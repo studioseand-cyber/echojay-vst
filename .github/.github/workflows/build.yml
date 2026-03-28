@@ -1,0 +1,243 @@
+name: Build EchoJay
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone JUCE
+        run: |
+          git clone --depth 1 --branch 8.0.4 https://github.com/juce-framework/JUCE.git ~/JUCE
+
+      - name: Configure (VST3 + AU)
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DJUCE_PATH=$HOME/JUCE \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Stage Mac plugins
+        run: |
+          mkdir -p dist/mac
+          cp -R build/EchoJay_artefacts/Release/VST3/EchoJay.vst3 dist/mac/ 2>/dev/null || true
+          cp -R build/EchoJay_artefacts/Release/AU/EchoJay.component dist/mac/ 2>/dev/null || true
+          cp -R build/EchoJay_artefacts/Release/AAX/EchoJay.aaxplugin dist/mac/ 2>/dev/null || true
+
+      - name: Build Mac installer
+        run: |
+          mkdir -p installer
+          # Welcome
+          cat > installer/welcome.html << 'EOF'
+          <html><head><meta charset="utf-8"></head>
+          <body style="font-family: -apple-system, Helvetica Neue, sans-serif; margin: 20px; color: #1d1d1f;">
+          <h1 style="font-size: 22px; font-weight: 600;">EchoJay - AI Mix Assistant</h1>
+          <p style="font-size: 14px; line-height: 1.6; color: #424245;">
+          This installer will set up EchoJay on your system.</p>
+          <ul style="font-size: 14px; line-height: 1.8; color: #424245;">
+          <li><strong>VST3</strong> - Ableton, FL Studio, Reaper, Studio One, Cubase, Bitwig</li>
+          <li><strong>AU</strong> - Logic Pro, GarageBand</li>
+          </ul>
+          <p style="font-size: 14px;">Click <strong>Continue</strong> to proceed.</p>
+          <p style="font-size: 12px; color: #86868b; margin-top: 30px;">EchoJay | echojay.ai</p>
+          </body></html>
+          EOF
+
+          # License
+          cat > installer/license.html << 'EOF'
+          <html><head><meta charset="utf-8"></head>
+          <body style="font-family: -apple-system, Helvetica Neue, sans-serif; margin: 20px; color: #1d1d1f;">
+          <h2 style="font-size: 18px; font-weight: 600;">End User License Agreement</h2>
+          <p style="font-size: 13px; line-height: 1.6; color: #424245;">Copyright 2026 EchoJay. All rights reserved.</p>
+          <ol style="font-size: 13px; line-height: 1.8; color: #424245;">
+          <li>You may install and use EchoJay on any computers you personally own.</li>
+          <li>You may not redistribute, reverse-engineer, or modify the software.</li>
+          <li>The software is provided "as is" without warranty of any kind.</li>
+          </ol>
+          </body></html>
+          EOF
+
+          # Conclusion
+          cat > installer/conclusion.html << 'EOF'
+          <html><head><meta charset="utf-8"></head>
+          <body style="font-family: -apple-system, Helvetica Neue, sans-serif; margin: 20px; color: #1d1d1f;">
+          <h1 style="font-size: 22px; font-weight: 600;">Installation Complete</h1>
+          <p style="font-size: 14px; line-height: 1.6; color: #424245;">
+          EchoJay has been installed. Restart your DAW to find it in your plugin list.</p>
+          <p style="font-size: 13px; color: #86868b;">Need help? Visit echojay.ai</p>
+          </body></html>
+          EOF
+
+          PKG_DIR=/tmp/echojay_pkg
+          rm -rf $PKG_DIR
+          mkdir -p $PKG_DIR/vst3_payload/Library/Audio/Plug-Ins/VST3
+          mkdir -p $PKG_DIR/au_payload/Library/Audio/Plug-Ins/Components
+          mkdir -p $PKG_DIR/components $PKG_DIR/scripts
+
+          cp -R dist/mac/EchoJay.vst3 $PKG_DIR/vst3_payload/Library/Audio/Plug-Ins/VST3/ 2>/dev/null || true
+          cp -R dist/mac/EchoJay.component $PKG_DIR/au_payload/Library/Audio/Plug-Ins/Components/ 2>/dev/null || true
+
+          echo '#!/bin/bash' > $PKG_DIR/scripts/postinstall
+          echo 'killall -9 AudioComponentRegistrar 2>/dev/null || true' >> $PKG_DIR/scripts/postinstall
+          echo 'exit 0' >> $PKG_DIR/scripts/postinstall
+          chmod +x $PKG_DIR/scripts/postinstall
+
+          pkgbuild --root $PKG_DIR/vst3_payload --install-location ~ \
+            --identifier com.echojay.plugin.vst3 --version 1.0.9 \
+            $PKG_DIR/components/EchoJay-VST3.pkg
+
+          pkgbuild --root $PKG_DIR/au_payload --install-location ~ \
+            --identifier com.echojay.plugin.au --version 1.0.9 \
+            --scripts $PKG_DIR/scripts \
+            $PKG_DIR/components/EchoJay-AU.pkg
+
+          cat > $PKG_DIR/distribution.xml << 'DISTEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <installer-gui-script minSpecVersion="2">
+            <title>EchoJay v1.0.9</title>
+            <organization>com.echojay.plugin</organization>
+            <options customize="allow" require-scripts="false" hostArchitectures="x86_64,arm64"/>
+            <welcome file="welcome.html"/>
+            <license file="license.html"/>
+            <conclusion file="conclusion.html"/>
+            <domains enable_localSystem="false" enable_currentUserHome="true"/>
+            <choices-outline>
+              <line choice="vst3"/>
+              <line choice="au"/>
+            </choices-outline>
+            <choice id="vst3" title="VST3 Plugin" description="For Ableton, FL Studio, Reaper, Studio One, Cubase, Bitwig" selected="true">
+              <pkg-ref id="com.echojay.plugin.vst3"/>
+            </choice>
+            <choice id="au" title="Audio Unit Plugin" description="For Logic Pro, GarageBand" selected="true">
+              <pkg-ref id="com.echojay.plugin.au"/>
+            </choice>
+            <pkg-ref id="com.echojay.plugin.vst3" version="1.0.9">EchoJay-VST3.pkg</pkg-ref>
+            <pkg-ref id="com.echojay.plugin.au" version="1.0.9">EchoJay-AU.pkg</pkg-ref>
+          </installer-gui-script>
+          DISTEOF
+
+          productbuild --distribution $PKG_DIR/distribution.xml \
+            --resources installer --package-path $PKG_DIR/components \
+            dist/mac/EchoJay-v1.0.9-Mac-Installer.pkg
+
+      - name: Create Mac DMG
+        run: |
+          DMG_DIR=/tmp/echojay_dmg
+          rm -rf $DMG_DIR
+          mkdir -p $DMG_DIR
+          cp dist/mac/EchoJay-v1.0.9-Mac-Installer.pkg $DMG_DIR/
+          hdiutil create -volname "EchoJay Installer" -srcfolder $DMG_DIR \
+            -ov -format UDZO -imagekey zlib-level=9 \
+            dist/mac/EchoJay-v1.0.9-Mac.dmg
+
+      - name: Upload Mac artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoJay-Mac
+          path: |
+            dist/mac/EchoJay-v1.0.9-Mac.dmg
+            dist/mac/EchoJay-v1.0.9-Mac-Installer.pkg
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone JUCE
+        run: |
+          git clone --depth 1 --branch 8.0.4 https://github.com/juce-framework/JUCE.git C:\JUCE
+
+      - name: Configure
+        run: |
+          cmake -B build -DJUCE_PATH=C:\JUCE -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Stage Windows plugins
+        run: |
+          mkdir dist\windows
+          xcopy /E /I build\EchoJay_artefacts\Release\VST3\EchoJay.vst3 dist\windows\EchoJay.vst3\
+          xcopy /E /I build\EchoJay_artefacts\Release\Standalone\EchoJay.exe dist\windows\ 2>nul || echo "No standalone"
+        shell: cmd
+
+      - name: Create Windows installer script
+        run: |
+          @"
+          @echo off
+          echo.
+          echo  ========================================
+          echo   Installing EchoJay...
+          echo  ========================================
+          echo.
+
+          set "VST3_DIR=%CommonProgramFiles%\VST3"
+          if not exist "%VST3_DIR%" mkdir "%VST3_DIR%"
+
+          xcopy /E /I /Y "%~dp0EchoJay.vst3" "%VST3_DIR%\EchoJay.vst3\"
+
+          echo.
+          echo  VST3 installed to: %VST3_DIR%\EchoJay.vst3
+          echo.
+          echo  ========================================
+          echo   Done - restart your DAW to load EchoJay
+          echo  ========================================
+          echo.
+          pause
+          "@ | Out-File -Encoding ASCII dist\windows\Install-EchoJay.bat
+        shell: powershell
+
+      - name: Create Windows zip
+        run: |
+          cd dist\windows
+          7z a ..\EchoJay-v1.0.9-Windows.zip *
+        shell: cmd
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoJay-Windows
+          path: dist/EchoJay-v1.0.9-Windows.zip
+
+  release:
+    needs: [build-mac, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download Mac artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: EchoJay-Mac
+          path: artifacts/mac
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: EchoJay-Windows
+          path: artifacts/windows
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: EchoJay ${{ github.ref_name }}
+          body: |
+            ## EchoJay ${{ github.ref_name }}
+
+            **Mac** - Open the DMG, run the installer. Supports VST3 and AU.
+            **Windows** - Extract the zip, run Install-EchoJay.bat. Supports VST3.
+
+            Right-click the Mac installer and select "Open" the first time (unsigned build).
+          files: |
+            artifacts/mac/EchoJay-v1.0.9-Mac.dmg
+            artifacts/windows/EchoJay-v1.0.9-Windows.zip
