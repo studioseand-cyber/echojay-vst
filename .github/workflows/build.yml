@@ -46,6 +46,7 @@ jobs:
           <ul style="font-size: 14px; line-height: 1.8; color: #424245;">
           <li><strong>VST3</strong> - Ableton, FL Studio, Reaper, Studio One, Cubase, Bitwig</li>
           <li><strong>AU</strong> - Logic Pro, GarageBand</li>
+          <li><strong>AAX</strong> - Pro Tools</li>
           </ul>
           <p style="font-size: 14px;">Click <strong>Continue</strong> to proceed.</p>
           <p style="font-size: 12px; color: #86868b; margin-top: 30px;">EchoJay | echojay.ai</p>
@@ -92,18 +93,18 @@ jobs:
           chmod +x $PKG_DIR/scripts/postinstall
 
           pkgbuild --root $PKG_DIR/vst3_payload --install-location ~ \
-            --identifier com.echojay.plugin.vst3 --version 1.0.9 \
+            --identifier com.echojay.plugin.vst3 --version 1.1.0 \
             $PKG_DIR/components/EchoJay-VST3.pkg
 
           pkgbuild --root $PKG_DIR/au_payload --install-location ~ \
-            --identifier com.echojay.plugin.au --version 1.0.9 \
+            --identifier com.echojay.plugin.au --version 1.1.0 \
             --scripts $PKG_DIR/scripts \
             $PKG_DIR/components/EchoJay-AU.pkg
 
           cat > $PKG_DIR/distribution.xml << 'DISTEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="2">
-            <title>EchoJay v1.0.9</title>
+            <title>EchoJay v1.1.0</title>
             <organization>com.echojay.plugin</organization>
             <options customize="allow" require-scripts="false" hostArchitectures="x86_64,arm64"/>
             <welcome file="welcome.html"/>
@@ -120,32 +121,32 @@ jobs:
             <choice id="au" title="Audio Unit Plugin" description="For Logic Pro, GarageBand" selected="true">
               <pkg-ref id="com.echojay.plugin.au"/>
             </choice>
-            <pkg-ref id="com.echojay.plugin.vst3" version="1.0.9">EchoJay-VST3.pkg</pkg-ref>
-            <pkg-ref id="com.echojay.plugin.au" version="1.0.9">EchoJay-AU.pkg</pkg-ref>
+            <pkg-ref id="com.echojay.plugin.vst3" version="1.1.0">EchoJay-VST3.pkg</pkg-ref>
+            <pkg-ref id="com.echojay.plugin.au" version="1.1.0">EchoJay-AU.pkg</pkg-ref>
           </installer-gui-script>
           DISTEOF
 
           productbuild --distribution $PKG_DIR/distribution.xml \
             --resources installer --package-path $PKG_DIR/components \
-            dist/mac/EchoJay-v1.0.9-Mac-Installer.pkg
+            dist/mac/EchoJay-v1.1.0-Mac-Installer.pkg
 
       - name: Create Mac DMG
         run: |
           DMG_DIR=/tmp/echojay_dmg
           rm -rf $DMG_DIR
           mkdir -p $DMG_DIR
-          cp dist/mac/EchoJay-v1.0.9-Mac-Installer.pkg $DMG_DIR/
+          cp dist/mac/EchoJay-v1.1.0-Mac-Installer.pkg $DMG_DIR/
           hdiutil create -volname "EchoJay Installer" -srcfolder $DMG_DIR \
             -ov -format UDZO -imagekey zlib-level=9 \
-            dist/mac/EchoJay-v1.0.9-Mac.dmg
+            dist/mac/EchoJay-v1.1.0-Mac.dmg
 
       - name: Upload Mac artifacts
         uses: actions/upload-artifact@v4
         with:
           name: EchoJay-Mac
           path: |
-            dist/mac/EchoJay-v1.0.9-Mac.dmg
-            dist/mac/EchoJay-v1.0.9-Mac-Installer.pkg
+            dist/mac/EchoJay-v1.1.0-Mac.dmg
+            dist/mac/EchoJay-v1.1.0-Mac-Installer.pkg
 
   build-windows:
     runs-on: windows-latest
@@ -199,14 +200,14 @@ jobs:
       - name: Create Windows zip
         run: |
           cd dist\windows
-          7z a ..\EchoJay-v1.0.9-Windows.zip *
+          7z a ..\EchoJay-v1.1.0-Windows.zip *
         shell: cmd
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: EchoJay-Windows
-          path: dist/EchoJay-v1.0.9-Windows.zip
+          path: dist/EchoJay-v1.1.0-Windows.zip
 
   release:
     needs: [build-mac, build-windows]
@@ -239,5 +240,5 @@ jobs:
 
             Right-click the Mac installer and select "Open" the first time (unsigned build).
           files: |
-            artifacts/mac/EchoJay-v1.0.9-Mac.dmg
-            artifacts/windows/EchoJay-v1.0.9-Windows.zip
+            artifacts/mac/EchoJay-v1.1.0-Mac.dmg
+            artifacts/windows/EchoJay-v1.1.0-Windows.zip

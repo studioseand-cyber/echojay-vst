@@ -73,6 +73,10 @@ private:
     enum class View { Meters, Compare, Settings };
     View currentView { View::Meters };
     
+    bool compactMode = false;
+    int fullModeWidth = 900;
+    int fullModeHeight = 580;
+    void toggleCompactMode();
     bool compareVisible = false;
     bool dragHovering = false;
     
@@ -167,6 +171,9 @@ private:
     juce::StringArray presetNames;
     
     juce::String getCompareSlotWavPath(int selectedId);
+    
+    // Loudness panel bounds for click-to-reset
+    juce::Rectangle<int> loudnessPanelBounds;
     
     // Compare card waveform positions — stored during paint, overlays positioned in timer
     struct CompareWavePos { juce::Rectangle<int> bounds; juce::String wavPath; float duration; };
@@ -268,6 +275,12 @@ private:
     void stopPlayback();
     
     EchoJayAPI api;
+    
+    // Update notification
+    bool updateAvailable = false;
+    bool updateDismissed = false;
+    int updateCheckCounter = 0;
+    static constexpr int kUpdateCheckInterval = 20 * 60 * 360; // ~6 hours at 20fps
     
     using C = EchoJayLookAndFeel::Colours;
     EchoJayLookAndFeel lnf;

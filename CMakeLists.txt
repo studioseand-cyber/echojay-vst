@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(EchoJay VERSION 1.0.9)
+project(EchoJay VERSION 1.1.0)
 
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/

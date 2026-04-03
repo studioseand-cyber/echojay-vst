@@ -102,7 +102,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     setLookAndFeel(&lnf);
     setSize(900, 580);
     setResizable(true, true);
-    setResizeLimits(630, 406, 1800, 1160);
+    setResizeLimits(900, 580, 1800, 1160);
 
     // --- Channel type ---
     // Grouped channel type dropdown — uses PopupMenu with submenus via getRootMenu()
@@ -2274,8 +2274,18 @@ void EchoJayEditor::paint(juce::Graphics& g)
 
     // === Main Screen ===
     int topH = 32;
-    int chatW = juce::jlimit(280, 420, bounds.getWidth() * 35 / 100);
-    int mW = bounds.getWidth() - chatW;
+    int chatW, mW;
+    
+    if (compactMode)
+    {
+        chatW = bounds.getWidth();
+        mW = 0;
+    }
+    else
+    {
+        chatW = juce::jlimit(280, 420, bounds.getWidth() * 35 / 100);
+        mW = bounds.getWidth() - chatW;
+    }
 
     // Top bar background
     g.setColour(C::bg2);
@@ -2303,6 +2313,36 @@ void EchoJayEditor::paint(juce::Graphics& g)
     }
     EchoJayLookAndFeel::drawGrainOverlay(g, juce::Rectangle<int>(0, 0, bounds.getWidth(), topH), 0.015f);
 
+    // Compact/expand toggle — top right of main top bar
+    {
+        int iconX = bounds.getWidth() - 24;
+        int iconY = 8;
+        int s = 16;
+        g.setColour(C::text3);
+        if (compactMode)
+        {
+            // Expand icon — two arrows pointing outward
+            g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + 2, (float)iconY + s - 6, 1.5f);
+            g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + 6, (float)iconY + s - 2, 1.5f);
+            g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s - 2, (float)iconY + 6, 1.5f);
+            g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s - 6, (float)iconY + 2, 1.5f);
+        }
+        else
+        {
+            // Compact icon — two arrows pointing inward
+            g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + s/2, (float)iconY + s/2, (float)iconX + s/2, (float)iconY + s/2 + 4, 1.5f);
+            g.drawLine((float)iconX + s/2, (float)iconY + s/2, (float)iconX + s/2 - 4, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + s/2, (float)iconY + s/2, (float)iconX + s/2, (float)iconY + s/2 - 4, 1.5f);
+            g.drawLine((float)iconX + s/2, (float)iconY + s/2, (float)iconX + s/2 + 4, (float)iconY + s/2, 1.5f);
+        }
+    }
+
+    if (!compactMode)
+    {
     // Vertical divider
     g.setColour(C::border);
     g.drawVerticalLine(mW, (float)topH, (float)bounds.getHeight());
@@ -2348,7 +2388,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
 
         // LOUDNESS panel
         int loudH = 98;
-        paintLoudnessPanel(g, { pad, y, contentW, loudH }, md);
+        loudnessPanelBounds = { pad, y, contentW, loudH };
+        paintLoudnessPanel(g, loudnessPanelBounds, md);
         y += loudH + secGap;
 
         // LEVELS + STEREO IMAGE side by side
@@ -2365,9 +2406,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
         int specH = std::max(80, bounds.getHeight() - y - pad);
         paintSpectrumPanel(g, { pad, y, contentW, specH }, md);
     }
+    } // end if (!compactMode)
 
     // === Chat Panel ===
-    int chatX = mW + 1;
+    int chatX = compactMode ? 0 : mW + 1;
 
     // Chat header — "AI ASSISTANT" bold, usage count right
     g.setColour(C::bg2);
@@ -2588,6 +2630,52 @@ void EchoJayEditor::paint(juce::Graphics& g)
         paintChannelPromptOverlay(g, bounds);
     else if (genrePromptVisible)
         paintGenrePromptOverlay(g, bounds);
+    
+    // Update available overlay — painted last so it's always on top
+    if (updateAvailable && !updateDismissed && currentScreen == Screen::Main
+        && !channelPromptVisible && !genrePromptVisible)
+    {
+        // Dark background overlay
+        g.setColour(juce::Colours::black.withAlpha(0.72f));
+        g.fillRect(bounds);
+        
+        // Card
+        int cardW = 340, cardH = 180;
+        int cardX = (bounds.getWidth() - cardW) / 2;
+        int cardY = (bounds.getHeight() - cardH) / 2;
+        auto card = juce::Rectangle<int>(cardX, cardY, cardW, cardH);
+        
+        g.setColour(C::bg2);
+        g.fillRoundedRectangle(card.toFloat(), 16.0f);
+        g.setColour(C::border2);
+        g.drawRoundedRectangle(card.toFloat(), 16.0f, 1.0f);
+        
+        // Title
+        g.setColour(C::text);
+        g.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
+        g.drawText("Update Available", card.getX(), card.getY() + 24, card.getWidth(), 24, juce::Justification::centred);
+        
+        // Version info
+        g.setColour(C::text2);
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
+        g.drawText("EchoJay " + EchoJayAPI::latestVersion + " is now available",
+                   card.getX(), card.getY() + 54, card.getWidth(), 20, juce::Justification::centred);
+        g.drawText("You're running v" + juce::String(ProjectInfo::versionString),
+                   card.getX(), card.getY() + 74, card.getWidth(), 20, juce::Justification::centred);
+        
+        // Download button
+        auto dlBtn = juce::Rectangle<float>((float)(card.getCentreX() - 70), (float)(card.getY() + 110), 140.0f, 34.0f);
+        g.setGradientFill(juce::ColourGradient(C::blue, dlBtn.getX(), 0, C::purple, dlBtn.getRight(), 0, false));
+        g.fillRoundedRectangle(dlBtn, 8.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+        g.drawText("Download Update", dlBtn.toNearestInt(), juce::Justification::centred);
+        
+        // Dismiss link
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText("Not now", card.getX(), card.getY() + 150, card.getWidth(), 20, juce::Justification::centred);
+    }
 }
 
 void EchoJayEditor::paintChannelPromptOverlay(juce::Graphics& g, juce::Rectangle<int> bounds)
@@ -2639,8 +2727,19 @@ void EchoJayEditor::resized()
         return;
 
     int topH = 32;
-    int chatW = juce::jlimit(240, 380, b.getWidth() * 32 / 100);
-    int mW = b.getWidth() - chatW;
+    int chatW, mW;
+    
+    if (compactMode)
+    {
+        // Compact: chat takes full width, no meter panel
+        chatW = b.getWidth();
+        mW = 0;
+    }
+    else
+    {
+        chatW = juce::jlimit(240, 380, b.getWidth() * 32 / 100);
+        mW = b.getWidth() - chatW;
+    }
 
     // === Single top bar row ===
     int ty = 4, bh = 24;
@@ -2648,9 +2747,20 @@ void EchoJayEditor::resized()
     channelTypeBox.setBounds(tx, ty, 100, bh); tx += 104;
     genreBox.setBounds(tx, ty, 95, bh); tx += 99;
     captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
-    compareBtn.setBounds(tx, ty, 64, bh); tx += 68;
-    settingsBtn.setBounds(tx, ty, 52, bh); tx += 56;
-    scanBtn.setBounds(tx, ty, 78, bh); tx += 82;
+    
+    if (compactMode)
+    {
+        // Hide full-mode-only top bar buttons
+        compareBtn.setBounds(0, -20, 1, 1);
+        settingsBtn.setBounds(0, -20, 1, 1);
+        scanBtn.setBounds(0, -20, 1, 1);
+    }
+    else
+    {
+        compareBtn.setBounds(tx, ty, 64, bh); tx += 68;
+        settingsBtn.setBounds(tx, ty, 52, bh); tx += 56;
+        scanBtn.setBounds(tx, ty, 78, bh); tx += 82;
+    }
     
     // Detected label — fixed position in top-right, right-aligned
     int detW = 140;
@@ -2671,12 +2781,13 @@ void EchoJayEditor::resized()
     int inH = 52; // ~2 lines of 13px font
     int sendW = 56;
     int sendH = 30;
-    int chatPadL = -20; // 20px past the panel divider
+    int chatPadL = compactMode ? 8 : -20; // compact: normal padding, full: 20px past divider
+    int chatStartX = compactMode ? 0 : mW;
     int inputY = b.getHeight() - inH - 10;
-    chatInput.setBounds(mW + chatPadL, inputY, chatW - sendW - chatPadL - 4, inH);
+    chatInput.setBounds(chatStartX + chatPadL, inputY, chatW - sendW - chatPadL - 4, inH);
     int sendY = inputY + (inH - sendH) / 2; // vertically centred
-    chatSendBtn.setBounds(mW + chatW - sendW - 2, sendY, sendW, sendH);
-    chatScroll.setBounds(mW + 2, topH + 32, chatW - 4, b.getHeight() - topH - 32 - inH - 4);
+    chatSendBtn.setBounds(chatStartX + chatW - sendW - 2, sendY, sendW, sendH);
+    chatScroll.setBounds(chatStartX + 2, topH + 32, chatW - 4, b.getHeight() - topH - 32 - inH - 4);
     chatContent.setSize(chatW - 16, std::max(100, chatScroll.getHeight()));
 
     // Hide chat when channel prompt overlay is showing
@@ -3214,6 +3325,22 @@ void EchoJayEditor::timerCallback()
     {
         for (int i = 0; i < kMaxWavePlayBtns; ++i)
             wavePlayOverlays[(size_t)i].setVisible(false);
+    }
+
+    // Periodic update check — every ~6 hours, re-fetch remote config
+    updateCheckCounter++;
+    if (updateCheckCounter >= kUpdateCheckInterval)
+    {
+        updateCheckCounter = 0;
+        EchoJayAPI::remoteConfigLoaded = false;
+        api.fetchRemoteConfig();
+    }
+    
+    // Check if an update is available
+    if (!updateDismissed && EchoJayAPI::latestVersion.isNotEmpty())
+    {
+        auto current = juce::String(ProjectInfo::versionString);
+        updateAvailable = (EchoJayAPI::latestVersion != current);
     }
 
     repaint();
@@ -4192,6 +4319,62 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 {
     auto pos = e.getEventRelativeTo(this).getPosition();
     
+    // Update overlay click handler
+    if (updateAvailable && !updateDismissed && currentScreen == Screen::Main
+        && !channelPromptVisible && !genrePromptVisible)
+    {
+        auto bounds = getLocalBounds();
+        int cardW = 340, cardH = 180;
+        int cardX = (bounds.getWidth() - cardW) / 2;
+        int cardY = (bounds.getHeight() - cardH) / 2;
+        
+        // Download button area
+        int dlBtnX = bounds.getWidth() / 2 - 70;
+        int dlBtnY = cardY + 110;
+        if (pos.x >= dlBtnX && pos.x <= dlBtnX + 140 && pos.y >= dlBtnY && pos.y <= dlBtnY + 34)
+        {
+            auto url = EchoJayAPI::updateUrl.isNotEmpty() ? EchoJayAPI::updateUrl : "https://www.echojay.ai/?noredirect#plugin";
+            juce::URL(url).launchInDefaultBrowser();
+            return;
+        }
+        
+        // "Not now" text area
+        int notNowY = cardY + 150;
+        if (pos.y >= notNowY && pos.y <= notNowY + 20 && pos.x >= cardX && pos.x <= cardX + cardW)
+        {
+            updateDismissed = true;
+            repaint();
+            return;
+        }
+        
+        // Click anywhere outside the card dismisses too
+        if (pos.x < cardX || pos.x > cardX + cardW || pos.y < cardY || pos.y > cardY + cardH)
+        {
+            updateDismissed = true;
+            repaint();
+            return;
+        }
+        
+        return; // Consume click while overlay is showing
+    }
+    
+    // Compact/expand toggle — top right of top bar
+    if (currentScreen == Screen::Main && pos.y < 32 && pos.x > getLocalBounds().getWidth() - 30)
+    {
+        toggleCompactMode();
+        return;
+    }
+    
+    // Click on loudness panel — reset integrated LUFS
+    if (currentScreen == Screen::Main && currentView == View::Meters && !compactMode
+        && !channelPromptVisible && !genrePromptVisible
+        && loudnessPanelBounds.contains(pos))
+    {
+        processorRef.getMeterEngine().resetIntegrated();
+        repaint();
+        return;
+    }
+    
     // Logo click — open landing page
     if (currentScreen == Screen::Main && pos.x < 120 && pos.y < 32)
     {
@@ -4200,14 +4383,13 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
             // Right-click on logo/top bar — UI size menu
             juce::PopupMenu sizeMenu;
             sizeMenu.setLookAndFeel(&lnf);
-            sizeMenu.addItem(1, "Small (720 x 464)");
+            
             sizeMenu.addItem(2, "Default (900 x 580)");
             sizeMenu.addItem(3, "Large (1080 x 696)");
             sizeMenu.addItem(4, "Extra Large (1260 x 812)");
             sizeMenu.showMenuAsync(juce::PopupMenu::Options(),
                 [this](int result) {
-                    if (result == 1) setSize(720, 464);
-                    else if (result == 2) setSize(900, 580);
+                    if (result == 2) setSize(900, 580);
                     else if (result == 3) setSize(1080, 696);
                     else if (result == 4) setSize(1260, 812);
                 });
@@ -4222,14 +4404,13 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     {
         juce::PopupMenu sizeMenu;
         sizeMenu.setLookAndFeel(&lnf);
-        sizeMenu.addItem(1, "Small (720 x 464)");
+        
         sizeMenu.addItem(2, "Default (900 x 580)");
         sizeMenu.addItem(3, "Large (1080 x 696)");
         sizeMenu.addItem(4, "Extra Large (1260 x 812)");
         sizeMenu.showMenuAsync(juce::PopupMenu::Options(),
             [this](int result) {
-                if (result == 1) setSize(720, 464);
-                else if (result == 2) setSize(900, 580);
+                if (result == 2) setSize(900, 580);
                 else if (result == 3) setSize(1080, 696);
                 else if (result == 4) setSize(1260, 812);
             });
@@ -4344,13 +4525,12 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 
 void EchoJayEditor::mouseDoubleClick(const juce::MouseEvent& e)
 {
+    auto pos = e.getEventRelativeTo(this).getPosition();
+    
     if (currentView != View::Compare) return;
     
     auto snaps = processorRef.getSnapshots();
     int refOffset = (int)snaps.size() + 100;
-    
-    // Use editor-relative coordinates (same as mouseDown does)
-    auto pos = e.getEventRelativeTo(this).getPosition();
     
     // Determine which card by checking if click is nearer to slot A or slot B
     int distA = std::abs(pos.x - compareSlotABox.getBounds().getCentreX());
@@ -4402,6 +4582,42 @@ void EchoJayEditor::stopChatPlayback()
     chatPlaybackOffset = 0;
     playSlotABtn.setButtonText(">");
     playSlotBBtn.setButtonText(">");
+}
+
+void EchoJayEditor::toggleCompactMode()
+{
+    compactMode = !compactMode;
+    
+    if (compactMode)
+    {
+        // Save current size so we can restore it
+        fullModeWidth = getWidth();
+        fullModeHeight = getHeight();
+        
+        // Switch to compact — chat only
+        setResizeLimits(420, 450, 600, 900);
+        setSize(450, 550);
+        
+        // Hide meter-side UI and force back to meters view
+        compareBtn.setVisible(false);
+        settingsBtn.setVisible(false);
+        scanBtn.setVisible(false);
+        if (currentView == View::Compare) { hideCompareView(); currentView = View::Meters; }
+        if (currentView == View::Settings) { hideSettingsView(); currentView = View::Meters; }
+    }
+    else
+    {
+        // Restore full mode
+        setResizeLimits(900, 580, 1800, 1160);
+        setSize(fullModeWidth, fullModeHeight);
+        
+        compareBtn.setVisible(true);
+        settingsBtn.setVisible(true);
+        scanBtn.setVisible(true);
+    }
+    
+    resized();
+    repaint();
 }
 
 void EchoJayEditor::startChatPlayback(const juce::String& wavPath, float offset)
