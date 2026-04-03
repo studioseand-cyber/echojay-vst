@@ -1,6 +1,0 @@
-# Hashes of file build rules.
-e608fef97abdca55c26bf6ce8c7b6368 EchoJay_artefacts/JuceLibraryCode/EchoJay_AAX/PkgInfo
-2b9510597df9ef5afc42f0377d63b835 EchoJay_artefacts/JuceLibraryCode/EchoJay_AU/PkgInfo
-984b98ec50d08d16d4b486a28b6beec3 EchoJay_artefacts/JuceLibraryCode/EchoJay_Standalone/PkgInfo
-bf6f428d0d2f15e879ebc3c456733125 EchoJay_artefacts/JuceLibraryCode/EchoJay_VST3/PkgInfo
-a14ba2a0d523875bc1baa69b443ff585 EchoJay_artefacts/JuceLibraryCode/JuceHeader.h
