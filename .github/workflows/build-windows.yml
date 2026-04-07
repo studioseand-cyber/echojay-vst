@@ -1,0 +1,49 @@
+name: Build Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clone JUCE
+        run: git clone --depth 1 --branch 8.0.12 https://github.com/juce-framework/JUCE.git ../JUCE
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_PATH="../JUCE"
+
+      - name: Build
+        run: cmake --build build --config Release --target EchoJay_VST3
+
+      - name: List artifacts
+        run: dir build\EchoJay_artefacts\Release\VST3 /s
+        shell: cmd
+
+      - name: Create installer
+        run: |
+          mkdir installer
+          xcopy /E /I "build\EchoJay_artefacts\Release\VST3\EchoJay.vst3" "installer\EchoJay.vst3\"
+        shell: cmd
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoJay-Windows-VST3
+          path: installer/
+
+      - name: Create Release Asset (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: installer/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
