@@ -1,6 +1,97 @@
 #include "PluginEditor.h"
 #include <cmath>
 
+namespace
+{
+struct ChannelPromptOption
+{
+    const char* label;
+    ChannelType type;
+    int groupIndex;
+};
+
+static constexpr const char* kChannelPromptGroups[] = {
+    "Vocals",
+    "Drums",
+    "Bass",
+    "Keys & Guitar",
+    "Synths",
+    "Strings & Brass",
+    "FX & Other",
+    "Buses"
+};
+
+static constexpr ChannelPromptOption kChannelPromptOptions[] = {
+    { "Lead Vocal", ChannelType::LeadVocal, 0 },
+    { "Backing Vocal", ChannelType::BackingVocal, 0 },
+    { "Adlibs", ChannelType::Adlibs, 0 },
+    { "Vocal Bus", ChannelType::VocalBus, 0 },
+    { "Kick", ChannelType::Kick, 1 },
+    { "Snare", ChannelType::Snare, 1 },
+    { "Hi-Hat", ChannelType::HiHat, 1 },
+    { "Overheads", ChannelType::Overheads, 1 },
+    { "Drum Bus", ChannelType::DrumBus, 1 },
+    { "Percussion", ChannelType::Percussion, 1 },
+    { "Bass / 808", ChannelType::Bass808, 2 },
+    { "Bass Guitar", ChannelType::BassGuitar, 2 },
+    { "Sub Bass", ChannelType::SubBass, 2 },
+    { "Synth Bass", ChannelType::SynthBass, 2 },
+    { "Piano", ChannelType::Piano, 3 },
+    { "Keys", ChannelType::Keys, 3 },
+    { "Acoustic Guitar", ChannelType::AcousticGuitar, 3 },
+    { "Electric Guitar", ChannelType::ElectricGuitar, 3 },
+    { "Guitar Bus", ChannelType::GuitarBus, 3 },
+    { "Synth Lead", ChannelType::SynthLead, 4 },
+    { "Synth Pad", ChannelType::SynthPad, 4 },
+    { "Synth Pluck", ChannelType::SynthPluck, 4 },
+    { "Synth Bus", ChannelType::SynthBus, 4 },
+    { "Strings", ChannelType::Strings, 5 },
+    { "Brass", ChannelType::Brass, 5 },
+    { "Woodwind", ChannelType::Woodwind, 5 },
+    { "Orchestral", ChannelType::Orchestral, 5 },
+    { "FX", ChannelType::FX, 6 },
+    { "Reverb", ChannelType::Reverb, 6 },
+    { "Delay", ChannelType::Delay, 6 },
+    { "Foley", ChannelType::Foley, 6 },
+    { "Ambient", ChannelType::Ambient, 6 },
+    { "Master Bus", ChannelType::MasterBus, 7 },
+    { "Instrument Bus", ChannelType::InstrumentBus, 7 },
+    { "Music Bus", ChannelType::MusicBus, 7 }
+};
+
+// Genre prompt data — matches web app menu structure
+struct GenrePromptOption
+{
+    const char* label;
+    int groupIndex;
+};
+
+static constexpr const char* kGenrePromptGroups[] = {
+    "Popular",
+    "Electronic",
+    "Rock & Alt",
+    "Other"
+};
+
+static constexpr GenrePromptOption kGenrePromptOptions[] = {
+    // Popular (0)
+    { "Hip-Hop", 0 }, { "Pop", 0 }, { "R&B", 0 }, { "Rap", 0 }, { "Trap", 0 }, { "Drill", 0 },
+    // Electronic (1)
+    { "EDM", 1 }, { "House", 1 }, { "Techno", 1 }, { "Drum & Bass", 1 },
+    { "Dubstep", 1 }, { "Trance", 1 }, { "Garage", 1 }, { "Bass / Dub", 1 },
+    // Rock & Alt (2)
+    { "Rock", 2 }, { "Indie", 2 }, { "Punk", 2 }, { "Metal", 2 }, { "Alt Rock", 2 }, { "Grunge", 2 },
+    // Other (3)
+    { "Jazz", 3 }, { "Classical", 3 }, { "Country", 3 }, { "Reggae", 3 },
+    { "Soul", 3 }, { "Funk", 3 }, { "Gospel", 3 }, { "Blues", 3 },
+    { "Lo-Fi", 3 }, { "Ambient", 3 }, { "Latin", 3 }, { "Afrobeat", 3 },
+    { "Dancehall", 3 }, { "Grime", 3 }, { "Phonk", 3 }, { "Jersey Club", 3 }
+};
+}
+
+// Static: genre prompt dismissed flag — persists across all instances for the DAW session
+bool EchoJayEditor::genrePromptDismissedThisSession = false;
+
 // ============================================================================
 // Constructor
 // ============================================================================
@@ -11,79 +102,20 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     setLookAndFeel(&lnf);
     setSize(900, 580);
     setResizable(true, true);
-    setResizeLimits(630, 406, 1800, 1160); // ~0.7x to ~2x
-    getConstrainer()->setFixedAspectRatio(900.0 / 580.0);
+    setResizeLimits(900, 580, 1800, 1160);
 
     // --- Channel type ---
-    // Grouped channel type dropdown
-    channelTypeBox.addItem("Full Mix", 1);
-    channelTypeBox.addSeparator();
-    channelTypeBox.addSectionHeading("Vocals");
-    channelTypeBox.addItem("Lead Vocal", 2);
-    channelTypeBox.addItem("Backing Vocal", 3);
-    channelTypeBox.addItem("Adlibs", 4);
-    channelTypeBox.addItem("Vocal Bus", 5);
-    channelTypeBox.addSeparator();
-    channelTypeBox.addSectionHeading("Drums");
-    channelTypeBox.addItem("Kick", 6);
-    channelTypeBox.addItem("Snare", 7);
-    channelTypeBox.addItem("Hi-Hat", 8);
-    channelTypeBox.addItem("Overheads", 9);
-    channelTypeBox.addItem("Drum Bus", 10);
-    channelTypeBox.addItem("Percussion", 11);
-    channelTypeBox.addSeparator();
-    channelTypeBox.addSectionHeading("Bass");
-    channelTypeBox.addItem("Bass / 808", 12);
-    channelTypeBox.addItem("Bass Guitar", 13);
-    channelTypeBox.addItem("Sub Bass", 14);
-    channelTypeBox.addItem("Synth Bass", 15);
-    channelTypeBox.addSeparator();
-    channelTypeBox.addSectionHeading("Keys & Guitar");
-    channelTypeBox.addItem("Piano", 16);
-    channelTypeBox.addItem("Keys", 17);
-    channelTypeBox.addItem("Acoustic Guitar", 18);
-    channelTypeBox.addItem("Electric Guitar", 19);
-    channelTypeBox.addItem("Guitar Bus", 20);
-    channelTypeBox.addSeparator();
-    channelTypeBox.addSectionHeading("Synths");
-    channelTypeBox.addItem("Synth Lead", 21);
-    channelTypeBox.addItem("Synth Pad", 22);
-    channelTypeBox.addItem("Synth Pluck", 23);
-    channelTypeBox.addItem("Synth Bus", 24);
-    channelTypeBox.addSeparator();
-    channelTypeBox.addSectionHeading("Strings & Brass");
-    channelTypeBox.addItem("Strings", 25);
-    channelTypeBox.addItem("Brass", 26);
-    channelTypeBox.addItem("Woodwind", 27);
-    channelTypeBox.addItem("Orchestral", 28);
-    channelTypeBox.addSeparator();
-    channelTypeBox.addSectionHeading("FX & Other");
-    channelTypeBox.addItem("FX", 29);
-    channelTypeBox.addItem("Reverb", 30);
-    channelTypeBox.addItem("Delay", 31);
-    channelTypeBox.addItem("Foley", 32);
-    channelTypeBox.addItem("Ambient", 33);
-    channelTypeBox.addSeparator();
-    channelTypeBox.addSectionHeading("Buses");
-    channelTypeBox.addItem("Master Bus", 34);
-    channelTypeBox.addItem("Instrument Bus", 35);
-    channelTypeBox.addItem("Music Bus", 36);
-    channelTypeBox.setSelectedId(static_cast<int>(processorRef.getChannelType()) + 1, juce::dontSendNotification);
-    channelTypeBox.onChange = [this] {
-        processorRef.setChannelType(static_cast<ChannelType>(channelTypeBox.getSelectedId() - 1));
-    };
+    // Grouped channel type dropdown — uses PopupMenu with submenus via getRootMenu()
+    loadCustomChannels();
+    rebuildChannelTypeBox();
     channelTypeBox.setColour(juce::ComboBox::backgroundColourId, C::bg3);
     channelTypeBox.setColour(juce::ComboBox::textColourId, C::text);
     channelTypeBox.setColour(juce::ComboBox::outlineColourId, C::border2);
     addAndMakeVisible(channelTypeBox);
 
     // --- Genre ---
-    juce::StringArray genres = { "Hip-Hop","Drill","Trap","Pop","R&B","EDM","House",
-        "Techno","Rock","Jazz","Classical","Lo-Fi","Afrobeat","Phonk","DnB",
-        "Reggaeton","Country","Metal","Ambient","Gospel","Funk","Soul" };
-    genreBox.addItemList(genres, 1);
-    genreBox.setSelectedId(1, juce::dontSendNotification);
-    genreBox.onChange = [this] { processorRef.setGenre(genreBox.getText()); };
+    loadCustomGenres();
+    rebuildGenreBox();
     genreBox.setColour(juce::ComboBox::backgroundColourId, C::bg3);
     genreBox.setColour(juce::ComboBox::textColourId, C::text);
     genreBox.setColour(juce::ComboBox::outlineColourId, C::border2);
@@ -152,6 +184,174 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     logoutBtn.onClick = [this] { handleLogout(); };
     addAndMakeVisible(logoutBtn);
 
+    channelPromptBlocker.setVisible(false);
+    addChildComponent(channelPromptBlocker);
+
+    channelPromptTitle.setText("What type of channel is this?", juce::dontSendNotification);
+    channelPromptTitle.setColour(juce::Label::textColourId, C::text);
+    channelPromptTitle.setFont(juce::Font(juce::FontOptions(24.0f, juce::Font::bold)));
+    channelPromptTitle.setJustificationType(juce::Justification::centred);
+    channelPromptTitle.setVisible(false);
+    addAndMakeVisible(channelPromptTitle);
+
+    channelPromptSubtitle.setText("Pick the source once and EchoJay will remember it for this plugin instance.", juce::dontSendNotification);
+    channelPromptSubtitle.setColour(juce::Label::textColourId, C::text3);
+    channelPromptSubtitle.setFont(juce::Font(juce::FontOptions(12.0f)));
+    channelPromptSubtitle.setJustificationType(juce::Justification::centred);
+    channelPromptSubtitle.setVisible(false);
+    addAndMakeVisible(channelPromptSubtitle);
+
+    for (int i = 0; i < kChannelPromptGroupCount; ++i)
+    {
+        channelPromptGroupLabels[(size_t)i].setText(kChannelPromptGroups[i], juce::dontSendNotification);
+        channelPromptGroupLabels[(size_t)i].setColour(juce::Label::textColourId, C::amber);
+        channelPromptGroupLabels[(size_t)i].setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        channelPromptGroupLabels[(size_t)i].setJustificationType(juce::Justification::centredLeft);
+        channelPromptGroupLabels[(size_t)i].setVisible(false);
+        addAndMakeVisible(channelPromptGroupLabels[(size_t)i]);
+    }
+
+    for (int i = 0; i < kChannelPromptOptionCount; ++i)
+    {
+        auto& button = channelPromptButtons[(size_t)i];
+        button.setButtonText(kChannelPromptOptions[i].label);
+        button.setColour(juce::TextButton::buttonColourId, C::bg3);
+        button.setColour(juce::TextButton::textColourOffId, C::text2);
+        button.setColour(juce::TextButton::buttonOnColourId, C::blue);
+        button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        button.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
+        button.setVisible(false);
+        button.onClick = [this, i] { selectChannelPromptType(kChannelPromptOptions[i].type); };
+        addAndMakeVisible(button);
+    }
+
+    channelPromptSkipBtn.setColour(juce::TextButton::buttonColourId, C::purple);
+    channelPromptSkipBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    channelPromptSkipBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    channelPromptSkipBtn.setButtonText("Mix Bus");
+    channelPromptSkipBtn.setVisible(false);
+    channelPromptSkipBtn.onClick = [this] { dismissChannelPrompt(); };
+    addAndMakeVisible(channelPromptSkipBtn);
+    
+    customChannelBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
+    customChannelBtn.setColour(juce::TextButton::textColourOffId, C::purple);
+    customChannelBtn.setColour(juce::TextButton::textColourOnId, C::purple);
+    customChannelBtn.setVisible(false);
+    customChannelBtn.onClick = [this] {
+        auto* te = new juce::TextEditor();
+        te->setFont(juce::Font(juce::FontOptions(13.0f)));
+        te->setTextToShowWhenEmpty("Type instrument name...", C::text3);
+        te->setBounds(getWidth() / 2 - 110, getHeight() / 2 + 20, 220, 28);
+        te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
+        te->setColour(juce::TextEditor::textColourId, C::text);
+        te->setColour(juce::TextEditor::outlineColourId, C::purple);
+        te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
+        addAndMakeVisible(te);
+        te->toFront(true);
+        te->grabKeyboardFocus();
+        te->onReturnKey = [this, te]() {
+            auto name = te->getText().trim();
+            if (name.isNotEmpty()) {
+                processorRef.setCustomChannelName(name);
+                processorRef.setChannelType(ChannelType::Other);
+                processorRef.setChannelTypePromptDismissed(true);
+                addCustomChannelToList(name);
+                rebuildChannelTypeBox();
+                updateChannelPromptVisibility();
+                resized();
+            }
+            juce::MessageManager::callAsync([te]() { delete te; });
+        };
+        te->onFocusLost = [this, te]() {
+            auto name = te->getText().trim();
+            if (name.isNotEmpty()) {
+                processorRef.setCustomChannelName(name);
+                processorRef.setChannelType(ChannelType::Other);
+                processorRef.setChannelTypePromptDismissed(true);
+                addCustomChannelToList(name);
+                rebuildChannelTypeBox();
+            }
+            juce::MessageManager::callAsync([te]() { delete te; });
+        };
+    };
+    addAndMakeVisible(customChannelBtn);
+
+    // --- Session-level genre prompt ---
+    genrePromptTitle.setText("What genre is this project?", juce::dontSendNotification);
+    genrePromptTitle.setColour(juce::Label::textColourId, C::text);
+    genrePromptTitle.setFont(juce::Font(juce::FontOptions(22.0f, juce::Font::bold)));
+    genrePromptTitle.setJustificationType(juce::Justification::centred);
+    genrePromptTitle.setVisible(false);
+    addAndMakeVisible(genrePromptTitle);
+
+    genrePromptSubtitle.setText("EchoJay uses this to judge loudness targets. Applies to all instances this session.", juce::dontSendNotification);
+    genrePromptSubtitle.setColour(juce::Label::textColourId, C::text3);
+    genrePromptSubtitle.setFont(juce::Font(juce::FontOptions(11.0f)));
+    genrePromptSubtitle.setJustificationType(juce::Justification::centred);
+    genrePromptSubtitle.setVisible(false);
+    addAndMakeVisible(genrePromptSubtitle);
+
+    for (int i = 0; i < kGenreGroupCount; ++i)
+    {
+        genrePromptGroupLabels[(size_t)i].setText(kGenrePromptGroups[i], juce::dontSendNotification);
+        genrePromptGroupLabels[(size_t)i].setColour(juce::Label::textColourId, C::amber);
+        genrePromptGroupLabels[(size_t)i].setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        genrePromptGroupLabels[(size_t)i].setJustificationType(juce::Justification::centredLeft);
+        genrePromptGroupLabels[(size_t)i].setVisible(false);
+        addAndMakeVisible(genrePromptGroupLabels[(size_t)i]);
+    }
+
+    for (int i = 0; i < kGenreOptionCount; ++i)
+    {
+        auto& btn = genrePromptButtons[(size_t)i];
+        btn.setButtonText(kGenrePromptOptions[i].label);
+        btn.setColour(juce::TextButton::buttonColourId, C::bg3);
+        btn.setColour(juce::TextButton::textColourOffId, C::text2);
+        btn.setColour(juce::TextButton::buttonOnColourId, C::purple);
+        btn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        btn.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
+        btn.setVisible(false);
+        btn.onClick = [this, i] { dismissGenrePrompt(kGenrePromptOptions[i].label); };
+        addAndMakeVisible(btn);
+    }
+
+    genrePromptCustomBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
+    genrePromptCustomBtn.setColour(juce::TextButton::textColourOffId, C::purple);
+    genrePromptCustomBtn.setColour(juce::TextButton::textColourOnId, C::purple);
+    genrePromptCustomBtn.setVisible(false);
+    genrePromptCustomBtn.onClick = [this] {
+        auto* te = new juce::TextEditor();
+        te->setFont(juce::Font(juce::FontOptions(13.0f)));
+        te->setTextToShowWhenEmpty("Type genre name...", C::text3);
+        te->setBounds(getWidth() / 2 - 110, getHeight() / 2 + 60, 220, 28);
+        te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
+        te->setColour(juce::TextEditor::textColourId, C::text);
+        te->setColour(juce::TextEditor::outlineColourId, C::purple);
+        te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
+        addAndMakeVisible(te);
+        te->toFront(true);
+        te->grabKeyboardFocus();
+        te->onReturnKey = [this, te]() {
+            auto name = te->getText().trim();
+            if (name.isNotEmpty()) {
+                addCustomGenreToList(name);
+                rebuildGenreBox();
+                dismissGenrePrompt(name);
+            }
+            juce::MessageManager::callAsync([te]() { delete te; });
+        };
+        te->onFocusLost = [this, te]() {
+            auto name = te->getText().trim();
+            if (name.isNotEmpty()) {
+                addCustomGenreToList(name);
+                rebuildGenreBox();
+                dismissGenrePrompt(name);
+            }
+            juce::MessageManager::callAsync([te]() { delete te; });
+        };
+    };
+    addAndMakeVisible(genrePromptCustomBtn);
+
     userLabel.setColour(juce::Label::textColourId, C::text2);
     userLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
     userLabel.setJustificationType(juce::Justification::centredRight);
@@ -189,7 +389,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     mkField(settingsMonitors, "e.g. PMC 6-2, Yamaha NS-10");
     mkField(settingsHeadphones, "e.g. Audeze LCD-X, Sennheiser HD600");
     mkField(settingsGenres, "e.g. Hip-Hop, R&B, Drill, Pop");
-    mkField(settingsPlugins, "List your main plugins, one per line or comma-separated.", true);
+    mkField(settingsPlugins, "Write plugins here or click Scan Plugins above", true);
 
     settingsExpLevel.addItem("Beginner - Just starting out", 1);
     settingsExpLevel.addItem("Intermediate - 1-3 years", 2);
@@ -280,8 +480,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     presetBox.setTextWhenNothingSelected("Reference Presets...");
     presetBox.onChange = [this] {
         int sel = presetBox.getSelectedId();
-        if (sel > 0 && sel <= presetNames.size())
-            loadPreset(presetNames[sel - 1]);
+        if (sel == 1) {
+            // "Clear All" selected
+            processorRef.getReferenceAnalyser().clearAll();
+            presetBox.setSelectedId(0, juce::dontSendNotification);
+            refStatusLabel.setText("References cleared", juce::dontSendNotification);
+            if (currentView == View::Compare)
+                showCompareView();
+            repaint();
+        } else if (sel > 1 && (sel - 2) < presetNames.size()) {
+            loadPreset(presetNames[sel - 2]);
+        }
     };
     presetBox.setVisible(false);
     addAndMakeVisible(presetBox);
@@ -295,7 +504,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         
         // Simple name dialog using AlertWindow
         auto* aw = new juce::AlertWindow("Save Preset", "Name this reference preset:", juce::MessageBoxIconType::NoIcon);
-        aw->addTextEditor("name", processorRef.getGenre() + " References", "Preset name:");
+        aw->addTextEditor("name", "", "Preset name:");
         aw->addButton("Save", 1);
         aw->addButton("Cancel", 0);
         aw->setLookAndFeel(&lnf);
@@ -319,8 +528,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     deletePresetBtn.setColour(juce::TextButton::textColourOffId, C::red);
     deletePresetBtn.onClick = [this] {
         int sel = presetBox.getSelectedId();
-        if (sel > 0 && sel <= presetNames.size()) {
-            juce::String filePath = presetNames[sel - 1];
+        if (sel > 1 && (sel - 2) < presetNames.size()) {
+            juce::String filePath = presetNames[sel - 2];
             juce::String displayName = juce::File(filePath).getFileNameWithoutExtension();
             auto* aw = new juce::AlertWindow("Delete Preset", 
                 "Are you sure you want to delete \"" + displayName + "\"?", 
@@ -404,15 +613,54 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     loginErrorLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(loginErrorLabel);
 
+    signUpLabel.setText("Don't have an account?", juce::dontSendNotification);
+    signUpLabel.setColour(juce::Label::textColourId, C::text3);
+    signUpLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
+    signUpLabel.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(signUpLabel);
+
+    signUpBtn.setColour(juce::TextButton::buttonColourId, C::purple);
+    signUpBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    signUpBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    signUpBtn.onClick = [this] {
+        juce::URL("https://www.echojay.ai/app").launchInDefaultBrowser();
+    };
+    addAndMakeVisible(signUpBtn);
+
+    // Restore chat history from processor (persists across editor destroy/recreate)
+    for (auto& entry : processorRef.chatHistory)
+    {
+        ChatMsg cm;
+        cm.role = entry.role;
+        cm.content = entry.content;
+        cm.durationSeconds = entry.durationSeconds;
+        cm.lufs = entry.lufs;
+        cm.wavFilename = entry.wavFilename;
+        cm.wavFilePath = entry.wavFilePath;
+        if (entry.hasWaveform && !entry.waveform.empty())
+        {
+            cm.hasWaveform = true;
+            for (auto& peak : entry.waveform)
+            {
+                WaveformRecorder::ThumbnailPoint pt;
+                pt.maxVal = peak;
+                pt.minVal = -peak;
+                cm.waveform.push_back(pt);
+            }
+        }
+        chatMessages.push_back(cm);
+    }
+
     // Check persisted login
     if (api.isLoggedIn())
     {
         currentScreen = Screen::Main;
-        api.refreshUserInfo([this](bool success) {
-            if (!success && !api.isLoggedIn()) { currentScreen = Screen::Login; showLoginScreen(); }
-            repaint();
-        });
+        loginTitle.setVisible(false); loginSubtitle.setVisible(false);
+        emailInput.setVisible(false); passwordInput.setVisible(false);
+        loginBtn.setVisible(false); loginErrorLabel.setVisible(false);
+        signUpLabel.setVisible(false); signUpBtn.setVisible(false);
         showMainScreen();
+        // No network calls here — periodic refresh in timer handles sync
     }
     else
     {
@@ -442,7 +690,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatInput.setFont(juce::Font(juce::FontOptions(13.0f)));
     chatInput.setIndents(8, 8);
     chatInput.addListener(this);
-    addAndMakeVisible(chatInput);
+    addChildComponent(chatInput);
 
     chatSendBtn.setColour(juce::TextButton::buttonColourId, C::blue);
     chatSendBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
@@ -451,9 +699,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         auto t = chatInput.getText().trim();
         if (t.isNotEmpty()) sendChatMessage(t);
     };
-    addAndMakeVisible(chatSendBtn);
+    addChildComponent(chatSendBtn);
 
-    addAndMakeVisible(chatScroll);
+    upgradeBtn.setColour(juce::TextButton::buttonColourId, C::purple);
+    upgradeBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    upgradeBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    upgradeBtn.onClick = [this] {
+        juce::URL("https://www.echojay.ai/?noredirect#pricing").launchInDefaultBrowser();
+    };
+    addChildComponent(upgradeBtn);
+
+    addChildComponent(chatScroll);
     chatScroll.setViewedComponent(&chatContent, false);
     chatScroll.setScrollBarsShown(true, false);
     chatScroll.addMouseListener(this, true);
@@ -515,11 +771,12 @@ void EchoJayEditor::showLoginScreen()
     loginTitle.setVisible(true); loginSubtitle.setVisible(true);
     emailInput.setVisible(true); passwordInput.setVisible(true);
     loginBtn.setVisible(true); loginErrorLabel.setVisible(true);
+    signUpLabel.setVisible(true); signUpBtn.setVisible(true);
 
     juce::Component* mainComps[] = { &captureBtn, &scanBtn,
         &channelTypeBox, &genreBox, &statusLabel, &durationLabel, &detectedLabel,
         &passLabel, &userLabel, &usageLabel, &chatInput, &chatSendBtn, &chatScroll,
-        &compareBtn, &settingsBtn, &playbackBtn, &wavSavedLabel };
+        &compareBtn, &settingsBtn, &playbackBtn, &wavSavedLabel, &upgradeBtn };
     for (auto* c : mainComps) c->setVisible(false);
     logoutBtn.setVisible(false);
     settingsName.setVisible(false); settingsMonitors.setVisible(false);
@@ -534,6 +791,14 @@ void EchoJayEditor::showLoginScreen()
     refStatusLabel.setVisible(false);
     presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false); for (auto& b : refRemoveBtns) b.setVisible(false); compareClickCatcher.setVisible(false);
 
+    channelPromptVisible = false;
+    genrePromptVisible = false;
+    updateChannelPromptVisibility();
+    genrePromptTitle.setVisible(false);
+    genrePromptSubtitle.setVisible(false);
+    genrePromptCustomBtn.setVisible(false);
+    for (auto& label : genrePromptGroupLabels) label.setVisible(false);
+    for (auto& btn : genrePromptButtons) btn.setVisible(false);
     resized(); repaint();
 }
 
@@ -543,46 +808,51 @@ void EchoJayEditor::showMainScreen()
     loginTitle.setVisible(false); loginSubtitle.setVisible(false);
     emailInput.setVisible(false); passwordInput.setVisible(false);
     loginBtn.setVisible(false); loginErrorLabel.setVisible(false);
+    signUpLabel.setVisible(false); signUpBtn.setVisible(false);
+
+    bool promptWillShow = !processorRef.isChannelTypePromptDismissed()
+                          && processorRef.getChannelType() == ChannelType::FullMix;
+    bool genrePromptWillShow = !genrePromptDismissedThisSession && !promptWillShow;
 
     juce::Component* mainComps[] = { &captureBtn, &scanBtn,
         &channelTypeBox, &genreBox, &statusLabel, &durationLabel, &detectedLabel,
-        &passLabel, &userLabel, &usageLabel, &chatInput, &chatSendBtn, &chatScroll,
+        &passLabel, &userLabel, &usageLabel,
         &compareBtn, &settingsBtn, &wavSavedLabel };
     for (auto* c : mainComps) c->setVisible(true);
+    // Only show chat if no prompt overlay is covering it
+    bool chatVisible = !promptWillShow && !genrePromptWillShow;
+    chatInput.setVisible(chatVisible);
+    chatSendBtn.setVisible(chatVisible);
+    chatScroll.setVisible(chatVisible);
     logoutBtn.setVisible(false); // logout only visible in Settings
     // playbackBtn visibility is managed by timerCallback based on WAV state
 
     auto info = api.getUserInfo();
     juce::String userText = info.displayName;
-    juce::String tierTag = info.tier == "studio" ? "STUDIO" : info.tier == "pro" ? "PRO" : info.tier == "its_platinum" ? "ITS" : "";
-    if (tierTag.isNotEmpty()) userText += "  " + tierTag;
+    if (info.tierLevel >= 2) userText += "  STUDIO";
+    else if (info.tierLevel >= 1) userText += "  PRO";
     userLabel.setText(userText, juce::dontSendNotification);
-    userLabel.setColour(juce::Label::textColourId, info.isPaidTier() ? C::purple : C::text2);
+    userLabel.setColour(juce::Label::textColourId, info.isPro() ? C::purple : C::text2);
 
     int remaining = api.getRemainingMessages();
     int limit = info.messageLimit;
-    usageLabel.setText(juce::String(remaining) + "/" + juce::String(limit) + " messages left",
-                       juce::dontSendNotification);
+    juce::String usageStr = juce::String(remaining) + "/" + juce::String(limit) + " messages left";
+    if (info.credits > 0)
+        usageStr += " (+" + juce::String(info.credits) + " credits)";
+    usageLabel.setText(usageStr, juce::dontSendNotification);
 
-    api.fetchSettings([this](bool success) {
-        if (success) {
-            settingsFetched = true;
-            auto s = api.getUserSettings();
-            settingsName.setText(s.name, false);
-            settingsMonitors.setText(s.monitors, false);
-            settingsHeadphones.setText(s.headphones, false);
-            settingsGenres.setText(s.genres, false);
-            settingsPlugins.setText(s.plugins, false);
-            if (s.experienceLevel == "Beginner") settingsExpLevel.setSelectedId(1, juce::dontSendNotification);
-            else if (s.experienceLevel == "Intermediate") settingsExpLevel.setSelectedId(2, juce::dontSendNotification);
-            else if (s.experienceLevel == "Advanced") settingsExpLevel.setSelectedId(3, juce::dontSendNotification);
-            else if (s.experienceLevel == "Expert") settingsExpLevel.setSelectedId(4, juce::dontSendNotification);
-            juce::StringArray dawN = { "Logic Pro","Ableton Live","FL Studio","Pro Tools",
-                "Studio One","Cubase","Reaper","Reason","Bitwig","GarageBand","Other" };
-            for (int i = 0; i < 11; ++i)
-                dawButtons[i].setToggleState(s.daws.contains(dawN[i]), juce::dontSendNotification);
-        }
-    });
+    updateChannelPromptVisibility();
+    updateGenrePromptVisibility();
+    
+    // Pre-fetch user settings so plugin scan won't save empty fields
+    if (!settingsFetched) {
+        auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
+        api.fetchSettings([safeThis2](bool success) {
+            if (safeThis2 && success)
+                safeThis2->settingsFetched = true;
+        });
+    }
+    
     resized(); repaint();
 }
 
@@ -599,21 +869,175 @@ void EchoJayEditor::attemptLogin()
     loginBtn.setEnabled(false);
     loginErrorLabel.setText("", juce::dontSendNotification);
 
-    api.login(email, password, [this](bool success, const juce::String& error) {
-        loginLoading = false;
-        loginBtn.setButtonText("Log In");
-        loginBtn.setEnabled(true);
-        if (success) { passwordInput.clear(); showMainScreen(); }
-        else loginErrorLabel.setText(error, juce::dontSendNotification);
-        repaint();
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.login(email, password, [safeThis](bool success, const juce::String& error) {
+        if (safeThis == nullptr)
+            return;
+        safeThis->loginLoading = false;
+        safeThis->loginBtn.setButtonText("Log In");
+        safeThis->loginBtn.setEnabled(true);
+        if (success) { safeThis->passwordInput.clear(); safeThis->showMainScreen(); }
+        else safeThis->loginErrorLabel.setText(error, juce::dontSendNotification);
+        safeThis->repaint();
     });
 }
 
 void EchoJayEditor::handleLogout()
 {
     api.logout();
-    chatMessages.clear(); chatRoles.clear(); chatContents.clear();
+    chatMessages.clear(); processorRef.chatHistory.clear(); processorRef.chatRoles.clear(); processorRef.chatContents.clear();
     showLoginScreen();
+}
+
+bool EchoJayEditor::shouldShowChannelPrompt() const
+{
+    return currentScreen == Screen::Main
+        && !processorRef.isChannelTypePromptDismissed()
+        && processorRef.getChannelType() == ChannelType::FullMix;
+}
+
+void EchoJayEditor::updateChannelPromptVisibility()
+{
+    channelPromptVisible = shouldShowChannelPrompt();
+
+    channelPromptBlocker.setVisible(false); // no longer used for blocking
+    channelPromptTitle.setVisible(channelPromptVisible);
+    channelPromptSubtitle.setVisible(channelPromptVisible);
+    channelPromptSkipBtn.setVisible(channelPromptVisible);
+    customChannelBtn.setVisible(channelPromptVisible);
+    chatScroll.setVisible(currentScreen == Screen::Main && !channelPromptVisible && !genrePromptVisible);
+    chatInput.setVisible(currentScreen == Screen::Main && !channelPromptVisible && !genrePromptVisible);
+    chatSendBtn.setVisible(currentScreen == Screen::Main && !channelPromptVisible && !genrePromptVisible);
+    
+    // Disable top bar action buttons when prompt overlays are showing
+    bool promptActive = channelPromptVisible || genrePromptVisible;
+    compareBtn.setEnabled(!promptActive);
+    captureBtn.setEnabled(!promptActive);
+    settingsBtn.setEnabled(!promptActive);
+
+    for (auto& label : channelPromptGroupLabels)
+        label.setVisible(channelPromptVisible);
+
+    for (auto& button : channelPromptButtons)
+        button.setVisible(channelPromptVisible);
+
+    if (channelPromptVisible)
+    {
+        channelPromptTitle.toFront(false);
+        channelPromptSubtitle.toFront(false);
+        for (auto& label : channelPromptGroupLabels)
+            label.toFront(false);
+        for (auto& button : channelPromptButtons)
+            button.toFront(false);
+        channelPromptSkipBtn.toFront(false);
+        customChannelBtn.toFront(false);
+    }
+
+    repaint();
+}
+
+void EchoJayEditor::selectChannelPromptType(ChannelType type)
+{
+    channelTypeBox.setSelectedId(static_cast<int>(type) + 1, juce::sendNotificationSync);
+}
+
+void EchoJayEditor::dismissChannelPrompt()
+{
+    processorRef.setChannelType(ChannelType::FullMix);
+    channelTypeBox.setSelectedId(1, juce::dontSendNotification);
+    processorRef.setChannelTypePromptDismissed(true);
+    updateChannelPromptVisibility();
+    compareBtn.setEnabled(true);
+    captureBtn.setEnabled(true);
+    settingsBtn.setEnabled(true);
+    // After channel prompt dismisses, check if genre prompt should show
+    updateGenrePromptVisibility();
+    resized();
+}
+
+// ============================================================================
+// Genre Prompt (once per session)
+// ============================================================================
+
+bool EchoJayEditor::shouldShowGenrePrompt() const
+{
+    return currentScreen == Screen::Main
+        && !genrePromptDismissedThisSession
+        && !channelPromptVisible;  // don't overlap with channel prompt
+}
+
+void EchoJayEditor::updateGenrePromptVisibility()
+{
+    genrePromptVisible = shouldShowGenrePrompt();
+
+    genrePromptTitle.setVisible(genrePromptVisible);
+    genrePromptSubtitle.setVisible(genrePromptVisible);
+    genrePromptCustomBtn.setVisible(genrePromptVisible);
+
+    for (auto& label : genrePromptGroupLabels)
+        label.setVisible(genrePromptVisible);
+
+    for (auto& btn : genrePromptButtons)
+        btn.setVisible(genrePromptVisible);
+
+    if (genrePromptVisible)
+    {
+        // Hide chat and disable action buttons while genre prompt is up
+        chatScroll.setVisible(false);
+        chatInput.setVisible(false);
+        chatSendBtn.setVisible(false);
+        compareBtn.setEnabled(false);
+        captureBtn.setEnabled(false);
+        settingsBtn.setEnabled(false);
+
+        genrePromptTitle.toFront(false);
+        genrePromptSubtitle.toFront(false);
+        for (auto& label : genrePromptGroupLabels)
+            label.toFront(false);
+        for (auto& btn : genrePromptButtons)
+            btn.toFront(false);
+        genrePromptCustomBtn.toFront(false);
+    }
+
+    repaint();
+}
+
+void EchoJayEditor::dismissGenrePrompt(const juce::String& selectedGenre)
+{
+    genrePromptDismissedThisSession = true;
+    processorRef.setGenre(selectedGenre);
+
+    // Sync the genre dropdown — find by text since IDs vary with submenus
+    rebuildGenreBox(); // ensure custom genres are in the list
+    
+    updateGenrePromptVisibility();
+    // Restore chat and button state
+    chatScroll.setVisible(currentScreen == Screen::Main);
+    chatInput.setVisible(currentScreen == Screen::Main);
+    chatSendBtn.setVisible(currentScreen == Screen::Main);
+    compareBtn.setEnabled(true);
+    captureBtn.setEnabled(true);
+    settingsBtn.setEnabled(true);
+    resized();
+    repaint();
+}
+
+void EchoJayEditor::paintGenrePromptOverlay(juce::Graphics& g, juce::Rectangle<int> bounds)
+{
+    g.setColour(juce::Colours::black.withAlpha(0.72f));
+    g.fillRect(bounds);
+
+    auto card = bounds.reduced(60, 50);
+    g.setColour(C::bg2);
+    g.fillRoundedRectangle(card.toFloat(), 16.0f);
+    g.setColour(C::border2);
+    g.drawRoundedRectangle(card.toFloat(), 16.0f, 1.0f);
+
+    auto accent = card.removeFromTop(6).reduced(24, 0);
+    g.setColour(C::purple.withAlpha(0.85f));
+    g.fillRoundedRectangle(accent.removeFromLeft(card.getWidth() / 3).toFloat(), 3.0f);
+    g.setColour(C::blue.withAlpha(0.85f));
+    g.fillRoundedRectangle(accent.toFloat(), 3.0f);
 }
 
 // ============================================================================
@@ -645,16 +1069,21 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
         {
             refStatusLabel.setText("Analysing " + file.getFileName() + "...", juce::dontSendNotification);
             
-            // Copy file to EchoJay folder first to avoid sandbox issues
+            // Copy file to EchoJay folder to avoid sandbox/permission issues.
+            // Always overwrite — the source file may have changed.
             auto destFolder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
                                   .getChildFile("EchoJay").getChildFile("References");
             destFolder.createDirectory();
             auto destFile = destFolder.getChildFile(file.getFileName());
-            if (!destFile.existsAsFile())
-                file.copyFileTo(destFile);
+            file.copyFileTo(destFile);
             
             auto fileToAnalyse = destFile.existsAsFile() ? destFile : file;
-            processorRef.getReferenceAnalyser().analyseFile(fileToAnalyse, [this, file](bool success, const juce::String& error) {
+            
+            // Safety: if a previous analysis got stuck, force-reset the flag
+            auto& analyser = processorRef.getReferenceAnalyser();
+            analyser.forceResetIfStuck();
+            
+            analyser.analyseFile(fileToAnalyse, [this, file](bool success, const juce::String& error) {
                 if (success) refStatusLabel.setText(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded", juce::dontSendNotification);
                 else refStatusLabel.setText("Error: " + error, juce::dontSendNotification);
                 if (currentView == View::Compare) showCompareView();
@@ -737,6 +1166,7 @@ void EchoJayEditor::runAICompare()
 {
     if (!api.canSendMessage()) {
         chatMessages.push_back({"assistant", "Daily message limit reached."});
+        processorRef.chatHistory.push_back({"assistant", "Daily message limit reached."});
         repaint(); return;
     }
     int idA = compareSlotABox.getSelectedId();
@@ -765,23 +1195,26 @@ void EchoJayEditor::runAICompare()
 
     if (compareCtx.isEmpty()) {
         chatMessages.push_back({"assistant", "Select two different items to compare."});
+        processorRef.chatHistory.push_back({"assistant", "Select two different items to compare."});
         repaint(); return;
     }
 
     chatMessages.push_back({"user", "Compare these mixes"});
+    processorRef.chatHistory.push_back({"user", "Compare these mixes"});
     chatLoading = true; repaint();
-    chatRoles.add("user");
-    chatContents.add("Give me a detailed comparison of these two.\n\n" + compareCtx);
+    processorRef.chatRoles.add("user");
+    processorRef.chatContents.add("Give me a detailed comparison of these two.\n\n" + compareCtx);
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         processorRef.getEffectiveChannelName(), processorRef.getGenre(),
         processorRef.getPluginScanner().getPluginNamesString());
 
-    api.sendChat(chatRoles, chatContents, sysPrompt,
+    api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [this](const juce::String& reply, bool success) {
             chatLoading = false;
             chatMessages.push_back({"assistant", reply});
-            if (success) { chatRoles.add("assistant"); chatContents.add(reply); }
+            processorRef.chatHistory.push_back({"assistant", reply});
+            if (success) { processorRef.chatRoles.add("assistant"); processorRef.chatContents.add(reply); }
             repaint();
         });
 }
@@ -1183,14 +1616,17 @@ void EchoJayEditor::showSettingsView()
         settingsSavedLabel.setText("Loading...", juce::dontSendNotification);
     
     // Always re-fetch from server
-    api.fetchSettings([this, populateFields](bool success) {
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.fetchSettings([safeThis, populateFields](bool success) {
+        if (safeThis == nullptr)
+            return;
         if (success) {
-            settingsFetched = true;
+            safeThis->settingsFetched = true;
             populateFields();
-            settingsSavedLabel.setText("", juce::dontSendNotification);
-            repaint();
+            safeThis->settingsSavedLabel.setText("", juce::dontSendNotification);
+            safeThis->repaint();
         } else {
-            settingsSavedLabel.setText("Could not load settings", juce::dontSendNotification);
+            safeThis->settingsSavedLabel.setText("Could not load settings", juce::dontSendNotification);
         }
     });
     
@@ -1228,11 +1664,16 @@ void EchoJayEditor::saveSettingsToServer()
     for (int i = 0; i < 11; ++i)
         if (dawButtons[i].getToggleState()) s.daws.add(dawN[i]);
     settingsSavedLabel.setText("Saving...", juce::dontSendNotification);
-    api.saveUserSettings(s, [this](bool success) {
-        settingsSavedLabel.setText(success ? "Saved" : "Failed to save", juce::dontSendNotification);
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.saveUserSettings(s, [safeThis](bool success) {
+        if (safeThis == nullptr)
+            return;
+        safeThis->settingsSavedLabel.setText(success ? "Saved" : "Failed to save", juce::dontSendNotification);
         if (success)
-            juce::Timer::callAfterDelay(3000, [this]() {
-                settingsSavedLabel.setText("", juce::dontSendNotification);
+            juce::Timer::callAfterDelay(3000, [safeThis]() {
+                if (safeThis == nullptr)
+                    return;
+                safeThis->settingsSavedLabel.setText("", juce::dontSendNotification);
             });
     });
 }
@@ -1255,7 +1696,9 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f)));
         juce::String usageStr = juce::String(used) + "/" + juce::String(limit) + " messages";
-        g.drawText(usageStr, x + w - 90, y, 90, 14, juce::Justification::centredRight);
+        if (info.credits > 0)
+            usageStr += " (+" + juce::String(info.credits) + ")";
+        g.drawText(usageStr, x + w - 120, y, 120, 14, juce::Justification::centredRight);
     }
     
     auto label = [&](const juce::String& text) {
@@ -1619,7 +2062,7 @@ void EchoJayEditor::paintCapturesPanel(juce::Graphics& g, juce::Rectangle<int> a
     int show = std::min((int)snaps.size(), 4);
     for (int i = (int)snaps.size() - show; i < (int)snaps.size(); ++i) {
         auto& s = snaps[i];
-        auto info = s.name + " | " + channelTypeNames[(int)s.channelType] + " | " +
+        auto info = s.name + " | " + s.getChannelDisplayName() + " | " +
             juce::String(s.averagedData.integrated, 1) + " LUFS | " +
             juce::String(s.durationSeconds, 1) + "s";
         g.setColour(C::bg3);
@@ -1662,6 +2105,10 @@ void EchoJayEditor::paintWaveformPanel(juce::Graphics& g, juce::Rectangle<int> a
     // Draw waveform — centre line
     float centreY = (float)y + (float)h * 0.5f;
     float halfH = (float)h * 0.45f;
+
+    // Clip to waveform area so loud peaks don't overflow the panel
+    g.saveState();
+    g.reduceClipRegion(x, y, w, h);
 
     // Centre line
     g.setColour(C::border2);
@@ -1709,6 +2156,9 @@ void EchoJayEditor::paintWaveformPanel(juce::Graphics& g, juce::Rectangle<int> a
         g.setColour(C::green);
         g.drawVerticalLine((int)cursorX, (float)y, (float)(y + h));
     }
+
+    // Restore clip region so recording dot and duration text aren't clipped
+    g.restoreState();
 
     // Recording indicator — pulsing red dot
     if (recorder.isRecording())
@@ -1760,8 +2210,11 @@ void EchoJayEditor::startPlayback()
 
     // Estimate playback end (can't track external process precisely, but approximate)
     float durationMs = recorder.getRecordedDuration() * 1000.0f;
-    juce::Timer::callAfterDelay((int)durationMs + 500, [this]() {
-        stopPlayback();
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay((int)durationMs + 500, [safeThis]() {
+        if (safeThis == nullptr)
+            return;
+        safeThis->stopPlayback();
     });
 }
 
@@ -1783,7 +2236,7 @@ void EchoJayEditor::stopPlayback()
 
 void EchoJayEditor::paint(juce::Graphics& g)
 {
-    auto bounds = juce::Rectangle<int>(0, 0, 900, 580);
+    auto bounds = getLocalBounds();
     g.fillAll(C::bg);
 
     // === Login Screen ===
@@ -1797,10 +2250,42 @@ void EchoJayEditor::paint(juce::Graphics& g)
         return;
     }
 
+    // === Loading Screen ===
+    if (currentScreen == Screen::Loading) {
+        g.setColour(C::bg);
+        g.fillRect(bounds);
+        
+        // Logo
+        EchoJayLookAndFeel::drawLogo(g, juce::Rectangle<float>(
+            (float)(bounds.getCentreX() - 60), (float)(bounds.getCentreY() - 40), 120.0f, 36.0f), 28.0f);
+        
+        // Animated dots
+        int dotCount = ((int)(juce::Time::getMillisecondCounter() / 400)) % 4;
+        juce::String dots;
+        for (int i = 0; i < dotCount; ++i) dots += ".";
+        
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
+        g.drawText("Connecting" + dots, bounds.getCentreX() - 50, bounds.getCentreY() + 10, 100, 24, juce::Justification::centred);
+        
+        EchoJayLookAndFeel::drawGrainOverlay(g, bounds, 0.015f);
+        return;
+    }
+
     // === Main Screen ===
     int topH = 32;
-    int chatW = juce::jlimit(280, 420, bounds.getWidth() * 35 / 100);
-    int mW = bounds.getWidth() - chatW;
+    int chatW, mW;
+    
+    if (compactMode)
+    {
+        chatW = bounds.getWidth();
+        mW = 0;
+    }
+    else
+    {
+        chatW = juce::jlimit(280, 420, bounds.getWidth() * 35 / 100);
+        mW = bounds.getWidth() - chatW;
+    }
 
     // Top bar background
     g.setColour(C::bg2);
@@ -1812,10 +2297,52 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // Tier badge next to logo
     if (api.isLoggedIn())
     {
-        EchoJayLookAndFeel::drawTierBadge(g, 82, (topH - 16) / 2, api.getUserInfo().tier);
+        auto info = api.getUserInfo();
+        if (info.tierLevel >= 1)
+            EchoJayLookAndFeel::drawTierBadge(g, 82, (topH - 16) / 2, info.tierLevel);
+        else
+        {
+            // FREE badge — subtle grey pill
+            auto freeBounds = juce::Rectangle<float>(82.0f, (float)(topH - 16) / 2, 36.0f, 16.0f);
+            g.setColour(C::bg4);
+            g.fillRoundedRectangle(freeBounds, 4.0f);
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+            g.drawText("FREE", freeBounds, juce::Justification::centred);
+        }
     }
     EchoJayLookAndFeel::drawGrainOverlay(g, juce::Rectangle<int>(0, 0, bounds.getWidth(), topH), 0.015f);
 
+    // Compact/expand toggle — top right of main top bar
+    {
+        int iconX = bounds.getWidth() - 24;
+        int iconY = 8;
+        int s = 16;
+        g.setColour(C::text3);
+        if (compactMode)
+        {
+            // Expand icon — two arrows pointing outward
+            g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + 2, (float)iconY + s - 6, 1.5f);
+            g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + 6, (float)iconY + s - 2, 1.5f);
+            g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s - 2, (float)iconY + 6, 1.5f);
+            g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s - 6, (float)iconY + 2, 1.5f);
+        }
+        else
+        {
+            // Compact icon — two arrows pointing inward
+            g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + s/2, (float)iconY + s/2, (float)iconX + s/2, (float)iconY + s/2 + 4, 1.5f);
+            g.drawLine((float)iconX + s/2, (float)iconY + s/2, (float)iconX + s/2 - 4, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + s/2, (float)iconY + s/2, (float)iconX + s/2, (float)iconY + s/2 - 4, 1.5f);
+            g.drawLine((float)iconX + s/2, (float)iconY + s/2, (float)iconX + s/2 + 4, (float)iconY + s/2, 1.5f);
+        }
+    }
+
+    if (!compactMode)
+    {
     // Vertical divider
     g.setColour(C::border);
     g.drawVerticalLine(mW, (float)topH, (float)bounds.getHeight());
@@ -1832,6 +2359,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
     else if (currentView == View::Settings) {
         auto sArea = juce::Rectangle<int>(pad, topH + 12, contentW, bounds.getHeight() - topH - 24);
         paintSettingsView(g, sArea);
+    }
+    else if (channelPromptVisible || genrePromptVisible)
+    {
+        // Don't paint meters behind the prompt overlay
     }
     else
     {
@@ -1857,7 +2388,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
 
         // LOUDNESS panel
         int loudH = 98;
-        paintLoudnessPanel(g, { pad, y, contentW, loudH }, md);
+        loudnessPanelBounds = { pad, y, contentW, loudH };
+        paintLoudnessPanel(g, loudnessPanelBounds, md);
         y += loudH + secGap;
 
         // LEVELS + STEREO IMAGE side by side
@@ -1874,9 +2406,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
         int specH = std::max(80, bounds.getHeight() - y - pad);
         paintSpectrumPanel(g, { pad, y, contentW, specH }, md);
     }
+    } // end if (!compactMode)
 
     // === Chat Panel ===
-    int chatX = mW + 1;
+    int chatX = compactMode ? 0 : mW + 1;
 
     // Chat header — "AI ASSISTANT" bold, usage count right
     g.setColour(C::bg2);
@@ -1893,10 +2426,13 @@ void EchoJayEditor::paint(juce::Graphics& g)
         int remaining = api.getRemainingMessages();
         int limit = api.getUserInfo().messageLimit;
         int used = limit - remaining;
+        juce::String miniUsage = juce::String(used) + "/" + juce::String(limit);
+        if (api.getUserInfo().credits > 0)
+            miniUsage += "+" + juce::String(api.getUserInfo().credits);
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        g.drawText(juce::String(used) + "/" + juce::String(limit),
-                   chatX + chatW - 56, topH, 44, 32, juce::Justification::centredRight);
+        g.drawText(miniUsage,
+                   chatX + chatW - 70, topH, 58, 32, juce::Justification::centredRight);
     }
 
     // Chat messages
@@ -2008,6 +2544,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     int numPts = (int)msg.waveform.size();
                     if (numPts > 0 && wfW > 0)
                     {
+                        g.saveState();
+                        g.reduceClipRegion(wfX, wfY, wfW, wfH);
                         float pxPerPt = (float)wfW / (float)numPts;
                         float centreY2 = (float)wfY + (float)wfH * 0.5f;
                         float halfH2 = (float)wfH * 0.45f;
@@ -2041,6 +2579,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                             g.setColour(juce::Colours::white);
                             g.drawVerticalLine((int)cursorX, (float)wfY, (float)(wfY + wfH));
                         }
+                        g.restoreState();
                     }
                 }
             }
@@ -2086,6 +2625,75 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // Hide unused overlay buttons
     for (int i = activeWavePlayBtns; i < kMaxWavePlayBtns; ++i)
         wavePlayOverlays[(size_t)i].setVisible(false);
+
+    if (channelPromptVisible)
+        paintChannelPromptOverlay(g, bounds);
+    else if (genrePromptVisible)
+        paintGenrePromptOverlay(g, bounds);
+    
+    // Update available overlay — painted last so it's always on top
+    if (updateAvailable && !updateDismissed && currentScreen == Screen::Main
+        && !channelPromptVisible && !genrePromptVisible)
+    {
+        // Dark background overlay
+        g.setColour(juce::Colours::black.withAlpha(0.72f));
+        g.fillRect(bounds);
+        
+        // Card
+        int cardW = 340, cardH = 180;
+        int cardX = (bounds.getWidth() - cardW) / 2;
+        int cardY = (bounds.getHeight() - cardH) / 2;
+        auto card = juce::Rectangle<int>(cardX, cardY, cardW, cardH);
+        
+        g.setColour(C::bg2);
+        g.fillRoundedRectangle(card.toFloat(), 16.0f);
+        g.setColour(C::border2);
+        g.drawRoundedRectangle(card.toFloat(), 16.0f, 1.0f);
+        
+        // Title
+        g.setColour(C::text);
+        g.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
+        g.drawText("Update Available", card.getX(), card.getY() + 24, card.getWidth(), 24, juce::Justification::centred);
+        
+        // Version info
+        g.setColour(C::text2);
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
+        g.drawText("EchoJay " + EchoJayAPI::latestVersion + " is now available",
+                   card.getX(), card.getY() + 54, card.getWidth(), 20, juce::Justification::centred);
+        g.drawText("You're running v" + juce::String(ProjectInfo::versionString),
+                   card.getX(), card.getY() + 74, card.getWidth(), 20, juce::Justification::centred);
+        
+        // Download button
+        auto dlBtn = juce::Rectangle<float>((float)(card.getCentreX() - 70), (float)(card.getY() + 110), 140.0f, 34.0f);
+        g.setGradientFill(juce::ColourGradient(C::blue, dlBtn.getX(), 0, C::purple, dlBtn.getRight(), 0, false));
+        g.fillRoundedRectangle(dlBtn, 8.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+        g.drawText("Download Update", dlBtn.toNearestInt(), juce::Justification::centred);
+        
+        // Dismiss link
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText("Not now", card.getX(), card.getY() + 150, card.getWidth(), 20, juce::Justification::centred);
+    }
+}
+
+void EchoJayEditor::paintChannelPromptOverlay(juce::Graphics& g, juce::Rectangle<int> bounds)
+{
+    g.setColour(juce::Colours::black.withAlpha(0.72f));
+    g.fillRect(bounds);
+
+    auto card = bounds.reduced(40, 34);
+    g.setColour(C::bg2);
+    g.fillRoundedRectangle(card.toFloat(), 16.0f);
+    g.setColour(C::border2);
+    g.drawRoundedRectangle(card.toFloat(), 16.0f, 1.0f);
+
+    auto accent = card.removeFromTop(6).reduced(24, 0);
+    g.setColour(C::blue.withAlpha(0.85f));
+    g.fillRoundedRectangle(accent.removeFromLeft(card.getWidth() / 3).toFloat(), 3.0f);
+    g.setColour(C::purple.withAlpha(0.85f));
+    g.fillRoundedRectangle(accent.toFloat(), 3.0f);
 }
 
 // ============================================================================
@@ -2094,15 +2702,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
 
 void EchoJayEditor::resized()
 {
-    // Scale the entire UI proportionally — internal layout fixed at 900x580
-    const float baseW = 900.0f, baseH = 580.0f;
-    float scaleX = (float)getWidth() / baseW;
-    float scaleY = (float)getHeight() / baseH;
-    float scale = std::min(scaleX, scaleY); // uniform scale, preserving aspect ratio
-    setTransform(juce::AffineTransform::scale(scale));
-    
-    // All layout below uses the fixed 900x580 coordinate space
-    auto b = juce::Rectangle<int>(0, 0, (int)baseW, (int)baseH);
+    // No transform — layout scales to actual window size
+    auto b = getLocalBounds();
+
+    // channelPromptBlocker removed — overlay is painted in paint()
 
     if (currentScreen == Screen::Login) {
         int formW = juce::jmin(340, b.getWidth() - 60);
@@ -2113,27 +2716,55 @@ void EchoJayEditor::resized()
         emailInput.setBounds(formX, y, formW, 36); y += 44;
         passwordInput.setBounds(formX, y, formW, 36); y += 44;
         loginBtn.setBounds(formX, y, formW, 38); y += 48;
-        loginErrorLabel.setBounds(formX, y, formW, 20);
+        loginErrorLabel.setBounds(formX, y, formW, 20); y += 30;
+        signUpLabel.setBounds(formX, y, formW, 18); y += 22;
+        signUpBtn.setBounds(formX + (formW - 120) / 2, y, 120, 32);
         return;
     }
 
+    // Loading screen — nothing to layout, paint() handles it
+    if (currentScreen == Screen::Loading)
+        return;
+
     int topH = 32;
-    int chatW = juce::jlimit(240, 380, b.getWidth() * 32 / 100);
-    int mW = b.getWidth() - chatW;
+    int chatW, mW;
+    
+    if (compactMode)
+    {
+        // Compact: chat takes full width, no meter panel
+        chatW = b.getWidth();
+        mW = 0;
+    }
+    else
+    {
+        chatW = juce::jlimit(240, 380, b.getWidth() * 32 / 100);
+        mW = b.getWidth() - chatW;
+    }
 
     // === Single top bar row ===
     int ty = 4, bh = 24;
     int tx = 122;
     channelTypeBox.setBounds(tx, ty, 100, bh); tx += 104;
-    genreBox.setBounds(tx, ty, 80, bh); tx += 84;
+    genreBox.setBounds(tx, ty, 95, bh); tx += 99;
     captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
-    compareBtn.setBounds(tx, ty, 64, bh); tx += 68;
-    settingsBtn.setBounds(tx, ty, 52, bh); tx += 56;
-    scanBtn.setBounds(tx, ty, 78, bh); tx += 82;
+    
+    if (compactMode)
+    {
+        // Hide full-mode-only top bar buttons
+        compareBtn.setBounds(0, -20, 1, 1);
+        settingsBtn.setBounds(0, -20, 1, 1);
+        scanBtn.setBounds(0, -20, 1, 1);
+    }
+    else
+    {
+        compareBtn.setBounds(tx, ty, 64, bh); tx += 68;
+        settingsBtn.setBounds(tx, ty, 52, bh); tx += 56;
+        scanBtn.setBounds(tx, ty, 78, bh); tx += 82;
+    }
     
     // Detected label — fixed position in top-right, right-aligned
     int detW = 140;
-    detectedLabel.setBounds(900 - detW - 8, ty, detW, bh);
+    detectedLabel.setBounds(b.getWidth() - detW - 8, ty, detW, bh);
     detectedLabel.setJustificationType(juce::Justification::centredRight);
     detectedLabel.setVisible(false);
 
@@ -2150,13 +2781,22 @@ void EchoJayEditor::resized()
     int inH = 52; // ~2 lines of 13px font
     int sendW = 56;
     int sendH = 30;
-    int chatPadL = -20; // 20px past the panel divider
+    int chatPadL = compactMode ? 8 : -20; // compact: normal padding, full: 20px past divider
+    int chatStartX = compactMode ? 0 : mW;
     int inputY = b.getHeight() - inH - 10;
-    chatInput.setBounds(mW + chatPadL, inputY, chatW - sendW - chatPadL - 4, inH);
+    chatInput.setBounds(chatStartX + chatPadL, inputY, chatW - sendW - chatPadL - 4, inH);
     int sendY = inputY + (inH - sendH) / 2; // vertically centred
-    chatSendBtn.setBounds(mW + chatW - sendW - 2, sendY, sendW, sendH);
-    chatScroll.setBounds(mW + 2, topH + 32, chatW - 4, b.getHeight() - topH - 32 - inH - 4);
+    chatSendBtn.setBounds(chatStartX + chatW - sendW - 2, sendY, sendW, sendH);
+    chatScroll.setBounds(chatStartX + 2, topH + 32, chatW - 4, b.getHeight() - topH - 32 - inH - 4);
     chatContent.setSize(chatW - 16, std::max(100, chatScroll.getHeight()));
+
+    // Hide chat when channel prompt overlay is showing
+    if (channelPromptVisible)
+    {
+        chatInput.setVisible(false);
+        chatSendBtn.setVisible(false);
+        chatScroll.setVisible(false);
+    }
 
     // Logout button lives in Settings view now (positioned there)
     if (currentView != View::Settings)
@@ -2183,15 +2823,26 @@ void EchoJayEditor::resized()
         playSlotABtn.setVisible(false);
         playSlotBBtn.setVisible(false);
         
-        // Click catcher covers the entire area below dropdowns (waveform bars + cards)
-        int wfBarY = cy2 + 26;
-        int catcherH = 580 - wfBarY - 40;
-        compareClickCatcher.setBounds(cPad, wfBarY, cW, catcherH);
+        // Click catcher covers the ENTIRE compare area for reliable drag-and-drop
+        // Using actual bounds instead of hardcoded values
+        int catcherTop = topH + 4;
+        int catcherH = getHeight() - catcherTop - 10;
+        compareClickCatcher.setBounds(0, catcherTop, mW, catcherH);
         compareClickCatcher.setVisible(true);
         compareClickCatcher.toFront(false);
         
+        // Bring interactive elements in front of the catcher
+        compareSlotABox.toFront(false);
+        compareSlotBBox.toFront(false);
+        aiCompareBtn.toFront(false);
+        presetBox.toFront(false);
+        savePresetBtn.toFront(false);
+        deletePresetBtn.toFront(false);
+        refStatusLabel.toFront(false);
+        for (auto& b : refRemoveBtns) b.toFront(false);
+        
         // AI Compare button centred at bottom
-        int btnY = 580 - 36;
+        int btnY = getHeight() - 36;
         int mwHalf = mW / 2;
         aiCompareBtn.setBounds(mwHalf - 65, btnY, 100, 26);
     }
@@ -2243,6 +2894,132 @@ void EchoJayEditor::resized()
         logoutBtn.setBounds(sx + sw - 80, saveRowY, 80, 30);
         logoutBtn.setVisible(true);
     }
+
+    auto card = b.reduced(40, 34);
+    channelPromptTitle.setBounds(card.getX() + 40, card.getY() + 26, card.getWidth() - 80, 30);
+    channelPromptSubtitle.setBounds(card.getX() + 60, card.getY() + 58, card.getWidth() - 120, 22);
+
+    auto gridArea = card.reduced(32, 88);
+    gridArea.removeFromBottom(42);
+    const int columns = 4;
+    const int columnGap = 12;
+    const int rowGap = 22;
+    const int groupW = (gridArea.getWidth() - columnGap * (columns - 1)) / columns;
+    std::array<int, kChannelPromptGroupCount> groupOptionCounts {};
+    for (const auto& option : kChannelPromptOptions)
+        ++groupOptionCounts[(size_t)option.groupIndex];
+
+    const int topRowMaxCount = juce::jmax(
+        juce::jmax(groupOptionCounts[0], groupOptionCounts[1]),
+        juce::jmax(groupOptionCounts[2], groupOptionCounts[3]));
+    const int bottomRowMaxCount = juce::jmax(
+        juce::jmax(groupOptionCounts[4], groupOptionCounts[5]),
+        juce::jmax(groupOptionCounts[6], groupOptionCounts[7]));
+
+    auto computeRowHeight = [](int optionCount) {
+        const int headingHeight = 18;
+        const int headingGap = 6;
+        const int buttonGap = 4;
+        const int buttonHeight = 18;
+        return headingHeight + headingGap + optionCount * buttonHeight + juce::jmax(0, optionCount - 1) * buttonGap;
+    };
+
+    const int topRowHeight = computeRowHeight(topRowMaxCount);
+    const int bottomRowHeight = computeRowHeight(bottomRowMaxCount);
+    const int totalRowsHeight = topRowHeight + bottomRowHeight + rowGap;
+    const int gridTop = gridArea.getY() + juce::jmax(0, (gridArea.getHeight() - totalRowsHeight) / 2);
+    const int rowTops[2] = { gridTop, gridTop + topRowHeight + rowGap };
+    const int rowHeights[2] = { topRowHeight, bottomRowHeight };
+
+    for (int i = 0; i < kChannelPromptGroupCount; ++i)
+    {
+        const int col = i % columns;
+        const int row = i / columns;
+        auto groupBounds = juce::Rectangle<int>(
+            gridArea.getX() + col * (groupW + columnGap),
+            rowTops[row],
+            groupW,
+            rowHeights[row]);
+
+        channelPromptGroupLabels[(size_t)i].setBounds(groupBounds.getX(), groupBounds.getY(), groupBounds.getWidth(), 18);
+
+        auto buttonsArea = groupBounds.withTrimmedTop(24);
+        const int buttonGap = 4;
+        const int buttonHeight = 18;
+
+        int localIndex = 0;
+        for (int optionIndex = 0; optionIndex < kChannelPromptOptionCount; ++optionIndex)
+        {
+            if (kChannelPromptOptions[optionIndex].groupIndex != i)
+                continue;
+
+            channelPromptButtons[(size_t)optionIndex].setBounds(
+                buttonsArea.getX(),
+                buttonsArea.getY() + localIndex * (buttonHeight + buttonGap),
+                buttonsArea.getWidth(),
+                buttonHeight);
+            ++localIndex;
+        }
+    }
+
+    channelPromptSkipBtn.setBounds(card.getCentreX() - 115, card.getBottom() - 40, 110, 28);
+    customChannelBtn.setBounds(card.getCentreX() + 5, card.getBottom() - 40, 110, 28);
+
+    // Genre prompt layout — 4 columns with group headers (like channel prompt)
+    {
+        auto genreCard = b.reduced(40, 34);
+        genrePromptTitle.setBounds(genreCard.getX() + 40, genreCard.getY() + 26, genreCard.getWidth() - 80, 28);
+        genrePromptSubtitle.setBounds(genreCard.getX() + 60, genreCard.getY() + 56, genreCard.getWidth() - 120, 20);
+
+        auto gridArea2 = genreCard.reduced(32, 88);
+        gridArea2.removeFromBottom(42);
+        const int columns = 4;
+        const int columnGap = 12;
+        const int rowGap = 22;
+        const int groupW = (gridArea2.getWidth() - columnGap * (columns - 1)) / columns;
+
+        // Count options per group
+        std::array<int, kGenreGroupCount> groupOptionCounts {};
+        for (int i = 0; i < kGenreOptionCount; ++i)
+            ++groupOptionCounts[(size_t)kGenrePromptOptions[i].groupIndex];
+
+        // Compute row heights
+        auto computeGenreRowHeight = [](int optionCount) {
+            const int headingH = 18, headingGap = 6, btnGap = 4, btnH = 18;
+            return headingH + headingGap + optionCount * btnH + juce::jmax(0, optionCount - 1) * btnGap;
+        };
+
+        // All 4 groups in a single row
+        int maxHeight = 0;
+        for (int i = 0; i < kGenreGroupCount; ++i)
+            maxHeight = juce::jmax(maxHeight, computeGenreRowHeight(groupOptionCounts[(size_t)i]));
+
+        const int gridTop = gridArea2.getY() + juce::jmax(0, (gridArea2.getHeight() - maxHeight) / 2);
+
+        for (int i = 0; i < kGenreGroupCount; ++i)
+        {
+            auto groupBounds = juce::Rectangle<int>(
+                gridArea2.getX() + i * (groupW + columnGap),
+                gridTop, groupW, maxHeight);
+
+            genrePromptGroupLabels[(size_t)i].setBounds(groupBounds.getX(), groupBounds.getY(), groupBounds.getWidth(), 18);
+
+            auto buttonsArea = groupBounds.withTrimmedTop(24);
+            const int btnGap = 4, btnH = 18;
+            int localIdx = 0;
+            for (int optIdx = 0; optIdx < kGenreOptionCount; ++optIdx)
+            {
+                if (kGenrePromptOptions[optIdx].groupIndex != i) continue;
+                genrePromptButtons[(size_t)optIdx].setBounds(
+                    buttonsArea.getX(),
+                    buttonsArea.getY() + localIdx * (btnH + btnGap),
+                    buttonsArea.getWidth(), btnH);
+                ++localIdx;
+            }
+        }
+
+        genrePromptCustomBtn.setBounds(genreCard.getCentreX() - 55, genreCard.getBottom() - 60, 110, 28);
+    }
 }
 
 // ============================================================================
@@ -2251,6 +3028,37 @@ void EchoJayEditor::resized()
 
 void EchoJayEditor::timerCallback()
 {
+    // Loading screen timeout — if network calls take too long, show main anyway
+    if (currentScreen == Screen::Loading)
+    {
+        refreshCounter++;
+        if (refreshCounter > 100) // 5 seconds at 20fps
+        {
+            refreshCounter = 0;
+            showMainScreen();
+        }
+        repaint(); // animate the dots
+        return; // don't process anything else while loading
+    }
+
+    // Enforce chat hidden while channel prompt overlay is showing
+    if (channelPromptVisible)
+    {
+        chatInput.setVisible(false);
+        chatSendBtn.setVisible(false);
+        chatScroll.setVisible(false);
+        upgradeBtn.setVisible(false);
+    }
+    
+    // Safety: re-enable buttons if no prompts are active
+    // (handles edge cases where dismiss didn't re-enable properly)
+    if (!channelPromptVisible && !genrePromptVisible)
+    {
+        if (!captureBtn.isEnabled())  captureBtn.setEnabled(true);
+        if (!compareBtn.isEnabled())  compareBtn.setEnabled(true);
+        if (!settingsBtn.isEnabled()) settingsBtn.setEnabled(true);
+    }
+
     auto state = processorRef.getCaptureState();
     if (state == CaptureState::Capturing) {
         captureBtn.setButtonText("Stop");
@@ -2324,15 +3132,18 @@ void EchoJayEditor::timerCallback()
     if (sc.isScanning()) {
         scanBtn.setButtonText("Scanning " + juce::String((int)(sc.getProgress() * 100)) + "%");
         scanBtn.setEnabled(false);
+        wasScanning = true;
     } else {
         int c = sc.getPluginCount();
-        if (c > 0 && c != scannedPluginCount) {
+        bool scanJustFinished = wasScanning;
+        wasScanning = false;
+        if (c > 0 && (c != scannedPluginCount || scanJustFinished)) {
             scannedPluginCount = c;
             api.updatePluginsFromScanner(sc.getPluginNamesString());
             if (currentView == View::Settings)
                 settingsPlugins.setText(api.getUserSettings().plugins, false);
-            // Only auto-save if we've fetched settings from server first
-            // (prevents overwriting web app data with empty local cache)
+            // Only save to server if we've already fetched settings,
+            // otherwise we'd overwrite name/monitors/etc with empty values
             if (settingsFetched)
                 api.saveUserSettings(api.getUserSettings(), nullptr);
         }
@@ -2340,54 +3151,83 @@ void EchoJayEditor::timerCallback()
         scanBtn.setEnabled(true);
     }
 
-    if (processorRef.shouldAutoFeedback()) {
+    // Auto-feedback: trigger AI review after capture completes
+    // Deferred until WAV save finishes (runs on background thread)
+    if (processorRef.shouldAutoFeedback())
+        pendingAutoFeedback = true;
+    
+    if (pendingAutoFeedback) {
         auto snap = processorRef.getLatestSnapshot();
-        if (snap.durationSeconds >= 1.0f)
+        auto savedPath = processorRef.getWaveformRecorder().getLastSavedPath();
+        if (snap.durationSeconds >= 0.1f && savedPath.isNotEmpty())
+        {
+            pendingAutoFeedback = false;
             requestAIFeedback(snap);
         
-        // Refresh compare dropdowns if we're on the compare view
-        if (currentView == View::Compare)
-        {
-            int prevSelA = compareSlotABox.getSelectedId();
-            int prevSelB = compareSlotBBox.getSelectedId();
-            compareSlotABox.clear(juce::dontSendNotification);
-            compareSlotBBox.clear(juce::dontSendNotification);
-            auto snaps2 = processorRef.getSnapshots();
-            for (int i = 0; i < (int)snaps2.size(); ++i) {
-                compareSlotABox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
-                compareSlotBBox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
+            // Refresh compare dropdowns if we're on the compare view
+            if (currentView == View::Compare)
+            {
+                int prevSelA = compareSlotABox.getSelectedId();
+                int prevSelB = compareSlotBBox.getSelectedId();
+                compareSlotABox.clear(juce::dontSendNotification);
+                compareSlotBBox.clear(juce::dontSendNotification);
+                auto snaps2 = processorRef.getSnapshots();
+                for (int i = 0; i < (int)snaps2.size(); ++i) {
+                    compareSlotABox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
+                    compareSlotBBox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
+                }
+                auto refs2 = processorRef.getReferenceAnalyser().getReferences();
+                int refOff = (int)snaps2.size() + 100;
+                for (int i = 0; i < (int)refs2.size(); ++i) {
+                    compareSlotABox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
+                    compareSlotBBox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
+                }
+                if (prevSelA > 0) compareSlotABox.setSelectedId(prevSelA, juce::dontSendNotification);
+                else if (snaps2.size() > 0) compareSlotABox.setSelectedId((int)snaps2.size(), juce::dontSendNotification);
+                if (prevSelB > 0) compareSlotBBox.setSelectedId(prevSelB, juce::dontSendNotification);
             }
-            auto refs2 = processorRef.getReferenceAnalyser().getReferences();
-            int refOff = (int)snaps2.size() + 100;
-            for (int i = 0; i < (int)refs2.size(); ++i) {
-                compareSlotABox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
-                compareSlotBBox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
-            }
-            // Keep previous selections or auto-select the new pass
-            if (prevSelA > 0) compareSlotABox.setSelectedId(prevSelA, juce::dontSendNotification);
-            else if (snaps2.size() > 0) compareSlotABox.setSelectedId((int)snaps2.size(), juce::dontSendNotification);
-            if (prevSelB > 0) compareSlotBBox.setSelectedId(prevSelB, juce::dontSendNotification);
         }
     }
 
     if (currentScreen == Screen::Main && api.isLoggedIn()) {
         auto info = api.getUserInfo();
         int remaining = api.getRemainingMessages();
-        usageLabel.setText(juce::String(remaining) + "/" + juce::String(info.messageLimit) + " messages left",
-                          juce::dontSendNotification);
+        juce::String usageStr = juce::String(remaining) + "/" + juce::String(info.messageLimit) + " messages left";
+        if (info.credits > 0)
+            usageStr += " (+" + juce::String(info.credits) + " credits)";
+        usageLabel.setText(usageStr, juce::dontSendNotification);
         
-        // Periodic refresh every 60 seconds to sync usage with web app
+        // Show upgrade button when free/pro user is out of messages (and credits)
+        bool showUpgrade = info.tierLevel < 2 && !api.canSendMessage() && !channelPromptVisible && !genrePromptVisible;
+        upgradeBtn.setVisible(showUpgrade);
+        if (showUpgrade)
+        {
+            upgradeBtn.setButtonText(info.tierLevel == 0 ? "Upgrade to Pro" : "Upgrade to Studio");
+            // Centre a compact button in the chat input area
+            auto cb = chatInput.getBounds();
+            int btnW = 140;
+            int btnH = 30;
+            int btnX = cb.getX() + (cb.getWidth() - btnW) / 2 + 20;
+            int btnY = cb.getY() + (cb.getHeight() - btnH) / 2;
+            upgradeBtn.setBounds(btnX, btnY, btnW, btnH);
+            chatInput.setVisible(false);
+            chatSendBtn.setVisible(false);
+        }
+        
+        // Colour the usage label red when out of messages
+        usageLabel.setColour(juce::Label::textColourId, !api.canSendMessage() ? C::red : C::text3);
+        
+        // Periodic refresh every 10 minutes to sync usage/subscription
         refreshCounter++;
-        if (refreshCounter >= 1800) // 30fps * 60s
+        if (refreshCounter >= 12000) // 20fps * 600s
         {
             refreshCounter = 0;
             api.refreshUserInfo(nullptr);
         }
         
-        // If displayName is still empty but we have settings name, use that
-        if (info.displayName.isEmpty() && api.getUserSettings().name.isNotEmpty())
+        // If displayName is still empty, try once on first refresh cycle
+        if (info.displayName.isEmpty() && refreshCounter == 100)
         {
-            // Can't modify via getUserInfo() — trigger a refresh instead
             api.refreshUserInfo(nullptr);
         }
     }
@@ -2487,6 +3327,22 @@ void EchoJayEditor::timerCallback()
             wavePlayOverlays[(size_t)i].setVisible(false);
     }
 
+    // Periodic update check — every ~6 hours, re-fetch remote config
+    updateCheckCounter++;
+    if (updateCheckCounter >= kUpdateCheckInterval)
+    {
+        updateCheckCounter = 0;
+        EchoJayAPI::remoteConfigLoaded = false;
+        api.fetchRemoteConfig();
+    }
+    
+    // Check if an update is available
+    if (!updateDismissed && EchoJayAPI::latestVersion.isNotEmpty())
+    {
+        auto current = juce::String(ProjectInfo::versionString);
+        updateAvailable = (EchoJayAPI::latestVersion != current);
+    }
+
     repaint();
 }
 
@@ -2501,6 +3357,7 @@ void EchoJayEditor::textEditorReturnKeyPressed(juce::TextEditor& ed)
 void EchoJayEditor::sendChatMessage(const juce::String& msg)
 {
     chatMessages.push_back({"user", msg});
+    processorRef.chatHistory.push_back({"user", msg});
     chatInput.clear();
     chatLoading = true;
     repaint();
@@ -2514,24 +3371,29 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
         " | TP " + ff(md.truePeakL) + "/" + ff(md.truePeakR) + " | Crest " + juce::String(md.crestFactor, 1) +
         " | Width " + juce::String(md.width, 1) + "% | Corr " + juce::String(md.correlation, 2);
 
-    chatRoles.add("user");
-    chatContents.add(msg + ctx);
+    processorRef.chatRoles.add("user");
+    processorRef.chatContents.add(msg + ctx);
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         processorRef.getEffectiveChannelName(), processorRef.getGenre(),
         processorRef.getPluginScanner().getPluginNamesString());
 
-    api.sendChat(chatRoles, chatContents, sysPrompt,
-        [this](const juce::String& reply, bool success) {
-            chatLoading = false;
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
+        [safeThis](const juce::String& reply, bool success) {
+            if (safeThis == nullptr)
+                return;
+            safeThis->chatLoading = false;
             if (success) {
-                chatMessages.push_back({"assistant", reply});
-                chatRoles.add("assistant");
-                chatContents.add(reply);
+                safeThis->chatMessages.push_back({"assistant", reply});
+                safeThis->processorRef.chatHistory.push_back({"assistant", reply});
+                safeThis->processorRef.chatRoles.add("assistant");
+                safeThis->processorRef.chatContents.add(reply);
             } else {
-                chatMessages.push_back({"assistant", reply});
+                safeThis->chatMessages.push_back({"assistant", reply});
+                safeThis->processorRef.chatHistory.push_back({"assistant", reply});
             }
-            repaint();
+            safeThis->repaint();
         });
 }
 
@@ -2539,10 +3401,10 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
 {
     auto ff = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
     auto& d = snap.averagedData;
-    juce::String ch = channelTypeNames[(int)snap.channelType];
+    juce::String ch = snap.getChannelDisplayName();
 
-    // Build chat message with waveform only — no text above the card
-    juce::String captureMsg = "";
+    // Build chat message label above waveform card
+    juce::String captureMsg = "Analyse this " + ch.toLowerCase();
 
     ChatMsg cm;
     cm.role = "user";
@@ -2559,73 +3421,322 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
     }
     
     chatMessages.push_back(cm);
+    {
+        EchoJayProcessor::ChatEntry entry;
+        entry.role = "user";
+        entry.content = cm.content;
+        entry.hasWaveform = cm.hasWaveform;
+        entry.durationSeconds = cm.durationSeconds;
+        entry.lufs = cm.lufs;
+        entry.wavFilename = cm.wavFilename;
+        entry.wavFilePath = cm.wavFilePath;
+        if (cm.hasWaveform)
+            for (auto& pt : cm.waveform)
+                entry.waveform.push_back(std::max(std::abs(pt.maxVal), std::abs(pt.minVal)));
+        processorRef.chatHistory.push_back(std::move(entry));
+    }
     chatLoading = true;
     repaint();
 
+    bool isFullMix = (ch == "Mix Bus" || ch == "Master Bus" || ch == "Music Bus" || ch == "Instrument Bus");
+    bool isIndividual = !isFullMix;
+    
+    // Track whether we flagged anything (individual channels only)
+    bool flaggedAnything = false;
+    
+    // Build flags first before constructing the context string
+    juce::String flagsStr;
+    
+    if (isFullMix)
+    {
+        // Full mix: always send loudness and crest
+        flagsStr += "Loudness: Integrated " + ff(d.integrated) + " LUFS\n";
+        flagsStr += "Dynamics: Avg Crest " + juce::String(d.crestFactor, 1) + " dB\n";
+    }
+    else
+    {
+        // Individual channels: only flag crest if drastically off
+        if (d.crestFactor < 3.0f)
+        {
+            flagsStr += "Dynamics: Crest " + juce::String(d.crestFactor, 1) + " dB — extremely squashed\n";
+            flaggedAnything = true;
+        }
+        
+        // Include LUFS quietly for sanity checking — the AI is told not to mention it,
+        // but uses it to detect if the readings don't match the channel type
+        flagsStr += "(Internal — do not mention to user) Integrated: " + ff(d.integrated) + " LUFS, LRA: " + juce::String(d.loudnessRange, 1) + " LU, Crest: " + juce::String(d.crestFactor, 1) + " dB\n";
+    }
+    
+    // True peak: flag clipping
+    float tpThreshold = isIndividual ? 0.0f : 1.5f;
+    if (d.truePeakL > tpThreshold || d.truePeakR > tpThreshold)
+    {
+        flagsStr += "True Peak: L " + ff(d.truePeakL) + " dBTP | R " + ff(d.truePeakR) + " dBTP — clipping\n";
+        flaggedAnything = true;
+    }
+    
+    // Stereo data
+    if (isFullMix)
+    {
+        if (d.width < 10.0f)
+            flagsStr += "Stereo: Width " + juce::String(d.width, 1) + "% — narrow\n";
+        else if (d.width > 55.0f)
+            flagsStr += "Stereo: Width " + juce::String(d.width, 1) + "% — wide\n";
+        if (d.correlation < 0.0f)
+            flagsStr += "Correlation: " + juce::String(d.correlation, 2) + " — PHASE ISSUES\n";
+    }
+    else if (ch == "Synth Pad" || ch == "Overheads" || ch == "Orchestral" || ch == "Strings")
+    {
+        if (d.width < 5.0f)
+        {
+            flagsStr += "Stereo: Width " + juce::String(d.width, 1) + "% — unexpectedly mono\n";
+            flaggedAnything = true;
+        }
+    }
+    
+    // ============ Spectrum analysis ============
+    // 64 log-spaced bins: 20Hz–20kHz. Compute average dB per musical band.
+    // Bin mapping (approx at 44.1k): bin 0 ≈ 20Hz, bin 63 ≈ 20kHz
+    // We define 6 bands by bin ranges (log-spaced, so each octave is ~6.4 bins):
+    //   Sub   (20-80Hz)   bins  0-11
+    //   Low   (80-250Hz)  bins 12-21
+    //   LMid  (250-1kHz)  bins 22-33
+    //   Mid   (1k-4kHz)   bins 34-44
+    //   UMid  (4k-10kHz)  bins 45-53
+    //   High  (10k-20kHz) bins 54-63
+    struct FreqBand { const char* name; int lo; int hi; float avgDb; };
+    FreqBand bands[] = {
+        { "Sub (20-80Hz)",     0, 11, -120.0f },
+        { "Low (80-250Hz)",   12, 21, -120.0f },
+        { "Low-Mid (250Hz-1kHz)", 22, 33, -120.0f },
+        { "Mid (1-4kHz)",     34, 44, -120.0f },
+        { "Upper-Mid (4-10kHz)", 45, 53, -120.0f },
+        { "High (10-20kHz)",  54, 63, -120.0f }
+    };
+    constexpr int numBands = 6;
+    
+    for (int b = 0; b < numBands; ++b)
+    {
+        float sum = 0.0f;
+        int count = bands[b].hi - bands[b].lo + 1;
+        for (int i = bands[b].lo; i <= bands[b].hi; ++i)
+            sum += d.spectrum[(size_t)i];
+        bands[b].avgDb = sum / (float)count;
+    }
+    
+    // Find overall peak band for context
+    float peakBandDb = -120.0f;
+    for (int b = 0; b < numBands; ++b)
+        if (bands[b].avgDb > peakBandDb) peakBandDb = bands[b].avgDb;
+    
+    // "Empty" threshold: if a band is more than 50dB below the peak band, 
+    // or below -100dB absolute, consider it empty.
+    // Note: averaged spectrum on quiet sources can sit around -60 to -80dB,
+    // so -80 was way too aggressive — caused false "empty" flags on real signals.
+    constexpr float emptyRelativeThreshold = 50.0f;
+    constexpr float emptyAbsoluteThreshold = -100.0f;
+    
+    // Build a compact spectrum summary for the AI
+    juce::String spectrumFlags;
+    
+    // Count how many bands are essentially empty
+    int emptyBandCount = 0;
+    juce::String emptyBandNames;
+    int activeBandCount = 0;
+    juce::String activeBandSummary;
+    
+    for (int b = 0; b < numBands; ++b)
+    {
+        bool isEmpty = (bands[b].avgDb < emptyAbsoluteThreshold) ||
+                       (peakBandDb - bands[b].avgDb > emptyRelativeThreshold);
+        if (isEmpty)
+        {
+            emptyBandCount++;
+            if (emptyBandNames.isNotEmpty()) emptyBandNames += ", ";
+            emptyBandNames += bands[b].name;
+        }
+        else
+        {
+            activeBandCount++;
+            if (activeBandSummary.isNotEmpty()) activeBandSummary += ", ";
+            activeBandSummary += juce::String(bands[b].name) + ": " + juce::String(bands[b].avgDb, 0) + "dB";
+        }
+    }
+    
+    if (isFullMix)
+    {
+        // Full mix: ONLY flag spectrum when something is drastically wrong.
+        // Normal spectrum shapes — even unusual ones — are creative choices.
+        // We flag: empty bands (entire range missing) and sustained near-0dBFS energy.
+        // We do NOT flag tonal imbalance — a pop vocal/guitar track with no sub bass
+        // is normal, and a bass-heavy hip-hop track is also normal. That's genre, not a problem.
+        
+        if (emptyBandCount > 0)
+        {
+            flagsStr += "Spectrum: " + activeBandSummary + "\n";
+            flagsStr += juce::String("SPECTRUM ISSUE: No energy in ") + emptyBandNames + " — entire frequency range(s) missing from this mix\n";
+        }
+        
+        // Check for any band peaking near 0dBFS (sustained clipping-level energy)
+        for (int b = 0; b < numBands; ++b)
+        {
+            if (bands[b].avgDb > -3.0f)
+            {
+                if (emptyBandCount == 0) flagsStr += "Spectrum: " + activeBandSummary + "\n";
+                flagsStr += juce::String("SPECTRUM ISSUE: ") + bands[b].name + " is averaging " + juce::String(bands[b].avgDb, 0) + "dB — extremely hot\n";
+                break;
+            }
+        }
+        // If spectrum looks normal — don't send it at all.
+    }
+    else
+    {
+        // Individual channels: flag spectrum anomalies based on channel type
+        
+        // --- Channels that SHOULD have low-end energy ---
+        bool expectsLowEnd = (ch == "Kick" || ch == "Bass / 808" || ch == "Bass Guitar" || 
+                              ch == "Sub Bass" || ch == "Synth Bass" || ch == "Drum Bus");
+        
+        // --- Channels that should NOT have significant low-end ---
+        bool expectsNoLowEnd = (ch == "Hi-Hat" || ch == "Percussion" || ch == "Synth Pluck" ||
+                                ch == "Adlibs" || ch == "FX");
+        
+        // --- Channels that should have presence/mid energy ---
+        bool expectsMids = (ch == "Lead Vocal" || ch == "Backing Vocal" || ch == "Snare" ||
+                            ch == "Electric Guitar" || ch == "Acoustic Guitar" || ch == "Piano" ||
+                            ch == "Keys" || ch == "Synth Lead" || ch == "Brass");
+        
+        // Only include spectrum details when there's something to flag
+        // (individual warnings below will set flaggedAnything and add specific text)
+        
+        // Flag: channel expects low-end but has none
+        bool subEmpty = (bands[0].avgDb < emptyAbsoluteThreshold) || 
+                        (peakBandDb - bands[0].avgDb > emptyRelativeThreshold);
+        bool lowEmpty = (bands[1].avgDb < emptyAbsoluteThreshold) || 
+                        (peakBandDb - bands[1].avgDb > emptyRelativeThreshold);
+        
+        if (expectsLowEnd && subEmpty && lowEmpty)
+        {
+            flagsStr += "SPECTRUM WARNING: No sub or low frequency content detected — unusual for " + ch.toLowerCase() + ". Possible HPF issue or wrong channel type selected.\n";
+            flaggedAnything = true;
+        }
+        else if (expectsLowEnd && subEmpty && !lowEmpty)
+        {
+            flagsStr += "SPECTRUM NOTE: No sub content below 80Hz — the low end starts from around 80Hz upward.\n";
+            flaggedAnything = true;
+        }
+        
+        // Flag: channel shouldn't have low-end but does
+        if (expectsNoLowEnd && !subEmpty)
+        {
+            float subLevel = bands[0].avgDb;
+            if (subLevel > -50.0f)
+            {
+                flagsStr += "SPECTRUM WARNING: Sub energy detected at " + juce::String(subLevel, 0) + "dB — likely bleed or missing HPF.\n";
+                flaggedAnything = true;
+            }
+        }
+        if (expectsNoLowEnd && !lowEmpty)
+        {
+            float lowLevel = bands[1].avgDb;
+            if (lowLevel > -40.0f)
+            {
+                flagsStr += "SPECTRUM WARNING: Low-end energy detected at " + juce::String(lowLevel, 0) + "dB — bleed or missing HPF.\n";
+                flaggedAnything = true;
+            }
+        }
+        
+        // Flag: vocal/lead channels with no presence range
+        bool midEmpty = (bands[3].avgDb < emptyAbsoluteThreshold) || 
+                        (peakBandDb - bands[3].avgDb > emptyRelativeThreshold);
+        if (expectsMids && midEmpty)
+        {
+            flagsStr += "SPECTRUM WARNING: No mid-range energy (1-4kHz) — this will lack presence and clarity.\n";
+            flaggedAnything = true;
+        }
+        
+        // Flag: extreme case — almost all energy in one band only
+        if (activeBandCount <= 1 && emptyBandCount >= 4)
+        {
+            flagsStr += juce::String("SPECTRUM WARNING: Energy concentrated in only ") + juce::String(activeBandCount) + " band(s) — " + 
+                juce::String(emptyBandCount) + " bands are empty. This is very unusual and suggests heavy filtering, wrong channel, or a processing issue.\n";
+            flaggedAnything = true;
+        }
+        
+        // Flag: everything is empty (silence or near-silence)
+        if (emptyBandCount == numBands)
+        {
+            flagsStr += "SPECTRUM WARNING: No significant energy in any frequency band — the signal may be extremely quiet or silent.\n";
+            flaggedAnything = true;
+        }
+    }
+    
+    // Build the actual context string
+    juce::String meterCtx;
     int mins = (int)snap.durationSeconds / 60;
     int secs = (int)snap.durationSeconds % 60;
     juce::String durStr = juce::String(mins) + ":" + juce::String(secs).paddedLeft('0', 2);
     
-    bool isFullMix = (ch == "Full Mix" || ch == "Master Bus");
-    bool isIndividual = !isFullMix;
-    
-    juce::String meterCtx = "\n\n[" + (isFullMix ? "FULL TRACK" : ch.toUpperCase()) + " ANALYSIS: \"" + snap.name + "\" (" + durStr + ")]\n";
-    
-    if (isFullMix)
-        meterCtx += "Loudness: Integrated " + ff(d.integrated) + " LUFS\n";
-    // Don't send LUFS for individual channels
-    
-    meterCtx += "Dynamics: Avg Crest " + juce::String(d.crestFactor, 1) + " dB";
-    
-    // True peak threshold: 0 dBTP for individual channels (gain staging matters), 1.5 for full mix
-    float tpThreshold = isIndividual ? 0.0f : 1.5f;
-    if (d.truePeakL > tpThreshold || d.truePeakR > tpThreshold)
+    if (isIndividual && !flaggedAnything)
     {
-        if (isIndividual)
-            meterCtx += "\nTrue Peak: L " + ff(d.truePeakL) + " dBTP | R " + ff(d.truePeakR) + " dBTP — CLIPPING. Check gain staging. If the distortion is intentional that's fine, but flag it.";
-        else
-            meterCtx += "\nTrue Peak: L " + ff(d.truePeakL) + " dBTP | R " + ff(d.truePeakR) + " dBTP — clipping (could be intentional for character, ask before assuming it's a problem)";
+        // Nothing to flag — don't send spectrum data, just the channel type
+        meterCtx = "\n\n[" + ch.toUpperCase() + " CHANNEL — nothing to flag]\n";
     }
-    
-    // Stereo data — different rules for individual channels
-    if (isFullMix)
+    else
     {
-        if (d.width < 10.0f)
-            meterCtx += "\nStereo: Width " + juce::String(d.width, 1) + "% — narrow";
-        else if (d.width > 55.0f)
-            meterCtx += "\nStereo: Width " + juce::String(d.width, 1) + "% — wide";
-        if (d.correlation < 0.0f)
-            meterCtx += "\nCorrelation: " + juce::String(d.correlation, 2) + " — PHASE ISSUES";
+        meterCtx = "\n\n[" + (isFullMix ? "FULL TRACK" : ch.toUpperCase()) + " ANALYSIS: \"" + snap.name + "\" (" + durStr + ")]\n";
+        meterCtx += flagsStr;
     }
-    // For individual channels: don't send correlation, don't flag bass width
-    // Only flag width if pads/overheads are unexpectedly mono
-    else if (ch == "Synth Pad" || ch == "Overheads" || ch == "Orchestral" || ch == "Strings")
-    {
-        if (d.width < 5.0f)
-            meterCtx += "\nStereo: Width " + juce::String(d.width, 1) + "% — unexpectedly mono for this type of element";
-    }
-    
-    meterCtx += "\n";
 
-    // Partial analysis warning
-    if (snap.durationSeconds < 5.0f)
-        meterCtx += "\n⚠ PARTIAL ANALYSIS: Only " + juce::String((int)snap.durationSeconds) + 
-            "s captured. These readings may not represent the full track. Keep your review brief and suggest they capture more of the track for a better analysis.";
-    else if (snap.durationSeconds < 15.0f)
-        meterCtx += "\n(Note: " + juce::String((int)snap.durationSeconds) + "s captured)";
+    // Partial analysis warning — skip for inherently short elements and buses
+    bool isShortElement = (ch == "Kick" || ch == "Snare" || ch == "Hi-Hat" || 
+                           ch == "Percussion" || ch == "Synth Pluck" || ch == "FX");
+    bool isBusType = (ch == "Drum Bus" || ch == "Instrument Bus" || ch == "Music Bus" || 
+                      ch == "Vocal Bus" || ch == "Guitar Bus" || ch == "Synth Bus");
+    if (!isShortElement && !isBusType)
+    {
+        if (snap.durationSeconds < 5.0f)
+            meterCtx += "\n⚠ PARTIAL ANALYSIS: Only " + juce::String((int)snap.durationSeconds) + 
+                "s captured. These readings may not represent the full track. Keep your review brief and suggest they capture more of the track for a better analysis.";
+        else if (snap.durationSeconds < 15.0f)
+            meterCtx += "\n(Note: " + juce::String((int)snap.durationSeconds) + "s captured)";
+    }
 
-    // Smart auto-comparison with previous pass (Full Mix and buses only)
+    // Smart auto-comparison — only compare against the most recent snapshot
+    // of the SAME channel type (don't compare a mix bus against a snare).
+    // Also requires an existing AI response in chat (prevents comparing against
+    // restored snapshots from a previous session).
     auto snaps = processorRef.getSnapshots();
-    bool isBusType = (ch == "Full Mix" || ch == "Master Bus" || ch == "Drum Bus" || 
-                      ch == "Instrument Bus" || ch == "Music Bus" || ch == "Vocal Bus" || 
-                      ch == "Guitar Bus" || ch == "Synth Bus");
-    if (snaps.size() >= 2 && isBusType)
+    bool hasPreviousAIResponse = false;
+    for (auto& entry : processorRef.chatHistory)
+        if (entry.role == "assistant") { hasPreviousAIResponse = true; break; }
+    
+    // Find the most recent previous snapshot of the same channel type
+    int prevIdx = -1;
+    for (int i = (int)snaps.size() - 2; i >= 0; --i)
     {
-        auto& prev = snaps[snaps.size() - 2];
+        if (snaps[(size_t)i].channelType == snap.channelType)
+        {
+            prevIdx = i;
+            break;
+        }
+    }
+    
+    if (prevIdx >= 0 && isFullMix && hasPreviousAIResponse)
+    {
+        auto& prev = snaps[(size_t)prevIdx];
         auto& pd = prev.averagedData;
         float lufsDiff = std::abs(d.integrated - pd.integrated);
         float crestDiff = std::abs(d.crestFactor - pd.crestFactor);
         float widthDiff = std::abs(d.width - pd.width);
+        
+        // Check spectrum difference — max dB change across all bins
+        float maxSpecDiff = 0.0f;
+        for (int i = 0; i < 64; ++i)
+        {
+            float diff = std::abs(d.spectrum[(size_t)i] - pd.spectrum[(size_t)i]);
+            if (diff > maxSpecDiff) maxSpecDiff = diff;
+        }
         
         // Check if everything changed drastically — might be a different song
         if (lufsDiff > 6.0f && crestDiff > 5.0f)
@@ -2634,33 +3745,380 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
                 ", Crest " + juce::String(pd.crestFactor, 1) + "dB]";
             meterCtx += "\n⚠ The numbers have changed dramatically from the previous capture. Ask if this is a different song or section, because the comparison won't be meaningful if it is.";
         }
-        // Only mention previous if there are meaningful changes
-        else if (lufsDiff > 2.0f || crestDiff > 3.0f || widthDiff > 20.0f)
+        // Meaningful changes in loudness, dynamics, width, OR spectrum (EQ changes)
+        else if (lufsDiff > 2.0f || crestDiff > 3.0f || widthDiff > 20.0f || maxSpecDiff > 8.0f)
         {
             meterCtx += "\n\n[PREVIOUS CAPTURE: " + prev.name + " — LUFS " + ff(pd.integrated) + 
                 ", Crest " + juce::String(pd.crestFactor, 1) + "dB]";
-            meterCtx += "\nBriefly note what changed from the previous pass — but keep it to one sentence. Don't do a full comparison, that's what the Compare view is for.";
+            if (maxSpecDiff > 8.0f)
+                meterCtx += "\nThe tonal balance has shifted noticeably from the previous pass — looks like EQ or filtering has changed. Mention what you hear is different.";
+            else
+                meterCtx += "\nBriefly note what changed from the previous pass — but keep it to one sentence. Don't do a full comparison, that's what the Compare view is for.";
         }
         // If changes are tiny, don't send previous data at all
     }
 
-    chatRoles.add("user");
-    chatContents.add("Give me feedback on this capture.\n\n" + meterCtx);
+    // Inject a random "angle" for individual channels to prevent repetitive responses.
+    // The AI only sees chat history, so without this it defaults to the same pattern.
+    if (isIndividual)
+    {
+        const char* angles[] = {
+            "If nothing is wrong, offer to build a processing chain using their plugins with specific settings.",
+            "If nothing is wrong, ask what they're going for with this sound — what vibe or direction.",
+            "If nothing is wrong, suggest one creative technique they could try with this element. Be specific.",
+            "If nothing is wrong, ask what part of the sound they're least happy with.",
+            "If nothing is wrong, pick an interesting plugin from their list and suggest how it could colour this sound.",
+            "If nothing is wrong, ask if they want to A/B this against a reference in Compare Mixes.",
+            "If nothing is wrong, offer a quick tip relevant to this type of channel — something practical, not generic."
+        };
+        int angleIdx = (int)(juce::Time::currentTimeMillis() % 7);
+        meterCtx += "\n[APPROACH: " + juce::String(angles[angleIdx]) + "]\n";
+    }
+
+    processorRef.chatRoles.add("user");
+    processorRef.chatContents.add("Give me feedback on this capture.\n\n" + meterCtx);
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         ch, processorRef.getGenre(),
         processorRef.getPluginScanner().getPluginNamesString());
 
-    api.sendChat(chatRoles, chatContents, sysPrompt,
-        [this](const juce::String& reply, bool success) {
-            chatLoading = false;
-            chatMessages.push_back({"assistant", reply});
-            if (success) { chatRoles.add("assistant"); chatContents.add(reply); }
-            repaint();
+    auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
+        [safeThis2](const juce::String& reply, bool success) {
+            if (safeThis2 == nullptr)
+                return;
+            safeThis2->chatLoading = false;
+            safeThis2->chatMessages.push_back({"assistant", reply});
+            safeThis2->processorRef.chatHistory.push_back({"assistant", reply});
+            if (success) { safeThis2->processorRef.chatRoles.add("assistant"); safeThis2->processorRef.chatContents.add(reply); }
+            safeThis2->repaint();
         });
 }
 
 void EchoJayEditor::layoutChatMessages() {}
+
+// ============================================================================
+// Custom Channel Management
+// ============================================================================
+
+void EchoJayEditor::rebuildChannelTypeBox()
+{
+    channelTypeBox.clear(juce::dontSendNotification);
+    
+    // Use getRootMenu() to build submenus
+    auto* root = channelTypeBox.getRootMenu();
+    
+    // ID scheme: built-in types use (int)ChannelType + 1
+    // Custom channels use 1000 + index
+    root->addItem(1, "Mix Bus");  // ChannelType::FullMix = 0, ID = 1
+    root->addSeparator();
+    
+    struct SubGroup { const char* name; std::vector<std::pair<juce::String, int>> items; };
+    SubGroup groups[] = {
+        { "Vocals", { {"Lead Vocal", 2}, {"Backing Vocal", 3}, {"Adlibs", 4}, {"Vocal Bus", 5} } },
+        { "Drums", { {"Kick", 6}, {"Snare", 7}, {"Hi-Hat", 8}, {"Overheads", 9}, {"Drum Bus", 10}, {"Percussion", 11} } },
+        { "Bass", { {"Bass / 808", 12}, {"Bass Guitar", 13}, {"Sub Bass", 14}, {"Synth Bass", 15} } },
+        { "Keys & Guitar", { {"Piano", 16}, {"Keys", 17}, {"Acoustic Guitar", 18}, {"Electric Guitar", 19}, {"Guitar Bus", 20} } },
+        { "Synths", { {"Synth Lead", 21}, {"Synth Pad", 22}, {"Synth Pluck", 23}, {"Synth Bus", 24} } },
+        { "Strings & Brass", { {"Strings", 25}, {"Brass", 26}, {"Woodwind", 27}, {"Orchestral", 28} } },
+        { "FX & Other", { {"FX", 29}, {"Reverb", 30}, {"Delay", 31}, {"Foley", 32}, {"Ambient", 33} } },
+        { "Buses", { {"Master Bus", 34}, {"Instrument Bus", 35}, {"Music Bus", 36} } }
+    };
+    
+    for (auto& g : groups)
+    {
+        juce::PopupMenu sub;
+        for (auto& item : g.items)
+            sub.addItem(item.second, item.first);
+        root->addSubMenu(g.name, sub);
+    }
+    
+    // Custom channels section
+    if (!customChannelNames.isEmpty())
+    {
+        root->addSeparator();
+        juce::PopupMenu customSub;
+        for (int i = 0; i < customChannelNames.size(); ++i)
+            customSub.addItem(1000 + i, customChannelNames[i]);
+        root->addSubMenu("Custom", customSub);
+    }
+    
+    // Add new custom option
+    root->addSeparator();
+    root->addItem(999, "Add Custom...");
+    
+    // Restore selection
+    if (processorRef.getChannelType() == ChannelType::Other && processorRef.getCustomChannelName().isNotEmpty())
+    {
+        // Find the custom channel in the list
+        int idx = customChannelNames.indexOf(processorRef.getCustomChannelName());
+        if (idx >= 0)
+            channelTypeBox.setSelectedId(1000 + idx, juce::dontSendNotification);
+        else
+            channelTypeBox.setText(processorRef.getCustomChannelName(), juce::dontSendNotification);
+    }
+    else
+    {
+        channelTypeBox.setSelectedId(static_cast<int>(processorRef.getChannelType()) + 1, juce::dontSendNotification);
+    }
+    
+    channelTypeBox.onChange = [this] {
+        int sel = channelTypeBox.getSelectedId();
+        if (sel == 999)
+        {
+            // "Add Custom..." — show text input
+            auto* te = new juce::TextEditor();
+            te->setFont(juce::Font(juce::FontOptions(12.0f)));
+            te->setTextToShowWhenEmpty("Type instrument name...", C::text3);
+            te->setBounds(channelTypeBox.getX(), channelTypeBox.getBottom() + 2, channelTypeBox.getWidth() + 40, 24);
+            te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
+            te->setColour(juce::TextEditor::textColourId, C::text);
+            te->setColour(juce::TextEditor::outlineColourId, C::purple);
+            te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
+            addAndMakeVisible(te);
+            te->toFront(true);
+            te->grabKeyboardFocus();
+            te->onReturnKey = [this, te]() {
+                auto name = te->getText().trim();
+                if (name.isNotEmpty()) {
+                    processorRef.setCustomChannelName(name);
+                    processorRef.setChannelType(ChannelType::Other);
+                    addCustomChannelToList(name);
+                    rebuildChannelTypeBox();
+                }
+                processorRef.setChannelTypePromptDismissed(true);
+                updateChannelPromptVisibility();
+                juce::MessageManager::callAsync([te]() { delete te; });
+                resized();
+            };
+            te->onFocusLost = [this, te]() {
+                auto name = te->getText().trim();
+                if (name.isNotEmpty()) {
+                    processorRef.setCustomChannelName(name);
+                    processorRef.setChannelType(ChannelType::Other);
+                    addCustomChannelToList(name);
+                    rebuildChannelTypeBox();
+                }
+                juce::MessageManager::callAsync([te]() { delete te; });
+            };
+        }
+        else if (sel >= 1000)
+        {
+            // Custom channel selected
+            int idx = sel - 1000;
+            if (idx < customChannelNames.size()) {
+                processorRef.setCustomChannelName(customChannelNames[idx]);
+                processorRef.setChannelType(ChannelType::Other);
+            }
+            processorRef.setChannelTypePromptDismissed(true);
+            updateChannelPromptVisibility();
+            resized();
+        }
+        else if (sel > 0)
+        {
+            processorRef.setChannelType(static_cast<ChannelType>(sel - 1));
+            processorRef.setChannelTypePromptDismissed(true);
+            updateChannelPromptVisibility();
+            resized();
+        }
+    };
+}
+
+void EchoJayEditor::addCustomChannelToList(const juce::String& name)
+{
+    if (name.isEmpty()) return;
+    // Don't add duplicates
+    for (auto& existing : customChannelNames)
+        if (existing.equalsIgnoreCase(name)) return;
+    customChannelNames.add(name);
+    customChannelNames.sort(true);
+    saveCustomChannels();
+}
+
+void EchoJayEditor::loadCustomChannels()
+{
+    auto file = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                    .getChildFile("EchoJay").getChildFile("custom_channels.txt");
+    if (file.existsAsFile())
+    {
+        customChannelNames.clear();
+        customChannelNames.addTokens(file.loadFileAsString(), "\n", "");
+        customChannelNames.removeEmptyStrings();
+        customChannelNames.trim();
+    }
+}
+
+void EchoJayEditor::saveCustomChannels()
+{
+    auto folder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                      .getChildFile("EchoJay");
+    folder.createDirectory();
+    folder.getChildFile("custom_channels.txt").replaceWithText(customChannelNames.joinIntoString("\n"));
+}
+
+// ============================================================================
+// Genre Box (submenu-based, like channel type box)
+// ============================================================================
+
+void EchoJayEditor::rebuildGenreBox()
+{
+    genreBox.clear(juce::dontSendNotification);
+    auto* root = genreBox.getRootMenu();
+
+    // ID scheme: built-in genres use index + 1
+    // Custom genres use 500 + index
+    // "Add Custom..." uses 999
+
+    struct GenreSubGroup { const char* name; juce::StringArray items; };
+    GenreSubGroup groups[] = {
+        { "Popular",     { "Hip-Hop", "Pop", "R&B", "Rap", "Trap", "Drill" } },
+        { "Electronic",  { "EDM", "House", "Techno", "Drum & Bass", "Dubstep", "Trance", "Garage", "Bass / Dub" } },
+        { "Rock & Alt",  { "Rock", "Indie", "Punk", "Metal", "Alt Rock", "Grunge" } },
+        { "Other",       { "Jazz", "Classical", "Country", "Reggae", "Soul", "Funk", "Gospel", "Blues",
+                           "Lo-Fi", "Ambient", "Latin", "Afrobeat", "Dancehall",
+                           "Grime", "Phonk", "Jersey Club" } }
+    };
+
+    int id = 1;
+    for (auto& g : groups)
+    {
+        juce::PopupMenu sub;
+        for (auto& item : g.items)
+        {
+            sub.addItem(id, item);
+            ++id;
+        }
+        root->addSubMenu(g.name, sub);
+    }
+
+    // Custom genres section
+    if (!customGenreNames.isEmpty())
+    {
+        root->addSeparator();
+        juce::PopupMenu customSub;
+        for (int i = 0; i < customGenreNames.size(); ++i)
+            customSub.addItem(500 + i, customGenreNames[i]);
+        root->addSubMenu("Custom", customSub);
+    }
+
+    // Add new custom option
+    root->addSeparator();
+    root->addItem(999, "Add Custom...");
+
+    // Restore selection from processor state
+    juce::String savedGenre = processorRef.getGenre();
+
+    genreBox.onChange = nullptr; // suppress while restoring
+
+    // Check built-in genres
+    int checkId = 1;
+    bool found = false;
+    for (auto& g : groups)
+    {
+        for (auto& item : g.items)
+        {
+            if (item.compareIgnoreCase(savedGenre) == 0)
+            {
+                genreBox.setSelectedId(checkId, juce::dontSendNotification);
+                found = true;
+                break;
+            }
+            ++checkId;
+        }
+        if (found) break;
+    }
+
+    // Check custom genres
+    if (!found)
+    {
+        for (int i = 0; i < customGenreNames.size(); ++i)
+        {
+            if (customGenreNames[i].compareIgnoreCase(savedGenre) == 0)
+            {
+                genreBox.setSelectedId(500 + i, juce::dontSendNotification);
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!found && savedGenre.isNotEmpty())
+        genreBox.setText(savedGenre, juce::dontSendNotification);
+    else if (!found)
+        genreBox.setSelectedId(1, juce::dontSendNotification); // Hip-Hop default
+
+    genreBox.onChange = [this] {
+        int sel = genreBox.getSelectedId();
+        if (sel == 999)
+        {
+            // "Add Custom..." — show text input
+            auto* te = new juce::TextEditor();
+            te->setFont(juce::Font(juce::FontOptions(12.0f)));
+            te->setTextToShowWhenEmpty("Type genre name...", C::text3);
+            te->setBounds(genreBox.getBounds().expanded(40, 0).translated(0, 28));
+            te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
+            te->setColour(juce::TextEditor::textColourId, C::text);
+            te->setColour(juce::TextEditor::outlineColourId, C::purple);
+            te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
+            addAndMakeVisible(te);
+            te->toFront(true);
+            te->grabKeyboardFocus();
+            te->onReturnKey = [this, te]() {
+                auto name = te->getText().trim();
+                if (name.isNotEmpty()) {
+                    addCustomGenreToList(name);
+                    processorRef.setGenre(name);
+                    rebuildGenreBox();
+                }
+                juce::MessageManager::callAsync([te]() { delete te; });
+            };
+            te->onFocusLost = [this, te]() {
+                auto name = te->getText().trim();
+                if (name.isNotEmpty()) {
+                    addCustomGenreToList(name);
+                    processorRef.setGenre(name);
+                    rebuildGenreBox();
+                }
+                juce::MessageManager::callAsync([te]() { delete te; });
+            };
+        }
+        else
+        {
+            processorRef.setGenre(genreBox.getText());
+        }
+    };
+}
+
+void EchoJayEditor::addCustomGenreToList(const juce::String& name)
+{
+    if (name.isEmpty()) return;
+    for (auto& existing : customGenreNames)
+        if (existing.equalsIgnoreCase(name)) return;
+    customGenreNames.add(name);
+    customGenreNames.sort(true);
+    saveCustomGenres();
+}
+
+void EchoJayEditor::loadCustomGenres()
+{
+    auto file = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                    .getChildFile("EchoJay").getChildFile("custom_genres.txt");
+    if (file.existsAsFile())
+    {
+        customGenreNames.clear();
+        customGenreNames.addTokens(file.loadFileAsString(), "\n", "");
+        customGenreNames.removeEmptyStrings();
+        customGenreNames.trim();
+    }
+}
+
+void EchoJayEditor::saveCustomGenres()
+{
+    auto folder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                      .getChildFile("EchoJay");
+    folder.createDirectory();
+    folder.getChildFile("custom_genres.txt").replaceWithText(customGenreNames.joinIntoString("\n"));
+}
 
 // ============================================================================
 // Reference Presets
@@ -2678,17 +4136,21 @@ void EchoJayEditor::loadPresetList()
 {
     int prevId = presetBox.getSelectedId();
     juce::String prevPath;
-    if (prevId > 0 && prevId <= presetNames.size())
-        prevPath = presetNames[prevId - 1];
+    if (prevId > 1 && (prevId - 2) < presetNames.size())
+        prevPath = presetNames[prevId - 2];
     
     presetNames.clear();
     presetBox.clear(juce::dontSendNotification);
+    
+    // First item: Clear All
+    presetBox.addItem("Clear All", 1);
+    presetBox.addSeparator();
     
     auto folder = getPresetsFolder();
     auto files = folder.findChildFiles(juce::File::findFiles, false, "*.json");
     files.sort();
     
-    int id = 1;
+    int id = 2;  // offset by 1 for Clear All
     int restoreId = 0;
     for (auto& f : files)
     {
@@ -2855,68 +4317,177 @@ juce::String EchoJayEditor::getCompareSlotWavPath(int selectedId)
 
 void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 {
-    if (currentView == View::Compare)
+    auto pos = e.getEventRelativeTo(this).getPosition();
+    
+    // Update overlay click handler
+    if (updateAvailable && !updateDismissed && currentScreen == Screen::Main
+        && !channelPromptVisible && !genrePromptVisible)
     {
-        auto pos = e.getEventRelativeTo(this).getPosition();
+        auto bounds = getLocalBounds();
+        int cardW = 340, cardH = 180;
+        int cardX = (bounds.getWidth() - cardW) / 2;
+        int cardY = (bounds.getHeight() - cardH) / 2;
         
-        // Right-click on card area — rename pass inline
+        // Download button area
+        int dlBtnX = bounds.getWidth() / 2 - 70;
+        int dlBtnY = cardY + 110;
+        if (pos.x >= dlBtnX && pos.x <= dlBtnX + 140 && pos.y >= dlBtnY && pos.y <= dlBtnY + 34)
+        {
+            auto url = EchoJayAPI::updateUrl.isNotEmpty() ? EchoJayAPI::updateUrl : "https://www.echojay.ai/?noredirect#plugin";
+            juce::URL(url).launchInDefaultBrowser();
+            return;
+        }
+        
+        // "Not now" text area
+        int notNowY = cardY + 150;
+        if (pos.y >= notNowY && pos.y <= notNowY + 20 && pos.x >= cardX && pos.x <= cardX + cardW)
+        {
+            updateDismissed = true;
+            repaint();
+            return;
+        }
+        
+        // Click anywhere outside the card dismisses too
+        if (pos.x < cardX || pos.x > cardX + cardW || pos.y < cardY || pos.y > cardY + cardH)
+        {
+            updateDismissed = true;
+            repaint();
+            return;
+        }
+        
+        return; // Consume click while overlay is showing
+    }
+    
+    // Compact/expand toggle — top right of top bar
+    if (currentScreen == Screen::Main && pos.y < 32 && pos.x > getLocalBounds().getWidth() - 30)
+    {
+        toggleCompactMode();
+        return;
+    }
+    
+    // Click on loudness panel — reset integrated LUFS
+    if (currentScreen == Screen::Main && currentView == View::Meters && !compactMode
+        && !channelPromptVisible && !genrePromptVisible
+        && loudnessPanelBounds.contains(pos))
+    {
+        processorRef.getMeterEngine().resetIntegrated();
+        repaint();
+        return;
+    }
+    
+    // Logo click — open landing page
+    if (currentScreen == Screen::Main && pos.x < 120 && pos.y < 32)
+    {
         if (e.mods.isPopupMenu())
         {
-            auto checkRename = [&](juce::ComboBox& box) {
-                int sel = box.getSelectedId();
-                if (sel <= 0) return;
-                auto snaps = processorRef.getSnapshots();
-                int refOffset = (int)snaps.size() + 100;
-                if (sel < refOffset && (sel - 1) < (int)snaps.size())
-                {
-                    int idx = sel - 1;
-                    // Show popup menu with rename option
-                    juce::PopupMenu menu;
-                    menu.setLookAndFeel(&lnf);
-                    menu.addItem(1, "Rename \"" + snaps[(size_t)idx].name + "\"");
-                    menu.addItem(2, "Delete Pass");
-                    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(box),
-                        [this, idx](int result) {
-                            if (result == 1) {
-                                // Inline rename via a popup text input
-                                auto snaps2 = processorRef.getSnapshots();
-                                if (idx < (int)snaps2.size()) {
-                                    auto* te = new juce::TextEditor();
-                                    te->setFont(juce::Font(juce::FontOptions(12.0f)));
-                                    te->setText(snaps2[(size_t)idx].name);
-                                    te->selectAll();
-                                    te->setBounds(getWidth() / 2 - 100, getHeight() / 2 - 14, 200, 28);
-                                    te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
-                                    te->setColour(juce::TextEditor::textColourId, C::text);
-                                    te->setColour(juce::TextEditor::outlineColourId, C::purple);
-                                    te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
-                                    addAndMakeVisible(te);
-                                    te->grabKeyboardFocus();
-                                    te->onReturnKey = [this, te, idx]() {
-                                        auto newName = te->getText().trim();
-                                        if (newName.isNotEmpty())
-                                            processorRef.renameSnapshot(idx, newName);
-                                        juce::MessageManager::callAsync([te]() { delete te; });
-                                        if (currentView == View::Compare)
-                                            showCompareView();
-                                        repaint();
-                                    };
-                                    te->onFocusLost = [this, te]() {
-                                        juce::MessageManager::callAsync([te]() { delete te; });
-                                        repaint();
-                                    };
-                                }
-                            } else if (result == 2) {
-                                processorRef.deleteSnapshot(idx);
-                                if (currentView == View::Compare)
-                                    showCompareView();
-                                repaint();
+            // Right-click on logo/top bar — UI size menu
+            juce::PopupMenu sizeMenu;
+            sizeMenu.setLookAndFeel(&lnf);
+            
+            sizeMenu.addItem(2, "Default (900 x 580)");
+            sizeMenu.addItem(3, "Large (1080 x 696)");
+            sizeMenu.addItem(4, "Extra Large (1260 x 812)");
+            sizeMenu.showMenuAsync(juce::PopupMenu::Options(),
+                [this](int result) {
+                    if (result == 2) setSize(900, 580);
+                    else if (result == 3) setSize(1080, 696);
+                    else if (result == 4) setSize(1260, 812);
+                });
+            return;
+        }
+        juce::URL("https://www.echojay.ai/?noredirect").launchInDefaultBrowser();
+        return;
+    }
+    
+    // Right-click anywhere on top bar — also show size menu
+    if (currentScreen == Screen::Main && pos.y < 32 && e.mods.isPopupMenu())
+    {
+        juce::PopupMenu sizeMenu;
+        sizeMenu.setLookAndFeel(&lnf);
+        
+        sizeMenu.addItem(2, "Default (900 x 580)");
+        sizeMenu.addItem(3, "Large (1080 x 696)");
+        sizeMenu.addItem(4, "Extra Large (1260 x 812)");
+        sizeMenu.showMenuAsync(juce::PopupMenu::Options(),
+            [this](int result) {
+                if (result == 2) setSize(900, 580);
+                else if (result == 3) setSize(1080, 696);
+                else if (result == 4) setSize(1260, 812);
+            });
+        return;
+    }
+
+    if (currentView == View::Compare)
+    {
+        
+        // Right-click on card area — rename/delete pass
+        if (e.mods.isPopupMenu())
+        {
+            auto snaps = processorRef.getSnapshots();
+            int refOffset = (int)snaps.size() + 100;
+            
+            // Determine which card (A or B) was clicked based on mouse position
+            struct SlotInfo { juce::ComboBox* box; int id; };
+            std::vector<SlotInfo> slotsToCheck;
+            
+            // Use card positions: nearer to slot A or slot B
+            int distA = std::abs(pos.x - compareSlotABox.getBounds().getCentreX());
+            int distB = std::abs(pos.x - compareSlotBBox.getBounds().getCentreX());
+            if (distA <= distB)
+                slotsToCheck.push_back({ &compareSlotABox, compareSlotABox.getSelectedId() });
+            else
+                slotsToCheck.push_back({ &compareSlotBBox, compareSlotBBox.getSelectedId() });
+            
+            for (auto& slot : slotsToCheck)
+            {
+                int sel = slot.id;
+                if (sel <= 0 || sel >= refOffset) continue;
+                if ((sel - 1) >= (int)snaps.size()) continue;
+                
+                int idx = sel - 1;
+                juce::PopupMenu menu;
+                menu.setLookAndFeel(&lnf);
+                menu.addItem(1, "Rename \"" + snaps[(size_t)idx].name + "\"");
+                menu.addItem(2, "Delete Pass");
+                auto* targetBox = slot.box;
+                menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(*targetBox),
+                    [this, idx, targetBox](int result) {
+                        if (result == 1) {
+                            auto snaps2 = processorRef.getSnapshots();
+                            if (idx < (int)snaps2.size()) {
+                                auto* te = new juce::TextEditor();
+                                te->setFont(juce::Font(juce::FontOptions(12.0f)));
+                                te->setText(snaps2[(size_t)idx].name);
+                                te->selectAll();
+                                te->setBounds(targetBox->getX(), targetBox->getBottom() + 4, targetBox->getWidth(), 24);
+                                te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
+                                te->setColour(juce::TextEditor::textColourId, C::text);
+                                te->setColour(juce::TextEditor::outlineColourId, C::purple);
+                                te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
+                                addAndMakeVisible(te);
+                                te->grabKeyboardFocus();
+                                te->onReturnKey = [this, te, idx]() {
+                                    auto newName = te->getText().trim();
+                                    if (newName.isNotEmpty())
+                                        processorRef.renameSnapshot(idx, newName);
+                                    juce::MessageManager::callAsync([te]() { delete te; });
+                                    if (currentView == View::Compare)
+                                        showCompareView();
+                                    repaint();
+                                };
+                                te->onFocusLost = [this, te]() {
+                                    juce::MessageManager::callAsync([te]() { delete te; });
+                                    repaint();
+                                };
                             }
-                        });
-                }
-            };
-            checkRename(compareSlotABox);
-            checkRename(compareSlotBBox);
+                        } else if (result == 2) {
+                            processorRef.deleteSnapshot(idx);
+                            if (currentView == View::Compare)
+                                showCompareView();
+                            repaint();
+                        }
+                    });
+            }
             return;
         }
         
@@ -2952,6 +4523,52 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     }
 }
 
+void EchoJayEditor::mouseDoubleClick(const juce::MouseEvent& e)
+{
+    auto pos = e.getEventRelativeTo(this).getPosition();
+    
+    if (currentView != View::Compare) return;
+    
+    auto snaps = processorRef.getSnapshots();
+    int refOffset = (int)snaps.size() + 100;
+    
+    // Determine which card by checking if click is nearer to slot A or slot B
+    int distA = std::abs(pos.x - compareSlotABox.getBounds().getCentreX());
+    int distB = std::abs(pos.x - compareSlotBBox.getBounds().getCentreX());
+    auto& box = (distA <= distB) ? compareSlotABox : compareSlotBBox;
+    int sel = box.getSelectedId();
+    
+    if (sel <= 0 || sel >= refOffset) return;
+    if ((sel - 1) >= (int)snaps.size()) return;
+    
+    int idx = sel - 1;
+    auto* te = new juce::TextEditor();
+    te->setFont(juce::Font(juce::FontOptions(12.0f)));
+    te->setText(snaps[(size_t)idx].name);
+    te->selectAll();
+    // Position rename field directly below the clicked card's dropdown
+    te->setBounds(box.getX(), box.getBottom() + 4, box.getWidth(), 24);
+    te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
+    te->setColour(juce::TextEditor::textColourId, C::text);
+    te->setColour(juce::TextEditor::outlineColourId, C::purple);
+    te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
+    addAndMakeVisible(te);
+    te->grabKeyboardFocus();
+    te->onReturnKey = [this, te, idx]() {
+        auto newName = te->getText().trim();
+        if (newName.isNotEmpty())
+            processorRef.renameSnapshot(idx, newName);
+        juce::MessageManager::callAsync([te]() { delete te; });
+        if (currentView == View::Compare)
+            showCompareView();
+        repaint();
+    };
+    te->onFocusLost = [this, te]() {
+        juce::MessageManager::callAsync([te]() { delete te; });
+        repaint();
+    };
+}
+
 void EchoJayEditor::stopChatPlayback()
 {
     if (chatPlaybackProcess != nullptr)
@@ -2965,6 +4582,42 @@ void EchoJayEditor::stopChatPlayback()
     chatPlaybackOffset = 0;
     playSlotABtn.setButtonText(">");
     playSlotBBtn.setButtonText(">");
+}
+
+void EchoJayEditor::toggleCompactMode()
+{
+    compactMode = !compactMode;
+    
+    if (compactMode)
+    {
+        // Save current size so we can restore it
+        fullModeWidth = getWidth();
+        fullModeHeight = getHeight();
+        
+        // Switch to compact — chat only
+        setResizeLimits(420, 450, 600, 900);
+        setSize(450, 550);
+        
+        // Hide meter-side UI and force back to meters view
+        compareBtn.setVisible(false);
+        settingsBtn.setVisible(false);
+        scanBtn.setVisible(false);
+        if (currentView == View::Compare) { hideCompareView(); currentView = View::Meters; }
+        if (currentView == View::Settings) { hideSettingsView(); currentView = View::Meters; }
+    }
+    else
+    {
+        // Restore full mode
+        setResizeLimits(900, 580, 1800, 1160);
+        setSize(fullModeWidth, fullModeHeight);
+        
+        compareBtn.setVisible(true);
+        settingsBtn.setVisible(true);
+        scanBtn.setVisible(true);
+    }
+    
+    resized();
+    repaint();
 }
 
 void EchoJayEditor::startChatPlayback(const juce::String& wavPath, float offset)
@@ -3033,11 +4686,16 @@ void EchoJayEditor::startChatPlayback(const juce::String& wavPath, float offset)
         // Auto-clear after remaining duration
         float remaining = chatPlaybackDuration - offset;
         if (remaining > 0)
-            juce::Timer::callAfterDelay((int)(remaining * 1000) + 500, [this]() {
-                if (chatPlaybackProcess != nullptr && !chatPlaybackProcess->isRunning())
-                    stopChatPlayback();
-                repaint();
+        {
+            auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+            juce::Timer::callAfterDelay((int)(remaining * 1000) + 500, [safeThis]() {
+                if (safeThis == nullptr)
+                    return;
+                if (safeThis->chatPlaybackProcess != nullptr && !safeThis->chatPlaybackProcess->isRunning())
+                    safeThis->stopChatPlayback();
+                safeThis->repaint();
             });
+        }
     }
     else
     {

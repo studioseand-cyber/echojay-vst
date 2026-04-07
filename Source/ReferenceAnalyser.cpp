@@ -1,32 +1,67 @@
 #include "ReferenceAnalyser.h"
 
 ReferenceAnalyser::ReferenceAnalyser() {}
-ReferenceAnalyser::~ReferenceAnalyser() {}
+ReferenceAnalyser::~ReferenceAnalyser()
+{
+    alive->store(false);
+    if (analyseThread && analyseThread->isThreadRunning())
+        analyseThread->waitForThreadToExit(10000);
+}
 
 void ReferenceAnalyser::analyseFile(const juce::File& file,
                                      std::function<void(bool success, const juce::String& error)> onComplete)
 {
-    if (analysing.load())
-    {
-        if (onComplete) onComplete(false, "Already analysing a file");
-        return;
-    }
-    
     if (!file.existsAsFile())
     {
         if (onComplete) onComplete(false, "File not found");
         return;
     }
     
+    // If already analysing, queue this file for later
+    if (analysing.load())
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        pendingQueue.push_back({ file, onComplete });
+        return;
+    }
+    
     analysing.store(true);
     progress.store(0.0f);
+    analysisStartTime = juce::Time::currentTimeMillis();
+    
+    // Wait for any previous analysis to finish
+    if (analyseThread && analyseThread->isThreadRunning())
+        analyseThread->waitForThreadToExit(10000);
     
     auto fileCopy = file;
-    auto cb = std::make_shared<std::function<void(bool, const juce::String&)>>(onComplete);
-    auto thisPtr = this;
+    // Wrap callback to trigger queue processing after completion
+    auto wrappedComplete = [this, onComplete](bool success, const juce::String& error) {
+        if (onComplete) onComplete(success, error);
+        // Process next queued file on the message thread
+        juce::MessageManager::callAsync([this]() { processQueue(); });
+    };
+    auto cb = std::make_shared<std::function<void(bool, const juce::String&)>>(wrappedComplete);
+    auto aliveFlag = alive; // shared_ptr captured by value — safe after destruction
+    auto* analysingFlag = &analysing;
+    auto* progressFlag = &progress;
+    auto* refMutexPtr = &refMutex;
+    auto* refsPtr = &references;
     
-    juce::Thread::launch([thisPtr, fileCopy, cb]()
+    struct AnalyseThread : public juce::Thread
     {
+        AnalyseThread(juce::File f, std::shared_ptr<std::function<void(bool, const juce::String&)>> callback,
+                      std::shared_ptr<std::atomic<bool>> af, std::atomic<bool>* analysing_,
+                      std::atomic<float>* progress_, std::mutex* mutex_, std::vector<ReferenceResult>* refs_)
+            : juce::Thread("EchoJay Ref Analysis"), fileCopy(f), cb(callback), aliveFlag(af),
+              analysingPtr(analysing_), progressPtr(progress_), refMutexPtr(mutex_), refsPtr(refs_) {}
+        
+        void run() override
+        {
+            runAnalysis();
+        }
+        
+        void runAnalysis()
+        {
         // Create an audio format manager and register formats
         juce::AudioFormatManager formatManager;
         formatManager.registerBasicFormats(); // WAV, AIFF, FLAC, MP3, etc.
@@ -36,9 +71,11 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
         
         if (reader == nullptr)
         {
-            thisPtr->analysing.store(false);
+            analysingPtr->store(false);
             auto callback = cb;
-            juce::MessageManager::callAsync([callback]() {
+            auto af = aliveFlag;
+            juce::MessageManager::callAsync([callback, af]() {
+                if (!af->load()) return;
                 (*callback)(false, "Unsupported audio format");
             });
             return;
@@ -51,9 +88,11 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
         
         if (totalSamples == 0 || sampleRate == 0)
         {
-            thisPtr->analysing.store(false);
+            analysingPtr->store(false);
             auto callback = cb;
-            juce::MessageManager::callAsync([callback]() {
+            auto af = aliveFlag;
+            juce::MessageManager::callAsync([callback, af]() {
+                if (!af->load()) return;
                 (*callback)(false, "Empty or invalid audio file");
             });
             return;
@@ -156,7 +195,7 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
             specFrames++;
             
             samplesRead += samplesToRead;
-            thisPtr->progress.store((float)samplesRead / (float)totalSamples);
+            progressPtr->store((float)samplesRead / (float)totalSamples);
         }
         if (thumbSampleCount > 0)
             waveformThumb.push_back(currentPeak);
@@ -193,18 +232,33 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
                 ref.eqCurve[(size_t)i] = specSum[(size_t)i] / (float)specFrames;
         
         {
-            std::lock_guard<std::mutex> lock(thisPtr->refMutex);
-            thisPtr->references.push_back(ref);
+            std::lock_guard<std::mutex> lock((*refMutexPtr));
+            if (aliveFlag->load()) // only push if object still alive
+                refsPtr->push_back(ref);
         }
         
-        thisPtr->analysing.store(false);
-        thisPtr->progress.store(1.0f);
+        analysingPtr->store(false);
+        progressPtr->store(1.0f);
         
         auto callback = cb;
-        juce::MessageManager::callAsync([callback]() {
+        auto af = aliveFlag;
+        juce::MessageManager::callAsync([callback, af]() {
+            if (!af->load()) return;
             (*callback)(true, "");
         });
-    });
+    }
+        
+        juce::File fileCopy;
+        std::shared_ptr<std::function<void(bool, const juce::String&)>> cb;
+        std::shared_ptr<std::atomic<bool>> aliveFlag;
+        std::atomic<bool>* analysingPtr;
+        std::atomic<float>* progressPtr;
+        std::mutex* refMutexPtr;
+        std::vector<ReferenceResult>* refsPtr;
+    };
+    
+    analyseThread = std::make_unique<AnalyseThread>(fileCopy, cb, aliveFlag, analysingFlag, progressFlag, refMutexPtr, refsPtr);
+    analyseThread->startThread();
 }
 
 std::vector<ReferenceResult> ReferenceAnalyser::getReferences() const
@@ -238,4 +292,26 @@ void ReferenceAnalyser::clearAll()
 {
     std::lock_guard<std::mutex> lock(refMutex);
     references.clear();
+    // Also clear pending queue
+    std::lock_guard<std::mutex> qLock(queueMutex);
+    pendingQueue.clear();
+}
+
+void ReferenceAnalyser::processQueue()
+{
+    QueuedFile next;
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        if (pendingQueue.empty()) return;
+        next = std::move(pendingQueue.front());
+        pendingQueue.erase(pendingQueue.begin());
+    }
+    analyseFile(next.file, next.callback);
+}
+
+void ReferenceAnalyser::analyseFiles(const std::vector<juce::File>& files,
+                                      std::function<void(bool success, const juce::String& error)> onEachComplete)
+{
+    for (auto& f : files)
+        analyseFile(f, onEachComplete);
 }

@@ -1,14 +1,31 @@
 #include "EchoJayAPI.h"
 
+// Static members for remote config — shared across all plugin instances
+juce::String EchoJayAPI::remoteSystemPrompt;
+int EchoJayAPI::remotePromptVersion = 0;
+bool EchoJayAPI::remoteConfigLoaded = false;
+juce::String EchoJayAPI::latestVersion;
+juce::String EchoJayAPI::updateUrl;
+juce::String EchoJayAPI::announcement;
+std::map<juce::String, juce::String> EchoJayAPI::remoteChannelPrompts;
+int EchoJayAPI::remoteChannelPromptsVersion = 0;
+juce::String EchoJayAPI::remoteIndividualChannelRules;
+juce::String EchoJayAPI::remoteIndividualChannelStyle;
+
 EchoJayAPI::EchoJayAPI()
 {
     loadSettings();
     if (apiEndpoint.isEmpty())
         apiEndpoint = "https://www.echojay.ai";
+    
+    // Fetch remote config once per session (shared across instances)
+    if (!remoteConfigLoaded)
+        fetchRemoteConfig();
 }
 
 EchoJayAPI::~EchoJayAPI()
 {
+    alive->store(false);
     saveSettings();
 }
 
@@ -20,6 +37,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
     auto endpoint = apiEndpoint;
     auto token = authToken;
     auto cb = std::make_shared<std::function<void(const juce::var&, int)>>(onComplete);
+    auto aliveFlag = alive; // capture shared_ptr by value — prevent use-after-free
     
     juce::Thread::launch([=]()
     {
@@ -48,7 +66,10 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
         auto callback = cb;
         auto sc = statusCode;
         auto j = json;
-        juce::MessageManager::callAsync([callback, j, sc]() { (*callback)(j, sc); });
+        juce::MessageManager::callAsync([callback, j, sc, aliveFlag]() {
+            if (!aliveFlag->load()) return; // object destroyed — bail
+            (*callback)(j, sc);
+        });
     });
 }
 
@@ -60,6 +81,7 @@ void EchoJayAPI::getJSON(const juce::String& path,
     auto endpoint = apiEndpoint;
     auto token = authToken;
     auto cb = std::make_shared<std::function<void(const juce::var&, int)>>(onComplete);
+    auto aliveFlag = alive; // capture shared_ptr by value — prevent use-after-free
     
     juce::Thread::launch([=]()
     {
@@ -87,7 +109,10 @@ void EchoJayAPI::getJSON(const juce::String& path,
         auto callback = cb;
         auto sc = statusCode;
         auto j = json;
-        juce::MessageManager::callAsync([callback, j, sc]() { (*callback)(j, sc); });
+        juce::MessageManager::callAsync([callback, j, sc, aliveFlag]() {
+            if (!aliveFlag->load()) return; // object destroyed — bail
+            (*callback)(j, sc);
+        });
     });
 }
 
@@ -117,8 +142,12 @@ void EchoJayAPI::login(const juce::String& email, const juce::String& password,
                 {
                     userInfo.email = userObj->getProperty("email").toString();
                     userInfo.displayName = userObj->getProperty("name").toString();
-                    juce::String tier = userObj->getProperty("tier").toString();
-                    userInfo.tier = tier;
+                    juce::String tierStr = userObj->getProperty("tier").toString();
+                    if (tierStr.isNotEmpty())
+                    {
+                        userInfo.tier = tierStr;
+                        userInfo.tierLevel = UserInfo::tierStringToLevel(tierStr);
+                    }
                 }
                 
                 // Check for nested usage object
@@ -127,17 +156,23 @@ void EchoJayAPI::login(const juce::String& email, const juce::String& password,
                 {
                     userInfo.messagesUsedToday = (int)usageObj->getProperty("messagesUsedToday");
                     userInfo.messageLimit = (int)usageObj->getProperty("messagesPerDay");
+                    if (usageObj->hasProperty("credits"))
+                        userInfo.credits = (int)usageObj->getProperty("credits");
                 }
                 
                 // Also check flat fields (in case server sends those)
                 if (obj->hasProperty("plan"))
-                    userInfo.tier = obj->getProperty("plan").toString();
+                {
+                    juce::String plan = obj->getProperty("plan").toString();
+                    userInfo.tier = plan;
+                    userInfo.tierLevel = UserInfo::tierStringToLevel(plan);
+                }
                 if (obj->hasProperty("name") && userInfo.displayName.isEmpty())
                     userInfo.displayName = obj->getProperty("name").toString();
                 
                 // Set defaults if not populated
                 if (userInfo.messageLimit <= 0)
-                    userInfo.messageLimit = userInfo.tier == "studio" ? 150 : userInfo.tier == "pro" ? 50 : userInfo.tier == "its_platinum" ? 15 : 2;
+                    userInfo.messageLimit = UserInfo::defaultLimitForTier(userInfo.tierLevel);
                 if (userInfo.displayName.isEmpty())
                     userInfo.displayName = userInfo.email.upToFirstOccurrenceOf("@", false, false);
                 
@@ -171,7 +206,7 @@ void EchoJayAPI::logout()
 
 bool EchoJayAPI::canSendMessage() const
 {
-    return userInfo.messagesUsedToday < userInfo.messageLimit;
+    return userInfo.messagesUsedToday < (userInfo.messageLimit + userInfo.credits);
 }
 
 int EchoJayAPI::getRemainingMessages() const
@@ -188,8 +223,9 @@ void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
     }
     
     // GET /api/me returns:
-    // { "user": { "email": "...", "name": "...", "tier": "pro" },
-    //   "usage": { "messagesUsedToday": 40, "messagesPerDay": 100, "remaining": 60 } }
+    // { "user": { "email": "...", "name": "...", "tier": "pro" | "studio" | "free" },
+    //   "usage": { "messagesUsedToday": 12, "messagesPerDay": 50, "remaining": 38, "credits": 15 },
+    //   "tierInfo": { "name": "Pro", "model": "claude-sonnet-4-20250514" } }
     getJSON("/api/me", [this, onComplete](const juce::var& json, int statusCode)
     {
         if (statusCode == 200 && json.isObject())
@@ -206,8 +242,12 @@ void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
                     if (userInfo.displayName.isEmpty())
                         userInfo.displayName = userInfo.email.upToFirstOccurrenceOf("@", false, false);
                     
-                    juce::String tier = userObj->getProperty("tier").toString();
-                    userInfo.tier = tier;
+                    juce::String tierStr = userObj->getProperty("tier").toString();
+                    if (tierStr.isNotEmpty())
+                    {
+                        userInfo.tier = tierStr;
+                        userInfo.tierLevel = UserInfo::tierStringToLevel(tierStr);
+                    }
                 }
                 
                 // Parse usage object
@@ -217,7 +257,9 @@ void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
                     userInfo.messagesUsedToday = (int)usageObj->getProperty("messagesUsedToday");
                     userInfo.messageLimit = (int)usageObj->getProperty("messagesPerDay");
                     if (userInfo.messageLimit <= 0)
-                        userInfo.messageLimit = userInfo.tier == "studio" ? 150 : userInfo.tier == "pro" ? 50 : userInfo.tier == "its_platinum" ? 15 : 2;
+                        userInfo.messageLimit = UserInfo::defaultLimitForTier(userInfo.tierLevel);
+                    if (usageObj->hasProperty("credits"))
+                        userInfo.credits = (int)usageObj->getProperty("credits");
                 }
                 
                 saveSettings();
@@ -226,13 +268,9 @@ void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
             }
         }
         
-        // Token might be expired
-        if (statusCode == 401)
-        {
-            authToken = "";
-            userInfo = UserInfo();
-            saveSettings();
-        }
+        // Token might be expired — but don't wipe on refresh failures
+        // as it could be a transient network issue. Only login and chat
+        // endpoints should clear auth on 401.
         
         if (onComplete) onComplete(false);
     });
@@ -247,18 +285,15 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
 {
     if (!canSendMessage())
     {
-        juce::String limit = juce::String(userInfo.messageLimit);
-        juce::String upgradeMsg;
-        if (userInfo.tier == "studio")
-            upgradeMsg = "Limit resets at midnight.";
-        else if (userInfo.tier == "pro")
-            upgradeMsg = "Upgrade to Studio for 150 messages per day.";
-        else if (userInfo.tier == "its_platinum")
-            upgradeMsg = "Upgrade to Pro (50/day) or Studio (150/day) for more.";
+        juce::String limitStr = juce::String(userInfo.messageLimit);
+        juce::String msg = "You've hit your daily limit of " + limitStr + " AI messages. ";
+        if (userInfo.tierLevel >= 2)
+            msg += "Limit resets at midnight.";
+        else if (userInfo.tierLevel >= 1)
+            msg += "Upgrade to Studio for 150 messages per day.";
         else
-            upgradeMsg = "Upgrade to Pro for 50 messages per day.";
-        
-        onComplete("You\u2019ve hit your daily limit of " + limit + " AI messages. " + upgradeMsg, false);
+            msg += "Upgrade to Pro for 50 messages per day.";
+        onComplete(msg, false);
         return;
     }
     
@@ -283,8 +318,8 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
             {
                 juce::String reply = obj->getProperty("reply").toString();
                 
-                // Update local usage count immediately
-                userInfo.messagesUsedToday++;
+                // Check if this message used a credit (don't increment daily counter)
+                bool usedCredit = false;
                 
                 // Try to read server's usage count from response
                 // Could be flat: {"usage": 42} or nested: {"usage": {"messagesUsedToday": 42}}
@@ -295,6 +330,10 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
                     {
                         if (auto* usageObj = usageVal.getDynamicObject())
                         {
+                            if (usageObj->hasProperty("usedCredit"))
+                                usedCredit = (bool)usageObj->getProperty("usedCredit");
+                            if (usageObj->hasProperty("credits"))
+                                userInfo.credits = (int)usageObj->getProperty("credits");
                             if (usageObj->hasProperty("messagesUsedToday"))
                                 userInfo.messagesUsedToday = (int)usageObj->getProperty("messagesUsedToday");
                             if (usageObj->hasProperty("messagesPerDay"))
@@ -312,7 +351,14 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
                         userInfo.messagesUsedToday = (int)usageVal;
                     }
                 }
+                else
+                {
+                    // No usage in response — increment locally only if not a credit use
+                    if (!usedCredit)
+                        userInfo.messagesUsedToday++;
+                }
                 
+                saveSettings(); // persist usage count to disk
                 onComplete(reply, true);
                 return;
             }
@@ -329,16 +375,17 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
         
         if (statusCode == 429)
         {
-            juce::String msg = "Daily message limit reached. ";
-            if (userInfo.tier == "studio")
-                msg += "Resets at midnight.";
-            else if (userInfo.tier == "pro")
-                msg += "Upgrade to Studio for 150/day.";
-            else if (userInfo.tier == "its_platinum")
-                msg += "Upgrade to Pro (50/day) or Studio (150/day).";
-            else
-                msg += "Upgrade to Pro for 50/day.";
-            onComplete(msg, false);
+            // Display the server's error message directly
+            juce::String serverMsg;
+            if (json.isObject())
+            {
+                auto* obj = json.getDynamicObject();
+                if (obj && obj->hasProperty("error"))
+                    serverMsg = obj->getProperty("error").toString();
+            }
+            if (serverMsg.isEmpty())
+                serverMsg = "Daily message limit reached.";
+            onComplete(serverMsg, false);
             return;
         }
         
@@ -353,11 +400,137 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     });
 }
 
+// ============ Remote Config ============
+
+void EchoJayAPI::fetchRemoteConfig()
+{
+    auto endpoint = apiEndpoint;
+    auto aliveFlag = alive;
+    
+    // Helper lambda to parse channel prompts from a config JSON object
+    auto parseChannelConfig = [](juce::DynamicObject* obj)
+    {
+        // Parse channel-specific prompts
+        if (obj->hasProperty("channelPrompts"))
+        {
+            int cpVersion = (int)obj->getProperty("channelPromptsVersion");
+            if (cpVersion > remoteChannelPromptsVersion)
+            {
+                auto cpVar = obj->getProperty("channelPrompts");
+                if (auto* cpObj = cpVar.getDynamicObject())
+                {
+                    remoteChannelPrompts.clear();
+                    for (auto& prop : cpObj->getProperties())
+                        remoteChannelPrompts[prop.name.toString()] = prop.value.toString();
+                    remoteChannelPromptsVersion = cpVersion;
+                }
+            }
+        }
+        
+        // Parse individual channel rules and style
+        if (obj->hasProperty("individualChannelRules"))
+        {
+            auto rules = obj->getProperty("individualChannelRules").toString();
+            if (rules.isNotEmpty())
+                remoteIndividualChannelRules = rules;
+        }
+        if (obj->hasProperty("individualChannelStyle"))
+        {
+            auto style = obj->getProperty("individualChannelStyle").toString();
+            if (style.isNotEmpty())
+                remoteIndividualChannelStyle = style;
+        }
+    };
+    
+    juce::Thread::launch([=]()
+    {
+        juce::URL url(endpoint + "/api/vst-config");
+        
+        int statusCode = 0;
+        auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                           .withConnectionTimeoutMs(5000)
+                           .withStatusCode(&statusCode);
+        
+        auto stream = url.createInputStream(options);
+        
+        if (stream != nullptr && statusCode == 200)
+        {
+            auto responseText = stream->readEntireStreamAsString();
+            auto json = juce::JSON::parse(responseText);
+            
+            if (auto* obj = json.getDynamicObject())
+            {
+                int version = (int)obj->getProperty("systemPromptVersion");
+                auto prompt = obj->getProperty("systemPrompt").toString();
+                
+                if (prompt.isNotEmpty() && version > remotePromptVersion)
+                {
+                    remoteSystemPrompt = prompt;
+                    remotePromptVersion = version;
+                }
+                
+                // Parse channel prompts
+                parseChannelConfig(obj);
+                
+                if (obj->hasProperty("latestVersion"))
+                    latestVersion = obj->getProperty("latestVersion").toString();
+                if (obj->hasProperty("updateUrl"))
+                    updateUrl = obj->getProperty("updateUrl").toString();
+                if (obj->hasProperty("announcement"))
+                    announcement = obj->getProperty("announcement").toString();
+                
+                remoteConfigLoaded = true;
+                
+                // Cache to disk so it works offline next time
+                auto cacheFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                     .getChildFile("EchoJay").getChildFile("remote_config.json");
+                cacheFile.getParentDirectory().createDirectory();
+                cacheFile.replaceWithText(responseText);
+            }
+        }
+        else if (!remoteConfigLoaded)
+        {
+            // Offline fallback — try loading cached config from disk
+            auto cacheFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                 .getChildFile("EchoJay").getChildFile("remote_config.json");
+            if (cacheFile.existsAsFile())
+            {
+                auto json = juce::JSON::parse(cacheFile.loadFileAsString());
+                if (auto* obj = json.getDynamicObject())
+                {
+                    auto prompt = obj->getProperty("systemPrompt").toString();
+                    int version = (int)obj->getProperty("systemPromptVersion");
+                    if (prompt.isNotEmpty())
+                    {
+                        remoteSystemPrompt = prompt;
+                        remotePromptVersion = version;
+                    }
+                    
+                    // Also parse channel prompts from cache
+                    parseChannelConfig(obj);
+                }
+            }
+            remoteConfigLoaded = true;
+        }
+    });
+}
+
+// ============ System Prompt ============
+
 juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
                                              const juce::String& genre,
                                              const juce::String& pluginList)
 {
     juce::String prompt;
+    
+    // Use remote system prompt if available, otherwise use hardcoded fallback
+    if (remoteSystemPrompt.isNotEmpty())
+    {
+        prompt = remoteSystemPrompt + "\n\n";
+    }
+    else
+    {
+    // === HARDCODED FALLBACK (used when offline or before remote config loads) ===
     prompt += "You're EchoJay, a mix engineer. You talk like a mate in the studio — direct, honest, conversational. No corporate language, no dramatic descriptions, no lists.\n\n";
     
     prompt += "Write your reviews exactly like these examples:\n\n";
@@ -393,126 +566,164 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     prompt += "- It is OK to write a short review. If nothing is wrong, 1-2 paragraphs is enough. Do NOT pad with invented problems to fill space.\n\n";
     
     prompt += "METER READING:\n";
-    prompt += "- LUFS: Use the genre (provided below, never mention it in your response) to judge loudness. -8 to -11 is normal for urban/pop. -6 to -9 for electronic. -8 to -12 for rock. -14 to -22 for jazz/classical/ambient. Only flag if clearly outside the expected range.\n";
+    prompt += "- LUFS: Use the genre (provided below, never mention it in your response) to judge loudness. -8 to -11 is normal for urban/pop. -5 to -8 for dance/club genres (DnB, house, techno, EDM, trance, garage, bassline). -6 to -9 for other electronic. -8 to -12 for rock. -14 to -22 for jazz/classical/ambient. Only flag if clearly outside the expected range.\n";
     prompt += "- Crest factor: Below 4dB = crushed. 4-6dB = compressed. 6-10dB = healthy. 10-14dB = dynamic.\n";
     prompt += "- True peak: Only shown in the data if it's clipping above +1.5 dBTP. If true peak isn't in the data, don't mention it.\n";
     prompt += "- Width: Only shown in the data if it's notably narrow or wide. If width isn't in the data, don't mention it.\n";
     prompt += "- Correlation: Only shown if there are phase issues. If not in the data, don't mention it.\n\n";
     
-    prompt += "WHEN EVERYTHING LOOKS GOOD: Say the mix is in good shape, mention what the numbers tell you is working well, then suggest they drop a reference in Compare Mixes or offer ONE creative technique to experiment with. Don't invent problems.\n\n";
+    prompt += "SPECTRUM READING:\n";
+    prompt += "- Lines labelled SPECTRUM ISSUE, SPECTRUM WARNING, or SPECTRUM NOTE are internal flags — NEVER say those words. Talk like an engineer.\n";
+    prompt += "- FOR FULL MIXES / MASTER BUS / MUSIC BUS: ONLY mention the spectrum if the data contains a SPECTRUM ISSUE flag. If there is no spectrum data or no flag, do NOT talk about frequency balance, tonal balance, spectrum shape, or anything frequency-related. A normal spectrum is not worth mentioning.\n";
+    prompt += "- FOR INDIVIDUAL CHANNELS: If the data contains a spectrum warning, flag it conversationally. If no spectrum data is present, don't mention frequencies.\n";
+    prompt += "- When you DO mention spectrum issues, use plain language — 'there's nothing below 100Hz' or 'the highs are way louder than everything else'. Never list dB values or band names.\n";
+    prompt += "- If the spectrum looks wrong for the channel type, ask about upstream processing or the right channel selected.\n\n";
+    
+    prompt += "WHEN EVERYTHING LOOKS GOOD: Say the mix is in good shape, mention what the LUFS and dynamics tell you, then suggest they drop a reference in Compare Mixes or offer ONE creative technique to experiment with. Don't invent problems. Do NOT talk about the spectrum if it wasn't flagged.\n\n";
     prompt += "In follow-up conversation: answer what they ask. Be conversational. Don't repeat the review.\n\n";
     
+    } // end hardcoded fallback
+    
+    // === DYNAMIC SECTIONS (always appended, whether remote or hardcoded) ===
+    
     // Channel type context — tells AI what kind of audio this is and what to focus on
-    if (channelType != "Full Mix" && channelType != "Master Bus")
+    if (channelType != "Mix Bus" && channelType != "Master Bus")
     {
         prompt += "CHANNEL TYPE: \"" + channelType + "\"\n";
         prompt += "This is NOT a full mix. Focus your feedback on what matters for this specific element.\n";
         
-        // Vocals
-        if (channelType == "Lead Vocal")
-            prompt += "Focus on: clarity and presence (2-5kHz), sibilance (6-10kHz), compression and dynamic control, proximity effect (low-mid buildup around 200-400Hz), de-essing needs, whether it would cut through a mix. Loudness norms don't apply — judge relative to typical vocal levels.\n";
-        else if (channelType == "Backing Vocal")
-            prompt += "Focus on: how it would sit behind a lead (presence vs lead conflict), stereo placement, whether EQ could help it tuck in without disappearing, compression for evenness, any harshness that would compete with the lead.\n";
-        else if (channelType == "Adlibs")
-            prompt += "Focus on: character and vibe, whether effects (delay/reverb) are working, stereo placement, whether they cut through without being distracting, dynamic range.\n";
-        else if (channelType == "Vocal Bus")
-            prompt += "Focus on: overall vocal balance, bus compression glue, tonal consistency across layers, stereo spread of the vocal stack, how it would sit in a full mix.\n";
+        // Channel-specific focus prompt — use remote config if available, hardcoded fallback otherwise
+        juce::String channelFocus;
         
-        // Drums
-        else if (channelType == "Kick")
-            prompt += "Focus on: sub weight (40-80Hz), punch/attack (2-5kHz), whether the click/beater cuts through, mono compatibility, any boxiness (200-400Hz), transient shape — is the attack defined or mushy?\n";
-        else if (channelType == "Snare")
-            prompt += "Focus on: crack and snap (2-4kHz), body (150-300Hz), ring or resonance, transient definition, whether it would cut through a busy mix, any unwanted bleed if it sounds like a live snare.\n";
-        else if (channelType == "Hi-Hat")
-            prompt += "Focus on: harshness or brittleness (8-12kHz), stereo placement, dynamic consistency, whether it's too loud/quiet relative to typical hat levels, any resonance or ringing.\n";
-        else if (channelType == "Overheads")
-            prompt += "Focus on: stereo image and width, cymbal clarity vs harshness, low-end bleed from kick/snare, phase coherence (check correlation), whether the overheads give a natural room sound.\n";
-        else if (channelType == "Drum Bus")
-            prompt += "Focus on: overall drum balance, bus compression character (is it pumping?), transient punch vs glue, tonal balance of the full kit, stereo width of the kit.\n";
-        else if (channelType == "Percussion")
-            prompt += "Focus on: stereo placement, transient clarity, whether it adds movement or clutters the mix, frequency range — is it competing with other elements?\n";
+        // Try remote config first
+        auto it = remoteChannelPrompts.find(channelType);
+        if (it != remoteChannelPrompts.end())
+        {
+            channelFocus = it->second;
+        }
+        else
+        {
+            // Hardcoded fallback — used when offline or before remote config loads
+            // Vocals
+            if (channelType == "Lead Vocal")
+                channelFocus = "Focus on: clarity and presence (2-5kHz), sibilance (6-10kHz), compression and dynamic control, proximity effect (low-mid buildup around 200-400Hz), de-essing needs, whether it would cut through a mix. Loudness norms don't apply — judge relative to typical vocal levels.";
+            else if (channelType == "Backing Vocal")
+                channelFocus = "Focus on: how it would sit behind a lead (presence vs lead conflict), stereo placement, whether EQ could help it tuck in without disappearing, compression for evenness, any harshness that would compete with the lead.";
+            else if (channelType == "Adlibs")
+                channelFocus = "Focus on: character and vibe, whether effects (delay/reverb) are working, stereo placement, whether they cut through without being distracting, dynamic range.";
+            else if (channelType == "Vocal Bus")
+                channelFocus = "Focus on: overall vocal balance, bus compression glue, tonal consistency across layers, stereo spread of the vocal stack, how it would sit in a full mix.";
+            else if (channelType == "Kick")
+                channelFocus = "Focus on: sub weight (40-80Hz), punch/attack (2-5kHz), whether the click/beater cuts through, mono compatibility, any boxiness (200-400Hz), transient shape — is the attack defined or mushy?";
+            else if (channelType == "Snare")
+                channelFocus = "Focus on: crack and snap (2-4kHz), body (150-300Hz), ring or resonance, transient definition, whether it would cut through a busy mix, any unwanted bleed if it sounds like a live snare.";
+            else if (channelType == "Hi-Hat")
+                channelFocus = "Focus on: harshness or brittleness (8-12kHz), stereo placement, dynamic consistency, whether it's too loud/quiet relative to typical hat levels, any resonance or ringing.";
+            else if (channelType == "Overheads")
+                channelFocus = "Focus on: stereo image and width, cymbal clarity vs harshness, low-end bleed from kick/snare, phase coherence (check correlation), whether the overheads give a natural room sound.";
+            else if (channelType == "Drum Bus")
+                channelFocus = "Focus on: overall drum balance, bus compression character (is it pumping?), transient punch vs glue, tonal balance of the full kit, stereo width of the kit.";
+            else if (channelType == "Percussion")
+                channelFocus = "Focus on: stereo placement, transient clarity, whether it adds movement or clutters the mix, frequency range — is it competing with other elements?";
+            else if (channelType == "Bass / 808")
+                channelFocus = "Focus on: sub weight and extension (30-60Hz), mid-range presence for smaller speakers (100-300Hz), mono compatibility (should be nearly 100% mono below 120Hz), distortion/saturation character, whether the 808 tail sustains cleanly or gets muddy, compression and level consistency.";
+            else if (channelType == "Bass Guitar")
+                channelFocus = "Focus on: low-end body (60-120Hz), finger/pick definition (700Hz-2kHz), string noise, dynamic consistency, whether it would lock with a kick drum, any mud in the 200-400Hz range.";
+            else if (channelType == "Sub Bass")
+                channelFocus = "Focus on: purity of the sub frequencies (20-60Hz), whether it's truly mono, any harmonic content above 100Hz, level consistency, whether it would cause issues on different playback systems.";
+            else if (channelType == "Synth Bass")
+                channelFocus = "Focus on: low-end weight, mid-range character and growl, mono compatibility of the lows, whether the sound design is working for the genre, dynamic control.";
+            else if (channelType == "Piano")
+                channelFocus = "Focus on: natural tone and resonance, dynamic range (should it be more controlled?), low-end buildup vs clarity, stereo image (real piano vs mono synth piano), any harshness in the upper register.";
+            else if (channelType == "Keys")
+                channelFocus = "Focus on: tonal character, stereo placement, frequency range — is it taking up too much space? Does it need to be EQ'd to fit around vocals? Dynamic control.";
+            else if (channelType == "Acoustic Guitar")
+                channelFocus = "Focus on: body (100-300Hz) vs string brightness (3-8kHz), pick/strum clarity, room sound, stereo image if double-tracked, any boominess or boxiness, dynamic range.";
+            else if (channelType == "Electric Guitar")
+                channelFocus = "Focus on: amp tone and saturation, mid-range presence (1-4kHz), low-end mud, high-end fizz from distortion, stereo image (double tracking?), how it would sit in a dense mix.";
+            else if (channelType == "Guitar Bus")
+                channelFocus = "Focus on: overall guitar balance, stereo spread, tonal consistency across layers, whether it's taking up too much frequency space, bus compression glue.";
+            else if (channelType == "Synth Lead")
+                channelFocus = "Focus on: presence and cut-through (1-5kHz), stereo placement (leads often work best fairly centred), dynamic control, whether the sound design fits the genre, any harshness or resonance.";
+            else if (channelType == "Synth Pad")
+                channelFocus = "Focus on: stereo width and spread, frequency range — is it taking up too much space? Low-end content that might conflict with bass, movement and modulation, how it would sit behind vocals and lead elements.";
+            else if (channelType == "Synth Pluck")
+                channelFocus = "Focus on: transient snap and definition, stereo placement, reverb/delay character, frequency range, whether it cuts through without being harsh.";
+            else if (channelType == "Synth Bus")
+                channelFocus = "Focus on: overall synth balance, stereo spread, frequency distribution — are the synths fighting each other? Bus processing character.";
+            else if (channelType == "Strings")
+                channelFocus = "Focus on: naturalness and realism (if sampled), stereo spread, bow noise and articulation, low-mid buildup, whether they add warmth or muddiness, dynamic expression.";
+            else if (channelType == "Brass")
+                channelFocus = "Focus on: bite and presence (1-4kHz), dynamic punch, low-mid body, whether it cuts through or gets buried, stereo placement.";
+            else if (channelType == "Woodwind")
+                channelFocus = "Focus on: breathiness and air, presence range, dynamic control, stereo placement, naturalness.";
+            else if (channelType == "Orchestral")
+                channelFocus = "Focus on: stereo imaging and depth, dynamic range (classical norms are much wider), frequency balance across the full ensemble, room/reverb character.";
+            else if (channelType == "FX")
+                channelFocus = "Focus on: character and purpose of the effect, whether it adds or clutters, stereo spread, frequency content — is it conflicting with main elements? Level relative to the dry signal.";
+            else if (channelType == "Reverb")
+                channelFocus = "Focus on: tail length and character, pre-delay, frequency content of the reverb (is the low end too thick?), stereo spread, whether it's adding depth or just mud.";
+            else if (channelType == "Delay")
+                channelFocus = "Focus on: timing and rhythm, feedback amount, frequency content of the repeats, stereo ping-pong vs mono, whether it's adding space or clutter.";
+            else if (channelType == "Foley")
+                channelFocus = "Focus on: realism and presence, dynamic range, stereo placement, whether it sits naturally in the soundscape, any unwanted noise floor.";
+            else if (channelType == "Ambient")
+                channelFocus = "Focus on: texture and atmosphere, stereo field, frequency range, dynamic movement, whether it creates the intended mood.";
+            else if (channelType == "Instrument Bus")
+                channelFocus = "Focus on: overall instrumental balance, frequency distribution, stereo spread, bus compression character, how it would sit with vocals on top.";
+            else if (channelType == "Music Bus")
+                channelFocus = "Focus on: overall balance of all musical elements, stereo image, dynamic range, tonal balance — this is everything minus vocals, so think about how it would work as a bed for the vocal.";
+        }
         
-        // Bass
-        else if (channelType == "Bass / 808")
-            prompt += "Focus on: sub weight and extension (30-60Hz), mid-range presence for smaller speakers (100-300Hz), mono compatibility (should be nearly 100% mono below 120Hz), distortion/saturation character, whether the 808 tail sustains cleanly or gets muddy, compression and level consistency.\n";
-        else if (channelType == "Bass Guitar")
-            prompt += "Focus on: low-end body (60-120Hz), finger/pick definition (700Hz-2kHz), string noise, dynamic consistency, whether it would lock with a kick drum, any mud in the 200-400Hz range.\n";
-        else if (channelType == "Sub Bass")
-            prompt += "Focus on: purity of the sub frequencies (20-60Hz), whether it's truly mono, any harmonic content above 100Hz, level consistency, whether it would cause issues on different playback systems.\n";
-        else if (channelType == "Synth Bass")
-            prompt += "Focus on: low-end weight, mid-range character and growl, mono compatibility of the lows, whether the sound design is working for the genre, dynamic control.\n";
-        
-        // Keys & Guitar
-        else if (channelType == "Piano")
-            prompt += "Focus on: natural tone and resonance, dynamic range (should it be more controlled?), low-end buildup vs clarity, stereo image (real piano vs mono synth piano), any harshness in the upper register.\n";
-        else if (channelType == "Keys")
-            prompt += "Focus on: tonal character, stereo placement, frequency range — is it taking up too much space? Does it need to be EQ'd to fit around vocals? Dynamic control.\n";
-        else if (channelType == "Acoustic Guitar")
-            prompt += "Focus on: body (100-300Hz) vs string brightness (3-8kHz), pick/strum clarity, room sound, stereo image if double-tracked, any boominess or boxiness, dynamic range.\n";
-        else if (channelType == "Electric Guitar")
-            prompt += "Focus on: amp tone and saturation, mid-range presence (1-4kHz), low-end mud, high-end fizz from distortion, stereo image (double tracking?), how it would sit in a dense mix.\n";
-        else if (channelType == "Guitar Bus")
-            prompt += "Focus on: overall guitar balance, stereo spread, tonal consistency across layers, whether it's taking up too much frequency space, bus compression glue.\n";
-        
-        // Synths
-        else if (channelType == "Synth Lead")
-            prompt += "Focus on: presence and cut-through (1-5kHz), stereo placement (leads often work best fairly centred), dynamic control, whether the sound design fits the genre, any harshness or resonance.\n";
-        else if (channelType == "Synth Pad")
-            prompt += "Focus on: stereo width and spread, frequency range — is it taking up too much space? Low-end content that might conflict with bass, movement and modulation, how it would sit behind vocals and lead elements.\n";
-        else if (channelType == "Synth Pluck")
-            prompt += "Focus on: transient snap and definition, stereo placement, reverb/delay character, frequency range, whether it cuts through without being harsh.\n";
-        else if (channelType == "Synth Bus")
-            prompt += "Focus on: overall synth balance, stereo spread, frequency distribution — are the synths fighting each other? Bus processing character.\n";
-        
-        // Strings & Brass
-        else if (channelType == "Strings")
-            prompt += "Focus on: naturalness and realism (if sampled), stereo spread, bow noise and articulation, low-mid buildup, whether they add warmth or muddiness, dynamic expression.\n";
-        else if (channelType == "Brass")
-            prompt += "Focus on: bite and presence (1-4kHz), dynamic punch, low-mid body, whether it cuts through or gets buried, stereo placement.\n";
-        else if (channelType == "Woodwind")
-            prompt += "Focus on: breathiness and air, presence range, dynamic control, stereo placement, naturalness.\n";
-        else if (channelType == "Orchestral")
-            prompt += "Focus on: stereo imaging and depth, dynamic range (classical norms are much wider), frequency balance across the full ensemble, room/reverb character.\n";
-        
-        // FX
-        else if (channelType == "FX")
-            prompt += "Focus on: character and purpose of the effect, whether it adds or clutters, stereo spread, frequency content — is it conflicting with main elements? Level relative to the dry signal.\n";
-        else if (channelType == "Reverb")
-            prompt += "Focus on: tail length and character, pre-delay, frequency content of the reverb (is the low end too thick?), stereo spread, whether it's adding depth or just mud.\n";
-        else if (channelType == "Delay")
-            prompt += "Focus on: timing and rhythm, feedback amount, frequency content of the repeats, stereo ping-pong vs mono, whether it's adding space or clutter.\n";
-        else if (channelType == "Foley")
-            prompt += "Focus on: realism and presence, dynamic range, stereo placement, whether it sits naturally in the soundscape, any unwanted noise floor.\n";
-        else if (channelType == "Ambient")
-            prompt += "Focus on: texture and atmosphere, stereo field, frequency range, dynamic movement, whether it creates the intended mood.\n";
-        
-        // Buses
-        else if (channelType == "Instrument Bus")
-            prompt += "Focus on: overall instrumental balance, frequency distribution, stereo spread, bus compression character, how it would sit with vocals on top.\n";
-        else if (channelType == "Music Bus")
-            prompt += "Focus on: overall balance of all musical elements, stereo image, dynamic range, tonal balance — this is everything minus vocals, so think about how it would work as a bed for the vocal.\n";
+        if (channelFocus.isNotEmpty())
+            prompt += channelFocus + "\n";
         
         prompt += "\n";
         
-        // General rules for ALL individual channels (not full mix/master bus)
-        prompt += "INDIVIDUAL CHANNEL RULES:\n";
-        prompt += "- Do NOT mention LUFS. Individual channels have no loudness target.\n";
-        prompt += "- Do NOT mention correlation. It's not useful for individual instruments.\n";
-        prompt += "- Do NOT mention stereo width on bass — wide bass is a creative choice nowadays.\n";
-        prompt += "- If true peak is above 0 dBTP, flag it: \"You're clipping at +X dBTP — check your gain staging. If the distortion is intentional that's fine, but if not you'll want to pull that back before it hits the mix bus.\"\n";
-        prompt += "- For vocals and live instruments ONLY (piano, acoustic guitar, strings, brass, woodwind): if crest factor is below 3dB, flag as over-compressed. Don't flag crest on drums, synths, or bass — heavy compression is normal.\n";
-        prompt += "- For ANYTHING that isn't kick, bass, 808, sub bass, drum bus, or music bus: if there's clearly dominant energy below 80Hz in the spectrum, flag it aggressively. \"There's low-end energy here that'll fight your kick and bass — HPF around 80-100Hz.\"\n";
-        prompt += "- For hi-hats, percussion, plucks, and anything high-frequency: energy below 200Hz is bleed or unwanted. Flag it.\n";
-        prompt += "- For reverb and delay returns: low-end buildup is extremely common. Flag it and suggest HPF on the return.\n";
-        prompt += "- Only flag width if it contradicts expectations: pads/overheads that are unexpectedly mono, or leads that are unnecessarily wide.\n";
-        prompt += "- Keep reviews SHORT. 1-2 paragraphs max. These are quick checks.\n";
-        prompt += "- Offer to build a processing chain specific to this element if you spot something worth improving. Use their plugins if available.\n\n";
+        // Individual channel rules — remote first, hardcoded fallback
+        if (remoteIndividualChannelRules.isNotEmpty())
+        {
+            prompt += remoteIndividualChannelRules + "\n\n";
+        }
+        else
+        {
+            // Hardcoded fallback
+            prompt += "INDIVIDUAL CHANNEL RULES:\n";
+            prompt += "- Do NOT mention LUFS. Individual channels have no loudness target.\n";
+            prompt += "- Do NOT mention correlation. It's not useful for individual instruments.\n";
+            prompt += "- Do NOT mention crest factor UNLESS the data says it's extremely squashed (below 3dB). Normal crest values are not worth discussing for individual elements.\n";
+            prompt += "- Do NOT mention stereo width on bass — wide bass is a creative choice nowadays.\n";
+            prompt += "- Do NOT say 'meters are clean', 'meters are reading clean', 'nothing jumping out', 'SPECTRUM WARNING', or ANY internal label names. Never reference meters/flags/warnings being clean/healthy/fine.\n";
+            prompt += "- If the spectrum data shows something wrong for this channel type (e.g. a drum bus with nothing below 10kHz, a kick with no sub, a hi-hat with bass bleed) — tell the user directly in plain language. These are not subtle problems.\n";
+            prompt += "- Use the spectrum to inform your feedback even when nothing is obviously wrong. If the balance looks normal, you don't need to mention it. But if something looks unusual (e.g. a vocal with no presence, a snare with no crack), mention it naturally.\n";
+            prompt += "- If true peak is clipping, mention it briefly.\n";
+            prompt += "- For reverb and delay returns: low-end buildup is common. Mention it and suggest HPF on the return.\n";
+            prompt += "- Only mention width if it contradicts expectations.\n\n";
+        }
+        
+        // Response style — remote first, hardcoded fallback
+        if (remoteIndividualChannelStyle.isNotEmpty())
+        {
+            prompt += remoteIndividualChannelStyle + "\n\n";
+        }
+        else
+        {
+            // Hardcoded fallback
+            prompt += "RESPONSE STYLE FOR INDIVIDUAL CHANNELS:\n";
+            prompt += "- NEVER say anything about meters, flags, or internal labels. Don't say 'meters look good', 'nothing flagged', 'clean capture', 'readings are healthy', 'SPECTRUM WARNING', 'APPROACH', or ANY internal label. Pretend the data system doesn't exist — you're just an engineer listening.\n";
+            prompt += "- If the data shows a spectrum problem: lead with it conversationally. Example: 'There's nothing going on below 10k here — have you got a filter on this channel somewhere?' Talk like you're standing next to them.\n";
+            prompt += "- If the spectrum is FINE: do NOT mention it at all. Don't say 'the frequency balance looks good' or 'spectrum is healthy' or anything about frequencies. Just move on to whatever else you want to talk about.\n";
+            prompt += "- The [APPROACH] hint tells you what angle to take THIS time. Follow it — it's how we keep responses varied. But never mention the hint itself or say 'as suggested' or anything that reveals the prompt.\n";
+            prompt += "- VARIETY IS EVERYTHING. Each response should feel different. Sometimes offer a processing chain. Sometimes ask about their vision. Sometimes suggest a creative technique. Sometimes pick a specific plugin from their list. The hint guides you — follow it.\n";
+            prompt += "- When suggesting plugins: use their ACTUAL plugin names. Reach for interesting, specific tools — channel strips, tape sims, console EQs, transient shapers, saturators. Don't default to Pro-Q and Pro-C every time.\n";
+            prompt += "- Keep it to 2-3 sentences max unless there's a real spectrum problem.\n\n";
+        }
     }
     
     if (pluginList.isNotEmpty())
     {
         prompt += "USER'S PLUGINS: " + pluginList + "\n";
-        prompt += "Reference their actual plugins by name when suggesting techniques.\n\n";
+        prompt += "When suggesting plugins, use their ACTUAL plugin names. ROTATE which plugins you suggest — don't default to the same ones every time. Dig into their list and find interesting, specific tools. If they have channel strips, tape sims, console EQs, or colourful compressors, reach for those sometimes instead of surgical tools.\n\n";
     }
     
     prompt += "Audio topics only. Internal genre reference (NEVER say this in your response): " + genre + ". ";
@@ -548,18 +759,36 @@ void EchoJayAPI::loadSettings()
         authToken = obj->getProperty("token").toString();
         userInfo.email = obj->getProperty("email").toString();
         
-        // Load tier (supports both new "tier" field and legacy "isPro" field)
-        if (obj->hasProperty("tier"))
-            userInfo.tier = obj->getProperty("tier").toString();
-        else if ((bool)obj->getProperty("isPro"))
-            userInfo.tier = "pro";
+        // Load tier (new format) with fallback to isPro (old format)
+        juce::String tierStr = obj->getProperty("tier").toString();
+        if (tierStr.isNotEmpty())
+        {
+            userInfo.tier = tierStr;
+            userInfo.tierLevel = UserInfo::tierStringToLevel(tierStr);
+        }
         else
-            userInfo.tier = "free";
+        {
+            // Migration from old isPro bool
+            bool wasPro = (bool)obj->getProperty("isPro");
+            userInfo.tier = wasPro ? "pro" : "free";
+            userInfo.tierLevel = wasPro ? 1 : 0;
+        }
         
-        userInfo.messageLimit = userInfo.tier == "studio" ? 150 : userInfo.tier == "pro" ? 50 : userInfo.tier == "its_platinum" ? 15 : 2;
+        // Load messageLimit from saved value, or fall back to tier default
+        int savedLimit = (int)obj->getProperty("messageLimit");
+        userInfo.messageLimit = savedLimit > 0 ? savedLimit : UserInfo::defaultLimitForTier(userInfo.tierLevel);
+        
+        userInfo.credits = (int)obj->getProperty("credits");
+        userInfo.messagesUsedToday = (int)obj->getProperty("messagesUsedToday");
         userInfo.displayName = obj->getProperty("displayName").toString();
         if (userInfo.displayName.isEmpty())
             userInfo.displayName = userInfo.email.upToFirstOccurrenceOf("@", false, false);
+        
+        // Check if the saved usage is from today — reset if it's a new day
+        auto savedDate = obj->getProperty("usageDate").toString();
+        auto today = juce::Time::getCurrentTime().formatted("%Y-%m-%d");
+        if (savedDate != today)
+            userInfo.messagesUsedToday = 0;
     }
 }
 
@@ -573,7 +802,12 @@ void EchoJayAPI::saveSettings() const
     obj->setProperty("token", authToken);
     obj->setProperty("email", userInfo.email);
     obj->setProperty("tier", userInfo.tier);
+    obj->setProperty("tierLevel", userInfo.tierLevel);
+    obj->setProperty("messageLimit", userInfo.messageLimit);
+    obj->setProperty("credits", userInfo.credits);
     obj->setProperty("displayName", userInfo.displayName);
+    obj->setProperty("messagesUsedToday", userInfo.messagesUsedToday);
+    obj->setProperty("usageDate", juce::Time::getCurrentTime().formatted("%Y-%m-%d"));
     
     file.replaceWithText(juce::JSON::toString(juce::var(obj)));
 }
