@@ -61,9 +61,6 @@ public:
     // Thread-safe access to current meter values
     MeterData getMeterData() const;
     
-    // Reset integrated LUFS measurement
-    void resetIntegrated();
-    
     // Get JSON string of all meter data for the WebView
     juce::String getMeterDataJSON() const;
     

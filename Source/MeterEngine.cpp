@@ -347,7 +347,7 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     // Smoothing coefficient: ~300ms window at typical buffer sizes
     // alpha ≈ 1 - exp(-bufferDuration / windowTime)
     double bufDur = blkN / currentSampleRate;
-    double windowTime = 0.5; // 500ms — slower for readability
+    double windowTime = 0.3; // 300ms
     double alpha = 1.0 - std::exp(-bufDur / windowTime);
     float af = (float)alpha;
     
@@ -364,8 +364,8 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     sumEnergyL += alpha * (blkEnL / blkN - sumEnergyL);
     sumEnergyR += alpha * (blkEnR / blkN - sumEnergyR);
     
-    // Peak: fast attack, slow release (~3s fallback for readable numbers)
-    float peakDecay = (float)std::exp(-bufDur / 3.0);
+    // Peak: fast attack, slow release (~1.5s fallback)
+    float peakDecay = (float)std::exp(-bufDur / 1.5);
     currentPeakL = std::max(blockPeakL, currentPeakL * peakDecay);
     currentPeakR = std::max(blockPeakR, currentPeakR * peakDecay);
     currentTpL   = std::max(blockTpL,   currentTpL * peakDecay);
@@ -439,7 +439,7 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     // Perceptual width: sqrt(side/mid) * 100
     // A pure mono signal = 0%, equal mid/side ≈ 100%, pure side > 100% (clamped)
     // This matches how iZotope Insight and similar tools report width
-    float smRatio = (sumMid > 1e-10) ? static_cast<float>(sumSide / sumMid) : 0.0f;
+    float smRatio = (sumMid > 0.0001) ? static_cast<float>(sumSide / sumMid) : 0.0f;
     float width = std::min(100.0f, std::sqrt(smRatio) * 100.0f);
     float corr = (sumEnergyL * sumEnergyR > 0) ? static_cast<float>(sumCorr / std::sqrt(sumEnergyL * sumEnergyR)) : 0.0f;
     
@@ -493,18 +493,6 @@ MeterData MeterEngine::getMeterData() const
 {
     std::lock_guard<std::mutex> lock(dataMutex);
     return data;
-}
-
-void MeterEngine::resetIntegrated()
-{
-    std::lock_guard<std::mutex> lock(dataMutex);
-    allBlocks.clear();
-    momentaryBlocks.clear();
-    shortTermBlocks.clear();
-    data.integrated = -100.0f;
-    data.loudnessRange = 0.0f;
-    data.momentary = -100.0f;
-    data.shortTerm = -100.0f;
 }
 
 juce::String MeterEngine::getMeterDataJSON() const

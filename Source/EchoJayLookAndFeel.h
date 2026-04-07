@@ -327,39 +327,58 @@ public:
         g.drawFittedText(text, textBounds.toNearestInt(), juce::Justification::topLeft, 100);
     }
     
-    // Draw tier badge (PRO / STUDIO / FREE)
-    static void drawTierBadge(juce::Graphics& g, int x, int y, int tierLevel)
+    // Draw tier badge (PRO, STUDIO, ITS, or FREE)
+    static void drawTierBadge(juce::Graphics& g, int x, int y, const juce::String& tier)
     {
-        if (tierLevel >= 2)
+        auto bounds = juce::Rectangle<float>((float)x, (float)y, 36.0f, 16.0f);
+        juce::String label;
+        juce::Colour gradStart, gradEnd, textCol;
+        
+        if (tier == "studio")
         {
-            // STUDIO — purple-to-pink gradient pill (compact)
-            auto bounds = juce::Rectangle<float>((float)x, (float)y, 36.0f, 14.0f);
-            juce::ColourGradient grad(Colours::purple, bounds.getX(), bounds.getCentreY(),
-                                       juce::Colour(0xFFE040A0), bounds.getRight(), bounds.getCentreY(), false);
-            g.setGradientFill(grad);
-            g.fillRoundedRectangle(bounds, 3.0f);
-            g.setColour(juce::Colours::white);
-            g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
-            g.drawText("STUDIO", bounds, juce::Justification::centred);
+            label = "STUDIO";
+            bounds.setWidth(48.0f);
+            gradStart = juce::Colour(0xFFa855f7);
+            gradEnd = juce::Colour(0xFFec4899);
+            textCol = juce::Colours::white;
         }
-        else if (tierLevel >= 1)
+        else if (tier == "pro")
         {
-            // PRO — blue-to-purple gradient pill
-            auto bounds = juce::Rectangle<float>((float)x, (float)y, 36.0f, 16.0f);
-            juce::ColourGradient grad(Colours::blue, bounds.getX(), bounds.getCentreY(),
-                                       Colours::purple, bounds.getRight(), bounds.getCentreY(), false);
-            g.setGradientFill(grad);
+            label = "PRO";
+            gradStart = juce::Colour(0xFF3b82f6);
+            gradEnd = juce::Colour(0xFFa855f7);
+            textCol = juce::Colours::white;
+        }
+        else if (tier == "its_platinum")
+        {
+            label = "ITS";
+            gradStart = juce::Colour(0xFFeab308);
+            gradEnd = juce::Colour(0xFFf59e0b);
+            textCol = juce::Colour(0xFF1a1a2e);
+        }
+        else
+        {
+            label = "FREE";
+            g.setColour(juce::Colour(0xFF2a2a3e));
             g.fillRoundedRectangle(bounds, 4.0f);
-            g.setColour(juce::Colours::white);
+            g.setColour(juce::Colour(0xFF888899));
             g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-            g.drawText("PRO", bounds, juce::Justification::centred);
+            g.drawText(label, bounds, juce::Justification::centred);
+            return;
         }
-        // tierLevel 0 (free) — no badge drawn here, handled by caller
+        
+        juce::ColourGradient grad(gradStart, bounds.getX(), bounds.getCentreY(),
+                                   gradEnd, bounds.getRight(), bounds.getCentreY(), false);
+        g.setGradientFill(grad);
+        g.fillRoundedRectangle(bounds, 4.0f);
+        g.setColour(textCol);
+        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        g.drawText(label, bounds, juce::Justification::centred);
     }
-
-    // Legacy wrapper for compatibility
+    
+    // Legacy wrapper for backwards compatibility
     static void drawProBadge(juce::Graphics& g, int x, int y)
     {
-        drawTierBadge(g, x, y, 1);
+        drawTierBadge(g, x, y, "pro");
     }
 };

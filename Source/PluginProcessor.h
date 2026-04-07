@@ -22,13 +22,11 @@ enum class ChannelType {
     // FX & Other
     FX, Reverb, Delay, Foley, Ambient,
     // Buses
-    MasterBus, InstrumentBus, MusicBus,
-    // Custom
-    Other
+    MasterBus, InstrumentBus, MusicBus
 };
 
 static const juce::StringArray channelTypeNames = {
-    "Mix Bus",
+    "Full Mix",
     "Lead Vocal", "Backing Vocal", "Adlibs", "Vocal Bus",
     "Kick", "Snare", "Hi-Hat", "Overheads", "Drum Bus", "Percussion",
     "Bass / 808", "Bass Guitar", "Sub Bass", "Synth Bass",
@@ -36,8 +34,7 @@ static const juce::StringArray channelTypeNames = {
     "Synth Lead", "Synth Pad", "Synth Pluck", "Synth Bus",
     "Strings", "Brass", "Woodwind", "Orchestral",
     "FX", "Reverb", "Delay", "Foley", "Ambient",
-    "Master Bus", "Instrument Bus", "Music Bus",
-    "Other"
+    "Master Bus", "Instrument Bus", "Music Bus"
 };
 
 enum class CaptureState { Idle, Capturing, Complete };
@@ -46,19 +43,12 @@ struct CaptureSnapshot {
     juce::String id;
     juce::String name;
     ChannelType channelType;
-    juce::String customChannelName;
     MeterData averagedData;
     juce::int64 timestamp;
     float durationSeconds;
     std::vector<float> waveformThumbnail;
     std::array<float, 64> eqCurve = {};
     juce::String wavFilePath;
-    
-    juce::String getChannelDisplayName() const {
-        if (channelType == ChannelType::Other && customChannelName.isNotEmpty())
-            return customChannelName;
-        return channelTypeNames[(int)channelType];
-    }
 };
 
 class EchoJayProcessor : public juce::AudioProcessor
@@ -101,13 +91,8 @@ public:
     juce::String buildCompareContext(const CaptureSnapshot& a, const CaptureSnapshot& b) const;
 
     ChannelType getChannelType() const { return channelType; }
-    void setChannelType(ChannelType t);
-    juce::String getCustomChannelName() const { return customChannelName; }
-    void setCustomChannelName(const juce::String& name) { customChannelName = name; }
+    void setChannelType(ChannelType t) { channelType = t; }
     juce::String getEffectiveChannelName() const;
-    
-    bool isChannelTypePromptDismissed() const { return channelTypePromptDismissed; }
-    void setChannelTypePromptDismissed(bool dismissed);
 
     juce::String getGenre() const { return genre; }
     void setGenre(const juce::String& g) { genre = g; }
@@ -127,20 +112,6 @@ public:
     // Returns true once when auto-feedback is ready (consumed on read)
     bool shouldAutoFeedback() const { return autoFeedbackReady.exchange(false); }
     bool isAudioSilent() const { return audioSilent.load(); }
-    bool isTransportPlaying() const { return transportPlaying.load(); }
-
-    // Chat history — stored here so it persists when the editor is destroyed/recreated
-    struct ChatEntry { 
-        juce::String role, content; 
-        bool hasWaveform = false;
-        std::vector<float> waveform;  // simplified thumbnail (peak values)
-        float durationSeconds = 0.0f;
-        float lufs = -100.0f;
-        juce::String wavFilename;
-        juce::String wavFilePath;
-    };
-    std::vector<ChatEntry> chatHistory;
-    juce::StringArray chatRoles, chatContents; // for API context window
 
 private:
     MeterEngine meterEngine;       // Live meters (always running)
@@ -150,16 +121,13 @@ private:
     WaveformRecorder waveformRecorder; // Audio recording + waveform thumbnail
 
     ChannelType channelType { ChannelType::FullMix };
-    juce::String customChannelName;
-    bool channelTypePromptDismissed = false;
     juce::String genre { "hip-hop" };
 
     // Auto-detection
     
     
-    // Spectrum accumulators during capture — both maintained simultaneously
-    std::array<float, 64> spectrumPeak = {};   // peak-hold (for individual channels)
-    std::array<float, 64> spectrumSum = {};     // running sum (for average on buses/mixes)
+    // Accumulated average spectrum from live engine during capture
+    std::array<float, 64> spectrumSum = {};
     int spectrumFrames = 0;
 
     // Capture
@@ -175,13 +143,8 @@ private:
 
     // Silence detection (triggers auto-stop when DAW stops)
     std::atomic<bool> audioSilent { true };
-    std::atomic<bool> transportPlaying { false };
-    bool wasTransportPlaying = false;
     int silenceCounter = 0;
     bool wasReceivingAudio = false;
-
-    // Background WAV save thread — destructor waits for it to finish
-    std::unique_ptr<juce::Thread> saveThread;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EchoJayProcessor)
 };

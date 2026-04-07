@@ -16,7 +16,6 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
-    void mouseDoubleClick(const juce::MouseEvent&) override;
     
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
@@ -35,11 +34,6 @@ private:
     void showMainScreen();
     void attemptLogin();
     void handleLogout();
-    bool shouldShowChannelPrompt() const;
-    void updateChannelPromptVisibility();
-    void selectChannelPromptType(ChannelType type);
-    void dismissChannelPrompt();
-    void paintChannelPromptOverlay(juce::Graphics& g, juce::Rectangle<int> bounds);
     
     void showCompareView();
     void hideCompareView();
@@ -67,16 +61,12 @@ private:
     
     EchoJayProcessor& processorRef;
     
-    enum class Screen { Login, Loading, Main };
+    enum class Screen { Login, Main };
     Screen currentScreen { Screen::Login };
     
     enum class View { Meters, Compare, Settings };
     View currentView { View::Meters };
     
-    bool compactMode = false;
-    int fullModeWidth = 900;
-    int fullModeHeight = 580;
-    void toggleCompactMode();
     bool compareVisible = false;
     bool dragHovering = false;
     
@@ -87,8 +77,6 @@ private:
     juce::Label loginErrorLabel;
     juce::Label loginTitle;
     juce::Label loginSubtitle;
-    juce::TextButton signUpBtn { "Sign Up" };
-    juce::Label signUpLabel;
     bool loginLoading = false;
     
     // Top bar — left group
@@ -109,47 +97,6 @@ private:
     juce::TextButton scanBtn { "Scan Plugins" };
     juce::TextButton logoutBtn { "Log Out" };
     
-    // First-open channel prompt
-    juce::Component channelPromptBlocker;
-    juce::Label channelPromptTitle;
-    juce::Label channelPromptSubtitle;
-    static constexpr int kChannelPromptGroupCount = 8;
-    static constexpr int kChannelPromptOptionCount = 35;
-    std::array<juce::Label, kChannelPromptGroupCount> channelPromptGroupLabels;
-    std::array<juce::TextButton, kChannelPromptOptionCount> channelPromptButtons;
-    juce::TextButton channelPromptSkipBtn { "Mix Bus" };
-    juce::TextButton customChannelBtn { "Custom..." };
-    bool channelPromptVisible = false;
-    
-    // Session-level genre prompt — shown once per DAW session across all instances
-    static bool genrePromptDismissedThisSession;
-    bool genrePromptVisible = false;
-    juce::Label genrePromptTitle;
-    juce::Label genrePromptSubtitle;
-    static constexpr int kGenreGroupCount = 4;
-    static constexpr int kGenreOptionCount = 36; // built-in genres (excludes Custom button)
-    std::array<juce::Label, kGenreGroupCount> genrePromptGroupLabels;
-    std::array<juce::TextButton, kGenreOptionCount> genrePromptButtons;
-    juce::TextButton genrePromptCustomBtn { "Custom..." };
-    void updateGenrePromptVisibility();
-    void dismissGenrePrompt(const juce::String& selectedGenre);
-    void paintGenrePromptOverlay(juce::Graphics& g, juce::Rectangle<int> bounds);
-    bool shouldShowGenrePrompt() const;
-    void rebuildGenreBox();
-    
-    // Custom genres added by the user
-    juce::StringArray customGenreNames;
-    void addCustomGenreToList(const juce::String& name);
-    void loadCustomGenres();
-    void saveCustomGenres();
-    
-    // Custom channel names added by the user
-    juce::StringArray customChannelNames;
-    void addCustomChannelToList(const juce::String& name);
-    void rebuildChannelTypeBox();
-    void loadCustomChannels();
-    void saveCustomChannels();
-
     // Compare
     juce::TextButton loadRefBtn { "+ Add Mix" };
     juce::TextButton aiCompareBtn { "AI Compare" };
@@ -172,39 +119,12 @@ private:
     
     juce::String getCompareSlotWavPath(int selectedId);
     
-    // Loudness panel bounds for click-to-reset
-    juce::Rectangle<int> loudnessPanelBounds;
-    
     // Compare card waveform positions — stored during paint, overlays positioned in timer
     struct CompareWavePos { juce::Rectangle<int> bounds; juce::String wavPath; float duration; };
     std::vector<CompareWavePos> compareWavePositions;
     
-    // Transparent click catcher for compare waveform area — forwards file drags to parent
-    struct DragForwardingComponent : public juce::Component, public juce::FileDragAndDropTarget
-    {
-        bool isInterestedInFileDrag(const juce::StringArray& files) override
-        {
-            if (auto* p = dynamic_cast<juce::FileDragAndDropTarget*>(getParentComponent()))
-                return p->isInterestedInFileDrag(files);
-            return false;
-        }
-        void filesDropped(const juce::StringArray& files, int x, int y) override
-        {
-            if (auto* p = dynamic_cast<juce::FileDragAndDropTarget*>(getParentComponent()))
-                p->filesDropped(files, x + getX(), y + getY());
-        }
-        void fileDragEnter(const juce::StringArray& files, int x, int y) override
-        {
-            if (auto* p = dynamic_cast<juce::FileDragAndDropTarget*>(getParentComponent()))
-                p->fileDragEnter(files, x + getX(), y + getY());
-        }
-        void fileDragExit(const juce::StringArray& files) override
-        {
-            if (auto* p = dynamic_cast<juce::FileDragAndDropTarget*>(getParentComponent()))
-                p->fileDragExit(files);
-        }
-    };
-    DragForwardingComponent compareClickCatcher;    static constexpr int kMaxRefRemoveBtns = 8;
+    // Transparent click catcher for compare waveform area
+    juce::Component compareClickCatcher;    static constexpr int kMaxRefRemoveBtns = 8;
     std::array<juce::TextButton, kMaxRefRemoveBtns> refRemoveBtns;
     int activeRefRemoveBtns = 0;
     int lastRefCount = 0; // track ref changes for auto-refresh
@@ -236,13 +156,10 @@ private:
     juce::Component chatContent;
     juce::TextEditor chatInput;
     juce::TextButton chatSendBtn { "Send" };
-    juce::TextButton upgradeBtn { "Upgrade to Pro" };
     
     bool pluginsSent = false;
     int scannedPluginCount = 0;
-    bool wasScanning = false;
     int refreshCounter = 0;
-    bool pendingAutoFeedback = false; // waiting for WAV save before triggering AI feedback
     bool settingsFetched = false; // true once we've loaded settings from server at least once
     
     // Waveform play buttons in chat — actual button components overlaid on waveform cards
@@ -275,12 +192,7 @@ private:
     void stopPlayback();
     
     EchoJayAPI api;
-    
-    // Update notification
-    bool updateAvailable = false;
-    bool updateDismissed = false;
-    int updateCheckCounter = 0;
-    static constexpr int kUpdateCheckInterval = 20 * 60 * 360; // ~6 hours at 20fps
+    juce::StringArray chatRoles, chatContents;
     
     using C = EchoJayLookAndFeel::Colours;
     EchoJayLookAndFeel lnf;

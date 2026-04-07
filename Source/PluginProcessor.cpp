@@ -7,18 +7,10 @@ EchoJayProcessor::EchoJayProcessor()
         .withInput("Input", juce::AudioChannelSet::stereo(), true)
         .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
-    // Defer plugin cache loading to background so constructor returns fast
-    juce::Thread::launch([this]() {
-        pluginScanner.loadCache();
-    });
+    pluginScanner.loadCache();
 }
 
-EchoJayProcessor::~EchoJayProcessor()
-{
-    // Wait for any in-flight WAV save to finish before we destroy members
-    if (saveThread && saveThread->isThreadRunning())
-        saveThread->waitForThreadToExit(5000);
-}
+EchoJayProcessor::~EchoJayProcessor() {}
 
 void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
@@ -32,23 +24,6 @@ void EchoJayProcessor::releaseResources() { meterEngine.reset(); }
 void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
-    
-    // Track DAW transport state (play/stop)
-    if (auto* playHead = getPlayHead())
-    {
-        if (auto pos = playHead->getPosition())
-        {
-            bool playing = pos->getIsPlaying();
-            transportPlaying.store(playing);
-            
-            // Auto-stop capture when transport stops (spacebar)
-            if (wasTransportPlaying && !playing && captureState.load() == CaptureState::Capturing)
-                stopCapture();
-            
-            wasTransportPlaying = playing;
-        }
-    }
-    
     const float* left = buffer.getNumChannels() >= 1 ? buffer.getReadPointer(0) : nullptr;
     const float* right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
     if (left == nullptr) return;
@@ -61,21 +36,15 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     {
         captureEngine.processBlock(left, right, buffer.getNumSamples());
         waveformRecorder.processBlock(left, right, buffer.getNumSamples());
-        // Accumulate both peak-hold AND average spectrum during capture.
-        // At snapshot time we choose: peak for individual channels (transient sources),
-        // average for full mix/master/buses (representative tonal balance).
+        // Accumulate live spectrum for averaged EQ curve
         auto liveSpec = meterEngine.getMeterData().spectrum;
         for (int i = 0; i < 64; ++i)
-        {
-            if (liveSpec[(size_t)i] > spectrumPeak[(size_t)i])
-                spectrumPeak[(size_t)i] = liveSpec[(size_t)i];
             spectrumSum[(size_t)i] += liveSpec[(size_t)i];
-        }
         spectrumFrames++;
     }
     
     
-    // Silence detection (for UI state only — does NOT auto-stop capture)
+    // Silence detection for auto-stop
     float peakL = 0, peakR = 0;
     for (int i = 0; i < buffer.getNumSamples(); ++i)
     {
@@ -87,8 +56,11 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     if (isSilent)
     {
         silenceCounter++;
+        // ~0.5s of silence = audio stopped
         if (silenceCounter > (int)(getSampleRate() * 0.5 / buffer.getNumSamples()))
         {
+            if (wasReceivingAudio && captureState.load() == CaptureState::Capturing)
+                stopCapture();
             audioSilent.store(true);
             wasReceivingAudio = false;
         }
@@ -105,21 +77,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
 
 juce::String EchoJayProcessor::getEffectiveChannelName() const
 {
-    if (channelType == ChannelType::Other && customChannelName.isNotEmpty())
-        return customChannelName;
     return channelTypeNames[(int)channelType];
-}
-
-void EchoJayProcessor::setChannelType(ChannelType t)
-{
-    channelType = t;
-    updateHostDisplay();
-}
-
-void EchoJayProcessor::setChannelTypePromptDismissed(bool dismissed)
-{
-    channelTypePromptDismissed = dismissed;
-    updateHostDisplay();
 }
 
 // ============ Capture System ============
@@ -130,7 +88,6 @@ void EchoJayProcessor::startCapture()
     waveformRecorder.startRecording();
     captureStartTime = juce::Time::currentTimeMillis();
     captureSampleCount = 0;
-    spectrumPeak.fill(-120.0f);
     spectrumSum.fill(0.0f);
     spectrumFrames = 0;
     captureState.store(CaptureState::Capturing);
@@ -148,7 +105,6 @@ void EchoJayProcessor::stopCapture()
     snap.id = juce::String(juce::Time::currentTimeMillis());
     snap.name = "Pass " + juce::String(passCounter);
     snap.channelType = channelType;
-    snap.customChannelName = customChannelName;
     snap.averagedData = captureEngine.getMeterData();
     snap.timestamp = juce::Time::currentTimeMillis();
     snap.durationSeconds = (float)(juce::Time::currentTimeMillis() - captureStartTime) / 1000.0f;
@@ -158,25 +114,8 @@ void EchoJayProcessor::stopCapture()
     for (auto& pt : thumb)
         snap.waveformThumbnail.push_back(std::max(std::abs(pt.maxVal), std::abs(pt.minVal)));
     
-    // EQ curve — choose spectrum method based on channel type:
-    // - Mix Bus / Master Bus: use AVERAGE (sustained full-frequency content,
-    //   representative tonal balance, not skewed by one loud section)
-    // - Everything else (including buses like Drum Bus, Vocal Bus): use PEAK-HOLD
-    //   (captures actual frequency content without gaps/silence diluting the reading.
-    //   Even buses like Drum Bus are fundamentally transient — averaging kills them.)
-    bool useAverage = (channelType == ChannelType::FullMix || 
-                       channelType == ChannelType::MasterBus ||
-                       channelType == ChannelType::MusicBus ||
-                       channelType == ChannelType::InstrumentBus);
-    
-    bool hasPeakData = false;
-    for (int i = 0; i < 64; ++i)
-        if (spectrumPeak[(size_t)i] > -119.0f) { hasPeakData = true; break; }
-    
-    if (!useAverage && hasPeakData) {
-        snap.eqCurve = spectrumPeak;
-        snap.averagedData.spectrum = spectrumPeak;
-    } else if (spectrumFrames > 0) {
+    // EQ curve — use averaged live spectrum accumulated during entire capture
+    if (spectrumFrames > 0) {
         for (int i = 0; i < 64; ++i)
             snap.eqCurve[(size_t)i] = spectrumSum[(size_t)i] / (float)spectrumFrames;
         snap.averagedData.spectrum = snap.eqCurve;
@@ -189,47 +128,20 @@ void EchoJayProcessor::stopCapture()
         snapshots.push_back(snap);
     }
     
-    // Auto-save WAV in background thread (tracked so destructor can wait)
-    // Wait for any previous save to finish first
-    if (saveThread && saveThread->isThreadRunning())
-        saveThread->waitForThreadToExit(5000);
-    
+    // Auto-save WAV in background thread
     auto passName = snap.name;
     auto captureDir = getCaptureFolder();
     int snapIdx = (int)snapshots.size() - 1;
-    auto* recorderPtr = &waveformRecorder;
-    auto* mutexPtr = &snapshotMutex;
-    auto* snapsPtr = &snapshots;
-    
-    struct SaveThread : public juce::Thread
-    {
-        SaveThread(WaveformRecorder* rec, juce::File dir, juce::String name,
-                   int idx, std::mutex* mtx, std::vector<CaptureSnapshot>* snaps)
-            : juce::Thread("EchoJay WAV Save"), recorder(rec), captureDir(dir),
-              passName(name), snapIdx(idx), mutex(mtx), snapshots(snaps) {}
-        
-        void run() override
+    juce::Thread::launch([this, captureDir, passName, snapIdx]() {
+        waveformRecorder.saveToWAV(captureDir, passName);
+        auto savedPath = waveformRecorder.getLastSavedPath();
+        if (savedPath.isNotEmpty())
         {
-            recorder->saveToWAV(captureDir, passName);
-            auto savedPath = recorder->getLastSavedPath();
-            if (savedPath.isNotEmpty())
-            {
-                std::lock_guard<std::mutex> lock(*mutex);
-                if (snapIdx >= 0 && snapIdx < (int)snapshots->size())
-                    (*snapshots)[(size_t)snapIdx].wavFilePath = savedPath;
-            }
+            std::lock_guard<std::mutex> lock(snapshotMutex);
+            if (snapIdx >= 0 && snapIdx < (int)snapshots.size())
+                snapshots[(size_t)snapIdx].wavFilePath = savedPath;
         }
-        
-        WaveformRecorder* recorder;
-        juce::File captureDir;
-        juce::String passName;
-        int snapIdx;
-        std::mutex* mutex;
-        std::vector<CaptureSnapshot>* snapshots;
-    };
-    
-    saveThread = std::make_unique<SaveThread>(recorderPtr, captureDir, passName, snapIdx, mutexPtr, snapsPtr);
-    saveThread->startThread();
+    });
     
     autoFeedbackReady.store(true);
 }
@@ -377,8 +289,6 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     auto state = std::make_unique<juce::DynamicObject>();
     state->setProperty("genre", genre);
     state->setProperty("channelType", (int)channelType);
-    state->setProperty("customChannelName", customChannelName);
-    state->setProperty("channelTypePromptDismissed", channelTypePromptDismissed);
     state->setProperty("passCounter", passCounter);
     
     // Serialise snapshots — copy under lock, serialise outside
@@ -395,7 +305,6 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
             obj->setProperty("id", s.id);
             obj->setProperty("name", s.name);
             obj->setProperty("channelType", (int)s.channelType);
-            obj->setProperty("customChannelName", s.customChannelName);
             obj->setProperty("timestamp", s.timestamp);
             obj->setProperty("durationSeconds", s.durationSeconds);
             obj->setProperty("wavFilePath", s.wavFilePath);
@@ -440,43 +349,6 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
         }
     state->setProperty("snapshots", snapsArr);
     
-    // Serialise chat history
-    juce::Array<juce::var> chatArr;
-    for (auto& entry : chatHistory)
-    {
-        auto chatObj = std::make_unique<juce::DynamicObject>();
-        chatObj->setProperty("role", entry.role);
-        chatObj->setProperty("content", entry.content);
-        chatObj->setProperty("hasWaveform", entry.hasWaveform);
-        chatObj->setProperty("durationSeconds", entry.durationSeconds);
-        chatObj->setProperty("lufs", entry.lufs);
-        chatObj->setProperty("wavFilename", entry.wavFilename);
-        chatObj->setProperty("wavFilePath", entry.wavFilePath);
-        if (entry.hasWaveform && !entry.waveform.empty())
-        {
-            juce::Array<juce::var> wfArr;
-            for (int i = 0; i < (int)entry.waveform.size(); i += 2) // every 2nd point to save space
-                wfArr.add(entry.waveform[(size_t)i]);
-            chatObj->setProperty("waveform", wfArr);
-        }
-        chatArr.add(juce::var(chatObj.release()));
-    }
-    state->setProperty("chatHistory", chatArr);
-    
-    // Serialise chat roles/contents for AI context
-    juce::Array<juce::var> rolesArr, contentsArr;
-    for (auto& r : chatRoles) rolesArr.add(r);
-    for (auto& c : chatContents) contentsArr.add(c);
-    state->setProperty("chatRoles", rolesArr);
-    state->setProperty("chatContents", contentsArr);
-    
-    // Serialise reference track paths so they persist across channel changes / DAW save
-    auto refs = refAnalyser.getReferences();
-    juce::Array<juce::var> refsArr;
-    for (auto& ref : refs)
-        refsArr.add(ref.path);
-    state->setProperty("referencePaths", refsArr);
-    
     juce::String json = juce::JSON::toString(juce::var(state.release()), true);
     destData.append(json.toRawUTF8(), json.getNumBytesAsUTF8());
     } catch (...) {}
@@ -497,13 +369,6 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             genre = obj->getProperty("genre").toString();
             if (genre.isEmpty()) genre = "hip-hop";
             channelType = static_cast<ChannelType>((int)obj->getProperty("channelType"));
-            if (obj->hasProperty("customChannelName"))
-                customChannelName = obj->getProperty("customChannelName").toString();
-            // Restore dismissed — if field exists use it, otherwise derive from channel type
-            if (obj->hasProperty("channelTypePromptDismissed"))
-                channelTypePromptDismissed = (bool)obj->getProperty("channelTypePromptDismissed");
-            else
-                channelTypePromptDismissed = (channelType != ChannelType::FullMix);
             passCounter = (int)obj->getProperty("passCounter");
             
             // Restore snapshots
@@ -522,8 +387,6 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                     s.id = so->getProperty("id").toString();
                     s.name = so->getProperty("name").toString();
                     s.channelType = static_cast<ChannelType>((int)so->getProperty("channelType"));
-                    if (so->hasProperty("customChannelName"))
-                        s.customChannelName = so->getProperty("customChannelName").toString();
                     s.timestamp = (juce::int64)(double)so->getProperty("timestamp");
                     s.durationSeconds = (float)(double)so->getProperty("durationSeconds");
                     s.wavFilePath = so->getProperty("wavFilePath").toString();
@@ -566,62 +429,6 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                 }
             }
         }
-        
-        // Restore chat history
-        if (auto* chatArr = obj->getProperty("chatHistory").getArray())
-        {
-            chatHistory.clear();
-            for (auto& entry : *chatArr)
-            {
-                if (auto* chatObj = entry.getDynamicObject())
-                {
-                    ChatEntry ce;
-                    ce.role = chatObj->getProperty("role").toString();
-                    ce.content = chatObj->getProperty("content").toString();
-                    ce.hasWaveform = (bool)chatObj->getProperty("hasWaveform");
-                    ce.durationSeconds = (float)(double)chatObj->getProperty("durationSeconds");
-                    ce.lufs = (float)(double)chatObj->getProperty("lufs");
-                    ce.wavFilename = chatObj->getProperty("wavFilename").toString();
-                    ce.wavFilePath = chatObj->getProperty("wavFilePath").toString();
-                    if (ce.hasWaveform)
-                    {
-                        if (auto* wfArr = chatObj->getProperty("waveform").getArray())
-                            for (auto& v : *wfArr)
-                                ce.waveform.push_back((float)(double)v);
-                    }
-                    chatHistory.push_back(ce);
-                }
-            }
-        }
-        
-        // Restore chat roles/contents for AI context
-        if (auto* rolesArr = obj->getProperty("chatRoles").getArray())
-        {
-            chatRoles.clear();
-            for (auto& r : *rolesArr)
-                chatRoles.add(r.toString());
-        }
-        if (auto* contentsArr = obj->getProperty("chatContents").getArray())
-        {
-            chatContents.clear();
-            for (auto& c : *contentsArr)
-                chatContents.add(c.toString());
-        }
-        
-        // Restore reference tracks — re-analyse from saved file paths
-        if (auto* refsArr = obj->getProperty("referencePaths").getArray())
-        {
-            std::vector<juce::File> refFiles;
-            for (auto& rp : *refsArr)
-            {
-                juce::File f(rp.toString());
-                if (f.existsAsFile())
-                    refFiles.push_back(f);
-            }
-            if (!refFiles.empty())
-                refAnalyser.analyseFiles(refFiles, [](bool, const juce::String&) {});
-        }
-        
         return;
     }
     
@@ -631,8 +438,6 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
         juce::ValueTree vstate = juce::ValueTree::fromXml(*xml);
         genre = vstate.getProperty("genre", "hip-hop").toString();
         channelType = static_cast<ChannelType>((int)vstate.getProperty("channelType", 0));
-        customChannelName = vstate.getProperty("customChannelName", "").toString();
-        channelTypePromptDismissed = (bool)vstate.getProperty("channelTypePromptDismissed", false);
     }
     } catch (...) {}
 }
