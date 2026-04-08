@@ -41,7 +41,6 @@ Metering is always free and unlimited. AI features use a credit system:
 | Free | £0 | 2 |
 | Pro | £9.99/mo | 50 |
 | Studio | £19.99/mo | 150 |
-| ITS Platinum | £14.99/mo | 15 (via Inside the Sound) |
 
 Credits are shared across the plugin and web app. Limits reset daily.
 
@@ -110,6 +109,5 @@ cmake --build build --config Release --target EchoJay_VST3
 
 - **Website:** [echojay.ai](https://echojay.ai)
 - **Support:** [echojay.ai/support](https://echojay.ai/support)
-- **Inside the Sound:** [insidethesound.com](https://insidethesound.com)
 
 © 2026 EchoJay
