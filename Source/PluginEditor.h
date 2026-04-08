@@ -17,6 +17,7 @@ public:
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
+    bool keyPressed(const juce::KeyPress& key) override;
     
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
@@ -265,6 +266,7 @@ private:
     std::vector<WaveformRecorder::ThumbnailPoint> frozenWaveform; // snapshot after capture stops
     bool waveformFrozen = false;
     bool captureWasSilent = false; // must go silent before unfreeze
+    int unfreezeCountdown = 0; // timer ticks until auto-unfreeze (0 = inactive)
     juce::TextButton playbackBtn { "Play" };
     juce::Label wavSavedLabel;
     

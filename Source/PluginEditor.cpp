@@ -103,6 +103,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     setSize(900, 580);
     setResizable(true, true);
     setResizeLimits(900, 580, 1800, 1160);
+    setWantsKeyboardFocus(true);
 
     // --- Channel type ---
     // Grouped channel type dropdown — uses PopupMenu with submenus via getRootMenu()
@@ -127,8 +128,18 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     captureBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     captureBtn.onClick = [this] {
         auto s = processorRef.getCaptureState();
-        if (s == CaptureState::Idle || s == CaptureState::Complete) processorRef.startCapture();
-        else if (s == CaptureState::Capturing) processorRef.stopCapture();
+        if (s == CaptureState::Idle || s == CaptureState::Complete)
+        {
+            waveformFrozen = false;
+            frozenWaveform.clear();
+            unfreezeCountdown = 0;
+            captureWasSilent = false;
+            processorRef.startCapture();
+        }
+        else if (s == CaptureState::Capturing)
+        {
+            processorRef.stopCapture();
+        }
     };
     addAndMakeVisible(captureBtn);
 
@@ -3072,27 +3083,40 @@ void EchoJayEditor::timerCallback()
         captureBtn.setColour(juce::TextButton::buttonColourId, C::blue);
         statusLabel.setText(state == CaptureState::Complete ? "Complete" : "", juce::dontSendNotification);
 
-        // Freeze waveform on capture complete (once)
-        if (state == CaptureState::Complete && !waveformFrozen)
+        // Freeze waveform on capture complete (once — only if we haven't already unfrozen)
+        if (state == CaptureState::Complete && !waveformFrozen && unfreezeCountdown != -1)
         {
             frozenWaveform = processorRef.getWaveformRecorder().getThumbnail();
             waveformFrozen = true;
-            captureWasSilent = false; // reset: need silence before unfreeze
+            captureWasSilent = false;
+            unfreezeCountdown = 60;   // ~2 seconds at 30fps — then meters go back to live
+        }
+
+        // Tick down the unfreeze timer
+        if (state == CaptureState::Complete && waveformFrozen && unfreezeCountdown > 0)
+        {
+            unfreezeCountdown--;
+            if (unfreezeCountdown == 0)
+            {
+                // Timer expired — unfreeze meters back to live
+                waveformFrozen = false;
+                unfreezeCountdown = -1; // mark as "already unfrozen" so we don't re-freeze
+            }
         }
 
         // Track if audio has gone silent since capture completed
-        if (state == CaptureState::Complete && waveformFrozen && processorRef.isAudioSilent())
+        if (state == CaptureState::Complete && processorRef.isAudioSilent())
             captureWasSilent = true;
 
-        // Unfreeze only after audio went silent AND then resumed
-        // This prevents immediate unfreeze when Stop button is pressed while DAW plays
-        if (state == CaptureState::Complete && waveformFrozen && captureWasSilent && !processorRef.isAudioSilent())
+        // Full reset after audio went silent AND then resumed
+        if (state == CaptureState::Complete && captureWasSilent && !processorRef.isAudioSilent())
         {
             processorRef.resetCapture();
             waveformFrozen = false;
             frozenWaveform.clear();
             wavSavedLabel.setText("", juce::dontSendNotification);
             captureWasSilent = false;
+            unfreezeCountdown = 0;
         }
     }
 
@@ -4313,6 +4337,32 @@ juce::String EchoJayEditor::getCompareSlotWavPath(int selectedId)
     else if ((selectedId - 1) < (int)snaps.size())
         return snaps[(size_t)(selectedId - 1)].wavFilePath;
     return {};
+}
+
+// ============ Keyboard Shortcuts ============
+
+bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
+{
+    // Don't handle keys when typing in text editors
+    if (chatInput.hasKeyboardFocus(false) || emailInput.hasKeyboardFocus(false) ||
+        passwordInput.hasKeyboardFocus(false) || settingsName.hasKeyboardFocus(false) ||
+        settingsMonitors.hasKeyboardFocus(false) || settingsHeadphones.hasKeyboardFocus(false) ||
+        settingsGenres.hasKeyboardFocus(false) || settingsPlugins.hasKeyboardFocus(false))
+        return false;
+
+    // Spacebar — stop capture only (start is button-only)
+    if (key == juce::KeyPress::spaceKey && currentScreen == Screen::Main
+        && !channelPromptVisible && !genrePromptVisible)
+    {
+        auto s = processorRef.getCaptureState();
+        if (s == CaptureState::Capturing)
+        {
+            processorRef.stopCapture();
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
