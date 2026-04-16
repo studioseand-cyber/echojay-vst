@@ -4152,6 +4152,16 @@ void EchoJayEditor::timerCallback()
             wavePlayOverlays[(size_t)i].setBounds(-100, -100, 1, 1);
         }
     }
+    else if (currentView == View::Meters)
+    {
+        // On Meters view — bring any existing chat overlays to front
+        // (chat paint positions them, but they may be hidden behind other components)
+        for (int i = 0; i < kMaxWavePlayBtns; ++i)
+        {
+            if (wavePlayOverlays[(size_t)i].isVisible())
+                wavePlayOverlays[(size_t)i].toFront(false);
+        }
+    }
     else if (currentView != View::Meters)
     {
         for (int i = 0; i < kMaxWavePlayBtns; ++i)

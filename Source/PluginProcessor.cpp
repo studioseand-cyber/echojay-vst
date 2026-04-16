@@ -46,26 +46,37 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             {
                 if (playing)
                 {
-                    // DAW is playing — sync position and ensure AB is outputting ref
-                    if (auto timeInSamples = pos->getTimeInSamples())
+                    // DAW is playing — sync position if ref is playing
+                    if (abPlayingRef.load())
                     {
-                        int dawPos = (int)*timeInSamples;
-                        double ratio = abSampleRate / getSampleRate();
-                        int abPos = (int)(dawPos * ratio);
-                        if (abSampleCount > 0)
-                            abPos = abPos % abSampleCount;
-                        if (abPos < 0) abPos = 0;
-                        abPlaybackPos = abPos;
+                        if (auto timeInSamples = pos->getTimeInSamples())
+                        {
+                            int dawPos = (int)*timeInSamples;
+                            double ratio = abSampleRate / getSampleRate();
+                            int abPos = (int)(dawPos * ratio);
+                            if (abSampleCount > 0)
+                                abPos = abPos % abSampleCount;
+                            if (abPos < 0) abPos = 0;
+                            abPlaybackPos = abPos;
+                        }
                     }
-                    // Auto-resume ref if it was paused by transport stop
-                    if (!abPlayingRef.load() && abPaused.load())
-                        resumeAB();
+                    // Auto-resume ref ONLY if transport paused it (not user)
+                    if (!abPlayingRef.load() && abPaused.load() && abPausedByTransport.load())
+                    {
+                        abPlayingRef.store(true);
+                        abPaused.store(false);
+                        abPausedByTransport.store(false);
+                    }
                 }
                 else
                 {
-                    // DAW stopped — pause AB to prevent feedback
+                    // DAW stopped — pause ref if playing (mark as transport-paused)
                     if (abPlayingRef.load())
-                        pauseAB();
+                    {
+                        abPlayingRef.store(false);
+                        abPaused.store(true);
+                        abPausedByTransport.store(true);
+                    }
                 }
             }
             
@@ -476,6 +487,7 @@ void EchoJayProcessor::pauseAB()
     // Pause: stop outputting ref but keep position
     abPlayingRef.store(false);
     abPaused.store(true);
+    abPausedByTransport.store(false); // user-initiated pause
 }
 
 void EchoJayProcessor::resumeAB()
@@ -484,6 +496,7 @@ void EchoJayProcessor::resumeAB()
     if (abActive.load() && abPaused.load()) {
         abPlayingRef.store(true);
         abPaused.store(false);
+        abPausedByTransport.store(false);
     }
 }
 

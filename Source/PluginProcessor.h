@@ -155,6 +155,7 @@ public:
     std::atomic<bool> abActive { false };      // file is loaded
     std::atomic<bool> abPlayingRef { false };   // true = outputting ref WAV, false = DAW passthrough
     std::atomic<bool> abPaused { false };       // paused state — position held
+    std::atomic<bool> abPausedByTransport { false }; // paused due to DAW stop (not user)
     std::atomic<bool> abSyncToDAW { false };    // sync AB position to DAW transport
     juce::AudioBuffer<float> abBuffer;
     int abPlaybackPos = 0;
