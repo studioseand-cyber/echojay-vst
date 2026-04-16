@@ -4423,12 +4423,14 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
     else
     {
         // Individual channels: flag spectrum anomalies based on channel type
-        // Note: channel TYPE mismatch detection is handled separately below.
-        // These flags only cover genuine tonal issues for the CORRECT channel type.
         
         // --- Channels that SHOULD have low-end energy ---
         bool expectsLowEnd = (ch == "Kick" || ch == "Bass / 808" || ch == "Bass Guitar" || 
-                              ch == "Sub Bass" || ch == "Synth Bass");
+                              ch == "Sub Bass" || ch == "Synth Bass" || ch == "Drum Bus");
+        
+        // --- Channels that should NOT have significant low-end ---
+        bool expectsNoLowEnd = (ch == "Hi-Hat" || ch == "Percussion" || ch == "Synth Pluck" ||
+                                ch == "Adlibs" || ch == "FX");
         
         // --- Channels that should have presence/mid energy ---
         bool expectsMids = (ch == "Lead Vocal" || ch == "Backing Vocal" || ch == "Snare" ||
@@ -4446,13 +4448,33 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
         
         if (expectsLowEnd && subEmpty && lowEmpty)
         {
-            flagsStr += "SPECTRUM WARNING: No sub or low frequency content detected — unusual for " + ch.toLowerCase() + ". Possible HPF issue.\n";
+            flagsStr += "SPECTRUM WARNING: No sub or low frequency content detected — unusual for " + ch.toLowerCase() + ". Possible HPF issue or wrong channel type selected.\n";
             flaggedAnything = true;
         }
         else if (expectsLowEnd && subEmpty && !lowEmpty)
         {
             flagsStr += "SPECTRUM NOTE: No sub content below 80Hz — the low end starts from around 80Hz upward.\n";
             flaggedAnything = true;
+        }
+        
+        // Flag: channel shouldn't have low-end but does
+        if (expectsNoLowEnd && !subEmpty)
+        {
+            float subLevel = bands[0].avgDb;
+            if (subLevel > -50.0f)
+            {
+                flagsStr += "SPECTRUM WARNING: Sub energy detected at " + juce::String(subLevel, 0) + "dB — likely bleed or missing HPF.\n";
+                flaggedAnything = true;
+            }
+        }
+        if (expectsNoLowEnd && !lowEmpty)
+        {
+            float lowLevel = bands[1].avgDb;
+            if (lowLevel > -40.0f)
+            {
+                flagsStr += "SPECTRUM WARNING: Low-end energy detected at " + juce::String(lowLevel, 0) + "dB — bleed or missing HPF.\n";
+                flaggedAnything = true;
+            }
         }
         
         // Flag: vocal/lead channels with no presence range
@@ -4468,7 +4490,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
         if (activeBandCount <= 1 && emptyBandCount >= 4)
         {
             flagsStr += juce::String("SPECTRUM WARNING: Energy concentrated in only ") + juce::String(activeBandCount) + " band(s) — " + 
-                juce::String(emptyBandCount) + " bands are empty. This is very unusual and suggests heavy filtering or a processing issue.\n";
+                juce::String(emptyBandCount) + " bands are empty. This is very unusual and suggests heavy filtering, wrong channel, or a processing issue.\n";
             flaggedAnything = true;
         }
         
@@ -4476,160 +4498,6 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
         if (emptyBandCount == numBands)
         {
             flagsStr += "SPECTRUM WARNING: No significant energy in any frequency band — the signal may be extremely quiet or silent.\n";
-            flaggedAnything = true;
-        }
-        
-        // ==========================================================
-        // Channel type mismatch detection
-        // Conservative — only flag when the spectrum OBVIOUSLY doesn't
-        // match the selected channel. Better to miss a mismatch than
-        // wrongly question the user's channel selection.
-        // ==========================================================
-        // Normalise bands relative to peak for shape comparison
-        float normBands[6];
-        for (int b = 0; b < numBands; ++b)
-            normBands[b] = bands[b].avgDb - peakBandDb; // 0 = loudest, negative = quieter
-        
-        auto normAvg = [&](int from, int to) -> float {
-            float s = 0.0f;
-            for (int i = from; i <= to; ++i) s += normBands[i];
-            return s / (float)(to - from + 1);
-        };
-        float subLowAvg = normAvg(0, 1);    // Sub + Low
-        float midUMidAvg = normAvg(3, 4);   // Mid + Upper-Mid
-        float highAvg2 = normBands[5];       // High only (single band in 6-band layout)
-        // Count bands within 12dB of peak
-        int activeBands6 = 0;
-        for (int b = 0; b < numBands; ++b)
-            if (normBands[b] > -12.0f) activeBands6++;
-        
-        auto ct = snap.channelType;
-        juce::String mismatchStr;
-        
-        // --- BASS types ---
-        if (ct == ChannelType::Bass808 || ct == ChannelType::BassGuitar || 
-            ct == ChannelType::SubBass || ct == ChannelType::SynthBass)
-        {
-            if (normBands[0] < -12.0f && normBands[1] < -12.0f && midUMidAvg > subLowAvg + 10.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for " + ch.toLowerCase() + " — most energy is in the mid/upper range with very little low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- KICK ---
-        else if (ct == ChannelType::Kick)
-        {
-            if (normBands[0] < -15.0f && normBands[1] < -15.0f && midUMidAvg > subLowAvg + 12.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a kick — there's very little sub/low energy. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- SNARE ---
-        else if (ct == ChannelType::Snare)
-        {
-            if (subLowAvg > midUMidAvg + 15.0f && highAvg2 < -22.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a snare — almost all energy is in the low end with very little above. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- HI-HAT ---
-        else if (ct == ChannelType::HiHat)
-        {
-            if (subLowAvg > highAvg2 + 10.0f && normBands[4] < -15.0f && normBands[5] < -15.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a hi-hat — most energy is in the low end with very little up top. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- OVERHEADS ---
-        else if (ct == ChannelType::Overheads)
-        {
-            if (normBands[4] < -20.0f && normBands[5] < -20.0f && subLowAvg > -5.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for overheads — very little energy in the upper range. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- DRUM BUS ---
-        else if (ct == ChannelType::DrumBus)
-        {
-            if (activeBands6 <= 1)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a drum bus — energy is very concentrated in one area. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- PERCUSSION ---
-        else if (ct == ChannelType::Percussion)
-        {
-            if (subLowAvg > midUMidAvg + 15.0f && highAvg2 < -22.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for percussion — almost all energy is in the low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- VOCALS ---
-        else if (ct == ChannelType::LeadVocal || ct == ChannelType::BackingVocal || 
-                 ct == ChannelType::Adlibs || ct == ChannelType::VocalBus)
-        {
-            if (normBands[0] > normBands[3] + 15.0f && normBands[0] > normBands[4] + 15.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a vocal — there's a lot of sub energy which is more typical of bass or a sub. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-            else if (highAvg2 > midUMidAvg + 12.0f && normBands[3] < -18.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a vocal — most energy is in the very high end with very little in the vocal range. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- PIANO ---
-        else if (ct == ChannelType::Piano)
-        {
-            if (normBands[0] > -3.0f && normBands[1] > -3.0f && midUMidAvg < -20.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for piano — almost all energy is in the sub/low range. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- KEYS ---
-        else if (ct == ChannelType::Keys)
-        {
-            if (subLowAvg > midUMidAvg + 15.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for keys — almost all energy is in the low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- GUITARS ---
-        else if (ct == ChannelType::AcousticGuitar || ct == ChannelType::ElectricGuitar || 
-                 ct == ChannelType::GuitarBus)
-        {
-            if (normBands[2] < -20.0f && normBands[3] < -20.0f && subLowAvg > -3.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for " + ch.toLowerCase() + " — very little mid-range energy. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- SYNTH LEAD ---
-        else if (ct == ChannelType::SynthLead)
-        {
-            if (subLowAvg > midUMidAvg + 15.0f && highAvg2 < -22.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a synth lead — almost all energy is in the low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- SYNTH PAD ---
-        else if (ct == ChannelType::SynthPad)
-        {
-            if (activeBands6 <= 1)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a synth pad — energy is very concentrated in one area. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- SYNTH PLUCK ---
-        else if (ct == ChannelType::SynthPluck)
-        {
-            if (subLowAvg > midUMidAvg + 15.0f && highAvg2 < -22.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a synth pluck — almost all energy is in the low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- SYNTH BUS ---
-        else if (ct == ChannelType::SynthBus)
-        {
-            if (activeBands6 <= 1)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a synth bus — energy is very concentrated in one area. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- STRINGS ---
-        else if (ct == ChannelType::Strings)
-        {
-            if (normBands[0] > -3.0f && midUMidAvg < -20.0f && highAvg2 < -20.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for strings — almost all energy is in the sub range. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- BRASS ---
-        else if (ct == ChannelType::Brass)
-        {
-            if (subLowAvg > midUMidAvg + 15.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for brass — almost all energy is in the low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- WOODWIND ---
-        else if (ct == ChannelType::Woodwind)
-        {
-            if (subLowAvg > midUMidAvg + 15.0f)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for woodwind — almost all energy is in the low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // --- ORCHESTRAL ---
-        else if (ct == ChannelType::Orchestral)
-        {
-            if (activeBands6 <= 1)
-                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for an orchestral channel — energy is very concentrated in one area. Ask the user if they have the right channel type selected, then review based on whatever they say.";
-        }
-        // FX / Reverb / Delay / Foley / Ambient — no mismatch detection
-        
-        if (mismatchStr.isNotEmpty())
-        {
-            flagsStr += mismatchStr + "\n";
             flaggedAnything = true;
         }
     }
