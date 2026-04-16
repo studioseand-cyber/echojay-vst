@@ -41,6 +41,34 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             bool playing = pos->getIsPlaying();
             transportPlaying.store(playing);
             
+            // Sync AB playback position to DAW transport
+            if (abSyncToDAW.load() && abActive.load() && abSampleCount > 0)
+            {
+                if (playing)
+                {
+                    // DAW is playing — sync position and ensure AB is outputting ref
+                    if (auto timeInSamples = pos->getTimeInSamples())
+                    {
+                        int dawPos = (int)*timeInSamples;
+                        double ratio = abSampleRate / getSampleRate();
+                        int abPos = (int)(dawPos * ratio);
+                        if (abSampleCount > 0)
+                            abPos = abPos % abSampleCount;
+                        if (abPos < 0) abPos = 0;
+                        abPlaybackPos = abPos;
+                    }
+                    // Auto-resume ref if it was paused by transport stop
+                    if (!abPlayingRef.load() && abPaused.load())
+                        resumeAB();
+                }
+                else
+                {
+                    // DAW stopped — pause AB to prevent feedback
+                    if (abPlayingRef.load())
+                        pauseAB();
+                }
+            }
+            
             // Auto-stop capture when transport stops (spacebar)
             if (wasTransportPlaying && !playing && captureState.load() == CaptureState::Capturing)
                 stopCapture();
@@ -53,7 +81,36 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     const float* right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
     if (left == nullptr) return;
 
-    // Always feed live meters
+    // A/B playback: if playing ref, replace buffer BEFORE meters read it
+    if (abActive.load() && abPlayingRef.load())
+    {
+        std::lock_guard<std::mutex> lock(abMutex);
+        if (abSampleCount > 0 && abPlaybackPos < abSampleCount)
+        {
+            int numSamples = buffer.getNumSamples();
+            int abChans = abBuffer.getNumChannels();
+            int samplesRemaining = abSampleCount - abPlaybackPos;
+            int samplesToPlay = std::min(numSamples, samplesRemaining);
+            
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            {
+                float* out = buffer.getWritePointer(ch);
+                const float* src = (ch < abChans) ? abBuffer.getReadPointer(ch) : abBuffer.getReadPointer(0);
+                
+                for (int i = 0; i < samplesToPlay; ++i)
+                    out[i] = src[abPlaybackPos + i];
+                for (int i = samplesToPlay; i < numSamples; ++i)
+                    out[i] = 0.0f;
+            }
+            abPlaybackPos += samplesToPlay;
+            
+            // Re-read pointers since buffer was modified
+            left = buffer.getReadPointer(0);
+            right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
+        }
+    }
+
+    // Always feed live meters (now sees ref audio when AB is active)
     meterEngine.processBlock(left, right, buffer.getNumSamples());
     
     // Feed capture engine if capturing
@@ -371,6 +428,67 @@ void EchoJayProcessor::deleteSnapshot(int index)
         snapshots.erase(snapshots.begin() + index);
 }
 
+// ============ A/B Playback ============
+
+void EchoJayProcessor::loadABFile(const juce::String& wavPath, double startOffsetSeconds)
+{
+    juce::File file(wavPath);
+    if (!file.existsAsFile()) return;
+    
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
+    
+    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
+    if (!reader) return;
+    
+    // Read entire file into buffer
+    juce::AudioBuffer<float> newBuf((int)reader->numChannels, (int)reader->lengthInSamples);
+    reader->read(&newBuf, 0, (int)reader->lengthInSamples, 0, true, true);
+    
+    // Calculate start position from offset
+    int startPos = (int)(startOffsetSeconds * reader->sampleRate);
+    if (startPos >= (int)reader->lengthInSamples)
+        startPos = 0;
+    
+    {
+        std::lock_guard<std::mutex> lock(abMutex);
+        abBuffer = std::move(newBuf);
+        abSampleCount = abBuffer.getNumSamples();
+        abSampleRate = reader->sampleRate;
+        abPlaybackPos = startPos;
+        abFilePath = wavPath;
+    }
+    
+    abActive.store(true);
+    abPlayingRef.store(true);
+}
+
+void EchoJayProcessor::stopAB()
+{
+    abActive.store(false);
+    abPlayingRef.store(false);
+    abPaused.store(false);
+    abPlaybackPos = 0;
+}
+
+void EchoJayProcessor::pauseAB()
+{
+    // Pause: stop outputting ref but keep position
+    abPlayingRef.store(false);
+    abPaused.store(true);
+}
+
+void EchoJayProcessor::resumeAB()
+{
+    // Resume: start outputting ref from where we paused
+    if (abActive.load() && abPaused.load()) {
+        abPlayingRef.store(true);
+        abPaused.store(false);
+    }
+}
+
+// ============ State Persistence ============
+
 void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     try {
@@ -476,6 +594,11 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     for (auto& ref : refs)
         refsArr.add(ref.path);
     state->setProperty("referencePaths", refsArr);
+    
+    // Visual mode state
+    state->setProperty("visualPreset", visualPreset);
+    state->setProperty("visualTheme", visualTheme);
+    state->setProperty("visualModeOn", visualModeOn);
     
     juce::String json = juce::JSON::toString(juce::var(state.release()), true);
     destData.append(json.toRawUTF8(), json.getNumBytesAsUTF8());
@@ -621,6 +744,14 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             if (!refFiles.empty())
                 refAnalyser.analyseFiles(refFiles, [](bool, const juce::String&) {});
         }
+        
+        // Restore visual mode state
+        if (obj->hasProperty("visualPreset"))
+            visualPreset = (int)obj->getProperty("visualPreset");
+        if (obj->hasProperty("visualTheme"))
+            visualTheme = (int)obj->getProperty("visualTheme");
+        if (obj->hasProperty("visualModeOn"))
+            visualModeOn = (bool)obj->getProperty("visualModeOn");
         
         return;
     }

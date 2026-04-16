@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include "EchoJayAPI.h"
 #include "EchoJayLookAndFeel.h"
+#include "ParticleVisual.h"
 
 class EchoJayEditor : public juce::AudioProcessorEditor,
                        private juce::Timer,
@@ -64,14 +65,15 @@ private:
     void drawPanel(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& title, juce::Colour titleCol);
     void drawHBar(juce::Graphics& g, int x, int y, int w, int h,
                   const juce::String& label, float valuedB, float minDb, float maxDb,
-                  juce::Colour startCol, juce::Colour endCol, const juce::String& unit = "dB");
+                  juce::Colour startCol, juce::Colour endCol, const juce::String& unit = "dB",
+                  float displayValue = -200.0f);
     
     EchoJayProcessor& processorRef;
     
     enum class Screen { Login, Loading, Main };
     Screen currentScreen { Screen::Login };
     
-    enum class View { Meters, Compare, Settings };
+    enum class View { Meters, Visual, Compare, Settings };
     View currentView { View::Meters };
     
     bool compactMode = false;
@@ -80,6 +82,31 @@ private:
     void toggleCompactMode();
     bool compareVisible = false;
     bool dragHovering = false;
+    
+    // Visual mode
+    bool visualMode = true;          // true when left panel shows particle visual instead of meters
+    bool visualOnlyMode = false;     // "screensaver" mode — visual fills whole window, no chat
+    bool abBarShowing = false;       // tracks whether AB transport bar is visible (window resized)
+    static constexpr int kAbBarH = 32;
+    
+    // Spectrum A/B overlay — holds the "other" spectrum when switching between ref and DAW
+    std::array<float, 64> heldSpectrum{};
+    std::array<float, 64> prevFrameSpectrum{};
+    bool heldSpectrumValid = false;
+    float heldSpectrumAlpha = 0.0f;
+    float heldDbMax = 0.0f, heldDbMin = -66.0f; // frozen dB range at capture time
+    bool wasPlayingRef = false;        // tracks ref state changes for spectrum hold
+    
+    // Spectrum peak hold — slowly falling peak line
+    std::array<float, 64> spectrumPeakHold{};
+    bool spectrumPeakHoldInit = false;
+    int visualOnlyWidth = 900;
+    int visualOnlyHeight = 580;
+    std::unique_ptr<ParticleVisual> particleVisual;
+    void toggleVisualMode();
+    void toggleVisualOnlyMode();
+    bool wasCapturing = false;       // for detecting capture start/stop transitions
+    bool captureAnimTriggered = false;
     
     // Login
     juce::TextEditor emailInput;
@@ -268,6 +295,7 @@ private:
     bool captureWasSilent = false; // must go silent before unfreeze
     int unfreezeCountdown = 0; // timer ticks until auto-unfreeze (0 = inactive)
     juce::TextButton playbackBtn { "Play" };
+    juce::TextButton abSyncBtn { "Sync" };
     juce::Label wavSavedLabel;
     
     // Simple playback engine (plays back through system default output)

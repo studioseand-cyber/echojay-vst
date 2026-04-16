@@ -22,6 +22,7 @@ struct MeterData {
     float peakL = -100.0f, peakR = -100.0f;
     float truePeakL = -100.0f, truePeakR = -100.0f;
     float truePeakMaxL = -100.0f, truePeakMaxR = -100.0f;
+    float truePeakBarL = -100.0f, truePeakBarR = -100.0f; // decaying value for bar display
     float peakMaxL = -100.0f, peakMaxR = -100.0f;
     
     // Dynamics
@@ -87,6 +88,14 @@ private:
     std::vector<LufsBlock> momentaryBlocks;  // 400ms window
     std::vector<LufsBlock> shortTermBlocks;  // 3s window
     std::vector<LufsBlock> allBlocks;        // all blocks for integrated
+    std::vector<double> shortTermHistory;   // short-term loudness values for LRA (3s windows)
+    
+    // Ring buffer for instant momentary LUFS (400ms of K-weighted power per sample)
+    std::vector<double> kPowerRing;          // sum of L²+R² per sample, K-weighted
+    int kPowerRingSize = 0;                  // 400ms worth of samples
+    int kPowerWritePos = 0;
+    double kPowerSum = 0;                    // running sum for fast average
+    int kPowerCount = 0;                     // how many valid samples in ring
     
     // K-weighted sample accumulator
     std::vector<double> kWeightedL, kWeightedR;
@@ -129,6 +138,7 @@ private:
     double sumL = 0, sumR = 0;
     float currentPeakL = 0, currentPeakR = 0;
     float currentTpL = 0, currentTpR = 0;
+    float displayTpL = 0, displayTpR = 0; // decaying for bar display
     int sampleCount = 0;
     
     // Stereo accumulators

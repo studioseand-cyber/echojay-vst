@@ -1,21 +1,22 @@
 #pragma once
 #include <JuceHeader.h>
+#include "EchoJayLogo.h"
 
 class EchoJayLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     // Colour palette matching the web app CSS variables
     struct Colours {
-        static inline const juce::Colour bg       { 0xff0a0a0f };
-        static inline const juce::Colour bg2      { 0xff12121a };
-        static inline const juce::Colour bg3      { 0xff1a1a26 };
-        static inline const juce::Colour bg4      { 0xff22222e };
+        static inline const juce::Colour bg       { 0xff080A12 };
+        static inline const juce::Colour bg2      { 0xff0A0C18 };
+        static inline const juce::Colour bg3      { 0xff0E1020 };
+        static inline const juce::Colour bg4      { 0xff141626 };
         static inline const juce::Colour text      { 0xfff0f0f5 };
         static inline const juce::Colour text2     { 0xffa0a0b8 };
         static inline const juce::Colour text3     { 0xff606078 };
-        static inline const juce::Colour blue      { 0xff3b82f6 };
-        static inline const juce::Colour blue2     { 0xff60a5fa };
-        static inline const juce::Colour purple    { 0xffa855f7 };
+        static inline const juce::Colour blue      { 0xff06b6d4 };
+        static inline const juce::Colour blue2     { 0xff22d3ee };
+        static inline const juce::Colour purple    { 0xff0891b2 };
         static inline const juce::Colour green     { 0xff4ade80 };
         static inline const juce::Colour red       { 0xffef4444 };
         static inline const juce::Colour amber     { 0xfff59e0b };
@@ -52,7 +53,7 @@ public:
                                const juce::Colour& bgColour, bool isMouseOver, bool isButtonDown) override
     {
         auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
-        float cornerSize = 8.0f;
+        float cornerSize = 6.0f;
         
         auto col = bgColour;
         if (isButtonDown)
@@ -60,27 +61,31 @@ public:
         else if (isMouseOver)
             col = col.brighter(0.05f);
         
-        // Check if this is a "gradient" button (blue or purple primary)
-        bool isGradient = (col.getRed() < 100 && col.getBlue() > 200) || 
-                          (col.getRed() > 150 && col.getBlue() > 200);
-        
-        if (isGradient && col.getAlpha() > 200)
+        // Transparent buttons — square hover fill, no rounded corners
+        if (col.getAlpha() < 10)
         {
-            // Gradient fill for primary buttons
-            juce::ColourGradient grad(Colours::blue, bounds.getX(), bounds.getY(),
-                                      Colours::purple, bounds.getRight(), bounds.getBottom(), false);
-            if (isMouseOver) grad = juce::ColourGradient(Colours::blue.brighter(0.1f), bounds.getX(), bounds.getY(),
-                                                          Colours::purple.brighter(0.1f), bounds.getRight(), bounds.getBottom(), false);
-            g.setGradientFill(grad);
+            if (isMouseOver || isButtonDown)
+            {
+                g.setColour(juce::Colour(0xff06b6d4).withAlpha(isButtonDown ? 0.12f : 0.06f));
+                g.fillRect(bounds);
+            }
+            return;
+        }
+        
+        // Check if this is a primary button (purple-ish)
+        bool isPrimary = (col.getGreen() > 150 && col.getBlue() > 150 && col.getRed() < 50);
+        
+        if (isPrimary)
+        {
+            // Dark teal glow button — subtle fill, brighter on hover
+            g.setColour(juce::Colour(0xff06b6d4).withAlpha(isButtonDown ? 0.18f : (isMouseOver ? 0.14f : 0.08f)));
             g.fillRoundedRectangle(bounds, cornerSize);
         }
         else
         {
-            // Solid fill for secondary buttons
+            // Secondary buttons — subtle solid fill
             g.setColour(col);
             g.fillRoundedRectangle(bounds, cornerSize);
-            
-            // Subtle border
             g.setColour(Colours::border2);
             g.drawRoundedRectangle(bounds, cornerSize, 1.0f);
         }
@@ -89,10 +94,13 @@ public:
     void drawButtonText(juce::Graphics& g, juce::TextButton& button,
                          bool isMouseOver, bool isButtonDown) override
     {
-        auto font = juce::Font(juce::FontOptions(12.0f, juce::Font::bold));
+        auto font = juce::Font(juce::FontOptions(11.0f, juce::Font::bold));
         g.setFont(font);
-        g.setColour(button.findColour(isButtonDown ? juce::TextButton::textColourOnId 
-                                                    : juce::TextButton::textColourOffId));
+        auto textCol = button.findColour(isButtonDown ? juce::TextButton::textColourOnId 
+                                                      : juce::TextButton::textColourOffId);
+        if (isMouseOver)
+            textCol = textCol.brighter(0.15f);
+        g.setColour(textCol);
         
         auto bounds = button.getLocalBounds();
         g.drawText(button.getButtonText(), bounds, juce::Justification::centred, true);
@@ -103,7 +111,7 @@ public:
                        int, int, int, int, juce::ComboBox& box) override
     {
         auto bounds = juce::Rectangle<float>(0, 0, (float)width, (float)height);
-        float cornerSize = 8.0f;
+        float cornerSize = 6.0f;
         
         g.setColour(box.findColour(juce::ComboBox::backgroundColourId));
         g.fillRoundedRectangle(bounds, cornerSize);
@@ -111,12 +119,14 @@ public:
         g.setColour(Colours::border2);
         g.drawRoundedRectangle(bounds.reduced(0.5f), cornerSize, 1.0f);
         
-        // Dropdown arrow
-        auto arrowArea = bounds.removeFromRight(24.0f).reduced(8.0f, (float)height * 0.35f);
+        // Dropdown arrow — smaller, cleaner
+        float arrowSize = 5.0f;
+        float arrowX = (float)width - 16.0f;
+        float arrowY = (float)height * 0.5f - 2.0f;
         juce::Path arrow;
-        arrow.addTriangle(arrowArea.getX(), arrowArea.getY(),
-                          arrowArea.getRight(), arrowArea.getY(),
-                          arrowArea.getCentreX(), arrowArea.getBottom());
+        arrow.addTriangle(arrowX - arrowSize, arrowY,
+                          arrowX + arrowSize, arrowY,
+                          arrowX, arrowY + arrowSize);
         g.setColour(Colours::text3);
         g.fillPath(arrow);
     }
@@ -124,7 +134,94 @@ public:
     void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override
     {
         label.setBounds(8, 0, box.getWidth() - 28, box.getHeight());
-        label.setFont(juce::Font(juce::FontOptions(12.0f)));
+        label.setFont(juce::Font(juce::FontOptions(11.0f)));
+    }
+    
+    // ============ PopupMenu ============
+    void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override
+    {
+        auto bounds = juce::Rectangle<float>(0, 0, (float)width, (float)height);
+        g.setColour(juce::Colour(0xff0E1020));
+        g.fillRoundedRectangle(bounds, 6.0f);
+        g.setColour(juce::Colour(0xff141626));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 6.0f, 1.0f);
+    }
+    
+    void drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<int>& area,
+                            bool isSeparator, bool isActive, bool isHighlighted,
+                            bool isTicked, bool hasSubMenu,
+                            const juce::String& text, const juce::String& shortcutKeyText,
+                            const juce::Drawable* icon, const juce::Colour* textColour) override
+    {
+        if (isSeparator)
+        {
+            auto sepArea = area.reduced(8, 0);
+            g.setColour(juce::Colour(0xff141626));
+            g.fillRect(sepArea.getX(), sepArea.getCentreY(), sepArea.getWidth(), 1);
+            return;
+        }
+        
+        auto r = area.reduced(4, 1);
+        
+        if (isHighlighted && isActive)
+        {
+            g.setColour(juce::Colour(0xff06b6d4).withAlpha(0.2f));
+            g.fillRoundedRectangle(r.toFloat(), 4.0f);
+        }
+        
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        
+        if (!isActive)
+            g.setColour(Colours::text3.withAlpha(0.4f));
+        else if (isHighlighted)
+            g.setColour(juce::Colours::white);
+        else if (textColour != nullptr)
+            g.setColour(*textColour);
+        else
+            g.setColour(Colours::text2);
+        
+        auto textArea = r.reduced(8, 0);
+        
+        if (isTicked)
+        {
+            g.setColour(juce::Colour(0xff06b6d4));
+            g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+            g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x9c\x93")) + " " + text, 
+                       textArea, juce::Justification::centredLeft, true);
+        }
+        else
+        {
+            g.drawText(text, textArea, juce::Justification::centredLeft, true);
+        }
+        
+        if (hasSubMenu)
+        {
+            float arrowH = 6.0f;
+            float arrowX = (float)r.getRight() - 10.0f;
+            float arrowY = (float)r.getCentreY();
+            juce::Path arrow;
+            arrow.addTriangle(arrowX, arrowY - arrowH * 0.5f,
+                              arrowX, arrowY + arrowH * 0.5f,
+                              arrowX + 5.0f, arrowY);
+            g.setColour(Colours::text3);
+            g.fillPath(arrow);
+        }
+    }
+    
+    void getIdealPopupMenuItemSize(const juce::String& text, bool isSeparator,
+                                    int standardMenuItemHeight, int& idealWidth, int& idealHeight) override
+    {
+        if (isSeparator)
+        {
+            idealWidth = 50;
+            idealHeight = 8;
+        }
+        else
+        {
+            auto font = juce::Font(juce::FontOptions(12.0f));
+            idealWidth = font.getStringWidth(text) + 40;
+            idealHeight = 26; // compact row height
+        }
     }
     
     // ============ TextEditor ============
@@ -152,11 +249,13 @@ public:
         
         bool isOn = button.getToggleState();
         
-        // Pill-style toggle (like the web app's DAW selector)
+        // Pill-style toggle — glow when selected
         if (isOn)
         {
-            g.setColour(Colours::blue);
+            g.setColour(juce::Colour(0xff06b6d4).withAlpha(0.15f));
             g.fillRoundedRectangle(bounds, cornerSize);
+            g.setColour(juce::Colour(0xff06b6d4).withAlpha(0.5f));
+            g.drawRoundedRectangle(bounds, cornerSize, 1.0f);
         }
         else
         {
@@ -209,11 +308,29 @@ public:
     // Draw the gradient EchoJay logo
     static void drawLogo(juce::Graphics& g, juce::Rectangle<float> bounds, float fontSize = 20.0f)
     {
-        juce::ColourGradient grad(Colours::blue, bounds.getX(), bounds.getCentreY(),
-                                   Colours::purple, bounds.getRight(), bounds.getCentreY(), false);
-        g.setGradientFill(grad);
-        g.setFont(juce::Font(juce::FontOptions(fontSize, juce::Font::bold)));
-        g.drawText("EchoJay", bounds, juce::Justification::centredLeft);
+        static juce::Image logoImg;
+        if (!logoImg.isValid())
+        {
+            logoImg = juce::ImageFileFormat::loadFrom(echoJayLogoPNG, (size_t)echoJayLogoPNGSize);
+        }
+        if (logoImg.isValid())
+        {
+            float aspect = (float)logoImg.getWidth() / (float)logoImg.getHeight();
+            float drawH = bounds.getHeight() * 0.8f;
+            float drawW = drawH * aspect;
+            float x = bounds.getX();
+            float y = bounds.getCentreY() - drawH / 2.0f;
+            g.setOpacity(1.0f);
+            g.drawImage(logoImg, 
+                        juce::Rectangle<float>(x, y, drawW, drawH),
+                        juce::RectanglePlacement::stretchToFit);
+        }
+        else
+        {
+            g.setColour(juce::Colours::white);
+            g.setFont(juce::Font(juce::FontOptions(fontSize, juce::Font::bold)));
+            g.drawText("EchoJay", bounds, juce::Justification::centredLeft);
+        }
     }
     
     // Draw a meter value card (matching web app's meter card style)

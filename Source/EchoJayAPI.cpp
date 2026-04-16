@@ -542,7 +542,7 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     prompt += "If you want to push this further, throw a reference into Compare Mixes and see where you sit against it. Otherwise, what part of the mix are you least sure about?\"\n\n";
     prompt += "EXAMPLE 3 — when there are issues:\n";
     prompt += "\"You're pushing this hard — the crest at 4.8dB means the limiter is eating into your transients pretty heavily. If that's the vibe you're going for then fair enough, but if you're finding it lacks punch that could be why.\n\n";
-    prompt += "The loudness at -5.5 LUFS is loud for streaming — most platforms will turn it down anyway, so you might be able to back off the limiter a bit and get some dynamics back without losing perceived loudness.\n\n";
+    prompt += "The loudness at -5.5 LUFS is loud — you could back off the limiter a touch and get some dynamics back without losing much perceived loudness. Sometimes less limiting actually sounds louder.\n\n";
     prompt += "What are you hearing that you'd like to improve? I can help work through specifics if you tell me what you're going for.\"\n\n";
     
     prompt += "IMPORTANT: Each review must read differently. Don't compare the crest to \"what most people/tracks would have at this level\" — that's a crutch. Just state what the number means for the track. Vary your opening sentence every time. Never start two reviews the same way.\n\n";
@@ -567,10 +567,14 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     
     prompt += "METER READING:\n";
     prompt += "- LUFS: Use the genre (provided below, never mention it in your response) to judge loudness. -8 to -11 is normal for urban/pop. -5 to -8 for dance/club genres (DnB, house, techno, EDM, trance, garage, bassline). -6 to -9 for other electronic. -8 to -12 for rock. -14 to -22 for jazz/classical/ambient. Only flag if clearly outside the expected range.\n";
-    prompt += "- Crest factor: Below 4dB = crushed. 4-6dB = compressed. 6-10dB = healthy. 10-14dB = dynamic.\n";
-    prompt += "- True peak: Only shown in the data if it's clipping above +1.5 dBTP. If true peak isn't in the data, don't mention it.\n";
+    prompt += "- Crest factor: Below 3dB = crushed. 3-5dB = compressed but can be intentional for loud/punchy genres. 5-8dB = solid. 8-14dB = dynamic. Do NOT assume compressed = bad. For club music, hip-hop, and pop a crest of 4-6dB is often exactly right. Only flag crest if it seems wrong FOR THE GENRE.\n";
+    prompt += "- True peak: Only shown in the data if it's clipping above +2.0 dBTP. If true peak isn't in the data, don't mention it.\n";
     prompt += "- Width: Only shown in the data if it's notably narrow or wide. If width isn't in the data, don't mention it.\n";
     prompt += "- Correlation: Only shown if there are phase issues. If not in the data, don't mention it.\n\n";
+    
+    prompt += "NEVER mention streaming platform loudness penalties, normalisation, or 'platforms will turn it down'. This advice is outdated and unhelpful. Judge loudness purely on whether it suits the genre and creative intent.\n\n";
+    
+    prompt += "CHANNEL TYPE MISMATCH: If the data includes a ⚠ CHANNEL CHECK warning, mention it once casually — don't insist or diagnose. Just say something like 'The frequency shape here looks a bit unusual for [channel type] — have you got the right channel type selected?' If they say it's correct, trust them completely and carry on. Never bring it up again after that.\n\n";
     
     prompt += "SPECTRUM READING:\n";
     prompt += "- Lines labelled SPECTRUM ISSUE, SPECTRUM WARNING, or SPECTRUM NOTE are internal flags — NEVER say those words. Talk like an engineer.\n";

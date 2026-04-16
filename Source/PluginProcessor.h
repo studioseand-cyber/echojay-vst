@@ -142,6 +142,27 @@ public:
     std::vector<ChatEntry> chatHistory;
     juce::StringArray chatRoles, chatContents; // for API context window
 
+    // Visual mode state — persisted with DAW session
+    int visualPreset = 0;   // 0=Orb, 1=Ring, 2=Helix, 3=Scatter
+    int visualTheme = 1;    // 0=Nebula, 1=Aurora, 2=Solar, 3=Crystal
+    bool visualModeOn = true;
+
+    // A/B playback — toggle between DAW audio and reference WAV
+    void loadABFile(const juce::String& wavPath, double startOffsetSeconds = 0.0);
+    void stopAB();
+    void pauseAB();
+    void resumeAB();
+    std::atomic<bool> abActive { false };      // file is loaded
+    std::atomic<bool> abPlayingRef { false };   // true = outputting ref WAV, false = DAW passthrough
+    std::atomic<bool> abPaused { false };       // paused state — position held
+    std::atomic<bool> abSyncToDAW { false };    // sync AB position to DAW transport
+    juce::AudioBuffer<float> abBuffer;
+    int abPlaybackPos = 0;
+    int abSampleCount = 0;
+    double abSampleRate = 44100.0;
+    juce::String abFilePath;
+    mutable std::mutex abMutex;
+
 private:
     MeterEngine meterEngine;       // Live meters (always running)
     MeterEngine captureEngine;     // Capture pass meters (reset each capture)

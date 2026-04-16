@@ -102,7 +102,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     setLookAndFeel(&lnf);
     setSize(900, 580);
     setResizable(true, true);
-    setResizeLimits(900, 580, 1800, 1160);
+    setResizeLimits(900, 580, 1800, 1200);
     setWantsKeyboardFocus(true);
 
     // --- Channel type ---
@@ -123,9 +123,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addAndMakeVisible(genreBox);
 
     // --- Capture ---
-    captureBtn.setColour(juce::TextButton::buttonColourId, C::blue);
-    captureBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    captureBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    captureBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    captureBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+    captureBtn.setColour(juce::TextButton::textColourOffId, C::text);
     captureBtn.onClick = [this] {
         auto s = processorRef.getCaptureState();
         if (s == CaptureState::Idle || s == CaptureState::Complete)
@@ -157,24 +157,49 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     playbackBtn.setVisible(false);
     addAndMakeVisible(playbackBtn);
 
+    abSyncBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    abSyncBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+    abSyncBtn.setColour(juce::TextButton::textColourOffId, C::text3);
+    abSyncBtn.setButtonText("Sync");
+    abSyncBtn.onClick = [this] {
+        bool newState = !processorRef.abSyncToDAW.load();
+        processorRef.abSyncToDAW.store(newState);
+        abSyncBtn.setColour(juce::TextButton::textColourOffId, 
+            newState ? juce::Colour(0xff22d3ee) : C::text3);
+        repaint();
+    };
+    abSyncBtn.setVisible(false);
+    abSyncBtn.setBounds(-100, -100, 1, 1);
+    addAndMakeVisible(abSyncBtn);
+
     wavSavedLabel.setColour(juce::Label::textColourId, C::text3);
     wavSavedLabel.setFont(juce::Font(juce::FontOptions(9.0f)));
     wavSavedLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(wavSavedLabel);
 
+    // --- Particle Visual ---
+    particleVisual = std::make_unique<ParticleVisual>();
+    particleVisual->setVisible(false);
+    addChildComponent(*particleVisual);
+    
+    // Restore visual state from processor (persisted with DAW session)
+    particleVisual->currentPreset = (ParticleVisual::Preset)juce::jlimit(0, 3, processorRef.visualPreset);
+    particleVisual->currentTheme = (ParticleVisual::Theme)juce::jlimit(0, 3, processorRef.visualTheme);
+    visualMode = processorRef.visualModeOn;
+
     // --- Compare ---
-    compareBtn.setColour(juce::TextButton::buttonColourId, C::purple);
-    compareBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    compareBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    compareBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+    compareBtn.setColour(juce::TextButton::textColourOffId, C::text);
     compareBtn.onClick = [this] {
-        if (currentView == View::Compare) { hideCompareView(); currentView = View::Meters; }
+        if (currentView == View::Compare) { currentView = View::Meters; hideCompareView(); }
         else { hideSettingsView(); currentView = View::Compare; showCompareView(); }
     };
     addAndMakeVisible(compareBtn);
 
     // --- Settings ---
-    settingsBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
-    settingsBtn.setColour(juce::TextButton::textColourOnId, C::text2);
+    settingsBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    settingsBtn.setColour(juce::TextButton::textColourOnId, C::text);
     settingsBtn.setColour(juce::TextButton::textColourOffId, C::text2);
     settingsBtn.onClick = [this] {
         if (currentView == View::Settings) { hideSettingsView(); currentView = View::Meters; }
@@ -183,7 +208,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addAndMakeVisible(settingsBtn);
 
     // --- Right-side top bar controls ---
-    scanBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
+    scanBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     scanBtn.setColour(juce::TextButton::textColourOnId, C::purple);
     scanBtn.setColour(juce::TextButton::textColourOffId, C::purple);
     scanBtn.onClick = [this] { processorRef.getPluginScanner().startScan(); };
@@ -227,7 +252,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         auto& button = channelPromptButtons[(size_t)i];
         button.setButtonText(kChannelPromptOptions[i].label);
         button.setColour(juce::TextButton::buttonColourId, C::bg3);
-        button.setColour(juce::TextButton::textColourOffId, C::text2);
+        button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         button.setColour(juce::TextButton::buttonOnColourId, C::blue);
         button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         button.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
@@ -236,7 +261,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         addAndMakeVisible(button);
     }
 
-    channelPromptSkipBtn.setColour(juce::TextButton::buttonColourId, C::purple);
+    channelPromptSkipBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
     channelPromptSkipBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     channelPromptSkipBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     channelPromptSkipBtn.setButtonText("Mix Bus");
@@ -252,7 +277,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         auto* te = new juce::TextEditor();
         te->setFont(juce::Font(juce::FontOptions(13.0f)));
         te->setTextToShowWhenEmpty("Type instrument name...", C::text3);
-        te->setBounds(getWidth() / 2 - 110, getHeight() / 2 + 20, 220, 28);
+        te->setBounds(getWidth() / 2 - 110, customChannelBtn.getY() - 34, 220, 28);
         te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
         te->setColour(juce::TextEditor::textColourId, C::text);
         te->setColour(juce::TextEditor::outlineColourId, C::purple);
@@ -334,7 +359,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         auto* te = new juce::TextEditor();
         te->setFont(juce::Font(juce::FontOptions(13.0f)));
         te->setTextToShowWhenEmpty("Type genre name...", C::text3);
-        te->setBounds(getWidth() / 2 - 110, getHeight() / 2 + 60, 220, 28);
+        te->setBounds(getWidth() / 2 - 110, genrePromptCustomBtn.getY() - 34, 220, 28);
         te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
         te->setColour(juce::TextEditor::textColourId, C::text);
         te->setColour(juce::TextEditor::outlineColourId, C::purple);
@@ -374,9 +399,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addAndMakeVisible(usageLabel);
 
     // --- Compare view controls ---
-    saveSettingsBtn.setColour(juce::TextButton::buttonColourId, C::blue);
-    saveSettingsBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    saveSettingsBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    saveSettingsBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
+    saveSettingsBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+    saveSettingsBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
     saveSettingsBtn.onClick = [this] { saveSettingsToServer(); };
     saveSettingsBtn.setVisible(false);
     addAndMakeVisible(saveSettingsBtn);
@@ -435,9 +460,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     loadRefBtn.setVisible(false); // removed from UI
     // addAndMakeVisible(loadRefBtn);
 
-    aiCompareBtn.setColour(juce::TextButton::buttonColourId, C::blue);
-    aiCompareBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    aiCompareBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    aiCompareBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
+    aiCompareBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+    aiCompareBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
     aiCompareBtn.onClick = [this] { runAICompare(); };
     aiCompareBtn.setVisible(false);
     addAndMakeVisible(aiCompareBtn);
@@ -455,17 +480,37 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 
     // Play buttons for each compare slot
     auto setupPlayBtn = [&](juce::TextButton& btn, juce::ComboBox& slot) {
-        btn.setColour(juce::TextButton::buttonColourId, C::purple);
-        btn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        btn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        btn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        btn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+        btn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
         btn.setVisible(false);
         btn.onClick = [this, &slot, &btn]() {
             auto wavPath = getCompareSlotWavPath(slot.getSelectedId());
             if (wavPath.isEmpty()) return;
+            
+            // If this file is currently playing, pause it
             if (currentlyPlayingChatWav == wavPath) {
                 stopChatPlayback();
                 btn.setButtonText(">");
-            } else {
+            }
+            // If this file is paused (AB has it loaded and paused), resume
+            else if (processorRef.abPaused.load() && processorRef.abFilePath == wavPath) {
+                // Calculate how far through the file we are (in seconds)
+                double elapsedSeconds = 0.0;
+                if (processorRef.abSampleCount > 0 && processorRef.abSampleRate > 0)
+                    elapsedSeconds = (double)processorRef.abPlaybackPos / processorRef.abSampleRate;
+                
+                processorRef.resumeAB();
+                currentlyPlayingChatWav = wavPath;
+                // Set start time in the past so (now - startTime) + offset = elapsedSeconds
+                chatPlaybackStartTime = juce::Time::getMillisecondCounterHiRes() - elapsedSeconds * 1000.0;
+                chatPlaybackOffset = 0;
+                playSlotABtn.setButtonText(">");
+                playSlotBBtn.setButtonText(">");
+                btn.setButtonText("||");
+            }
+            // Otherwise start fresh
+            else {
                 stopChatPlayback();
                 playSlotABtn.setButtonText(">");
                 playSlotBBtn.setButtonText(">");
@@ -478,7 +523,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     setupPlayBtn(playSlotABtn, compareSlotABox);
     setupPlayBtn(playSlotBBtn, compareSlotBBox);
 
-    refStatusLabel.setColour(juce::Label::textColourId, C::purple);
+    refStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffFF6B9D));
     refStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
     refStatusLabel.setJustificationType(juce::Justification::centredLeft);
     refStatusLabel.setVisible(false);
@@ -506,9 +551,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     presetBox.setVisible(false);
     addAndMakeVisible(presetBox);
     
-    savePresetBtn.setColour(juce::TextButton::buttonColourId, C::purple);
-    savePresetBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    savePresetBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    savePresetBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    savePresetBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+    savePresetBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
     savePresetBtn.onClick = [this] {
         auto refs = processorRef.getReferenceAnalyser().getReferences();
         if (refs.empty()) { refStatusLabel.setText("No references to save", juce::dontSendNotification); return; }
@@ -703,9 +748,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatInput.addListener(this);
     addChildComponent(chatInput);
 
-    chatSendBtn.setColour(juce::TextButton::buttonColourId, C::blue);
-    chatSendBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    chatSendBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    chatSendBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
+    chatSendBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+    chatSendBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
     chatSendBtn.onClick = [this] {
         auto t = chatInput.getText().trim();
         if (t.isNotEmpty()) sendChatMessage(t);
@@ -1135,7 +1180,7 @@ void EchoJayEditor::showCompareView()
 {
     compareVisible = true;
     compareBtn.setButtonText("Back");
-    compareBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
+    compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     aiCompareBtn.setVisible(true);
     compareSlotABox.setVisible(true); compareSlotBBox.setVisible(true);
     refStatusLabel.setVisible(true);
@@ -1165,8 +1210,9 @@ void EchoJayEditor::hideCompareView()
 {
     compareVisible = false;
     compareBtn.setButtonText("Compare");
-    compareBtn.setColour(juce::TextButton::buttonColourId, C::purple);
+    compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     aiCompareBtn.setVisible(false);
+    // Don't stop AB playback — let ref keep playing through plugin when switching views
     compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false); playSlotABtn.setVisible(false); playSlotBBtn.setVisible(false);
     refStatusLabel.setVisible(false);
     presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false); for (auto& b : refRemoveBtns) b.setVisible(false); compareClickCatcher.setVisible(false);
@@ -1260,7 +1306,7 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
     
     if (refs.empty())
     {
-        g.setColour(C::purple);
+        g.setColour(juce::Colour(0xffFF6B9D));
         g.fillRoundedRectangle((float)aX + 10, (float)cy + (float)(dropH - 18) / 2, 64.0f, 18.0f, 4.0f);
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
@@ -1286,13 +1332,13 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
             int tagY2 = cy + tagPad + row * (tagH + tagRowGap);
             
             // Tag pill
-            g.setColour(C::purple.withAlpha(0.2f));
+            g.setColour(juce::Colour(0xffFF6B9D).withAlpha(0.15f));
             g.fillRoundedRectangle((float)tagX, (float)tagY2, (float)tagW, (float)tagH, 6.0f);
-            g.setColour(C::purple.withAlpha(0.5f));
+            g.setColour(juce::Colour(0xffFF6B9D).withAlpha(0.4f));
             g.drawRoundedRectangle((float)tagX + 0.5f, (float)tagY2 + 0.5f, (float)tagW - 1.0f, (float)tagH - 1.0f, 6.0f, 1.0f);
             
             // Name (truncated)
-            g.setColour(C::purple);
+            g.setColour(juce::Colour(0xffFF8FAB));
             g.setFont(juce::Font(juce::FontOptions(8.0f)));
             g.drawText(refs[(size_t)i].name, tagX + 4, tagY2, tagW - 18, tagH, juce::Justification::centredLeft);
             
@@ -1338,12 +1384,15 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
             int playR = 18;
             int playX2 = wx + 4;
             int playY2 = wy + (wfBarH - playR) / 2;
-            bool playing = (currentlyPlayingChatWav == wavPath && wavPath.isNotEmpty());
-            g.setColour(playing ? C::red.withAlpha(0.6f) : C::purple.withAlpha(0.5f));
+            bool playing = (currentlyPlayingChatWav == wavPath && wavPath.isNotEmpty())
+                        || (processorRef.abPlayingRef.load() && processorRef.abFilePath == wavPath);
+            g.setColour(playing ? (isRef ? juce::Colour(0xffFF6B9D).withAlpha(0.5f) : juce::Colour(0xff06b6d4).withAlpha(0.4f)) : (isRef ? juce::Colour(0xffFF6B9D).withAlpha(0.3f) : juce::Colour(0xff06b6d4).withAlpha(0.15f)));
             g.fillEllipse((float)playX2, (float)playY2, (float)playR, (float)playR);
             g.setColour(juce::Colours::white);
             if (playing) {
-                g.fillRect((float)playX2 + 6.0f, (float)playY2 + 6.0f, 6.0f, 6.0f);
+                // Pause icon: two vertical bars
+                g.fillRect((float)playX2 + 5.0f, (float)playY2 + 5.0f, 3.0f, 8.0f);
+                g.fillRect((float)playX2 + 10.0f, (float)playY2 + 5.0f, 3.0f, 8.0f);
             } else {
                 juce::Path tri;
                 tri.addTriangle((float)playX2 + 7, (float)playY2 + 4, (float)playX2 + 7, (float)playY2 + 14, (float)playX2 + 14, (float)playY2 + 9);
@@ -1359,22 +1408,51 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
                 float pxPerPt = (float)wfBarW / (float)numPts;
                 float centreY2 = (float)wy + (float)wfBarH * 0.5f;
                 float halfH2 = (float)wfBarH * 0.38f;
+                
+                // Calculate play fraction for colouring
+                float cardPlayFrac = -1.0f;
+                if (playing) {
+                    if (processorRef.abPlayingRef.load() && processorRef.abSampleCount > 0)
+                        cardPlayFrac = (float)processorRef.abPlaybackPos / (float)processorRef.abSampleCount;
+                    else if (chatPlaybackDuration > 0 && chatPlaybackStartTime > 0) {
+                        double el2 = (juce::Time::getMillisecondCounterHiRes() - chatPlaybackStartTime) / 1000.0 + chatPlaybackOffset;
+                        cardPlayFrac = (float)(el2 / chatPlaybackDuration);
+                    }
+                    cardPlayFrac = juce::jlimit(0.0f, 1.0f, cardPlayFrac);
+                }
+                
                 for (int i2 = 0; i2 < numPts; ++i2)
                 {
                     float px = (float)wfStartX + (float)i2 * pxPerPt;
                     float h = waveform[(size_t)i2] * halfH2;
                     float frac = (float)i2 / (float)numPts;
-                    g.setColour(C::blue.interpolatedWith(C::purple, frac).withAlpha(0.6f));
+                    
+                    if (cardPlayFrac >= 0 && frac <= cardPlayFrac) {
+                        // Played portion
+                        if (isRef) {
+                            juce::Colour playedCol = juce::Colour(0xffFF6B9D).interpolatedWith(
+                                juce::Colour(0xffFF8FAB), frac / juce::jmax(0.01f, cardPlayFrac));
+                            g.setColour(playedCol.withAlpha(0.85f));
+                        } else {
+                            juce::Colour playedCol = juce::Colour(0xff06b6d4).interpolatedWith(
+                                juce::Colour(0xff22d3ee), frac / juce::jmax(0.01f, cardPlayFrac));
+                            g.setColour(playedCol.withAlpha(0.85f));
+                        }
+                    } else {
+                        // Unplayed or not playing
+                        if (isRef)
+                            g.setColour(juce::Colour(0xffFF6B9D).withAlpha(playing ? 0.2f : 0.5f));
+                        else
+                            g.setColour(C::blue.withAlpha(playing ? 0.2f : 0.5f));
+                    }
                     g.fillRect(px, centreY2 - h, std::max(1.0f, pxPerPt - 0.3f), h * 2.0f);
                 }
                 
                 // Playback cursor
-                if (playing && chatPlaybackDuration > 0)
+                if (playing && cardPlayFrac >= 0)
                 {
-                    double elapsed = (juce::Time::getMillisecondCounterHiRes() - chatPlaybackStartTime) / 1000.0 + chatPlaybackOffset;
-                    float playFrac = juce::jlimit(0.0f, 1.0f, (float)(elapsed / chatPlaybackDuration));
-                    float cursorX = (float)wfStartX + playFrac * (float)wfBarW;
-                    g.setColour(juce::Colours::white);
+                    float cursorX = (float)wfStartX + cardPlayFrac * (float)wfBarW;
+                    g.setColour((isRef ? juce::Colour(0xffFFB3C6) : juce::Colour(0xff67e8f9)).withAlpha(0.9f));
                     g.drawVerticalLine((int)cursorX, (float)wy + 2, (float)(wy + wfBarH - 2));
                 }
             }
@@ -1444,7 +1522,7 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
     {
         g.setColour(C::bg2);
         g.fillRoundedRectangle(card.toFloat(), 8.0f);
-        g.setColour(isRef ? C::purple.withAlpha(0.4f) : C::border);
+        g.setColour(isRef ? juce::Colour(0xffFF6B9D).withAlpha(0.35f) : C::border);
         g.drawRoundedRectangle(card.toFloat(), 8.0f, 1.0f);
         
         int cx = card.getX() + 8, cy = card.getY() + 6, cw = card.getWidth() - 16;
@@ -1452,7 +1530,7 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
         // Reference badge
         if (isRef)
         {
-            g.setColour(C::purple);
+            g.setColour(juce::Colour(0xffFF6B9D));
             g.fillRoundedRectangle((float)cx, (float)cy, 58.0f, 14.0f, 3.0f);
             g.setColour(juce::Colours::white);
             g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
@@ -1465,11 +1543,13 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
         g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
         g.drawText(title, cx, cy, cw, 13, juce::Justification::centredLeft);
         
-        // Subtitle: genre + duration
+        // Subtitle: duration (+ genre for passes only)
         int mins = (int)dur / 60, secs = (int)dur % 60;
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(8.0f)));
-        juce::String sub = processorRef.getGenre() + " - " + juce::String::formatted("%d:%02d", mins, secs);
+        juce::String sub = isRef 
+            ? juce::String::formatted("%d:%02d", mins, secs)
+            : processorRef.getGenre() + " - " + juce::String::formatted("%d:%02d", mins, secs);
         g.drawText(sub, cx, cy + 12, cw, 10, juce::Justification::centredLeft);
         cy += 24;
         
@@ -1517,14 +1597,14 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
                 if (i == 0) eqPath.startNewSubPath(xp, yp);
                 else eqPath.lineTo(xp, yp);
             }
-            g.setColour(isRef ? C::purple : C::blue);
+            g.setColour(isRef ? juce::Colour(0xffFF6B9D) : C::blue);
             g.strokePath(eqPath, juce::PathStrokeType(1.5f));
             
             juce::Path fillPath = eqPath;
             fillPath.lineTo((float)(cx + cw), (float)(cy + eqH));
             fillPath.lineTo((float)cx, (float)(cy + eqH));
             fillPath.closeSubPath();
-            g.setColour((isRef ? C::purple : C::blue).withAlpha(0.12f));
+            g.setColour((isRef ? juce::Colour(0xffFF6B9D) : C::blue).withAlpha(0.12f));
             g.fillPath(fillPath);
         }
     };
@@ -1763,7 +1843,8 @@ void EchoJayEditor::drawPanel(juce::Graphics& g, juce::Rectangle<int> area,
 
 void EchoJayEditor::drawHBar(juce::Graphics& g, int x, int y, int w, int h,
                               const juce::String& label, float valuedB, float minDb, float maxDb,
-                              juce::Colour startCol, juce::Colour endCol, const juce::String& unit)
+                              juce::Colour startCol, juce::Colour endCol, const juce::String& unit,
+                              float displayValue)
 {
     float n = juce::jlimit(0.0f, 1.0f, (valuedB - minDb) / (maxDb - minDb));
     int labelW = 44, valueW = 60, barX = x + labelW, barW = w - labelW - valueW - 8;
@@ -1790,10 +1871,11 @@ void EchoJayEditor::drawHBar(juce::Graphics& g, int x, int y, int w, int h,
     g.setColour(C::blue.withAlpha(0.3f));
     g.fillRect((float)(barX + barW - 2), (float)y + 2, 2.0f, (float)h - 4);
 
-    // Value
+    // Value — use displayValue if provided (for showing held max while bar decays)
+    float showVal = (displayValue > -99.0f) ? displayValue : valuedB;
     g.setColour(C::text);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-    juce::String valStr = valuedB > -99 ? juce::String(valuedB, 1) : "N/A";
+    juce::String valStr = showVal > -99 ? juce::String(showVal, 1) : "N/A";
     g.drawText(valStr + " " + unit, barX + barW + 4, y, valueW, h, juce::Justification::centredLeft);
 }
 
@@ -1850,10 +1932,13 @@ void EchoJayEditor::paintLevelsPanel(juce::Graphics& g, juce::Rectangle<int> are
     drawHBar(g, x, y, w, barH, "PEAK R", md.peakR, -60, 0, C::amber, C::amber); y += barH + gap + 2;
 
     float tpL = md.truePeakL, tpR = md.truePeakR;
-    drawHBar(g, x, y, w, barH, "TP L", tpL, -60, 0,
-             tpL > -1 ? C::red : C::amber, tpL > -1 ? C::red : C::amber); y += barH + gap;
-    drawHBar(g, x, y, w, barH, "TP R", tpR, -60, 0,
-             tpR > -1 ? C::red : C::amber, tpR > -1 ? C::red : C::amber); y += barH + gap + 11;
+    float tpBarL = md.truePeakBarL, tpBarR = md.truePeakBarR;
+    drawHBar(g, x, y, w, barH, "TP L", tpBarL, -60, 0,
+             tpL > -1 ? C::red : C::amber, tpL > -1 ? C::red : C::amber,
+             "dB", tpL); y += barH + gap;
+    drawHBar(g, x, y, w, barH, "TP R", tpBarR, -60, 0,
+             tpR > -1 ? C::red : C::amber, tpR > -1 ? C::red : C::amber,
+             "dB", tpR); y += barH + gap + 11;
 
     // Crest + DC offset boxes at bottom — fit within panel padding
     int boxGap = 6;
@@ -2013,36 +2098,173 @@ void EchoJayEditor::paintSpectrumPanel(juce::Graphics& g, juce::Rectangle<int> a
     int w = area.getWidth() - 28, h = area.getHeight() - 36;
     constexpr int N = MeterData::numSpecBins; // 64
     
-    // Bar width with 1px gap — continuous look like Logic's analyser
-    int barGap = 1;
-    int barW = std::max(2, (w - (N - 1) * barGap) / N);
-    int totalW = N * barW + (N - 1) * barGap;
-    int xOff = x + (w - totalW) / 2;
-
     int barMaxH = h - 14;
     
-    // Auto-range: find peak, set 66dB display range
+    // Update peak hold — rise instantly, fall slowly
+    if (!spectrumPeakHoldInit) {
+        spectrumPeakHold = md.spectrum;
+        spectrumPeakHoldInit = true;
+    }
+    for (int i = 0; i < N; ++i) {
+        if (md.spectrum[(size_t)i] > spectrumPeakHold[(size_t)i])
+            spectrumPeakHold[(size_t)i] = md.spectrum[(size_t)i];
+        else
+            spectrumPeakHold[(size_t)i] -= 0.35f; // slow decay in dB per frame
+    }
+    
+    // Auto-range: find peak from live spectrum and peak hold only (held uses its own frozen range)
     float peakDb = -200.0f;
-    for (int i = 0; i < N; ++i)
+    for (int i = 0; i < N; ++i) {
         if (md.spectrum[(size_t)i] > peakDb) peakDb = md.spectrum[(size_t)i];
+        if (spectrumPeakHold[(size_t)i] > peakDb) peakDb = spectrumPeakHold[(size_t)i];
+    }
     float dbMax = std::max(-20.0f, peakDb + 3.0f);
     float dbMin = dbMax - 66.0f;
-
-    for (int i = 0; i < N; ++i) {
-        float db = md.spectrum[(size_t)i];
-        float n = juce::jlimit(0.0f, 1.0f, (db - dbMin) / (dbMax - dbMin));
-        int bx = xOff + i * (barW + barGap);
-        int bH = std::max(0, (int)(n * barMaxH));
-        int by = y + barMaxH - bH;
-
-        if (bH > 0) {
-            // Gradient: blue at bottom → purple at top
-            juce::ColourGradient grad(C::blue.withAlpha(0.85f), (float)bx, (float)(y + barMaxH),
-                                       C::purple, (float)bx, (float)y, false);
-            g.setGradientFill(grad);
-            g.fillRect((float)bx, (float)by, (float)barW, (float)bH);
+    
+    double logMin = std::log2(20.0), logMax = std::log2(20000.0);
+    
+    // Helper: get interpolated dB value at fractional bin position (cubic)
+    auto getInterpolatedDb = [&](const std::array<float, 64>& spectrum, float fBin) -> float {
+        int i0 = juce::jlimit(0, N - 1, (int)fBin);
+        int i1 = juce::jlimit(0, N - 1, i0 + 1);
+        int im1 = juce::jlimit(0, N - 1, i0 - 1);
+        int i2 = juce::jlimit(0, N - 1, i0 + 2);
+        float t = fBin - (float)i0;
+        // Catmull-Rom interpolation
+        float a = spectrum[(size_t)im1], b = spectrum[(size_t)i0];
+        float c = spectrum[(size_t)i1], d = spectrum[(size_t)i2];
+        float v = b + 0.5f * t * (c - a + t * (2.0f*a - 5.0f*b + 4.0f*c - d + t * (3.0f*(b-c) + d - a)));
+        return v;
+    };
+    
+    // Number of interpolated points for smooth curve
+    int numInterp = juce::jmin(w, 256);
+    
+    // Helper lambda to build a smooth spectrum path (filled to bottom)
+    auto buildSpectrumPath = [&](const std::array<float, 64>& spectrum) -> juce::Path {
+        juce::Path path;
+        path.startNewSubPath((float)x, (float)(y + barMaxH));
+        
+        for (int i = 0; i < numInterp; ++i) {
+            float fBin = (float)i / (float)(numInterp - 1) * (float)(N - 1);
+            float db = juce::jlimit(dbMin, dbMax, getInterpolatedDb(spectrum, fBin));
+            float n2 = (db - dbMin) / (dbMax - dbMin);
+            double binFreq = 20.0 * std::pow(2.0, (double)fBin / (double)N * (logMax - logMin));
+            double normPos = (std::log2(binFreq) - logMin) / (logMax - logMin);
+            float px = (float)x + (float)(normPos * w);
+            float py = (float)(y + barMaxH) - n2 * (float)barMaxH;
+            path.lineTo(px, py);
         }
+        
+        path.lineTo((float)(x + w), (float)(y + barMaxH));
+        path.closeSubPath();
+        return path;
+    };
+    
+    // Helper to build just the top line (no fill)
+    auto buildSpectrumLine = [&](const std::array<float, 64>& spectrum) -> juce::Path {
+        juce::Path path;
+        bool started = false;
+        
+        for (int i = 0; i < numInterp; ++i) {
+            float fBin = (float)i / (float)(numInterp - 1) * (float)(N - 1);
+            float db = juce::jlimit(dbMin, dbMax, getInterpolatedDb(spectrum, fBin));
+            float n2 = (db - dbMin) / (dbMax - dbMin);
+            double binFreq = 20.0 * std::pow(2.0, (double)fBin / (double)N * (logMax - logMin));
+            double normPos = (std::log2(binFreq) - logMin) / (logMax - logMin);
+            float px = (float)x + (float)(normPos * w);
+            float py = (float)(y + barMaxH) - n2 * (float)barMaxH;
+            if (!started) { path.startNewSubPath(px, py); started = true; }
+            else path.lineTo(px, py);
+        }
+        return path;
+    };
+    
+    g.saveState();
+    g.reduceClipRegion(x, y, w, h);
+    
+    // Draw held spectrum first (behind) if valid — fades out smoothly
+    if (heldSpectrumValid && heldSpectrumAlpha > 0.01f) {
+        // Build held path using its own frozen dB range so it doesn't duck
+        juce::Path heldPath;
+        heldPath.startNewSubPath((float)x, (float)(y + barMaxH));
+        for (int i = 0; i < numInterp; ++i) {
+            float fBin = (float)i / (float)(numInterp - 1) * (float)(N - 1);
+            float db = juce::jlimit(heldDbMin, heldDbMax, getInterpolatedDb(heldSpectrum, fBin));
+            float n2 = (db - heldDbMin) / (heldDbMax - heldDbMin);
+            double binFreq = 20.0 * std::pow(2.0, (double)fBin / (double)N * (logMax - logMin));
+            double normPos = (std::log2(binFreq) - logMin) / (logMax - logMin);
+            float px = (float)x + (float)(normPos * w);
+            float py = (float)(y + barMaxH) - n2 * (float)barMaxH;
+            heldPath.lineTo(px, py);
+        }
+        heldPath.lineTo((float)(x + w), (float)(y + barMaxH));
+        heldPath.closeSubPath();
+        
+        bool heldIsRef = !processorRef.abPlayingRef.load();
+        float ha = heldSpectrumAlpha;
+        
+        if (heldIsRef) {
+            juce::ColourGradient heldGrad(
+                juce::Colour(0xffFF6B9D).withAlpha(0.2f * ha), (float)x, (float)(y + barMaxH),
+                juce::Colour(0xffFF8FAB).withAlpha(0.25f * ha), (float)x, (float)y, false);
+            g.setGradientFill(heldGrad);
+        } else {
+            juce::ColourGradient heldGrad(
+                C::blue.withAlpha(0.25f * ha), (float)x, (float)(y + barMaxH),
+                juce::Colour(0xff60A5FA).withAlpha(0.3f * ha), (float)x, (float)y, false);
+            g.setGradientFill(heldGrad);
+        }
+        g.fillPath(heldPath);
+        
+        // Held spectrum outline
+        g.setColour(heldIsRef ? juce::Colour(0xffFF6B9D).withAlpha(0.35f * ha) : C::blue.withAlpha(0.4f * ha));
+        g.strokePath(heldPath, juce::PathStrokeType(1.0f));
     }
+    
+    // Draw active spectrum on top
+    auto activePath = buildSpectrumPath(md.spectrum);
+    bool isRef = processorRef.abPlayingRef.load();
+    
+    // Peak hold: translucent fill between current and peak
+    auto peakPath = buildSpectrumPath(spectrumPeakHold);
+    if (isRef && processorRef.abActive.load()) {
+        g.setColour(juce::Colour(0xffFF6B9D).withAlpha(0.1f));
+    } else {
+        g.setColour(C::blue.withAlpha(0.1f));
+    }
+    g.fillPath(peakPath);
+    
+    // Active spectrum fill
+    if (isRef && processorRef.abActive.load()) {
+        juce::ColourGradient activeGrad(
+            juce::Colour(0xffFF6B9D).withAlpha(0.4f), (float)x, (float)(y + barMaxH),
+            juce::Colour(0xffFF8FAB).withAlpha(0.55f), (float)x, (float)y, false);
+        g.setGradientFill(activeGrad);
+    } else {
+        juce::ColourGradient activeGrad(
+            C::blue.withAlpha(0.5f), (float)x, (float)(y + barMaxH),
+            C::purple.withAlpha(0.65f), (float)x, (float)y, false);
+        g.setGradientFill(activeGrad);
+    }
+    g.fillPath(activePath);
+    
+    // Active spectrum outline
+    g.setColour(isRef && processorRef.abActive.load() 
+        ? juce::Colour(0xffFF8FAB).withAlpha(0.6f) 
+        : juce::Colours::white.withAlpha(0.35f));
+    g.strokePath(activePath, juce::PathStrokeType(1.2f));
+    
+    // Peak hold line — thin bright line at the peak
+    auto peakLine = buildSpectrumLine(spectrumPeakHold);
+    if (isRef && processorRef.abActive.load()) {
+        g.setColour(juce::Colour(0xffFF8FAB).withAlpha(0.35f));
+    } else {
+        g.setColour(juce::Colours::white.withAlpha(0.25f));
+    }
+    g.strokePath(peakLine, juce::PathStrokeType(1.0f));
+    
+    g.restoreState();
 
     // Frequency axis labels
     g.setColour(C::text3);
@@ -2050,12 +2272,19 @@ void EchoJayEditor::paintSpectrumPanel(juce::Graphics& g, juce::Rectangle<int> a
     struct FreqLabel { const char* text; double freq; };
     FreqLabel labels[] = { {"50",50}, {"100",100}, {"250",250}, {"500",500},
                            {"1k",1000}, {"2k",2000}, {"5k",5000}, {"10k",10000}, {"20k",20000} };
-    double logMin = std::log2(20.0), logMax = std::log2(20000.0);
+    double logMin2 = std::log2(20.0), logMax2 = std::log2(20000.0);
     for (auto& fl : labels) {
         double logF = std::log2(fl.freq);
-        double normPos = (logF - logMin) / (logMax - logMin);
-        int lx = xOff + (int)(normPos * totalW);
+        double normPos = (logF - logMin2) / (logMax2 - logMin2);
+        int lx = x + (int)(normPos * w);
         g.drawText(fl.text, lx - 12, y + barMaxH + 1, 24, 12, juce::Justification::centred);
+    }
+    
+    // A/B indicator
+    if (processorRef.abActive.load() && heldSpectrumValid) {
+        g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
+        g.setColour(isRef ? juce::Colour(0xffFF6B9D) : C::blue);
+        g.drawText(isRef ? "REF" : "DAW", x + w - 30, y - 14, 30, 12, juce::Justification::centredRight);
     }
 }
 
@@ -2113,11 +2342,12 @@ void EchoJayEditor::paintWaveformPanel(juce::Graphics& g, juce::Rectangle<int> a
 
     int numPts = (int)waveform.size();
 
-    // Draw waveform — centre line
+    // Draw waveform as smooth envelope path
     float centreY = (float)y + (float)h * 0.5f;
     float halfH = (float)h * 0.45f;
+    float pxPerPt = (float)w / (float)numPts;
 
-    // Clip to waveform area so loud peaks don't overflow the panel
+    // Clip to waveform area
     g.saveState();
     g.reduceClipRegion(x, y, w, h);
 
@@ -2125,39 +2355,60 @@ void EchoJayEditor::paintWaveformPanel(juce::Graphics& g, juce::Rectangle<int> a
     g.setColour(C::border2);
     g.drawHorizontalLine((int)centreY, (float)x, (float)(x + w));
 
-    // Draw waveform bars
-    float pxPerPt = (float)w / (float)numPts;
-
     // Playback position indicator
     float playFrac = -1.0f;
     if (isPlayingBack && recorder.getRecordedSampleCount() > 0)
         playFrac = (float)playbackPosition / (float)recorder.getRecordedSampleCount();
 
+    // Build top and bottom envelope paths
+    juce::Path topPath, bottomPath;
+    topPath.startNewSubPath((float)x, centreY);
+    bottomPath.startNewSubPath((float)x, centreY);
+    
     for (int i = 0; i < numPts; ++i)
     {
-        float px = (float)x + (float)i * pxPerPt;
-        float barW = std::max(1.0f, pxPerPt - 0.5f);
-
-        float minV = waveform[(size_t)i].minVal;
+        float px = (float)x + ((float)i + 0.5f) * pxPerPt;
         float maxV = waveform[(size_t)i].maxVal;
+        float minV = waveform[(size_t)i].minVal;
+        topPath.lineTo(px, centreY - maxV * halfH);
+        bottomPath.lineTo(px, centreY - minV * halfH);
+    }
+    
+    topPath.lineTo((float)(x + w), centreY);
+    bottomPath.lineTo((float)(x + w), centreY);
 
-        float top = centreY - maxV * halfH;
-        float bot = centreY - minV * halfH;
-        float barH = std::max(1.0f, bot - top);
-
-        // Colour: blue->purple gradient, dim if past playback cursor
-        float frac = (float)i / (float)numPts;
-        juce::Colour barCol = C::blue.interpolatedWith(C::purple, frac);
-
-        if (playFrac >= 0.0f && frac > playFrac)
-            barCol = barCol.withAlpha(0.25f);
-        else if (waveformFrozen)
-            barCol = barCol.withAlpha(0.7f);
-        else
-            barCol = barCol.withAlpha(0.85f);
-
-        g.setColour(barCol);
-        g.fillRect(px, top, barW, barH);
+    // Draw played portion with gradient
+    if (playFrac >= 0.0f)
+    {
+        float cursorPx = (float)x + playFrac * (float)w;
+        
+        // Played portion
+        g.saveState();
+        g.reduceClipRegion(x, y, (int)(cursorPx - x), h);
+        juce::ColourGradient playedGrad(C::blue.withAlpha(0.85f), (float)x, centreY,
+                                         C::purple.withAlpha(0.85f), cursorPx, centreY, false);
+        g.setGradientFill(playedGrad);
+        g.fillPath(topPath);
+        g.fillPath(bottomPath);
+        g.restoreState();
+        
+        // Unplayed portion
+        g.saveState();
+        g.reduceClipRegion((int)cursorPx, y, x + w - (int)cursorPx, h);
+        g.setColour(C::blue.interpolatedWith(C::purple, 0.5f).withAlpha(0.2f));
+        g.fillPath(topPath);
+        g.fillPath(bottomPath);
+        g.restoreState();
+    }
+    else
+    {
+        // No playback — full gradient fill
+        float alpha = waveformFrozen ? 0.7f : 0.85f;
+        juce::ColourGradient grad(C::blue.withAlpha(alpha), (float)x, centreY,
+                                   C::purple.withAlpha(alpha), (float)(x + w), centreY, false);
+        g.setGradientFill(grad);
+        g.fillPath(topPath);
+        g.fillPath(bottomPath);
     }
 
     // Playback cursor line
@@ -2250,6 +2501,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     auto bounds = getLocalBounds();
     g.fillAll(C::bg);
 
+
     // === Login Screen ===
     if (currentScreen == Screen::Login) {
         int cx = bounds.getCentreX(), cy = bounds.getCentreY() - 40;
@@ -2292,6 +2544,11 @@ void EchoJayEditor::paint(juce::Graphics& g)
         chatW = bounds.getWidth();
         mW = 0;
     }
+    else if (visualOnlyMode)
+    {
+        chatW = 0;
+        mW = bounds.getWidth();
+    }
     else
     {
         chatW = juce::jlimit(280, 420, bounds.getWidth() * 35 / 100);
@@ -2303,18 +2560,18 @@ void EchoJayEditor::paint(juce::Graphics& g)
     g.fillRect(0, 0, bounds.getWidth(), topH);
     g.setColour(C::border);
     g.drawHorizontalLine(topH - 1, 0.0f, (float)bounds.getWidth());
-    EchoJayLookAndFeel::drawLogo(g, juce::Rectangle<float>(12, 0, 70, (float)topH), 18.0f);
+    EchoJayLookAndFeel::drawLogo(g, juce::Rectangle<float>(12, 0, 110, (float)topH), 18.0f);
     
     // Tier badge next to logo
     if (api.isLoggedIn())
     {
         auto info = api.getUserInfo();
         if (info.tierLevel >= 1)
-            EchoJayLookAndFeel::drawTierBadge(g, 82, (topH - 16) / 2, info.tierLevel);
+            EchoJayLookAndFeel::drawTierBadge(g, 118, (topH - 16) / 2, info.tierLevel);
         else
         {
             // FREE badge — subtle grey pill
-            auto freeBounds = juce::Rectangle<float>(82.0f, (float)(topH - 16) / 2, 36.0f, 16.0f);
+            auto freeBounds = juce::Rectangle<float>(118.0f, (float)(topH - 16) / 2, 36.0f, 16.0f);
             g.setColour(C::bg4);
             g.fillRoundedRectangle(freeBounds, 4.0f);
             g.setColour(C::text3);
@@ -2324,7 +2581,24 @@ void EchoJayEditor::paint(juce::Graphics& g)
     }
     EchoJayLookAndFeel::drawGrainOverlay(g, juce::Rectangle<int>(0, 0, bounds.getWidth(), topH), 0.015f);
 
+    // Teal separators between header buttons
+    if (!compactMode && !visualOnlyMode && currentScreen == Screen::Main)
+    {
+        g.setColour(juce::Colour(0xff06b6d4).withAlpha(0.2f));
+        auto drawSep = [&](int x) {
+            g.drawVerticalLine(x, 6.0f, (float)(topH - 6));
+        };
+        // Separators between: [channel|genre|Capture|Compare|Settings|Plugins]
+        auto cmpBounds = compareBtn.getBounds();
+        auto sBounds = settingsBtn.getBounds();
+        auto scBounds = scanBtn.getBounds();
+        if (cmpBounds.getX() > 0) drawSep(cmpBounds.getX() - 2);
+        if (sBounds.getX() > 0) drawSep(sBounds.getX() - 2);
+        if (scBounds.getX() > 0) drawSep(scBounds.getX() - 2);
+    }
+
     // Compact/expand toggle — top right of main top bar
+    if (!visualOnlyMode)
     {
         int iconX = bounds.getWidth() - 24;
         int iconY = 8;
@@ -2352,34 +2626,78 @@ void EchoJayEditor::paint(juce::Graphics& g)
         }
     }
 
-    if (!compactMode)
+    // Visual-only toggle icon — diamond/eye icon, second from right
+    if (!compactMode && !visualOnlyMode)
     {
-    // Vertical divider
-    g.setColour(C::border);
-    g.drawVerticalLine(mW, (float)topH, (float)bounds.getHeight());
+        int iconX2 = bounds.getWidth() - 48;
+        int iconY2 = 8;
+        int s = 16;
+        g.setColour(visualMode ? juce::Colour(0xff06b6d4) : C::text3);
+        // Diamond shape
+        g.drawLine((float)iconX2 + s/2, (float)iconY2 + 2,
+                   (float)iconX2 + s - 2, (float)iconY2 + s/2, 1.5f);
+        g.drawLine((float)iconX2 + s - 2, (float)iconY2 + s/2,
+                   (float)iconX2 + s/2, (float)iconY2 + s - 2, 1.5f);
+        g.drawLine((float)iconX2 + s/2, (float)iconY2 + s - 2,
+                   (float)iconX2 + 2, (float)iconY2 + s/2, 1.5f);
+        g.drawLine((float)iconX2 + 2, (float)iconY2 + s/2,
+                   (float)iconX2 + s/2, (float)iconY2 + 2, 1.5f);
+        // Center dot
+        g.fillEllipse((float)iconX2 + s/2 - 2, (float)iconY2 + s/2 - 2, 4.0f, 4.0f);
+    }
+
+    // Visual-only mode — expand/exit icon in top right
+    if (visualOnlyMode)
+    {
+        int iconX = bounds.getWidth() - 24;
+        int iconY = 8;
+        int s = 16;
+        g.setColour(C::text3);
+        g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+        g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+        g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + 2, (float)iconY + s - 6, 1.5f);
+        g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + 6, (float)iconY + s - 2, 1.5f);
+        g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s - 2, (float)iconY + 6, 1.5f);
+        g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s - 6, (float)iconY + 2, 1.5f);
+    }
+
+    if (!compactMode && (!visualOnlyMode || (visualOnlyMode && !visualMode)))
+    {
+    // Vertical divider (not in visual-only mode)
+    if (!visualOnlyMode) {
+        g.setColour(C::border);
+        g.drawVerticalLine(mW, (float)topH, (float)bounds.getHeight());
+    }
 
     // === Meter Panel Content ===
     int pad = 10;
     int contentY = topH + 6;
     int contentW = mW - pad * 2;
+    int abBarOffset = abBarShowing ? kAbBarH : 0; // shrink content when AB bar showing
 
     if (currentView == View::Compare) {
-        auto cArea = juce::Rectangle<int>(pad, topH + 4, contentW, bounds.getHeight() - topH - 16);
+        auto cArea = juce::Rectangle<int>(pad, topH + 4, contentW, bounds.getHeight() - topH - 16 - abBarOffset);
         paintCompareView(g, cArea);
     }
     else if (currentView == View::Settings) {
-        auto sArea = juce::Rectangle<int>(pad, topH + 12, contentW, bounds.getHeight() - topH - 24);
+        auto sArea = juce::Rectangle<int>(pad, topH + 12, contentW, bounds.getHeight() - topH - 24 - abBarOffset);
         paintSettingsView(g, sArea);
     }
     else if (channelPromptVisible || genrePromptVisible)
     {
         // Don't paint meters behind the prompt overlay
     }
+    else if (visualMode)
+    {
+        // Visual mode — particle visual is a child component (OpenGL), just paint the number strip
+        int stripH = 28;
+        auto stripArea = juce::Rectangle<int>(0, bounds.getHeight() - stripH - abBarOffset, mW, stripH);
+        auto md2 = processorRef.getMeterEngine().getMeterData();
+        particleVisual->paintNumberStrip(g, stripArea, md2);
+    }
     else
     {
-        // Decide which meter data to show:
-        // - While capturing or idle: live meters
-        // - When complete (frozen): show the capture snapshot data
+        // Standard meter view
         auto state = processorRef.getCaptureState();
         auto md = (state == CaptureState::Complete && waveformFrozen)
                       ? processorRef.getLatestSnapshot().averagedData
@@ -2387,7 +2705,6 @@ void EchoJayEditor::paint(juce::Graphics& g)
         int secGap = 8;
         int y = contentY;
 
-        // WAVEFORM panel (above meters — shown when recording or has data)
         auto& recorder = processorRef.getWaveformRecorder();
         bool hasWaveform = recorder.getRecordedSampleCount() > 0 || !frozenWaveform.empty();
         if (hasWaveform)
@@ -2397,13 +2714,11 @@ void EchoJayEditor::paint(juce::Graphics& g)
             y += waveH + secGap;
         }
 
-        // LOUDNESS panel
         int loudH = 98;
         loudnessPanelBounds = { pad, y, contentW, loudH };
         paintLoudnessPanel(g, loudnessPanelBounds, md);
         y += loudH + secGap;
 
-        // LEVELS + STEREO IMAGE side by side
         int levelsW = (contentW - secGap) * 50 / 100;
         int stereoW = contentW - levelsW - secGap;
         int remainH = bounds.getHeight() - y - 160;
@@ -2413,15 +2728,318 @@ void EchoJayEditor::paint(juce::Graphics& g)
         paintStereoPanel(g, { pad + levelsW + secGap, y, stereoW, levStereoH }, md);
         y += levStereoH + secGap;
 
-        // SPECTRUM panel — extends to bottom
-        int specH = std::max(80, bounds.getHeight() - y - pad);
+        int specH = std::max(80, bounds.getHeight() - y - pad - 20 - abBarOffset);
         paintSpectrumPanel(g, { pad, y, contentW, specH }, md);
     }
-    } // end if (!compactMode)
+    
+    // Mode toggle strip at bottom of meter panel (Meters / Visual) — NOT in visual-only mode
+    if (currentView == View::Meters && !channelPromptVisible && !genrePromptVisible && !visualOnlyMode)
+    {
+        int stripH = 30;
+        int stripY = bounds.getHeight() - stripH - abBarOffset;
+        if (visualMode) stripY -= 28; // above number strip
+        
+        g.setColour(C::bg2);
+        g.fillRect(0, stripY, mW, stripH);
+        g.setColour(C::border);
+        g.drawHorizontalLine(stripY, 0.0f, (float)mW);
+        
+        if (visualMode) {
+            // In visual mode: METERS button on left + preset/theme arrows on right
+            int toggleBtnW = 80;
+            int toggleBtnX = 4;
+            {
+                auto mp = getMouseXYRelative();
+                bool hov = mp.x >= toggleBtnX && mp.x < toggleBtnX + toggleBtnW && mp.y >= stripY && mp.y < stripY + stripH;
+                g.setColour(hov ? juce::Colour(0xff22d3ee) : juce::Colour(0xff0891b2));
+            }
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.drawText("METERS", toggleBtnX, stripY, toggleBtnW, stripH, juce::Justification::centred);
+            g.fillRect(toggleBtnX + toggleBtnW / 4, stripY + stripH - 2, toggleBtnW / 2, 2);
+            
+            int arrowsX = toggleBtnX + toggleBtnW + 4;
+            int arrowsW = mW - arrowsX - 4;
+            int midX = arrowsX + arrowsW / 2;
+            
+            // Preset/theme arrows
+            g.setColour(C::text2);
+            g.drawText("<", arrowsX + 2, stripY, 12, stripH, juce::Justification::centred);
+            g.setColour(C::text);
+            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+            auto presetName = juce::String(ParticleVisual::getPresetName(particleVisual->currentPreset));
+            g.drawText(presetName, arrowsX + 14, stripY, midX - arrowsX - 28, stripH, juce::Justification::centred);
+            g.setColour(C::text2);
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.drawText(">", midX - 14, stripY, 12, stripH, juce::Justification::centred);
+            
+            g.setColour(C::text3);
+            g.fillEllipse((float)midX - 1.5f, (float)stripY + stripH / 2.0f - 1.5f, 3.0f, 3.0f);
+            
+            g.setColour(C::text2);
+            g.drawText("<", midX + 4, stripY, 12, stripH, juce::Justification::centred);
+            g.setColour(juce::Colour(0xff06b6d4));
+            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+            auto themeName = juce::String(ParticleVisual::getThemeName(particleVisual->currentTheme));
+            g.drawText(themeName, midX + 16, stripY, arrowsX + arrowsW - midX - 30, stripH, juce::Justification::centred);
+            g.setColour(C::text2);
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.drawText(">", arrowsX + arrowsW - 14, stripY, 12, stripH, juce::Justification::centred);
+        } else {
+            // In meters mode: single VISUALISATION label (click to switch)
+            {
+                auto mp = getMouseXYRelative();
+                bool hov = mp.x >= 0 && mp.x < mW && mp.y >= stripY && mp.y < stripY + stripH;
+                g.setColour(hov ? juce::Colour(0xff22d3ee) : juce::Colour(0xff0891b2));
+            }
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.drawText("VISUALISATION", 0, stripY, mW, stripH, juce::Justification::centred);
+            int ulW = 80;
+            g.fillRect((mW - ulW) / 2, stripY + stripH - 2, ulW, 2);
+        }
+    }
+    
+    } // end if (!compactMode && !visualOnlyMode)
+    
+    // A/B transport bar at very bottom — shows on ALL views when a ref is loaded
+    if (processorRef.abActive.load() && !compactMode && !visualOnlyMode)
+    {
+        int abBarH = 32;
+        int abBarY = bounds.getHeight() - abBarH;
+        bool isRef = processorRef.abPlayingRef.load();
+        int fullW = bounds.getWidth();
+        
+        // Background
+        g.setColour(juce::Colour(0xff080A12));
+        g.fillRect(0, abBarY, fullW, abBarH);
+        g.setColour(juce::Colour(0xff1A1D30));
+        g.drawHorizontalLine(abBarY, 0.0f, (float)fullW);
+        
+        // Play/pause button - centred icon
+        int btnX = 6;
+        int btnY2 = abBarY + (abBarH - 22) / 2;
+        int btnS = 22;
+        bool abIsRef = [&]() {
+            auto refs = processorRef.getReferenceAnalyser().getReferences();
+            for (auto& r : refs) if (r.path == processorRef.abFilePath) return true;
+            return false;
+        }();
+        juce::Colour abAccent = abIsRef ? juce::Colour(0xffFF6B9D) : juce::Colour(0xff06b6d4);
+        g.setColour(abAccent.withAlpha(0.12f));
+        g.fillRoundedRectangle((float)btnX, (float)btnY2, (float)btnS, (float)btnS, 5.0f);
+        g.setColour(abAccent.withAlpha(0.4f));
+        g.drawRoundedRectangle((float)btnX, (float)btnY2, (float)btnS, (float)btnS, 5.0f, 1.0f);
+        g.setColour(abIsRef ? juce::Colour(0xffFF8FAB) : juce::Colour(0xff22d3ee));
+        if (isRef) {
+            // Pause icon - centred
+            float cx = (float)btnX + (float)btnS * 0.5f;
+            float cy = (float)btnY2 + (float)btnS * 0.5f;
+            g.fillRect(cx - 4.0f, cy - 5.0f, 3.0f, 10.0f);
+            g.fillRect(cx + 1.0f, cy - 5.0f, 3.0f, 10.0f);
+        } else {
+            // Play icon - centred
+            float cx = (float)btnX + (float)btnS * 0.5f;
+            float cy = (float)btnY2 + (float)btnS * 0.5f;
+            juce::Path tri;
+            tri.addTriangle(cx - 3.0f, cy - 6.0f, cx - 3.0f, cy + 6.0f, cx + 5.0f, cy);
+            g.fillPath(tri);
+        }
+        
+        // Sync button — next to play button
+        bool syncOn = processorRef.abSyncToDAW.load();
+        int syncX = 33;
+        int syncW = 32;
+        int syncBtnY = abBarY + (abBarH - 16) / 2;
+        if (syncOn) {
+            g.setColour(juce::Colour(0xff06b6d4).withAlpha(0.15f));
+            g.fillRoundedRectangle((float)syncX, (float)syncBtnY, (float)syncW, 16.0f, 4.0f);
+            g.setColour(juce::Colour(0xff06b6d4).withAlpha(0.4f));
+            g.drawRoundedRectangle((float)syncX, (float)syncBtnY, (float)syncW, 16.0f, 4.0f, 1.0f);
+        }
+        g.setColour(syncOn ? juce::Colour(0xff22d3ee) : C::text3);
+        g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
+        g.drawText("SYNC", syncX, abBarY, syncW, abBarH, juce::Justification::centred);
+        
+        // Ref name
+        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        juce::String refName = juce::File(processorRef.abFilePath).getFileNameWithoutExtension();
+        if (refName.length() > 20) refName = refName.substring(0, 17) + "...";
+        g.setColour(abIsRef ? juce::Colour(0xffFF8FAB) : juce::Colour(0xff22d3ee));
+        g.drawText(refName, 68, abBarY, 100, abBarH, juce::Justification::centredLeft);
+        
+        // Waveform area - rounded, no grey box background
+        int wfX = 170;
+        int wfW = fullW - wfX - 28;
+        int wfY2 = abBarY + 3;
+        int wfH2 = abBarH - 6;
+        
+        if (wfW > 20 && processorRef.abSampleCount > 0) {
+            float playFrac = (float)processorRef.abPlaybackPos / (float)processorRef.abSampleCount;
+            
+            // Rounded clip region for waveform
+            g.saveState();
+            g.reduceClipRegion(juce::Rectangle<int>(wfX, wfY2, wfW, wfH2).toFloat().withTrimmedLeft(0).toNearestInt());
+            
+            // Subtle rounded background
+            g.setColour(juce::Colour(0xff0A0C18));
+            g.fillRoundedRectangle((float)wfX, (float)wfY2, (float)wfW, (float)wfH2, 6.0f);
+            
+            // Draw smooth waveform using the buffer
+            {
+                std::lock_guard<std::mutex> lock(processorRef.abMutex);
+                if (processorRef.abBuffer.getNumSamples() > 0) {
+                    int numPts = juce::jmin(wfW * 2, 600);
+                    float centreY3 = (float)wfY2 + (float)wfH2 * 0.5f;
+                    float halfH3 = (float)wfH2 * 0.42f;
+                    const float* ch0 = processorRef.abBuffer.getReadPointer(0);
+                    int totalSamples = processorRef.abBuffer.getNumSamples();
+                    
+                    // Build smooth path for top and bottom envelope
+                    juce::Path topPath, bottomPath;
+                    topPath.startNewSubPath((float)wfX, centreY3);
+                    bottomPath.startNewSubPath((float)wfX, centreY3);
+                    
+                    for (int i = 0; i < numPts; ++i) {
+                        int sampleIdx = (int)((float)i / (float)numPts * (float)totalSamples);
+                        int endIdx = (int)((float)(i + 1) / (float)numPts * (float)totalSamples);
+                        float maxVal = 0.0f, minVal = 0.0f;
+                        for (int s = sampleIdx; s < endIdx && s < totalSamples; s += 2) {
+                            maxVal = std::max(maxVal, ch0[s]);
+                            minVal = std::min(minVal, ch0[s]);
+                        }
+                        float px = (float)wfX + (float)i / (float)numPts * (float)wfW;
+                        topPath.lineTo(px, centreY3 - maxVal * halfH3);
+                        bottomPath.lineTo(px, centreY3 - minVal * halfH3);
+                    }
+                    
+                    topPath.lineTo((float)(wfX + wfW), centreY3);
+                    bottomPath.lineTo((float)(wfX + wfW), centreY3);
+                    
+                    // Draw played portion — purple to pink gradient glow
+                    float cursorPx = (float)wfX + playFrac * (float)wfW;
+                    g.saveState();
+                    g.reduceClipRegion(wfX, wfY2, (int)(cursorPx - wfX), wfH2);
+                    {
+                        juce::Colour wfCol1 = abIsRef ? juce::Colour(0xffFF6B9D) : juce::Colour(0xff06b6d4);
+                        juce::Colour wfCol2 = abIsRef ? juce::Colour(0xffFF8FAB) : juce::Colour(0xff22d3ee);
+                        juce::Colour wfCol3 = abIsRef ? juce::Colour(0xffFFB3C6) : juce::Colour(0xff67e8f9);
+                        juce::ColourGradient grad(
+                            wfCol1.withAlpha(0.7f), (float)wfX, centreY3,
+                            wfCol2.withAlpha(0.75f), cursorPx, centreY3, false);
+                        grad.addColour(0.5, wfCol3.withAlpha(0.7f));
+                        g.setGradientFill(grad);
+                        g.fillPath(topPath);
+                        g.fillPath(bottomPath);
+                    }
+                    g.restoreState();
+                    
+                    // Draw unplayed portion
+                    g.saveState();
+                    g.reduceClipRegion((int)cursorPx, wfY2, wfX + wfW - (int)cursorPx, wfH2);
+                    g.setColour(C::text3.withAlpha(0.2f));
+                    g.fillPath(topPath);
+                    g.fillPath(bottomPath);
+                    g.restoreState();
+                }
+            }
+            
+            g.restoreState();
+            
+            // Playback cursor
+            float cursorX2 = (float)wfX + playFrac * (float)wfW;
+            g.setColour((abIsRef ? juce::Colour(0xffFFB3C6) : juce::Colour(0xff67e8f9)).withAlpha(0.9f));
+            g.drawVerticalLine((int)cursorX2, (float)wfY2 + 1, (float)(wfY2 + wfH2 - 1));
+        }
+        
+        // X button
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+        g.drawText("x", fullW - 24, abBarY, 20, abBarH, juce::Justification::centred);
+    }
+    
+    // Visual-only mode — METERS tab + preset/theme strip + number strip at bottom
+    if (visualOnlyMode)
+    {
+        int stripH = 28;
+        int toggleH = 32;
+        
+        int toggleY = visualMode ? bounds.getHeight() - stripH - toggleH 
+                                  : bounds.getHeight() - toggleH;
+        g.setColour(C::bg2);
+        g.fillRect(0, toggleY, bounds.getWidth(), toggleH);
+        g.setColour(C::border);
+        g.drawHorizontalLine(toggleY, 0.0f, (float)bounds.getWidth());
+        
+        int fullW = bounds.getWidth();
+        
+        if (visualMode) {
+            // METERS button on left + preset/theme arrows
+            int toggleBtnW = 70;
+            int toggleBtnX = 8;
+            int toggleBtnBY = toggleY + (toggleH - 22) / 2;
+            
+            {
+                auto mp = getMouseXYRelative();
+                bool hov = mp.x >= toggleBtnX && mp.x < toggleBtnX + toggleBtnW && mp.y >= toggleY && mp.y < toggleY + toggleH;
+                g.setColour(hov ? juce::Colour(0xff22d3ee) : juce::Colour(0xff0891b2));
+            }
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.drawText("METERS", toggleBtnX, toggleY, toggleBtnW, toggleH, juce::Justification::centred);
+            g.fillRect(toggleBtnX + toggleBtnW / 4, toggleY + toggleH - 2, toggleBtnW / 2, 2);
+            
+            // Preset/Theme arrows
+            int arrowsX = toggleBtnX + toggleBtnW + 8;
+            int arrowsW = fullW - arrowsX - 4;
+            int arrowsMidX = arrowsX + arrowsW / 2;
+            
+            g.setColour(C::text2);
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.drawText("<", arrowsX + 4, toggleY, 14, toggleH, juce::Justification::centred);
+            g.setColour(C::text);
+            auto presetName2 = juce::String(ParticleVisual::getPresetName(particleVisual->currentPreset));
+            g.drawText(presetName2, arrowsX + 18, toggleY, arrowsMidX - arrowsX - 36, toggleH, juce::Justification::centred);
+            g.setColour(C::text2);
+            g.drawText(">", arrowsMidX - 18, toggleY, 14, toggleH, juce::Justification::centred);
+            
+            g.setColour(C::text3);
+            g.fillEllipse((float)arrowsMidX - 1.5f, (float)toggleY + toggleH / 2.0f - 1.5f, 3.0f, 3.0f);
+            
+            g.setColour(C::text2);
+            g.drawText("<", arrowsMidX + 4, toggleY, 14, toggleH, juce::Justification::centred);
+            g.setColour(juce::Colour(0xff06b6d4));
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            auto themeName2 = juce::String(ParticleVisual::getThemeName(particleVisual->currentTheme));
+            g.drawText(themeName2, arrowsMidX + 18, toggleY, fullW - arrowsMidX - 36, toggleH, juce::Justification::centred);
+            g.setColour(C::text2);
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.drawText(">", fullW - 18, toggleY, 14, toggleH, juce::Justification::centred);
+        } else {
+            // In meters mode — single centred VISUAL button
+            int toggleBtnW = 120;
+            int toggleBtnX = (fullW - toggleBtnW) / 2;
+            int toggleBtnBY = toggleY + (toggleH - 22) / 2;
+            
+            {
+                auto mp = getMouseXYRelative();
+                bool hov = mp.x >= toggleBtnX && mp.x < toggleBtnX + toggleBtnW && mp.y >= toggleY && mp.y < toggleY + toggleH;
+                g.setColour(hov ? juce::Colour(0xff22d3ee) : juce::Colour(0xff0891b2));
+            }
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.drawText("VISUALISATION", toggleBtnX, toggleY, toggleBtnW, toggleH, juce::Justification::centred);
+            g.fillRect(toggleBtnX + toggleBtnW / 4, toggleY + toggleH - 2, toggleBtnW / 2, 2);
+        }
+        
+        // Number strip (only when in visual mode)
+        if (visualMode) {
+            auto stripArea = juce::Rectangle<int>(0, bounds.getHeight() - stripH, bounds.getWidth(), stripH);
+            auto md2 = processorRef.getMeterEngine().getMeterData();
+            particleVisual->paintNumberStrip(g, stripArea, md2);
+        }
+    }
 
     // === Chat Panel ===
-    int chatX = compactMode ? 0 : mW + 1;
+    int chatX = compactMode ? 0 : (visualOnlyMode ? bounds.getWidth() : mW + 1);
 
+    if (!visualOnlyMode) {
     // Chat header — "AI ASSISTANT" bold, usage count right
     g.setColour(C::bg2);
     g.fillRect(chatX, topH, chatW, 32);
@@ -2512,11 +3130,12 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     int playBtnSize = 22;
                     int playX = cardX + 6;
                     int playY = cardY + (cardH - playBtnSize) / 2;
-                    bool isPlaying = (msg.wavFilePath.isNotEmpty() && currentlyPlayingChatWav == msg.wavFilePath);
+                    bool isPlaying = (msg.wavFilePath.isNotEmpty() && currentlyPlayingChatWav == msg.wavFilePath)
+                                  || (processorRef.abPlayingRef.load() && processorRef.abFilePath == msg.wavFilePath);
                     
-                    g.setColour(isPlaying ? C::red.withAlpha(0.7f) : C::purple.withAlpha(0.6f));
+                    g.setColour(isPlaying ? juce::Colour(0xffFF6B9D).withAlpha(0.35f) : juce::Colour(0xff06b6d4).withAlpha(0.15f));
                     g.fillEllipse((float)playX, (float)playY, (float)playBtnSize, (float)playBtnSize);
-                    g.setColour(juce::Colours::white);
+                    g.setColour(isPlaying ? juce::Colour(0xffFF8FAB) : juce::Colour(0xff22d3ee));
                     
                     if (isPlaying)
                     {
@@ -2570,11 +3189,16 @@ void EchoJayEditor::paint(juce::Graphics& g)
                             
                             // Dim waveform past the playback cursor
                             float alpha = 0.7f;
-                            if (isPlaying && chatPlaybackDuration > 0)
+                            if (isPlaying)
                             {
-                                double elapsed = (juce::Time::getMillisecondCounterHiRes() - chatPlaybackStartTime) / 1000.0 + chatPlaybackOffset;
-                                float playFrac = (float)(elapsed / chatPlaybackDuration);
-                                if (frac > playFrac) alpha = 0.25f;
+                                float playFrac2 = 0.0f;
+                                if (processorRef.abPlayingRef.load() && processorRef.abSampleCount > 0)
+                                    playFrac2 = (float)processorRef.abPlaybackPos / (float)processorRef.abSampleCount;
+                                else if (chatPlaybackDuration > 0 && chatPlaybackStartTime > 0) {
+                                    double el = (juce::Time::getMillisecondCounterHiRes() - chatPlaybackStartTime) / 1000.0 + chatPlaybackOffset;
+                                    playFrac2 = (float)(el / chatPlaybackDuration);
+                                }
+                                if (frac > playFrac2) alpha = 0.25f;
                             }
                             
                             g.setColour(C::blue.interpolatedWith(C::purple, frac).withAlpha(alpha));
@@ -2582,11 +3206,17 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         }
                         
                         // Playback cursor line
-                        if (isPlaying && chatPlaybackDuration > 0)
+                        if (isPlaying)
                         {
-                            double elapsed = (juce::Time::getMillisecondCounterHiRes() - chatPlaybackStartTime) / 1000.0 + chatPlaybackOffset;
-                            float playFrac = juce::jlimit(0.0f, 1.0f, (float)(elapsed / chatPlaybackDuration));
-                            float cursorX = (float)wfX + playFrac * (float)wfW;
+                            float playFrac3 = 0.0f;
+                            if (processorRef.abPlayingRef.load() && processorRef.abSampleCount > 0)
+                                playFrac3 = (float)processorRef.abPlaybackPos / (float)processorRef.abSampleCount;
+                            else if (chatPlaybackDuration > 0 && chatPlaybackStartTime > 0) {
+                                double el = (juce::Time::getMillisecondCounterHiRes() - chatPlaybackStartTime) / 1000.0 + chatPlaybackOffset;
+                                playFrac3 = (float)(el / chatPlaybackDuration);
+                            }
+                            playFrac3 = juce::jlimit(0.0f, 1.0f, playFrac3);
+                            float cursorX = (float)wfX + playFrac3 * (float)wfW;
                             g.setColour(juce::Colours::white);
                             g.drawVerticalLine((int)cursorX, (float)wfY, (float)(wfY + wfH));
                         }
@@ -2636,6 +3266,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // Hide unused overlay buttons
     for (int i = activeWavePlayBtns; i < kMaxWavePlayBtns; ++i)
         wavePlayOverlays[(size_t)i].setVisible(false);
+
+    } // end if (!visualOnlyMode) — chat section
 
     if (channelPromptVisible)
         paintChannelPromptOverlay(g, bounds);
@@ -2719,6 +3351,15 @@ void EchoJayEditor::resized()
     // channelPromptBlocker removed — overlay is painted in paint()
 
     if (currentScreen == Screen::Login) {
+        // Hide all overlay components
+        for (int i = 0; i < kMaxWavePlayBtns; ++i)
+            wavePlayOverlays[(size_t)i].setVisible(false);
+        upgradeBtn.setVisible(false);
+        playbackBtn.setVisible(false);
+        chatScroll.setVisible(false);
+        chatInput.setVisible(false);
+        chatSendBtn.setVisible(false);
+        
         int formW = juce::jmin(340, b.getWidth() - 60);
         int formX = (b.getWidth() - formW) / 2;
         int y = b.getHeight() / 2 - 120;
@@ -2742,9 +3383,14 @@ void EchoJayEditor::resized()
     
     if (compactMode)
     {
-        // Compact: chat takes full width, no meter panel
         chatW = b.getWidth();
         mW = 0;
+    }
+    else if (visualOnlyMode)
+    {
+        // Visual-only: no chat, visual takes full width
+        chatW = 0;
+        mW = b.getWidth();
     }
     else
     {
@@ -2752,12 +3398,48 @@ void EchoJayEditor::resized()
         mW = b.getWidth() - chatW;
     }
 
+    // Position particle visual — use paint formula for mW to match divider
+    int abOff = abBarShowing ? kAbBarH : 0;
+    int paintChatW = juce::jlimit(280, 420, b.getWidth() * 35 / 100);
+    int paintMW = b.getWidth() - paintChatW;
+    if (visualMode && !compactMode && !visualOnlyMode && currentView == View::Meters)
+    {
+        int stripH = 28;
+        int toggleH = 24;
+        particleVisual->setBounds(0, topH, paintMW - 1, b.getHeight() - topH - stripH - toggleH - abOff);
+        particleVisual->setVisible(!channelPromptVisible && !genrePromptVisible);
+    }
+    else if (visualOnlyMode)
+    {
+        if (visualMode) {
+            int stripH = 28;
+            int toggleH = 24;
+            particleVisual->setBounds(0, topH, b.getWidth() - 2, b.getHeight() - topH - stripH - toggleH - abOff);
+            particleVisual->setVisible(!channelPromptVisible && !genrePromptVisible);
+        } else {
+            // Meters mode in visual-only — hide particle visual
+            particleVisual->setVisible(false);
+        }
+    }
+    else
+    {
+        particleVisual->setVisible(false);
+    }
+
     // === Single top bar row ===
     int ty = 4, bh = 24;
-    int tx = 122;
-    channelTypeBox.setBounds(tx, ty, 100, bh); tx += 104;
-    genreBox.setBounds(tx, ty, 95, bh); tx += 99;
-    captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
+    int tx = 159;
+    
+    if (visualOnlyMode) {
+        // In visual-only: capture button right after logo+badge
+        captureBtn.setBounds(tx, ty, 64, bh);
+        channelTypeBox.setBounds(0, -20, 1, 1);
+        genreBox.setBounds(0, -20, 1, 1);
+    } else {
+        channelTypeBox.setBounds(tx, ty, 100, bh); tx += 104;
+        genreBox.setBounds(tx, ty, 95, bh); tx += 99;
+        captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
+    }
     
     if (compactMode)
     {
@@ -2765,6 +3447,7 @@ void EchoJayEditor::resized()
         compareBtn.setBounds(0, -20, 1, 1);
         settingsBtn.setBounds(0, -20, 1, 1);
         scanBtn.setBounds(0, -20, 1, 1);
+        abSyncBtn.setBounds(-100, -100, 1, 1);
     }
     else
     {
@@ -2794,15 +3477,37 @@ void EchoJayEditor::resized()
     int sendH = 30;
     int chatPadL = compactMode ? 8 : -20; // compact: normal padding, full: 20px past divider
     int chatStartX = compactMode ? 0 : mW;
-    int inputY = b.getHeight() - inH - 10;
+    int abOff4 = abBarShowing ? kAbBarH : 0;
+    int inputPad = compactMode ? 16 : 10;
+    int inputY = b.getHeight() - inH - inputPad - abOff4;
     chatInput.setBounds(chatStartX + chatPadL, inputY, chatW - sendW - chatPadL - 4, inH);
     int sendY = inputY + (inH - sendH) / 2; // vertically centred
     chatSendBtn.setBounds(chatStartX + chatW - sendW - 2, sendY, sendW, sendH);
-    chatScroll.setBounds(chatStartX + 2, topH + 32, chatW - 4, b.getHeight() - topH - 32 - inH - 4);
-    chatContent.setSize(chatW - 16, std::max(100, chatScroll.getHeight()));
+    
+    // Chat scroll: top = below chat header, bottom = above chat input with gap
+    int chatScrollTop = topH + 32;
+    int chatScrollBottom = inputY - 8;
+    int chatScrollH = juce::jmax(50, chatScrollBottom - chatScrollTop);
+    chatScroll.setBounds(chatStartX + 2, chatScrollTop, chatW - 4, chatScrollH);
+    chatContent.setSize(chatW - 16, std::max(chatScrollH, chatScroll.getHeight()));
+    
+    // In compact mode, ensure chat components are on top
+    if (compactMode) {
+        chatScroll.toFront(false);
+        chatInput.toFront(false);
+        chatSendBtn.toFront(false);
+    }
 
     // Hide chat when channel prompt overlay is showing
     if (channelPromptVisible)
+    {
+        chatInput.setVisible(false);
+        chatSendBtn.setVisible(false);
+        chatScroll.setVisible(false);
+    }
+    
+    // Hide chat in visual-only mode
+    if (visualOnlyMode)
     {
         chatInput.setVisible(false);
         chatSendBtn.setVisible(false);
@@ -2853,7 +3558,8 @@ void EchoJayEditor::resized()
         for (auto& b : refRemoveBtns) b.toFront(false);
         
         // AI Compare button centred at bottom
-        int btnY = getHeight() - 36;
+        int abOff2 = abBarShowing ? kAbBarH : 0;
+        int btnY = getHeight() - 36 - abOff2;
         int mwHalf = mW / 2;
         aiCompareBtn.setBounds(mwHalf - 65, btnY, 100, 26);
     }
@@ -2895,7 +3601,8 @@ void EchoJayEditor::resized()
         
         // PLUGINS — fills remaining space but guarantees save row is visible
         sy += labelGap;
-        int saveRowY = b.getHeight() - 44; // 30px button + 14px margin
+        int abOff3 = abBarShowing ? kAbBarH : 0;
+        int saveRowY = b.getHeight() - 44 - abOff3;
         int plugH = juce::jmax(40, saveRowY - sy - 8);
         settingsPlugins.setBounds(sx, sy, sw, plugH);
         
@@ -3048,6 +3755,11 @@ void EchoJayEditor::timerCallback()
             refreshCounter = 0;
             showMainScreen();
         }
+        // Hide any overlay components that might show through
+        for (int i = 0; i < kMaxWavePlayBtns; ++i)
+            wavePlayOverlays[(size_t)i].setVisible(false);
+        upgradeBtn.setVisible(false);
+        playbackBtn.setVisible(false);
         repaint(); // animate the dots
         return; // don't process anything else while loading
     }
@@ -3071,6 +3783,84 @@ void EchoJayEditor::timerCallback()
     }
 
     auto state = processorRef.getCaptureState();
+
+    // Auto-stop plugin-routed playback when WAV reaches end
+    if (processorRef.abActive.load() && processorRef.abPlayingRef.load() && processorRef.abSampleCount > 0)
+    {
+        if (processorRef.abPlaybackPos >= processorRef.abSampleCount - 1)
+        {
+            processorRef.stopAB();
+            currentlyPlayingChatWav.clear();
+            chatPlaybackStartTime = 0;
+            chatPlaybackDuration = 0;
+            chatPlaybackOffset = 0;
+            playSlotABtn.setButtonText(">");
+            playSlotBBtn.setButtonText(">");
+        }
+    }
+    
+    // Resize window when AB bar appears/disappears
+    bool shouldShowAbBar = processorRef.abActive.load() && !compactMode && !visualOnlyMode;
+    if (shouldShowAbBar && !abBarShowing) {
+        abBarShowing = true;
+        setSize(getWidth(), getHeight() + kAbBarH);
+    } else if (!shouldShowAbBar && abBarShowing) {
+        abBarShowing = false;
+        setSize(getWidth(), getHeight() - kAbBarH);
+    }
+    
+    // Spectrum A/B hold — capture spectrum snapshot when switching between ref and DAW
+    bool isPlayingRef = processorRef.abPlayingRef.load();
+    if (isPlayingRef != wasPlayingRef && processorRef.abActive.load()) {
+        // State changed — freeze the peak hold spectrum (the full envelope, not a single frame)
+        heldSpectrum = spectrumPeakHold;
+        heldSpectrumValid = true;
+        heldSpectrumAlpha = 1.0f;
+        // Capture the dB range so held spectrum doesn't shift with new signal
+        float hPeak = -200.0f;
+        for (int i = 0; i < 64; ++i)
+            if (heldSpectrum[(size_t)i] > hPeak) hPeak = heldSpectrum[(size_t)i];
+        heldDbMax = std::max(-20.0f, hPeak + 3.0f);
+        heldDbMin = heldDbMax - 66.0f;
+        // Reset peak hold so it starts fresh for the new source
+        spectrumPeakHoldInit = false;
+    }
+    wasPlayingRef = isPlayingRef;
+    // Always store current spectrum for next frame's potential hold
+    {
+        auto mdNow = processorRef.getMeterEngine().getMeterData();
+        prevFrameSpectrum = mdNow.spectrum;
+    }
+    // Smooth fade out held spectrum over ~3 seconds
+    if (heldSpectrumValid) {
+        heldSpectrumAlpha -= 0.005f;
+        if (heldSpectrumAlpha <= 0.0f) {
+            heldSpectrumAlpha = 0.0f;
+            heldSpectrumValid = false;
+        }
+    }
+
+    // Feed meter data to particle visual
+    if (particleVisual && particleVisual->isVisible())
+    {
+        auto md = processorRef.getMeterEngine().getMeterData();
+        particleVisual->updateMeterData(md);
+    }
+    
+    // Capture animation — detect state transitions for visual
+    {
+        bool isCapturing = (state == CaptureState::Capturing);
+        if (isCapturing && !wasCapturing && particleVisual) {
+            particleVisual->triggerCaptureImplode();
+            captureAnimTriggered = true;
+        }
+        if (!isCapturing && wasCapturing && captureAnimTriggered && particleVisual) {
+            particleVisual->triggerCaptureRelease();
+            captureAnimTriggered = false;
+        }
+        wasCapturing = isCapturing;
+    }
+
     if (state == CaptureState::Capturing) {
         captureBtn.setButtonText("Stop");
         captureBtn.setColour(juce::TextButton::buttonColourId, C::red);
@@ -3080,7 +3870,7 @@ void EchoJayEditor::timerCallback()
         waveformFrozen = false; // live while capturing
     } else {
         captureBtn.setButtonText("Capture");
-        captureBtn.setColour(juce::TextButton::buttonColourId, C::blue);
+        captureBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
         statusLabel.setText(state == CaptureState::Complete ? "Complete" : "", juce::dontSendNotification);
 
         // Freeze waveform on capture complete (once — only if we haven't already unfrozen)
@@ -3318,7 +4108,24 @@ void EchoJayEditor::timerCallback()
     }
 
     // Position compare waveform bar overlays
-    if (currentView == View::Compare && !compareWavePositions.empty())
+    // FIRST: hide all overlays if login screen, update prompt, or channel/genre prompt is showing
+    bool hideOverlays = (currentScreen != Screen::Main)
+                     || (updateAvailable && !updateDismissed)
+                     || channelPromptVisible
+                     || genrePromptVisible;
+    
+    if (hideOverlays)
+    {
+        for (int i = 0; i < kMaxWavePlayBtns; ++i)
+        {
+            wavePlayOverlays[(size_t)i].setVisible(false);
+            wavePlayOverlays[(size_t)i].setBounds(-100, -100, 1, 1);
+        }
+        activeWavePlayBtns = 0;
+        upgradeBtn.setVisible(false);
+        playbackBtn.setVisible(false);
+    }
+    else if (currentView == View::Compare && !compareWavePositions.empty())
     {
         activeWavePlayBtns = 0;
         for (auto& wp : compareWavePositions)
@@ -3492,7 +4299,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
     }
     
     // True peak: flag clipping
-    float tpThreshold = isIndividual ? 0.0f : 1.5f;
+    float tpThreshold = isIndividual ? 0.0f : 2.0f;
     if (d.truePeakL > tpThreshold || d.truePeakR > tpThreshold)
     {
         flagsStr += "True Peak: L " + ff(d.truePeakL) + " dBTP | R " + ff(d.truePeakR) + " dBTP — clipping\n";
@@ -3616,14 +4423,12 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
     else
     {
         // Individual channels: flag spectrum anomalies based on channel type
+        // Note: channel TYPE mismatch detection is handled separately below.
+        // These flags only cover genuine tonal issues for the CORRECT channel type.
         
         // --- Channels that SHOULD have low-end energy ---
         bool expectsLowEnd = (ch == "Kick" || ch == "Bass / 808" || ch == "Bass Guitar" || 
-                              ch == "Sub Bass" || ch == "Synth Bass" || ch == "Drum Bus");
-        
-        // --- Channels that should NOT have significant low-end ---
-        bool expectsNoLowEnd = (ch == "Hi-Hat" || ch == "Percussion" || ch == "Synth Pluck" ||
-                                ch == "Adlibs" || ch == "FX");
+                              ch == "Sub Bass" || ch == "Synth Bass");
         
         // --- Channels that should have presence/mid energy ---
         bool expectsMids = (ch == "Lead Vocal" || ch == "Backing Vocal" || ch == "Snare" ||
@@ -3641,33 +4446,13 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
         
         if (expectsLowEnd && subEmpty && lowEmpty)
         {
-            flagsStr += "SPECTRUM WARNING: No sub or low frequency content detected — unusual for " + ch.toLowerCase() + ". Possible HPF issue or wrong channel type selected.\n";
+            flagsStr += "SPECTRUM WARNING: No sub or low frequency content detected — unusual for " + ch.toLowerCase() + ". Possible HPF issue.\n";
             flaggedAnything = true;
         }
         else if (expectsLowEnd && subEmpty && !lowEmpty)
         {
             flagsStr += "SPECTRUM NOTE: No sub content below 80Hz — the low end starts from around 80Hz upward.\n";
             flaggedAnything = true;
-        }
-        
-        // Flag: channel shouldn't have low-end but does
-        if (expectsNoLowEnd && !subEmpty)
-        {
-            float subLevel = bands[0].avgDb;
-            if (subLevel > -50.0f)
-            {
-                flagsStr += "SPECTRUM WARNING: Sub energy detected at " + juce::String(subLevel, 0) + "dB — likely bleed or missing HPF.\n";
-                flaggedAnything = true;
-            }
-        }
-        if (expectsNoLowEnd && !lowEmpty)
-        {
-            float lowLevel = bands[1].avgDb;
-            if (lowLevel > -40.0f)
-            {
-                flagsStr += "SPECTRUM WARNING: Low-end energy detected at " + juce::String(lowLevel, 0) + "dB — bleed or missing HPF.\n";
-                flaggedAnything = true;
-            }
         }
         
         // Flag: vocal/lead channels with no presence range
@@ -3683,7 +4468,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
         if (activeBandCount <= 1 && emptyBandCount >= 4)
         {
             flagsStr += juce::String("SPECTRUM WARNING: Energy concentrated in only ") + juce::String(activeBandCount) + " band(s) — " + 
-                juce::String(emptyBandCount) + " bands are empty. This is very unusual and suggests heavy filtering, wrong channel, or a processing issue.\n";
+                juce::String(emptyBandCount) + " bands are empty. This is very unusual and suggests heavy filtering or a processing issue.\n";
             flaggedAnything = true;
         }
         
@@ -3691,6 +4476,160 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
         if (emptyBandCount == numBands)
         {
             flagsStr += "SPECTRUM WARNING: No significant energy in any frequency band — the signal may be extremely quiet or silent.\n";
+            flaggedAnything = true;
+        }
+        
+        // ==========================================================
+        // Channel type mismatch detection
+        // Conservative — only flag when the spectrum OBVIOUSLY doesn't
+        // match the selected channel. Better to miss a mismatch than
+        // wrongly question the user's channel selection.
+        // ==========================================================
+        // Normalise bands relative to peak for shape comparison
+        float normBands[6];
+        for (int b = 0; b < numBands; ++b)
+            normBands[b] = bands[b].avgDb - peakBandDb; // 0 = loudest, negative = quieter
+        
+        auto normAvg = [&](int from, int to) -> float {
+            float s = 0.0f;
+            for (int i = from; i <= to; ++i) s += normBands[i];
+            return s / (float)(to - from + 1);
+        };
+        float subLowAvg = normAvg(0, 1);    // Sub + Low
+        float midUMidAvg = normAvg(3, 4);   // Mid + Upper-Mid
+        float highAvg2 = normBands[5];       // High only (single band in 6-band layout)
+        // Count bands within 12dB of peak
+        int activeBands6 = 0;
+        for (int b = 0; b < numBands; ++b)
+            if (normBands[b] > -12.0f) activeBands6++;
+        
+        auto ct = snap.channelType;
+        juce::String mismatchStr;
+        
+        // --- BASS types ---
+        if (ct == ChannelType::Bass808 || ct == ChannelType::BassGuitar || 
+            ct == ChannelType::SubBass || ct == ChannelType::SynthBass)
+        {
+            if (normBands[0] < -12.0f && normBands[1] < -12.0f && midUMidAvg > subLowAvg + 10.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for " + ch.toLowerCase() + " — most energy is in the mid/upper range with very little low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- KICK ---
+        else if (ct == ChannelType::Kick)
+        {
+            if (normBands[0] < -15.0f && normBands[1] < -15.0f && midUMidAvg > subLowAvg + 12.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a kick — there's very little sub/low energy. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- SNARE ---
+        else if (ct == ChannelType::Snare)
+        {
+            if (subLowAvg > midUMidAvg + 15.0f && highAvg2 < -22.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a snare — almost all energy is in the low end with very little above. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- HI-HAT ---
+        else if (ct == ChannelType::HiHat)
+        {
+            if (subLowAvg > highAvg2 + 10.0f && normBands[4] < -15.0f && normBands[5] < -15.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a hi-hat — most energy is in the low end with very little up top. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- OVERHEADS ---
+        else if (ct == ChannelType::Overheads)
+        {
+            if (normBands[4] < -20.0f && normBands[5] < -20.0f && subLowAvg > -5.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for overheads — very little energy in the upper range. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- DRUM BUS ---
+        else if (ct == ChannelType::DrumBus)
+        {
+            if (activeBands6 <= 1)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a drum bus — energy is very concentrated in one area. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- PERCUSSION ---
+        else if (ct == ChannelType::Percussion)
+        {
+            if (subLowAvg > midUMidAvg + 15.0f && highAvg2 < -22.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for percussion — almost all energy is in the low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- VOCALS ---
+        else if (ct == ChannelType::LeadVocal || ct == ChannelType::BackingVocal || 
+                 ct == ChannelType::Adlibs || ct == ChannelType::VocalBus)
+        {
+            if (normBands[0] > normBands[3] + 15.0f && normBands[0] > normBands[4] + 15.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a vocal — there's a lot of sub energy which is more typical of bass or a sub. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+            else if (highAvg2 > midUMidAvg + 12.0f && normBands[3] < -18.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a vocal — most energy is in the very high end with very little in the vocal range. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- PIANO ---
+        else if (ct == ChannelType::Piano)
+        {
+            if (normBands[0] > -3.0f && normBands[1] > -3.0f && midUMidAvg < -20.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for piano — almost all energy is in the sub/low range. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- KEYS ---
+        else if (ct == ChannelType::Keys)
+        {
+            if (subLowAvg > midUMidAvg + 15.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for keys — almost all energy is in the low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- GUITARS ---
+        else if (ct == ChannelType::AcousticGuitar || ct == ChannelType::ElectricGuitar || 
+                 ct == ChannelType::GuitarBus)
+        {
+            if (normBands[2] < -20.0f && normBands[3] < -20.0f && subLowAvg > -3.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for " + ch.toLowerCase() + " — very little mid-range energy. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- SYNTH LEAD ---
+        else if (ct == ChannelType::SynthLead)
+        {
+            if (subLowAvg > midUMidAvg + 15.0f && highAvg2 < -22.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a synth lead — almost all energy is in the low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- SYNTH PAD ---
+        else if (ct == ChannelType::SynthPad)
+        {
+            if (activeBands6 <= 1)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a synth pad — energy is very concentrated in one area. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- SYNTH PLUCK ---
+        else if (ct == ChannelType::SynthPluck)
+        {
+            if (subLowAvg > midUMidAvg + 15.0f && highAvg2 < -22.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a synth pluck — almost all energy is in the low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- SYNTH BUS ---
+        else if (ct == ChannelType::SynthBus)
+        {
+            if (activeBands6 <= 1)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for a synth bus — energy is very concentrated in one area. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- STRINGS ---
+        else if (ct == ChannelType::Strings)
+        {
+            if (normBands[0] > -3.0f && midUMidAvg < -20.0f && highAvg2 < -20.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for strings — almost all energy is in the sub range. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- BRASS ---
+        else if (ct == ChannelType::Brass)
+        {
+            if (subLowAvg > midUMidAvg + 15.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for brass — almost all energy is in the low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- WOODWIND ---
+        else if (ct == ChannelType::Woodwind)
+        {
+            if (subLowAvg > midUMidAvg + 15.0f)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for woodwind — almost all energy is in the low end. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // --- ORCHESTRAL ---
+        else if (ct == ChannelType::Orchestral)
+        {
+            if (activeBands6 <= 1)
+                mismatchStr = "\n⚠ CHANNEL CHECK: The frequency shape looks unusual for an orchestral channel — energy is very concentrated in one area. Ask the user if they have the right channel type selected, then review based on whatever they say.";
+        }
+        // FX / Reverb / Delay / Foley / Ambient — no mismatch detection
+        
+        if (mismatchStr.isNotEmpty())
+        {
+            flagsStr += mismatchStr + "\n";
             flaggedAnything = true;
         }
     }
@@ -4350,7 +5289,7 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
         settingsGenres.hasKeyboardFocus(false) || settingsPlugins.hasKeyboardFocus(false))
         return false;
 
-    // Spacebar — stop capture only (start is button-only)
+    // Spacebar — stop capture or toggle AB playback
     if (key == juce::KeyPress::spaceKey && currentScreen == Screen::Main
         && !channelPromptVisible && !genrePromptVisible)
     {
@@ -4358,6 +5297,20 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
         if (s == CaptureState::Capturing)
         {
             processorRef.stopCapture();
+            return true;
+        }
+        
+        // Toggle AB playback with spacebar
+        if (processorRef.abActive.load())
+        {
+            if (processorRef.abPlayingRef.load()) {
+                processorRef.pauseAB();
+                currentlyPlayingChatWav.clear();
+            } else {
+                processorRef.resumeAB();
+                currentlyPlayingChatWav = processorRef.abFilePath;
+            }
+            repaint();
             return true;
         }
     }
@@ -4408,11 +5361,209 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         return; // Consume click while overlay is showing
     }
     
+    // Visual-only mode — click expand icon to exit
+    if (visualOnlyMode && currentScreen == Screen::Main && pos.y < 32 && pos.x > getLocalBounds().getWidth() - 30)
+    {
+        toggleVisualOnlyMode();
+        return;
+    }
+    
+    // Visual-only mode — single toggle button + preset/theme arrows
+    if (visualOnlyMode && currentScreen == Screen::Main)
+    {
+        int stripH = 28;
+        int toggleH = 32;
+        int toggleY = getHeight() - stripH - toggleH;
+        if (!visualMode) toggleY = getHeight() - toggleH;
+        int fullW = getWidth();
+        
+        if (pos.y >= toggleY && pos.y < toggleY + toggleH)
+        {
+            if (visualMode) {
+                // METERS button at left (x=8, w=70)
+                if (pos.x < 78) {
+                    visualMode = false;
+                    resized();
+                    repaint();
+                    return;
+                }
+                // Preset/theme — generous split zones
+                int arrowsX = 86;
+                int arrowsW = fullW - arrowsX - 4;
+                int midX = arrowsX + arrowsW / 2;
+                
+                if (pos.x >= arrowsX && pos.x < fullW) {
+                    if (pos.x < midX) {
+                        // Preset: left half = prev, right half = next
+                        int presetMid = arrowsX + (midX - arrowsX) / 2;
+                        if (pos.x < presetMid)
+                            particleVisual->prevPreset();
+                        else
+                            particleVisual->nextPreset();
+                        processorRef.visualPreset = (int)particleVisual->currentPreset;
+                    } else {
+                        // Theme: left half = prev, right half = next
+                        int themeMid = midX + (arrowsX + arrowsW - midX) / 2;
+                        if (pos.x < themeMid)
+                            particleVisual->prevTheme();
+                        else
+                            particleVisual->nextTheme();
+                        processorRef.visualTheme = (int)particleVisual->currentTheme;
+                    }
+                    repaint();
+                    return;
+                }
+                return;
+            } else {
+                // Single VISUALISATION button — click anywhere toggles
+                visualMode = true;
+                resized();
+                repaint();
+                return;
+            }
+        }
+    }
+    
     // Compact/expand toggle — top right of top bar
-    if (currentScreen == Screen::Main && pos.y < 32 && pos.x > getLocalBounds().getWidth() - 30)
+    if (currentScreen == Screen::Main && !visualOnlyMode && pos.y < 32 && pos.x > getLocalBounds().getWidth() - 30)
     {
         toggleCompactMode();
         return;
+    }
+    
+    // Visual-only mode toggle — diamond icon, second from right in top bar
+    if (currentScreen == Screen::Main && !compactMode && !visualOnlyMode
+        && pos.y < 32 && pos.x > getLocalBounds().getWidth() - 54 && pos.x <= getLocalBounds().getWidth() - 30)
+    {
+        toggleVisualOnlyMode();
+        return;
+    }
+    
+    // A/B transport bar clicks (bottom bar)
+    if (processorRef.abActive.load() && !compactMode && !visualOnlyMode)
+    {
+        int abBarH = 32;
+        int abBarY = getHeight() - abBarH;
+        int fullW = getWidth();
+        
+        if (pos.y >= abBarY && pos.y < abBarY + abBarH)
+        {
+            // X button to stop
+            if (pos.x >= fullW - 24) {
+                processorRef.stopAB();
+                repaint();
+                return;
+            }
+            // Play/pause button area
+            if (pos.x < 32) {
+                bool wasRef = processorRef.abPlayingRef.load();
+                if (wasRef) {
+                    processorRef.pauseAB();
+                    currentlyPlayingChatWav.clear();
+                } else {
+                    processorRef.resumeAB();
+                    currentlyPlayingChatWav = processorRef.abFilePath;
+                }
+                repaint();
+                return;
+            }
+            // Sync button area (right after play button)
+            if (pos.x >= 32 && pos.x < 68) {
+                processorRef.abSyncToDAW.store(!processorRef.abSyncToDAW.load());
+                repaint();
+                return;
+            }
+            // Waveform click — seek to position
+            int wfX = 170;
+            int wfW = fullW - wfX - 28;
+            if (pos.x >= wfX && pos.x < wfX + wfW && wfW > 0 && processorRef.abSampleCount > 0) {
+                float seekFrac = (float)(pos.x - wfX) / (float)wfW;
+                int seekPos = (int)(seekFrac * (float)processorRef.abSampleCount);
+                processorRef.abPlaybackPos = juce::jlimit(0, processorRef.abSampleCount - 1, seekPos);
+                if (!processorRef.abPlayingRef.load())
+                    processorRef.resumeAB();
+                repaint();
+                return;
+            }
+        }
+    }
+    
+    // Style navigation arrows click — in the VISUALISATION tab of toggle strip
+    if (currentScreen == Screen::Main && visualMode && !compactMode && !visualOnlyMode)
+    {
+        int paintCW = juce::jlimit(280, 420, getWidth() * 35 / 100);
+        int mW2 = getWidth() - paintCW;
+        int stripH = 32;
+        int abOff5 = abBarShowing ? kAbBarH : 0;
+        int stripY = getHeight() - stripH - abOff5;
+        if (visualMode) stripY -= 28; // above number strip
+        
+        // Match paint layout exactly: METERS button at x=4 w=80, arrows start at 88
+        int toggleBtnW = 80;
+        int toggleBtnX = 4;
+        int arrowsX = toggleBtnX + toggleBtnW + 4;
+        int arrowsW = mW2 - arrowsX - 4;
+        int midX2 = arrowsX + arrowsW / 2;
+        
+        if (pos.y >= stripY && pos.y < stripY + stripH)
+        {
+            // METERS button click area
+            if (pos.x >= toggleBtnX && pos.x < toggleBtnX + toggleBtnW) {
+                toggleVisualMode();
+                return;
+            }
+            
+            // Preset/theme arrow areas — generous click zones
+            if (pos.x >= arrowsX && pos.x < mW2)
+            {
+                // Left half = preset, right half = theme
+                if (pos.x < midX2) {
+                    // Preset area: left half = prev, right half = next
+                    int presetMid = arrowsX + (midX2 - arrowsX) / 2;
+                    if (pos.x < presetMid) {
+                        particleVisual->prevPreset();
+                    } else {
+                        particleVisual->nextPreset();
+                    }
+                    processorRef.visualPreset = (int)particleVisual->currentPreset;
+                    repaint();
+                    return;
+                } else {
+                    // Theme area: left half = prev, right half = next
+                    int themeMid = midX2 + (arrowsX + arrowsW - midX2) / 2;
+                    if (pos.x < themeMid) {
+                        particleVisual->prevTheme();
+                    } else {
+                        particleVisual->nextTheme();
+                    }
+                    processorRef.visualTheme = (int)particleVisual->currentTheme;
+                    repaint();
+                    return;
+                }
+            }
+        }
+    }
+    
+    // Meters/Visual toggle strip click — at bottom of meter panel
+    if (currentScreen == Screen::Main && currentView == View::Meters && !compactMode && !visualOnlyMode
+        && !channelPromptVisible && !genrePromptVisible)
+    {
+        int paintCW2 = juce::jlimit(280, 420, getWidth() * 35 / 100);
+        int mW2 = getWidth() - paintCW2;
+        int stripH = 32;
+        int abOff6 = abBarShowing ? kAbBarH : 0;
+        int stripY = getHeight() - stripH - abOff6;
+        if (visualMode) stripY -= 28;
+        
+        if (pos.x < mW2 && pos.y >= stripY && pos.y < stripY + stripH)
+        {
+            if (!visualMode) {
+                // VISUALISATION label — click anywhere toggles
+                toggleVisualMode();
+                return;
+            }
+            // Visual mode clicks handled by the arrow handler above
+        }
     }
     
     // Click on loudness panel — reset integrated LUFS
@@ -4626,9 +5777,13 @@ void EchoJayEditor::stopChatPlayback()
         chatPlaybackProcess->kill();
         chatPlaybackProcess.reset();
     }
+    // Pause plugin-routed playback (keeps position for resume)
+    if (processorRef.abActive.load())
+        processorRef.pauseAB();
+    
     currentlyPlayingChatWav.clear();
     chatPlaybackStartTime = 0;
-    chatPlaybackDuration = 0;
+    // Don't clear duration — needed for resume offset calculation
     chatPlaybackOffset = 0;
     playSlotABtn.setButtonText(">");
     playSlotBBtn.setButtonText(">");
@@ -4645,7 +5800,7 @@ void EchoJayEditor::toggleCompactMode()
         fullModeHeight = getHeight();
         
         // Switch to compact — chat only
-        setResizeLimits(420, 450, 600, 900);
+        setResizeLimits(420, 500, 600, 900);
         setSize(450, 550);
         
         // Hide meter-side UI and force back to meters view
@@ -4658,12 +5813,84 @@ void EchoJayEditor::toggleCompactMode()
     else
     {
         // Restore full mode
-        setResizeLimits(900, 580, 1800, 1160);
+        setResizeLimits(900, 580, 1800, 1200);
         setSize(fullModeWidth, fullModeHeight);
         
         compareBtn.setVisible(true);
         settingsBtn.setVisible(true);
         scanBtn.setVisible(true);
+    }
+    
+    resized();
+    repaint();
+}
+
+void EchoJayEditor::toggleVisualMode()
+{
+    visualMode = !visualMode;
+    
+    if (visualMode) {
+        if (currentView == View::Compare) { hideCompareView(); currentView = View::Meters; }
+        if (currentView == View::Settings) { hideSettingsView(); currentView = View::Meters; }
+    }
+    
+    processorRef.visualModeOn = visualMode;
+    
+    resized();
+    repaint();
+}
+
+void EchoJayEditor::toggleVisualOnlyMode()
+{
+    visualOnlyMode = !visualOnlyMode;
+    
+    if (visualOnlyMode)
+    {
+        // Save current size
+        visualOnlyWidth = getWidth();
+        visualOnlyHeight = getHeight();
+        
+        visualMode = true;
+        
+        // Force meters view
+        if (currentView == View::Compare) { hideCompareView(); currentView = View::Meters; }
+        if (currentView == View::Settings) { hideSettingsView(); currentView = View::Meters; }
+        
+        // Calculate meter panel width (same as normal layout)
+        int chatW = juce::jlimit(240, 380, getWidth() * 32 / 100);
+        int mW = getWidth() - chatW;
+        
+        // Shrink window to just the visual panel width
+        setResizeLimits(400, 450, 1200, 1200);
+        setSize(mW, getHeight());
+        
+        // Hide chat and meter-only UI (keep capture button visible)
+        compareBtn.setVisible(false);
+        settingsBtn.setVisible(false);
+        scanBtn.setVisible(false);
+        channelTypeBox.setVisible(false);
+        genreBox.setVisible(false);
+        chatInput.setVisible(false);
+        chatSendBtn.setVisible(false);
+        chatScroll.setVisible(false);
+    }
+    else
+    {
+        // Restore full mode
+        setResizeLimits(900, 580, 1800, 1200);
+        setSize(visualOnlyWidth, visualOnlyHeight);
+        
+        captureBtn.setVisible(true);
+        if (!compactMode) {
+            compareBtn.setVisible(true);
+            settingsBtn.setVisible(true);
+            scanBtn.setVisible(true);
+        }
+        channelTypeBox.setVisible(true);
+        genreBox.setVisible(true);
+        chatInput.setVisible(true);
+        chatSendBtn.setVisible(true);
+        chatScroll.setVisible(true);
     }
     
     resized();
@@ -4676,6 +5903,32 @@ void EchoJayEditor::startChatPlayback(const juce::String& wavPath, float offset)
     
     juce::File wavFile(wavPath);
     if (!wavFile.existsAsFile()) return;
+    
+    // If in Compare view, route playback through the plugin output (mutes DAW audio)
+    if (currentView == View::Compare)
+    {
+        // If same file is paused and no seek offset, resume from where we paused
+        if (processorRef.abPaused.load() && processorRef.abFilePath == wavPath && offset < 0.1f)
+        {
+            processorRef.resumeAB();
+        }
+        else
+        {
+            processorRef.loadABFile(wavPath, (double)offset);
+        }
+        currentlyPlayingChatWav = wavPath;
+        chatPlaybackStartTime = juce::Time::getMillisecondCounterHiRes();
+        chatPlaybackOffset = offset;
+        
+        for (auto& msg : chatMessages)
+            if (msg.wavFilePath == wavPath)
+                { chatPlaybackDuration = msg.durationSeconds; break; }
+        if (chatPlaybackDuration <= 0)
+            for (auto& wp : compareWavePositions)
+                if (wp.wavPath == wavPath)
+                    { chatPlaybackDuration = wp.duration; break; }
+        return;
+    }
     
     juce::File fileToPlay = wavFile;
     

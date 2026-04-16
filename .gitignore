@@ -1,2 +1,14 @@
 build/
 installer/
+*.pkg
+*.dmg
+*.aaxplugin/
+*.component/
+*.vst3/
+*.app/
+pkg-root/
+dmg-content/
+resources/welcome.html
+EchoJay.icns
+EchoJay_artefacts/
+.DS_Store

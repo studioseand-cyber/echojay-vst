@@ -35,7 +35,7 @@ juce_add_plugin(EchoJay
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    COPY_PLUGIN_AFTER_BUILD FALSE
     PLUGIN_MANUFACTURER_CODE Ecjy
     PLUGIN_CODE EcJy
     FORMATS ${PLUGIN_FORMATS}
@@ -61,6 +61,8 @@ target_sources(EchoJay PRIVATE
     Source/WaveformRecorder.cpp
     Source/WaveformRecorder.h
     Source/EchoJayLookAndFeel.h
+    Source/ParticleVisual.h
+    Source/ParticleVisual.cpp
 )
 
 target_compile_definitions(EchoJay PUBLIC
@@ -68,6 +70,7 @@ target_compile_definitions(EchoJay PUBLIC
     JUCE_USE_CURL=1
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_OPENGL=1
 )
 
 target_link_libraries(EchoJay
@@ -77,6 +80,7 @@ target_link_libraries(EchoJay
         juce::juce_dsp
         juce::juce_gui_extra
         juce::juce_cryptography
+        juce::juce_opengl
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
