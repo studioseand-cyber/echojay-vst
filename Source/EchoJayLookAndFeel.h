@@ -61,6 +61,10 @@ public:
         else if (isMouseOver)
             col = col.brighter(0.05f);
         
+        // Fully invisible overlay buttons — no painting at all
+        if (button.getAlpha() < 0.01f)
+            return;
+        
         // Transparent buttons — square hover fill, no rounded corners
         if (col.getAlpha() < 10)
         {

@@ -775,9 +775,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // Waveform play overlay buttons (invisible, positioned over waveform cards)
     for (int i = 0; i < kMaxWavePlayBtns; ++i)
     {
-        wavePlayOverlays[(size_t)i].setAlpha(1.0f);
+        wavePlayOverlays[(size_t)i].setAlpha(0.0f);
         wavePlayOverlays[(size_t)i].setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
         wavePlayOverlays[(size_t)i].setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+        wavePlayOverlays[(size_t)i].setColour(juce::TextButton::textColourOnId, juce::Colours::transparentBlack);
+        wavePlayOverlays[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colours::transparentBlack);
         wavePlayOverlays[(size_t)i].setInterceptsMouseClicks(true, false);
         wavePlayOverlays[(size_t)i].setVisible(false);
         // Use lambda that checks click position: left 30px = play/stop, rest = seek
