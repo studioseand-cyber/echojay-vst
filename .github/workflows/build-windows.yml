@@ -21,32 +21,73 @@ jobs:
         run: git clone --depth 1 --branch 8.0.12 https://github.com/juce-framework/JUCE.git ../JUCE
 
       - name: Configure CMake
-        run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_PATH="../JUCE"
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_PATH="../JUCE"
 
-      - name: Build
+      - name: Build VST3
         run: cmake --build build --config Release --target EchoJay_VST3
 
+      - name: Build Standalone
+        run: cmake --build build --config Release --target EchoJay_Standalone
+
       - name: List artifacts
-        run: dir build\EchoJay_artefacts\Release\VST3 /s
+        run: dir build\EchoJay_artefacts\Release /s
         shell: cmd
 
-      - name: Create installer
+      - name: Stage installer files
         run: |
-          mkdir installer
-          xcopy /E /I "build\EchoJay_artefacts\Release\VST3\EchoJay.vst3" "installer\EchoJay.vst3\"
+          mkdir installer-src\VST3
+          mkdir installer-src\Standalone
+          xcopy /E /I "build\EchoJay_artefacts\Release\VST3\EchoJay.vst3" "installer-src\VST3\EchoJay.vst3\"
+          copy "build\EchoJay_artefacts\Release\Standalone\EchoJay.exe" "installer-src\Standalone\"
         shell: cmd
 
-      - name: Upload VST3
+      - name: Create Inno Setup script
+        run: |
+          @"
+          [Setup]
+          AppName=EchoJay
+          AppVersion=1.1.0
+          AppPublisher=EchoJay
+          AppPublisherURL=https://echojay.ai
+          DefaultDirName={autopf}\EchoJay
+          DefaultGroupName=EchoJay
+          OutputDir=.
+          OutputBaseFilename=EchoJay-v1.1.0-Windows-Installer
+          Compression=lzma
+          SolidCompression=yes
+          WizardStyle=modern
+          ArchitecturesInstallIn64BitMode=x64
+          ArchitecturesAllowed=x64
+          PrivilegesRequired=admin
+
+          [Files]
+          Source: "installer-src\VST3\EchoJay.vst3\*"; DestDir: "{commoncf}\VST3\EchoJay.vst3"; Flags: ignoreversion recursesubdirs createallsubdirs
+          Source: "installer-src\Standalone\EchoJay.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+          [Icons]
+          Name: "{group}\EchoJay"; Filename: "{app}\EchoJay.exe"
+          Name: "{group}\Uninstall EchoJay"; Filename: "{uninstallexe}"
+
+          [Run]
+          Filename: "{app}\EchoJay.exe"; Description: "Launch EchoJay"; Flags: nowait postinstall skipifsilent
+          "@ | Out-File -FilePath installer.iss -Encoding ASCII
+        shell: pwsh
+
+      - name: Compile Installer (Inno Setup)
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+        shell: pwsh
+
+      - name: Upload Installer
         uses: actions/upload-artifact@v4
         with:
-          name: EchoJay-Windows-VST3
-          path: installer/
+          name: EchoJay-Windows-Installer
+          path: EchoJay-v1.1.0-Windows-Installer.exe
 
       - name: Create Release Asset (on tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          files: installer/**
+          files: EchoJay-v1.1.0-Windows-Installer.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
