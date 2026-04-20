@@ -135,6 +135,7 @@ public:
 private:
     juce::String apiEndpoint;
     juce::String authToken;
+    juce::String deviceId;
     UserInfo userInfo;
     UserSettings userSettings;
     

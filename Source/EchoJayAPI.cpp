@@ -18,6 +18,13 @@ EchoJayAPI::EchoJayAPI()
     if (apiEndpoint.isEmpty())
         apiEndpoint = "https://www.echojay.ai";
     
+    // Generate unique device ID from machine identifiers
+    auto computerName = juce::SystemStats::getComputerName();
+    auto userName = juce::SystemStats::getLogonName();
+    auto osName = juce::SystemStats::getOperatingSystemName();
+    deviceId = juce::SHA256((computerName + "|" + userName + "|" + osName).toUTF8())
+                   .toHexString().substring(0, 16);
+    
     // Fetch remote config once per session (shared across instances)
     if (!remoteConfigLoaded)
         fetchRemoteConfig();
@@ -80,6 +87,7 @@ void EchoJayAPI::getJSON(const juce::String& path,
 {
     auto endpoint = apiEndpoint;
     auto token = authToken;
+    auto devId = deviceId;
     auto cb = std::make_shared<std::function<void(const juce::var&, int)>>(onComplete);
     auto aliveFlag = alive; // capture shared_ptr by value — prevent use-after-free
     
@@ -90,6 +98,8 @@ void EchoJayAPI::getJSON(const juce::String& path,
         juce::String headers;
         if (token.isNotEmpty())
             headers += "Authorization: Bearer " + token + "\r\n";
+        if (devId.isNotEmpty())
+            headers += "x-device-id: " + devId + "\r\n";
         
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
@@ -122,7 +132,8 @@ void EchoJayAPI::login(const juce::String& email, const juce::String& password,
                         std::function<void(bool success, const juce::String& error)> onComplete)
 {
     juce::String body = "{\"email\":" + juce::JSON::toString(email) + 
-                        ",\"password\":" + juce::JSON::toString(password) + "}";
+                        ",\"password\":" + juce::JSON::toString(password) +
+                        ",\"deviceId\":" + juce::JSON::toString(deviceId) + "}";
     
     postJSON("/api/login", body, [this, onComplete](const juce::var& json, int statusCode)
     {
