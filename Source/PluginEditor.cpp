@@ -3165,6 +3165,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         if (inView) {
                             wavePlayOverlays[(size_t)idx].setBounds(cardX, cardY, cardW, cardH);
                             wavePlayOverlays[(size_t)idx].setVisible(true);
+                            wavePlayOverlays[(size_t)idx].toFront(false);
                         } else {
                             wavePlayOverlays[(size_t)idx].setBounds(-100, -100, 1, 1);
                             wavePlayOverlays[(size_t)idx].setVisible(false);
