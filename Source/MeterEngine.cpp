@@ -217,7 +217,10 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
             rawBins[(size_t)b] -= (float)(3.0 * octavesBelow);
         }
     }
-    float attackCoeff = 0.6f, releaseCoeff = 0.12f;
+    // Time-based smoothing — consistent across buffer sizes and platforms
+    double bufDur = (currentSampleRate > 0) ? (double)numSamples / currentSampleRate : 0.01;
+    float attackCoeff = 1.0f - (float)std::exp(-bufDur / 0.01);  // ~10ms attack
+    float releaseCoeff = 1.0f - (float)std::exp(-bufDur / 0.15); // ~150ms release
     for (int b = 0; b < N; ++b)
     {
         float coeff = (rawBins[(size_t)b] > smoothedSpectrum[(size_t)b]) ? attackCoeff : releaseCoeff;
