@@ -3139,11 +3139,14 @@ void EchoJayEditor::paint(juce::Graphics& g)
             {
                 int avX = chatX + chatW - avatarSize - 4;
                 int avY = drawY + 2;
-                g.setColour(C::bg4);
-                g.fillEllipse((float)avX, (float)avY, (float)avatarSize, (float)avatarSize);
-                g.setColour(C::text3);
-                g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-                g.drawText("U", avX, avY, avatarSize, avatarSize, juce::Justification::centred);
+                if (avY >= chatTop2 && avY + avatarSize <= chatBottomEdge)
+                {
+                    g.setColour(C::bg4);
+                    g.fillEllipse((float)avX, (float)avY, (float)avatarSize, (float)avatarSize);
+                    g.setColour(C::text3);
+                    g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+                    g.drawText("U", avX, avY, avatarSize, avatarSize, juce::Justification::centred);
+                }
                 
                 int bubbleX = chatX + chatW - maxBubbleW - 8;
                 int bubbleW = maxBubbleW - avatarSize + 4;
@@ -3269,11 +3272,15 @@ void EchoJayEditor::paint(juce::Graphics& g)
             {
                 int avX = chatX + 6;
                 int avY = drawY + 2;
-                g.setColour(C::purple);
-                g.fillEllipse((float)avX, (float)avY, (float)avatarSize, (float)avatarSize);
-                g.setColour(juce::Colours::white);
-                g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-                g.drawText("E", avX, avY, avatarSize, avatarSize, juce::Justification::centred);
+                // Only draw avatar if fully within clip region (avoids partial clip glitch)
+                if (avY >= chatTop2 && avY + avatarSize <= chatBottomEdge)
+                {
+                    g.setColour(C::purple);
+                    g.fillEllipse((float)avX, (float)avY, (float)avatarSize, (float)avatarSize);
+                    g.setColour(juce::Colours::white);
+                    g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+                    g.drawText("E", avX, avY, avatarSize, avatarSize, juce::Justification::centred);
+                }
                 
                 int bubbleX = avX + avatarSize + 6;
                 int bubbleW = chatW - avatarSize - 20;
