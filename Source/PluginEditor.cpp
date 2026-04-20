@@ -770,6 +770,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatScroll.setScrollBarsShown(true, false);
     chatScroll.addMouseListener(this, true);
     chatContent.setInterceptsMouseClicks(true, true);
+    
+    // Forward clicks from chat area to editor for wave card hit testing
+    chatContent.addMouseListener(this, false);
+    chatScroll.addMouseListener(this, true);
     chatContent.addMouseListener(this, true);
 
     // Waveform play overlay buttons (invisible, positioned over waveform cards)
