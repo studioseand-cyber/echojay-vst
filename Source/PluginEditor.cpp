@@ -768,8 +768,45 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addChildComponent(chatScroll);
     chatScroll.setViewedComponent(&chatContent, false);
     chatScroll.setScrollBarsShown(true, false);
-    chatScroll.setInterceptsMouseClicks(false, true);
     chatContent.setInterceptsMouseClicks(true, true);
+    
+    // Forward clicks on chat viewport to wave card hit testing
+    chatScroll.onClickCheck = [this](const juce::MouseEvent& e) -> bool {
+        auto pos = e.getEventRelativeTo(this).getPosition();
+        for (auto& wp : chatWavePositions)
+        {
+            if (wp.bounds.contains(pos))
+            {
+                int localX = pos.x - wp.bounds.getX();
+                int playBtnArea = 30;
+                if (localX <= playBtnArea)
+                {
+                    for (int j = 0; j < activeWavePlayBtns; ++j)
+                    {
+                        if (wavePlayPaths[(size_t)j] == wp.wavPath)
+                        { onWavePlayClick(j); break; }
+                    }
+                }
+                else
+                {
+                    int wfStart = playBtnArea;
+                    int wfWidth = wp.bounds.getWidth() - wfStart - 6;
+                    if (wfWidth > 0)
+                    {
+                        float frac = juce::jlimit(0.0f, 1.0f, (float)(localX - wfStart) / (float)wfWidth);
+                        for (int j = 0; j < activeWavePlayBtns; ++j)
+                        {
+                            if (wavePlayPaths[(size_t)j] == wp.wavPath)
+                            { onWaveSeekClick(j, frac); break; }
+                        }
+                    }
+                }
+                repaint();
+                return true;
+            }
+        }
+        return false;
+    };
 
     // Waveform play overlay buttons
     for (int i = 0; i < kMaxWavePlayBtns; ++i)
@@ -4215,17 +4252,23 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     chatLoading = true;
     repaint();
 
-    auto md = processorRef.getMeterEngine().getMeterData();
-    auto ff = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
-
-    juce::String ctx = "\n\n[METER: " + processorRef.getEffectiveChannelName() + " (" + processorRef.getGenre() + ")] " +
-        "Int " + ff(md.integrated) + " LUFS | Mom " + ff(md.momentary) + " | ST " + ff(md.shortTerm) +
-        " | LRA " + juce::String(md.loudnessRange, 1) + " LU | RMS " + ff(md.rmsL) + "/" + ff(md.rmsR) +
-        " | TP " + ff(md.truePeakL) + "/" + ff(md.truePeakR) + " | Crest " + juce::String(md.crestFactor, 1) +
-        " | Width " + juce::String(md.width, 1) + "% | Corr " + juce::String(md.correlation, 2);
+    // Only append meter data if this is the first message (no prior chat history)
+    // Follow-up messages are pure conversation — no meter context needed
+    juce::String userContent = msg;
+    if (processorRef.chatRoles.size() == 0)
+    {
+        auto md = processorRef.getMeterEngine().getMeterData();
+        auto ff = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
+        juce::String ctx = "\n\n[METER: " + processorRef.getEffectiveChannelName() + " (" + processorRef.getGenre() + ")] " +
+            "Int " + ff(md.integrated) + " LUFS | Mom " + ff(md.momentary) + " | ST " + ff(md.shortTerm) +
+            " | LRA " + juce::String(md.loudnessRange, 1) + " LU | RMS " + ff(md.rmsL) + "/" + ff(md.rmsR) +
+            " | TP " + ff(md.truePeakL) + "/" + ff(md.truePeakR) + " | Crest " + juce::String(md.crestFactor, 1) +
+            " | Width " + juce::String(md.width, 1) + "% | Corr " + juce::String(md.correlation, 2);
+        userContent = msg + ctx;
+    }
 
     processorRef.chatRoles.add("user");
-    processorRef.chatContents.add(msg + ctx);
+    processorRef.chatContents.add(userContent);
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         processorRef.getEffectiveChannelName(), processorRef.getGenre(),
@@ -5840,8 +5883,7 @@ void EchoJayEditor::startChatPlayback(const juce::String& wavPath, float offset)
     juce::File wavFile(wavPath);
     if (!wavFile.existsAsFile()) return;
     
-    // If in Compare view, route playback through the plugin output (mutes DAW audio)
-    if (currentView == View::Compare)
+    // Route playback through the plugin output (AB system) on all views
     {
         // If same file is paused and no seek offset, resume from where we paused
         if (processorRef.abPaused.load() && processorRef.abFilePath == wavPath && offset < 0.1f)

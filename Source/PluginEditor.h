@@ -263,7 +263,19 @@ private:
     };
     std::vector<ChatMsg> chatMessages;
     bool chatLoading = false;
-    juce::Viewport chatScroll;
+    
+    // Custom viewport that forwards clicks to parent for wave card hit testing
+    struct ChatViewport : public juce::Viewport
+    {
+        std::function<bool(const juce::MouseEvent&)> onClickCheck;
+        void mouseDown(const juce::MouseEvent& e) override
+        {
+            if (onClickCheck && onClickCheck(e))
+                return; // consumed by wave card
+            juce::Viewport::mouseDown(e);
+        }
+    };
+    ChatViewport chatScroll;
     juce::Component chatContent;
     juce::TextEditor chatInput;
     juce::TextButton chatSendBtn { "Send" };
