@@ -3078,6 +3078,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     g.reduceClipRegion(chatX, chatTop2, chatW, chatBottomEdge - chatTop2);
     // Track waveform card positions for overlay buttons
     activeWavePlayBtns = 0;
+    chatWavePositions.clear();
 
     int msgY = 8 - scrollOffset;
     for (auto& msg : chatMessages) {
@@ -3166,6 +3167,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
                             wavePlayOverlays[(size_t)idx].setBounds(cardX, cardY, cardW, cardH);
                             wavePlayOverlays[(size_t)idx].setVisible(true);
                             wavePlayOverlays[(size_t)idx].toFront(false);
+                            // Store for direct mouseDown hit testing (Windows workaround)
+                            chatWavePositions.push_back({ {cardX, cardY, cardW, cardH}, msg.wavFilePath, msg.durationSeconds });
                         } else {
                             wavePlayOverlays[(size_t)idx].setBounds(-100, -100, 1, 1);
                             wavePlayOverlays[(size_t)idx].setVisible(false);
@@ -5251,6 +5254,52 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         }
         
         return; // Consume click while overlay is showing
+    }
+    
+    // Chat wave card click — direct hit testing (works on Windows where overlays fail)
+    if (currentScreen == Screen::Main && !chatWavePositions.empty())
+    {
+        for (int i = 0; i < (int)chatWavePositions.size(); ++i)
+        {
+            auto& wp = chatWavePositions[(size_t)i];
+            if (wp.bounds.contains(pos))
+            {
+                int localX = pos.x - wp.bounds.getX();
+                int playBtnArea = 30;
+                if (localX <= playBtnArea)
+                {
+                    // Find matching index in wavePlayPaths
+                    for (int j = 0; j < activeWavePlayBtns; ++j)
+                    {
+                        if (wavePlayPaths[(size_t)j] == wp.wavPath)
+                        {
+                            onWavePlayClick(j);
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    // Seek
+                    int wfStart = playBtnArea;
+                    int wfWidth = wp.bounds.getWidth() - wfStart - 6;
+                    if (wfWidth > 0)
+                    {
+                        float frac = juce::jlimit(0.0f, 1.0f, (float)(localX - wfStart) / (float)wfWidth);
+                        for (int j = 0; j < activeWavePlayBtns; ++j)
+                        {
+                            if (wavePlayPaths[(size_t)j] == wp.wavPath)
+                            {
+                                onWaveSeekClick(j, frac);
+                                break;
+                            }
+                        }
+                    }
+                }
+                repaint();
+                return;
+            }
+        }
     }
     
     // Visual-only mode — click expand icon to exit

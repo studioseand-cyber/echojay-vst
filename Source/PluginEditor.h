@@ -207,6 +207,9 @@ private:
     struct CompareWavePos { juce::Rectangle<int> bounds; juce::String wavPath; float duration; };
     std::vector<CompareWavePos> compareWavePositions;
     
+    // Chat wave card positions for direct mouseDown hit testing (Windows overlay workaround)
+    std::vector<CompareWavePos> chatWavePositions;
+    
     // Transparent click catcher for compare waveform area — forwards file drags to parent
     struct DragForwardingComponent : public juce::Component, public juce::FileDragAndDropTarget
     {
