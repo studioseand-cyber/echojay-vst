@@ -46,7 +46,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             {
                 if (playing)
                 {
-                    // DAW is playing — sync position if ref is playing
+                    // DAW is playing — sync ref position to DAW timeline
                     if (abPlayingRef.load())
                     {
                         if (auto timeInSamples = pos->getTimeInSamples())
@@ -60,24 +60,11 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                             abPlaybackPos = abPos;
                         }
                     }
-                    // Auto-resume ref ONLY if transport paused it (not user)
-                    if (!abPlayingRef.load() && abPaused.load() && abPausedByTransport.load())
-                    {
-                        abPlayingRef.store(true);
-                        abPaused.store(false);
-                        abPausedByTransport.store(false);
-                    }
                 }
-                else
-                {
-                    // DAW stopped — pause ref if playing (mark as transport-paused)
-                    if (abPlayingRef.load())
-                    {
-                        abPlayingRef.store(false);
-                        abPaused.store(true);
-                        abPausedByTransport.store(true);
-                    }
-                }
+                // When DAW stops: do nothing — ref keeps playing freely,
+                // pass goes silent (no DAW audio flowing). User toggles A/B
+                // to switch between ref and pass (silence when DAW stopped).
+                // DAW start: ref re-syncs position on next playing block.
             }
             
             // Auto-stop capture when transport stops (spacebar)
@@ -100,20 +87,31 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         {
             int numSamples = buffer.getNumSamples();
             int abChans = abBuffer.getNumChannels();
-            int samplesRemaining = abSampleCount - abPlaybackPos;
-            int samplesToPlay = std::min(numSamples, samplesRemaining);
+            double dawRate = getSampleRate();
+            double ratio = (abSampleRate > 0 && dawRate > 0) ? abSampleRate / dawRate : 1.0;
             
             for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             {
                 float* out = buffer.getWritePointer(ch);
                 const float* src = (ch < abChans) ? abBuffer.getReadPointer(ch) : abBuffer.getReadPointer(0);
                 
-                for (int i = 0; i < samplesToPlay; ++i)
-                    out[i] = src[abPlaybackPos + i];
-                for (int i = samplesToPlay; i < numSamples; ++i)
-                    out[i] = 0.0f;
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    double srcPos = abPlaybackPos + i * ratio;
+                    int idx = (int)srcPos;
+                    if (idx >= abSampleCount - 1)
+                    {
+                        out[i] = 0.0f;
+                        continue;
+                    }
+                    // Linear interpolation
+                    float frac = (float)(srcPos - idx);
+                    out[i] = src[idx] * (1.0f - frac) + src[idx + 1] * frac;
+                }
             }
-            abPlaybackPos += samplesToPlay;
+            abPlaybackPos += (int)(numSamples * ratio);
+            if (abPlaybackPos >= abSampleCount)
+                abPlaybackPos = abSampleCount; // will stop on next block
             
             // Re-read pointers since buffer was modified
             left = buffer.getReadPointer(0);

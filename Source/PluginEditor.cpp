@@ -3159,13 +3159,16 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         int idx = activeWavePlayBtns++;
                         wavePlayPaths[(size_t)idx] = msg.wavFilePath;
                         wavePlayDurations[(size_t)idx] = msg.durationSeconds;
-                        wavePlayOverlays[(size_t)idx].setBounds(cardX, cardY, cardW, cardH);
-                        
                         // Only show if within the visible chat scroll area
                         auto scrollBounds = chatScroll.getBounds();
                         bool inView = cardY >= scrollBounds.getY() && (cardY + cardH) <= scrollBounds.getBottom();
-                        wavePlayOverlays[(size_t)idx].setVisible(inView);
-                        if (inView) wavePlayOverlays[(size_t)idx].toFront(false);
+                        if (inView) {
+                            wavePlayOverlays[(size_t)idx].setBounds(cardX, cardY, cardW, cardH);
+                            wavePlayOverlays[(size_t)idx].setVisible(true);
+                        } else {
+                            wavePlayOverlays[(size_t)idx].setBounds(-100, -100, 1, 1);
+                            wavePlayOverlays[(size_t)idx].setVisible(false);
+                        }
                     }
                     
                     // Waveform fills the rest
@@ -3810,6 +3813,14 @@ void EchoJayEditor::timerCallback()
         abBarShowing = false;
         setSize(getWidth(), getHeight() - kAbBarH);
     }
+    
+    // ALWAYS bring header buttons to front so overlays can't block them
+    captureBtn.toFront(false);
+    compareBtn.toFront(false);
+    settingsBtn.toFront(false);
+    scanBtn.toFront(false);
+    channelTypeBox.toFront(false);
+    genreBox.toFront(false);
     
     // Spectrum A/B hold — capture spectrum snapshot when switching between ref and DAW
     bool isPlayingRef = processorRef.abPlayingRef.load();
