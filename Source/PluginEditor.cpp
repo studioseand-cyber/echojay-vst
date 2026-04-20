@@ -768,15 +768,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addChildComponent(chatScroll);
     chatScroll.setViewedComponent(&chatContent, false);
     chatScroll.setScrollBarsShown(true, false);
-    chatScroll.addMouseListener(this, true);
+    chatScroll.setInterceptsMouseClicks(false, true);
     chatContent.setInterceptsMouseClicks(true, true);
-    
-    // Forward clicks from chat area to editor for wave card hit testing
-    chatContent.addMouseListener(this, false);
-    chatScroll.addMouseListener(this, true);
-    chatContent.addMouseListener(this, true);
 
-    // Waveform play overlay buttons (invisible, positioned over waveform cards)
+    // Waveform play overlay buttons
     for (int i = 0; i < kMaxWavePlayBtns; ++i)
     {
         wavePlayOverlays[(size_t)i].setAlpha(0.0f);
@@ -786,17 +781,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         wavePlayOverlays[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colours::transparentBlack);
         wavePlayOverlays[(size_t)i].setInterceptsMouseClicks(true, false);
         wavePlayOverlays[(size_t)i].setVisible(false);
-        // Use lambda that checks click position: left 30px = play/stop, rest = seek
         wavePlayOverlays[(size_t)i].onClick = [this, i]() {
             auto mousePos = wavePlayOverlays[(size_t)i].getMouseXYRelative();
-            int playBtnArea = 30; // play button circle is ~22px + padding
+            int playBtnArea = 30;
             if (mousePos.x <= playBtnArea)
             {
                 onWavePlayClick(i);
             }
             else
             {
-                // Seek: calculate fraction within waveform area
                 int wfStart = playBtnArea;
                 int wfWidth = wavePlayOverlays[(size_t)i].getWidth() - wfStart - 6;
                 if (wfWidth > 0)
@@ -3164,14 +3157,12 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         int idx = activeWavePlayBtns++;
                         wavePlayPaths[(size_t)idx] = msg.wavFilePath;
                         wavePlayDurations[(size_t)idx] = msg.durationSeconds;
-                        // Only show if within the visible chat scroll area
                         auto scrollBounds = chatScroll.getBounds();
                         bool inView = cardY >= scrollBounds.getY() && (cardY + cardH) <= scrollBounds.getBottom();
                         if (inView) {
                             wavePlayOverlays[(size_t)idx].setBounds(cardX, cardY, cardW, cardH);
                             wavePlayOverlays[(size_t)idx].setVisible(true);
                             wavePlayOverlays[(size_t)idx].toFront(false);
-                            // Store for direct mouseDown hit testing (Windows workaround)
                             chatWavePositions.push_back({ {cardX, cardY, cardW, cardH}, msg.wavFilePath, msg.durationSeconds });
                         } else {
                             wavePlayOverlays[(size_t)idx].setBounds(-100, -100, 1, 1);
