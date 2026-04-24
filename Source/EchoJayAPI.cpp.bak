@@ -743,14 +743,7 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     
     prompt += "Audio topics only. Internal genre reference (NEVER say this in your response): " + genre + ". ";
     prompt += "NEVER say the genre name — not \"hip-hop\", \"drill\", \"pop\", \"R&B\", \"rap\", \"trap\", \"grime\" or any other genre name. ";
-    prompt += "Don't say \"for hip-hop\" or \"that makes hip-hop work\" or \"in this genre\". Just talk about the mix without naming the genre.\n\n";
-    
-    prompt += "QUESTION ROUTING — read this carefully before every response:\n";
-    prompt += "Figure out what the user is actually asking. There are two kinds of messages:\n";
-    prompt += "1. MIX ANALYSIS — the user is asking about the capture/meter data in front of them. Words like 'my mix', 'this track', 'how does it sound', 'what's wrong with it', 'feedback on my capture'. Answer with meter analysis in the style above.\n";
-    prompt += "2. GENERAL QUESTION — the user is asking about production, other artists, gear, references, techniques, workflow, or anything not tied to the current capture. Examples: 'how do I get drums to hit like Hitboy', 'what's a good way to mix 808s', 'should I use parallel compression', 'tell me about bus compression', 'how would you EQ vocals'. Answer these directly like an engineer would in the studio. DO NOT pivot to analysing the current capture's meter data. DO NOT open with 'your vocal is sitting in a good spot' or similar. The meter data in earlier context is NOT the subject of the question — ignore it for general questions.\n";
-    prompt += "If you're unsure which kind, lean toward GENERAL QUESTION and answer what was asked. You can briefly tie advice back to their mix at the end IF relevant, but never force it.\n";
-    prompt += "NEVER reframe a general question as a mix analysis. If the user asks 'how do X hit like Y', answer that question — do not analyse their current capture instead.\n";
+    prompt += "Don't say \"for hip-hop\" or \"that makes hip-hop work\" or \"in this genre\". Just talk about the mix without naming the genre.\n";
     
     return prompt;
 }

@@ -1278,16 +1278,12 @@ void EchoJayEditor::runAICompare()
             compareCtx = processorRef.buildCompareContext(snaps[ci], refs[ri]);
     } else if (!aIsRef && !bIsRef) {
         int ia = idA - 1, ib = idB - 1;
-        if (ia >= 0 && ia < (int)snaps.size() && ib >= 0 && ib < (int)snaps.size() && ia != ib)
+        if (ia >= 0 && ia < (int)snaps.size() && ib >= 0 && ib < (int)snaps.size())
             compareCtx = processorRef.buildCompareContext(snaps[ia], snaps[ib]);
     } else if (aIsRef && !bIsRef) {
         int ri = idA - refOffset, ci = idB - 1;
         if (ci >= 0 && ci < (int)snaps.size() && ri >= 0 && ri < (int)refs.size())
             compareCtx = processorRef.buildCompareContext(snaps[ci], refs[ri]);
-    } else if (aIsRef && bIsRef) {
-        int ra = idA - refOffset, rb = idB - refOffset;
-        if (ra >= 0 && ra < (int)refs.size() && rb >= 0 && rb < (int)refs.size() && ra != rb)
-            compareCtx = processorRef.buildCompareContext(refs[ra], refs[rb]);
     }
 
     if (compareCtx.isEmpty()) {

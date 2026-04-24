@@ -99,8 +99,6 @@ public:
     juce::String buildCompareContext(const CaptureSnapshot& capture, const ReferenceResult& reference) const;
     // Build AI compare context between two captures
     juce::String buildCompareContext(const CaptureSnapshot& a, const CaptureSnapshot& b) const;
-    // Build AI compare context between two references
-    juce::String buildCompareContext(const ReferenceResult& a, const ReferenceResult& b) const;
 
     ChannelType getChannelType() const { return channelType; }
     void setChannelType(ChannelType t);
