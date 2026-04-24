@@ -28,6 +28,13 @@ EchoJayAPI::EchoJayAPI()
     // Fetch remote config once per session (shared across instances)
     if (!remoteConfigLoaded)
         fetchRemoteConfig();
+    
+    // AUTH CACHE REFRESH — if user was already logged in from a previous session,
+    // the cached tier/limit/usage on disk may be stale (e.g. they upgraded via the website
+    // since last plugin launch). Trigger an immediate server refresh so UI and send-gating
+    // reflect current server state instead of stale disk cache.
+    if (authToken.isNotEmpty())
+        refreshUserInfo(nullptr);
 }
 
 EchoJayAPI::~EchoJayAPI()
@@ -296,15 +303,34 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
 {
     if (!canSendMessage())
     {
-        juce::String limitStr = juce::String(userInfo.messageLimit);
-        juce::String msg = "You've hit your daily limit of " + limitStr + " AI messages. ";
-        if (userInfo.tierLevel >= 2)
-            msg += "Limit resets at midnight.";
-        else if (userInfo.tierLevel >= 1)
-            msg += "Upgrade to Studio for 150 messages per day.";
-        else
-            msg += "Upgrade to Pro for 50 messages per day.";
-        onComplete(msg, false);
+        // AUTH CACHE REFRESH — local cache says we're over limit, but the user may have
+        // upgraded tier or credits since the last server sync. Refresh from /api/me first,
+        // and only show "limit reached" if the server ALSO agrees we're at the limit.
+        // This is the self-healing path for users who upgrade mid-session.
+        auto aliveFlag = alive;
+        refreshUserInfo([this, roles, contents, systemPrompt, onComplete, aliveFlag](bool refreshSuccess)
+        {
+            if (!aliveFlag->load()) return;
+            
+            if (refreshSuccess && canSendMessage())
+            {
+                // Refresh revealed we actually CAN send (tier upgraded, credits added, new day, etc).
+                // Retry the send as if the limit error never happened.
+                sendChat(roles, contents, systemPrompt, onComplete);
+                return;
+            }
+            
+            // Server confirms we're at the limit (or refresh failed — fall back to cached state).
+            juce::String limitStr = juce::String(userInfo.messageLimit);
+            juce::String msg = "You've hit your daily limit of " + limitStr + " AI messages. ";
+            if (userInfo.tierLevel >= 2)
+                msg += "Limit resets at midnight.";
+            else if (userInfo.tierLevel >= 1)
+                msg += "Upgrade to Studio for 150 messages per day.";
+            else
+                msg += "Upgrade to Pro for 50 messages per day.";
+            onComplete(msg, false);
+        });
         return;
     }
     
