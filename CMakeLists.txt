@@ -30,6 +30,8 @@ endif()
 juce_add_plugin(EchoJay
     COMPANY_NAME "EchoJay"
     BUNDLE_ID "com.echojay.plugin"
+    ICON_BIG "${CMAKE_SOURCE_DIR}/EchoJay.icns"
+    ICON_BIG "${CMAKE_SOURCE_DIR}/EchoJay.icns"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
