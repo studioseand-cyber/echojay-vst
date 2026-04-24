@@ -9,6 +9,5 @@ installer/
 pkg-root/
 dmg-content/
 resources/welcome.html
-EchoJay.icns
 EchoJay_artefacts/
 .DS_Store

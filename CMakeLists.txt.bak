@@ -27,15 +27,11 @@ else()
     set(PLUGIN_FORMATS AU VST3 Standalone)
 endif()
 
-if(APPLE)
-    set(ECHOJAY_ICON_ARG ICON_BIG "${CMAKE_SOURCE_DIR}/EchoJay.icns")
-else()
-    set(ECHOJAY_ICON_ARG "")
-endif()
-
 juce_add_plugin(EchoJay
     COMPANY_NAME "EchoJay"
     BUNDLE_ID "com.echojay.plugin"
+    ICON_BIG "${CMAKE_SOURCE_DIR}/EchoJay.icns"
+    ICON_BIG "${CMAKE_SOURCE_DIR}/EchoJay.icns"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
