@@ -27,6 +27,8 @@ else()
     set(PLUGIN_FORMATS AU VST3 Standalone)
 endif()
 
+# Platform-conditional app icon — JUCE needs .ico on Windows, .icns on macOS
+# We only have .icns, so only set the icon on macOS
 if(APPLE)
     set(ECHOJAY_ICON_ARG ICON_BIG "${CMAKE_SOURCE_DIR}/EchoJay.icns")
 else()
@@ -34,6 +36,7 @@ else()
 endif()
 
 juce_add_plugin(EchoJay
+    ${ECHOJAY_ICON_ARG}
     COMPANY_NAME "EchoJay"
     BUNDLE_ID "com.echojay.plugin"
     IS_SYNTH FALSE
