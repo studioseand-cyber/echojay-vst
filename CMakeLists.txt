@@ -50,6 +50,9 @@ juce_add_plugin(EchoJay
     FORMATS ${PLUGIN_FORMATS}
     PRODUCT_NAME "EchoJay"
     AAX_IDENTIFIER "com.echojay.plugin"
+    AU_MAIN_TYPE kAudioUnitType_Effect
+    VST3_CATEGORIES "Fx" "Analyzer"
+    AAX_CATEGORY "AAX_ePlugInCategory_None"
 )
 
 juce_generate_juce_header(EchoJay)

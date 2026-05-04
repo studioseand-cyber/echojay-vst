@@ -20,6 +20,20 @@ EchoJayProcessor::~EchoJayProcessor()
         saveThread->waitForThreadToExit(5000);
 }
 
+bool EchoJayProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
+{
+    // Only support mono and stereo. Rejects 5.1, 7.1, ambisonics, etc.
+    // This is what stops Pro Tools showing the long list of channel layouts.
+    auto in  = layouts.getMainInputChannelSet();
+    auto out = layouts.getMainOutputChannelSet();
+    
+    if (in != out)
+        return false;
+    
+    return in == juce::AudioChannelSet::mono()
+        || in == juce::AudioChannelSet::stereo();
+}
+
 void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     meterEngine.prepare(sampleRate, samplesPerBlock);

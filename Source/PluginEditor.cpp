@@ -169,6 +169,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     setResizable(true, true);
     setResizeLimits(900, 580, 1800, 1200);
     setWantsKeyboardFocus(true);
+    setOpaque(true);
 
     // --- Channel type ---
     // Grouped channel type dropdown — uses PopupMenu with submenus via getRootMenu()
@@ -2006,6 +2007,12 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             usageStr += " (+" + juce::String(info.credits) + ")";
         g.drawText(usageStr, x + w - 120, y, 120, 14, juce::Justification::centredRight);
     }
+    
+    // Version number — top-right corner, below message count
+    g.setColour(C::text3);
+    g.setFont(juce::Font(juce::FontOptions(9.0f)));
+    g.drawText(juce::String("v") + ProjectInfo::versionString,
+               x + w - 120, y + 14, 120, 12, juce::Justification::centredRight);
     
     auto label = [&](const juce::String& text) {
         g.setColour(C::text3);
