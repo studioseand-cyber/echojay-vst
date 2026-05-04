@@ -16,6 +16,7 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+    void visibilityChanged() override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
     bool keyPressed(const juce::KeyPress& key) override;
@@ -326,6 +327,21 @@ private:
     bool updateDismissed = false;
     int updateCheckCounter = 0;
     static constexpr int kUpdateCheckInterval = 20 * 60 * 360; // ~6 hours at 20fps
+    
+    // Update overlay child component — drawn ON TOP of all other children including
+    // particleVisual. Paints its own dark background + card. Handles its own clicks.
+    struct UpdateOverlay : public juce::Component
+    {
+        std::function<void()> onDownload;
+        std::function<void()> onDismiss;
+        juce::String latestVersionStr;
+        juce::String currentVersionStr;
+        using C = EchoJayLookAndFeel::Colours;
+        
+        void paint(juce::Graphics& g) override;
+        void mouseDown(const juce::MouseEvent& e) override;
+    };
+    UpdateOverlay updateOverlay;
     
     using C = EchoJayLookAndFeel::Colours;
     EchoJayLookAndFeel lnf;

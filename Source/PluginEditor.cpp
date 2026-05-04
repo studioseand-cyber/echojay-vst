@@ -87,6 +87,71 @@ static constexpr GenrePromptOption kGenrePromptOptions[] = {
     { "Lo-Fi", 3 }, { "Ambient", 3 }, { "Latin", 3 }, { "Afrobeat", 3 },
     { "Dancehall", 3 }, { "Grime", 3 }, { "Phonk", 3 }, { "Jersey Club", 3 }
 };
+
+// --- Update-dismissed persistence -------------------------------------------
+// Stored at ~/Library/Application Support/EchoJay/update_dismissed.json
+// Format: { "version": "1.2.0", "dismissedAtSeconds": 1714678800 }
+//   - version: which latestVersion the user dismissed
+//   - dismissedAtSeconds: Unix epoch when they clicked Not Now
+// We re-prompt 3 days after the last dismissal, OR immediately if a newer
+// version appears.
+
+// Returns true if `a` is strictly newer than `b`, using dot-separated numeric
+// comparison. Handles 1.10.0 > 1.2.0 correctly (numeric, not lexicographic).
+// Trailing components in either string are treated as 0 (so "1.2" == "1.2.0").
+// Non-numeric tokens are treated as 0.
+static bool isVersionNewer(const juce::String& a, const juce::String& b)
+{
+    auto partsA = juce::StringArray::fromTokens(a, ".", "");
+    auto partsB = juce::StringArray::fromTokens(b, ".", "");
+    int n = juce::jmax(partsA.size(), partsB.size());
+    for (int i = 0; i < n; ++i)
+    {
+        int ai = (i < partsA.size()) ? partsA[i].getIntValue() : 0;
+        int bi = (i < partsB.size()) ? partsB[i].getIntValue() : 0;
+        if (ai > bi) return true;
+        if (ai < bi) return false;
+    }
+    return false;  // equal — not newer
+}
+
+static juce::File updateDismissFile()
+{
+    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+   #if JUCE_MAC
+    return appData.getChildFile("Application Support/EchoJay/update_dismissed.json");
+   #else
+    return appData.getChildFile("EchoJay/update_dismissed.json");
+   #endif
+}
+
+// Returns true if we should suppress the overlay because the user dismissed
+// THIS version less than 3 days ago.
+static bool isUpdateDismissalActive(const juce::String& versionToCheck)
+{
+    auto f = updateDismissFile();
+    if (!f.existsAsFile()) return false;
+    auto json = juce::JSON::parse(f);
+    auto* obj = json.getDynamicObject();
+    if (obj == nullptr) return false;
+    auto storedVersion = obj->getProperty("version").toString();
+    auto dismissedAt = (juce::int64)(double)obj->getProperty("dismissedAtSeconds");
+    if (storedVersion != versionToCheck) return false;  // different version → re-prompt
+    auto nowSec = juce::Time::currentTimeMillis() / 1000;
+    auto threeDaysSec = (juce::int64)(3 * 24 * 60 * 60);
+    return (nowSec - dismissedAt) < threeDaysSec;
+}
+
+static void recordUpdateDismissal(const juce::String& versionDismissed)
+{
+    auto f = updateDismissFile();
+    f.getParentDirectory().createDirectory();
+    juce::DynamicObject::Ptr obj = new juce::DynamicObject();
+    obj->setProperty("version", versionDismissed);
+    obj->setProperty("dismissedAtSeconds", (double)(juce::Time::currentTimeMillis() / 1000));
+    f.replaceWithText(juce::JSON::toString(juce::var(obj.get())));
+}
+
 }
 
 // Static: genre prompt dismissed flag — persists across all instances for the DAW session
@@ -186,6 +251,22 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     particleVisual->currentPreset = (ParticleVisual::Preset)juce::jlimit(0, 3, processorRef.visualPreset);
     particleVisual->currentTheme = (ParticleVisual::Theme)juce::jlimit(0, 3, processorRef.visualTheme);
     visualMode = processorRef.visualModeOn;
+    
+    // --- Update Overlay (real child component so it draws ON TOP of particleVisual) ---
+    updateOverlay.setVisible(false);
+    updateOverlay.onDownload = [this]() {
+        auto url = EchoJayAPI::updateUrl.isNotEmpty() ? EchoJayAPI::updateUrl : "https://www.echojay.ai/?noredirect#plugin";
+        juce::URL(url).launchInDefaultBrowser();
+    };
+    updateOverlay.onDismiss = [this]() {
+        updateDismissed = true;
+        recordUpdateDismissal(EchoJayAPI::latestVersion);
+        updateAvailable = false;
+        updateOverlay.setVisible(false);
+        resized();  // bring particleVisual back
+        repaint();
+    };
+    addChildComponent(updateOverlay);
 
     // --- Compare ---
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -847,6 +928,19 @@ EchoJayEditor::~EchoJayEditor() {
     stopPlayback(); stopTimer(); setLookAndFeel(nullptr);
 }
 
+void EchoJayEditor::visibilityChanged()
+{
+    // When the editor becomes visible (e.g. user reopens the plugin window in a host
+    // that hides/shows rather than destroys/recreates), reset the dismissed flag so
+    // any pending update notification reappears.
+    if (isVisible())
+    {
+        updateDismissed = false;
+        // updateAvailable will be re-set on next timer tick if latestVersion is still
+        // non-empty and differs from current.
+    }
+}
+
 // ============================================================================
 // Auth
 // ============================================================================
@@ -1112,6 +1206,87 @@ void EchoJayEditor::dismissGenrePrompt(const juce::String& selectedGenre)
     settingsBtn.setEnabled(true);
     resized();
     repaint();
+}
+
+// --- UpdateOverlay implementation ---
+// This is a real child component so it always paints ON TOP of particleVisual,
+// just like the channel/genre prompt UI (which uses real Components/Buttons).
+void EchoJayEditor::UpdateOverlay::paint(juce::Graphics& g)
+{
+    auto bounds = getLocalBounds();
+    
+    // Dark backdrop covering the whole editor area we occupy
+    g.setColour(juce::Colours::black.withAlpha(0.72f));
+    g.fillRect(bounds);
+    
+    // Card centred
+    int cardW = 340, cardH = 180;
+    int cardX = (bounds.getWidth() - cardW) / 2;
+    int cardY = (bounds.getHeight() - cardH) / 2;
+    auto card = juce::Rectangle<int>(cardX, cardY, cardW, cardH);
+    
+    g.setColour(C::bg2);
+    g.fillRoundedRectangle(card.toFloat(), 16.0f);
+    g.setColour(C::border2);
+    g.drawRoundedRectangle(card.toFloat(), 16.0f, 1.0f);
+    
+    g.setColour(C::text);
+    g.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
+    g.drawText("Update Available", card.getX(), card.getY() + 24, card.getWidth(), 24, juce::Justification::centred);
+    
+    g.setColour(C::text2);
+    g.setFont(juce::Font(juce::FontOptions(13.0f)));
+    g.drawText("EchoJay " + latestVersionStr + " is now available",
+               card.getX(), card.getY() + 54, card.getWidth(), 20, juce::Justification::centred);
+    g.drawText("You're running v" + currentVersionStr,
+               card.getX(), card.getY() + 74, card.getWidth(), 20, juce::Justification::centred);
+    
+    // Download button
+    auto dlBtn = juce::Rectangle<float>((float)(card.getCentreX() - 70), (float)(card.getY() + 110), 140.0f, 34.0f);
+    g.setGradientFill(juce::ColourGradient(C::blue, dlBtn.getX(), 0, C::purple, dlBtn.getRight(), 0, false));
+    g.fillRoundedRectangle(dlBtn, 8.0f);
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+    g.drawText("Download Update", dlBtn.toNearestInt(), juce::Justification::centred);
+    
+    // Dismiss link
+    g.setColour(C::text3);
+    g.setFont(juce::Font(juce::FontOptions(11.0f)));
+    g.drawText("Not now", card.getX(), card.getY() + 150, card.getWidth(), 20, juce::Justification::centred);
+}
+
+void EchoJayEditor::UpdateOverlay::mouseDown(const juce::MouseEvent& e)
+{
+    auto pos = e.getPosition();
+    auto bounds = getLocalBounds();
+    int cardW = 340, cardH = 180;
+    int cardX = (bounds.getWidth() - cardW) / 2;
+    int cardY = (bounds.getHeight() - cardH) / 2;
+    
+    // Download button hit test
+    int dlBtnX = bounds.getWidth() / 2 - 70;
+    int dlBtnY = cardY + 110;
+    if (pos.x >= dlBtnX && pos.x <= dlBtnX + 140 && pos.y >= dlBtnY && pos.y <= dlBtnY + 34)
+    {
+        if (onDownload) onDownload();
+        return;
+    }
+    
+    // "Not now" link
+    int notNowY = cardY + 150;
+    if (pos.y >= notNowY && pos.y <= notNowY + 20 && pos.x >= cardX && pos.x <= cardX + cardW)
+    {
+        if (onDismiss) onDismiss();
+        return;
+    }
+    
+    // Click outside the card also dismisses
+    if (pos.x < cardX || pos.x > cardX + cardW || pos.y < cardY || pos.y > cardY + cardH)
+    {
+        if (onDismiss) onDismiss();
+        return;
+    }
+    // Click inside card but not on a button — consume but don't dismiss
 }
 
 void EchoJayEditor::paintGenrePromptOverlay(juce::Graphics& g, juce::Rectangle<int> bounds)
@@ -3326,51 +3501,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
     else if (genrePromptVisible)
         paintGenrePromptOverlay(g, bounds);
     
-    // Update available overlay — painted last so it's always on top
-    if (updateAvailable && !updateDismissed && currentScreen == Screen::Main
-        && !channelPromptVisible && !genrePromptVisible)
-    {
-        // Dark background overlay
-        g.setColour(juce::Colours::black.withAlpha(0.72f));
-        g.fillRect(bounds);
-        
-        // Card
-        int cardW = 340, cardH = 180;
-        int cardX = (bounds.getWidth() - cardW) / 2;
-        int cardY = (bounds.getHeight() - cardH) / 2;
-        auto card = juce::Rectangle<int>(cardX, cardY, cardW, cardH);
-        
-        g.setColour(C::bg2);
-        g.fillRoundedRectangle(card.toFloat(), 16.0f);
-        g.setColour(C::border2);
-        g.drawRoundedRectangle(card.toFloat(), 16.0f, 1.0f);
-        
-        // Title
-        g.setColour(C::text);
-        g.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
-        g.drawText("Update Available", card.getX(), card.getY() + 24, card.getWidth(), 24, juce::Justification::centred);
-        
-        // Version info
-        g.setColour(C::text2);
-        g.setFont(juce::Font(juce::FontOptions(13.0f)));
-        g.drawText("EchoJay " + EchoJayAPI::latestVersion + " is now available",
-                   card.getX(), card.getY() + 54, card.getWidth(), 20, juce::Justification::centred);
-        g.drawText("You're running v" + juce::String(ProjectInfo::versionString),
-                   card.getX(), card.getY() + 74, card.getWidth(), 20, juce::Justification::centred);
-        
-        // Download button
-        auto dlBtn = juce::Rectangle<float>((float)(card.getCentreX() - 70), (float)(card.getY() + 110), 140.0f, 34.0f);
-        g.setGradientFill(juce::ColourGradient(C::blue, dlBtn.getX(), 0, C::purple, dlBtn.getRight(), 0, false));
-        g.fillRoundedRectangle(dlBtn, 8.0f);
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-        g.drawText("Download Update", dlBtn.toNearestInt(), juce::Justification::centred);
-        
-        // Dismiss link
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(11.0f)));
-        g.drawText("Not now", card.getX(), card.getY() + 150, card.getWidth(), 20, juce::Justification::centred);
-    }
+    // Update overlay is now a separate child component (updateOverlay) — it
+    // paints itself ON TOP of all other children. See UpdateOverlay::paint.
 }
 
 void EchoJayEditor::paintChannelPromptOverlay(juce::Graphics& g, juce::Rectangle<int> bounds)
@@ -3399,6 +3531,11 @@ void EchoJayEditor::resized()
 {
     // No transform — layout scales to actual window size
     auto b = getLocalBounds();
+
+    // Update overlay covers the full editor and is always brought to front
+    updateOverlay.setBounds(b);
+    if (updateOverlay.isVisible())
+        updateOverlay.toFront(false);
 
     // channelPromptBlocker removed — overlay is painted in paint()
 
@@ -3459,7 +3596,8 @@ void EchoJayEditor::resized()
         int stripH = 28;
         int toggleH = 24;
         particleVisual->setBounds(0, topH, paintMW - 1, b.getHeight() - topH - stripH - toggleH - abOff);
-        particleVisual->setVisible(!channelPromptVisible && !genrePromptVisible);
+        particleVisual->setVisible(!channelPromptVisible && !genrePromptVisible
+                                   && !updateOverlay.isVisible());
     }
     else if (visualOnlyMode)
     {
@@ -3467,7 +3605,8 @@ void EchoJayEditor::resized()
             int stripH = 28;
             int toggleH = 24;
             particleVisual->setBounds(0, topH, b.getWidth() - 2, b.getHeight() - topH - stripH - toggleH - abOff);
-            particleVisual->setVisible(!channelPromptVisible && !genrePromptVisible);
+            particleVisual->setVisible(!channelPromptVisible && !genrePromptVisible
+                                       && !updateOverlay.isVisible());
         } else {
             // Meters mode in visual-only — hide particle visual
             particleVisual->setVisible(false);
@@ -3541,7 +3680,11 @@ void EchoJayEditor::resized()
     int chatScrollBottom = inputY - 8;
     int chatScrollH = juce::jmax(50, chatScrollBottom - chatScrollTop);
     chatScroll.setBounds(chatStartX + 2, chatScrollTop, chatW - 4, chatScrollH);
-    chatContent.setSize(chatW - 16, std::max(chatScrollH, chatScroll.getHeight()));
+    // Set chatContent width here, but DO NOT cap height to viewport — the timer
+    // callback computes the real content height from the message list and sets it
+    // there. Capping to viewport height was the bug that broke scrolling.
+    int currentContentH = std::max(chatContent.getHeight(), chatScroll.getHeight());
+    chatContent.setSize(chatW - 16, currentContentH);
     
     // In compact mode, ensure chat components are on top
     if (compactMode) {
@@ -4112,25 +4255,30 @@ void EchoJayEditor::timerCallback()
     // Update chat scroll content size and auto-scroll to bottom
     if (currentScreen == Screen::Main && !chatMessages.empty())
     {
-        int chatW2 = chatScroll.getWidth();
+        // Mirror the paint code's geometry exactly so the scroll range matches the
+        // actual rendered height. Paint uses chatW (panel width), avatar 24, and
+        // -24 for bubble margin; the scroll viewport width is chatW - 4 (see resized).
+        int chatW2 = chatScroll.getWidth() + 4; // recover chat panel width
         int avatarSz = 24;
-        int maxBW = chatW2 - avatarSz - 20;
-        int totalH = 4;
+        int maxBW = chatW2 - avatarSz - 24; // matches paint maxBubbleW
+        int totalH = 8; // matches paint msgY initial value
         for (auto& msg : chatMessages) {
             juce::AttributedString as;
             as.append(msg.content, juce::Font(juce::FontOptions(12.0f)), C::text);
             juce::TextLayout layout;
             layout.createLayout(as, (float)(maxBW - 20));
-            int h = (int)layout.getHeight() + 20 + 8; // text padding + gap between bubbles
-            if (msg.hasWaveform && !msg.waveform.empty()) h += 36;
-            totalH += h;
+            int textH = (int)layout.getHeight() + 20;
+            int waveCardH = (msg.hasWaveform && !msg.waveform.empty()) ? 36 : 0;
+            int tH = textH + waveCardH;
+            totalH += tH + 10; // matches paint msgY += tH + 10
         }
         if (chatLoading) totalH += 30;
+        totalH += 8; // bottom padding so last message isn't flush against the edge
         
         int visH = chatScroll.getHeight();
         if (chatContent.getHeight() != std::max(visH, totalH))
         {
-            chatContent.setSize(chatW2 - 8, std::max(visH, totalH));
+            chatContent.setSize(chatScroll.getWidth() - 8, std::max(visH, totalH));
             if (totalH > visH)
                 chatScroll.setViewPosition(0, totalH - visH);
         }
@@ -4237,11 +4385,47 @@ void EchoJayEditor::timerCallback()
         api.fetchRemoteConfig();
     }
     
-    // Check if an update is available
-    if (!updateDismissed && EchoJayAPI::latestVersion.isNotEmpty())
+    // Check if an update is available. updateDismissed is the in-session flag
+    // (set on click). isUpdateDismissalActive reads the persisted-to-disk flag
+    // which suppresses re-prompts for 3 days unless a newer version appears.
+    // Don't show update overlay while channel/genre prompts are active — those
+    // are first-time setup and take priority.
+    if (!updateDismissed && EchoJayAPI::latestVersion.isNotEmpty()
+        && !channelPromptVisible && !genrePromptVisible
+        && currentScreen == Screen::Main)
     {
         auto current = juce::String(ProjectInfo::versionString);
-        updateAvailable = (EchoJayAPI::latestVersion != current);
+        bool versionDiffers = isVersionNewer(EchoJayAPI::latestVersion, current);
+        bool recentlyDismissed = isUpdateDismissalActive(EchoJayAPI::latestVersion);
+        bool wasAvailable = updateAvailable;
+        updateAvailable = versionDiffers && !recentlyDismissed;
+        if (updateAvailable && !wasAvailable)
+        {
+            // Edge transition: configure the overlay child for first-show.
+            updateOverlay.latestVersionStr = EchoJayAPI::latestVersion;
+            updateOverlay.currentVersionStr = current;
+            updateOverlay.setBounds(getLocalBounds());
+            updateOverlay.setVisible(true);
+            resized();  // re-run particleVisual visibility check
+        }
+    }
+    else if (channelPromptVisible || genrePromptVisible || currentScreen != Screen::Main)
+    {
+        // Hide overlay while higher-priority UI is showing
+        if (updateOverlay.isVisible())
+        {
+            updateOverlay.setVisible(false);
+            resized();
+        }
+    }
+    
+    // Keep updateOverlay on top while visible — same pattern as wavePlayOverlays.
+    // toFront() must run every tick because other components (esp. particleVisual)
+    // can otherwise end up above it on z-order resets.
+    if (updateOverlay.isVisible())
+    {
+        updateOverlay.setBounds(getLocalBounds());
+        updateOverlay.toFront(false);
     }
 
     repaint();
@@ -4433,8 +4617,280 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
     
     // Find overall peak band for context
     float peakBandDb = -120.0f;
+    int peakBandIdx = 0;
     for (int b = 0; b < numBands; ++b)
-        if (bands[b].avgDb > peakBandDb) peakBandDb = bands[b].avgDb;
+        if (bands[b].avgDb > peakBandDb) { peakBandDb = bands[b].avgDb; peakBandIdx = b; }
+    
+    // ============ Per-band crest (peak - avg) ============
+    // Crest tells us the CHARACTER of the energy in each band, not just whether
+    // it's there. A hi-hat has very high crest (>15dB) in the upper bands —
+    // sharp transients. An 808 has low crest (4-8dB) in the sub — sustained tone.
+    // A snare has high crest in the mids. A vocal sits at medium crest.
+    // This is what lets us tell channel mismatches apart, not just "is the band empty?".
+    float bandCrest[numBands];
+    bool hasCrestData = snap.hasDualSpectrum;
+    if (hasCrestData)
+    {
+        for (int b = 0; b < numBands; ++b)
+        {
+            float pkSum = 0.0f, avSum = 0.0f;
+            int cnt = bands[b].hi - bands[b].lo + 1;
+            for (int i = bands[b].lo; i <= bands[b].hi; ++i)
+            {
+                pkSum += snap.peakSpectrum[(size_t)i];
+                avSum += snap.avgSpectrum[(size_t)i];
+            }
+            float pkDb = pkSum / (float)cnt;
+            float avDb = avSum / (float)cnt;
+            bandCrest[b] = pkDb - avDb;
+        }
+    }
+    else
+    {
+        for (int b = 0; b < numBands; ++b) bandCrest[b] = 0.0f;
+    }
+    
+    // ============ Channel-shape check ============
+    // Build a "fingerprint" check for the selected channel type. If the actual
+    // capture's energy profile doesn't match the fingerprint, emit a
+    // CHANNEL SHAPE UNUSUAL flag — the AI is instructed to raise it as a
+    // question, not a verdict. Unusual readings can be intentional (distortion,
+    // layering, sidechaining), so we frame this as "worth checking" rather than
+    // "this is wrong".
+    //
+    // Band indices: 0=Sub, 1=Low, 2=LMid, 3=Mid, 4=UMid, 5=High
+    juce::String channelMismatchFlag;
+    if (isIndividual && hasCrestData)
+    {
+        // How "active" is each band relative to the peak band?
+        auto bandIsActive = [&](int b) {
+            return (peakBandDb - bands[b].avgDb) < 25.0f && bands[b].avgDb > -90.0f;
+        };
+        bool subActive  = bandIsActive(0);
+        bool lowActive  = bandIsActive(1);
+        bool midActive  = bandIsActive(3);
+        bool umidActive = bandIsActive(4);
+        bool highActive = bandIsActive(5);
+        
+        auto guessShape = [&]() -> juce::String {
+            // Peak in highs/upper-mids with very high crest = transient cymbal/hat
+            if ((peakBandIdx >= 4) && bandCrest[peakBandIdx] > 14.0f && !subActive && !lowActive)
+                return "a hi-hat or cymbal/percussion (peak energy in highs with sharp transients)";
+            // Peak in sub/low with low crest = sustained bass
+            if (peakBandIdx <= 1 && bandCrest[peakBandIdx] < 9.0f && !midActive && !umidActive && !highActive)
+                return "a sustained bass / 808 / sub (peak in low end, no transient character up top)";
+            // Peak in sub/low with HIGH crest = kick
+            if (peakBandIdx <= 1 && bandCrest[peakBandIdx] > 12.0f)
+                return "a kick drum (transient low-end energy)";
+            // Peak in low-mid/mid with high crest = snare
+            if ((peakBandIdx == 2 || peakBandIdx == 3) && bandCrest[peakBandIdx] > 10.0f)
+                return "a snare or drum-like transient element";
+            // Energy across most bands with moderate crest everywhere = full mix
+            int activeCount = (int)subActive + (int)lowActive + (int)midActive + (int)umidActive + (int)highActive;
+            if (activeCount >= 4)
+                return "a full mix or multi-element bus (energy spread across most bands)";
+            // Peak in mid with moderate crest = vocal/melodic lead
+            if (peakBandIdx == 3 && bandCrest[3] > 5.0f && bandCrest[3] < 12.0f)
+                return "a vocal or melodic lead (mid-range with moderate dynamics)";
+            return juce::String();
+        };
+        
+        // Per-channel mismatch rules. Each returns true when capture does NOT match channel.
+        bool mismatch = false;
+        juce::String reason;
+        
+        // Bass-family channels: should peak low, have sustained (low-crest) lows
+        if (ch == "Bass / 808" || ch == "Sub Bass" || ch == "Synth Bass")
+        {
+            if (peakBandIdx >= 3) // peak in mids or higher
+            { mismatch = true; reason = "peak energy is in the upper bands, not the low end"; }
+            else if (peakBandIdx <= 1 && bandCrest[peakBandIdx] > 14.0f)
+            { mismatch = true; reason = "the low-end character is highly transient — more like a kick than a sustained bass"; }
+            else if (highActive && bandCrest[5] > 14.0f && !subActive)
+            { mismatch = true; reason = "high-frequency transient energy with no sub — looks more like a hat or percussion"; }
+        }
+        else if (ch == "Bass Guitar")
+        {
+            if (peakBandIdx >= 4)
+            { mismatch = true; reason = "peak energy is in the high band, not the bass range"; }
+        }
+        else if (ch == "Kick")
+        {
+            // Kick can have low crest if heavily compressed but should peak low
+            if (peakBandIdx >= 4)
+            { mismatch = true; reason = "peak energy is in the high frequencies, not the low end where a kick lives"; }
+        }
+        else if (ch == "Hi-Hat")
+        {
+            if (peakBandIdx <= 1)
+            { mismatch = true; reason = "peak energy is in the sub/low — hi-hats live in the upper bands"; }
+            else if (peakBandIdx <= 3 && bandCrest[5] < 6.0f)
+            { mismatch = true; reason = "no transient character in the highs — doesn't look like a hi-hat"; }
+        }
+        else if (ch == "Snare")
+        {
+            if (peakBandIdx == 0) // peak in sub
+            { mismatch = true; reason = "peak energy is in the sub — that's not where a snare lives"; }
+        }
+        else if (ch == "Lead Vocal" || ch == "Backing Vocal" || ch == "Adlibs" || ch == "Vocal Bus")
+        {
+            // Peak in sub = definitely not a vocal
+            if (peakBandIdx == 0)
+            { mismatch = true; reason = "peak energy is in the sub-bass range — not characteristic of a vocal"; }
+            else
+            {
+                // Loosened: 4+ active bands (was 5+) catches mixes where mastering HPF
+                // pushes the sub band 25-35dB below peak, which fails the strict 5-band test.
+                int activeCount = (int)subActive + (int)lowActive + (int)midActive + (int)umidActive + (int)highActive;
+                // Sustained character in low end = bass + kick = full mix shape, not a vocal
+                bool sustainedSub = subActive && bandCrest[0] < 10.0f;
+                bool sustainedLow = lowActive && bandCrest[1] < 9.0f;
+                
+                if (activeCount >= 4 && (sustainedSub || sustainedLow))
+                { mismatch = true; reason = "energy is spread across the frequency range with sustained low-end content — looks more like a full mix or instrumental than an isolated vocal"; }
+                // Or: any vocal channel with significant sub presence is suspicious — vocals
+                // shouldn't have meaningful sub energy unless they're heavily processed/layered
+                else if (subActive && (peakBandDb - bands[0].avgDb) < 18.0f)
+                { mismatch = true; reason = "there's significant sub-bass content for a vocal channel — vocals usually sit above 100Hz, so this could be a full mix or unusual processing"; }
+            }
+        }
+        else if (ch == "Sub Bass")
+        {
+            if (peakBandIdx >= 2)
+            { mismatch = true; reason = "peak energy is above the sub range — sub-bass should sit below 80Hz"; }
+        }
+        else if (ch == "Piano" || ch == "Keys" || ch == "Acoustic Guitar" || ch == "Electric Guitar")
+        {
+            if (peakBandIdx == 0 && bandCrest[0] > 12.0f && !midActive)
+            { mismatch = true; reason = "peak is a low transient, not a melodic mid-range element"; }
+        }
+        // Drum/percussion buses: should be transient (high crest) somewhere
+        else if (ch == "Drum Bus" || ch == "Percussion")
+        {
+            if (bandCrest[peakBandIdx] < 6.0f)
+            { mismatch = true; reason = "no transient character — drums/percussion should show sharper peaks than this"; }
+        }
+        
+        if (mismatch)
+        {
+            juce::String guess = guessShape();
+            channelMismatchFlag = "CHANNEL SHAPE UNUSUAL: The reading is unusual for a \"" + ch + "\" — " + reason;
+            if (guess.isNotEmpty())
+                channelMismatchFlag += ". The shape is closer to what we'd expect from " + guess;
+            channelMismatchFlag += ". Mention this to the user as something worth checking — frame it as a question, not a verdict (e.g. 'these readings are a bit unusual for an 808 — is this definitely a bass?'). The user knows what they captured better than the meters do, so it might be a genuine creative choice (heavy distortion, layering, sidechaining etc) — leave room for that.\n";
+            flaggedAnything = true;
+        }
+    }
+    
+    // ============ Bus-type shape check ============
+    // Mix Bus / Master Bus / Music Bus channels expect a full mix. If someone
+    // accidentally puts a single element through (vocal, hat, bass alone), the
+    // shape is obviously wrong. Flag it so the AI can ask whether the right
+    // channel was used. Same questioning tone as channel-shape mismatches above.
+    if (hasCrestData && (ch == "Mix Bus" || ch == "Master Bus" || ch == "Music Bus") && channelMismatchFlag.isEmpty())
+    {
+        auto bandIsActive = [&](int b) {
+            return (peakBandDb - bands[b].avgDb) < 25.0f && bands[b].avgDb > -90.0f;
+        };
+        bool subActive  = bandIsActive(0);
+        bool lowActive  = bandIsActive(1);
+        bool midActive  = bandIsActive(3);
+        bool umidActive = bandIsActive(4);
+        bool highActive = bandIsActive(5);
+        int activeCount = (int)subActive + (int)lowActive + (int)midActive + (int)umidActive + (int)highActive;
+        bool sustainedLowEnd = (subActive && bandCrest[0] < 12.0f) || (lowActive && bandCrest[1] < 12.0f);
+        
+        bool busShapeOdd = false;
+        juce::String busReason, busGuess;
+        
+        // Less than 3 active bands = probably not a full mix (full mixes spread across spectrum)
+        if (activeCount < 3)
+        { busShapeOdd = true; busReason = "energy is concentrated in only " + juce::String(activeCount) + " band(s) — a full mix usually has energy across most of the spectrum"; busGuess = "an isolated element rather than a full mix"; }
+        // Peak in mids/upper-mids with no sustained low end = vocal/single melodic element
+        else if ((peakBandIdx == 3 || peakBandIdx == 4) && !sustainedLowEnd && !subActive)
+        { busShapeOdd = true; busReason = "the energy is sitting up in the mids with no sustained low end"; busGuess = "an isolated vocal or single melodic element"; }
+        // Peak in highs with no low/mid energy = hats/cymbals
+        else if (peakBandIdx >= 4 && !lowActive && !midActive)
+        { busShapeOdd = true; busReason = "energy is concentrated in the highs with very little low or mid content"; busGuess = "an isolated hi-hat, cymbal, or percussion stem"; }
+        // Peak in sub/low with no mids/uppers = bass alone
+        else if (peakBandIdx <= 1 && !midActive && !umidActive)
+        { busShapeOdd = true; busReason = "energy is concentrated in the low end with no mids or highs"; busGuess = "an isolated bass, kick, or sub element"; }
+        
+        if (busShapeOdd)
+        {
+            channelMismatchFlag = "CHANNEL SHAPE UNUSUAL: The reading is unusual for a \"" + ch + "\" — " + busReason
+                + ". The shape is closer to what we'd expect from " + busGuess
+                + ". Mention this to the user as something worth checking — frame it as a question, not a verdict (e.g. 'these readings look more like a single element than a full mix — did you mean to capture this on the Mix Bus?'). They might have a stripped-back section playing or be testing something unusual, so leave room for that.\n";
+            flaggedAnything = true;
+        }
+    }
+    
+    // ============ Bus-type drift check ============
+    // For Mix Bus / Master Bus / Music Bus, if a subsequent capture in the same
+    // session is drastically different from the previous one, flag it. This catches
+    // accidents like running a vocal through Mix Bus by mistake when the previous
+    // capture was the actual full mix. Only fires if 2+ drift signals trigger
+    // together, only within a session (where there's a previous AI response).
+    if (hasCrestData && (ch == "Mix Bus" || ch == "Master Bus" || ch == "Music Bus") && channelMismatchFlag.isEmpty())
+    {
+        auto driftSnaps = processorRef.getSnapshots();
+        bool hasSessionContinuity = false;
+        for (auto& entry : processorRef.chatHistory)
+            if (entry.role == "assistant") { hasSessionContinuity = true; break; }
+        
+        // Find most recent prior snapshot of same channel type with dual spectrum
+        int prevDriftIdx = -1;
+        for (int i = (int)driftSnaps.size() - 2; i >= 0; --i)
+        {
+            if (driftSnaps[(size_t)i].channelType == snap.channelType && driftSnaps[(size_t)i].hasDualSpectrum)
+            { prevDriftIdx = i; break; }
+        }
+        
+        if (prevDriftIdx >= 0 && hasSessionContinuity)
+        {
+            auto& prev = driftSnaps[(size_t)prevDriftIdx];
+            int driftFlags = 0;
+            juce::StringArray driftReasons;
+            
+            // LUFS shift > 5 dB
+            float lufsDiff = std::abs(snap.averagedData.integrated - prev.averagedData.integrated);
+            if (lufsDiff > 5.0f)
+            { driftFlags++; driftReasons.add("loudness has shifted by " + juce::String((int)lufsDiff) + " LUFS"); }
+            
+            // Crest shift > 4 dB
+            float crestDiff = std::abs(snap.averagedData.crestFactor - prev.averagedData.crestFactor);
+            if (crestDiff > 4.0f)
+            { driftFlags++; driftReasons.add("dynamic range has changed significantly"); }
+            
+            // Peak band shift by 2+ positions
+            int prevPeakBand = 0;
+            float prevPeakDb = -120.0f;
+            for (int b = 0; b < numBands; ++b)
+            {
+                float sum = 0.0f;
+                int cnt = bands[b].hi - bands[b].lo + 1;
+                for (int i = bands[b].lo; i <= bands[b].hi; ++i)
+                    sum += prev.avgSpectrum[(size_t)i];
+                float avg = sum / (float)cnt;
+                if (avg > prevPeakDb) { prevPeakDb = avg; prevPeakBand = b; }
+            }
+            if (std::abs(peakBandIdx - prevPeakBand) >= 2)
+            { driftFlags++; driftReasons.add("the spectrum shape has moved — a different frequency range is dominant now"); }
+            
+            // Width shift > 30%
+            float widthDiff = std::abs(snap.averagedData.width - prev.averagedData.width);
+            if (widthDiff > 30.0f)
+            { driftFlags++; driftReasons.add("stereo width has changed dramatically"); }
+            
+            if (driftFlags >= 2)
+            {
+                channelMismatchFlag = "CAPTURE DRIFT: This " + ch + " capture is significantly different from the previous one — " 
+                    + driftReasons.joinIntoString(", ") 
+                    + ". Open by mentioning this is a big shift from the previous pass and ask what's different — could be a different song or section, an element captured by accident, or major mix changes. Don't assume it's a mistake; frame it as a question.\n";
+                flaggedAnything = true;
+            }
+        }
+    }
     
     // "Empty" threshold: if a band is more than 50dB below the peak band, 
     // or below -100dB absolute, consider it empty.
@@ -4578,21 +5034,106 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
         }
     }
     
+    // Prepend the channel-shape flag so it sits at the top of the report.
+    // The AI is instructed (in the system prompt) to raise this as a question
+    // rather than a verdict, since unusual readings can be intentional.
+    if (channelMismatchFlag.isNotEmpty())
+        flagsStr = channelMismatchFlag + flagsStr;
+    
+    // For individual channels with a shape flag, attach a compact band profile
+    // showing where the energy actually IS — this gives the AI concrete data to
+    // reference when raising the question (and prevents it from guessing).
+    if (isIndividual && hasCrestData && channelMismatchFlag.isNotEmpty())
+    {
+        juce::String profile = "BAND PROFILE (avg dB | crest dB): ";
+        const char* shortNames[] = { "Sub", "Low", "LMid", "Mid", "UMid", "High" };
+        for (int b = 0; b < numBands; ++b)
+        {
+            if (b > 0) profile += ", ";
+            profile += juce::String(shortNames[b]) + " " + juce::String(bands[b].avgDb, 0) + "/" + juce::String(bandCrest[b], 0);
+        }
+        profile += " (high crest = transient/sharp, low crest = sustained/tonal)\n";
+        flagsStr += profile;
+    }
+    
+    // Helper: build a plain-language band profile for follow-up reference.
+    // Always include this when nothing's flagged so the AI has real data to
+    // describe if the user asks about frequencies — without it, the AI claims
+    // "no spectrum data" which is a lie (and looks broken).
+    auto buildReferenceBandProfile = [&]() -> juce::String {
+        if (!hasCrestData)
+            return juce::String();
+        const char* shortNames[] = { "Sub", "Low", "LMid", "Mid", "UMid", "High" };
+        // Find the loudest band for plain-language summary
+        int loudest = 0;
+        float loudestDb = -999.0f;
+        for (int b = 0; b < numBands; ++b)
+            if (bands[b].avgDb > loudestDb) { loudestDb = bands[b].avgDb; loudest = b; }
+        // Find the quietest of the active bands
+        int quietest = 0;
+        float quietestDb = 999.0f;
+        for (int b = 0; b < numBands; ++b)
+            if (bands[b].avgDb < quietestDb && bands[b].avgDb > -90.0f) { quietestDb = bands[b].avgDb; quietest = b; }
+        
+        juce::String p = "[SPECTRUM REFERENCE — DO NOT mention this on the initial review. ONLY use if the user asks about frequencies, tonal balance, the spectrum, or the lows/mids/highs. When they ask, describe in plain language — never quote dB values or band names.]\n";
+        p += "Band profile (avg dB / crest dB): ";
+        for (int b = 0; b < numBands; ++b)
+        {
+            if (b > 0) p += ", ";
+            p += juce::String(shortNames[b]) + " " + juce::String(bands[b].avgDb, 0) + "/" + juce::String(bandCrest[b], 0);
+        }
+        // Plain-language summary of overall shape
+        p += "\nShape summary: ";
+        const char* plainNames[] = { "sub-bass", "low end", "low-mids", "mids", "upper-mids", "highs" };
+        if (loudest != quietest)
+            p += juce::String("loudest in the ") + plainNames[loudest] + ", quietest in the " + plainNames[quietest];
+        else
+            p += juce::String("fairly even across bands");
+        // Note about transients vs sustained based on average crest
+        float avgCrestAll = 0.0f;
+        for (int b = 0; b < numBands; ++b) avgCrestAll += bandCrest[b];
+        avgCrestAll /= (float)numBands;
+        if (avgCrestAll > 12.0f)
+            p += "; transient/punchy character overall";
+        else if (avgCrestAll < 6.0f)
+            p += "; sustained/dense character overall";
+        else
+            p += "; mixed dynamic character";
+        p += "\n";
+        return p;
+    };
+    
     // Build the actual context string
     juce::String meterCtx;
     int mins = (int)snap.durationSeconds / 60;
     int secs = (int)snap.durationSeconds % 60;
     juce::String durStr = juce::String(mins) + ":" + juce::String(secs).paddedLeft('0', 2);
     
-    if (isIndividual && !flaggedAnything)
+    if (!flaggedAnything)
     {
-        // Nothing to flag — don't send spectrum data, just the channel type
-        meterCtx = "\n\n[" + ch.toUpperCase() + " CHANNEL — nothing to flag]\n";
+        // Nothing flagged — but we still include the spectrum band profile so the
+        // AI can answer follow-up frequency questions truthfully. The header tells
+        // the AI the meters aren't flagging anything, and the SPECTRUM REFERENCE
+        // block (added below) tells it to only use that data on follow-up.
+        meterCtx = "\n\n[" + (isFullMix ? "FULL TRACK" : ch.toUpperCase()) + 
+                   (isIndividual ? " CHANNEL" : " ANALYSIS") + 
+                   ": \"" + snap.name + "\" (" + durStr + ") — meters aren't flagging anything]\n";
+        // For full mix we ALWAYS emit LUFS and crest values, even when nothing
+        // is flagged — without these the AI hallucinates plausible-sounding
+        // numbers (consistently inventing things like "-9 LUFS, 8dB crest").
+        // flagsStr contains those lines for full mix even on no-flag captures.
+        if (isFullMix)
+            meterCtx += flagsStr;
+        meterCtx += buildReferenceBandProfile();
     }
     else
     {
         meterCtx = "\n\n[" + (isFullMix ? "FULL TRACK" : ch.toUpperCase()) + " ANALYSIS: \"" + snap.name + "\" (" + durStr + ")]\n";
         meterCtx += flagsStr;
+        // Also append the spectrum reference for follow-up — even when something
+        // IS flagged, the user might ask about a different aspect of the spectrum
+        // than what was flagged, and we want the AI to be able to answer.
+        meterCtx += buildReferenceBandProfile();
     }
 
     // Partial analysis warning — skip for inherently short elements and buses
@@ -5233,6 +5774,7 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
         settingsGenres.hasKeyboardFocus(false) || settingsPlugins.hasKeyboardFocus(false))
         return false;
 
+
     // Spacebar — stop capture or toggle AB playback
     if (key == juce::KeyPress::spaceKey && currentScreen == Screen::Main
         && !channelPromptVisible && !genrePromptVisible)
@@ -5266,44 +5808,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 {
     auto pos = e.getEventRelativeTo(this).getPosition();
     
-    // Update overlay click handler
-    if (updateAvailable && !updateDismissed && currentScreen == Screen::Main
-        && !channelPromptVisible && !genrePromptVisible)
-    {
-        auto bounds = getLocalBounds();
-        int cardW = 340, cardH = 180;
-        int cardX = (bounds.getWidth() - cardW) / 2;
-        int cardY = (bounds.getHeight() - cardH) / 2;
-        
-        // Download button area
-        int dlBtnX = bounds.getWidth() / 2 - 70;
-        int dlBtnY = cardY + 110;
-        if (pos.x >= dlBtnX && pos.x <= dlBtnX + 140 && pos.y >= dlBtnY && pos.y <= dlBtnY + 34)
-        {
-            auto url = EchoJayAPI::updateUrl.isNotEmpty() ? EchoJayAPI::updateUrl : "https://www.echojay.ai/?noredirect#plugin";
-            juce::URL(url).launchInDefaultBrowser();
-            return;
-        }
-        
-        // "Not now" text area
-        int notNowY = cardY + 150;
-        if (pos.y >= notNowY && pos.y <= notNowY + 20 && pos.x >= cardX && pos.x <= cardX + cardW)
-        {
-            updateDismissed = true;
-            repaint();
-            return;
-        }
-        
-        // Click anywhere outside the card dismisses too
-        if (pos.x < cardX || pos.x > cardX + cardW || pos.y < cardY || pos.y > cardY + cardH)
-        {
-            updateDismissed = true;
-            repaint();
-            return;
-        }
-        
-        return; // Consume click while overlay is showing
-    }
+    // Update overlay clicks are handled by the UpdateOverlay child component itself.
     
     // Chat wave card click — direct hit testing (works on Windows where overlays fail)
     if (currentScreen == Screen::Main && !chatWavePositions.empty())
