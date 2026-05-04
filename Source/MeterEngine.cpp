@@ -83,6 +83,15 @@ void MeterEngine::prepare(double sampleRate, int /*samplesPerBlock*/)
 
 void MeterEngine::reset()
 {
+    // Just set the flag — actual reset happens on the audio thread at the
+    // top of the next processBlock. This avoids a data race where the message
+    // thread clears the LufsBlock vectors while the audio thread is mid-block
+    // appending to them (which produced intermittent garbage LUFS readings).
+    pendingReset.store(true);
+}
+
+void MeterEngine::resetState()
+{
     s1x1L = s1x2L = s1y1L = s1y2L = 0;
     s1x1R = s1x2R = s1y1R = s1y2R = 0;
     s2x1L = s2x2L = s2y1L = s2y2L = 0;
@@ -105,6 +114,10 @@ void MeterEngine::reset()
     sampleCount = 0;
     sumMid = sumSide = 0;
     sumCorr = sumEnergyL = sumEnergyR = 0;
+    displayWidth = 0.0f;
+    displayCorr = 0.0f;
+    displayStereoInit = false;
+    lastCrest = 0.0f;
     fftData.fill(0.0f);
     std::fill(fftAccumulator.begin(), fftAccumulator.end(), 0.0f);
     fftWritePos = 0;
@@ -231,6 +244,13 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
 
 void MeterEngine::processBlock(const float* left, const float* right, int numSamples)
 {
+    // Run any pending reset BEFORE touching any state. This ensures state is
+    // clean and consistent before we start writing to it. Cleared atomically
+    // so a second reset() from message thread during this block sets it again
+    // and gets handled on the NEXT block — which is fine.
+    if (pendingReset.exchange(false))
+        resetState();
+    
     float blockPeakL = 0, blockPeakR = 0;
     float blockTpL = 0, blockTpR = 0;
     computeTruePeak(left, numSamples, blockTpL);
@@ -419,12 +439,75 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         }
     }
     
-    float smRatio = (sumMid > 1e-10) ? static_cast<float>(sumSide / sumMid) : 0.0f;
-    float width = std::min(100.0f, std::sqrt(smRatio) * 100.0f);
-    float corr = (sumEnergyL * sumEnergyR > 0) ? static_cast<float>(sumCorr / std::sqrt(sumEnergyL * sumEnergyR)) : 0.0f;
+    // Width and correlation: compute INSTANTANEOUS values from this buffer's
+    // mid/side and L/R cross-product, then smooth the resulting scalar with a
+    // 1.5s EMA. Smoothing the components independently (sumMid, sumSide etc)
+    // and then dividing produces wild swings on signals where mid and side
+    // energies change on different timescales — e.g. vocal reverb tails, where
+    // mid is decaying as the dry signal stops while side is rising as the
+    // reverb spreads. Smoothing the ratio gives a calm, useful reading.
+    //
+    // We also GATE the smoothing so that silent buffers don't update the EMA
+    // at all — silence contains no meaningful stereo information and would
+    // otherwise produce wild spikes (gaps between words, reverb-only sections).
+    float instWidth = 0.0f;
+    float instCorr = 0.0f;
+    bool stereoBufHasSignal = false;
+    {
+        if (blkMid > 1e-10)
+        {
+            double r = blkSide / blkMid;
+            instWidth = std::min(100.0f, static_cast<float>(std::sqrt(r) * 100.0));
+        }
+        if (blkEnL > 1e-10 && blkEnR > 1e-10)
+            instCorr = static_cast<float>(blkCorr / std::sqrt(blkEnL * blkEnR));
+        // Gate: this buffer has audible signal if the louder channel's peak
+        // is above a sensible threshold. Below that, hold the previous EMA value
+        // rather than letting silence pollute the reading.
+        float bufPeak = std::max(blockPeakL, blockPeakR);
+        stereoBufHasSignal = (bufPeak > 0.003162f);  // -50 dBFS
+    }
+    
+    // 1.5-second EMA on the scalar values, but only update during audible signal
+    double widthAlpha = 1.0 - std::exp(-bufDur / 1.5);
+    if (stereoBufHasSignal)
+    {
+        if (!displayStereoInit)
+        {
+            displayWidth = instWidth;
+            displayCorr = instCorr;
+            displayStereoInit = true;
+        }
+        else
+        {
+            displayWidth += static_cast<float>(widthAlpha * (instWidth - displayWidth));
+            displayCorr += static_cast<float>(widthAlpha * (instCorr - displayCorr));
+        }
+    }
+    // else: hold the last meaningful values — silence has no stereo info
+    
+    float width = displayWidth;
+    float corr = displayCorr;
     float rmsAvg = std::sqrt(static_cast<float>((sumSqL + sumSqR) * 0.5));
     float peakMax = std::max(currentPeakL, currentPeakR);
-    float crest = (rmsAvg > 0) ? 20.0f * std::log10(peakMax / rmsAvg) : 0.0f;
+    // Crest: peak/RMS in dB. Freeze when signal is inaudibly quiet, otherwise
+    // crest grows without bound as RMS decays toward zero on stopped playback
+    // (peak holds, RMS doesn't, so the ratio explodes). Below -60 dBFS peak
+    // there's nothing useful to report.
+    float crest = 0.0f;
+    if (peakMax > 0.001f && rmsAvg > 0.0f)
+    {
+        crest = 20.0f * std::log10(peakMax / rmsAvg);
+        // Sanity clamp — real-world crest is 3-30 dB; outside that means the
+        // measurement is unreliable (numerical edge case).
+        crest = juce::jlimit(0.0f, 40.0f, crest);
+        lastCrest = crest;
+    }
+    else
+    {
+        // Silence: hold previous crest value rather than reporting nonsense
+        crest = lastCrest;
+    }
     float dc = static_cast<float>(((sumL + sumR) * 0.5) * 1000.0);
     
     computeSpectrum(left, right, numSamples);
@@ -483,17 +566,10 @@ MeterData MeterEngine::getMeterData() const
 
 void MeterEngine::resetIntegrated()
 {
-    std::lock_guard<std::mutex> lock(dataMutex);
-    allBlocks.clear();
-    momentaryBlocks.clear();
-    shortTermBlocks.clear();
-    shortTermHistory.clear();
-    currentTpL = 0; currentTpR = 0;
-    displayTpL = 0; displayTpR = 0;
-    data.integrated = -100.0f;
-    data.loudnessRange = 0.0f;
-    data.momentary = -100.0f;
-    data.shortTerm = -100.0f;
+    // Same race risk as reset() — defer to audio thread by setting the flag.
+    // The full state reset will clear integrated LUFS along with everything
+    // else, which is what the user wanted anyway.
+    pendingReset.store(true);
 }
 
 juce::String MeterEngine::getMeterDataJSON() const

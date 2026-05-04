@@ -56,6 +56,13 @@ public:
     ~MeterEngine();
     
     void prepare(double sampleRate, int samplesPerBlock);
+    
+    // Request a reset. Thread-safe. The actual reset happens on the audio
+    // thread at the start of the next processBlock — this avoids a race
+    // condition where the message thread clears vectors while the audio
+    // thread is mid-processBlock writing to them. Caused intermittent garbage
+    // measurements (e.g. -8 LUFS for a -27 LUFS source) when capture was
+    // started during the wrong audio buffer.
     void reset();
     void processBlock(const float* left, const float* right, int numSamples);
     
@@ -133,6 +140,12 @@ private:
     mutable std::mutex dataMutex;
     MeterData data;
     
+    // Reset coordination: message thread sets this true via reset(), audio
+    // thread checks it at top of processBlock and runs resetState() if set,
+    // then clears it. Avoids data race on the unprotected vectors below.
+    std::atomic<bool> pendingReset { false };
+    void resetState();   // does the actual reset work — called from audio thread
+    
     // Running accumulators
     double sumSqL = 0, sumSqR = 0;
     double sumL = 0, sumR = 0;
@@ -144,6 +157,19 @@ private:
     // Stereo accumulators
     double sumMid = 0, sumSide = 0;
     double sumCorr = 0, sumEnergyL = 0, sumEnergyR = 0;
+    
+    // Display-smoothed width and correlation values. Computed by smoothing the
+    // FINAL ratio (not the components — see comment in processBlock for why).
+    // 1.5s EMA gives a calmer, more usable reading on signals with intermittent
+    // stereo content like vocals with reverb tails.
+    float displayWidth = 0.0f;
+    float displayCorr = 0.0f;
+    bool displayStereoInit = false;
+    
+    // Last meaningful crest reading, held across silent buffers so the meter
+    // doesn't grow to infinity when playback stops (RMS decays to 0 while peak
+    // holds, ratio explodes).
+    float lastCrest = 0.0f;
     
     // High-pass filter for width calculation (~300Hz, 2nd order)
     // Prevents bass from collapsing width reading

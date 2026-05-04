@@ -54,6 +54,16 @@ struct CaptureSnapshot {
     std::array<float, 64> eqCurve = {};
     juce::String wavFilePath;
     
+    // Both spectra preserved for channel-shape / per-band crest analysis.
+    // peakSpectrum  = max-hold dB per bin over the capture (transient character)
+    // avgSpectrum   = average dB per bin over the capture (sustained character)
+    // Per-band crest = peak - avg, used to distinguish transient vs sustained content.
+    // Note: existing eqCurve / averagedData.spectrum may be either peak or avg
+    // depending on channel type — those are kept for display/compatibility.
+    std::array<float, 64> peakSpectrum = {};
+    std::array<float, 64> avgSpectrum  = {};
+    bool hasDualSpectrum = false; // false on snapshots restored from older save files
+    
     juce::String getChannelDisplayName() const {
         if (channelType == ChannelType::Other && customChannelName.isNotEmpty())
             return customChannelName;
@@ -185,6 +195,29 @@ private:
     std::array<float, 64> spectrumPeak = {};   // peak-hold (for individual channels)
     std::array<float, 64> spectrumSum = {};     // running sum (for average on buses/mixes)
     int spectrumFrames = 0;
+    
+    // Per-capture aggregators for crest/RMS/peak/width/correlation.
+    // Reset on capture start, updated per-buffer in audio thread, finalized on
+    // capture stop. Using these instead of the meter engine's instantaneous
+    // values (which is what was producing the wildly inconsistent snapshot data
+    // — a snapshot was just "whatever the meter happened to read at the moment
+    // Capture was clicked", not a measurement of the captured audio).
+    //
+    // Each is updated atomically per-buffer and read on the message thread
+    // when stopCapture() runs. The values are simple summed accumulators rather
+    // than running averages so we don't lose precision over long captures.
+    std::atomic<float> capPeakL { 0.0f };       // max abs sample L over capture
+    std::atomic<float> capPeakR { 0.0f };       // max abs sample R over capture
+    std::atomic<double> capSumSqL { 0.0 };      // sum of x^2 over all samples L (for total RMS)
+    std::atomic<double> capSumSqR { 0.0 };      // sum of x^2 over all samples R (for total RMS)
+    std::atomic<double> capGatedSumSqL { 0.0 }; // sum of x^2 only over gated buffers L (for gated RMS)
+    std::atomic<double> capGatedSumSqR { 0.0 }; // sum of x^2 only over gated buffers R (for gated RMS)
+    std::atomic<long long> capTotalSamples { 0 };       // total samples processed
+    std::atomic<long long> capGatedSamples { 0 };       // samples that passed the gate
+    std::atomic<double> capWidthSum { 0.0 };    // sum of per-buffer width readings (gated)
+    std::atomic<double> capCorrSum { 0.0 };     // sum of per-buffer correlation readings (gated)
+    std::atomic<int> capGatedBufCount { 0 };    // number of buffers that passed the gate
+    std::atomic<float> capRunningPeakForGate { 0.0f };  // running max peak, used as the moving gate threshold
 
     // Capture
     std::atomic<CaptureState> captureState { CaptureState::Idle };

@@ -138,6 +138,79 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             spectrumSum[(size_t)i] += liveSpec[(size_t)i];
         }
         spectrumFrames++;
+        
+        // ============ Capture-window aggregation ============
+        // Per-buffer accumulators for crest/RMS/peak/width/correlation. These
+        // produce a TIME-WINDOWED measurement of the captured audio rather than
+        // a single-instant reading from the meter engine. Without this, the
+        // snapshot's crest/width/RMS were just whatever the meter happened to
+        // read on the buffer when the user clicked Capture — which is why the
+        // same vocal would produce wildly different snapshot values on different
+        // captures (loud word vs sustained vowel vs breath gap).
+        const int n = buffer.getNumSamples();
+        if (n > 0)
+        {
+            // Per-sample peak and sum-of-squares for total RMS
+            float bufPeakL = 0.0f, bufPeakR = 0.0f;
+            double bufSumSqL = 0.0, bufSumSqR = 0.0;
+            for (int i = 0; i < n; ++i)
+            {
+                float aL = std::abs(left[i]);
+                float aR = std::abs(right[i]);
+                if (aL > bufPeakL) bufPeakL = aL;
+                if (aR > bufPeakR) bufPeakR = aR;
+                bufSumSqL += (double)left[i] * (double)left[i];
+                bufSumSqR += (double)right[i] * (double)right[i];
+            }
+            
+            // Update running peaks (for snapshot AND for the gate threshold)
+            float curPL = capPeakL.load();
+            while (bufPeakL > curPL && !capPeakL.compare_exchange_weak(curPL, bufPeakL)) {}
+            float curPR = capPeakR.load();
+            while (bufPeakR > curPR && !capPeakR.compare_exchange_weak(curPR, bufPeakR)) {}
+            float curGate = capRunningPeakForGate.load();
+            float bufMaxBoth = std::max(bufPeakL, bufPeakR);
+            while (bufMaxBoth > curGate && !capRunningPeakForGate.compare_exchange_weak(curGate, bufMaxBoth)) {}
+            
+            // Total RMS accumulation (every sample counts — silence dragging things
+            // down IS the truthful RMS of the captured audio for full mixes)
+            // Atomic add via compare-exchange loop
+            double cur = capSumSqL.load();
+            while (!capSumSqL.compare_exchange_weak(cur, cur + bufSumSqL)) {}
+            cur = capSumSqR.load();
+            while (!capSumSqR.compare_exchange_weak(cur, cur + bufSumSqR)) {}
+            capTotalSamples.fetch_add(n);
+            
+            // Gate: this buffer "passes" if its peak is loud enough relative to
+            // the running peak so far. Standard noise gate logic — anything more
+            // than 50dB below running peak, or below -60dBFS absolute, doesn't
+            // count toward gated measurements (RMS, width, correlation).
+            float runningPeak = capRunningPeakForGate.load();
+            float gateRel = runningPeak * 0.00316f;   // -50 dB relative (10^(-50/20))
+            float gateAbs = 0.001f;                    // -60 dBFS absolute (10^(-60/20))
+            float gateThreshold = std::max(gateRel, gateAbs);
+            bool buffPassesGate = (bufMaxBoth > gateThreshold);
+            
+            if (buffPassesGate)
+            {
+                // Gated RMS accumulators (for percussive/element sources)
+                cur = capGatedSumSqL.load();
+                while (!capGatedSumSqL.compare_exchange_weak(cur, cur + bufSumSqL)) {}
+                cur = capGatedSumSqR.load();
+                while (!capGatedSumSqR.compare_exchange_weak(cur, cur + bufSumSqR)) {}
+                capGatedSamples.fetch_add(n);
+                
+                // Gated width and correlation. Pull the meter engine's live values
+                // for this buffer — they're instantaneous but we only sum them when
+                // the buffer is loud enough to have meaningful stereo measurements.
+                auto liveData = meterEngine.getMeterData();
+                cur = capWidthSum.load();
+                while (!capWidthSum.compare_exchange_weak(cur, cur + (double)liveData.width)) {}
+                cur = capCorrSum.load();
+                while (!capCorrSum.compare_exchange_weak(cur, cur + (double)liveData.correlation)) {}
+                capGatedBufCount.fetch_add(1);
+            }
+        }
     }
     
     
@@ -199,6 +272,21 @@ void EchoJayProcessor::startCapture()
     spectrumPeak.fill(-120.0f);
     spectrumSum.fill(0.0f);
     spectrumFrames = 0;
+    
+    // Reset capture aggregators
+    capPeakL.store(0.0f);
+    capPeakR.store(0.0f);
+    capSumSqL.store(0.0);
+    capSumSqR.store(0.0);
+    capGatedSumSqL.store(0.0);
+    capGatedSumSqR.store(0.0);
+    capTotalSamples.store(0);
+    capGatedSamples.store(0);
+    capWidthSum.store(0.0);
+    capCorrSum.store(0.0);
+    capGatedBufCount.store(0);
+    capRunningPeakForGate.store(0.0f);
+    
     captureState.store(CaptureState::Capturing);
 }
 
@@ -215,7 +303,85 @@ void EchoJayProcessor::stopCapture()
     snap.name = "Pass " + juce::String(passCounter);
     snap.channelType = channelType;
     snap.customChannelName = customChannelName;
+    
+    // Start with the meter engine's data — this provides correctly-integrated
+    // values that need long buffers (LUFS Integrated, LUFS Range) and the
+    // momentary/short-term displays. Then OVERRIDE the per-buffer aggregable
+    // values (peak, RMS, crest, width, correlation) with our time-windowed
+    // measurements computed across the whole capture.
     snap.averagedData = captureEngine.getMeterData();
+    
+    {
+        // ============ Finalize time-windowed measurements ============
+        // Different channel types want different aggregation strategies:
+        //   - Mix Bus / Master Bus / Music Bus: full-window RMS (silence is part
+        //     of the dynamic story for sustained full-range content)
+        //   - Everything else: gated RMS (vocals, drums, instruments naturally
+        //     have silence/quiet sections that shouldn't drag down RMS)
+        //   - Width and correlation: ALWAYS gated (silence has no stereo info)
+        //   - Peak: ALWAYS the absolute max over the capture
+        //   - Crest: peak / RMS, where the RMS choice follows the channel type rule
+        bool useFullWindowRms = (channelType == ChannelType::FullMix ||
+                                  channelType == ChannelType::MasterBus ||
+                                  channelType == ChannelType::MusicBus);
+        
+        long long totalN = capTotalSamples.load();
+        long long gatedN = capGatedSamples.load();
+        int gatedBufN = capGatedBufCount.load();
+        
+        // Peak L/R: absolute max over capture (as dBFS)
+        float pL = capPeakL.load();
+        float pR = capPeakR.load();
+        auto toDb = [](float lin) { return lin > 1e-10f ? 20.0f * std::log10(lin) : -100.0f; };
+        snap.averagedData.peakL = toDb(pL);
+        snap.averagedData.peakR = toDb(pR);
+        snap.averagedData.peakMaxL = snap.averagedData.peakL;
+        snap.averagedData.peakMaxR = snap.averagedData.peakR;
+        
+        // RMS L/R: full-window or gated depending on channel type (as dBFS)
+        long long rmsN = useFullWindowRms ? totalN : gatedN;
+        double sumSqL = useFullWindowRms ? capSumSqL.load() : capGatedSumSqL.load();
+        double sumSqR = useFullWindowRms ? capSumSqR.load() : capGatedSumSqR.load();
+        if (rmsN > 0)
+        {
+            double meanSqL = sumSqL / (double)rmsN;
+            double meanSqR = sumSqR / (double)rmsN;
+            snap.averagedData.rmsL = (float)(meanSqL > 1e-20 ? 10.0 * std::log10(meanSqL) : -100.0);
+            snap.averagedData.rmsR = (float)(meanSqR > 1e-20 ? 10.0 * std::log10(meanSqR) : -100.0);
+        }
+        else
+        {
+            snap.averagedData.rmsL = -100.0f;
+            snap.averagedData.rmsR = -100.0f;
+        }
+        
+        // Crest factor: peak / RMS (in dB, that's peak_dB - rms_dB).
+        // Use the louder channel's peak vs the louder channel's RMS for a stable single value.
+        float peakDb = std::max(snap.averagedData.peakL, snap.averagedData.peakR);
+        float rmsDb = std::max(snap.averagedData.rmsL, snap.averagedData.rmsR);
+        if (peakDb > -90.0f && rmsDb > -90.0f)
+        {
+            float crestDb = peakDb - rmsDb;
+            // Sanity clamp — real-world crest is roughly 3-30 dB; outside that
+            // suggests a measurement issue and the meter strip should not show
+            // impossible values like 128 or 200 dB.
+            snap.averagedData.crestFactor = juce::jlimit(0.0f, 40.0f, crestDb);
+        }
+        else
+        {
+            snap.averagedData.crestFactor = 0.0f;
+        }
+        
+        // Width and correlation: always gated, averaged over loud-enough buffers
+        if (gatedBufN > 0)
+        {
+            snap.averagedData.width = (float)(capWidthSum.load() / (double)gatedBufN);
+            snap.averagedData.correlation = (float)(capCorrSum.load() / (double)gatedBufN);
+        }
+        // If no buffer passed the gate (mostly silent capture), leave width/corr
+        // at whatever the meter engine had as its default — better than zero.
+    }
+    
     snap.timestamp = juce::Time::currentTimeMillis();
     snap.durationSeconds = (float)(juce::Time::currentTimeMillis() - captureStartTime) / 1000.0f;
     
@@ -239,12 +405,21 @@ void EchoJayProcessor::stopCapture()
     for (int i = 0; i < 64; ++i)
         if (spectrumPeak[(size_t)i] > -119.0f) { hasPeakData = true; break; }
     
+    // Always preserve BOTH spectra on the snapshot for per-band crest analysis.
+    // Per-band crest (peak - avg) is what lets us tell hi-hats from 808s, etc.
+    if (hasPeakData)
+        snap.peakSpectrum = spectrumPeak;
+    if (spectrumFrames > 0) {
+        for (int i = 0; i < 64; ++i)
+            snap.avgSpectrum[(size_t)i] = spectrumSum[(size_t)i] / (float)spectrumFrames;
+    }
+    snap.hasDualSpectrum = (hasPeakData && spectrumFrames > 0);
+    
     if (!useAverage && hasPeakData) {
         snap.eqCurve = spectrumPeak;
         snap.averagedData.spectrum = spectrumPeak;
     } else if (spectrumFrames > 0) {
-        for (int i = 0; i < 64; ++i)
-            snap.eqCurve[(size_t)i] = spectrumSum[(size_t)i] / (float)spectrumFrames;
+        snap.eqCurve = snap.avgSpectrum;
         snap.averagedData.spectrum = snap.eqCurve;
     } else {
         snap.eqCurve = snap.averagedData.spectrum;
@@ -499,6 +674,31 @@ juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& captur
     appendTonalDiff(ctx, a.spectrum, reference.eqCurve, "your mix", "the reference");
     
     ctx += "\nINSTRUCTIONS: Only comment on differences that are genuinely significant. Small variations (< 1.5 LUFS, < 2dB crest, < 15% width) are normal and should be described as practically the same. Width is not a reliable metric — only flag if the difference is drastic. For tonal balance, speak in plain language ('your mix is heavier in the low end', 'the reference has more air on top') — do NOT quote dB values or band names like '200-600Hz' to the user. Focus on what the user should actually do differently to get closer to the reference. Be concise — 2-3 paragraphs max.\n";
+    
+    // Length-based caveats — comparing a snippet against a full track (or vice
+    // versa) skews tonal balance and dynamics readings, so the AI must mention this.
+    float capDur = capture.durationSeconds;
+    float refDur = reference.durationSeconds;
+    if (capDur > 0 && refDur > 0)
+    {
+        float ratio = (capDur > refDur) ? (capDur / refDur) : (refDur / capDur);
+        bool eitherShort = (capDur < 30.0f) || (refDur < 30.0f);
+        if (eitherShort && ratio > 2.5f)
+        {
+            ctx += "[LENGTH MISMATCH: Your capture is " + juce::String((int)capDur) + "s, the reference is " 
+                + juce::String((int)refDur) + "s. Open the response by telling the user this comparison may be misleading "
+                "because one is a short snippet and one is a full track — tonal balance especially can read very differently. "
+                "Suggest they capture a longer section (ideally a full chorus and verse) for a more accurate comparison. "
+                "Then proceed with the comparison but keep caveats in mind.]\n";
+        }
+        else if (capDur < 30.0f)
+        {
+            ctx += "[CAPTURE LENGTH: Your capture is only " + juce::String((int)capDur) + "s — mention briefly that the "
+                "comparison is based on a short snippet and a longer capture would give a fuller picture, "
+                "but proceed with the comparison.]\n";
+        }
+    }
+    
     ctx += "[END COMPARE CONTEXT]\n";
     ctx += "[PERSISTENT NOTE: If the user later captures a new mix and asks about it, DO NOT treat the numbers in the compare block above as a previous version of that new mix. The compare block is a snapshot of this specific comparison, not part of an ongoing capture history. New captures have their own CURRENT MIX data — use only that for new-capture analysis.]\n";
     
@@ -540,6 +740,27 @@ juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& a, con
     appendTonalDiff(ctx, da.spectrum, db.spectrum, a.name, b.name);
     
     ctx += "\nINSTRUCTIONS: Only comment on differences that are genuinely significant. Small variations (< 1.5 LUFS, < 2dB crest, < 15% width) are normal measurement noise and should be described as practically the same — do NOT suggest changes for metrics that haven't meaningfully changed. Width is not reliable enough to suggest changes unless the difference is drastic (> 15%). For tonal balance, speak in plain language ('more low end', 'brighter on top') — do NOT quote dB values or band names like '200-600Hz' to the user. If the passes are essentially the same, say so and ask what they changed or what they're trying to achieve. Be concise — 2-3 paragraphs max.\n";
+    
+    // Length-based caveats
+    float aDur = a.durationSeconds, bDur = b.durationSeconds;
+    if (aDur > 0 && bDur > 0)
+    {
+        float ratio = (aDur > bDur) ? (aDur / bDur) : (bDur / aDur);
+        bool eitherShort = (aDur < 30.0f) || (bDur < 30.0f);
+        if (eitherShort && ratio > 2.5f)
+        {
+            ctx += "[LENGTH MISMATCH: " + a.name + " is " + juce::String((int)aDur) + "s, " + b.name + " is " 
+                + juce::String((int)bDur) + "s. Open by telling the user this comparison may be misleading because "
+                "one capture is a short snippet and the other is much longer — tonal balance especially won't read accurately. "
+                "Suggest they capture matching sections for a fairer comparison, then proceed with the comparison.]\n";
+        }
+        else if (aDur < 30.0f && bDur < 30.0f)
+        {
+            ctx += "[SHORT CAPTURES: Both passes are under 30s — mention briefly that short snippets can give a partial "
+                "picture, but proceed with the comparison.]\n";
+        }
+    }
+    
     ctx += "[END COMPARE CONTEXT]\n";
     ctx += "[PERSISTENT NOTE: If the user later captures a new pass and asks about it, DO NOT treat the numbers in the compare block above as a previous version of that new capture. This compare is a snapshot of two specific passes at one moment. New captures have their own CURRENT MIX data — use only that for new-capture analysis.]\n";
     
@@ -582,6 +803,20 @@ juce::String EchoJayProcessor::buildCompareContext(const ReferenceResult& a, con
     appendTonalDiff(ctx, a.eqCurve, b.eqCurve, a.name, b.name);
     
     ctx += "\nINSTRUCTIONS: The user is comparing two reference tracks (not their own mix) — this is usually to understand what separates two sounds they like, or to pick which one to aim for. Focus on what's genuinely different between the two. For tonal balance, speak in plain language ('more low end', 'brighter on top') — do NOT quote dB values or band names like '200-600Hz'. Do NOT suggest 'changes the user should make' since these aren't their mixes. Be concise — 2-3 paragraphs max.\n";
+    
+    // Length-based caveats — references are usually full tracks but worth checking
+    float aDur = a.durationSeconds, bDur = b.durationSeconds;
+    if (aDur > 0 && bDur > 0)
+    {
+        float ratio = (aDur > bDur) ? (aDur / bDur) : (bDur / aDur);
+        if (((aDur < 30.0f) || (bDur < 30.0f)) && ratio > 2.5f)
+        {
+            ctx += "[LENGTH MISMATCH: " + a.name + " is " + juce::String((int)aDur) + "s, " + b.name + " is " 
+                + juce::String((int)bDur) + "s. Mention briefly that a short clip vs a full track will skew tonal-balance "
+                "comparisons, then proceed.]\n";
+        }
+    }
+    
     ctx += "[END COMPARE CONTEXT]\n";
     ctx += "[PERSISTENT NOTE: The two tracks above are REFERENCE tracks — not the user's own mix. If the user later captures their mix and asks about it, DO NOT treat these reference numbers as a previous version of their capture. Reference tracks and user captures are separate things.]\n";
     
