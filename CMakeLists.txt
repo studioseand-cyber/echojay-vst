@@ -95,3 +95,20 @@ target_link_libraries(EchoJay
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
+
+# --- Force-replace JUCE-generated placeholder Icon.icns with the real EchoJay.icns ---
+# JUCE sometimes embeds an 8-byte placeholder instead of using ICON_BIG.
+# This post-build copy guarantees the real icon ends up in every bundle.
+if(APPLE)
+    foreach(target_name EchoJay_VST3 EchoJay_AU EchoJay_AAX EchoJay_Standalone)
+        if(TARGET ${target_name})
+            add_custom_command(TARGET ${target_name} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy
+                    "${CMAKE_SOURCE_DIR}/EchoJay.icns"
+                    "$<TARGET_BUNDLE_CONTENT_DIR:${target_name}>/Resources/Icon.icns"
+                COMMENT "Copying real EchoJay.icns to ${target_name} Resources"
+                VERBATIM
+            )
+        endif()
+    endforeach()
+endif()
