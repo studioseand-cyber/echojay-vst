@@ -103,6 +103,22 @@ private:
     bool spectrumPeakHoldInit = false;
     int visualOnlyWidth = 900;
     int visualOnlyHeight = 580;
+    // Opaque holder around particleVisual. macOS positions JUCE's OpenGL overlay
+    // based on the GL component's window position; if the immediate parent is
+    // opaque with the bg colour, the brief blank frame during GL init shows
+    // the bg instead of the desktop/host's white. Workaround for known JUCE
+    // issue: https://forum.juce.com/t/white-flash-for-the-first-opengl-frame-only-in-logic-pro/28240
+    struct ParticleVisualHolder : public juce::Component {
+        ParticleVisualHolder() { setOpaque(true); }
+        void paint(juce::Graphics& g) override {
+            g.fillAll(juce::Colour(0xff080A12));  // C::bg
+        }
+        void resized() override {
+            if (auto* c = getChildComponent(0)) c->setBounds(getLocalBounds());
+        }
+    };
+    ParticleVisualHolder particleVisualHolder;
+    
     std::unique_ptr<ParticleVisual> particleVisual;
     void toggleVisualMode();
     void toggleVisualOnlyMode();

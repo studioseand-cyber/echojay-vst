@@ -244,9 +244,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addAndMakeVisible(wavSavedLabel);
 
     // --- Particle Visual ---
+    // Holder is a child of the editor; particleVisual lives inside the holder.
+    // This makes the macOS GL overlay show the holder's opaque bg during GL init
+    // instead of the desktop/host's underlying surface (JUCE+macOS limitation).
+    addChildComponent(particleVisualHolder);
     particleVisual = std::make_unique<ParticleVisual>();
-    particleVisual->setVisible(false);
-    addChildComponent(*particleVisual);
+    particleVisualHolder.addAndMakeVisible(*particleVisual);
     
     // Restore visual state from processor (persisted with DAW session)
     particleVisual->currentPreset = (ParticleVisual::Preset)juce::jlimit(0, 3, processorRef.visualPreset);
@@ -2002,17 +2005,13 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
         // Usage count on same line as YOUR NAME label
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        juce::String usageStr = juce::String(used) + "/" + juce::String(limit) + " messages";
+        juce::String usageStr = juce::String::fromUTF8("v") + ProjectInfo::versionString
+                              + juce::String::fromUTF8(" \xc2\xb7 ")  // middle dot
+                              + juce::String(used) + "/" + juce::String(limit) + " messages";
         if (info.credits > 0)
             usageStr += " (+" + juce::String(info.credits) + ")";
-        g.drawText(usageStr, x + w - 120, y, 120, 14, juce::Justification::centredRight);
+        g.drawText(usageStr, x + w - 200, y, 200, 14, juce::Justification::centredRight);
     }
-    
-    // Version number — top-right corner, below message count
-    g.setColour(C::text3);
-    g.setFont(juce::Font(juce::FontOptions(9.0f)));
-    g.drawText(juce::String("v") + ProjectInfo::versionString,
-               x + w - 120, y + 14, 120, 12, juce::Justification::centredRight);
     
     auto label = [&](const juce::String& text) {
         g.setColour(C::text3);
@@ -3602,26 +3601,26 @@ void EchoJayEditor::resized()
     {
         int stripH = 28;
         int toggleH = 24;
-        particleVisual->setBounds(0, topH, paintMW - 1, b.getHeight() - topH - stripH - toggleH - abOff);
-        particleVisual->setVisible(!channelPromptVisible && !genrePromptVisible
-                                   && !updateOverlay.isVisible());
+        particleVisualHolder.setBounds(0, topH, paintMW - 1, b.getHeight() - topH - stripH - toggleH - abOff);
+        particleVisualHolder.setVisible(!channelPromptVisible && !genrePromptVisible
+                                        && !updateOverlay.isVisible());
     }
     else if (visualOnlyMode)
     {
         if (visualMode) {
             int stripH = 28;
             int toggleH = 24;
-            particleVisual->setBounds(0, topH, b.getWidth() - 2, b.getHeight() - topH - stripH - toggleH - abOff);
-            particleVisual->setVisible(!channelPromptVisible && !genrePromptVisible
-                                       && !updateOverlay.isVisible());
+            particleVisualHolder.setBounds(0, topH, b.getWidth() - 2, b.getHeight() - topH - stripH - toggleH - abOff);
+            particleVisualHolder.setVisible(!channelPromptVisible && !genrePromptVisible
+                                            && !updateOverlay.isVisible());
         } else {
             // Meters mode in visual-only — hide particle visual
-            particleVisual->setVisible(false);
+            particleVisualHolder.setVisible(false);
         }
     }
     else
     {
-        particleVisual->setVisible(false);
+        particleVisualHolder.setVisible(false);
     }
 
     // === Single top bar row ===
