@@ -251,14 +251,29 @@ juce::String PluginScanner::getPluginNamesString() const
 {
     std::lock_guard<std::mutex> lock(pluginMutex);
     
-    juce::StringArray names;
+    std::vector<juce::String> names;
     for (auto& p : plugins)
     {
         if (p.category == "Effect")  // Only list effects for mix feedback
-            names.add(p.name + " (" + p.manufacturer + ")");
+            names.push_back(p.name + " (" + p.manufacturer + ")");
     }
     
-    return names.joinIntoString(", ");
+    // Shuffle the order each time this string is built so the AI doesn't see
+    // the same plugins at the top of the list every request. LLMs have strong
+    // positional bias — the first few entries are most likely to be picked.
+    // Fisher–Yates shuffle, seeded from current time so each call differs.
+    juce::Random rng (juce::Time::currentTimeMillis());
+    for (int i = (int) names.size() - 1; i > 0; --i)
+    {
+        int j = rng.nextInt (i + 1);
+        if (j != i)
+            std::swap (names[(size_t) i], names[(size_t) j]);
+    }
+    
+    juce::StringArray arr;
+    for (auto& n : names)
+        arr.add (n);
+    return arr.joinIntoString (", ");
 }
 
 juce::File PluginScanner::getCacheFile()

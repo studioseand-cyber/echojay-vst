@@ -855,6 +855,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatScroll.setScrollBarsShown(true, false);
     chatContent.setInterceptsMouseClicks(true, true);
     
+    // Repaint the editor on every scroll so the avatars (which we paint
+    // ourselves into the editor, not into chatContent) stay in sync with the
+    // viewport's repaint regions. Without this, the avatar's right edge tears
+    // because JUCE only invalidates part of it when chatScroll scrolls.
+    chatScroll.onScroll = [this]() { repaint(); };
+    
     // Forward clicks on chat viewport to wave card hit testing
     chatScroll.onClickCheck = [this](const juce::MouseEvent& e) -> bool {
         auto pos = e.getEventRelativeTo(this).getPosition();
@@ -3324,17 +3330,31 @@ void EchoJayEditor::paint(juce::Graphics& g)
             {
                 int avX = chatX + chatW - avatarSize - 4;
                 int avY = drawY + 2;
-                if (avY >= chatTop2 && avY + avatarSize <= chatBottomEdge)
+                // Add a 2px buffer either side so the avatar's antialiased edge
+                // doesn't poke through the chat region boundary during scrolling.
+                if (avY >= chatTop2 + 2 && avY + avatarSize <= chatBottomEdge - 2)
                 {
+                    // Snap circle coords to integer pixel boundaries (see E avatar comment).
+                    const float fAvX = std::floor((float)avX);
+                    const float fAvY = std::floor((float)avY);
+                    const float fAvSize = (float)avatarSize;
                     g.setColour(C::bg4);
-                    g.fillEllipse((float)avX, (float)avY, (float)avatarSize, (float)avatarSize);
+                    g.fillEllipse(fAvX, fAvY, fAvSize, fAvSize);
                     g.setColour(C::text3);
                     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
                     g.drawText("U", avX, avY, avatarSize, avatarSize, juce::Justification::centred);
                 }
                 
-                int bubbleX = chatX + chatW - maxBubbleW - 8;
-                int bubbleW = maxBubbleW - avatarSize + 4;
+                // Size the bubble to the text width (plus 20px horizontal
+                // padding) so short messages don't stretch the full panel.
+                // Capped at maxBubbleW so long messages still wrap. When a
+                // waveform card is attached, force full width so the card has
+                // room to render the play button + waveform.
+                int textRenderedW = (int)std::ceil(layout.getWidth()) + 20;
+                int bubbleW = (msg.hasWaveform && !msg.waveform.empty())
+                                ? maxBubbleW
+                                : juce::jlimit(40, maxBubbleW, textRenderedW);
+                int bubbleX = chatX + chatW - avatarSize - 12 - bubbleW;
                 g.setColour(C::bg4);
                 g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)tH, 10.0f);
                 layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(textH - 20) });
@@ -3457,11 +3477,18 @@ void EchoJayEditor::paint(juce::Graphics& g)
             {
                 int avX = chatX + 6;
                 int avY = drawY + 2;
-                // Only draw avatar if fully within clip region (avoids partial clip glitch)
-                if (avY >= chatTop2 && avY + avatarSize <= chatBottomEdge)
+                // 2px buffer so AA fringes don't bleed through the clip edge while scrolling.
+                if (avY >= chatTop2 + 2 && avY + avatarSize <= chatBottomEdge - 2)
                 {
+                    // Snap circle coords to integer pixel boundaries so the
+                    // ellipse rasterizes identically every frame during scroll.
+                    // Without this, sub-pixel positions cause the right edge
+                    // of the ring to flatten/jag as scrollOffset changes.
+                    const float fAvX = std::floor((float)avX);
+                    const float fAvY = std::floor((float)avY);
+                    const float fAvSize = (float)avatarSize;
                     g.setColour(C::purple);
-                    g.fillEllipse((float)avX, (float)avY, (float)avatarSize, (float)avatarSize);
+                    g.fillEllipse(fAvX, fAvY, fAvSize, fAvSize);
                     g.setColour(juce::Colours::white);
                     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
                     g.drawText("E", avX, avY, avatarSize, avatarSize, juce::Justification::centred);
@@ -3681,16 +3708,24 @@ void EchoJayEditor::resized()
     int sendY = inputY + (inH - sendH) / 2; // vertically centred
     chatSendBtn.setBounds(chatStartX + chatW - sendW - 2, sendY, sendW, sendH);
     
-    // Chat scroll: top = below chat header, bottom = above chat input with gap
+    // Chat scroll: top = below chat header, bottom = above chat input with gap.
+    // The assistant avatar is painted by the editor at chatX+6 with width 24,
+    // so the viewport must start AFTER the avatar (chatX + 30 + a small gap)
+    // — otherwise macOS's scroll-blit optimisation blits the avatar's old
+    // pixels along with the bubble area, causing the avatar's right edge to
+    // tear during scroll. The user (U) avatar is on the right side and lives
+    // outside the viewport's right edge by symmetry of chatW - 4.
+    int chatAvatarReserve = 32; // 6px left margin + 24px avatar + 2px gap
     int chatScrollTop = topH + 32;
     int chatScrollBottom = inputY - 8;
     int chatScrollH = juce::jmax(50, chatScrollBottom - chatScrollTop);
-    chatScroll.setBounds(chatStartX + 2, chatScrollTop, chatW - 4, chatScrollH);
+    chatScroll.setBounds(chatStartX + chatAvatarReserve, chatScrollTop,
+                         chatW - chatAvatarReserve - 2, chatScrollH);
     // Set chatContent width here, but DO NOT cap height to viewport — the timer
     // callback computes the real content height from the message list and sets it
     // there. Capping to viewport height was the bug that broke scrolling.
     int currentContentH = std::max(chatContent.getHeight(), chatScroll.getHeight());
-    chatContent.setSize(chatW - 16, currentContentH);
+    chatContent.setSize(chatW - chatAvatarReserve - 4, currentContentH);
     
     // In compact mode, ensure chat components are on top
     if (compactMode) {
@@ -4263,8 +4298,10 @@ void EchoJayEditor::timerCallback()
     {
         // Mirror the paint code's geometry exactly so the scroll range matches the
         // actual rendered height. Paint uses chatW (panel width), avatar 24, and
-        // -24 for bubble margin; the scroll viewport width is chatW - 4 (see resized).
-        int chatW2 = chatScroll.getWidth() + 4; // recover chat panel width
+        // -24 for bubble margin; the scroll viewport now starts at chatX + 32
+        // (avatar reserve) and is chatW - 34 wide — see resized() for details.
+        int chatAvatarReserve = 32;
+        int chatW2 = chatScroll.getWidth() + chatAvatarReserve + 2; // recover chat panel width
         int avatarSz = 24;
         int maxBW = chatW2 - avatarSz - 24; // matches paint maxBubbleW
         int totalH = 8; // matches paint msgY initial value
@@ -4284,7 +4321,7 @@ void EchoJayEditor::timerCallback()
         int visH = chatScroll.getHeight();
         if (chatContent.getHeight() != std::max(visH, totalH))
         {
-            chatContent.setSize(chatScroll.getWidth() - 8, std::max(visH, totalH));
+            chatContent.setSize(chatScroll.getWidth() - 4, std::max(visH, totalH));
             if (totalH > visH)
                 chatScroll.setViewPosition(0, totalH - visH);
         }

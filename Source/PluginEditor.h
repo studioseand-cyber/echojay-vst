@@ -285,11 +285,21 @@ private:
     struct ChatViewport : public juce::Viewport
     {
         std::function<bool(const juce::MouseEvent&)> onClickCheck;
+        std::function<void()> onScroll;
         void mouseDown(const juce::MouseEvent& e) override
         {
             if (onClickCheck && onClickCheck(e))
                 return; // consumed by wave card
             juce::Viewport::mouseDown(e);
+        }
+        // Called by JUCE when the visible area changes (i.e. when the user
+        // scrolls). We use this to ask the parent editor to repaint the
+        // chat region — without it, the editor's manually-painted avatars
+        // tear at the viewport boundary because half the avatar lives in
+        // the area JUCE marks dirty during scroll and half doesn't.
+        void visibleAreaChanged(const juce::Rectangle<int>&) override
+        {
+            if (onScroll) onScroll();
         }
     };
     ChatViewport chatScroll;
