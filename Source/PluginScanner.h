@@ -57,6 +57,15 @@ private:
     
     mutable std::mutex pluginMutex;
     std::vector<ScannedPlugin> plugins;
+
+    // Cached shuffled plugin list — populated lazily on first call to
+    // getPluginNamesString() and reused for the lifetime of this scanner
+    // (i.e. until the plugin instance is unloaded). Keeps the order stable
+    // within a session so server-side prompt caching works. Cache is
+    // invalidated when the plugin count changes (e.g. after a rescan).
+    mutable juce::String cachedShuffledNames;
+    mutable size_t       cachedShuffleSize = 0;
+
     std::atomic<bool> scanning { false };
     std::atomic<float> progress { 0.0f };
     std::unique_ptr<juce::Thread> scanThread;

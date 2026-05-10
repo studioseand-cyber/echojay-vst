@@ -21,6 +21,12 @@ void PluginScanner::startScan()
     {
         std::lock_guard<std::mutex> lock(pluginMutex);
         plugins.clear();
+        // Invalidate the cached shuffled names — next call to
+        // getPluginNamesString() will reshuffle. We do this explicitly (not
+        // just relying on size mismatch) to handle the edge case where a
+        // rescan ends up with the same plugin count but different plugins.
+        cachedShuffledNames = juce::String();
+        cachedShuffleSize = 0;
     }
     
     scanThread = std::make_unique<ScanThread>(*this);
@@ -250,18 +256,32 @@ juce::String PluginScanner::getPluginsJSON() const
 juce::String PluginScanner::getPluginNamesString() const
 {
     std::lock_guard<std::mutex> lock(pluginMutex);
-    
+
+    // Build the list of effect plugin names from the current scan results.
     std::vector<juce::String> names;
     for (auto& p : plugins)
     {
         if (p.category == "Effect")  // Only list effects for mix feedback
             names.push_back(p.name + " (" + p.manufacturer + ")");
     }
-    
-    // Shuffle the order each time this string is built so the AI doesn't see
-    // the same plugins at the top of the list every request. LLMs have strong
-    // positional bias — the first few entries are most likely to be picked.
-    // Fisher–Yates shuffle, seeded from current time so each call differs.
+
+    // Return the cached shuffle if it's still valid. The cache is invalidated
+    // when the plugin count changes (e.g. user rescanned and added/removed
+    // plugins), in which case we shuffle fresh.
+    //
+    // IMPORTANT: this is what keeps server-side prompt caching working. If
+    // we shuffled on every call (the original behaviour), the system prompt
+    // would differ on every request and Anthropic's cache could never hit.
+    if (! cachedShuffledNames.isEmpty() && cachedShuffleSize == names.size())
+        return cachedShuffledNames;
+
+    // First call this session, or plugin list size has changed since the
+    // last shuffle. Reshuffle and cache.
+    //
+    // LLMs have strong positional bias — the first few entries are most
+    // likely to be referenced. Shuffling once at session-start gives the AI
+    // a different starting position each session without churning the order
+    // mid-conversation.
     juce::Random rng (juce::Time::currentTimeMillis());
     for (int i = (int) names.size() - 1; i > 0; --i)
     {
@@ -269,11 +289,14 @@ juce::String PluginScanner::getPluginNamesString() const
         if (j != i)
             std::swap (names[(size_t) i], names[(size_t) j]);
     }
-    
+
     juce::StringArray arr;
     for (auto& n : names)
         arr.add (n);
-    return arr.joinIntoString (", ");
+
+    cachedShuffledNames = arr.joinIntoString (", ");
+    cachedShuffleSize   = names.size();
+    return cachedShuffledNames;
 }
 
 juce::File PluginScanner::getCacheFile()
