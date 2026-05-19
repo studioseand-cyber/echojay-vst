@@ -380,9 +380,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                             auto picked = fc.getResult();
                             if (picked.isDirectory())
                             {
-                                auto& s = safeThis->processorRef.getPluginScanner();
-                                s.addCustomFolder(picked);
-                                s.startScan();
+                                // Use pointer rather than reference here — MSVC's
+                                // reference-initialisation rules are stricter than Clang's
+                                // when the source is a SafePointer dereference inside a
+                                // nested lambda. Pointer works on both compilers.
+                                auto* scannerPtr = &safeThis->processorRef.getPluginScanner();
+                                scannerPtr->addCustomFolder(picked);
+                                scannerPtr->startScan();
                             }
                         });
                 }
