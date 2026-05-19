@@ -357,13 +357,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             menu.addSubMenu("Custom Folders (" + juce::String(folders.size()) + ")", removeSub);
         }
         
+        // Create SafePointer outside the lambda — MSVC's type deduction
+        // for init-captures in nested lambdas is unreliable; building it
+        // here and capturing by value works on both Clang and MSVC.
+        juce::Component::SafePointer<EchoJayEditor> safeThis(this);
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&scanBtn),
-            [safeThis = juce::Component::SafePointer<EchoJayEditor>(this)](int result) {
+            [safeThis](int result) {
                 if (safeThis == nullptr) return;
-                auto& scanner = safeThis->processorRef.getPluginScanner();
+                auto* scanner = &safeThis->processorRef.getPluginScanner();
                 if (result == 1)
                 {
-                    scanner.startScan();
+                    scanner->startScan();
                 }
                 else if (result == 2)
                 {
@@ -393,11 +397,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 else if (result >= 100)
                 {
                     int idx = result - 100;
-                    auto folders = scanner.getCustomFolders();
-                    if (idx >= 0 && idx < folders.size())
+                    auto folders = scanner->getCustomFolders();
+                    if (idx >= 0 && (size_t)idx < folders.size())
                     {
-                        scanner.removeCustomFolder(folders[idx]);
-                        scanner.startScan(); // rescan so AI prompt drops removed-folder plugins
+                        scanner->removeCustomFolder(folders[idx]);
+                        scanner->startScan(); // rescan so AI prompt drops removed-folder plugins
                     }
                 }
             });
