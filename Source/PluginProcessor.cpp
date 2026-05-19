@@ -10,6 +10,7 @@ EchoJayProcessor::EchoJayProcessor()
     // Defer plugin cache loading to background so constructor returns fast
     juce::Thread::launch([this]() {
         pluginScanner.loadCache();
+        pluginScanner.loadCustomFolders();
     });
 }
 

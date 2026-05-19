@@ -32,6 +32,23 @@ struct MeterData {
     // Stereo
     float width = 0.0f;
     float correlation = 0.0f;
+
+    // Mid/Side energy ratio (side / mid). 0.0 = pure mid (mono),
+    // higher values mean more side energy. Typical commercial material
+    // sits roughly 0.2 to 0.8. Computed from the same HPF'd mid/side
+    // accumulators that drive width, and held silent during quiet
+    // buffers so it doesn't update on inaudible signal.
+    float sideToMidRatio = 0.0f;
+
+    // Banded correlation: phase relationship per frequency band.
+    // sub  = below 120 Hz   (low-pass)
+    // mid  = 120 Hz to 5 kHz (band-pass)
+    // top  = above 5 kHz    (high-pass)
+    // Same -1.0 to +1.0 scale as the overall correlation field.
+    // Held during silence the same way the overall correlation is.
+    float corrSub = 0.0f;
+    float corrMid = 0.0f;
+    float corrTop = 0.0f;
     
     // Goniometer — recent L/R sample pairs for vectorscope display
     static constexpr int gonioSize = 512;
@@ -47,6 +64,12 @@ struct MeterData {
         -120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,
         -120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120
     };
+
+    // True when the plugin has not seen audible audio for the silence
+    // timeout window (set in MeterEngine::prepare). When this is true,
+    // all other meter values are stale snapshots from the last active
+    // moment and should not be presented as current state.
+    bool isSilent = true;
 };
 
 class MeterEngine
@@ -177,6 +200,57 @@ private:
     double whpx1L = 0, whpx2L = 0, whpy1L = 0, whpy2L = 0;
     double whpx1R = 0, whpx2R = 0, whpy1R = 0, whpy2R = 0;
     void computeWidthHpfCoeffs(double sr);
+
+    // ===== Banded correlation filters =====
+    // Three band-limiting filters drive the corrSub / corrMid / corrTop
+    // readings. Sub = LPF 120Hz, Mid = LPF 5kHz applied AFTER an HPF 120Hz
+    // (i.e. band-pass via cascaded HP+LP for simplicity vs a real BPF),
+    // Top = HPF 5kHz. All 2nd-order Butterworth. The bands intentionally
+    // overlap by a sample's worth of phase at the crossover; we don't need
+    // hard separation, we need a useful per-band reading.
+    BiquadCoeffs corrSubLpf;     // LPF 120Hz for sub band
+    BiquadCoeffs corrTopHpf;     // HPF 5kHz for top band
+    BiquadCoeffs corrMidHpf;     // HPF 120Hz for mid band low-side
+    BiquadCoeffs corrMidLpf;     // LPF 5kHz for mid band high-side
+    // Filter state per band and channel (x1/x2/y1/y2 each, L and R)
+    double subLpxL1=0, subLpxL2=0, subLpyL1=0, subLpyL2=0;
+    double subLpxR1=0, subLpxR2=0, subLpyR1=0, subLpyR2=0;
+    double topHpxL1=0, topHpxL2=0, topHpyL1=0, topHpyL2=0;
+    double topHpxR1=0, topHpxR2=0, topHpyR1=0, topHpyR2=0;
+    double midHpxL1=0, midHpxL2=0, midHpyL1=0, midHpyL2=0;
+    double midHpxR1=0, midHpxR2=0, midHpyR1=0, midHpyR2=0;
+    double midLpxL1=0, midLpxL2=0, midLpyL1=0, midLpyL2=0;
+    double midLpxR1=0, midLpxR2=0, midLpyR1=0, midLpyR2=0;
+    void computeBandedCorrCoeffs(double sr);
+
+    // Display-smoothed banded correlation values. Same gating discipline
+    // as the overall correlation: only updated when the band has audible
+    // signal, else held at last meaningful value. Each band has its own
+    // init flag because bands fill at different times on real material
+    // (a kick-only track has nothing in the top band).
+    float displayCorrSub = 0.0f;
+    float displayCorrMid = 0.0f;
+    float displayCorrTop = 0.0f;
+    bool subInit = false;
+    bool midInit = false;
+    bool topInit = false;
+
+    // Display-smoothed side/mid ratio. Reuses the same EMA-on-the-scalar
+    // pattern as width (smoothing the ratio rather than the components,
+    // so vocal reverb tails don't produce wild swings).
+    float displaySideToMid = 0.0f;
+    bool sideToMidInit = false;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MeterEngine)
+
+    // ===== Silence detection (for stale-meter prevention) =====
+    // Counts consecutive samples seen below kSilenceThreshold. When the
+    // count exceeds silenceTimeoutSamples (set to 500ms in prepare()),
+    // the engine reports isSilent=true so the chat layer can avoid
+    // sending stale meter values to the model. Reset to 0 whenever any
+    // sample exceeds the threshold.
+    std::atomic<int> silentSampleCount {0};
+    int silenceTimeoutSamples = 24000; // overwritten in prepare()
+    static constexpr float kSilenceThreshold = 0.0001f; // ~-80dBFS
+
 };

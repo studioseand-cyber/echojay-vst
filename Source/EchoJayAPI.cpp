@@ -6,6 +6,8 @@ int EchoJayAPI::remotePromptVersion = 0;
 bool EchoJayAPI::remoteConfigLoaded = false;
 juce::String EchoJayAPI::latestVersion;
 juce::String EchoJayAPI::updateUrl;
+juce::String EchoJayAPI::downloadUrlMac;
+juce::String EchoJayAPI::downloadUrlWin;
 juce::String EchoJayAPI::announcement;
 std::map<juce::String, juce::String> EchoJayAPI::remoteChannelPrompts;
 int EchoJayAPI::remoteChannelPromptsVersion = 0;
@@ -65,7 +67,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
                            .withExtraHeaders(headers)
-                           .withConnectionTimeoutMs(15000)
+                           .withConnectionTimeoutMs(60000)
                            .withStatusCode(&statusCode);
         
         auto stream = url.createInputStream(options);
@@ -111,7 +113,7 @@ void EchoJayAPI::getJSON(const juce::String& path,
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                            .withExtraHeaders(headers)
-                           .withConnectionTimeoutMs(15000)
+                           .withConnectionTimeoutMs(60000)
                            .withStatusCode(&statusCode);
         
         auto stream = url.createInputStream(options);
@@ -232,6 +234,22 @@ int EchoJayAPI::getRemainingMessages() const
     return juce::jmax(0, userInfo.messageLimit - userInfo.messagesUsedToday);
 }
 
+juce::String EchoJayAPI::getLimitReachedMessage() const
+{
+    // Strings MUST stay in sync with api/chat.js in the SaaS — see the
+    // `if (user.tier === 'free')` / `else if (user.tier === 'pro')` block.
+    // The SaaS sends these in the 429 response body; we mirror them here
+    // for the client-side pre-check path so the user sees identical
+    // wording regardless of which side caught the limit.
+    if (userInfo.tier == "free")
+        return "You've hit your free monthly limit. Upgrade to Pro to keep going.";
+    if (userInfo.tier == "pro")
+        return "You've hit your monthly limit. Upgrade to Studio or top up with credits to keep going.";
+    // studio, its_platinum, and any future tiers fall through to the
+    // generic "top up" message — they can't upgrade further.
+    return "You've hit your monthly limit. Top up with credits to keep going.";
+}
+
 void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
 {
     if (!isLoggedIn())
@@ -321,15 +339,7 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
             }
             
             // Server confirms we're at the limit (or refresh failed — fall back to cached state).
-            juce::String limitStr = juce::String(userInfo.messageLimit);
-            juce::String msg = "You've hit your daily limit of " + limitStr + " AI messages. ";
-            if (userInfo.tierLevel >= 2)
-                msg += "Limit resets at midnight.";
-            else if (userInfo.tierLevel >= 1)
-                msg += "Upgrade to Studio for 150 messages per day.";
-            else
-                msg += "Upgrade to Pro for 50 messages per day.";
-            onComplete(msg, false);
+            onComplete(getLimitReachedMessage(), false);
         });
         return;
     }
@@ -436,7 +446,7 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
                     serverMsg = obj->getProperty("error").toString();
             }
             if (serverMsg.isEmpty())
-                serverMsg = "Daily message limit reached.";
+                serverMsg = getLimitReachedMessage();
             onComplete(serverMsg, false);
             return;
         }
@@ -500,7 +510,7 @@ void EchoJayAPI::fetchRemoteConfig()
         
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-                           .withConnectionTimeoutMs(5000)
+                           .withConnectionTimeoutMs(60000)
                            .withStatusCode(&statusCode);
         
         auto stream = url.createInputStream(options);
@@ -528,6 +538,10 @@ void EchoJayAPI::fetchRemoteConfig()
                     latestVersion = obj->getProperty("latestVersion").toString();
                 if (obj->hasProperty("updateUrl"))
                     updateUrl = obj->getProperty("updateUrl").toString();
+                if (obj->hasProperty("downloadUrlMac"))
+                    downloadUrlMac = obj->getProperty("downloadUrlMac").toString();
+                if (obj->hasProperty("downloadUrlWin"))
+                    downloadUrlWin = obj->getProperty("downloadUrlWin").toString();
                 if (obj->hasProperty("announcement"))
                     announcement = obj->getProperty("announcement").toString();
                 
@@ -560,11 +574,93 @@ void EchoJayAPI::fetchRemoteConfig()
                     
                     // Also parse channel prompts from cache
                     parseChannelConfig(obj);
+                    
+                    // Pull update-related fields too so the offline path still
+                    // knows the latest version and where to download from. The
+                    // user will likely be online by the time they click
+                    // "Download Update" — caching these lets the overlay show
+                    // the right state even before the next config refresh.
+                    if (obj->hasProperty("latestVersion"))
+                        latestVersion = obj->getProperty("latestVersion").toString();
+                    if (obj->hasProperty("updateUrl"))
+                        updateUrl = obj->getProperty("updateUrl").toString();
+                    if (obj->hasProperty("downloadUrlMac"))
+                        downloadUrlMac = obj->getProperty("downloadUrlMac").toString();
+                    if (obj->hasProperty("downloadUrlWin"))
+                        downloadUrlWin = obj->getProperty("downloadUrlWin").toString();
                 }
             }
             remoteConfigLoaded = true;
         }
     });
+}
+
+// ============ Chat Language ============
+// Stored as a short code in ~/Documents/EchoJay/chat_language.txt. The file
+// is human-editable plain text so users can override via the filesystem if
+// they want to add a language we haven't exposed in the UI yet (anything
+// Claude recognises will work — it's just a string injected into the
+// system prompt).
+
+const juce::Array<std::pair<juce::String, juce::String>>& EchoJayAPI::chatLanguageList()
+{
+    // Static-init the list once. Order is the order they'll appear in the
+    // Settings dropdown. "Auto" first so it's the default sensible pick;
+    // English second; rest sorted by approximate user share for audio
+    // production globally (rough order — feel free to reshuffle).
+    static const auto list = [] {
+        juce::Array<std::pair<juce::String, juce::String>> l;
+        l.add({ "auto",  "Auto (match input)" });
+        l.add({ "en",    "English" });
+        l.add({ "es",    "Spanish" });
+        l.add({ "pt-br", "Portuguese (Brazil)" });
+        l.add({ "fr",    "French" });
+        l.add({ "de",    "German" });
+        l.add({ "it",    "Italian" });
+        l.add({ "nl",    "Dutch" });
+        l.add({ "ja",    "Japanese" });
+        l.add({ "ko",    "Korean" });
+        l.add({ "zh",    "Chinese (Simplified)" });
+        return l;
+    }();
+    return list;
+}
+
+juce::String EchoJayAPI::chatLanguageDisplayName(const juce::String& code)
+{
+    for (auto& p : chatLanguageList())
+        if (p.first == code) return p.second;
+    return "Auto (match input)";
+}
+
+static juce::File getChatLanguageFile()
+{
+    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+               .getChildFile("EchoJay").getChildFile("chat_language.txt");
+}
+
+juce::String EchoJayAPI::getChatLanguage()
+{
+    auto file = getChatLanguageFile();
+    if (! file.existsAsFile()) return "auto";
+    auto code = file.loadFileAsString().trim().toLowerCase();
+    // Validate against the known list — reject anything else to avoid
+    // injecting arbitrary user-edited text into the system prompt.
+    for (auto& p : chatLanguageList())
+        if (p.first == code) return code;
+    return "auto";
+}
+
+void EchoJayAPI::setChatLanguage(const juce::String& code)
+{
+    // Round-trip through the list so we only ever persist known codes.
+    juce::String validated = "auto";
+    for (auto& p : chatLanguageList())
+        if (p.first == code) { validated = code; break; }
+    
+    auto file = getChatLanguageFile();
+    file.getParentDirectory().createDirectory();
+    file.replaceWithText(validated);
 }
 
 // ============ System Prompt ============
@@ -795,6 +891,29 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     prompt += "If you're unsure which kind, lean toward GENERAL QUESTION and answer what was asked. You can briefly tie advice back to their mix at the end IF relevant, but never force it.\n";
     prompt += "NEVER reframe a general question as a mix analysis. If the user asks 'how do X hit like Y', answer that question — do not analyse their current capture instead.\n";
     
+    // Language preference — appended last so it sits closest to the user
+    // turn in the model's attention. "auto" means the AI should match
+    // whatever language the user typed in (Claude does this naturally
+    // when nothing else is specified, so we omit any instruction). For
+    // any specific language, we force it explicitly. Technical audio
+    // terms (LUFS, dB, RMS, plugin names) stay in English regardless —
+    // translating "Pro-Q 3" into French would just be confusing.
+    auto langCode = getChatLanguage();
+    if (langCode != "auto" && langCode.isNotEmpty())
+    {
+        auto langName = chatLanguageDisplayName(langCode);
+        // chatLanguageDisplayName returns "Auto (match input)" when the
+        // code isn't recognised — guard against that slipping through.
+        if (! langName.startsWith("Auto"))
+        {
+            prompt += "\nIMPORTANT — RESPONSE LANGUAGE: Reply in " + langName
+                   + ". Keep technical audio terms, units (LUFS, dB, Hz, ms), "
+                     "and plugin or product names in their original English form. "
+                     "Everything else — explanations, examples, conversational "
+                     "phrasing — should be in " + langName + ".\n";
+        }
+    }
+    
     return prompt;
 }
 
@@ -849,10 +968,17 @@ void EchoJayAPI::loadSettings()
         if (userInfo.displayName.isEmpty())
             userInfo.displayName = userInfo.email.upToFirstOccurrenceOf("@", false, false);
         
-        // Check if the saved usage is from today — reset if it's a new day
+        // Check if the saved usage is from this period — reset if we've
+        // rolled into a new month. Period is monthly across all tiers in
+        // the current SaaS. (Field name `messagesUsedToday` is legacy and
+        // kept for compat with old saved settings on disk; semantically
+        // it now means "messages used this period".)
+        // The local cache is just an offline-friendly stale view — the
+        // SaaS is the source of truth and the next refreshUserInfo() call
+        // will correct any drift. We use YYYY-MM as the comparison key.
         auto savedDate = obj->getProperty("usageDate").toString();
-        auto today = juce::Time::getCurrentTime().formatted("%Y-%m-%d");
-        if (savedDate != today)
+        auto thisMonth = juce::Time::getCurrentTime().formatted("%Y-%m");
+        if (savedDate.substring(0, 7) != thisMonth)
             userInfo.messagesUsedToday = 0;
     }
 }

@@ -51,18 +51,43 @@ ParticleVisual::ParticleVisual()
 {
     setOpaque(true);
     
+    // NOTE: do NOT attach the GL context here. Attaching OpenGL inside a
+    // plugin-host UI thread can hang on Windows (especially in sandboxed
+    // hosts like Fender Studio Pro / Studio One, and on machines with
+    // older or buggy GPU drivers). The host calls our editor constructor
+    // on its UI thread — anything that blocks here freezes the whole DAW.
+    //
+    // The editor now calls start() AFTER the constructor returns, and
+    // only when visual mode is actually on. If GL attachment fails on
+    // the user's machine the freeze becomes "visuals don't appear" rather
+    // than "DAW locks up forever".
+}
+
+void ParticleVisual::start()
+{
+    if (glAttached) return;
+    
     glContext.setRenderer(this);
     glContext.setContinuousRepainting(true);
     glContext.setComponentPaintingEnabled(false);
     glContext.attachTo(*this);
-
+    glAttached = true;
+    
     startTimerHz(60);
+}
+
+void ParticleVisual::stop()
+{
+    if (! glAttached) return;
+    
+    stopTimer();
+    glContext.detach();
+    glAttached = false;
 }
 
 ParticleVisual::~ParticleVisual()
 {
-    stopTimer();
-    glContext.detach();
+    stop();
 }
 
 void ParticleVisual::timerCallback()

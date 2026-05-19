@@ -48,6 +48,42 @@ void MeterEngine::computeWidthHpfCoeffs(double sr)
     widthHpf.a2 = (1.0 - K / Q + K * K) / a0_;
 }
 
+// Compute biquad coefficients for the three banded correlation filters:
+// LPF 120Hz (sub), HPF 5kHz (top), and HPF 120Hz + LPF 5kHz cascaded (mid).
+// All 2nd-order Butterworth (Q ~ 0.7071). The mid band uses two filters
+// in cascade rather than a true band-pass biquad. Simpler maintenance,
+// and the phase quirks of cascaded HP+LP don't matter for correlation.
+void MeterEngine::computeBandedCorrCoeffs(double sr)
+{
+    const double Q = 0.7071;
+    auto computeLpf = [sr, Q](double f0) -> BiquadCoeffs {
+        BiquadCoeffs c;
+        double K = std::tan(juce::MathConstants<double>::pi * f0 / sr);
+        double a0_ = 1.0 + K / Q + K * K;
+        c.b0 = (K * K) / a0_;
+        c.b1 = 2.0 * (K * K) / a0_;
+        c.b2 = (K * K) / a0_;
+        c.a1 = 2.0 * (K * K - 1.0) / a0_;
+        c.a2 = (1.0 - K / Q + K * K) / a0_;
+        return c;
+    };
+    auto computeHpf = [sr, Q](double f0) -> BiquadCoeffs {
+        BiquadCoeffs c;
+        double K = std::tan(juce::MathConstants<double>::pi * f0 / sr);
+        double a0_ = 1.0 + K / Q + K * K;
+        c.b0 = 1.0 / a0_;
+        c.b1 = -2.0 / a0_;
+        c.b2 = 1.0 / a0_;
+        c.a1 = 2.0 * (K * K - 1.0) / a0_;
+        c.a2 = (1.0 - K / Q + K * K) / a0_;
+        return c;
+    };
+    corrSubLpf = computeLpf(120.0);
+    corrTopHpf = computeHpf(5000.0);
+    corrMidHpf = computeHpf(120.0);
+    corrMidLpf = computeLpf(5000.0);
+}
+
 double MeterEngine::applyBiquad(double input, const BiquadCoeffs& c,
                                  double& x1, double& x2, double& y1, double& y2)
 {
@@ -59,10 +95,18 @@ double MeterEngine::applyBiquad(double input, const BiquadCoeffs& c,
 
 void MeterEngine::prepare(double sampleRate, int /*samplesPerBlock*/)
 {
+    // 500ms of silence at the host sample rate flips isSilent to true.
+    // Long enough to ride out short gaps between phrases, short enough
+    // that a stopped transport reads as silent before the user sends
+    // a follow-up message.
+    silenceTimeoutSamples = (int)(sampleRate * 0.5);
+    silentSampleCount.store(silenceTimeoutSamples + 1); // start as silent
+
     currentSampleRate = sampleRate;
     samplesPerBlock100ms = static_cast<int>(sampleRate * 0.1);
     computeKWeightingCoeffs(sampleRate);
     computeWidthHpfCoeffs(sampleRate);
+    computeBandedCorrCoeffs(sampleRate);
     
     for (int i = 0; i < fftSize; ++i)
         fftWindow[(size_t)i] = 0.5f * (1.0f - std::cos(2.0f * juce::MathConstants<float>::pi * (float)i / (float)fftSize));
@@ -117,6 +161,21 @@ void MeterEngine::resetState()
     displayWidth = 0.0f;
     displayCorr = 0.0f;
     displayStereoInit = false;
+    // Banded correlation filter states
+    subLpxL1=subLpxL2=subLpyL1=subLpyL2=0;
+    subLpxR1=subLpxR2=subLpyR1=subLpyR2=0;
+    topHpxL1=topHpxL2=topHpyL1=topHpyL2=0;
+    topHpxR1=topHpxR2=topHpyR1=topHpyR2=0;
+    midHpxL1=midHpxL2=midHpyL1=midHpyL2=0;
+    midHpxR1=midHpxR2=midHpyR1=midHpyR2=0;
+    midLpxL1=midLpxL2=midLpyL1=midLpyL2=0;
+    midLpxR1=midLpxR2=midLpyR1=midLpyR2=0;
+    // Banded display values and init flags
+    displayCorrSub = displayCorrMid = displayCorrTop = 0.0f;
+    subInit = midInit = topInit = false;
+    // Side/mid display value
+    displaySideToMid = 0.0f;
+    sideToMidInit = false;
     lastCrest = 0.0f;
     fftData.fill(0.0f);
     std::fill(fftAccumulator.begin(), fftAccumulator.end(), 0.0f);
@@ -250,7 +309,27 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     // and gets handled on the NEXT block — which is fine.
     if (pendingReset.exchange(false))
         resetState();
-    
+
+    // ===== Silence detection: are we receiving audio right now? =====
+    // Scan the block for any sample above kSilenceThreshold. If found,
+    // reset the silent-sample counter. If not, accumulate. The chat
+    // layer uses the resulting isSilent flag to decide whether to send
+    // stale meter values to the model on follow-up messages.
+    {
+        float blockPeakAny = 0.0f;
+        for (int i = 0; i < numSamples; ++i) {
+            float a = std::abs(left[i]);
+            float b = std::abs(right[i]);
+            if (a > blockPeakAny) blockPeakAny = a;
+            if (b > blockPeakAny) blockPeakAny = b;
+        }
+        if (blockPeakAny > kSilenceThreshold) {
+            silentSampleCount.store(0);
+        } else {
+            silentSampleCount.fetch_add(numSamples);
+        }
+    }
+
     float blockPeakL = 0, blockPeakR = 0;
     float blockTpL = 0, blockTpR = 0;
     computeTruePeak(left, numSamples, blockTpL);
@@ -258,7 +337,16 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     
     double blkSqL = 0, blkSqR = 0, blkSumL = 0, blkSumR = 0;
     double blkMid = 0, blkSide = 0, blkCorr = 0, blkEnL = 0, blkEnR = 0;
-    
+
+    // Per-buffer banded correlation accumulators. Same pattern as the
+    // overall blkCorr/blkEnL/blkEnR: sum of LR product, sum of L², sum of R²
+    // for each of the three bands. Per-buffer (not per-block) because the
+    // existing correlation does the same and the EMA at the buffer boundary
+    // already handles smoothing.
+    double subCorrSum=0, subEnL=0, subEnR=0;
+    double midCorrSum=0, midEnL=0, midEnR=0;
+    double topCorrSum=0, topEnL=0, topEnR=0;
+
     for (int i = 0; i < numSamples; ++i)
     {
         float sL = left[i]; float sR = right[i];
@@ -266,7 +354,7 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         blkSumL += sL; blkSumR += sR;
         blockPeakL = std::max(blockPeakL, std::abs(sL));
         blockPeakR = std::max(blockPeakR, std::abs(sR));
-        
+
         double hpL = applyBiquad(sL, widthHpf, whpx1L, whpx2L, whpy1L, whpy2L);
         double hpR = applyBiquad(sR, widthHpf, whpx1R, whpx2R, whpy1R, whpy2R);
         float hpMid = (float)(hpL + hpR) * 0.5f;
@@ -274,6 +362,25 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         blkMid += hpMid * hpMid; blkSide += hpSide * hpSide;
         blkCorr += (double)sL * (double)sR;
         blkEnL += sL * sL; blkEnR += sR * sR;
+
+        // ===== Banded correlation: filter each band, accumulate LR cross =====
+        // Sub (LPF 120Hz)
+        double subL = applyBiquad(sL, corrSubLpf, subLpxL1, subLpxL2, subLpyL1, subLpyL2);
+        double subR = applyBiquad(sR, corrSubLpf, subLpxR1, subLpxR2, subLpyR1, subLpyR2);
+        subCorrSum += subL * subR;
+        subEnL += subL * subL; subEnR += subR * subR;
+        // Mid (HPF 120Hz then LPF 5kHz, cascaded)
+        double midL = applyBiquad(sL, corrMidHpf, midHpxL1, midHpxL2, midHpyL1, midHpyL2);
+        midL = applyBiquad(midL, corrMidLpf, midLpxL1, midLpxL2, midLpyL1, midLpyL2);
+        double midR = applyBiquad(sR, corrMidHpf, midHpxR1, midHpxR2, midHpyR1, midHpyR2);
+        midR = applyBiquad(midR, corrMidLpf, midLpxR1, midLpxR2, midLpyR1, midLpyR2);
+        midCorrSum += midL * midR;
+        midEnL += midL * midL; midEnR += midR * midR;
+        // Top (HPF 5kHz)
+        double topL = applyBiquad(sL, corrTopHpf, topHpxL1, topHpxL2, topHpyL1, topHpyL2);
+        double topR = applyBiquad(sR, corrTopHpf, topHpxR1, topHpxR2, topHpyR1, topHpyR2);
+        topCorrSum += topL * topR;
+        topEnL += topL * topL; topEnR += topR * topR;
         
         double kL = applyBiquad(sL, kStage1, s1x1L, s1x2L, s1y1L, s1y2L);
         kL = applyBiquad(kL, kStage2, s2x1L, s2x2L, s2y1L, s2y2L);
@@ -485,7 +592,54 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         }
     }
     // else: hold the last meaningful values — silence has no stereo info
-    
+
+    // ===== Banded correlation: instantaneous values, then EMA with the same
+    // overall gate. Each band has its own init flag because bands can fill
+    // at different times (e.g. a sub-only intro has no top-band signal).
+    // We use the same overall bufPeak gate for EMA update because gating
+    // per-band creates inconsistent timestamps across the readings, which
+    // makes the relationship between them less useful for the model.
+    auto bandedCorr = [](double cross, double enL, double enR) -> float {
+        if (enL > 1e-10 && enR > 1e-10)
+            return static_cast<float>(cross / std::sqrt(enL * enR));
+        return 0.0f;
+    };
+    float instCorrSub = bandedCorr(subCorrSum, subEnL, subEnR);
+    float instCorrMid = bandedCorr(midCorrSum, midEnL, midEnR);
+    float instCorrTop = bandedCorr(topCorrSum, topEnL, topEnR);
+
+    // Band-specific "has signal" gates: only update each band's EMA when
+    // there's meaningful energy in THAT band. Same threshold as the overall
+    // gate, but applied to the band-filtered energy. This prevents the
+    // bass-only intro case from settling top correlation to a meaningless
+    // value picked up from filter ringing during the loud first kick.
+    const double bandEnergyGate = 1e-7;  // ~ -70 dBFS RMS in the band
+    bool subHasSig = (subEnL + subEnR) > bandEnergyGate;
+    bool midHasSig = (midEnL + midEnR) > bandEnergyGate;
+    bool topHasSig = (topEnL + topEnR) > bandEnergyGate;
+
+    auto updateEma = [widthAlpha](float& display, bool& init, float inst, bool hasSig) {
+        if (!hasSig) return;
+        if (!init) { display = inst; init = true; }
+        else       { display += static_cast<float>(widthAlpha * (inst - display)); }
+    };
+    updateEma(displayCorrSub, subInit, instCorrSub, subHasSig);
+    updateEma(displayCorrMid, midInit, instCorrMid, midHasSig);
+    updateEma(displayCorrTop, topInit, instCorrTop, topHasSig);
+
+    // ===== Side/mid ratio: derived from the SAME HPF'd mid/side accumulators
+    // that drive width. Width is sqrt(side/mid)*100 (a percentage), this is
+    // the raw ratio side/mid. Different numerical shape, same underlying
+    // measurement. Gated and smoothed identically to width.
+    float instSideToMid = 0.0f;
+    if (blkMid > 1e-10)
+        instSideToMid = static_cast<float>(blkSide / blkMid);
+    if (stereoBufHasSignal)
+    {
+        if (!sideToMidInit) { displaySideToMid = instSideToMid; sideToMidInit = true; }
+        else                { displaySideToMid += static_cast<float>(widthAlpha * (instSideToMid - displaySideToMid)); }
+    }
+
     float width = displayWidth;
     float corr = displayCorr;
     float rmsAvg = std::sqrt(static_cast<float>((sumSqL + sumSqR) * 0.5));
@@ -547,6 +701,10 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         data.dcOffset = dc;
         data.width = width;
         data.correlation = corr;
+        data.sideToMidRatio = displaySideToMid;
+        data.corrSub = displayCorrSub;
+        data.corrMid = displayCorrMid;
+        data.corrTop = displayCorrTop;
         int step = std::max(1, numSamples / 64);
         for (int i = 0; i < numSamples; i += step)
         {
@@ -561,7 +719,13 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
 MeterData MeterEngine::getMeterData() const
 {
     std::lock_guard<std::mutex> lock(dataMutex);
-    return data;
+    // Return a copy of data with the silence flag set from the atomic
+    // counter. getMeterData() is const, so we can't modify the member
+    // 'data' directly. Copying is cheap and avoids needing to make
+    // isSilent mutable.
+    MeterData result = data;
+    result.isSilent = silentSampleCount.load() > silenceTimeoutSamples;
+    return result;
 }
 
 void MeterEngine::resetIntegrated()
@@ -592,6 +756,10 @@ juce::String MeterEngine::getMeterDataJSON() const
     json += "\"dc\":" + juce::String(d.dcOffset, 2) + ",";
     json += "\"width\":" + juce::String(d.width, 1) + ",";
     json += "\"corr\":" + juce::String(d.correlation, 2) + ",";
+    json += "\"sideMid\":" + juce::String(d.sideToMidRatio, 2) + ",";
+    json += "\"corrSub\":" + juce::String(d.corrSub, 2) + ",";
+    json += "\"corrMid\":" + juce::String(d.corrMid, 2) + ",";
+    json += "\"corrTop\":" + juce::String(d.corrTop, 2) + ",";
     json += "\"spectrum\":[";
     for (int i = 0; i < MeterData::numSpecBins; ++i)
     {

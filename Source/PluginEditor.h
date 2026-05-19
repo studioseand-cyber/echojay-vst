@@ -264,6 +264,11 @@ private:
     juce::TextEditor settingsGenres;
     juce::TextEditor settingsPlugins;
     juce::ComboBox settingsExpLevel;
+    // Chat language picker — controls what language the AI replies in.
+    // Persisted locally via EchoJayAPI::setChatLanguage(); doesn't sync to
+    // the SaaS (intentionally — it's a per-device preference, and adding
+    // server sync would mean a new SaaS field and a new endpoint).
+    juce::ComboBox settingsLanguage;
     std::array<juce::ToggleButton, 11> dawButtons;
     juce::TextButton saveSettingsBtn { "Save" };
     juce::Label settingsSavedLabel;
@@ -306,7 +311,16 @@ private:
     juce::Component chatContent;
     juce::TextEditor chatInput;
     juce::TextButton chatSendBtn { "Send" };
+    juce::TextButton chatTextSizeBtn { "Aa" };
     juce::TextButton upgradeBtn { "Upgrade to Pro" };
+
+    // Chat text scaling (user-adjustable via Aa button in chat header).
+    // Stored as a multiplier applied to the base 12pt message font. Cycles
+    // through preset steps on each click and persists across sessions.
+    float chatTextScale = 1.0f;
+    void cycleChatTextScale();
+    void loadChatTextScale();
+    void saveChatTextScale();
     
     bool pluginsSent = false;
     int scannedPluginCount = 0;
@@ -356,10 +370,21 @@ private:
     
     // Update overlay child component — drawn ON TOP of all other children including
     // particleVisual. Paints its own dark background + card. Handles its own clicks.
+    // State machine: Idle → Downloading (with progress) → ReadyToInstall → done
+    // (or Failed). The editor owns the actual download thread and just flips
+    // these fields + repaints; the overlay is pure presentation.
     struct UpdateOverlay : public juce::Component
     {
-        std::function<void()> onDownload;
-        std::function<void()> onDismiss;
+        enum class State { Idle, Downloading, ReadyToInstall, Failed };
+        State state { State::Idle };
+        float progress = 0.0f;          // 0..1 download progress
+        juce::String errorText;         // shown when state == Failed
+        
+        std::function<void()> onDownload;   // user clicked Download Update (Idle)
+        std::function<void()> onInstall;    // user clicked Install Now (ReadyToInstall)
+        std::function<void()> onRetry;      // user clicked Try Again (Failed)
+        std::function<void()> onDismiss;    // user clicked Not now / Close
+        
         juce::String latestVersionStr;
         juce::String currentVersionStr;
         using C = EchoJayLookAndFeel::Colours;
@@ -368,6 +393,24 @@ private:
         void mouseDown(const juce::MouseEvent& e) override;
     };
     UpdateOverlay updateOverlay;
+    
+    // In-plugin installer download state. Set when the user clicks Download
+    // Update in the overlay; the path is what we hand to Process::openDocument
+    // when they then click Install Now. Mutated from the download worker
+    // thread — but only via MessageManager::callAsync back to the UI thread,
+    // so no extra synchronisation here.
+    juce::File downloadedInstallerFile;
+    // Liveness token shared with the download thread so we can ignore late
+    // callbacks if the editor is destroyed mid-download.
+    std::shared_ptr<std::atomic<bool>> updateDownloadAlive {
+        std::make_shared<std::atomic<bool>>(true) };
+    // Cooperative cancel flag for the download thread. The dismiss/cancel
+    // path flips this; the worker polls it between chunks and bails out
+    // cleanly. shared_ptr so its lifetime outlives any single download.
+    std::shared_ptr<std::atomic<bool>> updateDownloadCancelled {
+        std::make_shared<std::atomic<bool>>(false) };
+    void startUpdateDownload();
+    void launchDownloadedInstaller();
     
     using C = EchoJayLookAndFeel::Colours;
     EchoJayLookAndFeel lnf;

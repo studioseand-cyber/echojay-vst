@@ -7,11 +7,11 @@
 
 struct UserInfo {
     juce::String email;
-    juce::String tier = "free";     // "free", "pro", "studio"
-    int tierLevel = 0;              // 0=free, 1=pro, 2=studio
-    int messagesUsedToday = 0;
-    int messageLimit = 5;           // 5 free, 50 pro, 150 studio
-    int credits = 0;                // bonus credits beyond daily limit
+    juce::String tier = "free";     // "free", "pro", "studio", "its_platinum"
+    int tierLevel = 0;              // 0=free, 1=pro, 2=studio (its_platinum maps to 0 here)
+    int messagesUsedToday = 0;      // field name is legacy — period is now monthly
+    int messageLimit = 15;          // 15 free, 200 pro, 400 studio (per month)
+    int credits = 0;                // bonus credits beyond monthly limit
     juce::String displayName;
 
     bool isPro() const { return tierLevel >= 1; }
@@ -25,9 +25,9 @@ struct UserInfo {
     }
     static int defaultLimitForTier(int level)
     {
-        if (level >= 2) return 150;
-        if (level >= 1) return 50;
-        return 5;
+        if (level >= 2) return 400;
+        if (level >= 1) return 200;
+        return 15;
     }
 };
 
@@ -67,11 +67,18 @@ public:
     // Get current user info
     UserInfo getUserInfo() const { return userInfo; }
     
-    // Check if user can send a message (within daily limit)
+    // Check if user can send a message (within monthly limit + credits)
     bool canSendMessage() const;
     
-    // Get remaining messages today
+    // Get remaining messages this period
     int getRemainingMessages() const;
+    
+    // Returns the canonical "you've hit your limit" message for the current
+    // tier. Mirrors the strings the SaaS returns on a 429 response so the
+    // VST shows the same wording whether the limit is hit client-side
+    // (pre-check) or server-side. Centralised here to avoid drift between
+    // multiple call sites.
+    juce::String getLimitReachedMessage() const;
     
     // Refresh user info from server (check usage, pro status)
     void refreshUserInfo(std::function<void(bool success)> onComplete = nullptr);
@@ -109,12 +116,28 @@ public:
                                            const juce::String& genre,
                                            const juce::String& pluginList);
     
+    // Chat language preference. Affects the language the AI replies in.
+    // Stored as a short code: "auto" (match user input — default),
+    // "en", "es", "pt-br", "fr", "de", "it", "nl", "ja", "ko", "zh".
+    // Persisted to ~/Documents/EchoJay/chat_language.txt so the choice
+    // survives across DAW sessions and applies to every plugin instance.
+    // The full display name (e.g. "Spanish") is what gets injected into
+    // the system prompt — see chatLanguageDisplayName().
+    static juce::String getChatLanguage();
+    static void         setChatLanguage(const juce::String& code);
+    static juce::String chatLanguageDisplayName(const juce::String& code);
+    // Returns the (code, displayName) pairs in the order they should appear
+    // in the language picker. Includes "auto" as the first entry.
+    static const juce::Array<std::pair<juce::String, juce::String>>& chatLanguageList();
+    
     // Remote prompt storage — static so all instances share the same prompt
     static juce::String remoteSystemPrompt;
     static int remotePromptVersion;
     static bool remoteConfigLoaded;
     static juce::String latestVersion;
-    static juce::String updateUrl;
+    static juce::String updateUrl;          // legacy/fallback browser URL
+    static juce::String downloadUrlMac;     // direct .pkg URL for macOS in-plugin download
+    static juce::String downloadUrlWin;     // direct .exe URL for Windows in-plugin download
     static juce::String announcement;
     
     // Remote channel-specific prompts — keyed by channel type name (e.g. "Kick", "Lead Vocal")

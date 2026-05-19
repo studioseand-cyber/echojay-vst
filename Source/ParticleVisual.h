@@ -63,6 +63,13 @@ public:
     void newOpenGLContextCreated() override;
     void renderOpenGL() override;
     void openGLContextClosing() override;
+    
+    // Lazy GL attach. Editor calls start() once it's safe (after the host
+    // has returned from constructing the editor) and only when visuals
+    // are turned on. Calling stop() detaches and stops the timer.
+    // Idempotent — safe to call multiple times.
+    void start();
+    void stop();
 
     // Component
     void paint(juce::Graphics&) override {}
@@ -75,6 +82,7 @@ private:
     void timerCallback() override;
 
     juce::OpenGLContext glContext;
+    bool glAttached = false;
 
     // === Particle data ===
     enum class Band { Bass, Mid, High, Trail };

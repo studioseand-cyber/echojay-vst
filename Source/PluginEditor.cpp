@@ -259,10 +259,44 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // --- Update Overlay (real child component so it draws ON TOP of particleVisual) ---
     updateOverlay.setVisible(false);
     updateOverlay.onDownload = [this]() {
-        auto url = EchoJayAPI::updateUrl.isNotEmpty() ? EchoJayAPI::updateUrl : "https://www.echojay.ai/?noredirect#plugin";
-        juce::URL(url).launchInDefaultBrowser();
+        // If we have a direct download URL for this platform, do the
+        // in-plugin download flow. Otherwise fall back to the legacy
+        // browser-open behaviour. (This also covers very early launches
+        // where the remote config hasn't loaded yet — better to do
+        // something useful than block.)
+       #if JUCE_MAC
+        bool haveDirect = EchoJayAPI::downloadUrlMac.isNotEmpty();
+       #elif JUCE_WINDOWS
+        bool haveDirect = EchoJayAPI::downloadUrlWin.isNotEmpty();
+       #else
+        bool haveDirect = false;
+       #endif
+        if (haveDirect)
+        {
+            startUpdateDownload();
+        }
+        else
+        {
+            auto url = EchoJayAPI::updateUrl.isNotEmpty()
+                         ? EchoJayAPI::updateUrl
+                         : juce::String("https://www.echojay.ai/?noredirect#plugin");
+            juce::URL(url).launchInDefaultBrowser();
+        }
+    };
+    updateOverlay.onInstall = [this]() { launchDownloadedInstaller(); };
+    updateOverlay.onRetry = [this]() {
+        // Reset to idle and immediately re-kick the download. Saves the
+        // user a redundant click.
+        updateOverlay.state = UpdateOverlay::State::Idle;
+        updateOverlay.progress = 0.0f;
+        updateOverlay.errorText.clear();
+        startUpdateDownload();
     };
     updateOverlay.onDismiss = [this]() {
+        // If a download is in flight, signal it to stop so we don't keep
+        // streaming bytes after the user has clicked away. Safe to set
+        // unconditionally — worker only checks during a download.
+        updateDownloadCancelled->store(true);
         updateDismissed = true;
         recordUpdateDismissal(EchoJayAPI::latestVersion);
         updateAvailable = false;
@@ -296,7 +330,74 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     scanBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     scanBtn.setColour(juce::TextButton::textColourOnId, C::purple);
     scanBtn.setColour(juce::TextButton::textColourOffId, C::purple);
-    scanBtn.onClick = [this] { processorRef.getPluginScanner().startScan(); };
+    // Click opens a menu: Scan Now / Add Folder / list of custom folders to
+    // remove. Keeps the default action (Scan Now) one step away while letting
+    // users add or prune extra scan locations without a settings trip.
+    scanBtn.onClick = [this] {
+        auto& sc = processorRef.getPluginScanner();
+        juce::PopupMenu menu;
+        menu.addItem(1, "Scan Now", ! sc.isScanning());
+        menu.addItem(2, "Add Folder...");
+        
+        auto folders = sc.getCustomFolders();
+        if (folders.size() > 0)
+        {
+            menu.addSeparator();
+            juce::PopupMenu removeSub;
+            for (int i = 0; i < folders.size(); ++i)
+            {
+                // Show just the folder name (with full path as a hint via the
+                // shortcut column would be nicer but PopupMenu doesn't support
+                // that cleanly; keep the leaf name and trust users to know
+                // which folder they added).
+                auto path = folders[i];
+                auto leaf = juce::File(path).getFileName();
+                removeSub.addItem(100 + i, "Remove: " + leaf);
+            }
+            menu.addSubMenu("Custom Folders (" + juce::String(folders.size()) + ")", removeSub);
+        }
+        
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&scanBtn),
+            [safeThis = juce::Component::SafePointer<EchoJayEditor>(this)](int result) {
+                if (safeThis == nullptr) return;
+                auto& scanner = safeThis->processorRef.getPluginScanner();
+                if (result == 1)
+                {
+                    scanner.startScan();
+                }
+                else if (result == 2)
+                {
+                    // Folder picker. shared_ptr keeps the chooser alive until
+                    // the user dismisses it; SafePointer guards against the
+                    // editor being closed while the chooser is open.
+                    auto chooser = std::make_shared<juce::FileChooser>(
+                        "Add Plugin Scan Folder",
+                        juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+                    chooser->launchAsync(juce::FileBrowserComponent::openMode
+                                       | juce::FileBrowserComponent::canSelectDirectories,
+                        [safeThis, chooser](const juce::FileChooser& fc) {
+                            if (safeThis == nullptr) return;
+                            auto picked = fc.getResult();
+                            if (picked.isDirectory())
+                            {
+                                auto& s = safeThis->processorRef.getPluginScanner();
+                                s.addCustomFolder(picked);
+                                s.startScan();
+                            }
+                        });
+                }
+                else if (result >= 100)
+                {
+                    int idx = result - 100;
+                    auto folders = scanner.getCustomFolders();
+                    if (idx >= 0 && idx < folders.size())
+                    {
+                        scanner.removeCustomFolder(folders[idx]);
+                        scanner.startScan(); // rescan so AI prompt drops removed-folder plugins
+                    }
+                }
+            });
+    };
     addAndMakeVisible(scanBtn);
 
     logoutBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
@@ -521,6 +622,40 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     settingsExpLevel.setColour(juce::ComboBox::outlineColourId, C::border2);
     settingsExpLevel.setVisible(false);
     addAndMakeVisible(settingsExpLevel);
+    
+    // Chat language picker. Items are populated from EchoJayAPI's canonical
+    // list so the codes here stay aligned with the codes the API validates
+    // against. ComboBox item IDs are 1-indexed (0 means "no selection"), so
+    // we add 1 to the array index. Saves immediately on change — no need
+    // to wait for the Save button since this is a local preference.
+    {
+        const auto& langs = EchoJayAPI::chatLanguageList();
+        for (int i = 0; i < langs.size(); ++i)
+            settingsLanguage.addItem(langs.getReference(i).second, i + 1);
+        // Set current selection based on the saved preference.
+        auto currentCode = EchoJayAPI::getChatLanguage();
+        for (int i = 0; i < langs.size(); ++i)
+        {
+            if (langs.getReference(i).first == currentCode)
+            {
+                settingsLanguage.setSelectedId(i + 1, juce::dontSendNotification);
+                break;
+            }
+        }
+        settingsLanguage.setColour(juce::ComboBox::backgroundColourId, C::bg3);
+        settingsLanguage.setColour(juce::ComboBox::textColourId, C::text);
+        settingsLanguage.setColour(juce::ComboBox::outlineColourId, C::border2);
+        settingsLanguage.onChange = [this] {
+            int id = settingsLanguage.getSelectedId();
+            if (id < 1) return;
+            const auto& list = EchoJayAPI::chatLanguageList();
+            int idx = id - 1;
+            if (idx < 0 || idx >= list.size()) return;
+            EchoJayAPI::setChatLanguage(list.getReference(idx).first);
+        };
+        settingsLanguage.setVisible(false);
+        addAndMakeVisible(settingsLanguage);
+    }
 
     juce::StringArray dawNames = { "Logic Pro", "Ableton Live", "FL Studio", "Pro Tools",
         "Studio One", "Cubase", "Reaper", "Reason", "Bitwig", "GarageBand", "Other" };
@@ -713,7 +848,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     }
 
     // --- Login screen components ---
-    loginTitle.setText("EchoJay", juce::dontSendNotification);
+    // The "EchoJay" wordmark used to live here as a 32pt label. It's now
+    // painted as the actual PNG logo in paint() (Login branch). We keep
+    // the loginTitle Label declared and laid out so the rest of the form
+    // spacing is undisturbed, but with empty text it draws nothing.
+    loginTitle.setText("", juce::dontSendNotification);
     loginTitle.setColour(juce::Label::textColourId, C::blue);
     loginTitle.setFont(juce::Font(juce::FontOptions(32.0f, juce::Font::bold)));
     loginTitle.setJustificationType(juce::Justification::centred);
@@ -842,6 +981,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     addChildComponent(chatSendBtn);
 
+    // "Aa" text-size toggle sits in the chat header. Cycles a preset list
+    // of scales so users can bump chat readability without a settings trip.
+    // Uses a subtle filled background so users can actually spot it.
+    loadChatTextScale();
+    chatTextSizeBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
+    chatTextSizeBtn.setColour(juce::TextButton::buttonOnColourId, C::bg4);
+    chatTextSizeBtn.setColour(juce::TextButton::textColourOnId, C::text);
+    chatTextSizeBtn.setColour(juce::TextButton::textColourOffId, C::text);
+    chatTextSizeBtn.onClick = [this] { cycleChatTextScale(); };
+    addChildComponent(chatTextSizeBtn);
+
     upgradeBtn.setColour(juce::TextButton::buttonColourId, C::purple);
     upgradeBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     upgradeBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
@@ -934,20 +1084,47 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 }
 
 EchoJayEditor::~EchoJayEditor() {
+    // Tell any in-flight update download to stop. The alive flag protects
+    // against UAF after destruction; the cancel flag lets the worker exit
+    // its read loop early instead of finishing the download into a void.
+    updateDownloadAlive->store(false);
+    updateDownloadCancelled->store(true);
     stopChatPlayback();
     stopPlayback(); stopTimer(); setLookAndFeel(nullptr);
 }
 
 void EchoJayEditor::visibilityChanged()
 {
-    // When the editor becomes visible (e.g. user reopens the plugin window in a host
-    // that hides/shows rather than destroys/recreates), reset the dismissed flag so
-    // any pending update notification reappears.
     if (isVisible())
     {
+        // Reset the dismissed flag for hosts that hide/show the editor.
         updateDismissed = false;
-        // updateAvailable will be re-set on next timer tick if latestVersion is still
-        // non-empty and differs from current.
+        
+        // Refresh tier/usage from the server. The common upgrade flow is
+        // "user opens browser, pays for Pro, switches back to the DAW" —
+        // and switching back to the DAW is exactly when the plugin
+        // window regains focus. Triggering a refresh here means upgrades
+        // show up the moment the user returns instead of after the
+        // 60-second periodic refresh.
+        if (api.isLoggedIn())
+            api.refreshUserInfo(nullptr);
+        
+        // Lazily attach the OpenGL context AFTER returning to the host's
+        // message loop. Doing this synchronously in the editor constructor
+        // (or even directly here) froze Fender Studio Pro on Windows.
+        // The 50ms delay is large enough that the host has fully returned
+        // from its construction call, small enough to be invisible to
+        // users. We use a SafePointer so a quick close-before-attach
+        // doesn't UAF the editor.
+        if (visualMode)
+        {
+            juce::Component::SafePointer<EchoJayEditor> safeThis(this);
+            juce::Timer::callAfterDelay(50, [safeThis]() {
+                if (safeThis == nullptr) return;
+                if (safeThis->particleVisual != nullptr)
+                    safeThis->particleVisual->start();
+            });
+        }
     }
 }
 
@@ -978,6 +1155,7 @@ void EchoJayEditor::showLoginScreen()
     settingsName.setVisible(false); settingsMonitors.setVisible(false);
     settingsHeadphones.setVisible(false); settingsGenres.setVisible(false);
     settingsPlugins.setVisible(false); settingsExpLevel.setVisible(false);
+    settingsLanguage.setVisible(false);
     saveSettingsBtn.setVisible(false); settingsSavedLabel.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
     
@@ -1019,6 +1197,7 @@ void EchoJayEditor::showMainScreen()
     bool chatVisible = !promptWillShow && !genrePromptWillShow;
     chatInput.setVisible(chatVisible);
     chatSendBtn.setVisible(chatVisible);
+    chatTextSizeBtn.setVisible(chatVisible);
     chatScroll.setVisible(chatVisible);
     logoutBtn.setVisible(false); // logout only visible in Settings
     // playbackBtn visibility is managed by timerCallback based on WAV state
@@ -1032,7 +1211,8 @@ void EchoJayEditor::showMainScreen()
 
     int remaining = api.getRemainingMessages();
     int limit = info.messageLimit;
-    juce::String usageStr = juce::String(remaining) + "/" + juce::String(limit) + " messages left";
+    int used = limit - remaining;
+    juce::String usageStr = juce::String(used) + "/" + juce::String(limit);
     if (info.credits > 0)
         usageStr += " (+" + juce::String(info.credits) + " credits)";
     usageLabel.setText(usageStr, juce::dontSendNotification);
@@ -1104,6 +1284,7 @@ void EchoJayEditor::updateChannelPromptVisibility()
     chatScroll.setVisible(currentScreen == Screen::Main && !channelPromptVisible && !genrePromptVisible);
     chatInput.setVisible(currentScreen == Screen::Main && !channelPromptVisible && !genrePromptVisible);
     chatSendBtn.setVisible(currentScreen == Screen::Main && !channelPromptVisible && !genrePromptVisible);
+    chatTextSizeBtn.setVisible(currentScreen == Screen::Main && !channelPromptVisible && !genrePromptVisible);
     
     // Disable top bar action buttons when prompt overlays are showing
     bool promptActive = channelPromptVisible || genrePromptVisible;
@@ -1182,6 +1363,7 @@ void EchoJayEditor::updateGenrePromptVisibility()
         chatScroll.setVisible(false);
         chatInput.setVisible(false);
         chatSendBtn.setVisible(false);
+        chatTextSizeBtn.setVisible(false);
         compareBtn.setEnabled(false);
         captureBtn.setEnabled(false);
         settingsBtn.setEnabled(false);
@@ -1211,6 +1393,7 @@ void EchoJayEditor::dismissGenrePrompt(const juce::String& selectedGenre)
     chatScroll.setVisible(currentScreen == Screen::Main);
     chatInput.setVisible(currentScreen == Screen::Main);
     chatSendBtn.setVisible(currentScreen == Screen::Main);
+    chatTextSizeBtn.setVisible(currentScreen == Screen::Main);
     compareBtn.setEnabled(true);
     captureBtn.setEnabled(true);
     settingsBtn.setEnabled(true);
@@ -1221,6 +1404,15 @@ void EchoJayEditor::dismissGenrePrompt(const juce::String& selectedGenre)
 // --- UpdateOverlay implementation ---
 // This is a real child component so it always paints ON TOP of particleVisual,
 // just like the channel/genre prompt UI (which uses real Components/Buttons).
+//
+// State diagram:
+//   Idle           — title + version info + [Download Update] + "Not now"
+//   Downloading    — title + version info + progress bar + percentage + Cancel
+//   ReadyToInstall — title + "Ready to install"   + [Install Now]      + "Close"
+//   Failed         — title + error text           + [Try Again]        + "Close"
+//
+// We give Downloading / ReadyToInstall / Failed a slightly taller card so
+// the progress / status text fits without crowding the buttons.
 void EchoJayEditor::UpdateOverlay::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
@@ -1229,8 +1421,9 @@ void EchoJayEditor::UpdateOverlay::paint(juce::Graphics& g)
     g.setColour(juce::Colours::black.withAlpha(0.72f));
     g.fillRect(bounds);
     
-    // Card centred
-    int cardW = 340, cardH = 180;
+    // Card centred. Taller in non-idle states to fit progress / error text.
+    int cardW = 340;
+    int cardH = (state == State::Idle) ? 180 : 200;
     int cardX = (bounds.getWidth() - cardW) / 2;
     int cardY = (bounds.getHeight() - cardH) / 2;
     auto card = juce::Rectangle<int>(cardX, cardY, cardW, cardH);
@@ -1240,64 +1433,414 @@ void EchoJayEditor::UpdateOverlay::paint(juce::Graphics& g)
     g.setColour(C::border2);
     g.drawRoundedRectangle(card.toFloat(), 16.0f, 1.0f);
     
+    // Title — same for every state, the body differs
     g.setColour(C::text);
     g.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
     g.drawText("Update Available", card.getX(), card.getY() + 24, card.getWidth(), 24, juce::Justification::centred);
     
     g.setColour(C::text2);
     g.setFont(juce::Font(juce::FontOptions(13.0f)));
-    g.drawText("EchoJay " + latestVersionStr + " is now available",
+    g.drawText("EchoJay " + latestVersionStr,
                card.getX(), card.getY() + 54, card.getWidth(), 20, juce::Justification::centred);
     g.drawText("You're running v" + currentVersionStr,
                card.getX(), card.getY() + 74, card.getWidth(), 20, juce::Justification::centred);
     
-    // Download button
-    auto dlBtn = juce::Rectangle<float>((float)(card.getCentreX() - 70), (float)(card.getY() + 110), 140.0f, 34.0f);
-    g.setGradientFill(juce::ColourGradient(C::blue, dlBtn.getX(), 0, C::purple, dlBtn.getRight(), 0, false));
-    g.fillRoundedRectangle(dlBtn, 8.0f);
-    g.setColour(juce::Colours::white);
-    g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-    g.drawText("Download Update", dlBtn.toNearestInt(), juce::Justification::centred);
+    int btnW = 140, btnH = 34;
+    auto primaryBtn = juce::Rectangle<float>(
+        (float)(card.getCentreX() - btnW / 2),
+        (float)(card.getY() + (state == State::Idle ? 110 : 130)),
+        (float)btnW, (float)btnH);
     
-    // Dismiss link
+    juce::String primaryLabel;
+    bool drawProgress = false;
+    juce::String secondaryLabel = "Not now";
+    
+    switch (state)
+    {
+        case State::Idle:
+            primaryLabel = "Download Update";
+            break;
+        case State::Downloading:
+            // Progress bar instead of a button. Cancel link below.
+            drawProgress = true;
+            primaryLabel = juce::String((int)(progress * 100.0f)) + "%";
+            secondaryLabel = "Cancel";
+            break;
+        case State::ReadyToInstall:
+            primaryLabel = "Install Now";
+            secondaryLabel = "Close";
+            break;
+        case State::Failed:
+            primaryLabel = "Try Again";
+            secondaryLabel = "Close";
+            break;
+    }
+    
+    if (drawProgress)
+    {
+        // Replace the line "EchoJay vX.Y.Z" with a transient "Downloading..."
+        // status so the version text doesn't fight the progress bar for
+        // attention. We rely on overpainting since the title block above
+        // already drew the version — clean it with a bg2 fill first.
+        g.setColour(C::bg2);
+        g.fillRect(card.getX() + 1, card.getY() + 54, card.getWidth() - 2, 20);
+        g.setColour(C::text2);
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
+        g.drawText("Downloading EchoJay " + latestVersionStr + "...",
+                   card.getX(), card.getY() + 54, card.getWidth(), 20, juce::Justification::centred);
+        
+        // Progress bar — same dims as the primary button rect for consistency.
+        auto barX = primaryBtn.getX();
+        auto barY = primaryBtn.getY();
+        auto barW = primaryBtn.getWidth();
+        auto barH = primaryBtn.getHeight();
+        // Track background
+        g.setColour(C::bg3);
+        g.fillRoundedRectangle(barX, barY, barW, barH, 8.0f);
+        // Filled portion — gradient matches the brand button
+        float fillW = juce::jlimit(0.0f, 1.0f, progress) * barW;
+        if (fillW > 0.5f)
+        {
+            g.saveState();
+            g.reduceClipRegion(juce::Rectangle<int>((int)barX, (int)barY, (int)fillW, (int)barH));
+            g.setGradientFill(juce::ColourGradient(C::blue, barX, 0, C::purple, barX + barW, 0, false));
+            g.fillRoundedRectangle(barX, barY, barW, barH, 8.0f);
+            g.restoreState();
+        }
+        // Percentage label centred over the bar
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+        g.drawText(primaryLabel, primaryBtn.toNearestInt(), juce::Justification::centred);
+    }
+    else if (state == State::Failed)
+    {
+        // Show the error text in place of the second info line so the user
+        // sees WHY the retry button is there. Errors tend to be short
+        // (server msg, "network unavailable", etc.) — single line is fine.
+        g.setColour(C::bg2);
+        g.fillRect(card.getX() + 1, card.getY() + 54, card.getWidth() - 2, 40);
+        g.setColour(juce::Colour(0xffff8a8a)); // soft red
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        auto errText = errorText.isNotEmpty() ? errorText : juce::String("Download failed");
+        g.drawText(errText, card.getX() + 18, card.getY() + 60, card.getWidth() - 36, 28,
+                   juce::Justification::centredTop);
+        
+        // Primary button (Try Again) — outline style rather than filled gradient
+        // so it doesn't read as "everything's fine".
+        g.setColour(C::bg3);
+        g.fillRoundedRectangle(primaryBtn, 8.0f);
+        g.setColour(C::border2);
+        g.drawRoundedRectangle(primaryBtn, 8.0f, 1.0f);
+        g.setColour(C::text);
+        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+        g.drawText(primaryLabel, primaryBtn.toNearestInt(), juce::Justification::centred);
+    }
+    else
+    {
+        // Idle and ReadyToInstall both use the brand gradient button.
+        if (state == State::ReadyToInstall)
+        {
+            // Subtitle change: instead of "You're running vX" show "Ready to install"
+            g.setColour(C::bg2);
+            g.fillRect(card.getX() + 1, card.getY() + 74, card.getWidth() - 2, 20);
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(12.0f)));
+            g.drawText("Ready to install. The installer will open next.",
+                       card.getX(), card.getY() + 74, card.getWidth(), 20, juce::Justification::centred);
+        }
+        g.setGradientFill(juce::ColourGradient(C::blue, primaryBtn.getX(), 0, C::purple, primaryBtn.getRight(), 0, false));
+        g.fillRoundedRectangle(primaryBtn, 8.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+        g.drawText(primaryLabel, primaryBtn.toNearestInt(), juce::Justification::centred);
+    }
+    
+    // Secondary link at the bottom of the card
+    int secY = card.getY() + cardH - 26;
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(11.0f)));
-    g.drawText("Not now", card.getX(), card.getY() + 150, card.getWidth(), 20, juce::Justification::centred);
+    g.drawText(secondaryLabel, card.getX(), secY, card.getWidth(), 20, juce::Justification::centred);
 }
 
 void EchoJayEditor::UpdateOverlay::mouseDown(const juce::MouseEvent& e)
 {
     auto pos = e.getPosition();
     auto bounds = getLocalBounds();
-    int cardW = 340, cardH = 180;
+    int cardW = 340;
+    int cardH = (state == State::Idle) ? 180 : 200;
     int cardX = (bounds.getWidth() - cardW) / 2;
     int cardY = (bounds.getHeight() - cardH) / 2;
     
-    // Download button hit test
-    int dlBtnX = bounds.getWidth() / 2 - 70;
-    int dlBtnY = cardY + 110;
-    if (pos.x >= dlBtnX && pos.x <= dlBtnX + 140 && pos.y >= dlBtnY && pos.y <= dlBtnY + 34)
+    int btnW = 140, btnH = 34;
+    int btnX = bounds.getWidth() / 2 - btnW / 2;
+    int btnY = cardY + (state == State::Idle ? 110 : 130);
+    
+    bool inPrimary = (pos.x >= btnX && pos.x <= btnX + btnW
+                   && pos.y >= btnY && pos.y <= btnY + btnH);
+    int secY = cardY + cardH - 26;
+    bool inSecondary = (pos.y >= secY && pos.y <= secY + 20
+                     && pos.x >= cardX && pos.x <= cardX + cardW);
+    
+    // Click outside the card — treat as dismiss/close. We use onDismiss
+    // for this in every state; Cancel-during-download also flows through
+    // onDismiss because cancelling AND closing the overlay are the same
+    // user intent here.
+    bool outsideCard = (pos.x < cardX || pos.x > cardX + cardW
+                     || pos.y < cardY || pos.y > cardY + cardH);
+    
+    // Primary button action depends on state.
+    if (inPrimary)
     {
-        if (onDownload) onDownload();
+        switch (state)
+        {
+            case State::Idle:
+                if (onDownload) onDownload();
+                break;
+            case State::Downloading:
+                // Clicking the progress bar does nothing — only the
+                // explicit Cancel link cancels.
+                break;
+            case State::ReadyToInstall:
+                if (onInstall) onInstall();
+                break;
+            case State::Failed:
+                if (onRetry) onRetry();
+                break;
+        }
         return;
     }
     
-    // "Not now" link
-    int notNowY = cardY + 150;
-    if (pos.y >= notNowY && pos.y <= notNowY + 20 && pos.x >= cardX && pos.x <= cardX + cardW)
+    if (inSecondary || outsideCard)
     {
         if (onDismiss) onDismiss();
         return;
     }
-    
-    // Click outside the card also dismisses
-    if (pos.x < cardX || pos.x > cardX + cardW || pos.y < cardY || pos.y > cardY + cardH)
-    {
-        if (onDismiss) onDismiss();
-        return;
-    }
-    // Click inside card but not on a button — consume but don't dismiss
+    // Click inside card but not on a control — consume silently.
 }
+
+// ============================================================================
+// In-plugin update download
+// ============================================================================
+//
+// Flow: user clicks Download Update → we resolve the platform-specific URL
+// from the remote config → spawn a background thread that streams the
+// response body to a file in ~/Downloads (or %USERPROFILE%\Downloads on
+// Windows) → on completion, flip the overlay to ReadyToInstall.
+//
+// When the user then clicks Install Now, we hand the file off to
+// Process::openDocument which on macOS launches the .pkg in Installer.app
+// (admin password prompt and wizard included) and on Windows runs the
+// .exe installer. The DAW restart at the end is still the user's job —
+// no way around that without a separate launcher app.
+
+void EchoJayEditor::startUpdateDownload()
+{
+    // Resolve URL + target file name for the current platform.
+   #if JUCE_MAC
+    auto downloadUrl = EchoJayAPI::downloadUrlMac;
+    auto extHint = ".pkg";
+   #elif JUCE_WINDOWS
+    auto downloadUrl = EchoJayAPI::downloadUrlWin;
+    auto extHint = ".exe";
+   #else
+    auto downloadUrl = juce::String();
+    auto extHint = "";
+   #endif
+    
+    if (downloadUrl.isEmpty())
+    {
+        updateOverlay.state = UpdateOverlay::State::Failed;
+        updateOverlay.errorText = "No installer URL available for this platform.";
+        repaint();
+        return;
+    }
+    
+    // Pick a sensible destination filename. Prefer the leaf of the URL
+    // so version info from the URL is preserved (e.g. EchoJay-v1.3.0-Installer.pkg).
+    // If the URL doesn't end in a clean filename, fall back to a synthesised one.
+    juce::String leaf;
+    {
+        auto u = downloadUrl;
+        int slash = u.lastIndexOfChar('/');
+        if (slash > 0) leaf = u.substring(slash + 1);
+        // Strip query string and fragment off the end.
+        int q = leaf.indexOfChar('?');
+        if (q > 0) leaf = leaf.substring(0, q);
+        int h = leaf.indexOfChar('#');
+        if (h > 0) leaf = leaf.substring(0, h);
+        if (! leaf.endsWithIgnoreCase(extHint))
+            leaf = "EchoJay-v" + EchoJayAPI::latestVersion + "-Installer" + extHint;
+    }
+    auto downloadsDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                            .getChildFile("Downloads");
+    if (! downloadsDir.isDirectory())
+        downloadsDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+    auto destFile = downloadsDir.getChildFile(leaf);
+    
+    // Flip the overlay to Downloading and kick the worker.
+    updateOverlay.state = UpdateOverlay::State::Downloading;
+    updateOverlay.progress = 0.0f;
+    updateOverlay.errorText.clear();
+    repaint();
+    
+    // Capture alive token + cancel flag + safe self-pointer so the worker
+    // can talk back to the UI thread without holding `this` directly.
+    // Worker MUST NOT touch any editor members directly — every UI update
+    // goes through MessageManager::callAsync.
+    auto aliveCopy = updateDownloadAlive;
+    auto cancelCopy = updateDownloadCancelled;
+    cancelCopy->store(false);   // fresh start for this download
+    auto urlCopy = downloadUrl;
+    auto destPath = destFile.getFullPathName();
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    
+    juce::Thread::launch([aliveCopy, cancelCopy, urlCopy, destPath, safeThis]() {
+        auto reportFailure = [aliveCopy, safeThis](juce::String msg) {
+            if (! aliveCopy->load()) return;
+            juce::MessageManager::callAsync([aliveCopy, safeThis, msg]() {
+                if (! aliveCopy->load()) return;
+                if (safeThis == nullptr) return;
+                safeThis->updateOverlay.state = UpdateOverlay::State::Failed;
+                safeThis->updateOverlay.errorText = msg;
+                safeThis->repaint();
+            });
+        };
+        
+        juce::URL url(urlCopy);
+        int statusCode = 0;
+        auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                           .withConnectionTimeoutMs(60000)
+                           .withStatusCode(&statusCode);
+        auto stream = url.createInputStream(options);
+        if (stream == nullptr || statusCode < 200 || statusCode >= 400)
+        {
+            reportFailure("Couldn't reach the download server (HTTP "
+                          + juce::String(statusCode) + ").");
+            return;
+        }
+        
+        juce::int64 totalBytes = stream->getTotalLength(); // may be -1 if server didn't send Content-Length
+        juce::int64 readSoFar = 0;
+        
+        juce::File destFile(destPath);
+        // If there's an old partial in the way, replace it.
+        if (destFile.existsAsFile()) destFile.deleteFile();
+        std::unique_ptr<juce::FileOutputStream> out(destFile.createOutputStream());
+        if (out == nullptr || out->failedToOpen())
+        {
+            reportFailure("Couldn't write to " + destFile.getFullPathName() + ".");
+            return;
+        }
+        
+        // Stream in chunks. 64KB is plenty for ~16MB installers and keeps
+        // the progress bar smooth without spamming the UI thread.
+        constexpr int kChunk = 64 * 1024;
+        juce::HeapBlock<char> buffer(kChunk);
+        double lastReportSec = 0.0;
+        while (! stream->isExhausted())
+        {
+            if (! aliveCopy->load()) { destFile.deleteFile(); return; }
+            
+            // User clicked Cancel/Close while we were downloading. The
+            // dismiss callback flips this flag; the worst case is one
+            // extra chunk before we notice and bail out.
+            if (cancelCopy->load())
+            {
+                destFile.deleteFile();
+                return;
+            }
+            
+            int got = stream->read(buffer.getData(), kChunk);
+            if (got <= 0) break;
+            if (! out->write(buffer.getData(), (size_t)got))
+            {
+                reportFailure("Disk write failed (out of space?).");
+                return;
+            }
+            readSoFar += got;
+            
+            // Throttle UI updates to ~10/sec — anything more is wasted
+            // repaints. Always force a final report when done.
+            double nowSec = juce::Time::getMillisecondCounterHiRes() * 0.001;
+            if (nowSec - lastReportSec > 0.1 || (totalBytes > 0 && readSoFar >= totalBytes))
+            {
+                lastReportSec = nowSec;
+                float frac = totalBytes > 0
+                               ? (float)((double)readSoFar / (double)totalBytes)
+                               : 0.0f;
+                if (! aliveCopy->load()) { destFile.deleteFile(); return; }
+                juce::MessageManager::callAsync([aliveCopy, safeThis, frac]() {
+                    if (! aliveCopy->load()) return;
+                    if (safeThis == nullptr) return;
+                    if (safeThis->updateOverlay.state != UpdateOverlay::State::Downloading) return;
+                    safeThis->updateOverlay.progress = juce::jlimit(0.0f, 1.0f, frac);
+                    safeThis->repaint();
+                });
+            }
+        }
+        out->flush();
+        out.reset();
+        
+        if (! aliveCopy->load()) { destFile.deleteFile(); return; }
+        
+        // Sanity check: did we end up with a non-empty file? An empty
+        // result is treated as failure even if the HTTP status was 200.
+        if (! destFile.existsAsFile() || destFile.getSize() < 1024)
+        {
+            destFile.deleteFile();
+            reportFailure("Downloaded file was empty or truncated.");
+            return;
+        }
+        
+        // Success — flip state and stash the path for the install step.
+        juce::MessageManager::callAsync([aliveCopy, safeThis, destPath]() {
+            if (! aliveCopy->load()) return;
+            if (safeThis == nullptr) return;
+            safeThis->downloadedInstallerFile = juce::File(destPath);
+            safeThis->updateOverlay.state = UpdateOverlay::State::ReadyToInstall;
+            safeThis->updateOverlay.progress = 1.0f;
+            safeThis->repaint();
+        });
+    });
+}
+
+void EchoJayEditor::launchDownloadedInstaller()
+{
+    if (! downloadedInstallerFile.existsAsFile())
+    {
+        updateOverlay.state = UpdateOverlay::State::Failed;
+        updateOverlay.errorText = "The downloaded installer is missing.";
+        repaint();
+        return;
+    }
+    
+    // Process::openDocument hands the file to the OS's default handler:
+    // macOS → Installer.app for .pkg (DAW user is then prompted for admin
+    // creds and clicks through the wizard); Windows → ShellExecute on .exe
+    // which runs the NSIS/Inno installer. We dismiss our overlay so the
+    // user sees the system installer cleanly. They'll need to restart
+    // their DAW after install — that's still on them.
+    bool launched = juce::Process::openDocument(downloadedInstallerFile.getFullPathName(),
+                                                  juce::String());
+    if (! launched)
+    {
+        updateOverlay.state = UpdateOverlay::State::Failed;
+        updateOverlay.errorText = "Couldn't launch the installer. Open it from your Downloads folder.";
+        repaint();
+        return;
+    }
+    
+    // Treat "installer opened" the same as the user choosing to update —
+    // suppress the overlay for this version so we don't nag them again
+    // on the next timer tick.
+    updateDismissed = true;
+    recordUpdateDismissal(EchoJayAPI::latestVersion);
+    updateAvailable = false;
+    updateOverlay.setVisible(false);
+    resized();
+    repaint();
+}
+
 
 void EchoJayEditor::paintGenrePromptOverlay(juce::Graphics& g, juce::Rectangle<int> bounds)
 {
@@ -1443,8 +1986,9 @@ void EchoJayEditor::hideCompareView()
 void EchoJayEditor::runAICompare()
 {
     if (!api.canSendMessage()) {
-        chatMessages.push_back({"assistant", "Daily message limit reached."});
-        processorRef.chatHistory.push_back({"assistant", "Daily message limit reached."});
+        auto msg = api.getLimitReachedMessage();
+        chatMessages.push_back({"assistant", msg});
+        processorRef.chatHistory.push_back({"assistant", msg});
         repaint(); return;
     }
     int idA = compareSlotABox.getSelectedId();
@@ -1903,8 +2447,16 @@ void EchoJayEditor::showSettingsView()
     settingsName.setVisible(true); settingsMonitors.setVisible(true);
     settingsHeadphones.setVisible(true); settingsGenres.setVisible(true);
     settingsPlugins.setVisible(true); settingsExpLevel.setVisible(true);
+    settingsLanguage.setVisible(true);
     saveSettingsBtn.setVisible(true); settingsSavedLabel.setVisible(true);
     for (auto& b : dawButtons) b.setVisible(true);
+    
+    // Refresh tier/usage when Settings opens — this is where users go
+    // to "check" an upgrade after paying on the website. Catching it
+    // here means the tier badge and message limit reflect the upgrade
+    // immediately, not after the 60-second periodic refresh.
+    if (api.isLoggedIn())
+        api.refreshUserInfo(nullptr);
     
     auto populateFields = [this]() {
         auto s = api.getUserSettings();
@@ -1957,6 +2509,7 @@ void EchoJayEditor::hideSettingsView()
     settingsName.setVisible(false); settingsMonitors.setVisible(false);
     settingsHeadphones.setVisible(false); settingsGenres.setVisible(false);
     settingsPlugins.setVisible(false); settingsExpLevel.setVisible(false);
+    settingsLanguage.setVisible(false);
     saveSettingsBtn.setVisible(false); settingsSavedLabel.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
     resized(); repaint();
@@ -2013,7 +2566,7 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
         g.setFont(juce::Font(juce::FontOptions(10.0f)));
         juce::String usageStr = juce::String::fromUTF8("v") + ProjectInfo::versionString
                               + juce::String::fromUTF8(" \xc2\xb7 ")  // middle dot
-                              + juce::String(used) + "/" + juce::String(limit) + " messages";
+                              + juce::String(used) + "/" + juce::String(limit);
         if (info.credits > 0)
             usageStr += " (+" + juce::String(info.credits) + ")";
         g.drawText(usageStr, x + w - 200, y, 200, 14, juce::Justification::centredRight);
@@ -2038,7 +2591,20 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     int dawRows = (11 + 2) / 3; // ceil(11/3) = 4 rows
     y += labelGap + dawRows * (bh2 + 3) + 8;
     
-    label("EXPERIENCE LEVEL");
+    // EXPERIENCE LEVEL + CHAT LANGUAGE labels — side-by-side, mirroring the
+    // half-width field layout in resized(). We hand-draw these two labels
+    // and advance Y manually instead of using the label() helper, then
+    // continue with the helper for the rest.
+    {
+        int halfGap = 8;
+        int halfW = (juce::jmin(560, w) - halfGap) / 2;
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        g.drawText("EXPERIENCE LEVEL", x, y, halfW, 14, juce::Justification::centredLeft);
+        g.drawText("CHAT LANGUAGE",    x + halfW + halfGap, y, halfW, 14, juce::Justification::centredLeft);
+        y += labelGap + fh + 8;
+    }
+    
     label("MAIN MONITORS / SPEAKERS");
     label("HEADPHONES");
     label("GENRES YOU WORK WITH");
@@ -2736,6 +3302,43 @@ void EchoJayEditor::paint(juce::Graphics& g)
             C::blue.withAlpha(0.06f), (float)cx, (float)cy,
             juce::Colours::transparentBlack, (float)cx, (float)(cy + 300), true));
         g.fillRect(bounds);
+        
+        // Logo above the form. We paint this rather than using a Label
+        // because it's a PNG with gradient styling that can't be reproduced
+        // with text. Bounds match the loginTitle slot from resized() so
+        // the form layout doesn't shift. Centered manually since drawLogo
+        // left-aligns within its bounds.
+        {
+            int formW = juce::jmin(340, bounds.getWidth() - 60);
+            int formX = (bounds.getWidth() - formW) / 2;
+            int titleY = bounds.getHeight() / 2 - 120;
+            int titleH = 40;
+            
+            static juce::Image cachedLogo;
+            if (! cachedLogo.isValid())
+                cachedLogo = juce::ImageFileFormat::loadFrom(echoJayLogoPNG,
+                                                              (size_t)echoJayLogoPNGSize);
+            if (cachedLogo.isValid())
+            {
+                float aspect = (float)cachedLogo.getWidth() / (float)cachedLogo.getHeight();
+                float drawH = (float)titleH;
+                float drawW = drawH * aspect;
+                // Clamp width to the form width so the logo doesn't overflow
+                // on very narrow windows; recalc height to preserve aspect.
+                if (drawW > (float)formW)
+                {
+                    drawW = (float)formW;
+                    drawH = drawW / aspect;
+                }
+                float x = (float)bounds.getCentreX() - drawW * 0.5f;
+                float y = (float)titleY + ((float)titleH - drawH) * 0.5f;
+                g.setOpacity(1.0f);
+                g.drawImage(cachedLogo,
+                            juce::Rectangle<float>(x, y, drawW, drawH),
+                            juce::RectanglePlacement::stretchToFit);
+            }
+        }
+        
         EchoJayLookAndFeel::drawGrainOverlay(g, bounds, 0.015f);
         return;
     }
@@ -3277,19 +3880,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
     g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
     g.drawText("AI ASSISTANT", chatX + 14, topH, chatW, 32, juce::Justification::centredLeft);
 
-    if (api.isLoggedIn())
-    {
-        int remaining = api.getRemainingMessages();
-        int limit = api.getUserInfo().messageLimit;
-        int used = limit - remaining;
-        juce::String miniUsage = juce::String(used) + "/" + juce::String(limit);
-        if (api.getUserInfo().credits > 0)
-            miniUsage += "+" + juce::String(api.getUserInfo().credits);
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        g.drawText(miniUsage,
-                   chatX + chatW - 70, topH, 58, 32, juce::Justification::centredRight);
-    }
+    // (Credit counter intentionally removed from chat header — it lives in
+    // the Settings panel only. Keeps the chat strip clean and avoids
+    // duplicating info that's one click away.)
 
     // Chat messages
     int chatTop2 = topH + 32;
@@ -3306,11 +3899,12 @@ void EchoJayEditor::paint(juce::Graphics& g)
     chatWavePositions.clear();
 
     int msgY = 8 - scrollOffset;
+    const float chatMsgFontSize = 12.0f * chatTextScale;
     for (auto& msg : chatMessages) {
         bool isUser = (msg.role == "user");
         
         juce::AttributedString as;
-        as.append(msg.content, juce::Font(juce::FontOptions(12.0f)),
+        as.append(msg.content, juce::Font(juce::FontOptions(chatMsgFontSize)),
                   isUser ? C::text : C::text2);
         juce::TextLayout layout;
         layout.createLayout(as, (float)(maxBubbleW - 20));
@@ -3516,7 +4110,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
             g.drawText("E", avX, drawY + 2, avatarSize, avatarSize, juce::Justification::centred);
             
             g.setColour(C::text3);
-            g.setFont(juce::Font(juce::FontOptions(12.0f)));
+            g.setFont(juce::Font(juce::FontOptions(12.0f * chatTextScale)));
             g.drawText("Analysing...", avX + avatarSize + 12, drawY + 4, 100, 20, juce::Justification::centredLeft);
         }
     }
@@ -3581,6 +4175,7 @@ void EchoJayEditor::resized()
         chatScroll.setVisible(false);
         chatInput.setVisible(false);
         chatSendBtn.setVisible(false);
+        chatTextSizeBtn.setVisible(false);
         
         int formW = juce::jmin(340, b.getWidth() - 60);
         int formX = (b.getWidth() - formW) / 2;
@@ -3693,7 +4288,8 @@ void EchoJayEditor::resized()
     playbackBtn.setBounds(0, -20, 1, 1);
     wavSavedLabel.setBounds(0, -20, 1, 1);
     userLabel.setBounds(0, -20, 1, 1);
-    usageLabel.setBounds(0, -20, 1, 1);
+    // usageLabel positioning moved to the chat-header block below — it
+    // now lives in the AI ASSISTANT strip next to the Aa button.
 
     // Chat input — 2-line height, Send centred vertically
     int inH = 52; // ~2 lines of 13px font
@@ -3707,6 +4303,30 @@ void EchoJayEditor::resized()
     chatInput.setBounds(chatStartX + chatPadL, inputY, chatW - sendW - chatPadL - 4, inH);
     int sendY = inputY + (inH - sendH) / 2; // vertically centred
     chatSendBtn.setBounds(chatStartX + chatW - sendW - 2, sendY, sendW, sendH);
+
+    // Aa text-size button — sits in the chat header strip. Header is at
+    // top = topH, height = 32. The usage counter sits just to the LEFT
+    // of the Aa button so users can see how many messages they have left
+    // without leaving the chat view.
+    {
+        int aaW = 26, aaH = 22;
+        int rightMargin = 8;
+        int aaX = chatStartX + chatW - rightMargin - aaW;
+        int aaY = topH + (32 - aaH) / 2;
+        chatTextSizeBtn.setBounds(aaX, aaY, aaW, aaH);
+        chatTextSizeBtn.setVisible(chatScroll.isVisible());
+
+        // Counter label — right-aligned, ending 6px before the Aa button.
+        int counterW = 130;
+        int counterH = 16;
+        int counterX = aaX - counterW - 6;
+        int counterY = topH + (32 - counterH) / 2;
+        usageLabel.setBounds(counterX, counterY, counterW, counterH);
+        usageLabel.setJustificationType(juce::Justification::centredRight);
+        usageLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::plain)));
+        usageLabel.setColour(juce::Label::textColourId, C::text3);
+        usageLabel.setVisible(chatScroll.isVisible());
+    }
     
     // Chat scroll: top = below chat header, bottom = above chat input with gap.
     // The assistant avatar is painted by the editor at chatX+6 with width 24,
@@ -3739,6 +4359,7 @@ void EchoJayEditor::resized()
     {
         chatInput.setVisible(false);
         chatSendBtn.setVisible(false);
+        chatTextSizeBtn.setVisible(false);
         chatScroll.setVisible(false);
     }
     
@@ -3747,6 +4368,7 @@ void EchoJayEditor::resized()
     {
         chatInput.setVisible(false);
         chatSendBtn.setVisible(false);
+        chatTextSizeBtn.setVisible(false);
         chatScroll.setVisible(false);
     }
 
@@ -3771,7 +4393,7 @@ void EchoJayEditor::resized()
         
         // Pass dropdowns — full width, no play buttons
         compareSlotABox.setBounds(cPad, cy2, cCardW - 4, 22);
-        compareSlotBBox.setBounds(cPad + cCardW + 10, cy2, cCardW - 3, 22);
+        compareSlotBBox.setBounds(cPad + cCardW + 12, cy2, cCardW - 4, 22);
         playSlotABtn.setVisible(false);
         playSlotBBtn.setVisible(false);
         
@@ -3819,9 +4441,17 @@ void EchoJayEditor::resized()
         }
         sy += bh2 + 8;
         
-        // EXPERIENCE LEVEL
+        // EXPERIENCE LEVEL + CHAT LANGUAGE — on the same row, half-width each.
+        // The 8px gap matches the inter-field vertical spacing used elsewhere,
+        // so the row visually balances with the rest of the form.
         sy += labelGap;
-        settingsExpLevel.setBounds(sx, sy, sw, fh); sy += fh + 8;
+        {
+            int halfGap = 8;
+            int halfW = (sw - halfGap) / 2;
+            settingsExpLevel.setBounds(sx, sy, halfW, fh);
+            settingsLanguage.setBounds(sx + halfW + halfGap, sy, halfW, fh);
+        }
+        sy += fh + 8;
         
         // MONITORS
         sy += labelGap;
@@ -4005,6 +4635,7 @@ void EchoJayEditor::timerCallback()
     {
         chatInput.setVisible(false);
         chatSendBtn.setVisible(false);
+        chatTextSizeBtn.setVisible(false);
         chatScroll.setVisible(false);
         upgradeBtn.setVisible(false);
     }
@@ -4250,7 +4881,8 @@ void EchoJayEditor::timerCallback()
     if (currentScreen == Screen::Main && api.isLoggedIn()) {
         auto info = api.getUserInfo();
         int remaining = api.getRemainingMessages();
-        juce::String usageStr = juce::String(remaining) + "/" + juce::String(info.messageLimit) + " messages left";
+        int used = info.messageLimit - remaining;
+        juce::String usageStr = juce::String(used) + "/" + juce::String(info.messageLimit);
         if (info.credits > 0)
             usageStr += " (+" + juce::String(info.credits) + " credits)";
         usageLabel.setText(usageStr, juce::dontSendNotification);
@@ -4270,14 +4902,19 @@ void EchoJayEditor::timerCallback()
             upgradeBtn.setBounds(btnX, btnY, btnW, btnH);
             chatInput.setVisible(false);
             chatSendBtn.setVisible(false);
+            chatTextSizeBtn.setVisible(false);
         }
         
         // Colour the usage label red when out of messages
         usageLabel.setColour(juce::Label::textColourId, !api.canSendMessage() ? C::red : C::text3);
         
-        // Periodic refresh every 10 minutes to sync usage/subscription
+        // Periodic refresh every 5 minutes to sync usage/subscription.
+        // Visibility-change and Settings-open refreshes (see elsewhere)
+        // cover the common upgrade-detection cases. The periodic timer
+        // is a safety net for the user who keeps the plugin open and
+        // visible for long stretches without interacting with Settings.
         refreshCounter++;
-        if (refreshCounter >= 12000) // 20fps * 600s
+        if (refreshCounter >= 6000) // 20fps * 300s
         {
             refreshCounter = 0;
             api.refreshUserInfo(nullptr);
@@ -4305,9 +4942,10 @@ void EchoJayEditor::timerCallback()
         int avatarSz = 24;
         int maxBW = chatW2 - avatarSz - 24; // matches paint maxBubbleW
         int totalH = 8; // matches paint msgY initial value
+        const float chatMsgFontSize2 = 12.0f * chatTextScale;
         for (auto& msg : chatMessages) {
             juce::AttributedString as;
-            as.append(msg.content, juce::Font(juce::FontOptions(12.0f)), C::text);
+            as.append(msg.content, juce::Font(juce::FontOptions(chatMsgFontSize2)), C::text);
             juce::TextLayout layout;
             layout.createLayout(as, (float)(maxBW - 20));
             int textH = (int)layout.getHeight() + 20;
@@ -4490,20 +5128,42 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     chatLoading = true;
     repaint();
 
-    // Only append meter data if this is the first message (no prior chat history)
-    // Follow-up messages are pure conversation — no meter context needed
-    juce::String userContent = msg;
-    if (processorRef.chatRoles.size() == 0)
-    {
-        auto md = processorRef.getMeterEngine().getMeterData();
-        auto ff = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
-        juce::String ctx = "\n\n[METER: " + processorRef.getEffectiveChannelName() + " (" + processorRef.getGenre() + ")] " +
+    // Attach a live meter snapshot to every chat message. We tag it
+    // [LIVE METER] (not [METER] or [CAPTURE]) so Claude knows this is
+    // continuously-running data with varying precision per metric:
+    //   - momentary (400ms window) and short-term (3s window) — real
+    //     and immediate
+    //   - integrated LUFS — averaged from whenever the integrator was
+    //     last reset, could be very recent or stale
+    //   - rms / peak / crest / width / correlation — current state
+    // The system prompt's [LIVE METER] handling tells Claude to use
+    // the data, qualify once that Capture gives averaged-over-window
+    // precision, then move on. If the user's question is general
+    // (not about the mix), the QUESTION ROUTING block tells Claude
+    // to ignore the meter data and answer normally.
+    auto md = processorRef.getMeterEngine().getMeterData();
+    auto ff = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
+    juce::String ctx;
+    if (md.isSilent) {
+        // No audio playing through the plugin right now. Last meter
+        // values would be stale ghosts from the previous playback
+        // window; instead, tell the model there's no signal so it
+        // continues the conversation about earlier captures (or the
+        // user's general question) rather than analysing dead numbers.
+        ctx = "\n\n[LIVE METER: " + processorRef.getEffectiveChannelName()
+            + " (" + processorRef.getGenre() + ")] NO SIGNAL (playback stopped or no audio routed to plugin)";
+    } else {
+        ctx = "\n\n[LIVE METER: " + processorRef.getEffectiveChannelName() + " (" + processorRef.getGenre() + ")] " +
             "Int " + ff(md.integrated) + " LUFS | Mom " + ff(md.momentary) + " | ST " + ff(md.shortTerm) +
             " | LRA " + juce::String(md.loudnessRange, 1) + " LU | RMS " + ff(md.rmsL) + "/" + ff(md.rmsR) +
             " | TP " + ff(md.truePeakL) + "/" + ff(md.truePeakR) + " | Crest " + juce::String(md.crestFactor, 1) +
-            " | Width " + juce::String(md.width, 1) + "% | Corr " + juce::String(md.correlation, 2);
-        userContent = msg + ctx;
+            " | Width " + juce::String(md.width, 1) + "% | Corr " + juce::String(md.correlation, 2) +
+            " | S/M " + juce::String(md.sideToMidRatio, 2) +
+            " | Corr-sub " + juce::String(md.corrSub, 2) +
+            " | Corr-mid " + juce::String(md.corrMid, 2) +
+            " | Corr-top " + juce::String(md.corrTop, 2);
     }
+    juce::String userContent = msg + ctx;
 
     processorRef.chatRoles.add("user");
     processorRef.chatContents.add(userContent);
@@ -5612,6 +6272,58 @@ void EchoJayEditor::saveCustomGenres()
 }
 
 // ============================================================================
+// Chat text scaling
+// ============================================================================
+// Cycles the chat message font size through a small preset list. Stored as a
+// multiplier on the base 12pt font (so 1.0 = stock, 1.6 = noticeably bigger).
+// Persisted to ~/Documents/EchoJay/chat_text_scale.txt so the user's choice
+// survives across sessions and across plugin instances.
+
+static constexpr float kChatTextScalePresets[] = { 1.0f, 1.2f, 1.4f, 1.6f, 0.9f };
+static constexpr int kChatTextScalePresetCount = (int)(sizeof(kChatTextScalePresets) / sizeof(float));
+
+void EchoJayEditor::cycleChatTextScale()
+{
+    // Find current index in the preset list (nearest match) and advance.
+    int curIdx = 0;
+    float bestDelta = 1e9f;
+    for (int i = 0; i < kChatTextScalePresetCount; ++i)
+    {
+        float d = std::abs(kChatTextScalePresets[i] - chatTextScale);
+        if (d < bestDelta) { bestDelta = d; curIdx = i; }
+    }
+    int next = (curIdx + 1) % kChatTextScalePresetCount;
+    chatTextScale = kChatTextScalePresets[next];
+    saveChatTextScale();
+
+    // Recompute chat content height immediately (so the scroll range is right)
+    // and trigger a full repaint. The timer would catch this on its next tick
+    // but doing it now avoids a visible jump.
+    resized();
+    repaint();
+}
+
+void EchoJayEditor::loadChatTextScale()
+{
+    auto file = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                    .getChildFile("EchoJay").getChildFile("chat_text_scale.txt");
+    if (file.existsAsFile())
+    {
+        float v = file.loadFileAsString().trim().getFloatValue();
+        if (v >= 0.7f && v <= 2.5f) // sanity clamp against junk on disk
+            chatTextScale = v;
+    }
+}
+
+void EchoJayEditor::saveChatTextScale()
+{
+    auto folder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                      .getChildFile("EchoJay");
+    folder.createDirectory();
+    folder.getChildFile("chat_text_scale.txt").replaceWithText(juce::String(chatTextScale, 2));
+}
+
+// ============================================================================
 // Reference Presets
 // ============================================================================
 
@@ -6374,6 +7086,16 @@ void EchoJayEditor::toggleVisualMode()
     
     processorRef.visualModeOn = visualMode;
     
+    // Attach/detach the OpenGL context to match the toggle. Saves GPU
+    // cycles when visuals are off, and means a Windows user who's hit
+    // the freeze can recover by toggling off (they'd already need a way
+    // in via Settings, but at least it's recoverable).
+    if (particleVisual != nullptr)
+    {
+        if (visualMode) particleVisual->start();
+        else            particleVisual->stop();
+    }
+    
     resized();
     repaint();
 }
@@ -6410,6 +7132,7 @@ void EchoJayEditor::toggleVisualOnlyMode()
         genreBox.setVisible(false);
         chatInput.setVisible(false);
         chatSendBtn.setVisible(false);
+        chatTextSizeBtn.setVisible(false);
         chatScroll.setVisible(false);
     }
     else
@@ -6428,6 +7151,7 @@ void EchoJayEditor::toggleVisualOnlyMode()
         genreBox.setVisible(true);
         chatInput.setVisible(true);
         chatSendBtn.setVisible(true);
+        chatTextSizeBtn.setVisible(true);
         chatScroll.setVisible(true);
     }
     
