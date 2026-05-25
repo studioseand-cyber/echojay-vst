@@ -114,7 +114,19 @@ public:
     // Get the current system prompt — uses remote version if available, else hardcoded
     static juce::String buildSystemPrompt(const juce::String& channelType,
                                            const juce::String& genre,
-                                           const juce::String& pluginList);
+                                           const juce::String& pluginSummary);
+
+    // Returns true if a user message looks like it wants plugin suggestions /
+    // a chain / a specific processing tool — i.e. a turn where we should
+    // inject the full plugin list. Cheap keyword heuristic; errs toward
+    // including, since a false positive just sends a list that goes unused.
+    static bool messageNeedsPlugins(const juce::String& userMessage);
+
+    // Builds the per-turn plugin block to append to a user message when
+    // messageNeedsPlugins() is true. Given the full list string from the
+    // scanner, wraps it with framing the AI understands. Returns empty if the
+    // list is empty.
+    static juce::String buildPluginInjection(const juce::String& fullList);
     
     // Chat language preference. Affects the language the AI replies in.
     // Stored as a short code: "auto" (match user input — default),

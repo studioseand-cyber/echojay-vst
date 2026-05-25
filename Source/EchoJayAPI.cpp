@@ -54,31 +54,49 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
     auto token = authToken;
     auto cb = std::make_shared<std::function<void(const juce::var&, int)>>(onComplete);
     auto aliveFlag = alive; // capture shared_ptr by value — prevent use-after-free
-    
+
     juce::Thread::launch([=]()
     {
-        juce::URL url(endpoint + path);
-        url = url.withPOSTData(body);
-        
-        juce::String headers = "Content-Type: application/json\r\n";
-        if (token.isNotEmpty())
-            headers += "Authorization: Bearer " + token + "\r\n";
-        
-        int statusCode = 0;
-        auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
-                           .withExtraHeaders(headers)
-                           .withConnectionTimeoutMs(60000)
-                           .withStatusCode(&statusCode);
-        
-        auto stream = url.createInputStream(options);
-        
         juce::var json;
-        if (stream != nullptr)
+        int statusCode = 0;
+
+        // Retry only on connection-level failures (createInputStream returns
+        // nullptr — timeout, dropped connection, TLS/DNS blip, cold-start
+        // stall before first byte). These never reach the server, so retrying
+        // is safe. Real HTTP responses (200/4xx/5xx) are NOT retried here —
+        // the caller's status-code logic handles those.
+        constexpr int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; ++attempt)
         {
-            auto responseText = stream->readEntireStreamAsString();
-            json = juce::JSON::parse(responseText);
+            juce::URL url(endpoint + path);
+            url = url.withPOSTData(body);
+
+            juce::String headers = "Content-Type: application/json\r\n";
+            if (token.isNotEmpty())
+                headers += "Authorization: Bearer " + token + "\r\n";
+
+            statusCode = 0;
+            auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
+                               .withExtraHeaders(headers)
+                               .withConnectionTimeoutMs(60000)
+                               .withStatusCode(&statusCode);
+
+            auto stream = url.createInputStream(options);
+
+            if (stream != nullptr)
+            {
+                auto responseText = stream->readEntireStreamAsString();
+                json = juce::JSON::parse(responseText);
+                break; // got a response (any status) — stop retrying
+            }
+
+            DBG("[EchoJay] postJSON connection failed (attempt " << attempt
+                << "/" << maxAttempts << ") path=" << path << " statusCode=" << statusCode);
+
+            if (attempt < maxAttempts)
+                juce::Thread::sleep(attempt * 1000); // 1s, then 2s backoff
         }
-        
+
         auto callback = cb;
         auto sc = statusCode;
         auto j = json;
@@ -451,7 +469,9 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
             return;
         }
         
-        juce::String error = "Failed to get AI response";
+        juce::String error = (statusCode == 0)
+            ? "Could not reach EchoJay. Check your connection and try again."
+            : "Failed to get AI response";
         if (json.isObject())
         {
             auto* obj = json.getDynamicObject();
@@ -667,7 +687,7 @@ void EchoJayAPI::setChatLanguage(const juce::String& code)
 
 juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
                                              const juce::String& genre,
-                                             const juce::String& pluginList)
+                                             const juce::String& pluginSummary)
 {
     juce::String prompt;
     
@@ -874,10 +894,10 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
         }
     }
     
-    if (pluginList.isNotEmpty())
+    if (pluginSummary.isNotEmpty())
     {
-        prompt += "USER'S PLUGINS (REFERENCE ONLY): " + pluginList + "\n";
-        prompt += "This list is for reference only. Do NOT proactively suggest plugins from this list. ONLY mention specific plugins by name if (a) the user explicitly asks for plugin suggestions or for a chain, or (b) you're solving a clear problem flagged in the data and a specific tool is the right answer. When you DO suggest plugins, use their actual names from this list and rotate which ones you suggest — don't default to the same ones every time.\n\n";
+        prompt += "USER'S PLUGIN LIBRARY (REFERENCE ONLY): " + pluginSummary + "\n";
+        prompt += "This is a summary of what the user owns, for context only. Do NOT proactively suggest plugins. When the user asks for a plugin suggestion or a chain, or you're solving a clear flagged problem where a specific tool is the answer, their full relevant plugin list will be provided in that message — use the actual names from it and rotate your picks. If no list is attached to a given message, you can still refer to the library in general terms but don't invent specific product names you haven't been given.\n\n";
     }
     
     prompt += "Audio topics only. Internal genre reference (NEVER say this in your response): " + genre + ". ";
@@ -915,6 +935,57 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     }
     
     return prompt;
+}
+
+// ============ Per-turn plugin injection ============
+// Plugins live in two places now: a tiny summary in the (cached) system
+// prompt, and the FULL list injected into the user turn only when the message
+// actually needs it. This keeps the everyday prompt cheap and cache-stable
+// while giving the AI the user's entire library exactly on the turns where
+// plugin specifics matter — no cap, nothing hidden.
+
+bool EchoJayAPI::messageNeedsPlugins(const juce::String& userMessage)
+{
+    auto m = userMessage.toLowerCase();
+
+    // Direct asks and processing-type mentions. Deliberately broad: a false
+    // positive just attaches a list the model may not use (cheap on a single
+    // turn), whereas a false negative means the AI can't name the user's
+    // tools when they wanted it to (the thing we're fixing). So we lean in.
+    static const char* kCues[] = {
+        // explicit asks
+        "plugin", "plug-in", "vst", "chain", "what should i use", "which ",
+        "recommend", "suggestion", "suggest", "what would you", "any tips on",
+        "how do i", "how would you", "what can i use", "reach for", "tool for",
+        // processing types
+        "eq", "equali", "compress", "limit", "reverb", "delay", "saturat",
+        "distort", "tape", "exciter", "transient", "de-ess", "deess", "gate",
+        "widen", "stereo", "imag", "chorus", "flang", "phaser", "pitch",
+        "tune", "clip", "multiband", "sidechain", "side-chain", "bus comp",
+        "glue", "parallel", "harmonic", "warmth", "color", "colour",
+        // mix-move verbs that usually imply a tool
+        "brighten", "darken", "tame", "control the", "smooth out", "thicken",
+        "tighten", "add air", "more punch", "more presence"
+    };
+
+    for (auto* cue : kCues)
+        if (m.contains(cue))
+            return true;
+
+    return false;
+}
+
+juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
+{
+    if (fullList.isEmpty()) return {};
+
+    // Appended to the user's message (NOT the system prompt), so it never
+    // touches the cached prefix. Framed so the model treats it as the
+    // authoritative set to pick from for this answer.
+    juce::String block;
+    block << "\n\n[USER'S FULL PLUGIN LIST — for this question, recommend only from these, using their exact names; rotate your picks rather than defaulting to the same few]:\n"
+          << fullList;
+    return block;
 }
 
 // ============ Settings persistence ============

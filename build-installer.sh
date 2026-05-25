@@ -145,7 +145,7 @@ echo "  Created: installer/conclusion.html"
 
 # --- Clean previous build ---
 rm -rf "$PKG_DIR"
-mkdir -p "${PKG_DIR}/vst3_payload" "${PKG_DIR}/au_payload" "${PKG_DIR}/aax_payload" "${PKG_DIR}/scripts" "${PKG_DIR}/components"
+mkdir -p "${PKG_DIR}/vst3_payload" "${PKG_DIR}/au_payload" "${PKG_DIR}/aax_payload" "${PKG_DIR}/scripts" "${PKG_DIR}/aax-scripts" "${PKG_DIR}/components"
 
 # --- Stage payloads with correct install paths ---
 
@@ -175,6 +175,45 @@ killall -9 AudioComponentRegistrar 2>/dev/null || true
 exit 0
 POSTINSTALL
 chmod +x "${PKG_DIR}/scripts/postinstall"
+
+# --- Post-install script to reset Pro Tools AAX validation cache ---
+# Pro Tools caches plugin validation results per-user; without this, an
+# in-place AAX update wont be detected until a manual rescan. This script
+# nukes the InstalledAAXPlugIns cache for every real user on the system,
+# so Pro Tools rescans (including this plugin) on next launch.
+cat > "${PKG_DIR}/aax-scripts/postinstall" << 'AAXPOSTINSTALL'
+#!/bin/bash
+# Find every real user (UID >= 501 on macOS) and clear their PT cache.
+# We use dscl to enumerate users so this works on multi-user studio setups.
+USERS=$(dscl . list /Users UniqueID | awk '$2 >= 501 && $2 < 1000 {print $1}')
+
+for u in $USERS; do
+    USER_HOME=$(dscl . -read "/Users/$u" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+    if [ -z "$USER_HOME" ] || [ ! -d "$USER_HOME" ]; then
+        continue
+    fi
+    PT_PREFS="$USER_HOME/Library/Preferences/Avid/Pro Tools"
+    if [ -d "$PT_PREFS" ]; then
+        # Remove validation cache so PT rescans on next launch
+        rm -f "$PT_PREFS/InstalledAAXPlugIns" 2>/dev/null || true
+        rm -f "$PT_PREFS/InstalledAAXPlugIns.xml" 2>/dev/null || true
+    fi
+    # Also clear the broader Avid cache directory if present
+    AVID_CACHE="$USER_HOME/Library/Caches/Avid"
+    if [ -d "$AVID_CACHE" ]; then
+        rm -rf "$AVID_CACHE" 2>/dev/null || true
+    fi
+done
+
+# Touch the plugin bundle so Pro Tools detects it as freshly modified
+PLUGIN_BUNDLE="/Library/Application Support/Avid/Audio/Plug-Ins/EchoJay.aaxplugin"
+if [ -d "$PLUGIN_BUNDLE" ]; then
+    touch "$PLUGIN_BUNDLE"
+fi
+
+exit 0
+AAXPOSTINSTALL
+chmod +x "${PKG_DIR}/aax-scripts/postinstall"
 
 # --- Build component packages ---
 echo ""
@@ -208,6 +247,7 @@ if [ -n "$AAX_PATH" ]; then
         --install-location "/" \
         --identifier "${IDENTIFIER}.aax" \
         --version "$VERSION" \
+        --scripts "${PKG_DIR}/aax-scripts" \
         "${PKG_DIR}/components/EchoJay-AAX.pkg"
     echo "  Done: AAX component"
 fi

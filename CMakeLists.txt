@@ -1,4 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
+# Universal binary: Apple Silicon + Intel
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures")
+# Minimum macOS: Big Sur (11.0). Covers anything 4+ years old.
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+
 project(EchoJay VERSION 1.4.0)
 
 # Path to your JUCE installation — update this to match your setup
@@ -53,6 +58,8 @@ juce_add_plugin(EchoJay
     AU_MAIN_TYPE kAudioUnitType_Effect
     VST3_CATEGORIES "Fx" "Analyzer"
     AAX_CATEGORY "AAX_ePlugInCategory_None"
+    HARDENED_RUNTIME_ENABLED TRUE
+    HARDENED_RUNTIME_OPTIONS "com.apple.security.network.client"
 )
 
 juce_generate_juce_header(EchoJay)
@@ -66,6 +73,9 @@ target_sources(EchoJay PRIVATE
     Source/MeterEngine.h
     Source/PluginScanner.cpp
     Source/PluginScanner.h
+    Source/PluginCatalog.h
+    Source/PluginChecklist.cpp
+    Source/PluginChecklist.h
     Source/EchoJayAPI.cpp
     Source/EchoJayAPI.h
     Source/ReferenceAnalyser.cpp

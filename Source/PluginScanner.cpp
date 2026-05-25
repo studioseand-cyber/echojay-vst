@@ -1,6 +1,8 @@
 #include "PluginScanner.h"
+#include "PluginCatalog.h"
 #include <algorithm>
 #include <functional>
+#include <map>
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -40,6 +42,7 @@ void PluginScanner::startScan()
     {
         std::lock_guard<std::mutex> lock(pluginMutex);
         plugins.clear();
+        pluginIndex.clear();
         // Invalidate the cached shuffled names — next call to
         // getPluginNamesString() will reshuffle. We do this explicitly (not
         // just relying on size mismatch) to handle the edge case where a
@@ -47,6 +50,10 @@ void PluginScanner::startScan()
         cachedShuffledNames = juce::String();
         cachedShuffleSize = 0;
     }
+
+    // Reset the WaveShell-seen flag for this run (set during the walk,
+    // consumed afterwards to trigger catalog expansion).
+    sawWaveShell = false;
     
     scanThread = std::make_unique<ScanThread>(*this);
     scanThread->startThread();
@@ -293,9 +300,22 @@ void PluginScanner::scanPluginDirectories()
         safeScan(dir, "AU", false);
         safeScan(dir, "VST", false);
     }
-    
+
+    // ---- WaveShell expansion -------------------------------------------
+    // If any WaveShell bundle was seen during the walk, replace the (now
+    // suppressed) single shell entry with the curated Waves plugin catalog.
+    if (sawWaveShell && alive->load())
+        expandWavesCatalog();
+
+    // ---- Stock DAW plugins ---------------------------------------------
+    // Inject stock plugins for every DAW we can detect as installed. These
+    // never appear in the folder scan, so this is the only path that makes
+    // a producer's everyday stock tools visible to the AI.
+    if (alive->load())
+        injectStockDawPlugins();
+
     progress.store(1.0f);
-    
+
     // Sort alphabetically
     {
         std::lock_guard<std::mutex> lock(pluginMutex);
@@ -303,6 +323,10 @@ void PluginScanner::scanPluginDirectories()
                   [](const ScannedPlugin& a, const ScannedPlugin& b) {
                       return a.name.compareIgnoreCase(b.name) < 0;
                   });
+        // The sort reordered the vector, so every index in pluginIndex is now
+        // stale. Rebuild it before anyone (a follow-up rescan merge, etc.)
+        // relies on it again.
+        rebuildIndex();
     }
     
     // Cache to disk
@@ -376,7 +400,22 @@ void PluginScanner::scanDirectory(const juce::File& dir, const juce::String& for
                 // It's a plugin — record it and DO NOT recurse into it.
                 juce::String name = file.getFileNameWithoutExtension();
                 if (name.isEmpty()) continue;
-                
+
+                // WaveShell special case. Waves hosts every installed plugin
+                // inside this one bundle; the filename ("WaveShell1-VST3 14.0",
+                // "WaveShell2-AU 11.0", etc.) only tells us the version, not
+                // the contents. Recording it verbatim gives the AI a useless
+                // "WaveShell..." entry. Instead we flag that a shell was seen
+                // and skip the raw entry; expandWavesCatalog() runs once after
+                // the walk and injects the curated Waves plugin names. The
+                // flag write is racy across the multiple scanned format dirs
+                // but it's a monotonic set-to-true, so no lock needed.
+                if (isWaveShell(leaf))
+                {
+                    sawWaveShell = true;
+                    continue; // suppress raw shell; do NOT descend
+                }
+
                 // Try to extract manufacturer from the parent dir name.
                 // Common pattern: /Manufacturer/PluginName.vst3
                 juce::String manufacturer = "Unknown";
@@ -421,6 +460,16 @@ void PluginScanner::scanDirectory(const juce::File& dir, const juce::String& for
                     category = "Instrument";
                 }
                 
+                // Correct manufacturer for vendors that organise plugins into
+                // category subfolders (UAD -> "Guitar and Bass" etc.) or whose
+                // brand is in the plugin name. resolveManufacturer returns a
+                // better value, or empty to keep what we have.
+                {
+                    auto corrected = echojay::resolveManufacturer(name, manufacturer);
+                    if (corrected.isNotEmpty())
+                        manufacturer = corrected;
+                }
+
                 addPlugin(name, manufacturer, format, category, file.getFullPathName());
                 continue; // do NOT descend into the bundle
             }
@@ -445,24 +494,140 @@ void PluginScanner::scanDirectory(const juce::File& dir, const juce::String& for
     walk(dir, 0);
 }
 
+// ============================================================================
+// WaveShell detection + expansion
+// ============================================================================
+
+bool PluginScanner::isWaveShell(const juce::String& bundleFileName)
+{
+    // Match the family of shell names across versions and formats:
+    //   WaveShell1-VST3 14.0.vst3, WaveShell2-AU 11.0.component,
+    //   WaveShell1-VST 9.x.vst, WaveShell-AAX ... etc.
+    // The common, stable token is "waveshell" at the start of the leaf.
+    return bundleFileName.startsWithIgnoreCase("WaveShell");
+}
+
+void PluginScanner::expandWavesCatalog()
+{
+    // Inject every curated Waves plugin under the "Waves" manufacturer.
+    // Format is reported generically as the shell's host format set — we
+    // don't know per-plugin which formats are present, so we tag "VST3/AU"
+    // which is true for any modern Waves install. addPlugin dedupes by
+    // name+manufacturer, so re-running a scan won't double up, and a real
+    // scanned Waves entry (if one ever appears via a custom folder) merges
+    // cleanly.
+    for (const auto& e : echojay::wavesCatalog())
+    {
+        if (! alive->load()) return;
+        addPlugin(juce::String(e.name), "Waves",
+                  "VST3/AU", juce::String(e.category),
+                  /*path*/ "WaveShell");
+    }
+
+    DBG("[PluginScanner] Expanded WaveShell into "
+        << (int) echojay::wavesCatalog().size() << " Waves plugins");
+}
+
+// ============================================================================
+// Stock DAW plugin injection (settings-driven)
+// ============================================================================
+// We inject stock catalogues for the DAWs the user selected in Settings,
+// not for whatever happens to be installed. This is both more accurate
+// (a producer with five DAWs installed only mixes in one or two) and far
+// simpler (no fragile app-bundle probing across platforms and install
+// layouts). The DAW name strings here MUST match the Settings UI labels in
+// PluginEditor exactly.
+
+void PluginScanner::setDetectedDaw(const juce::String& dawLabel)
+{
+    std::lock_guard<std::mutex> lock(pluginMutex);
+    detectedDaw = dawLabel.trim();
+}
+
+void PluginScanner::injectStockDawPlugins()
+{
+    // Stock plugins are injected ONLY for the DAW auto-detected from the host
+    // (juce::PluginHostType, set via setDetectedDaw from the processor). The
+    // Settings DAW checkboxes do NOT add stock plugins — detection is the sole
+    // source, so the stock list always reflects the DAW the user is actually
+    // running EchoJay in, with no manual step. If the host couldn't be
+    // identified (out-of-process / sandboxed host reporting Unknown), nothing
+    // is injected rather than guessing.
+    juce::String daw;
+    {
+        std::lock_guard<std::mutex> lock(pluginMutex);
+        daw = detectedDaw;
+    }
+    if (daw.isEmpty()) return; // host not identified — inject no stock plugins
+
+    // Helper to add a whole catalogue under one manufacturer/format tag.
+    auto add = [this](const std::vector<echojay::CatalogEntry>& cat,
+                       const juce::String& manufacturer,
+                       const juce::String& format)
+    {
+        for (const auto& e : cat)
+        {
+            if (! alive->load()) return;
+            // Stock plugins of different DAWs frequently share generic names
+            // ("Compressor", "Limiter", "Gate", "Chorus"). The manufacturer
+            // tag keeps them distinct in addPlugin's dedupe (which keys on
+            // name+manufacturer).
+            addPlugin(juce::String(e.name), manufacturer,
+                      format, juce::String(e.category), /*path*/ "Stock");
+        }
+    };
+
+    // Inject the detected DAW's stock catalogue. Only one matches.
+    if (daw == "Logic Pro")
+        add(echojay::logicStockCatalog(), "Logic Pro Stock", "AU");
+    else if (daw == "Ableton Live")
+        add(echojay::abletonStockCatalog(), "Ableton Stock", "Stock");
+    else if (daw == "FL Studio")
+        add(echojay::flStudioStockCatalog(), "FL Studio Stock", "Stock");
+    else if (daw == "Pro Tools")
+        add(echojay::proToolsStockCatalog(), "Pro Tools Stock", "AAX");
+    else if (daw == "Studio One")
+        add(echojay::studioOneStockCatalog(), "Studio One Stock", "Stock");
+    else if (daw == "Cubase")
+        add(echojay::cubaseStockCatalog(), "Cubase Stock", "VST3");
+}
+
+std::string PluginScanner::makeKey(const juce::String& name,
+                                   const juce::String& manufacturer)
+{
+    // Exact (case-sensitive) name|manufacturer, matching the original dedupe
+    // semantics. The separator can't appear in either field in practice.
+    return (name + "|" + manufacturer).toStdString();
+}
+
+void PluginScanner::rebuildIndex()
+{
+    // Caller must hold pluginMutex. Rebuilds pluginIndex from the vector.
+    pluginIndex.clear();
+    pluginIndex.reserve(plugins.size() * 2);
+    for (size_t i = 0; i < plugins.size(); ++i)
+        pluginIndex[makeKey(plugins[i].name, plugins[i].manufacturer)] = i;
+}
+
 void PluginScanner::addPlugin(const juce::String& name, const juce::String& manufacturer,
                                const juce::String& format, const juce::String& category,
                                const juce::String& path)
 {
-    // Check for duplicates (same name + manufacturer = same plugin, different format)
+    // Dedupe in O(1) via the index rather than scanning the whole vector.
+    // Same plugin (name + manufacturer) seen in another format just merges
+    // the format string onto the existing entry.
     std::lock_guard<std::mutex> lock(pluginMutex);
-    
-    for (auto& p : plugins)
+
+    auto key = makeKey(name, manufacturer);
+    auto it = pluginIndex.find(key);
+    if (it != pluginIndex.end())
     {
-        if (p.name == name && p.manufacturer == manufacturer)
-        {
-            // Add format to existing entry
-            if (!p.format.contains(format))
-                p.format += "/" + format;
-            return;
-        }
+        auto& existing = plugins[it->second];
+        if (! existing.format.contains(format))
+            existing.format += "/" + format;
+        return;
     }
-    
+
     ScannedPlugin plugin;
     plugin.name = name;
     plugin.manufacturer = manufacturer;
@@ -470,7 +635,17 @@ void PluginScanner::addPlugin(const juce::String& name, const juce::String& manu
     plugin.category = category;
     plugin.path = path;
     plugin.uid = name.toLowerCase().replaceCharacter(' ', '_') + "_" + manufacturer.toLowerCase().replaceCharacter(' ', '_');
-    
+
+    // Classify effect type for per-type capping of the AI feed. Instruments
+    // don't go in the feed, so leave their fxType empty.
+    if (category == "Effect")
+        plugin.fxType = echojay::fxTypeTag(echojay::classifyEffect(name));
+
+    // Respect a prior unticking: if the user disabled this uid before (and it
+    // survived in disabledUids across the rescan), keep it disabled.
+    plugin.enabled = (disabledUids.find(plugin.uid) == disabledUids.end());
+
+    pluginIndex[key] = plugins.size();
     plugins.push_back(plugin);
 }
 
@@ -479,6 +654,140 @@ std::vector<ScannedPlugin> PluginScanner::getPlugins() const
     std::lock_guard<std::mutex> lock(pluginMutex);
     return plugins;
 }
+
+// ============================================================================
+// Enabled / disabled state
+// ============================================================================
+
+void PluginScanner::setPluginEnabled(const juce::String& uid, bool enabled)
+{
+    std::lock_guard<std::mutex> lock(pluginMutex);
+
+    // O(1) lookup via the dedupe index would need a uid->index map; we only
+    // have name|manufacturer keyed. A linear scan of a few thousand entries is
+    // ~microseconds and fine for a click, but we avoid the EXPENSIVE part
+    // (disk write) here — persistence is handled by the debounced commit in
+    // the editor (saveEnabledState), so rapid clicking doesn't write the file
+    // on every toggle. State lives in memory immediately either way.
+    for (auto& p : plugins)
+        if (p.uid == uid)
+            p.enabled = enabled;
+
+    if (enabled) disabledUids.erase(uid);
+    else         disabledUids.insert(uid);
+
+    cachedShuffledNames = juce::String();
+    cachedShuffleSize = 0;
+}
+
+void PluginScanner::setManyEnabled(const juce::StringArray& uids, bool enabled)
+{
+    {
+        std::lock_guard<std::mutex> lock(pluginMutex);
+
+        // Build a lookup set of the target uids so the plugin pass is O(n)
+        // rather than O(uids x n). "Untick all" on a 2000-plugin install would
+        // otherwise be ~4M comparisons.
+        std::set<juce::String> target;
+        for (auto& uid : uids)
+        {
+            target.insert(uid);
+            if (enabled) disabledUids.erase(uid);
+            else         disabledUids.insert(uid);
+        }
+
+        for (auto& p : plugins)
+            if (target.find(p.uid) != target.end())
+                p.enabled = enabled;
+
+        cachedShuffledNames = juce::String();
+        cachedShuffleSize = 0;
+    }
+    saveEnabledState();
+}
+
+bool PluginScanner::isPluginEnabled(const juce::String& uid) const
+{
+    std::lock_guard<std::mutex> lock(pluginMutex);
+    for (auto& p : plugins)
+        if (p.uid == uid)
+            return p.enabled;
+    return true; // unknown uid: treat as enabled (the default)
+}
+
+void PluginScanner::addManualPlugin(const juce::String& name)
+{
+    auto trimmed = name.trim();
+    if (trimmed.isEmpty()) return;
+
+    // Manual entries are tagged manufacturer "Custom" so they're visually
+    // distinct in the list and never collide with scanned/stock entries.
+    addPlugin(trimmed, "Custom", "Manual", "Effect", "Manual");
+
+    // addPlugin invalidates nothing about the shuffle cache itself, so do it
+    // here to make the new entry visible to the AI feed immediately.
+    {
+        std::lock_guard<std::mutex> lock(pluginMutex);
+        cachedShuffledNames = juce::String();
+        cachedShuffleSize = 0;
+    }
+    saveCache();
+}
+
+juce::File PluginScanner::getEnabledStateFile()
+{
+    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+#if JUCE_MAC
+    return appData.getChildFile("Application Support/EchoJay/plugin_disabled.json");
+#elif JUCE_WINDOWS
+    return appData.getChildFile("EchoJay/plugin_disabled.json");
+#else
+    return appData.getChildFile(".echojay/plugin_disabled.json");
+#endif
+}
+
+void PluginScanner::saveEnabledState() const
+{
+    juce::StringArray snapshot;
+    {
+        std::lock_guard<std::mutex> lock(pluginMutex);
+        for (auto& uid : disabledUids)
+            snapshot.add(uid);
+    }
+
+    // Store as a JSON array of disabled uids.
+    juce::String json = "[";
+    for (int i = 0; i < snapshot.size(); ++i)
+    {
+        json += "\"" + snapshot[i].replace("\"", "\\\"") + "\"";
+        if (i < snapshot.size() - 1) json += ",";
+    }
+    json += "]";
+
+    auto file = getEnabledStateFile();
+    file.getParentDirectory().createDirectory();
+    file.replaceWithText(json);
+}
+
+void PluginScanner::loadEnabledState()
+{
+    auto file = getEnabledStateFile();
+    if (! file.existsAsFile()) return;
+
+    auto json = juce::JSON::parse(file.loadFileAsString());
+    if (auto* arr = json.getArray())
+    {
+        std::lock_guard<std::mutex> lock(pluginMutex);
+        disabledUids.clear();
+        for (auto& item : *arr)
+            disabledUids.insert(item.toString());
+
+        // Apply to any already-loaded plugins (e.g. loadCache ran first).
+        for (auto& p : plugins)
+            p.enabled = (disabledUids.find(p.uid) == disabledUids.end());
+    }
+}
+
 
 int PluginScanner::getPluginCount() const
 {
@@ -498,7 +807,9 @@ juce::String PluginScanner::getPluginsJSON() const
         json += "\"name\":\"" + p.name.replace("\"", "\\\"") + "\",";
         json += "\"manufacturer\":\"" + p.manufacturer.replace("\"", "\\\"") + "\",";
         json += "\"format\":\"" + p.format + "\",";
-        json += "\"category\":\"" + p.category + "\"";
+        json += "\"category\":\"" + p.category + "\",";
+        json += "\"uid\":\"" + p.uid.replace("\"", "\\\"") + "\",";
+        json += "\"enabled\":" + juce::String(p.enabled ? "true" : "false");
         json += "}";
         if (i < plugins.size() - 1) json += ",";
     }
@@ -511,12 +822,78 @@ juce::String PluginScanner::getPluginNamesString() const
 {
     std::lock_guard<std::mutex> lock(pluginMutex);
 
-    // Build the list of effect plugin names from the current scan results.
-    std::vector<juce::String> names;
+    // ------------------------------------------------------------------
+    // Build the AI plugin feed: ENABLED effects only, capped and balanced.
+    // ------------------------------------------------------------------
+    // The raw enabled set can be 200+ entries once WaveShell expansion and
+    // stock-DAW injection are in play. Dumping all of them bloats every
+    // prompt and biases the model toward whichever type happens to dominate
+    // the list. Instead we select up to kMaxFeedPlugins via a per-type
+    // round-robin that (a) guarantees a spread across processing types so the
+    // AI always has an EQ, a comp, a reverb, etc. to reach for, and (b) within
+    // each type prefers plugins the user actively installed (third-party) over
+    // DAW stock, over Waves-from-shell (which may not even be licensed).
+    //
+    // "names" ends up holding the SELECTED subset; everything downstream
+    // (shuffle + cache) is unchanged, so prompt caching still works.
+    static constexpr size_t kMaxFeedPlugins = 60;
+
+    // Source priority: lower = kept first. Stock manufacturers end in "Stock";
+    // Waves came from the shell; "Custom" is a manual user entry (trust it
+    // like third-party). Everything else is real scanned third-party.
+    auto sourcePriority = [](const juce::String& manu) -> int
+    {
+        if (manu == "Waves")               return 3;
+        if (manu.endsWithIgnoreCase("Stock")) return 2;
+        if (manu == "Custom")              return 0;
+        return 0; // third-party scanned
+    };
+
+    // Bucket enabled effects by fxType, each bucket sorted by source priority
+    // then name for determinism.
+    struct Cand { juce::String display; int prio; juce::String sortName; };
+    std::map<juce::String, std::vector<Cand>> byType;
     for (auto& p : plugins)
     {
-        if (p.category == "Effect")  // Only list effects for mix feedback
-            names.push_back(p.name + " (" + p.manufacturer + ")");
+        if (p.category != "Effect" || ! p.enabled) continue;
+        juce::String type = p.fxType.isNotEmpty() ? p.fxType : juce::String("Other");
+        byType[type].push_back({ p.name + " (" + p.manufacturer + ")",
+                                 sourcePriority(p.manufacturer),
+                                 p.name.toLowerCase() });
+    }
+    for (auto& kv : byType)
+    {
+        std::sort(kv.second.begin(), kv.second.end(),
+                  [](const Cand& a, const Cand& b)
+                  {
+                      if (a.prio != b.prio) return a.prio < b.prio;
+                      return a.sortName.compareIgnoreCase(b.sortName) < 0;
+                  });
+    }
+
+    // Round-robin across types: take one from each type per pass (the next
+    // unused, highest-priority candidate), cycling until we hit the cap or
+    // run out. This interleaves types so the cap can't be eaten entirely by
+    // one huge category. Type visitation order is fixed (alphabetical by tag)
+    // for determinism; the final shuffle randomises presentation order.
+    std::vector<juce::String> names;
+    std::map<juce::String, size_t> cursor;
+    bool progressed = true;
+    while (names.size() < kMaxFeedPlugins && progressed)
+    {
+        progressed = false;
+        for (auto& kv : byType)
+        {
+            auto& bucket = kv.second;
+            size_t& idx = cursor[kv.first];
+            if (idx < bucket.size())
+            {
+                names.push_back(bucket[idx].display);
+                ++idx;
+                progressed = true;
+                if (names.size() >= kMaxFeedPlugins) break;
+            }
+        }
     }
 
     // Return the cached shuffle if it's still valid. The cache is invalidated
@@ -551,6 +928,70 @@ juce::String PluginScanner::getPluginNamesString() const
     cachedShuffledNames = arr.joinIntoString (", ");
     cachedShuffleSize   = names.size();
     return cachedShuffledNames;
+}
+
+int PluginScanner::getEnabledEffectCount() const
+{
+    std::lock_guard<std::mutex> lock(pluginMutex);
+    int n = 0;
+    for (auto& p : plugins)
+        if (p.category == "Effect" && p.enabled)
+            ++n;
+    return n;
+}
+
+juce::String PluginScanner::getFullPluginList() const
+{
+    // Complete enabled effect list, no cap. Order is the vector order (already
+    // sorted alphabetically after a scan), which is fine for an injected
+    // per-turn block — it's not in the cached system prompt, so a stable
+    // order isn't needed for caching here.
+    std::lock_guard<std::mutex> lock(pluginMutex);
+    juce::StringArray arr;
+    for (auto& p : plugins)
+        if (p.category == "Effect" && p.enabled)
+            arr.add(p.name + " (" + p.manufacturer + ")");
+    return arr.joinIntoString(", ");
+}
+
+juce::String PluginScanner::getPluginSummary() const
+{
+    // A short, cache-safe overview for the system prompt: total enabled effect
+    // count plus the biggest manufacturers by count. Gives the AI the SHAPE of
+    // the library ("this user has a lot of Waves and a FabFilter bundle")
+    // without listing anything, so it's a handful of tokens regardless of
+    // whether the user owns 50 plugins or 2000.
+    std::lock_guard<std::mutex> lock(pluginMutex);
+
+    int total = 0;
+    std::map<juce::String, int> byManu;
+    for (auto& p : plugins)
+    {
+        if (p.category != "Effect" || ! p.enabled) continue;
+        ++total;
+        // Normalise the stock labels to something human ("Logic Pro Stock" ->
+        // "Logic stock") and group all stock under their DAW name as-is.
+        byManu[p.manufacturer]++;
+    }
+
+    if (total == 0) return {};
+
+    // Rank manufacturers by count, take the top few.
+    std::vector<std::pair<juce::String,int>> ranked(byManu.begin(), byManu.end());
+    std::sort(ranked.begin(), ranked.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+
+    juce::StringArray parts;
+    const int kTopManus = 6;
+    for (int i = 0; i < (int) ranked.size() && i < kTopManus; ++i)
+        parts.add(ranked[(size_t) i].first + " (" + juce::String(ranked[(size_t) i].second) + ")");
+
+    juce::String summary = juce::String(total) + " plugins";
+    if (! parts.isEmpty())
+        summary += " incl. " + parts.joinIntoString(", ");
+    if ((int) ranked.size() > kTopManus)
+        summary += ", and more";
+    return summary;
 }
 
 juce::File PluginScanner::getCacheFile()
@@ -591,13 +1032,35 @@ void PluginScanner::loadCache()
                 ScannedPlugin p;
                 p.name = obj->getProperty("name").toString();
                 p.manufacturer = obj->getProperty("manufacturer").toString();
+                // Correct legacy cache entries where a category folder name
+                // ("Guitar and Bass", "Equalizers") was stored as the
+                // manufacturer (UAD-style layouts). This fixes existing caches
+                // without forcing a rescan.
+                {
+                    auto corrected = echojay::resolveManufacturer(p.name, p.manufacturer);
+                    if (corrected.isNotEmpty())
+                        p.manufacturer = corrected;
+                }
                 p.format = obj->getProperty("format").toString();
                 p.category = obj->getProperty("category").toString();
                 p.uid = p.name.toLowerCase().replaceCharacter(' ', '_') + "_" +
                          p.manufacturer.toLowerCase().replaceCharacter(' ', '_');
+                // enabled: prefer the cache value if present, but the
+                // disabledUids set (loaded separately) is the authority and is
+                // re-applied in loadEnabledState() regardless.
+                if (obj->hasProperty("enabled"))
+                    p.enabled = (bool) obj->getProperty("enabled");
+                // Reclassify effect type on load (cheap, keyword-based) rather
+                // than persisting it — keeps the cache format stable and means
+                // classifier improvements apply to cached entries too.
+                if (p.category == "Effect")
+                    p.fxType = echojay::fxTypeTag(echojay::classifyEffect(p.name));
                 plugins.push_back(p);
             }
         }
+        // Built the vector directly (not via addPlugin), so build the dedupe
+        // index to match.
+        rebuildIndex();
     }
 }
 

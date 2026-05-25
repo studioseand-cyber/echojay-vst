@@ -4,6 +4,7 @@
 #include "EchoJayAPI.h"
 #include "EchoJayLookAndFeel.h"
 #include "ParticleVisual.h"
+#include "PluginChecklist.h"
 
 class EchoJayEditor : public juce::AudioProcessorEditor,
                        private juce::Timer,
@@ -393,6 +394,63 @@ private:
         void mouseDown(const juce::MouseEvent& e) override;
     };
     UpdateOverlay updateOverlay;
+
+    // ---- Plugin review / checklist -------------------------------------
+    // Shared checklist component (one instance for the post-scan review
+    // overlay, one for the Settings view). Each lives inside a Viewport so a
+    // long list scrolls. The post-scan overlay is a dark backdrop + card that
+    // appears after a scan completes, prompting the user to untick plugins
+    // they don't own (chiefly unlicensed Waves from a WaveShell). The Settings
+    // checklist is always available to edit the same state later.
+    struct PluginReviewOverlay : public juce::Component
+    {
+        bool visibleState = false;
+        std::function<void()> onDone;        // "Done" / "Save"
+        std::function<void(bool)> onSelectAll; // true=all, false=none
+        std::function<void()> onAddManual;   // "+ Add plugin"
+        using C = EchoJayLookAndFeel::Colours;
+        juce::Rectangle<int> cardBounds, doneBtn, allBtn, noneBtn, addBtn, closeBtn, searchBounds;
+        juce::String hintText; // "Showing N of M — search to narrow"
+        void paint(juce::Graphics& g) override;
+        void mouseDown(const juce::MouseEvent& e) override;
+    };
+    PluginReviewOverlay reviewOverlay;
+    juce::Viewport reviewViewport;
+    std::unique_ptr<PluginChecklistComponent> reviewChecklist;
+    // Search box inside the popup overlay — filters the checklist as you type.
+    juce::TextEditor reviewSearchBox;
+
+    // Settings plugin area: instead of a giant inline list, Settings shows a
+    // search box (inline filtered results) plus a "View all" button that opens
+    // the same scrollable popup used after a scan. This keeps Settings light
+    // even when the user has thousands of plugins.
+    // Settings PLUGINS row is now compact: a count line ("2009 plugins
+    // detected") plus a "View all" button that opens the scrollable popup
+    // (which has its own search + collapsible sections). The inline checklist
+    // and search box are still kept as members for the popup path but are NOT
+    // shown inline in Settings anymore.
+    // Settings PLUGINS row: a scan button (identical to the header one — shows
+    // the count, opens the scan menu) with "View all" right beside it, and a
+    // Help & Support button filling the other half (opens the website).
+    juce::Viewport settingsPluginViewport;
+    std::unique_ptr<PluginChecklistComponent> settingsChecklist;
+    juce::TextEditor settingsPluginSearchBox;
+    juce::TextButton viewAllPluginsBtn { "View all" };
+    juce::TextButton settingsScanBtn { "Scan Plugins" };
+    juce::TextButton settingsHelpBtn { "Help & Support" };
+
+    // Commits the checklists' local selections to the scanner + server. Set in
+    // the constructor; invoked on review-popup Done and on Settings Save.
+    std::function<void()> commitChecklistFn;
+
+    void showPluginReview();
+    void hidePluginReview();
+
+    // Shows the plugin scan menu (Scan Now / Add Folder / manage folders)
+    // anchored to the given component. Shared by the header scan button and
+    // the Settings scan button so both behave identically.
+    void showScanMenu(juce::Component* target);
+    void layoutPluginReview();
     
     // In-plugin installer download state. Set when the user clicks Download
     // Update in the overlay; the path is what we hand to Process::openDocument
