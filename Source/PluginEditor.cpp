@@ -171,6 +171,157 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     setWantsKeyboardFocus(true);
     setOpaque(true);
 
+    // Stock plugins are injected from the auto-detected host DAW (set in the
+    // processor via juce::PluginHostType), not from the Settings selection, so
+    // there's nothing to seed here.
+
+    // ---- Plugin review / checklist setup -------------------------------
+    auto& scannerRef = processorRef.getPluginScanner();
+
+    reviewChecklist = std::make_unique<PluginChecklistComponent>(scannerRef);
+    settingsChecklist = std::make_unique<PluginChecklistComponent>(scannerRef);
+
+    // When either checklist changes, persist to server (if settings already
+    // fetched) and refresh the AI plugin feed + the other checklist so both
+    // views stay consistent.
+    // Ticking is now a LOCAL, instant operation inside the checklist (it just
+    // flips a bool in an in-memory set and repaints one row — no scanner, disk,
+    // or network touch per click). The expensive commit happens once, on Done /
+    // Save, via commitChecklist(). onChanged only fires cheaply so we can note
+    // there are unsaved changes if we ever want to.
+    auto commitChecklist = [this]()
+    {
+        // Push both checklists' local selections to the scanner (only the one
+        // with changes will do anything), then persist + sync once.
+        if (reviewChecklist)   reviewChecklist->commit();
+        if (settingsChecklist) settingsChecklist->commit();
+
+        auto& sc = processorRef.getPluginScanner();
+        sc.saveEnabledState();
+        api.updatePluginsFromScanner(sc.getFullPluginList());
+        if (settingsFetched)
+            api.saveUserSettings(api.getUserSettings(), nullptr);
+    };
+    // Stash it so other handlers (Settings Save) can reuse it.
+    commitChecklistFn = commitChecklist;
+
+    auto onChecklistChanged = [this]() { /* local only; nothing to do per tick */ };
+    reviewChecklist->onChanged = onChecklistChanged;
+    settingsChecklist->onChanged = onChecklistChanged;
+
+    reviewViewport.setViewedComponent(reviewChecklist.get(), false);
+    reviewViewport.setScrollBarsShown(true, false);
+    settingsPluginViewport.setViewedComponent(settingsChecklist.get(), false);
+    settingsPluginViewport.setScrollBarsShown(true, false);
+
+    addChildComponent(settingsPluginViewport);
+
+    // Review overlay button wiring. Done COMMITS the local selection, then
+    // closes — this is the single point where ticks are saved.
+    reviewOverlay.onDone = [this]()
+    {
+        if (commitChecklistFn) commitChecklistFn();
+        hidePluginReview();
+    };
+    reviewOverlay.onSelectAll = [this](bool all)
+    {
+        if (reviewChecklist) reviewChecklist->selectAllVisible(all);
+    };
+    reviewOverlay.onAddManual = [this]()
+    {
+        auto* w = new juce::AlertWindow("Add Plugin",
+            "Enter the plugin name as you'd refer to it (e.g. \"FabFilter Pro-Q 4\").",
+            juce::MessageBoxIconType::NoIcon);
+        w->addTextEditor("name", "", "Plugin name:");
+        w->addButton("Add", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        w->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        juce::Component::SafePointer<EchoJayEditor> safeThis(this);
+        w->enterModalState(true,
+            juce::ModalCallbackFunction::create([safeThis, w](int r)
+            {
+                std::unique_ptr<juce::AlertWindow> holder(w);
+                if (safeThis == nullptr) return;
+                if (r == 1)
+                {
+                    auto name = w->getTextEditorContents("name").trim();
+                    if (name.isNotEmpty() && safeThis->reviewChecklist)
+                        safeThis->reviewChecklist->addManual(name);
+                }
+            }), false);
+    };
+    addChildComponent(reviewOverlay);
+    reviewOverlay.addAndMakeVisible(reviewViewport);
+
+    // Search box inside the popup overlay. Filters the review checklist live.
+    auto styleSearch = [this](juce::TextEditor& ed, const juce::String& placeholder)
+    {
+        ed.setMultiLine(false);
+        ed.setTextToShowWhenEmpty(placeholder, C::text3);
+        ed.setColour(juce::TextEditor::backgroundColourId, C::bg3);
+        ed.setColour(juce::TextEditor::textColourId, C::text);
+        ed.setColour(juce::TextEditor::outlineColourId, C::border2);
+        ed.setFont(juce::Font(juce::FontOptions(13.0f)));
+        ed.setIndents(8, 6);
+    };
+    styleSearch(reviewSearchBox, "Search plugins...");
+    reviewOverlay.addAndMakeVisible(reviewSearchBox);
+    reviewSearchBox.onTextChange = [this]()
+    {
+        if (reviewChecklist)
+        {
+            reviewChecklist->setFilter(reviewSearchBox.getText());
+            layoutPluginReview();
+            reviewOverlay.repaint();
+        }
+    };
+
+    // Settings: search box (inline filtered results) + "View all" button that
+    // opens the popup. The inline viewport shows the filtered subset; with no
+    // search it shows the capped first rows and the user clicks View all to
+    // browse/scroll everything in the popup.
+    // Settings no longer shows an inline plugin list or search box. It shows a
+    // scan button (same behaviour as the header one), a View all button, and a
+    // Help & Support button. The search box member is kept (unused inline) only
+    // so existing references compile; search now lives inside the popup.
+    styleSearch(settingsPluginSearchBox, "Search your plugins...");
+    addChildComponent(settingsPluginSearchBox); // not shown inline anymore
+
+    // Settings scan button — identical menu/behaviour to the header scan
+    // button. Its label tracks the plugin count (kept in sync in timerCallback
+    // alongside the header button).
+    settingsScanBtn.setColour(juce::TextButton::buttonColourId, C::bg4);
+    settingsScanBtn.setColour(juce::TextButton::textColourOffId, C::purple);
+    settingsScanBtn.setColour(juce::TextButton::textColourOnId, C::purple);
+    addChildComponent(settingsScanBtn);
+    settingsScanBtn.onClick = [this]() { showScanMenu(&settingsScanBtn); };
+
+    viewAllPluginsBtn.setColour(juce::TextButton::buttonColourId, C::bg4);
+    viewAllPluginsBtn.setColour(juce::TextButton::textColourOffId, C::text2);
+    addChildComponent(viewAllPluginsBtn);
+    viewAllPluginsBtn.onClick = [this]()
+    {
+        if (reviewChecklist)
+        {
+            reviewChecklist->setFilter(juce::String());
+            reviewChecklist->refresh();
+        }
+        reviewSearchBox.setText(juce::String(), juce::dontSendNotification);
+        showPluginReview();
+    };
+
+    // Help & Support — a quiet link-style button (transparent, muted text) on
+    // the bottom row near Log Out, so it reads as an app action, not a plugins
+    // control. Opens the EchoJay support page.
+    settingsHelpBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    settingsHelpBtn.setColour(juce::TextButton::textColourOffId, C::text3);
+    settingsHelpBtn.setColour(juce::TextButton::textColourOnId, C::text2);
+    addChildComponent(settingsHelpBtn);
+    settingsHelpBtn.onClick = [this]()
+    {
+        juce::URL("https://www.echojay.ai/support").launchInDefaultBrowser();
+    };
+
+
     // --- Channel type ---
     // Grouped channel type dropdown — uses PopupMenu with submenus via getRootMenu()
     loadCustomChannels();
@@ -333,79 +484,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // Click opens a menu: Scan Now / Add Folder / list of custom folders to
     // remove. Keeps the default action (Scan Now) one step away while letting
     // users add or prune extra scan locations without a settings trip.
-    scanBtn.onClick = [this] {
-        auto& sc = processorRef.getPluginScanner();
-        juce::PopupMenu menu;
-        menu.addItem(1, "Scan Now", ! sc.isScanning());
-        menu.addItem(2, "Add Folder...");
-        
-        auto folders = sc.getCustomFolders();
-        if (folders.size() > 0)
-        {
-            menu.addSeparator();
-            juce::PopupMenu removeSub;
-            for (int i = 0; i < folders.size(); ++i)
-            {
-                // Show just the folder name (with full path as a hint via the
-                // shortcut column would be nicer but PopupMenu doesn't support
-                // that cleanly; keep the leaf name and trust users to know
-                // which folder they added).
-                auto path = folders[i];
-                auto leaf = juce::File(path).getFileName();
-                removeSub.addItem(100 + i, "Remove: " + leaf);
-            }
-            menu.addSubMenu("Custom Folders (" + juce::String(folders.size()) + ")", removeSub);
-        }
-        
-        // Create SafePointer outside the lambda — MSVC's type deduction
-        // for init-captures in nested lambdas is unreliable; building it
-        // here and capturing by value works on both Clang and MSVC.
-        juce::Component::SafePointer<EchoJayEditor> safeThis(this);
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&scanBtn),
-            [safeThis](int result) {
-                if (safeThis == nullptr) return;
-                auto* scanner = &safeThis->processorRef.getPluginScanner();
-                if (result == 1)
-                {
-                    scanner->startScan();
-                }
-                else if (result == 2)
-                {
-                    // Folder picker. shared_ptr keeps the chooser alive until
-                    // the user dismisses it; SafePointer guards against the
-                    // editor being closed while the chooser is open.
-                    auto chooser = std::make_shared<juce::FileChooser>(
-                        "Add Plugin Scan Folder",
-                        juce::File::getSpecialLocation(juce::File::userHomeDirectory));
-                    chooser->launchAsync(juce::FileBrowserComponent::openMode
-                                       | juce::FileBrowserComponent::canSelectDirectories,
-                        [safeThis, chooser](const juce::FileChooser& fc) {
-                            if (safeThis == nullptr) return;
-                            auto picked = fc.getResult();
-                            if (picked.isDirectory())
-                            {
-                                // Use pointer rather than reference here — MSVC's
-                                // reference-initialisation rules are stricter than Clang's
-                                // when the source is a SafePointer dereference inside a
-                                // nested lambda. Pointer works on both compilers.
-                                auto* scannerPtr = &safeThis->processorRef.getPluginScanner();
-                                scannerPtr->addCustomFolder(picked);
-                                scannerPtr->startScan();
-                            }
-                        });
-                }
-                else if (result >= 100)
-                {
-                    int idx = result - 100;
-                    auto folders = scanner->getCustomFolders();
-                    if (idx >= 0 && (size_t)idx < folders.size())
-                    {
-                        scanner->removeCustomFolder(folders[idx]);
-                        scanner->startScan(); // rescan so AI prompt drops removed-folder plugins
-                    }
-                }
-            });
-    };
+    scanBtn.onClick = [this] { showScanMenu(&scanBtn); };
     addAndMakeVisible(scanBtn);
 
     logoutBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
@@ -1092,6 +1171,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 }
 
 EchoJayEditor::~EchoJayEditor() {
+    // If the user changed ticks and closed without hitting Done, commit the
+    // local selection now so it isn't lost (disk persist; server is best-effort
+    // and skipped during teardown).
+    if ((reviewChecklist && reviewChecklist->hasUncommittedChanges()) ||
+        (settingsChecklist && settingsChecklist->hasUncommittedChanges()))
+    {
+        if (reviewChecklist)   reviewChecklist->commit();
+        if (settingsChecklist) settingsChecklist->commit();
+        processorRef.getPluginScanner().saveEnabledState();
+    }
     // Tell any in-flight update download to stop. The alive flag protects
     // against UAF after destruction; the cancel flag lets the worker exit
     // its read loop early instead of finishing the download into a void.
@@ -1166,6 +1255,11 @@ void EchoJayEditor::showLoginScreen()
     settingsLanguage.setVisible(false);
     saveSettingsBtn.setVisible(false); settingsSavedLabel.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
+    settingsPluginViewport.setVisible(false);
+    settingsPluginSearchBox.setVisible(false);
+    viewAllPluginsBtn.setVisible(false);
+    settingsScanBtn.setVisible(false);
+    settingsHelpBtn.setVisible(false);
     
     // Also hide compare fields
     aiCompareBtn.setVisible(false);
@@ -1627,8 +1721,222 @@ void EchoJayEditor::UpdateOverlay::mouseDown(const juce::MouseEvent& e)
 }
 
 // ============================================================================
-// In-plugin update download
+// Plugin review overlay
 // ============================================================================
+// A dark backdrop + card containing the scrollable plugin checklist. Shown
+// after a scan so the user can untick plugins they don't own. The viewport
+// (holding the shared PluginChecklistComponent) is positioned by
+// layoutPluginReview(); this overlay paints the card chrome and the buttons
+// around it, and hit-tests clicks on those buttons.
+
+void EchoJayEditor::PluginReviewOverlay::paint(juce::Graphics& g)
+{
+    // Dim everything behind the card.
+    g.fillAll(juce::Colours::black.withAlpha(0.6f));
+
+    // Card.
+    g.setColour(C::bg2);
+    g.fillRoundedRectangle(cardBounds.toFloat(), 12.0f);
+    g.setColour(C::border2);
+    g.drawRoundedRectangle(cardBounds.toFloat(), 12.0f, 1.0f);
+
+    int pad = 18;
+    int x = cardBounds.getX() + pad;
+    int w = cardBounds.getWidth() - pad * 2;
+    int y = cardBounds.getY() + pad;
+
+    // Title + close.
+    g.setColour(C::text);
+    g.setFont(juce::Font(juce::FontOptions(17.0f)).boldened());
+    g.drawText("Review your plugins", x, y, w - 24, 24, juce::Justification::centredLeft);
+
+    g.setColour(C::text3);
+    g.setFont(juce::Font(juce::FontOptions(18.0f)));
+    g.drawText("X", closeBtn, juce::Justification::centred);
+
+    y += 30;
+    g.setColour(C::text2);
+    g.setFont(juce::Font(juce::FontOptions(12.5f)));
+    g.drawFittedText(
+        "Untick anything you don't actually own or don't want suggested. "
+        "Waves plugins are listed from your WaveShell, so untick any you're "
+        "not licensed for. You can change this any time in Settings.",
+        x, y, w, 40, juce::Justification::topLeft, 3);
+
+    // Select all / none + add, drawn as text buttons.
+    auto drawBtn = [&g](juce::Rectangle<int> r, const juce::String& label,
+                        juce::Colour bg, juce::Colour fg)
+    {
+        g.setColour(bg);
+        g.fillRoundedRectangle(r.toFloat(), 6.0f);
+        g.setColour(fg);
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        g.drawText(label, r, juce::Justification::centred);
+    };
+    drawBtn(allBtn,  "Tick all",   C::bg4, C::text2);
+    drawBtn(noneBtn, "Untick all", C::bg4, C::text2);
+    drawBtn(addBtn,  "+ Add plugin", C::bg4, C::text2);
+    drawBtn(doneBtn, "Done", C::purple, juce::Colours::white);
+
+    // "Showing N of M — search to narrow" hint, drawn just under the search
+    // box when the list was capped. searchBounds is set by layoutPluginReview.
+    if (hintText.isNotEmpty())
+    {
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText(hintText,
+                   searchBounds.getX(), searchBounds.getBottom() + 2,
+                   searchBounds.getWidth(), 14,
+                   juce::Justification::centredLeft);
+    }
+}
+
+void EchoJayEditor::PluginReviewOverlay::mouseDown(const juce::MouseEvent& e)
+{
+    auto p = e.getPosition();
+    if (closeBtn.contains(p) || doneBtn.contains(p)) { if (onDone) onDone(); return; }
+    if (allBtn.contains(p))   { if (onSelectAll) onSelectAll(true);  return; }
+    if (noneBtn.contains(p))  { if (onSelectAll) onSelectAll(false); return; }
+    if (addBtn.contains(p))   { if (onAddManual) onAddManual();      return; }
+    // Click on the dark backdrop (outside the card) dismisses.
+    if (! cardBounds.contains(p)) { if (onDone) onDone(); return; }
+}
+
+void EchoJayEditor::showScanMenu(juce::Component* target)
+{
+    auto& sc = processorRef.getPluginScanner();
+    juce::PopupMenu menu;
+    menu.addItem(1, "Scan Now", ! sc.isScanning());
+    menu.addItem(2, "Add Folder...");
+
+    auto folders = sc.getCustomFolders();
+    if (folders.size() > 0)
+    {
+        menu.addSeparator();
+        juce::PopupMenu removeSub;
+        for (int i = 0; i < folders.size(); ++i)
+        {
+            auto path = folders[i];
+            auto leaf = juce::File(path).getFileName();
+            removeSub.addItem(100 + i, "Remove: " + leaf);
+        }
+        menu.addSubMenu("Custom Folders (" + juce::String(folders.size()) + ")", removeSub);
+    }
+
+    juce::Component::SafePointer<EchoJayEditor> safeThis(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(target),
+        [safeThis](int result) {
+            if (safeThis == nullptr) return;
+            auto* scanner = &safeThis->processorRef.getPluginScanner();
+            if (result == 1)
+            {
+                scanner->startScan();
+            }
+            else if (result == 2)
+            {
+                auto chooser = std::make_shared<juce::FileChooser>(
+                    "Add Plugin Scan Folder",
+                    juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+                chooser->launchAsync(juce::FileBrowserComponent::openMode
+                                   | juce::FileBrowserComponent::canSelectDirectories,
+                    [safeThis, chooser](const juce::FileChooser& fc) {
+                        if (safeThis == nullptr) return;
+                        auto picked = fc.getResult();
+                        if (picked.isDirectory())
+                        {
+                            auto* scannerPtr = &safeThis->processorRef.getPluginScanner();
+                            scannerPtr->addCustomFolder(picked);
+                            scannerPtr->startScan();
+                        }
+                    });
+            }
+            else if (result >= 100)
+            {
+                int idx = result - 100;
+                auto folders = scanner->getCustomFolders();
+                if (idx >= 0 && (size_t)idx < folders.size())
+                {
+                    scanner->removeCustomFolder(folders[idx]);
+                    scanner->startScan();
+                }
+            }
+        });
+}
+
+void EchoJayEditor::showPluginReview()
+{
+    reviewOverlay.visibleState = true;
+    reviewOverlay.setVisible(true);
+    resized(); // hide the (OpenGL) particle visualiser so it can't composite
+               // over the overlay; also lays everything out
+    reviewOverlay.toFront(false);
+    layoutPluginReview();
+    reviewOverlay.repaint();
+    // Let the user type a filter immediately.
+    reviewSearchBox.grabKeyboardFocus();
+}
+
+void EchoJayEditor::hidePluginReview()
+{
+    reviewOverlay.visibleState = false;
+    reviewOverlay.setVisible(false);
+    resized(); // bring the particle visualiser back
+    repaint();
+}
+
+void EchoJayEditor::layoutPluginReview()
+{
+    reviewOverlay.setBounds(getLocalBounds());
+
+    // Card centered, generous but bounded.
+    int cardW = juce::jmin(520, getWidth() - 60);
+    int cardH = juce::jmin(560, getHeight() - 60);
+    int cardX = (getWidth() - cardW) / 2;
+    int cardY = (getHeight() - cardH) / 2;
+    reviewOverlay.cardBounds = { cardX, cardY, cardW, cardH };
+
+    int pad = 18;
+    // Close button: top-right of card.
+    reviewOverlay.closeBtn = { cardX + cardW - pad - 22, cardY + pad, 22, 22 };
+
+    // Search box: below the title + blurb (title ~30h, blurb ~48h).
+    int searchY = cardY + pad + 30 + 48;
+    int searchH = 30;
+    reviewOverlay.searchBounds = { cardX + pad, searchY, cardW - pad * 2, searchH };
+    reviewSearchBox.setBounds(reviewOverlay.searchBounds);
+
+    // Hint line under the search box. When a filter is active, show how many
+    // of the total it matches; otherwise show the total library size.
+    int hintH = 16;
+    bool showHint = reviewChecklist != nullptr;
+    if (reviewChecklist)
+    {
+        bool filtering = reviewSearchBox.getText().trim().isNotEmpty();
+        reviewOverlay.hintText = filtering
+            ? ("Showing " + juce::String(reviewChecklist->getMatchCount()) + " of "
+               + juce::String(reviewChecklist->getTotalCount()) + " plugins")
+            : (juce::String(reviewChecklist->getTotalCount()) + " plugins — tap a section to expand");
+    }
+
+    // List viewport: below search (+ hint), above the button row.
+    int listTop = searchY + searchH + 6 + (showHint ? hintH : 0);
+    int btnRowH = 34;
+    int listBottom = cardY + cardH - pad - btnRowH - 10;
+    int listX = cardX + pad;
+    int listW = cardW - pad * 2;
+    reviewViewport.setBounds(listX, listTop, listW, juce::jmax(40, listBottom - listTop));
+    if (reviewChecklist)
+        reviewChecklist->setBounds(0, 0, listW - 12, reviewChecklist->getContentHeight());
+
+    // Button row.
+    int by = cardY + cardH - pad - btnRowH;
+    reviewOverlay.allBtn  = { cardX + pad,            by, 80,  btnRowH };
+    reviewOverlay.noneBtn = { cardX + pad + 88,       by, 84,  btnRowH };
+    reviewOverlay.addBtn  = { cardX + pad + 180,      by, 96,  btnRowH };
+    reviewOverlay.doneBtn = { cardX + cardW - pad - 90, by, 90, btnRowH };
+}
+
+
 //
 // Flow: user clicks Download Update → we resolve the platform-specific URL
 // from the remote config → spawn a background thread that streams the
@@ -2041,7 +2349,7 @@ void EchoJayEditor::runAICompare()
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         processorRef.getEffectiveChannelName(), processorRef.getGenre(),
-        processorRef.getPluginScanner().getPluginNamesString());
+        processorRef.getPluginScanner().getPluginSummary());
 
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [this](const juce::String& reply, bool success) {
@@ -2454,10 +2762,18 @@ void EchoJayEditor::showSettingsView()
     settingsBtn.setButtonText("Back");
     settingsName.setVisible(true); settingsMonitors.setVisible(true);
     settingsHeadphones.setVisible(true); settingsGenres.setVisible(true);
-    settingsPlugins.setVisible(true); settingsExpLevel.setVisible(true);
+    settingsExpLevel.setVisible(true);
+    // settingsPlugins (freeform box) removed — replaced by settingsPluginViewport.
     settingsLanguage.setVisible(true);
     saveSettingsBtn.setVisible(true); settingsSavedLabel.setVisible(true);
     for (auto& b : dawButtons) b.setVisible(true);
+
+    // Plugins row: scan button + View all + Help & Support. No inline list.
+    settingsScanBtn.setVisible(true);
+    viewAllPluginsBtn.setVisible(true);
+    settingsHelpBtn.setVisible(true);
+    settingsPluginViewport.setVisible(false);
+    settingsPluginSearchBox.setVisible(false);
     
     // Refresh tier/usage when Settings opens — this is where users go
     // to "check" an upgrade after paying on the website. Catching it
@@ -2472,7 +2788,8 @@ void EchoJayEditor::showSettingsView()
         settingsMonitors.setText(s.monitors, false);
         settingsHeadphones.setText(s.headphones, false);
         settingsGenres.setText(s.genres, false);
-        settingsPlugins.setText(s.plugins, false);
+        // settingsPlugins removed — the checklist (settingsChecklist) reflects
+        // the scanner state and is refreshed when the Settings view opens.
         
         if (s.experienceLevel == "Beginner") settingsExpLevel.setSelectedId(1, juce::dontSendNotification);
         else if (s.experienceLevel == "Intermediate") settingsExpLevel.setSelectedId(2, juce::dontSendNotification);
@@ -2483,6 +2800,9 @@ void EchoJayEditor::showSettingsView()
             "Studio One","Cubase","Reaper","Reason","Bitwig","GarageBand","Other" };
         for (int i = 0; i < 11; ++i)
             dawButtons[(size_t)i].setToggleState(s.daws.contains(dawN[i]), juce::dontSendNotification);
+        // Note: the DAW selection no longer drives stock plugin injection
+        // (that's auto-detected from the host). These toggles still record the
+        // user's DAWs for the server/AI context.
     };
     
     // Only show cached data if we've already fetched from server
@@ -2520,6 +2840,11 @@ void EchoJayEditor::hideSettingsView()
     settingsLanguage.setVisible(false);
     saveSettingsBtn.setVisible(false); settingsSavedLabel.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
+    settingsPluginViewport.setVisible(false);
+    settingsPluginSearchBox.setVisible(false);
+    viewAllPluginsBtn.setVisible(false);
+    settingsScanBtn.setVisible(false);
+    settingsHelpBtn.setVisible(false);
     resized(); repaint();
 }
 
@@ -2528,7 +2853,16 @@ void EchoJayEditor::saveSettingsToServer()
     UserSettings s;
     s.name = settingsName.getText(); s.monitors = settingsMonitors.getText();
     s.headphones = settingsHeadphones.getText(); s.genres = settingsGenres.getText();
-    s.plugins = settingsPlugins.getText();
+    // Commit the Settings checklist's local tick selection to the scanner
+    // first, so the plugin list reflects any changes the user made here. Then
+    // read the full list. (The checklist is local-until-commit for speed.)
+    if (settingsChecklist) settingsChecklist->commit();
+    processorRef.getPluginScanner().saveEnabledState();
+    // Plugins now come from the checklist (the freeform box was removed). The
+    // scanner's enabled-effects list is the source of truth; merge it the same
+    // way updatePluginsFromScanner does so manual web-app entries are kept.
+    api.updatePluginsFromScanner(processorRef.getPluginScanner().getFullPluginList());
+    s.plugins = api.getUserSettings().plugins;
     switch (settingsExpLevel.getSelectedId()) {
         case 1: s.experienceLevel = "Beginner"; break;
         case 2: s.experienceLevel = "Intermediate"; break;
@@ -2540,6 +2874,10 @@ void EchoJayEditor::saveSettingsToServer()
         "Studio One","Cubase","Reaper","Reason","Bitwig","GarageBand","Other" };
     for (int i = 0; i < 11; ++i)
         if (dawButtons[i].getToggleState()) s.daws.add(dawN[i]);
+
+    // The DAW selection is saved for server/AI context but does NOT drive
+    // stock plugin injection — that's auto-detected from the host DAW.
+
     settingsSavedLabel.setText("Saving...", juce::dontSendNotification);
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.saveUserSettings(s, [safeThis](bool success) {
@@ -4172,6 +4510,13 @@ void EchoJayEditor::resized()
     if (updateOverlay.isVisible())
         updateOverlay.toFront(false);
 
+    // Plugin review overlay tracks the window and stays on top while shown.
+    if (reviewOverlay.visibleState)
+    {
+        layoutPluginReview();
+        reviewOverlay.toFront(false);
+    }
+
     // channelPromptBlocker removed — overlay is painted in paint()
 
     if (currentScreen == Screen::Login) {
@@ -4233,7 +4578,8 @@ void EchoJayEditor::resized()
         int toggleH = 24;
         particleVisualHolder.setBounds(0, topH, paintMW - 1, b.getHeight() - topH - stripH - toggleH - abOff);
         particleVisualHolder.setVisible(!channelPromptVisible && !genrePromptVisible
-                                        && !updateOverlay.isVisible());
+                                        && !updateOverlay.isVisible()
+                                        && !reviewOverlay.visibleState);
     }
     else if (visualOnlyMode)
     {
@@ -4242,7 +4588,8 @@ void EchoJayEditor::resized()
             int toggleH = 24;
             particleVisualHolder.setBounds(0, topH, b.getWidth() - 2, b.getHeight() - topH - stripH - toggleH - abOff);
             particleVisualHolder.setVisible(!channelPromptVisible && !genrePromptVisible
-                                            && !updateOverlay.isVisible());
+                                            && !updateOverlay.isVisible()
+                                            && !reviewOverlay.visibleState);
         } else {
             // Meters mode in visual-only — hide particle visual
             particleVisualHolder.setVisible(false);
@@ -4473,17 +4820,26 @@ void EchoJayEditor::resized()
         sy += labelGap;
         settingsGenres.setBounds(sx, sy, sw, fh); sy += fh + 8;
         
-        // PLUGINS — fills remaining space but guarantees save row is visible
+        // PLUGINS — a scan button (same behaviour as the header one) with
+        // "View all" beside it. (Help & Support lives down on the Save/Log Out
+        // row, since it's an app action, not a plugins control.)
         sy += labelGap;
+
         int abOff3 = abBarShowing ? kAbBarH : 0;
         int saveRowY = b.getHeight() - 44 - abOff3;
-        int plugH = juce::jmax(40, saveRowY - sy - 8);
-        settingsPlugins.setBounds(sx, sy, sw, plugH);
+
+        int viewAllW = 90, rowGap = 8;
+        settingsScanBtn.setBounds(sx, sy, sw - viewAllW - rowGap, fh);
+        viewAllPluginsBtn.setBounds(sx + sw - viewAllW, sy, viewAllW, fh);
+        sy += fh + 8;
         
         // Save + Logout row — always pinned to bottom
         saveSettingsBtn.setBounds(sx, saveRowY, 100, 30);
         settingsSavedLabel.setBounds(sx + 110, saveRowY, 150, 30);
         logoutBtn.setBounds(sx + sw - 80, saveRowY, 80, 30);
+        // Help & Support sits just left of Log Out — an app-level link, kept
+        // visually distinct from the plugins controls above.
+        settingsHelpBtn.setBounds(sx + sw - 80 - 8 - 120, saveRowY, 120, 30);
         logoutBtn.setVisible(true);
     }
 
@@ -4829,6 +5185,8 @@ void EchoJayEditor::timerCallback()
     if (sc.isScanning()) {
         scanBtn.setButtonText("Scanning " + juce::String((int)(sc.getProgress() * 100)) + "%");
         scanBtn.setEnabled(false);
+        settingsScanBtn.setButtonText("Scanning " + juce::String((int)(sc.getProgress() * 100)) + "%");
+        settingsScanBtn.setEnabled(false);
         wasScanning = true;
     } else {
         int c = sc.getPluginCount();
@@ -4836,16 +5194,29 @@ void EchoJayEditor::timerCallback()
         wasScanning = false;
         if (c > 0 && (c != scannedPluginCount || scanJustFinished)) {
             scannedPluginCount = c;
-            api.updatePluginsFromScanner(sc.getPluginNamesString());
-            if (currentView == View::Settings)
-                settingsPlugins.setText(api.getUserSettings().plugins, false);
+            api.updatePluginsFromScanner(sc.getFullPluginList());
+            if (currentView == View::Settings && settingsChecklist)
+                settingsChecklist->refresh();
             // Only save to server if we've already fetched settings,
             // otherwise we'd overwrite name/monitors/etc with empty values
             if (settingsFetched)
                 api.saveUserSettings(api.getUserSettings(), nullptr);
+
+            // Pop the review checklist after a scan completes so the user can
+            // untick anything they don't own (chiefly unlicensed Waves
+            // plugins surfaced from a WaveShell). Only on a genuine scan
+            // finish, not on every cache-count tick.
+            if (scanJustFinished)
+            {
+                if (reviewChecklist) reviewChecklist->refresh();
+                if (settingsChecklist) settingsChecklist->refresh();
+                showPluginReview();
+            }
         }
         scanBtn.setButtonText(c > 0 ? juce::String(c) + " Plugins" : "Scan Plugins");
         scanBtn.setEnabled(true);
+        settingsScanBtn.setButtonText(c > 0 ? juce::String(c) + " Plugins" : "Scan Plugins");
+        settingsScanBtn.setEnabled(true);
     }
 
     // Auto-feedback: trigger AI review after capture completes
@@ -5173,12 +5544,20 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     }
     juce::String userContent = msg + ctx;
 
+    // Plugins: tiny summary in the (cached) system prompt; full list appended
+    // to THIS user message only when the message looks plugin-related. Lets
+    // the AI see the entire library exactly when it matters, with no cap and
+    // no per-message cost on non-plugin turns.
+    if (EchoJayAPI::messageNeedsPlugins(msg))
+        userContent += EchoJayAPI::buildPluginInjection(
+            processorRef.getPluginScanner().getFullPluginList());
+
     processorRef.chatRoles.add("user");
     processorRef.chatContents.add(userContent);
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         processorRef.getEffectiveChannelName(), processorRef.getGenre(),
-        processorRef.getPluginScanner().getPluginNamesString());
+        processorRef.getPluginScanner().getPluginSummary());
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
@@ -5917,8 +6296,9 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
         // If changes are tiny, don't send previous data at all
     }
 
-    // Inject a random "angle" for individual channels to prevent repetitive responses.
-    // The AI only sees chat history, so without this it defaults to the same pattern.
+    // Track whether this turn's angle asks the AI to use the user's plugins,
+    // so we can attach the full list on exactly those turns.
+    bool angleNeedsPlugins = false;
     if (isIndividual)
     {
         const char* angles[] = {
@@ -5932,14 +6312,22 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
         };
         int angleIdx = (int)(juce::Time::currentTimeMillis() % 7);
         meterCtx += "\n[APPROACH: " + juce::String(angles[angleIdx]) + "]\n";
+        // Angles 0 and 4 explicitly reference building chains / picking from
+        // the user's plugins — attach the full list on those turns.
+        angleNeedsPlugins = (angleIdx == 0 || angleIdx == 4);
     }
 
+    juce::String captureContent = "Give me feedback on this capture.\n\n" + meterCtx;
+    if (angleNeedsPlugins)
+        captureContent += EchoJayAPI::buildPluginInjection(
+            processorRef.getPluginScanner().getFullPluginList());
+
     processorRef.chatRoles.add("user");
-    processorRef.chatContents.add("Give me feedback on this capture.\n\n" + meterCtx);
+    processorRef.chatContents.add(captureContent);
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         ch, processorRef.getGenre(),
-        processorRef.getPluginScanner().getPluginNamesString());
+        processorRef.getPluginScanner().getPluginSummary());
 
     auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
@@ -6534,7 +6922,8 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
     if (chatInput.hasKeyboardFocus(false) || emailInput.hasKeyboardFocus(false) ||
         passwordInput.hasKeyboardFocus(false) || settingsName.hasKeyboardFocus(false) ||
         settingsMonitors.hasKeyboardFocus(false) || settingsHeadphones.hasKeyboardFocus(false) ||
-        settingsGenres.hasKeyboardFocus(false) || settingsPlugins.hasKeyboardFocus(false))
+        settingsGenres.hasKeyboardFocus(false) || settingsPlugins.hasKeyboardFocus(false) ||
+        reviewSearchBox.hasKeyboardFocus(false) || settingsPluginSearchBox.hasKeyboardFocus(false))
         return false;
 
 

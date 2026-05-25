@@ -2,6 +2,9 @@
 #include <JuceHeader.h>
 #include <vector>
 #include <mutex>
+#include <set>
+#include <unordered_map>
+#include <string>
 #include <atomic>
 #include <memory>
 
@@ -12,6 +15,17 @@ struct ScannedPlugin {
     juce::String category;     // "Effect", "Instrument", "Unknown"
     juce::String path;
     juce::String uid;
+    bool enabled = true;       // ticked in the review list / Settings checklist.
+                               // Disabled plugins stay in the list (so the user
+                               // can re-tick later) but are excluded from the
+                               // AI plugin feed. Default true so a freshly
+                               // scanned plugin is available until the user
+                               // explicitly unticks it (e.g. unlicensed Waves).
+    juce::String fxType;       // Processing type tag for effects ("EQ",
+                               // "Dynamics", "Reverb", ...). Classified once at
+                               // add time (echojay::classifyEffect). Used to cap
+                               // the AI feed per-type for a good spread. Empty
+                               // for instruments.
 };
 
 class PluginScanner
@@ -35,8 +49,65 @@ public:
     // Get plugin list as JSON for the WebView
     juce::String getPluginsJSON() const;
     
-    // Get plugin names as comma-separated string (for AI prompt)
+    // Get plugin names as comma-separated string (for AI prompt). This is the
+    // BALANCED, capped list (a spread across processing types). Used as the
+    // per-turn plugin injection when a message needs plugins but we don't want
+    // to send the entire library.
     juce::String getPluginNamesString() const;
+
+    // ---- Plugin feed: summary + full list ------------------------------
+    // The AI gets plugins in two ways. A tiny always-present SUMMARY goes in
+    // the (cached) system prompt so the AI always knows the SHAPE of the
+    // user's library (top manufacturers + counts) without bloating every
+    // message. The FULL enabled list is injected into the user turn ONLY when
+    // a message actually needs plugins (asks about a chain, a processing type,
+    // "what should I use"), so the AI can see everything the user owns exactly
+    // when it matters, with no per-message token cost the rest of the time.
+
+    // Short summary line, e.g. "~1,840 plugins incl. Waves (62), FabFilter (9),
+    // UAD (140), Soundtoys (11), Logic stock". Always cheap; safe for the
+    // cached system prompt.
+    juce::String getPluginSummary() const;
+
+    // The COMPLETE enabled effect list (no cap), comma-separated "Name (Manu)".
+    // For per-turn injection on plugin-relevant messages.
+    juce::String getFullPluginList() const;
+
+    // Count of enabled effects (for the summary and for callers deciding
+    // whether the full list is large enough to bother type-scoping).
+    int getEnabledEffectCount() const;
+
+    // ---- Enabled / disabled state -------------------------------------
+    // The post-scan review list and the Settings checklist let the user
+    // untick plugins they don't actually own (the main case: Waves plugins
+    // listed from a WaveShell that aren't licensed) or simply don't want the
+    // AI to suggest. Unticked plugins stay in the list but are excluded from
+    // getPluginNamesString() (the AI feed). Disabled state is keyed by uid
+    // and persisted separately from the plugin cache, so it survives a
+    // rescan: re-detecting a plugin the user previously unticked keeps it
+    // unticked.
+    void setPluginEnabled(const juce::String& uid, bool enabled);
+    void setManyEnabled(const juce::StringArray& uids, bool enabled);
+    bool isPluginEnabled(const juce::String& uid) const;
+
+    // Manually add a user-entered plugin not found by the scan (the
+    // "Add custom" button in the review/Settings list). Enabled by default.
+    void addManualPlugin(const juce::String& name);
+
+    // Set the DAW detected automatically from the plugin host (via
+    // juce::PluginHostType in the processor) — the DAW the user is running
+    // EchoJay in right now. Drives stock plugin injection on the next scan.
+    // Pass a Settings-style label ("Logic Pro", "Ableton Live", "FL Studio",
+    // "Pro Tools", "Studio One", "Cubase") or empty if the host couldn't be
+    // identified (out-of-process / sandboxed hosts can report Unknown), in
+    // which case no stock plugins are injected. Thread-safe. Public: called
+    // from the processor.
+    void setDetectedDaw(const juce::String& dawLabel);
+
+    // Persist / load the set of disabled uids.
+    void saveEnabledState() const;
+    void loadEnabledState();
+    static juce::File getEnabledStateFile();
     
     // Get count
     int getPluginCount() const;
@@ -63,6 +134,34 @@ public:
 
 private:
     void scanPluginDirectories();
+
+    // ---- WaveShell expansion -------------------------------------------
+    // A WaveShell bundle (e.g. "WaveShell1-VST3 14.0.vst3") hosts every
+    // installed Waves plugin behind one file. The bundle name reveals only
+    // the Waves version, never its contents, so a raw scan records a single
+    // meaningless "WaveShell..." entry. Returns true if the given plugin
+    // bundle filename is a WaveShell. When one is seen during the scan we
+    // suppress the raw entry and instead expand the curated Waves catalog
+    // (see expandWavesCatalog) so the AI gets real, nameable plugins.
+    static bool isWaveShell(const juce::String& bundleFileName);
+
+    // Inject the curated Waves catalog into the plugin list. Called once if
+    // any WaveShell was detected during the scan. Idempotent via addPlugin's
+    // dedupe. Guarded by the alive flag like every other member-touching call.
+    void expandWavesCatalog();
+
+    // ---- Stock DAW plugin injection ------------------------------------
+    // Stock plugins ship inside the DAW app bundle / private dirs, never in
+    // the shared VST3/AU/VST folders the scan walks. We inject the stock
+    // catalogue for the DAW auto-detected from the plugin host (see
+    // setDetectedDaw). Detection is the SOLE source — the Settings DAW
+    // checkboxes do not add stock plugins — so the stock list always reflects
+    // the DAW the user is actually running EchoJay in, with no manual step.
+    void injectStockDawPlugins();
+
+    // Add a flag the scan sets when a WaveShell was encountered, so the
+    // expansion runs exactly once after the directory walk completes.
+    bool sawWaveShell = false;
     
     // Scan a directory for plugins of one format. The cancel flag is checked
     // between entries during the walk so callers can time-bound the scan and
@@ -85,11 +184,37 @@ private:
     mutable std::mutex pluginMutex;
     std::vector<ScannedPlugin> plugins;
 
+    // Fast dedupe index: maps a plugin's "name|manufacturer" key to its index
+    // in the plugins vector. Without this, addPlugin() does a linear scan of
+    // the whole vector on every insert — O(n^2) over a scan, which at 1000s
+    // of plugins (e.g. a full Waves + Komplete + UAD + stock install) means
+    // millions of string comparisons and a multi-second stall on the scan
+    // thread. The map makes dedupe O(1) amortised. Rebuilt by rebuildIndex()
+    // whenever the vector is repopulated wholesale (loadCache, clear on
+    // startScan). Guarded by pluginMutex like the vector itself.
+    std::unordered_map<std::string, size_t> pluginIndex;
+    void rebuildIndex();                       // call under lock after bulk vector changes
+    static std::string makeKey(const juce::String& name,
+                               const juce::String& manufacturer);
+
     // User-added scan folders (in addition to platform defaults). Stored
     // here as plain absolute paths, persisted in a text file alongside
     // other EchoJay user data. The mutex above guards reads/writes so
     // both the background scanner thread and the UI can touch it safely.
     juce::StringArray customFolders;
+
+    // DAW auto-detected from the plugin host this session (Settings-style
+    // label, or empty if unidentified). This is the SOLE source for stock
+    // plugin injection — the Settings DAW checkboxes do not add stock plugins.
+    // Guarded by pluginMutex.
+    juce::String detectedDaw;
+
+    // Set of plugin uids the user has explicitly DISABLED (unticked). Kept
+    // separate from the plugins vector so it survives a rescan and so we can
+    // apply it to freshly scanned/injected plugins. A uid in this set means
+    // "user unticked it"; absence means enabled (the default). Persisted to
+    // disk via saveEnabledState/loadEnabledState. Guarded by pluginMutex.
+    std::set<juce::String> disabledUids;
 
     // Cached shuffled plugin list — populated lazily on first call to
     // getPluginNamesString() and reused for the lifetime of this scanner
