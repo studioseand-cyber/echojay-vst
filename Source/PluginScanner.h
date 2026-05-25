@@ -36,6 +36,12 @@ public:
     
     // Scan all plugin directories (runs on background thread)
     void startScan();
+
+    // Signal any in-flight scan/load work to abort as soon as possible. Flips
+    // the shared `alive` flag that loadCache/scan loops check between steps.
+    // Safe to call from another thread (e.g. the processor destructor) before
+    // joining a background load thread, so the worker stops touching members.
+    void requestStop() { alive->store(false); }
     
     // Check if scan is running
     bool isScanning() const { return scanning.load(); }

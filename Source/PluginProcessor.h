@@ -1,9 +1,18 @@
 #pragma once
 #include <JuceHeader.h>
+#include <thread>
+#include <atomic>
 #include "MeterEngine.h"
 #include "PluginScanner.h"
 #include "ReferenceAnalyser.h"
 #include "WaveformRecorder.h"
+
+// Temporary diagnostic: append a timestamped line to the EchoJay teardown log
+// file (Release-safe; DBG is compiled out of Release). Used to trace the
+// Cubase/Windows freeze-on-removal across both the processor and editor
+// destructors. Defined in PluginProcessor.cpp. Remove once the freeze is fixed.
+void ejTeardownLog(const juce::String& msg);
+
 
 enum class ChannelType {
     FullMix = 0,
@@ -79,6 +88,7 @@ public:
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
+    bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     juce::AudioProcessorEditor* createEditor() override;
@@ -239,6 +249,17 @@ private:
 
     // Background WAV save thread — destructor waits for it to finish
     std::unique_ptr<juce::Thread> saveThread;
+
+    // Background cache-load thread, launched from the constructor. Tracked
+    // (not fire-and-forget) so the destructor can join it deterministically.
+    // On full plugin removal the host destroys this processor; if this thread
+    // were still inside pluginScanner.loadCache() while members tear down, the
+    // result is a teardown race / freeze (observed on Windows/Cubase VST3,
+    // where teardown timing differs from macOS). isShuttingDown lets the load
+    // work bail early, and joining here guarantees it has stopped touching
+    // members before they are destroyed.
+    std::thread loadThread;
+    std::atomic<bool> isShuttingDown { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EchoJayProcessor)
 };

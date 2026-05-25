@@ -2,23 +2,115 @@
 #include "PluginEditor.h"
 #include <cmath>
 
+// ---------------------------------------------------------------------------
+// Teardown logging (Release-safe).
+//
+// DBG() is compiled out of Release builds, and the GitHub Actions Windows
+// build is Release — so to diagnose the Cubase/Windows freeze-on-removal we
+// append to a small log file in the EchoJay app-data folder instead. A remote
+// tester can simply email the file back. Each line is timestamped so we can
+// see exactly which teardown step ran last before a freeze.
+//
+// Path (matches the cache/settings location used elsewhere):
+//   Windows: %APPDATA%\EchoJay\teardown.log
+//   macOS:   ~/Library/Application Support/EchoJay/teardown.log
+//   Linux:   ~/.echojay/teardown.log
+//
+// This is a temporary diagnostic. Once the freeze is confirmed fixed we strip
+// these calls (or gate them behind a debug flag). The logging itself is cheap
+// and harmless on every platform. Declared in PluginProcessor.h so the editor
+// teardown can log to the same file.
+// ---------------------------------------------------------------------------
+void ejTeardownLog(const juce::String& msg)
+{
+    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+   #if JUCE_MAC
+    auto dir = appData.getChildFile("Application Support/EchoJay");
+   #elif JUCE_WINDOWS
+    auto dir = appData.getChildFile("EchoJay");
+   #else
+    auto dir = appData.getChildFile(".echojay");
+   #endif
+    dir.createDirectory();
+    auto logFile = dir.getChildFile("teardown.log");
+    auto line = juce::Time::getCurrentTime().toString(true, true, true, true)
+              + "  " + msg + juce::newLine;
+    logFile.appendText(line);
+    DBG("[TEARDOWN] " << msg); // also emit to debugger in Debug builds
+}
+
 EchoJayProcessor::EchoJayProcessor()
     : AudioProcessor(BusesProperties()
         .withInput("Input", juce::AudioChannelSet::stereo(), true)
         .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
-    // Defer plugin cache loading to background so constructor returns fast
-    juce::Thread::launch([this]() {
+    // Auto-detect the host DAW so stock plugins for the DAW the user is
+    // actually running get injected without them having to tick anything in
+    // Settings. juce::PluginHostType identifies the host from the loading
+    // process. Note: out-of-process / sandboxed hosts (some AUv3, plugin
+    // bridges, separate scan processes) can report Unknown — in that case we
+    // leave the detected DAW empty and fall back to the Settings selection.
+    // Map the host to the same labels the Settings UI and stock catalogues
+    // use ("Logic Pro", "Ableton Live", ...).
+    {
+        juce::PluginHostType host;
+        juce::String label;
+        if      (host.isLogic())       label = "Logic Pro";
+        else if (host.isAbletonLive()) label = "Ableton Live";
+        else if (host.isFruityLoops()) label = "FL Studio";
+        else if (host.isProTools())    label = "Pro Tools";
+        else if (host.isStudioOne())   label = "Studio One";
+        else if (host.isCubase() || host.isNuendo()) label = "Cubase";
+        // Other/Unknown hosts (Reaper, Bitwig, GarageBand, standalone, or an
+        // unidentified out-of-process host) leave label empty -> Settings
+        // selection is used instead.
+        pluginScanner.setDetectedDaw(label);
+    }
+
+    // Defer plugin cache loading to background so constructor returns fast.
+    // Tracked on loadThread (a std::thread member) so the destructor can join
+    // it — see ~EchoJayProcessor. Bails immediately if shutdown began.
+    loadThread = std::thread([this]() {
+        if (isShuttingDown.load()) return;
         pluginScanner.loadCache();
+        if (isShuttingDown.load()) return;
+        pluginScanner.loadEnabledState();
+        if (isShuttingDown.load()) return;
         pluginScanner.loadCustomFolders();
     });
 }
 
 EchoJayProcessor::~EchoJayProcessor()
 {
-    // Wait for any in-flight WAV save to finish before we destroy members
+    ejTeardownLog("~EchoJayProcessor enter");
+
+    // Signal background work to stop touching members.
+    isShuttingDown.store(true);
+
+    // Tell the scanner to abort any in-flight scan/load before we join, so the
+    // load thread returns quickly rather than finishing a full cache parse.
+    pluginScanner.requestStop();
+    ejTeardownLog("scanner stop requested");
+
+    // Join the cache-load thread deterministically. Unlike the previous
+    // fire-and-forget Thread::launch, this guarantees the worker is no longer
+    // touching pluginScanner before members are destroyed below.
+    if (loadThread.joinable())
+    {
+        ejTeardownLog("joining loadThread...");
+        loadThread.join();
+        ejTeardownLog("loadThread joined");
+    }
+
+    // Wait for any in-flight WAV save to finish before we destroy members.
     if (saveThread && saveThread->isThreadRunning())
+    {
+        ejTeardownLog("waiting for saveThread...");
         saveThread->waitForThreadToExit(5000);
+        ejTeardownLog("saveThread done");
+    }
+
+    ejTeardownLog("~EchoJayProcessor exit (members destruct next)");
 }
 
 bool EchoJayProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const

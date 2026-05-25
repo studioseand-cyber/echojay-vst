@@ -1171,6 +1171,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 }
 
 EchoJayEditor::~EchoJayEditor() {
+    ejTeardownLog("~EchoJayEditor enter");
     // If the user changed ticks and closed without hitting Done, commit the
     // local selection now so it isn't lost (disk persist; server is best-effort
     // and skipped during teardown).
@@ -1181,13 +1182,16 @@ EchoJayEditor::~EchoJayEditor() {
         if (settingsChecklist) settingsChecklist->commit();
         processorRef.getPluginScanner().saveEnabledState();
     }
+    ejTeardownLog("editor checklist commit done");
     // Tell any in-flight update download to stop. The alive flag protects
     // against UAF after destruction; the cancel flag lets the worker exit
     // its read loop early instead of finishing the download into a void.
     updateDownloadAlive->store(false);
     updateDownloadCancelled->store(true);
     stopChatPlayback();
+    ejTeardownLog("editor playback stopped, stopping GL/timer...");
     stopPlayback(); stopTimer(); setLookAndFeel(nullptr);
+    ejTeardownLog("~EchoJayEditor exit");
 }
 
 void EchoJayEditor::visibilityChanged()
