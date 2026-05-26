@@ -1190,7 +1190,27 @@ EchoJayEditor::~EchoJayEditor() {
     updateDownloadCancelled->store(true);
     stopChatPlayback();
     ejTeardownLog("editor playback stopped, stopping GL/timer...");
-    stopPlayback(); stopTimer(); setLookAndFeel(nullptr);
+    stopPlayback(); stopTimer();
+
+    // Detach the OpenGL context HERE, explicitly, while the editor and its
+    // child component tree are still fully alive and we are on a clean message
+    // thread. Previously detach() only happened later inside ~ParticleVisual,
+    // during member destruction (after this destructor body returned, the
+    // "members destruct next" point in the teardown log). On Windows, calling
+    // OpenGLContext::detach() while the owning component is mid-destruction and
+    // continuous repainting is still live deadlocks the message thread against
+    // the GL render thread: the host freezes with no crash dump, and only on
+    // full plugin removal (window-close/disable never destroys the processor or
+    // these members). Driving stop() from here, before particleVisual is
+    // destroyed, breaks that ordering and lets detach() complete normally.
+    if (particleVisual != nullptr)
+    {
+        ejTeardownLog("detaching GL context...");
+        particleVisual->stop();
+        ejTeardownLog("GL context detached");
+    }
+
+    setLookAndFeel(nullptr);
     ejTeardownLog("~EchoJayEditor exit");
 }
 
