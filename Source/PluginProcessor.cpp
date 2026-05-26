@@ -134,7 +134,7 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     waveformRecorder.prepare(sampleRate, samplesPerBlock);
 }
 
-void EchoJayProcessor::releaseResources() { meterEngine.reset(); }
+void EchoJayProcessor::releaseResources() { ejTeardownLog("releaseResources enter"); meterEngine.reset(); ejTeardownLog("releaseResources exit"); }
 
 void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
@@ -1009,6 +1009,7 @@ void EchoJayProcessor::resumeAB()
 
 void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
+    ejTeardownLog("getStateInformation enter");
     try {
     auto state = std::make_unique<juce::DynamicObject>();
     state->setProperty("genre", genre);
@@ -1121,6 +1122,7 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     juce::String json = juce::JSON::toString(juce::var(state.release()), true);
     destData.append(json.toRawUTF8(), json.getNumBytesAsUTF8());
     } catch (...) {}
+    ejTeardownLog("getStateInformation exit");
 }
 
 void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
