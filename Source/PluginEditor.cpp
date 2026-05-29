@@ -2038,11 +2038,13 @@ void EchoJayEditor::startUpdateDownload()
         auto reportFailure = [aliveCopy, safeThis](juce::String msg) {
             if (! aliveCopy->load()) return;
             juce::MessageManager::callAsync([aliveCopy, safeThis, msg]() {
-                if (! aliveCopy->load()) return;
-                if (safeThis == nullptr) return;
+                ejTeardownLog("[callAsync] download-fail firing");
+                if (! aliveCopy->load()) { ejTeardownLog("[callAsync] download-fail: alive=false, bailing"); return; }
+                if (safeThis == nullptr) { ejTeardownLog("[callAsync] download-fail: safeThis=null, bailing"); return; }
                 safeThis->updateOverlay.state = UpdateOverlay::State::Failed;
                 safeThis->updateOverlay.errorText = msg;
                 safeThis->repaint();
+                ejTeardownLog("[callAsync] download-fail done");
             });
         };
         
@@ -2110,11 +2112,13 @@ void EchoJayEditor::startUpdateDownload()
                                : 0.0f;
                 if (! aliveCopy->load()) { destFile.deleteFile(); return; }
                 juce::MessageManager::callAsync([aliveCopy, safeThis, frac]() {
-                    if (! aliveCopy->load()) return;
-                    if (safeThis == nullptr) return;
+                    ejTeardownLog("[callAsync] download-progress firing");
+                    if (! aliveCopy->load()) { ejTeardownLog("[callAsync] download-progress: alive=false, bailing"); return; }
+                    if (safeThis == nullptr) { ejTeardownLog("[callAsync] download-progress: safeThis=null, bailing"); return; }
                     if (safeThis->updateOverlay.state != UpdateOverlay::State::Downloading) return;
                     safeThis->updateOverlay.progress = juce::jlimit(0.0f, 1.0f, frac);
                     safeThis->repaint();
+                    ejTeardownLog("[callAsync] download-progress done");
                 });
             }
         }
@@ -2134,12 +2138,14 @@ void EchoJayEditor::startUpdateDownload()
         
         // Success — flip state and stash the path for the install step.
         juce::MessageManager::callAsync([aliveCopy, safeThis, destPath]() {
-            if (! aliveCopy->load()) return;
-            if (safeThis == nullptr) return;
+            ejTeardownLog("[callAsync] download-success firing");
+            if (! aliveCopy->load()) { ejTeardownLog("[callAsync] download-success: alive=false, bailing"); return; }
+            if (safeThis == nullptr) { ejTeardownLog("[callAsync] download-success: safeThis=null, bailing"); return; }
             safeThis->downloadedInstallerFile = juce::File(destPath);
             safeThis->updateOverlay.state = UpdateOverlay::State::ReadyToInstall;
             safeThis->updateOverlay.progress = 1.0f;
             safeThis->repaint();
+            ejTeardownLog("[callAsync] download-success done");
         });
     });
 }

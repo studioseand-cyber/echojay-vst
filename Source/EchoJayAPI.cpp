@@ -1,5 +1,11 @@
 #include "EchoJayAPI.h"
 
+// Forward-declared from PluginProcessor.cpp so we can tag callAsync entry
+// points from the API thread. The diagnostic helps identify which async
+// path (if any) fires AFTER the plugin has been removed — those are the
+// ones that hang Cubase on the user's next message-loop pump (next click).
+extern void ejTeardownLog(const juce::String& msg);
+
 // Static members for remote config — shared across all plugin instances
 juce::String EchoJayAPI::remoteSystemPrompt;
 int EchoJayAPI::remotePromptVersion = 0;
@@ -100,9 +106,22 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
         auto callback = cb;
         auto sc = statusCode;
         auto j = json;
+        // Do NOT post back into the host message queue if we have already been
+        // torn down. A request can be in flight for up to ~3 minutes (60s
+        // timeout x 3 attempts), long after the user removed the plugin. If we
+        // post a callAsync after teardown, it sits in the host's message queue
+        // and fires on the host's NEXT message-loop pump — i.e. the user's next
+        // mouse click — invoking a callback that captures now-destroyed objects.
+        // That is the "Cubase freezes on my first click after removing the
+        // plugin" report. Checking alive BEFORE posting (not just inside the
+        // lambda) means a request that finishes after removal quietly does
+        // nothing instead of queueing a time-bomb into the host loop.
+        if (!aliveFlag->load()) return;
         juce::MessageManager::callAsync([callback, j, sc, aliveFlag]() {
-            if (!aliveFlag->load()) return; // object destroyed — bail
+            ejTeardownLog("[callAsync] postJSON completion firing");
+            if (!aliveFlag->load()) { ejTeardownLog("[callAsync] postJSON: alive=false, bailing"); return; }
             (*callback)(j, sc);
+            ejTeardownLog("[callAsync] postJSON completion done");
         });
     });
 }
@@ -146,9 +165,15 @@ void EchoJayAPI::getJSON(const juce::String& path,
         auto callback = cb;
         auto sc = statusCode;
         auto j = json;
+        // See postJSON: do not queue a callback into the host message loop
+        // after teardown, or it fires on the user's next click and touches
+        // destroyed objects (Cubase freeze on first click after removal).
+        if (!aliveFlag->load()) return;
         juce::MessageManager::callAsync([callback, j, sc, aliveFlag]() {
-            if (!aliveFlag->load()) return; // object destroyed — bail
+            ejTeardownLog("[callAsync] getJSON completion firing");
+            if (!aliveFlag->load()) { ejTeardownLog("[callAsync] getJSON: alive=false, bailing"); return; }
             (*callback)(j, sc);
+            ejTeardownLog("[callAsync] getJSON completion done");
         });
     });
 }

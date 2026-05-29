@@ -1,11 +1,16 @@
 #include "ReferenceAnalyser.h"
 
+// Forward-declared from PluginProcessor.cpp; see note in EchoJayAPI.cpp.
+extern void ejTeardownLog(const juce::String& msg);
+
 ReferenceAnalyser::ReferenceAnalyser() {}
 ReferenceAnalyser::~ReferenceAnalyser()
 {
+    ejTeardownLog("~ReferenceAnalyser enter");
     alive->store(false);
     if (analyseThread && analyseThread->isThreadRunning())
         analyseThread->waitForThreadToExit(10000);
+    ejTeardownLog("~ReferenceAnalyser exit");
 }
 
 void ReferenceAnalyser::analyseFile(const juce::File& file,
@@ -34,11 +39,26 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
         analyseThread->waitForThreadToExit(10000);
     
     auto fileCopy = file;
+    auto aliveFlagWrap = alive; // capture for the wrappedComplete lambda
     // Wrap callback to trigger queue processing after completion
-    auto wrappedComplete = [this, onComplete](bool success, const juce::String& error) {
+    auto wrappedComplete = [this, onComplete, aliveFlagWrap](bool success, const juce::String& error) {
         if (onComplete) onComplete(success, error);
-        // Process next queued file on the message thread
-        juce::MessageManager::callAsync([this]() { processQueue(); });
+        // Process next queued file on the message thread, BUT only if this
+        // ReferenceAnalyser is still alive. Previously this captured raw
+        // `this` with no guard, so if the analysis completed after the plugin
+        // was removed (the worker thread can outlive the destructor while
+        // ~ReferenceAnalyser waits up to 10s for the thread to exit), the
+        // queued callAsync fired on the host's next message-loop pump — i.e.
+        // the user's next mouse click after plugin removal — and called
+        // processQueue() on freed memory. Capturing the alive shared_ptr by
+        // value here closes that hole.
+        auto af = aliveFlagWrap;
+        juce::MessageManager::callAsync([this, af]() {
+            ejTeardownLog("[callAsync] RefAnalyser processQueue firing");
+            if (!af->load()) { ejTeardownLog("[callAsync] RefAnalyser processQueue: alive=false, bailing"); return; }
+            processQueue();
+            ejTeardownLog("[callAsync] RefAnalyser processQueue done");
+        });
     };
     auto cb = std::make_shared<std::function<void(bool, const juce::String&)>>(wrappedComplete);
     auto aliveFlag = alive; // shared_ptr captured by value — safe after destruction
@@ -75,8 +95,10 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
             auto callback = cb;
             auto af = aliveFlag;
             juce::MessageManager::callAsync([callback, af]() {
-                if (!af->load()) return;
+                ejTeardownLog("[callAsync] RefAnalyser err-unsupported firing");
+                if (!af->load()) { ejTeardownLog("[callAsync] RefAnalyser err-unsupported: alive=false, bailing"); return; }
                 (*callback)(false, "Unsupported audio format");
+                ejTeardownLog("[callAsync] RefAnalyser err-unsupported done");
             });
             return;
         }
@@ -92,8 +114,10 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
             auto callback = cb;
             auto af = aliveFlag;
             juce::MessageManager::callAsync([callback, af]() {
-                if (!af->load()) return;
+                ejTeardownLog("[callAsync] RefAnalyser err-empty firing");
+                if (!af->load()) { ejTeardownLog("[callAsync] RefAnalyser err-empty: alive=false, bailing"); return; }
                 (*callback)(false, "Empty or invalid audio file");
+                ejTeardownLog("[callAsync] RefAnalyser err-empty done");
             });
             return;
         }
@@ -243,8 +267,10 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
         auto callback = cb;
         auto af = aliveFlag;
         juce::MessageManager::callAsync([callback, af]() {
-            if (!af->load()) return;
+            ejTeardownLog("[callAsync] RefAnalyser success firing");
+            if (!af->load()) { ejTeardownLog("[callAsync] RefAnalyser success: alive=false, bailing"); return; }
             (*callback)(true, "");
+            ejTeardownLog("[callAsync] RefAnalyser success done");
         });
     }
         
