@@ -74,6 +74,14 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
         constexpr int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; ++attempt)
         {
+            // Bail immediately if the plugin has been removed. Without this the
+            // detached worker keeps running inside the host process for up to
+            // a minute on a dead socket, holding OS resources that outlive the
+            // plugin module. On Windows that surfaces as Cubase freezing a few
+            // seconds after removal, with a perfectly clean teardown log
+            // (this thread is not part of teardown and leaves no trace).
+            if (!aliveFlag->load()) return;
+
             juce::URL url(endpoint + path);
             url = url.withPOSTData(body);
 
@@ -84,7 +92,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
             statusCode = 0;
             auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
                                .withExtraHeaders(headers)
-                               .withConnectionTimeoutMs(60000)
+                               .withConnectionTimeoutMs(8000)
                                .withStatusCode(&statusCode);
 
             auto stream = url.createInputStream(options);
@@ -99,6 +107,8 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
             DBG("[EchoJay] postJSON connection failed (attempt " << attempt
                 << "/" << maxAttempts << ") path=" << path << " statusCode=" << statusCode);
 
+            // Bail out of the backoff sleep too if torn down mid-retry.
+            if (!aliveFlag->load()) return;
             if (attempt < maxAttempts)
                 juce::Thread::sleep(attempt * 1000); // 1s, then 2s backoff
         }
@@ -139,6 +149,11 @@ void EchoJayAPI::getJSON(const juce::String& path,
     
     juce::Thread::launch([=]()
     {
+        // Bail immediately if the plugin was removed before this thread ran.
+        // See postJSON for why: a detached worker on a dead socket outliving
+        // the plugin module is what freezes the host seconds after removal.
+        if (!aliveFlag->load()) return;
+
         juce::URL url(endpoint + path);
         
         juce::String headers;
@@ -150,7 +165,7 @@ void EchoJayAPI::getJSON(const juce::String& path,
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                            .withExtraHeaders(headers)
-                           .withConnectionTimeoutMs(60000)
+                           .withConnectionTimeoutMs(8000)
                            .withStatusCode(&statusCode);
         
         auto stream = url.createInputStream(options);
@@ -551,11 +566,13 @@ void EchoJayAPI::fetchRemoteConfig()
     
     juce::Thread::launch([=]()
     {
+        if (!aliveFlag->load()) return; // plugin removed before thread ran
+
         juce::URL url(endpoint + "/api/vst-config");
         
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-                           .withConnectionTimeoutMs(60000)
+                           .withConnectionTimeoutMs(8000)
                            .withStatusCode(&statusCode);
         
         auto stream = url.createInputStream(options);
