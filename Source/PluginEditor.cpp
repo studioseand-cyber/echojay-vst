@@ -2381,13 +2381,23 @@ void EchoJayEditor::runAICompare()
         processorRef.getEffectiveChannelName(), processorRef.getGenre(),
         processorRef.getPluginScanner().getPluginSummary());
 
+    // SafePointer guard. The API's alive flag protects the API object's
+    // lifetime, but the API outlives the editor: when the user removes the
+    // plugin, Cubase destroys the editor first and keeps the processor (and
+    // API) around for many seconds while it saves state. An in-flight chat
+    // request that completes in that window fires this callback against a
+    // destroyed editor. The lambda then sits in the host message queue and
+    // runs on the user's NEXT mouse click — the "1 second after first click"
+    // freeze. Bailing on a null SafePointer makes the late callback a no-op.
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
-        [this](const juce::String& reply, bool success) {
-            chatLoading = false;
-            chatMessages.push_back({"assistant", reply});
-            processorRef.chatHistory.push_back({"assistant", reply});
-            if (success) { processorRef.chatRoles.add("assistant"); processorRef.chatContents.add(reply); }
-            repaint();
+        [safeThis](const juce::String& reply, bool success) {
+            if (safeThis == nullptr) return;
+            safeThis->chatLoading = false;
+            safeThis->chatMessages.push_back({"assistant", reply});
+            safeThis->processorRef.chatHistory.push_back({"assistant", reply});
+            if (success) { safeThis->processorRef.chatRoles.add("assistant"); safeThis->processorRef.chatContents.add(reply); }
+            safeThis->repaint();
         });
 }
 
