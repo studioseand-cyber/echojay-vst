@@ -3,6 +3,32 @@
 
 namespace
 {
+// Shared logo image cache. This MUST be explicitly cleared during editor
+// teardown (see ~EchoJayEditor), not left to destruct at DLL unload.
+//
+// Root cause of the Windows/Cubase "freeze a couple of seconds after removal,
+// on its own, no click" hang (confirmed by a forced dump: APPLICATION_HANG
+// HungIn_LoaderLock in EchoJay.vst3): a juce::Image held in a function-local
+// static stays alive for the lifetime of the DLL. When the host unloads the
+// plugin, Windows runs the DLL's static destructors UNDER THE LOADER LOCK. If
+// that static Image still owns a GPU/OpenGL-cached texture, freeing it calls
+// into the D3D/WARP driver (d3d11 -> d3d10warp), which itself needs the loader
+// lock -> deadlock -> host frozen, no crash, Windows-only. Clearing the cache
+// (and JUCE's image cache) during normal editor destruction means nothing
+// GPU-backed survives to DLL-unload time, so the loader-lock teardown has
+// nothing to do and cannot hang.
+juce::Image getLogoImage()
+{
+    // Reference-counted; released by ImageCache::releaseUnusedImages() during
+    // editor teardown, so it never survives to DLL unload (see note below).
+    return juce::ImageCache::getFromMemory(echoJayLogoPNG, (int)echoJayLogoPNGSize);
+}
+
+void clearLogoImageCache()
+{
+    juce::ImageCache::releaseUnusedImages();
+}
+
 struct ChannelPromptOption
 {
     const char* label;
@@ -1209,6 +1235,12 @@ EchoJayEditor::~EchoJayEditor() {
         particleVisual->stop();
         ejTeardownLog("GL context detached");
     }
+
+    // Release any GPU/OpenGL-backed cached images now, during normal teardown,
+    // so nothing survives to be freed under the Windows loader lock at DLL
+    // unload (which deadlocks the host, see note on getLogoImage()).
+    clearLogoImageCache();
+    ejTeardownLog("logo/image cache cleared");
 
     setLookAndFeel(nullptr);
     ejTeardownLog("~EchoJayEditor exit");
@@ -3700,10 +3732,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
             int titleY = bounds.getHeight() / 2 - 120;
             int titleH = 40;
             
-            static juce::Image cachedLogo;
-            if (! cachedLogo.isValid())
-                cachedLogo = juce::ImageFileFormat::loadFrom(echoJayLogoPNG,
-                                                              (size_t)echoJayLogoPNGSize);
+            juce::Image cachedLogo = getLogoImage();
             if (cachedLogo.isValid())
             {
                 float aspect = (float)cachedLogo.getWidth() / (float)cachedLogo.getHeight();

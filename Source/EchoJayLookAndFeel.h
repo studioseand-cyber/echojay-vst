@@ -312,11 +312,14 @@ public:
     // Draw the gradient EchoJay logo
     static void drawLogo(juce::Graphics& g, juce::Rectangle<float> bounds, float fontSize = 20.0f)
     {
-        static juce::Image logoImg;
-        if (!logoImg.isValid())
-        {
-            logoImg = juce::ImageFileFormat::loadFrom(echoJayLogoPNG, (size_t)echoJayLogoPNGSize);
-        }
+        // Use JUCE's reference-counted ImageCache rather than a function-local
+        // static juce::Image. A static Image lives until DLL unload, and if it
+        // still owns a GPU/OpenGL texture at that point, freeing it under the
+        // Windows loader lock deadlocks the host (confirmed via hang dump:
+        // HungIn_LoaderLock). ImageCache entries are released during normal
+        // teardown by ImageCache::releaseUnusedImages(), so nothing GPU-backed
+        // survives to DLL-unload time.
+        juce::Image logoImg = juce::ImageCache::getFromMemory(echoJayLogoPNG, (int)echoJayLogoPNGSize);
         if (logoImg.isValid())
         {
             float aspect = (float)logoImg.getWidth() / (float)logoImg.getHeight();
