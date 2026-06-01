@@ -3,26 +3,26 @@
 #include <cmath>
 
 // ---------------------------------------------------------------------------
-// Teardown logging (Release-safe).
+// Teardown logging (diagnostic, OFF by default).
 //
-// DBG() is compiled out of Release builds, and the GitHub Actions Windows
-// build is Release — so to diagnose the Cubase/Windows freeze-on-removal we
-// append to a small log file in the EchoJay app-data folder instead. A remote
-// tester can simply email the file back. Each line is timestamped so we can
-// see exactly which teardown step ran last before a freeze.
-//
-// Path (matches the cache/settings location used elsewhere):
+// Used to diagnose the Windows/Cubase freeze-on-removal (a loader-lock hang in
+// GPU image teardown at DLL unload, since fixed). Left in place but disabled:
+// set ECHOJAY_TEARDOWN_LOGGING to 1 to re-enable if a teardown issue ever needs
+// investigating again. When enabled it appends timestamped lines to a small log
+// file a remote tester can email back:
 //   Windows: %APPDATA%\EchoJay\teardown.log
 //   macOS:   ~/Library/Application Support/EchoJay/teardown.log
 //   Linux:   ~/.echojay/teardown.log
-//
-// This is a temporary diagnostic. Once the freeze is confirmed fixed we strip
-// these calls (or gate them behind a debug flag). The logging itself is cheap
-// and harmless on every platform. Declared in PluginProcessor.h so the editor
-// teardown can log to the same file.
+// When disabled (the default) every ejTeardownLog() call is a no-op with no
+// disk I/O.
 // ---------------------------------------------------------------------------
+#ifndef ECHOJAY_TEARDOWN_LOGGING
+ #define ECHOJAY_TEARDOWN_LOGGING 0
+#endif
+
 void ejTeardownLog(const juce::String& msg)
 {
+   #if ECHOJAY_TEARDOWN_LOGGING
     auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
    #if JUCE_MAC
     auto dir = appData.getChildFile("Application Support/EchoJay");
@@ -37,6 +37,9 @@ void ejTeardownLog(const juce::String& msg)
               + "  " + msg + juce::newLine;
     logFile.appendText(line);
     DBG("[TEARDOWN] " << msg); // also emit to debugger in Debug builds
+   #else
+    juce::ignoreUnused(msg);
+   #endif
 }
 
 EchoJayProcessor::EchoJayProcessor()
@@ -316,6 +319,17 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                 cur = capCorrSum.load();
                 while (!capCorrSum.compare_exchange_weak(cur, cur + (double)liveData.correlation)) {}
                 capGatedBufCount.fetch_add(1);
+
+                // Highest momentary / short-term LUFS over the capture. Tracked
+                // inside the gate so silence between phrases can't register as a
+                // max (it can't anyway, but this keeps it consistent with the
+                // other gated measurements and reuses the liveData we just read).
+                float m = liveData.momentary;
+                float curM = capMaxMomentary.load();
+                while (m > curM && !capMaxMomentary.compare_exchange_weak(curM, m)) {}
+                float st = liveData.shortTerm;
+                float curST = capMaxShortTerm.load();
+                while (st > curST && !capMaxShortTerm.compare_exchange_weak(curST, st)) {}
             }
         }
     }
@@ -393,6 +407,8 @@ void EchoJayProcessor::startCapture()
     capCorrSum.store(0.0);
     capGatedBufCount.store(0);
     capRunningPeakForGate.store(0.0f);
+    capMaxMomentary.store(-100.0f);
+    capMaxShortTerm.store(-100.0f);
     
     captureState.store(CaptureState::Capturing);
 }
@@ -487,6 +503,10 @@ void EchoJayProcessor::stopCapture()
         }
         // If no buffer passed the gate (mostly silent capture), leave width/corr
         // at whatever the meter engine had as its default — better than zero.
+
+        // Highest momentary / short-term LUFS reached over the capture.
+        snap.averagedData.momentaryMax = capMaxMomentary.load();
+        snap.averagedData.shortTermMax = capMaxShortTerm.load();
     }
     
     snap.timestamp = juce::Time::currentTimeMillis();

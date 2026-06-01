@@ -228,6 +228,8 @@ private:
     std::atomic<double> capCorrSum { 0.0 };     // sum of per-buffer correlation readings (gated)
     std::atomic<int> capGatedBufCount { 0 };    // number of buffers that passed the gate
     std::atomic<float> capRunningPeakForGate { 0.0f };  // running max peak, used as the moving gate threshold
+    std::atomic<float> capMaxMomentary { -100.0f };     // highest momentary LUFS over capture
+    std::atomic<float> capMaxShortTerm { -100.0f };     // highest short-term LUFS over capture
 
     // Capture
     std::atomic<CaptureState> captureState { CaptureState::Idle };

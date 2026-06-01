@@ -3104,13 +3104,17 @@ void EchoJayEditor::paintLoudnessPanel(juce::Graphics& g, juce::Rectangle<int> a
 
     auto ff = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "--"; };
 
+    // When a capture is frozen, surface the highest momentary / short-term
+    // reached over the whole capture beneath the main figure.
+    bool frozen = (processorRef.getCaptureState() == CaptureState::Complete && waveformFrozen);
+
     // 4 big numbers: Momentary, Short Term, Integrated, LRA
-    struct LufsItem { const char* label; float val; const char* unit; juce::Colour col; };
+    struct LufsItem { const char* label; float val; const char* unit; juce::Colour col; float maxVal; };
     LufsItem items[] = {
-        { "Momentary",  md.momentary,     "LUFS", md.momentary > -6 ? C::red : C::green },
-        { "Short Term", md.shortTerm,     "LUFS", C::blue2 },
-        { "Integrated", md.integrated,    "LUFS", C::green },
-        { "LRA",        md.loudnessRange, "LU",   C::text }
+        { "Momentary",  md.momentary,     "LUFS", md.momentary > -6 ? C::red : C::green, md.momentaryMax },
+        { "Short Term", md.shortTerm,     "LUFS", C::blue2, md.shortTermMax },
+        { "Integrated", md.integrated,    "LUFS", C::green, -100.0f },
+        { "LRA",        md.loudnessRange, "LU",   C::text, -100.0f }
     };
     for (int i = 0; i < 4; ++i) {
         int cx = innerX + i * cellW;
@@ -3126,12 +3130,22 @@ void EchoJayEditor::paintLoudnessPanel(juce::Graphics& g, juce::Rectangle<int> a
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(9.0f)));
         g.drawText(items[i].unit, cx, y + 46, cellW, 12, juce::Justification::centred);
+        // Capture max (momentary / short-term only)
+        if (frozen && items[i].maxVal > -99.0f) {
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(8.0f)));
+            g.drawText("max " + ff(items[i].maxVal), cx, y + 57, cellW, 10, juce::Justification::centred);
+        }
     }
 }
 
 void EchoJayEditor::paintLevelsPanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md)
 {
-    drawPanel(g, area, "LEVELS", C::green);
+    bool frozen = (processorRef.getCaptureState() == CaptureState::Complete && waveformFrozen);
+    // When frozen, PEAK L/R are the highest peaks held over the capture and
+    // RMS L/R is the full-capture RMS (set in PluginProcessor::stopCapture),
+    // so flag the panel as showing capture figures rather than live levels.
+    drawPanel(g, area, frozen ? "LEVELS - CAPTURE" : "LEVELS", C::green);
 
     int y = area.getY() + 28, x = area.getX() + 14, w = area.getWidth() - 28;
     int barH = 14, gap = 4;
@@ -3176,6 +3190,17 @@ void EchoJayEditor::paintLevelsPanel(juce::Graphics& g, juce::Rectangle<int> are
 void EchoJayEditor::paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md)
 {
     drawPanel(g, area, "STEREO IMAGE", C::blue2);
+
+    // Make clear whether width/correlation are the live meter values (which
+    // track the last ~1.5s) or the averaged values for a completed capture.
+    {
+        bool frozen = (processorRef.getCaptureState() == CaptureState::Complete && waveformFrozen);
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(8.0f)));
+        g.drawText(frozen ? "capture average" : "live",
+                   area.getX(), area.getY() + 4, area.getWidth() - 12, 12,
+                   juce::Justification::centredRight);
+    }
 
     int x = area.getX() + 14, y = area.getY() + 28, w = area.getWidth() - 28;
 
@@ -3937,7 +3962,14 @@ void EchoJayEditor::paint(juce::Graphics& g)
         // Visual mode — particle visual is a child component (OpenGL), just paint the number strip
         int stripH = 28;
         auto stripArea = juce::Rectangle<int>(0, bounds.getHeight() - stripH - abBarOffset, mW, stripH);
-        auto md2 = processorRef.getMeterEngine().getMeterData();
+        // After a capture is frozen, show the capture's averaged data (same as the
+        // standard meter view does) rather than the live EMA values. Otherwise the
+        // strip keeps reporting the last ~1.5s of audio — e.g. correlation reading
+        // the moment you stopped instead of the capture average.
+        auto stripState = processorRef.getCaptureState();
+        auto md2 = (stripState == CaptureState::Complete && waveformFrozen)
+                       ? processorRef.getLatestSnapshot().averagedData
+                       : processorRef.getMeterEngine().getMeterData();
         particleVisual->paintNumberStrip(g, stripArea, md2);
     }
     else

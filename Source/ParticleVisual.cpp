@@ -986,6 +986,7 @@ void ParticleVisual::paintNumberStrip(juce::Graphics& g, juce::Rectangle<int> ar
         { "ST",    md.shortTerm,     " LUFS", true  },
         { "MOM",   md.momentary,     " LUFS", true  },
         { "LRA",   md.loudnessRange, " LU",   false },
+        { "RMS",   juce::jmax(md.rmsL, md.rmsR), " dB", true },
         { "TP L",  md.truePeakL,     " dB",   true  },
         { "TP R",  md.truePeakR,     " dB",   true  },
         { "CORR",  md.correlation,   "",       false },
@@ -993,7 +994,7 @@ void ParticleVisual::paintNumberStrip(juce::Graphics& g, juce::Rectangle<int> ar
         { "CREST", md.crestFactor,   " dB",   false },
     };
 
-    int count = 9;
+    int count = 10;
     float cellW = (float)area.getWidth() / (float)count;
 
     g.setFont(juce::Font(juce::FontOptions(9.0f)));

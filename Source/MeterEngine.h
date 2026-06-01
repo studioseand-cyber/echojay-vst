@@ -16,6 +16,11 @@ struct MeterData {
     float shortTerm = -100.0f;
     float integrated = -100.0f;
     float loudnessRange = 0.0f;
+    // Highest momentary / short-term reached over a capture. Only populated
+    // on a frozen capture snapshot (see PluginProcessor::stopCapture); left at
+    // -100 for live meter data, where a running max isn't meaningful.
+    float momentaryMax = -100.0f;
+    float shortTermMax = -100.0f;
     
     // Levels
     float rmsL = -100.0f, rmsR = -100.0f;
