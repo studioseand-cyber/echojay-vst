@@ -12,7 +12,7 @@ set -e
 
 PLUGIN_NAME="EchoJay"
 IDENTIFIER="com.echojay.plugin"
-VERSION="1.6.0"
+VERSION="1.6.1"
 BUILD_DIR="build"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PKG_DIR="/tmp/${PLUGIN_NAME}_pkg_build"

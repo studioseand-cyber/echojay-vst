@@ -1,14 +1,3 @@
-// System audio framework headers MUST be included BEFORE the JUCE headers.
-// Including them afterwards pulls the system 'AudioBuffer' struct into a TU
-// where juce::AudioBuffer is already visible unqualified, which makes the SDK
-// header itself fail to parse ("reference to 'AudioBuffer' is ambiguous").
-// Guarded with __APPLE__ (not JUCE_MAC) because JUCE_MAC isn't defined yet here.
-#if defined(__APPLE__)
- #include <AudioToolbox/AudioToolbox.h>
- #include <AudioUnit/AudioUnit.h>
- #include <CoreFoundation/CoreFoundation.h>
-#endif
-
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
 #include <algorithm>
@@ -17,120 +6,6 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
-
-// Normalised plugin name (lowercase, alphanumerics only) used as the key for
-// the name index, so "Pro-Q 3" and "ProQ3" collapse to the same name bucket.
-static std::string normaliseForMatch(const juce::String& s)
-{
-    auto lower = s.toLowerCase();
-    std::string out;
-    for (int i = 0; i < lower.length(); ++i)
-    {
-        auto c = lower[i];
-        if (juce::CharacterFunctions::isLetterOrDigit(c))
-            out.push_back((char) c);
-    }
-    return out;
-}
-
-#if JUCE_MAC
-void PluginScanner::scanAudioUnitsFromRegistry()
-{
-    // Walk every registered AudioComponent and add the real plugins directly.
-    // AudioComponentCopyName returns "Manufacturer: Plugin", the same string a
-    // host shows. We never instantiate anything, so this is fast and cannot
-    // hang on a bad plugin. Filtered to real plugin types so the system codecs
-    // / format converters (the long "no Manufacturer:" list) are skipped.
-    AudioComponentDescription desc {}; // all-zero = wildcard (every component)
-    AudioComponent comp = nullptr;
-
-    while ((comp = AudioComponentFindNext(comp, &desc)) != nullptr)
-    {
-        if (! alive->load()) return;
-
-        AudioComponentDescription got {};
-        if (AudioComponentGetDescription(comp, &got) != noErr)
-            continue;
-
-        // Keep effects, music effects, instruments and generators; skip
-        // converters/codecs/mixers/etc.
-        if (got.componentType != kAudioUnitType_Effect
-            && got.componentType != kAudioUnitType_MusicEffect
-            && got.componentType != kAudioUnitType_MusicDevice
-            && got.componentType != kAudioUnitType_Generator)
-            continue;
-
-        CFStringRef cfName = nullptr;
-        if (AudioComponentCopyName(comp, &cfName) != noErr || cfName == nullptr)
-            continue;
-
-        auto full = juce::String::fromCFString(cfName);
-        CFRelease(cfName);
-
-        // "Manufacturer: Plugin"
-        auto colon = full.indexOf(": ");
-        juce::String manu, name;
-        if (colon > 0)
-        {
-            manu = full.substring(0, colon).trim();
-            name = full.substring(colon + 2).trim();
-        }
-        else
-        {
-            manu = "Unknown";
-            name = full.trim();
-        }
-        if (name.isEmpty())
-            continue;
-
-        // Waves registers every plugin as its own AU component (hundreds of
-        // them), but Waves is already injected via the curated WaveShell
-        // catalog after the VST3 walk. Skip them here so the group isn't
-        // doubled.
-        if (manu.trim().equalsIgnoreCase("Waves"))
-            continue;
-
-        const bool isInstrument = (got.componentType == kAudioUnitType_MusicDevice);
-        addPlugin(name, manu, "AU", isInstrument ? "Instrument" : "Effect",
-                  "AudioUnit:" + name);
-    }
-}
-#else
-void PluginScanner::scanAudioUnitsFromRegistry() {}
-#endif
-
-#if JUCE_MAC
-// Reads a bundle's CFBundleIdentifier (e.g. "com.meldaproduction.MUtility")
-// WITHOUT loading the plugin's executable: CFBundleCreate only parses the
-// Info.plist (and transparently handles binary plists), it does not run code,
-// so there's no hang/crash risk. Returns "" if the bundle has no identifier.
-static juce::String bundleIdentifierFor(const juce::File& bundle)
-{
-    juce::String result;
-    auto path = bundle.getFullPathName();
-
-    CFStringRef cfPath = CFStringCreateWithCString(kCFAllocatorDefault,
-                                                   path.toRawUTF8(),
-                                                   kCFStringEncodingUTF8);
-    if (cfPath != nullptr)
-    {
-        CFURLRef url = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, cfPath,
-                                                     kCFURLPOSIXPathStyle, true);
-        if (url != nullptr)
-        {
-            if (CFBundleRef b = CFBundleCreate(kCFAllocatorDefault, url))
-            {
-                if (CFStringRef ident = CFBundleGetIdentifier(b)) // not owned
-                    result = juce::String::fromCFString(ident);
-                CFRelease(b);
-            }
-            CFRelease(url);
-        }
-        CFRelease(cfPath);
-    }
-    return result;
-}
-#endif
 
 PluginScanner::PluginScanner() {}
 
@@ -168,7 +43,6 @@ void PluginScanner::startScan()
         std::lock_guard<std::mutex> lock(pluginMutex);
         plugins.clear();
         pluginIndex.clear();
-        nameIndex.clear();
         // Invalidate the cached shuffled names — next call to
         // getPluginNamesString() will reshuffle. We do this explicitly (not
         // just relying on size mismatch) to handle the edge case where a
@@ -354,12 +228,14 @@ void PluginScanner::scanPluginDirectories()
     
     progress.store(0.33f);
     
-    // AU (Audio Units): read straight from the AudioComponent registry instead
-    // of globbing /Components and matching filenames back to it. The registry
-    // gives the real "Manufacturer: Plugin" for every installed AU, which is
-    // how Logic/Pro Tools list them, and it sidesteps the bundle-filename
-    // mismatch that was leaving Melda et al mis-grouped.
-    scanAudioUnitsFromRegistry();
+    // AU (Audio Units)
+    juce::Array<juce::File> auDirs;
+    auDirs.add(juce::File("/Library/Audio/Plug-Ins/Components"));
+    auDirs.add(juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                   .getChildFile("Library/Audio/Plug-Ins/Components"));
+    
+    for (auto& dir : auDirs)
+        safeScan(dir, "AU", true);
     
     progress.store(0.66f);
     
@@ -568,34 +444,8 @@ void PluginScanner::scanDirectory(const juce::File& dir, const juce::String& for
                         {
                             if (obj->hasProperty("Name"))
                                 name = obj->getProperty("Name").toString();
-
-                            // In the VST3 moduleinfo schema the vendor lives
-                            // under "Factory Info" -> "Vendor", NOT at the top
-                            // level (the old top-level read here always missed,
-                            // which is why moduleinfo-only vendors fell through
-                            // to "Unknown"). Fall back to a top-level "Vendor"
-                            // and then the first class's "Vendor".
-                            juce::String vendor;
-                            auto fi = obj->getProperty("Factory Info");
-                            if (auto* fiObj = fi.getDynamicObject())
-                                if (fiObj->hasProperty("Vendor"))
-                                    vendor = fiObj->getProperty("Vendor").toString();
-                            if (vendor.isEmpty() && obj->hasProperty("Vendor"))
-                                vendor = obj->getProperty("Vendor").toString();
-                            if (vendor.isEmpty())
-                            {
-                                auto classes = obj->getProperty("Classes");
-                                if (auto* arr = classes.getArray())
-                                    for (auto& cls : *arr)
-                                        if (auto* cObj = cls.getDynamicObject())
-                                            if (cObj->hasProperty("Vendor"))
-                                            {
-                                                auto v = cObj->getProperty("Vendor").toString();
-                                                if (v.isNotEmpty()) { vendor = v; break; }
-                                            }
-                            }
-                            if (vendor.isNotEmpty())
-                                manufacturer = vendor;
+                            if (obj->hasProperty("Vendor"))
+                                manufacturer = obj->getProperty("Vendor").toString();
                         }
                     }
                 }
@@ -619,32 +469,6 @@ void PluginScanner::scanDirectory(const juce::File& dir, const juce::String& for
                     if (corrected.isNotEmpty())
                         manufacturer = corrected;
                 }
-
-                // A "manufacturer" identical to the plugin name is never a real
-                // vendor: it's a per-plugin folder or a self-named vendor field
-                // (Melda's VST3 layout does this, giving a hundred junk
-                // single-plugin groups). Drop it to Unknown so the AU registry's
-                // real vendor claims it via the name-based merge in addPlugin.
-                if (normaliseForMatch(manufacturer) == normaliseForMatch(name))
-                    manufacturer = "Unknown";
-
-                // Last resort: plugins with no vendor from the folder, no VST3
-                // moduleinfo vendor, and no AU twin can still be attributed from
-                // their bundle identifier (reverse-DNS like com.vendor.product),
-                // read without loading the plugin. macOS bundles only.
-              #if JUCE_MAC
-                if (manufacturer == "Unknown"
-                    && (format == "VST3" || format == "VST"))
-                {
-                    auto bid = bundleIdentifierFor(file);
-                    if (bid.isNotEmpty())
-                    {
-                        auto v = echojay::vendorFromBundleId(bid, name);
-                        if (v.isNotEmpty())
-                            manufacturer = v;
-                    }
-                }
-              #endif
 
                 addPlugin(name, manufacturer, format, category, file.getFullPathName());
                 continue; // do NOT descend into the bundle
@@ -771,34 +595,21 @@ void PluginScanner::injectStockDawPlugins()
 std::string PluginScanner::makeKey(const juce::String& name,
                                    const juce::String& manufacturer)
 {
-    // Case-INsensitive name|manufacturer. Combined with canonicaliseManufacturer
-    // in addPlugin, this merges entries that differ only in casing (the old
-    // case-sensitive key let "Decapitator|Soundtoys" and "Decapitator|SoundToys"
-    // through as two plugins). The separator can't appear in either field.
-    return (name.toLowerCase().trim() + "|" + manufacturer.toLowerCase().trim()).toStdString();
+    // Exact (case-sensitive) name|manufacturer, matching the original dedupe
+    // semantics. The separator can't appear in either field in practice.
+    return (name + "|" + manufacturer).toStdString();
 }
 
 void PluginScanner::rebuildIndex()
 {
-    // Caller must hold pluginMutex. Rebuilds pluginIndex and nameIndex.
+    // Caller must hold pluginMutex. Rebuilds pluginIndex from the vector.
     pluginIndex.clear();
-    nameIndex.clear();
     pluginIndex.reserve(plugins.size() * 2);
-    nameIndex.reserve(plugins.size() * 2);
     for (size_t i = 0; i < plugins.size(); ++i)
-    {
         pluginIndex[makeKey(plugins[i].name, plugins[i].manufacturer)] = i;
-        auto nk = normaliseForMatch(plugins[i].name);
-        auto it = nameIndex.find(nk);
-        // Prefer an attributed row as the canonical one for its name.
-        if (it == nameIndex.end()
-            || (plugins[i].manufacturer != "Unknown"
-                && plugins[it->second].manufacturer == "Unknown"))
-            nameIndex[nk] = i;
-    }
 }
 
-void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& manufacturerIn,
+void PluginScanner::addPlugin(const juce::String& name, const juce::String& manufacturer,
                                const juce::String& format, const juce::String& category,
                                const juce::String& path)
 {
@@ -806,13 +617,6 @@ void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& ma
     // Same plugin (name + manufacturer) seen in another format just merges
     // the format string onto the existing entry.
     std::lock_guard<std::mutex> lock(pluginMutex);
-
-    // Canonicalise the vendor at this single chokepoint so the stored label,
-    // the dedupe key, and the uid all agree no matter which source (AU
-    // registry, VST3 Vendor, folder name) produced it. This is what collapses
-    // the "Soundtoys"/"SoundToys" and "UAD"/"Universal Audio" splits.
-    const juce::String name = echojay::stripChannelVariant(nameIn);
-    const juce::String manufacturer = echojay::canonicaliseManufacturer(manufacturerIn);
 
     auto key = makeKey(name, manufacturer);
     auto it = pluginIndex.find(key);
@@ -822,43 +626,6 @@ void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& ma
         if (! existing.format.contains(format))
             existing.format += "/" + format;
         return;
-    }
-
-    // No exact name|manufacturer match. Before adding a new row, reconcile
-    // against any existing entry with the SAME name so the same plugin seen
-    // across formats with one side "Unknown" collapses into one correctly
-    // attributed row instead of a duplicate (the cross-format doubles).
-    const std::string nkey = normaliseForMatch(name);
-    auto nIt = nameIndex.find(nkey);
-    if (nIt != nameIndex.end())
-    {
-        auto& existing = plugins[nIt->second];
-        const bool existingKnown = existing.manufacturer != "Unknown";
-        const bool newKnown      = manufacturer != "Unknown";
-
-        if (existingKnown && ! newKnown)
-        {
-            // New row is an "Unknown" copy of an already-attributed plugin:
-            // absorb its format and drop it.
-            if (! existing.format.contains(format))
-                existing.format += "/" + format;
-            return;
-        }
-        if (! existingKnown && newKnown)
-        {
-            // Existing row was "Unknown"; promote it to the manufacturer we
-            // just learned, re-keying the exact index to match.
-            pluginIndex.erase(makeKey(existing.name, existing.manufacturer));
-            existing.manufacturer = manufacturer;
-            existing.uid = existing.name.toLowerCase().replaceCharacter(' ', '_')
-                           + "_" + manufacturer.toLowerCase().replaceCharacter(' ', '_');
-            if (! existing.format.contains(format))
-                existing.format += "/" + format;
-            pluginIndex[makeKey(existing.name, existing.manufacturer)] = nIt->second;
-            return;
-        }
-        // else: two real but different vendors share this name (genuine
-        // collision) -> fall through and keep them as separate rows.
     }
 
     ScannedPlugin plugin;
@@ -878,13 +645,7 @@ void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& ma
     // survived in disabledUids across the rescan), keep it disabled.
     plugin.enabled = (disabledUids.find(plugin.uid) == disabledUids.end());
 
-    const size_t newIdx = plugins.size();
-    pluginIndex[key] = newIdx;
-    // Point the name index at this row if it's the first with this name, or if
-    // this row is attributed and the current canonical one is not.
-    if (nIt == nameIndex.end()
-        || (manufacturer != "Unknown" && plugins[nIt->second].manufacturer == "Unknown"))
-        nameIndex[nkey] = newIdx;
+    pluginIndex[key] = plugins.size();
     plugins.push_back(plugin);
 }
 
@@ -1279,11 +1040,6 @@ void PluginScanner::loadCache()
                     auto corrected = echojay::resolveManufacturer(p.name, p.manufacturer);
                     if (corrected.isNotEmpty())
                         p.manufacturer = corrected;
-                    // Match the canonical label a fresh scan would store, so a
-                    // stale cache shows the same vendor grouping (Soundtoys,
-                    // Universal Audio, etc.) until the next rescan rewrites it.
-                    p.manufacturer = echojay::canonicaliseManufacturer(p.manufacturer);
-                    p.name = echojay::stripChannelVariant(p.name);
                 }
                 p.format = obj->getProperty("format").toString();
                 p.category = obj->getProperty("category").toString();

@@ -36,12 +36,6 @@ public:
     
     // Scan all plugin directories (runs on background thread)
     void startScan();
-
-    // Signal any in-flight scan/load work to abort as soon as possible. Flips
-    // the shared `alive` flag that loadCache/scan loops check between steps.
-    // Safe to call from another thread (e.g. the processor destructor) before
-    // joining a background load thread, so the worker stops touching members.
-    void requestStop() { alive->store(false); }
     
     // Check if scan is running
     bool isScanning() const { return scanning.load(); }
@@ -177,15 +171,6 @@ private:
     // timeout to move on regardless.
     void scanDirectory(const juce::File& dir, const juce::String& format,
                        const std::atomic<bool>& cancelled);
-
-    // Enumerates AU plugins directly from the macOS AudioComponent registry
-    // (no-op off macOS) and adds them with their real manufacturer + name, the
-    // way a host does. This replaces matching filesystem .component files back
-    // to the registry, which was failing for vendors whose bundle filename did
-    // not match the registry plugin name. Filtered to real plugin component
-    // types (effects, music effects, instruments, generators) so codecs and
-    // format converters are skipped.
-    void scanAudioUnitsFromRegistry();
     
     // Returns true for folders that are known to hang or stall a scan —
     // iCloud Drive, Dropbox, OneDrive, Time Machine snapshots, etc. We skip
@@ -208,12 +193,6 @@ private:
     // whenever the vector is repopulated wholesale (loadCache, clear on
     // startScan). Guarded by pluginMutex like the vector itself.
     std::unordered_map<std::string, size_t> pluginIndex;
-    // Secondary index: normalised plugin NAME -> index of the canonical entry
-    // for that name. Lets addPlugin absorb an "Unknown" copy of a plugin into
-    // the same-named entry that already has a real manufacturer (and vice
-    // versa), which collapses the cross-format doubles (e.g. the VST3 known as
-    // "Plugin Alliance" and its AU twin that came through as "Unknown").
-    std::unordered_map<std::string, size_t> nameIndex;
     void rebuildIndex();                       // call under lock after bulk vector changes
     static std::string makeKey(const juce::String& name,
                                const juce::String& manufacturer);
