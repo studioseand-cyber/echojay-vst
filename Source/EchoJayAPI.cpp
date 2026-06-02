@@ -92,7 +92,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
             statusCode = 0;
             auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
                                .withExtraHeaders(headers)
-                               .withConnectionTimeoutMs(8000)
+                               .withConnectionTimeoutMs(60000)
                                .withStatusCode(&statusCode);
 
             auto stream = url.createInputStream(options);
@@ -165,7 +165,7 @@ void EchoJayAPI::getJSON(const juce::String& path,
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                            .withExtraHeaders(headers)
-                           .withConnectionTimeoutMs(8000)
+                           .withConnectionTimeoutMs(60000)
                            .withStatusCode(&statusCode);
         
         auto stream = url.createInputStream(options);
@@ -572,7 +572,7 @@ void EchoJayAPI::fetchRemoteConfig()
         
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-                           .withConnectionTimeoutMs(8000)
+                           .withConnectionTimeoutMs(60000)
                            .withStatusCode(&statusCode);
         
         auto stream = url.createInputStream(options);

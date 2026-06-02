@@ -11,3 +11,5 @@ dmg-content/
 resources/welcome.html
 EchoJay_artefacts/
 .DS_Store
+.vercel
+.env*.local
