@@ -13,3 +13,9 @@ EchoJay_artefacts/
 .DS_Store
 .vercel
 .env*.local
+build/
+build-*/
+cmake-build-*/
+*.xcodeproj/
+DerivedData/
+.DS_Store

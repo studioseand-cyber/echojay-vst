@@ -1,0 +1,21 @@
+{
+  "logFormatVersion": 1,
+  "jobId": "6a57161c-98d0-4506-8239-62141c7c6c7f",
+  "status": "Invalid",
+  "statusSummary": "Archive contains critical validation errors",
+  "statusCode": 4000,
+  "archiveFilename": "EchoJay-v1.2.0.dmg",
+  "uploadDate": "2026-05-02T18:57:23.342Z",
+  "sha256": "d6c1bbfdbd8a51b8a2d9d687cadbfb2ce920c48ff6c24fd4c523a8fd04669213",
+  "ticketContents": null,
+  "issues": [
+    {
+      "severity": "error",
+      "code": null,
+      "path": "EchoJay-v1.2.0.dmg/EchoJay-v1.2.0-Installer.pkg",
+      "message": "The binary is not signed.",
+      "docUrl": "https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution/resolving_common_notarization_issues#3087721",
+      "architecture": null
+    }
+  ]
+}
