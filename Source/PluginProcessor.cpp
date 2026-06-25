@@ -114,6 +114,10 @@ EchoJayProcessor::~EchoJayProcessor()
     }
 
     ejTeardownLog("~EchoJayProcessor exit (members destruct next)");
+
+    // Link consumer — close synchronously (audio thread stopped)
+    disconnectAllLinkSlotsNow();
+    closeLinkRegistryNow();
 }
 
 bool EchoJayProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -335,6 +339,24 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     }
     
     
+    // Link consumer: drain available frames from all active Links.
+    // tryEnter is non-blocking — if message thread is swapping a mapping, skip this block.
+    for (int li = 0; li < kMaxLinkSlots; ++li)
+    {
+        auto& ls = activeLinkSlots[li];
+        if (ls.lock.tryEnter())
+        {
+            if (ls.map != nullptr)
+            {
+                uint32_t n = LinkShm::ringConsume(ls.map, nullptr, nullptr,
+                                                   buffer.getNumSamples());
+                if (n > 0)
+                    ls.framesRead.fetch_add((int64_t)n, std::memory_order_relaxed);
+            }
+            ls.lock.exit();
+        }
+    }
+
     // Silence detection (for UI state only — does NOT auto-stop capture)
     float peakL = 0, peakR = 0;
     for (int i = 0; i < buffer.getNumSamples(); ++i)
@@ -368,6 +390,23 @@ juce::String EchoJayProcessor::getEffectiveChannelName() const
     if (channelType == ChannelType::Other && customChannelName.isNotEmpty())
         return customChannelName;
     return channelTypeNames[(int)channelType];
+}
+
+void EchoJayProcessor::setProjectName(const juce::String& name)
+{
+    if (name != projectName)
+    {
+        projectName = name;
+        captureVersion = 1; // reset version whenever the project name changes
+    }
+}
+
+juce::String EchoJayProcessor::computePassName() const
+{
+    juce::String proj = projectName.trim();
+    if (proj.isEmpty())
+        return "Pass " + juce::String(passCounter + 1);   // passCounter is 0-based; +1 gives 1-based display
+    return proj + " v" + juce::String(juce::jmax(1, captureVersion));
 }
 
 void EchoJayProcessor::setChannelType(ChannelType t)
@@ -419,11 +458,15 @@ void EchoJayProcessor::stopCapture()
     captureState.store(CaptureState::Complete);
     waveformRecorder.stopRecording();
     
-    passCounter++;
-    
+    // Compute pass name BEFORE incrementing so the display value matches the counter.
+    // Then increment only the counter that was actually used.
     CaptureSnapshot snap;
-    snap.id = juce::String(juce::Time::currentTimeMillis());
-    snap.name = "Pass " + juce::String(passCounter);
+    snap.id   = juce::String(juce::Time::currentTimeMillis());
+    snap.name = computePassName();   // reads passCounter+1 (no-project) or captureVersion (project)
+    if (projectName.trim().isEmpty())
+        passCounter++;               // "Pass N" used → next will be "Pass N+1"
+    else
+        captureVersion++;
     snap.channelType = channelType;
     snap.customChannelName = customChannelName;
     
@@ -598,7 +641,7 @@ void EchoJayProcessor::stopCapture()
     
     saveThread = std::make_unique<SaveThread>(recorderPtr, captureDir, passName, snapIdx, mutexPtr, snapsPtr);
     saveThread->startThread();
-    
+
     autoFeedbackReady.store(true);
 }
 
@@ -1037,6 +1080,8 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     state->setProperty("customChannelName", customChannelName);
     state->setProperty("channelTypePromptDismissed", channelTypePromptDismissed);
     state->setProperty("passCounter", passCounter);
+    state->setProperty("projectName", projectName);
+    state->setProperty("captureVersion", captureVersion);
     
     // Serialise snapshots — copy under lock, serialise outside
     std::vector<CaptureSnapshot> snapsCopy;
@@ -1168,6 +1213,10 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             else
                 channelTypePromptDismissed = (channelType != ChannelType::FullMix);
             passCounter = (int)obj->getProperty("passCounter");
+            if (obj->hasProperty("projectName"))
+                projectName = obj->getProperty("projectName").toString();
+            if (obj->hasProperty("captureVersion"))
+                captureVersion = juce::jmax(1, (int)obj->getProperty("captureVersion"));
             
             // Restore snapshots
             auto snapsVar = obj->getProperty("snapshots");
@@ -1310,3 +1359,165 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
 
 juce::AudioProcessorEditor* EchoJayProcessor::createEditor() { return new EchoJayEditor(*this); }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new EchoJayProcessor(); }
+
+// =============================================================================
+//  EchoJay Link — consumer implementation (stage 2: registry auto-discovery)
+// =============================================================================
+
+void EchoJayProcessor::ensureLinkRegistryOpen()
+{
+    if (linkRegMap) return;
+
+    // Resolve directory once — reuse for audio slot opens
+    if (linkResolvedDir.isEmpty())
+    {
+        int dirErr = 0;
+        linkResolvedDir = LinkShm::resolveDir(dirErr);
+        if (linkResolvedDir.isEmpty())
+        {
+            consumerDiag.regKey    = "(no writable dir)";
+            consumerDiag.regOpened = false;
+            consumerDiag.regErrno  = dirErr;
+            return;
+        }
+    }
+
+    consumerDiag.regKey = linkResolvedDir;
+    int err = 0;
+    linkRegMap = LinkShm::openRegistry(linkResolvedDir, linkRegFd, err);
+    consumerDiag.regOpened = (linkRegMap != nullptr);
+    consumerDiag.regErrno  = err;
+}
+
+void EchoJayProcessor::closeLinkRegistryNow()
+{
+    LinkShm::closeRegistry(linkRegMap, linkRegFd);
+    linkRegMap = nullptr;
+    linkRegFd  = -1;
+}
+
+void EchoJayProcessor::connectLinkAudioSlot(int i, const juce::String& audioFilename, float sr)
+{
+    if (i < 0 || i >= kMaxLinkSlots) return;
+    if (linkResolvedDir.isEmpty()) return;
+    // Close existing mapping for this slot if any
+    disconnectLinkAudioSlot(i);
+
+    int   fd  = -1;
+    void* map = LinkShm::openRingConsumer(linkResolvedDir, audioFilename, fd);
+    if (!map) return;
+
+    {
+        const juce::SpinLock::ScopedLockType sl(activeLinkSlots[i].lock);
+        activeLinkSlots[i].map    = map;
+        activeLinkSlots[i].fd     = fd;
+        activeLinkSlots[i].shmKey = audioFilename;  // track filename for change detection
+    }
+    activeLinkSlots[i].framesRead.store(0);
+    juce::ignoreUnused(sr); // stored per-slot in linkSlotInfos for UI
+}
+
+void EchoJayProcessor::disconnectLinkAudioSlot(int i)
+{
+    if (i < 0 || i >= kMaxLinkSlots) return;
+    void* old = nullptr;
+    int   fd  = -1;
+    {
+        const juce::SpinLock::ScopedLockType sl(activeLinkSlots[i].lock);
+        old                      = activeLinkSlots[i].map;
+        fd                       = activeLinkSlots[i].fd;
+        activeLinkSlots[i].map   = nullptr;
+        activeLinkSlots[i].fd    = -1;
+        activeLinkSlots[i].shmKey = {};
+    }
+    if (!old) return;
+    // Deferred munmap — audio thread may be inside ringConsume with old pointer
+    juce::Timer::callAfterDelay(50, [old, fd]()
+    {
+        LinkShm::closeRing(old, fd, {}, /*doUnlink=*/false);
+    });
+}
+
+void EchoJayProcessor::disconnectAllLinkSlotsNow()
+{
+    for (int i = 0; i < kMaxLinkSlots; ++i)
+    {
+        void* old = nullptr;
+        int   fd  = -1;
+        {
+            const juce::SpinLock::ScopedLockType sl(activeLinkSlots[i].lock);
+            old                      = activeLinkSlots[i].map;
+            fd                       = activeLinkSlots[i].fd;
+            activeLinkSlots[i].map   = nullptr;
+            activeLinkSlots[i].fd    = -1;
+            activeLinkSlots[i].shmKey = {};
+        }
+        if (old) LinkShm::closeRing(old, fd, {}, false);
+    }
+}
+
+void EchoJayProcessor::refreshLinkRegistry()
+{
+    // Message thread only. Called from editor timer ~2 Hz.
+    ensureLinkRegistryOpen();
+    if (!linkRegMap) return;
+
+    std::vector<LinkSlotInfo> newInfos;
+
+    for (int i = 0; i < kMaxLinkSlots; ++i)
+    {
+        LinkShm::SlotSnapshot snap;
+        const bool slotActive = LinkShm::readSlot(linkRegMap, i, snap);
+
+        if (!slotActive)
+        {
+            // Slot went inactive — disconnect audio if we had it open
+            if (activeLinkSlots[i].map != nullptr)
+                disconnectLinkAudioSlot(i);
+            slotProbeStates[i] = {};
+            continue;
+        }
+
+        // Stale detection: heartbeat must climb
+        auto& ps = slotProbeStates[i];
+        if (snap.heartbeat == ps.lastHb)
+        {
+            ps.staleCycles++;
+            if (ps.staleCycles >= kRegStaleCycles)
+            {
+                // Producer appears to have crashed — reap the slot
+                disconnectLinkAudioSlot(i);
+                LinkShm::reapSlot(linkRegMap, i);
+                ps = {};
+                continue;
+            }
+        }
+        else
+        {
+            ps.lastHb     = snap.heartbeat;
+            ps.staleCycles = 0;
+        }
+
+        // Connect audio ring if not open (or if filename changed)
+        if (activeLinkSlots[i].shmKey != snap.audioFilename || activeLinkSlots[i].map == nullptr)
+            connectLinkAudioSlot(i, snap.audioFilename, snap.sampleRate);
+
+        const bool connected = activeLinkSlots[i].map != nullptr;
+        int64_t frames = activeLinkSlots[i].framesRead.load(std::memory_order_relaxed);
+
+        LinkSlotInfo info;
+        info.name       = snap.displayName;
+        info.connected  = connected;
+        info.sampleRate = snap.sampleRate;
+        info.framesRead = frames;
+        newInfos.push_back(std::move(info));
+    }
+
+    linkSlotInfos = std::move(newInfos);
+
+    // Update consumer diagnostics
+    consumerDiag.activeSlotCount = (int)linkSlotInfos.size();
+    juce::StringArray names;
+    for (const auto& s : linkSlotInfos) names.add(s.name);
+    consumerDiag.nameList = names.joinIntoString(", ");
+}

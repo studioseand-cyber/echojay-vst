@@ -158,8 +158,25 @@ public:
     static juce::String remoteIndividualChannelRules;
     static juce::String remoteIndividualChannelStyle;
     
+    // ============ Workspace data (used by EchoJayWorkspace) ============
+
+    // Raw GET /api/data — calls back on the message thread via callAsync.
+    void getWorkspaceData(std::function<void(const juce::var&, int)> cb)
+    {
+        if (isLoggedIn()) getJSON("/api/data", std::move(cb));
+        else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
+    }
+
+    // Raw POST /api/data — calls back on the message thread via callAsync.
+    void postWorkspaceData(const juce::String& body,
+                           std::function<void(const juce::var&, int)> cb)
+    {
+        if (isLoggedIn()) postJSON("/api/data", body, std::move(cb));
+        else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
+    }
+
     // ============ Local Settings ============
-    
+
     void setEndpoint(const juce::String& url) { apiEndpoint = url; }
     juce::String getEndpoint() const { return apiEndpoint; }
     

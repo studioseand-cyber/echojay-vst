@@ -1,10 +1,12 @@
 #pragma once
 #include <JuceHeader.h>
+#include <set>
 #include "PluginProcessor.h"
 #include "EchoJayAPI.h"
 #include "EchoJayLookAndFeel.h"
 #include "ParticleVisual.h"
 #include "PluginChecklist.h"
+#include "EchoJayWorkspace.h"
 
 class EchoJayEditor : public juce::AudioProcessorEditor,
                        private juce::Timer,
@@ -32,7 +34,14 @@ private:
     void textEditorReturnKeyPressed(juce::TextEditor&) override;
     
     void sendChatMessage(const juce::String& msg);
-    void requestAIFeedback(const CaptureSnapshot& snap);
+
+    // prevReview is non-null when this is not the first capture in the chat.
+    void requestAIFeedback(const CaptureSnapshot& snap,
+                           const juce::String& chatId,
+                           const juce::String& reviewId,
+                           const juce::String& passName,
+                           int version,
+                           const WsReview* prevReview);
     void layoutChatMessages();
     
     void showLoginScreen();
@@ -77,7 +86,13 @@ private:
     
     enum class View { Meters, Visual, Compare, Settings };
     View currentView { View::Meters };
-    
+
+    // V2 six-tab shell
+    enum class Tab { Visualisation, Meters, Chat, Compare, Link, Chain, Settings };
+    Tab currentTab { Tab::Visualisation };
+    static constexpr int kTabBarH = 28;
+    void switchToTab(Tab t);
+
     bool compactMode = false;
     int fullModeWidth = 900;
     int fullModeHeight = 580;
@@ -144,6 +159,7 @@ private:
     juce::TextButton settingsBtn { "Settings" };
     juce::ComboBox channelTypeBox;
     juce::ComboBox genreBox;
+    juce::TextEditor projectInput;  // optional project name — drives pass versioning
     juce::Label statusLabel;
     juce::Label durationLabel;
     juce::Label detectedLabel;
@@ -277,10 +293,13 @@ private:
     // Chat
     struct ChatMsg {
         juce::String role, content;
+        juce::String reviewId;    // non-empty for capture messages; key into workspace.reviews
         bool hasWaveform = false;
         std::vector<WaveformRecorder::ThumbnailPoint> waveform;
         juce::String wavFilename;
         juce::String wavFilePath;
+        juce::String audioUrl;    // remote URL (web captures)
+        juce::String origin;      // "plugin" | "" (web) — controls playback UI
         float durationSeconds = 0;
         float lufs = -100;
     };
@@ -362,7 +381,14 @@ private:
     void stopPlayback();
     
     EchoJayAPI api;
-    
+    EchoJayWorkspace workspace { api };
+
+    // =========================================================================
+    //  Link tab — live auto-discovery panel
+    // =========================================================================
+    void paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int> area);
+    int  linkRefreshTick = 0;
+
     // Update notification
     bool updateAvailable = false;
     bool updateDismissed = false;
@@ -445,6 +471,69 @@ private:
 
     void showPluginReview();
     void hidePluginReview();
+
+    // ---- Chat sidebar (Phase 2a) -------------------------------------------
+    static constexpr int kSidebarW = 210;
+
+    // Which albums are collapsed (by album id). Default = all expanded.
+    std::set<juce::String> collapsedAlbums;
+
+    // Currently open chat id (empty = none)
+    juce::String currentChatId;
+
+    // Temporary debug readout shown in the status-line slot (Chat tab)
+    juce::String sidebarDebugText;
+
+    // ListBoxModel for the chat sidebar. Owns the flat row list and
+    // routes clicks back into the editor via callbacks.
+    // Sidebar toolbar (above the ListBox)
+    static constexpr int kSidebarToolbarH = 30;
+    juce::TextButton sidebarNewChatBtn  { "+ New chat"  };
+    juce::TextButton sidebarNewAlbumBtn { "+ New album" };
+
+    struct ChatSidebarModel : public juce::ListBoxModel
+    {
+        struct Row {
+            enum class Kind { SectionTitle, AlbumHeader, ChatRow, ReviewRow };
+            Kind         kind   = Kind::SectionTitle;
+            juce::String id;
+            juce::String label;
+            juce::String meta;
+            bool         collapsed = false;
+            bool         active    = false;
+            int          indent    = 0;
+        };
+        std::vector<Row> rows;
+
+        std::function<void(const juce::String&)> onChatClicked;
+        std::function<void(const juce::String&)> onAlbumToggled;
+        // Right-click on a chat row — editor shows rename/delete/move menu
+        std::function<void(const juce::String& chatId)> onChatContextMenu;
+        // Right-click on an album header — editor shows rename/delete menu
+        std::function<void(const juce::String& albumId)> onAlbumContextMenu;
+
+        int  getNumRows() override { return (int)rows.size(); }
+        void paintListBoxItem(int rowNum, juce::Graphics& g,
+                              int width, int height, bool isSelected) override;
+        void listBoxItemClicked(int rowNum, const juce::MouseEvent&) override;
+
+        void refreshRows(const std::vector<WsChat>&,
+                         const std::vector<WsAlbum>&,
+                         const std::vector<WsReview>&,
+                         const std::set<juce::String>& collapsed,
+                         const juce::String& activeChatId);
+    };
+    std::unique_ptr<ChatSidebarModel> sidebarModel;
+    juce::ListBox chatSidebar { {}, nullptr };
+
+    void loadChatFromWorkspace(const juce::String& chatId);
+    void createNewChat();
+    void createNewAlbum();
+    void showMoveToAlbumMenu(const juce::String& chatId);
+    void showAlbumContextMenu(const juce::String& albumId);
+    juce::String getCurrentAlbumId() const; // album containing currentChatId
+    // Returns the reviewId of the created review (empty string if not logged in)
+    juce::String createReviewFromCapture(const CaptureSnapshot& snap, const juce::String& wavPath);
 
     // Shows the plugin scan menu (Scan Now / Add Folder / manage folders)
     // anchored to the given component. Shared by the header scan button and

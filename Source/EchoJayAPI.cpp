@@ -99,7 +99,9 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
 
             if (stream != nullptr)
             {
-                auto responseText = stream->readEntireStreamAsString();
+                juce::MemoryBlock mb;
+                stream->readIntoMemoryBlock(mb);
+                auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
                 json = juce::JSON::parse(responseText);
                 break; // got a response (any status) — stop retrying
             }
@@ -173,7 +175,9 @@ void EchoJayAPI::getJSON(const juce::String& path,
         juce::var json;
         if (stream != nullptr)
         {
-            auto responseText = stream->readEntireStreamAsString();
+            juce::MemoryBlock mb;
+            stream->readIntoMemoryBlock(mb);
+            auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
             json = juce::JSON::parse(responseText);
         }
         
@@ -579,7 +583,9 @@ void EchoJayAPI::fetchRemoteConfig()
         
         if (stream != nullptr && statusCode == 200)
         {
-            auto responseText = stream->readEntireStreamAsString();
+            juce::MemoryBlock mb;
+            stream->readIntoMemoryBlock(mb);
+            auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
             auto json = juce::JSON::parse(responseText);
             
             if (auto* obj = json.getDynamicObject())

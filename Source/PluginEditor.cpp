@@ -197,6 +197,21 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     setWantsKeyboardFocus(true);
     setOpaque(true);
 
+    // Wire workspace load callback — repaint so Chat tab status line updates
+    workspace.onLoaded = [this]()
+    {
+        DBG("[EchoJayWorkspace] onLoaded — chats:" << (int)workspace.getChats().size()
+            << "  albums:" << (int)workspace.getAlbums().size()
+            << "  reviews:" << (int)workspace.getReviews().size());
+        if (sidebarModel)
+        {
+            sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                      workspace.getReviews(), collapsedAlbums, currentChatId);
+            chatSidebar.updateContent();
+        }
+        repaint();
+    };
+
     // Stock plugins are injected from the auto-detected host DAW (set in the
     // processor via juce::PluginHostType), not from the Settings selection, so
     // there's nothing to seed here.
@@ -364,6 +379,42 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     genreBox.setColour(juce::ComboBox::textColourId, C::text);
     genreBox.setColour(juce::ComboBox::outlineColourId, C::border2);
     addAndMakeVisible(genreBox);
+
+    // --- Project input ---
+    projectInput.setFont(juce::Font(juce::FontOptions(12.0f)));
+    projectInput.setTextToShowWhenEmpty("Project name...", C::text3.withAlpha(0.5f));
+    projectInput.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff111520));
+    projectInput.setColour(juce::TextEditor::outlineColourId, C::border2);
+    projectInput.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff22d3ee).withAlpha(0.6f));
+    projectInput.setColour(juce::TextEditor::textColourId, C::text);
+    projectInput.setText(processorRef.getProjectName(), juce::dontSendNotification);
+    projectInput.onTextChange = [this] {
+        juce::String proj = projectInput.getText().trim();
+        processorRef.setProjectName(proj);
+        // Immediately rename the current chat to match the project name
+        if (currentChatId.isNotEmpty())
+        {
+            juce::String newTitle = proj;
+            if (proj.isEmpty()) {
+                for (auto& ch : workspace.getChats()) {
+                    if (ch.id == currentChatId) {
+                        if (ch.created.isNotEmpty())
+                            newTitle = juce::Time::fromISO8601(ch.created).formatted("%d %b %Y, %H:%M");
+                        break;
+                    }
+                }
+            }
+            workspace.setChatTitle(currentChatId, newTitle);
+            workspace.setChatTrackName(currentChatId, proj);
+            if (sidebarModel)
+            {
+                sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                          workspace.getReviews(), collapsedAlbums, currentChatId);
+                chatSidebar.updateContent();
+            }
+        }
+    };
+    addAndMakeVisible(projectInput);
 
     // --- Capture ---
     captureBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -1113,6 +1164,44 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     addChildComponent(upgradeBtn);
 
+    // Chat sidebar — ListBox + toolbar (Phase 2a/2b).
+    sidebarModel = std::make_unique<ChatSidebarModel>();
+    sidebarModel->onChatClicked = [this](const juce::String& id)
+    {
+        loadChatFromWorkspace(id);
+    };
+    sidebarModel->onAlbumToggled = [this](const juce::String& id)
+    {
+        if (collapsedAlbums.count(id))
+            collapsedAlbums.erase(id);
+        else
+            collapsedAlbums.insert(id);
+        sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                  workspace.getReviews(), collapsedAlbums, currentChatId);
+        chatSidebar.updateContent();
+        repaint();
+    };
+    sidebarModel->onChatContextMenu = [this](const juce::String& id)
+    {
+        showMoveToAlbumMenu(id);
+    };
+    sidebarModel->onAlbumContextMenu = [this](const juce::String& id)
+    {
+        showAlbumContextMenu(id);
+    };
+    chatSidebar.setModel(sidebarModel.get());
+    chatSidebar.setRowHeight(36);
+    chatSidebar.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff080A12));
+    chatSidebar.setColour(juce::ListBox::outlineColourId, juce::Colour(0x00000000));
+    chatSidebar.setOutlineThickness(0);
+    addChildComponent(chatSidebar);
+
+    // Sidebar toolbar buttons
+    sidebarNewChatBtn.onClick = [this]  { createNewChat();  };
+    sidebarNewAlbumBtn.onClick = [this] { createNewAlbum(); };
+    addChildComponent(sidebarNewChatBtn);
+    addChildComponent(sidebarNewAlbumBtn);
+
     addChildComponent(chatScroll);
     chatScroll.setViewedComponent(&chatContent, false);
     chatScroll.setScrollBarsShown(true, false);
@@ -1192,6 +1281,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         };
         addAndMakeVisible(wavePlayOverlays[(size_t)i]);
     }
+
+    // Link tab has no persistent child components — painted directly.
 
     startTimerHz(20);
 }
@@ -1300,7 +1391,7 @@ void EchoJayEditor::showLoginScreen()
     signUpLabel.setVisible(true); signUpBtn.setVisible(true);
 
     juce::Component* mainComps[] = { &captureBtn, &scanBtn,
-        &channelTypeBox, &genreBox, &statusLabel, &durationLabel, &detectedLabel,
+        &channelTypeBox, &genreBox, &projectInput, &statusLabel, &durationLabel, &detectedLabel,
         &passLabel, &userLabel, &usageLabel, &chatInput, &chatSendBtn, &chatScroll,
         &compareBtn, &settingsBtn, &playbackBtn, &wavSavedLabel, &upgradeBtn };
     for (auto* c : mainComps) c->setVisible(false);
@@ -1347,7 +1438,7 @@ void EchoJayEditor::showMainScreen()
     bool genrePromptWillShow = !genrePromptDismissedThisSession && !promptWillShow;
 
     juce::Component* mainComps[] = { &captureBtn, &scanBtn,
-        &channelTypeBox, &genreBox, &statusLabel, &durationLabel, &detectedLabel,
+        &channelTypeBox, &genreBox, &projectInput, &statusLabel, &durationLabel, &detectedLabel,
         &passLabel, &userLabel, &usageLabel,
         &compareBtn, &settingsBtn, &wavSavedLabel };
     for (auto* c : mainComps) c->setVisible(true);
@@ -1386,7 +1477,10 @@ void EchoJayEditor::showMainScreen()
                 safeThis2->settingsFetched = true;
         });
     }
-    
+
+    // Load workspace data on plugin open
+    workspace.requestLoad();
+
     resized(); repaint();
 }
 
@@ -2433,6 +2527,109 @@ void EchoJayEditor::runAICompare()
         });
 }
 
+// =============================================================================
+//  Link tab painter — auto-discovery list
+// =============================================================================
+void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int> area)
+{
+    using C = EchoJayLookAndFeel::Colours;
+    const int pad = 32;
+    int y = area.getY() + 16;
+    const int fw = area.getWidth() - pad * 2;
+
+    // Title
+    g.setColour(C::blue2);
+    g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+    g.drawText("LINK MONITOR", pad, y, fw, 18, juce::Justification::centredLeft);
+    y += 26;
+
+    // Consumer diagnostic bar
+    {
+        const auto& cd = processorRef.consumerDiag;
+        juce::String regStr = cd.regOpened ? "opened"
+                            : (cd.regKey.isEmpty() ? "not tried"
+                                                   : "FAILED errno " + juce::String(cd.regErrno));
+        juce::String diagLine = "registry: " + regStr
+                              + "  |  active slots: " + juce::String(cd.activeSlotCount)
+                              + "  |  names: " + (cd.nameList.isEmpty() ? "(none)" : cd.nameList);
+        juce::String keyLine  = "dir: " + (cd.regKey.isEmpty() ? "(none)" : cd.regKey);
+
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(10.0f)));
+        g.drawText(diagLine, pad, y,      fw, 14, juce::Justification::centredLeft);
+        g.drawText(keyLine,  pad, y + 14, fw, 13, juce::Justification::centredLeft);
+    }
+    y += 34;
+
+    const auto& slots = processorRef.getLinkSlotInfos();
+
+    if (slots.empty())
+    {
+        // Empty state
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        const int emptyY = area.getY() + area.getHeight() / 2 - 20;
+        g.drawText("No active Links detected.", pad, emptyY, fw, 18,
+                   juce::Justification::centred);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText("Add an EchoJay Link plugin to a channel and turn it on.",
+                   pad, emptyY + 22, fw, 14, juce::Justification::centred);
+        return;
+    }
+
+    // One card per slot
+    const int cardH = 54;
+    const int dotD  = 10;
+
+    for (const auto& slot : slots)
+    {
+        const int cardX = pad;
+        const int cardW = fw;
+
+        // Card background
+        g.setColour(C::bg3);
+        g.fillRoundedRectangle((float)cardX, (float)y, (float)cardW, (float)cardH, 6.f);
+        g.setColour(C::border2);
+        g.drawRoundedRectangle((float)cardX, (float)y, (float)cardW, (float)cardH, 6.f, 1.f);
+
+        // Connection dot
+        const juce::Colour dotCol = slot.connected
+            ? juce::Colour(0xff22c55e)   // green
+            : juce::Colour(0xffef4444);  // red
+        const float dotX = (float)(cardX + cardW - dotD - 10);
+        const float dotY = (float)(y + (cardH - dotD) / 2);
+        g.setColour(dotCol.withAlpha(0.25f));
+        g.fillEllipse(dotX - 3.f, dotY - 3.f, (float)(dotD + 6), (float)(dotD + 6));
+        g.setColour(dotCol);
+        g.fillEllipse(dotX, dotY, (float)dotD, (float)dotD);
+
+        // Name
+        g.setColour(C::text);
+        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+        g.drawText(slot.name.isEmpty() ? "(unnamed)" : slot.name,
+                   cardX + 14, y + 8, cardW - dotD - 36, 18,
+                   juce::Justification::centredLeft);
+
+        // Stats line
+        juce::String stats;
+        if (slot.connected)
+            stats = "sr " + juce::String((int)slot.sampleRate)
+                  + "  |  frames " + juce::String(slot.framesRead);
+        else
+            stats = "waiting for audio...";
+
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText(stats, cardX + 14, y + 30, cardW - dotD - 36, 14,
+                   juce::Justification::centredLeft);
+
+        y += cardH + 8;
+        if (y > area.getBottom() - cardH) break; // don't overflow
+    }
+}
+
+// =============================================================================
+
 void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> area)
 {
     auto snaps = processorRef.getSnapshots();
@@ -2920,6 +3117,130 @@ void EchoJayEditor::hideSettingsView()
     resized(); repaint();
 }
 
+// ============================================================================
+// V2 Tab Shell
+// ============================================================================
+
+void EchoJayEditor::switchToTab(Tab t)
+{
+    if (currentTab == t) return;
+    currentTab = t;
+
+    // Tear down any active overlay views
+    if (currentView == View::Compare) { currentView = View::Meters; hideCompareView(); }
+    if (currentView == View::Settings) hideSettingsView();
+
+    // (Link tab has no persistent child components — all painted)
+
+    // Particle visual: authoritative start/stop on every tab switch.
+    // The GL context uses continuous repainting — setVisible(false) alone does not
+    // stop it from rendering. We must detach (stop) when leaving Visualisation and
+    // re-attach (start) when entering it.
+    if (t == Tab::Visualisation)
+    {
+        visualMode = true;
+        particleVisualHolder.setVisible(true);
+        if (particleVisual != nullptr)
+            particleVisual->start();
+    }
+    else
+    {
+        // Clear visualMode so resized() cannot re-show the holder via its
+        // "visualMode && currentView == View::Meters" branch.
+        visualMode = false;
+        particleVisualHolder.setVisible(false);
+        if (particleVisual != nullptr)
+            particleVisual->stop();
+    }
+
+    // Per-tab setup
+    switch (t)
+    {
+        case Tab::Visualisation:
+            visualMode = true; // Visualisation tab always shows the particle visual
+            chatSidebar.setVisible(false);
+            if (!compactMode)
+            {
+                chatScroll.setVisible(true);
+                chatInput.setVisible(true);
+                chatSendBtn.setVisible(true);
+            }
+            break;
+        case Tab::Chat:
+            if (!compactMode)
+            {
+                chatSidebar.setVisible(true);
+                chatScroll.setVisible(true);
+                chatInput.setVisible(true);
+                chatSendBtn.setVisible(true);
+            }
+            // Load workspace on first open only. Do NOT reload on every tab
+            // switch — that would overwrite in-flight local mutations (captures)
+            // with a stale server copy before they have been persisted.
+            if (workspace.getLoadState() == EchoJayWorkspace::LoadState::Idle)
+                workspace.requestLoad();
+            break;
+
+        case Tab::Meters:
+            // Split layout (meters left, chat right) — same as Visualisation.
+            // Tear down settings/compare so their content can't bleed in.
+            if (currentView == View::Settings) hideSettingsView();
+            if (currentView == View::Compare)  { hideCompareView(); }
+            currentView = View::Meters;
+            visualMode = false; // force standard meter readout (not particle visual)
+            chatSidebar.setVisible(false);
+            if (!compactMode)
+            {
+                chatScroll.setVisible(true);
+                chatInput.setVisible(true);
+                chatSendBtn.setVisible(true);
+            }
+            break;
+
+        case Tab::Compare:
+            currentView = View::Compare;
+            chatSidebar.setVisible(false);
+            showCompareView(); // sets up compare components and calls resized/repaint
+            chatScroll.setVisible(false);
+            chatInput.setVisible(false);
+            chatSendBtn.setVisible(false);
+            chatTextSizeBtn.setVisible(false);
+            return; // showCompareView already called resized/repaint
+
+        case Tab::Settings:
+            chatSidebar.setVisible(false);
+            showSettingsView(); // sets currentView = Settings, calls resized/repaint
+            chatScroll.setVisible(false);
+            chatInput.setVisible(false);
+            chatSendBtn.setVisible(false);
+            chatTextSizeBtn.setVisible(false);
+            return; // showSettingsView already called resized/repaint
+
+        case Tab::Chain:
+            chatSidebar.setVisible(false);
+            chatScroll.setVisible(false);
+            chatInput.setVisible(false);
+            chatSendBtn.setVisible(false);
+            chatTextSizeBtn.setVisible(false);
+            upgradeBtn.setVisible(false);
+            break;
+
+        case Tab::Link:
+            chatSidebar.setVisible(false);
+            chatScroll.setVisible(false);
+            chatInput.setVisible(false);
+            chatSendBtn.setVisible(false);
+            chatTextSizeBtn.setVisible(false);
+            upgradeBtn.setVisible(false);
+            // Trigger an immediate refresh so the list isn't blank on tab switch
+            processorRef.refreshLinkRegistry();
+            break;
+    }
+
+    resized();
+    repaint();
+}
+
 void EchoJayEditor::saveSettingsToServer()
 {
     UserSettings s;
@@ -2965,6 +3286,1083 @@ void EchoJayEditor::saveSettingsToServer()
     });
 }
 
+// ============================================================================
+// Chat sidebar — Phase 2a
+// ============================================================================
+
+// ============================================================================
+// ChatSidebarModel — ListBoxModel implementation
+// ============================================================================
+
+void EchoJayEditor::ChatSidebarModel::refreshRows(
+    const std::vector<WsChat>&  chats,
+    const std::vector<WsAlbum>& albums,
+    const std::vector<WsReview>& reviews,
+    const std::set<juce::String>& collapsedSet,
+    const juce::String& activeChatId)
+{
+    rows.clear();
+
+    // Build set of chat ids belonging to at least one album
+    std::set<juce::String> albumedIds;
+    for (auto& album : albums)
+        for (auto& cid : album.chatIds)
+            albumedIds.insert(cid);
+
+    // --- Section: Albums & Chats ---
+    {
+        Row r;
+        r.kind  = Row::Kind::SectionTitle;
+        r.label = "ALBUMS & CHATS";
+        rows.push_back(r);
+    }
+
+    for (auto& album : albums)
+    {
+        bool collapsed = (collapsedSet.count(album.id) > 0);
+        int chatCount = 0;
+        for (auto& cid : album.chatIds)
+            for (auto& ch : chats)
+                if (ch.id == cid && !ch.messages.empty()) ++chatCount;
+
+        // Strip any leading non-ASCII characters (e.g. folder emoji stored by
+        // the web app) so the name renders cleanly in JUCE's default font.
+        juce::String albumName = album.name;
+        while (albumName.isNotEmpty() && (albumName[0] < 0 || albumName[0] > 127))
+            albumName = albumName.substring(1);
+        albumName = albumName.trimStart();
+
+        Row header;
+        header.kind      = Row::Kind::AlbumHeader;
+        header.id        = album.id;
+        header.collapsed = collapsed;
+        header.label     = albumName;
+        if (chatCount > 0) header.label += "  (" + juce::String(chatCount) + ")";
+        rows.push_back(header);
+
+        if (!collapsed)
+        {
+            for (auto& cid : album.chatIds)
+            {
+                const WsChat* chat = nullptr;
+                for (auto& ch : chats)
+                    if (ch.id == cid && !ch.messages.empty()) { chat = &ch; break; }
+                if (!chat) continue;
+
+                Row r;
+                r.kind   = Row::Kind::ChatRow;
+                r.id     = chat->id;
+                r.label  = chat->title.isEmpty() ? "Untitled" : chat->title;
+                r.active = (chat->id == activeChatId);
+                r.indent = 16;
+
+                auto raw = chat->created;
+                auto s = raw.upToFirstOccurrenceOf("T", false, false);
+                r.meta = (s.length() == 10) ? s.substring(5) : raw.substring(0, 10);
+                if (chat->revisionCount > 0)
+                    r.meta += "  -" + juce::String(chat->revisionCount) + " rev";
+
+                rows.push_back(r);
+            }
+        }
+    }
+
+    // --- Section: Ungrouped Chats ---
+    std::vector<const WsChat*> ungrouped;
+    for (auto& ch : chats)
+        if (!ch.messages.empty() && albumedIds.count(ch.id) == 0)
+            ungrouped.push_back(&ch);
+
+    if (!ungrouped.empty())
+    {
+        Row sec;
+        sec.kind  = Row::Kind::SectionTitle;
+        sec.label = "CHATS";
+        rows.push_back(sec);
+
+        for (auto* chat : ungrouped)
+        {
+            Row r;
+            r.kind   = Row::Kind::ChatRow;
+            r.id     = chat->id;
+            r.label  = chat->title.isEmpty() ? "Untitled" : chat->title;
+            r.active = (chat->id == activeChatId);
+
+            auto raw = chat->created;
+            auto s = raw.upToFirstOccurrenceOf("T", false, false);
+            r.meta = (s.length() == 10) ? s.substring(5) : raw.substring(0, 10);
+            if (chat->revisionCount > 0)
+                r.meta += "  -" + juce::String(chat->revisionCount) + " rev";
+
+            rows.push_back(r);
+        }
+    }
+
+    // --- Section: Mix Reviews ---
+    if (!reviews.empty())
+    {
+        Row sec;
+        sec.kind  = Row::Kind::SectionTitle;
+        sec.label = "MIX REVIEWS";
+        rows.push_back(sec);
+
+        for (auto& rev : reviews)
+        {
+            Row r;
+            r.kind  = Row::Kind::ReviewRow;
+            r.id    = rev.id;
+            r.label = rev.fileName.isEmpty() ? "Untitled" : rev.fileName;
+
+            auto raw = rev.date;
+            auto s = raw.upToFirstOccurrenceOf("T", false, false);
+            r.meta = (s.length() == 10) ? s.substring(5) : raw.substring(0, 10);
+            if (rev.genre.isNotEmpty())            r.meta += "  -" + rev.genre;
+            else if (rev.channelType.isNotEmpty()) r.meta += "  -" + rev.channelType;
+
+            rows.push_back(r);
+        }
+    }
+}
+
+void EchoJayEditor::ChatSidebarModel::paintListBoxItem(
+    int rowNum, juce::Graphics& g, int width, int height, bool /*isSelected*/)
+{
+    using C = EchoJayLookAndFeel::Colours;
+
+    if (rowNum < 0 || rowNum >= (int)rows.size()) return;
+    const auto& row = rows[(size_t)rowNum];
+
+    const int padX = 10;
+
+    if (row.kind == Row::Kind::SectionTitle)
+    {
+        g.setColour(juce::Colour(0xff080A12));
+        g.fillRect(0, 0, width, height);
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+        g.drawText(row.label, padX, 0, width - padX * 2, height,
+                   juce::Justification::centredLeft);
+        return;
+    }
+
+    if (row.kind == Row::Kind::AlbumHeader)
+    {
+        g.setColour(C::bg2);
+        g.fillRect(0, 0, width, height);
+        g.setColour(C::border);
+        g.drawHorizontalLine(height - 1, 0.f, (float)width);
+
+        // Draw collapse/expand triangle with Graphics (no text glyph — avoids
+        // JUCE Latin-1 misinterpretation of u8 Unicode literals).
+        {
+            float cx = (float)padX + 5.0f;
+            float cy = (float)height * 0.5f;
+            juce::Path tri;
+            if (row.collapsed)
+            {
+                // Right-pointing triangle
+                tri.addTriangle(cx - 3.0f, cy - 5.0f,
+                                cx - 3.0f, cy + 5.0f,
+                                cx + 4.0f, cy);
+            }
+            else
+            {
+                // Down-pointing triangle
+                tri.addTriangle(cx - 5.0f, cy - 3.0f,
+                                cx + 5.0f, cy - 3.0f,
+                                cx,        cy + 4.0f);
+            }
+            g.setColour(C::text3);
+            g.fillPath(tri);
+        }
+
+        g.setColour(C::text2);
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.drawText(row.label, padX + 14, 0, width - padX * 2 - 14, height,
+                   juce::Justification::centredLeft);
+        return;
+    }
+
+    if (row.kind == Row::Kind::ChatRow)
+    {
+        g.setColour(row.active ? C::bg4 : C::bg);
+        g.fillRect(0, 0, width, height);
+        if (row.active)
+        {
+            g.setColour(C::blue);
+            g.fillRect(0, 0, 3, height);
+        }
+        g.setColour(C::border);
+        g.drawHorizontalLine(height - 1, 0.f, (float)width);
+
+        g.setColour(row.active ? C::text : C::text2);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText(row.label, padX + row.indent, 0,
+                   width - padX - row.indent, height - 14,
+                   juce::Justification::bottomLeft);
+
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(9.5f)));
+        g.drawText(row.meta, padX + row.indent, height - 16,
+                   width - padX - row.indent, 14,
+                   juce::Justification::bottomLeft);
+        return;
+    }
+
+    if (row.kind == Row::Kind::ReviewRow)
+    {
+        g.setColour(C::bg);
+        g.fillRect(0, 0, width, height);
+        g.setColour(C::border);
+        g.drawHorizontalLine(height - 1, 0.f, (float)width);
+
+        g.setColour(C::text2);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText(row.label, padX, 0, width - padX * 2, height - 14,
+                   juce::Justification::bottomLeft);
+
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(9.5f)));
+        g.drawText(row.meta, padX, height - 16, width - padX * 2, 14,
+                   juce::Justification::bottomLeft);
+        return;
+    }
+}
+
+void EchoJayEditor::ChatSidebarModel::listBoxItemClicked(
+    int rowNum, const juce::MouseEvent& e)
+{
+    if (rowNum < 0 || rowNum >= (int)rows.size()) return;
+    const auto& row = rows[(size_t)rowNum];
+
+    if (row.kind == Row::Kind::AlbumHeader)
+    {
+        if (e.mods.isPopupMenu())
+        {
+            if (onAlbumContextMenu) onAlbumContextMenu(row.id);
+        }
+        else if (onAlbumToggled)
+        {
+            onAlbumToggled(row.id);
+        }
+        return;
+    }
+
+    if (row.kind == Row::Kind::ChatRow)
+    {
+        if (e.mods.isPopupMenu())
+        {
+            if (onChatContextMenu) onChatContextMenu(row.id);
+        }
+        else
+        {
+            if (onChatClicked) onChatClicked(row.id);
+        }
+    }
+    // SectionTitle and ReviewRow: no action
+}
+
+// Legacy free function kept for the date formatting used elsewhere
+#if 0  // Old paintChatSidebar removed — replaced by ChatSidebarModel above
+void EchoJayEditor::paintChatSidebar(juce::Graphics& g, juce::Rectangle<int> area)
+{
+    const int x     = area.getX();
+    const int y     = area.getY();
+    const int w     = area.getWidth();
+    const int fullH = area.getHeight();
+
+    // Background + right border
+    g.setColour(juce::Colour(0xff080A12));
+    g.fillRect(area);
+    g.setColour(C::border);
+    g.drawVerticalLine(x + w - 1, (float)y, (float)(y + fullH));
+
+    // Scroll offset
+    int scrollY = chatSidebarScroll.getViewPositionY();
+
+    // Rebuild row list each frame (cheap — list is small)
+    sidebarRows.clear();
+
+    const int rowH    = 36;
+    const int secH    = 24;
+    const int padX    = 10;
+    const int indent  = 16; // chat rows indented under album header
+    int cy = y - scrollY;   // current Y in window coords (scrolled)
+
+    auto& chats   = workspace.getChats();
+    auto& albums  = workspace.getAlbums();
+    auto& reviews = workspace.getReviews();
+
+    // ---- Section: Albums & Chats ----------------------------------------
+    // Section title
+    {
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+        g.drawText("ALBUMS & CHATS", x + padX, cy, w - padX * 2, secH,
+                   juce::Justification::centredLeft);
+        SidebarRow sr;
+        sr.kind = SidebarRow::Kind::SectionTitle;
+        sr.bounds = { 0, cy - y + scrollY, w, secH };
+        sidebarRows.push_back(sr);
+        cy += secH;
+    }
+
+    // Build a set of chat ids that belong to at least one album
+    std::set<juce::String> albumedChatIds;
+    for (auto& album : albums)
+        for (auto& cid : album.chatIds)
+            albumedChatIds.insert(cid);
+
+    // Albums
+    for (auto& album : albums)
+    {
+        bool collapsed = (collapsedAlbums.count(album.id) > 0);
+
+        // Count chats in this album that have messages
+        int chatCount = 0;
+        for (auto& cid : album.chatIds)
+            for (auto& ch : chats)
+                if (ch.id == cid && !ch.messages.empty()) chatCount++;
+
+        bool isHovered = false; // future hover state
+
+        // Album header row
+        bool rowVis = (cy + rowH > y && cy < y + fullH);
+        if (rowVis)
+        {
+            juce::Rectangle<int> rowRect(x, cy, w, rowH);
+            g.setColour(C::bg2);
+            g.fillRect(rowRect);
+            g.setColour(C::border);
+            g.drawHorizontalLine(cy + rowH - 1, (float)x, (float)(x + w));
+
+            // Arrow — drawn path, not a text glyph
+            {
+                float tcx = (float)(x + padX) + 5.0f;
+                float tcy = (float)cy + (float)rowH * 0.5f;
+                juce::Path tri;
+                if (collapsed)
+                {
+                    tri.addTriangle(tcx - 3.0f, tcy - 5.0f,
+                                    tcx - 3.0f, tcy + 5.0f,
+                                    tcx + 4.0f, tcy);
+                }
+                else
+                {
+                    tri.addTriangle(tcx - 5.0f, tcy - 3.0f,
+                                    tcx + 5.0f, tcy - 3.0f,
+                                    tcx,        tcy + 4.0f);
+                }
+                g.setColour(C::text3);
+                g.fillPath(tri);
+            }
+
+            // Name
+            g.setColour(C::text2);
+            g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+            juce::String label = album.name;
+            if (chatCount > 0) label += "  (" + juce::String(chatCount) + ")";
+            g.drawText(label, x + padX + 14, cy, w - padX * 2 - 14, rowH,
+                       juce::Justification::centredLeft);
+        }
+        {
+            SidebarRow sr;
+            sr.kind = SidebarRow::Kind::AlbumHeader;
+            sr.id = album.id;
+            sr.bounds = { 0, cy - y + scrollY, w, rowH };
+            sidebarRows.push_back(sr);
+        }
+        cy += rowH;
+
+        // Chat rows within this album (if expanded)
+        if (!collapsed)
+        {
+            for (auto& cid : album.chatIds)
+            {
+                const WsChat* chat = nullptr;
+                for (auto& ch : chats)
+                    if (ch.id == cid && !ch.messages.empty()) { chat = &ch; break; }
+                if (!chat) continue;
+
+                bool active = (chat->id == currentChatId);
+
+                if (cy + rowH > y && cy < y + fullH)
+                {
+                    juce::Rectangle<int> rowRect(x, cy, w, rowH);
+                    g.setColour(active ? C::bg4 : C::bg);
+                    g.fillRect(rowRect);
+                    if (active)
+                    {
+                        g.setColour(C::blue);
+                        g.fillRect(x, cy, 3, rowH);
+                    }
+                    g.setColour(C::border);
+                    g.drawHorizontalLine(cy + rowH - 1, (float)x, (float)(x + w));
+
+                    g.setColour(active ? C::text : C::text2);
+                    g.setFont(juce::Font(juce::FontOptions(11.0f)));
+                    g.drawText(chat->title.isEmpty() ? "Untitled" : chat->title,
+                               x + indent + padX, cy, w - indent - padX * 2, rowH - 14,
+                               juce::Justification::bottomLeft);
+
+                    juce::String meta = formatSidebarDate(chat->created);
+                    if (chat->revisionCount > 0) meta += "  -" + juce::String(chat->revisionCount) + " rev";
+                    g.setColour(C::text3);
+                    g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                    g.drawText(meta, x + indent + padX, cy + rowH - 16, w - indent - padX * 2, 14,
+                               juce::Justification::bottomLeft);
+                }
+                {
+                    SidebarRow sr;
+                    sr.kind = SidebarRow::Kind::ChatRow;
+                    sr.id = chat->id;
+                    sr.bounds = { 0, cy - y + scrollY, w, rowH };
+                    sidebarRows.push_back(sr);
+                }
+                cy += rowH;
+            }
+        }
+    }
+
+    // ---- Section: Ungrouped Chats ----------------------------------------
+    // Collect chats with no albumId (or albumId not matching any album)
+    std::vector<const WsChat*> ungrouped;
+    for (auto& ch : chats)
+    {
+        if (ch.messages.empty()) continue;
+        if (albumedChatIds.count(ch.id) == 0)
+            ungrouped.push_back(&ch);
+    }
+
+    if (!ungrouped.empty())
+    {
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+        if (cy + secH > y && cy < y + fullH)
+            g.drawText("CHATS", x + padX, cy, w - padX * 2, secH,
+                       juce::Justification::centredLeft);
+        {
+            SidebarRow sr;
+            sr.kind = SidebarRow::Kind::SectionTitle;
+            sr.bounds = { 0, cy - y + scrollY, w, secH };
+            sidebarRows.push_back(sr);
+        }
+        cy += secH;
+
+        for (auto* chat : ungrouped)
+        {
+            bool active = (chat->id == currentChatId);
+
+            if (cy + rowH > y && cy < y + fullH)
+            {
+                juce::Rectangle<int> rowRect(x, cy, w, rowH);
+                g.setColour(active ? C::bg4 : C::bg);
+                g.fillRect(rowRect);
+                if (active)
+                {
+                    g.setColour(C::blue);
+                    g.fillRect(x, cy, 3, rowH);
+                }
+                g.setColour(C::border);
+                g.drawHorizontalLine(cy + rowH - 1, (float)x, (float)(x + w));
+
+                g.setColour(active ? C::text : C::text2);
+                g.setFont(juce::Font(juce::FontOptions(11.0f)));
+                g.drawText(chat->title.isEmpty() ? "Untitled" : chat->title,
+                           x + padX, cy, w - padX * 2, rowH - 14,
+                           juce::Justification::bottomLeft);
+
+                juce::String meta = formatSidebarDate(chat->created);
+                if (chat->revisionCount > 0) meta += "  -" + juce::String(chat->revisionCount) + " rev";
+                g.setColour(C::text3);
+                g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                g.drawText(meta, x + padX, cy + rowH - 16, w - padX * 2, 14,
+                           juce::Justification::bottomLeft);
+            }
+            {
+                SidebarRow sr;
+                sr.kind = SidebarRow::Kind::ChatRow;
+                sr.id = chat->id;
+                sr.bounds = { 0, cy - y + scrollY, w, rowH };
+                sidebarRows.push_back(sr);
+            }
+            cy += rowH;
+        }
+    }
+
+    // ---- Section: Mix Reviews -------------------------------------------
+    if (!reviews.empty())
+    {
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+        if (cy + secH > y && cy < y + fullH)
+            g.drawText("MIX REVIEWS", x + padX, cy, w - padX * 2, secH,
+                       juce::Justification::centredLeft);
+        {
+            SidebarRow sr;
+            sr.kind = SidebarRow::Kind::SectionTitle;
+            sr.bounds = { 0, cy - y + scrollY, w, secH };
+            sidebarRows.push_back(sr);
+        }
+        cy += secH;
+
+        for (auto& rev : reviews)
+        {
+            if (cy + rowH > y && cy < y + fullH)
+            {
+                juce::Rectangle<int> rowRect(x, cy, w, rowH);
+                g.setColour(C::bg);
+                g.fillRect(rowRect);
+                g.setColour(C::border);
+                g.drawHorizontalLine(cy + rowH - 1, (float)x, (float)(x + w));
+
+                g.setColour(C::text2);
+                g.setFont(juce::Font(juce::FontOptions(11.0f)));
+                juce::String fname = rev.fileName.isEmpty() ? "Untitled" : rev.fileName;
+                g.drawText(fname, x + padX, cy, w - padX * 2, rowH - 14,
+                           juce::Justification::bottomLeft);
+
+                juce::String meta = formatSidebarDate(rev.date);
+                if (rev.genre.isNotEmpty()) meta += "  -" + rev.genre;
+                else if (rev.channelType.isNotEmpty()) meta += "  -" + rev.channelType;
+                g.setColour(C::text3);
+                g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                g.drawText(meta, x + padX, cy + rowH - 16, w - padX * 2, 14,
+                           juce::Justification::bottomLeft);
+            }
+            {
+                SidebarRow sr;
+                sr.kind = SidebarRow::Kind::ReviewRow;
+                sr.id = rev.id;
+                sr.bounds = { 0, cy - y + scrollY, w, rowH };
+                sidebarRows.push_back(sr);
+            }
+            cy += rowH;
+        }
+    }
+
+    // Update content component height so the viewport can scroll
+    int totalH = cy - y + scrollY;
+    if (totalH != chatSidebarContent.getHeight())
+        chatSidebarContent.setSize(w, juce::jmax(fullH, totalH));
+}
+#endif // old paintChatSidebar
+
+void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
+{
+    for (auto& ch : workspace.getChats())
+    {
+        if (ch.id != chatId) continue;
+
+        currentChatId = chatId;
+        chatMessages.clear();
+        processorRef.chatHistory.clear();
+        processorRef.chatRoles.clear();
+        processorRef.chatContents.clear();
+
+        // Load index.json once for wav path lookups
+        juce::File captureDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                                    .getChildFile("EchoJay").getChildFile("Captures");
+        juce::var indexVar;
+        {
+            juce::File indexFile = captureDir.getChildFile("index.json");
+            if (indexFile.existsAsFile())
+                indexVar = juce::JSON::parse(indexFile.loadFileAsString());
+        }
+
+        for (auto& msg : ch.messages)
+        {
+            ChatMsg cm;
+            cm.role     = msg.role;
+            cm.content  = msg.content;
+            cm.reviewId = msg.reviewId;
+
+            // Reconstruct capture block from stored review.
+            // Helper lambda — populates cm from a resolved WsReview.
+            auto populateFromReview = [&](const WsReview& rv)
+            {
+                cm.reviewId = rv.id;
+                if (rv.label.isNotEmpty() && cm.content.isEmpty())
+                    cm.content = rv.label;
+                if (rv.waveform.isArray())
+                {
+                    for (int wi = 0; wi < rv.waveform.size(); ++wi)
+                    {
+                        WaveformRecorder::ThumbnailPoint pt;
+                        if (auto* obj = rv.waveform[wi].getDynamicObject())
+                        {
+                            // {x, n} format: x = positive peak, n = negative peak
+                            pt.maxVal = (float)(double)obj->getProperty("x");
+                            pt.minVal = (float)(double)obj->getProperty("n");
+                        }
+                        else
+                        {
+                            // Flat float format (old plugin captures)
+                            float peak = (float)(double)rv.waveform[wi];
+                            pt.maxVal =  peak;
+                            pt.minVal = -peak;
+                        }
+                        cm.waveform.push_back(pt);
+                    }
+                    cm.hasWaveform = !cm.waveform.empty();
+                }
+                cm.durationSeconds = rv.data.duration;
+                cm.lufs            = rv.data.integ;
+                cm.audioUrl        = rv.audioUrl;
+                cm.origin          = rv.origin;
+                if (auto* idxObj = indexVar.getDynamicObject())
+                {
+                    juce::String wavName = idxObj->getProperty(rv.id).toString();
+                    if (wavName.isNotEmpty())
+                    {
+                        juce::File wavFile = captureDir.getChildFile(wavName);
+                        if (wavFile.existsAsFile())
+                        {
+                            cm.wavFilename = wavName;
+                            cm.wavFilePath = wavFile.getFullPathName();
+                        }
+                    }
+                }
+            };
+
+            if (msg.reviewId.isNotEmpty())
+            {
+                // Primary path: message carries _reviewId — direct lookup.
+                for (auto& rv : workspace.getReviews())
+                    if (rv.id == msg.reviewId) { populateFromReview(rv); break; }
+            }
+            else if (msg.role == "user" && ch.trackName.isNotEmpty())
+            {
+                // Fallback for older messages without _reviewId: match review by
+                // fileName or label equalling the chat's trackName.
+                for (auto& rv : workspace.getReviews())
+                    if (rv.fileName == ch.trackName || rv.label == ch.trackName)
+                        { populateFromReview(rv); break; }
+            }
+
+            chatMessages.push_back(cm);
+
+            // Populate API context window
+            processorRef.chatRoles.add(msg.role);
+            processorRef.chatContents.add(msg.content);
+
+            // Mirror into processor chat history for persistence
+            EchoJayProcessor::ChatEntry ce;
+            ce.role    = msg.role;
+            ce.content = msg.content;
+            if (cm.hasWaveform)
+            {
+                ce.hasWaveform     = true;
+                ce.durationSeconds = cm.durationSeconds;
+                ce.lufs            = cm.lufs;
+                ce.wavFilename     = cm.wavFilename;
+                ce.wavFilePath     = cm.wavFilePath;
+                for (auto& pt : cm.waveform)
+                    ce.waveform.push_back(std::max(std::abs(pt.maxVal), std::abs(pt.minVal)));
+            }
+            processorRef.chatHistory.push_back(ce);
+        }
+
+        juce::String title = ch.title.isEmpty() ? "Untitled" : ch.title;
+        sidebarDebugText = "opened " + title + " (" + juce::String((int)ch.messages.size()) + " msgs)";
+
+        // Refresh the sidebar so the active row highlight updates
+        if (sidebarModel)
+        {
+            sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                      workspace.getReviews(), collapsedAlbums, currentChatId);
+            chatSidebar.updateContent();
+        }
+
+        layoutChatMessages();
+        // Scroll to bottom
+        chatScroll.setViewPositionProportionately(0.0, 1.0);
+        repaint();
+        return;
+    }
+}
+
+// ============================================================================
+// Sidebar column management — Phase 2b
+// ============================================================================
+
+juce::String EchoJayEditor::getCurrentAlbumId() const
+{
+    if (currentChatId.isEmpty()) return {};
+    for (auto& a : workspace.getAlbums())
+        if (a.chatIds.contains(currentChatId))
+            return a.id;
+    return {};
+}
+
+void EchoJayEditor::createNewChat()
+{
+    // Don't create another empty chat if the current one is already empty
+    if (chatMessages.empty()) return;
+
+    WsChat c;
+    c.id           = juce::String(juce::Time::currentTimeMillis());
+    c.title        = "New chat";
+    c.created      = juce::Time::getCurrentTime().toISO8601(true);
+    c.trackName    = "";
+    c.albumId      = getCurrentAlbumId();
+    c.revisionCount = 0;
+    // messages intentionally empty — won't appear in sidebar until first send
+
+    workspace.addChat(c);
+    // No mutation sync yet — nothing to persist until a message is added
+
+    currentChatId = c.id;
+    chatMessages.clear();
+    processorRef.chatHistory.clear();
+    processorRef.chatRoles.clear();
+    processorRef.chatContents.clear();
+    sidebarDebugText = "";
+
+    // Refresh sidebar (the new chat won't show — empty messages are filtered)
+    if (sidebarModel)
+    {
+        sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                  workspace.getReviews(), collapsedAlbums, currentChatId);
+        chatSidebar.updateContent();
+    }
+
+    layoutChatMessages();
+    chatInput.grabKeyboardFocus();
+    repaint();
+}
+
+void EchoJayEditor::createNewAlbum()
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+
+    auto* dlg = new juce::AlertWindow("New Album", "Album name:",
+                                       juce::MessageBoxIconType::QuestionIcon);
+    dlg->addTextEditor("name", "", "Name:");
+    dlg->addButton("Create", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    dlg->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    dlg->enterModalState(true,
+        juce::ModalCallbackFunction::create([safeThis, dlg](int result)
+        {
+            juce::String trimmed = dlg->getTextEditorContents("name").trim();
+            delete dlg;
+            if (safeThis == nullptr || result != 1 || trimmed.isEmpty()) return;
+
+            WsAlbum a;
+            a.id      = juce::String(juce::Time::currentTimeMillis());
+            a.name    = trimmed;
+            a.created = juce::Time::getCurrentTime().toISO8601(true);
+
+            safeThis->workspace.addAlbum(a);
+            safeThis->workspace.requestMutationSync();
+
+            if (safeThis->sidebarModel)
+            {
+                safeThis->sidebarModel->refreshRows(
+                    safeThis->workspace.getChats(),
+                    safeThis->workspace.getAlbums(),
+                    safeThis->workspace.getReviews(),
+                    safeThis->collapsedAlbums,
+                    safeThis->currentChatId);
+                safeThis->chatSidebar.updateContent();
+            }
+            safeThis->repaint();
+        }), true);
+}
+
+void EchoJayEditor::showMoveToAlbumMenu(const juce::String& chatId)
+{
+    auto& albums = workspace.getAlbums();
+
+    // Current title for the rename dialog default
+    juce::String currentTitle;
+    for (auto& ch : workspace.getChats())
+        if (ch.id == chatId) { currentTitle = ch.title; break; }
+
+    // Which album (if any) currently owns this chat?
+    juce::String currentAlbum;
+    for (auto& a : albums)
+        if (a.chatIds.contains(chatId)) { currentAlbum = a.id; break; }
+
+    juce::PopupMenu menu;
+
+    // Rename / Delete at top
+    int itemId = 1;
+    std::vector<juce::String> actions;
+    menu.addItem(itemId++, "Rename...");  actions.push_back("__rename__");
+    menu.addItem(itemId++, "Delete");               actions.push_back("__delete__");
+    menu.addSeparator();
+
+    // Move to album sub-section
+    juce::PopupMenu albumSub;
+    int albumSubBase = itemId;
+    for (auto& a : albums)
+    {
+        bool isCurrent = (a.id == currentAlbum);
+        albumSub.addItem(itemId++, (isCurrent ? "* " : "  ") + a.name);
+        actions.push_back(a.id);
+    }
+    if (!currentAlbum.isEmpty())
+    {
+        albumSub.addSeparator();
+        albumSub.addItem(itemId++, "Remove from album");
+        actions.push_back("__remove__");
+    }
+    albumSub.addSeparator();
+    albumSub.addItem(itemId++, "New album...");
+    actions.push_back("__new__");
+
+    (void)albumSubBase;
+    menu.addSubMenu("Move to album", albumSub);
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
+        [safeThis, chatId, actions, currentTitle](int result)
+        {
+            if (safeThis == nullptr || result <= 0) return;
+            juce::String action = actions[(size_t)(result - 1)];
+
+            auto doRefreshAndSync = [safeThis]()
+            {
+                if (safeThis->sidebarModel)
+                {
+                    safeThis->sidebarModel->refreshRows(
+                        safeThis->workspace.getChats(),
+                        safeThis->workspace.getAlbums(),
+                        safeThis->workspace.getReviews(),
+                        safeThis->collapsedAlbums,
+                        safeThis->currentChatId);
+                    safeThis->chatSidebar.updateContent();
+                }
+                safeThis->workspace.requestMutationSync();
+                safeThis->repaint();
+            };
+
+            if (action == "__rename__")
+            {
+                auto* dlg = new juce::AlertWindow("Rename Chat", "New name:",
+                                                   juce::MessageBoxIconType::QuestionIcon);
+                dlg->addTextEditor("name", currentTitle, "Name:");
+                dlg->addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
+                dlg->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+                dlg->enterModalState(true,
+                    juce::ModalCallbackFunction::create([safeThis, dlg, chatId, doRefreshAndSync](int r)
+                    {
+                        juce::String trimmed = dlg->getTextEditorContents("name").trim();
+                        delete dlg;
+                        if (safeThis == nullptr || r != 1 || trimmed.isEmpty()) return;
+                        safeThis->workspace.setChatTitle(chatId, trimmed);
+                        doRefreshAndSync();
+                    }), true);
+            }
+            else if (action == "__delete__")
+            {
+                juce::AlertWindow::showOkCancelBox(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Delete Chat",
+                    "Delete this chat? This cannot be undone.",
+                    "Delete", "Cancel",
+                    nullptr,
+                    juce::ModalCallbackFunction::create([safeThis, chatId, doRefreshAndSync](int r)
+                    {
+                        if (safeThis == nullptr || r != 1) return;
+                        // Clear message view if we're deleting the current chat
+                        if (safeThis->currentChatId == chatId)
+                        {
+                            safeThis->currentChatId = {};
+                            safeThis->chatMessages.clear();
+                            safeThis->processorRef.chatHistory.clear();
+                            safeThis->processorRef.chatRoles.clear();
+                            safeThis->processorRef.chatContents.clear();
+                        }
+                        safeThis->workspace.removeChat(chatId);
+                        doRefreshAndSync();
+                    }));
+            }
+            else if (action == "__remove__")
+            {
+                safeThis->workspace.removeChatFromAlbum(chatId);
+                doRefreshAndSync();
+            }
+            else if (action == "__new__")
+            {
+                auto* dlg2 = new juce::AlertWindow("New Album", "Album name:",
+                                                    juce::MessageBoxIconType::QuestionIcon);
+                dlg2->addTextEditor("name", "", "Name:");
+                dlg2->addButton("Create", 1, juce::KeyPress(juce::KeyPress::returnKey));
+                dlg2->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+                dlg2->enterModalState(true,
+                    juce::ModalCallbackFunction::create([safeThis, dlg2, chatId, doRefreshAndSync](int r)
+                    {
+                        juce::String trimmed = dlg2->getTextEditorContents("name").trim();
+                        delete dlg2;
+                        if (safeThis == nullptr || r != 1 || trimmed.isEmpty()) return;
+                        WsAlbum a;
+                        a.id      = juce::String(juce::Time::currentTimeMillis());
+                        a.name    = trimmed;
+                        a.created = juce::Time::getCurrentTime().toISO8601(true);
+                        safeThis->workspace.addAlbum(a);
+                        safeThis->workspace.moveChatToAlbum(chatId, a.id);
+                        doRefreshAndSync();
+                    }), true);
+            }
+            else
+            {
+                // Assign to an existing album
+                safeThis->workspace.moveChatToAlbum(chatId, action);
+                doRefreshAndSync();
+            }
+        });
+}
+
+void EchoJayEditor::showAlbumContextMenu(const juce::String& albumId)
+{
+    juce::String currentName;
+    for (auto& a : workspace.getAlbums())
+        if (a.id == albumId) { currentName = a.name; break; }
+
+    juce::PopupMenu menu;
+    menu.addItem(1, "Rename...");
+    menu.addItem(2, "Delete");
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
+        [safeThis, albumId, currentName](int result)
+        {
+            if (safeThis == nullptr || result <= 0) return;
+
+            auto doRefreshAndSync = [safeThis]()
+            {
+                if (safeThis->sidebarModel)
+                {
+                    safeThis->sidebarModel->refreshRows(
+                        safeThis->workspace.getChats(),
+                        safeThis->workspace.getAlbums(),
+                        safeThis->workspace.getReviews(),
+                        safeThis->collapsedAlbums,
+                        safeThis->currentChatId);
+                    safeThis->chatSidebar.updateContent();
+                }
+                safeThis->workspace.requestMutationSync();
+                safeThis->repaint();
+            };
+
+            if (result == 1) // Rename
+            {
+                auto* dlg = new juce::AlertWindow("Rename Album", "New name:",
+                                                   juce::MessageBoxIconType::QuestionIcon);
+                dlg->addTextEditor("name", currentName, "Name:");
+                dlg->addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
+                dlg->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+                dlg->enterModalState(true,
+                    juce::ModalCallbackFunction::create([safeThis, dlg, albumId, doRefreshAndSync](int r)
+                    {
+                        juce::String trimmed = dlg->getTextEditorContents("name").trim();
+                        delete dlg;
+                        if (safeThis == nullptr || r != 1 || trimmed.isEmpty()) return;
+                        safeThis->workspace.setAlbumName(albumId, trimmed);
+                        doRefreshAndSync();
+                    }), true);
+            }
+            else if (result == 2) // Delete
+            {
+                juce::AlertWindow::showOkCancelBox(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Delete Album",
+                    "Delete this album? Its chats will become ungrouped.",
+                    "Delete", "Cancel",
+                    nullptr,
+                    juce::ModalCallbackFunction::create([safeThis, albumId, doRefreshAndSync](int r)
+                    {
+                        if (safeThis == nullptr || r != 1) return;
+                        safeThis->workspace.removeAlbum(albumId);
+                        doRefreshAndSync();
+                    }));
+            }
+        });
+}
+
+juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
+                                                      const juce::String& wavPath)
+{
+    if (!api.isLoggedIn()) return {};
+
+    juce::String reviewId = juce::String(juce::Time::currentTimeMillis());
+    juce::String fileName = juce::File(wavPath).getFileName();
+    auto& d = snap.averagedData;
+
+    // ---- Build waveform var (array of {x, n} objects matching web format) ----
+    juce::Array<juce::var> wfArr;
+    for (auto& pt : frozenWaveform)
+    {
+        auto* wfObj = new juce::DynamicObject();
+        wfObj->setProperty("x", (double)pt.maxVal);
+        wfObj->setProperty("n", (double)pt.minVal);
+        wfArr.add(juce::var(wfObj));
+    }
+
+    // ---- Build WsReview ----
+    WsReview rev;
+    rev.id          = reviewId;
+    rev.fileName    = fileName;
+    rev.genre       = processorRef.getGenre();
+    rev.stemType    = "mix";
+    rev.channelType = snap.getChannelDisplayName();
+    rev.date        = juce::Time::getCurrentTime().toISO8601(true);
+    rev.audioUrl    = "";
+    rev.origin      = "plugin";
+    rev.label       = snap.name;    // passName — used to reconstruct the bubble label on reload
+    rev.waveform    = juce::var(wfArr);
+
+    rev.data.integ    = d.integrated;
+    rev.data.range    = d.loudnessRange;
+    rev.data.rmsL     = d.rmsL;
+    rev.data.rmsR     = d.rmsR;
+    rev.data.peakL    = d.peakMaxL;
+    rev.data.peakR    = d.peakMaxR;
+    rev.data.tpL      = d.truePeakMaxL;
+    rev.data.tpR      = d.truePeakMaxR;
+    rev.data.width    = d.width;
+    rev.data.corr     = d.correlation;
+    rev.data.crest    = d.crestFactor;
+    rev.data.dc       = d.dcOffset;
+    rev.data.duration = snap.durationSeconds;
+
+    // ---- Write index.json entry ----
+    juce::File captureDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                                .getChildFile("EchoJay")
+                                .getChildFile("Captures");
+    captureDir.createDirectory();
+    juce::File indexFile = captureDir.getChildFile("index.json");
+
+    auto* indexObj = new juce::DynamicObject();
+    if (indexFile.existsAsFile())
+    {
+        auto parsed = juce::JSON::parse(indexFile.loadFileAsString());
+        if (auto* existing = parsed.getDynamicObject())
+            for (auto& prop : existing->getProperties())
+                indexObj->setProperty(prop.name, prop.value);
+    }
+    indexObj->setProperty(reviewId, fileName);
+    indexFile.replaceWithText(juce::JSON::toString(juce::var(indexObj), false));
+
+    // ---- Add to workspace and sync ----
+    workspace.addReview(rev);
+    workspace.requestMutationSync();
+
+    // Refresh sidebar column (MIX REVIEWS section)
+    if (sidebarModel)
+    {
+        sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                  workspace.getReviews(), collapsedAlbums, currentChatId);
+        chatSidebar.updateContent();
+    }
+
+    return reviewId;
+}
+
 void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> area)
 {
     int x = area.getX(), w = area.getWidth();
@@ -2983,7 +4381,7 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f)));
         juce::String usageStr = juce::String::fromUTF8("v") + ProjectInfo::versionString
-                              + juce::String::fromUTF8(" \xc2\xb7 ")  // middle dot
+                              + " - "
                               + juce::String(used) + "/" + juce::String(limit);
         if (info.credits > 0)
             usageStr += " (+" + juce::String(info.credits) + ")";
@@ -3806,15 +5204,19 @@ void EchoJayEditor::paint(juce::Graphics& g)
     }
 
     // === Main Screen ===
-    int topH = 32;
+    // topH = 32px header + 28px tab bar = 60; content starts at y=60.
+    int topH = 32 + kTabBarH;
+    bool chatOnlyMode   = (currentTab == Tab::Chat);
+    bool comingSoonTab  = (currentTab == Tab::Chain);
+    bool linkMonitorTab = (currentTab == Tab::Link);
     int chatW, mW;
-    
-    if (compactMode)
+
+    if (compactMode || chatOnlyMode)
     {
         chatW = bounds.getWidth();
         mW = 0;
     }
-    else if (visualOnlyMode)
+    else if (visualOnlyMode || comingSoonTab || linkMonitorTab)
     {
         chatW = 0;
         mW = bounds.getWidth();
@@ -3825,23 +5227,23 @@ void EchoJayEditor::paint(juce::Graphics& g)
         mW = bounds.getWidth() - chatW;
     }
 
-    // Top bar background
+    // Top bar background (32px header band only)
     g.setColour(C::bg2);
-    g.fillRect(0, 0, bounds.getWidth(), topH);
+    g.fillRect(0, 0, bounds.getWidth(), 32);
     g.setColour(C::border);
-    g.drawHorizontalLine(topH - 1, 0.0f, (float)bounds.getWidth());
-    EchoJayLookAndFeel::drawLogo(g, juce::Rectangle<float>(12, 0, 110, (float)topH), 18.0f);
-    
+    g.drawHorizontalLine(31, 0.0f, (float)bounds.getWidth());
+    EchoJayLookAndFeel::drawLogo(g, juce::Rectangle<float>(12, 0, 110, 32.0f), 18.0f);
+
     // Tier badge next to logo
     if (api.isLoggedIn())
     {
         auto info = api.getUserInfo();
         if (info.tierLevel >= 1)
-            EchoJayLookAndFeel::drawTierBadge(g, 118, (topH - 16) / 2, info.tierLevel);
+            EchoJayLookAndFeel::drawTierBadge(g, 118, 8, info.tierLevel);
         else
         {
             // FREE badge — subtle grey pill
-            auto freeBounds = juce::Rectangle<float>(118.0f, (float)(topH - 16) / 2, 36.0f, 16.0f);
+            auto freeBounds = juce::Rectangle<float>(118.0f, 8.0f, 36.0f, 16.0f);
             g.setColour(C::bg4);
             g.fillRoundedRectangle(freeBounds, 4.0f);
             g.setColour(C::text3);
@@ -3849,14 +5251,14 @@ void EchoJayEditor::paint(juce::Graphics& g)
             g.drawText("FREE", freeBounds, juce::Justification::centred);
         }
     }
-    EchoJayLookAndFeel::drawGrainOverlay(g, juce::Rectangle<int>(0, 0, bounds.getWidth(), topH), 0.015f);
+    EchoJayLookAndFeel::drawGrainOverlay(g, juce::Rectangle<int>(0, 0, bounds.getWidth(), 32), 0.015f);
 
     // Teal separators between header buttons
     if (!compactMode && !visualOnlyMode && currentScreen == Screen::Main)
     {
         g.setColour(juce::Colour(0xff06b6d4).withAlpha(0.2f));
         auto drawSep = [&](int x) {
-            g.drawVerticalLine(x, 6.0f, (float)(topH - 6));
+            g.drawVerticalLine(x, 6.0f, 26.0f); // within 32px header band
         };
         // Separators between: [channel|genre|Capture|Compare|Settings|Plugins]
         auto cmpBounds = compareBtn.getBounds();
@@ -3931,9 +5333,62 @@ void EchoJayEditor::paint(juce::Graphics& g)
         g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s - 6, (float)iconY + 2, 1.5f);
     }
 
-    if (!compactMode && (!visualOnlyMode || (visualOnlyMode && !visualMode)))
+    // === V2 Tab Bar (y=32, height=kTabBarH) ===
+    if (!visualOnlyMode)
     {
-    // Vertical divider (not in visual-only mode)
+        static constexpr const char* kTabNames[] = {
+            "VISUALISATION", "METERS", "CHAT", "COMPARE", "LINK", "CHAIN", "SETTINGS"
+        };
+        constexpr int kTabCount = 7;
+        const int W  = bounds.getWidth();
+        const int tabW = W / kTabCount;
+        const int tabY = 32;
+
+        // Tab bar background
+        g.setColour(C::bg);
+        g.fillRect(0, tabY, W, kTabBarH);
+        // Bottom border
+        g.setColour(C::border);
+        g.drawHorizontalLine(tabY + kTabBarH - 1, 0.0f, (float)W);
+
+        for (int i = 0; i < kTabCount; ++i)
+        {
+            const int tx = i * tabW;
+            const int tw = (i == kTabCount - 1) ? W - tx : tabW;
+            const Tab t  = static_cast<Tab>(i);
+            const bool active = (currentTab == t);
+
+            if (active)
+            {
+                g.setColour(juce::Colour(0xff06b6d4).withAlpha(0.09f));
+                g.fillRect(tx, tabY, tw, kTabBarH - 1);
+                g.setColour(juce::Colour(0xff22d3ee));
+                g.fillRect(tx + 2, tabY + kTabBarH - 2, tw - 4, 2);
+            }
+
+            g.setColour(active ? juce::Colour(0xff22d3ee) : C::text3);
+            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+            g.drawText(kTabNames[i], tx, tabY, tw, kTabBarH, juce::Justification::centred);
+        }
+    }
+
+    // Coming-soon placeholder (Chain only now; Link has its own panel)
+    if (comingSoonTab)
+    {
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
+        g.drawText("CHAIN  —  coming soon",
+                   juce::Rectangle<int>(0, topH, bounds.getWidth(), bounds.getHeight() - topH),
+                   juce::Justification::centred);
+    }
+
+    // Link monitor panel
+    if (linkMonitorTab)
+        paintLinkMonitorPanel(g, juce::Rectangle<int>(0, topH, bounds.getWidth(), bounds.getHeight() - topH));
+
+    if (!compactMode && !chatOnlyMode && (!visualOnlyMode || (visualOnlyMode && !visualMode)) && !comingSoonTab && !linkMonitorTab)
+    {
+    // Vertical divider (not in visual-only / metersOnly mode)
     if (!visualOnlyMode) {
         g.setColour(C::border);
         g.drawVerticalLine(mW, (float)topH, (float)bounds.getHeight());
@@ -3945,11 +5400,11 @@ void EchoJayEditor::paint(juce::Graphics& g)
     int contentW = mW - pad * 2;
     int abBarOffset = abBarShowing ? kAbBarH : 0; // shrink content when AB bar showing
 
-    if (currentView == View::Compare) {
+    if (currentView == View::Compare && currentTab == Tab::Compare) {
         auto cArea = juce::Rectangle<int>(pad, topH + 4, contentW, bounds.getHeight() - topH - 16 - abBarOffset);
         paintCompareView(g, cArea);
     }
-    else if (currentView == View::Settings) {
+    else if (currentView == View::Settings && currentTab == Tab::Settings) {
         auto sArea = juce::Rectangle<int>(pad, topH + 12, contentW, bounds.getHeight() - topH - 24 - abBarOffset);
         paintSettingsView(g, sArea);
     }
@@ -4009,74 +5464,53 @@ void EchoJayEditor::paint(juce::Graphics& g)
         paintSpectrumPanel(g, { pad, y, contentW, specH }, md);
     }
     
-    // Mode toggle strip at bottom of meter panel (Meters / Visual) — NOT in visual-only mode
-    if (currentView == View::Meters && !channelPromptVisible && !genrePromptVisible && !visualOnlyMode)
+    // Preset / theme selector strip — VISUALISATION tab only, below the particle visual
+    if (currentTab == Tab::Visualisation && visualMode && !channelPromptVisible && !genrePromptVisible && !visualOnlyMode)
     {
+        int numStripH = 28;
         int stripH = 30;
-        int stripY = bounds.getHeight() - stripH - abBarOffset;
-        if (visualMode) stripY -= 28; // above number strip
-        
+        int stripY = bounds.getHeight() - numStripH - stripH - abBarOffset;
+
         g.setColour(C::bg2);
         g.fillRect(0, stripY, mW, stripH);
         g.setColour(C::border);
         g.drawHorizontalLine(stripY, 0.0f, (float)mW);
-        
-        if (visualMode) {
-            // In visual mode: METERS button on left + preset/theme arrows on right
-            int toggleBtnW = 80;
-            int toggleBtnX = 4;
-            {
-                auto mp = getMouseXYRelative();
-                bool hov = mp.x >= toggleBtnX && mp.x < toggleBtnX + toggleBtnW && mp.y >= stripY && mp.y < stripY + stripH;
-                g.setColour(hov ? juce::Colour(0xff22d3ee) : juce::Colour(0xff0891b2));
-            }
-            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-            g.drawText("METERS", toggleBtnX, stripY, toggleBtnW, stripH, juce::Justification::centred);
-            g.fillRect(toggleBtnX + toggleBtnW / 4, stripY + stripH - 2, toggleBtnW / 2, 2);
-            
-            int arrowsX = toggleBtnX + toggleBtnW + 4;
-            int arrowsW = mW - arrowsX - 4;
-            int midX = arrowsX + arrowsW / 2;
-            
-            // Preset/theme arrows
-            g.setColour(C::text2);
-            g.drawText("<", arrowsX + 2, stripY, 12, stripH, juce::Justification::centred);
-            g.setColour(C::text);
-            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-            auto presetName = juce::String(ParticleVisual::getPresetName(particleVisual->currentPreset));
-            g.drawText(presetName, arrowsX + 14, stripY, midX - arrowsX - 28, stripH, juce::Justification::centred);
-            g.setColour(C::text2);
-            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-            g.drawText(">", midX - 14, stripY, 12, stripH, juce::Justification::centred);
-            
-            g.setColour(C::text3);
-            g.fillEllipse((float)midX - 1.5f, (float)stripY + stripH / 2.0f - 1.5f, 3.0f, 3.0f);
-            
-            g.setColour(C::text2);
-            g.drawText("<", midX + 4, stripY, 12, stripH, juce::Justification::centred);
-            g.setColour(juce::Colour(0xff06b6d4));
-            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-            auto themeName = juce::String(ParticleVisual::getThemeName(particleVisual->currentTheme));
-            g.drawText(themeName, midX + 16, stripY, arrowsX + arrowsW - midX - 30, stripH, juce::Justification::centred);
-            g.setColour(C::text2);
-            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-            g.drawText(">", arrowsX + arrowsW - 14, stripY, 12, stripH, juce::Justification::centred);
-        } else {
-            // In meters mode: single VISUALISATION label (click to switch)
-            {
-                auto mp = getMouseXYRelative();
-                bool hov = mp.x >= 0 && mp.x < mW && mp.y >= stripY && mp.y < stripY + stripH;
-                g.setColour(hov ? juce::Colour(0xff22d3ee) : juce::Colour(0xff0891b2));
-            }
-            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-            g.drawText("VISUALISATION", 0, stripY, mW, stripH, juce::Justification::centred);
-            int ulW = 80;
-            g.fillRect((mW - ulW) / 2, stripY + stripH - 2, ulW, 2);
-        }
+
+        int arrowsX = 4;
+        int arrowsW = mW - arrowsX - 4;
+        int midX = arrowsX + arrowsW / 2;
+
+        // Preset arrows (left half)
+        g.setColour(C::text2);
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        g.drawText("<", arrowsX + 2, stripY, 12, stripH, juce::Justification::centred);
+        g.setColour(C::text);
+        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        auto presetName = juce::String(ParticleVisual::getPresetName(particleVisual->currentPreset));
+        g.drawText(presetName, arrowsX + 14, stripY, midX - arrowsX - 28, stripH, juce::Justification::centred);
+        g.setColour(C::text2);
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        g.drawText(">", midX - 14, stripY, 12, stripH, juce::Justification::centred);
+
+        // Dot separator
+        g.setColour(C::text3);
+        g.fillEllipse((float)midX - 1.5f, (float)stripY + stripH / 2.0f - 1.5f, 3.0f, 3.0f);
+
+        // Theme arrows (right half)
+        g.setColour(C::text2);
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        g.drawText("<", midX + 4, stripY, 12, stripH, juce::Justification::centred);
+        g.setColour(juce::Colour(0xff06b6d4));
+        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        auto themeName = juce::String(ParticleVisual::getThemeName(particleVisual->currentTheme));
+        g.drawText(themeName, midX + 16, stripY, arrowsX + arrowsW - midX - 30, stripH, juce::Justification::centred);
+        g.setColour(C::text2);
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        g.drawText(">", arrowsX + arrowsW - 14, stripY, 12, stripH, juce::Justification::centred);
     }
-    
+
     } // end if (!compactMode && !visualOnlyMode)
-    
+
     // A/B transport bar at very bottom — shows on ALL views when a ref is loaded
     if (processorRef.abActive.load() && !compactMode && !visualOnlyMode)
     {
@@ -4316,6 +5750,18 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // === Chat Panel ===
     int chatX = compactMode ? 0 : (visualOnlyMode ? bounds.getWidth() : mW + 1);
 
+    // Sidebar (Chat tab only) — rendered by the chatSidebar ListBox child component.
+    // We just shift chatX/chatW here so the message area doesn't overlap the sidebar,
+    // and draw the right-edge border line (the ListBox doesn't paint outside its bounds).
+    bool hasSidebar = (currentTab == Tab::Chat && !compactMode && !visualOnlyMode);
+    if (hasSidebar)
+    {
+        g.setColour(C::border);
+        g.drawVerticalLine(chatX + kSidebarW - 1, (float)topH, (float)bounds.getHeight());
+        chatX += kSidebarW;
+        chatW -= kSidebarW;
+    }
+
     if (!visualOnlyMode) {
     // Chat header — "AI ASSISTANT" bold, usage count right
     g.setColour(C::bg2);
@@ -4350,19 +5796,25 @@ void EchoJayEditor::paint(juce::Graphics& g)
     for (auto& msg : chatMessages) {
         bool isUser = (msg.role == "user");
         
+        // Capture messages get a unified card (waveform + label row) instead of
+        // the text-bubble + waveform-card pattern. Always 56 px regardless of
+        // content length so the layout stays predictable.
+        const bool isCaptureMsg = isUser && msg.reviewId.isNotEmpty();
+        static constexpr int kCaptureMsgH = 56;
+
         juce::AttributedString as;
         as.append(msg.content, juce::Font(juce::FontOptions(chatMsgFontSize)),
                   isUser ? C::text : C::text2);
         juce::TextLayout layout;
         layout.createLayout(as, (float)(maxBubbleW - 20));
         int textH = (int)layout.getHeight() + 20;
-        
+
         // Extra height for waveform card
         int waveCardH = 0;
-        if (msg.hasWaveform && !msg.waveform.empty())
+        if (!isCaptureMsg && msg.hasWaveform && !msg.waveform.empty())
             waveCardH = 36; // play button + waveform only
-        
-        int tH = textH + waveCardH;
+
+        int tH = isCaptureMsg ? kCaptureMsgH : (textH + waveCardH);
         int drawY = chatTop2 + msgY;
 
         if (drawY + tH > chatTop2 - 50 && drawY < chatBottomEdge + 50)
@@ -4385,63 +5837,85 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
                     g.drawText("U", avX, avY, avatarSize, avatarSize, juce::Justification::centred);
                 }
-                
-                // Size the bubble to the text width (plus 20px horizontal
-                // padding) so short messages don't stretch the full panel.
-                // Capped at maxBubbleW so long messages still wrap. When a
-                // waveform card is attached, force full width so the card has
-                // room to render the play button + waveform.
-                int textRenderedW = (int)std::ceil(layout.getWidth()) + 20;
-                int bubbleW = (msg.hasWaveform && !msg.waveform.empty())
-                                ? maxBubbleW
-                                : juce::jlimit(40, maxBubbleW, textRenderedW);
-                int bubbleX = chatX + chatW - avatarSize - 12 - bubbleW;
-                g.setColour(C::bg4);
-                g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)tH, 10.0f);
-                layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(textH - 20) });
-                
-                // Waveform card — play button + waveform only
-                if (msg.hasWaveform && !msg.waveform.empty())
+
+                if (isCaptureMsg)
                 {
+                    // ── Unified capture card (waveform section + label row) ──────────
+                    // Layout: top 38px = inner bg3 card with play button + waveform bars
+                    //         bottom 18px = label line (passName · LUFS · duration)
+                    int bubbleW = maxBubbleW;
+                    int bubbleX = chatX + chatW - avatarSize - 12 - bubbleW;
+
+                    // Outer card background
+                    g.setColour(C::bg4);
+                    g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)kCaptureMsgH, 10.0f);
+
+                    // Inner waveform card (top section)
                     int cardX = bubbleX + 8;
-                    int cardY = drawY + textH - 2;
+                    int cardY = drawY + 4;
                     int cardW = bubbleW - 16;
-                    int cardH = waveCardH - 4;
-                    
-                    // Card background
+                    int cardH = 34;
                     g.setColour(C::bg3);
                     g.fillRoundedRectangle((float)cardX, (float)cardY, (float)cardW, (float)cardH, 6.0f);
-                    
-                    // Play/Stop button circle
+
+                    // Origin-based playback controls
+                    // "plugin" origin (or empty for old records) = local AB playback.
+                    // Any other origin = web capture → link to echojay.ai, no in-plugin play.
+                    const bool isPluginOrigin = msg.origin == "plugin" || msg.origin.isEmpty();
+                    const bool hasLocalFile   = msg.wavFilePath.isNotEmpty();
+
                     int playBtnSize = 22;
                     int playX = cardX + 6;
                     int playY = cardY + (cardH - playBtnSize) / 2;
-                    bool isPlaying = (msg.wavFilePath.isNotEmpty() && currentlyPlayingChatWav == msg.wavFilePath)
-                                  || (processorRef.abPlayingRef.load() && processorRef.abFilePath == msg.wavFilePath);
-                    
-                    g.setColour(isPlaying ? juce::Colour(0xffFF6B9D).withAlpha(0.35f) : juce::Colour(0xff06b6d4).withAlpha(0.15f));
-                    g.fillEllipse((float)playX, (float)playY, (float)playBtnSize, (float)playBtnSize);
-                    g.setColour(isPlaying ? juce::Colour(0xffFF8FAB) : juce::Colour(0xff22d3ee));
-                    
-                    if (isPlaying)
+                    bool isPlaying = false;
+
+                    if (!isPluginOrigin)
                     {
-                        // Stop square
-                        g.fillRect((float)playX + 7.0f, (float)playY + 7.0f, 8.0f, 8.0f);
+                        // Web capture — show "Open in echojay.ai" link button (amber)
+                        g.setColour(juce::Colour(0xffF59E0B).withAlpha(0.18f));
+                        g.fillEllipse((float)playX, (float)playY, (float)playBtnSize, (float)playBtnSize);
+                        g.setColour(juce::Colour(0xffFBBF24));
+                        // Draw external-link arrow: → with a small cap
+                        float ax = (float)playX + 7.0f, ay = (float)playY + 11.0f;
+                        g.drawLine(ax, ay, ax + 7.0f, ay, 1.5f);
+                        g.drawLine(ax + 4.0f, ay - 3.0f, ax + 7.0f, ay, 1.5f);
+                        g.drawLine(ax + 4.0f, ay + 3.0f, ax + 7.0f, ay, 1.5f);
                     }
-                    else
+                    else if (hasLocalFile)
                     {
-                        // Play triangle
-                        juce::Path tri;
-                        float triX = (float)playX + 8.0f, triY2 = (float)playY + 5.0f;
-                        tri.addTriangle(triX, triY2, triX, triY2 + 12.0f, triX + 8.0f, triY2 + 6.0f);
-                        g.fillPath(tri);
+                        // Plugin capture with local file — play/stop button (cyan/pink)
+                        isPlaying = (currentlyPlayingChatWav == msg.wavFilePath)
+                                 || (processorRef.abPlayingRef.load() && processorRef.abFilePath == msg.wavFilePath);
+                        g.setColour(isPlaying ? juce::Colour(0xffFF6B9D).withAlpha(0.35f)
+                                              : juce::Colour(0xff06b6d4).withAlpha(0.15f));
+                        g.fillEllipse((float)playX, (float)playY, (float)playBtnSize, (float)playBtnSize);
+                        g.setColour(isPlaying ? juce::Colour(0xffFF8FAB) : juce::Colour(0xff22d3ee));
+                        if (isPlaying)
+                        {
+                            g.fillRect((float)playX + 7.0f, (float)playY + 7.0f, 8.0f, 8.0f);
+                        }
+                        else
+                        {
+                            juce::Path tri;
+                            float triX = (float)playX + 8.0f, triY0 = (float)playY + 5.0f;
+                            tri.addTriangle(triX, triY0, triX, triY0 + 12.0f, triX + 8.0f, triY0 + 6.0f);
+                            g.fillPath(tri);
+                        }
                     }
-                    
-                    // Position overlay button on this card
-                    if (msg.wavFilePath.isNotEmpty() && activeWavePlayBtns < kMaxWavePlayBtns)
+                    // else: plugin origin, no local file — no button drawn; label row explains
+
+                    // Overlay (transparent click catcher over inner card)
+                    // Web captures get "__open_web__" as the path; onWavePlayClick opens browser.
+                    juce::String playKey;
+                    if (!isPluginOrigin)
+                        playKey = "__open_web__";
+                    else if (hasLocalFile)
+                        playKey = msg.wavFilePath;
+
+                    if (playKey.isNotEmpty() && activeWavePlayBtns < kMaxWavePlayBtns)
                     {
                         int idx = activeWavePlayBtns++;
-                        wavePlayPaths[(size_t)idx] = msg.wavFilePath;
+                        wavePlayPaths[(size_t)idx] = playKey;
                         wavePlayDurations[(size_t)idx] = msg.durationSeconds;
                         auto scrollBounds = chatScroll.getBounds();
                         bool inView = cardY >= scrollBounds.getY() && (cardY + cardH) <= scrollBounds.getBottom();
@@ -4449,14 +5923,16 @@ void EchoJayEditor::paint(juce::Graphics& g)
                             wavePlayOverlays[(size_t)idx].setBounds(cardX, cardY, cardW, cardH);
                             wavePlayOverlays[(size_t)idx].setVisible(true);
                             wavePlayOverlays[(size_t)idx].toFront(false);
-                            chatWavePositions.push_back({ {cardX, cardY, cardW, cardH}, msg.wavFilePath, msg.durationSeconds });
+                            chatWavePositions.push_back({ {cardX, cardY, cardW, cardH}, playKey, msg.durationSeconds });
                         } else {
                             wavePlayOverlays[(size_t)idx].setBounds(-100, -100, 1, 1);
                             wavePlayOverlays[(size_t)idx].setVisible(false);
                         }
                     }
-                    
-                    // Waveform fills the rest
+
+                    // Waveform bars (shown for all origins when waveform data is available)
+                    // Always render at a fixed display density using linear interpolation so
+                    // that ~80-bar web captures look identical to ~435-bar plugin captures.
                     int wfX = playX + playBtnSize + 6;
                     int wfY = cardY + 4;
                     int wfW = cardX + cardW - wfX - 6;
@@ -4464,53 +5940,199 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     int numPts = (int)msg.waveform.size();
                     if (numPts > 0 && wfW > 0)
                     {
+                        constexpr int kDisplayBars = 400;
+                        const int displayBars = kDisplayBars;
                         g.saveState();
                         g.reduceClipRegion(wfX, wfY, wfW, wfH);
-                        float pxPerPt = (float)wfW / (float)numPts;
+                        float pxPerBar = (float)wfW / (float)displayBars;
                         float centreY2 = (float)wfY + (float)wfH * 0.5f;
-                        float halfH2 = (float)wfH * 0.45f;
-                        for (int i = 0; i < numPts; ++i)
+                        float halfH2   = (float)wfH * 0.45f;
+                        for (int i = 0; i < displayBars; ++i)
                         {
-                            float px = (float)wfX + (float)i * pxPerPt;
-                            float top2 = centreY2 - msg.waveform[(size_t)i].maxVal * halfH2;
-                            float bot2 = centreY2 - msg.waveform[(size_t)i].minVal * halfH2;
-                            float bH2 = std::max(1.0f, bot2 - top2);
-                            float frac = (float)i / (float)numPts;
-                            
-                            // Dim waveform past the playback cursor
+                            // Map display bar → fractional source position, then lerp
+                            float srcPos = (float)i / (float)(displayBars - 1) * (float)(numPts - 1);
+                            int   s0     = (int)srcPos;
+                            int   s1     = juce::jmin(s0 + 1, numPts - 1);
+                            float t      = srcPos - (float)s0;
+                            float maxV   = msg.waveform[(size_t)s0].maxVal * (1.0f - t)
+                                         + msg.waveform[(size_t)s1].maxVal * t;
+                            float minV   = msg.waveform[(size_t)s0].minVal * (1.0f - t)
+                                         + msg.waveform[(size_t)s1].minVal * t;
+
+                            float px   = (float)wfX + (float)i * pxPerBar;
+                            float top2 = centreY2 - maxV * halfH2;
+                            float bot2 = centreY2 - minV * halfH2;
+                            float bH2  = std::max(1.0f, bot2 - top2);
+                            float frac = (float)i / (float)displayBars;
                             float alpha = 0.7f;
                             if (isPlaying)
                             {
-                                float playFrac2 = 0.0f;
+                                float pf = 0.0f;
                                 if (processorRef.abPlayingRef.load() && processorRef.abSampleCount > 0)
-                                    playFrac2 = (float)processorRef.abPlaybackPos / (float)processorRef.abSampleCount;
+                                    pf = (float)processorRef.abPlaybackPos / (float)processorRef.abSampleCount;
                                 else if (chatPlaybackDuration > 0 && chatPlaybackStartTime > 0) {
                                     double el = (juce::Time::getMillisecondCounterHiRes() - chatPlaybackStartTime) / 1000.0 + chatPlaybackOffset;
-                                    playFrac2 = (float)(el / chatPlaybackDuration);
+                                    pf = (float)(el / chatPlaybackDuration);
                                 }
-                                if (frac > playFrac2) alpha = 0.25f;
+                                if (frac > pf) alpha = 0.25f;
                             }
-                            
                             g.setColour(C::blue.interpolatedWith(C::purple, frac).withAlpha(alpha));
-                            g.fillRect(px, top2, std::max(1.0f, pxPerPt - 0.5f), bH2);
+                            g.fillRect(px, top2, std::max(1.0f, pxPerBar - 0.5f), bH2);
                         }
-                        
-                        // Playback cursor line
                         if (isPlaying)
                         {
-                            float playFrac3 = 0.0f;
+                            float pf = 0.0f;
                             if (processorRef.abPlayingRef.load() && processorRef.abSampleCount > 0)
-                                playFrac3 = (float)processorRef.abPlaybackPos / (float)processorRef.abSampleCount;
+                                pf = (float)processorRef.abPlaybackPos / (float)processorRef.abSampleCount;
                             else if (chatPlaybackDuration > 0 && chatPlaybackStartTime > 0) {
                                 double el = (juce::Time::getMillisecondCounterHiRes() - chatPlaybackStartTime) / 1000.0 + chatPlaybackOffset;
-                                playFrac3 = (float)(el / chatPlaybackDuration);
+                                pf = (float)(el / chatPlaybackDuration);
                             }
-                            playFrac3 = juce::jlimit(0.0f, 1.0f, playFrac3);
-                            float cursorX = (float)wfX + playFrac3 * (float)wfW;
+                            pf = juce::jlimit(0.0f, 1.0f, pf);
                             g.setColour(juce::Colours::white);
-                            g.drawVerticalLine((int)cursorX, (float)wfY, (float)(wfY + wfH));
+                            g.drawVerticalLine((int)((float)wfX + pf * (float)wfW), (float)wfY, (float)(wfY + wfH));
                         }
                         g.restoreState();
+                    }
+
+                    // Label row
+                    juce::String labelLine;
+                    if (isPluginOrigin && !hasLocalFile)
+                    {
+                        // File is not on this machine
+                        labelLine = "Audio not on this device";
+                    }
+                    else
+                    {
+                        labelLine = msg.content;
+                        if (msg.lufs > -99.f)
+                            labelLine += "   " + juce::String(msg.lufs, 1) + " LUFS";
+                        if (msg.durationSeconds > 0.1f)
+                        {
+                            int secs = (int)msg.durationSeconds;
+                            int mins = secs / 60; secs %= 60;
+                            labelLine += "   " + (mins > 0 ? juce::String(mins) + ":" : "")
+                                        + juce::String(secs).paddedLeft('0', 2) + "s";
+                        }
+                    }
+                    g.setColour(C::text3);
+                    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+                    g.drawText(labelLine, bubbleX + 12, drawY + kCaptureMsgH - 17,
+                               bubbleW - 24, 14, juce::Justification::centredLeft);
+                }
+                else
+                {
+                    // ── Regular text bubble + optional waveform card ─────────────────
+                    int textRenderedW = (int)std::ceil(layout.getWidth()) + 20;
+                    int bubbleW = (msg.hasWaveform && !msg.waveform.empty())
+                                    ? maxBubbleW
+                                    : juce::jlimit(40, maxBubbleW, textRenderedW);
+                    int bubbleX = chatX + chatW - avatarSize - 12 - bubbleW;
+                    g.setColour(C::bg4);
+                    g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)tH, 10.0f);
+                    layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(textH - 20) });
+
+                    // Waveform card — play button + waveform only
+                    if (msg.hasWaveform && !msg.waveform.empty())
+                    {
+                        int cardX = bubbleX + 8;
+                        int cardY = drawY + textH - 2;
+                        int cardW = bubbleW - 16;
+                        int cardH = waveCardH - 4;
+
+                        g.setColour(C::bg3);
+                        g.fillRoundedRectangle((float)cardX, (float)cardY, (float)cardW, (float)cardH, 6.0f);
+
+                        int playBtnSize = 22;
+                        int playX = cardX + 6;
+                        int playY = cardY + (cardH - playBtnSize) / 2;
+                        bool isPlaying = (msg.wavFilePath.isNotEmpty() && currentlyPlayingChatWav == msg.wavFilePath)
+                                      || (processorRef.abPlayingRef.load() && processorRef.abFilePath == msg.wavFilePath);
+
+                        g.setColour(isPlaying ? juce::Colour(0xffFF6B9D).withAlpha(0.35f)
+                                              : juce::Colour(0xff06b6d4).withAlpha(0.15f));
+                        g.fillEllipse((float)playX, (float)playY, (float)playBtnSize, (float)playBtnSize);
+                        g.setColour(isPlaying ? juce::Colour(0xffFF8FAB) : juce::Colour(0xff22d3ee));
+                        if (isPlaying)
+                        {
+                            g.fillRect((float)playX + 7.0f, (float)playY + 7.0f, 8.0f, 8.0f);
+                        }
+                        else
+                        {
+                            juce::Path tri;
+                            float triX = (float)playX + 8.0f, triY2 = (float)playY + 5.0f;
+                            tri.addTriangle(triX, triY2, triX, triY2 + 12.0f, triX + 8.0f, triY2 + 6.0f);
+                            g.fillPath(tri);
+                        }
+
+                        if (msg.wavFilePath.isNotEmpty() && activeWavePlayBtns < kMaxWavePlayBtns)
+                        {
+                            int idx = activeWavePlayBtns++;
+                            wavePlayPaths[(size_t)idx] = msg.wavFilePath;
+                            wavePlayDurations[(size_t)idx] = msg.durationSeconds;
+                            auto scrollBounds = chatScroll.getBounds();
+                            bool inView = cardY >= scrollBounds.getY() && (cardY + cardH) <= scrollBounds.getBottom();
+                            if (inView) {
+                                wavePlayOverlays[(size_t)idx].setBounds(cardX, cardY, cardW, cardH);
+                                wavePlayOverlays[(size_t)idx].setVisible(true);
+                                wavePlayOverlays[(size_t)idx].toFront(false);
+                                chatWavePositions.push_back({ {cardX, cardY, cardW, cardH}, msg.wavFilePath, msg.durationSeconds });
+                            } else {
+                                wavePlayOverlays[(size_t)idx].setBounds(-100, -100, 1, 1);
+                                wavePlayOverlays[(size_t)idx].setVisible(false);
+                            }
+                        }
+
+                        int wfX = playX + playBtnSize + 6;
+                        int wfY = cardY + 4;
+                        int wfW = cardX + cardW - wfX - 6;
+                        int wfH = cardH - 8;
+                        int numPts = (int)msg.waveform.size();
+                        if (numPts > 0 && wfW > 0)
+                        {
+                            g.saveState();
+                            g.reduceClipRegion(wfX, wfY, wfW, wfH);
+                            float pxPerPt = (float)wfW / (float)numPts;
+                            float centreY2 = (float)wfY + (float)wfH * 0.5f;
+                            float halfH2 = (float)wfH * 0.45f;
+                            for (int i = 0; i < numPts; ++i)
+                            {
+                                float px = (float)wfX + (float)i * pxPerPt;
+                                float top2 = centreY2 - msg.waveform[(size_t)i].maxVal * halfH2;
+                                float bot2 = centreY2 - msg.waveform[(size_t)i].minVal * halfH2;
+                                float bH2 = std::max(1.0f, bot2 - top2);
+                                float frac = (float)i / (float)numPts;
+                                float alpha = 0.7f;
+                                if (isPlaying)
+                                {
+                                    float playFrac2 = 0.0f;
+                                    if (processorRef.abPlayingRef.load() && processorRef.abSampleCount > 0)
+                                        playFrac2 = (float)processorRef.abPlaybackPos / (float)processorRef.abSampleCount;
+                                    else if (chatPlaybackDuration > 0 && chatPlaybackStartTime > 0) {
+                                        double el = (juce::Time::getMillisecondCounterHiRes() - chatPlaybackStartTime) / 1000.0 + chatPlaybackOffset;
+                                        playFrac2 = (float)(el / chatPlaybackDuration);
+                                    }
+                                    if (frac > playFrac2) alpha = 0.25f;
+                                }
+                                g.setColour(C::blue.interpolatedWith(C::purple, frac).withAlpha(alpha));
+                                g.fillRect(px, top2, std::max(1.0f, pxPerPt - 0.5f), bH2);
+                            }
+                            if (isPlaying)
+                            {
+                                float playFrac3 = 0.0f;
+                                if (processorRef.abPlayingRef.load() && processorRef.abSampleCount > 0)
+                                    playFrac3 = (float)processorRef.abPlaybackPos / (float)processorRef.abSampleCount;
+                                else if (chatPlaybackDuration > 0 && chatPlaybackStartTime > 0) {
+                                    double el = (juce::Time::getMillisecondCounterHiRes() - chatPlaybackStartTime) / 1000.0 + chatPlaybackOffset;
+                                    playFrac3 = (float)(el / chatPlaybackDuration);
+                                }
+                                playFrac3 = juce::jlimit(0.0f, 1.0f, playFrac3);
+                                float cursorX = (float)wfX + playFrac3 * (float)wfW;
+                                g.setColour(juce::Colours::white);
+                                g.drawVerticalLine((int)cursorX, (float)wfY, (float)(wfY + wfH));
+                            }
+                            g.restoreState();
+                        }
                     }
                 }
             }
@@ -4649,17 +6271,19 @@ void EchoJayEditor::resized()
     if (currentScreen == Screen::Loading)
         return;
 
-    int topH = 32;
+    int topH = 32 + kTabBarH; // 32px header + 28px tab bar
+    bool chatOnlyMode  = (currentTab == Tab::Chat);
+    bool comingSoonTab  = (currentTab == Tab::Chain);
+    bool linkMonitorTab = (currentTab == Tab::Link);
     int chatW, mW;
-    
-    if (compactMode)
+
+    if (compactMode || chatOnlyMode)
     {
         chatW = b.getWidth();
         mW = 0;
     }
-    else if (visualOnlyMode)
+    else if (visualOnlyMode || comingSoonTab || linkMonitorTab)
     {
-        // Visual-only: no chat, visual takes full width
         chatW = 0;
         mW = b.getWidth();
     }
@@ -4669,20 +6293,24 @@ void EchoJayEditor::resized()
         mW = b.getWidth() - chatW;
     }
 
+    // Link tab: no child components to lay out — painted directly
+
     // Position particle visual — use paint formula for mW to match divider
     int abOff = abBarShowing ? kAbBarH : 0;
     int paintChatW = juce::jlimit(280, 420, b.getWidth() * 35 / 100);
     int paintMW = b.getWidth() - paintChatW;
-    if (visualMode && !compactMode && !visualOnlyMode && currentView == View::Meters)
+    // particleVisualHolder may only be shown on Visualisation or Meters tabs.
+    const bool isVisualTab = (currentTab == Tab::Visualisation || currentTab == Tab::Meters);
+    if (isVisualTab && visualMode && !compactMode && !visualOnlyMode && currentView == View::Meters)
     {
-        int stripH = 28;
-        int toggleH = 24;
-        particleVisualHolder.setBounds(0, topH, paintMW - 1, b.getHeight() - topH - stripH - toggleH - abOff);
+        int stripH = 28;  // number strip
+        int selectorH = 30; // preset/theme selector strip
+        particleVisualHolder.setBounds(0, topH, paintMW - 1, b.getHeight() - topH - stripH - selectorH - abOff);
         particleVisualHolder.setVisible(!channelPromptVisible && !genrePromptVisible
                                         && !updateOverlay.isVisible()
                                         && !reviewOverlay.visibleState);
     }
-    else if (visualOnlyMode)
+    else if (isVisualTab && visualOnlyMode)
     {
         if (visualMode) {
             int stripH = 28;
@@ -4710,9 +6338,11 @@ void EchoJayEditor::resized()
         captureBtn.setBounds(tx, ty, 64, bh);
         channelTypeBox.setBounds(0, -20, 1, 1);
         genreBox.setBounds(0, -20, 1, 1);
+        projectInput.setBounds(0, -20, 1, 1);
     } else {
         channelTypeBox.setBounds(tx, ty, 100, bh); tx += 104;
         genreBox.setBounds(tx, ty, 95, bh); tx += 99;
+        projectInput.setBounds(tx, ty, 90, bh); tx += 94;
         captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
     }
     
@@ -4747,12 +6377,38 @@ void EchoJayEditor::resized()
     // usageLabel positioning moved to the chat-header block below — it
     // now lives in the AI ASSISTANT strip next to the Aa button.
 
+    // Sidebar ListBox + toolbar — Chat tab only, full height below tab bar.
+    // Narrow chatW so all subsequent chat-area bounds use the reduced width.
+    bool resSidebar = (currentTab == Tab::Chat && !compactMode && !visualOnlyMode);
+    int sidebarOffsetX = resSidebar ? kSidebarW : 0;
+    if (resSidebar) chatW -= kSidebarW;
+    if (resSidebar)
+    {
+        int sbX = compactMode ? 0 : mW;
+        // Toolbar: two equal-width buttons at top
+        int halfW = kSidebarW / 2;
+        sidebarNewChatBtn.setBounds(sbX,           topH, halfW,          kSidebarToolbarH);
+        sidebarNewAlbumBtn.setBounds(sbX + halfW,  topH, kSidebarW - halfW, kSidebarToolbarH);
+        sidebarNewChatBtn.setVisible(true);
+        sidebarNewAlbumBtn.setVisible(true);
+        // ListBox fills the rest
+        chatSidebar.setBounds(sbX, topH + kSidebarToolbarH,
+                              kSidebarW, b.getHeight() - topH - kSidebarToolbarH);
+        chatSidebar.setVisible(true);
+    }
+    else
+    {
+        sidebarNewChatBtn.setVisible(false);
+        sidebarNewAlbumBtn.setVisible(false);
+        chatSidebar.setVisible(false);
+    }
+
     // Chat input — 2-line height, Send centred vertically
     int inH = 52; // ~2 lines of 13px font
     int sendW = 56;
     int sendH = 30;
-    int chatPadL = compactMode ? 8 : -20; // compact: normal padding, full: 20px past divider
-    int chatStartX = compactMode ? 0 : mW;
+    int chatPadL = (compactMode || chatOnlyMode) ? 8 : -20; // compact/chat-only: normal padding; full: 20px past divider
+    int chatStartX = (compactMode ? 0 : mW) + sidebarOffsetX;
     int abOff4 = abBarShowing ? kAbBarH : 0;
     int inputPad = compactMode ? 16 : 10;
     int inputY = b.getHeight() - inH - inputPad - abOff4;
@@ -5331,7 +6987,102 @@ void EchoJayEditor::timerCallback()
         if (snap.durationSeconds >= 0.1f && savedPath.isNotEmpty())
         {
             pendingAutoFeedback = false;
-            requestAIFeedback(snap);
+
+            // ── 1. Ensure a current chat ────────────────────────────────────
+            // Use whatever is already open; only create one if there is none.
+            if (currentChatId.isEmpty())
+            {
+                juce::String proj = processorRef.getProjectName().trim();
+                WsChat nc;
+                nc.id           = juce::String(juce::Time::currentTimeMillis());
+                nc.title        = proj.isEmpty() ? juce::Time::getCurrentTime().formatted("%d %b %Y, %H:%M") : proj;
+                nc.trackName    = proj;
+                nc.created      = juce::Time::getCurrentTime().toISO8601(true);
+                nc.albumId      = getCurrentAlbumId();
+                nc.revisionCount = 0;
+                workspace.addChat(nc);
+                currentChatId = nc.id;
+                chatMessages.clear();
+                processorRef.chatHistory.clear();
+                processorRef.chatRoles.clear();
+                processorRef.chatContents.clear();
+                if (sidebarModel)
+                {
+                    sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                              workspace.getReviews(), collapsedAlbums, currentChatId);
+                    chatSidebar.updateContent();
+                }
+            }
+
+            // ── 2. Compute version and passName ────────────────────────────
+            int version = 1;
+            const WsReview* prevReview = nullptr;
+            for (auto& chat : workspace.getChats())
+            {
+                if (chat.id != currentChatId) continue;
+                version = chat.revisionCount + 1;
+                // Find the previous capture review in this chat (last _reviewId)
+                for (int mi = (int)chat.messages.size() - 1; mi >= 0; --mi)
+                {
+                    if (chat.messages[(size_t)mi].reviewId.isNotEmpty())
+                    {
+                        juce::String prevId = chat.messages[(size_t)mi].reviewId;
+                        for (auto& rv : workspace.getReviews())
+                            if (rv.id == prevId) { prevReview = &rv; break; }
+                        break;
+                    }
+                }
+                break;
+            }
+            juce::String proj = processorRef.getProjectName().trim();
+            juce::String passName = proj.isEmpty()
+                ? ("Capture v" + juce::String(version))
+                : (proj + " v" + juce::String(version));
+
+            // ── 3. Create review (uses passName for fileName) ──────────────
+            // Override snap.name so the WAV filename uses passName
+            snap.name = passName;
+            juce::String reviewId = createReviewFromCapture(snap, savedPath);
+
+            // Push PERSISTED user message — content = passName (survives save/load
+            // cleanly), _reviewId links it to the review for waveform reconstruction.
+            workspace.appendMessageToChat(currentChatId, "user", passName, reviewId);
+            // Persist immediately so a background sync cannot clobber this message.
+            workspace.requestMutationSync();
+
+            // Local display
+            ChatMsg displayCm;
+            displayCm.role     = "user";
+            displayCm.content  = passName;
+            displayCm.reviewId = reviewId;
+            displayCm.origin   = "plugin";
+            displayCm.hasWaveform = !frozenWaveform.empty();
+            displayCm.waveform    = frozenWaveform;
+            displayCm.durationSeconds = snap.durationSeconds;
+            displayCm.lufs    = snap.averagedData.integrated;
+            if (savedPath.isNotEmpty())
+            {
+                displayCm.wavFilename = juce::File(savedPath).getFileName();
+                displayCm.wavFilePath = savedPath;
+            }
+            chatMessages.push_back(displayCm);
+            {
+                EchoJayProcessor::ChatEntry ce;
+                ce.role    = "user";
+                ce.content = passName;  // passName is the display label for AI context
+                ce.hasWaveform = displayCm.hasWaveform;
+                ce.durationSeconds = displayCm.durationSeconds;
+                ce.lufs    = displayCm.lufs;
+                ce.wavFilename = displayCm.wavFilename;
+                ce.wavFilePath = displayCm.wavFilePath;
+                if (displayCm.hasWaveform)
+                    for (auto& pt : displayCm.waveform)
+                        ce.waveform.push_back(std::max(std::abs(pt.maxVal), std::abs(pt.minVal)));
+                processorRef.chatHistory.push_back(std::move(ce));
+            }
+
+            // ── 4. Fire AI feedback ────────────────────────────────────────
+            requestAIFeedback(snap, currentChatId, reviewId, passName, version, prevReview);
         
             // Refresh compare dropdowns if we're on the compare view
             if (currentView == View::Compare)
@@ -5424,13 +7175,22 @@ void EchoJayEditor::timerCallback()
         int totalH = 8; // matches paint msgY initial value
         const float chatMsgFontSize2 = 12.0f * chatTextScale;
         for (auto& msg : chatMessages) {
-            juce::AttributedString as;
-            as.append(msg.content, juce::Font(juce::FontOptions(chatMsgFontSize2)), C::text);
-            juce::TextLayout layout;
-            layout.createLayout(as, (float)(maxBW - 20));
-            int textH = (int)layout.getHeight() + 20;
-            int waveCardH = (msg.hasWaveform && !msg.waveform.empty()) ? 36 : 0;
-            int tH = textH + waveCardH;
+            const bool isCaptureMsg2 = (msg.role == "user") && msg.reviewId.isNotEmpty();
+            int tH;
+            if (isCaptureMsg2)
+            {
+                tH = 56; // unified capture card — must match kCaptureMsgH in paint
+            }
+            else
+            {
+                juce::AttributedString as;
+                as.append(msg.content, juce::Font(juce::FontOptions(chatMsgFontSize2)), C::text);
+                juce::TextLayout layout;
+                layout.createLayout(as, (float)(maxBW - 20));
+                int textH = (int)layout.getHeight() + 20;
+                int waveCardH = (msg.hasWaveform && !msg.waveform.empty()) ? 36 : 0;
+                tH = textH + waveCardH;
+            }
             totalH += tH + 10; // matches paint msgY += tH + 10
         }
         if (chatLoading) totalH += 30;
@@ -5589,6 +7349,16 @@ void EchoJayEditor::timerCallback()
         updateOverlay.toFront(false);
     }
 
+    // -------------------------------------------------------------------------
+    //  Link registry refresh every 10 ticks (~500 ms at 20 fps)
+    // -------------------------------------------------------------------------
+    linkRefreshTick++;
+    if (linkRefreshTick >= 10)
+    {
+        linkRefreshTick = 0;
+        processorRef.refreshLinkRegistry();
+    }
+
     repaint();
 }
 
@@ -5602,8 +7372,54 @@ void EchoJayEditor::textEditorReturnKeyPressed(juce::TextEditor& ed)
 
 void EchoJayEditor::sendChatMessage(const juce::String& msg)
 {
+    // Ensure we have an active workspace chat to write into
+    if (currentChatId.isEmpty())
+    {
+        WsChat c;
+        c.id      = juce::String(juce::Time::currentTimeMillis());
+        c.title   = "New chat";
+        c.created = juce::Time::getCurrentTime().toISO8601(true);
+        workspace.addChat(c);
+        currentChatId = c.id;
+    }
+
+    // Push user turn to display list
     chatMessages.push_back({"user", msg});
     processorRef.chatHistory.push_back({"user", msg});
+
+    // Push to workspace (single source of truth)
+    bool isFirstMessage = workspace.appendMessageToChat(currentChatId, "user", msg);
+    if (isFirstMessage)
+    {
+        // Title priority: project name (set on chat creation) > first user message >
+        // created date. Capture chats have trackName = passName so they keep it.
+        // Manual "New chat" entries have no trackName — title them from the message.
+        const auto& chats = workspace.getChats();
+        auto chatIt = std::find_if(chats.begin(), chats.end(),
+            [this](const WsChat& c) { return c.id == currentChatId; });
+        if (chatIt != chats.end() && chatIt->trackName.isEmpty())
+        {
+            // Use first message text (trimmed to 40 chars) as the title
+            juce::String newTitle = msg.trim().substring(0, 40);
+            if (newTitle.isEmpty())
+            {
+                // Fallback: created date/time
+                if (chatIt->created.isNotEmpty())
+                    newTitle = juce::Time::fromISO8601(chatIt->created).formatted("%d %b, %H:%M");
+            }
+            if (newTitle.isNotEmpty())
+                workspace.setChatTitle(currentChatId, newTitle);
+        }
+    }
+
+    // Refresh sidebar — chat now appears if it was previously empty
+    if (sidebarModel)
+    {
+        sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                  workspace.getReviews(), collapsedAlbums, currentChatId);
+        chatSidebar.updateContent();
+    }
+
     chatInput.clear();
     chatLoading = true;
     repaint();
@@ -5660,9 +7476,10 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
         processorRef.getEffectiveChannelName(), processorRef.getGenre(),
         processorRef.getPluginScanner().getPluginSummary());
 
+    juce::String activeChatId = currentChatId; // capture before async
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
-        [safeThis](const juce::String& reply, bool success) {
+        [safeThis, activeChatId](const juce::String& reply, bool success) {
             if (safeThis == nullptr)
                 return;
             safeThis->chatLoading = false;
@@ -5675,48 +7492,40 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
                 safeThis->chatMessages.push_back({"assistant", reply});
                 safeThis->processorRef.chatHistory.push_back({"assistant", reply});
             }
+            // Mirror assistant turn to workspace and persist
+            safeThis->workspace.appendMessageToChat(activeChatId, "assistant", reply);
+            if (safeThis->sidebarModel)
+            {
+                safeThis->sidebarModel->refreshRows(
+                    safeThis->workspace.getChats(),
+                    safeThis->workspace.getAlbums(),
+                    safeThis->workspace.getReviews(),
+                    safeThis->collapsedAlbums,
+                    safeThis->currentChatId);
+                safeThis->chatSidebar.updateContent();
+            }
+            safeThis->workspace.requestMutationSync();
             safeThis->repaint();
         });
 }
 
-void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
+void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
+                                       const juce::String& chatId,
+                                       const juce::String& reviewId,
+                                       const juce::String& passName,
+                                       int version,
+                                       const WsReview* prevReview)
 {
     auto ff = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
     auto& d = snap.averagedData;
     juce::String ch = snap.getChannelDisplayName();
+    juce::String proj = processorRef.getProjectName().trim();
 
-    // Build chat message label above waveform card
-    juce::String captureMsg = "Analyse this " + ch.toLowerCase();
+    // ── User-visible prompt ────────────────────────────────────────────────
+    // Already pushed as persisted workspace message in the capture handler.
+    // Here we build what actually goes to the API (with hidden meter context).
+    // The display message was already pushed to chatMessages in the caller.
 
-    ChatMsg cm;
-    cm.role = "user";
-    cm.content = captureMsg;
-    cm.hasWaveform = !frozenWaveform.empty();
-    cm.waveform = frozenWaveform;
-    cm.durationSeconds = snap.durationSeconds;
-    cm.lufs = snap.averagedData.integrated;
-    auto wavPath = processorRef.getWaveformRecorder().getLastSavedPath();
-    if (wavPath.isNotEmpty())
-    {
-        cm.wavFilename = juce::File(wavPath).getFileName();
-        cm.wavFilePath = wavPath;
-    }
-    
-    chatMessages.push_back(cm);
-    {
-        EchoJayProcessor::ChatEntry entry;
-        entry.role = "user";
-        entry.content = cm.content;
-        entry.hasWaveform = cm.hasWaveform;
-        entry.durationSeconds = cm.durationSeconds;
-        entry.lufs = cm.lufs;
-        entry.wavFilename = cm.wavFilename;
-        entry.wavFilePath = cm.wavFilePath;
-        if (cm.hasWaveform)
-            for (auto& pt : cm.waveform)
-                entry.waveform.push_back(std::max(std::abs(pt.maxVal), std::abs(pt.minVal)));
-        processorRef.chatHistory.push_back(std::move(entry));
-    }
     chatLoading = true;
     repaint();
 
@@ -6341,64 +8150,9 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
             meterCtx += "\n(Note: " + juce::String((int)snap.durationSeconds) + "s captured)";
     }
 
-    // Smart auto-comparison — only compare against the most recent snapshot
-    // of the SAME channel type (don't compare a mix bus against a snare).
-    // Also requires an existing AI response in chat (prevents comparing against
-    // restored snapshots from a previous session).
-    auto snaps = processorRef.getSnapshots();
-    bool hasPreviousAIResponse = false;
-    for (auto& entry : processorRef.chatHistory)
-        if (entry.role == "assistant") { hasPreviousAIResponse = true; break; }
+    // (Auto-comparison now uses prevReview from workspace chat history, not snapshots)
     
-    // Find the most recent previous snapshot of the same channel type
-    int prevIdx = -1;
-    for (int i = (int)snaps.size() - 2; i >= 0; --i)
-    {
-        if (snaps[(size_t)i].channelType == snap.channelType)
-        {
-            prevIdx = i;
-            break;
-        }
-    }
-    
-    if (prevIdx >= 0 && isFullMix && hasPreviousAIResponse)
-    {
-        auto& prev = snaps[(size_t)prevIdx];
-        auto& pd = prev.averagedData;
-        float lufsDiff = std::abs(d.integrated - pd.integrated);
-        float crestDiff = std::abs(d.crestFactor - pd.crestFactor);
-        float widthDiff = std::abs(d.width - pd.width);
-        
-        // Check spectrum difference — max dB change across all bins
-        float maxSpecDiff = 0.0f;
-        for (int i = 0; i < 64; ++i)
-        {
-            float diff = std::abs(d.spectrum[(size_t)i] - pd.spectrum[(size_t)i]);
-            if (diff > maxSpecDiff) maxSpecDiff = diff;
-        }
-        
-        // Check if everything changed drastically — might be a different song
-        if (lufsDiff > 6.0f && crestDiff > 5.0f)
-        {
-            meterCtx += "\n\n[PREVIOUS CAPTURE: " + prev.name + " — LUFS " + ff(pd.integrated) + 
-                ", Crest " + juce::String(pd.crestFactor, 1) + "dB]";
-            meterCtx += "\n⚠ The numbers have changed dramatically from the previous capture. Ask if this is a different song or section, because the comparison won't be meaningful if it is.";
-        }
-        // Meaningful changes in loudness, dynamics, width, OR spectrum (EQ changes)
-        else if (lufsDiff > 2.0f || crestDiff > 3.0f || widthDiff > 20.0f || maxSpecDiff > 8.0f)
-        {
-            meterCtx += "\n\n[PREVIOUS CAPTURE: " + prev.name + " — LUFS " + ff(pd.integrated) + 
-                ", Crest " + juce::String(pd.crestFactor, 1) + "dB]";
-            if (maxSpecDiff > 8.0f)
-                meterCtx += "\nThe tonal balance has shifted noticeably from the previous pass — looks like EQ or filtering has changed. Mention what you hear is different.";
-            else
-                meterCtx += "\nBriefly note what changed from the previous pass — but keep it to one sentence. Don't do a full comparison, that's what the Compare view is for.";
-        }
-        // If changes are tiny, don't send previous data at all
-    }
-
-    // Track whether this turn's angle asks the AI to use the user's plugins,
-    // so we can attach the full list on exactly those turns.
+    // ── Approach angle (individual channels only) ─────────────────────────
     bool angleNeedsPlugins = false;
     if (isIndividual)
     {
@@ -6413,12 +8167,40 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
         };
         int angleIdx = (int)(juce::Time::currentTimeMillis() % 7);
         meterCtx += "\n[APPROACH: " + juce::String(angles[angleIdx]) + "]\n";
-        // Angles 0 and 4 explicitly reference building chains / picking from
-        // the user's plugins — attach the full list on those turns.
         angleNeedsPlugins = (angleIdx == 0 || angleIdx == 4);
     }
 
-    juce::String captureContent = "Give me feedback on this capture.\n\n" + meterCtx;
+    // ── Build API user content ─────────────────────────────────────────────
+    // If this is the first capture in the chat (no prevReview): baseline review.
+    // If there IS a previous revision: user message says "v<N> of <project>",
+    // plus a hidden block of the previous revision's data for comparison.
+    juce::String captureContent;
+    if (prevReview == nullptr)
+    {
+        // First capture — baseline review
+        captureContent = passName + "\n\nGive me feedback on this capture.\n\n" + meterCtx;
+    }
+    else
+    {
+        // Compare to previous revision
+        auto& pr = prevReview->data;
+        juce::String prevBlock =
+            "\n\n[PREVIOUS REVISION DATA — do not show these numbers to the user, "
+            "use them to compare against the current meter data:]\n"
+            "Loudness: Integrated " + ff(pr.integ) + " LUFS | LRA " + ff(pr.range) + " LU\n"
+            "Levels: Avg RMS " + ff(pr.rmsL) + "/" + ff(pr.rmsR) + " dB"
+            " | Peak Max " + ff(pr.peakL) + "/" + ff(pr.peakR) + " dB"
+            " | TP Max " + ff(pr.tpL) + "/" + ff(pr.tpR) + " dBTP\n"
+            "Dynamics: Crest " + ff(pr.crest) + " dB | DC " + ff(pr.dc) + " mV\n"
+            "Stereo: Width " + ff(pr.width) + "% | Correlation " + ff(pr.corr) + "\n";
+
+        juce::String userLabel = proj.isEmpty()
+            ? ("Here's v" + juce::String(version) + ". Compare to the previous version.")
+            : ("Here's v" + juce::String(version) + " of " + proj + ". Compare to the previous version.");
+
+        captureContent = userLabel + prevBlock + meterCtx;
+    }
+
     if (angleNeedsPlugins)
         captureContent += EchoJayAPI::buildPluginInjection(
             processorRef.getPluginScanner().getFullPluginList());
@@ -6431,14 +8213,34 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap)
         processorRef.getPluginScanner().getPluginSummary());
 
     auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::String captureChatId = chatId;
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
-        [safeThis2](const juce::String& reply, bool success) {
+        [safeThis2, captureChatId](const juce::String& reply, bool success) {
             if (safeThis2 == nullptr)
                 return;
             safeThis2->chatLoading = false;
             safeThis2->chatMessages.push_back({"assistant", reply});
             safeThis2->processorRef.chatHistory.push_back({"assistant", reply});
             if (success) { safeThis2->processorRef.chatRoles.add("assistant"); safeThis2->processorRef.chatContents.add(reply); }
+
+            // Mirror assistant turn into the capture chat, increment revisionCount, persist
+            if (captureChatId.isNotEmpty())
+            {
+                safeThis2->workspace.appendMessageToChat(captureChatId, "assistant", reply);
+                safeThis2->workspace.incrementChatRevisionCount(captureChatId);
+                if (safeThis2->sidebarModel)
+                {
+                    safeThis2->sidebarModel->refreshRows(
+                        safeThis2->workspace.getChats(),
+                        safeThis2->workspace.getAlbums(),
+                        safeThis2->workspace.getReviews(),
+                        safeThis2->collapsedAlbums,
+                        safeThis2->currentChatId);
+                    safeThis2->chatSidebar.updateContent();
+                }
+                safeThis2->workspace.requestMutationSync();
+            }
+
             safeThis2->repaint();
         });
 }
@@ -7060,9 +8862,20 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
 void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 {
     auto pos = e.getEventRelativeTo(this).getPosition();
-    
+
     // Update overlay clicks are handled by the UpdateOverlay child component itself.
-    
+
+    // Tab bar click — y=32..60 (below the 32px header, height=kTabBarH)
+    if (currentScreen == Screen::Main && !visualOnlyMode
+        && pos.y >= 32 && pos.y < 32 + kTabBarH)
+    {
+        constexpr int kTabCount = 7;
+        int tabW = getWidth() / kTabCount;
+        int idx = juce::jlimit(0, kTabCount - 1, pos.x / juce::jmax(1, tabW));
+        switchToTab(static_cast<Tab>(idx));
+        return;
+    }
+
     // Chat wave card click — direct hit testing (works on Windows where overlays fail)
     if (currentScreen == Screen::Main && !chatWavePositions.empty())
     {
@@ -7236,84 +9049,42 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         }
     }
     
-    // Style navigation arrows click — in the VISUALISATION tab of toggle strip
-    if (currentScreen == Screen::Main && visualMode && !compactMode && !visualOnlyMode)
+    // Preset/theme selector strip click — VISUALISATION tab only
+    if (currentScreen == Screen::Main && currentTab == Tab::Visualisation
+        && visualMode && !compactMode && !visualOnlyMode
+        && !channelPromptVisible && !genrePromptVisible)
     {
         int paintCW = juce::jlimit(280, 420, getWidth() * 35 / 100);
         int mW2 = getWidth() - paintCW;
-        int stripH = 32;
+        int numStripH = 28;
+        int stripH = 30;
         int abOff5 = abBarShowing ? kAbBarH : 0;
-        int stripY = getHeight() - stripH - abOff5;
-        if (visualMode) stripY -= 28; // above number strip
-        
-        // Match paint layout exactly: METERS button at x=4 w=80, arrows start at 88
-        int toggleBtnW = 80;
-        int toggleBtnX = 4;
-        int arrowsX = toggleBtnX + toggleBtnW + 4;
-        int arrowsW = mW2 - arrowsX - 4;
-        int midX2 = arrowsX + arrowsW / 2;
-        
-        if (pos.y >= stripY && pos.y < stripY + stripH)
-        {
-            // METERS button click area
-            if (pos.x >= toggleBtnX && pos.x < toggleBtnX + toggleBtnW) {
-                toggleVisualMode();
-                return;
-            }
-            
-            // Preset/theme arrow areas — generous click zones
-            if (pos.x >= arrowsX && pos.x < mW2)
-            {
-                // Left half = preset, right half = theme
-                if (pos.x < midX2) {
-                    // Preset area: left half = prev, right half = next
-                    int presetMid = arrowsX + (midX2 - arrowsX) / 2;
-                    if (pos.x < presetMid) {
-                        particleVisual->prevPreset();
-                    } else {
-                        particleVisual->nextPreset();
-                    }
-                    processorRef.visualPreset = (int)particleVisual->currentPreset;
-                    repaint();
-                    return;
-                } else {
-                    // Theme area: left half = prev, right half = next
-                    int themeMid = midX2 + (arrowsX + arrowsW - midX2) / 2;
-                    if (pos.x < themeMid) {
-                        particleVisual->prevTheme();
-                    } else {
-                        particleVisual->nextTheme();
-                    }
-                    processorRef.visualTheme = (int)particleVisual->currentTheme;
-                    repaint();
-                    return;
-                }
-            }
-        }
-    }
-    
-    // Meters/Visual toggle strip click — at bottom of meter panel
-    if (currentScreen == Screen::Main && currentView == View::Meters && !compactMode && !visualOnlyMode
-        && !channelPromptVisible && !genrePromptVisible)
-    {
-        int paintCW2 = juce::jlimit(280, 420, getWidth() * 35 / 100);
-        int mW2 = getWidth() - paintCW2;
-        int stripH = 32;
-        int abOff6 = abBarShowing ? kAbBarH : 0;
-        int stripY = getHeight() - stripH - abOff6;
-        if (visualMode) stripY -= 28;
-        
+        int stripY = getHeight() - numStripH - stripH - abOff5;
+
         if (pos.x < mW2 && pos.y >= stripY && pos.y < stripY + stripH)
         {
-            if (!visualMode) {
-                // VISUALISATION label — click anywhere toggles
-                toggleVisualMode();
-                return;
+            int arrowsX = 4;
+            int arrowsW = mW2 - arrowsX - 4;
+            int midX = arrowsX + arrowsW / 2;
+
+            if (pos.x < midX) {
+                // Preset: left of centre = prev, right of centre = next
+                int presetMid = arrowsX + (midX - arrowsX) / 2;
+                if (pos.x < presetMid) particleVisual->prevPreset();
+                else                   particleVisual->nextPreset();
+                processorRef.visualPreset = (int)particleVisual->currentPreset;
+            } else {
+                // Theme: left of centre = prev, right of centre = next
+                int themeMid = midX + (arrowsX + arrowsW - midX) / 2;
+                if (pos.x < themeMid) particleVisual->prevTheme();
+                else                  particleVisual->nextTheme();
+                processorRef.visualTheme = (int)particleVisual->currentTheme;
             }
-            // Visual mode clicks handled by the arrow handler above
+            repaint();
+            return;
         }
     }
-    
+
     // Click on loudness panel — reset integrated LUFS
     if (currentScreen == Screen::Main && currentView == View::Meters && !compactMode
         && !channelPromptVisible && !genrePromptVisible
@@ -7660,10 +9431,21 @@ void EchoJayEditor::toggleVisualOnlyMode()
 void EchoJayEditor::startChatPlayback(const juce::String& wavPath, float offset)
 {
     stopChatPlayback();
-    
+
+    // Helper: find duration from chat messages (matches wavFilePath or audioUrl)
+    auto findDuration = [&]() -> float {
+        for (auto& msg : chatMessages)
+            if (msg.wavFilePath == wavPath || msg.audioUrl == wavPath)
+                return msg.durationSeconds;
+        for (auto& wp : compareWavePositions)
+            if (wp.wavPath == wavPath)
+                return wp.duration;
+        return 0.f;
+    };
+
     juce::File wavFile(wavPath);
     if (!wavFile.existsAsFile()) return;
-    
+
     // Route playback through the plugin output (AB system) on all views
     {
         // If same file is paused and no seek offset, resume from where we paused
@@ -7678,14 +9460,7 @@ void EchoJayEditor::startChatPlayback(const juce::String& wavPath, float offset)
         currentlyPlayingChatWav = wavPath;
         chatPlaybackStartTime = juce::Time::getMillisecondCounterHiRes();
         chatPlaybackOffset = offset;
-        
-        for (auto& msg : chatMessages)
-            if (msg.wavFilePath == wavPath)
-                { chatPlaybackDuration = msg.durationSeconds; break; }
-        if (chatPlaybackDuration <= 0)
-            for (auto& wp : compareWavePositions)
-                if (wp.wavPath == wavPath)
-                    { chatPlaybackDuration = wp.duration; break; }
+        chatPlaybackDuration = findDuration();
         return;
     }
     
@@ -7735,16 +9510,8 @@ void EchoJayEditor::startChatPlayback(const juce::String& wavPath, float offset)
         currentlyPlayingChatWav = wavPath;
         chatPlaybackStartTime = juce::Time::getMillisecondCounterHiRes();
         chatPlaybackOffset = offset;
-        
-        // Find duration — search chat messages and compare positions
-        for (auto& msg : chatMessages)
-            if (msg.wavFilePath == wavPath)
-                { chatPlaybackDuration = msg.durationSeconds; break; }
-        if (chatPlaybackDuration <= 0)
-            for (auto& wp : compareWavePositions)
-                if (wp.wavPath == wavPath)
-                    { chatPlaybackDuration = wp.duration; break; }
-        
+        chatPlaybackDuration = findDuration();
+
         // Auto-clear after remaining duration
         float remaining = chatPlaybackDuration - offset;
         if (remaining > 0)
@@ -7771,7 +9538,14 @@ void EchoJayEditor::onWavePlayClick(int index)
     if (index < 0 || index >= kMaxWavePlayBtns) return;
     juce::String wavPath = wavePlayPaths[(size_t)index];
     if (wavPath.isEmpty()) return;
-    
+
+    // Web capture — open echojay.ai in the browser instead of playing
+    if (wavPath == "__open_web__")
+    {
+        juce::URL("https://www.echojay.ai").launchInDefaultBrowser();
+        return;
+    }
+
     if (currentlyPlayingChatWav == wavPath)
     {
         // Toggle off
@@ -7779,7 +9553,7 @@ void EchoJayEditor::onWavePlayClick(int index)
         repaint();
         return;
     }
-    
+
     startChatPlayback(wavPath, 0);
 }
 

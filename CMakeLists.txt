@@ -4,7 +4,7 @@ set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures")
 # Minimum macOS: Big Sur (11.0). Covers anything 4+ years old.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(EchoJay VERSION 1.6.2)
+project(EchoJay VERSION 2.1.3)
 
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/
@@ -43,7 +43,7 @@ endif()
 juce_add_plugin(EchoJay
     ${ECHOJAY_ICON_ARG}
     COMPANY_NAME "EchoJay"
-    BUNDLE_ID "com.echojay.plugin"
+    BUNDLE_ID "com.echojay.plugin.v2"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
@@ -51,10 +51,10 @@ juce_add_plugin(EchoJay
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD FALSE
     PLUGIN_MANUFACTURER_CODE Ecjy
-    PLUGIN_CODE EcJy
+    PLUGIN_CODE EcJ2
     FORMATS ${PLUGIN_FORMATS}
-    PRODUCT_NAME "EchoJay"
-    AAX_IDENTIFIER "com.echojay.plugin"
+    PRODUCT_NAME "EchoJay V2"
+    AAX_IDENTIFIER "com.echojay.plugin.v2"
     AU_MAIN_TYPE kAudioUnitType_Effect
     VST3_CATEGORIES "Fx" "Analyzer"
     AAX_CATEGORY "AAX_ePlugInCategory_None"
@@ -78,6 +78,8 @@ target_sources(EchoJay PRIVATE
     Source/PluginChecklist.h
     Source/EchoJayAPI.cpp
     Source/EchoJayAPI.h
+    Source/EchoJayWorkspace.cpp
+    Source/EchoJayWorkspace.h
     Source/ReferenceAnalyser.cpp
     Source/ReferenceAnalyser.h
     Source/WaveformRecorder.cpp
@@ -85,6 +87,7 @@ target_sources(EchoJay PRIVATE
     Source/EchoJayLookAndFeel.h
     Source/ParticleVisual.h
     Source/ParticleVisual.cpp
+    Source/LinkShm.h
 )
 
 target_compile_definitions(EchoJay PUBLIC
@@ -124,4 +127,73 @@ if(APPLE)
             )
         endif()
     endforeach()
+endif()
+
+# =============================================================================
+# EchoJay Link — separate plugin target, version 0.1.0
+# A lightweight insert that identifies a channel by name and passes audio
+# through completely unchanged. No audio analysis yet.
+# =============================================================================
+
+set(LINK_VERSION "0.2.3")
+
+# Link only ships AU + VST3 (no AAX, no Standalone for now)
+set(LINK_FORMATS AU VST3)
+
+juce_add_plugin(EchoJayLink
+    COMPANY_NAME "EchoJay"
+    BUNDLE_ID "com.echojay.link"
+    IS_SYNTH FALSE
+    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE
+    COPY_PLUGIN_AFTER_BUILD FALSE
+    PLUGIN_MANUFACTURER_CODE Ecjy
+    PLUGIN_CODE EjLk
+    FORMATS ${LINK_FORMATS}
+    PRODUCT_NAME "EchoJay Link"
+    AU_MAIN_TYPE kAudioUnitType_Effect
+    VST3_CATEGORIES "Fx"
+    HARDENED_RUNTIME_ENABLED TRUE
+    HARDENED_RUNTIME_OPTIONS "com.apple.security.network.client"
+    VERSION ${LINK_VERSION}
+)
+
+juce_generate_juce_header(EchoJayLink)
+
+target_sources(EchoJayLink PRIVATE
+    Source/LinkProcessor.cpp
+    Source/LinkProcessor.h
+    Source/LinkEditor.cpp
+    Source/LinkEditor.h
+    Source/EchoJayLogo.h
+    Source/LinkShm.h
+)
+
+target_compile_definitions(EchoJayLink PUBLIC
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+)
+
+target_link_libraries(EchoJayLink
+    PRIVATE
+        juce::juce_audio_utils
+        juce::juce_gui_extra
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags
+)
+
+# Print built bundle path after AU build
+if(APPLE)
+    add_custom_command(TARGET EchoJayLink_AU POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "EchoJay Link AU: $<TARGET_BUNDLE_DIR:EchoJayLink_AU>"
+        COMMENT "EchoJay Link AU path"
+        VERBATIM
+    )
 endif()

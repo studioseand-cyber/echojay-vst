@@ -6,6 +6,7 @@
 #include "PluginScanner.h"
 #include "ReferenceAnalyser.h"
 #include "WaveformRecorder.h"
+#include "LinkShm.h"
 
 // Temporary diagnostic: append a timestamped line to the EchoJay teardown log
 // file (Release-safe; DBG is compiled out of Release). Used to trace the
@@ -134,6 +135,16 @@ public:
     juce::String getGenre() const { return genre; }
     void setGenre(const juce::String& g) { genre = g; }
 
+    // Project name — optional label for the current mix session.
+    // Resetting the name to something new resets captureVersion to 1.
+    juce::String getProjectName() const { return projectName; }
+    void setProjectName(const juce::String& name);
+    int  getCaptureVersion() const { return captureVersion; }
+
+    // Returns the pass name used for WAV, review fileName, and chat title.
+    // "Pass N" when no project is set; "project vN" when one is.
+    juce::String computePassName() const;
+
     CaptureState getCaptureState() const { return captureState.load(); }
     void startCapture();
     void stopCapture();
@@ -239,6 +250,10 @@ private:
     std::vector<CaptureSnapshot> snapshots;
     int passCounter = 0;
 
+    // Project naming — persisted in plugin state
+    juce::String projectName;    // empty = use "Pass N" naming
+    int captureVersion = 1;      // incremented after each capture when project is set; resets when name changes
+
     // Auto-feedback
     mutable std::atomic<bool> autoFeedbackReady { false };
 
@@ -262,6 +277,69 @@ private:
     // members before they are destroyed.
     std::thread loadThread;
     std::atomic<bool> isShuttingDown { false };
+
+    // =========================================================================
+    //  EchoJay Link consumer — stage 2 (auto-discovery via registry)
+    // =========================================================================
+public:
+    struct LinkSlotInfo {
+        juce::String name;
+        bool         connected  = false;
+        float        sampleRate = 0.f;
+        int64_t      framesRead = 0;
+    };
+
+    /// Refresh the list of known Link slots from the registry.
+    /// Call from the message thread (editor timer, ~2 Hz).
+    void refreshLinkRegistry();
+
+    /// Snapshot of currently known slots — message thread only.
+    const std::vector<LinkSlotInfo>& getLinkSlotInfos() const { return linkSlotInfos; }
+
+    // Consumer diagnostics (message thread, read by editor in paint)
+    struct ConsumerDiag {
+        juce::String regKey;
+        bool         regOpened = false;
+        int          regErrno  = 0;
+        int          activeSlotCount = 0;
+        juce::String nameList;    // comma-separated display names
+    };
+    ConsumerDiag consumerDiag;
+
+private:
+    static constexpr int kMaxLinkSlots = 16;
+
+    // Resolved shared directory (message thread, set once in ensureLinkRegistryOpen)
+    juce::String linkResolvedDir;
+
+    // Registry mapping (message thread)
+    void*  linkRegMap = nullptr;
+    int    linkRegFd  = -1;
+
+    void ensureLinkRegistryOpen();
+    void closeLinkRegistryNow();   // destructor
+
+    // Per-slot audio ring mappings — SpinLock for audio/message thread safety
+    struct ActiveLinkSlot {
+        juce::SpinLock       lock;
+        void*                map    = nullptr;
+        int                  fd     = -1;
+        juce::String         shmKey;  // last opened key, message thread
+        std::atomic<int64_t> framesRead { 0 };
+        // Non-copyable due to SpinLock — managed in-place via std::array
+    };
+    std::array<ActiveLinkSlot, kMaxLinkSlots> activeLinkSlots;
+
+    void connectLinkAudioSlot   (int i, const juce::String& key, float sr);
+    void disconnectLinkAudioSlot(int i);
+    void disconnectAllLinkSlotsNow();  // destructor
+
+    // Stale detection (message thread)
+    struct SlotProbeState { uint32_t lastHb = 0; int staleCycles = 0; };
+    std::array<SlotProbeState, kMaxLinkSlots> slotProbeStates;
+
+    // UI snapshot (message thread only)
+    std::vector<LinkSlotInfo> linkSlotInfos;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EchoJayProcessor)
 };
