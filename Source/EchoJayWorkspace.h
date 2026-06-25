@@ -45,6 +45,12 @@ struct WsMeasurements {
     float duration = 0.f;
 };
 
+struct WsChannelMeasurements {
+    juce::String   name;
+    WsMeasurements data;
+    juce::String   wavFile;  // filename only; empty until saved
+};
+
 struct WsReview {
     juce::String id;
     juce::String label;      // display name set at capture time (e.g. "test v1")
@@ -57,6 +63,7 @@ struct WsReview {
     juce::String origin;
     juce::var    waveform;      // kept as raw var (may be array or string)
     WsMeasurements data;
+    std::vector<WsChannelMeasurements> channels;  // empty for single-channel (host-only) reviews
 };
 
 struct WsProfile {

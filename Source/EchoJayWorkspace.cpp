@@ -506,6 +506,36 @@ WsReview EchoJayWorkspace::parseReview(const juce::var& v)
             r.data.dc       = (float)d->getProperty("dc");
             r.data.duration = (float)d->getProperty("duration");
         }
+        if (auto* chArr = obj->getProperty("channels").getArray())
+        {
+            for (auto& cVar : *chArr)
+            {
+                if (auto* cObj = cVar.getDynamicObject())
+                {
+                    WsChannelMeasurements ch;
+                    ch.name    = cObj->getProperty("name").toString();
+                    ch.wavFile = cObj->getProperty("wavFile").toString();
+                    auto cdVar = cObj->getProperty("data");
+                    if (auto* cd = cdVar.getDynamicObject())
+                    {
+                        ch.data.integ    = (float)cd->getProperty("integ");
+                        ch.data.range    = (float)cd->getProperty("range");
+                        ch.data.rmsL     = (float)cd->getProperty("rmsL");
+                        ch.data.rmsR     = (float)cd->getProperty("rmsR");
+                        ch.data.peakL    = (float)cd->getProperty("peakL");
+                        ch.data.peakR    = (float)cd->getProperty("peakR");
+                        ch.data.tpL      = (float)cd->getProperty("tpL");
+                        ch.data.tpR      = (float)cd->getProperty("tpR");
+                        ch.data.width    = (float)cd->getProperty("width");
+                        ch.data.corr     = (float)cd->getProperty("corr");
+                        ch.data.crest    = (float)cd->getProperty("crest");
+                        ch.data.dc       = (float)cd->getProperty("dc");
+                        ch.data.duration = (float)cd->getProperty("duration");
+                    }
+                    r.channels.push_back(ch);
+                }
+            }
+        }
     }
     return r;
 }
@@ -618,6 +648,34 @@ juce::var EchoJayWorkspace::reviewToVar(const WsReview& r)
     d->setProperty("dc",       r.data.dc);
     d->setProperty("duration", r.data.duration);
     obj->setProperty("data", juce::var(d));
+    if (!r.channels.empty())
+    {
+        juce::Array<juce::var> chArr;
+        for (auto& ch : r.channels)
+        {
+            auto* cObj  = new juce::DynamicObject();
+            cObj->setProperty("name", ch.name);
+            if (ch.wavFile.isNotEmpty())
+                cObj->setProperty("wavFile", ch.wavFile);
+            auto* cd = new juce::DynamicObject();
+            cd->setProperty("integ",    ch.data.integ);
+            cd->setProperty("range",    ch.data.range);
+            cd->setProperty("rmsL",     ch.data.rmsL);
+            cd->setProperty("rmsR",     ch.data.rmsR);
+            cd->setProperty("peakL",    ch.data.peakL);
+            cd->setProperty("peakR",    ch.data.peakR);
+            cd->setProperty("tpL",      ch.data.tpL);
+            cd->setProperty("tpR",      ch.data.tpR);
+            cd->setProperty("width",    ch.data.width);
+            cd->setProperty("corr",     ch.data.corr);
+            cd->setProperty("crest",    ch.data.crest);
+            cd->setProperty("dc",       ch.data.dc);
+            cd->setProperty("duration", ch.data.duration);
+            cObj->setProperty("data", juce::var(cd));
+            chArr.add(juce::var(cObj));
+        }
+        obj->setProperty("channels", juce::var(chArr));
+    }
     return juce::var(obj);
 }
 

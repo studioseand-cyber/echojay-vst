@@ -52,6 +52,15 @@ static const juce::StringArray channelTypeNames = {
 
 enum class CaptureState { Idle, Capturing, Complete };
 
+// Per-channel data from a multi-channel capture.
+// channels[0] = host, channels[1..] = active Links.
+// Only populated when Links were active during capture.
+struct ChannelMeterData {
+    juce::String name;
+    MeterData    meterData;
+    juce::String wavFilePath;   // filled by background save thread
+};
+
 struct CaptureSnapshot {
     juce::String id;
     juce::String name;
@@ -63,7 +72,9 @@ struct CaptureSnapshot {
     std::vector<float> waveformThumbnail;
     std::array<float, 64> eqCurve = {};
     juce::String wavFilePath;
-    
+    // Multi-channel data — empty when no Links active during capture
+    std::vector<ChannelMeterData> channels;
+
     // Both spectra preserved for channel-shape / per-band crest analysis.
     // peakSpectrum  = max-hold dB per bin over the capture (transient character)
     // avgSpectrum   = average dB per bin over the capture (sustained character)
@@ -306,6 +317,8 @@ public:
     };
     ConsumerDiag consumerDiag;
 
+    struct LinkCaptureChannel; // defined in PluginProcessor.cpp
+
 private:
     static constexpr int kMaxLinkSlots = 16;
 
@@ -325,12 +338,13 @@ private:
         void*                map    = nullptr;
         int                  fd     = -1;
         juce::String         shmKey;  // last opened key, message thread
+        juce::String         displayName;  // message-thread only, set on connect
         std::atomic<int64_t> framesRead { 0 };
         // Non-copyable due to SpinLock — managed in-place via std::array
     };
     std::array<ActiveLinkSlot, kMaxLinkSlots> activeLinkSlots;
 
-    void connectLinkAudioSlot   (int i, const juce::String& key, float sr);
+    void connectLinkAudioSlot   (int i, const juce::String& key, const juce::String& displayName, float sr);
     void disconnectLinkAudioSlot(int i);
     void disconnectAllLinkSlotsNow();  // destructor
 
@@ -340,6 +354,12 @@ private:
 
     // UI snapshot (message thread only)
     std::vector<LinkSlotInfo> linkSlotInfos;
+
+    // Per-link capture channels — message thread writes, audio thread reads via spinlock
+    std::vector<std::unique_ptr<LinkCaptureChannel>> linkCaptureChannels;
+    juce::SpinLock                                   linkCaptureSpinLock;
+    double hostSampleRate_    = 44100.0;
+    int    hostSamplesPerBlock_ = 512;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EchoJayProcessor)
 };

@@ -2561,6 +2561,31 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     }
     y += 34;
 
+    // Host channel card — always shown first, above Links
+    {
+        const int cardH = 46;
+        g.setColour(C::bg3.brighter(0.04f));
+        g.fillRoundedRectangle((float)pad, (float)y, (float)fw, (float)cardH, 6.f);
+        g.setColour(C::blue2.withAlpha(0.4f));
+        g.drawRoundedRectangle((float)pad + 0.5f, (float)y + 0.5f, (float)fw - 1.f, (float)cardH - 1.f, 6.f, 1.f);
+
+        juce::String hostLabel = processorRef.getEffectiveChannelName();
+        if (hostLabel.isEmpty()) hostLabel = "Host Channel";
+
+        g.setColour(C::text);
+        g.setFont(juce::Font(juce::FontOptions(12.5f, juce::Font::bold)));
+        g.drawText(hostLabel, pad + 12, y + 8, fw - 24, 16, juce::Justification::centredLeft);
+
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(10.5f)));
+        auto md = processorRef.getMeterEngine().getMeterData();
+        juce::String hostStats = "Integrated: " + juce::String(md.integrated, 1) + " LUFS"
+            + "  Crest: " + juce::String(md.crestFactor, 1) + " dB";
+        g.drawText(hostStats, pad + 12, y + 26, fw - 24, 13, juce::Justification::centredLeft);
+
+        y += cardH + 6;
+    }
+
     const auto& slots = processorRef.getLinkSlotInfos();
 
     if (slots.empty())
@@ -4330,6 +4355,28 @@ juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
     rev.data.dc       = d.dcOffset;
     rev.data.duration = snap.durationSeconds;
 
+    // Multi-channel: populate per-channel measurements
+    for (auto& sch : snap.channels)
+    {
+        WsChannelMeasurements wsch;
+        wsch.name = sch.name;
+        auto& md = sch.meterData;
+        wsch.data.integ    = md.integrated;
+        wsch.data.range    = md.loudnessRange;
+        wsch.data.rmsL     = md.rmsL;
+        wsch.data.rmsR     = md.rmsR;
+        wsch.data.peakL    = md.peakMaxL;
+        wsch.data.peakR    = md.peakMaxR;
+        wsch.data.tpL      = md.truePeakMaxL;
+        wsch.data.tpR      = md.truePeakMaxR;
+        wsch.data.width    = md.width;
+        wsch.data.corr     = md.correlation;
+        wsch.data.crest    = md.crestFactor;
+        wsch.data.dc       = md.dcOffset;
+        wsch.data.duration = snap.durationSeconds;
+        rev.channels.push_back(wsch);
+    }
+
     // ---- Write index.json entry ----
     juce::File captureDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
                                 .getChildFile("EchoJay")
@@ -4345,7 +4392,22 @@ juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
             for (auto& prop : existing->getProperties())
                 indexObj->setProperty(prop.name, prop.value);
     }
-    indexObj->setProperty(reviewId, fileName);
+    if (snap.channels.empty())
+    {
+        // Single-channel (host-only): existing format
+        indexObj->setProperty(reviewId, fileName);
+    }
+    else
+    {
+        // Multi-channel: extended format { host: "...", channels: [...] }
+        auto* entry = new juce::DynamicObject();
+        entry->setProperty("host", fileName);
+        juce::Array<juce::var> chNames;
+        for (size_t ci = 1; ci < snap.channels.size(); ++ci)
+            chNames.add(snap.channels[ci].name);
+        entry->setProperty("channels", juce::var(chNames));
+        indexObj->setProperty(reviewId, juce::var(entry));
+    }
     indexFile.replaceWithText(juce::JSON::toString(juce::var(indexObj), false));
 
     // ---- Add to workspace and sync ----
@@ -8168,6 +8230,39 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         int angleIdx = (int)(juce::Time::currentTimeMillis() % 7);
         meterCtx += "\n[APPROACH: " + juce::String(angles[angleIdx]) + "]\n";
         angleNeedsPlugins = (angleIdx == 0 || angleIdx == 4);
+    }
+
+    // ── Multi-channel context (appended to meterCtx when Links active) ────
+    if (!snap.channels.empty())
+    {
+        auto ff2 = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
+        juce::String mcCtx = "\n\n[MULTI-CHANNEL CAPTURE — " + juce::String((int)snap.channels.size()) + " channels]\n";
+        mcCtx += "Channels captured: ";
+        for (size_t ci = 0; ci < snap.channels.size(); ++ci)
+        {
+            if (ci > 0) mcCtx += ", ";
+            mcCtx += snap.channels[ci].name;
+        }
+        mcCtx += "\n\n";
+        for (size_t ci = 0; ci < snap.channels.size(); ++ci)
+        {
+            auto& sch = snap.channels[ci];
+            auto& md = sch.meterData;
+            juce::String header = (ci == 0)
+                ? ("[HOST — " + sch.name + "]\n")
+                : ("[LINK — " + sch.name + "]\n");
+            mcCtx += header;
+            mcCtx += "(Internal — do not show raw numbers) ";
+            mcCtx += "Integrated: " + ff2(md.integrated) + " LUFS | LRA: " + ff2(md.loudnessRange) + " LU\n";
+            mcCtx += "Peak: L " + ff2(md.peakMaxL) + " / R " + ff2(md.peakMaxR) + " dBFS\n";
+            mcCtx += "RMS: L " + ff2(md.rmsL) + " / R " + ff2(md.rmsR) + " dB\n";
+            mcCtx += "Crest: " + ff2(md.crestFactor) + " dB | Width: " + ff2(md.width) + "% | Corr: " + ff2(md.correlation) + "\n";
+            mcCtx += "\n";
+        }
+        mcCtx += "[Read the whole session: note any per-channel issues and how they relate. "
+                 "If the host mix looks fine, check whether the individual channels suggest a balance or "
+                 "dynamics issue that might not be obvious from the full mix alone.]\n";
+        meterCtx += mcCtx;
     }
 
     // ── Build API user content ─────────────────────────────────────────────

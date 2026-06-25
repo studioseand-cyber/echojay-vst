@@ -16,6 +16,192 @@
 // When disabled (the default) every ejTeardownLog() call is a no-op with no
 // disk I/O.
 // ---------------------------------------------------------------------------
+// ============ Per-Link capture channel ============
+// Owns a MeterEngine + WaveformRecorder for one Link stream during a capture.
+// Heap-allocated (unique_ptr) so atomics can live in place without move.
+struct EchoJayProcessor::LinkCaptureChannel
+{
+    juce::String name;
+    int          slotIdx;
+
+    // Drain buffers (pre-allocated at construction to avoid audio-thread allocs)
+    std::vector<float> tmpBufL;
+    std::vector<float> tmpBufR;
+
+    // Spectrum accumulation (audio thread during capture, message thread after)
+    std::array<float, 64> spectrumPeak {};
+    std::array<float, 64> spectrumSum  {};
+    int spectrumFrames = 0;
+
+    // Per-capture accumulators (atomic: written audio thread, read message thread)
+    std::atomic<float>     capPeakL          { 0.0f };
+    std::atomic<float>     capPeakR          { 0.0f };
+    std::atomic<double>    capSumSqL         { 0.0  };
+    std::atomic<double>    capSumSqR         { 0.0  };
+    std::atomic<double>    capGatedSumSqL    { 0.0  };
+    std::atomic<double>    capGatedSumSqR    { 0.0  };
+    std::atomic<long long> capTotalSamples   { 0    };
+    std::atomic<long long> capGatedSamples   { 0    };
+    std::atomic<double>    capWidthSum       { 0.0  };
+    std::atomic<double>    capCorrSum        { 0.0  };
+    std::atomic<int>       capGatedBufCount  { 0    };
+    std::atomic<float>     capRunningPeakForGate { 0.0f };
+    std::atomic<float>     capMaxMomentary   { -100.0f };
+    std::atomic<float>     capMaxShortTerm   { -100.0f };
+
+    MeterEngine      meterEngine;
+    WaveformRecorder waveformRecorder;
+
+    // Finalised on message thread after stopCapture
+    std::array<float, 64> finalSpectrumPeak {};
+    std::array<float, 64> finalAvgSpectrum  {};
+    bool hasDualSpectrum = false;
+
+    LinkCaptureChannel(const juce::String& n, int idx, double sr, int bs)
+        : name(n), slotIdx(idx),
+          tmpBufL((size_t)std::max(bs * 2, 4096), 0.0f),
+          tmpBufR((size_t)std::max(bs * 2, 4096), 0.0f)
+    {
+        spectrumPeak.fill(-120.0f);
+        spectrumSum.fill(0.0f);
+        meterEngine.prepare(sr, bs);
+        waveformRecorder.prepare(sr, bs);
+        waveformRecorder.startRecording();
+    }
+
+    // Non-copyable — managed via unique_ptr
+    LinkCaptureChannel(const LinkCaptureChannel&) = delete;
+    LinkCaptureChannel& operator=(const LinkCaptureChannel&) = delete;
+};
+
+// Accumulate one audio block into a link capture channel (audio thread).
+static void accumulateLinkChannel(EchoJayProcessor::LinkCaptureChannel& lcc,
+                                   const float* L, const float* R, int n)
+{
+    if (n <= 0) return;
+
+    lcc.meterEngine.processBlock(L, R, n);
+    lcc.waveformRecorder.processBlock(L, R, n);
+
+    // Spectrum
+    auto liveSpec = lcc.meterEngine.getMeterData().spectrum;
+    for (int i = 0; i < 64; ++i)
+    {
+        if (liveSpec[(size_t)i] > lcc.spectrumPeak[(size_t)i])
+            lcc.spectrumPeak[(size_t)i] = liveSpec[(size_t)i];
+        lcc.spectrumSum[(size_t)i] += liveSpec[(size_t)i];
+    }
+    lcc.spectrumFrames++;
+
+    float bufPeakL = 0.0f, bufPeakR = 0.0f;
+    double bufSumSqL = 0.0, bufSumSqR = 0.0;
+    for (int i = 0; i < n; ++i)
+    {
+        float aL = std::abs(L[i]);
+        float aR = std::abs(R[i]);
+        if (aL > bufPeakL) bufPeakL = aL;
+        if (aR > bufPeakR) bufPeakR = aR;
+        bufSumSqL += (double)L[i] * (double)L[i];
+        bufSumSqR += (double)R[i] * (double)R[i];
+    }
+
+    // Running peaks
+    float curPL = lcc.capPeakL.load();
+    while (bufPeakL > curPL && !lcc.capPeakL.compare_exchange_weak(curPL, bufPeakL)) {}
+    float curPR = lcc.capPeakR.load();
+    while (bufPeakR > curPR && !lcc.capPeakR.compare_exchange_weak(curPR, bufPeakR)) {}
+    float bufMax = std::max(bufPeakL, bufPeakR);
+    float curG = lcc.capRunningPeakForGate.load();
+    while (bufMax > curG && !lcc.capRunningPeakForGate.compare_exchange_weak(curG, bufMax)) {}
+
+    // Total RMS
+    double cur = lcc.capSumSqL.load();
+    while (!lcc.capSumSqL.compare_exchange_weak(cur, cur + bufSumSqL)) {}
+    cur = lcc.capSumSqR.load();
+    while (!lcc.capSumSqR.compare_exchange_weak(cur, cur + bufSumSqR)) {}
+    lcc.capTotalSamples.fetch_add(n);
+
+    // Gate (gated RMS for individual channels)
+    float runPeak = lcc.capRunningPeakForGate.load();
+    float gate = std::max(runPeak * 0.00316f, 0.001f);
+    if (bufMax > gate)
+    {
+        cur = lcc.capGatedSumSqL.load();
+        while (!lcc.capGatedSumSqL.compare_exchange_weak(cur, cur + bufSumSqL)) {}
+        cur = lcc.capGatedSumSqR.load();
+        while (!lcc.capGatedSumSqR.compare_exchange_weak(cur, cur + bufSumSqR)) {}
+        lcc.capGatedSamples.fetch_add(n);
+
+        auto ld = lcc.meterEngine.getMeterData();
+        cur = lcc.capWidthSum.load();
+        while (!lcc.capWidthSum.compare_exchange_weak(cur, cur + (double)ld.width)) {}
+        cur = lcc.capCorrSum.load();
+        while (!lcc.capCorrSum.compare_exchange_weak(cur, cur + (double)ld.correlation)) {}
+        lcc.capGatedBufCount.fetch_add(1);
+
+        float m = ld.momentary;
+        float cm = lcc.capMaxMomentary.load();
+        while (m > cm && !lcc.capMaxMomentary.compare_exchange_weak(cm, m)) {}
+        float st = ld.shortTerm;
+        float cst = lcc.capMaxShortTerm.load();
+        while (st > cst && !lcc.capMaxShortTerm.compare_exchange_weak(cst, st)) {}
+    }
+}
+
+// Finalise a LinkCaptureChannel into a ChannelMeterData (message thread).
+static ChannelMeterData finalizeLinkChannel(EchoJayProcessor::LinkCaptureChannel& lcc,
+                                             float durationSeconds)
+{
+    ChannelMeterData result;
+    result.name = lcc.name;
+    result.meterData = lcc.meterEngine.getMeterData();
+
+    auto toDb = [](float lin) { return lin > 1e-10f ? 20.0f * std::log10(lin) : -100.0f; };
+
+    float pL = lcc.capPeakL.load(), pR = lcc.capPeakR.load();
+    result.meterData.peakL = result.meterData.peakMaxL = toDb(pL);
+    result.meterData.peakR = result.meterData.peakMaxR = toDb(pR);
+
+    // Gated RMS for Link channels
+    long long rmsN = lcc.capGatedSamples.load();
+    double sqL = lcc.capGatedSumSqL.load(), sqR = lcc.capGatedSumSqR.load();
+    if (rmsN > 0)
+    {
+        result.meterData.rmsL = (float)(sqL / rmsN > 1e-20 ? 10.0 * std::log10(sqL / rmsN) : -100.0);
+        result.meterData.rmsR = (float)(sqR / rmsN > 1e-20 ? 10.0 * std::log10(sqR / rmsN) : -100.0);
+    }
+    else { result.meterData.rmsL = result.meterData.rmsR = -100.0f; }
+
+    float peakDb = std::max(result.meterData.peakL, result.meterData.peakR);
+    float rmsDb  = std::max(result.meterData.rmsL,  result.meterData.rmsR);
+    result.meterData.crestFactor = (peakDb > -90.0f && rmsDb > -90.0f)
+        ? juce::jlimit(0.0f, 40.0f, peakDb - rmsDb) : 0.0f;
+
+    int gatedBufs = lcc.capGatedBufCount.load();
+    if (gatedBufs > 0)
+    {
+        result.meterData.width       = (float)(lcc.capWidthSum.load()  / gatedBufs);
+        result.meterData.correlation = (float)(lcc.capCorrSum.load()   / gatedBufs);
+    }
+    result.meterData.momentaryMax = lcc.capMaxMomentary.load();
+    result.meterData.shortTermMax = lcc.capMaxShortTerm.load();
+
+    // Spectrum — peak for individual channels
+    bool hasPeak = false;
+    for (int i = 0; i < 64; ++i) if (lcc.spectrumPeak[(size_t)i] > -119.0f) { hasPeak = true; break; }
+    lcc.finalSpectrumPeak = lcc.spectrumPeak;
+    if (lcc.spectrumFrames > 0)
+        for (int i = 0; i < 64; ++i)
+            lcc.finalAvgSpectrum[(size_t)i] = lcc.spectrumSum[(size_t)i] / (float)lcc.spectrumFrames;
+    lcc.hasDualSpectrum = hasPeak && (lcc.spectrumFrames > 0);
+
+    if (hasPeak)        result.meterData.spectrum = lcc.spectrumPeak;
+    else if (lcc.spectrumFrames > 0) result.meterData.spectrum = lcc.finalAvgSpectrum;
+
+    juce::ignoreUnused(durationSeconds);
+    return result;
+}
+
 #ifndef ECHOJAY_TEARDOWN_LOGGING
  #define ECHOJAY_TEARDOWN_LOGGING 0
 #endif
@@ -139,6 +325,8 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     meterEngine.prepare(sampleRate, samplesPerBlock);
     captureEngine.prepare(sampleRate, samplesPerBlock);
     waveformRecorder.prepare(sampleRate, samplesPerBlock);
+    hostSampleRate_      = sampleRate;
+    hostSamplesPerBlock_ = samplesPerBlock;
 }
 
 void EchoJayProcessor::releaseResources() { ejTeardownLog("releaseResources enter"); meterEngine.reset(); ejTeardownLog("releaseResources exit"); }
@@ -339,22 +527,49 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     }
     
     
-    // Link consumer: drain available frames from all active Links.
-    // tryEnter is non-blocking — if message thread is swapping a mapping, skip this block.
-    for (int li = 0; li < kMaxLinkSlots; ++li)
+    // Link consumer: drain all active Links; route to capture channels when capturing.
     {
-        auto& ls = activeLinkSlots[li];
-        if (ls.lock.tryEnter())
+        const bool isCapturing = (captureState.load() == CaptureState::Capturing);
+        const bool gotLccLock  = isCapturing && linkCaptureSpinLock.tryEnter();
+
+        // O(N) slot→lcc lookup on stack
+        LinkCaptureChannel* lccBySlot[kMaxLinkSlots] = {};
+        if (gotLccLock)
+            for (auto& c : linkCaptureChannels)
+                if (c->slotIdx >= 0 && c->slotIdx < kMaxLinkSlots)
+                    lccBySlot[c->slotIdx] = c.get();
+
+        for (int li = 0; li < kMaxLinkSlots; ++li)
         {
+            auto& ls = activeLinkSlots[li];
+            if (!ls.lock.tryEnter()) continue;
             if (ls.map != nullptr)
             {
-                uint32_t n = LinkShm::ringConsume(ls.map, nullptr, nullptr,
-                                                   buffer.getNumSamples());
-                if (n > 0)
-                    ls.framesRead.fetch_add((int64_t)n, std::memory_order_relaxed);
+                LinkCaptureChannel* lcc = gotLccLock ? lccBySlot[li] : nullptr;
+                if (lcc != nullptr)
+                {
+                    int nReq = std::min(buffer.getNumSamples(), (int)lcc->tmpBufL.size());
+                    uint32_t n = LinkShm::ringConsume(ls.map,
+                                                       lcc->tmpBufL.data(),
+                                                       lcc->tmpBufR.data(), nReq);
+                    if (n > 0)
+                    {
+                        ls.framesRead.fetch_add((int64_t)n, std::memory_order_relaxed);
+                        accumulateLinkChannel(*lcc, lcc->tmpBufL.data(), lcc->tmpBufR.data(), (int)n);
+                    }
+                }
+                else
+                {
+                    uint32_t n = LinkShm::ringConsume(ls.map, nullptr, nullptr,
+                                                       buffer.getNumSamples());
+                    if (n > 0)
+                        ls.framesRead.fetch_add((int64_t)n, std::memory_order_relaxed);
+                }
             }
             ls.lock.exit();
         }
+
+        if (gotLccLock) linkCaptureSpinLock.exit();
     }
 
     // Silence detection (for UI state only — does NOT auto-stop capture)
@@ -450,6 +665,23 @@ void EchoJayProcessor::startCapture()
     capMaxShortTerm.store(-100.0f);
     
     captureState.store(CaptureState::Capturing);
+
+    // Snapshot active Link slots for multi-channel capture
+    {
+        const juce::SpinLock::ScopedLockType sl(linkCaptureSpinLock);
+        linkCaptureChannels.clear();
+        double sr = hostSampleRate_;
+        int    bs = hostSamplesPerBlock_;
+        for (int i = 0; i < kMaxLinkSlots; ++i)
+        {
+            if (activeLinkSlots[i].map != nullptr && activeLinkSlots[i].displayName.isNotEmpty())
+            {
+                linkCaptureChannels.push_back(
+                    std::make_unique<LinkCaptureChannel>(
+                        activeLinkSlots[i].displayName, i, sr, bs));
+            }
+        }
+    }
 }
 
 void EchoJayProcessor::stopCapture()
@@ -594,7 +826,28 @@ void EchoJayProcessor::stopCapture()
     } else {
         snap.eqCurve = snap.averagedData.spectrum;
     }
-    
+
+    // ── Multi-channel: finalize Link channels ──────────────────────────────
+    // Lock to ensure the audio thread has finished its last capture block.
+    // captureState is already Complete so audio thread won't re-enter.
+    {
+        const juce::SpinLock::ScopedLockType sl(linkCaptureSpinLock);
+        if (!linkCaptureChannels.empty())
+        {
+            // Channel 0 = host
+            ChannelMeterData hostCh;
+            hostCh.name = snap.getChannelDisplayName();
+            hostCh.meterData = snap.averagedData;
+            snap.channels.push_back(hostCh);
+            // Channels 1..N = Links
+            for (auto& lcc : linkCaptureChannels)
+            {
+                lcc->waveformRecorder.stopRecording();
+                snap.channels.push_back(finalizeLinkChannel(*lcc, snap.durationSeconds));
+            }
+        }
+    }
+
     {
         std::lock_guard<std::mutex> lock(snapshotMutex);
         snapshots.push_back(snap);
@@ -612,34 +865,64 @@ void EchoJayProcessor::stopCapture()
     auto* mutexPtr = &snapshotMutex;
     auto* snapsPtr = &snapshots;
     
+    // Move link channels into save thread (captureState = Complete, audio thread done)
+    auto movedLinkChannels = std::move(linkCaptureChannels);
+
     struct SaveThread : public juce::Thread
     {
         SaveThread(WaveformRecorder* rec, juce::File dir, juce::String name,
-                   int idx, std::mutex* mtx, std::vector<CaptureSnapshot>* snaps)
+                   int idx, std::mutex* mtx, std::vector<CaptureSnapshot>* snaps,
+                   std::vector<std::unique_ptr<LinkCaptureChannel>> lcs)
             : juce::Thread("EchoJay WAV Save"), recorder(rec), captureDir(dir),
-              passName(name), snapIdx(idx), mutex(mtx), snapshots(snaps) {}
-        
+              passName(name), snapIdx(idx), mutex(mtx), snapshots(snaps),
+              linkChannels(std::move(lcs)) {}
+
         void run() override
         {
+            // Host WAV
             recorder->saveToWAV(captureDir, passName);
-            auto savedPath = recorder->getLastSavedPath();
-            if (savedPath.isNotEmpty())
+            auto hostPath = recorder->getLastSavedPath();
+            if (hostPath.isNotEmpty())
             {
                 std::lock_guard<std::mutex> lock(*mutex);
                 if (snapIdx >= 0 && snapIdx < (int)snapshots->size())
-                    (*snapshots)[(size_t)snapIdx].wavFilePath = savedPath;
+                {
+                    (*snapshots)[(size_t)snapIdx].wavFilePath = hostPath;
+                    if (!(*snapshots)[(size_t)snapIdx].channels.empty())
+                        (*snapshots)[(size_t)snapIdx].channels[0].wavFilePath = hostPath;
+                }
+            }
+            // Per-Link WAVs
+            for (size_t i = 0; i < linkChannels.size(); ++i)
+            {
+                auto& lcc = linkChannels[i];
+                lcc->waveformRecorder.saveToWAV(captureDir, passName + " - " + lcc->name);
+                auto lp = lcc->waveformRecorder.getLastSavedPath();
+                if (lp.isNotEmpty())
+                {
+                    std::lock_guard<std::mutex> lock(*mutex);
+                    if (snapIdx >= 0 && snapIdx < (int)snapshots->size())
+                    {
+                        auto& chs = (*snapshots)[(size_t)snapIdx].channels;
+                        size_t ci = i + 1;   // channel 0 = host
+                        if (ci < chs.size())
+                            chs[ci].wavFilePath = lp;
+                    }
+                }
             }
         }
-        
+
         WaveformRecorder* recorder;
         juce::File captureDir;
         juce::String passName;
         int snapIdx;
         std::mutex* mutex;
         std::vector<CaptureSnapshot>* snapshots;
+        std::vector<std::unique_ptr<LinkCaptureChannel>> linkChannels;
     };
-    
-    saveThread = std::make_unique<SaveThread>(recorderPtr, captureDir, passName, snapIdx, mutexPtr, snapsPtr);
+
+    saveThread = std::make_unique<SaveThread>(recorderPtr, captureDir, passName, snapIdx, mutexPtr, snapsPtr,
+                                               std::move(movedLinkChannels));
     saveThread->startThread();
 
     autoFeedbackReady.store(true);
@@ -1396,7 +1679,8 @@ void EchoJayProcessor::closeLinkRegistryNow()
     linkRegFd  = -1;
 }
 
-void EchoJayProcessor::connectLinkAudioSlot(int i, const juce::String& audioFilename, float sr)
+void EchoJayProcessor::connectLinkAudioSlot(int i, const juce::String& audioFilename,
+                                              const juce::String& displayName, float sr)
 {
     if (i < 0 || i >= kMaxLinkSlots) return;
     if (linkResolvedDir.isEmpty()) return;
@@ -1412,6 +1696,7 @@ void EchoJayProcessor::connectLinkAudioSlot(int i, const juce::String& audioFile
         activeLinkSlots[i].map    = map;
         activeLinkSlots[i].fd     = fd;
         activeLinkSlots[i].shmKey = audioFilename;  // track filename for change detection
+        activeLinkSlots[i].displayName = displayName;
     }
     activeLinkSlots[i].framesRead.store(0);
     juce::ignoreUnused(sr); // stored per-slot in linkSlotInfos for UI
@@ -1429,6 +1714,7 @@ void EchoJayProcessor::disconnectLinkAudioSlot(int i)
         activeLinkSlots[i].map   = nullptr;
         activeLinkSlots[i].fd    = -1;
         activeLinkSlots[i].shmKey = {};
+        activeLinkSlots[i].displayName = {};
     }
     if (!old) return;
     // Deferred munmap — audio thread may be inside ringConsume with old pointer
@@ -1451,6 +1737,7 @@ void EchoJayProcessor::disconnectAllLinkSlotsNow()
             activeLinkSlots[i].map   = nullptr;
             activeLinkSlots[i].fd    = -1;
             activeLinkSlots[i].shmKey = {};
+            activeLinkSlots[i].displayName = {};
         }
         if (old) LinkShm::closeRing(old, fd, {}, false);
     }
@@ -1500,7 +1787,7 @@ void EchoJayProcessor::refreshLinkRegistry()
 
         // Connect audio ring if not open (or if filename changed)
         if (activeLinkSlots[i].shmKey != snap.audioFilename || activeLinkSlots[i].map == nullptr)
-            connectLinkAudioSlot(i, snap.audioFilename, snap.sampleRate);
+            connectLinkAudioSlot(i, snap.audioFilename, snap.displayName, snap.sampleRate);
 
         const bool connected = activeLinkSlots[i].map != nullptr;
         int64_t frames = activeLinkSlots[i].framesRead.load(std::memory_order_relaxed);
