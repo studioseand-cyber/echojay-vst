@@ -227,13 +227,16 @@ int ChainHost::getNumPlugins() const
     return entries_.size();
 }
 
-juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(const juce::String& filter) const
+juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(
+    const juce::String& filter,
+    const juce::String& formatFilter) const
 {
     std::lock_guard<std::mutex> lock(pluginsMutex_);
     juce::Array<juce::PluginDescription> result;
     juce::String lf = filter.toLowerCase();
     for (auto& d : entries_)
     {
+        if (formatFilter.isNotEmpty() && d.pluginFormatName != formatFilter) continue;
         if (lf.isEmpty()
             || d.name.toLowerCase().contains(lf)
             || d.manufacturerName.toLowerCase().contains(lf))

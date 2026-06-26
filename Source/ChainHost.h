@@ -42,7 +42,11 @@ public:
 
     // ---- Plugin list (message thread) ------------------------------------
     int getNumPlugins() const;
-    juce::Array<juce::PluginDescription> getFilteredPlugins(const juce::String& filter) const;
+    // formatFilter: if non-empty, only plugins with that pluginFormatName are returned.
+    // Pass an empty string to return all formats.
+    juce::Array<juce::PluginDescription> getFilteredPlugins(
+        const juce::String& filter,
+        const juce::String& formatFilter = {}) const;
 
     // ---- Hosting (message thread only) -----------------------------------
     // Asynchronously loads the plugin:

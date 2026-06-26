@@ -340,17 +340,30 @@ private:
     {
         juce::Array<juce::PluginDescription> items;
         std::function<void(int)> onRowSelected;
+        std::function<void(int)> onRowDoubleClicked;
         int getNumRows() override { return items.size(); }
         void paintListBoxItem(int row, juce::Graphics& g, int w, int h, bool sel) override
         {
             if (sel) g.fillAll(juce::Colour(0xff2a4d7a));
+            if (row >= items.size()) return;
+            // Format tag (AU = green-tinted, VST3 = blue-tinted)
+            bool isAU = items[row].pluginFormatName == "AudioUnit";
+            juce::Colour tagCol = isAU ? juce::Colour(0xff3a7a3a) : juce::Colour(0xff2a4d7a);
+            juce::String tag    = isAU ? "AU" : "VST3";
+            int tagW = 36;
+            g.setColour(tagCol.withAlpha(0.7f));
+            g.fillRoundedRectangle((float)(w - tagW - 4), (float)(h/2 - 8), (float)tagW, 16.0f, 3.0f);
+            g.setColour(juce::Colours::white.withAlpha(0.8f));
+            g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+            g.drawText(tag, w - tagW - 4, h/2 - 8, tagW, 16, juce::Justification::centred);
+            // Plugin name
             g.setColour(sel ? juce::Colours::white : juce::Colour(0xffcccccc));
             g.setFont(juce::Font(juce::FontOptions(12.0f)));
-            if (row < items.size())
-                g.drawText(items[row].name + "  (" + items[row].pluginFormatName + ")",
-                           4, 0, w - 8, h, juce::Justification::centredLeft);
+            g.drawText(items[row].name, 4, 0, w - tagW - 12, h, juce::Justification::centredLeft);
         }
         void selectedRowsChanged(int r) override { if (onRowSelected) onRowSelected(r); }
+        void listBoxItemDoubleClicked(int r, const juce::MouseEvent&) override
+        { if (onRowDoubleClicked) onRowDoubleClicked(r); }
     };
     std::unique_ptr<ChainPluginListModel> chainListModel;
     juce::ListBox    chainPluginList;
@@ -359,6 +372,9 @@ private:
     juce::Label      chainStatusLabel;
     juce::TextButton chainLoadBtn    { "Load Plugin" };
     juce::TextButton chainRemoveBtn  { "Remove" };
+    // Restricts the CHAIN list to plugins loadable in this wrapper (AU→"AudioUnit", VST3→"VST3").
+    // Set once at construction from processorRef.wrapperType.
+    juce::String chainFormatFilter_;
 
     // Holder for the hosted plugin's editor — added as a child component
     struct ChainEditorHolder : juce::Component
@@ -368,15 +384,20 @@ private:
         {
             if (hosted) hosted->setBounds(getLocalBounds());
         }
+        juce::String statusText;  // shown when no hosted editor
         void paint(juce::Graphics& g) override
         {
             g.fillAll(juce::Colour(0xff111111));
             if (!hosted)
             {
-                g.setColour(juce::Colour(0xff555555));
+                bool isError   = statusText.startsWith("Failed") || statusText.startsWith("Error");
+                bool isLoading = statusText.startsWith("Loading");
+                g.setColour(isError   ? juce::Colour(0xffdd6666)
+                          : isLoading ? juce::Colour(0xff88aadd)
+                                      : juce::Colour(0xff555555));
                 g.setFont(juce::Font(juce::FontOptions(13.0f)));
-                g.drawText("Select a plugin and click Load",
-                           getLocalBounds(), juce::Justification::centred);
+                g.drawText(statusText.isNotEmpty() ? statusText : "Select a plugin and click Load",
+                           getLocalBounds().reduced(16), juce::Justification::centred, true);
             }
         }
         void setHostedEditor(juce::AudioProcessorEditor* e)
