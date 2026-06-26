@@ -3381,13 +3381,18 @@ void EchoJayEditor::switchToTab(Tab t)
             chainEditorHolder.setVisible(true);
             // Refresh plugin list
             auto& ch = processorRef.getChainHost();
+            // Auto-start a refresh on first open (list empty, not already running)
+            if (ch.getNumPlugins() == 0 && !ch.isScanning())
+                ch.startScan();
             chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText());
             chainPluginList.updateContent();
             // Update status
             if (ch.isPluginLoaded())
                 chainStatusLabel.setText("Loaded: " + ch.getLoadedPluginName(), juce::dontSendNotification);
+            else if (ch.isScanning())
+                chainStatusLabel.setText("Reading plugin list...", juce::dontSendNotification);
             else if (ch.getNumPlugins() == 0)
-                chainStatusLabel.setText("No plugins found. Click Rescan.", juce::dontSendNotification);
+                chainStatusLabel.setText("No plugins found. Click Refresh.", juce::dontSendNotification);
             else
                 chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins", juce::dontSendNotification);
             // Show warning if not yet dismissed
@@ -7069,15 +7074,15 @@ void EchoJayEditor::timerCallback()
         if (ch.isScanning())
         {
             int pct = (int)(ch.getScanProgress() * 100.0f);
-            chainStatusLabel.setText("Scanning... " + juce::String(pct) + "%",
+            chainStatusLabel.setText("Reading plugins... " + juce::String(pct) + "%",
                                      juce::dontSendNotification);
-            // Refresh list periodically during scan
+            // Update list as entries arrive
             chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText());
             chainPluginList.updateContent();
         }
         else if (ch.getNumPlugins() > 0 && !ch.isPluginLoaded())
         {
-            chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins found",
+            chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins",
                                      juce::dontSendNotification);
         }
     }

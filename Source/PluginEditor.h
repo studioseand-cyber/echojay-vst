@@ -355,7 +355,7 @@ private:
     std::unique_ptr<ChainPluginListModel> chainListModel;
     juce::ListBox    chainPluginList;
     juce::TextEditor chainSearchBox;
-    juce::TextButton chainScanBtn    { "Rescan" };
+    juce::TextButton chainScanBtn    { "Refresh" };
     juce::Label      chainStatusLabel;
     juce::TextButton chainLoadBtn    { "Load Plugin" };
     juce::TextButton chainRemoveBtn  { "Remove" };

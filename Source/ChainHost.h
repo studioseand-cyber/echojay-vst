@@ -4,30 +4,35 @@
 #include <mutex>
 #include <memory>
 #include <thread>
-#include <vector>
 
-// Manages plugin discovery (with crash-safety for VST3 via per-file timeout threads)
-// and hosting via AudioProcessorGraph. Owned by EchoJayProcessor.
+// Manages plugin discovery and hosting via AudioProcessorGraph.
+// Owned by EchoJayProcessor.
 //
-// Stage 1 out-of-process approach:
-//   AU  – AudioUnitPluginFormat uses AudioComponent registry (metadata-only, no dylib
-//         loaded during scan) — crash-safe by design.
-//   VST3 – Each file's findAllTypesForFile() runs in a detached std::thread with a
-//           shared-ptr-guarded state. A 10 s timeout detects hangs; a deadman file
-//           detects crashes on the next run. Stage 2 will upgrade to posix_spawn.
+// Discovery is list-then-load-on-demand:
+//   startScan() – enumerates plugins by reading the OS registry/filesystem,
+//                 WITHOUT instantiating any plugin code.
+//     AU:   JUCE AudioUnitPluginFormat queries the CoreAudio registry
+//           (metadata-only, no dylib loaded) — crash-safe by design.
+//     VST3: filesystem walk only; name from bundle filename, no loading.
+//
+//   loadPlugin() – called once the user picks a plugin.
+//     AU:   already has a full PluginDescription → createPluginInstance().
+//     VST3: if not in the validated cache, runs findAllTypesForFile() for
+//           that ONE bundle in a detached thread (10 s timeout + deadman
+//           crash guard), then createPluginInstance().
 class ChainHost
 {
 public:
     ChainHost();
     ~ChainHost();
 
-    // ---- Audio thread hooks (called by EchoJayProcessor) -----------------
+    // ---- Audio thread hooks -----------------------------------------------
     void prepare(double sampleRate, int blockSize);
     void release();
-    // Routes buffer through the hosted plugin (or passthrough if none loaded).
     void process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi);
 
-    // ---- Scanning (message thread) ----------------------------------------
+    // ---- List refresh (message thread) -----------------------------------
+    // Enumerates AU (registry) + VST3 (filesystem) without loading plugins.
     void startScan();
     void cancelScan();
     bool  isScanning()      const noexcept { return scanning_.load(); }
@@ -36,62 +41,59 @@ public:
 
     // ---- Plugin list (message thread) ------------------------------------
     int getNumPlugins() const;
-    juce::PluginDescription getPlugin(int index) const;
     juce::Array<juce::PluginDescription> getFilteredPlugins(const juce::String& filter) const;
 
     // ---- Hosting (message thread only) -----------------------------------
-    // Returns "" on success, an error string on failure.
+    // desc comes from getFilteredPlugins().  AU entries are fully-described;
+    // VST3 entries may be thin (name+path) and are validated lazily here.
+    // Returns "" on success, error string on failure.
     juce::String loadPlugin(const juce::PluginDescription& desc);
     void unloadPlugin();
     bool isPluginLoaded() const noexcept { return pluginLoaded_; }
     juce::String getLoadedPluginName() const;
-    // Creates the hosted plugin's editor. Caller owns the returned pointer.
-    // Must be called (and the result deleted) on the message thread.
     juce::AudioProcessorEditor* createHostedEditor();
 
     // ---- State persistence -----------------------------------------------
     void saveToDisk() const;
     void loadFromDisk();
-    // Serialise/restore the currently loaded plugin description across DAW sessions.
     juce::String getLoadedDescXml() const;
     void tryRestoreFromXml(const juce::String& xml);
 
-    // Whether the user has dismissed the "experimental" warning on this machine.
     bool chainWarningDismissed = false;
 
 private:
     juce::AudioPluginFormatManager formatManager_;
 
-    // Discovered plugins (guarded by pluginsMutex_)
+    // entries_      – UI list built by doRefresh() (full AU + thin VST3).
+    // knownPlugins_ – cache of validated VST3 descriptions, saved to disk.
     mutable std::mutex  pluginsMutex_;
+    juce::Array<juce::PluginDescription> entries_;
     juce::KnownPluginList knownPlugins_;
-    juce::StringArray   blacklist_;   // file paths that crashed/hung
+    juce::StringArray     blacklist_;   // paths that crashed/timed-out
 
-    // AudioProcessorGraph: input -> [plugin] -> output (passthrough if no plugin).
-    // graph_->processBlock() is called on the audio thread; addNode/removeNode
-    // are called on the message thread. JUCE's graph uses its own callback lock.
+    // AudioProcessorGraph
     std::unique_ptr<juce::AudioProcessorGraph> graph_;
     juce::AudioProcessorGraph::Node::Ptr inputNode_, outputNode_, hostedNode_;
 
-    // Loaded plugin state (message thread)
-    bool                pluginLoaded_ = false;
+    bool   pluginLoaded_ = false;
     juce::PluginDescription loadedDesc_;
     double sampleRate_ = 44100.0;
     int    blockSize_  = 512;
     bool   prepared_   = false;
 
-    // Scan state
-    std::atomic<bool>  scanning_       { false };
-    std::atomic<bool>  cancelFlag_     { false };
-    std::atomic<float> scanProgress_   { 0.0f };
+    // Refresh thread
+    std::atomic<bool>  scanning_     { false };
+    std::atomic<bool>  cancelFlag_   { false };
+    std::atomic<float> scanProgress_ { 0.0f };
     mutable std::mutex statusMutex_;
     juce::String       scanStatus_;
     std::thread        scanThread_;
 
-    void doScan();
+    void doRefresh();
     void setScanStatus(const juce::String& s);
     bool isBlacklisted(const juce::String& path) const;
     void addToBlacklist(const juce::String& path);
+    juce::AudioPluginFormat* getFormatByName(const juce::String& namePart) const;
 
     void rebuildPassthrough();
     void rebuildWithPlugin();

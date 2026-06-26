@@ -1,4 +1,6 @@
 #include "ChainHost.h"
+#include <algorithm>
+#include <chrono>
 
 // ---------------------------------------------------------------------------
 // File path helpers
@@ -11,29 +13,27 @@ static juce::File appSupportDir()
 
 juce::File ChainHost::getPluginListFile() { return appSupportDir().getChildFile("chain_plugins.xml"); }
 juce::File ChainHost::getBlacklistFile()  { return appSupportDir().getChildFile("chain_blacklist.txt"); }
-juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_scan_deadman.txt"); }
+juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_load_deadman.txt"); }
+
+// (sort done via std::sort below — no comparator struct needed)
 
 // ---------------------------------------------------------------------------
 // Constructor / Destructor
 // ---------------------------------------------------------------------------
 ChainHost::ChainHost()
 {
-    // addDefaultFormats() is deleted in juce_audio_processors_headless.
-    // Use addDefaultFormatsToManager() from juce_audio_processors instead.
     juce::addDefaultFormatsToManager(formatManager_);
 
     graph_ = std::make_unique<juce::AudioProcessorGraph>();
 
-    // Add I/O nodes
     using IOProc = juce::AudioProcessorGraph::AudioGraphIOProcessor;
     inputNode_  = graph_->addNode(std::make_unique<IOProc>(IOProc::audioInputNode));
     outputNode_ = graph_->addNode(std::make_unique<IOProc>(IOProc::audioOutputNode));
 
     rebuildPassthrough();
-
     loadFromDisk();
 
-    // Check deadman file — if it exists with content, the last scan crashed on that file
+    // Deadman check: if present, last single-load crashed — blacklist that path
     auto deadman = getDeadmanFile();
     if (deadman.existsAsFile())
     {
@@ -68,15 +68,13 @@ void ChainHost::prepare(double sampleRate, int blockSize)
     sampleRate_ = sampleRate;
     blockSize_  = blockSize;
     prepared_   = true;
-
     graph_->setPlayConfigDetails(2, 2, sampleRate, blockSize);
     graph_->prepareToPlay(sampleRate, blockSize);
 }
 
 void ChainHost::release()
 {
-    if (graph_)
-        graph_->releaseResources();
+    if (graph_) graph_->releaseResources();
     prepared_ = false;
 }
 
@@ -87,27 +85,22 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
 }
 
 // ---------------------------------------------------------------------------
-// Scanning
+// List refresh — no plugin instantiation, just enumeration
 // ---------------------------------------------------------------------------
 void ChainHost::startScan()
 {
     if (scanning_.load()) return;
-
     cancelFlag_.store(false);
     scanning_.store(true);
     scanProgress_.store(0.0f);
-
-    if (scanThread_.joinable())
-        scanThread_.join();
-
-    scanThread_ = std::thread([this] { doScan(); });
+    if (scanThread_.joinable()) scanThread_.join();
+    scanThread_ = std::thread([this] { doRefresh(); });
 }
 
 void ChainHost::cancelScan()
 {
     cancelFlag_.store(true);
-    if (scanThread_.joinable())
-        scanThread_.join();
+    if (scanThread_.joinable()) scanThread_.join();
 }
 
 juce::String ChainHost::getScanStatus() const
@@ -122,151 +115,112 @@ void ChainHost::setScanStatus(const juce::String& s)
     scanStatus_ = s;
 }
 
-void ChainHost::doScan()
+void ChainHost::doRefresh()
 {
-    // RAII: always clear scanning flag and save on exit
-    struct Finally {
-        ChainHost* h;
-        ~Finally() { h->scanning_.store(false); h->saveToDisk(); }
-    } fin { this };
+    // Always clear scanning flag on exit
+    struct Finally { ChainHost* h; ~Finally() { h->scanning_.store(false); } } fin{this};
 
-    // Clear existing list under lock
+    juce::Array<juce::PluginDescription> collected;
+
+    auto* auFmt   = getFormatByName("AudioUnit");
+    auto* vst3Fmt = getFormatByName("VST3");
+
+    // ---- AU: JUCE AU format queries the CoreAudio registry (no dylib load) ----
+    if (auFmt && !cancelFlag_.load())
     {
-        std::lock_guard<std::mutex> lock(pluginsMutex_);
-        knownPlugins_.clear();
-    }
+        setScanStatus("Reading AU registry...");
 
-    auto formats = formatManager_.getFormats();
-
-    // First pass: count total files for progress tracking
-    int totalFiles = 0;
-    int filesScanned = 0;
-
-    // Collect all (format, file) pairs
-    struct ScanItem { juce::AudioPluginFormat* fmt; juce::File file; bool isAU; };
-    std::vector<ScanItem> items;
-
-    for (auto* fmt : formats)
-    {
-        if (cancelFlag_.load()) return;
-
-        juce::String fmtName = fmt->getName();
-        bool isAU  = fmtName.startsWithIgnoreCase("AudioUnit");
-        bool isVST3 = fmtName.containsIgnoreCase("VST3") || fmtName.containsIgnoreCase("VST 3");
-
-        if (!isAU && !isVST3) continue; // skip any unexpected formats
-
-        auto searchPaths = fmt->getDefaultLocationsToSearch();
-
-        for (int pi = 0; pi < searchPaths.getNumPaths(); ++pi)
+        juce::StringArray componentPaths;
+        auto paths = auFmt->getDefaultLocationsToSearch();
+        for (int pi = 0; pi < paths.getNumPaths(); ++pi)
         {
-            if (cancelFlag_.load()) return;
-            auto dir = searchPaths[pi];
+            auto dir = paths[pi];
             if (!dir.isDirectory()) continue;
+            auto found = dir.findChildFiles(
+                juce::File::findDirectories, false, "*.component");
+            for (auto& f : found)
+                componentPaths.addIfNotAlreadyThere(f.getFullPathName());
+        }
 
-            auto children = dir.findChildFiles(
-                juce::File::findDirectories | juce::File::findFiles, false);
+        int total = componentPaths.size(), done = 0;
+        for (auto& path : componentPaths)
+        {
+            if (cancelFlag_.load()) break;
+            if (isBlacklisted(path)) { done++; continue; }
 
-            for (auto& f : children)
-            {
-                juce::String ext = f.getFileExtension().toLowerCase();
-                if (isAU  && ext == ".component") items.push_back({ fmt, f, true });
-                if (isVST3 && ext == ".vst3")     items.push_back({ fmt, f, false });
-            }
+            juce::OwnedArray<juce::PluginDescription> types;
+            // AU findAllTypesForFile = registry query only, never loads dylib
+            auFmt->findAllTypesForFile(types, path);
+            for (auto* d : types)
+                collected.add(*d);
+
+            scanProgress_.store((float)++done / (float)juce::jmax(1, total) * 0.6f);
         }
     }
 
-    totalFiles = (int)items.size();
-
-    for (auto& item : items)
+    // ---- VST3: filesystem walk only, NO findAllTypesForFile, NO loading ----
+    if (vst3Fmt && !cancelFlag_.load())
     {
-        if (cancelFlag_.load()) return;
+        setScanStatus("Reading VST3 folders...");
 
-        juce::String filePath = item.file.getFullPathName();
-        juce::String filename = item.file.getFileName();
-
-        if (isBlacklisted(filePath))
+        juce::StringArray bundlePaths;
+        auto paths = vst3Fmt->getDefaultLocationsToSearch();
+        for (int pi = 0; pi < paths.getNumPaths(); ++pi)
         {
-            filesScanned++;
-            scanProgress_.store(totalFiles > 0 ? (float)filesScanned / (float)totalFiles : 1.0f);
-            continue;
+            auto dir = paths[pi];
+            if (!dir.isDirectory()) continue;
+            auto found = dir.findChildFiles(
+                juce::File::findDirectories | juce::File::findFiles, false, "*.vst3");
+            for (auto& f : found)
+                bundlePaths.addIfNotAlreadyThere(f.getFullPathName());
         }
 
-        setScanStatus("Scanning: " + filename);
-
-        if (item.isAU)
+        int total = bundlePaths.size(), done = 0;
+        for (auto& path : bundlePaths)
         {
-            // AU: metadata-only scan — crash-safe
-            juce::OwnedArray<juce::PluginDescription> found;
-            item.fmt->findAllTypesForFile(found, filePath);
+            if (cancelFlag_.load()) break;
+            if (isBlacklisted(path)) { done++; continue; }
+
+            // Check validated cache first
+            bool usedCache = false;
             {
-                std::lock_guard<std::mutex> lock(pluginsMutex_);
-                for (auto* d : found)
-                    knownPlugins_.addType(*d);
-            }
-        }
-        else
-        {
-            // VST3: run in a timeout thread with deadman file for crash detection
-            auto deadman = getDeadmanFile();
-            appSupportDir().createDirectory();
-            deadman.replaceWithText(filePath);
-
-            // Shared state for cross-thread result passing
-            struct ScanState {
-                std::atomic<bool> done { false };
-                std::mutex mtx;
-                std::vector<juce::PluginDescription> results;
-            };
-            auto state = std::make_shared<ScanState>();
-
-            // Capture format pointer and path by value for the thread
-            auto* fmt = item.fmt;
-            juce::String path = filePath;
-            auto weakState = std::weak_ptr<ScanState>(state);
-
-            std::thread worker([fmt, path, weakState] {
-                juce::OwnedArray<juce::PluginDescription> found;
-                fmt->findAllTypesForFile(found, path);
-
-                auto s = weakState.lock();
-                if (!s) return;
+                std::lock_guard<std::mutex> lk(pluginsMutex_);
+                for (int i = 0; i < knownPlugins_.getNumTypes(); ++i)
                 {
-                    std::lock_guard<std::mutex> lk(s->mtx);
-                    for (auto* d : found)
-                        s->results.push_back(*d);
+                    auto* d = knownPlugins_.getType(i);
+                    if (d->fileOrIdentifier == path)
+                    {
+                        collected.add(*d);
+                        usedCache = true;
+                        // A single .vst3 can host multiple types; keep checking
+                    }
                 }
-                s->done.store(true);
-            });
-            worker.detach();
-
-            // Poll up to 10 seconds with 100ms sleep
-            bool timedOut = true;
-            for (int t = 0; t < 100; ++t)
-            {
-                if (cancelFlag_.load()) break;
-                if (state->done.load()) { timedOut = false; break; }
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
 
-            if (!timedOut && !cancelFlag_.load())
+            if (!usedCache)
             {
-                std::lock_guard<std::mutex> lock(pluginsMutex_);
-                std::lock_guard<std::mutex> slk(state->mtx);
-                for (auto& d : state->results)
-                    knownPlugins_.addType(d);
-                deadman.deleteFile();
+                // Thin entry: name from bundle filename (no loading)
+                juce::PluginDescription thin;
+                thin.name              = juce::File(path).getFileNameWithoutExtension();
+                thin.pluginFormatName  = "VST3";
+                thin.fileOrIdentifier  = path;
+                thin.category          = "Effect";
+                collected.add(thin);
             }
-            else if (timedOut)
-            {
-                addToBlacklist(filePath);
-                setScanStatus("Skipped (timed out): " + filename);
-                // Leave deadman file so next launch can detect the crash
-            }
+
+            scanProgress_.store(0.6f + (float)++done / (float)juce::jmax(1, total) * 0.4f);
         }
+    }
 
-        filesScanned++;
-        scanProgress_.store(totalFiles > 0 ? (float)filesScanned / (float)totalFiles : 1.0f);
+    // Sort and store
+    std::sort(collected.begin(), collected.end(),
+              [](const juce::PluginDescription& a, const juce::PluginDescription& b) {
+                  return a.name.compareIgnoreCase(b.name) < 0;
+              });
+
+    {
+        std::lock_guard<std::mutex> lk(pluginsMutex_);
+        entries_ = collected;
     }
 
     scanProgress_.store(1.0f);
@@ -279,36 +233,20 @@ void ChainHost::doScan()
 int ChainHost::getNumPlugins() const
 {
     std::lock_guard<std::mutex> lock(pluginsMutex_);
-    return knownPlugins_.getNumTypes();
-}
-
-juce::PluginDescription ChainHost::getPlugin(int index) const
-{
-    std::lock_guard<std::mutex> lock(pluginsMutex_);
-    if (index < 0 || index >= knownPlugins_.getNumTypes())
-        return {};
-    return *knownPlugins_.getType(index);
+    return entries_.size();
 }
 
 juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(const juce::String& filter) const
 {
     std::lock_guard<std::mutex> lock(pluginsMutex_);
     juce::Array<juce::PluginDescription> result;
-
-    if (filter.isEmpty())
-    {
-        for (int i = 0; i < knownPlugins_.getNumTypes(); ++i)
-            result.add(*knownPlugins_.getType(i));
-        return result;
-    }
-
     juce::String lf = filter.toLowerCase();
-    for (int i = 0; i < knownPlugins_.getNumTypes(); ++i)
+    for (auto& d : entries_)
     {
-        auto* d = knownPlugins_.getType(i);
-        if (d->name.toLowerCase().contains(lf) ||
-            d->manufacturerName.toLowerCase().contains(lf))
-            result.add(*d);
+        if (lf.isEmpty()
+            || d.name.toLowerCase().contains(lf)
+            || d.manufacturerName.toLowerCase().contains(lf))
+            result.add(d);
     }
     return result;
 }
@@ -318,14 +256,118 @@ juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(const juce::S
 // ---------------------------------------------------------------------------
 juce::String ChainHost::loadPlugin(const juce::PluginDescription& desc)
 {
-    if (isScanning())
-        return "Cannot load while scanning";
+    if (pluginLoaded_) unloadPlugin();
 
-    if (pluginLoaded_)
-        unloadPlugin();
+    // For AU, we always have a full PluginDescription from the CoreAudio
+    // registry query in doRefresh(). Go straight to createPluginInstance().
+    //
+    // For VST3, the entry may be "thin" (version empty, uid 0). In that case
+    // we run findAllTypesForFile() for this one bundle in a guarded thread,
+    // check the result into knownPlugins_ cache, then instantiate.
 
+    juce::PluginDescription fullDesc = desc;
+
+    bool needsValidation = (desc.pluginFormatName == "VST3" && desc.version.isEmpty());
+
+    if (needsValidation)
+    {
+        // 1. Check validated cache
+        bool foundInCache = false;
+        {
+            std::lock_guard<std::mutex> lk(pluginsMutex_);
+            for (int i = 0; i < knownPlugins_.getNumTypes(); ++i)
+            {
+                auto* d = knownPlugins_.getType(i);
+                if (d->fileOrIdentifier == desc.fileOrIdentifier)
+                {
+                    fullDesc = *d;
+                    foundInCache = true;
+                    break;
+                }
+            }
+        }
+
+        if (!foundInCache)
+        {
+            // 2. Single-file validation (timeout-guarded, deadman crash guard)
+            appSupportDir().createDirectory();
+            auto deadman = getDeadmanFile();
+            deadman.replaceWithText(desc.fileOrIdentifier);
+
+            struct ScanState {
+                std::atomic<bool> done { false };
+                std::mutex mtx;
+                juce::PluginDescription result;
+                bool found = false;
+            };
+            auto state = std::make_shared<ScanState>();
+
+            auto* vst3Fmt = getFormatByName("VST3");
+            if (!vst3Fmt)
+                return "VST3 format not available";
+
+            auto path = desc.fileOrIdentifier;
+            auto weakState = std::weak_ptr<ScanState>(state);
+
+            std::thread worker([vst3Fmt, path, weakState] {
+                juce::OwnedArray<juce::PluginDescription> found;
+                vst3Fmt->findAllTypesForFile(found, path);
+                if (auto s = weakState.lock())
+                {
+                    if (!found.isEmpty())
+                    {
+                        std::lock_guard<std::mutex> lk(s->mtx);
+                        s->result = *found[0];
+                        s->found = true;
+                    }
+                    s->done.store(true);
+                }
+            });
+            worker.detach();
+
+            bool timedOut = true;
+            for (int t = 0; t < 100; ++t)
+            {
+                if (state->done.load()) { timedOut = false; break; }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+
+            if (timedOut || !state->found)
+            {
+                addToBlacklist(desc.fileOrIdentifier);
+                deadman.deleteFile();
+                return "Could not load " + desc.name
+                       + (timedOut ? " (timed out — added to skip list)" : " (no types found)");
+            }
+
+            {
+                std::lock_guard<std::mutex> lk(state->mtx);
+                fullDesc = state->result;
+            }
+            deadman.deleteFile();
+
+            // Cache validated description
+            {
+                std::lock_guard<std::mutex> lk(pluginsMutex_);
+                knownPlugins_.addType(fullDesc);
+            }
+            saveToDisk();
+        }
+    }
+
+    // 3. Instantiate
     juce::String errorMessage;
-    auto plugin = formatManager_.createPluginInstance(desc, sampleRate_, blockSize_, errorMessage);
+    std::unique_ptr<juce::AudioPluginInstance> plugin;
+    try
+    {
+        plugin = formatManager_.createPluginInstance(
+            fullDesc, sampleRate_, blockSize_, errorMessage);
+    }
+    catch (...)
+    {
+        return "Plugin threw an exception during instantiation: " + desc.name;
+    }
+
     if (!plugin)
         return errorMessage.isNotEmpty() ? errorMessage : "Failed to create plugin instance";
 
@@ -334,12 +376,10 @@ juce::String ChainHost::loadPlugin(const juce::PluginDescription& desc)
         return "Failed to add plugin to graph";
 
     rebuildWithPlugin();
-
-    if (prepared_)
-        graph_->prepareToPlay(sampleRate_, blockSize_);
+    if (prepared_) graph_->prepareToPlay(sampleRate_, blockSize_);
 
     pluginLoaded_ = true;
-    loadedDesc_   = desc;
+    loadedDesc_   = fullDesc;
     return {};
 }
 
@@ -355,17 +395,14 @@ void ChainHost::unloadPlugin()
     hostedNode_ = nullptr;
 
     rebuildPassthrough();
-
-    if (prepared_)
-        graph_->prepareToPlay(sampleRate_, blockSize_);
+    if (prepared_) graph_->prepareToPlay(sampleRate_, blockSize_);
 
     pluginLoaded_ = false;
 }
 
 juce::String ChainHost::getLoadedPluginName() const
 {
-    if (!pluginLoaded_) return {};
-    return loadedDesc_.name;
+    return pluginLoaded_ ? loadedDesc_.name : juce::String{};
 }
 
 juce::AudioProcessorEditor* ChainHost::createHostedEditor()
@@ -374,13 +411,9 @@ juce::AudioProcessorEditor* ChainHost::createHostedEditor()
     try
     {
         auto* proc = hostedNode_->getProcessor();
-        if (!proc) return nullptr;
-        return proc->createEditor();
+        return proc ? proc->createEditor() : nullptr;
     }
-    catch (...)
-    {
-        return nullptr;
-    }
+    catch (...) { return nullptr; }
 }
 
 // ---------------------------------------------------------------------------
@@ -390,9 +423,7 @@ void ChainHost::rebuildPassthrough()
 {
     if (!graph_) return;
     auto connections = graph_->getConnections();
-    for (auto& c : connections)
-        graph_->removeConnection(c);
-
+    for (auto& c : connections) graph_->removeConnection(c);
     if (inputNode_ && outputNode_)
     {
         graph_->addConnection({{inputNode_->nodeID, 0}, {outputNode_->nodeID, 0}});
@@ -404,14 +435,10 @@ void ChainHost::rebuildWithPlugin()
 {
     if (!graph_) return;
     auto connections = graph_->getConnections();
-    for (auto& c : connections)
-        graph_->removeConnection(c);
+    for (auto& c : connections) graph_->removeConnection(c);
 
     if (!inputNode_ || !outputNode_ || !hostedNode_)
-    {
-        rebuildPassthrough();
-        return;
-    }
+    { rebuildPassthrough(); return; }
 
     auto* proc = hostedNode_->getProcessor();
     int nIn  = proc ? proc->getTotalNumInputChannels()  : 0;
@@ -419,13 +446,23 @@ void ChainHost::rebuildWithPlugin()
 
     for (int ch = 0; ch < juce::jmin(2, nIn); ++ch)
         graph_->addConnection({{inputNode_->nodeID, ch}, {hostedNode_->nodeID, ch}});
-
     for (int ch = 0; ch < juce::jmin(2, nOut); ++ch)
         graph_->addConnection({{hostedNode_->nodeID, ch}, {outputNode_->nodeID, ch}});
-
-    // Passthrough for any output channels not covered by the plugin
+    // Passthrough for uncovered output channels
     for (int ch = nOut; ch < 2; ++ch)
         graph_->addConnection({{inputNode_->nodeID, ch}, {outputNode_->nodeID, ch}});
+}
+
+// ---------------------------------------------------------------------------
+// Format lookup helper
+// ---------------------------------------------------------------------------
+juce::AudioPluginFormat* ChainHost::getFormatByName(const juce::String& namePart) const
+{
+    auto formats = formatManager_.getFormats();
+    for (auto* f : formats)
+        if (f->getName().containsIgnoreCase(namePart))
+            return f;
+    return nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -440,8 +477,7 @@ bool ChainHost::isBlacklisted(const juce::String& path) const
 void ChainHost::addToBlacklist(const juce::String& path)
 {
     std::lock_guard<std::mutex> lock(pluginsMutex_);
-    if (!blacklist_.contains(path))
-        blacklist_.add(path);
+    if (!blacklist_.contains(path)) blacklist_.add(path);
 }
 
 // ---------------------------------------------------------------------------
@@ -451,30 +487,25 @@ void ChainHost::saveToDisk() const
 {
     appSupportDir().createDirectory();
 
-    // Save plugin list as XML
+    // Save validated VST3 cache
     {
         std::lock_guard<std::mutex> lock(pluginsMutex_);
         auto xml = knownPlugins_.createXml();
-        if (xml)
-        {
-            auto f = getPluginListFile();
-            xml->writeTo(f);
-        }
+        if (xml) xml->writeTo(getPluginListFile());
     }
 
-    // Save blacklist (one path per line)
+    // Save blacklist
     {
         std::lock_guard<std::mutex> lock(pluginsMutex_);
         juce::String bl;
-        for (auto& p : blacklist_)
-            bl += p + "\n";
+        for (auto& p : blacklist_) bl += p + "\n";
         getBlacklistFile().replaceWithText(bl);
     }
 }
 
 void ChainHost::loadFromDisk()
 {
-    // Load plugin list
+    // Load validated VST3 cache
     auto listFile = getPluginListFile();
     if (listFile.existsAsFile())
     {
@@ -512,8 +543,5 @@ void ChainHost::tryRestoreFromXml(const juce::String& xml)
     if (!elem) return;
     juce::PluginDescription desc;
     if (desc.loadFromXml(*elem))
-    {
         loadPlugin(desc);
-        // Editor will be created when user opens CHAIN tab
-    }
 }
