@@ -208,19 +208,12 @@ void LinkProcessor::prepareToPlay(double sampleRate, int numChannels)
     hostSampleRate  = sampleRate;
     hostNumChannels = juce::jmin(numChannels, 2);
 
-    // Reopen ring with new sample rate if currently active
-    if (linkOn.load() && linkName.trim().isNotEmpty())
-    {
-        closeRingDeferred();
-        openRing();
-        // Update registry slot with new sr
-        if (regSlotIdx >= 0 && regMap)
-        {
-            LinkShm::releaseSlot(regMap, regSlotIdx);
-            regSlotIdx = -1;
-            claimRegistrySlot();
-        }
-    }
+    // Always sync shm state from the message thread so that:
+    //  (a) a fresh session restore with Active=on registers correctly, and
+    //  (b) a sample-rate change reopens the ring with the new rate.
+    // updateShmState() is idempotent — if already open it compares the
+    // wanted path against shmOpenedKey and skips the reopen.
+    juce::MessageManager::callAsync([this] { updateShmState(); });
 }
 
 void LinkProcessor::releaseResources() {}
@@ -271,7 +264,11 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
         if (obj->hasProperty("linkName")) linkName = obj->getProperty("linkName").toString();
         if (obj->hasProperty("linkOn"))   linkOn.store((bool)obj->getProperty("linkOn"));
     }
-    // prepareToPlay will open the ring/registry when the host initialises audio
+    // Schedule registration on the message thread. If prepareToPlay has already
+    // run (some hosts call it before setStateInformation), this triggers
+    // registration immediately. If prepareToPlay comes later, the prepareToPlay
+    // callAsync above will also call updateShmState — both are idempotent.
+    juce::MessageManager::callAsync([this] { updateShmState(); });
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new LinkProcessor(); }
