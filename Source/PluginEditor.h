@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include <set>
 #include "PluginProcessor.h"
+#include "ChainHost.h"
 #include "EchoJayAPI.h"
 #include "EchoJayLookAndFeel.h"
 #include "ParticleVisual.h"
@@ -333,6 +334,72 @@ private:
     juce::TextButton chatSendBtn { "Send" };
     juce::TextButton chatTextSizeBtn { "Aa" };
     juce::TextButton upgradeBtn { "Upgrade to Pro" };
+
+    // ---- CHAIN tab (stage 1) ----------------------------------------------
+    struct ChainPluginListModel : juce::ListBoxModel
+    {
+        juce::Array<juce::PluginDescription> items;
+        std::function<void(int)> onRowSelected;
+        int getNumRows() override { return items.size(); }
+        void paintListBoxItem(int row, juce::Graphics& g, int w, int h, bool sel) override
+        {
+            if (sel) g.fillAll(juce::Colour(0xff2a4d7a));
+            g.setColour(sel ? juce::Colours::white : juce::Colour(0xffcccccc));
+            g.setFont(juce::Font(juce::FontOptions(12.0f)));
+            if (row < items.size())
+                g.drawText(items[row].name + "  (" + items[row].pluginFormatName + ")",
+                           4, 0, w - 8, h, juce::Justification::centredLeft);
+        }
+        void selectedRowsChanged(int r) override { if (onRowSelected) onRowSelected(r); }
+    };
+    std::unique_ptr<ChainPluginListModel> chainListModel;
+    juce::ListBox    chainPluginList;
+    juce::TextEditor chainSearchBox;
+    juce::TextButton chainScanBtn    { "Rescan" };
+    juce::Label      chainStatusLabel;
+    juce::TextButton chainLoadBtn    { "Load Plugin" };
+    juce::TextButton chainRemoveBtn  { "Remove" };
+
+    // Holder for the hosted plugin's editor — added as a child component
+    struct ChainEditorHolder : juce::Component
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> hosted;
+        void resized() override
+        {
+            if (hosted) hosted->setBounds(getLocalBounds());
+        }
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour(0xff111111));
+            if (!hosted)
+            {
+                g.setColour(juce::Colour(0xff555555));
+                g.setFont(juce::Font(juce::FontOptions(13.0f)));
+                g.drawText("Select a plugin and click Load",
+                           getLocalBounds(), juce::Justification::centred);
+            }
+        }
+        void setHostedEditor(juce::AudioProcessorEditor* e)
+        {
+            if (hosted) { removeChildComponent(hosted.get()); hosted.reset(); }
+            if (e)
+            {
+                hosted.reset(e);
+                addAndMakeVisible(*hosted);
+                // Size to plugin's preferred size, clamped to our bounds
+                int pw = juce::jlimit(200, juce::jmax(200, getWidth()),  hosted->getWidth()  > 0 ? hosted->getWidth()  : 400);
+                int ph = juce::jlimit(100, juce::jmax(100, getHeight()), hosted->getHeight() > 0 ? hosted->getHeight() : 300);
+                hosted->setSize(pw, ph);
+                resized();
+            }
+        }
+    };
+    ChainEditorHolder chainEditorHolder;
+
+    // Warning overlay (shown once when CHAIN tab first opened)
+    juce::Component  chainWarnOverlay;
+    juce::Label      chainWarnLabel;
+    juce::TextButton chainWarnOkBtn { "I understand, continue" };
 
     // Chat text scaling (user-adjustable via Aa button in chat header).
     // Stored as a multiplier applied to the base 12pt message font. Cycles

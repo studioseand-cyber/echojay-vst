@@ -327,9 +327,16 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     waveformRecorder.prepare(sampleRate, samplesPerBlock);
     hostSampleRate_      = sampleRate;
     hostSamplesPerBlock_ = samplesPerBlock;
+    chainHost.prepare(sampleRate, samplesPerBlock);
 }
 
-void EchoJayProcessor::releaseResources() { ejTeardownLog("releaseResources enter"); meterEngine.reset(); ejTeardownLog("releaseResources exit"); }
+void EchoJayProcessor::releaseResources()
+{
+    ejTeardownLog("releaseResources enter");
+    meterEngine.reset();
+    chainHost.release();
+    ejTeardownLog("releaseResources exit");
+}
 
 void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
@@ -595,6 +602,12 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         silenceCounter = 0;
         audioSilent.store(false);
         wasReceivingAudio = true;
+    }
+
+    // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
+    {
+        juce::MidiBuffer emptyMidi;
+        chainHost.process(buffer, emptyMidi);
     }
 }
 
@@ -1466,7 +1479,11 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     state->setProperty("visualPreset", visualPreset);
     state->setProperty("visualTheme", visualTheme);
     state->setProperty("visualModeOn", visualModeOn);
-    
+
+    // CHAIN state
+    state->setProperty("chainLoadedDescXml", chainHost.getLoadedDescXml());
+    state->setProperty("chainWarningDismissed", chainHost.chainWarningDismissed);
+
     juce::String json = juce::JSON::toString(juce::var(state.release()), true);
     destData.append(json.toRawUTF8(), json.getNumBytesAsUTF8());
     } catch (...) {}
@@ -1624,7 +1641,22 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             visualTheme = (int)obj->getProperty("visualTheme");
         if (obj->hasProperty("visualModeOn"))
             visualModeOn = (bool)obj->getProperty("visualModeOn");
-        
+
+        // Restore CHAIN state
+        if (obj->hasProperty("chainLoadedDescXml"))
+            chainLoadedDescXml = obj->getProperty("chainLoadedDescXml").toString();
+        if (obj->hasProperty("chainWarningDismissed"))
+            chainHost.chainWarningDismissed = (bool)obj->getProperty("chainWarningDismissed");
+
+        // Restore hosted plugin on message thread (after audio is set up)
+        if (chainLoadedDescXml.isNotEmpty())
+        {
+            auto xml = chainLoadedDescXml;
+            juce::MessageManager::callAsync([this, xml] {
+                chainHost.tryRestoreFromXml(xml);
+            });
+        }
+
         return;
     }
     

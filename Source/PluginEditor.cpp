@@ -1164,6 +1164,85 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     addChildComponent(upgradeBtn);
 
+    // CHAIN tab
+    chainListModel = std::make_unique<ChainPluginListModel>();
+    chainListModel->onRowSelected = [this](int) { /* selection handled at load time */ };
+    chainPluginList.setModel(chainListModel.get());
+    chainPluginList.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff1a1a1a));
+    chainPluginList.setColour(juce::ListBox::outlineColourId, juce::Colour(0xff333333));
+    chainPluginList.setRowHeight(22);
+    addChildComponent(chainPluginList);
+
+    chainSearchBox.setTextToShowWhenEmpty("Search plugins...", juce::Colour(0xff555555));
+    chainSearchBox.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff1e1e1e));
+    chainSearchBox.setColour(juce::TextEditor::textColourId, juce::Colour(0xffcccccc));
+    chainSearchBox.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff333333));
+    chainSearchBox.onTextChange = [this] {
+        auto& ch = processorRef.getChainHost();
+        chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText());
+        chainPluginList.updateContent();
+    };
+    addChildComponent(chainSearchBox);
+
+    chainScanBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a4d7a));
+    chainScanBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    chainScanBtn.onClick = [this] {
+        processorRef.getChainHost().startScan();
+    };
+    addChildComponent(chainScanBtn);
+
+    chainStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xff888888));
+    chainStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+    addChildComponent(chainStatusLabel);
+
+    chainLoadBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a6b2a));
+    chainLoadBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    chainLoadBtn.onClick = [this] {
+        int row = chainPluginList.getSelectedRow();
+        if (row < 0 || row >= chainListModel->items.size()) return;
+        auto desc = chainListModel->items[row];
+        auto& ch = processorRef.getChainHost();
+        juce::String err = ch.loadPlugin(desc);
+        if (err.isNotEmpty())
+        {
+            chainStatusLabel.setText("Error: " + err, juce::dontSendNotification);
+            return;
+        }
+        auto* editor = ch.createHostedEditor();
+        chainEditorHolder.setHostedEditor(editor);
+        chainStatusLabel.setText("Loaded: " + ch.getLoadedPluginName(), juce::dontSendNotification);
+        resized(); repaint();
+    };
+    addChildComponent(chainLoadBtn);
+
+    chainRemoveBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff6b2a2a));
+    chainRemoveBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    chainRemoveBtn.onClick = [this] {
+        chainEditorHolder.setHostedEditor(nullptr);
+        processorRef.getChainHost().unloadPlugin();
+        chainStatusLabel.setText("Plugin removed", juce::dontSendNotification);
+        resized(); repaint();
+    };
+    addChildComponent(chainRemoveBtn);
+
+    addChildComponent(chainEditorHolder);
+
+    // Warning overlay
+    chainWarnLabel.setText("Hosting third-party plugins is experimental.\nSave your project before loading a plugin.",
+                           juce::dontSendNotification);
+    chainWarnLabel.setColour(juce::Label::textColourId, juce::Colour(0xffdddddd));
+    chainWarnLabel.setJustificationType(juce::Justification::centred);
+    chainWarnLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
+    chainWarnOverlay.addAndMakeVisible(chainWarnLabel);
+    chainWarnOkBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a4d7a));
+    chainWarnOkBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    chainWarnOkBtn.onClick = [this] {
+        processorRef.getChainHost().chainWarningDismissed = true;
+        chainWarnOverlay.setVisible(false);
+    };
+    chainWarnOverlay.addAndMakeVisible(chainWarnOkBtn);
+    addChildComponent(chainWarnOverlay);
+
     // Chat sidebar — ListBox + toolbar (Phase 2a/2b).
     sidebarModel = std::make_unique<ChatSidebarModel>();
     sidebarModel->onChatClicked = [this](const juce::String& id)
@@ -3182,6 +3261,14 @@ void EchoJayEditor::switchToTab(Tab t)
     switch (t)
     {
         case Tab::Visualisation:
+            chainScanBtn.setVisible(false);
+            chainStatusLabel.setVisible(false);
+            chainSearchBox.setVisible(false);
+            chainPluginList.setVisible(false);
+            chainLoadBtn.setVisible(false);
+            chainRemoveBtn.setVisible(false);
+            chainEditorHolder.setVisible(false);
+            chainWarnOverlay.setVisible(false);
             visualMode = true; // Visualisation tab always shows the particle visual
             chatSidebar.setVisible(false);
             if (!compactMode)
@@ -3192,6 +3279,14 @@ void EchoJayEditor::switchToTab(Tab t)
             }
             break;
         case Tab::Chat:
+            chainScanBtn.setVisible(false);
+            chainStatusLabel.setVisible(false);
+            chainSearchBox.setVisible(false);
+            chainPluginList.setVisible(false);
+            chainLoadBtn.setVisible(false);
+            chainRemoveBtn.setVisible(false);
+            chainEditorHolder.setVisible(false);
+            chainWarnOverlay.setVisible(false);
             if (!compactMode)
             {
                 chatSidebar.setVisible(true);
@@ -3207,6 +3302,14 @@ void EchoJayEditor::switchToTab(Tab t)
             break;
 
         case Tab::Meters:
+            chainScanBtn.setVisible(false);
+            chainStatusLabel.setVisible(false);
+            chainSearchBox.setVisible(false);
+            chainPluginList.setVisible(false);
+            chainLoadBtn.setVisible(false);
+            chainRemoveBtn.setVisible(false);
+            chainEditorHolder.setVisible(false);
+            chainWarnOverlay.setVisible(false);
             // Split layout (meters left, chat right) — same as Visualisation.
             // Tear down settings/compare so their content can't bleed in.
             if (currentView == View::Settings) hideSettingsView();
@@ -3223,6 +3326,14 @@ void EchoJayEditor::switchToTab(Tab t)
             break;
 
         case Tab::Compare:
+            chainScanBtn.setVisible(false);
+            chainStatusLabel.setVisible(false);
+            chainSearchBox.setVisible(false);
+            chainPluginList.setVisible(false);
+            chainLoadBtn.setVisible(false);
+            chainRemoveBtn.setVisible(false);
+            chainEditorHolder.setVisible(false);
+            chainWarnOverlay.setVisible(false);
             currentView = View::Compare;
             chatSidebar.setVisible(false);
             showCompareView(); // sets up compare components and calls resized/repaint
@@ -3236,6 +3347,14 @@ void EchoJayEditor::switchToTab(Tab t)
             return; // showCompareView already called resized/repaint
 
         case Tab::Settings:
+            chainScanBtn.setVisible(false);
+            chainStatusLabel.setVisible(false);
+            chainSearchBox.setVisible(false);
+            chainPluginList.setVisible(false);
+            chainLoadBtn.setVisible(false);
+            chainRemoveBtn.setVisible(false);
+            chainEditorHolder.setVisible(false);
+            chainWarnOverlay.setVisible(false);
             chatSidebar.setVisible(false);
             showSettingsView(); // sets currentView = Settings, calls resized/repaint
             chatScroll.setVisible(false);
@@ -3245,15 +3364,50 @@ void EchoJayEditor::switchToTab(Tab t)
             return; // showSettingsView already called resized/repaint
 
         case Tab::Chain:
+        {
             chatSidebar.setVisible(false);
             chatScroll.setVisible(false);
             chatInput.setVisible(false);
             chatSendBtn.setVisible(false);
             chatTextSizeBtn.setVisible(false);
             upgradeBtn.setVisible(false);
+            // Show CHAIN tab components
+            chainScanBtn.setVisible(true);
+            chainStatusLabel.setVisible(true);
+            chainSearchBox.setVisible(true);
+            chainPluginList.setVisible(true);
+            chainLoadBtn.setVisible(true);
+            chainRemoveBtn.setVisible(true);
+            chainEditorHolder.setVisible(true);
+            // Refresh plugin list
+            auto& ch = processorRef.getChainHost();
+            chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText());
+            chainPluginList.updateContent();
+            // Update status
+            if (ch.isPluginLoaded())
+                chainStatusLabel.setText("Loaded: " + ch.getLoadedPluginName(), juce::dontSendNotification);
+            else if (ch.getNumPlugins() == 0)
+                chainStatusLabel.setText("No plugins found. Click Rescan.", juce::dontSendNotification);
+            else
+                chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins", juce::dontSendNotification);
+            // Show warning if not yet dismissed
+            if (!ch.chainWarningDismissed)
+            {
+                chainWarnOverlay.setVisible(true);
+                chainWarnOverlay.toFront(false);
+            }
             break;
+        }
 
         case Tab::Link:
+            chainScanBtn.setVisible(false);
+            chainStatusLabel.setVisible(false);
+            chainSearchBox.setVisible(false);
+            chainPluginList.setVisible(false);
+            chainLoadBtn.setVisible(false);
+            chainRemoveBtn.setVisible(false);
+            chainEditorHolder.setVisible(false);
+            chainWarnOverlay.setVisible(false);
             chatSidebar.setVisible(false);
             upgradeBtn.setVisible(false);
             if (!compactMode)
@@ -5439,14 +5593,31 @@ void EchoJayEditor::paint(juce::Graphics& g)
         }
     }
 
-    // Coming-soon placeholder (Chain only now; Link has its own panel)
+    // CHAIN tab panel backgrounds and headers
     if (comingSoonTab)
     {
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
-        g.drawText("CHAIN  —  coming soon",
-                   juce::Rectangle<int>(0, topH, bounds.getWidth(), bounds.getHeight() - topH),
-                   juce::Justification::centred);
+        int leftW = juce::jmin(300, bounds.getWidth() / 3);
+        g.setColour(juce::Colour(0xff161616));
+        g.fillRect(0, topH, leftW, bounds.getHeight() - topH);
+        // Panel header
+        g.setColour(juce::Colour(0xff1e1e1e));
+        g.fillRect(0, topH, leftW, 32);
+        g.setColour(juce::Colour(0xff333333));
+        g.drawHorizontalLine(topH + 31, 0.0f, (float)leftW);
+        g.setColour(juce::Colour(0xffaaaaaa));
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.drawText("PLUGINS", 14, topH, leftW - 14, 32, juce::Justification::centredLeft);
+        // Divider between left panel and editor
+        g.setColour(juce::Colour(0xff2a2a2a));
+        g.drawVerticalLine(leftW, (float)topH, (float)bounds.getHeight());
+        // Editor panel header
+        g.setColour(juce::Colour(0xff1e1e1e));
+        g.fillRect(leftW + 1, topH, bounds.getWidth() - leftW - 1, 32);
+        g.setColour(juce::Colour(0xff333333));
+        g.drawHorizontalLine(topH + 31, (float)(leftW + 1), (float)bounds.getWidth());
+        g.setColour(juce::Colour(0xffaaaaaa));
+        g.drawText("PLUGIN EDITOR", leftW + 14, topH, bounds.getWidth() - leftW - 28, 32,
+                   juce::Justification::centredLeft);
     }
 
     // Link monitor panel (left side only — chat occupies the right)
@@ -6370,6 +6541,48 @@ void EchoJayEditor::resized()
 
     // Link tab: no child components to lay out — painted directly
 
+    // CHAIN tab layout
+    if (comingSoonTab)
+    {
+        int leftW = juce::jmin(300, b.getWidth() / 3);
+        int abOff3 = abBarShowing ? kAbBarH : 0;
+        int contentH = b.getHeight() - topH - abOff3;
+        int y = topH + 32 + 8; // below header strip
+
+        chainScanBtn.setBounds(10, y, 76, 24);
+        chainStatusLabel.setBounds(94, y, leftW - 104, 24);
+        y += 32;
+
+        chainSearchBox.setBounds(10, y, leftW - 20, 22);
+        y += 28;
+
+        int listBottom = topH + contentH - 38;
+        int listH = juce::jmax(40, listBottom - y);
+        chainPluginList.setBounds(10, y, leftW - 20, listH);
+
+        int btnY = topH + contentH - 30;
+        chainLoadBtn.setBounds(10, btnY, 100, 24);
+        chainRemoveBtn.setBounds(118, btnY, 80, 24);
+
+        // Editor holder: right panel, below header strip
+        int editorX = leftW + 1;
+        int editorW = b.getWidth() - editorX;
+        int editorH = contentH - 32;
+        chainEditorHolder.setBounds(editorX, topH + 32, editorW, editorH);
+
+        // Warning overlay: centered in the whole CHAIN area
+        if (chainWarnOverlay.isVisible())
+        {
+            int ovW = juce::jmin(480, b.getWidth() - 40);
+            int ovH = 130;
+            int ovX = (b.getWidth() - ovW) / 2;
+            int ovY = topH + (b.getHeight() - topH - ovH) / 2;
+            chainWarnOverlay.setBounds(ovX, ovY, ovW, ovH);
+            chainWarnLabel.setBounds(10, 10, ovW - 20, 60);
+            chainWarnOkBtn.setBounds((ovW - 200) / 2, 80, 200, 32);
+        }
+    }
+
     // Position particle visual — use paint formula for mW to match divider
     int abOff = abBarShowing ? kAbBarH : 0;
     int paintChatW = juce::jlimit(280, 420, b.getWidth() * 35 / 100);
@@ -6847,6 +7060,26 @@ void EchoJayEditor::timerCallback()
         if (!captureBtn.isEnabled())  captureBtn.setEnabled(true);
         if (!compareBtn.isEnabled())  compareBtn.setEnabled(true);
         if (!settingsBtn.isEnabled()) settingsBtn.setEnabled(true);
+    }
+
+    // Update CHAIN tab scan status
+    if (currentTab == Tab::Chain)
+    {
+        auto& ch = processorRef.getChainHost();
+        if (ch.isScanning())
+        {
+            int pct = (int)(ch.getScanProgress() * 100.0f);
+            chainStatusLabel.setText("Scanning... " + juce::String(pct) + "%",
+                                     juce::dontSendNotification);
+            // Refresh list periodically during scan
+            chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText());
+            chainPluginList.updateContent();
+        }
+        else if (ch.getNumPlugins() > 0 && !ch.isPluginLoaded())
+        {
+            chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins found",
+                                     juce::dontSendNotification);
+        }
     }
 
     auto state = processorRef.getCaptureState();

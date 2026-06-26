@@ -6,6 +6,7 @@
 #include "PluginScanner.h"
 #include "ReferenceAnalyser.h"
 #include "WaveformRecorder.h"
+#include "ChainHost.h"
 #include "LinkShm.h"
 
 // Temporary diagnostic: append a timestamped line to the EchoJay teardown log
@@ -122,6 +123,7 @@ public:
     PluginScanner& getPluginScanner() { return pluginScanner; }
     ReferenceAnalyser& getReferenceAnalyser() { return refAnalyser; }
     WaveformRecorder& getWaveformRecorder() { return waveformRecorder; }
+    ChainHost& getChainHost() { return chainHost; }
 
     // Save captured audio to WAV in the project/capture folder
     juce::String saveCaptureWAV();
@@ -191,6 +193,10 @@ public:
     int visualTheme = 1;    // 0=Nebula, 1=Aurora, 2=Solar, 3=Crystal
     bool visualModeOn = true;
 
+    // CHAIN state — loaded plugin desc (serialised for DAW session restore)
+    juce::String chainLoadedDescXml;
+    bool chainWarningDismissed = false;
+
     // A/B playback — toggle between DAW audio and reference WAV
     void loadABFile(const juce::String& wavPath, double startOffsetSeconds = 0.0);
     void stopAB();
@@ -214,6 +220,7 @@ private:
     PluginScanner pluginScanner;
     ReferenceAnalyser refAnalyser;
     WaveformRecorder waveformRecorder; // Audio recording + waveform thumbnail
+    ChainHost chainHost;           // Plugin chain hosting (CHAIN tab)
 
     ChannelType channelType { ChannelType::FullMix };
     juce::String customChannelName;

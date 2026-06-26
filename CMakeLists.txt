@@ -4,7 +4,7 @@ set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures")
 # Minimum macOS: Big Sur (11.0). Covers anything 4+ years old.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(EchoJay VERSION 2.2.1)
+project(EchoJay VERSION 2.3.0)
 
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/
@@ -69,6 +69,8 @@ target_sources(EchoJay PRIVATE
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
+    Source/ChainHost.cpp
+    Source/ChainHost.h
     Source/MeterEngine.cpp
     Source/MeterEngine.h
     Source/PluginScanner.cpp
@@ -96,11 +98,14 @@ target_compile_definitions(EchoJay PUBLIC
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_OPENGL=1
+    JUCE_PLUGINHOST_AU=1
+    JUCE_PLUGINHOST_VST3=1
 )
 
 target_link_libraries(EchoJay
     PRIVATE
         juce::juce_audio_utils
+        juce::juce_audio_processors
         juce::juce_audio_formats
         juce::juce_dsp
         juce::juce_gui_extra
