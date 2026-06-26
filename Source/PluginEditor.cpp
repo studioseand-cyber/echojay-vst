@@ -3226,10 +3226,13 @@ void EchoJayEditor::switchToTab(Tab t)
             currentView = View::Compare;
             chatSidebar.setVisible(false);
             showCompareView(); // sets up compare components and calls resized/repaint
-            chatScroll.setVisible(false);
-            chatInput.setVisible(false);
-            chatSendBtn.setVisible(false);
-            chatTextSizeBtn.setVisible(false);
+            // Chat panel stays visible on Compare (right-side split, same as Visualisation/Meters)
+            if (!compactMode)
+            {
+                chatScroll.setVisible(true);
+                chatInput.setVisible(true);
+                chatSendBtn.setVisible(true);
+            }
             return; // showCompareView already called resized/repaint
 
         case Tab::Settings:
@@ -3252,11 +3255,13 @@ void EchoJayEditor::switchToTab(Tab t)
 
         case Tab::Link:
             chatSidebar.setVisible(false);
-            chatScroll.setVisible(false);
-            chatInput.setVisible(false);
-            chatSendBtn.setVisible(false);
-            chatTextSizeBtn.setVisible(false);
             upgradeBtn.setVisible(false);
+            if (!compactMode)
+            {
+                chatScroll.setVisible(true);
+                chatInput.setVisible(true);
+                chatSendBtn.setVisible(true);
+            }
             // Trigger an immediate refresh so the list isn't blank on tab switch
             processorRef.refreshLinkRegistry();
             break;
@@ -5278,7 +5283,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         chatW = bounds.getWidth();
         mW = 0;
     }
-    else if (visualOnlyMode || comingSoonTab || linkMonitorTab)
+    else if (visualOnlyMode || comingSoonTab)
     {
         chatW = 0;
         mW = bounds.getWidth();
@@ -5444,9 +5449,17 @@ void EchoJayEditor::paint(juce::Graphics& g)
                    juce::Justification::centred);
     }
 
-    // Link monitor panel
+    // Link monitor panel (left side only — chat occupies the right)
     if (linkMonitorTab)
-        paintLinkMonitorPanel(g, juce::Rectangle<int>(0, topH, bounds.getWidth(), bounds.getHeight() - topH));
+    {
+        paintLinkMonitorPanel(g, juce::Rectangle<int>(0, topH, mW, bounds.getHeight() - topH));
+        // Divider between link monitor and chat panel
+        if (!compactMode)
+        {
+            g.setColour(C::border);
+            g.drawVerticalLine(mW, (float)topH, (float)bounds.getHeight());
+        }
+    }
 
     if (!compactMode && !chatOnlyMode && (!visualOnlyMode || (visualOnlyMode && !visualMode)) && !comingSoonTab && !linkMonitorTab)
     {
@@ -6344,7 +6357,7 @@ void EchoJayEditor::resized()
         chatW = b.getWidth();
         mW = 0;
     }
-    else if (visualOnlyMode || comingSoonTab || linkMonitorTab)
+    else if (visualOnlyMode || comingSoonTab)
     {
         chatW = 0;
         mW = b.getWidth();
@@ -6588,6 +6601,10 @@ void EchoJayEditor::resized()
         deletePresetBtn.toFront(false);
         refStatusLabel.toFront(false);
         for (auto& b : refRemoveBtns) b.toFront(false);
+        // Chat input overlaps the divider by 20px — keep it above the catcher
+        chatInput.toFront(false);
+        chatSendBtn.toFront(false);
+        chatScroll.toFront(false);
         
         // AI Compare button centred at bottom
         int abOff2 = abBarShowing ? kAbBarH : 0;
