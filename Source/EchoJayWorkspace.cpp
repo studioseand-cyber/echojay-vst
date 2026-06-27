@@ -120,7 +120,8 @@ void EchoJayWorkspace::removeAlbum(const juce::String& albumId)
 bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
                                             const juce::String& role,
                                             const juce::String& content,
-                                            const juce::String& reviewId)
+                                            const juce::String& reviewId,
+                                            const juce::String& chainJson)
 {
     for (auto& c : chats)
     {
@@ -128,9 +129,10 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
         {
             bool first = c.messages.empty();
             WsMessage m;
-            m.role     = role;
-            m.content  = content;
-            m.reviewId = reviewId;
+            m.role      = role;
+            m.content   = content;
+            m.reviewId  = reviewId;
+            m.chainJson = chainJson;
             c.messages.push_back(std::move(m));
             return first;
         }
@@ -141,9 +143,10 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
     c.title   = "New chat";
     c.created = juce::Time::getCurrentTime().toISO8601(true);
     WsMessage m;
-    m.role     = role;
-    m.content  = content;
-    m.reviewId = reviewId;
+    m.role      = role;
+    m.content   = content;
+    m.reviewId  = reviewId;
+    m.chainJson = chainJson;
     c.messages.push_back(std::move(m));
     chats.insert(chats.begin(), std::move(c));
     return true; // first message
@@ -443,6 +446,7 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
                     msg.content   = mObj->getProperty("content").toString();
                     msg.reviewId  = mObj->getProperty("_reviewId").toString();
                     msg.meterCtx  = mObj->getProperty("_meterCtx").toString();
+                    msg.chainJson = mObj->getProperty("_chain").toString();
                     c.messages.push_back(std::move(msg));
                 }
             }
@@ -598,6 +602,8 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
             mObj->setProperty("_reviewId",  m.reviewId);
         if (m.meterCtx.isNotEmpty())
             mObj->setProperty("_meterCtx",  m.meterCtx);
+        if (m.chainJson.isNotEmpty())
+            mObj->setProperty("_chain",     m.chainJson);
         msgs.add(juce::var(mObj));
     }
     obj->setProperty("messages", juce::var(msgs));

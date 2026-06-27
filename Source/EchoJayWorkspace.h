@@ -15,6 +15,7 @@ struct WsMessage {
     juce::String content;
     juce::String reviewId;   // non-empty on capture-review user messages; serialised as _reviewId
     juce::String meterCtx;   // optional meter snapshot text; serialised as _meterCtx
+    juce::String chainJson;  // non-empty on assistant chain replies; serialised as _chain
 };
 
 struct WsChat {
@@ -118,7 +119,8 @@ public:
     bool appendMessageToChat(const juce::String& chatId,
                              const juce::String& role,
                              const juce::String& content,
-                             const juce::String& reviewId = juce::String());
+                             const juce::String& reviewId  = juce::String(),
+                             const juce::String& chainJson = juce::String());
     void setChatTitle(const juce::String& chatId, const juce::String& title);
     void setChatTrackName(const juce::String& chatId, const juce::String& trackName);
     void incrementChatRevisionCount(const juce::String& chatId);

@@ -431,7 +431,7 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     }
     messagesJson += "]";
     
-    juce::String body = "{\"messages\":" + messagesJson + "}";
+    juce::String body = "{\"messages\":" + messagesJson + ",\"max_tokens\":4096}";
     
     postJSON("/api/chat", body, [this, onComplete](const juce::var& json, int statusCode)
     {
@@ -972,13 +972,18 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     prompt += "(2) Then append the following machine block as the VERY LAST thing in your response — "
               "nothing at all after <<<END_CHAIN>>>:\n";
     prompt += "<<<ECHOJAY_CHAIN>>>\n";
-    prompt += "{\"chain\":[{\"name\":\"<exact name from AVAILABLE PLUGINS>\",\"role\":\"<brief role>\"},...],\"explanation\":\"<one sentence>\"}\n";
+    prompt += "{\"chain\":[{\"name\":\"<exact name from AVAILABLE PLUGINS>\",\"role\":\"<2-4 words>\","
+              "\"settings\":\"<REQUIRED: 3-6 short values, e.g. '4:1, -18dB thr, 30ms att' or '-3dB@200Hz, +2dB shelf'>\"},...],\"explanation\":\"<one sentence>\"}\n";
     prompt += "<<<END_CHAIN>>>\n";
     prompt += "The prose and the block are NOT alternatives — when there is a chain, include both. "
               "Use only names that appear verbatim in the AVAILABLE PLUGINS list. "
               "If your preferred plugin is not listed, substitute the closest available one. "
               "Omit the block ONLY when you are not proposing an ordered set of plugins "
-              "(e.g. single-plugin answers, general mixing advice, or chat with no plugin chain).\n\n";
+              "(e.g. single-plugin answers, general mixing advice, or chat with no plugin chain).\n";
+    prompt += "CRITICAL: \"settings\" is MANDATORY for every chain entry. It must contain specific, "
+              "concrete starting values in real units (dB, ratio, ms, Hz, dBTP) — matching the values "
+              "you mention in your prose. NEVER leave settings empty, null, or vague ('adjust to taste', "
+              "'as needed'). If you give a number in the prose for this plugin, put it in settings.\n\n";
 
     // Language preference — appended last so it sits closest to the user
     // turn in the model's attention. "auto" means the AI should match
@@ -1080,7 +1085,9 @@ juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availableP
           << "(pure advice, a single-plugin suggestion, or general discussion with no ordered plugin set).\n\n"
           << "BLOCK FORMAT (copy exactly, no extra text before or after):\n"
           << "<<<ECHOJAY_CHAIN>>>\n"
-          << "{\"chain\":[{\"name\":\"<exact name from AVAILABLE PLUGINS>\",\"role\":\"<brief role>\"},...],\"explanation\":\"<one sentence summary>\"}\n"
+          << "{\"chain\":[{\"name\":\"<exact name from AVAILABLE PLUGINS>\","
+          << "\"role\":\"<2-4 words>\","
+          << "\"settings\":\"<SHORT: 3-6 key values only, e.g. '4:1, -18dB thr, 30ms att'>\"},...],\"explanation\":\"<one sentence>\"}\n"
           << "<<<END_CHAIN>>>\n\n"
           << "RULES FOR THE BLOCK:\n"
           << "- Use ONLY exact names from the AVAILABLE PLUGINS list above.\n"
@@ -1088,7 +1095,11 @@ juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availableP
           << "- If your ideal plugin is absent from the list, substitute the closest available one "
           << "  (do not mention the missing plugin or leave the slot empty).\n"
           << "- Do not pad with unnecessary plugins; include only slots that genuinely serve the request.\n"
-          << "- The block must be syntactically valid JSON on a single line between the delimiters.";
+          << "- settings is MANDATORY for every slot — never leave it empty or vague ('adjust to taste' is not acceptable). "
+          << "  Give 3-6 concrete values in real units (dB, ratio, ms, Hz, dBTP). Full advice stays in the prose; this is the compact tile version.\n"
+          << "- Keep the ENTIRE block compact — short names, 2-4 word roles, 3-6 value settings. "
+          << "  This is machine data written after the prose; it must fit in the remaining response budget.\n"
+          << "- Write prose first (full technical detail), then append the compact block as the final output.";
     return block;
 }
 
@@ -1099,16 +1110,74 @@ bool EchoJayAPI::extractChainBlock(juce::String& replyInOut, juce::String& chain
 
     int start = replyInOut.indexOf(kOpen);
     if (start < 0) return false;
+
+    int jsonStart = start + (int)kOpen.length();
     int end = replyInOut.indexOf(start, kClose);
-    if (end < 0) return false;
 
-    int jsonStart = start + kOpen.length();
-    chainJsonOut = replyInOut.substring(jsonStart, end).trim();
-
-    // Strip the entire block (including delimiters) from the visible reply
-    replyInOut = replyInOut.substring(0, start).trimEnd()
-               + replyInOut.substring(end + kClose.length());
+    if (end >= 0)
+    {
+        // Complete block — extract JSON and strip entire block including delimiters
+        chainJsonOut = replyInOut.substring(jsonStart, end).trim();
+        replyInOut   = replyInOut.substring(0, start).trimEnd()
+                     + replyInOut.substring(end + (int)kClose.length());
+    }
+    else
+    {
+        // Truncated: opening delimiter found but no closing tag.
+        // ALWAYS strip everything from <<<ECHOJAY_CHAIN>>> to end of reply so
+        // raw JSON never leaks into the visible chat message.
+        chainJsonOut = replyInOut.substring(jsonStart).trim();
+        replyInOut   = replyInOut.substring(0, start).trimEnd();
+    }
     return true;
+}
+
+juce::String EchoJayAPI::salvagePartialChain(const juce::String& partial)
+{
+    // Find the chain array opening
+    int arrayPos = partial.indexOf("\"chain\":[");
+    if (arrayPos < 0) arrayPos = partial.indexOf("\"chain\": [");
+    if (arrayPos < 0) return {};
+
+    int bracketPos = partial.indexOf(arrayPos, "[");
+    if (bracketPos < 0) return {};
+    int pos = bracketPos + 1; // step past '['
+
+    // Bracket-depth scan: collect every complete top-level {...} object
+    juce::String entries;
+    int depth = 0;
+    int entryStart = -1;
+    int n = partial.length();
+
+    for (int i = pos; i < n; ++i)
+    {
+        juce::juce_wchar c = partial[i];
+        if (c == '{')
+        {
+            if (depth == 0) entryStart = i;
+            depth++;
+        }
+        else if (c == '}')
+        {
+            if (depth > 0)
+            {
+                depth--;
+                if (depth == 0 && entryStart >= 0)
+                {
+                    if (entries.isNotEmpty()) entries += ",";
+                    entries += partial.substring(entryStart, i + 1);
+                    entryStart = -1;
+                }
+            }
+        }
+        else if (c == ']' && depth == 0)
+        {
+            break; // end of array (shouldn't reach here if truncated, but be safe)
+        }
+    }
+
+    if (entries.isEmpty()) return {};
+    return "{\"chain\":[" + entries + "],\"explanation\":\"Chain recovered from truncated response\"}";
 }
 
 // ============ Settings persistence ============

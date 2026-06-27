@@ -249,14 +249,20 @@ std::vector<ChainHost::SlotInfo> ChainHost::getAllSlotInfos() const
     std::vector<SlotInfo> result;
     result.reserve(slots_.size());
     for (auto& s : slots_)
-        result.push_back({ s.desc.name, s.bypassed });
+        result.push_back({ s.desc.name, s.bypassed, s.settings });
     return result;
 }
 
 ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
 {
-    if (i < 0 || i >= (int)slots_.size()) return { {}, false };
-    return { slots_[i].desc.name, slots_[i].bypassed };
+    if (i < 0 || i >= (int)slots_.size()) return { {}, false, {} };
+    return { slots_[i].desc.name, slots_[i].bypassed, slots_[i].settings };
+}
+
+void ChainHost::setSlotSettings(int i, const juce::String& settings)
+{
+    if (i < 0 || i >= (int)slots_.size()) return;
+    slots_[i].settings = settings;
 }
 
 void ChainHost::removeSlot(int i)

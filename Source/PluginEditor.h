@@ -371,6 +371,7 @@ private:
     juce::Label      chainStatusLabel;
     juce::TextButton chainLoadBtn  { "Add to Chain" };
     juce::Label      chainRecommendLabel;  // "recommendable: N resolved (M enabled, K unmatched)"
+    juce::TextEditor chainDebugJsonBox;    // shows raw chain JSON after each build (temporary debug)
     // Restricts the list to plugins loadable in this wrapper format.
     juce::String chainFormatFilter_;
 
@@ -378,11 +379,37 @@ private:
     struct ChainEditorHolder : juce::Component
     {
         std::unique_ptr<juce::AudioProcessorEditor> hosted;
-        void resized() override { if (hosted) hosted->setBounds(getLocalBounds()); }
         juce::String statusText;
+        juce::String settingsHint;  // AI-suggested dial-in text for the selected slot
+
+        static constexpr int kHintH = 36; // height reserved for hint banner when non-empty
+
+        void resized() override
+        {
+            if (hosted)
+            {
+                int hintOffset = settingsHint.isNotEmpty() ? kHintH : 0;
+                hosted->setBounds(0, hintOffset, getWidth(), getHeight() - hintOffset);
+            }
+        }
+
         void paint(juce::Graphics& g) override
         {
             g.fillAll(juce::Colour(0xff111111));
+
+            // Settings hint banner at top (when a slot with AI guidance is selected)
+            if (settingsHint.isNotEmpty())
+            {
+                g.setColour(juce::Colour(0xff1a2a1a));
+                g.fillRect(0, 0, getWidth(), kHintH);
+                g.setColour(juce::Colour(0xff334433));
+                g.drawHorizontalLine(kHintH - 1, 0.0f, (float)getWidth());
+                g.setColour(juce::Colour(0xff88cc88));
+                g.setFont(juce::Font(juce::FontOptions(10.5f)));
+                g.drawText(settingsHint, 10, 0, getWidth() - 20, kHintH,
+                           juce::Justification::centredLeft, true);
+            }
+
             if (!hosted)
             {
                 bool isError   = statusText.startsWith("Failed") || statusText.startsWith("Error");
@@ -395,6 +422,7 @@ private:
                            getLocalBounds().reduced(16), juce::Justification::centred, true);
             }
         }
+
         void setHostedEditor(juce::AudioProcessorEditor* e)
         {
             if (hosted) { removeChildComponent(hosted.get()); hosted.reset(); }
@@ -402,8 +430,9 @@ private:
             {
                 hosted.reset(e);
                 addAndMakeVisible(*hosted);
+                int hintOffset = settingsHint.isNotEmpty() ? kHintH : 0;
                 int pw = juce::jlimit(200, juce::jmax(200, getWidth()),  hosted->getWidth()  > 0 ? hosted->getWidth()  : 400);
-                int ph = juce::jlimit(100, juce::jmax(100, getHeight()), hosted->getHeight() > 0 ? hosted->getHeight() : 300);
+                int ph = juce::jlimit(100, juce::jmax(100, getHeight() - hintOffset), hosted->getHeight() > 0 ? hosted->getHeight() : 300);
                 hosted->setSize(pw, ph);
                 resized();
             }
@@ -418,6 +447,7 @@ private:
         struct Tile : juce::Component
         {
             juce::String name;
+            juce::String settings;  // AI-suggested dial-in hint
             int  slotIdx  = 0;
             bool bypassed = false;
             bool selected = false;
@@ -478,6 +508,13 @@ private:
                     g.setFont(juce::Font(juce::FontOptions(9.0f)));
                     g.drawText("bypassed", 8, 22, getWidth() - 16, 12, juce::Justification::centredLeft);
                 }
+                else if (settings.isNotEmpty())
+                {
+                    g.setColour(juce::Colour(0xff669966).withAlpha(0.85f));
+                    g.setFont(juce::Font(juce::FontOptions(8.5f)));
+                    g.drawText(settings, 8, 22, getWidth() - 16, 12,
+                               juce::Justification::centredLeft, true);
+                }
             }
 
             void resized() override
@@ -525,9 +562,10 @@ private:
 
             for (int i = 0; i < (int)slots.size(); ++i)
             {
-                auto tile     = std::make_unique<Tile>();
-                tile->name    = slots[i].name;
-                tile->slotIdx = i;
+                auto tile      = std::make_unique<Tile>();
+                tile->name     = slots[i].name;
+                tile->settings = slots[i].settings;
+                tile->slotIdx  = i;
                 tile->bypassed = slots[i].bypassed;
                 tile->selected = (i == selIdx);
 
@@ -604,11 +642,10 @@ private:
     std::array<juce::String, kMaxChainBuildBtns> chainBuildJsons;
     int activeChainBuildBtns = 0;
     void loadChainFromJson(const juce::String& chainJson);
+    void promptForFailedPlugins(juce::StringArray failed);
+    void showNextFailPrompt(juce::StringArray names, int idx);
+    std::set<juce::String> chainFailSessionSeen_; // names user chose "Keep it" this session
 
-    // Temporary chain debug display (shown in CHAIN tab editor panel)
-    juce::String chainSendDebug;   // updated on each send
-    juce::String chainReplyTail;   // last ~200 chars of the raw reply (before extraction)
-    juce::Label  chainDebugLabel;  // overlaid at bottom of editor panel
     juce::String currentlyPlayingChatWav;
     std::unique_ptr<juce::ChildProcess> chatPlaybackProcess;
     double chatPlaybackStartTime = 0; // Time::getMillisecondCounterHiRes() when play started

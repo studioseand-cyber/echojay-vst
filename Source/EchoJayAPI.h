@@ -137,9 +137,15 @@ public:
     static juce::String buildChainInjection(const juce::StringArray& availablePlugins);
 
     // Parse the chain block out of an assistant reply.
-    // Returns true and fills chainJson if a block is present.
-    // Strips the block delimiters from replyInOut so the visible chat text is clean.
+    // Returns true and fills chainJsonOut if a block (complete or truncated) is present.
+    // Always strips everything from <<<ECHOJAY_CHAIN>>> onward from replyInOut so raw
+    // JSON/delimiters are never shown to the user, even when the closing tag is missing.
     static bool extractChainBlock(juce::String& replyInOut, juce::String& chainJsonOut);
+
+    // Recover a valid chain JSON string from a partially-written (truncated) block.
+    // Scans for complete {...} objects using brace depth and reconstructs the array.
+    // Returns an empty string if no complete entry can be found.
+    static juce::String salvagePartialChain(const juce::String& partial);
     
     // Chat language preference. Affects the language the AI replies in.
     // Stored as a short code: "auto" (match user input — default),

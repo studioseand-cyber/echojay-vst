@@ -28,6 +28,7 @@ public:
     struct SlotInfo {
         juce::String name;
         bool bypassed;
+        juce::String settings;  // suggested dial-in guidance from AI (display only)
     };
 
     ChainHost();
@@ -91,6 +92,7 @@ public:
     void removeSlot(int i);
     void moveSlot(int i, int direction);    // direction: -1 = left, +1 = right
     void setSlotBypassed(int i, bool bypassed);
+    void setSlotSettings(int i, const juce::String& settings);  // store AI guidance text
 
     juce::AudioProcessorEditor* createEditorForSlot(int i);
 
@@ -121,6 +123,7 @@ private:
         juce::AudioProcessorGraph::Node::Ptr node;
         juce::PluginDescription              desc;
         bool                                 bypassed = false;
+        juce::String                         settings;   // AI-suggested dial-in guidance
     };
 
     juce::AudioPluginFormatManager formatManager_;
