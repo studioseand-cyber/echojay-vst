@@ -1481,7 +1481,7 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     state->setProperty("visualModeOn", visualModeOn);
 
     // CHAIN state
-    state->setProperty("chainLoadedDescXml", chainHost.getLoadedDescXml());
+    state->setProperty("chainSlotsXml", chainHost.getSlotsStateXml());
     state->setProperty("chainWarningDismissed", chainHost.chainWarningDismissed);
 
     juce::String json = juce::JSON::toString(juce::var(state.release()), true);
@@ -1643,17 +1643,32 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             visualModeOn = (bool)obj->getProperty("visualModeOn");
 
         // Restore CHAIN state
-        if (obj->hasProperty("chainLoadedDescXml"))
-            chainLoadedDescXml = obj->getProperty("chainLoadedDescXml").toString();
         if (obj->hasProperty("chainWarningDismissed"))
             chainHost.chainWarningDismissed = (bool)obj->getProperty("chainWarningDismissed");
 
-        // Restore hosted plugin on message thread (after audio is set up)
-        if (chainLoadedDescXml.isNotEmpty())
+        // Restore chain slots on message thread (after audio is set up).
+        // Support both new "chainSlotsXml" key and old single-plugin "chainLoadedDescXml"
+        // so existing sessions that stored one plugin still restore correctly.
+        juce::String slotsXml;
+        if (obj->hasProperty("chainSlotsXml"))
+            slotsXml = obj->getProperty("chainSlotsXml").toString();
+        else if (obj->hasProperty("chainLoadedDescXml"))
+            chainLoadedDescXml = obj->getProperty("chainLoadedDescXml").toString();
+
+        if (slotsXml.isNotEmpty())
         {
+            juce::MessageManager::callAsync([this, slotsXml] {
+                chainHost.tryRestoreSlotsFromXml(slotsXml);
+            });
+        }
+        else if (chainLoadedDescXml.isNotEmpty())
+        {
+            // Old single-plugin format: wrap in CHAIN_SLOTS for restore
             auto xml = chainLoadedDescXml;
             juce::MessageManager::callAsync([this, xml] {
-                chainHost.tryRestoreFromXml(xml);
+                // Build a CHAIN_SLOTS wrapper around the old single-desc XML
+                juce::String wrapped = "<CHAIN_SLOTS><SLOT bypassed=\"0\">" + xml + "</SLOT></CHAIN_SLOTS>";
+                chainHost.tryRestoreSlotsFromXml(wrapped);
             });
         }
 

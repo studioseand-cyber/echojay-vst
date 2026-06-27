@@ -1205,6 +1205,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
     addChildComponent(chainStatusLabel);
 
+    // "Add to Chain" — appends the selected list entry as a new slot
     chainLoadBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a6b2a));
     chainLoadBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     chainLoadBtn.onClick = [this] {
@@ -1216,7 +1217,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         chainLoadBtn.setEnabled(false);
         chainEditorHolder.statusText = "Loading " + desc.name + "...";
         chainEditorHolder.repaint();
-        ch.loadPluginAsync(desc, [this](const juce::String& err)
+        ch.loadPluginAsync(desc, [this, desc](const juce::String& err)
         {
             chainLoadBtn.setEnabled(true);
             if (err.isNotEmpty())
@@ -1227,28 +1228,67 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 return;
             }
             auto& ch2 = processorRef.getChainHost();
-            resized();  // ensure editor holder has final bounds before creating editor
-            auto* editor = ch2.createHostedEditor();
+            // Select the newly added slot (last one)
+            chainSelectedSlot_ = ch2.getNumSlots() - 1;
+            chainRackStrip.rebuild(ch2.getAllSlotInfos(), chainSelectedSlot_);
+            chainStatusLabel.setText(juce::String(ch2.getNumSlots()) + " slot(s) in chain",
+                                     juce::dontSendNotification);
+            resized();
+            // Show the new slot's editor
             chainEditorHolder.statusText = {};
-            chainEditorHolder.setHostedEditor(editor);
-            chainStatusLabel.setText("Loaded: " + ch2.getLoadedPluginName(), juce::dontSendNotification);
+            chainEditorHolder.setHostedEditor(ch2.createEditorForSlot(chainSelectedSlot_));
             repaint();
         });
     };
     addChildComponent(chainLoadBtn);
 
-    chainRemoveBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff6b2a2a));
-    chainRemoveBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    chainRemoveBtn.onClick = [this] {
-        chainEditorHolder.statusText = {};
-        chainEditorHolder.setHostedEditor(nullptr);
-        processorRef.getChainHost().unloadPlugin();
-        chainStatusLabel.setText("Plugin removed", juce::dontSendNotification);
-        resized(); repaint();
-    };
-    addChildComponent(chainRemoveBtn);
-
     addChildComponent(chainEditorHolder);
+
+    // Rack strip — callbacks
+    chainRackStrip.onSelectSlot = [this](int i) {
+        auto& ch = processorRef.getChainHost();
+        if (i < 0 || i >= ch.getNumSlots()) return;
+        chainSelectedSlot_ = i;
+        chainRackStrip.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+        chainEditorHolder.statusText = {};
+        chainEditorHolder.setHostedEditor(ch.createEditorForSlot(i));
+        repaint();
+    };
+    chainRackStrip.onRemoveSlot = [this](int i) {
+        auto& ch = processorRef.getChainHost();
+        ch.removeSlot(i);
+        chainSelectedSlot_ = juce::jlimit(-1, ch.getNumSlots() - 1, chainSelectedSlot_);
+        chainRackStrip.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+        chainEditorHolder.statusText = {};
+        chainEditorHolder.setHostedEditor(chainSelectedSlot_ >= 0
+            ? ch.createEditorForSlot(chainSelectedSlot_) : nullptr);
+        chainStatusLabel.setText(ch.getNumSlots() > 0
+            ? juce::String(ch.getNumSlots()) + " slot(s) in chain"
+            : "Chain empty", juce::dontSendNotification);
+        repaint();
+    };
+    chainRackStrip.onBypassSlot = [this](int i) {
+        auto& ch = processorRef.getChainHost();
+        if (i < 0 || i >= ch.getNumSlots()) return;
+        ch.setSlotBypassed(i, !ch.getSlotInfo(i).bypassed);
+        chainRackStrip.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+        repaint();
+    };
+    chainRackStrip.onMoveSlot = [this](int i, int dir) {
+        auto& ch = processorRef.getChainHost();
+        ch.moveSlot(i, dir);
+        // Track selection with the moved slot
+        int newSel = chainSelectedSlot_;
+        if (chainSelectedSlot_ == i) newSel = i + dir;
+        chainSelectedSlot_ = juce::jlimit(0, ch.getNumSlots() - 1, newSel);
+        chainRackStrip.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+        repaint();
+    };
+    chainRackStrip.onAddClick = [this] {
+        // Scroll the plugin list into view and focus it
+        chainPluginList.grabKeyboardFocus();
+    };
+    addChildComponent(chainRackStrip);
 
     // Warning overlay
     chainWarnLabel.setText("Hosting third-party plugins is experimental.\nSave your project before loading a plugin.",
@@ -3289,7 +3329,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
-            chainRemoveBtn.setVisible(false);
+            chainRackStrip.setVisible(false);
             chainEditorHolder.setVisible(false);
             chainWarnOverlay.setVisible(false);
             visualMode = true; // Visualisation tab always shows the particle visual
@@ -3307,7 +3347,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
-            chainRemoveBtn.setVisible(false);
+            chainRackStrip.setVisible(false);
             chainEditorHolder.setVisible(false);
             chainWarnOverlay.setVisible(false);
             if (!compactMode)
@@ -3330,7 +3370,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
-            chainRemoveBtn.setVisible(false);
+            chainRackStrip.setVisible(false);
             chainEditorHolder.setVisible(false);
             chainWarnOverlay.setVisible(false);
             // Split layout (meters left, chat right) — same as Visualisation.
@@ -3354,7 +3394,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
-            chainRemoveBtn.setVisible(false);
+            chainRackStrip.setVisible(false);
             chainEditorHolder.setVisible(false);
             chainWarnOverlay.setVisible(false);
             currentView = View::Compare;
@@ -3375,7 +3415,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
-            chainRemoveBtn.setVisible(false);
+            chainRackStrip.setVisible(false);
             chainEditorHolder.setVisible(false);
             chainWarnOverlay.setVisible(false);
             chatSidebar.setVisible(false);
@@ -3400,29 +3440,34 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(true);
             chainPluginList.setVisible(true);
             chainLoadBtn.setVisible(true);
-            chainRemoveBtn.setVisible(true);
+            chainRackStrip.setVisible(true);
             chainEditorHolder.setVisible(true);
-            // Refresh plugin list
-            auto& ch = processorRef.getChainHost();
-            // Auto-start a refresh on first open (list empty, not already running)
-            if (ch.getNumPlugins() == 0 && !ch.isScanning())
-                ch.startScan();
-            chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText(), chainFormatFilter_);
-            chainPluginList.updateContent();
-            // Update status
-            if (ch.isPluginLoaded())
-                chainStatusLabel.setText("Loaded: " + ch.getLoadedPluginName(), juce::dontSendNotification);
-            else if (ch.isScanning())
-                chainStatusLabel.setText("Reading plugin list...", juce::dontSendNotification);
-            else if (ch.getNumPlugins() == 0)
-                chainStatusLabel.setText("No plugins found. Click Refresh.", juce::dontSendNotification);
-            else
-                chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins", juce::dontSendNotification);
-            // Show warning if not yet dismissed
-            if (!ch.chainWarningDismissed)
             {
-                chainWarnOverlay.setVisible(true);
-                chainWarnOverlay.toFront(false);
+                auto& ch = processorRef.getChainHost();
+                // Auto-start a refresh on first open
+                if (ch.getNumPlugins() == 0 && !ch.isScanning())
+                    ch.startScan();
+                chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText(), chainFormatFilter_);
+                chainPluginList.updateContent();
+                // Rebuild rack strip from current chain state
+                chainRackStrip.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+                // Status label
+                if (ch.getNumSlots() > 0)
+                    chainStatusLabel.setText(juce::String(ch.getNumSlots()) + " slot(s) in chain",
+                                             juce::dontSendNotification);
+                else if (ch.isScanning())
+                    chainStatusLabel.setText("Reading plugin list...", juce::dontSendNotification);
+                else if (ch.getNumPlugins() == 0)
+                    chainStatusLabel.setText("No plugins found. Click Refresh.", juce::dontSendNotification);
+                else
+                    chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins available",
+                                             juce::dontSendNotification);
+                // Show warning if not yet dismissed
+                if (!ch.chainWarningDismissed)
+                {
+                    chainWarnOverlay.setVisible(true);
+                    chainWarnOverlay.toFront(false);
+                }
             }
             break;
         }
@@ -3433,7 +3478,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
-            chainRemoveBtn.setVisible(false);
+            chainRackStrip.setVisible(false);
             chainEditorHolder.setVisible(false);
             chainWarnOverlay.setVisible(false);
             chatSidebar.setVisible(false);
@@ -6572,10 +6617,18 @@ void EchoJayEditor::resized()
     // CHAIN tab layout
     if (comingSoonTab)
     {
-        int leftW = juce::jmin(300, b.getWidth() / 3);
-        int abOff3 = abBarShowing ? kAbBarH : 0;
+        int leftW   = juce::jmin(300, b.getWidth() / 3);
+        int abOff3  = abBarShowing ? kAbBarH : 0;
         int contentH = b.getHeight() - topH - abOff3;
-        int y = topH + 32 + 8; // below header strip
+
+        // Rack strip occupies the bottom of the content area, full width
+        static constexpr int kRackH = 72;
+        int rackY = topH + contentH - kRackH;
+        chainRackStrip.setBounds(0, rackY, b.getWidth(), kRackH);
+
+        // Upper section height (excluding tab header and rack strip)
+        int upperH = contentH - 32 - kRackH; // 32 = tab header
+        int y = topH + 32 + 8;               // below header strip
 
         chainScanBtn.setBounds(10, y, 76, 24);
         chainStatusLabel.setBounds(94, y, leftW - 104, 24);
@@ -6584,19 +6637,17 @@ void EchoJayEditor::resized()
         chainSearchBox.setBounds(10, y, leftW - 20, 22);
         y += 28;
 
-        int listBottom = topH + contentH - 38;
+        int listBottom = topH + 32 + upperH - 34;
         int listH = juce::jmax(40, listBottom - y);
         chainPluginList.setBounds(10, y, leftW - 20, listH);
 
-        int btnY = topH + contentH - 30;
-        chainLoadBtn.setBounds(10, btnY, 100, 24);
-        chainRemoveBtn.setBounds(118, btnY, 80, 24);
+        int btnY = topH + 32 + upperH - 28;
+        chainLoadBtn.setBounds(10, btnY, 110, 24);
 
-        // Editor holder: right panel, below header strip
+        // Editor holder: right panel, between header and rack strip
         int editorX = leftW + 1;
         int editorW = b.getWidth() - editorX;
-        int editorH = contentH - 32;
-        chainEditorHolder.setBounds(editorX, topH + 32, editorW, editorH);
+        chainEditorHolder.setBounds(editorX, topH + 32, editorW, upperH);
 
         // Warning overlay: centered in the whole CHAIN area
         if (chainWarnOverlay.isVisible())
@@ -7099,13 +7150,17 @@ void EchoJayEditor::timerCallback()
             int pct = (int)(ch.getScanProgress() * 100.0f);
             chainStatusLabel.setText("Reading plugins... " + juce::String(pct) + "%",
                                      juce::dontSendNotification);
-            // Update list as entries arrive
             chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText(), chainFormatFilter_);
             chainPluginList.updateContent();
         }
-        else if (ch.getNumPlugins() > 0 && !ch.isPluginLoaded())
+        else if (ch.getNumSlots() > 0)
         {
-            chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins",
+            chainStatusLabel.setText(juce::String(ch.getNumSlots()) + " slot(s) in chain",
+                                     juce::dontSendNotification);
+        }
+        else if (ch.getNumPlugins() > 0)
+        {
+            chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins available",
                                      juce::dontSendNotification);
         }
     }

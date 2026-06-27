@@ -335,7 +335,7 @@ private:
     juce::TextButton chatTextSizeBtn { "Aa" };
     juce::TextButton upgradeBtn { "Upgrade to Pro" };
 
-    // ---- CHAIN tab (stage 1) ----------------------------------------------
+    // ---- CHAIN tab (stage 2: multi-plugin rack) ------------------------------
     struct ChainPluginListModel : juce::ListBoxModel
     {
         juce::Array<juce::PluginDescription> items;
@@ -346,7 +346,6 @@ private:
         {
             if (sel) g.fillAll(juce::Colour(0xff2a4d7a));
             if (row >= items.size()) return;
-            // Format tag (AU = green-tinted, VST3 = blue-tinted)
             bool isAU = items[row].pluginFormatName == "AudioUnit";
             juce::Colour tagCol = isAU ? juce::Colour(0xff3a7a3a) : juce::Colour(0xff2a4d7a);
             juce::String tag    = isAU ? "AU" : "VST3";
@@ -356,7 +355,6 @@ private:
             g.setColour(juce::Colours::white.withAlpha(0.8f));
             g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
             g.drawText(tag, w - tagW - 4, h/2 - 8, tagW, 16, juce::Justification::centred);
-            // Plugin name
             g.setColour(sel ? juce::Colours::white : juce::Colour(0xffcccccc));
             g.setFont(juce::Font(juce::FontOptions(12.0f)));
             g.drawText(items[row].name, 4, 0, w - tagW - 12, h, juce::Justification::centredLeft);
@@ -368,23 +366,18 @@ private:
     std::unique_ptr<ChainPluginListModel> chainListModel;
     juce::ListBox    chainPluginList;
     juce::TextEditor chainSearchBox;
-    juce::TextButton chainScanBtn    { "Refresh" };
+    juce::TextButton chainScanBtn  { "Refresh" };
     juce::Label      chainStatusLabel;
-    juce::TextButton chainLoadBtn    { "Load Plugin" };
-    juce::TextButton chainRemoveBtn  { "Remove" };
-    // Restricts the CHAIN list to plugins loadable in this wrapper (AU→"AudioUnit", VST3→"VST3").
-    // Set once at construction from processorRef.wrapperType.
+    juce::TextButton chainLoadBtn  { "Add to Chain" };
+    // Restricts the list to plugins loadable in this wrapper format.
     juce::String chainFormatFilter_;
 
-    // Holder for the hosted plugin's editor — added as a child component
+    // Holder for the currently-selected slot's editor
     struct ChainEditorHolder : juce::Component
     {
         std::unique_ptr<juce::AudioProcessorEditor> hosted;
-        void resized() override
-        {
-            if (hosted) hosted->setBounds(getLocalBounds());
-        }
-        juce::String statusText;  // shown when no hosted editor
+        void resized() override { if (hosted) hosted->setBounds(getLocalBounds()); }
+        juce::String statusText;
         void paint(juce::Graphics& g) override
         {
             g.fillAll(juce::Colour(0xff111111));
@@ -396,7 +389,7 @@ private:
                           : isLoading ? juce::Colour(0xff88aadd)
                                       : juce::Colour(0xff555555));
                 g.setFont(juce::Font(juce::FontOptions(13.0f)));
-                g.drawText(statusText.isNotEmpty() ? statusText : "Select a plugin and click Load",
+                g.drawText(statusText.isNotEmpty() ? statusText : "Add plugins below, then click a slot",
                            getLocalBounds().reduced(16), juce::Justification::centred, true);
             }
         }
@@ -407,7 +400,6 @@ private:
             {
                 hosted.reset(e);
                 addAndMakeVisible(*hosted);
-                // Size to plugin's preferred size, clamped to our bounds
                 int pw = juce::jlimit(200, juce::jmax(200, getWidth()),  hosted->getWidth()  > 0 ? hosted->getWidth()  : 400);
                 int ph = juce::jlimit(100, juce::jmax(100, getHeight()), hosted->getHeight() > 0 ? hosted->getHeight() : 300);
                 hosted->setSize(pw, ph);
@@ -416,6 +408,166 @@ private:
         }
     };
     ChainEditorHolder chainEditorHolder;
+
+    // Horizontal rack strip — one tile per chain slot, full-width, at bottom
+    struct ChainRackStrip : juce::Component
+    {
+        // One component per slot
+        struct Tile : juce::Component
+        {
+            juce::String name;
+            int  slotIdx  = 0;
+            bool bypassed = false;
+            bool selected = false;
+
+            juce::TextButton bypassBtn   { "B" };
+            juce::TextButton removeBtn   { "X" };
+            juce::TextButton leftBtn     { "<" };
+            juce::TextButton rightBtn    { ">" };
+
+            std::function<void()>    onSelect;
+            std::function<void()>    onBypass;
+            std::function<void()>    onRemove;
+            std::function<void(int)> onMove;
+
+            Tile()
+            {
+                addAndMakeVisible(bypassBtn);
+                addAndMakeVisible(removeBtn);
+                addAndMakeVisible(leftBtn);
+                addAndMakeVisible(rightBtn);
+                bypassBtn.onClick  = [this] { if (onBypass) onBypass(); };
+                removeBtn.onClick  = [this] { if (onRemove) onRemove(); };
+                leftBtn.onClick    = [this] { if (onMove) onMove(-1); };
+                rightBtn.onClick   = [this] { if (onMove) onMove(+1); };
+
+                // Style: small, dark
+                auto style = [](juce::TextButton& b, juce::Colour bg) {
+                    b.setColour(juce::TextButton::buttonColourId, bg);
+                    b.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffcccccc));
+                };
+                style(bypassBtn,  juce::Colour(0xff2a3a2a));
+                style(removeBtn,  juce::Colour(0xff3a2a2a));
+                style(leftBtn,    juce::Colour(0xff262626));
+                style(rightBtn,   juce::Colour(0xff262626));
+            }
+
+            void mouseDown(const juce::MouseEvent&) override
+            {
+                if (onSelect) onSelect();
+            }
+
+            void paint(juce::Graphics& g) override
+            {
+                auto r = getLocalBounds().reduced(3).toFloat();
+                g.setColour(selected  ? juce::Colour(0xff1e3d1e)
+                          : bypassed  ? juce::Colour(0xff252515)
+                                      : juce::Colour(0xff1e1e1e));
+                g.fillRoundedRectangle(r, 5.0f);
+                g.setColour(selected ? juce::Colour(0xff44aa44) : juce::Colour(0xff3a3a3a));
+                g.drawRoundedRectangle(r, 5.0f, 1.0f);
+                // Name
+                g.setColour(bypassed ? juce::Colour(0xff666666) : juce::Colour(0xffdddddd));
+                g.setFont(juce::Font(juce::FontOptions(11.0f)));
+                g.drawText(name, 8, 4, getWidth() - 16, 18, juce::Justification::centredLeft, true);
+                if (bypassed)
+                {
+                    g.setColour(juce::Colour(0xffaaaa44));
+                    g.setFont(juce::Font(juce::FontOptions(9.0f)));
+                    g.drawText("bypassed", 8, 22, getWidth() - 16, 12, juce::Justification::centredLeft);
+                }
+            }
+
+            void resized() override
+            {
+                int bh = 18, bw = 22, m = 4;
+                int y = getHeight() - bh - m;
+                leftBtn.setBounds(m, y, bw, bh);
+                bypassBtn.setBounds(m + bw + 2, y, bw, bh);
+                removeBtn.setBounds(m + bw * 2 + 4, y, bw, bh);
+                rightBtn.setBounds(getWidth() - bw - m, y, bw, bh);
+            }
+        };
+
+        juce::Viewport viewport;
+        juce::Component content;
+        juce::TextButton addBtn { "+" };
+        std::vector<std::unique_ptr<Tile>> tiles;
+        int selectedIdx = -1;
+
+        std::function<void(int)>      onSelectSlot;
+        std::function<void(int)>      onRemoveSlot;
+        std::function<void(int)>      onBypassSlot;
+        std::function<void(int, int)> onMoveSlot;
+        std::function<void()>         onAddClick;
+
+        static constexpr int kTileW = 152;
+        static constexpr int kAddW  = 36;
+
+        ChainRackStrip()
+        {
+            addAndMakeVisible(viewport);
+            viewport.setScrollBarsShown(false, true);
+            viewport.setViewedComponent(&content, false);
+            addBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1e2e1e));
+            addBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff77bb77));
+            addBtn.onClick = [this] { if (onAddClick) onAddClick(); };
+            content.addAndMakeVisible(addBtn);
+        }
+
+        void rebuild(const std::vector<ChainHost::SlotInfo>& slots, int selIdx)
+        {
+            selectedIdx = selIdx;
+            for (auto& t : tiles) content.removeChildComponent(t.get());
+            tiles.clear();
+
+            for (int i = 0; i < (int)slots.size(); ++i)
+            {
+                auto tile     = std::make_unique<Tile>();
+                tile->name    = slots[i].name;
+                tile->slotIdx = i;
+                tile->bypassed = slots[i].bypassed;
+                tile->selected = (i == selIdx);
+
+                int ci = i;
+                tile->onSelect = [this, ci] { if (onSelectSlot) onSelectSlot(ci); };
+                tile->onBypass = [this, ci] { if (onSelectSlot) onSelectSlot(ci);
+                                              if (onBypassSlot) onBypassSlot(ci); };
+                tile->onRemove = [this, ci] { if (onRemoveSlot) onRemoveSlot(ci); };
+                tile->onMove   = [this, ci](int dir) { if (onMoveSlot) onMoveSlot(ci, dir); };
+
+                content.addAndMakeVisible(*tile);
+                tiles.push_back(std::move(tile));
+            }
+            layoutContent();
+        }
+
+        void layoutContent()
+        {
+            int n = (int)tiles.size();
+            int totalW = n * kTileW + kAddW + 16;
+            int h = viewport.getHeight() > 0 ? viewport.getHeight() : getHeight();
+            content.setSize(juce::jmax(totalW, viewport.getWidth()), h);
+            for (int i = 0; i < n; ++i)
+                tiles[i]->setBounds(i * kTileW + 4, 4, kTileW - 8, h - 8);
+            addBtn.setBounds(n * kTileW + 8, (h - 28) / 2, 28, 28);
+        }
+
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour(0xff161616));
+            g.setColour(juce::Colour(0xff303030));
+            g.drawLine(0.0f, 0.0f, (float)getWidth(), 0.0f, 1.0f);
+        }
+
+        void resized() override
+        {
+            viewport.setBounds(getLocalBounds());
+            layoutContent();
+        }
+    };
+    ChainRackStrip chainRackStrip;
+    int chainSelectedSlot_ = -1;  // which rack tile is currently selected
 
     // Warning overlay (shown once when CHAIN tab first opened)
     juce::Component  chainWarnOverlay;

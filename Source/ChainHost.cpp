@@ -28,10 +28,9 @@ ChainHost::ChainHost()
     inputNode_  = graph_->addNode(std::make_unique<IOProc>(IOProc::audioInputNode));
     outputNode_ = graph_->addNode(std::make_unique<IOProc>(IOProc::audioOutputNode));
 
-    rebuildPassthrough();
+    rebuildGraph(); // passthrough (no slots yet)
     loadFromDisk();
 
-    // Deadman check: if present, the last single-plugin load crashed
     auto deadman = getDeadmanFile();
     if (deadman.existsAsFile())
     {
@@ -46,12 +45,12 @@ ChainHost::~ChainHost()
     cancelFlag_.store(true);
     if (scanThread_.joinable()) scanThread_.join();
 
-    if (pluginLoaded_ && hostedNode_ != nullptr && graph_ != nullptr)
+    // Remove all connections and nodes cleanly
+    if (graph_)
     {
-        auto connections = graph_->getConnections();
-        for (auto& c : connections) graph_->removeConnection(c);
-        graph_->removeNode(hostedNode_->nodeID);
-        hostedNode_ = nullptr;
+        for (auto& c : graph_->getConnections()) graph_->removeConnection(c);
+        for (auto& s : slots_)
+            if (s.node) graph_->removeNode(s.node->nodeID);
     }
 }
 
@@ -116,9 +115,6 @@ void ChainHost::doRefresh()
 
     juce::Array<juce::PluginDescription> auEntries, vst3Entries;
 
-    // ---- Step 1: AU via CoreAudio registry (no instantiation) ----------------
-    // enumerateAUs() is compiled in AUEnumerator.mm (no JUCE headers) to avoid
-    // the CoreAudio/juce::AudioBuffer typedef conflict.
 #if JUCE_MAC
     setScanStatus("Reading AU registry...");
     for (const auto& e : enumerateAUs())
@@ -139,9 +135,7 @@ void ChainHost::doRefresh()
 
     if (cancelFlag_.load()) { std::lock_guard<std::mutex> lk(pluginsMutex_); entries_ = auEntries; return; }
 
-    // ---- Step 2: VST3 via filesystem walk (no instantiation) -----------------
     setScanStatus("Reading VST3 folders...");
-
     auto* vst3Fmt = getFormatByName("VST3");
     if (vst3Fmt)
     {
@@ -161,7 +155,6 @@ void ChainHost::doRefresh()
                 juce::String path = f.getFullPathName();
                 if (isBlacklisted(path)) continue;
 
-                // Check validated cache — full description already known?
                 bool usedCache = false;
                 {
                     std::lock_guard<std::mutex> lk(pluginsMutex_);
@@ -177,13 +170,11 @@ void ChainHost::doRefresh()
 
                 if (!usedCache)
                 {
-                    // Thin entry: name from bundle filename, no loading
                     juce::PluginDescription thin;
                     thin.name             = f.getFileNameWithoutExtension();
                     thin.pluginFormatName = "VST3";
                     thin.fileOrIdentifier = path;
                     thin.category         = "Effect";
-                    // version left empty → signals "thin, needs validation"
                     vst3Entries.add(thin);
                 }
             }
@@ -192,7 +183,6 @@ void ChainHost::doRefresh()
 
     scanProgress_.store(0.9f);
 
-    // ---- Step 3: Dedup — prefer AU over VST3 of same name ------------------
     std::unordered_set<std::string> auNames;
     for (auto& d : auEntries)
         auNames.insert(d.name.toLowerCase().toStdString());
@@ -203,7 +193,6 @@ void ChainHost::doRefresh()
         if (auNames.find(d.name.toLowerCase().toStdString()) == auNames.end())
             collected.add(d);
 
-    // Sort alphabetically by name
     std::sort(collected.begin(), collected.end(),
               [](const juce::PluginDescription& a, const juce::PluginDescription& b) {
                   return a.name.compareIgnoreCase(b.name) < 0;
@@ -246,23 +235,98 @@ juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(
 }
 
 // ---------------------------------------------------------------------------
-// Hosting — async load
+// Chain slot management
 // ---------------------------------------------------------------------------
 
-// Internal: wire the newly created instance into the graph.
-// Called on the message thread from createPluginInstanceAsync callback.
-void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
-                              const juce::PluginDescription& desc)
+int ChainHost::getNumSlots() const noexcept
 {
-    loadedDesc_   = desc;
-    hostedNode_   = graph_->addNode(std::move(inst));
-    rebuildWithPlugin();
+    return (int)slots_.size();
+}
+
+std::vector<ChainHost::SlotInfo> ChainHost::getAllSlotInfos() const
+{
+    std::vector<SlotInfo> result;
+    result.reserve(slots_.size());
+    for (auto& s : slots_)
+        result.push_back({ s.desc.name, s.bypassed });
+    return result;
+}
+
+ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
+{
+    if (i < 0 || i >= (int)slots_.size()) return { {}, false };
+    return { slots_[i].desc.name, slots_[i].bypassed };
+}
+
+void ChainHost::removeSlot(int i)
+{
+    if (i < 0 || i >= (int)slots_.size()) return;
+    for (auto& c : graph_->getConnections()) graph_->removeConnection(c);
+    if (slots_[i].node) graph_->removeNode(slots_[i].node->nodeID);
+    slots_.erase(slots_.begin() + i);
+    rebuildGraph();
     if (prepared_)
     {
         graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
         graph_->prepareToPlay(sampleRate_, blockSize_);
     }
-    pluginLoaded_ = true;
+}
+
+void ChainHost::moveSlot(int i, int direction)
+{
+    int j = i + direction;
+    if (i < 0 || i >= (int)slots_.size()) return;
+    if (j < 0 || j >= (int)slots_.size()) return;
+    std::swap(slots_[i], slots_[j]);
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+}
+
+void ChainHost::setSlotBypassed(int i, bool bypassed)
+{
+    if (i < 0 || i >= (int)slots_.size()) return;
+    slots_[i].bypassed = bypassed;
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+}
+
+juce::AudioProcessorEditor* ChainHost::createEditorForSlot(int i)
+{
+    if (i < 0 || i >= (int)slots_.size()) return nullptr;
+    if (!slots_[i].node) return nullptr;
+    try
+    {
+        auto* proc = slots_[i].node->getProcessor();
+        return proc ? proc->createEditor() : nullptr;
+    }
+    catch (...) { return nullptr; }
+}
+
+// ---------------------------------------------------------------------------
+// Async load (appends to chain)
+// ---------------------------------------------------------------------------
+void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
+                              const juce::PluginDescription& desc)
+{
+    ChainSlot slot;
+    slot.node     = graph_->addNode(std::move(inst));
+    slot.desc     = desc;
+    slot.bypassed = false;
+    slots_.push_back(std::move(slot));
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
 }
 
 // Forward declaration for mutual recursion with the polling lambda
@@ -300,8 +364,6 @@ static void pollVST3Validation(
         if (!found) { cb("No types found in " + desc.name); return; }
 
         host->saveToDisk();
-
-        // asyncCreatePlugin is a public helper wrapping formatManager_ + sampleRate_ + blockSize_
         host->asyncCreatePlugin(fullDesc,
             [host, cb, fullDesc](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
             {
@@ -319,7 +381,6 @@ static void pollVST3Validation(
         return;
     }
 
-    // Poll again after 100 ms (non-blocking, no message-thread sleep)
     juce::Timer::callAfterDelay(100, [host, vs, desc, deadman, cb, ticksLeft]() mutable {
         pollVST3Validation(host, vs, desc, deadman, cb, ticksLeft - 1);
     });
@@ -328,15 +389,11 @@ static void pollVST3Validation(
 void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
                                 std::function<void(const juce::String& error)> callback)
 {
-    if (pluginLoaded_) unloadPlugin();
-
-    // Determine if we need VST3 validation (thin entry: version empty = never validated)
     bool needsValidation = (desc.pluginFormatName == "VST3" && desc.version.isEmpty());
 
     juce::PluginDescription fullDesc = desc;
     if (needsValidation)
     {
-        // Check validated cache first
         std::lock_guard<std::mutex> lk(pluginsMutex_);
         for (const auto& d : knownPlugins_.getTypes())
         {
@@ -351,7 +408,6 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
 
     if (!needsValidation)
     {
-        // AU or already-cached VST3: go straight to async instantiation
         formatManager_.createPluginInstanceAsync(
             fullDesc, sampleRate_, blockSize_,
             [this, callback, fullDesc](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
@@ -367,7 +423,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         return;
     }
 
-    // Thin VST3: run findAllTypesForFile in a detached thread, poll result
+    // Thin VST3: validate in detached thread, poll on message thread
     appSupportDir().createDirectory();
     auto deadman = getDeadmanFile();
     deadman.replaceWithText(desc.fileOrIdentifier);
@@ -375,7 +431,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
     auto* vst3Fmt = getFormatByName("VST3");
     if (!vst3Fmt) { callback("VST3 format not available"); return; }
 
-    auto vs = std::make_shared<VST3ValState>();
+    auto vs   = std::make_shared<VST3ValState>();
     auto path = desc.fileOrIdentifier;
     auto weakVs = std::weak_ptr<VST3ValState>(vs);
 
@@ -390,75 +446,73 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         }
     }).detach();
 
-    pollVST3Validation(this, vs, desc, deadman, callback, 100 /*10 s*/);
-}
-
-void ChainHost::unloadPlugin()
-{
-    if (!pluginLoaded_ || !hostedNode_) return;
-    auto connections = graph_->getConnections();
-    for (auto& c : connections) graph_->removeConnection(c);
-    graph_->removeNode(hostedNode_->nodeID);
-    hostedNode_ = nullptr;
-    rebuildPassthrough();
-    if (prepared_) graph_->prepareToPlay(sampleRate_, blockSize_);
-    pluginLoaded_ = false;
-}
-
-juce::String ChainHost::getLoadedPluginName() const
-{
-    return pluginLoaded_ ? loadedDesc_.name : juce::String{};
-}
-
-juce::AudioProcessorEditor* ChainHost::createHostedEditor()
-{
-    if (!pluginLoaded_ || !hostedNode_) return nullptr;
-    try
-    {
-        auto* proc = hostedNode_->getProcessor();
-        return proc ? proc->createEditor() : nullptr;
-    }
-    catch (...) { return nullptr; }
+    pollVST3Validation(this, vs, desc, deadman, callback, 100);
 }
 
 // ---------------------------------------------------------------------------
 // Graph wiring
 // ---------------------------------------------------------------------------
-void ChainHost::rebuildPassthrough()
+void ChainHost::rebuildGraph()
 {
     if (!graph_) return;
-    auto connections = graph_->getConnections();
-    for (auto& c : connections) graph_->removeConnection(c);
-    if (inputNode_ && outputNode_)
+    // Remove all existing connections
+    for (auto& c : graph_->getConnections())
+        graph_->removeConnection(c);
+
+    // Collect active (non-bypassed) node IDs in chain order
+    std::vector<juce::AudioProcessorGraph::NodeID> active;
+    for (auto& s : slots_)
+        if (!s.bypassed && s.node)
+            active.push_back(s.node->nodeID);
+
+    if (active.empty())
     {
-        graph_->addConnection({{inputNode_->nodeID, 0}, {outputNode_->nodeID, 0}});
-        graph_->addConnection({{inputNode_->nodeID, 1}, {outputNode_->nodeID, 1}});
+        // Pure passthrough
+        if (inputNode_ && outputNode_)
+        {
+            graph_->addConnection({{inputNode_->nodeID, 0}, {outputNode_->nodeID, 0}});
+            graph_->addConnection({{inputNode_->nodeID, 1}, {outputNode_->nodeID, 1}});
+        }
+        return;
+    }
+
+    auto channelsOf = [&](juce::AudioProcessorGraph::NodeID id, bool inputs) -> int {
+        auto* node = graph_->getNodeForId(id);
+        auto* proc = node ? node->getProcessor() : nullptr;
+        if (!proc) return 2;
+        return inputs ? proc->getTotalNumInputChannels()
+                      : proc->getTotalNumOutputChannels();
+    };
+
+    // Input → first active slot
+    {
+        int nIn = channelsOf(active[0], true);
+        for (int ch = 0; ch < juce::jmin(2, nIn); ++ch)
+            graph_->addConnection({{inputNode_->nodeID, ch}, {active[0], ch}});
+    }
+
+    // Each slot → next slot
+    for (int i = 0; i + 1 < (int)active.size(); ++i)
+    {
+        int nOut = channelsOf(active[i],     false);
+        int nIn2 = channelsOf(active[i + 1], true);
+        for (int ch = 0; ch < std::min({2, nOut, nIn2}); ++ch)
+            graph_->addConnection({{active[i], ch}, {active[i + 1], ch}});
+    }
+
+    // Last active slot → output
+    {
+        int nOut = channelsOf(active.back(), false);
+        for (int ch = 0; ch < juce::jmin(2, nOut); ++ch)
+            graph_->addConnection({{active.back(), ch}, {outputNode_->nodeID, ch}});
+        // Passthrough for any uncovered output channels
+        for (int ch = nOut; ch < 2; ++ch)
+            graph_->addConnection({{inputNode_->nodeID, ch}, {outputNode_->nodeID, ch}});
     }
 }
 
-void ChainHost::rebuildWithPlugin()
-{
-    if (!graph_) return;
-    auto connections = graph_->getConnections();
-    for (auto& c : connections) graph_->removeConnection(c);
-
-    if (!inputNode_ || !outputNode_ || !hostedNode_) { rebuildPassthrough(); return; }
-
-    auto* proc = hostedNode_->getProcessor();
-    int nIn  = proc ? proc->getTotalNumInputChannels()  : 0;
-    int nOut = proc ? proc->getTotalNumOutputChannels() : 0;
-
-    for (int ch = 0; ch < juce::jmin(2, nIn);  ++ch)
-        graph_->addConnection({{inputNode_->nodeID,  ch}, {hostedNode_->nodeID, ch}});
-    for (int ch = 0; ch < juce::jmin(2, nOut); ++ch)
-        graph_->addConnection({{hostedNode_->nodeID, ch}, {outputNode_->nodeID, ch}});
-    // Passthrough for uncovered output channels
-    for (int ch = nOut; ch < 2; ++ch)
-        graph_->addConnection({{inputNode_->nodeID, ch}, {outputNode_->nodeID, ch}});
-}
-
 // ---------------------------------------------------------------------------
-// Format lookup helper
+// Format lookup
 // ---------------------------------------------------------------------------
 juce::AudioPluginFormat* ChainHost::getFormatByName(const juce::String& namePart) const
 {
@@ -470,7 +524,7 @@ juce::AudioPluginFormat* ChainHost::getFormatByName(const juce::String& namePart
 }
 
 // ---------------------------------------------------------------------------
-// Blacklist helpers
+// Blacklist
 // ---------------------------------------------------------------------------
 bool ChainHost::isBlacklisted(const juce::String& path) const
 {
@@ -485,22 +539,17 @@ void ChainHost::addToBlacklist(const juce::String& path)
 }
 
 // ---------------------------------------------------------------------------
-// Persistence
+// Persistence — plugin list cache
 // ---------------------------------------------------------------------------
 void ChainHost::saveToDisk() const
 {
     appSupportDir().createDirectory();
-    {
-        std::lock_guard<std::mutex> lock(pluginsMutex_);
-        auto xml = knownPlugins_.createXml();
-        if (xml) xml->writeTo(getPluginListFile());
-    }
-    {
-        std::lock_guard<std::mutex> lock(pluginsMutex_);
-        juce::String bl;
-        for (auto& p : blacklist_) bl += p + "\n";
-        getBlacklistFile().replaceWithText(bl);
-    }
+    std::lock_guard<std::mutex> lock(pluginsMutex_);
+    auto xml = knownPlugins_.createXml();
+    if (xml) xml->writeTo(getPluginListFile());
+    juce::String bl;
+    for (auto& p : blacklist_) bl += p + "\n";
+    getBlacklistFile().replaceWithText(bl);
 }
 
 void ChainHost::loadFromDisk()
@@ -526,19 +575,56 @@ void ChainHost::loadFromDisk()
     }
 }
 
-juce::String ChainHost::getLoadedDescXml() const
+// ---------------------------------------------------------------------------
+// Persistence — chain slot state (save/restore all slots in order)
+// ---------------------------------------------------------------------------
+juce::String ChainHost::getSlotsStateXml() const
 {
-    if (!pluginLoaded_) return {};
-    auto xml = loadedDesc_.createXml();
-    return xml ? xml->toString() : juce::String{};
+    auto root = std::make_unique<juce::XmlElement>("CHAIN_SLOTS");
+    for (auto& s : slots_)
+    {
+        auto* item = root->createNewChildElement("SLOT");
+        item->setAttribute("bypassed", s.bypassed ? 1 : 0);
+        if (auto descXml = s.desc.createXml())
+            item->addChildElement(descXml.release());
+    }
+    return root->toString();
 }
 
-void ChainHost::tryRestoreFromXml(const juce::String& xml)
+void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx)
+{
+    if (idx >= (int)items.size()) return;
+    bool wasBypassed = items[idx].bypassed;
+    loadPluginAsync(items[idx].desc,
+        [this, items = std::move(items), idx, wasBypassed](const juce::String& err) mutable
+        {
+            if (err.isEmpty() && wasBypassed)
+            {
+                int lastSlot = (int)slots_.size() - 1;
+                if (lastSlot >= 0) setSlotBypassed(lastSlot, true);
+            }
+            restoreNextSlot(std::move(items), idx + 1);
+        });
+}
+
+void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml)
 {
     if (xml.isEmpty()) return;
-    auto elem = juce::XmlDocument::parse(xml);
-    if (!elem) return;
-    juce::PluginDescription desc;
-    if (!desc.loadFromXml(*elem)) return;
-    loadPluginAsync(desc, [](const juce::String&) {});
+    auto root = juce::XmlDocument::parse(xml);
+    if (!root || root->getTagName() != "CHAIN_SLOTS") return;
+
+    std::vector<RestoreItem> items;
+    for (auto* child : root->getChildIterator())
+    {
+        if (child->getTagName() != "SLOT") continue;
+        bool bypassed = child->getIntAttribute("bypassed", 0) != 0;
+        auto* descElem = child->getFirstChildElement();
+        if (!descElem) continue;
+        juce::PluginDescription desc;
+        if (!desc.loadFromXml(*descElem)) continue;
+        items.push_back({ desc, bypassed });
+    }
+
+    if (!items.empty())
+        restoreNextSlot(std::move(items), 0);
 }
