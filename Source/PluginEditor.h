@@ -369,6 +369,7 @@ private:
     juce::TextButton chainScanBtn  { "Refresh" };
     juce::Label      chainStatusLabel;
     juce::TextButton chainLoadBtn  { "Add to Chain" };
+    juce::Label      chainRecommendLabel;  // "recommendable: N resolved (M enabled, K unmatched)"
     // Restricts the list to plugins loadable in this wrapper format.
     juce::String chainFormatFilter_;
 

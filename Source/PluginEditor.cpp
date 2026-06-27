@@ -1242,6 +1242,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     addChildComponent(chainLoadBtn);
 
+    chainRecommendLabel.setColour(juce::Label::textColourId, juce::Colour(0xff557755));
+    chainRecommendLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
+    addChildComponent(chainRecommendLabel);
+
     addChildComponent(chainEditorHolder);
 
     // Rack strip — callbacks
@@ -3326,6 +3330,7 @@ void EchoJayEditor::switchToTab(Tab t)
         case Tab::Visualisation:
             chainScanBtn.setVisible(false);
             chainStatusLabel.setVisible(false);
+            chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
@@ -3344,6 +3349,7 @@ void EchoJayEditor::switchToTab(Tab t)
         case Tab::Chat:
             chainScanBtn.setVisible(false);
             chainStatusLabel.setVisible(false);
+            chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
@@ -3367,6 +3373,7 @@ void EchoJayEditor::switchToTab(Tab t)
         case Tab::Meters:
             chainScanBtn.setVisible(false);
             chainStatusLabel.setVisible(false);
+            chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
@@ -3391,6 +3398,7 @@ void EchoJayEditor::switchToTab(Tab t)
         case Tab::Compare:
             chainScanBtn.setVisible(false);
             chainStatusLabel.setVisible(false);
+            chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
@@ -3412,6 +3420,7 @@ void EchoJayEditor::switchToTab(Tab t)
         case Tab::Settings:
             chainScanBtn.setVisible(false);
             chainStatusLabel.setVisible(false);
+            chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
@@ -3437,6 +3446,7 @@ void EchoJayEditor::switchToTab(Tab t)
             // Show CHAIN tab components
             chainScanBtn.setVisible(true);
             chainStatusLabel.setVisible(true);
+            chainRecommendLabel.setVisible(true);
             chainSearchBox.setVisible(true);
             chainPluginList.setVisible(true);
             chainLoadBtn.setVisible(true);
@@ -3451,6 +3461,13 @@ void EchoJayEditor::switchToTab(Tab t)
                 chainPluginList.updateContent();
                 // Rebuild rack strip from current chain state
                 chainRackStrip.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+                // Rebuild resolver and update readout
+                ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
+                chainRecommendLabel.setText(
+                    "recommendable: " + juce::String(ch.getRecommendableCount())
+                    + " resolved (" + juce::String(ch.getEnabledInputCount()) + " enabled, "
+                    + juce::String(ch.getUnmatchedCount()) + " unmatched)",
+                    juce::dontSendNotification);
                 // Status label
                 if (ch.getNumSlots() > 0)
                     chainStatusLabel.setText(juce::String(ch.getNumSlots()) + " slot(s) in chain",
@@ -3475,6 +3492,7 @@ void EchoJayEditor::switchToTab(Tab t)
         case Tab::Link:
             chainScanBtn.setVisible(false);
             chainStatusLabel.setVisible(false);
+            chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
@@ -6637,12 +6655,13 @@ void EchoJayEditor::resized()
         chainSearchBox.setBounds(10, y, leftW - 20, 22);
         y += 28;
 
-        int listBottom = topH + 32 + upperH - 34;
+        int listBottom = topH + 32 + upperH - 50;  // leaves room for Load btn + recommend label
         int listH = juce::jmax(40, listBottom - y);
         chainPluginList.setBounds(10, y, leftW - 20, listH);
 
-        int btnY = topH + 32 + upperH - 28;
+        int btnY = topH + 32 + upperH - 42;
         chainLoadBtn.setBounds(10, btnY, 110, 24);
+        chainRecommendLabel.setBounds(10, btnY + 26, leftW - 20, 14);
 
         // Editor holder: right panel, between header and rack strip
         int editorX = leftW + 1;
@@ -7145,7 +7164,8 @@ void EchoJayEditor::timerCallback()
     if (currentTab == Tab::Chain)
     {
         auto& ch = processorRef.getChainHost();
-        if (ch.isScanning())
+        bool wasScanning = ch.isScanning();
+        if (wasScanning)
         {
             int pct = (int)(ch.getScanProgress() * 100.0f);
             chainStatusLabel.setText("Reading plugins... " + juce::String(pct) + "%",
@@ -7153,15 +7173,30 @@ void EchoJayEditor::timerCallback()
             chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText(), chainFormatFilter_);
             chainPluginList.updateContent();
         }
-        else if (ch.getNumSlots() > 0)
+        else
         {
-            chainStatusLabel.setText(juce::String(ch.getNumSlots()) + " slot(s) in chain",
-                                     juce::dontSendNotification);
-        }
-        else if (ch.getNumPlugins() > 0)
-        {
-            chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins available",
-                                     juce::dontSendNotification);
+            // Rebuild resolver once after scan completes (entries_ has stabilised)
+            // We detect completion by checking if the recommendable count is still 0
+            // while the entries list is non-empty.  A proper "scan just finished" flag
+            // isn't exposed, so we rebuild whenever the numbers look stale.
+            bool entriesReady = ch.getNumPlugins() > 0;
+            bool resolverStale = (ch.getEnabledInputCount() == 0 && entriesReady);
+            if (resolverStale)
+            {
+                ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
+                chainRecommendLabel.setText(
+                    "recommendable: " + juce::String(ch.getRecommendableCount())
+                    + " resolved (" + juce::String(ch.getEnabledInputCount()) + " enabled, "
+                    + juce::String(ch.getUnmatchedCount()) + " unmatched)",
+                    juce::dontSendNotification);
+            }
+
+            if (ch.getNumSlots() > 0)
+                chainStatusLabel.setText(juce::String(ch.getNumSlots()) + " slot(s) in chain",
+                                         juce::dontSendNotification);
+            else if (entriesReady)
+                chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins available",
+                                         juce::dontSendNotification);
         }
     }
 

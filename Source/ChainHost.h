@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "PluginScanner.h"
 #include <atomic>
 #include <mutex>
 #include <memory>
@@ -49,6 +50,33 @@ public:
     juce::Array<juce::PluginDescription> getFilteredPlugins(
         const juce::String& filter,
         const juce::String& formatFilter = {}) const;
+
+    // ---- Settings ↔ ChainHost resolver (message thread) -----------------
+    // A "recommendable" plugin is BOTH enabled in the Settings checklist AND
+    // present in ChainHost's loadable entries_ list (same format filter applies).
+    //
+    // Call buildRecommendable() after a scan completes or after Settings are
+    // saved, passing the current enabled plugin list and the active format filter.
+    // The result is cached internally and returned by the two accessors below.
+    struct RecommendableEntry {
+        juce::String            displayName;
+        juce::PluginDescription desc;
+    };
+    void buildRecommendable(const std::vector<ScannedPlugin>& enabledPlugins,
+                            const juce::String& formatFilter);
+
+    // Display names of resolved entries (for AI prompt injection).
+    juce::StringArray getRecommendableNames() const;
+
+    // Count stats from the last buildRecommendable() call.
+    int getRecommendableCount()   const noexcept { return (int)recommendable_.size(); }
+    int getEnabledInputCount()    const noexcept { return recommendableEnabledIn_; }
+    int getUnmatchedCount()       const noexcept { return recommendableEnabledIn_ - (int)recommendable_.size(); }
+
+    // Async-load the first recommendable entry whose displayName matches `name`
+    // (case-insensitive). Callback: empty string on success, error message on fail.
+    void loadByRecommendedName(const juce::String& name,
+                               std::function<void(const juce::String&)> callback);
 
     // ---- Chain slot management (message thread) --------------------------
     // Async-append: loads the plugin and adds it to the end of the chain.
@@ -110,6 +138,10 @@ private:
     std::vector<ChainSlot> slots_;
 
     bool   prepared_  = false;
+
+    // Resolver cache (message thread only — no mutex needed)
+    std::vector<RecommendableEntry> recommendable_;
+    int recommendableEnabledIn_ = 0;   // how many enabled scanner entries were fed in
 
     // Scan thread
     std::atomic<bool>  scanning_     { false };

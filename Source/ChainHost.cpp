@@ -1,6 +1,7 @@
 #include "ChainHost.h"
 #include "AUEnumerator.h"
 #include <algorithm>
+#include <unordered_map>
 
 // ---------------------------------------------------------------------------
 // File path helpers
@@ -536,6 +537,119 @@ void ChainHost::addToBlacklist(const juce::String& path)
 {
     std::lock_guard<std::mutex> lock(pluginsMutex_);
     if (!blacklist_.contains(path)) blacklist_.add(path);
+}
+
+// ---------------------------------------------------------------------------
+// Settings ↔ ChainHost resolver
+// ---------------------------------------------------------------------------
+
+// Normalize a plugin name for fuzzy matching:
+//   lowercase, trim whitespace, collapse internal runs of spaces/punctuation
+//   to a single space, strip trailing version suffixes like " 3" / " v2" / " 2.0".
+static juce::String normalizeName(const juce::String& raw)
+{
+    juce::String s = raw.toLowerCase().trim();
+    // Replace common punctuation chars that differ between sources with space
+    s = s.replace("-", " ").replace("_", " ").replace(".", " ");
+    // Collapse multiple spaces
+    while (s.contains("  ")) s = s.replace("  ", " ");
+    // Strip trailing version tokens: " 3", " v2", " 2", " ii", " iii"
+    s = s.trimEnd();
+    juce::StringArray parts = juce::StringArray::fromTokens(s, " ", "");
+    if (parts.size() >= 2)
+    {
+        const auto& last = parts[parts.size() - 1];
+        bool isVersion = last.containsOnly("0123456789") ||
+                         (last.startsWithChar('v') && last.substring(1).containsOnly("0123456789")) ||
+                         last == "ii" || last == "iii" || last == "iv";
+        if (isVersion) parts.remove(parts.size() - 1);
+    }
+    return parts.joinIntoString(" ").trim();
+}
+
+void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
+                                    const juce::String& formatFilter)
+{
+    // Snapshot the loadable entries under lock
+    juce::Array<juce::PluginDescription> loadable;
+    {
+        std::lock_guard<std::mutex> lk(pluginsMutex_);
+        for (const auto& d : entries_)
+        {
+            if (formatFilter.isNotEmpty() && d.pluginFormatName != formatFilter) continue;
+            loadable.add(d);
+        }
+    }
+
+    // Build a normalized-name → PluginDescription map from the loadable entries.
+    // If multiple entries share the same normalized name, keep the first (alphabetically
+    // stable since entries_ is already sorted).
+    std::unordered_map<std::string, juce::PluginDescription> nameMap;
+    nameMap.reserve((size_t)loadable.size());
+    for (const auto& d : loadable)
+    {
+        std::string key = normalizeName(d.name).toStdString();
+        if (nameMap.find(key) == nameMap.end())
+            nameMap[key] = d;
+    }
+
+    // Filter enabled scanner plugins and resolve against the map
+    int enabledCount = 0;
+    std::vector<RecommendableEntry> resolved;
+
+    for (const auto& sp : allPlugins)
+    {
+        if (!sp.enabled) continue;
+        ++enabledCount;
+
+        // Try exact normalized name
+        std::string key = normalizeName(sp.name).toStdString();
+        auto it = nameMap.find(key);
+
+        // If not found, try without manufacturer prefix ("Fab Filter: Pro-Q 3" → "pro q 3")
+        if (it == nameMap.end() && sp.name.containsChar(':'))
+        {
+            juce::String afterColon = sp.name.fromFirstOccurrenceOf(":", false, false).trim();
+            key = normalizeName(afterColon).toStdString();
+            it = nameMap.find(key);
+        }
+
+        if (it != nameMap.end())
+            resolved.push_back({ sp.name, it->second });
+    }
+
+    // Log unmatched count to stderr so it's visible in DAW console
+    int unmatched = enabledCount - (int)resolved.size();
+    if (unmatched > 0)
+        DBG("ChainHost resolver: " + juce::String(resolved.size()) + "/" + juce::String(enabledCount)
+            + " enabled plugins resolved (" + juce::String(unmatched) + " unmatched)");
+
+    // Cache result (message thread only — no mutex)
+    recommendable_          = std::move(resolved);
+    recommendableEnabledIn_ = enabledCount;
+}
+
+juce::StringArray ChainHost::getRecommendableNames() const
+{
+    juce::StringArray names;
+    for (const auto& e : recommendable_)
+        names.add(e.displayName);
+    return names;
+}
+
+void ChainHost::loadByRecommendedName(const juce::String& name,
+                                       std::function<void(const juce::String&)> callback)
+{
+    juce::String nameLower = name.toLowerCase().trim();
+    for (const auto& e : recommendable_)
+    {
+        if (e.displayName.toLowerCase().trim() == nameLower)
+        {
+            loadPluginAsync(e.desc, std::move(callback));
+            return;
+        }
+    }
+    callback("\"" + name + "\" not found in recommendable list");
 }
 
 // ---------------------------------------------------------------------------
