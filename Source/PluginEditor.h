@@ -303,6 +303,7 @@ private:
         juce::String origin;      // "plugin" | "" (web) — controls playback UI
         float durationSeconds = 0;
         float lufs = -100;
+        juce::String chainData;   // non-empty when AI returned a <<<ECHOJAY_CHAIN>>> block
     };
     std::vector<ChatMsg> chatMessages;
     bool chatLoading = false;
@@ -596,6 +597,18 @@ private:
     std::array<juce::String, kMaxWavePlayBtns> wavePlayPaths;
     std::array<float, kMaxWavePlayBtns> wavePlayDurations {};
     int activeWavePlayBtns = 0;
+
+    // "Build this chain" buttons — one per assistant reply that contains a chain block
+    static constexpr int kMaxChainBuildBtns = 8;
+    std::array<juce::TextButton, kMaxChainBuildBtns> chainBuildBtns;
+    std::array<juce::String, kMaxChainBuildBtns> chainBuildJsons;
+    int activeChainBuildBtns = 0;
+    void loadChainFromJson(const juce::String& chainJson);
+
+    // Temporary chain debug display (shown in CHAIN tab editor panel)
+    juce::String chainSendDebug;   // updated on each send
+    juce::String chainReplyTail;   // last ~200 chars of the raw reply (before extraction)
+    juce::Label  chainDebugLabel;  // overlaid at bottom of editor panel
     juce::String currentlyPlayingChatWav;
     std::unique_ptr<juce::ChildProcess> chatPlaybackProcess;
     double chatPlaybackStartTime = 0; // Time::getMillisecondCounterHiRes() when play started

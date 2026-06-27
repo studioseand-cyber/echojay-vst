@@ -1428,6 +1428,25 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         addAndMakeVisible(wavePlayOverlays[(size_t)i]);
     }
 
+    // "Build this chain" overlay buttons (one per assistant chain reply)
+    for (int i = 0; i < kMaxChainBuildBtns; ++i)
+    {
+        chainBuildBtns[(size_t)i].setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1a2e1a));
+        chainBuildBtns[(size_t)i].setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2a4a2a));
+        chainBuildBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff77dd77));
+        chainBuildBtns[(size_t)i].setVisible(false);
+        chainBuildBtns[(size_t)i].onClick = [this, i]() { loadChainFromJson(chainBuildJsons[(size_t)i]); };
+        addAndMakeVisible(chainBuildBtns[(size_t)i]);
+    }
+
+    // Chain debug label (CHAIN tab only — overlaid on editor panel)
+    chainDebugLabel.setColour(juce::Label::backgroundColourId, juce::Colour(0xcc0a0a14));
+    chainDebugLabel.setColour(juce::Label::textColourId, juce::Colour(0xffaacc88));
+    chainDebugLabel.setFont(juce::Font(juce::FontOptions(9.5f)));
+    chainDebugLabel.setJustificationType(juce::Justification::topLeft);
+    chainDebugLabel.setVisible(false);
+    addAndMakeVisible(chainDebugLabel);
+
     // Link tab has no persistent child components — painted directly.
 
     startTimerHz(20);
@@ -3337,6 +3356,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainRackStrip.setVisible(false);
             chainEditorHolder.setVisible(false);
             chainWarnOverlay.setVisible(false);
+            chainDebugLabel.setVisible(false);
             visualMode = true; // Visualisation tab always shows the particle visual
             chatSidebar.setVisible(false);
             if (!compactMode)
@@ -3356,6 +3376,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainRackStrip.setVisible(false);
             chainEditorHolder.setVisible(false);
             chainWarnOverlay.setVisible(false);
+            chainDebugLabel.setVisible(false);
             if (!compactMode)
             {
                 chatSidebar.setVisible(true);
@@ -3380,6 +3401,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainRackStrip.setVisible(false);
             chainEditorHolder.setVisible(false);
             chainWarnOverlay.setVisible(false);
+            chainDebugLabel.setVisible(false);
             // Split layout (meters left, chat right) — same as Visualisation.
             // Tear down settings/compare so their content can't bleed in.
             if (currentView == View::Settings) hideSettingsView();
@@ -3405,6 +3427,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainRackStrip.setVisible(false);
             chainEditorHolder.setVisible(false);
             chainWarnOverlay.setVisible(false);
+            chainDebugLabel.setVisible(false);
             currentView = View::Compare;
             chatSidebar.setVisible(false);
             showCompareView(); // sets up compare components and calls resized/repaint
@@ -3427,6 +3450,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainRackStrip.setVisible(false);
             chainEditorHolder.setVisible(false);
             chainWarnOverlay.setVisible(false);
+            chainDebugLabel.setVisible(false);
             chatSidebar.setVisible(false);
             showSettingsView(); // sets currentView = Settings, calls resized/repaint
             chatScroll.setVisible(false);
@@ -3443,6 +3467,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chatSendBtn.setVisible(false);
             chatTextSizeBtn.setVisible(false);
             upgradeBtn.setVisible(false);
+            chainDebugLabel.setVisible(true);
             // Show CHAIN tab components
             chainScanBtn.setVisible(true);
             chainStatusLabel.setVisible(true);
@@ -3499,6 +3524,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainRackStrip.setVisible(false);
             chainEditorHolder.setVisible(false);
             chainWarnOverlay.setVisible(false);
+            chainDebugLabel.setVisible(false);
             chatSidebar.setVisible(false);
             upgradeBtn.setVisible(false);
             if (!compactMode)
@@ -6126,13 +6152,14 @@ void EchoJayEditor::paint(juce::Graphics& g)
     g.reduceClipRegion(chatX, chatTop2, chatW, chatBottomEdge - chatTop2);
     // Track waveform card positions for overlay buttons
     activeWavePlayBtns = 0;
+    activeChainBuildBtns = 0;
     chatWavePositions.clear();
 
     int msgY = 8 - scrollOffset;
     const float chatMsgFontSize = 12.0f * chatTextScale;
     for (auto& msg : chatMessages) {
         bool isUser = (msg.role == "user");
-        
+
         // Capture messages get a unified card (waveform + label row) instead of
         // the text-bubble + waveform-card pattern. Always 56 px regardless of
         // content length so the layout stays predictable.
@@ -6151,7 +6178,12 @@ void EchoJayEditor::paint(juce::Graphics& g)
         if (!isCaptureMsg && msg.hasWaveform && !msg.waveform.empty())
             waveCardH = 36; // play button + waveform only
 
-        int tH = isCaptureMsg ? kCaptureMsgH : (textH + waveCardH);
+        // Extra height for "Build this chain" button on assistant messages with a chain block
+        static constexpr int kChainBtnH = 26;
+        bool hasChainBtn = !isUser && msg.chainData.isNotEmpty();
+        int chainAreaH = hasChainBtn ? (kChainBtnH + 6) : 0;
+
+        int tH = isCaptureMsg ? kCaptureMsgH : (textH + waveCardH + chainAreaH);
         int drawY = chatTop2 + msgY;
 
         if (drawY + tH > chatTop2 - 50 && drawY < chatBottomEdge + 50)
@@ -6496,9 +6528,34 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 
                 int bubbleX = avX + avatarSize + 6;
                 int bubbleW = chatW - avatarSize - 20;
+                int bubbleH = tH - chainAreaH;
                 g.setColour(C::bg3);
-                g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)tH, 10.0f);
-                layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(tH - 20) });
+                g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)bubbleH, 10.0f);
+                layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(bubbleH - 20) });
+
+                // "Build this chain" button
+                if (hasChainBtn && activeChainBuildBtns < kMaxChainBuildBtns)
+                {
+                    int btnIdx = activeChainBuildBtns++;
+                    chainBuildJsons[(size_t)btnIdx] = msg.chainData;
+                    int btnX = bubbleX + 10;
+                    int btnY = drawY + bubbleH + 4;
+                    int btnW = juce::jmin(160, bubbleW - 20);
+                    chainBuildBtns[(size_t)btnIdx].setButtonText("Build this chain");
+                    auto scrollBounds2 = chatScroll.getBounds();
+                    bool btnInView = btnY >= scrollBounds2.getY()
+                                  && (btnY + kChainBtnH) <= scrollBounds2.getBottom();
+                    if (btnInView)
+                    {
+                        chainBuildBtns[(size_t)btnIdx].setBounds(btnX, btnY, btnW, kChainBtnH);
+                        chainBuildBtns[(size_t)btnIdx].setVisible(true);
+                    }
+                    else
+                    {
+                        chainBuildBtns[(size_t)btnIdx].setBounds(-100, -100, 1, 1);
+                        chainBuildBtns[(size_t)btnIdx].setVisible(false);
+                    }
+                }
             }
         }
         msgY += tH + 10;
@@ -6526,6 +6583,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // Hide unused overlay buttons
     for (int i = activeWavePlayBtns; i < kMaxWavePlayBtns; ++i)
         wavePlayOverlays[(size_t)i].setVisible(false);
+    for (int i = activeChainBuildBtns; i < kMaxChainBuildBtns; ++i)
+        chainBuildBtns[(size_t)i].setVisible(false);
 
     } // end if (!visualOnlyMode) — chat section
 
@@ -6666,7 +6725,11 @@ void EchoJayEditor::resized()
         // Editor holder: right panel, between header and rack strip
         int editorX = leftW + 1;
         int editorW = b.getWidth() - editorX;
-        chainEditorHolder.setBounds(editorX, topH + 32, editorW, upperH);
+        static constexpr int kDebugH = 58;
+        chainEditorHolder.setBounds(editorX, topH + 32, editorW, upperH - kDebugH);
+        // Debug label: bottom of editor panel, shows send/reply chain diagnostics
+        chainDebugLabel.setBounds(editorX, topH + 32 + upperH - kDebugH, editorW, kDebugH);
+        chainDebugLabel.toFront(false);
 
         // Warning overlay: centered in the whole CHAIN area
         if (chainWarnOverlay.isVisible())
@@ -7619,7 +7682,8 @@ void EchoJayEditor::timerCallback()
                 layout.createLayout(as, (float)(maxBW - 20));
                 int textH = (int)layout.getHeight() + 20;
                 int waveCardH = (msg.hasWaveform && !msg.waveform.empty()) ? 36 : 0;
-                tH = textH + waveCardH;
+                int chainAreaH2 = (msg.role == "assistant" && msg.chainData.isNotEmpty()) ? 32 : 0;
+                tH = textH + waveCardH + chainAreaH2;
             }
             totalH += tH + 10; // matches paint msgY += tH + 10
         }
@@ -7891,13 +7955,31 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     }
     juce::String userContent = msg + ctx;
 
-    // Plugins: tiny summary in the (cached) system prompt; full list appended
-    // to THIS user message only when the message looks plugin-related. Lets
-    // the AI see the entire library exactly when it matters, with no cap and
-    // no per-message cost on non-plugin turns.
-    if (EchoJayAPI::messageNeedsPlugins(msg))
+    // Plugin/chain injection: always include chain instructions (with full plugin list)
+    // when the user has recommendable plugins resolved — the model decides whether to
+    // return a chain block. Fall back to plain plugin list only when no plugins are
+    // resolved yet (e.g. scanner hasn't run).
+    auto& chainHost = processorRef.getChainHost();
+    juce::StringArray recommendable = chainHost.getRecommendableNames();
+
+    juce::String chainInjection;
+    if (recommendable.size() > 0)
+    {
+        chainInjection = EchoJayAPI::buildChainInjection(recommendable);
+        userContent += chainInjection;
+    }
+    else if (EchoJayAPI::messageNeedsPlugins(msg))
+    {
         userContent += EchoJayAPI::buildPluginInjection(
             processorRef.getPluginScanner().getFullPluginList());
+    }
+
+    // Debug: log and surface chain injection state
+    chainSendDebug = "Send: recomm=" + juce::String(recommendable.size())
+                   + " | injection=" + (chainInjection.isNotEmpty() ? "YES (" + juce::String(chainInjection.length()) + " chars)" : "NO");
+    DBG("EchoJay chain debug — " + chainSendDebug);
+    chainReplyTail = "(awaiting reply...)";
+    chainDebugLabel.setText(chainSendDebug + "\n" + chainReplyTail, juce::dontSendNotification);
 
     processorRef.chatRoles.add("user");
     processorRef.chatContents.add(userContent);
@@ -7913,17 +7995,70 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
             if (safeThis == nullptr)
                 return;
             safeThis->chatLoading = false;
+
+            // Store raw reply tail for chain debug display (before any extraction)
+            juce::String rawTail = reply.substring(juce::jmax(0, reply.length() - 220));
+            safeThis->chainReplyTail = "Raw reply tail (" + juce::String(reply.length()) + " chars):\n" + rawTail;
+            DBG("EchoJay chain raw tail: " + rawTail);
+
+            juce::String visibleReply = reply;
+            juce::String chainJson;
+            // Always try to extract a chain block; the model may or may not have included one.
+            if (success)
+                EchoJayAPI::extractChainBlock(visibleReply, chainJson);
+
+            // Client-side fallback: if the model described a chain in prose but omitted the
+            // machine block, reconstruct it from mention-order scanning. Triggers when ≥2
+            // recommendable plugin names appear in the reply in order.
+            if (chainJson.isEmpty() && success)
+            {
+                juce::StringArray recommNames = safeThis->processorRef.getChainHost().getRecommendableNames();
+                struct Mention { juce::String name; int pos; };
+                std::vector<Mention> mentions;
+                juce::String lowerReply = visibleReply.toLowerCase();
+                for (auto& n : recommNames)
+                {
+                    int p = lowerReply.indexOf(n.toLowerCase());
+                    if (p >= 0)
+                        mentions.push_back({ n, p });
+                }
+                if ((int)mentions.size() >= 2)
+                {
+                    std::sort(mentions.begin(), mentions.end(),
+                              [](const Mention& a, const Mention& b) { return a.pos < b.pos; });
+                    juce::String arr;
+                    for (int i = 0; i < (int)mentions.size(); ++i)
+                    {
+                        if (i > 0) arr += ",";
+                        arr += "{\"name\":\"" + mentions[i].name + "\",\"role\":\"from reply\"}";
+                    }
+                    chainJson = "{\"chain\":[" + arr + "],\"explanation\":\"Chain extracted from reply text\"}";
+                    DBG("EchoJay chain fallback: synthesised block from " + juce::String(mentions.size()) + " mentions");
+                }
+            }
+
+            // Update debug label with outcome
+            juce::String outcome = chainJson.isNotEmpty() ? "BLOCK FOUND (" + juce::String(chainJson.length()) + " chars)" : "NO BLOCK";
+            safeThis->chainDebugLabel.setText(
+                safeThis->chainSendDebug + " | " + outcome + "\n" + safeThis->chainReplyTail,
+                juce::dontSendNotification);
+
             if (success) {
-                safeThis->chatMessages.push_back({"assistant", reply});
-                safeThis->processorRef.chatHistory.push_back({"assistant", reply});
+                ChatMsg cm;
+                cm.role      = "assistant";
+                cm.content   = visibleReply;
+                cm.chainData = chainJson;   // empty if model didn't return a chain block
+                safeThis->chatMessages.push_back(cm);
+                safeThis->processorRef.chatHistory.push_back({"assistant", visibleReply});
                 safeThis->processorRef.chatRoles.add("assistant");
-                safeThis->processorRef.chatContents.add(reply);
+                safeThis->processorRef.chatContents.add(visibleReply);
             } else {
                 safeThis->chatMessages.push_back({"assistant", reply});
                 safeThis->processorRef.chatHistory.push_back({"assistant", reply});
             }
-            // Mirror assistant turn to workspace and persist
-            safeThis->workspace.appendMessageToChat(activeChatId, "assistant", reply);
+
+            // Mirror assistant turn to workspace and persist (use visibleReply — no block)
+            safeThis->workspace.appendMessageToChat(activeChatId, "assistant", visibleReply);
             if (safeThis->sidebarModel)
             {
                 safeThis->sidebarModel->refreshRows(
@@ -7937,6 +8072,114 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
             safeThis->workspace.requestMutationSync();
             safeThis->repaint();
         });
+}
+
+void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
+{
+    auto parsedVar = juce::JSON::parse(chainJson);
+    if (!parsedVar.isObject()) return;
+    auto* obj = parsedVar.getDynamicObject();
+    if (!obj || !obj->hasProperty("chain")) return;
+    auto chainArr = obj->getProperty("chain");
+    if (!chainArr.isArray()) return;
+
+    auto& ch = processorRef.getChainHost();
+    juce::StringArray recommNames = ch.getRecommendableNames();
+
+    // Collect names from chain JSON, filtering to only those in recommendable
+    struct SlotSpec { juce::String name; };
+    std::vector<SlotSpec> slots;
+    for (int i = 0; i < chainArr.size(); ++i)
+    {
+        auto entry = chainArr[i];
+        if (!entry.isObject()) continue;
+        auto* entryObj = entry.getDynamicObject();
+        if (!entryObj || !entryObj->hasProperty("name")) continue;
+        juce::String name = entryObj->getProperty("name").toString().trim();
+        bool found = false;
+        for (auto& r : recommNames)
+            if (r.equalsIgnoreCase(name)) { found = true; break; }
+        if (found) slots.push_back({ name });
+        else DBG("loadChainFromJson: skipping unknown name: " + name);
+    }
+    if (slots.empty()) return;
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+
+    auto doLoad = [safeThis, slots]()
+    {
+        if (safeThis == nullptr) return;
+
+        // Clear existing rack
+        auto& ch2 = safeThis->processorRef.getChainHost();
+        int n = ch2.getNumSlots();
+        for (int i = n - 1; i >= 0; --i) ch2.removeSlot(i);
+        safeThis->chainSelectedSlot_ = -1;
+        safeThis->chainEditorHolder.setHostedEditor(nullptr);
+
+        // Switch to Chain tab so the user sees loading progress
+        safeThis->switchToTab(Tab::Chain);
+
+        // Load slots sequentially
+        auto loadNextPtr = std::make_shared<std::function<void()>>();
+        auto idx         = std::make_shared<int>(0);
+        auto skipped     = std::make_shared<juce::StringArray>();
+
+        *loadNextPtr = [safeThis, slots, idx, skipped, loadNextPtr]() mutable
+        {
+            if (safeThis == nullptr) return;
+            if (*idx >= (int)slots.size())
+            {
+                auto& ch3 = safeThis->processorRef.getChainHost();
+                safeThis->chainSelectedSlot_ = ch3.getNumSlots() > 0 ? 0 : -1;
+                safeThis->chainRackStrip.rebuild(ch3.getAllSlotInfos(), safeThis->chainSelectedSlot_);
+                if (safeThis->chainSelectedSlot_ >= 0)
+                {
+                    safeThis->chainEditorHolder.statusText = {};
+                    safeThis->chainEditorHolder.setHostedEditor(
+                        ch3.createEditorForSlot(safeThis->chainSelectedSlot_));
+                }
+                juce::String status = juce::String(ch3.getNumSlots()) + " slot(s) loaded";
+                if (!skipped->isEmpty())
+                    status += " (" + skipped->joinIntoString(", ") + " failed)";
+                safeThis->chainStatusLabel.setText(status, juce::dontSendNotification);
+                safeThis->resized();
+                safeThis->repaint();
+                return;
+            }
+            int i = (*idx)++;
+            juce::String name = slots[i].name;
+            auto& ch3 = safeThis->processorRef.getChainHost();
+            ch3.loadByRecommendedName(name,
+                [safeThis, name, skipped, loadNextPtr](const juce::String& err) mutable
+                {
+                    if (err.isNotEmpty())
+                    {
+                        DBG("AI chain load failed for \"" + name + "\": " + err);
+                        skipped->add(name);
+                    }
+                    (*loadNextPtr)();
+                });
+        };
+        (*loadNextPtr)();
+    };
+
+    if (ch.getNumSlots() > 0)
+    {
+        juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::QuestionIcon,
+            "Replace chain?",
+            juce::String(ch.getNumSlots()) + " slot(s) will be cleared. Build the AI chain?",
+            "Build", "Cancel", nullptr,
+            juce::ModalCallbackFunction::create([doLoad](int result) mutable
+            {
+                if (result == 1) doLoad();
+            }));
+    }
+    else
+    {
+        doLoad();
+    }
 }
 
 void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,

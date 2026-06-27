@@ -127,6 +127,19 @@ public:
     // scanner, wraps it with framing the AI understands. Returns empty if the
     // list is empty.
     static juce::String buildPluginInjection(const juce::String& fullList);
+
+    // Builds the chain-request injection appended to the user's message content.
+    // availablePlugins: the resolved recommendable names (exact, from ChainHost).
+    // Returns empty if availablePlugins is empty.
+    // When present, instructs the model to: choose ONLY from these names, return
+    // the chain as a <<<ECHOJAY_CHAIN>>>...<<<END_CHAIN>>> JSON block at the end
+    // of the reply (in addition to the normal human-readable explanation).
+    static juce::String buildChainInjection(const juce::StringArray& availablePlugins);
+
+    // Parse the chain block out of an assistant reply.
+    // Returns true and fills chainJson if a block is present.
+    // Strips the block delimiters from replyInOut so the visible chat text is clean.
+    static bool extractChainBlock(juce::String& replyInOut, juce::String& chainJsonOut);
     
     // Chat language preference. Affects the language the AI replies in.
     // Stored as a short code: "auto" (match user input — default),

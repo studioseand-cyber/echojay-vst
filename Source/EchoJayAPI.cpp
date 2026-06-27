@@ -959,6 +959,27 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     prompt += "If you're unsure which kind, lean toward GENERAL QUESTION and answer what was asked. You can briefly tie advice back to their mix at the end IF relevant, but never force it.\n";
     prompt += "NEVER reframe a general question as a mix analysis. If the user asks 'how do X hit like Y', answer that question — do not analyse their current capture instead.\n";
     
+    // === V2 PLUGIN-SIDE CHAIN BLOCK RULE ===
+    // This section is appended by the EchoJay V2 desktop plugin only.
+    // The SaaS backend (echojay-saas) does not include this — do not add it there.
+    // It is a standing instruction so the model always knows the output contract,
+    // even before the per-turn AVAILABLE PLUGINS list arrives in the user message.
+    prompt += "\n[ECHOJAY V2 — CHAIN BLOCK OUTPUT CONTRACT]\n";
+    prompt += "When this conversation contains an AVAILABLE PLUGINS list (provided in the user message), ";
+    prompt += "and your reply names two or more of those plugins to be used in sequence ";
+    prompt += "(i.e. you are describing or recommending a processing chain), you MUST: ";
+    prompt += "(1) Write the human-readable explanation first. ";
+    prompt += "(2) Then append the following machine block as the VERY LAST thing in your response — "
+              "nothing at all after <<<END_CHAIN>>>:\n";
+    prompt += "<<<ECHOJAY_CHAIN>>>\n";
+    prompt += "{\"chain\":[{\"name\":\"<exact name from AVAILABLE PLUGINS>\",\"role\":\"<brief role>\"},...],\"explanation\":\"<one sentence>\"}\n";
+    prompt += "<<<END_CHAIN>>>\n";
+    prompt += "The prose and the block are NOT alternatives — when there is a chain, include both. "
+              "Use only names that appear verbatim in the AVAILABLE PLUGINS list. "
+              "If your preferred plugin is not listed, substitute the closest available one. "
+              "Omit the block ONLY when you are not proposing an ordered set of plugins "
+              "(e.g. single-plugin answers, general mixing advice, or chat with no plugin chain).\n\n";
+
     // Language preference — appended last so it sits closest to the user
     // turn in the model's attention. "auto" means the AI should match
     // whatever language the user typed in (Claude does this naturally
@@ -1034,6 +1055,60 @@ juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
     block << "\n\n[USER'S FULL PLUGIN LIST — for this question, recommend only from these, using their exact names; rotate your picks rather than defaulting to the same few]:\n"
           << fullList;
     return block;
+}
+
+juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availablePlugins)
+{
+    if (availablePlugins.isEmpty()) return {};
+
+    juce::String list;
+    for (int i = 0; i < availablePlugins.size(); ++i)
+    {
+        if (i > 0) list += ", ";
+        list += "\"" + availablePlugins[i] + "\"";
+    }
+
+    juce::String block;
+    block << "\n\n[AVAILABLE PLUGINS (installed & enabled on this machine): " << list << "]\n\n"
+          << "[CHAIN BLOCK RULE — read carefully and follow exactly]\n"
+          << "WHENEVER your reply names two or more plugins to use in order "
+          << "(i.e. you are recommending or describing a processing chain), "
+          << "you MUST append the machine block below at the very end of your reply — "
+          << "after all prose, as the absolute last thing, with nothing after <<<END_CHAIN>>>.\n"
+          << "The prose explanation and the block are NOT alternatives: when there is a chain, give BOTH.\n"
+          << "Only omit the block when you are genuinely not proposing a chain "
+          << "(pure advice, a single-plugin suggestion, or general discussion with no ordered plugin set).\n\n"
+          << "BLOCK FORMAT (copy exactly, no extra text before or after):\n"
+          << "<<<ECHOJAY_CHAIN>>>\n"
+          << "{\"chain\":[{\"name\":\"<exact name from AVAILABLE PLUGINS>\",\"role\":\"<brief role>\"},...],\"explanation\":\"<one sentence summary>\"}\n"
+          << "<<<END_CHAIN>>>\n\n"
+          << "RULES FOR THE BLOCK:\n"
+          << "- Use ONLY exact names from the AVAILABLE PLUGINS list above.\n"
+          << "- Order slots for logical audio signal flow (e.g. EQ → Comp → Saturation → Limiter).\n"
+          << "- If your ideal plugin is absent from the list, substitute the closest available one "
+          << "  (do not mention the missing plugin or leave the slot empty).\n"
+          << "- Do not pad with unnecessary plugins; include only slots that genuinely serve the request.\n"
+          << "- The block must be syntactically valid JSON on a single line between the delimiters.";
+    return block;
+}
+
+bool EchoJayAPI::extractChainBlock(juce::String& replyInOut, juce::String& chainJsonOut)
+{
+    const juce::String kOpen  = "<<<ECHOJAY_CHAIN>>>";
+    const juce::String kClose = "<<<END_CHAIN>>>";
+
+    int start = replyInOut.indexOf(kOpen);
+    if (start < 0) return false;
+    int end = replyInOut.indexOf(start, kClose);
+    if (end < 0) return false;
+
+    int jsonStart = start + kOpen.length();
+    chainJsonOut = replyInOut.substring(jsonStart, end).trim();
+
+    // Strip the entire block (including delimiters) from the visible reply
+    replyInOut = replyInOut.substring(0, start).trimEnd()
+               + replyInOut.substring(end + kClose.length());
+    return true;
 }
 
 // ============ Settings persistence ============
