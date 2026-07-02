@@ -70,6 +70,13 @@ struct MeterData {
         -120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120
     };
 
+    // Rolling waveform — ring buffer of min/max peak pairs (~5s at ~86 pts/s)
+    static constexpr int waveformSize = 512;
+    struct WavePoint { float minVal = 0.0f; float maxVal = 0.0f; };
+    std::array<WavePoint, waveformSize> waveform = {};
+    int waveformWritePos = 0;
+    int waveformCount = 0;  // how many valid points (up to waveformSize)
+
     // True when the plugin has not seen audible audio for the silence
     // timeout window (set in MeterEngine::prepare). When this is true,
     // all other meter values are stale snapshots from the last active
@@ -156,6 +163,12 @@ private:
     };
 
     void computeSpectrum(const float* left, const float* right, int numSamples);
+
+    // Rolling waveform accumulator — downsample to ~86 pts/s (every 512 samples at 44.1k)
+    static constexpr int kWaveDownsample = 512;
+    float wfMinAccum = 0.0f, wfMaxAccum = 0.0f;
+    int wfAccumCount = 0;
+    void pushWaveformSamples(const float* left, const float* right, int numSamples);
     
     // Apply K-weighting biquad filter
     double applyBiquad(double input, const BiquadCoeffs& c,

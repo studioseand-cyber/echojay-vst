@@ -41,18 +41,40 @@ ChainHost::ChainHost()
     }
 }
 
+// Process-lifetime store for hosted plugin instances — INTENTIONALLY leaked
+// (never destroyed). Plugins with leaked repeating UI timers (AMEK EQ 250)
+// crash the shared AU hosting service whenever their instance memory or code
+// is freed: disposing on removeSlot crashed (use-after-free at 0x178), and
+// disposing in ~ChainHost crashed on the next EchoJay open (timer fired into
+// UNLOADED code, jump to 0x0). Keeping the instances alive until the process
+// exits makes the stray timers permanently harmless; the OS reclaims
+// everything when the hosting service quits.
+static std::vector<juce::AudioProcessorGraph::Node::Ptr>& leakedNodeStore()
+{
+    static auto* store = new std::vector<juce::AudioProcessorGraph::Node::Ptr>();
+    return *store;
+}
+
 ChainHost::~ChainHost()
 {
     cancelFlag_.store(true);
     if (scanThread_.joinable()) scanThread_.join();
 
-    // Remove all connections and nodes cleanly
+    // Detach nodes from the graph, then park them in the process-lifetime
+    // store instead of letting them be destroyed (see leakedNodeStore above)
     if (graph_)
     {
         for (auto& c : graph_->getConnections()) graph_->removeConnection(c);
         for (auto& s : slots_)
-            if (s.node) graph_->removeNode(s.node->nodeID);
+            if (s.node)
+            {
+                graph_->removeNode(s.node->nodeID);
+                leakedNodeStore().push_back(s.node);
+            }
     }
+    for (auto& n : graveyard_)
+        if (n) leakedNodeStore().push_back(n);
+    graveyard_.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -75,8 +97,13 @@ void ChainHost::release()
 
 void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
-    if (prepared_ && graph_)
-        graph_->processBlock(buffer, midi);
+    // Skip the graph entirely when no plugins are loaded — pure passthrough.
+    // An empty AudioProcessorGraph with only IO nodes can drop audio under
+    // certain prepare/rebuild orderings; bypassing it avoids that entirely.
+    if (!prepared_ || !graph_ || !hasActiveSlots_.load())
+        return;   // buffer passes through untouched
+
+    graph_->processBlock(buffer, midi);
 }
 
 // ---------------------------------------------------------------------------
@@ -269,7 +296,17 @@ void ChainHost::removeSlot(int i)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
     for (auto& c : graph_->getConnections()) graph_->removeConnection(c);
-    if (slots_[i].node) graph_->removeNode(slots_[i].node->nodeID);
+    if (slots_[i].node)
+    {
+        // Disconnect from the graph but DO NOT destroy the instance: some
+        // plugins (AMEK EQ 250) leak repeating UI timers that keep firing
+        // after their editor is gone. The timers are harmless while the
+        // AudioUnit is alive, but disposing it turns the next tick into a
+        // use-after-free (confirmed SIGSEGV in the crash log). Removed
+        // instances are parked in the graveyard for the session instead.
+        graveyard_.push_back(slots_[i].node);
+        graph_->removeNode(slots_[i].node->nodeID);
+    }
     slots_.erase(slots_.begin() + i);
     rebuildGraph();
     if (prepared_)
@@ -472,9 +509,11 @@ void ChainHost::rebuildGraph()
         if (!s.bypassed && s.node)
             active.push_back(s.node->nodeID);
 
+    hasActiveSlots_.store(!active.empty());
+
     if (active.empty())
     {
-        // Pure passthrough
+        // Pure passthrough — also skip graph in process() for safety
         if (inputNode_ && outputNode_)
         {
             graph_->addConnection({{inputNode_->nodeID, 0}, {outputNode_->nodeID, 0}});

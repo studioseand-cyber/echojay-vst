@@ -191,7 +191,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     : AudioProcessorEditor(&p), processorRef(p)
 {
     setLookAndFeel(&lnf);
-    setSize(900, 580);
+    setSize(1170, 696);
     setResizable(true, true);
     setResizeLimits(900, 580, 1800, 1200);
     setWantsKeyboardFocus(true);
@@ -837,6 +837,31 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     settingsSavedLabel.setVisible(false);
     addAndMakeVisible(settingsSavedLabel);
 
+    // UI scale picker
+    uiScaleCombo.addItem("80%",  1);
+    uiScaleCombo.addItem("90%",  2);
+    uiScaleCombo.addItem("100%", 3);
+    uiScaleCombo.addItem("110%", 4);
+    uiScaleCombo.addItem("125%", 5);
+    uiScaleCombo.addItem("150%", 6);
+    uiScaleCombo.setColour(juce::ComboBox::backgroundColourId, C::bg3);
+    uiScaleCombo.setColour(juce::ComboBox::textColourId,       C::text);
+    uiScaleCombo.setColour(juce::ComboBox::outlineColourId,    C::border2);
+    uiScaleCombo.setVisible(false);
+    uiScaleCombo.onChange = [this] {
+        static constexpr float kScales[] = { 0.80f, 0.90f, 1.00f, 1.10f, 1.25f, 1.50f };
+        int id = uiScaleCombo.getSelectedId();
+        if (id >= 1 && id <= 6) {
+            applyUIScale(kScales[id - 1]);
+            saveUIScale();
+        }
+    };
+    addAndMakeVisible(uiScaleCombo);
+
+    // Load and apply persisted scale before first paint
+    loadUIScale();
+    applyUIScale(uiScale_);
+
     loadRefBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
     loadRefBtn.setColour(juce::TextButton::textColourOnId, C::purple);
     loadRefBtn.setColour(juce::TextButton::textColourOffId, C::purple);
@@ -862,50 +887,116 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     compareSlotBBox.setVisible(false);
     addAndMakeVisible(compareSlotBBox);
 
-    // Play buttons for each compare slot
-    auto setupPlayBtn = [&](juce::TextButton& btn, juce::ComboBox& slot) {
-        btn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        btn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
-        btn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
-        btn.setVisible(false);
-        btn.onClick = [this, &slot, &btn]() {
-            auto wavPath = getCompareSlotWavPath(slot.getSelectedId());
-            if (wavPath.isEmpty()) return;
-            
-            // If this file is currently playing, pause it
-            if (currentlyPlayingChatWav == wavPath) {
-                stopChatPlayback();
-                btn.setButtonText(">");
-            }
-            // If this file is paused (AB has it loaded and paused), resume
-            else if (processorRef.abPaused.load() && processorRef.abFilePath == wavPath) {
-                // Calculate how far through the file we are (in seconds)
-                double elapsedSeconds = 0.0;
-                if (processorRef.abSampleCount > 0 && processorRef.abSampleRate > 0)
-                    elapsedSeconds = (double)processorRef.abPlaybackPos / processorRef.abSampleRate;
-                
-                processorRef.resumeAB();
-                currentlyPlayingChatWav = wavPath;
-                // Set start time in the past so (now - startTime) + offset = elapsedSeconds
-                chatPlaybackStartTime = juce::Time::getMillisecondCounterHiRes() - elapsedSeconds * 1000.0;
-                chatPlaybackOffset = 0;
-                playSlotABtn.setButtonText(">");
-                playSlotBBtn.setButtonText(">");
-                btn.setButtonText("||");
-            }
-            // Otherwise start fresh
-            else {
-                stopChatPlayback();
-                playSlotABtn.setButtonText(">");
-                playSlotBBtn.setButtonText(">");
-                startChatPlayback(wavPath, 0);
-                btn.setButtonText("||");
-            }
+    // Meter-type selector buttons for Compare tab (stage 1)
+    {
+        static const char* kMeterLabels[] = { "Waveform", "Spectrum", "Levels", "Stereo Image", "Loudness" };
+        for (int i = 0; i < 5; ++i)
+        {
+            compareMeterBtns[(size_t)i].setButtonText(kMeterLabels[i]);
+            compareMeterBtns[(size_t)i].setVisible(false);
+            compareMeterBtns[(size_t)i].setColour(juce::TextButton::buttonColourId,
+                i == 0 ? juce::Colour(0xff1a2d4a) : C::bg3);
+            compareMeterBtns[(size_t)i].setColour(juce::TextButton::textColourOffId,
+                i == 0 ? C::blue : C::text3);
+            int ci = i;
+            compareMeterBtns[(size_t)i].onClick = [this, ci]
+            {
+                compareMeterId_ = ci;
+                for (int j = 0; j < 5; ++j)
+                {
+                    compareMeterBtns[(size_t)j].setColour(juce::TextButton::buttonColourId,
+                        j == ci ? juce::Colour(0xff1a2d4a) : C::bg3);
+                    compareMeterBtns[(size_t)j].setColour(juce::TextButton::textColourOffId,
+                        j == ci ? C::blue : C::text3);
+                }
+                repaint();
+            };
+            addAndMakeVisible(compareMeterBtns[(size_t)i]);
+        }
+    }
+
+    // Stage 2: slot selection buttons — live in each panel header strip
+    {
+        auto styleSlotBtn = [&](juce::TextButton& btn) {
+            btn.setColour(juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
+            btn.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff1a2030));
+            btn.setColour(juce::TextButton::textColourOffId,  C::text2);
+            btn.setVisible(false);
+            addAndMakeVisible(btn);
         };
-        addAndMakeVisible(btn);
-    };
-    setupPlayBtn(playSlotABtn, compareSlotABox);
-    setupPlayBtn(playSlotBBtn, compareSlotBBox);
+        styleSlotBtn(compareTopSlotBtn_);
+        styleSlotBtn(compareBotSlotBtn_);
+        compareTopSlotBtn_.onClick = [this] { openCompareSlotMenu(true);  };
+        compareBotSlotBtn_.onClick = [this] { openCompareSlotMenu(false); };
+
+        // Top slot defaults to Live; bottom starts empty
+        compareTop_.kind  = CompareSlotState::Kind::Live;
+        compareTop_.label = "Live signal";
+        compareBot_.kind  = CompareSlotState::Kind::Empty;
+        compareBot_.label = "Select slot...";
+    }
+
+    // Stage 3: play/audibility buttons + sync toggle
+    {
+        auto stylePlayBtn = [&](juce::TextButton& btn, const juce::String& text) {
+            btn.setButtonText(text);
+            btn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+            btn.setColour(juce::TextButton::textColourOffId, C::text3);
+            btn.setEnabled(false);
+            btn.setVisible(false);
+            addAndMakeVisible(btn);
+        };
+        stylePlayBtn(comparePlayTopBtn_, juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6")));
+        stylePlayBtn(comparePlayBotBtn_, juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6")));
+        comparePlayTopBtn_.onClick = [this] { DBG("comparePlayTopBtn_ clicked"); toggleComparePlay(true);  };
+        comparePlayBotBtn_.onClick = [this] { DBG("comparePlayBotBtn_ clicked"); toggleComparePlay(false); };
+
+        // Transport bar: A/B selector, play button, sync toggle
+        auto styleTBar = [&](juce::TextButton& btn) {
+            btn.setColour(juce::TextButton::buttonColourId, C::bg3);
+            btn.setColour(juce::TextButton::textColourOffId, C::text3);
+            btn.setVisible(false);
+            addAndMakeVisible(btn);
+        };
+
+        cmpABtn_.setButtonText("A");
+        styleTBar(cmpABtn_);
+        cmpABtn_.onClick = [this] {
+            processorRef.cmpAudible.store(0);
+            updateTransportBar(); updateComparePlayBtns(); repaint();
+        };
+
+        cmpBBtn_.setButtonText("B");
+        styleTBar(cmpBBtn_);
+        cmpBBtn_.onClick = [this] {
+            processorRef.cmpAudible.store(1);
+            updateTransportBar(); updateComparePlayBtns(); repaint();
+        };
+
+        cmpPlayBtn_.setButtonText(juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6")));
+        styleTBar(cmpPlayBtn_);
+        cmpPlayBtn_.onClick = [this] {
+            int aud = processorRef.cmpAudible.load();
+            if (aud >= 0) toggleComparePlay(aud == 0);
+            updateTransportBar();
+        };
+
+        compareSyncBtn_.setButtonText("SYNC");
+        compareSyncBtn_.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1a2d4a));
+        compareSyncBtn_.setColour(juce::TextButton::textColourOffId, C::blue);
+        compareSyncBtn_.setVisible(false);
+        compareSyncBtn_.onClick = [this]
+        {
+            bool cur = processorRef.cmpSyncToTransport.load();
+            processorRef.cmpSyncToTransport.store(!cur);
+            compareSyncBtn_.setColour(juce::TextButton::buttonColourId,
+                !cur ? juce::Colour(0xff1a2d4a) : C::bg3);
+            compareSyncBtn_.setColour(juce::TextButton::textColourOffId,
+                !cur ? C::blue : C::text3);
+            repaint();
+        };
+        addAndMakeVisible(compareSyncBtn_);
+    }
 
     refStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffFF6B9D));
     refStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
@@ -1226,28 +1317,22 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         auto& ch = processorRef.getChainHost();
         chainStatusLabel.setText("Loading " + desc.name + "...", juce::dontSendNotification);
         chainLoadBtn.setEnabled(false);
-        chainEditorHolder.statusText = "Loading " + desc.name + "...";
-        chainEditorHolder.repaint();
+        chainListPanel.statusText = "Loading " + desc.name + "...";
+        chainListPanel.repaint();
         ch.loadPluginAsync(desc, [this, desc](const juce::String& err)
         {
             chainLoadBtn.setEnabled(true);
             if (err.isNotEmpty())
             {
-                chainEditorHolder.statusText = "Failed: " + err;
-                chainEditorHolder.repaint();
-                chainStatusLabel.setText("Failed: " + err, juce::dontSendNotification);
+                chainListPanel.statusText = "Failed: " + err;
+                chainListPanel.repaint();
                 return;
             }
             auto& ch2 = processorRef.getChainHost();
-            // Select the newly added slot (last one)
             chainSelectedSlot_ = ch2.getNumSlots() - 1;
-            chainRackStrip.rebuild(ch2.getAllSlotInfos(), chainSelectedSlot_);
-            chainStatusLabel.setText(juce::String(ch2.getNumSlots()) + " slot(s) in chain",
-                                     juce::dontSendNotification);
+            chainListPanel.statusText = {};
+            chainListPanel.rebuild(ch2.getAllSlotInfos(), chainSelectedSlot_);
             resized();
-            // Show the new slot's editor
-            chainEditorHolder.statusText = {};
-            chainEditorHolder.setHostedEditor(ch2.createEditorForSlot(chainSelectedSlot_));
             repaint();
         });
     };
@@ -1257,72 +1342,91 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainRecommendLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
     addChildComponent(chainRecommendLabel);
 
-    addChildComponent(chainEditorHolder);
-
-    // Rack strip — callbacks
-    chainRackStrip.onSelectSlot = [this](int i) {
-        auto& ch = processorRef.getChainHost();
-        if (i < 0 || i >= ch.getNumSlots()) return;
-        chainSelectedSlot_ = i;
-        chainRackStrip.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
-        chainEditorHolder.statusText = {};
-        chainEditorHolder.settingsHint = ch.getSlotInfo(i).settings;
-        chainEditorHolder.setHostedEditor(ch.createEditorForSlot(i));
-        repaint();
+    chainListPanel.onCreateEditor = [this](int i) -> juce::AudioProcessorEditor* {
+        return processorRef.getChainHost().createEditorForSlot(i);
     };
-    chainRackStrip.onRemoveSlot = [this](int i) {
+    chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
+    chainListPanel.onRemoveSlot = [this](int i) {
         auto& ch = processorRef.getChainHost();
-        ch.removeSlot(i);
-        chainSelectedSlot_ = juce::jlimit(-1, ch.getNumSlots() - 1, chainSelectedSlot_);
-        chainRackStrip.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
-        chainEditorHolder.statusText = {};
-        chainEditorHolder.settingsHint = chainSelectedSlot_ >= 0
-            ? ch.getSlotInfo(chainSelectedSlot_).settings : juce::String{};
-        chainEditorHolder.setHostedEditor(chainSelectedSlot_ >= 0
-            ? ch.createEditorForSlot(chainSelectedSlot_) : nullptr);
-        chainStatusLabel.setText(ch.getNumSlots() > 0
-            ? juce::String(ch.getNumSlots()) + " slot(s) in chain"
-            : "Chain empty", juce::dontSendNotification);
-        repaint();
+        if (i < 0 || i >= ch.getNumSlots() || chainRemovePending_) return;
+        // Close/remap open editors FIRST, then destroy the processor a
+        // runloop turn later: AU Cocoa views tear their UI timers down in
+        // dealloc (deferred via autorelease), and destroying the AudioUnit
+        // in the same tick lets a final timer fire into freed plugin state
+        // (AMEK EQ 250 segfault).
+        chainRemovePending_ = true;
+        chainListPanel.noteSlotRemoved(i);
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        juce::Timer::callAfterDelay(80, [safeThis, i] {
+            if (safeThis == nullptr) return;
+            safeThis->chainRemovePending_ = false;
+            auto& ch2 = safeThis->processorRef.getChainHost();
+            if (i < 0 || i >= ch2.getNumSlots()) return;
+            ch2.removeSlot(i);
+            safeThis->chainSelectedSlot_ =
+                juce::jlimit(-1, ch2.getNumSlots() - 1, safeThis->chainSelectedSlot_);
+            safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(),
+                                             safeThis->chainSelectedSlot_);
+            safeThis->repaint();
+        });
     };
-    chainRackStrip.onBypassSlot = [this](int i) {
+    chainListPanel.onBypassSlot = [this](int i) {
         auto& ch = processorRef.getChainHost();
         if (i < 0 || i >= ch.getNumSlots()) return;
         ch.setSlotBypassed(i, !ch.getSlotInfo(i).bypassed);
-        chainRackStrip.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+        chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
         repaint();
     };
-    chainRackStrip.onMoveSlot = [this](int i, int dir) {
+    chainListPanel.onMoveSlot = [this](int i, int dir) {
         auto& ch = processorRef.getChainHost();
+        int j = i + dir;
+        if (i < 0 || i >= ch.getNumSlots() || j < 0 || j >= ch.getNumSlots()) return;
+        chainListPanel.noteSlotMoved(i, j);   // keep the open editor tracking its slot
         ch.moveSlot(i, dir);
-        // Track selection with the moved slot
         int newSel = chainSelectedSlot_;
-        if (chainSelectedSlot_ == i) newSel = i + dir;
+        if (chainSelectedSlot_ == i)      newSel = j;
+        else if (chainSelectedSlot_ == j) newSel = i;
         chainSelectedSlot_ = juce::jlimit(0, ch.getNumSlots() - 1, newSel);
-        chainRackStrip.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+        chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
         repaint();
     };
-    chainRackStrip.onAddClick = [this] {
-        // Scroll the plugin list into view and focus it
-        chainPluginList.grabKeyboardFocus();
-    };
-    addChildComponent(chainRackStrip);
+    chainListPanel.onAddClick = [this] { showChainPluginPicker(); };
+    addChildComponent(chainListPanel);
 
-    // Warning overlay
-    chainWarnLabel.setText("Hosting third-party plugins is experimental.\nSave your project before loading a plugin.",
-                           juce::dontSendNotification);
-    chainWarnLabel.setColour(juce::Label::textColourId, juce::Colour(0xffdddddd));
-    chainWarnLabel.setJustificationType(juce::Justification::centred);
-    chainWarnLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
-    chainWarnOverlay.addAndMakeVisible(chainWarnLabel);
-    chainWarnOkBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a4d7a));
-    chainWarnOkBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    chainWarnOkBtn.onClick = [this] {
-        processorRef.getChainHost().chainWarningDismissed = true;
-        chainWarnOverlay.setVisible(false);
+    // AI assistant sidebar toggle — collapsing gives the plugin display area
+    // the full tab width. Chain tab only.
+    chainChatToggleBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+    chainChatToggleBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+    chainChatToggleBtn.onClick = [this] {
+        chainChatCollapsed_ = !chainChatCollapsed_;
+        if (currentTab == Tab::Chain && !compactMode)
+        {
+            bool show = !chainChatCollapsed_;
+            chatScroll.setVisible(show);
+            chatInput.setVisible(show);
+            chatSendBtn.setVisible(show);
+            if (!show)
+            {
+                // Paint-time chat overlays would go stale — hide them now
+                for (int i = 0; i < kMaxChainBuildBtns; ++i)
+                    chainBuildBtns[(size_t)i].setVisible(false);
+                for (int i = 0; i < kMaxWavePlayBtns; ++i)
+                    wavePlayOverlays[(size_t)i].setVisible(false);
+            }
+        }
+        resized();
+        repaint();
     };
-    chainWarnOverlay.addAndMakeVisible(chainWarnOkBtn);
-    addChildComponent(chainWarnOverlay);
+    addChildComponent(chainChatToggleBtn);
+
+    chainSlotCountLabel.setColour(juce::Label::textColourId, C::text3);
+    chainSlotCountLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
+    chainSlotCountLabel.setJustificationType(juce::Justification::centredRight);
+    chainSlotCountLabel.setText("0/" + juce::String(ChainListPanel::kMaxSlots),
+                                juce::dontSendNotification);
+    addChildComponent(chainSlotCountLabel);
+
+    // Warning overlay removed — folded into empty editor state text
 
     // Chat sidebar — ListBox + toolbar (Phase 2a/2b).
     sidebarModel = std::make_unique<ChatSidebarModel>();
@@ -1356,7 +1460,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatSidebar.setOutlineThickness(0);
     addChildComponent(chatSidebar);
 
-    // Sidebar toolbar buttons
+    // Sidebar toolbar buttons — styled like header items (transparent bg, plain text)
+    auto styleSidebarBtn = [](juce::TextButton& btn) {
+        btn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        btn.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+        btn.setColour(juce::TextButton::textColourOnId, C::text);
+        btn.setColour(juce::TextButton::textColourOffId, C::text2);
+    };
+    styleSidebarBtn(sidebarNewChatBtn);
+    styleSidebarBtn(sidebarNewAlbumBtn);
     sidebarNewChatBtn.onClick = [this]  { createNewChat();  };
     sidebarNewAlbumBtn.onClick = [this] { createNewAlbum(); };
     addChildComponent(sidebarNewChatBtn);
@@ -1445,9 +1557,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // "Build this chain" overlay buttons (one per assistant chain reply)
     for (int i = 0; i < kMaxChainBuildBtns; ++i)
     {
-        chainBuildBtns[(size_t)i].setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1a2e1a));
-        chainBuildBtns[(size_t)i].setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2a4a2a));
-        chainBuildBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff77dd77));
+        chainBuildBtns[(size_t)i].setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+        chainBuildBtns[(size_t)i].setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff0E1020));
+        chainBuildBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
         chainBuildBtns[(size_t)i].setVisible(false);
         chainBuildBtns[(size_t)i].onClick = [this, i]() { loadChainFromJson(chainBuildJsons[(size_t)i]); };
         addAndMakeVisible(chainBuildBtns[(size_t)i]);
@@ -1581,7 +1693,7 @@ void EchoJayEditor::showLoginScreen()
     
     // Also hide compare fields
     aiCompareBtn.setVisible(false);
-    compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false); playSlotABtn.setVisible(false); playSlotBBtn.setVisible(false);
+    compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
     refStatusLabel.setVisible(false);
     presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false); for (auto& b : refRemoveBtns) b.setVisible(false); compareClickCatcher.setVisible(false);
 
@@ -2589,8 +2701,9 @@ void EchoJayEditor::showCompareView()
     compareBtn.setButtonText("Back");
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     aiCompareBtn.setVisible(true);
-    compareSlotABox.setVisible(true); compareSlotBBox.setVisible(true);
-    refStatusLabel.setVisible(true);
+    // Stage 1: slot boxes hidden — populated silently so AI Compare still works
+    compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
+    refStatusLabel.setVisible(false);
     presetBox.setVisible(true); savePresetBtn.setVisible(true); deletePresetBtn.setVisible(true);
     loadPresetList();
 
@@ -2610,6 +2723,25 @@ void EchoJayEditor::showCompareView()
     if (snaps.size() > 0) compareSlotABox.setSelectedId(1);
     if (snaps.size() > 1) compareSlotBBox.setSelectedId(2);
     else if (refs.size() > 0) compareSlotBBox.setSelectedId(refOffset);
+
+    // Show meter-type selector buttons, slot buttons, and play buttons
+    for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(true);
+    compareTopSlotBtn_.setVisible(true);
+    compareBotSlotBtn_.setVisible(true);
+    updateCompareSlotBtn(true);
+    updateCompareSlotBtn(false);
+    comparePlayTopBtn_.setVisible(true);
+    comparePlayBotBtn_.setVisible(true);
+
+    // Pre-load WAV data (no auto-play) so static waveform is visible
+    startCompareStream(0);
+    startCompareStream(1);
+    compareSyncBtn_.setVisible(true);
+    cmpABtn_.setVisible(true);
+    cmpBBtn_.setVisible(true);
+    cmpPlayBtn_.setVisible(true);
+    updateComparePlayBtns();
+
     resized(); repaint();
 }
 
@@ -2620,10 +2752,440 @@ void EchoJayEditor::hideCompareView()
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     aiCompareBtn.setVisible(false);
     // Don't stop AB playback — let ref keep playing through plugin when switching views
-    compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false); playSlotABtn.setVisible(false); playSlotBBtn.setVisible(false);
+    compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
     refStatusLabel.setVisible(false);
-    presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false); for (auto& b : refRemoveBtns) b.setVisible(false); compareClickCatcher.setVisible(false);
+    presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false);
+    for (auto& b : refRemoveBtns) b.setVisible(false);
+    compareClickCatcher.setVisible(false);
+    for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(false);
+    compareTopSlotBtn_.setVisible(false);
+    compareBotSlotBtn_.setVisible(false);
+    processorRef.stopAllCompare();
+    comparePlayTopBtn_.setVisible(false);
+    comparePlayBotBtn_.setVisible(false);
+    compareSyncBtn_.setVisible(false);
+    cmpABtn_.setVisible(false);
+    cmpBBtn_.setVisible(false);
+    cmpPlayBtn_.setVisible(false);
     resized(); repaint();
+}
+
+// ============================================================================
+// Compare stage 2 — slot selection helpers
+// ============================================================================
+
+void EchoJayEditor::updateCompareSlotBtn(bool isTop)
+{
+    auto& slot = isTop ? compareTop_ : compareBot_;
+    auto& btn  = isTop ? compareTopSlotBtn_ : compareBotSlotBtn_;
+
+    juce::Colour col;
+    juce::String text;
+
+    switch (slot.kind)
+    {
+        case CompareSlotState::Kind::Live:
+            text = "Live signal";
+            col  = C::green;
+            break;
+        case CompareSlotState::Kind::Empty:
+            text = "Select slot...";
+            col  = C::text3;
+            break;
+        default:
+            text = slot.label.substring(0, 36);
+            col  = C::text2;
+            break;
+    }
+
+    btn.setButtonText(text);
+    btn.setColour(juce::TextButton::textColourOffId, col);
+}
+
+void EchoJayEditor::openCompareSlotMenu(bool isTop)
+{
+    auto snaps = processorRef.getSnapshots();
+    auto refs  = processorRef.getReferenceAnalyser().getReferences();
+
+    // Collect ordered, deduplicated review IDs for the current chat
+    juce::StringArray chatReviewIds;
+    for (auto& c : workspace.getChats())
+    {
+        if (c.id != currentChatId) continue;
+        for (auto& msg : c.messages)
+            if (msg.reviewId.isNotEmpty() && !chatReviewIds.contains(msg.reviewId))
+                chatReviewIds.add(msg.reviewId);
+        break;
+    }
+
+    auto& curSlot = isTop ? compareTop_ : compareBot_;
+
+    juce::PopupMenu menu;
+    menu.addItem(1, "Live signal", true,
+                 curSlot.kind == CompareSlotState::Kind::Live);
+
+    if (!snaps.empty())
+    {
+        menu.addSeparator();
+        menu.addSectionHeader("SESSION CAPTURES");
+        for (int i = 0; i < (int)snaps.size() && i < 99; ++i)
+            menu.addItem(100 + i, snaps[i].name.substring(0, 44));
+    }
+
+    if (!chatReviewIds.isEmpty())
+    {
+        menu.addSeparator();
+        menu.addSectionHeader("CHAT CAPTURES");
+        int wsIdx = 200;
+        for (auto& rid : chatReviewIds)
+        {
+            juce::String lbl = rid;
+            for (auto& r : workspace.getReviews())
+                if (r.id == rid) { lbl = r.label.isNotEmpty() ? r.label : r.id; break; }
+            menu.addItem(wsIdx++, lbl.substring(0, 44));
+        }
+    }
+
+    if (!refs.empty())
+    {
+        menu.addSeparator();
+        menu.addSectionHeader("REFERENCES");
+        for (int i = 0; i < (int)refs.size() && i < 99; ++i)
+            menu.addItem(300 + i, refs[i].name.substring(0, 44));
+    }
+
+    auto& btn = isTop ? compareTopSlotBtn_ : compareBotSlotBtn_;
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(&btn),
+        [safeThis, isTop](int result)
+        {
+            if (safeThis == nullptr || result == 0) return;
+
+            auto& slot = isTop ? safeThis->compareTop_ : safeThis->compareBot_;
+
+            if (result == 1)
+            {
+                slot.kind  = CompareSlotState::Kind::Live;
+                slot.label = "Live signal";
+            }
+            else if (result >= 100 && result < 200)
+            {
+                int idx = result - 100;
+                auto snaps2 = safeThis->processorRef.getSnapshots();
+                if (idx < (int)snaps2.size())
+                {
+                    slot.kind  = CompareSlotState::Kind::Snapshot;
+                    slot.index = idx;
+                    slot.label = snaps2[idx].name;
+                }
+            }
+            else if (result >= 200 && result < 300)
+            {
+                // Re-derive the Nth chat review in the same iteration order as the menu build
+                int nth = result - 200, count = 0;
+                juce::StringArray seenIds;
+                for (auto& c : safeThis->workspace.getChats())
+                {
+                    if (c.id != safeThis->currentChatId) continue;
+                    for (auto& msg : c.messages)
+                    {
+                        if (msg.reviewId.isEmpty() || seenIds.contains(msg.reviewId)) continue;
+                        seenIds.add(msg.reviewId);
+                        if (count++ == nth)
+                        {
+                            slot.kind       = CompareSlotState::Kind::WsCapture;
+                            slot.wsReviewId = msg.reviewId;
+                            slot.label      = msg.reviewId;
+                            for (auto& r : safeThis->workspace.getReviews())
+                                if (r.id == msg.reviewId)
+                                    { slot.label = r.label.isNotEmpty() ? r.label : r.id; break; }
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            else if (result >= 300 && result < 400)
+            {
+                int idx = result - 300;
+                auto refs2 = safeThis->processorRef.getReferenceAnalyser().getReferences();
+                if (idx < (int)refs2.size())
+                {
+                    slot.kind  = CompareSlotState::Kind::Reference;
+                    slot.index = idx;
+                    slot.label = refs2[idx].name;
+                }
+            }
+
+            // Stop old stream for this slot, then auto-start new one
+            int slotIdx = isTop ? 0 : 1;
+            safeThis->processorRef.stopCompareStream(slotIdx);
+            safeThis->updateCompareSlotBtn(isTop);
+            safeThis->startCompareStream(slotIdx);
+            safeThis->processorRef.cmpBothCaptures.store(safeThis->bothSlotsAreCaptures());
+            safeThis->updateComparePlayBtns();
+            safeThis->repaint();
+        });
+}
+
+MeterData EchoJayEditor::getSlotMeterData(const CompareSlotState& slot) const
+{
+    // Live slot always feeds from meterEngine (live input, never AB audio)
+    if (slot.kind == CompareSlotState::Kind::Live)
+        return processorRef.getMeterEngine().getMeterData();
+
+    // If a compare stream is playing for this slot, use its live meter data
+    int slotIdx = (&slot == &compareTop_) ? 0 : 1;
+    if (processorRef.cmpStream[slotIdx].playing.load())
+        return processorRef.getCompareMeter(slotIdx).getMeterData();
+
+    // Fallback to stored data for non-playing sources
+    switch (slot.kind)
+    {
+        case CompareSlotState::Kind::Snapshot:
+        {
+            auto snaps = processorRef.getSnapshots();
+            if (slot.index >= 0 && slot.index < (int)snaps.size())
+                return snaps[(size_t)slot.index].averagedData;
+            break;
+        }
+
+        case CompareSlotState::Kind::WsCapture:
+        {
+            for (auto& r : workspace.getReviews())
+                if (r.id == slot.wsReviewId)
+                    return meterDataFromWsReview(r);
+            break;
+        }
+
+        case CompareSlotState::Kind::Reference:
+        {
+            auto refs = processorRef.getReferenceAnalyser().getReferences();
+            if (slot.index >= 0 && slot.index < (int)refs.size())
+                return refs[(size_t)slot.index].data;
+            break;
+        }
+
+        default: break;
+    }
+    return MeterData{};
+}
+
+/*static*/ MeterData EchoJayEditor::meterDataFromWsReview(const WsReview& r)
+{
+    MeterData d;
+    d.integrated    = r.data.integ;
+    d.loudnessRange = r.data.range;
+    d.rmsL          = r.data.rmsL;  d.rmsR  = r.data.rmsR;
+    d.peakL         = r.data.peakL; d.peakR = r.data.peakR;
+    d.truePeakL     = r.data.tpL;   d.truePeakR    = r.data.tpR;
+    d.truePeakMaxL  = r.data.tpL;   d.truePeakMaxR = r.data.tpR;
+    d.width         = r.data.width;
+    d.correlation   = r.data.corr;
+    d.crestFactor   = r.data.crest;
+    d.dcOffset      = r.data.dc;
+    d.isSilent      = false;
+    if (r.hasSpectrum) d.spectrum = r.spectrumBands;
+    return d;
+}
+
+// ============================================================================
+// Compare stage 3 — A/B play toggle
+// ============================================================================
+
+juce::String EchoJayEditor::resolveSlotWavPath(const CompareSlotState& slot) const
+{
+    switch (slot.kind)
+    {
+        case CompareSlotState::Kind::Live:
+        case CompareSlotState::Kind::Empty:
+            return {};
+
+        case CompareSlotState::Kind::Snapshot:
+        {
+            auto snaps = processorRef.getSnapshots();
+            if (slot.index >= 0 && slot.index < (int)snaps.size())
+                return snaps[(size_t)slot.index].wavFilePath;
+            return {};
+        }
+
+        case CompareSlotState::Kind::Reference:
+        {
+            auto refs = processorRef.getReferenceAnalyser().getReferences();
+            if (slot.index >= 0 && slot.index < (int)refs.size())
+                return refs[(size_t)slot.index].path;
+            return {};
+        }
+
+        case CompareSlotState::Kind::WsCapture:
+        {
+            for (auto& r : workspace.getReviews())
+            {
+                if (r.id != slot.wsReviewId) continue;
+                // Plugin-origin captures have a local WAV
+                if (r.origin == "plugin" || r.origin == "Plugin")
+                {
+                    auto f = processorRef.getCaptureFolder().getChildFile(r.fileName);
+                    if (f.existsAsFile()) return f.getFullPathName();
+                }
+                // Web-only
+                if (r.audioUrl.isNotEmpty()) return "WEB";
+                return {};
+            }
+            return {};
+        }
+
+        default: return {};
+    }
+}
+
+void EchoJayEditor::toggleComparePlay(bool isTop)
+{
+    int slotIdx = isTop ? 0 : 1;
+    auto& slot = isTop ? compareTop_ : compareBot_;
+    DBG("toggleComparePlay slot=" + juce::String(slotIdx)
+        + " kind=" + juce::String((int)slot.kind));
+    if (slot.kind == CompareSlotState::Kind::Live ||
+        slot.kind == CompareSlotState::Kind::Empty) return;
+
+    auto& s = processorRef.cmpStream[slotIdx];
+
+    // Load file if not yet loaded
+    if (!s.loaded.load())
+    {
+        startCompareStream(slotIdx);
+        if (!s.loaded.load()) { DBG("  file not found"); return; }
+    }
+
+    // Toggle play/pause
+    bool wasPlaying = s.playing.load();
+    s.playing.store(!wasPlaying);
+    DBG("  wasPlaying=" + juce::String((int)wasPlaying)
+        + " -> playing=" + juce::String((int)!wasPlaying));
+
+    // When starting playback, also make this slot audible
+    if (!wasPlaying)
+        processorRef.cmpAudible.store(slotIdx);
+
+    // SYNC between two captures: if both slots are captures (no live) and
+    // sync is on, mirror play/pause to the other slot
+    if (processorRef.cmpSyncToTransport.load() && bothSlotsAreCaptures())
+    {
+        int otherIdx = 1 - slotIdx;
+        auto& other = processorRef.cmpStream[otherIdx];
+        if (!other.loaded.load())
+        {
+            startCompareStream(otherIdx);
+        }
+        if (other.loaded.load())
+        {
+            other.playing.store(!wasPlaying);
+            // When starting synced playback, reset both to same position
+            if (!wasPlaying)
+            {
+                std::lock_guard<std::mutex> lock(processorRef.cmpMutex);
+                other.playbackPos = s.playbackPos;
+            }
+        }
+    }
+
+    updateComparePlayBtns();
+    repaint();
+}
+
+void EchoJayEditor::toggleCompareAudible(bool isTop)
+{
+    int slotIdx = isTop ? 0 : 1;
+    int cur = processorRef.cmpAudible.load();
+
+    if (cur == slotIdx)
+    {
+        // Toggle off — mute this slot (analysis continues)
+        processorRef.cmpAudible.store(-1);
+    }
+    else
+    {
+        // Make this slot audible (stream should already be running)
+        auto& slot = isTop ? compareTop_ : compareBot_;
+        auto wavPath = resolveSlotWavPath(slot);
+        if (wavPath.isEmpty() || wavPath == "WEB") return;
+        processorRef.cmpAudible.store(slotIdx);
+    }
+    updateComparePlayBtns();
+    repaint();
+}
+
+void EchoJayEditor::startCompareStream(int slot)
+{
+    auto& s = (slot == 0) ? compareTop_ : compareBot_;
+    auto wavPath = resolveSlotWavPath(s);
+    if (wavPath.isEmpty() || wavPath == "WEB")
+    {
+        processorRef.stopCompareStream(slot);
+        return;
+    }
+    processorRef.loadCompareFile(slot, wavPath);
+}
+
+bool EchoJayEditor::bothSlotsAreCaptures() const
+{
+    auto isCapture = [](CompareSlotState::Kind k) {
+        return k != CompareSlotState::Kind::Live &&
+               k != CompareSlotState::Kind::Empty;
+    };
+    return isCapture(compareTop_.kind) && isCapture(compareBot_.kind);
+}
+
+void EchoJayEditor::updateComparePlayBtns()
+{
+    auto update = [&](juce::TextButton& btn, const CompareSlotState& slot, bool isTop)
+    {
+        int slotIdx = isTop ? 0 : 1;
+        juce::String wavPath = resolveSlotWavPath(slot);
+        bool canPlay = (slot.kind != CompareSlotState::Kind::Empty &&
+                        slot.kind != CompareSlotState::Kind::Live &&
+                        wavPath != "WEB" && wavPath.isNotEmpty());
+        bool isPlaying = processorRef.cmpStream[slotIdx].playing.load();
+
+        btn.setEnabled(canPlay);
+        // ⏸ when playing, ▶ when stopped
+        btn.setButtonText(isPlaying
+            ? juce::String(juce::CharPointer_UTF8("\xe2\x8f\xb8"))   // ⏸
+            : juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6"))); // ▶
+        btn.setColour(juce::TextButton::textColourOffId,
+                      isPlaying ? C::green : (canPlay ? C::text2 : C::text3));
+    };
+
+    update(comparePlayTopBtn_, compareTop_, true);
+    update(comparePlayBotBtn_, compareBot_, false);
+    updateTransportBar();
+}
+
+void EchoJayEditor::updateTransportBar()
+{
+    int aud = processorRef.cmpAudible.load();
+
+    // A/B selector — lit up when that side is audible
+    cmpABtn_.setColour(juce::TextButton::buttonColourId,
+                       aud == 0 ? juce::Colour(0xff1a2d4a) : C::bg3);
+    cmpABtn_.setColour(juce::TextButton::textColourOffId,
+                       aud == 0 ? C::blue : C::text3);
+    cmpBBtn_.setColour(juce::TextButton::buttonColourId,
+                       aud == 1 ? juce::Colour(0xff1a2d4a) : C::bg3);
+    cmpBBtn_.setColour(juce::TextButton::textColourOffId,
+                       aud == 1 ? C::blue : C::text3);
+
+    // Play button reflects the audible side's play state
+    bool anyPlaying = false;
+    if (aud >= 0 && aud <= 1)
+        anyPlaying = processorRef.cmpStream[aud].playing.load();
+    cmpPlayBtn_.setButtonText(anyPlaying
+        ? juce::String(juce::CharPointer_UTF8("\xe2\x8f\xb8"))   // ⏸
+        : juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6"))); // ▶
+    cmpPlayBtn_.setColour(juce::TextButton::textColourOffId,
+                          anyPlaying ? C::green : C::text2);
 }
 
 void EchoJayEditor::runAICompare()
@@ -2713,24 +3275,6 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
     g.drawText("LINK MONITOR", pad, y, fw, 18, juce::Justification::centredLeft);
     y += 26;
-
-    // Consumer diagnostic bar
-    {
-        const auto& cd = processorRef.consumerDiag;
-        juce::String regStr = cd.regOpened ? "opened"
-                            : (cd.regKey.isEmpty() ? "not tried"
-                                                   : "FAILED errno " + juce::String(cd.regErrno));
-        juce::String diagLine = "registry: " + regStr
-                              + "  |  active slots: " + juce::String(cd.activeSlotCount)
-                              + "  |  names: " + (cd.nameList.isEmpty() ? "(none)" : cd.nameList);
-        juce::String keyLine  = "dir: " + (cd.regKey.isEmpty() ? "(none)" : cd.regKey);
-
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        g.drawText(diagLine, pad, y,      fw, 14, juce::Justification::centredLeft);
-        g.drawText(keyLine,  pad, y + 14, fw, 13, juce::Justification::centredLeft);
-    }
-    y += 34;
 
     // Host channel card — always shown first, above Links
     {
@@ -2828,32 +3372,22 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
 
 void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    auto snaps = processorRef.getSnapshots();
     auto refs = processorRef.getReferenceAnalyser().getReferences();
-    int refOffset = (int)snaps.size() + 100;
-    auto ff = [](float v) { return v > -99.0f ? juce::String(v, 1) : juce::String("N/A"); };
+    int aX = area.getX(), aY = area.getY(), aW = area.getWidth();
+    int cy = aY;
 
-    int pad = 10;
-    int cardW = (area.getWidth() - 12) / 2;
-    int aX = area.getX(), aW = area.getWidth();
-    
-    // Build compare wave positions (don't clear — timer uses them between paints)
-    std::vector<CompareWavePos> newWavePositions;
-    activeWavePlayBtns = 0;
-    int cy = area.getY(); // current Y cursor
+    // --- Preset row (controls positioned by resized()) ---
+    cy += 26;
 
-    // Preset row is at cy (positioned by resized), skip it
-    cy += 26; // preset row height + gap
-
-    // Reference drop zone — sized for 4 tags per row, 3 rows
-    int dropH = 82; // fits 3 rows of tags + padding
+    // --- Reference drop zone ---
+    const int dropH = 82;
     g.setColour(C::bg3);
     g.fillRoundedRectangle((float)aX, (float)cy, (float)aW, (float)dropH, 8.0f);
     g.setColour(C::purple.withAlpha(0.3f));
     g.drawRoundedRectangle((float)aX + 0.5f, (float)cy + 0.5f, (float)aW - 1.0f, (float)dropH - 1.0f, 8.0f, 1.0f);
-    
+
     activeRefRemoveBtns = 0;
-    
+
     if (refs.empty())
     {
         g.setColour(juce::Colour(0xffFF6B9D));
@@ -2867,37 +3401,27 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
     }
     else
     {
-        int tagPad = 6;
-        int tagGap = 4;
-        int tagsPerRow = 4;
+        const int tagPad = 6, tagGap = 4, tagsPerRow = 4;
         int tagW = (aW - tagPad * 2 - tagGap * (tagsPerRow - 1)) / tagsPerRow;
-        int tagH = 20;
-        int tagRowGap = 4;
-        
+        const int tagH = 20, tagRowGap = 4;
+
         for (int i = 0; i < (int)refs.size() && i < 12; ++i)
         {
-            int col = i % tagsPerRow;
-            int row = i / tagsPerRow;
+            int col = i % tagsPerRow, row = i / tagsPerRow;
             int tagX = aX + tagPad + col * (tagW + tagGap);
             int tagY2 = cy + tagPad + row * (tagH + tagRowGap);
-            
-            // Tag pill
+
             g.setColour(juce::Colour(0xffFF6B9D).withAlpha(0.15f));
             g.fillRoundedRectangle((float)tagX, (float)tagY2, (float)tagW, (float)tagH, 6.0f);
             g.setColour(juce::Colour(0xffFF6B9D).withAlpha(0.4f));
             g.drawRoundedRectangle((float)tagX + 0.5f, (float)tagY2 + 0.5f, (float)tagW - 1.0f, (float)tagH - 1.0f, 6.0f, 1.0f);
-            
-            // Name (truncated)
             g.setColour(juce::Colour(0xffFF8FAB));
             g.setFont(juce::Font(juce::FontOptions(8.0f)));
             g.drawText(refs[(size_t)i].name, tagX + 4, tagY2, tagW - 18, tagH, juce::Justification::centredLeft);
-            
-            // X button
             g.setColour(C::text3);
             g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
             g.drawText("x", tagX + tagW - 14, tagY2, 12, tagH, juce::Justification::centred);
-            
-            // Overlay remove button
+
             if (activeRefRemoveBtns < kMaxRefRemoveBtns)
             {
                 int idx = activeRefRemoveBtns++;
@@ -2907,303 +3431,113 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
             }
         }
     }
-    
+
     for (int i = activeRefRemoveBtns; i < kMaxRefRemoveBtns; ++i)
         refRemoveBtns[(size_t)i].setVisible(false);
 
-    cy += dropH + 4; // below drop zone
-    // Dropdowns are at cy (positioned by resized), skip
-    cy += 26; // dropdown height + gap
-    int dropdownY = cy;
-    
-    // Waveform bars above cards — separate from cards so overlays work
-    int wfBarH = 28;
-    auto snapsLocal = processorRef.getSnapshots();
-    auto refsLocal = processorRef.getReferenceAnalyser().getReferences();
-    int refOffsetLocal = (int)snapsLocal.size() + 100;
-    
-    auto drawWaveBar = [&](int wx, int wy, int ww, const std::vector<float>& waveform, 
-                           const juce::String& wavPath, float dur, bool isRef)
-    {
-        g.setColour(C::bg3);
-        g.fillRoundedRectangle((float)wx, (float)wy, (float)ww, (float)wfBarH, 6.0f);
-        
-        if (!waveform.empty())
-        {
-            // Play circle
-            int playR = 18;
-            int playX2 = wx + 4;
-            int playY2 = wy + (wfBarH - playR) / 2;
-            bool playing = (currentlyPlayingChatWav == wavPath && wavPath.isNotEmpty())
-                        || (processorRef.abPlayingRef.load() && processorRef.abFilePath == wavPath);
-            g.setColour(playing ? (isRef ? juce::Colour(0xffFF6B9D).withAlpha(0.5f) : juce::Colour(0xff06b6d4).withAlpha(0.4f)) : (isRef ? juce::Colour(0xffFF6B9D).withAlpha(0.3f) : juce::Colour(0xff06b6d4).withAlpha(0.15f)));
-            g.fillEllipse((float)playX2, (float)playY2, (float)playR, (float)playR);
-            g.setColour(juce::Colours::white);
-            if (playing) {
-                // Pause icon: two vertical bars
-                g.fillRect((float)playX2 + 5.0f, (float)playY2 + 5.0f, 3.0f, 8.0f);
-                g.fillRect((float)playX2 + 10.0f, (float)playY2 + 5.0f, 3.0f, 8.0f);
-            } else {
-                juce::Path tri;
-                tri.addTriangle((float)playX2 + 7, (float)playY2 + 4, (float)playX2 + 7, (float)playY2 + 14, (float)playX2 + 14, (float)playY2 + 9);
-                g.fillPath(tri);
-            }
-            
-            // Waveform
-            int wfStartX = wx + playR + 10;
-            int wfBarW = ww - playR - 14;
-            int numPts = (int)waveform.size();
-            if (numPts > 0 && wfBarW > 0)
-            {
-                float pxPerPt = (float)wfBarW / (float)numPts;
-                float centreY2 = (float)wy + (float)wfBarH * 0.5f;
-                float halfH2 = (float)wfBarH * 0.38f;
-                
-                // Calculate play fraction for colouring
-                float cardPlayFrac = -1.0f;
-                if (playing) {
-                    if (processorRef.abPlayingRef.load() && processorRef.abSampleCount > 0)
-                        cardPlayFrac = (float)processorRef.abPlaybackPos / (float)processorRef.abSampleCount;
-                    else if (chatPlaybackDuration > 0 && chatPlaybackStartTime > 0) {
-                        double el2 = (juce::Time::getMillisecondCounterHiRes() - chatPlaybackStartTime) / 1000.0 + chatPlaybackOffset;
-                        cardPlayFrac = (float)(el2 / chatPlaybackDuration);
-                    }
-                    cardPlayFrac = juce::jlimit(0.0f, 1.0f, cardPlayFrac);
-                }
-                
-                for (int i2 = 0; i2 < numPts; ++i2)
-                {
-                    float px = (float)wfStartX + (float)i2 * pxPerPt;
-                    float h = waveform[(size_t)i2] * halfH2;
-                    float frac = (float)i2 / (float)numPts;
-                    
-                    if (cardPlayFrac >= 0 && frac <= cardPlayFrac) {
-                        // Played portion
-                        if (isRef) {
-                            juce::Colour playedCol = juce::Colour(0xffFF6B9D).interpolatedWith(
-                                juce::Colour(0xffFF8FAB), frac / juce::jmax(0.01f, cardPlayFrac));
-                            g.setColour(playedCol.withAlpha(0.85f));
-                        } else {
-                            juce::Colour playedCol = juce::Colour(0xff06b6d4).interpolatedWith(
-                                juce::Colour(0xff22d3ee), frac / juce::jmax(0.01f, cardPlayFrac));
-                            g.setColour(playedCol.withAlpha(0.85f));
-                        }
-                    } else {
-                        // Unplayed or not playing
-                        if (isRef)
-                            g.setColour(juce::Colour(0xffFF6B9D).withAlpha(playing ? 0.2f : 0.5f));
-                        else
-                            g.setColour(C::blue.withAlpha(playing ? 0.2f : 0.5f));
-                    }
-                    g.fillRect(px, centreY2 - h, std::max(1.0f, pxPerPt - 0.3f), h * 2.0f);
-                }
-                
-                // Playback cursor
-                if (playing && cardPlayFrac >= 0)
-                {
-                    float cursorX = (float)wfStartX + cardPlayFrac * (float)wfBarW;
-                    g.setColour((isRef ? juce::Colour(0xffFFB3C6) : juce::Colour(0xff67e8f9)).withAlpha(0.9f));
-                    g.drawVerticalLine((int)cursorX, (float)wy + 2, (float)(wy + wfBarH - 2));
-                }
-            }
-        }
-        
-        // Store position for overlay
-        if (wavPath.isNotEmpty())
-            newWavePositions.push_back({ { wx, wy, ww, wfBarH }, wavPath, dur });
-    };
-    
-    // Helper to draw placeholder waveform bar
-    auto drawEmptyWaveBar = [&](int wx, int wy, int ww) {
-        g.setColour(C::bg3);
-        g.fillRoundedRectangle((float)wx, (float)wy, (float)ww, (float)wfBarH, 6.0f);
-        // Fake greyed-out waveform
-        juce::Random rng(42); // fixed seed for consistent look
-        float centreY2 = (float)wy + (float)wfBarH * 0.5f;
-        int numBars = ww / 3;
-        for (int i2 = 0; i2 < numBars; ++i2)
-        {
-            float px = (float)wx + 4.0f + (float)i2 * 3.0f;
-            float h = (2.0f + rng.nextFloat() * 6.0f);
-            g.setColour(C::text3.withAlpha(0.12f));
-            g.fillRect(px, centreY2 - h, 2.0f, h * 2.0f);
-        }
-    };
-    
-    // Draw waveform bars for each slot
-    int idALocal = compareSlotABox.getSelectedId();
-    int idBLocal = compareSlotBBox.getSelectedId();
-    
-    if (idALocal > 0)
-    {
-        if (idALocal >= refOffsetLocal && (idALocal - refOffsetLocal) < (int)refsLocal.size()) {
-            auto& r = refsLocal[(size_t)(idALocal - refOffsetLocal)];
-            drawWaveBar(aX, cy + 4, cardW, r.waveformThumbnail, r.path, r.durationSeconds, true);
-        } else if ((idALocal - 1) < (int)snapsLocal.size()) {
-            auto& s = snapsLocal[(size_t)(idALocal - 1)];
-            drawWaveBar(aX, cy + 4, cardW, s.waveformThumbnail, s.wavFilePath, s.durationSeconds, false);
-        }
-    }
-    else
-        drawEmptyWaveBar(aX, cy + 4, cardW);
-    
-    if (idBLocal > 0)
-    {
-        if (idBLocal >= refOffsetLocal && (idBLocal - refOffsetLocal) < (int)refsLocal.size()) {
-            auto& r = refsLocal[(size_t)(idBLocal - refOffsetLocal)];
-            drawWaveBar(aX + cardW + 12, cy + 4, cardW, r.waveformThumbnail, r.path, r.durationSeconds, true);
-        } else if ((idBLocal - 1) < (int)snapsLocal.size()) {
-            auto& s = snapsLocal[(size_t)(idBLocal - 1)];
-            drawWaveBar(aX + cardW + 12, cy + 4, cardW, s.waveformThumbnail, s.wavFilePath, s.durationSeconds, false);
-        }
-    }
-    else
-        drawEmptyWaveBar(aX + cardW + 12, cy + 4, cardW);
-    
-    cy += wfBarH + 8;
-    
-    // Cards below waveform bars
-    int cardY = cy;
-    int cardH = area.getY() + area.getHeight() - cardY - 36;
-    
-    auto drawCompareCard = [&](juce::Rectangle<int> card, const MeterData& d, const juce::String& title,
-                                bool isRef, const std::vector<float>& waveform, float dur,
-                                const std::array<float, 64>& eqCurve, const juce::String& wavPath)
-    {
-        g.setColour(C::bg2);
-        g.fillRoundedRectangle(card.toFloat(), 8.0f);
-        g.setColour(isRef ? juce::Colour(0xffFF6B9D).withAlpha(0.35f) : C::border);
-        g.drawRoundedRectangle(card.toFloat(), 8.0f, 1.0f);
-        
-        int cx = card.getX() + 8, cy = card.getY() + 6, cw = card.getWidth() - 16;
-        
-        // Reference badge
-        if (isRef)
-        {
-            g.setColour(juce::Colour(0xffFF6B9D));
-            g.fillRoundedRectangle((float)cx, (float)cy, 58.0f, 14.0f, 3.0f);
-            g.setColour(juce::Colours::white);
-            g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
-            g.drawText("REFERENCE", cx, cy, 58, 14, juce::Justification::centred);
-            cy += 16;
-        }
-        
-        // Title
-        g.setColour(C::text);
-        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-        g.drawText(title, cx, cy, cw, 13, juce::Justification::centredLeft);
-        
-        // Subtitle: duration (+ genre for passes only)
-        int mins = (int)dur / 60, secs = (int)dur % 60;
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(8.0f)));
-        juce::String sub = isRef 
-            ? juce::String::formatted("%d:%02d", mins, secs)
-            : processorRef.getGenre() + " - " + juce::String::formatted("%d:%02d", mins, secs);
-        g.drawText(sub, cx, cy + 12, cw, 10, juce::Justification::centredLeft);
-        cy += 24;
-        
-        // Meter rows — compact
-        g.setFont(juce::Font(juce::FontOptions(9.0f)));
-        auto row = [&](const juce::String& lbl, const juce::String& val, juce::Colour col) {
-            g.setColour(C::text3);
-            g.drawText(lbl, cx, cy, cw / 2, 13, juce::Justification::centredLeft);
-            g.setColour(col);
-            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-            g.drawText(val, cx + cw / 2, cy, cw / 2, 13, juce::Justification::centredRight);
-            g.setFont(juce::Font(juce::FontOptions(9.0f)));
-            cy += 14;
-        };
-        
-        row("Integrated", ff(d.integrated) + " LUFS", d.integrated > -14 ? C::amber : C::green);
-        row("True Peak L", ff(d.truePeakL) + " dBTP", d.truePeakL > -0.1f ? C::red : C::green);
-        row("True Peak R", ff(d.truePeakR) + " dBTP", d.truePeakR > -0.1f ? C::red : C::green);
-        row("LRA", ff(d.loudnessRange) + " LU", C::text2);
-        row("Crest", juce::String(d.crestFactor, 1) + " dB", d.crestFactor > 12 ? C::green : C::amber);
-        row("Width", juce::String(d.width, 1) + " %", C::blue2);
-        row("Correlation", juce::String(d.correlation, 2), d.correlation < 0.5f ? C::amber : C::green);
-        row("DC", juce::String(d.dcOffset, 2) + " mV", std::abs(d.dcOffset) > 5 ? C::red : C::text3);
-        
-        // EQ Curve
-        cy += 2;
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
-        g.drawText("EQ CURVE", cx, cy, cw, 10, juce::Justification::centredLeft);
-        cy += 11;
-        
-        int eqH = std::max(24, card.getY() + card.getHeight() - cy - 4);
-        g.setColour(C::bg.withAlpha(0.5f));
-        g.fillRoundedRectangle((float)cx, (float)cy, (float)cw, (float)eqH, 4.0f);
-        
-        if (eqH > 8)
-        {
-            juce::Path eqPath;
-            float minDB = -80.0f, maxDB = 0.0f;
-            for (int i = 0; i < 64; ++i)
-            {
-                float xp = (float)cx + ((float)i / 63.0f) * (float)cw;
-                float db = juce::jlimit(minDB, maxDB, eqCurve[(size_t)i]);
-                float yp = (float)cy + (float)eqH * (1.0f - (db - minDB) / (maxDB - minDB));
-                if (i == 0) eqPath.startNewSubPath(xp, yp);
-                else eqPath.lineTo(xp, yp);
-            }
-            g.setColour(isRef ? juce::Colour(0xffFF6B9D) : C::blue);
-            g.strokePath(eqPath, juce::PathStrokeType(1.5f));
-            
-            juce::Path fillPath = eqPath;
-            fillPath.lineTo((float)(cx + cw), (float)(cy + eqH));
-            fillPath.lineTo((float)cx, (float)(cy + eqH));
-            fillPath.closeSubPath();
-            g.setColour((isRef ? juce::Colour(0xffFF6B9D) : C::blue).withAlpha(0.12f));
-            g.fillPath(fillPath);
-        }
-    };
+    cy += dropH + 4;
 
-    // Draw cards
-    int idA = compareSlotABox.getSelectedId();
-    auto cardARect = juce::Rectangle<int>(area.getX(), cardY, cardW, cardH);
-    if (idA > 0) {
-        if (idA >= refOffset && (idA - refOffset) < (int)refs.size()) {
-            auto& r = refs[(size_t)(idA - refOffset)];
-            drawCompareCard(cardARect, r.data, r.name, true, r.waveformThumbnail, r.durationSeconds, r.eqCurve, r.path);
-        } else if ((idA - 1) < (int)snaps.size()) {
-            auto& s = snaps[(size_t)(idA - 1)];
-            drawCompareCard(cardARect, s.averagedData, s.name, false, s.waveformThumbnail, s.durationSeconds, s.eqCurve, s.wavFilePath);
+    // --- Meter-type selector row (buttons positioned by resized()) ---
+    cy += 28; // 24px button height + 4px gap
+
+    // --- Two stacked panels ---
+    const int kBtnAreaH = 36;  // reserved for AI Compare button at bottom
+    const int kGap = 6;
+    const int kHeaderH = 20;
+    int panelsH = aY + area.getHeight() - cy - kBtnAreaH;
+    int panelContentH = (panelsH - kHeaderH * 2 - kGap) / 2;
+    if (panelContentH < 40) panelContentH = 40;
+
+    // TOP PANEL header strip with "A" label
+    {
+        int aud = processorRef.cmpAudible.load();
+        g.setColour(juce::Colour(0xff141626));
+        g.fillRoundedRectangle((float)aX, (float)cy, (float)aW, (float)kHeaderH, 4.0f);
+        // "A" label — lit up when this side is audible
+        g.setColour(aud == 0 ? C::blue : C::text3.withAlpha(0.4f));
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        g.drawText("A", aX + 4, cy, 14, kHeaderH, juce::Justification::centredLeft);
+        if (compareTop_.kind == CompareSlotState::Kind::Live)
+        {
+            g.setColour(C::green);
+            g.fillEllipse((float)(aX + 18), (float)(cy + kHeaderH / 2 - 3), 6.0f, 6.0f);
         }
-    } else {
-        // Empty card placeholder
-        g.setColour(C::bg2);
-        g.fillRoundedRectangle(cardARect.toFloat(), 8.0f);
-        g.setColour(C::border);
-        g.drawRoundedRectangle(cardARect.toFloat(), 8.0f, 1.0f);
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(11.0f)));
-        g.drawText("Capture a pass or select\na mix from the dropdown", cardARect, juce::Justification::centred);
     }
-    
-    int idB = compareSlotBBox.getSelectedId();
-    auto cardBRect = juce::Rectangle<int>(area.getX() + cardW + 12, cardY, cardW, cardH);
-    if (idB > 0) {
-        if (idB >= refOffset && (idB - refOffset) < (int)refs.size()) {
-            auto& r = refs[(size_t)(idB - refOffset)];
-            drawCompareCard(cardBRect, r.data, r.name, true, r.waveformThumbnail, r.durationSeconds, r.eqCurve, r.path);
-        } else if ((idB - 1) < (int)snaps.size()) {
-            auto& s = snaps[(size_t)(idB - 1)];
-            drawCompareCard(cardBRect, s.averagedData, s.name, false, s.waveformThumbnail, s.durationSeconds, s.eqCurve, s.wavFilePath);
+    cy += kHeaderH + 2;
+
+    // Top panel content — always full brightness
+    {
+        auto topRect = juce::Rectangle<int>(aX, cy, aW, panelContentH);
+        auto md = getSlotMeterData(compareTop_);
+        bool topIsLive = (compareTop_.kind == CompareSlotState::Kind::Live);
+        switch (compareMeterId_)
+        {
+            case 1:  paintCompareSpectrum(g, topRect, md, topIsLive); break;
+            case 2:  paintLevelsPanel  (g, topRect, md); break;
+            case 3:  paintStereoPanel  (g, topRect, md); break;
+            case 4:  paintLoudnessPanel(g, topRect, md); break;
+            default: paintCompareWaveform(g, topRect, compareTop_, processorRef.cmpAudible.load() == 0); break;
         }
-    } else {
-        // Empty card placeholder
-        g.setColour(C::bg2);
-        g.fillRoundedRectangle(cardBRect.toFloat(), 8.0f);
-        g.setColour(C::border);
-        g.drawRoundedRectangle(cardBRect.toFloat(), 8.0f, 1.0f);
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(11.0f)));
-        g.drawText("Drop a reference track\nor select from dropdown", cardBRect, juce::Justification::centred);
+    }
+    cy += panelContentH + kGap;
+
+    // BOTTOM PANEL header strip with "B" label
+    {
+        int aud = processorRef.cmpAudible.load();
+        g.setColour(juce::Colour(0xff141626));
+        g.fillRoundedRectangle((float)aX, (float)cy, (float)aW, (float)kHeaderH, 4.0f);
+        g.setColour(aud == 1 ? C::blue : C::text3.withAlpha(0.4f));
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        g.drawText("B", aX + 4, cy, 14, kHeaderH, juce::Justification::centredLeft);
+        if (compareBot_.kind == CompareSlotState::Kind::Live)
+        {
+            g.setColour(C::green);
+            g.fillEllipse((float)(aX + 18), (float)(cy + kHeaderH / 2 - 3), 6.0f, 6.0f);
+        }
+    }
+    cy += kHeaderH + 2;
+
+    // Bottom panel content — always full brightness
+    {
+        auto botRect = juce::Rectangle<int>(aX, cy, aW, panelContentH);
+        if (compareBot_.kind == CompareSlotState::Kind::Empty)
+        {
+            g.setColour(C::bg2);
+            g.fillRoundedRectangle(botRect.toFloat(), 8.0f);
+            g.setColour(C::border);
+            g.drawRoundedRectangle(botRect.toFloat().reduced(0.5f), 8.0f, 1.0f);
+            g.setColour(C::border2);
+            g.drawRoundedRectangle(botRect.reduced(10).toFloat(), 5.0f, 1.0f);
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(11.5f)));
+            g.drawText("Load a reference or previous capture to compare",
+                       botRect.reduced(24, 0), juce::Justification::centred, true);
+        }
+        else
+        {
+            auto md = getSlotMeterData(compareBot_);
+            bool botIsLive = (compareBot_.kind == CompareSlotState::Kind::Live);
+            switch (compareMeterId_)
+            {
+                case 1:  paintCompareSpectrum(g, botRect, md, botIsLive); break;
+                case 2:  paintLevelsPanel  (g, botRect, md); break;
+                case 3:  paintStereoPanel  (g, botRect, md); break;
+                case 4:  paintLoudnessPanel(g, botRect, md); break;
+                default: paintCompareWaveform(g, botRect, compareBot_, processorRef.cmpAudible.load() == 1); break;
+            }
+            if (resolveSlotWavPath(compareBot_) == "WEB")
+            {
+                g.setColour(juce::Colour(0xffFFAA44).withAlpha(0.85f));
+                g.setFont(juce::Font(juce::FontOptions(9.0f)));
+                g.drawText("Stored on the web \xe2\x80\x94 open echojay.ai to play",
+                           botRect.reduced(8, 4), juce::Justification::centredTop, true);
+            }
+        }
     }
 
     // Drag-drop overlay
-    if (dragHovering) {
+    if (dragHovering)
+    {
         g.setColour(C::purple.withAlpha(0.12f));
         g.fillRoundedRectangle(area.toFloat(), 12.0f);
         g.setColour(C::purple.withAlpha(0.6f));
@@ -3212,9 +3546,285 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
         g.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
         g.drawText("Drop reference track here", area, juce::Justification::centred);
     }
-    
-    // Update positions for timer to use
-    compareWavePositions = newWavePositions;
+
+}
+
+// ============================================================================
+// Compare waveform — draws stored or live rolling waveform per panel
+// ============================================================================
+void EchoJayEditor::paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int> area,
+                                          const CompareSlotState& slot, bool isPlaying)
+{
+    // Background
+    g.setColour(C::bg2);
+    g.fillRoundedRectangle(area.toFloat(), 6.0f);
+
+    const int pad = 8;
+    auto inner = area.reduced(pad, pad);
+    if (inner.getWidth() < 10 || inner.getHeight() < 10) return;
+
+    float centreY = (float)inner.getY() + (float)inner.getHeight() * 0.5f;
+    float halfH   = (float)inner.getHeight() * 0.45f;
+
+    // Draw centre line
+    g.setColour(C::border.withAlpha(0.3f));
+    g.drawHorizontalLine((int)centreY, (float)inner.getX(), (float)inner.getRight());
+
+    bool isLive = (slot.kind == CompareSlotState::Kind::Live);
+    int slotIdx = (&slot == &compareTop_) ? 0 : 1;
+
+    // ===== LIVE SLOT: real-time scrolling waveform =====
+    if (isLive)
+    {
+        MeterData md = processorRef.getMeterEngine().getMeterData();
+        int count = md.waveformCount;
+        if (count == 0)
+        {
+            g.setColour(C::text3.withAlpha(0.5f));
+            g.setFont(juce::Font(juce::FontOptions(11.0f)));
+            g.drawText("Waiting for signal\xe2\x80\xa6",
+                       inner, juce::Justification::centred, true);
+            return;
+        }
+
+        int drawCount = std::min(count, inner.getWidth());
+        int startIdx = (md.waveformWritePos - drawCount + MeterData::waveformSize) % MeterData::waveformSize;
+        float pxPerPt = (float)inner.getWidth() / (float)drawCount;
+
+        for (int i = 0; i < drawCount; ++i)
+        {
+            int idx = (startIdx + i) % MeterData::waveformSize;
+            auto& wp = md.waveform[(size_t)idx];
+            float px  = (float)inner.getX() + (float)i * pxPerPt;
+            float top = centreY - wp.maxVal * halfH;
+            float bot = centreY - wp.minVal * halfH;
+            float bH  = std::max(1.0f, bot - top);
+            float frac = (float)i / (float)drawCount;
+            g.setColour(C::blue.interpolatedWith(C::purple, frac).withAlpha(0.75f));
+            g.fillRect(px, top, std::max(1.0f, pxPerPt - 0.5f), bH);
+        }
+
+        g.setColour(C::green);
+        g.fillEllipse((float)(inner.getRight() - 8), centreY - 3.0f, 6.0f, 6.0f);
+        return;
+    }
+
+    // ===== CAPTURE / REFERENCE SLOT: static full waveform with playhead =====
+
+    // Collect stored waveform points
+    struct WP { float minVal; float maxVal; };
+    std::vector<WP> pts;
+
+    switch (slot.kind)
+    {
+        case CompareSlotState::Kind::Snapshot:
+        {
+            auto snaps = processorRef.getSnapshots();
+            if (slot.index >= 0 && slot.index < (int)snaps.size())
+            {
+                auto& wf = snaps[(size_t)slot.index].waveformThumbnail;
+                for (auto v : wf)
+                    pts.push_back({ -std::abs(v), std::abs(v) });
+            }
+            break;
+        }
+        case CompareSlotState::Kind::WsCapture:
+        {
+            for (auto& r : workspace.getReviews())
+            {
+                if (r.id == slot.wsReviewId && r.waveform.isArray())
+                {
+                    auto* arr = r.waveform.getArray();
+                    for (auto& v : *arr)
+                    {
+                        if (auto* obj = v.getDynamicObject())
+                        {
+                            float mx = (float)(double)obj->getProperty("x");
+                            float mn = (float)(double)obj->getProperty("n");
+                            pts.push_back({ mn, mx });
+                        }
+                        else
+                        {
+                            float peak = (float)(double)v;
+                            pts.push_back({ -std::abs(peak), std::abs(peak) });
+                        }
+                    }
+                    break;
+                }
+            }
+            break;
+        }
+        case CompareSlotState::Kind::Reference:
+        {
+            auto refs = processorRef.getReferenceAnalyser().getReferences();
+            if (slot.index >= 0 && slot.index < (int)refs.size())
+            {
+                auto& wf = refs[(size_t)slot.index].waveformThumbnail;
+                for (auto v : wf)
+                    pts.push_back({ -std::abs(v), std::abs(v) });
+            }
+            break;
+        }
+        default: break;
+    }
+
+    if (pts.empty())
+    {
+        g.setColour(C::text3.withAlpha(0.5f));
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText("No waveform data", inner, juce::Justification::centred, true);
+        return;
+    }
+
+    // Register seek area for click handling
+    cmpWaveSeekAreas_[(size_t)slotIdx] = { inner, slotIdx };
+
+    // Draw static waveform (entire file, fit to panel width)
+    int numPts = (int)pts.size();
+    float pxPerPt = (float)inner.getWidth() / (float)numPts;
+
+    // Get playback fraction for played/unplayed colouring
+    bool isStreamPlaying = processorRef.cmpStream[slotIdx].playing.load();
+    float playFrac = 0.0f;
+    if (processorRef.cmpStream[slotIdx].loaded.load())
+    {
+        auto& s = processorRef.cmpStream[slotIdx];
+        if (s.sampleCount > 0)
+            playFrac = (float)s.playbackPos / (float)s.sampleCount;
+    }
+
+    for (int i = 0; i < numPts; ++i)
+    {
+        float px  = (float)inner.getX() + (float)i * pxPerPt;
+        float top = centreY - pts[(size_t)i].maxVal * halfH;
+        float bot = centreY - pts[(size_t)i].minVal * halfH;
+        float bH  = std::max(1.0f, bot - top);
+        float frac = (float)i / (float)numPts;
+        // Dim bars past the playhead when playing
+        float alpha = (isStreamPlaying && frac > playFrac) ? 0.3f : 0.75f;
+        g.setColour(C::blue.interpolatedWith(C::purple, frac).withAlpha(alpha));
+        g.fillRect(px, top, std::max(1.0f, pxPerPt - 0.5f), bH);
+    }
+
+    // Draw playhead line (visible when loaded, even if paused)
+    if (processorRef.cmpStream[slotIdx].loaded.load() && playFrac > 0.001f)
+    {
+        float cursorX = (float)inner.getX() + playFrac * (float)inner.getWidth();
+        g.setColour(isStreamPlaying ? juce::Colours::white : C::text3);
+        g.drawVerticalLine((int)cursorX, (float)inner.getY(), (float)inner.getBottom());
+    }
+
+    // Audible indicator
+    if (isPlaying)
+    {
+        g.setColour(C::green.withAlpha(0.8f));
+        g.fillEllipse((float)(inner.getRight() - 8), centreY - 3.0f, 6.0f, 6.0f);
+    }
+
+    // Web-only: can't seek
+    juce::String wavPath = resolveSlotWavPath(slot);
+    if (wavPath == "WEB")
+    {
+        // Clear seek area — no seeking for web captures
+        cmpWaveSeekAreas_[(size_t)slotIdx] = { {}, -1 };
+    }
+}
+
+// ============================================================================
+// Compare spectrum — independent static panel, no shared peak-hold state
+// Each panel calls this separately; it reads only from md and local variables,
+// so top and bottom spectra never interfere with each other or with the
+// Meters-tab spectrum state.
+// ============================================================================
+
+void EchoJayEditor::paintCompareSpectrum(juce::Graphics& g, juce::Rectangle<int> area,
+                                          const MeterData& md, bool isLive)
+{
+    drawPanel(g, area, "SPECTRUM", C::purple);
+
+    int x = area.getX() + 14, y = area.getY() + 28;
+    int w = area.getWidth() - 28, h = area.getHeight() - 36;
+    if (w < 4 || h < 10) return;
+    int barMaxH = h - 14;
+
+    constexpr int N = MeterData::numSpecBins; // 64
+
+    // Auto-range from this panel's data only
+    float peakDb = -120.0f;
+    for (int i = 0; i < N; ++i)
+        if (md.spectrum[(size_t)i] > peakDb) peakDb = md.spectrum[(size_t)i];
+
+    // Show placeholder when there is truly no data
+    if (peakDb < -119.0f)
+    {
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(9.5f)));
+        g.drawText(isLive ? "No signal" : "No spectrum data",
+                   area.reduced(8), juce::Justification::centred, false);
+        return;
+    }
+
+    float dbMax = std::max(-20.0f, peakDb + 3.0f);
+    float dbMin = dbMax - 66.0f;
+
+    const double logMin = std::log2(20.0), logMax = std::log2(20000.0);
+    int numInterp = juce::jmin(w, 256);
+
+    // Cubic Catmull-Rom interpolation across bins
+    auto getInterp = [&](float fBin) -> float {
+        int i0  = juce::jlimit(0, N - 1, (int)fBin);
+        int i1  = juce::jlimit(0, N - 1, i0 + 1);
+        int im1 = juce::jlimit(0, N - 1, i0 - 1);
+        int i2  = juce::jlimit(0, N - 1, i0 + 2);
+        float t = fBin - (float)i0;
+        float a = md.spectrum[(size_t)im1], b = md.spectrum[(size_t)i0];
+        float c = md.spectrum[(size_t)i1],  d = md.spectrum[(size_t)i2];
+        return b + 0.5f * t * (c - a + t * (2.0f*a - 5.0f*b + 4.0f*c - d
+                                              + t * (3.0f*(b - c) + d - a)));
+    };
+
+    juce::Path fillPath, linePath;
+    fillPath.startNewSubPath((float)x, (float)(y + barMaxH));
+    bool lineStarted = false;
+
+    for (int i = 0; i < numInterp; ++i)
+    {
+        float fBin = (float)i / (float)(numInterp - 1) * (float)(N - 1);
+        float db   = juce::jlimit(dbMin, dbMax, getInterp(fBin));
+        float n    = (db - dbMin) / (dbMax - dbMin);
+        double binFreq  = 20.0 * std::pow(2.0, (double)fBin / (double)N * (logMax - logMin));
+        double normPos  = (std::log2(binFreq) - logMin) / (logMax - logMin);
+        float px = (float)x + (float)(normPos * w);
+        float py = (float)(y + barMaxH) - n * (float)barMaxH;
+        fillPath.lineTo(px, py);
+        if (!lineStarted) { linePath.startNewSubPath(px, py); lineStarted = true; }
+        else              linePath.lineTo(px, py);
+    }
+    fillPath.lineTo((float)(x + w), (float)(y + barMaxH));
+    fillPath.closeSubPath();
+
+    g.saveState();
+    g.reduceClipRegion(x, y, w, h);
+
+    // Filled area
+    juce::ColourGradient grad(
+        C::blue.withAlpha(0.5f),   (float)x, (float)(y + barMaxH),
+        C::purple.withAlpha(0.65f),(float)x, (float)y, false);
+    g.setGradientFill(grad);
+    g.fillPath(fillPath);
+
+    // Outline
+    g.setColour(juce::Colours::white.withAlpha(0.35f));
+    g.strokePath(linePath, juce::PathStrokeType(1.0f));
+
+    g.restoreState();
+
+    // Small live-signal dot in top-right corner so user knows which panel is live
+    if (isLive)
+    {
+        g.setColour(C::green.withAlpha(0.85f));
+        g.fillEllipse((float)(area.getRight() - 12), (float)(area.getY() + 8), 5.0f, 5.0f);
+    }
 }
 
 // ============================================================================
@@ -3232,6 +3842,14 @@ void EchoJayEditor::showSettingsView()
     settingsLanguage.setVisible(true);
     saveSettingsBtn.setVisible(true); settingsSavedLabel.setVisible(true);
     for (auto& b : dawButtons) b.setVisible(true);
+    {
+        static constexpr float kScales[] = { 0.80f, 0.90f, 1.00f, 1.10f, 1.25f, 1.50f };
+        int selId = 3; // default 100%
+        for (int i = 0; i < 6; ++i)
+            if (std::abs(uiScale_ - kScales[i]) < 0.01f) { selId = i + 1; break; }
+        uiScaleCombo.setSelectedId(selId, juce::dontSendNotification);
+        uiScaleCombo.setVisible(true);
+    }
 
     // Plugins row: scan button + View all + Help & Support. No inline list.
     settingsScanBtn.setVisible(true);
@@ -3304,6 +3922,7 @@ void EchoJayEditor::hideSettingsView()
     settingsPlugins.setVisible(false); settingsExpLevel.setVisible(false);
     settingsLanguage.setVisible(false);
     saveSettingsBtn.setVisible(false); settingsSavedLabel.setVisible(false);
+    uiScaleCombo.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
     settingsPluginViewport.setVisible(false);
     settingsPluginSearchBox.setVisible(false);
@@ -3325,6 +3944,9 @@ void EchoJayEditor::switchToTab(Tab t)
     // Tear down any active overlay views
     if (currentView == View::Compare) { currentView = View::Meters; hideCompareView(); }
     if (currentView == View::Settings) hideSettingsView();
+    // Close any hosted plugin editor (inline or pop-out) when leaving Chain tab
+    if (t != Tab::Chain) chainListPanel.closeAllEditors();
+    // Note: the first addChildComponent(chainListPanel) is in the constructor
 
     // (Link tab has no persistent child components — all painted)
 
@@ -3360,9 +3982,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
-            chainRackStrip.setVisible(false);
-            chainEditorHolder.setVisible(false);
-            chainWarnOverlay.setVisible(false);
+            chainListPanel.setVisible(false);
             visualMode = true; // Visualisation tab always shows the particle visual
             chatSidebar.setVisible(false);
             if (!compactMode)
@@ -3380,9 +4000,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
-            chainRackStrip.setVisible(false);
-            chainEditorHolder.setVisible(false);
-            chainWarnOverlay.setVisible(false);
+            chainListPanel.setVisible(false);
             if (!compactMode)
             {
                 chatSidebar.setVisible(true);
@@ -3405,9 +4023,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
-            chainRackStrip.setVisible(false);
-            chainEditorHolder.setVisible(false);
-            chainWarnOverlay.setVisible(false);
+            chainListPanel.setVisible(false);
             // Split layout (meters left, chat right) — same as Visualisation.
             // Tear down settings/compare so their content can't bleed in.
             if (currentView == View::Settings) hideSettingsView();
@@ -3431,9 +4047,10 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
-            chainRackStrip.setVisible(false);
-            chainEditorHolder.setVisible(false);
-            chainWarnOverlay.setVisible(false);
+            chainListPanel.setVisible(false);
+            // Stop chat AB playback — Compare has its own cmpStream player
+            if (processorRef.abActive.load())
+                stopChatPlayback();
             currentView = View::Compare;
             chatSidebar.setVisible(false);
             showCompareView(); // sets up compare components and calls resized/repaint
@@ -3454,68 +4071,41 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
-            chainRackStrip.setVisible(false);
-            chainEditorHolder.setVisible(false);
-            chainWarnOverlay.setVisible(false);
+            chainListPanel.setVisible(false);
             chatSidebar.setVisible(false);
             showSettingsView(); // sets currentView = Settings, calls resized/repaint
             chatScroll.setVisible(false);
             chatInput.setVisible(false);
             chatSendBtn.setVisible(false);
             chatTextSizeBtn.setVisible(false);
+            usageLabel.setVisible(false); // credits are painted bottom-right instead
             return; // showSettingsView already called resized/repaint
 
         case Tab::Chain:
         {
             chatSidebar.setVisible(false);
-            chatScroll.setVisible(false);
-            chatInput.setVisible(false);
-            chatSendBtn.setVisible(false);
-            chatTextSizeBtn.setVisible(false);
-            upgradeBtn.setVisible(false);
-            // Show CHAIN tab components
-            chainScanBtn.setVisible(true);
-            chainStatusLabel.setVisible(true);
-            chainDebugJsonBox.setVisible(true);
-            chainRecommendLabel.setVisible(true);
-            chainSearchBox.setVisible(true);
-            chainPluginList.setVisible(true);
-            chainLoadBtn.setVisible(true);
-            chainRackStrip.setVisible(true);
-            chainEditorHolder.setVisible(true);
+            // Show AI assistant chat on the right (unless collapsed)
+            if (!compactMode)
+            {
+                bool showChat = !chainChatCollapsed_;
+                chatScroll.setVisible(showChat);
+                chatInput.setVisible(showChat);
+                chatSendBtn.setVisible(showChat);
+            }
+            // Show CHAIN tab component
+            chainListPanel.setVisible(true);
             {
                 auto& ch = processorRef.getChainHost();
-                // Auto-start a refresh on first open
+                // Auto-start a scan on first open (data ready for picker popup)
                 if (ch.getNumPlugins() == 0 && !ch.isScanning())
                     ch.startScan();
+                // Keep list model populated for the picker popup
                 chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText(), chainFormatFilter_);
                 chainPluginList.updateContent();
                 // Rebuild rack strip from current chain state
-                chainRackStrip.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
-                // Rebuild resolver and update readout
+                chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+                // Rebuild resolver
                 ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
-                chainRecommendLabel.setText(
-                    "recommendable: " + juce::String(ch.getRecommendableCount())
-                    + " resolved (" + juce::String(ch.getEnabledInputCount()) + " enabled, "
-                    + juce::String(ch.getUnmatchedCount()) + " unmatched)",
-                    juce::dontSendNotification);
-                // Status label
-                if (ch.getNumSlots() > 0)
-                    chainStatusLabel.setText(juce::String(ch.getNumSlots()) + " slot(s) in chain",
-                                             juce::dontSendNotification);
-                else if (ch.isScanning())
-                    chainStatusLabel.setText("Reading plugin list...", juce::dontSendNotification);
-                else if (ch.getNumPlugins() == 0)
-                    chainStatusLabel.setText("No plugins found. Click Refresh.", juce::dontSendNotification);
-                else
-                    chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins available",
-                                             juce::dontSendNotification);
-                // Show warning if not yet dismissed
-                if (!ch.chainWarningDismissed)
-                {
-                    chainWarnOverlay.setVisible(true);
-                    chainWarnOverlay.toFront(false);
-                }
             }
             break;
         }
@@ -3528,9 +4118,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chainSearchBox.setVisible(false);
             chainPluginList.setVisible(false);
             chainLoadBtn.setVisible(false);
-            chainRackStrip.setVisible(false);
-            chainEditorHolder.setVisible(false);
-            chainWarnOverlay.setVisible(false);
+            chainListPanel.setVisible(false);
             chatSidebar.setVisible(false);
             upgradeBtn.setVisible(false);
             if (!compactMode)
@@ -3596,6 +4184,42 @@ void EchoJayEditor::saveSettingsToServer()
                 safeThis->settingsSavedLabel.setText("", juce::dontSendNotification);
             });
     });
+}
+
+// ---- UI Scale persistence ------------------------------------------------
+
+juce::File EchoJayEditor::getUIScaleFile()
+{
+    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+#if JUCE_MAC
+    return appData.getChildFile("Application Support/EchoJay/ui_scale.txt");
+#else
+    return appData.getChildFile("EchoJay/ui_scale.txt");
+#endif
+}
+
+void EchoJayEditor::saveUIScale() const
+{
+    auto f = getUIScaleFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(juce::String(uiScale_, 4));
+}
+
+void EchoJayEditor::loadUIScale()
+{
+    auto f = getUIScaleFile();
+    if (!f.existsAsFile()) { uiScale_ = 1.0f; return; }
+    float v = f.loadFileAsString().getFloatValue();
+    static constexpr float kValid[] = { 0.80f, 0.90f, 1.00f, 1.10f, 1.25f, 1.50f };
+    for (float s : kValid)
+        if (std::abs(v - s) < 0.01f) { uiScale_ = s; return; }
+    uiScale_ = 1.0f; // unrecognised value → reset to 100%
+}
+
+void EchoJayEditor::applyUIScale(float scale)
+{
+    uiScale_ = scale;
+    setTransform(juce::AffineTransform::scale(scale));
 }
 
 // ============================================================================
@@ -4223,17 +4847,32 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                 cm.lufs            = rv.data.integ;
                 cm.audioUrl        = rv.audioUrl;
                 cm.origin          = rv.origin;
-                if (auto* idxObj = indexVar.getDynamicObject())
+
+                // Resolve local WAV: prefer WsReview.fileName (same path Compare
+                // uses via resolveSlotWavPath), fall back to index.json lookup.
+                // This keeps chat and Compare aligned on the same resolution logic.
+                auto tryFile = [&](const juce::String& name) -> bool {
+                    if (name.isEmpty()) return false;
+                    juce::File f = captureDir.getChildFile(name);
+                    if (!f.existsAsFile()) return false;
+                    cm.wavFilename = name;
+                    cm.wavFilePath = f.getFullPathName();
+                    return true;
+                };
+
+                // 1) Direct from review fileName (same as Compare)
+                if (!tryFile(rv.fileName))
                 {
-                    juce::String wavName = idxObj->getProperty(rv.id).toString();
-                    if (wavName.isNotEmpty())
+                    // 2) Fallback: index.json — handles both string and {host,channels} entries
+                    if (auto* idxObj = indexVar.getDynamicObject())
                     {
-                        juce::File wavFile = captureDir.getChildFile(wavName);
-                        if (wavFile.existsAsFile())
-                        {
-                            cm.wavFilename = wavName;
-                            cm.wavFilePath = wavFile.getFullPathName();
-                        }
+                        auto entry = idxObj->getProperty(rv.id);
+                        juce::String wavName;
+                        if (auto* entryObj = entry.getDynamicObject())
+                            wavName = entryObj->getProperty("host").toString();  // multi-channel
+                        else
+                            wavName = entry.toString();  // single-channel string
+                        tryFile(wavName);
                     }
                 }
             };
@@ -4643,6 +5282,20 @@ juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
     rev.data.dc       = d.dcOffset;
     rev.data.duration = snap.durationSeconds;
 
+    // In-memory spectrum for Compare-page display (not persisted to server)
+    if (snap.hasDualSpectrum) {
+        rev.spectrumBands = snap.avgSpectrum;
+        rev.hasSpectrum   = true;
+    } else {
+        // Fallback: averagedData.spectrum (populated during capture)
+        bool anySignal = false;
+        for (auto v : snap.averagedData.spectrum) if (v > -119.0f) { anySignal = true; break; }
+        if (anySignal) {
+            rev.spectrumBands = snap.averagedData.spectrum;
+            rev.hasSpectrum   = true;
+        }
+    }
+
     // Multi-channel: populate per-channel measurements
     for (auto& sch : snap.channels)
     {
@@ -4719,25 +5372,28 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     int fh = 30, labelGap = 18;
     int y = area.getY();
     
-    // === Account info at top of settings ===
+    // === Version + credits — single dim line, bottom-right, ending just
+    // left of the Help & Support button (nothing at the top-right) ===
     if (api.isLoggedIn())
     {
         auto info = api.getUserInfo();
         int remaining = api.getRemainingMessages();
         int limit = info.messageLimit;
         int used = limit - remaining;
-        
-        // Usage count on same line as YOUR NAME label
+
+        juce::String line = juce::String::fromUTF8("v") + ProjectInfo::versionString
+                          + juce::String::fromUTF8("  \xc2\xb7  Credits: ")
+                          + juce::String(used) + "/" + juce::String(limit);
+        if (info.credits > 0)
+            line += " (+" + juce::String(info.credits) + ")";
+
+        int helpX = x + w - 80 - 8 - 120;   // Help & Support X in resized()
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        juce::String usageStr = juce::String::fromUTF8("v") + ProjectInfo::versionString
-                              + " - "
-                              + juce::String(used) + "/" + juce::String(limit);
-        if (info.credits > 0)
-            usageStr += " (+" + juce::String(info.credits) + ")";
-        g.drawText(usageStr, x + w - 200, y, 200, 14, juce::Justification::centredRight);
+        g.drawText(line, x, area.getBottom() - 32, helpX - x - 12, 30,
+                   juce::Justification::centredRight);
     }
-    
+
     auto label = [&](const juce::String& text) {
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
@@ -4751,11 +5407,12 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
     g.drawText("DAW(S)", x, y, w, 14, juce::Justification::centredLeft);
-    // DAW buttons take ~4 rows of 26px + gaps
-    int sw = juce::jmin(560, w);
-    int bw = (sw - 20) / 3, bh2 = 26;
-    int dawRows = (11 + 2) / 3; // ceil(11/3) = 4 rows
-    y += labelGap + dawRows * (bh2 + 3) + 8;
+    // Row count mirrors the width-redistributing grid in resized()
+    const int dawGap = 4;
+    int dawPerRow = juce::jlimit(3, 11, (w + dawGap) / 118);
+    int dawRows   = (11 + dawPerRow - 1) / dawPerRow;
+    int bh2 = 26;
+    y += labelGap + dawRows * (bh2 + 3) + 5;
     
     // EXPERIENCE LEVEL + CHAT LANGUAGE labels — side-by-side, mirroring the
     // half-width field layout in resized(). We hand-draw these two labels
@@ -4763,7 +5420,7 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     // continue with the helper for the rest.
     {
         int halfGap = 8;
-        int halfW = (juce::jmin(560, w) - halfGap) / 2;
+        int halfW = (w - halfGap) / 2;
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
         g.drawText("EXPERIENCE LEVEL", x, y, halfW, 14, juce::Justification::centredLeft);
@@ -4774,7 +5431,8 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     label("MAIN MONITORS / SPEAKERS");
     label("HEADPHONES");
     label("GENRES YOU WORK WITH");
-    
+    label("UI SCALE");
+
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
     g.drawText("YOUR PLUGINS", x, y, w, 14, juce::Justification::centredLeft);
@@ -5566,8 +6224,19 @@ void EchoJayEditor::paint(juce::Graphics& g)
         chatW = bounds.getWidth();
         mW = 0;
     }
-    else if (visualOnlyMode || comingSoonTab)
+    else if (visualOnlyMode)
     {
+        chatW = 0;
+        mW = bounds.getWidth();
+    }
+    else if (comingSoonTab)
+    {
+        chatW = chainChatCollapsed_ ? 0 : juce::jlimit(200, 280, bounds.getWidth() * 22 / 100);
+        mW = bounds.getWidth() - chatW;
+    }
+    else if (currentTab == Tab::Settings)
+    {
+        // No AI assistant sidebar on Settings — the form gets the full width
         chatW = 0;
         mW = bounds.getWidth();
     }
@@ -5725,27 +6394,14 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // CHAIN tab panel backgrounds and headers
     if (comingSoonTab)
     {
-        int leftW = juce::jmin(300, bounds.getWidth() / 3);
-        g.setColour(juce::Colour(0xff161616));
-        g.fillRect(0, topH, leftW, bounds.getHeight() - topH);
-        // Panel header
-        g.setColour(juce::Colour(0xff1e1e1e));
-        g.fillRect(0, topH, leftW, 32);
-        g.setColour(juce::Colour(0xff333333));
-        g.drawHorizontalLine(topH + 31, 0.0f, (float)leftW);
-        g.setColour(juce::Colour(0xffaaaaaa));
+        // Chain header strip
+        g.setColour(C::bg3);
+        g.fillRect(0, topH, mW, 32);
+        g.setColour(C::border);
+        g.drawHorizontalLine(topH + 31, 0.0f, (float)mW);
+        g.setColour(C::text2);
         g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-        g.drawText("PLUGINS", 14, topH, leftW - 14, 32, juce::Justification::centredLeft);
-        // Divider between left panel and editor
-        g.setColour(juce::Colour(0xff2a2a2a));
-        g.drawVerticalLine(leftW, (float)topH, (float)bounds.getHeight());
-        // Editor panel header
-        g.setColour(juce::Colour(0xff1e1e1e));
-        g.fillRect(leftW + 1, topH, bounds.getWidth() - leftW - 1, 32);
-        g.setColour(juce::Colour(0xff333333));
-        g.drawHorizontalLine(topH + 31, (float)(leftW + 1), (float)bounds.getWidth());
-        g.setColour(juce::Colour(0xffaaaaaa));
-        g.drawText("PLUGIN EDITOR", leftW + 14, topH, bounds.getWidth() - leftW - 28, 32,
+        g.drawText("PLUGIN CHAIN", 14, topH, mW - 28, 32,
                    juce::Justification::centredLeft);
     }
 
@@ -5769,6 +6425,19 @@ void EchoJayEditor::paint(juce::Graphics& g)
         g.drawVerticalLine(mW, (float)topH, (float)bounds.getHeight());
     }
 
+    // Sidebar toolbar divider + bottom border (Chat tab only)
+    if (currentTab == Tab::Chat && sidebarNewChatBtn.isVisible())
+    {
+        int divX = sidebarNewChatBtn.getRight();
+        int divTop = topH + 6;
+        int divBot = topH + kSidebarToolbarH - 6;
+        g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.25f));
+        g.drawVerticalLine(divX, (float)divTop, (float)divBot);
+        // Bottom edge of toolbar
+        g.setColour(C::border);
+        g.drawHorizontalLine(topH + kSidebarToolbarH - 1, (float)mW, (float)(mW + kSidebarW));
+    }
+
     // === Meter Panel Content ===
     int pad = 10;
     int contentY = topH + 6;
@@ -5780,7 +6449,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
         paintCompareView(g, cArea);
     }
     else if (currentView == View::Settings && currentTab == Tab::Settings) {
-        auto sArea = juce::Rectangle<int>(pad, topH + 12, contentW, bounds.getHeight() - topH - 24 - abBarOffset);
+        // Settings has no chat sidebar — the form gets the FULL window width
+        // (x/width here must match sx/sw in resized()'s Settings block)
+        auto sArea = juce::Rectangle<int>(20, topH + 12, bounds.getWidth() - 40,
+                                          bounds.getHeight() - topH - 24 - abBarOffset);
         paintSettingsView(g, sArea);
     }
     else if (channelPromptVisible || genrePromptVisible)
@@ -5886,8 +6558,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
 
     } // end if (!compactMode && !visualOnlyMode)
 
-    // A/B transport bar at very bottom — shows on ALL views when a ref is loaded
-    if (processorRef.abActive.load() && !compactMode && !visualOnlyMode)
+    // A/B transport bar at very bottom — shows when a ref is loaded (hidden on Compare tab)
+    if (processorRef.abActive.load() && !compactMode && !visualOnlyMode
+        && currentView != View::Compare)
     {
         int abBarH = 32;
         int abBarY = bounds.getHeight() - abBarH;
@@ -6137,7 +6810,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         chatW -= kSidebarW;
     }
 
-    if (!visualOnlyMode) {
+    if (!visualOnlyMode && chatW > 0) {
     // Chat header — "AI ASSISTANT" bold, usage count right
     g.setColour(C::bg2);
     g.fillRect(chatX, topH, chatW, 32);
@@ -6599,7 +7272,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     for (int i = activeChainBuildBtns; i < kMaxChainBuildBtns; ++i)
         chainBuildBtns[(size_t)i].setVisible(false);
 
-    } // end if (!visualOnlyMode) — chat section
+    } // end if (!visualOnlyMode && chatW > 0) — chat section
 
     if (channelPromptVisible)
         paintChannelPromptOverlay(g, bounds);
@@ -6691,8 +7364,21 @@ void EchoJayEditor::resized()
         chatW = b.getWidth();
         mW = 0;
     }
-    else if (visualOnlyMode || comingSoonTab)
+    else if (visualOnlyMode)
     {
+        chatW = 0;
+        mW = b.getWidth();
+    }
+    else if (comingSoonTab)
+    {
+        // CHAIN tab: slim sidebar so plugin editors get maximum width.
+        // Collapsed sidebar → plugin display area takes the full tab width.
+        chatW = chainChatCollapsed_ ? 0 : juce::jlimit(200, 280, b.getWidth() * 22 / 100);
+        mW = b.getWidth() - chatW;
+    }
+    else if (currentTab == Tab::Settings)
+    {
+        // No AI assistant sidebar on Settings — the form gets the full width
         chatW = 0;
         mW = b.getWidth();
     }
@@ -6704,58 +7390,42 @@ void EchoJayEditor::resized()
 
     // Link tab: no child components to lay out — painted directly
 
-    // CHAIN tab layout
+    // CHAIN tab layout — plugin view + strip fill the left area, chat on right
     if (comingSoonTab)
     {
-        int leftW   = juce::jmin(300, b.getWidth() / 3);
         int abOff3  = abBarShowing ? kAbBarH : 0;
         int contentH = b.getHeight() - topH - abOff3;
+        // Panel fills from below the header strip to the bottom
+        chainListPanel.setBounds(0, topH + 32, mW, contentH - 32);
 
-        // Rack strip occupies the bottom of the content area, full width
-        static constexpr int kRackH = 72;
-        int rackY = topH + contentH - kRackH;
-        chainRackStrip.setBounds(0, rackY, b.getWidth(), kRackH);
+        // AI sidebar toggle — right end of the "PLUGIN CHAIN" header strip
+        chainChatToggleBtn.setButtonText(chainChatCollapsed_ ? "< AI" : "AI >");
+        chainChatToggleBtn.setBounds(mW - 62, topH + 5, 54, 22);
+        chainChatToggleBtn.setVisible(!compactMode && !visualOnlyMode);
+        chainChatToggleBtn.toFront(false);
 
-        // Upper section height (excluding tab header and rack strip)
-        int upperH = contentH - 32 - kRackH; // 32 = tab header
-        int y = topH + 32 + 8;               // below header strip
-
-        chainScanBtn.setBounds(10, y, 76, 24);
-        chainStatusLabel.setBounds(94, y, leftW - 104, 24);
-        y += 28;
-
-        static constexpr int kDebugJsonH = 62;
-        chainDebugJsonBox.setBounds(10, y, leftW - 20, kDebugJsonH);
-        y += kDebugJsonH + 4;
-
-        chainSearchBox.setBounds(10, y, leftW - 20, 22);
-        y += 28;
-
-        int listBottom = topH + 32 + upperH - 50;  // leaves room for Load btn + recommend label
-        int listH = juce::jmax(40, listBottom - y);
-        chainPluginList.setBounds(10, y, leftW - 20, listH);
-
-        int btnY = topH + 32 + upperH - 42;
-        chainLoadBtn.setBounds(10, btnY, 110, 24);
-        chainRecommendLabel.setBounds(10, btnY + 26, leftW - 20, 14);
-
-        // Editor holder: right panel, between header and rack strip
-        int editorX = leftW + 1;
-        int editorW = b.getWidth() - editorX;
-        chainEditorHolder.setBounds(editorX, topH + 32, editorW, upperH);
-
-        // Warning overlay: centered in the whole CHAIN area
-        if (chainWarnOverlay.isVisible())
+        if (chainChatCollapsed_ && !compactMode)
         {
-            int ovW = juce::jmin(480, b.getWidth() - 40);
-            int ovH = 130;
-            int ovX = (b.getWidth() - ovW) / 2;
-            int ovY = topH + (b.getHeight() - topH - ovH) / 2;
-            chainWarnOverlay.setBounds(ovX, ovY, ovW, ovH);
-            chainWarnLabel.setBounds(10, 10, ovW - 20, 60);
-            chainWarnOkBtn.setBounds((ovW - 200) / 2, 80, 200, 32);
+            chatScroll.setVisible(false);
+            chatInput.setVisible(false);
+            chatSendBtn.setVisible(false);
+            for (int i = 0; i < kMaxChainBuildBtns; ++i)
+                chainBuildBtns[(size_t)i].setVisible(false);
+            for (int i = 0; i < kMaxWavePlayBtns; ++i)
+                wavePlayOverlays[(size_t)i].setVisible(false);
         }
+
+        // Left-panel components hidden — picker popup replaces them
+        chainScanBtn.setVisible(false);
+        chainStatusLabel.setVisible(false);
+        chainDebugJsonBox.setVisible(false);
+        chainRecommendLabel.setVisible(false);
+        chainSearchBox.setVisible(false);
+        chainPluginList.setVisible(false);
+        chainLoadBtn.setVisible(false);
     }
+    else
+        chainChatToggleBtn.setVisible(false);
 
     // Position particle visual — use paint formula for mW to match divider
     int abOff = abBarShowing ? kAbBarH : 0;
@@ -6853,9 +7523,10 @@ void EchoJayEditor::resized()
         sidebarNewAlbumBtn.setBounds(sbX + halfW,  topH, kSidebarW - halfW, kSidebarToolbarH);
         sidebarNewChatBtn.setVisible(true);
         sidebarNewAlbumBtn.setVisible(true);
-        // ListBox fills the rest
+        // ListBox fills the rest (shorten when AB bar is visible to avoid overlap)
+        int sbAbOff = abBarShowing ? kAbBarH : 0;
         chatSidebar.setBounds(sbX, topH + kSidebarToolbarH,
-                              kSidebarW, b.getHeight() - topH - kSidebarToolbarH);
+                              kSidebarW, b.getHeight() - topH - kSidebarToolbarH - sbAbOff);
         chatSidebar.setVisible(true);
     }
     else
@@ -6869,7 +7540,11 @@ void EchoJayEditor::resized()
     int inH = 52; // ~2 lines of 13px font
     int sendW = 56;
     int sendH = 30;
-    int chatPadL = (compactMode || chatOnlyMode) ? 8 : -20; // compact/chat-only: normal padding; full: 20px past divider
+    // Flush inside the sidebar column on ALL tabs: left edge at the divider
+    // plus padding, matching the message list above. (Historically -20 in
+    // full mode — "20px past divider" — which overlapped the content panel;
+    // invisible on the old tabs' dead space, obvious against CHAIN's card.)
+    int chatPadL = 8;
     int chatStartX = (compactMode ? 0 : mW) + sidebarOffsetX;
     int abOff4 = abBarShowing ? kAbBarH : 0;
     int inputPad = compactMode ? 16 : 10;
@@ -6899,7 +7574,20 @@ void EchoJayEditor::resized()
         usageLabel.setJustificationType(juce::Justification::centredRight);
         usageLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::plain)));
         usageLabel.setColour(juce::Label::textColourId, C::text3);
-        usageLabel.setVisible(chatScroll.isVisible());
+        // Settings has no assistant sidebar; during the tab switch this runs
+        // while chatScroll is still visible, which used to leave a stray
+        // credits label floating at the top-right of the Settings form.
+        usageLabel.setVisible(chatScroll.isVisible() && currentTab != Tab::Settings);
+
+        // CHAIN tab: the "n/15" slot counter takes the usage counter's spot
+        if (comingSoonTab)
+        {
+            usageLabel.setVisible(false);
+            chainSlotCountLabel.setBounds(counterX, counterY, counterW, counterH);
+            chainSlotCountLabel.setVisible(chatScroll.isVisible());
+        }
+        else
+            chainSlotCountLabel.setVisible(false);
     }
     
     // Chat scroll: top = below chat header, bottom = above chat input with gap.
@@ -6954,34 +7642,77 @@ void EchoJayEditor::resized()
     if (currentView == View::Compare) {
         int cPad = 10;
         int cW = mW - cPad * 2 - 24; // 24px less on right
-        int cCardW = (cW - 12) / 2;
         int cy2 = topH + 4;
-        
+
         // Preset row
         presetBox.setBounds(cPad, cy2, cW - 180, 22);
         savePresetBtn.setBounds(cPad + cW - 174, cy2, 84, 22);
         deletePresetBtn.setBounds(cPad + cW - 84, cy2, 80, 22);
         cy2 += 26;
-        
-        cy2 += 82 + 4;
-        
-        // Pass dropdowns — full width, no play buttons
-        compareSlotABox.setBounds(cPad, cy2, cCardW - 4, 22);
-        compareSlotBBox.setBounds(cPad + cCardW + 12, cy2, cCardW - 4, 22);
-        playSlotABtn.setVisible(false);
-        playSlotBBtn.setVisible(false);
-        
+
+        cy2 += 82 + 4; // reference drop zone
+
+        // rowW: content width matching paint()'s chatW formula (35%, [280,420])
+        // paint() and resized() use different chatW formulas, so we recompute here
+        // to ensure meter buttons and slot/play buttons fit within the painted area.
+        int rowW;
+        {
+            int paintChatW = juce::jlimit(280, 420, b.getWidth() * 35 / 100);
+            rowW = b.getWidth() - paintChatW - 2 * cPad;
+            if (rowW < 1) rowW = 1;
+        }
+
+        // Meter-type selector — 5 even buttons
+        {
+            const int kGap = 1;
+            int btnW3 = (rowW - 4 * kGap) / 5;
+            for (int i = 0; i < 5; ++i)
+                compareMeterBtns[(size_t)i].setBounds(cPad + i * (btnW3 + kGap), cy2, btnW3, 24);
+        }
+        cy2 += 28;
+
+        // Stage 2: slot dropdowns hidden — populated silently for AI Compare
+        compareSlotABox.setVisible(false);
+        compareSlotBBox.setVisible(false);
+
+        // Position slot buttons in their panel header strips (same geometry as paintCompareView)
+        {
+            const int kHdrH = 20, kGap = 6, kBtnAreaH = 36;
+            int aY2 = topH + 4;
+            int aH2 = getHeight() - topH - 16 - (abBarShowing ? kAbBarH : 0);
+            // Accumulate to panels start (preset 26 + dropzone 86 + selector 28 = 140)
+            int panelsCy = aY2 + 140;
+            int panelsH = aY2 + aH2 - panelsCy - kBtnAreaH;
+            int panelH = (panelsH - kHdrH * 2 - kGap) / 2;
+            if (panelH < 40) panelH = 40;
+            int topHdrY = panelsCy;
+            int botHdrY = panelsCy + kHdrH + 2 + panelH + kGap;
+            // Play button on far right of header; slot button fills remainder with a gap
+            const int kPlayBtnW = 24;
+            const int kPlayGap  = 4;
+            compareTopSlotBtn_.setBounds(cPad, topHdrY, rowW - kPlayBtnW - kPlayGap, kHdrH);
+            compareBotSlotBtn_.setBounds(cPad, botHdrY, rowW - kPlayBtnW - kPlayGap, kHdrH);
+            comparePlayTopBtn_.setBounds(cPad + rowW - kPlayBtnW, topHdrY, kPlayBtnW, kHdrH);
+            comparePlayBotBtn_.setBounds(cPad + rowW - kPlayBtnW, botHdrY, kPlayBtnW, kHdrH);
+        }
+
         // Click catcher covers the ENTIRE compare area for reliable drag-and-drop
-        // Using actual bounds instead of hardcoded values
         int catcherTop = topH + 4;
         int catcherH = getHeight() - catcherTop - 10;
         compareClickCatcher.setBounds(0, catcherTop, mW, catcherH);
         compareClickCatcher.setVisible(true);
         compareClickCatcher.toFront(false);
-        
+
         // Bring interactive elements in front of the catcher
-        compareSlotABox.toFront(false);
-        compareSlotBBox.toFront(false);
+        for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].toFront(false);
+        cmpABtn_.toFront(false);
+        cmpBBtn_.toFront(false);
+        cmpPlayBtn_.toFront(false);
+        compareSyncBtn_.toFront(false);
+        compareTopSlotBtn_.toFront(false);
+        compareBotSlotBtn_.toFront(false);
+        comparePlayTopBtn_.toFront(false);
+        comparePlayBotBtn_.toFront(false);
         aiCompareBtn.toFront(false);
         presetBox.toFront(false);
         savePresetBtn.toFront(false);
@@ -6992,32 +7723,51 @@ void EchoJayEditor::resized()
         chatInput.toFront(false);
         chatSendBtn.toFront(false);
         chatScroll.toFront(false);
-        
-        // AI Compare button centred at bottom
-        int abOff2 = abBarShowing ? kAbBarH : 0;
-        int btnY = getHeight() - 36 - abOff2;
-        int mwHalf = mW / 2;
-        aiCompareBtn.setBounds(mwHalf - 65, btnY, 100, 26);
+
+        // Transport bar at bottom: [A] [B] [▶] [SYNC] ... [AI Compare]
+        {
+            int abOff2 = abBarShowing ? kAbBarH : 0;
+            int btnY = getHeight() - 36 - abOff2;
+            const int kTGap = 4;
+            const int kAbW = 28;   // A/B buttons
+            const int kPlayW = 28;
+            const int kSyncW = 44;
+            const int kAiW = 100;
+            // Centre the transport group
+            int totalW = kAbW + kTGap + kAbW + kTGap + kPlayW + kTGap + kSyncW + kTGap + kAiW;
+            int tx = (mW - totalW) / 2;
+            cmpABtn_.setBounds(tx, btnY, kAbW, 26);              tx += kAbW + kTGap;
+            cmpBBtn_.setBounds(tx, btnY, kAbW, 26);              tx += kAbW + kTGap;
+            cmpPlayBtn_.setBounds(tx, btnY, kPlayW, 26);         tx += kPlayW + kTGap;
+            compareSyncBtn_.setBounds(tx, btnY, kSyncW, 26);     tx += kSyncW + kTGap;
+            aiCompareBtn.setBounds(tx, btnY, kAiW, 26);
+        }
     }
 
-    // Settings layout — consistent Y tracking matching paintSettingsView
+    // Settings layout — consistent Y tracking matching paintSettingsView.
+    // The form stretches to the full window width (no chat sidebar here);
+    // reflows on every resize since this all derives from current bounds.
     if (currentView == View::Settings) {
-        int sx = 20, sy = topH + 18, sw = juce::jmin(560, mW - 40);
+        int sx = 20, sy = topH + 18, sw = juce::jmax(200, b.getWidth() - 40);
         int fh = 30, labelGap = 18; // label height + space before field
-        
+
         // YOUR NAME
         sy += labelGap;
         settingsName.setBounds(sx, sy, sw, fh); sy += fh + 8;
-        
-        // DAW(S)
+
+        // DAW(S) — grid redistributes across the available width
+        // (row math mirrored in paintSettingsView; keep the two in sync)
         sy += labelGap;
-        int bw = (sw - 20) / 3, bh2 = 26, bx = sx;
+        const int dawGap = 4;
+        int dawPerRow = juce::jlimit(3, 11, (sw + dawGap) / 118);
+        int dawRows   = (11 + dawPerRow - 1) / dawPerRow;
+        int bw = (sw - (dawPerRow - 1) * dawGap) / dawPerRow, bh2 = 26;
         for (int i = 0; i < 11; ++i) {
-            dawButtons[(size_t)i].setBounds(bx, sy, bw, bh2);
-            bx += bw + 4;
-            if (bx + bw > sx + sw) { bx = sx; sy += bh2 + 3; }
+            int row = i / dawPerRow, col = i % dawPerRow;
+            dawButtons[(size_t)i].setBounds(sx + col * (bw + dawGap),
+                                            sy + row * (bh2 + 3), bw, bh2);
         }
-        sy += bh2 + 8;
+        sy += dawRows * (bh2 + 3) + 5;
         
         // EXPERIENCE LEVEL + CHAT LANGUAGE — on the same row, half-width each.
         // The 8px gap matches the inter-field vertical spacing used elsewhere,
@@ -7042,7 +7792,11 @@ void EchoJayEditor::resized()
         // GENRES
         sy += labelGap;
         settingsGenres.setBounds(sx, sy, sw, fh); sy += fh + 8;
-        
+
+        // UI SCALE
+        sy += labelGap;
+        uiScaleCombo.setBounds(sx, sy, 140, fh); sy += fh + 8;
+
         // PLUGINS — a scan button (same behaviour as the header one) with
         // "View all" beside it. (Help & Support lives down on the Save/Log Out
         // row, since it's an app action, not a plugins control.)
@@ -7240,6 +7994,9 @@ void EchoJayEditor::timerCallback()
     if (currentTab == Tab::Chain)
     {
         auto& ch = processorRef.getChainHost();
+        chainSlotCountLabel.setText(juce::String(ch.getNumSlots()) + "/"
+                                        + juce::String(ChainListPanel::kMaxSlots),
+                                    juce::dontSendNotification);
         bool wasScanning = ch.isScanning();
         if (wasScanning)
         {
@@ -7288,13 +8045,13 @@ void EchoJayEditor::timerCallback()
             chatPlaybackStartTime = 0;
             chatPlaybackDuration = 0;
             chatPlaybackOffset = 0;
-            playSlotABtn.setButtonText(">");
-            playSlotBBtn.setButtonText(">");
+            // Note: compare streams loop independently and don't use the AB system
         }
     }
     
-    // Resize window when AB bar appears/disappears
-    bool shouldShowAbBar = processorRef.abActive.load() && !compactMode && !visualOnlyMode;
+    // Resize window when AB bar appears/disappears (hidden on Compare tab)
+    bool shouldShowAbBar = processorRef.abActive.load() && !compactMode && !visualOnlyMode
+                           && currentView != View::Compare;
     if (shouldShowAbBar && !abBarShowing) {
         abBarShowing = true;
         setSize(getWidth(), getHeight() + kAbBarH);
@@ -7761,25 +8518,6 @@ void EchoJayEditor::timerCallback()
         upgradeBtn.setVisible(false);
         playbackBtn.setVisible(false);
     }
-    else if (currentView == View::Compare && !compareWavePositions.empty())
-    {
-        activeWavePlayBtns = 0;
-        for (auto& wp : compareWavePositions)
-        {
-            if (activeWavePlayBtns >= kMaxWavePlayBtns) break;
-            int idx = activeWavePlayBtns++;
-            wavePlayPaths[(size_t)idx] = wp.wavPath;
-            wavePlayDurations[(size_t)idx] = wp.duration;
-            wavePlayOverlays[(size_t)idx].setBounds(wp.bounds);
-            wavePlayOverlays[(size_t)idx].setVisible(true);
-            wavePlayOverlays[(size_t)idx].toFront(false);
-        }
-        for (int i = activeWavePlayBtns; i < kMaxWavePlayBtns; ++i)
-        {
-            wavePlayOverlays[(size_t)i].setVisible(false);
-            wavePlayOverlays[(size_t)i].setBounds(-100, -100, 1, 1);
-        }
-    }
     else if (currentView == View::Compare)
     {
         for (int i = 0; i < kMaxWavePlayBtns; ++i)
@@ -8085,6 +8823,59 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
         });
 }
 
+void EchoJayEditor::showChainPluginPicker()
+{
+    auto& ch = processorRef.getChainHost();
+    auto plugins = ch.getFilteredPlugins("", chainFormatFilter_);
+    if (plugins.isEmpty()) return;
+
+    juce::PopupMenu menu;
+    // Search hint as disabled header
+    menu.addSectionHeader("ADD PLUGIN TO CHAIN");
+
+    for (int i = 0; i < plugins.size(); ++i)
+    {
+        const auto& p = plugins.getReference(i);
+        bool isAU = p.pluginFormatName == "AudioUnit";
+        juce::String label = p.name + "  [" + (isAU ? "AU" : "VST3") + "]";
+        menu.addItem(i + 1, label);
+    }
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options()
+            .withTargetComponent(&chainListPanel)
+            .withMaximumNumColumns(1)
+            .withMinimumNumColumns(1),
+        [safeThis, plugins](int result)
+        {
+            if (safeThis == nullptr || result <= 0 || result > plugins.size()) return;
+            auto desc = plugins[result - 1];
+            auto& ch2 = safeThis->processorRef.getChainHost();
+            safeThis->chainListPanel.statusText = "Loading " + desc.name + "...";
+            safeThis->chainListPanel.repaint();
+
+            ch2.loadPluginAsync(desc, [safeThis, desc](const juce::String& err)
+            {
+                if (safeThis == nullptr) return;
+                if (err.isNotEmpty())
+                {
+                    safeThis->chainListPanel.statusText = "Failed: " + err;
+                    safeThis->chainListPanel.repaint();
+                    return;
+                }
+                auto& ch3 = safeThis->processorRef.getChainHost();
+                int newSlot = ch3.getNumSlots() - 1;
+                safeThis->chainSelectedSlot_ = newSlot;
+                safeThis->chainListPanel.statusText = {};
+                // rebuild() selects the new slot and opens its editor inline
+                safeThis->chainListPanel.rebuild(ch3.getAllSlotInfos(), safeThis->chainSelectedSlot_);
+                safeThis->resized();
+                safeThis->repaint();
+            });
+        });
+}
+
 void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
 {
     auto parsedVar = juce::JSON::parse(chainJson);
@@ -8122,12 +8913,18 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
     {
         if (safeThis == nullptr) return;
 
-        // Clear existing rack
+        // Close any open hosted editor FIRST; the rack is cleared a runloop
+        // turn later (see onRemoveSlot — destroying a plugin's processor in
+        // the same tick as its editor lets a final UI timer fire into freed
+        // state).
+        safeThis->chainListPanel.closeAllEditors();
+        juce::Timer::callAfterDelay(80, [safeThis, slots, chainJson]
+        {
+        if (safeThis == nullptr) return;
         auto& ch2 = safeThis->processorRef.getChainHost();
         int n = ch2.getNumSlots();
         for (int i = n - 1; i >= 0; --i) ch2.removeSlot(i);
         safeThis->chainSelectedSlot_ = -1;
-        safeThis->chainEditorHolder.setHostedEditor(nullptr);
 
         // Switch to Chain tab so the user sees loading progress
         safeThis->switchToTab(Tab::Chain);
@@ -8144,17 +8941,8 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
             {
                 auto& ch3 = safeThis->processorRef.getChainHost();
                 safeThis->chainSelectedSlot_ = ch3.getNumSlots() > 0 ? 0 : -1;
-                safeThis->chainRackStrip.rebuild(ch3.getAllSlotInfos(), safeThis->chainSelectedSlot_);
-                if (safeThis->chainSelectedSlot_ >= 0)
-                {
-                    safeThis->chainEditorHolder.statusText = {};
-                    safeThis->chainEditorHolder.setHostedEditor(
-                        ch3.createEditorForSlot(safeThis->chainSelectedSlot_));
-                    // Show settings for first slot
-                    safeThis->chainEditorHolder.settingsHint =
-                        ch3.getSlotInfo(safeThis->chainSelectedSlot_).settings;
-                    safeThis->chainEditorHolder.repaint();
-                }
+                safeThis->chainListPanel.rebuild(ch3.getAllSlotInfos(), safeThis->chainSelectedSlot_);
+                safeThis->chainListPanel.statusText = {};
                 juce::String status = juce::String(ch3.getNumSlots()) + " slot(s) loaded";
                 if (!skipped->isEmpty())
                     status += " (" + skipped->joinIntoString(", ") + " failed)";
@@ -8189,6 +8977,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 });
         };
         (*loadNextPtr)();
+        });   // end deferred rack-clear
     };
 
     if (ch.getNumSlots() > 0)
@@ -9591,20 +10380,6 @@ void EchoJayEditor::deletePreset(const juce::String& filePath)
         file.deleteFile();
 }
 
-juce::String EchoJayEditor::getCompareSlotWavPath(int selectedId)
-{
-    if (selectedId <= 0) return {};
-    auto snaps = processorRef.getSnapshots();
-    auto refs = processorRef.getReferenceAnalyser().getReferences();
-    int refOffset = (int)snaps.size() + 100;
-    
-    if (selectedId >= refOffset && (selectedId - refOffset) < (int)refs.size())
-        return refs[(size_t)(selectedId - refOffset)].path;
-    else if ((selectedId - 1) < (int)snaps.size())
-        return snaps[(size_t)(selectedId - 1)].wavFilePath;
-    return {};
-}
-
 // ============ Keyboard Shortcuts ============
 
 bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
@@ -9788,8 +10563,9 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         return;
     }
     
-    // A/B transport bar clicks (bottom bar)
-    if (processorRef.abActive.load() && !compactMode && !visualOnlyMode)
+    // A/B transport bar clicks (bottom bar — hidden on Compare tab)
+    if (processorRef.abActive.load() && !compactMode && !visualOnlyMode
+        && currentView != View::Compare)
     {
         int abBarH = 32;
         int abBarY = getHeight() - abBarH;
@@ -9892,14 +10668,14 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
             juce::PopupMenu sizeMenu;
             sizeMenu.setLookAndFeel(&lnf);
             
-            sizeMenu.addItem(2, "Default (900 x 580)");
-            sizeMenu.addItem(3, "Large (1080 x 696)");
-            sizeMenu.addItem(4, "Extra Large (1260 x 812)");
+            sizeMenu.addItem(2, "Small (900 x 580)");
+            sizeMenu.addItem(3, "Default (1170 x 696)");
+            sizeMenu.addItem(4, "Large (1400 x 860)");
             sizeMenu.showMenuAsync(juce::PopupMenu::Options(),
                 [this](int result) {
                     if (result == 2) setSize(900, 580);
-                    else if (result == 3) setSize(1080, 696);
-                    else if (result == 4) setSize(1260, 812);
+                    else if (result == 3) setSize(1170, 696);
+                    else if (result == 4) setSize(1400, 860);
                 });
             return;
         }
@@ -9999,35 +10775,43 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
             return;
         }
         
-        // Left-click on waveform bars — play/seek
-        if (!compareWavePositions.empty())
+        // Click-to-seek on static compare waveform panels
+        for (auto& sa : cmpWaveSeekAreas_)
         {
-            for (auto& wp : compareWavePositions)
+            if (sa.slotIdx >= 0 && sa.inner.contains(pos))
             {
-                if (wp.bounds.expanded(4, 8).contains(pos) && wp.wavPath.isNotEmpty())
+                float fraction = juce::jlimit(0.0f, 1.0f,
+                    (float)(pos.x - sa.inner.getX()) / (float)sa.inner.getWidth());
+                auto& s = processorRef.cmpStream[sa.slotIdx];
+                if (!s.loaded.load())
+                    startCompareStream(sa.slotIdx);
+                if (s.loaded.load() && s.sampleCount > 0)
                 {
-                    int playBtnArea = 26;
-                    int wfStartX = wp.bounds.getX() + playBtnArea;
-                    int wfEndX = wp.bounds.getRight() - 4;
-                    
-                    if (pos.x <= wfStartX)
+                    std::lock_guard<std::mutex> lock(processorRef.cmpMutex);
+                    s.playbackPos = (int)(fraction * s.sampleCount);
+                    // Start playing + make audible on seek
+                    s.playing.store(true);
+                    processorRef.cmpAudible.store(sa.slotIdx);
+                    // SYNC: mirror seek position to the other capture slot
+                    if (processorRef.cmpSyncToTransport.load() && bothSlotsAreCaptures())
                     {
-                        if (currentlyPlayingChatWav == wp.wavPath)
-                            stopChatPlayback();
-                        else
-                            startChatPlayback(wp.wavPath, 0);
+                        int otherIdx = 1 - sa.slotIdx;
+                        auto& other = processorRef.cmpStream[otherIdx];
+                        if (!other.loaded.load())
+                            startCompareStream(otherIdx);
+                        if (other.loaded.load() && other.sampleCount > 0)
+                        {
+                            other.playbackPos = (int)(fraction * other.sampleCount);
+                            other.playing.store(true);
+                        }
                     }
-                    else
-                    {
-                        float fraction = juce::jlimit(0.0f, 1.0f, (float)(pos.x - wfStartX) / (float)(wfEndX - wfStartX));
-                        float seekTime = fraction * wp.duration;
-                        startChatPlayback(wp.wavPath, seekTime);
-                    }
-                    repaint();
-                    return;
+                    updateComparePlayBtns();
                 }
+                repaint();
+                return;
             }
         }
+
     }
 }
 
@@ -10092,8 +10876,6 @@ void EchoJayEditor::stopChatPlayback()
     chatPlaybackStartTime = 0;
     // Don't clear duration — needed for resume offset calculation
     chatPlaybackOffset = 0;
-    playSlotABtn.setButtonText(">");
-    playSlotBBtn.setButtonText(">");
 }
 
 void EchoJayEditor::toggleCompactMode()
@@ -10225,9 +11007,6 @@ void EchoJayEditor::startChatPlayback(const juce::String& wavPath, float offset)
         for (auto& msg : chatMessages)
             if (msg.wavFilePath == wavPath || msg.audioUrl == wavPath)
                 return msg.durationSeconds;
-        for (auto& wp : compareWavePositions)
-            if (wp.wavPath == wavPath)
-                return wp.duration;
         return 0.f;
     };
 

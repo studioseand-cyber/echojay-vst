@@ -65,6 +65,12 @@ struct WsReview {
     juce::var    waveform;      // kept as raw var (may be array or string)
     WsMeasurements data;
     std::vector<WsChannelMeasurements> channels;  // empty for single-channel (host-only) reviews
+
+    // In-memory only — NOT persisted to the server.
+    // Populated in createReviewFromCapture() from the source CaptureSnapshot's avgSpectrum
+    // so that the Compare-page spectrum panel can show stored data for WsCapture slots.
+    std::array<float, 64> spectrumBands = {};
+    bool hasSpectrum = false;
 };
 
 struct WsProfile {

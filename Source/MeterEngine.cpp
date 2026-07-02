@@ -181,6 +181,8 @@ void MeterEngine::resetState()
     std::fill(fftAccumulator.begin(), fftAccumulator.end(), 0.0f);
     fftWritePos = 0;
     smoothedSpectrum.fill(-100.0f);
+    wfMinAccum = wfMaxAccum = 0.0f;
+    wfAccumCount = 0;
     std::lock_guard<std::mutex> lock(dataMutex);
     data = MeterData();
 }
@@ -299,6 +301,28 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
         smoothedSpectrum[(size_t)b] += coeff * (rawBins[(size_t)b] - smoothedSpectrum[(size_t)b]);
     }
     { std::lock_guard<std::mutex> lock(dataMutex); data.spectrum = smoothedSpectrum; }
+}
+
+void MeterEngine::pushWaveformSamples(const float* left, const float* right, int numSamples)
+{
+    for (int i = 0; i < numSamples; ++i)
+    {
+        float mono = (left[i] + right[i]) * 0.5f;
+        if (mono < wfMinAccum) wfMinAccum = mono;
+        if (mono > wfMaxAccum) wfMaxAccum = mono;
+        ++wfAccumCount;
+        if (wfAccumCount >= kWaveDownsample)
+        {
+            std::lock_guard<std::mutex> lock(dataMutex);
+            int wp = data.waveformWritePos;
+            data.waveform[(size_t)wp] = { wfMinAccum, wfMaxAccum };
+            data.waveformWritePos = (wp + 1) % MeterData::waveformSize;
+            if (data.waveformCount < MeterData::waveformSize)
+                ++data.waveformCount;
+            wfMinAccum = wfMaxAccum = 0.0f;
+            wfAccumCount = 0;
+        }
+    }
 }
 
 void MeterEngine::processBlock(const float* left, const float* right, int numSamples)
@@ -665,7 +689,8 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     float dc = static_cast<float>(((sumL + sumR) * 0.5) * 1000.0);
     
     computeSpectrum(left, right, numSamples);
-    
+    pushWaveformSamples(left, right, numSamples);
+
     {
         std::lock_guard<std::mutex> lock(dataMutex);
         // Momentary: instant 400ms from ring buffer with peak hold

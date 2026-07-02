@@ -324,6 +324,10 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     meterEngine.prepare(sampleRate, samplesPerBlock);
     captureEngine.prepare(sampleRate, samplesPerBlock);
+    abMeterEngine.prepare(sampleRate, samplesPerBlock);
+    cmpMeter[0].prepare(sampleRate, samplesPerBlock);
+    cmpMeter[1].prepare(sampleRate, samplesPerBlock);
+    cmpTmpBuf.setSize(2, samplesPerBlock);
     waveformRecorder.prepare(sampleRate, samplesPerBlock);
     hostSampleRate_      = sampleRate;
     hostSamplesPerBlock_ = samplesPerBlock;
@@ -379,7 +383,22 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             // Auto-stop capture when transport stops (spacebar)
             if (wasTransportPlaying && !playing && captureState.load() == CaptureState::Capturing)
                 stopCapture();
-            
+
+            // Sync compare streams to DAW transport on state TRANSITIONS only.
+            // Running every block was stomping user-initiated play/pause from the button.
+            if (cmpSyncToTransport.load() && !cmpBothCaptures.load()
+                && playing != wasTransportPlaying)
+            {
+                for (int sl = 0; sl < 2; ++sl)
+                {
+                    if (!cmpStream[sl].loaded.load()) continue;
+                    if (playing)
+                        cmpStream[sl].playing.store(true);
+                    else
+                        cmpStream[sl].playing.store(false);
+                }
+            }
+
             wasTransportPlaying = playing;
         }
     }
@@ -388,7 +407,13 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     const float* right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
     if (left == nullptr) return;
 
-    // A/B playback: if playing ref, replace buffer BEFORE meters read it
+    // Feed meterEngine with the live input BEFORE AB replaces the buffer.
+    // This keeps the Compare "Live" panel showing the actual input signal
+    // regardless of whether compare-slot playback is active.
+    meterEngine.processBlock(left, right, buffer.getNumSamples());
+
+    // A/B playback: replace buffer with playback audio, then analyse it into
+    // abMeterEngine so the Compare playing-slot panel has its own spectrum source.
     if (abActive.load() && abPlayingRef.load())
     {
         std::lock_guard<std::mutex> lock(abMutex);
@@ -398,12 +423,12 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             int abChans = abBuffer.getNumChannels();
             double dawRate = getSampleRate();
             double ratio = (abSampleRate > 0 && dawRate > 0) ? abSampleRate / dawRate : 1.0;
-            
+
             for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             {
                 float* out = buffer.getWritePointer(ch);
                 const float* src = (ch < abChans) ? abBuffer.getReadPointer(ch) : abBuffer.getReadPointer(0);
-                
+
                 for (int i = 0; i < numSamples; ++i)
                 {
                     double srcPos = abPlaybackPos + i * ratio;
@@ -421,16 +446,88 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             abPlaybackPos += (int)(numSamples * ratio);
             if (abPlaybackPos >= abSampleCount)
                 abPlaybackPos = abSampleCount; // will stop on next block
-            
+
             // Re-read pointers since buffer was modified
             left = buffer.getReadPointer(0);
             right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
+
+            // AB-only spectrum: used by Compare playing-slot panel
+            abMeterEngine.processBlock(left, right, numSamples);
+        }
+    }
+    
+    // ===== Compare dual-stream: both advance + analyse into temp buffers =====
+    // NEVER touches the main output buffer — DAW passthrough is always preserved.
+    // The audible stream's audio is copied to the output buffer AFTER rendering.
+    {
+        int audible = cmpAudible.load();
+        std::lock_guard<std::mutex> lock(cmpMutex);
+        int numSamples = buffer.getNumSamples();
+        double dawRate = getSampleRate();
+
+        for (int sl = 0; sl < 2; ++sl)
+        {
+            auto& s = cmpStream[sl];
+            if (!s.loaded.load() || !s.playing.load() || s.sampleCount <= 0) continue;
+
+            double ratio = (s.sampleRate > 0 && dawRate > 0) ? s.sampleRate / dawRate : 1.0;
+            int chans = s.buffer.getNumChannels();
+
+            // Always render into temp buffer (never the output buffer directly)
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* out = cmpTmpBuf.getWritePointer(ch);
+                const float* src = (ch < chans) ? s.buffer.getReadPointer(ch) : s.buffer.getReadPointer(0);
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    double srcPos = s.playbackPos + i * ratio;
+                    int idx = ((int)srcPos) % s.sampleCount;
+                    int idx2 = (idx + 1) % s.sampleCount;
+                    float frac = (float)(srcPos - (int)srcPos);
+                    out[i] = src[idx] * (1.0f - frac) + src[idx2] * frac;
+                }
+            }
+            s.playbackPos = ((int)(s.playbackPos + numSamples * ratio)) % s.sampleCount;
+
+            // Feed this stream's meter from the temp buffer
+            cmpMeter[sl].processBlock(cmpTmpBuf.getReadPointer(0),
+                                       cmpTmpBuf.getReadPointer(1), numSamples);
+
+            // If this stream is the audible one, copy temp buffer to output
+            // (replaces DAW audio with the capture playback)
+            if (sl == audible)
+            {
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                {
+                    float* out = buffer.getWritePointer(ch);
+                    const float* src = cmpTmpBuf.getReadPointer(std::min(ch, 1));
+                    std::memcpy(out, src, (size_t)numSamples * sizeof(float));
+                }
+                left = buffer.getReadPointer(0);
+                right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
+            }
+        }
+
+        // SYNC lockstep for two captures: keep positions aligned by fraction
+        if (cmpSyncToTransport.load() && cmpBothCaptures.load())
+        {
+            auto& a = cmpStream[0];
+            auto& b = cmpStream[1];
+            bool aOk = a.loaded.load() && a.playing.load() && a.sampleCount > 0;
+            bool bOk = b.loaded.load() && b.playing.load() && b.sampleCount > 0;
+            if (aOk && bOk)
+            {
+                // Audible stream is the leader; follower matches its fractional position
+                int leader = (audible >= 0 && audible <= 1) ? audible : 0;
+                int follower = 1 - leader;
+                auto& ls = cmpStream[leader];
+                auto& fs = cmpStream[follower];
+                double frac = (double)ls.playbackPos / (double)ls.sampleCount;
+                fs.playbackPos = (int)(frac * fs.sampleCount) % fs.sampleCount;
+            }
         }
     }
 
-    // Always feed live meters (now sees ref audio when AB is active)
-    meterEngine.processBlock(left, right, buffer.getNumSamples());
-    
     // Feed capture engine if capturing
     if (captureState.load() == CaptureState::Capturing)
     {
@@ -1362,6 +1459,57 @@ void EchoJayProcessor::resumeAB()
         abPaused.store(false);
         abPausedByTransport.store(false);
     }
+}
+
+// ============ Compare dual-stream playback ============
+
+void EchoJayProcessor::loadCompareFile(int slot, const juce::String& wavPath)
+{
+    if (slot < 0 || slot > 1) return;
+    juce::File file(wavPath);
+    if (!file.existsAsFile()) return;
+
+    juce::AudioFormatManager fmt;
+    fmt.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(fmt.createReaderFor(file));
+    if (!reader) return;
+
+    juce::AudioBuffer<float> newBuf((int)reader->numChannels, (int)reader->lengthInSamples);
+    reader->read(&newBuf, 0, (int)reader->lengthInSamples, 0, true, true);
+
+    {
+        std::lock_guard<std::mutex> lock(cmpMutex);
+        auto& s = cmpStream[slot];
+        s.buffer = std::move(newBuf);
+        s.sampleCount = s.buffer.getNumSamples();
+        s.sampleRate = reader->sampleRate;
+        s.playbackPos = 0;
+        s.filePath = wavPath;
+    }
+    cmpStream[slot].loaded.store(true);
+    cmpStream[slot].playing.store(false);  // don't auto-play; wait for user or transport
+    cmpMeter[slot].reset();
+}
+
+void EchoJayProcessor::stopCompareStream(int slot)
+{
+    if (slot < 0 || slot > 1) return;
+    cmpStream[slot].loaded.store(false);
+    cmpStream[slot].playing.store(false);
+    cmpStream[slot].playbackPos = 0;
+    if (cmpAudible.load() == slot)
+        cmpAudible.store(-1);
+}
+
+void EchoJayProcessor::stopAllCompare()
+{
+    for (int i = 0; i < 2; ++i)
+    {
+        cmpStream[i].loaded.store(false);
+        cmpStream[i].playing.store(false);
+        cmpStream[i].playbackPos = 0;
+    }
+    cmpAudible.store(-1);
 }
 
 // ============ State Persistence ============

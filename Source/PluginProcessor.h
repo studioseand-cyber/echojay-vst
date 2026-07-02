@@ -119,7 +119,9 @@ public:
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
 
-    MeterEngine& getMeterEngine() { return meterEngine; }
+    MeterEngine& getMeterEngine()   { return meterEngine; }
+    MeterEngine& getABMeterEngine() { return abMeterEngine; }
+    MeterEngine& getCompareMeter(int slot) { return (slot == 0) ? cmpMeter[0] : cmpMeter[1]; }
     PluginScanner& getPluginScanner() { return pluginScanner; }
     ReferenceAnalyser& getReferenceAnalyser() { return refAnalyser; }
     WaveformRecorder& getWaveformRecorder() { return waveformRecorder; }
@@ -214,9 +216,35 @@ public:
     juce::String abFilePath;
     mutable std::mutex abMutex;
 
+    // ===== Compare dual-stream playback =====
+    // Two independent streams: both advance + analyse simultaneously.
+    // Only the audible one replaces the output buffer.
+    struct CmpStream {
+        juce::AudioBuffer<float> buffer;
+        std::atomic<bool> loaded { false };   // file loaded into buffer
+        std::atomic<bool> playing { false };  // actively advancing playback
+        int playbackPos = 0;
+        int sampleCount = 0;
+        double sampleRate = 44100.0;
+        juce::String filePath;
+    };
+    CmpStream cmpStream[2];
+    mutable std::mutex cmpMutex;             // protects both streams' buffers
+    std::atomic<int> cmpAudible { -1 };      // which stream is audible (-1 = none)
+    std::atomic<bool> cmpSyncToTransport { true }; // sync capture playback to DAW transport
+    std::atomic<bool> cmpBothCaptures { false };   // true when both slots are captures (set by editor)
+    // Temp buffers for muted-stream analysis (pre-allocated, avoids alloc on audio thread)
+    juce::AudioBuffer<float> cmpTmpBuf;
+
+    void loadCompareFile(int slot, const juce::String& wavPath);
+    void stopCompareStream(int slot);
+    void stopAllCompare();
+
 private:
-    MeterEngine meterEngine;       // Live meters (always running)
+    MeterEngine meterEngine;       // Live meters (always running — live input only)
     MeterEngine captureEngine;     // Capture pass meters (reset each capture)
+    MeterEngine abMeterEngine;     // AB playback spectrum only (used by Compare playing-slot panel)
+    MeterEngine cmpMeter[2];       // Compare stream meters (one per slot)
     PluginScanner pluginScanner;
     ReferenceAnalyser refAnalyser;
     WaveformRecorder waveformRecorder; // Audio recording + waveform thumbnail

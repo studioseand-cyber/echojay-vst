@@ -3,6 +3,7 @@
 #include <set>
 #include "PluginProcessor.h"
 #include "ChainHost.h"
+#include "NativeClip.h"
 #include "EchoJayAPI.h"
 #include "EchoJayLookAndFeel.h"
 #include "ParticleVisual.h"
@@ -60,7 +61,10 @@ private:
     void loadReferenceFile();
     void runAICompare();
     void paintCompareView(juce::Graphics& g, juce::Rectangle<int> area);
-    
+    // Spectrum panel for Compare tab: independent per-panel static snapshot,
+    // no shared peak-hold state (avoids top/bottom panel interference).
+    void paintCompareSpectrum(juce::Graphics& g, juce::Rectangle<int> area,
+                              const MeterData& md, bool isLive);
     void showSettingsView();
     void hideSettingsView();
     void saveSettingsToServer();
@@ -218,9 +222,44 @@ private:
     juce::TextButton aiCompareBtn { "AI Compare" };
     juce::ComboBox compareSlotABox;
     juce::ComboBox compareSlotBBox;
-    juce::TextButton playSlotABtn { ">" };
-    juce::TextButton playSlotBBtn { ">" };
     juce::Label refStatusLabel;
+    // Stage 1: meter-type selector (Waveform / Spectrum / Levels / Stereo Image / Loudness)
+    std::array<juce::TextButton, 5> compareMeterBtns;
+    int compareMeterId_ = 0; // 0=Waveform, 1=Spectrum, 2=Levels, 3=Stereo, 4=Loudness
+
+    // Stage 2: per-slot source selection
+    struct CompareSlotState {
+        enum class Kind { Empty, Live, Snapshot, WsCapture, Reference };
+        Kind kind = Kind::Empty;
+        int  index = -1;          // Snapshot or Reference index
+        juce::String wsReviewId;  // WsCapture: review ID from workspace
+        juce::String label;       // display name shown in the slot button
+    };
+    CompareSlotState compareTop_, compareBot_;
+    juce::TextButton compareTopSlotBtn_;
+    juce::TextButton compareBotSlotBtn_;
+    void openCompareSlotMenu(bool isTop);
+    void updateCompareSlotBtn(bool isTop);
+    MeterData getSlotMeterData(const CompareSlotState& slot) const;
+    static MeterData meterDataFromWsReview(const WsReview& r);
+    void paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int> area,
+                              const CompareSlotState& slot, bool isPlaying);
+
+    // Stage 3: transport bar controls
+    juce::TextButton comparePlayTopBtn_;   // per-header play (kept for direct play)
+    juce::TextButton comparePlayBotBtn_;
+    juce::TextButton compareSyncBtn_;      // SYNC toggle: capture follows DAW transport
+    juce::TextButton cmpABtn_ { "A" };     // transport bar: select side A (top)
+    juce::TextButton cmpBBtn_ { "B" };     // transport bar: select side B (bottom)
+    juce::TextButton cmpPlayBtn_;          // transport bar: play/pause selected side
+    void toggleComparePlay(bool isTop);    // play/pause a capture slot
+    void toggleCompareAudible(bool isTop); // toggle which slot is audible
+    void updateComparePlayBtns();
+    void updateTransportBar();             // refresh A/B/play/sync appearance
+    void startCompareStream(int slot);     // load WAV into compare stream (no auto-play)
+    bool bothSlotsAreCaptures() const;     // true when neither slot is Live or Empty
+    // Returns full path, "WEB" (web-only, no local file), or "" (no audio / empty)
+    juce::String resolveSlotWavPath(const CompareSlotState& slot) const;
     
     // Reference Presets
     juce::ComboBox presetBox;
@@ -233,14 +272,15 @@ private:
     juce::File getPresetsFolder();
     juce::StringArray presetNames;
     
-    juce::String getCompareSlotWavPath(int selectedId);
-    
     // Loudness panel bounds for click-to-reset
     juce::Rectangle<int> loudnessPanelBounds;
     
-    // Compare card waveform positions — stored during paint, overlays positioned in timer
+    // Waveform click positions — stored during paint, overlays positioned in timer
     struct CompareWavePos { juce::Rectangle<int> bounds; juce::String wavPath; float duration; };
-    std::vector<CompareWavePos> compareWavePositions;
+
+    // Compare static waveform seek areas — inner rect of each panel's waveform
+    struct CmpWaveSeekArea { juce::Rectangle<int> inner; int slotIdx; };
+    std::array<CmpWaveSeekArea, 2> cmpWaveSeekAreas_ = {};
     
     // Chat wave card positions for direct mouseDown hit testing (Windows overlay workaround)
     std::vector<CompareWavePos> chatWavePositions;
@@ -290,6 +330,12 @@ private:
     std::array<juce::ToggleButton, 11> dawButtons;
     juce::TextButton saveSettingsBtn { "Save" };
     juce::Label settingsSavedLabel;
+    juce::ComboBox uiScaleCombo;     // UI scale picker: 80–150%
+    float uiScale_ = 1.0f;          // current scale factor
+    void applyUIScale(float scale);
+    void saveUIScale() const;
+    void loadUIScale();
+    static juce::File getUIScaleFile();
     
     // Chat
     struct ChatMsg {
@@ -376,238 +422,662 @@ private:
     juce::String chainFormatFilter_;
 
     // Holder for the currently-selected slot's editor
-    struct ChainEditorHolder : juce::Component
+    // Pop-out window for hosted plugin editors at native size
+    struct ChainEditorWindow : juce::DocumentWindow
     {
-        std::unique_ptr<juce::AudioProcessorEditor> hosted;
-        juce::String statusText;
-        juce::String settingsHint;  // AI-suggested dial-in text for the selected slot
+        std::unique_ptr<juce::AudioProcessorEditor> editor;
+        std::function<void()> onCloseRequest;   // owner brings the editor back inline
 
-        static constexpr int kHintH = 36; // height reserved for hint banner when non-empty
-
-        void resized() override
+        ChainEditorWindow(const juce::String& name, juce::AudioProcessorEditor* e)
+            : juce::DocumentWindow(name, juce::Colour(0xff0A0C18),
+                                   juce::DocumentWindow::closeButton),
+              editor(e)
         {
-            if (hosted)
-            {
-                int hintOffset = settingsHint.isNotEmpty() ? kHintH : 0;
-                hosted->setBounds(0, hintOffset, getWidth(), getHeight() - hintOffset);
-            }
+            setUsingNativeTitleBar(true);
+            setContentNonOwned(editor.get(), true);
+            setResizable(false, false);
+            centreWithSize(editor->getWidth(), editor->getHeight());
+            // Float above the EchoJay window — Logic keeps plugin windows at
+            // a raised level, so a normal-level window can be fully hidden
+            // behind EchoJay no matter the stacking order at creation.
+            setAlwaysOnTop(true);
+            setVisible(true);
         }
-
-        void paint(juce::Graphics& g) override
+        void closeButtonPressed() override
         {
-            g.fillAll(juce::Colour(0xff111111));
-
-            // Settings hint banner at top (when a slot with AI guidance is selected)
-            if (settingsHint.isNotEmpty())
-            {
-                g.setColour(juce::Colour(0xff1a2a1a));
-                g.fillRect(0, 0, getWidth(), kHintH);
-                g.setColour(juce::Colour(0xff334433));
-                g.drawHorizontalLine(kHintH - 1, 0.0f, (float)getWidth());
-                g.setColour(juce::Colour(0xff88cc88));
-                g.setFont(juce::Font(juce::FontOptions(10.5f)));
-                g.drawText(settingsHint, 10, 0, getWidth() - 20, kHintH,
-                           juce::Justification::centredLeft, true);
-            }
-
-            if (!hosted)
-            {
-                bool isError   = statusText.startsWith("Failed") || statusText.startsWith("Error");
-                bool isLoading = statusText.startsWith("Loading");
-                g.setColour(isError   ? juce::Colour(0xffdd6666)
-                          : isLoading ? juce::Colour(0xff88aadd)
-                                      : juce::Colour(0xff555555));
-                g.setFont(juce::Font(juce::FontOptions(13.0f)));
-                g.drawText(statusText.isNotEmpty() ? statusText : "Add plugins below, then click a slot",
-                           getLocalBounds().reduced(16), juce::Justification::centred, true);
-            }
-        }
-
-        void setHostedEditor(juce::AudioProcessorEditor* e)
-        {
-            if (hosted) { removeChildComponent(hosted.get()); hosted.reset(); }
-            if (e)
-            {
-                hosted.reset(e);
-                addAndMakeVisible(*hosted);
-                int hintOffset = settingsHint.isNotEmpty() ? kHintH : 0;
-                int pw = juce::jlimit(200, juce::jmax(200, getWidth()),  hosted->getWidth()  > 0 ? hosted->getWidth()  : 400);
-                int ph = juce::jlimit(100, juce::jmax(100, getHeight() - hintOffset), hosted->getHeight() > 0 ? hosted->getHeight() : 300);
-                hosted->setSize(pw, ph);
-                resized();
-            }
+            if (onCloseRequest) onCloseRequest();
+            else setVisible(false);
         }
     };
-    ChainEditorHolder chainEditorHolder;
 
-    // Horizontal rack strip — one tile per chain slot, full-width, at bottom
-    struct ChainRackStrip : juce::Component
+    // Meaw:Chain-style rack — one large inline plugin view on top, horizontal
+    // chain strip along the bottom. ONE hosted editor open at a time; selecting
+    // another block closes the current editor first (sequential, never
+    // simultaneous). The hosted NSView is clipped via NativeClip masksToBounds
+    // and laid out from the ACTUAL native frame, not JUCE-reported sizes.
+    struct ChainListPanel : juce::Component, juce::Timer
     {
-        // One component per slot
-        struct Tile : juce::Component
+        static constexpr int kMaxSlots    = 15;
+        static constexpr int kCardHeaderH = 30;  // B/X + name + pop-out row above the plugin box
+        static constexpr int kCardMargin  = 18;  // outer margin around the card boxes
+        static constexpr int kSettingsH   = 72;  // SUGGESTED SETTINGS box height
+        static constexpr int kCardGap     = 10;  // vertical gap between card boxes
+        static constexpr int kStripH   = 76;   // bottom chain strip incl. scrollbar
+        static constexpr int kBlockW   = 118;
+        static constexpr int kBlockH   = 50;
+        static constexpr int kBlockGap = 26;   // connector-line gap between blocks
+        static constexpr int kAddW     = 40;   // "+" block
+
+        // Compact rounded block in the bottom strip — name + B/X/</> controls.
+        // Clicking anywhere else on the block selects it (shows editor above).
+        struct Block : juce::Component
         {
             juce::String name;
-            juce::String settings;  // AI-suggested dial-in hint
             int  slotIdx  = 0;
             bool bypassed = false;
             bool selected = false;
 
-            juce::TextButton bypassBtn   { "B" };
-            juce::TextButton removeBtn   { "X" };
-            juce::TextButton leftBtn     { "<" };
-            juce::TextButton rightBtn    { ">" };
+            juce::TextButton bypassBtn { "B" };
+            juce::TextButton removeBtn { "X" };
+            juce::TextButton prevBtn   { "<" };
+            juce::TextButton nextBtn   { ">" };
 
             std::function<void()>    onSelect;
             std::function<void()>    onBypass;
             std::function<void()>    onRemove;
             std::function<void(int)> onMove;
 
-            Tile()
+            Block()
             {
-                addAndMakeVisible(bypassBtn);
-                addAndMakeVisible(removeBtn);
-                addAndMakeVisible(leftBtn);
-                addAndMakeVisible(rightBtn);
-                bypassBtn.onClick  = [this] { if (onBypass) onBypass(); };
-                removeBtn.onClick  = [this] { if (onRemove) onRemove(); };
-                leftBtn.onClick    = [this] { if (onMove) onMove(-1); };
-                rightBtn.onClick   = [this] { if (onMove) onMove(+1); };
-
-                // Style: small, dark
-                auto style = [](juce::TextButton& b, juce::Colour bg) {
-                    b.setColour(juce::TextButton::buttonColourId, bg);
-                    b.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffcccccc));
+                auto style = [](juce::TextButton& b, juce::Colour fg) {
+                    b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
+                    b.setColour(juce::TextButton::textColourOffId, fg);
                 };
-                style(bypassBtn,  juce::Colour(0xff2a3a2a));
-                style(removeBtn,  juce::Colour(0xff3a2a2a));
-                style(leftBtn,    juce::Colour(0xff262626));
-                style(rightBtn,   juce::Colour(0xff262626));
+                style(bypassBtn, juce::Colour(0xffa0a0b8));
+                style(removeBtn, juce::Colour(0xffef4444));
+                style(prevBtn,   juce::Colour(0xffa0a0b8));
+                style(nextBtn,   juce::Colour(0xffa0a0b8));
+                for (auto* b : { &bypassBtn, &removeBtn, &prevBtn, &nextBtn })
+                    addAndMakeVisible(*b);
+                bypassBtn.onClick = [this] { if (onBypass) onBypass(); };
+                removeBtn.onClick = [this] { if (onRemove) onRemove(); };
+                prevBtn.onClick   = [this] { if (onMove)   onMove(-1); };
+                nextBtn.onClick   = [this] { if (onMove)   onMove(+1); };
             }
 
             void mouseDown(const juce::MouseEvent&) override
-            {
-                if (onSelect) onSelect();
-            }
+            { if (onSelect) onSelect(); }
 
             void paint(juce::Graphics& g) override
             {
-                auto r = getLocalBounds().reduced(3).toFloat();
-                g.setColour(selected  ? juce::Colour(0xff1e3d1e)
-                          : bypassed  ? juce::Colour(0xff252515)
-                                      : juce::Colour(0xff1e1e1e));
-                g.fillRoundedRectangle(r, 5.0f);
-                g.setColour(selected ? juce::Colour(0xff44aa44) : juce::Colour(0xff3a3a3a));
-                g.drawRoundedRectangle(r, 5.0f, 1.0f);
-                // Name
-                g.setColour(bypassed ? juce::Colour(0xff666666) : juce::Colour(0xffdddddd));
-                g.setFont(juce::Font(juce::FontOptions(11.0f)));
-                g.drawText(name, 8, 4, getWidth() - 16, 18, juce::Justification::centredLeft, true);
+                auto r = getLocalBounds().toFloat().reduced(0.5f);
+                g.setColour(selected ? juce::Colour(0xff11293a) : juce::Colour(0xff0E1020));
+                g.fillRoundedRectangle(r, 8.0f);
+                g.setColour(selected ? juce::Colour(0xff22d3ee)
+                                     : juce::Colour::fromFloatRGBA(1, 1, 1, 0.08f));
+                g.drawRoundedRectangle(r, 8.0f, selected ? 1.5f : 1.0f);
+
+                g.setColour(bypassed ? juce::Colour(0xff606078) : juce::Colour(0xfff0f0f5));
+                g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+                g.drawText(name, 6, 3, getWidth() - 12, 18,
+                           juce::Justification::centred, true);
                 if (bypassed)
                 {
-                    g.setColour(juce::Colour(0xffaaaa44));
-                    g.setFont(juce::Font(juce::FontOptions(9.0f)));
-                    g.drawText("bypassed", 8, 22, getWidth() - 16, 12, juce::Justification::centredLeft);
-                }
-                else if (settings.isNotEmpty())
-                {
-                    g.setColour(juce::Colour(0xff669966).withAlpha(0.85f));
-                    g.setFont(juce::Font(juce::FontOptions(8.5f)));
-                    g.drawText(settings, 8, 22, getWidth() - 16, 12,
-                               juce::Justification::centredLeft, true);
+                    g.setColour(juce::Colour(0xfff59e0b));
+                    g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
+                    g.drawText("BYPASSED", 6, 19, getWidth() - 12, 9,
+                               juce::Justification::centred);
                 }
             }
 
             void resized() override
             {
-                int bh = 18, bw = 22, m = 4;
-                int y = getHeight() - bh - m;
-                leftBtn.setBounds(m, y, bw, bh);
-                bypassBtn.setBounds(m + bw + 2, y, bw, bh);
-                removeBtn.setBounds(m + bw * 2 + 4, y, bw, bh);
-                rightBtn.setBounds(getWidth() - bw - m, y, bw, bh);
+                int bw = 18, bh = 15, m = 4;
+                int by = getHeight() - bh - m;
+                bypassBtn.setBounds(m, by, bw, bh);
+                removeBtn.setBounds(m + bw + 2, by, bw, bh);
+                nextBtn.setBounds(getWidth() - m - bw, by, bw, bh);
+                prevBtn.setBounds(getWidth() - m - bw * 2 - 2, by, bw, bh);
             }
         };
 
-        juce::Viewport viewport;
-        juce::Component content;
-        juce::TextButton addBtn { "+" };
-        std::vector<std::unique_ptr<Tile>> tiles;
+        // Strip content — paints the left-to-right connector line behind blocks
+        struct StripContent : juce::Component
+        {
+            int lineY = 0, lineEndX = 0;
+            void paint(juce::Graphics& g) override
+            {
+                if (lineEndX > 12)
+                {
+                    g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.35f));
+                    g.drawLine(12.0f, (float)lineY, (float)lineEndX, (float)lineY, 1.5f);
+                }
+            }
+        };
+
+        juce::Viewport   stripView;
+        StripContent     stripContent;
+        juce::TextButton addBlock { "+" };
+        std::vector<std::unique_ptr<Block>> blocks;
+        std::vector<ChainHost::SlotInfo>    slotInfos;
         int selectedIdx = -1;
+
+        // JUCE-side clip: the inline editor lives INSIDE this holder, which is
+        // locked to the display area. Descendant painting (e.g. an AU editor
+        // component's white background) cannot leak outside it — that leak was
+        // the white bands around plugins in 2.9.20.
+        struct InlineHolder : juce::Component
+        {
+            std::function<void()> onChildBounds;
+            void childBoundsChanged(juce::Component*) override
+            { if (onChildBounds) onChildBounds(); }
+        };
+        InlineHolder inlineHolder;
+
+        // Inline hosted editor — at most ONE alive at any moment
+        std::unique_ptr<juce::AudioProcessorEditor> inlineEditor;
+        int  inlineSlot  = -1;
+        int  realW = 0, realH = 0;  // actual native NSView size (JUCE sizes lie)
+        int  framePolls  = 0;
+        bool settled     = false;   // real native frame captured; timer in maintenance mode
+        bool layoutGuard = false;
+
+        std::unique_ptr<ChainEditorWindow> popout;
+        int popoutSlot = -1;
+
+        // Card header row controls — act on the SELECTED slot
+        juce::TextButton cardBypassBtn { "B" };
+        juce::TextButton cardRemoveBtn { "X" };
+        juce::TextButton popBtn { juce::String::fromUTF8("\xe2\x86\x97") }; // expand to floating window
+
+        // SUGGESTED SETTINGS box content — wraps, scrolls when it overflows
+        juce::TextEditor settingsBox;
+        juce::TooltipWindow tooltipWindow { this, 600 };
+
+        juce::String statusText;
 
         std::function<void(int)>      onSelectSlot;
         std::function<void(int)>      onRemoveSlot;
         std::function<void(int)>      onBypassSlot;
         std::function<void(int, int)> onMoveSlot;
         std::function<void()>         onAddClick;
+        std::function<juce::AudioProcessorEditor*(int)> onCreateEditor;
 
-        static constexpr int kTileW = 152;
-        static constexpr int kAddW  = 36;
-
-        ChainRackStrip()
+        ChainListPanel()
         {
-            addAndMakeVisible(viewport);
-            viewport.setScrollBarsShown(false, true);
-            viewport.setViewedComponent(&content, false);
-            addBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1e2e1e));
-            addBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff77bb77));
-            addBtn.onClick = [this] { if (onAddClick) onAddClick(); };
-            content.addAndMakeVisible(addBtn);
+            // Added first: stays at the back of the z-order so the strip,
+            // header row and pop-out button remain clickable above it
+            addChildComponent(inlineHolder);
+            inlineHolder.setInterceptsMouseClicks(false, true);
+            inlineHolder.onChildBounds = [this]
+            {
+                // Hosted editor resized itself — re-centre within the FIXED
+                // container (never resize the container)
+                if (layoutGuard || inlineEditor == nullptr) return;
+                int w = 0, h = 0;
+                if (NativeClip::getPluginViewSize(this, w, h) && w > 100 && h > 60)
+                { realW = w; realH = h; }
+                layoutInline();
+                attachNative(false);
+            };
+
+            addAndMakeVisible(stripView);
+            stripView.setViewedComponent(&stripContent, false);
+            stripView.setScrollBarsShown(false, true, false, true);
+            stripView.setScrollBarThickness(8);
+
+            addBlock.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+            addBlock.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+            addBlock.onClick = [this] { if (onAddClick) onAddClick(); };
+            stripContent.addAndMakeVisible(addBlock);
+
+            popBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
+            popBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+            popBtn.setTooltip("Open in floating window at native size");
+            popBtn.onClick = [this] { openPopoutForSelected(); };
+            addChildComponent(popBtn);
+
+            // Card header B / X — same actions as the strip blocks
+            auto cardStyle = [](juce::TextButton& b, juce::Colour fg) {
+                b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
+                b.setColour(juce::TextButton::textColourOffId, fg);
+            };
+            cardStyle(cardBypassBtn, juce::Colour(0xffa0a0b8));
+            cardStyle(cardRemoveBtn, juce::Colour(0xffef4444));
+            cardBypassBtn.setTooltip("Bypass this plugin");
+            cardRemoveBtn.setTooltip("Remove from chain");
+            cardBypassBtn.onClick = [this] {
+                if (selectedIdx >= 0 && onBypassSlot) onBypassSlot(selectedIdx);
+            };
+            cardRemoveBtn.onClick = [this] {
+                if (selectedIdx >= 0 && onRemoveSlot) onRemoveSlot(selectedIdx);
+            };
+            addChildComponent(cardBypassBtn);
+            addChildComponent(cardRemoveBtn);
+
+            settingsBox.setMultiLine(true, true);
+            settingsBox.setReadOnly(true);
+            settingsBox.setScrollbarsShown(true);
+            settingsBox.setCaretVisible(false);
+            settingsBox.setColour(juce::TextEditor::backgroundColourId,
+                                  juce::Colours::transparentBlack);
+            settingsBox.setColour(juce::TextEditor::outlineColourId,
+                                  juce::Colours::transparentBlack);
+            settingsBox.setColour(juce::TextEditor::focusedOutlineColourId,
+                                  juce::Colours::transparentBlack);
+            settingsBox.setColour(juce::TextEditor::textColourId, juce::Colour(0xff22d3ee));
+            settingsBox.setFont(juce::Font(juce::FontOptions(11.5f)));
+            addChildComponent(settingsBox);
+        }
+
+        ~ChainListPanel() override { closeAllEditors(); }
+
+        // ---- Editor lifecycle (ONE at a time, always close-before-open) ----
+
+        void closeInline()
+        {
+            stopTimer();
+            if (inlineEditor)
+            {
+                inlineHolder.removeChildComponent(inlineEditor.get());
+                inlineEditor.reset();
+                NativeClip::detach(this);   // remove the clip container too
+            }
+            inlineHolder.setVisible(false);
+            inlineSlot = -1;
+            realW = realH = 0;
+            settled = false;
+        }
+
+        void closePopout()
+        {
+            if (popout) { popout->setVisible(false); popout.reset(); }
+            popoutSlot = -1;
+        }
+
+        void closeAllEditors() { closeInline(); closePopout(); }
+
+        // Open slot i's editor inline in the display area. The current editor
+        // (inline or floating) is fully destroyed FIRST — never two at once.
+        void showInline(int i)
+        {
+            closeAllEditors();
+            if (!onCreateEditor || i < 0 || i >= (int)slotInfos.size()) return;
+
+            juce::AudioProcessorEditor* ed = nullptr;
+            try { ed = onCreateEditor(i); } catch (...) {}
+            if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }
+
+            statusText.clear();
+            inlineEditor.reset(ed);
+            inlineSlot = i;
+            inlineHolder.setVisible(true);
+            inlineHolder.addAndMakeVisible(*inlineEditor);
+            layoutInline();
+            attachNative(true);   // create container, reparent, clip, centre + log
+
+            // JUCE-reported editor sizes are unreliable — poll the native
+            // NSView frame while it's a degenerate placeholder (1x1, 40x30 …)
+            framePolls = 0;
+            settled = false;
+            startTimer(100);
+            repaint();
+        }
+
+        // Reassert the fixed clipping container over the display area and
+        // re-centre the plugin view inside it. The container's frame comes
+        // from OUR layout only — this never resizes it to the plugin.
+        void attachNative(bool log)
+        {
+            if (inlineEditor)
+                NativeClip::attach(this, displayArea(), log);
+        }
+
+        void timerCallback() override
+        {
+            if (!inlineEditor) { stopTimer(); return; }
+            if (!settled)
+            {
+                // Sizes up to 100x60 are treated as placeholders — Waves-style
+                // out-of-process views report 40x30 until the remote UI fills
+                // in. Wait up to ~5s before falling back to a hint.
+                ++framePolls;
+                int w = 0, h = 0;
+                bool got = NativeClip::getPluginViewSize(this, w, h)
+                        && w > 100 && h > 60;
+                if (got) { realW = w; realH = h; }
+                if (got || framePolls >= 50)
+                {
+                    settled = true;
+                    if (!got)
+                        statusText = "Editor didn't load inline - try the pop-out button (top right).";
+                    layoutInline();
+                    attachNative(true);   // log the settled geometry
+                    repaint();
+                    startTimer(400);      // switch to maintenance cadence
+                }
+                return;
+            }
+            // Maintenance: keep the plugin view parented in the fixed
+            // container and aligned, and pick up LATE size changes —
+            // out-of-process views can fill in many seconds after load.
+            int w = 0, h = 0;
+            if (NativeClip::getPluginViewSize(this, w, h) && w > 100 && h > 60
+                && (w != realW || h != realH))
+            {
+                realW = w;
+                realH = h;
+                if (statusText.startsWith("Editor didn't")) statusText.clear();
+                layoutInline();
+                repaint();
+            }
+            attachNative(false);
+        }
+
+        bool hasSelection() const
+        {
+            return selectedIdx >= 0 && selectedIdx < (int)slotInfos.size();
+        }
+
+        // Framed card layout, top to bottom: card header row (B/X + name +
+        // pop-out), plugin box (the clip container, inset on all sides),
+        // SUGGESTED SETTINGS box, chain strip. The plugin box IS the
+        // container clip frame — containment policy is unchanged.
+        juce::Rectangle<int> displayArea() const
+        {
+            int top    = 4 + kCardHeaderH + kCardGap;
+            int bottom = getHeight() - kStripH - 8 - kSettingsH - kCardGap;
+            return { kCardMargin, top,
+                     juce::jmax(50, getWidth() - kCardMargin * 2),
+                     juce::jmax(50, bottom - top) };
+        }
+
+        juce::Rectangle<int> settingsBoxRect() const
+        {
+            auto area = displayArea();
+            return { area.getX(), area.getBottom() + kCardGap,
+                     area.getWidth(), kSettingsH };
+        }
+
+        // Sync card controls + settings text with the current selection
+        void updateCard()
+        {
+            bool sel = hasSelection();
+            cardBypassBtn.setVisible(sel);
+            cardRemoveBtn.setVisible(sel);
+            popBtn.setVisible(sel);
+            settingsBox.setVisible(sel);
+            if (sel)
+            {
+                const auto& s = slotInfos[(size_t)selectedIdx];
+                bool hasGuidance = s.settings.isNotEmpty();
+                settingsBox.setColour(juce::TextEditor::textColourId,
+                                      hasGuidance ? juce::Colour(0xff22d3ee)
+                                                  : juce::Colour(0xff606078));
+                juce::String txt = hasGuidance
+                    ? s.settings
+                    : juce::String("No suggested settings for this plugin");
+                if (settingsBox.getText() != txt)
+                    settingsBox.setText(txt, false);
+            }
+        }
+
+        // Size the JUCE editor component to the plugin's NATIVE size — never
+        // clamp it: JUCE mirrors the component size onto the native view, so
+        // clamping would shrink the plugin view instead of trimming it. The
+        // holder clips JUCE-side painting to the display area; the NSView
+        // container clips the native side. Top-aligned, centred-x — matching
+        // the native alignment policy exactly.
+        void layoutInline()
+        {
+            if (!inlineEditor) return;
+            auto area = displayArea();
+            inlineHolder.setBounds(area);
+            int pw = realW > 8 ? realW : inlineEditor->getWidth();
+            int ph = realH > 8 ? realH : inlineEditor->getHeight();
+            pw = juce::jmax(pw, 40);
+            ph = juce::jmax(ph, 30);
+            layoutGuard = true;
+            inlineEditor->setBounds((area.getWidth() - pw) / 2, 0, pw, ph);
+            layoutGuard = false;
+        }
+
+        void selectSlot(int i)
+        {
+            selectedIdx = i;
+            if (onSelectSlot) onSelectSlot(i);
+            for (auto& bl : blocks)
+            { bl->selected = (bl->slotIdx == i); bl->repaint(); }
+            if (inlineSlot != i || inlineEditor == nullptr)
+                showInline(i);
+            popBtn.setVisible(selectedIdx >= 0);
+            // Header may have appeared/disappeared with the new selection —
+            // re-run layout so the clip container is re-asserted at the new
+            // display-area rect.
+            resized();
+            repaint();
+        }
+
+        // Fallback: open the selected slot's editor in a floating window at
+        // native size (closes the inline editor first — one at a time).
+        void openPopoutForSelected()
+        {
+            if (selectedIdx < 0 || selectedIdx >= (int)slotInfos.size() || !onCreateEditor)
+                return;
+            int i = selectedIdx;
+            closeAllEditors();
+            juce::AudioProcessorEditor* ed = nullptr;
+            try { ed = onCreateEditor(i); } catch (...) {}
+            if (!ed) return;
+            popout = std::make_unique<ChainEditorWindow>(slotInfos[(size_t)i].name, ed);
+            popoutSlot = i;
+            // Closing the floating window returns the editor to the plugin
+            // box. Deferred: the window can't be destroyed from inside its
+            // own close callback.
+            popout->onCloseRequest = [safe = juce::Component::SafePointer<ChainListPanel>(this)]
+            {
+                juce::MessageManager::callAsync([safe]
+                {
+                    if (safe == nullptr) return;
+                    int s = safe->popoutSlot;
+                    safe->closePopout();
+                    if (s >= 0 && s == safe->selectedIdx)
+                        safe->showInline(s);   // sequential: popout destroyed first
+                    safe->repaint();
+                });
+            };
+            if (auto* topComp = getTopLevelComponent())
+            {
+                auto mb = topComp->getScreenBounds();
+                popout->setTopLeftPosition(mb.getX() + 60, mb.getY() + 60);
+            }
+            popout->toFront(true);
+            repaint();
+        }
+
+        // Keep editor-slot bookkeeping in sync when the chain mutates.
+        // Call BEFORE ChainHost destroys/reorders the underlying processors.
+        void noteSlotRemoved(int i)
+        {
+            if (inlineSlot == i || popoutSlot == i) closeAllEditors();
+            if (inlineSlot > i) --inlineSlot;
+            if (popoutSlot > i) --popoutSlot;
+        }
+
+        void noteSlotMoved(int i, int j)
+        {
+            auto remap = [i, j](int s) { return s == i ? j : (s == j ? i : s); };
+            inlineSlot = remap(inlineSlot);
+            popoutSlot = remap(popoutSlot);
         }
 
         void rebuild(const std::vector<ChainHost::SlotInfo>& slots, int selIdx)
         {
-            selectedIdx = selIdx;
-            for (auto& t : tiles) content.removeChildComponent(t.get());
-            tiles.clear();
+            slotInfos = slots;
+            if ((int)slotInfos.size() > kMaxSlots)
+                slotInfos.resize(kMaxSlots);
+            selectedIdx = juce::jlimit(-1, (int)slotInfos.size() - 1, selIdx);
 
-            for (int i = 0; i < (int)slots.size(); ++i)
+            for (auto& bl : blocks) stripContent.removeChildComponent(bl.get());
+            blocks.clear();
+            for (int i = 0; i < (int)slotInfos.size(); ++i)
             {
-                auto tile      = std::make_unique<Tile>();
-                tile->name     = slots[i].name;
-                tile->settings = slots[i].settings;
-                tile->slotIdx  = i;
-                tile->bypassed = slots[i].bypassed;
-                tile->selected = (i == selIdx);
-
+                auto bl = std::make_unique<Block>();
+                bl->name     = slotInfos[(size_t)i].name;
+                bl->slotIdx  = i;
+                bl->bypassed = slotInfos[(size_t)i].bypassed;
+                bl->selected = (i == selectedIdx);
                 int ci = i;
-                tile->onSelect = [this, ci] { if (onSelectSlot) onSelectSlot(ci); };
-                tile->onBypass = [this, ci] { if (onSelectSlot) onSelectSlot(ci);
-                                              if (onBypassSlot) onBypassSlot(ci); };
-                tile->onRemove = [this, ci] { if (onRemoveSlot) onRemoveSlot(ci); };
-                tile->onMove   = [this, ci](int dir) { if (onMoveSlot) onMoveSlot(ci, dir); };
-
-                content.addAndMakeVisible(*tile);
-                tiles.push_back(std::move(tile));
+                bl->onSelect = [this, ci] { selectSlot(ci); };
+                bl->onBypass = [this, ci] { if (onBypassSlot) onBypassSlot(ci); };
+                bl->onRemove = [this, ci] { if (onRemoveSlot) onRemoveSlot(ci); };
+                bl->onMove   = [this, ci](int dir) { if (onMoveSlot) onMoveSlot(ci, dir); };
+                bl->prevBtn.setEnabled(i > 0);
+                bl->nextBtn.setEnabled(i < (int)slotInfos.size() - 1);
+                stripContent.addAndMakeVisible(*bl);
+                blocks.push_back(std::move(bl));
             }
-            layoutContent();
+            layoutStrip();
+            popBtn.setVisible(selectedIdx >= 0);
+
+            // Bring the inline editor in line with the selection
+            if (selectedIdx < 0)
+                closeAllEditors();
+            else if ((inlineSlot != selectedIdx || inlineEditor == nullptr)
+                     && !(popout != nullptr && popoutSlot == selectedIdx))
+                showInline(selectedIdx);
+            resized();   // header visibility may have changed — re-assert clip rect
+            repaint();
         }
 
-        void layoutContent()
+        void layoutStrip()
         {
-            int n = (int)tiles.size();
-            int totalW = n * kTileW + kAddW + 16;
-            int h = viewport.getHeight() > 0 ? viewport.getHeight() : getHeight();
-            content.setSize(juce::jmax(totalW, viewport.getWidth()), h);
-            for (int i = 0; i < n; ++i)
-                tiles[i]->setBounds(i * kTileW + 4, 4, kTileW - 8, h - 8);
-            addBtn.setBounds(n * kTileW + 8, (h - 28) / 2, 28, 28);
+            const int contentH = kStripH - 10;  // leave room for the h-scrollbar
+            int x = 12;
+            int y = (contentH - kBlockH) / 2;
+            for (auto& bl : blocks)
+            {
+                bl->setBounds(x, y, kBlockW, kBlockH);
+                x += kBlockW + kBlockGap;
+            }
+            bool canAdd = (int)blocks.size() < kMaxSlots;
+            addBlock.setVisible(canAdd);
+            if (canAdd)
+            {
+                addBlock.setBounds(x, y + (kBlockH - kAddW) / 2, kAddW, kAddW);
+                x += kAddW + 12;
+            }
+            stripContent.lineY    = y + kBlockH / 2;
+            stripContent.lineEndX = blocks.empty() ? 0 : x - 12;
+            stripContent.setSize(juce::jmax(x, stripView.getWidth()), contentH);
+            stripContent.repaint();
         }
 
         void paint(juce::Graphics& g) override
         {
-            g.fillAll(juce::Colour(0xff161616));
-            g.setColour(juce::Colour(0xff303030));
-            g.drawLine(0.0f, 0.0f, (float)getWidth(), 0.0f, 1.0f);
+            g.fillAll(juce::Colour(0xff0A0C18));
+
+            auto area = displayArea();
+
+            if (hasSelection())
+            {
+                const auto& s = slotInfos[(size_t)selectedIdx];
+
+                // Plugin box card — the native container paints its own bg +
+                // border on top of this; drawing it here too keeps the frame
+                // visible during load and while popped out
+                auto cardBorder = juce::Colour(0xff22d3ee).withAlpha(0.3f);
+                g.setColour(juce::Colour(0xff080A12));
+                g.fillRoundedRectangle(area.toFloat(), 8.0f);
+                g.setColour(cardBorder);
+                g.drawRoundedRectangle(area.toFloat().reduced(0.5f), 8.0f, 1.0f);
+
+                // Card header row — name centred between B/X (left) and ↗ (right)
+                g.setColour(s.bypassed ? juce::Colour(0xff606078) : juce::Colour(0xfff0f0f5));
+                g.setFont(juce::Font(juce::FontOptions(13.5f, juce::Font::bold)));
+                int nameInset = kCardMargin + 56;
+                g.drawText(s.name + (s.bypassed ? "  (bypassed)" : ""),
+                           nameInset, 4, getWidth() - nameInset * 2, kCardHeaderH - 4,
+                           juce::Justification::centred, true);
+
+                // SUGGESTED SETTINGS box card
+                auto sb = settingsBoxRect().toFloat();
+                g.setColour(juce::Colour(0xff080A12));
+                g.fillRoundedRectangle(sb, 8.0f);
+                g.setColour(cardBorder);
+                g.drawRoundedRectangle(sb.reduced(0.5f), 8.0f, 1.0f);
+                g.setColour(juce::Colour(0xffa0a0b8));
+                g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
+                g.drawText("SUGGESTED SETTINGS", (int)sb.getX() + 10, (int)sb.getY() + 5,
+                           200, 12, juce::Justification::centredLeft);
+            }
+
+            // Display-area messages
+            if (statusText.isNotEmpty())
+            {
+                bool isErr = statusText.startsWith("Failed") || statusText.startsWith("Error");
+                bool isLd  = statusText.startsWith("Loading");
+                g.setColour(isErr ? juce::Colour(0xffdd6666)
+                                  : isLd ? juce::Colour(0xff88aadd) : juce::Colour(0xffa0a0b8));
+                g.setFont(juce::Font(juce::FontOptions(13.0f)));
+                g.drawText(statusText, area.reduced(16), juce::Justification::centred, true);
+            }
+            else if (slotInfos.empty())
+            {
+                int cy = area.getCentreY() - 34;
+                g.setColour(juce::Colour(0xffa0a0b8));
+                g.setFont(juce::Font(juce::FontOptions(13.0f)));
+                g.drawText("Press + to add a plugin, or ask the AI assistant",
+                           0, cy, getWidth(), 20, juce::Justification::centred);
+                g.drawText("to build a chain for you.",
+                           0, cy + 20, getWidth(), 20, juce::Justification::centred);
+                g.setColour(juce::Colour(0xff606078));
+                g.setFont(juce::Font(juce::FontOptions(10.0f)));
+                g.drawText("Hosting third-party plugins is experimental. Save your project before loading.",
+                           0, cy + 48, getWidth(), 16, juce::Justification::centred);
+            }
+            else if (popout != nullptr && popoutSlot == selectedIdx && inlineEditor == nullptr)
+            {
+                g.setColour(juce::Colour(0xffa0a0b8));
+                g.setFont(juce::Font(juce::FontOptions(12.0f)));
+                g.drawText("Editor is open in a floating window - click the plugin block to bring it back.",
+                           area.reduced(16), juce::Justification::centred, true);
+            }
         }
 
         void resized() override
         {
-            viewport.setBounds(getLocalBounds());
-            layoutContent();
+            // Card header row: B / X left, pop-out right (name painted centred)
+            cardBypassBtn.setBounds(kCardMargin, 6, 24, 22);
+            cardRemoveBtn.setBounds(kCardMargin + 26, 6, 24, 22);
+            popBtn.setBounds(getWidth() - kCardMargin - 26, 6, 26, 22);
+
+            // Settings text sits inside its card, below the tiny caps label
+            auto sb = settingsBoxRect();
+            settingsBox.setBounds(sb.getX() + 8, sb.getY() + 18,
+                                  sb.getWidth() - 16, sb.getHeight() - 24);
+
+            stripView.setBounds(0, getHeight() - kStripH, getWidth(), kStripH);
+            updateCard();
+            layoutStrip();
+            layoutInline();
+            attachNative(false);   // re-assert the clip frame at the new rect
         }
+
+        // The container frame is peer-relative — track pure moves too
+        void moved() override { attachNative(false); }
     };
-    ChainRackStrip chainRackStrip;
-    int chainSelectedSlot_ = -1;  // which rack tile is currently selected
+    ChainListPanel chainListPanel;
+    int chainSelectedSlot_ = -1;
+    bool chainRemovePending_ = false;  // one deferred slot-removal at a time
+
+    // CHAIN tab AI assistant sidebar collapse — when collapsed the plugin
+    // display area takes the full tab width.
+    bool chainChatCollapsed_ = false;
+    juce::TextButton chainChatToggleBtn { "AI >" };
+    // "n/15" slots-used counter — sits left of the Aa button in the AI
+    // ASSISTANT header (replaces the usage counter on this tab).
+    juce::Label chainSlotCountLabel;
 
     // Warning overlay (shown once when CHAIN tab first opened)
     juce::Component  chainWarnOverlay;
@@ -641,6 +1111,7 @@ private:
     std::array<juce::TextButton, kMaxChainBuildBtns> chainBuildBtns;
     std::array<juce::String, kMaxChainBuildBtns> chainBuildJsons;
     int activeChainBuildBtns = 0;
+    void showChainPluginPicker();                       // "+" button popup
     void loadChainFromJson(const juce::String& chainJson);
     void promptForFailedPlugins(juce::StringArray failed);
     void showNextFailPrompt(juce::StringArray names, int idx);

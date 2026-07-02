@@ -287,10 +287,27 @@ void EchoJayWorkspace::doLoad()
                 if (!serverIds.contains(lr.id))
                     localOnly.push_back(lr);
 
+            // Snapshot in-memory spectrum data before overwriting (server doesn't store it)
+            // Maps review id → (spectrumBands, hasSpectrum)
+            struct SpecSnap { std::array<float, 64> bands; bool has; };
+            std::vector<std::pair<juce::String, SpecSnap>> specCache;
+            for (auto& lr : reviews)
+                if (lr.hasSpectrum)
+                    specCache.push_back({ lr.id, { lr.spectrumBands, true } });
+
             reviews.clear();
             if (auto* arr = root->getProperty("reviews").getArray())
+            {
                 for (auto& v : *arr)
-                    reviews.push_back(parseReview(v));
+                {
+                    auto r = parseReview(v);
+                    // Restore in-session spectrum that the server doesn't persist
+                    for (auto& sc : specCache)
+                        if (sc.first == r.id)
+                            { r.spectrumBands = sc.second.bands; r.hasSpectrum = true; break; }
+                    reviews.push_back(std::move(r));
+                }
+            }
 
             // Prepend surviving local reviews (newest-first order maintained)
             for (int i = (int)localOnly.size() - 1; i >= 0; --i)
@@ -374,7 +391,7 @@ void EchoJayWorkspace::doSync()
             for (auto& v : *arr)
                 albums.push_back(parseAlbum(v));
 
-        // Merge reviews — same as doLoad: preserve local-only entries
+        // Merge reviews — same as doLoad: preserve local-only entries + in-session spectrum
         {
             juce::StringArray serverIds;
             if (auto* arr = root->getProperty("reviews").getArray())
@@ -388,10 +405,26 @@ void EchoJayWorkspace::doSync()
                 if (!serverIds.contains(lr.id))
                     localOnly.push_back(lr);
 
+            // Snapshot in-memory spectrum data before overwriting (server doesn't store it)
+            struct SpecSnap { std::array<float, 64> bands; bool has; };
+            std::vector<std::pair<juce::String, SpecSnap>> specCache;
+            for (auto& lr : reviews)
+                if (lr.hasSpectrum)
+                    specCache.push_back({ lr.id, { lr.spectrumBands, true } });
+
             reviews.clear();
             if (auto* arr = root->getProperty("reviews").getArray())
+            {
                 for (auto& v : *arr)
-                    reviews.push_back(parseReview(v));
+                {
+                    auto r = parseReview(v);
+                    // Restore in-session spectrum that the server doesn't persist
+                    for (auto& sc : specCache)
+                        if (sc.first == r.id)
+                            { r.spectrumBands = sc.second.bands; r.hasSpectrum = true; break; }
+                    reviews.push_back(std::move(r));
+                }
+            }
 
             for (int i = (int)localOnly.size() - 1; i >= 0; --i)
                 reviews.insert(reviews.begin(), localOnly[(size_t)i]);

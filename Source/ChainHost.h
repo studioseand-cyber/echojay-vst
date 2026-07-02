@@ -140,7 +140,14 @@ private:
 
     std::vector<ChainSlot> slots_;
 
+    // Removed slots' nodes — kept ALIVE (disconnected, not processed) because
+    // some plugins leak UI timers that fire into their AudioUnit after editor
+    // close; disposing the instance makes that a use-after-free crash.
+    // Freed only when the ChainHost itself is destroyed.
+    std::vector<juce::AudioProcessorGraph::Node::Ptr> graveyard_;
+
     bool   prepared_  = false;
+    std::atomic<bool> hasActiveSlots_ { false };  // true when ≥1 non-bypassed slot exists
 
     // Resolver cache (message thread only — no mutex needed)
     std::vector<RecommendableEntry> recommendable_;
