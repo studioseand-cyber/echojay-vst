@@ -1107,7 +1107,10 @@ private:
     // Chat text scaling (user-adjustable via Aa button in chat header).
     // Stored as a multiplier applied to the base 12pt message font. Cycles
     // through preset steps on each click and persists across sessions.
-    float chatTextScale = 1.0f;
+    // Multiplier on the 12pt base font. Default 1.25 = 15px message text
+    // (Claude/ChatGPT territory); loadChatTextScale() overrides it only when
+    // the user has an explicit persisted Aa choice.
+    float chatTextScale = 1.25f;
     void cycleChatTextScale();
     void loadChatTextScale();
     void saveChatTextScale();

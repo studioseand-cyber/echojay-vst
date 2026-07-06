@@ -1235,7 +1235,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatInput.setColour(juce::TextEditor::backgroundColourId, C::bg3);
     chatInput.setColour(juce::TextEditor::textColourId, C::text);
     chatInput.setColour(juce::TextEditor::outlineColourId, C::border2);
-    chatInput.setFont(juce::Font(juce::FontOptions(13.0f)));
+    chatInput.setFont(juce::Font(juce::FontOptions(12.0f * chatTextScale)));
     chatInput.setIndents(8, 8);
     chatInput.addListener(this);
     addChildComponent(chatInput);
@@ -1253,6 +1253,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // of scales so users can bump chat readability without a settings trip.
     // Uses a subtle filled background so users can actually spot it.
     loadChatTextScale();
+    // Re-apply the input font — a persisted Aa choice may differ from the
+    // default the constructor used a few lines up
+    chatInput.setFont(juce::Font(juce::FontOptions(12.0f * chatTextScale)));
     loadSpectrogramMode();
     chatTextSizeBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
     chatTextSizeBtn.setColour(juce::TextButton::buttonOnColourId, C::bg4);
@@ -7301,6 +7304,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
         juce::AttributedString as;
         as.append(msg.content, juce::Font(juce::FontOptions(chatMsgFontSize)),
                   isUser ? C::text : C::text2);
+        // ~1.4x effective line height so paragraphs breathe. MUST match the
+        // height-measure pass in resized() or the scroll range drifts.
+        as.setLineSpacing(chatMsgFontSize * 0.35f);
         juce::TextLayout layout;
         layout.createLayout(as, (float)(maxBubbleW - 20));
         int textH = (int)layout.getHeight() + 20;
@@ -8896,6 +8902,7 @@ void EchoJayEditor::timerCallback()
             {
                 juce::AttributedString as;
                 as.append(msg.content, juce::Font(juce::FontOptions(chatMsgFontSize2)), C::text);
+                as.setLineSpacing(chatMsgFontSize2 * 0.35f); // MUST match paint pass
                 juce::TextLayout layout;
                 layout.createLayout(as, (float)(maxBW - 20));
                 int textH = (int)layout.getHeight() + 20;
@@ -10898,11 +10905,12 @@ void EchoJayEditor::saveCustomGenres()
 // Chat text scaling
 // ============================================================================
 // Cycles the chat message font size through a small preset list. Stored as a
-// multiplier on the base 12pt font (so 1.0 = stock, 1.6 = noticeably bigger).
+// multiplier on the base 12pt font. Default is 1.25 (= 15px message text);
+// the cycle goes bigger from there, then offers the smaller legacy sizes.
 // Persisted to ~/Documents/EchoJay/chat_text_scale.txt so the user's choice
 // survives across sessions and across plugin instances.
 
-static constexpr float kChatTextScalePresets[] = { 1.0f, 1.2f, 1.4f, 1.6f, 0.9f };
+static constexpr float kChatTextScalePresets[] = { 1.25f, 1.5f, 1.75f, 1.0f, 0.9f };
 static constexpr int kChatTextScalePresetCount = (int)(sizeof(kChatTextScalePresets) / sizeof(float));
 
 void EchoJayEditor::cycleChatTextScale()
@@ -10918,6 +10926,11 @@ void EchoJayEditor::cycleChatTextScale()
     int next = (curIdx + 1) % kChatTextScalePresetCount;
     chatTextScale = kChatTextScalePresets[next];
     saveChatTextScale();
+
+    // Input field follows the message text size
+    juce::Font inputFont(juce::FontOptions(12.0f * chatTextScale));
+    chatInput.setFont(inputFont);
+    chatInput.applyFontToAllText(inputFont);
 
     // Recompute chat content height immediately (so the scroll range is right)
     // and trigger a full repaint. The timer would catch this on its next tick
