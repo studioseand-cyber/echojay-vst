@@ -174,6 +174,11 @@ void LinkProcessor::closeRingNow()
 // =============================================================================
 void LinkProcessor::updateShmState()
 {
+    // Called after any linkName/linkOn change — tell the host non-parameter
+    // state changed so it re-snapshots (plain updateHostDisplay() doesn't
+    // signal this; a host restoring a stale blob would lose the name/toggle).
+    updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+
     const bool on = linkOn.load();
     const bool hasName = linkName.trim().isNotEmpty();
     const bool shouldBeActive = on && hasName;
@@ -329,6 +334,8 @@ void LinkProcessor::updateChainLatency()
 void LinkProcessor::notifyChainModel()
 {
     if (onChainModelChanged) onChainModelChanged();
+    // Chain model changed → host should re-snapshot our state
+    updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
 }
 
 void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,

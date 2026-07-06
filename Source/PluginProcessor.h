@@ -138,17 +138,30 @@ public:
     // Build AI compare context between two references
     juce::String buildCompareContext(const ReferenceResult& a, const ReferenceResult& b) const;
 
+    // Tell the host non-parameter state changed so it re-snapshots our state
+    // (plain updateHostDisplay() does NOT signal this — Logic could restore a
+    // stale pre-selection blob if its hosting process recycles, re-showing
+    // the channel/genre prompts the user already answered).
+    void markStateDirty() { updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true)); }
+
     ChannelType getChannelType() const { return channelType; }
     void setChannelType(ChannelType t);
     juce::String getCustomChannelName() const { return customChannelName; }
-    void setCustomChannelName(const juce::String& name) { customChannelName = name; }
+    void setCustomChannelName(const juce::String& name) { customChannelName = name; markStateDirty(); }
     juce::String getEffectiveChannelName() const;
-    
+
     bool isChannelTypePromptDismissed() const { return channelTypePromptDismissed; }
     void setChannelTypePromptDismissed(bool dismissed);
 
     juce::String getGenre() const { return genre; }
-    void setGenre(const juce::String& g) { genre = g; }
+    void setGenre(const juce::String& g) { genre = g; markStateDirty(); }
+
+    // Genre prompt answered — PROCESSOR-owned and serialised (like the
+    // channel flag) so an editor rebuild or project reload never re-prompts.
+    // Genre's default ("hip-hop") is never empty, so the value alone cannot
+    // distinguish a fresh instance from a chosen one; this flag is the truth.
+    bool isGenrePromptDismissed() const { return genrePromptDismissed; }
+    void setGenrePromptDismissed(bool dismissed) { genrePromptDismissed = dismissed; markStateDirty(); }
 
     // Project name — optional label for the current mix session.
     // Resetting the name to something new resets captureVersion to 1.
@@ -254,6 +267,7 @@ private:
     juce::String customChannelName;
     bool channelTypePromptDismissed = false;
     juce::String genre { "hip-hop" };
+    bool genrePromptDismissed = false;
 
     // Auto-detection
     

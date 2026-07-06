@@ -182,7 +182,6 @@ static void recordUpdateDismissal(const juce::String& versionDismissed)
 }
 
 // Static: genre prompt dismissed flag — persists across all instances for the DAW session
-bool EchoJayEditor::genrePromptDismissedThisSession = false;
 
 // ============================================================================
 // Constructor
@@ -1734,7 +1733,7 @@ void EchoJayEditor::showMainScreen()
 
     bool promptWillShow = !processorRef.isChannelTypePromptDismissed()
                           && processorRef.getChannelType() == ChannelType::FullMix;
-    bool genrePromptWillShow = !genrePromptDismissedThisSession && !promptWillShow;
+    bool genrePromptWillShow = !processorRef.isGenrePromptDismissed() && !promptWillShow;
 
     juce::Component* mainComps[] = { &captureBtn, &scanBtn,
         &channelTypeBox, &genreBox, &projectInput, &statusLabel, &durationLabel, &detectedLabel,
@@ -1890,7 +1889,7 @@ void EchoJayEditor::dismissChannelPrompt()
 bool EchoJayEditor::shouldShowGenrePrompt() const
 {
     return currentScreen == Screen::Main
-        && !genrePromptDismissedThisSession
+        && !processorRef.isGenrePromptDismissed()
         && !channelPromptVisible;  // don't overlap with channel prompt
 }
 
@@ -1933,7 +1932,7 @@ void EchoJayEditor::updateGenrePromptVisibility()
 
 void EchoJayEditor::dismissGenrePrompt(const juce::String& selectedGenre)
 {
-    genrePromptDismissedThisSession = true;
+    processorRef.setGenrePromptDismissed(true);
     processorRef.setGenre(selectedGenre);
 
     // Sync the genre dropdown — find by text since IDs vary with submenus
@@ -10839,6 +10838,7 @@ void EchoJayEditor::rebuildGenreBox()
                 if (name.isNotEmpty()) {
                     addCustomGenreToList(name);
                     processorRef.setGenre(name);
+                    processorRef.setGenrePromptDismissed(true);
                     rebuildGenreBox();
                 }
                 juce::MessageManager::callAsync([te]() { delete te; });
@@ -10848,6 +10848,7 @@ void EchoJayEditor::rebuildGenreBox()
                 if (name.isNotEmpty()) {
                     addCustomGenreToList(name);
                     processorRef.setGenre(name);
+                    processorRef.setGenrePromptDismissed(true);
                     rebuildGenreBox();
                 }
                 juce::MessageManager::callAsync([te]() { delete te; });
@@ -10855,7 +10856,9 @@ void EchoJayEditor::rebuildGenreBox()
         }
         else
         {
+            // An explicit dropdown selection answers the genre question too
             processorRef.setGenre(genreBox.getText());
+            processorRef.setGenrePromptDismissed(true);
         }
     };
 }

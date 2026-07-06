@@ -723,6 +723,7 @@ void EchoJayProcessor::setProjectName(const juce::String& name)
     {
         projectName = name;
         captureVersion = 1; // reset version whenever the project name changes
+        markStateDirty();
     }
 }
 
@@ -737,13 +738,13 @@ juce::String EchoJayProcessor::computePassName() const
 void EchoJayProcessor::setChannelType(ChannelType t)
 {
     channelType = t;
-    updateHostDisplay();
+    markStateDirty();
 }
 
 void EchoJayProcessor::setChannelTypePromptDismissed(bool dismissed)
 {
     channelTypePromptDismissed = dismissed;
-    updateHostDisplay();
+    markStateDirty();
 }
 
 // ============ Capture System ============
@@ -1520,6 +1521,7 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     try {
     auto state = std::make_unique<juce::DynamicObject>();
     state->setProperty("genre", genre);
+    state->setProperty("genrePromptDismissed", genrePromptDismissed);
     state->setProperty("channelType", (int)channelType);
     state->setProperty("customChannelName", customChannelName);
     state->setProperty("channelTypePromptDismissed", channelTypePromptDismissed);
@@ -1660,6 +1662,14 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                 channelTypePromptDismissed = (bool)obj->getProperty("channelTypePromptDismissed");
             else
                 channelTypePromptDismissed = (channelType != ChannelType::FullMix);
+            // Genre flag: saves made before it existed derive from the channel
+            // flag — the genre prompt always followed the channel prompt, so
+            // an answered channel implies an answered genre (avoids one
+            // spurious re-prompt on every pre-existing project).
+            if (obj->hasProperty("genrePromptDismissed"))
+                genrePromptDismissed = (bool)obj->getProperty("genrePromptDismissed");
+            else
+                genrePromptDismissed = channelTypePromptDismissed;
             passCounter = (int)obj->getProperty("passCounter");
             if (obj->hasProperty("projectName"))
                 projectName = obj->getProperty("projectName").toString();
@@ -1831,6 +1841,9 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
         channelType = static_cast<ChannelType>((int)vstate.getProperty("channelType", 0));
         customChannelName = vstate.getProperty("customChannelName", "").toString();
         channelTypePromptDismissed = (bool)vstate.getProperty("channelTypePromptDismissed", false);
+        // Legacy XML saves predate the genre flag — derive as in the JSON path
+        genrePromptDismissed = (bool)vstate.getProperty("genrePromptDismissed",
+                                                        channelTypePromptDismissed);
     }
     } catch (...) {}
 }

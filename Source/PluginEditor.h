@@ -208,7 +208,8 @@ private:
     bool channelPromptVisible = false;
     
     // Session-level genre prompt — shown once per DAW session across all instances
-    static bool genrePromptDismissedThisSession;
+    // Genre-prompt dismissal lives in the PROCESSOR (serialised with state);
+    // the old editor static re-prompted after project reload / process recycle.
     bool genrePromptVisible = false;
     juce::Label genrePromptTitle;
     juce::Label genrePromptSubtitle;
