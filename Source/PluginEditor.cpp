@@ -1575,7 +1575,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         chainBuildBtns[(size_t)i].setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff0E1020));
         chainBuildBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
         chainBuildBtns[(size_t)i].setVisible(false);
-        chainBuildBtns[(size_t)i].onClick = [this, i]() { loadChainFromJson(chainBuildJsons[(size_t)i]); };
+        chainBuildBtns[(size_t)i].onClick = [this, i]() { showChainBuildTargetMenu(chainBuildJsons[(size_t)i]); };
         addAndMakeVisible(chainBuildBtns[(size_t)i]);
     }
 
@@ -9164,7 +9164,13 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     juce::String chainInjection;
     if (recommendable.size() > 0)
     {
-        chainInjection = EchoJayAPI::buildChainInjection(recommendable);
+        // Live Link names ride along so the model can tag suggestedTarget
+        processorRef.refreshLinkRegistry();
+        juce::StringArray liveLinks;
+        for (auto& li : processorRef.getLinkSlotInfos())
+            if (li.connected && li.name.isNotEmpty())
+                liveLinks.addIfNotAlreadyThere(li.name);
+        chainInjection = EchoJayAPI::buildChainInjection(recommendable, liveLinks);
         userContent += chainInjection;
     }
     else if (EchoJayAPI::messageNeedsPlugins(msg))
@@ -9331,6 +9337,153 @@ void EchoJayEditor::showChainPluginPicker()
                 safeThis->repaint();
             });
         });
+}
+
+// =============================================================================
+// Link chain send side — Build target menu, command write, ack polling
+// =============================================================================
+void EchoJayEditor::showChainBuildTargetMenu(const juce::String& chainJson)
+{
+    processorRef.refreshLinkRegistry();
+    juce::StringArray links;
+    for (auto& li : processorRef.getLinkSlotInfos())
+        if (li.connected && li.name.isNotEmpty())
+            links.addIfNotAlreadyThere(li.name);
+
+    // No live Links → unchanged default behaviour
+    if (links.isEmpty()) { loadChainFromJson(chainJson); return; }
+
+    // Optional AI suggestion — only pre-selects when it matches a LIVE
+    // instance; the user always confirms by choosing an item.
+    juce::String suggested;
+    {
+        auto v = juce::JSON::parse(chainJson);
+        if (auto* o = v.getDynamicObject())
+            suggested = o->getProperty("suggestedTarget").toString().trim();
+        bool live = false;
+        for (auto& l : links)
+            if (l.equalsIgnoreCase(suggested)) { suggested = l; live = true; break; }
+        if (!live) suggested.clear();
+    }
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("BUILD CHAIN ON");
+    menu.addItem(1, "Build here (this EchoJay)", true, suggested.isEmpty());
+    menu.addSeparator();
+    for (int i = 0; i < links.size(); ++i)
+    {
+        bool isSuggested = (links[i] == suggested);
+        menu.addItem(2 + i,
+                     "Link: " + links[i] + (isSuggested ? "   - suggested" : ""),
+                     true, isSuggested);
+    }
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
+        [safeThis, chainJson, links](int result)
+        {
+            if (safeThis == nullptr || result <= 0) return;
+            if (result == 1) { safeThis->loadChainFromJson(chainJson); return; }
+            int li = result - 2;
+            if (li >= 0 && li < links.size())
+                safeThis->sendChainToLink(links[li], chainJson);
+        });
+}
+
+void EchoJayEditor::sendChainToLink(const juce::String& linkName,
+                                    const juce::String& chainJson)
+{
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    auto id = LinkShm::makeSafeFilePart(linkName);
+    if (dir.isEmpty() || id.isEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+            "Link chain build", "Could not resolve the shared Link directory.");
+        return;
+    }
+
+    auto v = juce::JSON::parse(chainJson);
+    auto* o = v.getDynamicObject();
+    if (o == nullptr || !o->hasProperty("chain")) return;
+
+    // Chain entries pass through as-is (name/role/settings) — the Link
+    // resolves names and applies plugin_disabled.json on its side.
+    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",          1);
+    cmd->setProperty("seq",        seq);
+    cmd->setProperty("chain",      o->getProperty("chain"));
+    cmd->setProperty("sourceNote", "EchoJay V2 chat build");
+
+    juce::File(dir + "chain-ack-" + id + ".json").deleteFile();   // stale ack
+    juce::File(dir + "chain-cmd-" + id + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+
+    pollLinkChainAck(linkName, seq, 20);   // 20 x 250ms = ~5s timeout
+}
+
+void EchoJayEditor::pollLinkChainAck(const juce::String& linkName, int seq,
+                                     int attemptsLeft)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay(250, [safeThis, linkName, seq, attemptsLeft]
+    {
+        if (safeThis == nullptr) return;
+
+        int err = 0;
+        juce::String dir = LinkShm::resolveDir(err);
+        auto id = LinkShm::makeSafeFilePart(linkName);
+        juce::File ack(dir + "chain-ack-" + id + ".json");
+
+        if (dir.isNotEmpty() && ack.existsAsFile())
+        {
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+            {
+                if ((int)o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();   // consumed
+                    juce::String status = o->getProperty("status").toString();
+                    juce::StringArray lines;
+                    if (auto* arr = o->getProperty("perPluginResults").getArray())
+                        for (auto& rv : *arr) lines.add(rv.toString());
+
+                    // Existing build-results style: built-count + skipped list
+                    int ok = 0;
+                    juce::StringArray skipped;
+                    for (auto& l : lines)
+                    {
+                        if (l.endsWith(": ok")) ++ok;
+                        else skipped.add(l.upToFirstOccurrenceOf(":", false, false));
+                    }
+                    juce::String summary = "Built " + juce::String(ok) + "/"
+                                         + juce::String(lines.size())
+                                         + " on \"" + linkName + "\"";
+                    if (!skipped.isEmpty())
+                        summary += "\nSkipped: " + skipped.joinIntoString(", ");
+                    if (status != "ok")
+                        summary += "\nStatus: " + status;
+                    if (!lines.isEmpty())
+                        summary += "\n\n" + lines.joinIntoString("\n");
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::InfoIcon,
+                        "Link chain build", summary);
+                    return;
+                }
+            }
+        }
+
+        if (attemptsLeft <= 1)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                "Link chain build",
+                "Link instance \"" + linkName + "\" not responding. "
+                "Check the Link plugin is loaded, named, and its track is active.");
+            return;
+        }
+        safeThis->pollLinkChainAck(linkName, seq, attemptsLeft - 1);
+    });
 }
 
 void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)

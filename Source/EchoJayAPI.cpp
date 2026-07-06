@@ -1081,7 +1081,8 @@ juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
     return block;
 }
 
-juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availablePlugins)
+juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availablePlugins,
+                                             const juce::StringArray& liveLinkNames)
 {
     if (availablePlugins.isEmpty()) return {};
 
@@ -1119,6 +1120,26 @@ juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availableP
           << "- Keep the ENTIRE block compact — short names, 2-4 word roles, 3-6 value settings. "
           << "  This is machine data written after the prose; it must fit in the remaining response budget.\n"
           << "- Write prose first (full technical detail), then append the compact block as the final output.";
+
+    // Optional, additive: live Link targets for suggestedTarget tagging.
+    // Old clients / target-less blocks behave exactly as before.
+    if (!liveLinkNames.isEmpty())
+    {
+        juce::String linkList;
+        for (int i = 0; i < liveLinkNames.size(); ++i)
+        {
+            if (i > 0) linkList += ", ";
+            linkList += "\"" + liveLinkNames[i] + "\"";
+        }
+        block << "\n- LIVE ECHOJAY LINK TARGETS: the user also has EchoJay Link "
+              << "instances on other tracks named: " << linkList << ". "
+              << "If the chain you propose is clearly meant for one of those tracks "
+              << "(e.g. the user asked about their drum bus and a Link named \"Drums\" exists), "
+              << "add an optional top-level field \"suggestedTarget\":\"<exact Link name>\" "
+              << "to the block JSON, alongside \"chain\". Omit it when the chain is for "
+              << "the current track. This only pre-selects a build target; the user always "
+              << "confirms before anything is built.";
+    }
     return block;
 }
 

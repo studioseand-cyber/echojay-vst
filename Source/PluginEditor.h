@@ -1132,6 +1132,14 @@ private:
     int activeChainBuildBtns = 0;
     void showChainPluginPicker();                       // "+" button popup
     void loadChainFromJson(const juce::String& chainJson);
+
+    // ---- Link chain send side (phase 1) ----
+    // Build button target menu: "Build here" (default) + live Link
+    // instances. An AI suggestedTarget matching a live Link is pre-selected
+    // (ticked + "suggested" marker); the user always confirms.
+    void showChainBuildTargetMenu(const juce::String& chainJson);
+    void sendChainToLink(const juce::String& linkName, const juce::String& chainJson);
+    void pollLinkChainAck(const juce::String& linkName, int seq, int attemptsLeft);
     void promptForFailedPlugins(juce::StringArray failed);
     void showNextFailPrompt(juce::StringArray names, int idx);
     std::set<juce::String> chainFailSessionSeen_; // names user chose "Keep it" this session

@@ -144,7 +144,13 @@ public:
     // When present, instructs the model to: choose ONLY from these names, return
     // the chain as a <<<ECHOJAY_CHAIN>>>...<<<END_CHAIN>>> JSON block at the end
     // of the reply (in addition to the normal human-readable explanation).
-    static juce::String buildChainInjection(const juce::StringArray& availablePlugins);
+    // liveLinkNames (optional, additive): names of live EchoJay Link
+    // instances. When present the model may tag its chain JSON with an
+    // optional top-level "suggestedTarget" — used only to PRE-SELECT the
+    // Build target; sending is always user-initiated. Target-less payloads
+    // behave exactly as before.
+    static juce::String buildChainInjection(const juce::StringArray& availablePlugins,
+                                            const juce::StringArray& liveLinkNames = {});
 
     // Parse the chain block out of an assistant reply.
     // Returns true and fills chainJsonOut if a block (complete or truncated) is present.
