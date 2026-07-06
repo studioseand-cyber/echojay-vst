@@ -19,14 +19,25 @@
 #include <cstdint>
 #include <cmath>
 
+// Per-target identity: both plugins compile this file into their own dylib
+// and can coexist in one hosting process. The ObjC class name MUST be unique
+// per target (duplicate names make isKindOfClass unreliable across dylibs),
+// and the log tag distinguishes hosts in the unified log.
+#ifndef ECHOJAY_CLIP_CLASS
+#define ECHOJAY_CLIP_CLASS EchoJayClipContainer
+#endif
+#ifndef NATIVECLIP_LOG_TAG
+#define NATIVECLIP_LOG_TAG "NativeClip2"
+#endif
+
 // Identifiable container class — frame is set exclusively by NativeClip2_attach.
 // hadPlugin tracks presence across calls so a LATE-arriving plugin view
 // (e.g. ADPTR MetricAB attaches well after editor creation) logs the moment
 // it is first captured.
-@interface EchoJayClipContainer : NSView
+@interface ECHOJAY_CLIP_CLASS : NSView
 @property (nonatomic) BOOL hadPlugin;
 @end
-@implementation EchoJayClipContainer
+@implementation ECHOJAY_CLIP_CLASS
 // Flipped to match the JUCE peer view (top-left origin). Combined with
 // boundsOrigin == frame.origin (set in attach), any frame JUCE writes in
 // peer-absolute coordinates renders at the SAME visual position inside the
@@ -45,11 +56,11 @@ void EchoJay_NSLog(const char* msg)
     NSLog(@"%s", msg != nullptr ? msg : "(null)");
 }
 
-static EchoJayClipContainer* NativeClip2_findContainer(NSView* peer)
+static ECHOJAY_CLIP_CLASS* NativeClip2_findContainer(NSView* peer)
 {
     for (NSView* sv in [peer subviews])
-        if ([sv isKindOfClass:[EchoJayClipContainer class]])
-            return (EchoJayClipContainer*)sv;
+        if ([sv isKindOfClass:[ECHOJAY_CLIP_CLASS class]])
+            return (ECHOJAY_CLIP_CLASS*)sv;
     return nil;
 }
 
@@ -67,7 +78,7 @@ static NSView* NativeClip2_findStrayPluginView(NSView* peer, NSView* container)
     for (NSView* sv in [peer subviews])
     {
         if (sv == container) continue;
-        if ([sv isKindOfClass:[EchoJayClipContainer class]]) continue;
+        if ([sv isKindOfClass:[ECHOJAY_CLIP_CLASS class]]) continue;
         NSString* cls = NSStringFromClass([sv class]);
         if ([cls hasPrefix:@"JUCEView"])   // the peer NSView class itself
             continue;
@@ -109,10 +120,10 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
                                   : [peer bounds].size.height - (CGFloat)cy - (CGFloat)ch;
     NSRect wanted = NSMakeRect((CGFloat)cx, py, (CGFloat)cw, (CGFloat)ch);
 
-    EchoJayClipContainer* container = NativeClip2_findContainer(peer);
+    ECHOJAY_CLIP_CLASS* container = NativeClip2_findContainer(peer);
     if (!container)
     {
-        container = [[EchoJayClipContainer alloc] initWithFrame:wanted];
+        container = [[ECHOJAY_CLIP_CLASS alloc] initWithFrame:wanted];
         [container setAutoresizingMask:NSViewNotSizable]; // never auto-resize
         [container setAutoresizesSubviews:NO];            // never resize the plugin
         [peer addSubview:container];
@@ -150,7 +161,7 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
     for (NSView* sv in [[peer subviews] copy])
     {
         if (sv == container) continue;
-        if ([sv isKindOfClass:[EchoJayClipContainer class]]) continue;
+        if ([sv isKindOfClass:[ECHOJAY_CLIP_CLASS class]]) continue;
         NSString* cls = NSStringFromClass([sv class]);
         if ([cls hasPrefix:@"JUCEView"]) continue;
         if ([cls rangeOfString:@"OpenGL" options:NSCaseInsensitiveSearch].location != NSNotFound)
@@ -161,7 +172,7 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
     for (NSView* sv in strays)
         if (sv != newest)
         {
-            NSLog(@"NativeClip2: removing orphaned peer view %@ frame=%@",
+            NSLog(@NATIVECLIP_LOG_TAG ": removing orphaned peer view %@ frame=%@",
                   NSStringFromClass([sv class]), NSStringFromRect([sv frame]));
             [sv removeFromSuperview];
         }
@@ -171,12 +182,12 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
         // plugin view arriving after an out-of-process placeholder)
         for (NSView* old in [[container subviews] copy])
         {
-            NSLog(@"NativeClip2: replacing stale container view %@ frame=%@",
+            NSLog(@NATIVECLIP_LOG_TAG ": replacing stale container view %@ frame=%@",
                   NSStringFromClass([old class]), NSStringFromRect([old frame]));
             [old removeFromSuperview];
         }
         NSSize keep = [newest frame].size;   // keep the plugin's NATIVE size
-        NSLog(@"NativeClip2: reparenting stray %@ frame=%@ from peer into container",
+        NSLog(@NATIVECLIP_LOG_TAG ": reparenting stray %@ frame=%@ from peer into container",
               NSStringFromClass([newest class]), NSStringFromRect([newest frame]));
         [newest removeFromSuperview];
         [newest setAutoresizingMask:NSViewNotSizable];
@@ -211,7 +222,7 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
         // Full diagnostic line — coordinate conventions, computed alignment,
         // and complete subview inventories of both the peer and the container
         NSRect pf = plugin ? [plugin frame] : NSZeroRect;
-        NSLog(@"NativeClip2-diag: container=%@ flipped=%d masksToBounds=%d | peer=%@ flipped=%d | plugin=%@ frame=%@ | computed innerX=%d innerY=%d | peerSubviews: %@| containerSubviews: %@",
+        NSLog(@NATIVECLIP_LOG_TAG "-diag: container=%@ flipped=%d masksToBounds=%d | peer=%@ flipped=%d | plugin=%@ frame=%@ | computed innerX=%d innerY=%d | peerSubviews: %@| containerSubviews: %@",
               NSStringFromRect([container frame]),
               (int)[container isFlipped],
               (int)[container layer].masksToBounds,
@@ -234,7 +245,7 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
                 for (NSView* sv in [wcv subviews])
                     [wdump appendFormat:@"[%@ %@] ", NSStringFromClass([sv class]),
                                         NSStringFromRect([sv frame])];
-            NSLog(@"NativeClip2-diag: no plugin view. window contentView subviews: %@",
+            NSLog(@NATIVECLIP_LOG_TAG "-diag: no plugin view. window contentView subviews: %@",
                   [wdump length] > 0 ? wdump : @"(peer is contentView / none)");
         }
     }
@@ -268,11 +279,11 @@ void NativeClip2_detach(void* peerHandle)
 {
     if (!peerHandle) return;
     NSView* peer = (__bridge NSView*)peerHandle;
-    EchoJayClipContainer* container = NativeClip2_findContainer(peer);
+    ECHOJAY_CLIP_CLASS* container = NativeClip2_findContainer(peer);
     if (!container) return;
     for (NSView* child in [[container subviews] copy])
     {
-        NSLog(@"NativeClip2: detach removing leftover view %@ frame=%@",
+        NSLog(@NATIVECLIP_LOG_TAG ": detach removing leftover view %@ frame=%@",
               NSStringFromClass([child class]), NSStringFromRect([child frame]));
         [child removeFromSuperview];
     }

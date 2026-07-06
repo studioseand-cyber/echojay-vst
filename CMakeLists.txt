@@ -184,6 +184,8 @@ target_sources(EchoJayLink PRIVATE
     Source/AUEnumerator.mm
     Source/AUEnumerator.h
     Source/PluginScanner.h
+    Source/NativeClip.mm
+    Source/NativeClip.h
 )
 
 target_compile_definitions(EchoJayLink PUBLIC
@@ -193,6 +195,10 @@ target_compile_definitions(EchoJayLink PUBLIC
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_VST3=1
+    # NativeClip per-target identity — unique ObjC class + log tag so both
+    # plugins can host inline in the same process without colliding
+    ECHOJAY_CLIP_CLASS=EchoJayClipContainerLink
+    NATIVECLIP_LOG_TAG="NativeClipLink"
 )
 
 target_link_libraries(EchoJayLink

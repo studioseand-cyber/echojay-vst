@@ -1,11 +1,17 @@
 #pragma once
 #include <JuceHeader.h>
 #include "LinkProcessor.h"
+#include "NativeClip.h"
 
-// EchoJay Link editor — resizable window sized to host plugin UIs.
-// Layout: compact header row (logo, name, Active toggle, status light),
-// display area filling most of the window (inline hosting lands here in
-// phase 2), chain strip along the bottom, status line above the strip.
+// EchoJay Link editor — resizable window hosting the received chain inline.
+//
+// The hosting pattern is a port of the main plugin's ChainListPanel (see
+// PluginEditor.h): dedicated clip-container NSView locked to the display
+// rect (NativeClip, per-target class/log tag), JUCE-side InlineHolder clip,
+// native-frame polling then a 400ms maintenance re-assert, ONE hosted editor
+// at a time with sequential close-before-open, pop-out fallback. Layout
+// policy identical: native size, no scaling, centred with equal side trim,
+// top edge always visible, bottom-only trim, dark navy container.
 class LinkEditor : public juce::AudioProcessorEditor
 {
 public:
@@ -15,24 +21,514 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    // ========================================================================
+    struct LinkChainPanel : juce::Component, juce::Timer
+    {
+        LinkProcessor& proc;
+
+        static constexpr int kNameRowH = 28;   // selected plugin name + popout
+        static constexpr int kStatusH  = 18;   // build results line
+        static constexpr int kStripH   = 76;
+        static constexpr int kBlockW   = 118;
+        static constexpr int kBlockH   = 50;
+        static constexpr int kBlockGap = 26;
+
+        // Pop-out fallback window (native size, always on top, close returns
+        // the editor inline)
+        struct PopoutWindow : juce::DocumentWindow
+        {
+            std::unique_ptr<juce::AudioProcessorEditor> editor;
+            std::function<void()> onCloseRequest;
+            PopoutWindow(const juce::String& name, juce::AudioProcessorEditor* e)
+                : juce::DocumentWindow(name, juce::Colour(0xff0A0C18),
+                                       juce::DocumentWindow::closeButton),
+                  editor(e)
+            {
+                setUsingNativeTitleBar(true);
+                setContentNonOwned(editor.get(), true);
+                setResizable(false, false);
+                centreWithSize(editor->getWidth(), editor->getHeight());
+                setAlwaysOnTop(true);
+                setVisible(true);
+            }
+            void closeButtonPressed() override
+            {
+                if (onCloseRequest) onCloseRequest();
+                else setVisible(false);
+            }
+        };
+
+        struct Block : juce::Component
+        {
+            juce::String name;
+            int  modelIdx = 0;
+            bool bypassed = false;
+            bool selected = false;
+            bool missing  = false;
+
+            juce::TextButton bypassBtn { "B" };
+            juce::TextButton removeBtn { "X" };
+            juce::TextButton prevBtn   { "<" };
+            juce::TextButton nextBtn   { ">" };
+
+            std::function<void()>    onSelect;
+            std::function<void()>    onBypass;
+            std::function<void()>    onRemove;
+            std::function<void(int)> onMove;
+
+            Block()
+            {
+                auto style = [](juce::TextButton& b, juce::Colour fg) {
+                    b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
+                    b.setColour(juce::TextButton::textColourOffId, fg);
+                };
+                style(bypassBtn, juce::Colour(0xffa0a0b8));
+                style(removeBtn, juce::Colour(0xffef4444));
+                style(prevBtn,   juce::Colour(0xffa0a0b8));
+                style(nextBtn,   juce::Colour(0xffa0a0b8));
+                for (auto* b : { &bypassBtn, &removeBtn, &prevBtn, &nextBtn })
+                    addAndMakeVisible(*b);
+                bypassBtn.onClick = [this] { if (onBypass) onBypass(); };
+                removeBtn.onClick = [this] { if (onRemove) onRemove(); };
+                prevBtn.onClick   = [this] { if (onMove)   onMove(-1); };
+                nextBtn.onClick   = [this] { if (onMove)   onMove(+1); };
+            }
+
+            void mouseDown(const juce::MouseEvent&) override
+            { if (onSelect) onSelect(); }
+
+            void paint(juce::Graphics& g) override
+            {
+                const auto coral = juce::Colour(0xffff6d5a);
+                auto r = getLocalBounds().toFloat().reduced(0.5f);
+                g.setColour(missing ? coral.withAlpha(0.12f)
+                          : selected ? juce::Colour(0xff11293a)
+                                     : juce::Colour(0xff0E1020));
+                g.fillRoundedRectangle(r, 8.0f);
+                g.setColour(missing  ? coral.withAlpha(0.6f)
+                          : selected ? juce::Colour(0xff22d3ee)
+                                     : juce::Colour::fromFloatRGBA(1, 1, 1, 0.08f));
+                g.drawRoundedRectangle(r, 8.0f, selected ? 1.5f : 1.0f);
+
+                g.setColour(missing  ? coral
+                          : bypassed ? juce::Colour(0xff606078)
+                                     : juce::Colour(0xfff0f0f5));
+                g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+                g.drawText(name, 6, 3, getWidth() - 12, 18,
+                           juce::Justification::centred, true);
+                if (missing || bypassed)
+                {
+                    g.setColour(missing ? coral.withAlpha(0.8f)
+                                        : juce::Colour(0xfff59e0b));
+                    g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
+                    g.drawText(missing ? "MISSING" : "BYPASSED", 6, 19,
+                               getWidth() - 12, 9, juce::Justification::centred);
+                }
+            }
+
+            void resized() override
+            {
+                int bw = 18, bh = 15, m = 4;
+                int by = getHeight() - bh - m;
+                bypassBtn.setBounds(m, by, bw, bh);
+                removeBtn.setBounds(m + bw + 2, by, bw, bh);
+                nextBtn.setBounds(getWidth() - m - bw, by, bw, bh);
+                prevBtn.setBounds(getWidth() - m - bw * 2 - 2, by, bw, bh);
+            }
+        };
+
+        struct StripContent : juce::Component
+        {
+            int lineY = 0, lineEndX = 0;
+            void paint(juce::Graphics& g) override
+            {
+                if (lineEndX > 12)
+                {
+                    g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.35f));
+                    g.drawLine(12.0f, (float)lineY, (float)lineEndX, (float)lineY, 1.5f);
+                }
+            }
+        };
+
+        struct InlineHolder : juce::Component
+        {
+            std::function<void()> onChildBounds;
+            void childBoundsChanged(juce::Component*) override
+            { if (onChildBounds) onChildBounds(); }
+        };
+
+        // ---- members ----
+        juce::Viewport   stripView;
+        StripContent     stripContent;
+        std::vector<std::unique_ptr<Block>> blocks;
+        int selectedIdx = -1;
+
+        InlineHolder inlineHolder;
+        std::unique_ptr<juce::AudioProcessorEditor> inlineEditor;
+        int  inlineModelIdx = -1;
+        int  realW = 0, realH = 0;
+        int  framePolls  = 0;
+        bool settled     = false;
+        bool layoutGuard = false;
+
+        std::unique_ptr<PopoutWindow> popout;
+        int popoutModelIdx = -1;
+        juce::TextButton popBtn { juce::String::fromUTF8("\xe2\x86\x97") };
+
+        juce::String statusText;   // build results line
+
+        // ---- lifecycle ----
+        explicit LinkChainPanel(LinkProcessor& p) : proc(p)
+        {
+            addChildComponent(inlineHolder);   // back of z-order
+            inlineHolder.setInterceptsMouseClicks(false, true);
+            inlineHolder.onChildBounds = [this]
+            {
+                if (layoutGuard || inlineEditor == nullptr) return;
+                int w = 0, h = 0;
+                if (NativeClip::getPluginViewSize(this, w, h) && w > 100 && h > 60)
+                { realW = w; realH = h; }
+                layoutInline();
+                attachNative(false);
+            };
+
+            addAndMakeVisible(stripView);
+            stripView.setViewedComponent(&stripContent, false);
+            stripView.setScrollBarsShown(false, true, false, true);
+            stripView.setScrollBarThickness(8);
+
+            popBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
+            popBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+            popBtn.onClick = [this] { openPopoutForSelected(); };
+            addChildComponent(popBtn);
+        }
+
+        ~LinkChainPanel() override { closeAllEditors(); }
+
+        juce::Rectangle<int> displayArea() const
+        {
+            return { 12, kNameRowH,
+                     juce::jmax(50, getWidth() - 24),
+                     juce::jmax(50, getHeight() - kNameRowH - kStatusH - kStripH - 8) };
+        }
+
+        // ---- editor lifecycle (ONE at a time, close-before-open) ----
+        void closeInline()
+        {
+            stopTimer();
+            if (inlineEditor)
+            {
+                inlineHolder.removeChildComponent(inlineEditor.get());
+                inlineEditor.reset();
+                NativeClip::detach(this);
+            }
+            inlineHolder.setVisible(false);
+            inlineModelIdx = -1;
+            realW = realH = 0;
+            settled = false;
+        }
+
+        void closePopout()
+        {
+            if (popout) { popout->setVisible(false); popout.reset(); }
+            popoutModelIdx = -1;
+        }
+
+        void closeAllEditors() { closeInline(); closePopout(); }
+
+        void attachNative(bool log)
+        {
+            if (inlineEditor)
+                NativeClip::attach(this, displayArea(), log);
+        }
+
+        void layoutInline()
+        {
+            if (!inlineEditor) return;
+            auto area = displayArea();
+            inlineHolder.setBounds(area);
+            int pw = realW > 8 ? realW : inlineEditor->getWidth();
+            int ph = realH > 8 ? realH : inlineEditor->getHeight();
+            pw = juce::jmax(pw, 40);
+            ph = juce::jmax(ph, 30);
+            layoutGuard = true;
+            inlineEditor->setBounds((area.getWidth() - pw) / 2, 0, pw, ph);
+            layoutGuard = false;
+        }
+
+        void showInline(int modelIdx)
+        {
+            closeAllEditors();
+            auto& model = proc.getChainModel();
+            if (modelIdx < 0 || modelIdx >= (int)model.size()) return;
+            int hostIdx = model[(size_t)modelIdx].hostIdx;
+            if (model[(size_t)modelIdx].missing || hostIdx < 0) { repaint(); return; }
+
+            juce::AudioProcessorEditor* ed = nullptr;
+            try { ed = proc.getChainHost().createEditorForSlot(hostIdx); } catch (...) {}
+            if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }
+
+            inlineEditor.reset(ed);
+            inlineModelIdx = modelIdx;
+            inlineHolder.setVisible(true);
+            inlineHolder.addAndMakeVisible(*inlineEditor);
+            layoutInline();
+            attachNative(true);
+            framePolls = 0;
+            settled = false;
+            startTimer(100);
+            repaint();
+        }
+
+        void timerCallback() override
+        {
+            if (!inlineEditor) { stopTimer(); return; }
+            if (!settled)
+            {
+                ++framePolls;
+                int w = 0, h = 0;
+                bool got = NativeClip::getPluginViewSize(this, w, h)
+                        && w > 100 && h > 60;
+                if (got) { realW = w; realH = h; }
+                if (got || framePolls >= 50)
+                {
+                    settled = true;
+                    if (!got)
+                        statusText = "Editor didn't load inline - try the pop-out button.";
+                    layoutInline();
+                    attachNative(true);
+                    repaint();
+                    startTimer(400);
+                }
+                return;
+            }
+            int w = 0, h = 0;
+            if (NativeClip::getPluginViewSize(this, w, h) && w > 100 && h > 60
+                && (w != realW || h != realH))
+            {
+                realW = w; realH = h;
+                if (statusText.startsWith("Editor didn't")) statusText.clear();
+                layoutInline();
+                repaint();
+            }
+            attachNative(false);
+        }
+
+        void selectSlot(int i)
+        {
+            selectedIdx = i;
+            for (auto& bl : blocks)
+            { bl->selected = (bl->modelIdx == i); bl->repaint(); }
+            if (inlineModelIdx != i || inlineEditor == nullptr)
+                showInline(i);
+            popBtn.setVisible(canPopOut());
+            repaint();
+        }
+
+        bool canPopOut() const
+        {
+            auto& model = proc.getChainModel();
+            return selectedIdx >= 0 && selectedIdx < (int)model.size()
+                && !model[(size_t)selectedIdx].missing;
+        }
+
+        void openPopoutForSelected()
+        {
+            auto& model = proc.getChainModel();
+            if (!canPopOut()) return;
+            int i = selectedIdx;
+            int hostIdx = model[(size_t)i].hostIdx;
+            closeAllEditors();
+            juce::AudioProcessorEditor* ed = nullptr;
+            try { ed = proc.getChainHost().createEditorForSlot(hostIdx); } catch (...) {}
+            if (!ed) return;
+            popout = std::make_unique<PopoutWindow>(model[(size_t)i].name, ed);
+            popoutModelIdx = i;
+            popout->onCloseRequest = [safe = juce::Component::SafePointer<LinkChainPanel>(this)]
+            {
+                juce::MessageManager::callAsync([safe]
+                {
+                    if (safe == nullptr) return;
+                    int s = safe->popoutModelIdx;
+                    safe->closePopout();
+                    if (s >= 0 && s == safe->selectedIdx)
+                        safe->showInline(s);
+                    safe->repaint();
+                });
+            };
+            popout->toFront(true);
+            repaint();
+        }
+
+        // ---- strip / model sync ----
+        void rebuild()
+        {
+            auto& model = proc.getChainModel();
+            selectedIdx = juce::jlimit(-1, (int)model.size() - 1, selectedIdx);
+
+            for (auto& bl : blocks) stripContent.removeChildComponent(bl.get());
+            blocks.clear();
+            for (int i = 0; i < (int)model.size(); ++i)
+            {
+                auto bl = std::make_unique<Block>();
+                bl->name     = model[(size_t)i].name;
+                bl->modelIdx = i;
+                bl->bypassed = model[(size_t)i].bypassed;
+                bl->missing  = model[(size_t)i].missing;
+                bl->selected = (i == selectedIdx);
+                int ci = i;
+                bl->onSelect = [this, ci] { selectSlot(ci); };
+                bl->onBypass = [this, ci] { proc.toggleChainSlotBypass(ci); };
+                bl->onRemove = [this, ci]
+                {
+                    // proc closes our editors first via onChainAboutToChange
+                    if (selectedIdx == ci) selectedIdx = -1;
+                    proc.removeChainSlot(ci);
+                };
+                bl->onMove   = [this, ci](int dir)
+                {
+                    if (selectedIdx == ci) selectedIdx = ci + dir;
+                    else if (selectedIdx == ci + dir) selectedIdx = ci;
+                    proc.moveChainSlot(ci, dir);
+                };
+                bl->prevBtn.setEnabled(i > 0);
+                bl->nextBtn.setEnabled(i < (int)model.size() - 1);
+                stripContent.addAndMakeVisible(*bl);
+                blocks.push_back(std::move(bl));
+            }
+            layoutStrip();
+            popBtn.setVisible(canPopOut());
+
+            // Keep the inline editor in sync: the model index it was opened
+            // for may have moved or vanished — reopen/close as needed
+            if (selectedIdx < 0)
+                closeAllEditors();
+            else if ((inlineModelIdx != selectedIdx || inlineEditor == nullptr)
+                     && !(popout != nullptr && popoutModelIdx == selectedIdx))
+                showInline(selectedIdx);
+            resized();
+            repaint();
+        }
+
+        void layoutStrip()
+        {
+            const int contentH = kStripH - 10;
+            int x = 12;
+            int y = (contentH - kBlockH) / 2;
+            for (auto& bl : blocks)
+            {
+                bl->setBounds(x, y, kBlockW, kBlockH);
+                x += kBlockW + kBlockGap;
+            }
+            stripContent.lineY    = y + kBlockH / 2;
+            stripContent.lineEndX = blocks.empty() ? 0 : x - kBlockGap;
+            stripContent.setSize(juce::jmax(x, stripView.getWidth()), contentH);
+            stripContent.repaint();
+        }
+
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour(0xff0A0C18));
+
+            auto area = displayArea();
+            auto& model = proc.getChainModel();
+            bool haveSel = selectedIdx >= 0 && selectedIdx < (int)model.size();
+
+            g.setColour(juce::Colour(0xff080A12));
+            g.fillRoundedRectangle(area.toFloat(), 8.0f);
+            g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.3f));
+            g.drawRoundedRectangle(area.toFloat().reduced(0.5f), 8.0f, 1.0f);
+
+            // Name row — selected plugin, centred
+            if (haveSel)
+            {
+                const auto& s = model[(size_t)selectedIdx];
+                g.setColour(s.missing  ? juce::Colour(0xffff6d5a)
+                          : s.bypassed ? juce::Colour(0xff606078)
+                                       : juce::Colour(0xfff0f0f5));
+                g.setFont(juce::Font(juce::FontOptions(13.5f, juce::Font::bold)));
+                juce::String title = s.name
+                    + (s.missing ? "  (missing)" : s.bypassed ? "  (bypassed)" : "");
+                g.drawText(title, 48, 3, getWidth() - 96, kNameRowH - 4,
+                           juce::Justification::centred, true);
+            }
+
+            // Display-area messages
+            if (model.empty())
+            {
+                g.setColour(juce::Colour(0xffa0a0b8));
+                g.setFont(juce::Font(juce::FontOptions(13.0f)));
+                g.drawText(proc.isChainBuilding() ? "Building chain..."
+                                                  : "No chain loaded",
+                           area, juce::Justification::centred);
+                if (!proc.isChainBuilding())
+                {
+                    g.setColour(juce::Colour(0xff606078));
+                    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+                    g.drawText("Chains arrive from EchoJay V2 - use the Build button in chat",
+                               area.withTrimmedTop(48), juce::Justification::centredTop);
+                }
+            }
+            else if (haveSel && model[(size_t)selectedIdx].missing)
+            {
+                g.setColour(juce::Colour(0xffff6d5a).withAlpha(0.8f));
+                g.setFont(juce::Font(juce::FontOptions(12.0f)));
+                g.drawText("This plugin could not be loaded on this machine.",
+                           area, juce::Justification::centred);
+            }
+            else if (popout != nullptr && popoutModelIdx == selectedIdx
+                     && inlineEditor == nullptr)
+            {
+                g.setColour(juce::Colour(0xffa0a0b8));
+                g.setFont(juce::Font(juce::FontOptions(12.0f)));
+                g.drawText("Editor is open in a floating window - click the plugin block to bring it back.",
+                           area.reduced(16), juce::Justification::centred, true);
+            }
+
+            // Status line
+            {
+                int sy = getHeight() - kStripH - kStatusH;
+                g.setColour(juce::Colour(0xff8B949E).withAlpha(0.85f));
+                g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                juce::String line = statusText;
+                if (line.isEmpty() && !model.empty())
+                {
+                    int missing = 0;
+                    for (auto& s : model) if (s.missing) ++missing;
+                    line = juce::String((int)model.size()) + " slot(s)";
+                    if (missing > 0) line += ", " + juce::String(missing) + " missing";
+                }
+                if (!proc.chainLayoutSupported())
+                    line += (line.isEmpty() ? "" : "  |  ")
+                          + juce::String("unsupported channel layout (chain bypassed)");
+                g.drawText(line, 12, sy, getWidth() - 24, kStatusH,
+                           juce::Justification::centredLeft);
+            }
+        }
+
+        void resized() override
+        {
+            popBtn.setBounds(getWidth() - 40, 3, 26, 22);
+            stripView.setBounds(0, getHeight() - kStripH, getWidth(), kStripH);
+            layoutStrip();
+            layoutInline();
+            attachNative(false);
+        }
+
+        void moved() override { attachNative(false); }
+    };
+    // ========================================================================
+
 private:
     LinkProcessor& proc;
 
     static constexpr int kHeaderH = 40;
-    static constexpr int kStatusH = 18;
-    static constexpr int kStripH  = 76;
 
     juce::TextEditor   nameField;
     juce::ToggleButton toggleBtn { "Active" };
-
-    // status light bounds — set in resized(), read in paint()
     juce::Rectangle<float> lightBounds;
 
-    // Latest build result summary shown on the status line
-    juce::String statusLine;
-
-    juce::Rectangle<int> displayArea() const;
-    juce::Rectangle<int> stripArea() const;
+    LinkChainPanel chainPanel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LinkEditor)
 };
