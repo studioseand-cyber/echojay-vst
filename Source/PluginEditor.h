@@ -1142,6 +1142,12 @@ private:
     void pollLinkChainAck(const juce::String& linkName, int seq, int attemptsLeft);
     void promptForFailedPlugins(juce::StringArray failed);
     void showNextFailPrompt(juce::StringArray names, int idx);
+    // Shared disable action (local + Link build failures): untick in the
+    // scanner (plugin_disabled.json), refresh checklist, rebuild recommendable.
+    void disablePluginByName(const juce::String& name);
+    // Link build results with load_failed entries: one dialog, per-plugin
+    // "don't suggest again" toggle rows (no modal chain).
+    void showLinkBuildResults(const juce::String& summary, juce::StringArray loadFailed);
     std::set<juce::String> chainFailSessionSeen_; // names user chose "Keep it" this session
 
     juce::String currentlyPlayingChatWav;

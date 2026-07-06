@@ -74,9 +74,13 @@ public:
 
     // Replace the chain with the given spec (message thread, sequential
     // instantiation, editors are NEVER opened during build). onDone receives
-    // one result line per requested slot ("ok" / failure reason).
+    // one result line per requested slot ("ok" / failure reason) plus a
+    // structured array of {name, kind, detail, resolvedName} objects where
+    // kind is "built" / "not_found" / "load_failed" / "skipped" — the sender
+    // uses load_failed to offer the don't-suggest-again flow.
     void buildChainFromSpec(std::vector<ChainBuildItem> spec,
-                            std::function<void(const juce::StringArray&)> onDone);
+                            std::function<void(const juce::StringArray&,
+                                               const juce::var&)> onDone);
 
     // Strip operations (message thread)
     void removeChainSlot(int idx);
@@ -158,7 +162,11 @@ private:
 
     // ---- Chain transport: versioned command/ack files in the link dir ----
     // chain-cmd-<instanceId>.json  {v:1, seq, chain:[{name,role,settings}], sourceNote}
-    // chain-ack-<instanceId>.json  {v:1, seq, status, perPluginResults}
+    // chain-ack-<instanceId>.json  {v:1, seq, status, perPluginResults,
+    //                               perPluginDetail}
+    // perPluginDetail is ADDITIVE (old senders ignore it, old Links omit it)
+    // so the cmd "v" stays 1 — bumping it would make existing Links reject
+    // new commands outright.
     // Polled at ~250ms on the message-thread timer; applied on seq change;
     // the command file is deleted on consume.
     int  lastAppliedChainSeq_ = 0;
@@ -166,7 +174,8 @@ private:
     juce::String chainInstanceId() const;
     void pollChainCommand();
     void writeChainAck(int seq, const juce::String& status,
-                       const juce::StringArray& results);
+                       const juce::StringArray& results,
+                       const juce::var& detail);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LinkProcessor)
 };

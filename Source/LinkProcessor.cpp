@@ -332,7 +332,8 @@ void LinkProcessor::notifyChainModel()
 }
 
 void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
-                                       std::function<void(const juce::StringArray&)> onDone)
+                                       std::function<void(const juce::StringArray&,
+                                                          const juce::var&)> onDone)
 {
     if ((int)spec.size() > kMaxChainSlots)
         spec.resize((size_t)kMaxChainSlots);
@@ -361,6 +362,7 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
     }
 
     auto results  = std::make_shared<juce::StringArray>();
+    auto detail   = std::make_shared<juce::Array<juce::var>>();
     auto disabled = std::make_shared<juce::StringArray>(loadDisabledUids());
     auto items    = std::make_shared<std::vector<ChainBuildItem>>(std::move(spec));
     auto idx      = std::make_shared<int>(0);
@@ -368,14 +370,31 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
 
     auto isDisabled = [disabled](const juce::String& name)
     {
-        auto key = name.trim().toLowerCase().replaceCharacter(' ', '_') + "_";
+        // Key on both the raw name and the parenthetical-stripped one — the
+        // AI may send "Name (Manufacturer)" while uids derive from the plain
+        // scanner name ("name_manufacturer_...").
+        auto mk = [](const juce::String& n)
+            { return n.trim().toLowerCase().replaceCharacter(' ', '_') + "_"; };
+        auto k1 = mk(name);
+        auto k2 = mk(ChainHost::stripParenthetical(name));
         for (auto& uid : *disabled)
-            if (uid.startsWith(key)) return true;
+            if (uid.startsWith(k1) || uid.startsWith(k2)) return true;
         return false;
     };
 
+    auto addDetail = [detail](const juce::String& name, const juce::String& kind,
+                              const juce::String& info, const juce::String& resolvedName)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty("name", name);
+        o->setProperty("kind", kind);
+        if (info.isNotEmpty())         o->setProperty("detail", info);
+        if (resolvedName.isNotEmpty()) o->setProperty("resolvedName", resolvedName);
+        detail->add(juce::var(o));
+    };
+
     auto stepPtr = std::make_shared<std::function<void()>>();
-    *stepPtr = [self, results, items, idx, isDisabled, stepPtr, onDone]()
+    *stepPtr = [self, results, detail, items, idx, isDisabled, addDetail, stepPtr, onDone]()
     {
         // Wait for an in-flight scan before resolving (poll, bounded)
         if (self->chainHost.isScanning())
@@ -389,7 +408,7 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
             self->chainBuilding = false;
             self->updateChainLatency();
             self->notifyChainModel();
-            if (onDone) onDone(*results);
+            if (onDone) onDone(*results, juce::var(*detail));
             return;
         }
 
@@ -406,6 +425,7 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
             slot.missing = true;
             self->chainModel.push_back(slot);
             results->add(item.name + ": skipped (disabled in Settings)");
+            addDetail(item.name, "skipped", "disabled in Settings", {});
             self->notifyChainModel();
             (*stepPtr)();
             return;
@@ -417,6 +437,20 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
             slot.missing = true;
             self->chainModel.push_back(slot);
             results->add(item.name + ": not found");
+            addDetail(item.name, "not_found", {}, {});
+            self->notifyChainModel();
+            (*stepPtr)();
+            return;
+        }
+
+        // Re-check disabled state against the RESOLVED name too — the loose
+        // resolver can match variants the raw-name key check misses.
+        if (isDisabled(desc.name))
+        {
+            slot.missing = true;
+            self->chainModel.push_back(slot);
+            results->add(item.name + ": skipped (disabled in Settings)");
+            addDetail(item.name, "skipped", "disabled in Settings", desc.name);
             self->notifyChainModel();
             (*stepPtr)();
             return;
@@ -425,7 +459,8 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
         juce::String stateB64 = item.stateBase64;
         bool wantBypass = item.bypassed;
         self->chainHost.loadPluginAsync(desc,
-            [self, results, slot, stateB64, wantBypass, stepPtr, name = item.name]
+            [self, results, addDetail, slot, stateB64, wantBypass, stepPtr,
+             name = item.name, resolvedName = desc.name]
             (const juce::String& err) mutable
         {
             if (err.isNotEmpty())
@@ -433,6 +468,7 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
                 slot.missing = true;
                 self->chainModel.push_back(slot);
                 results->add(name + ": failed (" + err + ")");
+                addDetail(name, "load_failed", err, resolvedName);
             }
             else
             {
@@ -451,6 +487,7 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
                 }
                 self->chainModel.push_back(slot);
                 results->add(name + ": ok");
+                addDetail(name, "built", {}, resolvedName);
             }
             self->notifyChainModel();
             (*stepPtr)();
@@ -604,7 +641,7 @@ void LinkProcessor::pollChainCommand()
     }
 
     buildChainFromSpec(std::move(spec),
-        [this, seq](const juce::StringArray& results)
+        [this, seq](const juce::StringArray& results, const juce::var& detail)
     {
         int failures = 0;
         for (auto& r : results)
@@ -612,12 +649,13 @@ void LinkProcessor::pollChainCommand()
         juce::String status = !chainStereoOk ? "unsupported channel layout"
                             : failures == 0  ? "ok"
                             : failures == results.size() ? "failed" : "partial";
-        writeChainAck(seq, status, results);
+        writeChainAck(seq, status, results, detail);
     });
 }
 
 void LinkProcessor::writeChainAck(int seq, const juce::String& status,
-                                  const juce::StringArray& results)
+                                  const juce::StringArray& results,
+                                  const juce::var& detail)
 {
     if (resolvedDir.isEmpty()) return;
     auto id = chainInstanceId();
@@ -630,6 +668,8 @@ void LinkProcessor::writeChainAck(int seq, const juce::String& status,
     juce::Array<juce::var> arr;
     for (auto& r : results) arr.add(r);
     obj->setProperty("perPluginResults", juce::var(arr));
+    if (detail.isArray())
+        obj->setProperty("perPluginDetail", detail);
 
     juce::File(resolvedDir + "chain-ack-" + id + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(obj), true));

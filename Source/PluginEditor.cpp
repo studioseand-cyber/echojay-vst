@@ -9449,6 +9449,21 @@ void EchoJayEditor::pollLinkChainAck(const juce::String& linkName, int seq,
                     if (auto* arr = o->getProperty("perPluginResults").getArray())
                         for (auto& rv : *arr) lines.add(rv.toString());
 
+                    // Structured detail (newer Links): collect load_failed
+                    // entries — matched but failed instantiation, typically a
+                    // licence/installation issue — for the disable offer.
+                    // not_found entries indicate resolver issues, never get it.
+                    juce::StringArray loadFailed;
+                    if (auto* darr = o->getProperty("perPluginDetail").getArray())
+                        for (auto& dv : *darr)
+                            if (auto* dobj = dv.getDynamicObject())
+                                if (dobj->getProperty("kind").toString() == "load_failed")
+                                {
+                                    auto n = dobj->getProperty("resolvedName").toString();
+                                    if (n.isEmpty()) n = dobj->getProperty("name").toString();
+                                    if (n.isNotEmpty()) loadFailed.addIfNotAlreadyThere(n);
+                                }
+
                     // Existing build-results style: built-count + skipped list
                     int ok = 0;
                     juce::StringArray skipped;
@@ -9466,9 +9481,7 @@ void EchoJayEditor::pollLinkChainAck(const juce::String& linkName, int seq,
                         summary += "\nStatus: " + status;
                     if (!lines.isEmpty())
                         summary += "\n\n" + lines.joinIntoString("\n");
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::InfoIcon,
-                        "Link chain build", summary);
+                    safeThis->showLinkBuildResults(summary, loadFailed);
                     return;
                 }
             }
@@ -9486,6 +9499,76 @@ void EchoJayEditor::pollLinkChainAck(const juce::String& linkName, int seq,
     });
 }
 
+void EchoJayEditor::showLinkBuildResults(const juce::String& summary,
+                                         juce::StringArray loadFailed)
+{
+    // Plugins the user already chose "Keep it" for this session don't get
+    // re-offered (same rule as the local promptForFailedPlugins flow).
+    juce::StringArray toPrompt;
+    for (auto& n : loadFailed)
+        if (chainFailSessionSeen_.find(n) == chainFailSessionSeen_.end())
+            toPrompt.add(n);
+
+    if (toPrompt.isEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
+                                               "Link chain build", summary);
+        return;
+    }
+
+    auto* w = new juce::AlertWindow("Link chain build",
+        summary + "\n\nSome plugins failed to load (licence or installation "
+        "issue?).\nTick any you want EchoJay to stop suggesting:",
+        juce::MessageBoxIconType::WarningIcon, this);
+
+    auto toggles = std::make_shared<juce::OwnedArray<juce::ToggleButton>>();
+    for (auto& n : toPrompt)
+    {
+        auto* t = new juce::ToggleButton("Don't suggest \"" + n + "\" again");
+        t->setSize(420, 24);
+        toggles->add(t);
+        w->addCustomComponent(t);
+    }
+    w->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    w->enterModalState(true,
+        juce::ModalCallbackFunction::create([safeThis, toggles, toPrompt](int)
+        {
+            if (safeThis == nullptr) return;
+            for (int i = 0; i < toPrompt.size(); ++i)
+            {
+                if (auto* t = (*toggles)[i]; t != nullptr && t->getToggleState())
+                    safeThis->disablePluginByName(toPrompt[i]);
+                else
+                    safeThis->chainFailSessionSeen_.insert(toPrompt[i]);
+            }
+        }),
+        true /* delete window when dismissed */);
+}
+
+void EchoJayEditor::disablePluginByName(const juce::String& name)
+{
+    auto& scanner = processorRef.getPluginScanner();
+    for (auto& p : scanner.getPlugins())
+    {
+        // Loose match: Link ack names are resolved entry names, but local
+        // failures may carry raw AI strings ("Name (Manufacturer)")
+        if (ChainHost::namesMatchLoose(name, p.name))
+        {
+            scanner.setPluginEnabled(p.uid, false);
+            scanner.saveEnabledState();
+            // Keep Settings checklist in sync
+            if (settingsChecklist)
+                settingsChecklist->refresh();
+            // Rebuild resolver so the AI no longer sees this plugin
+            auto& ch = processorRef.getChainHost();
+            ch.buildRecommendable(scanner.getPlugins(), chainFormatFilter_);
+            break;
+        }
+    }
+}
+
 void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
 {
     auto parsedVar = juce::JSON::parse(chainJson);
@@ -9501,6 +9584,8 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
     // Collect names+settings from chain JSON, filtering to only those in recommendable
     struct SlotSpec { juce::String name; juce::String settings; };
     std::vector<SlotSpec> slots;
+    juce::StringArray droppedDisabled;
+    auto& scanner = processorRef.getPluginScanner();
     for (int i = 0; i < chainArr.size(); ++i)
     {
         auto entry = chainArr[i];
@@ -9513,9 +9598,22 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         for (auto& r : recommNames)
             if (ChainHost::namesMatchLoose(name, r)) { found = true; break; }
         // The loose loadByRecommendedName fallback resolves names the
-        // recommendable list misses (e.g. "Name (Manufacturer)" strings)
+        // recommendable list misses (e.g. "Name (Manufacturer)" strings) —
+        // but must never resurrect a plugin the user disabled: entries_ is
+        // scan-wide, not filtered by the Settings checklist.
         if (!found)
-            found = ch.resolveByName(name, {}, nullptr).name.isNotEmpty();
+        {
+            auto d = ch.resolveByName(name, {}, nullptr);
+            if (d.name.isNotEmpty())
+            {
+                bool disabled = false;
+                for (auto& p : scanner.getPlugins())
+                    if (ChainHost::namesMatchLoose(d.name, p.name))
+                    { disabled = !scanner.isPluginEnabled(p.uid); break; }
+                if (disabled) droppedDisabled.add(name);
+                else          found = true;
+            }
+        }
         if (found) slots.push_back({ name, settings });
         else DBG("loadChainFromJson: skipping unknown name: " + name);
     }
@@ -9523,7 +9621,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
 
-    auto doLoad = [safeThis, slots, chainJson]()
+    auto doLoad = [safeThis, slots, chainJson, droppedDisabled]()
     {
         if (safeThis == nullptr) return;
 
@@ -9532,7 +9630,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         // the same tick as its editor lets a final UI timer fire into freed
         // state).
         safeThis->chainListPanel.closeAllEditors();
-        juce::Timer::callAfterDelay(80, [safeThis, slots, chainJson]
+        juce::Timer::callAfterDelay(80, [safeThis, slots, chainJson, droppedDisabled]
         {
         if (safeThis == nullptr) return;
         auto& ch2 = safeThis->processorRef.getChainHost();
@@ -9548,7 +9646,8 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         auto idx         = std::make_shared<int>(0);
         auto skipped     = std::make_shared<juce::StringArray>();
 
-        *loadNextPtr = [safeThis, slots, idx, skipped, loadNextPtr, chainJson]() mutable
+        *loadNextPtr = [safeThis, slots, idx, skipped, loadNextPtr, chainJson,
+                        droppedDisabled]() mutable
         {
             if (safeThis == nullptr) return;
             if (*idx >= (int)slots.size())
@@ -9560,6 +9659,9 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 juce::String status = juce::String(ch3.getNumSlots()) + " slot(s) loaded";
                 if (!skipped->isEmpty())
                     status += " (" + skipped->joinIntoString(", ") + " failed)";
+                if (!droppedDisabled.isEmpty())
+                    status += " (skipped: " + droppedDisabled.joinIntoString(", ")
+                            + " — disabled in Settings)";
                 safeThis->chainStatusLabel.setText(status, juce::dontSendNotification);
                 // Debug: show full raw chain JSON so we can verify settings fields
                 safeThis->chainDebugJsonBox.setText(chainJson, false);
@@ -9642,22 +9744,7 @@ void EchoJayEditor::showNextFailPrompt(juce::StringArray names, int idx)
             if (!safeThis) return;
             if (result == 1) // "Don't suggest again"
             {
-                auto& scanner = safeThis->processorRef.getPluginScanner();
-                for (auto& p : scanner.getPlugins())
-                {
-                    if (p.name.equalsIgnoreCase(name))
-                    {
-                        scanner.setPluginEnabled(p.uid, false);
-                        scanner.saveEnabledState();
-                        // Keep Settings checklist in sync
-                        if (safeThis->settingsChecklist)
-                            safeThis->settingsChecklist->refresh();
-                        // Rebuild resolver so the AI no longer sees this plugin
-                        auto& ch = safeThis->processorRef.getChainHost();
-                        ch.buildRecommendable(scanner.getPlugins(), safeThis->chainFormatFilter_);
-                        break;
-                    }
-                }
+                safeThis->disablePluginByName(name);
             }
             else // "Keep it" — don't prompt again this session
             {
