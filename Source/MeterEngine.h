@@ -33,6 +33,21 @@ struct MeterData {
     // Dynamics
     float crestFactor = 0.0f;
     float dcOffset = 0.0f;
+
+    // Per-band crest factor (dB) — same sub (<120Hz) / mid (120Hz-5k) /
+    // top (>5k) splits as the banded correlation, same windows as the global
+    // crest. -1 = not yet measured (serialisation omits, absent=unavailable).
+    float bandCrestSub = -1.0f;
+    float bandCrestMid = -1.0f;
+    float bandCrestTop = -1.0f;
+
+    // Short-term true peak (dBTP) — max true peak over the same 3s window as
+    // short-term LUFS. Drives PSR (= shortTermTruePeak - shortTerm).
+    float shortTermTruePeak = -100.0f;
+
+    // Inter-sample overs: count of contiguous runs above 0 dBTP (one event
+    // per run, not per sample). Resets with the max-hold / on capture start.
+    int oversCount = 0;
     
     // Stereo
     float width = 0.0f;
@@ -61,6 +76,13 @@ struct MeterData {
     std::array<float, gonioSize> gonioR = {};
     int gonioWritePos = 0;
     
+    // Macro-band levels (dB, power-per-octave) — integrated from the RAW FFT
+    // in computeSpectrum, separately from the display bins below (which carry
+    // intentional visual shaping). Pink-referenced by construction: equal
+    // energy per octave reads flat across bands. -120 = no data yet.
+    // Order: sub, low, lowMid, mid, highMid, air.
+    std::array<float, 6> macroBandDb = { -120,-120,-120,-120,-120,-120 };
+
     // Spectrum — 64 log-spaced bins from ~20 Hz to Nyquist
     static constexpr int numSpecBins = 64;
     std::array<float, 64> spectrum = {
@@ -109,6 +131,25 @@ public:
     
     // Get JSON string of all meter data for the WebView
     juce::String getMeterDataJSON() const;
+
+    // Serialise an arbitrary MeterData to the same JSON shape — used to send
+    // a capture snapshot's averagedData with chat requests (the backend's
+    // parseExtendedMeter accepts this exact blob). sampleRate drives the
+    // macro-band bucket mapping only.
+    static juce::String meterDataToJSON(const MeterData& d, double sampleRate);
+
+    // ===== Spectrogram history (visualiser-only; never serialised) =====
+    // Ring of display-bin frames decimated to ~25 fps (max-aggregated between
+    // frames so transients survive), ~12s deep. Fixed allocation; the audio
+    // thread pushes under dataMutex, the UI thread copies increments out.
+    static constexpr int kSpecHistFrames = 300;
+
+    // Copies up to maxFrames frames newer than sinceCounter into dest
+    // (oldest→newest), returns the count and the new counter value. The
+    // counter is monotonic so callers can fetch incrementally.
+    int getSpectrogramFrames(int sinceCounter,
+                             std::array<float, 64>* dest, int maxFrames,
+                             int& counterOut) const;
     
 private:
     double currentSampleRate = 44100.0;
@@ -146,6 +187,17 @@ private:
     
     // True peak (4x oversampling)
     void computeTruePeak(const float* samples, int numSamples, float& truePeak);
+
+    // Short-term true-peak window: per-100ms-block TP maxima, 30 blocks = 3s
+    // (aligned with shortTermBlocks). Fed from the existing 4x detector —
+    // no additional DSP.
+    std::vector<float> stTpBlocks;
+    float tp100msAccum = 0.0f;
+
+    // Inter-sample overs event counter (contiguous-run, buffer-granular edge
+    // detection on the existing detector output)
+    bool tpOverRun  = false;
+    int  oversEvents = 0;
     
     // FFT spectrum analysis (2048-point -> 64 log-spaced bins)
     static constexpr int fftOrder = 11;                    // 2^11 = 2048
@@ -163,6 +215,20 @@ private:
     };
 
     void computeSpectrum(const float* left, const float* right, int numSamples);
+
+    // Smoothed macro-band per-octave levels (see MeterData::macroBandDb)
+    std::array<float, 6> smoothedMacroBands = { -120,-120,-120,-120,-120,-120 };
+
+    // Spectrogram ring (see kSpecHistFrames). specAccum max-aggregates the
+    // display bins between ~25fps frames; audio-thread-only except the ring
+    // itself, which is written/read under dataMutex.
+    std::array<std::array<float, 64>, kSpecHistFrames> specRing {};
+    std::array<float, 64> specAccum {};
+    int specWritePos = 0;
+    int specFrameCount = 0;
+    int specFrameCounter = 0;   // monotonic; survives resets
+    int specAccumSamples = 0;
+    int samplesPerSpecFrame = 1764;  // sampleRate/25, set in prepare()
 
     // Rolling waveform accumulator — downsample to ~86 pts/s (every 512 samples at 44.1k)
     static constexpr int kWaveDownsample = 512;
@@ -252,6 +318,17 @@ private:
     bool subInit = false;
     bool midInit = false;
     bool topInit = false;
+
+    // Per-band crest accumulators — fed from the SAME band samples the
+    // banded-correlation loop already computes (no additional filtering).
+    // RMS reuses the correlation energy sums; only the per-sample abs-max
+    // peak is new. Same constants as the global crest: 0.5s RMS EMA, 3s
+    // peak decay, hold-last-value during silence (-1 until first valid).
+    double bandSqSub = 0, bandSqMid = 0, bandSqTop = 0;
+    float  bandPeakSub = 0, bandPeakMid = 0, bandPeakTop = 0;
+    float  lastBandCrestSub = -1.0f;
+    float  lastBandCrestMid = -1.0f;
+    float  lastBandCrestTop = -1.0f;
 
     // Display-smoothed side/mid ratio. Reuses the same EMA-on-the-scalar
     // pattern as width (smoothing the ratio rather than the components,

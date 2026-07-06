@@ -85,10 +85,20 @@ public:
     
     // ============ Chat ============
     
+    // meterJsonBlob: raw MeterEngine JSON (getMeterDataJSON / meterDataToJSON),
+    // passed through UNCHANGED as the request's "meters" field — the backend's
+    // parseExtendedMeter reads psr/plr/oversCount/macroBands from it. Empty =
+    // field omitted (absent = unavailable convention).
     void sendChat(const juce::StringArray& roles,
                   const juce::StringArray& contents,
                   const juce::String& systemPrompt,
-                  std::function<void(const juce::String& reply, bool success)> onComplete);
+                  std::function<void(const juce::String& reply, bool success)> onComplete,
+                  const juce::String& meterJsonBlob = juce::String());
+
+    // Stage the meter blob for the NEXT sendChat call (consumed when the
+    // request body is built, so it also survives the limit-refresh retry).
+    // Alternative to passing meterJsonBlob directly.
+    void setNextChatMeters(const juce::String& blob) { nextChatMeters_ = blob; }
     
     // ============ User Settings (synced with web app) ============
     
@@ -207,6 +217,7 @@ private:
     juce::String apiEndpoint;
     juce::String authToken;
     juce::String deviceId;
+    juce::String nextChatMeters_;   // staged by setNextChatMeters()
     UserInfo userInfo;
     UserSettings userSettings;
     

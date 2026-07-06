@@ -104,6 +104,7 @@ void MeterEngine::prepare(double sampleRate, int /*samplesPerBlock*/)
 
     currentSampleRate = sampleRate;
     samplesPerBlock100ms = static_cast<int>(sampleRate * 0.1);
+    samplesPerSpecFrame  = std::max(1, (int)(sampleRate / 25.0)); // ~25 fps frames
     computeKWeightingCoeffs(sampleRate);
     computeWidthHpfCoeffs(sampleRate);
     computeBandedCorrCoeffs(sampleRate);
@@ -155,6 +156,10 @@ void MeterEngine::resetState()
     sumL = sumR = 0;
     currentPeakL = currentPeakR = 0;
     currentTpL = currentTpR = 0;
+    stTpBlocks.clear();
+    tp100msAccum = 0.0f;
+    tpOverRun = false;
+    oversEvents = 0;
     sampleCount = 0;
     sumMid = sumSide = 0;
     sumCorr = sumEnergyL = sumEnergyR = 0;
@@ -177,10 +182,18 @@ void MeterEngine::resetState()
     displaySideToMid = 0.0f;
     sideToMidInit = false;
     lastCrest = 0.0f;
+    bandSqSub = bandSqMid = bandSqTop = 0;
+    bandPeakSub = bandPeakMid = bandPeakTop = 0;
+    lastBandCrestSub = lastBandCrestMid = lastBandCrestTop = -1.0f;
     fftData.fill(0.0f);
     std::fill(fftAccumulator.begin(), fftAccumulator.end(), 0.0f);
     fftWritePos = 0;
     smoothedSpectrum.fill(-100.0f);
+    smoothedMacroBands.fill(-120.0f);
+    specFrameCount = 0;
+    specAccumSamples = 0;
+    specAccum.fill(-120.0f);
+    // specFrameCounter stays monotonic across resets so UI fetches stay valid
     wfMinAccum = wfMaxAccum = 0.0f;
     wfAccumCount = 0;
     std::lock_guard<std::mutex> lock(dataMutex);
@@ -300,7 +313,75 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
         float coeff = (rawBins[(size_t)b] > smoothedSpectrum[(size_t)b]) ? attackCoeff : releaseCoeff;
         smoothedSpectrum[(size_t)b] += coeff * (rawBins[(size_t)b] - smoothedSpectrum[(size_t)b]);
     }
-    { std::lock_guard<std::mutex> lock(dataMutex); data.spectrum = smoothedSpectrum; }
+
+    // ===== Macro-band per-octave energy (pink-referenced data path) =====
+    // Integrates RAW FFT power per macro band and normalises to power per
+    // octave: equal-energy-per-octave (pink) material reads flat across
+    // bands by construction. Deliberately separate from the display bins
+    // above, which carry visual shaping (low-end attenuation, span-peak
+    // sampling) that must NOT leak into the serialised macroBands data.
+    {
+        struct BandEdge { double lo, hi; };
+        const BandEdge edges[6] = {
+            {   20.0,    60.0 },   // sub
+            {   60.0,   250.0 },   // low
+            {  250.0,   500.0 },   // lowMid
+            {  500.0,  2000.0 },   // mid
+            { 2000.0,  6000.0 },   // highMid
+            { 6000.0, maxFreq },   // air
+        };
+        double bandPower[6] = {};
+        for (int k = 1; k < usableBins; ++k)
+        {
+            double f = k * binHz;
+            if (f < 20.0 || f >= maxFreq) continue;
+            double m = (double)fftData[(size_t)k] * normFactor;
+            for (int bi = 0; bi < 6; ++bi)
+                if (f >= edges[bi].lo && f < edges[bi].hi)
+                { bandPower[bi] += m * m; break; }
+        }
+        for (int bi = 0; bi < 6; ++bi)
+        {
+            double octaves = std::log2(std::max(1.01, edges[bi].hi / edges[bi].lo));
+            double perOct  = bandPower[bi] / octaves;
+            float dbv = perOct > 1e-12 ? (float)(10.0 * std::log10(perOct)) : -120.0f;
+            float coeff = (dbv > smoothedMacroBands[(size_t)bi]) ? attackCoeff : releaseCoeff;
+            smoothedMacroBands[(size_t)bi] += coeff * (dbv - smoothedMacroBands[(size_t)bi]);
+        }
+    }
+
+    // ===== Spectrogram history =====
+    // Max-aggregate the display bins between ~25fps frames so short
+    // transients survive decimation. Frozen while silent — constant floor
+    // frames add nothing and pausing keeps recent history on screen.
+    if (silentSampleCount.load() > silenceTimeoutSamples)
+    {
+        specAccumSamples = 0;
+        specAccum.fill(-120.0f);
+    }
+    else
+    {
+        for (int b = 0; b < N; ++b)
+            specAccum[(size_t)b] = std::max(specAccum[(size_t)b],
+                                            smoothedSpectrum[(size_t)b]);
+        specAccumSamples += numSamples;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(dataMutex);
+        data.spectrum = smoothedSpectrum;
+        data.macroBandDb = smoothedMacroBands;
+
+        while (specAccumSamples >= samplesPerSpecFrame)
+        {
+            specRing[(size_t)specWritePos] = specAccum;
+            specWritePos = (specWritePos + 1) % kSpecHistFrames;
+            specFrameCount = std::min(specFrameCount + 1, kSpecHistFrames);
+            ++specFrameCounter;
+            specAccum = smoothedSpectrum;   // restart aggregation from current
+            specAccumSamples -= samplesPerSpecFrame;
+        }
+    }
 }
 
 void MeterEngine::pushWaveformSamples(const float* left, const float* right, int numSamples)
@@ -358,6 +439,20 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     float blockTpL = 0, blockTpR = 0;
     computeTruePeak(left, numSamples, blockTpL);
     computeTruePeak(right, numSamples, blockTpR);
+
+    // Short-term true-peak window accumulator (100ms granularity, 3s window)
+    tp100msAccum = std::max(tp100msAccum, std::max(blockTpL, blockTpR));
+
+    // Inter-sample overs: one event per contiguous run above 0 dBTP
+    // (linear 1.0 on the 4x-oversampled detector). Buffer-granular edge
+    // detection — a run spanning several buffers counts once; multiple
+    // overs inside one buffer also count once (an "event", not a sample).
+    {
+        bool overNow = (blockTpL > 1.0f || blockTpR > 1.0f);
+        if (overNow && !tpOverRun)
+            ++oversEvents;
+        tpOverRun = overNow;
+    }
     
     double blkSqL = 0, blkSqR = 0, blkSumL = 0, blkSumR = 0;
     double blkMid = 0, blkSide = 0, blkCorr = 0, blkEnL = 0, blkEnR = 0;
@@ -370,6 +465,10 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     double subCorrSum=0, subEnL=0, subEnR=0;
     double midCorrSum=0, midEnL=0, midEnR=0;
     double topCorrSum=0, topEnL=0, topEnR=0;
+
+    // Per-band crest: per-buffer abs-max of the band samples (RMS side
+    // reuses the *En sums above)
+    float blkBandPeakSub = 0, blkBandPeakMid = 0, blkBandPeakTop = 0;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -405,6 +504,11 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         double topR = applyBiquad(sR, corrTopHpf, topHpxR1, topHpxR2, topHpyR1, topHpyR2);
         topCorrSum += topL * topR;
         topEnL += topL * topL; topEnR += topR * topR;
+
+        // Per-band peaks for band crest (band samples already computed above)
+        blkBandPeakSub = std::max(blkBandPeakSub, (float)std::max(std::abs(subL), std::abs(subR)));
+        blkBandPeakMid = std::max(blkBandPeakMid, (float)std::max(std::abs(midL), std::abs(midR)));
+        blkBandPeakTop = std::max(blkBandPeakTop, (float)std::max(std::abs(topL), std::abs(topR)));
         
         double kL = applyBiquad(sL, kStage1, s1x1L, s1x2L, s1y1L, s1y2L);
         kL = applyBiquad(kL, kStage2, s2x1L, s2x2L, s2y1L, s2y2L);
@@ -444,6 +548,13 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     float peakDecay = (float)std::exp(-bufDur / 3.0);
     currentPeakL = std::max(blockPeakL, currentPeakL * peakDecay);
     currentPeakR = std::max(blockPeakR, currentPeakR * peakDecay);
+    // Per-band crest accumulators — same EMA / decay constants as global crest
+    bandSqSub += alpha * ((subEnL + subEnR) / (2.0 * blkN) - bandSqSub);
+    bandSqMid += alpha * ((midEnL + midEnR) / (2.0 * blkN) - bandSqMid);
+    bandSqTop += alpha * ((topEnL + topEnR) / (2.0 * blkN) - bandSqTop);
+    bandPeakSub = std::max(blkBandPeakSub, bandPeakSub * peakDecay);
+    bandPeakMid = std::max(blkBandPeakMid, bandPeakMid * peakDecay);
+    bandPeakTop = std::max(blkBandPeakTop, bandPeakTop * peakDecay);
     // True peak: HOLD maximum (no decay) — reset only on resetIntegrated
     currentTpL = std::max(blockTpL, currentTpL);
     currentTpR = std::max(blockTpR, currentTpR);
@@ -467,6 +578,12 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         momentaryBlocks.push_back(block);
         shortTermBlocks.push_back(block);
         allBlocks.push_back(block);
+
+        // Short-term true-peak window: one TP max per 100ms block, 3s = 30
+        stTpBlocks.push_back(tp100msAccum);
+        tp100msAccum = 0.0f;
+        while (stTpBlocks.size() > 30)
+            stTpBlocks.erase(stTpBlocks.begin());
         
         // Momentary: 400ms = 4 x 100ms blocks
         while (momentaryBlocks.size() > 4)
@@ -686,6 +803,24 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         // Silence: hold previous crest value rather than reporting nonsense
         crest = lastCrest;
     }
+
+    // Per-band crest — same validity threshold and hold rule as the global.
+    // lastBandCrest* stays -1 until the band first has measurable signal;
+    // serialisation omits negative values (absent = unavailable).
+    auto computeBandCrest = [](float pk, double sqEma, float& lastVal)
+    {
+        if (pk > 0.001f && sqEma > 0.0)
+        {
+            float rms = std::sqrt((float)sqEma);
+            if (rms > 0.0f)
+                lastVal = juce::jlimit(0.0f, 40.0f,
+                                       20.0f * std::log10(pk / rms));
+        }
+        return lastVal;
+    };
+    float bcSub = computeBandCrest(bandPeakSub, bandSqSub, lastBandCrestSub);
+    float bcMid = computeBandCrest(bandPeakMid, bandSqMid, lastBandCrestMid);
+    float bcTop = computeBandCrest(bandPeakTop, bandSqTop, lastBandCrestTop);
     float dc = static_cast<float>(((sumL + sumR) * 0.5) * 1000.0);
     
     computeSpectrum(left, right, numSamples);
@@ -724,6 +859,17 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         data.peakMaxR = toDb(currentPeakR);
         data.crestFactor = crest;
         data.dcOffset = dc;
+        data.bandCrestSub = bcSub;
+        data.bandCrestMid = bcMid;
+        data.bandCrestTop = bcTop;
+        // Short-term true peak: max over the 3s window (plus the partial
+        // 100ms block still accumulating)
+        {
+            float stTp = tp100msAccum;
+            for (float v : stTpBlocks) stTp = std::max(stTp, v);
+            data.shortTermTruePeak = toDb(stTp);
+        }
+        data.oversCount = oversEvents;
         data.width = width;
         data.correlation = corr;
         data.sideToMidRatio = displaySideToMid;
@@ -763,7 +909,28 @@ void MeterEngine::resetIntegrated()
 
 juce::String MeterEngine::getMeterDataJSON() const
 {
-    auto d = getMeterData();
+    return meterDataToJSON(getMeterData(), currentSampleRate);
+}
+
+int MeterEngine::getSpectrogramFrames(int sinceCounter,
+                                      std::array<float, 64>* dest, int maxFrames,
+                                      int& counterOut) const
+{
+    std::lock_guard<std::mutex> lock(dataMutex);
+    counterOut = specFrameCounter;
+    int avail = juce::jmin(specFrameCounter - sinceCounter,
+                           specFrameCount, maxFrames);
+    if (avail <= 0 || dest == nullptr) return 0;
+    for (int i = 0; i < avail; ++i)
+    {
+        int idx = (specWritePos - avail + i + kSpecHistFrames * 2) % kSpecHistFrames;
+        dest[i] = specRing[(size_t)idx];
+    }
+    return avail;
+}
+
+juce::String MeterEngine::meterDataToJSON(const MeterData& d, double sampleRate)
+{
     juce::String json = "{";
     json += "\"mom\":" + juce::String(d.momentary, 1) + ",";
     json += "\"st\":" + juce::String(d.shortTerm, 1) + ",";
@@ -785,6 +952,63 @@ juce::String MeterEngine::getMeterDataJSON() const
     json += "\"corrSub\":" + juce::String(d.corrSub, 2) + ",";
     json += "\"corrMid\":" + juce::String(d.corrMid, 2) + ",";
     json += "\"corrTop\":" + juce::String(d.corrTop, 2) + ",";
+
+    // ===== Phase-1 metering additions (all additive — v1 clients ignore) =====
+    // Compat convention shared with v1: an ABSENT key means unavailable.
+    // Each key is omitted entirely until its inputs are valid — never
+    // emitted as a 0.0 / 0 placeholder.
+    // PSR: short-term true peak minus short-term LUFS (BS.1770 3s window).
+    // PLR: max-hold true peak minus integrated LUFS.
+    {
+        float tpMax = std::max(d.truePeakMaxL, d.truePeakMaxR);
+        if (d.shortTermTruePeak > -90.0f && d.shortTerm > -90.0f)
+            json += "\"psr\":" + juce::String(d.shortTermTruePeak - d.shortTerm, 1) + ",";
+        if (tpMax > -90.0f && d.integrated > -90.0f)
+            json += "\"plr\":" + juce::String(tpMax - d.integrated, 1) + ",";
+        if (tpMax > -90.0f)   // audio has been measured since the last reset
+            json += "\"oversCount\":" + juce::String(d.oversCount) + ",";
+    }
+
+    // Per-band crest — subkeys appear as their band first has measurable
+    // signal; the whole key is omitted while none do (absent = unavailable)
+    {
+        juce::StringArray parts;
+        if (d.bandCrestSub >= 0.0f) parts.add("\"sub\":" + juce::String(d.bandCrestSub, 1));
+        if (d.bandCrestMid >= 0.0f) parts.add("\"mid\":" + juce::String(d.bandCrestMid, 1));
+        if (d.bandCrestTop >= 0.0f) parts.add("\"top\":" + juce::String(d.bandCrestTop, 1));
+        if (!parts.isEmpty())
+            json += "\"bandCrest\":{" + parts.joinIntoString(",") + "},";
+    }
+
+    // Macro-band tonal balance — reads the pink-referenced per-octave band
+    // energies integrated from the raw FFT in computeSpectrum (NOT the
+    // display bins, which carry visual shaping). Pink noise reads ~0 rel on
+    // all six bands by construction. rel = band minus the six-band mean.
+    juce::ignoreUnused(sampleRate);
+    {
+        static const char* mbNames[6] = { "sub", "low", "lowMid", "mid", "highMid", "air" };
+        float mean = 0.0f;
+        bool anySignal = false;
+        for (int i = 0; i < 6; ++i)
+        {
+            mean += d.macroBandDb[(size_t)i];
+            if (d.macroBandDb[(size_t)i] > -119.0f) anySignal = true;
+        }
+        mean /= 6.0f;
+        if (anySignal)   // omit entirely until the spectrum has data
+        {
+            json += "\"macroBands\":{";
+            for (int i = 0; i < 6; ++i)
+            {
+                json += "\"" + juce::String(mbNames[i]) + "\":{\"db\":"
+                      + juce::String(d.macroBandDb[(size_t)i], 1) + ",\"rel\":"
+                      + juce::String(d.macroBandDb[(size_t)i] - mean, 1) + "}";
+                if (i < 5) json += ",";
+            }
+            json += "},";
+        }
+    }
+
     json += "\"spectrum\":[";
     for (int i = 0; i < MeterData::numSpecBins; ++i)
     {

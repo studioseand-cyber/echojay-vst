@@ -11,6 +11,9 @@ extern "C" bool NativeClip2_attach(void* peerHandle, int x, int y, int w, int h,
 extern "C" bool NativeClip2_getPluginSize(void* peerHandle, int* outW, int* outH);
 extern "C" void NativeClip2_detach(void* peerHandle);
 
+// Unified-log bridge (NSLog) so C++ diagnostics show up in Console.app
+extern "C" void EchoJay_NSLog(const char* msg);
+
 namespace NativeClip
 {
     inline void* windowHandleFor(juce::Component* comp)

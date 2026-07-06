@@ -38,6 +38,13 @@
 extern "C"
 {
 
+// Unified-log bridge for cross-platform C++ callers (EchoJayAPI diagnostics)
+// — NSLog lands in Console.app / `log stream` like the NativeClip2 lines.
+void EchoJay_NSLog(const char* msg)
+{
+    NSLog(@"%s", msg != nullptr ? msg : "(null)");
+}
+
 static EchoJayClipContainer* NativeClip2_findContainer(NSView* peer)
 {
     for (NSView* sv in [peer subviews])

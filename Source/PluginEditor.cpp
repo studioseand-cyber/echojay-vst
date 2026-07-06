@@ -362,6 +362,34 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         juce::URL("https://www.echojay.ai/support").launchInDefaultBrowser();
     };
 
+    // Debug meter dump — same dim text styling as Help & Support
+    dumpMetersBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    dumpMetersBtn.setColour(juce::TextButton::textColourOffId, C::text3);
+    dumpMetersBtn.setColour(juce::TextButton::textColourOnId, C::text2);
+    addChildComponent(dumpMetersBtn);
+    dumpMetersBtn.onClick = [this]()
+    {
+        auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                       .getChildFile("EchoJay");
+        dir.createDirectory();
+
+        auto& me = processorRef.getMeterEngine();
+        dir.getChildFile("meter-debug.json").replaceWithText(me.getMeterDataJSON());
+
+        auto d = me.getMeterData();
+        juce::String line = juce::Time::getCurrentTime().toISO8601(true)
+            + "  v" + ProjectInfo::versionString
+            + "  integ=" + juce::String(d.integrated, 1)
+            + " st="     + juce::String(d.shortTerm, 1)
+            + " tpMax="  + juce::String(juce::jmax(d.truePeakMaxL, d.truePeakMaxR), 1)
+            + " crest="  + juce::String(d.crestFactor, 1)
+            + " overs="  + juce::String(d.oversCount)
+            + " silent=" + (d.isSilent ? "y" : "n") + "\n";
+        dir.getChildFile("meter-debug.log").appendText(line);
+
+        settingsSavedLabel.setText("Meters dumped", juce::dontSendNotification);
+    };
+
 
     // --- Channel type ---
     // Grouped channel type dropdown — uses PopupMenu with submenus via getRootMenu()
@@ -534,25 +562,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     addChildComponent(updateOverlay);
 
-    // --- Compare ---
-    compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    compareBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
-    compareBtn.setColour(juce::TextButton::textColourOffId, C::text);
-    compareBtn.onClick = [this] {
-        if (currentView == View::Compare) { currentView = View::Meters; hideCompareView(); }
-        else { hideSettingsView(); currentView = View::Compare; showCompareView(); }
-    };
-    addAndMakeVisible(compareBtn);
-
-    // --- Settings ---
-    settingsBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    settingsBtn.setColour(juce::TextButton::textColourOnId, C::text);
-    settingsBtn.setColour(juce::TextButton::textColourOffId, C::text2);
-    settingsBtn.onClick = [this] {
-        if (currentView == View::Settings) { hideSettingsView(); currentView = View::Meters; }
-        else { hideCompareView(); showSettingsView(); currentView = View::Settings; }
-    };
-    addAndMakeVisible(settingsBtn);
+    // Compare and Settings header buttons removed — both are full tabs in
+    // the tab strip, which is the only navigation path to them. (The member
+    // objects remain but are never parented; legacy state calls on them are
+    // harmless no-ops.)
 
     // --- Right-side top bar controls ---
     scanBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -1240,6 +1253,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // of scales so users can bump chat readability without a settings trip.
     // Uses a subtle filled background so users can actually spot it.
     loadChatTextScale();
+    loadSpectrogramMode();
     chatTextSizeBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
     chatTextSizeBtn.setColour(juce::TextButton::buttonOnColourId, C::bg4);
     chatTextSizeBtn.setColour(juce::TextButton::textColourOnId, C::text);
@@ -1690,6 +1704,7 @@ void EchoJayEditor::showLoginScreen()
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
     settingsHelpBtn.setVisible(false);
+    dumpMetersBtn.setVisible(false);
     
     // Also hide compare fields
     aiCompareBtn.setVisible(false);
@@ -3248,6 +3263,13 @@ void EchoJayEditor::runAICompare()
     // destroyed editor. The lambda then sits in the host message queue and
     // runs on the user's NEXT mouse click — the "1 second after first click"
     // freeze. Bailing on a null SafePointer makes the late callback a no-op.
+    // AI-compare turns also carry the live meter blob when audio is playing
+    // (the reviews' own psr/plr/overs are already in their stored data).
+    {
+        auto& me = processorRef.getMeterEngine();
+        api.setNextChatMeters(me.getMeterData().isSilent ? juce::String()
+                                                          : me.getMeterDataJSON());
+    }
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis](const juce::String& reply, bool success) {
@@ -3855,6 +3877,7 @@ void EchoJayEditor::showSettingsView()
     settingsScanBtn.setVisible(true);
     viewAllPluginsBtn.setVisible(true);
     settingsHelpBtn.setVisible(true);
+    dumpMetersBtn.setVisible(true);
     settingsPluginViewport.setVisible(false);
     settingsPluginSearchBox.setVisible(false);
     
@@ -3929,6 +3952,7 @@ void EchoJayEditor::hideSettingsView()
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
     settingsHelpBtn.setVisible(false);
+    dumpMetersBtn.setVisible(false);
     resized(); repaint();
 }
 
@@ -4245,6 +4269,43 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         for (auto& cid : album.chatIds)
             albumedIds.insert(cid);
 
+    auto makeChatRow = [&activeChatId](const WsChat& chat, int indent)
+    {
+        Row r;
+        r.kind   = Row::Kind::ChatRow;
+        r.id     = chat.id;
+        r.label  = chat.title.isEmpty() ? "Untitled" : chat.title;
+        r.active = (chat.id == activeChatId);
+        r.pinned = chat.pinned;
+        r.indent = indent;
+
+        auto raw = chat.created;
+        auto s = raw.upToFirstOccurrenceOf("T", false, false);
+        r.meta = (s.length() == 10) ? s.substring(5) : raw.substring(0, 10);
+        if (chat.revisionCount > 0)
+            r.meta += "  -" + juce::String(chat.revisionCount) + " rev";
+        return r;
+    };
+
+    // --- Section: Pinned chats — always at the very top, most recently
+    // pinned first. Pinned chats are lifted OUT of the album/ungrouped rows
+    // below (album membership data is unchanged).
+    std::vector<const WsChat*> pinnedChats;
+    for (auto& ch : chats)
+        if (ch.pinned && !ch.messages.empty())
+            pinnedChats.push_back(&ch);
+    std::sort(pinnedChats.begin(), pinnedChats.end(),
+              [](const WsChat* a, const WsChat* b) { return a->pinnedAt > b->pinnedAt; });
+    if (!pinnedChats.empty())
+    {
+        Row sec;
+        sec.kind  = Row::Kind::SectionTitle;
+        sec.label = "PINNED";
+        rows.push_back(sec);
+        for (auto* chat : pinnedChats)
+            rows.push_back(makeChatRow(*chat, 0));
+    }
+
     // --- Section: Albums & Chats ---
     {
         Row r;
@@ -4259,7 +4320,7 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         int chatCount = 0;
         for (auto& cid : album.chatIds)
             for (auto& ch : chats)
-                if (ch.id == cid && !ch.messages.empty()) ++chatCount;
+                if (ch.id == cid && !ch.messages.empty() && !ch.pinned) ++chatCount;
 
         // Strip any leading non-ASCII characters (e.g. folder emoji stored by
         // the web app) so the name renders cleanly in JUCE's default font.
@@ -4282,31 +4343,19 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
             {
                 const WsChat* chat = nullptr;
                 for (auto& ch : chats)
-                    if (ch.id == cid && !ch.messages.empty()) { chat = &ch; break; }
+                    if (ch.id == cid && !ch.messages.empty() && !ch.pinned)
+                    { chat = &ch; break; }
                 if (!chat) continue;
 
-                Row r;
-                r.kind   = Row::Kind::ChatRow;
-                r.id     = chat->id;
-                r.label  = chat->title.isEmpty() ? "Untitled" : chat->title;
-                r.active = (chat->id == activeChatId);
-                r.indent = 16;
-
-                auto raw = chat->created;
-                auto s = raw.upToFirstOccurrenceOf("T", false, false);
-                r.meta = (s.length() == 10) ? s.substring(5) : raw.substring(0, 10);
-                if (chat->revisionCount > 0)
-                    r.meta += "  -" + juce::String(chat->revisionCount) + " rev";
-
-                rows.push_back(r);
+                rows.push_back(makeChatRow(*chat, 16));
             }
         }
     }
 
-    // --- Section: Ungrouped Chats ---
+    // --- Section: Ungrouped Chats (pinned ones live in the PINNED group) ---
     std::vector<const WsChat*> ungrouped;
     for (auto& ch : chats)
-        if (!ch.messages.empty() && albumedIds.count(ch.id) == 0)
+        if (!ch.messages.empty() && !ch.pinned && albumedIds.count(ch.id) == 0)
             ungrouped.push_back(&ch);
 
     if (!ungrouped.empty())
@@ -4317,21 +4366,7 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         rows.push_back(sec);
 
         for (auto* chat : ungrouped)
-        {
-            Row r;
-            r.kind   = Row::Kind::ChatRow;
-            r.id     = chat->id;
-            r.label  = chat->title.isEmpty() ? "Untitled" : chat->title;
-            r.active = (chat->id == activeChatId);
-
-            auto raw = chat->created;
-            auto s = raw.upToFirstOccurrenceOf("T", false, false);
-            r.meta = (s.length() == 10) ? s.substring(5) : raw.substring(0, 10);
-            if (chat->revisionCount > 0)
-                r.meta += "  -" + juce::String(chat->revisionCount) + " rev";
-
-            rows.push_back(r);
-        }
+            rows.push_back(makeChatRow(*chat, 0));
     }
 
     // --- Section: Mix Reviews ---
@@ -4431,10 +4466,23 @@ void EchoJayEditor::ChatSidebarModel::paintListBoxItem(
         g.setColour(C::border);
         g.drawHorizontalLine(height - 1, 0.f, (float)width);
 
+        // Pin glyph — right-aligned, drawn with Graphics (no text glyph):
+        // angled pin head + stem, in the accent cyan
+        int pinReserve = 0;
+        if (row.pinned)
+        {
+            pinReserve = 16;
+            float px = (float)width - 15.0f;
+            float py = (float)height * 0.5f - 6.0f;
+            g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.75f));
+            g.fillEllipse(px + 2.0f, py, 6.0f, 6.0f);                       // head
+            g.drawLine(px + 5.0f, py + 5.5f, px + 5.0f, py + 11.0f, 1.6f);  // stem
+        }
+
         g.setColour(row.active ? C::text : C::text2);
         g.setFont(juce::Font(juce::FontOptions(11.0f)));
         g.drawText(row.label, padX + row.indent, 0,
-                   width - padX - row.indent, height - 14,
+                   width - padX - row.indent - pinReserve, height - 14,
                    juce::Justification::bottomLeft);
 
         g.setColour(C::text3);
@@ -5026,10 +5074,12 @@ void EchoJayEditor::showMoveToAlbumMenu(const juce::String& chatId)
 {
     auto& albums = workspace.getAlbums();
 
-    // Current title for the rename dialog default
+    // Current title (rename dialog default) + pinned state (menu toggle)
     juce::String currentTitle;
+    bool currentlyPinned = false;
     for (auto& ch : workspace.getChats())
-        if (ch.id == chatId) { currentTitle = ch.title; break; }
+        if (ch.id == chatId)
+        { currentTitle = ch.title; currentlyPinned = ch.pinned; break; }
 
     // Which album (if any) currently owns this chat?
     juce::String currentAlbum;
@@ -5038,9 +5088,11 @@ void EchoJayEditor::showMoveToAlbumMenu(const juce::String& chatId)
 
     juce::PopupMenu menu;
 
-    // Rename / Delete at top
+    // Pin / Rename / Delete at top
     int itemId = 1;
     std::vector<juce::String> actions;
+    menu.addItem(itemId++, currentlyPinned ? "Unpin chat" : "Pin chat");
+    actions.push_back("__togglepin__");
     menu.addItem(itemId++, "Rename...");  actions.push_back("__rename__");
     menu.addItem(itemId++, "Delete");               actions.push_back("__delete__");
     menu.addSeparator();
@@ -5070,7 +5122,7 @@ void EchoJayEditor::showMoveToAlbumMenu(const juce::String& chatId)
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
 
     menu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
-        [safeThis, chatId, actions, currentTitle](int result)
+        [safeThis, chatId, actions, currentTitle, currentlyPinned](int result)
         {
             if (safeThis == nullptr || result <= 0) return;
             juce::String action = actions[(size_t)(result - 1)];
@@ -5090,6 +5142,14 @@ void EchoJayEditor::showMoveToAlbumMenu(const juce::String& chatId)
                 safeThis->workspace.requestMutationSync();
                 safeThis->repaint();
             };
+
+            if (action == "__togglepin__")
+            {
+                // Pinning never changes the active chat — just data + list order
+                safeThis->workspace.setChatPinned(chatId, !currentlyPinned);
+                doRefreshAndSync();
+                return;
+            }
 
             if (action == "__rename__")
             {
@@ -5281,6 +5341,20 @@ juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
     rev.data.crest    = d.crestFactor;
     rev.data.dc       = d.dcOffset;
     rev.data.duration = snap.durationSeconds;
+    // Phase-1 metering: PSR from the capture's final short-term window,
+    // PLR from max-hold TP vs integrated, plus the inter-sample overs count
+    {
+        float tpMax = juce::jmax(d.truePeakMaxL, d.truePeakMaxR);
+        if (d.shortTermTruePeak > -90.0f && d.shortTerm > -90.0f)
+            rev.data.psr = d.shortTermTruePeak - d.shortTerm;
+        if (tpMax > -90.0f && d.integrated > -90.0f)
+            rev.data.plr = tpMax - d.integrated;
+        rev.data.overs = d.oversCount;
+        // Band crest sentinels (-1 = never measured) flow through directly
+        rev.data.crestSub = d.bandCrestSub;
+        rev.data.crestMid = d.bandCrestMid;
+        rev.data.crestTop = d.bandCrestTop;
+    }
 
     // In-memory spectrum for Compare-page display (not persisted to server)
     if (snap.hasDualSpectrum) {
@@ -5387,10 +5461,10 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
         if (info.credits > 0)
             line += " (+" + juce::String(info.credits) + ")";
 
-        int helpX = x + w - 80 - 8 - 120;   // Help & Support X in resized()
+        int dumpX = x + w - 80 - 8 - 120 - 8 - 96;   // Dump meters X in resized()
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        g.drawText(line, x, area.getBottom() - 32, helpX - x - 12, 30,
+        g.drawText(line, x, area.getBottom() - 32, dumpX - x - 12, 30,
                    juce::Justification::centredRight);
     }
 
@@ -5506,13 +5580,84 @@ void EchoJayEditor::paintLoudnessPanel(juce::Graphics& g, juce::Rectangle<int> a
 
     int innerX = area.getX() + 14, innerW = area.getWidth() - 28;
     int y = area.getY() + 30;
-    int cellW = innerW / 4;
+    // 6 cells: 4 LUFS numbers + PSR gauge + PLR readout
+    int cellW = innerW / 6;
 
     auto ff = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "--"; };
 
     // When a capture is frozen, surface the highest momentary / short-term
     // reached over the whole capture beneath the main figure.
     bool frozen = (processorRef.getCaptureState() == CaptureState::Complete && waveformFrozen);
+
+    // PSR / PLR from the same fields the serialiser uses — absent inputs
+    // show a dim placeholder, never 0
+    float tpMax = juce::jmax(md.truePeakMaxL, md.truePeakMaxR);
+    bool  psrValid = (md.shortTermTruePeak > -90.0f && md.shortTerm > -90.0f);
+    bool  plrValid = (tpMax > -90.0f && md.integrated > -90.0f);
+    float psr = psrValid ? md.shortTermTruePeak - md.shortTerm : 0.0f;
+    float plr = plrValid ? tpMax - md.integrated : 0.0f;
+
+    // PSR arc gauge (cell 5): semicircle, three zones — 0-5 coral (crushed),
+    // 5-8 amber (dense), 8+ cyan (open) — needle on the live value
+    {
+        const auto coral = juce::Colour(0xffff6d5a);
+        const auto amber = juce::Colour(0xfff59e0b);
+        const auto cyan  = juce::Colour(0xff22d3ee);
+        int cx = innerX + 4 * cellW;
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(9.0f)));
+        g.drawText("PSR", cx, y, cellW, 14, juce::Justification::centred);
+
+        float gx = (float)(cx + cellW / 2);
+        float gy = (float)(y + 44);
+        float rad = juce::jmin(22.0f, cellW * 0.4f);
+        auto zoneArc = [&](float dbLo, float dbHi, juce::Colour c)
+        {
+            auto a0 = -juce::MathConstants<float>::halfPi
+                    + (dbLo / 15.0f) * juce::MathConstants<float>::pi;
+            auto a1 = -juce::MathConstants<float>::halfPi
+                    + (dbHi / 15.0f) * juce::MathConstants<float>::pi;
+            juce::Path p;
+            p.addCentredArc(gx, gy, rad, rad, 0.0f, a0, a1, true);
+            g.setColour(c.withAlpha(psrValid ? 0.85f : 0.25f));
+            g.strokePath(p, juce::PathStrokeType(3.5f));
+        };
+        zoneArc(0.0f,  5.0f, coral);
+        zoneArc(5.0f,  8.0f, amber);
+        zoneArc(8.0f, 15.0f, cyan);
+        if (psrValid)
+        {
+            float t = juce::jlimit(0.0f, 15.0f, psr) / 15.0f;
+            float ang = -juce::MathConstants<float>::halfPi
+                      + t * juce::MathConstants<float>::pi;
+            // 0 = 12 o'clock convention: needle endpoint via sin/cos of angle
+            float nx = gx + (rad - 5.0f) * std::sin(ang);
+            float ny = gy - (rad - 5.0f) * std::cos(ang);
+            g.setColour(C::text);
+            g.drawLine(gx, gy, nx, ny, 1.8f);
+            g.setColour(psr < 5.0f ? coral : psr < 8.0f ? amber : cyan);
+        }
+        else
+            g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+        g.drawText(psrValid ? juce::String(psr, 1) : juce::String("--"),
+                   cx, y + 46, cellW, 14, juce::Justification::centred);
+    }
+
+    // PLR readout (cell 6) — same style as the LRA cell
+    {
+        int cx = innerX + 5 * cellW;
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(9.0f)));
+        g.drawText("PLR", cx, y, cellW, 14, juce::Justification::centred);
+        g.setColour(plrValid ? C::text : C::text3);
+        g.setFont(juce::Font(juce::FontOptions(26.0f, juce::Font::bold)));
+        g.drawText(plrValid ? ff(plr) : juce::String("--"),
+                   cx, y + 14, cellW, 32, juce::Justification::centred);
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(9.0f)));
+        g.drawText("dB", cx, y + 46, cellW, 12, juce::Justification::centred);
+    }
 
     // 4 big numbers: Momentary, Short Term, Integrated, LRA
     struct LufsItem { const char* label; float val; const char* unit; juce::Colour col; float maxVal; };
@@ -5552,6 +5697,29 @@ void EchoJayEditor::paintLevelsPanel(juce::Graphics& g, juce::Rectangle<int> are
     // RMS L/R is the full-capture RMS (set in PluginProcessor::stopCapture),
     // so flag the panel as showing capture figures rather than live levels.
     drawPanel(g, area, frozen ? "LEVELS - CAPTURE" : "LEVELS", C::green);
+
+    // Inter-sample overs chip — dim when clean, coral when any events.
+    // Follows the counter's own lifecycle (resets with the meter reset).
+    {
+        juce::String chip = "OVERS " + juce::String(juce::jmax(0, md.oversCount));
+        int chipW = 62, chipH = 16;
+        auto r = juce::Rectangle<int>(area.getRight() - 14 - chipW, area.getY() + 7,
+                                      chipW, chipH);
+        if (md.oversCount > 0)
+        {
+            g.setColour(juce::Colour(0xffff6d5a));
+            g.fillRoundedRectangle(r.toFloat(), 4.0f);
+            g.setColour(juce::Colours::white);
+        }
+        else
+        {
+            g.setColour(C::bg4);
+            g.fillRoundedRectangle(r.toFloat(), 4.0f);
+            g.setColour(C::text3);
+        }
+        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        g.drawText(chip, r, juce::Justification::centred);
+    }
 
     int y = area.getY() + 28, x = area.getX() + 14, w = area.getWidth() - 28;
     int barH = 14, gap = 4;
@@ -5732,15 +5900,294 @@ void EchoJayEditor::paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> are
     g.restoreState(); // end goniometer clip
 }
 
+// TONAL BALANCE — six deviation bars (macro-band rel, pink-referenced) plus
+// the BAND DYNAMICS group (per-band crest). Display only; simple fills at
+// the existing meter UI rate.
+void EchoJayEditor::paintTonalBalancePanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md)
+{
+    drawPanel(g, area, "TONAL BALANCE", C::purple);
+
+    const auto cyan  = juce::Colour(0xff22d3ee);
+    const auto coral = juce::Colour(0xffff6d5a);
+    int x = area.getX() + 14, w = area.getWidth() - 28;
+    int y = area.getY() + 28;
+
+    static const char* bandNames[6]  = { "SUB", "LOW", "LOW-MID", "MID", "HIGH-MID", "AIR" };
+
+    bool haveBands = false;
+    for (int i = 0; i < 6; ++i)
+        if (md.macroBandDb[(size_t)i] > -119.0f) { haveBands = true; break; }
+
+    // Row budget: 6 deviation rows on top, BAND DYNAMICS group below
+    int dynH   = juce::jmin(78, area.getHeight() / 3);
+    int rowsH  = area.getHeight() - 28 - dynH - 8;
+    int rowPit = juce::jmax(12, rowsH / 6);
+    int barH   = juce::jmax(7, rowPit - 6);
+
+    if (!haveBands)
+    {
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText("no signal", x, y, w, rowsH, juce::Justification::centred);
+        tonalSmoothInit_ = false;
+    }
+    else
+    {
+        // rel = band minus six-band mean, smoothed like the spectrum
+        // (fast toward larger deviations, slow release back to centre)
+        float mean = 0.0f;
+        for (int i = 0; i < 6; ++i) mean += md.macroBandDb[(size_t)i];
+        mean /= 6.0f;
+        for (int i = 0; i < 6; ++i)
+        {
+            float rel = md.macroBandDb[(size_t)i] - mean;
+            if (!tonalSmoothInit_) tonalSmooth_[(size_t)i] = rel;
+            else
+            {
+                float cur = tonalSmooth_[(size_t)i];
+                float coeff = (std::abs(rel) > std::abs(cur)) ? 0.6f : 0.18f;
+                tonalSmooth_[(size_t)i] = cur + coeff * (rel - cur);
+            }
+        }
+        tonalSmoothInit_ = true;
+
+        int labelW = 52, numW = 36;
+        int fieldX = x + labelW + 4;
+        int fieldW = w - labelW - numW - 10;
+        float halfW = (float)fieldW * 0.5f;
+        int cxLine  = fieldX + fieldW / 2;
+
+        for (int i = 0; i < 6; ++i)
+        {
+            int ry = y + i * rowPit;
+            int by = ry + (rowPit - barH) / 2;
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
+            g.drawText(bandNames[i], x, ry, labelW, rowPit, juce::Justification::centredLeft);
+
+            // Gridlines at -6 / 0 / +6
+            g.setColour(juce::Colours::white.withAlpha(0.05f));
+            g.drawVerticalLine(cxLine - (int)(halfW * 0.5f), (float)by, (float)(by + barH));
+            g.drawVerticalLine(cxLine + (int)(halfW * 0.5f), (float)by, (float)(by + barH));
+            g.setColour(juce::Colours::white.withAlpha(0.12f));
+            g.drawVerticalLine(cxLine, (float)by, (float)(by + barH));
+
+            float rel = tonalSmooth_[(size_t)i];
+            float relC = juce::jlimit(-12.0f, 12.0f, rel);
+            float len = std::abs(relC) / 12.0f * halfW;
+            auto col = rel >= 0.0f ? cyan : coral;
+            g.setColour(col.withAlpha(0.85f));
+            if (rel >= 0.0f)
+                g.fillRect((float)cxLine, (float)by, len, (float)barH);
+            else
+                g.fillRect((float)cxLine - len, (float)by, len, (float)barH);
+            // Clamp marker — small arrow when the value exceeds the scale
+            if (std::abs(rel) > 12.0f)
+            {
+                juce::Path arrow;
+                float ax = rel > 0 ? (float)(fieldX + fieldW) : (float)fieldX;
+                float dir = rel > 0 ? 1.0f : -1.0f;
+                float my = (float)by + barH * 0.5f;
+                arrow.addTriangle(ax + dir * 4.0f, my,
+                                  ax, my - 3.5f, ax, my + 3.5f);
+                g.setColour(col);
+                g.fillPath(arrow);
+            }
+            g.setColour(col);
+            g.setFont(juce::Font(juce::FontOptions(8.5f)));
+            juce::String num = (rel >= 0 ? "+" : "") + juce::String(rel, 1);
+            g.drawText(num, fieldX + fieldW + 6, ry, numW, rowPit,
+                       juce::Justification::centredLeft);
+        }
+    }
+
+    // BAND DYNAMICS — three thin vertical crest bars, descriptive (single
+    // cyan fill, no good/bad colours)
+    {
+        int dy = y + rowsH + 6;
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
+        g.drawText("BAND DYNAMICS", x, dy, w, 10, juce::Justification::centredLeft);
+        dy += 12;
+        int captionH = 10;
+        int barsH = juce::jmax(16, dynH - 12 - captionH - 12);
+
+        static const char* dynNames[3] = { "SUB", "MID", "TOP" };
+        float dynVals[3] = { md.bandCrestSub, md.bandCrestMid, md.bandCrestTop };
+        int colW = w / 3;
+        for (int i = 0; i < 3; ++i)
+        {
+            int cx = x + i * colW + colW / 2;
+            int bw = 10;
+            // dim gridlines at 6 / 12 / 18 dB of the 0-24 scale
+            g.setColour(juce::Colours::white.withAlpha(0.06f));
+            for (int gl = 6; gl <= 18; gl += 6)
+            {
+                int gy = dy + barsH - (int)(barsH * (float)gl / 24.0f);
+                g.drawHorizontalLine(gy, (float)(cx - bw), (float)(cx + bw));
+            }
+            g.setColour(C::bg4);
+            g.fillRect(cx - bw / 2, dy, bw, barsH);
+            if (dynVals[i] >= 0.0f)
+            {
+                float t = juce::jlimit(0.0f, 24.0f, dynVals[i]) / 24.0f;
+                int fh2 = (int)(barsH * t);
+                g.setColour(cyan.withAlpha(0.9f));
+                g.fillRect(cx - bw / 2, dy + barsH - fh2, bw, fh2);
+            }
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(7.5f)));
+            g.drawText(dynNames[i], cx - colW / 2, dy + barsH + 2, colW, 9,
+                       juce::Justification::centred);
+        }
+        g.setColour(C::text3.withAlpha(0.6f));
+        g.setFont(juce::Font(juce::FontOptions(7.5f)));
+        g.drawText("peak vs average, higher = more open",
+                   x, dy + barsH + 12, w, captionH, juce::Justification::centredLeft);
+    }
+}
+
+void EchoJayEditor::loadSpectrogramMode()
+{
+    auto file = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                    .getChildFile("EchoJay").getChildFile("spectrogram_mode.txt");
+    if (file.existsAsFile())
+        spectrogramMode_ = (file.loadFileAsString().trim() == "1");
+}
+
+void EchoJayEditor::saveSpectrogramMode() const
+{
+    auto folder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                      .getChildFile("EchoJay");
+    folder.createDirectory();
+    folder.getChildFile("spectrogram_mode.txt")
+          .replaceWithText(spectrogramMode_ ? "1" : "0");
+}
+
+// Scrolling waterfall: time horizontal (newest right), the 64 log-frequency
+// display bins vertical, magnitude as colour. History lives in a persistent
+// kSpecHistFrames x 64 image that is blit-scrolled left one column per new
+// frame and drawn scaled — the whole history is never repainted cell by cell.
+void EchoJayEditor::paintSpectrogramContent(juce::Graphics& g, int x, int y, int w, int h)
+{
+    constexpr int H = MeterEngine::kSpecHistFrames;
+    if (spectroImg.isNull())
+    {
+        spectroImg = juce::Image(juce::Image::ARGB, H, 64, true);
+        juce::Graphics ig(spectroImg);
+        ig.fillAll(juce::Colour(0xff080A12));
+    }
+
+    // Colour LUT — navy floor through cyan into coral for the top few dB.
+    // Index maps dB in [-70, 0]; mild gamma lift keeps mid-level texture
+    // visible on real material.
+    static const std::array<juce::Colour, 256> lut = []
+    {
+        std::array<juce::Colour, 256> t {};
+        const auto bg    = juce::Colour(0xff080A12);
+        const auto blue  = juce::Colour(0xff1d4ed8);
+        const auto cyan  = juce::Colour(0xff22d3ee);
+        const auto light = juce::Colour(0xff9ff2ff);
+        const auto coral = juce::Colour(0xffff6d5a);
+        for (int i = 0; i < 256; ++i)
+        {
+            float v = std::pow((float)i / 255.0f, 0.75f);
+            juce::Colour c;
+            if      (v < 0.45f) c = bg.interpolatedWith(blue,   v / 0.45f);
+            else if (v < 0.75f) c = blue.interpolatedWith(cyan,  (v - 0.45f) / 0.30f);
+            else if (v < 0.92f) c = cyan.interpolatedWith(light, (v - 0.75f) / 0.17f);
+            else                c = light.interpolatedWith(coral,(v - 0.92f) / 0.08f);
+            t[(size_t)i] = c;
+        }
+        return t;
+    }();
+
+    // Pull new frames (engine decimates to ~25 fps, max-aggregated, frozen
+    // during silence) and blit-scroll them in
+    std::array<std::array<float, 64>, 32> fresh;
+    int newCounter = 0;
+    int n = processorRef.getMeterEngine().getSpectrogramFrames(
+        spectroFrameCounter_, fresh.data(), (int)fresh.size(), newCounter);
+    spectroFrameCounter_ = newCounter;
+    if (n > 0)
+    {
+        spectroImg.moveImageSection(0, 0, n, 0, H - n, 64);
+        juce::Image::BitmapData bd(spectroImg, juce::Image::BitmapData::writeOnly);
+        for (int f2 = 0; f2 < n; ++f2)
+        {
+            int px = H - n + f2;
+            for (int b = 0; b < 64; ++b)
+            {
+                float db = fresh[(size_t)f2][(size_t)b];
+                int li = juce::jlimit(0, 255, (int)((db + 70.0f) * (255.0f / 70.0f)));
+                bd.setPixelColour(px, 63 - b, lut[(size_t)li]); // bin 0 = bottom
+            }
+        }
+    }
+
+    g.saveState();
+    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+    g.drawImage(spectroImg, x, y, w, h, 0, 0, H, 64);
+    g.restoreState();
+
+    // Frequency gridlines/labels — same positions as the spectrum axis
+    struct FreqMark { double hz; const char* label; };
+    static const FreqMark marks[] = {
+        { 50, "50" }, { 100, "100" }, { 250, "250" }, { 500, "500" },
+        { 1000, "1k" }, { 2000, "2k" }, { 5000, "5k" }, { 10000, "10k" }, { 20000, "20k" } };
+    const double logMin = std::log2(20.0), logMax = std::log2(20000.0);
+    for (auto& m2 : marks)
+    {
+        int fy = y + (int)std::round((double)h
+                     * (1.0 - (std::log2(m2.hz) - logMin) / (logMax - logMin)));
+        g.setColour(juce::Colours::white.withAlpha(0.06f));
+        g.drawHorizontalLine(fy, (float)x, (float)(x + w));
+        g.setColour(C::text3.withAlpha(0.55f));
+        g.setFont(juce::Font(juce::FontOptions(7.5f)));
+        g.drawText(m2.label, x + 3, fy - 10, 26, 9, juce::Justification::centredLeft);
+    }
+}
+
 void EchoJayEditor::paintSpectrumPanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md)
 {
-    drawPanel(g, area, "SPECTRUM", C::purple);
+    drawPanel(g, area, juce::String(), C::purple);
+
+    // Header toggle: SPECTRUM / SPECTROGRAM — active word coloured with
+    // underline, inactive dim, hover brightens (EchoJay small-toggle style)
+    {
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        int tx = area.getX() + 14, ty2 = area.getY() + 8, th = 16;
+        spectrumToggleRect_    = { tx, ty2, 64, th };
+        spectrogramToggleRect_ = { tx + 64 + 16, ty2, 92, th };
+        auto mp = getMouseXYRelative();
+        auto drawToggle = [&](const juce::Rectangle<int>& r, const char* label, bool active)
+        {
+            bool hov = r.contains(mp);
+            g.setColour(active ? C::purple : (hov ? C::text2 : C::text3));
+            g.drawText(label, r, juce::Justification::centredLeft);
+            if (active)
+            {
+                g.setColour(C::purple);
+                g.fillRect(r.getX(), r.getBottom() - 1, r.getWidth() * 2 / 3, 2);
+            }
+        };
+        drawToggle(spectrumToggleRect_,    "SPECTRUM",    !spectrogramMode_);
+        drawToggle(spectrogramToggleRect_, "SPECTROGRAM",  spectrogramMode_);
+    }
 
     int x = area.getX() + 14, y = area.getY() + 28;
     int w = area.getWidth() - 28, h = area.getHeight() - 36;
     constexpr int N = MeterData::numSpecBins; // 64
-    
+
     int barMaxH = h - 14;
+
+    if (spectrogramMode_)
+    {
+        // Waterfall replaces the curve; same panel rect, same log-frequency
+        // axis and pink-tilted display-bin values so the two views agree.
+        paintSpectrogramContent(g, x, y, w, barMaxH);
+        return;
+    }
     
     // Update peak hold — rise instantly, fall slowly
     if (!spectrumPeakHoldInit) {
@@ -6279,12 +6726,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
         auto drawSep = [&](int x) {
             g.drawVerticalLine(x, 6.0f, 26.0f); // within 32px header band
         };
-        // Separators between: [channel|genre|Capture|Compare|Settings|Plugins]
-        auto cmpBounds = compareBtn.getBounds();
-        auto sBounds = settingsBtn.getBounds();
+        // Separator between: [channel|genre|project|Capture | Plugins]
         auto scBounds = scanBtn.getBounds();
-        if (cmpBounds.getX() > 0) drawSep(cmpBounds.getX() - 2);
-        if (sBounds.getX() > 0) drawSep(sBounds.getX() - 2);
         if (scBounds.getX() > 0) drawSep(scBounds.getX() - 2);
     }
 
@@ -6498,13 +6941,17 @@ void EchoJayEditor::paint(juce::Graphics& g)
         paintLoudnessPanel(g, loudnessPanelBounds, md);
         y += loudH + secGap;
 
-        int levelsW = (contentW - secGap) * 50 / 100;
-        int stereoW = contentW - levelsW - secGap;
+        // Three-across row: LEVELS | STEREO IMAGE | TONAL BALANCE
+        int levelsW = (contentW - secGap * 2) * 38 / 100;
+        int stereoW = (contentW - secGap * 2) * 28 / 100;
+        int tonalW  = contentW - levelsW - stereoW - secGap * 2;
         int remainH = bounds.getHeight() - y - 160;
         int levStereoH = std::min(300, hasWaveform ? (remainH * 45 / 100) : (remainH * 50 / 100));
         levStereoH = std::max(210, levStereoH);
         paintLevelsPanel(g, { pad, y, levelsW, levStereoH }, md);
         paintStereoPanel(g, { pad + levelsW + secGap, y, stereoW, levStereoH }, md);
+        paintTonalBalancePanel(g, { pad + levelsW + secGap + stereoW + secGap, y,
+                                    tonalW, levStereoH }, md);
         y += levStereoH + secGap;
 
         int specH = std::max(80, bounds.getHeight() - y - pad - 20 - abBarOffset);
@@ -7481,15 +7928,13 @@ void EchoJayEditor::resized()
     if (compactMode)
     {
         // Hide full-mode-only top bar buttons
-        compareBtn.setBounds(0, -20, 1, 1);
-        settingsBtn.setBounds(0, -20, 1, 1);
         scanBtn.setBounds(0, -20, 1, 1);
         abSyncBtn.setBounds(-100, -100, 1, 1);
     }
     else
     {
-        compareBtn.setBounds(tx, ty, 64, bh); tx += 68;
-        settingsBtn.setBounds(tx, ty, 52, bh); tx += 56;
+        // Plugin count follows Capture directly (Compare/Settings header
+        // buttons removed — they live in the tab strip)
         scanBtn.setBounds(tx, ty, 78, bh); tx += 82;
     }
     
@@ -7817,6 +8262,9 @@ void EchoJayEditor::resized()
         // Help & Support sits just left of Log Out — an app-level link, kept
         // visually distinct from the plugins controls above.
         settingsHelpBtn.setBounds(sx + sw - 80 - 8 - 120, saveRowY, 120, 30);
+        // Dump meters — debug affordance beside the version/credits line
+        // (the painted line in paintSettingsView ends just left of this)
+        dumpMetersBtn.setBounds(sx + sw - 80 - 8 - 120 - 8 - 96, saveRowY, 96, 30);
         logoutBtn.setVisible(true);
     }
 
@@ -8731,6 +9179,15 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         processorRef.getEffectiveChannelName(), processorRef.getGenre(),
         processorRef.getPluginScanner().getPluginSummary());
+
+    // Attach the raw meter JSON blob so psr/plr/oversCount/macroBands ride
+    // along for the backend's parseExtendedMeter. Absent = unavailable:
+    // nothing is attached while no audio is playing.
+    {
+        auto& me = processorRef.getMeterEngine();
+        api.setNextChatMeters(me.getMeterData().isSilent ? juce::String()
+                                                          : me.getMeterDataJSON());
+    }
 
     juce::String activeChatId = currentChatId; // capture before async
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -9789,6 +10246,11 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         ch, processorRef.getGenre(),
         processorRef.getPluginScanner().getPluginSummary());
 
+    // Capture turns attach the snapshot's meter blob (identical JSON shape,
+    // serialised from the capture's final averaged data)
+    api.setNextChatMeters(MeterEngine::meterDataToJSON(
+        snap.averagedData, processorRef.getSampleRate()));
+
     auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
     juce::String captureChatId = chatId;
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
@@ -10427,6 +10889,16 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     auto pos = e.getEventRelativeTo(this).getPosition();
 
     // Update overlay clicks are handled by the UpdateOverlay child component itself.
+
+    // SPECTRUM / SPECTROGRAM header toggle (SPECTRUM panel on METERS).
+    // Rects are cached during paint; only live while the meter panels show.
+    if (currentScreen == Screen::Main && currentView == View::Meters && !visualMode)
+    {
+        if (!spectrogramMode_ && spectrogramToggleRect_.contains(pos))
+        { spectrogramMode_ = true;  saveSpectrogramMode(); repaint(); return; }
+        if (spectrogramMode_ && spectrumToggleRect_.contains(pos))
+        { spectrogramMode_ = false; saveSpectrogramMode(); repaint(); return; }
+    }
 
     // Tab bar click — y=32..60 (below the 32px header, height=kTabBarH)
     if (currentScreen == Screen::Main && !visualOnlyMode

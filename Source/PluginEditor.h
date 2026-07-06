@@ -75,6 +75,7 @@ private:
     void paintLevelsPanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md);
     void paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md);
     void paintSpectrumPanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md);
+    void paintTonalBalancePanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md);
     void paintCapturesPanel(juce::Graphics& g, juce::Rectangle<int> area);
     void paintWaveformPanel(juce::Graphics& g, juce::Rectangle<int> area);
     
@@ -122,6 +123,24 @@ private:
     // Spectrum peak hold — slowly falling peak line
     std::array<float, 64> spectrumPeakHold{};
     bool spectrumPeakHoldInit = false;
+
+    // SPECTRUM panel view mode — false = spectrum curve (default), true =
+    // scrolling spectrogram waterfall. Toggled in the panel header, persisted
+    // to ~/Documents/EchoJay/spectrogram_mode.txt (same pattern as chat scale).
+    bool spectrogramMode_ = false;
+    void loadSpectrogramMode();
+    void saveSpectrogramMode() const;
+    // Persistent history image (kSpecHistFrames x 64) — blit-scrolled one
+    // column per new frame, then drawn scaled into the panel rect.
+    juce::Image spectroImg;
+    int spectroFrameCounter_ = 0;
+    // Header toggle hit rects, cached during paint for mouseDown
+    juce::Rectangle<int> spectrumToggleRect_, spectrogramToggleRect_;
+    void paintSpectrogramContent(juce::Graphics& g, int x, int y, int w, int h);
+
+    // TONAL BALANCE display smoothing (rel values per macro band)
+    std::array<float, 6> tonalSmooth_ {};
+    bool tonalSmoothInit_ = false;
     int visualOnlyWidth = 900;
     int visualOnlyHeight = 580;
     // Opaque holder around particleVisual. macOS positions JUCE's OpenGL overlay
@@ -1226,6 +1245,9 @@ private:
     juce::TextButton viewAllPluginsBtn { "View all" };
     juce::TextButton settingsScanBtn { "Scan Plugins" };
     juce::TextButton settingsHelpBtn { "Help & Support" };
+    // Debug: dumps MeterEngine::getMeterDataJSON() to ~/Documents/EchoJay/
+    // meter-debug.json + appends a one-line summary to meter-debug.log
+    juce::TextButton dumpMetersBtn { "Dump meters" };
 
     // Commits the checklists' local selections to the scanner + server. Set in
     // the constructor; invoked on review-popup Done and on Settings Save.
@@ -1263,6 +1285,7 @@ private:
             juce::String meta;
             bool         collapsed = false;
             bool         active    = false;
+            bool         pinned    = false;   // ChatRow: draws the pin glyph
             int          indent    = 0;
         };
         std::vector<Row> rows;

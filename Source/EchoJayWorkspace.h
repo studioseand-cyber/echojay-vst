@@ -26,6 +26,8 @@ struct WsChat {
     juce::String trackName;
     juce::String albumId;
     int revisionCount = 0;
+    bool pinned = false;       // shown in the PINNED sidebar group
+    juce::String pinnedAt;     // ISO timestamp — orders the group (newest first)
 };
 
 struct WsAlbum {
@@ -44,6 +46,15 @@ struct WsMeasurements {
     float width    = 0.f, corr     = 0.f;
     float crest    = 0.f, dc       = 0.f;
     float duration = 0.f;
+    // Phase-1/2a metering additions. Sentinel defaults mean "unavailable"
+    // (review stored by an older build, or inputs never became valid) —
+    // serialisation OMITS the keys in that case, per the shared v1
+    // convention that an absent key = unavailable. A real overs count of
+    // 0 is a valid measurement and IS written.
+    float psr   = -999.0f;
+    float plr   = -999.0f;
+    int   overs = -1;
+    float crestSub = -1.0f, crestMid = -1.0f, crestTop = -1.0f;
 };
 
 struct WsChannelMeasurements {
@@ -129,6 +140,7 @@ public:
                              const juce::String& chainJson = juce::String());
     void setChatTitle(const juce::String& chatId, const juce::String& title);
     void setChatTrackName(const juce::String& chatId, const juce::String& trackName);
+    void setChatPinned(const juce::String& chatId, bool pinned); // stamps pinnedAt
     void incrementChatRevisionCount(const juce::String& chatId);
 
     // Persist a local mutation: POST current state immediately, then schedule

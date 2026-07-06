@@ -172,6 +172,18 @@ void EchoJayWorkspace::incrementChatRevisionCount(const juce::String& chatId)
         if (c.id == chatId) { c.revisionCount++; return; }
 }
 
+void EchoJayWorkspace::setChatPinned(const juce::String& chatId, bool pinned)
+{
+    for (auto& c : chats)
+        if (c.id == chatId)
+        {
+            c.pinned   = pinned;
+            c.pinnedAt = pinned ? juce::Time::getCurrentTime().toISO8601(true)
+                                : juce::String();
+            return;
+        }
+}
+
 void EchoJayWorkspace::requestMutationSync()
 {
     if (!api.isLoggedIn()) return;
@@ -467,6 +479,8 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
         c.trackName     = obj->getProperty("trackName").toString();
         c.albumId       = obj->getProperty("albumId").toString();
         c.revisionCount = (int)obj->getProperty("revisionCount");
+        c.pinned        = (bool)obj->getProperty("pinned");
+        c.pinnedAt      = obj->getProperty("pinnedAt").toString();
 
         if (auto* msgs = obj->getProperty("messages").getArray())
         {
@@ -542,6 +556,13 @@ WsReview EchoJayWorkspace::parseReview(const juce::var& v)
             r.data.crest    = (float)d->getProperty("crest");
             r.data.dc       = (float)d->getProperty("dc");
             r.data.duration = (float)d->getProperty("duration");
+            // Absent key = unavailable — keep the sentinel defaults then
+            if (d->hasProperty("psr"))   r.data.psr   = (float)d->getProperty("psr");
+            if (d->hasProperty("plr"))   r.data.plr   = (float)d->getProperty("plr");
+            if (d->hasProperty("overs")) r.data.overs = (int)d->getProperty("overs");
+            if (d->hasProperty("crestSub")) r.data.crestSub = (float)d->getProperty("crestSub");
+            if (d->hasProperty("crestMid")) r.data.crestMid = (float)d->getProperty("crestMid");
+            if (d->hasProperty("crestTop")) r.data.crestTop = (float)d->getProperty("crestTop");
         }
         if (auto* chArr = obj->getProperty("channels").getArray())
         {
@@ -624,6 +645,9 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
     obj->setProperty("trackName",     c.trackName);
     obj->setProperty("albumId",       c.albumId);
     obj->setProperty("revisionCount", c.revisionCount);
+    obj->setProperty("pinned",        c.pinned);   // must survive the sync round-trip
+    if (c.pinnedAt.isNotEmpty())
+        obj->setProperty("pinnedAt",  c.pinnedAt);
 
     juce::Array<juce::var> msgs;
     for (auto& m : c.messages)
@@ -686,6 +710,14 @@ juce::var EchoJayWorkspace::reviewToVar(const WsReview& r)
     d->setProperty("crest",    r.data.crest);
     d->setProperty("dc",       r.data.dc);
     d->setProperty("duration", r.data.duration);
+    // Phase-1/2a metering additions — written only when available (sentinel
+    // defaults are omitted; absent key = unavailable, shared v1 convention)
+    if (r.data.psr   > -900.0f) d->setProperty("psr",   r.data.psr);
+    if (r.data.plr   > -900.0f) d->setProperty("plr",   r.data.plr);
+    if (r.data.overs >= 0)      d->setProperty("overs", r.data.overs);
+    if (r.data.crestSub >= 0.0f) d->setProperty("crestSub", r.data.crestSub);
+    if (r.data.crestMid >= 0.0f) d->setProperty("crestMid", r.data.crestMid);
+    if (r.data.crestTop >= 0.0f) d->setProperty("crestTop", r.data.crestTop);
     obj->setProperty("data", juce::var(d));
     if (!r.channels.empty())
     {

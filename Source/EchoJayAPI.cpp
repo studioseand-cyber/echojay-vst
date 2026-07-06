@@ -1,4 +1,5 @@
 #include "EchoJayAPI.h"
+#include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
 
 // Forward-declared from PluginProcessor.cpp so we can tag callAsync entry
 // points from the API thread. The diagnostic helps identify which async
@@ -379,7 +380,8 @@ void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
 void EchoJayAPI::sendChat(const juce::StringArray& roles,
                            const juce::StringArray& contents,
                            const juce::String& systemPrompt,
-                           std::function<void(const juce::String& reply, bool success)> onComplete)
+                           std::function<void(const juce::String& reply, bool success)> onComplete,
+                           const juce::String& meterJsonBlob)
 {
     if (!canSendMessage())
     {
@@ -388,15 +390,15 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
         // and only show "limit reached" if the server ALSO agrees we're at the limit.
         // This is the self-healing path for users who upgrade mid-session.
         auto aliveFlag = alive;
-        refreshUserInfo([this, roles, contents, systemPrompt, onComplete, aliveFlag](bool refreshSuccess)
+        refreshUserInfo([this, roles, contents, systemPrompt, onComplete, aliveFlag, meterJsonBlob](bool refreshSuccess)
         {
             if (!aliveFlag->load()) return;
-            
+
             if (refreshSuccess && canSendMessage())
             {
                 // Refresh revealed we actually CAN send (tier upgraded, credits added, new day, etc).
                 // Retry the send as if the limit error never happened.
-                sendChat(roles, contents, systemPrompt, onComplete);
+                sendChat(roles, contents, systemPrompt, onComplete, meterJsonBlob);
                 return;
             }
             
@@ -431,8 +433,25 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     }
     messagesJson += "]";
     
-    juce::String body = "{\"messages\":" + messagesJson + ",\"max_tokens\":4096}";
-    
+    juce::String body = "{\"messages\":" + messagesJson + ",\"max_tokens\":4096";
+    juce::String metersBlob = meterJsonBlob;
+    if (metersBlob.isEmpty())
+    {
+        metersBlob = nextChatMeters_;   // consume the staged blob
+        nextChatMeters_.clear();
+    }
+    if (metersBlob.isNotEmpty())
+    {
+        // Raw passthrough — the blob is already a JSON object; splicing it in
+        // unchanged preserves the absent-key convention field for field
+        // (backend parseExtendedMeter reads psr/plr/oversCount/macroBands).
+        body += ",\"meters\":" + metersBlob;
+        // Diagnostic: outgoing meter portion, visible in Console.app on the
+        // same stream as the NativeClip2 logs
+        EchoJay_NSLog(("EJChat: meters " + metersBlob.substring(0, 400)).toRawUTF8());
+    }
+    body += "}";
+
     postJSON("/api/chat", body, [this, onComplete](const juce::var& json, int statusCode)
     {
         if (statusCode == 200 && json.isObject())
