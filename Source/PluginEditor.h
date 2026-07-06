@@ -13,7 +13,8 @@
 class EchoJayEditor : public juce::AudioProcessorEditor,
                        private juce::Timer,
                        private juce::TextEditor::Listener,
-                       public juce::FileDragAndDropTarget
+                       public juce::FileDragAndDropTarget,
+                       public juce::TooltipClient
 {
 public:
     EchoJayEditor(EchoJayProcessor&);
@@ -517,6 +518,10 @@ private:
                 style(removeBtn, juce::Colour(0xffef4444));
                 style(prevBtn,   juce::Colour(0xffa0a0b8));
                 style(nextBtn,   juce::Colour(0xffa0a0b8));
+                bypassBtn.setTooltip("Bypass this plugin");
+                removeBtn.setTooltip("Remove from chain");
+                prevBtn.setTooltip("Move earlier in the chain");
+                nextBtn.setTooltip("Move later in the chain");
                 for (auto* b : { &bypassBtn, &removeBtn, &prevBtn, &nextBtn })
                     addAndMakeVisible(*b);
                 bypassBtn.onClick = [this] { if (onBypass) onBypass(); };
@@ -1364,6 +1369,19 @@ private:
     
     using C = EchoJayLookAndFeel::Colours;
     EchoJayLookAndFeel lnf;
+
+    // ---- Meter hover tooltips ------------------------------------------
+    // The METERS painters record {rect, text} zones each frame (editor
+    // coordinates); getTooltip() hit-tests the mouse against them. One
+    // shared TooltipWindow serves these AND the Button tooltips (chain card
+    // header, strip B/X). ~700ms hover delay.
+    std::vector<std::pair<juce::Rectangle<int>, juce::String>> meterTips_;
+    void addMeterTip(const juce::Rectangle<int>& r, const juce::String& t)
+    { meterTips_.emplace_back(r, t); }
+public:
+    juce::String getTooltip() override;
+private:
+    juce::TooltipWindow tooltipWindow_ { this, 700 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EchoJayEditor)
 };

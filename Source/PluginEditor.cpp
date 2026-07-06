@@ -5577,6 +5577,20 @@ void EchoJayEditor::drawHBar(juce::Graphics& g, int x, int y, int w, int h,
 // Section Painters (matching web app layout)
 // ============================================================================
 
+juce::String EchoJayEditor::getTooltip()
+{
+    // Meter hover explanations. Zones are recorded by the METERS painters
+    // each frame; later entries are more specific and win (reverse search).
+    // Suppressed while anything modal (menu/dialog) is up; TooltipWindow
+    // itself never shows while a mouse button is down (drags).
+    if (currentScreen != Screen::Main || currentTab != Tab::Meters) return {};
+    if (juce::Component::getCurrentlyModalComponent() != nullptr) return {};
+    auto pos = getMouseXYRelative();
+    for (auto it = meterTips_.rbegin(); it != meterTips_.rend(); ++it)
+        if (it->first.contains(pos)) return it->second;
+    return {};
+}
+
 void EchoJayEditor::paintLoudnessPanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md)
 {
     drawPanel(g, area, "LOUDNESS - EBU R128", C::purple);
@@ -5585,6 +5599,18 @@ void EchoJayEditor::paintLoudnessPanel(juce::Graphics& g, juce::Rectangle<int> a
     int y = area.getY() + 30;
     // 6 cells: 4 LUFS numbers + PSR gauge + PLR readout
     int cellW = innerW / 6;
+
+    // Hover explanations, one zone per cell
+    {
+        auto cellTip = [&](int i, const char* t)
+        { addMeterTip({ innerX + i * cellW, y, cellW, 66 }, t); };
+        cellTip(0, "Loudness right now, averaged over the last 400 milliseconds. Jumps around with the music.");
+        cellTip(1, "Loudness over the last 3 seconds. Good for judging how loud a section feels.");
+        cellTip(2, "Average loudness of everything played since the meter started. This is the number streaming services use.");
+        cellTip(3, "Loudness Range. How much the loudness varies across the programme. Higher means more dynamic contrast between sections.");
+        cellTip(4, "Peak to Short-term loudness Ratio. How much peak headroom survives above the loudness. High and cyan means open and dynamic, low and coral means crushed by limiting.");
+        cellTip(5, "Peak to Loudness Ratio. Max true peak minus integrated loudness. A whole-programme picture of how hard the master is pushed.");
+    }
 
     auto ff = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "--"; };
 
@@ -5722,19 +5748,23 @@ void EchoJayEditor::paintLevelsPanel(juce::Graphics& g, juce::Rectangle<int> are
         }
         g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
         g.drawText(chip, r, juce::Justification::centred);
+        addMeterTip(r, "Inter-sample overs. How many times the true peak went above 0 dBTP since the meter reset. Any count above zero means conversion clipping is possible.");
     }
 
     int y = area.getY() + 28, x = area.getX() + 14, w = area.getWidth() - 28;
     int barH = 14, gap = 4;
 
+    addMeterTip({ x, y, w, barH * 2 + gap }, "Average level per channel. Steadier than peak, closer to how loud it feels.");
     drawHBar(g, x, y, w, barH, "RMS L", md.rmsL, -60, 0, C::green, C::green); y += barH + gap;
     drawHBar(g, x, y, w, barH, "RMS R", md.rmsR, -60, 0, C::green, C::green); y += barH + gap + 2;
 
+    addMeterTip({ x, y, w, barH * 2 + gap }, "The highest sample level per channel.");
     drawHBar(g, x, y, w, barH, "PEAK L", md.peakL, -60, 0, C::amber, C::amber); y += barH + gap;
     drawHBar(g, x, y, w, barH, "PEAK R", md.peakR, -60, 0, C::amber, C::amber); y += barH + gap + 2;
 
     float tpL = md.truePeakL, tpR = md.truePeakR;
     float tpBarL = md.truePeakBarL, tpBarR = md.truePeakBarR;
+    addMeterTip({ x, y, w, barH * 2 + gap }, "True peak. The real analogue peak between samples, which can be higher than the sample peak. Keep below 0 to avoid conversion clipping.");
     drawHBar(g, x, y, w, barH, "TP L", tpBarL, -60, 0,
              tpL > -1 ? C::red : C::amber, tpL > -1 ? C::red : C::amber,
              "dB", tpL); y += barH + gap;
@@ -5762,6 +5792,8 @@ void EchoJayEditor::paintLevelsPanel(juce::Graphics& g, juce::Rectangle<int> are
     drawSmallBox(x, y + 5, boxW, "CREST", juce::String(md.crestFactor, 1), C::amber, "dB");
     drawSmallBox(x + boxW + boxGap, y + 5, boxW, "DC OFFSET", juce::String(md.dcOffset, 2),
                  std::abs(md.dcOffset) > 5 ? C::red : C::text3, "mV");
+    addMeterTip({ x, y + 5, boxW, 38 }, "Peak level minus average level. Higher means more dynamic and punchy, lower means denser and more compressed.");
+    addMeterTip({ x + boxW + boxGap, y + 5, boxW, 38 }, "How far the waveform sits from the zero line. Should be near 0 mV; large values waste headroom.");
 }
 
 void EchoJayEditor::paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md)
@@ -5782,6 +5814,7 @@ void EchoJayEditor::paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> are
     int x = area.getX() + 14, y = area.getY() + 28, w = area.getWidth() - 28;
 
     // WIDTH bar
+    addMeterTip({ x, y, w, 16 }, "How much of the signal is stereo rather than mono. 0 percent is mono, higher means wider.");
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(10.0f)));
     g.drawText("WIDTH", x, y, 60, 14, juce::Justification::centredLeft);
@@ -5805,6 +5838,7 @@ void EchoJayEditor::paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> are
     y += 22;
 
     // CORRELATION bar (centred: -1 to +1)
+    addMeterTip({ x, y, w, 26 }, "Correlation between left and right. Near +1 is mono-safe. Near 0 is very wide or uncorrelated. Negative risks cancellation in mono.");
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(10.0f)));
     g.drawText("CORR", x, y, 60, 14, juce::Justification::centredLeft);
@@ -5846,7 +5880,8 @@ void EchoJayEditor::paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> are
     int gx = x + (w - gonioSize2) / 2;
     int gy = y;
     auto gonioRect = juce::Rectangle<float>((float)gx, (float)gy, (float)gonioSize2, (float)gonioSize2);
-    
+    addMeterTip(gonioRect.toNearestInt(), "A picture of the stereo field. A vertical line is mono, a wide cloud is a wide mix, horizontal energy means phase problems.");
+
     // Clip to goniometer rectangle
     g.saveState();
     g.reduceClipRegion(gonioRect.toNearestInt());
@@ -5910,12 +5945,18 @@ void EchoJayEditor::paintTonalBalancePanel(juce::Graphics& g, juce::Rectangle<in
 {
     drawPanel(g, area, "TONAL BALANCE", C::purple);
 
+    // Panel-wide tip FIRST — the band-label and BAND DYNAMICS zones added
+    // below are more specific and win the reverse-order hit test.
+    addMeterTip(area, "Each band's level relative to the average of all six bands, referenced so a balanced mix sits near the centre line. Cyan right of centre means the band is prominent, coral left means it is recessed.");
+
     const auto cyan  = juce::Colour(0xff22d3ee);
     const auto coral = juce::Colour(0xffff6d5a);
     int x = area.getX() + 14, w = area.getWidth() - 28;
     int y = area.getY() + 28;
 
     static const char* bandNames[6]  = { "SUB", "LOW", "LOW-MID", "MID", "HIGH-MID", "AIR" };
+    static const char* bandTips[6]   = { "roughly 20 to 60 Hz", "60 to 250 Hz", "250 to 500 Hz",
+                                         "500 Hz to 2 kHz", "2 to 6 kHz", "above 6 kHz" };
 
     bool haveBands = false;
     for (int i = 0; i < 6; ++i)
@@ -5967,6 +6008,7 @@ void EchoJayEditor::paintTonalBalancePanel(juce::Graphics& g, juce::Rectangle<in
             g.setColour(C::text3);
             g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
             g.drawText(bandNames[i], x, ry, labelW, rowPit, juce::Justification::centredLeft);
+            addMeterTip({ x, ry, labelW, rowPit }, bandTips[i]);
 
             // Gridlines at -6 / 0 / +6
             g.setColour(juce::Colours::white.withAlpha(0.05f));
@@ -6008,6 +6050,7 @@ void EchoJayEditor::paintTonalBalancePanel(juce::Graphics& g, juce::Rectangle<in
     // cyan fill, no good/bad colours)
     {
         int dy = y + rowsH + 6;
+        addMeterTip({ x, dy, w, dynH }, "Peak versus average level per band. Taller means that region still moves and breathes, shorter means it is denser or more compressed. Read the three bars relative to each other.");
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
         g.drawText("BAND DYNAMICS", x, dy, w, 10, juce::Justification::centredLeft);
@@ -6154,6 +6197,10 @@ void EchoJayEditor::paintSpectrogramContent(juce::Graphics& g, int x, int y, int
 void EchoJayEditor::paintSpectrumPanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md)
 {
     drawPanel(g, area, juce::String(), C::purple);
+
+    addMeterTip(area, spectrogramMode_
+        ? "The spectrum over time. Newest at the right. Bright horizontal streaks are sustained tones or resonances, vertical stripes are hits."
+        : "Level across frequency, tilted so balanced material reads roughly flat. The dimmer trace behind is the recent peak hold.");
 
     // Header toggle: SPECTRUM / SPECTROGRAM — active word coloured with
     // underline, inactive dim, hover brightens (EchoJay small-toggle style)
@@ -6939,6 +6986,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
             y += waveH + secGap;
         }
 
+        meterTips_.clear();   // hover-tip zones repopulate as the panels paint
         int loudH = 98;
         loudnessPanelBounds = { pad, y, contentW, loudH };
         paintLoudnessPanel(g, loudnessPanelBounds, md);

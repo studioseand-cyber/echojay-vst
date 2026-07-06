@@ -21,6 +21,10 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    // Shared tooltip window — makes the chain strip / card button tooltips
+    // live (700ms hover, styled by the editor's LookAndFeel)
+    juce::TooltipWindow tooltipWindow_ { this, 700 };
+
     // ========================================================================
     struct LinkChainPanel : juce::Component, juce::Timer
     {
@@ -88,6 +92,10 @@ public:
                 style(removeBtn, juce::Colour(0xffef4444));
                 style(prevBtn,   juce::Colour(0xffa0a0b8));
                 style(nextBtn,   juce::Colour(0xffa0a0b8));
+                bypassBtn.setTooltip("Bypass this plugin");
+                removeBtn.setTooltip("Remove from chain");
+                prevBtn.setTooltip("Move earlier in the chain");
+                nextBtn.setTooltip("Move later in the chain");
                 for (auto* b : { &bypassBtn, &removeBtn, &prevBtn, &nextBtn })
                     addAndMakeVisible(*b);
                 bypassBtn.onClick = [this] { if (onBypass) onBypass(); };

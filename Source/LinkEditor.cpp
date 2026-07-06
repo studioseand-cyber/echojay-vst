@@ -18,6 +18,13 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     setSize(juce::jlimit(900, 1800, proc.editorW),
             juce::jlimit(580, 1200, proc.editorH));
 
+    // Tooltip styling — Link has no custom LookAndFeel, so match the main
+    // plugin's dark navy / cyan tooltip look via the colour ids the default
+    // LookAndFeel's drawTooltip uses
+    tooltipWindow_.setColour(juce::TooltipWindow::backgroundColourId, juce::Colour(0xff0A0C18));
+    tooltipWindow_.setColour(juce::TooltipWindow::textColourId,       juce::Colour(0xfff0f0f5));
+    tooltipWindow_.setColour(juce::TooltipWindow::outlineColourId,    juce::Colour(0xff22d3ee).withAlpha(0.35f));
+
     // Name field
     nameField.setText(proc.linkName, juce::dontSendNotification);
     nameField.setFont(juce::Font(juce::FontOptions(13.0f)));

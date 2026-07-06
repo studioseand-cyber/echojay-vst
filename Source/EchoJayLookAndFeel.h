@@ -47,7 +47,48 @@ public:
         setColour(juce::ScrollBar::thumbColourId, Colours::bg4);
         setColour(juce::ScrollBar::trackColourId, juce::Colours::transparentBlack);
     }
-    
+
+    // ============ Tooltips ============
+    // Dark navy panel, light small text, subtle cyan border. Max width 320
+    // so longer meter explanations wrap; constrained within the parent so
+    // tips never clip at the window edge.
+    static constexpr int kTooltipMaxWidth = 320;
+
+    static void layoutTooltipText(const juce::String& text, juce::TextLayout& tl)
+    {
+        juce::AttributedString s;
+        s.append(text, juce::Font(juce::FontOptions(12.0f)), Colours::text);
+        s.setLineSpacing(2.0f);
+        tl.createLayout(s, (float)kTooltipMaxWidth - 18.0f);
+    }
+
+    juce::Rectangle<int> getTooltipBounds(const juce::String& tipText,
+                                          juce::Point<int> screenPos,
+                                          juce::Rectangle<int> parentArea) override
+    {
+        juce::TextLayout tl;
+        layoutTooltipText(tipText, tl);
+        int w = (int)std::ceil(tl.getWidth())  + 18;
+        int h = (int)std::ceil(tl.getHeight()) + 14;
+        return juce::Rectangle<int>(
+                   screenPos.x > parentArea.getCentreX() ? screenPos.x - (w + 10) : screenPos.x + 16,
+                   screenPos.y > parentArea.getCentreY() ? screenPos.y - (h + 4)  : screenPos.y + 20,
+                   w, h)
+               .constrainedWithin(parentArea);
+    }
+
+    void drawTooltip(juce::Graphics& g, const juce::String& text, int width, int height) override
+    {
+        juce::Rectangle<float> b(0.0f, 0.0f, (float)width, (float)height);
+        g.setColour(Colours::bg2);
+        g.fillRoundedRectangle(b, 6.0f);
+        g.setColour(Colours::blue2.withAlpha(0.35f));
+        g.drawRoundedRectangle(b.reduced(0.5f), 6.0f, 1.0f);
+        juce::TextLayout tl;
+        layoutTooltipText(text, tl);
+        tl.draw(g, b.reduced(9.0f, 7.0f));
+    }
+
     // ============ Buttons ============
     void drawButtonBackground(juce::Graphics& g, juce::Button& button, 
                                const juce::Colour& bgColour, bool isMouseOver, bool isButtonDown) override
