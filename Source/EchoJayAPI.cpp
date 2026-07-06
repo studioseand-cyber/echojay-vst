@@ -1094,7 +1094,8 @@ juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availableP
     }
 
     juce::String block;
-    block << "\n\n[AVAILABLE PLUGINS (installed & enabled on this machine): " << list << "]\n\n"
+    block << "\n\n[AVAILABLE PLUGINS — the ONLY plugins that can be loaded into a chain "
+          << "on this machine right now: " << list << "]\n\n"
           << "[CHAIN BLOCK RULE — read carefully and follow exactly]\n"
           << "WHENEVER your reply names two or more plugins to use in order "
           << "(i.e. you are recommending or describing a processing chain), "
@@ -1110,7 +1111,12 @@ juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availableP
           << "\"settings\":\"<SHORT: 3-6 key values only, e.g. '4:1, -18dB thr, 30ms att'>\"},...],\"explanation\":\"<one sentence>\"}\n"
           << "<<<END_CHAIN>>>\n\n"
           << "RULES FOR THE BLOCK:\n"
-          << "- Use ONLY exact names from the AVAILABLE PLUGINS list above.\n"
+          << "- Use ONLY exact names from the AVAILABLE PLUGINS list above. That list is the "
+          << "  SOLE source of truth for chain blocks: the user's profile plugin library, the "
+          << "  conversation history, and your own knowledge of popular plugins are NOT valid "
+          << "  sources — plugins named there may be uninstalled or in a format (e.g. VST2) "
+          << "  this host cannot load. NEVER put a name in the block that is not in the list, "
+          << "  even if the user appears to own it.\n"
           << "- Order slots for logical audio signal flow (e.g. EQ → Comp → Saturation → Limiter).\n"
           << "- If your ideal plugin is absent from the list, substitute the closest available one "
           << "  (do not mention the missing plugin or leave the slot empty).\n"
@@ -1498,29 +1504,15 @@ void EchoJayAPI::saveUserSettings(const UserSettings& settings,
 
 void EchoJayAPI::updatePluginsFromScanner(const juce::String& scannedPlugins)
 {
-    // Merge scanned plugins with any manually entered ones from the web app
-    juce::StringArray existing;
-    existing.addTokens(userSettings.plugins, ",\n", "");
-    existing.trim();
-    existing.removeEmptyStrings();
-    
+    // The scanner is the source of truth for what is installed NOW — REPLACE
+    // the profile list outright. The old merge-only behaviour accumulated
+    // names forever (web-app manual entries + every past scan), so plugins
+    // uninstalled long ago kept riding the profile into the AI's server-side
+    // context and could surface in recommendations.
     juce::StringArray scanned;
     scanned.addTokens(scannedPlugins, ",", "");
     scanned.trim();
     scanned.removeEmptyStrings();
-    
-    // Add scanned plugins that aren't already in the list
-    for (auto& p : scanned)
-    {
-        bool found = false;
-        for (auto& e : existing)
-            if (e.containsIgnoreCase(p.upToFirstOccurrenceOf(" (", false, false)))
-            { found = true; break; }
-        
-        if (!found)
-            existing.add(p);
-    }
-    
-    existing.sort(true);
-    userSettings.plugins = existing.joinIntoString(", ");
+    scanned.sort(true);
+    userSettings.plugins = scanned.joinIntoString(", ");
 }

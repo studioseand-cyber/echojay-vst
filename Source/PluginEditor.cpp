@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include <cmath>
 
 namespace
@@ -9172,11 +9173,16 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
                 liveLinks.addIfNotAlreadyThere(li.name);
         chainInjection = EchoJayAPI::buildChainInjection(recommendable, liveLinks);
         userContent += chainInjection;
+        EchoJay_NSLog(("EJChat: chain injection attached -- "
+                       + juce::String(recommendable.size())
+                       + " recommendable names in feed").toRawUTF8());
     }
     else if (EchoJayAPI::messageNeedsPlugins(msg))
     {
         userContent += EchoJayAPI::buildPluginInjection(
             processorRef.getPluginScanner().getFullPluginList());
+        EchoJay_NSLog("EJChat: NO recommendable names -- full-list fallback "
+                      "injection (chain blocks cannot be feed-validated)");
     }
 
     processorRef.chatRoles.add("user");
@@ -9253,6 +9259,38 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
                 }
             }
 
+            // Feed-conformance check: every chain-block name must be in the
+            // recommendable feed (the AVAILABLE PLUGINS list we injected).
+            // An out-of-feed name means the model drew from another source
+            // (profile plugin library, chat history, its own knowledge) —
+            // log loudly so contaminated context is diagnosable per request.
+            if (success && chainJson.isNotEmpty())
+            {
+                auto pv = juce::JSON::parse(chainJson);
+                if (auto* po = pv.getDynamicObject())
+                    if (auto* carr = po->getProperty("chain").getArray())
+                    {
+                        juce::StringArray feed =
+                            safeThis->processorRef.getChainHost().getRecommendableNames();
+                        int total = 0, inFeed = 0;
+                        for (auto& ev : *carr)
+                            if (auto* eo = ev.getDynamicObject())
+                            {
+                                auto n = eo->getProperty("name").toString().trim();
+                                if (n.isEmpty()) continue;
+                                ++total;
+                                bool ok = false;
+                                for (auto& f : feed)
+                                    if (ChainHost::namesMatchLoose(n, f)) { ok = true; break; }
+                                if (ok) ++inFeed;
+                                else EchoJay_NSLog(("EJChat: chain name OUT OF FEED: \""
+                                                    + n + "\"").toRawUTF8());
+                            }
+                        EchoJay_NSLog(("EJChat: chain block feed check -- "
+                                       + juce::String(inFeed) + "/" + juce::String(total)
+                                       + " names in recommendable feed").toRawUTF8());
+                    }
+            }
 
             if (success) {
                 ChatMsg cm;
