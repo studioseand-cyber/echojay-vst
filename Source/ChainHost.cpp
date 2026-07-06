@@ -519,6 +519,7 @@ void ChainHost::rebuildGraph()
             graph_->addConnection({{inputNode_->nodeID, 0}, {outputNode_->nodeID, 0}});
             graph_->addConnection({{inputNode_->nodeID, 1}, {outputNode_->nodeID, 1}});
         }
+        if (onChainChanged) onChainChanged();
         return;
     }
 
@@ -555,6 +556,33 @@ void ChainHost::rebuildGraph()
         for (int ch = nOut; ch < 2; ++ch)
             graph_->addConnection({{inputNode_->nodeID, ch}, {outputNode_->nodeID, ch}});
     }
+
+    if (onChainChanged) onChainChanged();
+}
+
+// ---------------------------------------------------------------------------
+// Additive accessors (Link hosting)
+// ---------------------------------------------------------------------------
+juce::PluginDescription ChainHost::getSlotDescription(int i) const
+{
+    if (i < 0 || i >= (int)slots_.size()) return {};
+    return slots_[(size_t)i].desc;
+}
+
+juce::AudioProcessor* ChainHost::getSlotProcessor(int i) const
+{
+    if (i < 0 || i >= (int)slots_.size() || slots_[(size_t)i].node == nullptr)
+        return nullptr;
+    return slots_[(size_t)i].node->getProcessor();
+}
+
+int ChainHost::getTotalLatencySamples() const
+{
+    int total = 0;
+    for (auto& s : slots_)
+        if (!s.bypassed && s.node && s.node->getProcessor())
+            total += s.node->getProcessor()->getLatencySamples();
+    return total;
 }
 
 // ---------------------------------------------------------------------------

@@ -144,7 +144,7 @@ endif()
 # through completely unchanged. No audio analysis yet.
 # =============================================================================
 
-set(LINK_VERSION "0.2.4")
+set(LINK_VERSION "0.3.0")
 
 # Link only ships AU + VST3 (no AAX, no Standalone for now)
 set(LINK_FORMATS AU VST3)
@@ -178,6 +178,12 @@ target_sources(EchoJayLink PRIVATE
     Source/LinkEditor.h
     Source/EchoJayLogo.h
     Source/LinkShm.h
+    # Chain hosting — shared with the main plugin (phase 1)
+    Source/ChainHost.cpp
+    Source/ChainHost.h
+    Source/AUEnumerator.mm
+    Source/AUEnumerator.h
+    Source/PluginScanner.h
 )
 
 target_compile_definitions(EchoJayLink PUBLIC
@@ -185,6 +191,8 @@ target_compile_definitions(EchoJayLink PUBLIC
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_PLUGINHOST_AU=1
+    JUCE_PLUGINHOST_VST3=1
 )
 
 target_link_libraries(EchoJayLink

@@ -1,21 +1,28 @@
 #include "LinkEditor.h"
 #include "EchoJayLogo.h"
 
-static const juce::Colour kBg     { 0xff0D1117 };
+static const juce::Colour kBg     { 0xff0A0C18 };
 static const juce::Colour kCard   { 0xff161B22 };
+static const juce::Colour kPanel  { 0xff080A12 };
 static const juce::Colour kBorder { 0xff30363D };
 static const juce::Colour kText   { 0xffE6EDF3 };
 static const juce::Colour kText2  { 0xff8B949E };
 static const juce::Colour kCyan   { 0xff22d3ee };
+static const juce::Colour kCoral  { 0xffff6d5a };
 
 LinkEditor::LinkEditor(LinkProcessor& p)
     : AudioProcessorEditor(&p), proc(p)
 {
-    setSize(380, 200);
+    // Resizable, sized to host plugin UIs — same conventions as the main
+    // plugin. Size persists in the processor state.
+    setResizable(true, true);
+    setResizeLimits(900, 580, 1800, 1200);
+    setSize(juce::jlimit(900, 1800, proc.editorW),
+            juce::jlimit(580, 1200, proc.editorH));
 
     // Name field
     nameField.setText(proc.linkName, juce::dontSendNotification);
-    nameField.setFont(juce::Font(juce::FontOptions(14.0f)));
+    nameField.setFont(juce::Font(juce::FontOptions(13.0f)));
     nameField.setColour(juce::TextEditor::backgroundColourId, kCard);
     nameField.setColour(juce::TextEditor::textColourId, kText);
     nameField.setColour(juce::TextEditor::outlineColourId, kBorder);
@@ -43,112 +50,147 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     };
     addAndMakeVisible(toggleBtn);
 
-    nameLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
-    nameLabel.setColour(juce::Label::textColourId, kText2);
-    addAndMakeVisible(nameLabel);
+    // Chain model changes repaint the strip/status (phase-2 adds the panel)
+    proc.onChainModelChanged = [safe = juce::Component::SafePointer<LinkEditor>(this)]
+    {
+        if (safe != nullptr) safe->repaint();
+    };
 }
 
-LinkEditor::~LinkEditor() {}
+LinkEditor::~LinkEditor()
+{
+    proc.onChainModelChanged = nullptr;
+    proc.onChainAboutToChange = nullptr;
+}
+
+juce::Rectangle<int> LinkEditor::displayArea() const
+{
+    return { 12, kHeaderH + 8,
+             getWidth() - 24,
+             getHeight() - kHeaderH - 8 - kStatusH - kStripH - 12 };
+}
+
+juce::Rectangle<int> LinkEditor::stripArea() const
+{
+    return { 0, getHeight() - kStripH, getWidth(), kStripH };
+}
 
 void LinkEditor::paint(juce::Graphics& g)
 {
     g.fillAll(kBg);
 
-    // Title bar
+    // ---- Header row ----
     g.setColour(kCard);
-    g.fillRect(0, 0, getWidth(), 36);
+    g.fillRect(0, 0, getWidth(), kHeaderH);
     g.setColour(kBorder);
-    g.drawHorizontalLine(36, 0.f, (float)getWidth());
+    g.drawHorizontalLine(kHeaderH, 0.f, (float)getWidth());
 
-    // Logo in header
     juce::Image logo = juce::ImageCache::getFromMemory(echoJayLogoPNG,
                                                         (int)echoJayLogoPNGSize);
-    const float headerH = 36.0f;
-    const float logoH   = 22.0f;
-    const float logoX   = 12.0f;
-    const float logoY   = (headerH - logoH) * 0.5f;
-
+    const float logoH = 22.0f, logoX = 12.0f;
+    const float logoY = (kHeaderH - logoH) * 0.5f;
     if (logo.isValid())
     {
         float aspect = (float)logo.getWidth() / (float)logo.getHeight();
         float logoW  = logoH * aspect;
-        g.drawImage(logo,
-                    (int)logoX, (int)logoY, (int)logoW, (int)logoH,
+        g.drawImage(logo, (int)logoX, (int)logoY, (int)logoW, (int)logoH,
                     0, 0, logo.getWidth(), logo.getHeight());
-
-        // "Link" label after logo
         g.setColour(kCyan);
         g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-        g.drawText("Link",
-                   (int)(logoX + logoW + 6.0f), 0,
-                   80, 36,
-                   juce::Justification::centredLeft);
-    }
-    else
-    {
-        // Fallback if logo unavailable
-        g.setColour(kCyan);
-        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-        g.drawText("ECHOJAY LINK", 16, 0, getWidth() - 32, 36,
+        g.drawText("Link", (int)(logoX + logoW + 6.0f), 0, 80, kHeaderH,
                    juce::Justification::centredLeft);
     }
 
-    // Card outline
-    g.setColour(kBorder);
-    g.drawRoundedRectangle(12.f, 48.f, (float)getWidth() - 24.f, 96.f, 6.f, 1.f);
-
-    // ---- Diagnostic line ----
-    auto& d = proc.diag;
-    juce::String regStr  = d.regOpened  ? "opened"
-                         : (d.regKey.isEmpty() ? "not tried"
-                                                : "FAILED errno " + juce::String(d.regErrno));
-    juce::String slotStr = (d.slotIdx >= 0) ? juce::String(d.slotIdx) : "NONE";
-    juce::String wroteStr = proc.didWrite.load() ? "yes" : "no";
-    juce::String diagLine = "registry: " + regStr
-                          + "  |  slot: " + slotStr
-                          + "  |  wrote: " + wroteStr;
-    juce::String keyLine  = "dir: " + (d.regKey.isEmpty() ? "(none)" : d.regKey);
-
-    g.setFont(juce::Font(juce::FontOptions(9.5f)));
-    g.setColour(kText2.withAlpha(0.7f));
-    g.drawText(diagLine, 12, 150, getWidth() - 24, 14, juce::Justification::centredLeft);
-    g.setColour(kText2.withAlpha(0.5f));
-    g.drawText(keyLine,  12, 163, getWidth() - 24, 13, juce::Justification::centredLeft);
-
-    // Status light
+    // Status light (bounds from resized)
     const juce::Colour lightColour = proc.linkOn.load()
-                                   ? juce::Colour(0xff22c55e)   // green
-                                   : juce::Colour(0xffef4444);  // red
+                                   ? juce::Colour(0xff22c55e)
+                                   : juce::Colour(0xffef4444);
     g.setColour(lightColour);
     g.fillEllipse(lightBounds);
-
-    // Glow ring
     g.setColour(lightColour.withAlpha(0.25f));
     g.fillEllipse(lightBounds.expanded(3.0f));
 
-    // Status text next to light
-    g.setColour(kText2);
-    g.setFont(juce::Font(juce::FontOptions(12.0f)));
-    const juce::String statusTxt = proc.linkOn ? "On" : "Off";
-    g.drawText(statusTxt,
-               (int)(lightBounds.getRight() + 6.0f),
-               (int)(lightBounds.getY() - 2.0f),
-               40, (int)(lightBounds.getHeight() + 4.0f),
-               juce::Justification::centredLeft);
+    // ---- Display area (inline hosting lands here in phase 2) ----
+    auto area = displayArea();
+    g.setColour(kPanel);
+    g.fillRoundedRectangle(area.toFloat(), 8.0f);
+    g.setColour(kCyan.withAlpha(0.15f));
+    g.drawRoundedRectangle(area.toFloat().reduced(0.5f), 8.0f, 1.0f);
+
+    auto& model = proc.getChainModel();
+    if (model.empty())
+    {
+        g.setColour(kText2);
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
+        g.drawText(proc.isChainBuilding() ? "Building chain..."
+                                          : "No chain loaded",
+                   area, juce::Justification::centred);
+        if (!proc.isChainBuilding())
+        {
+            g.setColour(kText2.withAlpha(0.6f));
+            g.setFont(juce::Font(juce::FontOptions(10.0f)));
+            g.drawText("Chains arrive from EchoJay V2 - use the Build button in chat",
+                       area.withTrimmedTop(44), juce::Justification::centredTop);
+        }
+    }
+
+    // ---- Status line ----
+    {
+        int sy = getHeight() - kStripH - kStatusH;
+        g.setColour(kText2.withAlpha(0.8f));
+        g.setFont(juce::Font(juce::FontOptions(9.5f)));
+        juce::String line = statusLine;
+        if (line.isEmpty() && !model.empty())
+        {
+            int missing = 0;
+            for (auto& s : model) if (s.missing) ++missing;
+            line = juce::String((int)model.size()) + " slot(s)";
+            if (missing > 0) line += ", " + juce::String(missing) + " missing";
+            if (!proc.chainLayoutSupported()) line += "  |  unsupported channel layout (chain bypassed)";
+        }
+        g.drawText(line, 12, sy, getWidth() - 24, kStatusH,
+                   juce::Justification::centredLeft);
+    }
+
+    // ---- Chain strip (simple name list in phase 1; blocks in phase 2) ----
+    {
+        auto strip = stripArea();
+        g.setColour(kCard);
+        g.fillRect(strip);
+        g.setColour(kBorder);
+        g.drawHorizontalLine(strip.getY(), 0.f, (float)getWidth());
+        int x = 12;
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        for (auto& s : model)
+        {
+            int wPx = juce::jmax(80, 12 + s.name.length() * 6);
+            auto r = juce::Rectangle<int>(x, strip.getY() + 14, wPx, kStripH - 28);
+            g.setColour(s.missing ? kCoral.withAlpha(0.15f) : kPanel);
+            g.fillRoundedRectangle(r.toFloat(), 6.0f);
+            g.setColour(s.missing ? kCoral.withAlpha(0.6f)
+                                  : kCyan.withAlpha(0.25f));
+            g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 6.0f, 1.0f);
+            g.setColour(s.missing ? kCoral : (s.bypassed ? kText2 : kText));
+            g.drawText(s.name, r.reduced(6, 0), juce::Justification::centred, true);
+            x += wPx + 10;
+            if (x > getWidth()) break;
+        }
+    }
 }
 
 void LinkEditor::resized()
 {
-    const int pad = 20;
-    const int fW  = getWidth() - pad * 2;
+    // Persist window size in the processor state
+    proc.editorW = getWidth();
+    proc.editorH = getHeight();
 
-    nameLabel.setBounds(pad, 52, fW, 16);
-    nameField.setBounds(pad, 70, fW, 28);
-    toggleBtn.setBounds(pad, 106, 80, 24);
+    // Compact header row: [logo Link] [name field] [Active] [light]
+    int fieldX = 150;
+    int fieldW = juce::jmin(280, getWidth() - fieldX - 170);
+    nameField.setBounds(fieldX, (kHeaderH - 26) / 2, fieldW, 26);
+    toggleBtn.setBounds(fieldX + fieldW + 12, (kHeaderH - 24) / 2, 76, 24);
 
-    // Status light: 10px circle, vertically centred in toggle row, after toggle
     const float lightD = 10.0f;
-    const float lightX = (float)(pad + 80 + 12);
-    const float lightY = 106.0f + (24.0f - lightD) * 0.5f;
-    lightBounds = { lightX, lightY, lightD, lightD };
+    lightBounds = { (float)(fieldX + fieldW + 12 + 76 + 10),
+                    (kHeaderH - lightD) * 0.5f, lightD, lightD };
 }

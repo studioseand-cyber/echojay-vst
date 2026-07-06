@@ -96,6 +96,19 @@ public:
 
     juce::AudioProcessorEditor* createEditorForSlot(int i);
 
+    // ---- Additive accessors (used by EchoJay Link hosting; main plugin
+    // behaviour unchanged) ------------------------------------------------
+    juce::PluginDescription getSlotDescription(int i) const;
+    juce::AudioProcessor*   getSlotProcessor(int i) const;
+
+    // Sum of the non-bypassed hosted plugins' reported latencies (message
+    // thread). Link mirrors this into setLatencySamples on every change.
+    int getTotalLatencySamples() const;
+
+    // Fired on the message thread at the end of every graph rebuild
+    // (load / remove / move / bypass). Unset in the main plugin.
+    std::function<void()> onChainChanged;
+
     // ---- State persistence -----------------------------------------------
     void saveToDisk() const;
     void loadFromDisk();

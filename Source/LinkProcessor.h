@@ -1,6 +1,9 @@
 #pragma once
 #include <JuceHeader.h>
+#include "ChainHost.h"
 #include <atomic>
+#include <functional>
+#include <vector>
 
 class LinkProcessor : public juce::AudioProcessor,
                       private juce::Timer
@@ -44,6 +47,57 @@ public:
     /// Call from editor after any change to linkOn or linkName (message thread).
     void updateShmState();
 
+    // ========================================================================
+    // Chain hosting (phase 1) — chains arrive from the main plugin.
+    // The MODEL is the requested chain including unresolvable slots
+    // (missing=true, hostIdx=-1); ChainHost's slot order always equals the
+    // real (non-missing) model slots in order.
+    // ========================================================================
+    struct ChainSlotSpec {
+        juce::String name;
+        juce::String settings;     // AI guidance text, display only
+        bool bypassed = false;
+        bool missing  = false;     // could not be resolved/loaded
+        int  hostIdx  = -1;        // index into chainHost slots, -1 if missing
+    };
+    static constexpr int kMaxChainSlots = 15;
+
+    struct ChainBuildItem {
+        juce::String name;
+        juce::String settings;
+        bool bypassed = false;
+        juce::String stateBase64;  // hosted plugin state (restore path only)
+    };
+
+    ChainHost& getChainHost() { return chainHost; }
+    const std::vector<ChainSlotSpec>& getChainModel() const { return chainModel; }
+
+    // Replace the chain with the given spec (message thread, sequential
+    // instantiation, editors are NEVER opened during build). onDone receives
+    // one result line per requested slot ("ok" / failure reason).
+    void buildChainFromSpec(std::vector<ChainBuildItem> spec,
+                            std::function<void(const juce::StringArray&)> onDone);
+
+    // Strip operations (message thread)
+    void removeChainSlot(int idx);
+    void moveChainSlot(int idx, int dir);      // dir: -1 / +1
+    void toggleChainSlotBypass(int idx);
+
+    // Fired on the message thread whenever the model changes (editor refresh)
+    std::function<void()> onChainModelChanged;
+    // Fired BEFORE slots are torn down so the editor can close hosted
+    // editors first (one-editor-at-a-time discipline)
+    std::function<void()> onChainAboutToChange;
+
+    // True while a build/restore is in flight (strip shows progress)
+    bool isChainBuilding() const { return chainBuilding; }
+
+    // Stereo support flag — set in prepareToPlay; mono tracks pass through
+    bool chainLayoutSupported() const { return chainStereoOk; }
+
+    // Editor window size — persisted in plugin state
+    int editorW = 1035, editorH = 638;
+
     // ---- Diagnostics (message thread, read by editor timer) ----
     struct Diag {
         juce::String regKey;          // resolved shared directory path
@@ -85,6 +139,22 @@ private:
     void ensureRegistryOpen();
     void claimRegistrySlot();
     void releaseRegistrySlot();
+
+    // ---- Chain hosting internals (message thread unless noted) ----
+    ChainHost chainHost;                    // audio-thread process() via processBlock
+    std::vector<ChainSlotSpec> chainModel;
+    bool chainBuilding = false;
+    bool chainStereoOk = true;
+
+    void clearChainInternal();              // closes editors first via callback
+    void updateChainLatency();
+    void notifyChainModel();
+    juce::PluginDescription resolveChainPlugin(const juce::String& name) const;
+    static juce::StringArray loadDisabledUids();
+    juce::String chainFormatFilter() const; // "AudioUnit" / "VST3" by wrapper
+
+    juce::var  chainModelToVar() const;     // state serialise (incl. plugin blobs)
+    void       restoreChainFromVar(const juce::var& v);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LinkProcessor)
 };

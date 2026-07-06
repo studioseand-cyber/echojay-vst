@@ -8,6 +8,11 @@ LinkProcessor::LinkProcessor()
           .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
     startTimerHz(1); // heartbeat bump every second
+
+    // Mirror hosted chain latency into the host on EVERY chain change —
+    // Link sits on parallel and phase-critical tracks, so this must track
+    // build/add/remove/bypass exactly.
+    chainHost.onChainChanged = [this] { updateChainLatency(); };
 }
 
 LinkProcessor::~LinkProcessor()
@@ -208,6 +213,12 @@ void LinkProcessor::prepareToPlay(double sampleRate, int numChannels)
     hostSampleRate  = sampleRate;
     hostNumChannels = juce::jmin(numChannels, 2);
 
+    // Chain hosting: stereo only. On mono tracks the chain stays out of
+    // circuit (clean passthrough) and the transport ack reports it.
+    chainStereoOk = (getTotalNumInputChannels() >= 2
+                     && getTotalNumOutputChannels() >= 2);
+    chainHost.prepare(sampleRate, getBlockSize() > 0 ? getBlockSize() : 512);
+
     // Always sync shm state from the message thread so that:
     //  (a) a fresh session restore with Active=on registers correctly, and
     //  (b) a sample-rate change reopens the ring with the new rate.
@@ -216,14 +227,23 @@ void LinkProcessor::prepareToPlay(double sampleRate, int numChannels)
     juce::MessageManager::callAsync([this] { updateShmState(); });
 }
 
-void LinkProcessor::releaseResources() {}
+void LinkProcessor::releaseResources()
+{
+    chainHost.release();
+}
 
-void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
     // Pass-through: silence extra output channels
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear(ch, 0, buffer.getNumSamples());
+
+    // Hosted chain runs FIRST so the ring tap (and the track) hears the
+    // processed signal. Empty / all-bypassed chain = the graph stays out of
+    // circuit entirely; mono layouts skip the chain (stereo-only phase 1).
+    if (chainStereoOk)
+        chainHost.process(buffer, midi);
 
     // Write into ring buffer if active — non-blocking tryEnter
     if (linkOn.load(std::memory_order_acquire))
@@ -244,6 +264,269 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
     }
 }
 
+// =============================================================================
+//  Chain hosting (message thread)
+// =============================================================================
+juce::String LinkProcessor::chainFormatFilter() const
+{
+    switch (wrapperType)
+    {
+        case juce::AudioProcessor::wrapperType_AudioUnit: return "AudioUnit";
+        case juce::AudioProcessor::wrapperType_VST3:      return "VST3";
+        default:                                          return {};
+    }
+}
+
+juce::StringArray LinkProcessor::loadDisabledUids()
+{
+    // plugin_disabled.json — a JSON array of scanner uids
+    // (lowercase name + "_" + lowercase manufacturer, spaces -> underscores).
+    auto file = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                    .getChildFile("Application Support/EchoJay/plugin_disabled.json");
+    juce::StringArray uids;
+    if (file.existsAsFile())
+    {
+        auto v = juce::JSON::parse(file.loadFileAsString());
+        if (auto* arr = v.getArray())
+            for (auto& u : *arr)
+                uids.add(u.toString());
+    }
+    return uids;
+}
+
+juce::PluginDescription LinkProcessor::resolveChainPlugin(const juce::String& name) const
+{
+    auto list = chainHost.getFilteredPlugins(juce::String(), chainFormatFilter());
+    for (auto& d : list)
+        if (d.name.equalsIgnoreCase(name.trim()))
+            return d;
+    return {};
+}
+
+void LinkProcessor::clearChainInternal()
+{
+    if (onChainAboutToChange) onChainAboutToChange();   // editors close first
+    for (int i = chainHost.getNumSlots() - 1; i >= 0; --i)
+        chainHost.removeSlot(i);
+    chainModel.clear();
+}
+
+void LinkProcessor::updateChainLatency()
+{
+    setLatencySamples(chainHost.getTotalLatencySamples());
+}
+
+void LinkProcessor::notifyChainModel()
+{
+    if (onChainModelChanged) onChainModelChanged();
+}
+
+void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
+                                       std::function<void(const juce::StringArray&)> onDone)
+{
+    if ((int)spec.size() > kMaxChainSlots)
+        spec.resize((size_t)kMaxChainSlots);
+
+    chainBuilding = true;
+    clearChainInternal();
+    notifyChainModel();
+
+    // Plugin list must exist before names can resolve. The list cache
+    // (chain_plugins.xml) is shared with the main plugin; scan if empty.
+    if (chainHost.getNumPlugins() == 0 && !chainHost.isScanning())
+        chainHost.startScan();
+
+    auto results  = std::make_shared<juce::StringArray>();
+    auto disabled = std::make_shared<juce::StringArray>(loadDisabledUids());
+    auto items    = std::make_shared<std::vector<ChainBuildItem>>(std::move(spec));
+    auto idx      = std::make_shared<int>(0);
+    auto self     = this;   // processor outlives message-thread callbacks in-session
+
+    auto isDisabled = [disabled](const juce::String& name)
+    {
+        auto key = name.trim().toLowerCase().replaceCharacter(' ', '_') + "_";
+        for (auto& uid : *disabled)
+            if (uid.startsWith(key)) return true;
+        return false;
+    };
+
+    auto stepPtr = std::make_shared<std::function<void()>>();
+    *stepPtr = [self, results, items, idx, isDisabled, stepPtr, onDone]()
+    {
+        // Wait for an in-flight scan before resolving (poll, bounded)
+        if (self->chainHost.isScanning())
+        {
+            juce::Timer::callAfterDelay(200, [stepPtr] { (*stepPtr)(); });
+            return;
+        }
+
+        if (*idx >= (int)items->size())
+        {
+            self->chainBuilding = false;
+            self->updateChainLatency();
+            self->notifyChainModel();
+            if (onDone) onDone(*results);
+            return;
+        }
+
+        int i = (*idx)++;
+        auto& item = (*items)[(size_t)i];
+
+        ChainSlotSpec slot;
+        slot.name     = item.name;
+        slot.settings = item.settings;
+        slot.bypassed = item.bypassed;
+
+        if (isDisabled(item.name))
+        {
+            slot.missing = true;
+            self->chainModel.push_back(slot);
+            results->add(item.name + ": skipped (disabled in Settings)");
+            self->notifyChainModel();
+            (*stepPtr)();
+            return;
+        }
+
+        auto desc = self->resolveChainPlugin(item.name);
+        if (desc.name.isEmpty())
+        {
+            slot.missing = true;
+            self->chainModel.push_back(slot);
+            results->add(item.name + ": not found");
+            self->notifyChainModel();
+            (*stepPtr)();
+            return;
+        }
+
+        juce::String stateB64 = item.stateBase64;
+        bool wantBypass = item.bypassed;
+        self->chainHost.loadPluginAsync(desc,
+            [self, results, slot, stateB64, wantBypass, stepPtr, name = item.name]
+            (const juce::String& err) mutable
+        {
+            if (err.isNotEmpty())
+            {
+                slot.missing = true;
+                self->chainModel.push_back(slot);
+                results->add(name + ": failed (" + err + ")");
+            }
+            else
+            {
+                int hostIdx = self->chainHost.getNumSlots() - 1;
+                slot.hostIdx = hostIdx;
+                self->chainHost.setSlotSettings(hostIdx, slot.settings);
+                if (wantBypass)
+                    self->chainHost.setSlotBypassed(hostIdx, true);
+                // Restore the hosted plugin's saved state (session restore)
+                if (stateB64.isNotEmpty())
+                {
+                    juce::MemoryOutputStream mo;
+                    if (juce::Base64::convertFromBase64(mo, stateB64))
+                        if (auto* p = self->chainHost.getSlotProcessor(hostIdx))
+                            p->setStateInformation(mo.getData(), (int)mo.getDataSize());
+                }
+                self->chainModel.push_back(slot);
+                results->add(name + ": ok");
+            }
+            self->notifyChainModel();
+            (*stepPtr)();
+        });
+    };
+    (*stepPtr)();
+}
+
+void LinkProcessor::removeChainSlot(int idx)
+{
+    if (idx < 0 || idx >= (int)chainModel.size()) return;
+    if (onChainAboutToChange) onChainAboutToChange();
+    int hostIdx = chainModel[(size_t)idx].hostIdx;
+    if (hostIdx >= 0)
+    {
+        chainHost.removeSlot(hostIdx);
+        for (auto& s : chainModel)
+            if (s.hostIdx > hostIdx) --s.hostIdx;
+    }
+    chainModel.erase(chainModel.begin() + idx);
+    notifyChainModel();
+}
+
+void LinkProcessor::moveChainSlot(int idx, int dir)
+{
+    int j = idx + dir;
+    if (idx < 0 || idx >= (int)chainModel.size()) return;
+    if (j < 0 || j >= (int)chainModel.size()) return;
+    // Host order = real model slots in order, so a host move is only needed
+    // when BOTH swapped slots are real (adjacent real slots are adjacent in
+    // the host too — missing slots don't exist there)
+    auto& a = chainModel[(size_t)idx];
+    auto& b = chainModel[(size_t)j];
+    if (a.hostIdx >= 0 && b.hostIdx >= 0)
+    {
+        chainHost.moveSlot(a.hostIdx, dir);
+        std::swap(a.hostIdx, b.hostIdx);
+    }
+    std::swap(a, b);
+    notifyChainModel();
+}
+
+void LinkProcessor::toggleChainSlotBypass(int idx)
+{
+    if (idx < 0 || idx >= (int)chainModel.size()) return;
+    auto& s = chainModel[(size_t)idx];
+    s.bypassed = !s.bypassed;
+    if (s.hostIdx >= 0)
+        chainHost.setSlotBypassed(s.hostIdx, s.bypassed);
+    notifyChainModel();
+}
+
+// ---- Chain state serialise / restore ---------------------------------------
+juce::var LinkProcessor::chainModelToVar() const
+{
+    juce::Array<juce::var> arr;
+    for (auto& s : chainModel)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty("name",     s.name);
+        o->setProperty("settings", s.settings);
+        o->setProperty("bypassed", s.bypassed);
+        o->setProperty("missing",  s.missing);
+        if (!s.missing && s.hostIdx >= 0)
+        {
+            if (auto* p = chainHost.getSlotProcessor(s.hostIdx))
+            {
+                juce::MemoryBlock mb;
+                p->getStateInformation(mb);
+                if (mb.getSize() > 0)
+                    o->setProperty("state", juce::Base64::toBase64(mb.getData(), mb.getSize()));
+            }
+        }
+        arr.add(juce::var(o));
+    }
+    return juce::var(arr);
+}
+
+void LinkProcessor::restoreChainFromVar(const juce::var& v)
+{
+    auto* arr = v.getArray();
+    if (arr == nullptr || arr->isEmpty()) return;
+
+    std::vector<ChainBuildItem> spec;
+    for (auto& sv : *arr)
+    {
+        auto* o = sv.getDynamicObject();
+        if (o == nullptr) continue;
+        ChainBuildItem item;
+        item.name        = o->getProperty("name").toString();
+        item.settings    = o->getProperty("settings").toString();
+        item.bypassed    = (bool)o->getProperty("bypassed");
+        item.stateBase64 = o->getProperty("state").toString();
+        if (item.name.isNotEmpty())
+            spec.push_back(std::move(item));
+    }
+    if (!spec.empty())
+        buildChainFromSpec(std::move(spec), nullptr);   // missing → named slot, no crash
+}
+
 juce::AudioProcessorEditor* LinkProcessor::createEditor() { return new LinkEditor(*this); }
 
 void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
@@ -251,6 +534,10 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     juce::DynamicObject* obj = new juce::DynamicObject();
     obj->setProperty("linkName", linkName);
     obj->setProperty("linkOn",   (bool)linkOn.load());
+    obj->setProperty("editorW",  editorW);
+    obj->setProperty("editorH",  editorH);
+    // Full hosted chain: identities, order, bypass flags, per-plugin state
+    obj->setProperty("chain",    chainModelToVar());
     juce::String json = juce::JSON::toString(juce::var(obj), true);
     dest.replaceAll(json.toRawUTF8(), json.getNumBytesAsUTF8());
 }
@@ -263,6 +550,18 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
     {
         if (obj->hasProperty("linkName")) linkName = obj->getProperty("linkName").toString();
         if (obj->hasProperty("linkOn"))   linkOn.store((bool)obj->getProperty("linkOn"));
+        if (obj->hasProperty("editorW"))  editorW = juce::jlimit(900, 1800, (int)obj->getProperty("editorW"));
+        if (obj->hasProperty("editorH"))  editorH = juce::jlimit(580, 1200, (int)obj->getProperty("editorH"));
+        if (obj->hasProperty("chain"))
+        {
+            // Restore on the message thread — sequential async instantiation;
+            // missing plugins become named empty slots, the rest still load.
+            auto chainVar = obj->getProperty("chain");
+            juce::MessageManager::callAsync([this, chainVar]
+            {
+                restoreChainFromVar(chainVar);
+            });
+        }
     }
     // Schedule registration on the message thread. If prepareToPlay has already
     // run (some hosts call it before setStateInformation), this triggers
