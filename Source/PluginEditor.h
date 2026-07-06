@@ -1056,10 +1056,6 @@ private:
                            0, cy, getWidth(), 20, juce::Justification::centred);
                 g.drawText("to build a chain for you.",
                            0, cy + 20, getWidth(), 20, juce::Justification::centred);
-                g.setColour(juce::Colour(0xff606078));
-                g.setFont(juce::Font(juce::FontOptions(10.0f)));
-                g.drawText("Hosting third-party plugins is experimental. Save your project before loading.",
-                           0, cy + 48, getWidth(), 16, juce::Justification::centred);
             }
             else if (popout != nullptr && popoutSlot == selectedIdx && inlineEditor == nullptr)
             {

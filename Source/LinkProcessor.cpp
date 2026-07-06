@@ -503,6 +503,49 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
     (*stepPtr)();
 }
 
+bool LinkProcessor::isPluginDisabledByName(const juce::String& name) const
+{
+    auto disabled = loadDisabledUids();
+    auto mk = [](const juce::String& n)
+        { return n.trim().toLowerCase().replaceCharacter(' ', '_') + "_"; };
+    auto k1 = mk(name), k2 = mk(ChainHost::stripParenthetical(name));
+    for (auto& uid : disabled)
+        if (uid.startsWith(k1) || uid.startsWith(k2)) return true;
+    return false;
+}
+
+void LinkProcessor::addChainPluginManually(const juce::PluginDescription& desc,
+                                           std::function<void(const juce::String&)> done)
+{
+    if ((int)chainModel.size() >= kMaxChainSlots)
+    {
+        if (done) done("Chain is full (" + juce::String(kMaxChainSlots) + " slots max)");
+        return;
+    }
+    if (chainBuilding)
+    {
+        if (done) done("A chain build is in progress");
+        return;
+    }
+    chainHost.loadPluginAsync(desc,
+        [this, done, name = desc.name](const juce::String& err)
+    {
+        if (err.isNotEmpty()) { if (done) done(err); return; }
+        // No settings guidance on manual adds — the empty string persists in
+        // state like AI-provided guidance does (chainModelToVar serialises
+        // the slot as-is), so the placeholder survives save/reopen.
+        ChainSlotSpec slot;
+        slot.name    = name;
+        slot.hostIdx = chainHost.getNumSlots() - 1;
+        chainModel.push_back(slot);
+        // Latency: chainHost.onChainChanged already ran updateChainLatency
+        // during the graph rebuild. notifyChainModel refreshes the editor
+        // and marks host state dirty — the same path command builds use.
+        notifyChainModel();
+        if (done) done({});
+    });
+}
+
 void LinkProcessor::removeChainSlot(int idx)
 {
     if (idx < 0 || idx >= (int)chainModel.size()) return;

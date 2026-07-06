@@ -57,6 +57,7 @@ LinkEditor::LinkEditor(LinkProcessor& p)
 
     // Chain panel fills everything below the header
     addAndMakeVisible(chainPanel);
+    chainPanel.onAddClick = [this] { showChainPluginPicker(); };
     chainPanel.rebuild();
 
     // Editors must close BEFORE the processor tears slots down
@@ -129,4 +130,58 @@ void LinkEditor::resized()
                     (kHeaderH - lightD) * 0.5f, lightD, lightD };
 
     chainPanel.setBounds(0, kHeaderH + 1, getWidth(), getHeight() - kHeaderH - 1);
+}
+
+void LinkEditor::showChainPluginPicker()
+{
+    auto& ch = proc.getChainHost();
+    auto plugins = ch.getFilteredPlugins("", proc.chainPickerFormat());
+
+    // Respect the Settings checklist — same disabled set builds honour
+    juce::Array<juce::PluginDescription> avail;
+    for (auto& p : plugins)
+        if (!proc.isPluginDisabledByName(p.name))
+            avail.add(p);
+    if (avail.isEmpty()) return;
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("ADD PLUGIN TO CHAIN");
+    for (int i = 0; i < avail.size(); ++i)
+    {
+        const auto& p = avail.getReference(i);
+        bool isAU = p.pluginFormatName == "AudioUnit";
+        menu.addItem(i + 1, p.name + "  [" + (isAU ? "AU" : "VST3") + "]");
+    }
+
+    auto safeThis = juce::Component::SafePointer<LinkEditor>(this);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options()
+            .withTargetComponent(&chainPanel)
+            .withMaximumNumColumns(1)
+            .withMinimumNumColumns(1),
+        [safeThis, avail](int result)
+        {
+            if (safeThis == nullptr || result <= 0 || result > avail.size()) return;
+            auto desc = avail[result - 1];
+            safeThis->chainPanel.statusText = "Loading " + desc.name + "...";
+            safeThis->chainPanel.repaint();
+
+            safeThis->proc.addChainPluginManually(desc,
+                [safeThis](const juce::String& err)
+            {
+                if (safeThis == nullptr) return;
+                if (err.isNotEmpty())
+                {
+                    safeThis->chainPanel.statusText = "Failed: " + err;
+                    safeThis->chainPanel.repaint();
+                    return;
+                }
+                // notifyChainModel already rebuilt the strip; select the new
+                // last slot so its editor opens inline (same as the main "+")
+                safeThis->chainPanel.statusText = {};
+                safeThis->chainPanel.selectedIdx =
+                    (int)safeThis->proc.getChainModel().size() - 1;
+                safeThis->chainPanel.rebuild();
+            });
+        });
 }

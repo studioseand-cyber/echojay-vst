@@ -87,6 +87,20 @@ public:
     void moveChainSlot(int idx, int dir);      // dir: -1 / +1
     void toggleChainSlotBypass(int idx);
 
+    // Manual add from the "+" picker (message thread). Appends to the current
+    // chain (which may have arrived via command file); no settings guidance,
+    // so the SUGGESTED SETTINGS card shows its placeholder. done(error) —
+    // empty on success.
+    void addChainPluginManually(const juce::PluginDescription& desc,
+                                std::function<void(const juce::String&)> done);
+
+    // plugin_disabled.json check for the picker — same keying as builds
+    // (raw + parenthetical-stripped name against scanner uids)
+    bool isPluginDisabledByName(const juce::String& name) const;
+
+    // Active format filter for the picker ("AudioUnit" / "VST3" by wrapper)
+    juce::String chainPickerFormat() const { return chainFormatFilter(); }
+
     // Fired on the message thread whenever the model changes (editor refresh)
     std::function<void()> onChainModelChanged;
     // Fired BEFORE slots are torn down so the editor can close hosted

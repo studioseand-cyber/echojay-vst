@@ -173,6 +173,12 @@ public:
         std::vector<std::unique_ptr<Block>> blocks;
         int selectedIdx = -1;
 
+        // Manual add — "+" block after the last slot, identical to the main
+        // plugin's; hidden at kMaxChainSlots
+        static constexpr int kAddW = 40;
+        juce::TextButton addBlock { "+" };
+        std::function<void()> onAddClick;
+
         InlineHolder inlineHolder;
         std::unique_ptr<juce::AudioProcessorEditor> inlineEditor;
         int  inlineModelIdx = -1;
@@ -210,6 +216,11 @@ public:
             stripView.setViewedComponent(&stripContent, false);
             stripView.setScrollBarsShown(false, true, false, true);
             stripView.setScrollBarThickness(8);
+
+            addBlock.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+            addBlock.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+            addBlock.onClick = [this] { if (onAddClick) onAddClick(); };
+            stripContent.addAndMakeVisible(addBlock);
 
             popBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
             popBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
@@ -480,6 +491,16 @@ public:
             }
             stripContent.lineY    = y + kBlockH / 2;
             stripContent.lineEndX = blocks.empty() ? 0 : x - kBlockGap;
+
+            // "+" block after the last slot (same as the main plugin's strip)
+            bool canAdd = (int)blocks.size() < LinkProcessor::kMaxChainSlots;
+            addBlock.setVisible(canAdd);
+            if (canAdd)
+            {
+                addBlock.setBounds(x, y + (kBlockH - kAddW) / 2, kAddW, kAddW);
+                x += kAddW + 12;
+            }
+
             stripContent.setSize(juce::jmax(x, stripView.getWidth()), contentH);
             stripContent.repaint();
         }
@@ -516,15 +537,20 @@ public:
             {
                 g.setColour(juce::Colour(0xffa0a0b8));
                 g.setFont(juce::Font(juce::FontOptions(13.0f)));
-                g.drawText(proc.isChainBuilding() ? "Building chain..."
-                                                  : "No chain loaded",
-                           area, juce::Justification::centred);
-                if (!proc.isChainBuilding())
+                if (proc.isChainBuilding())
                 {
-                    g.setColour(juce::Colour(0xff606078));
-                    g.setFont(juce::Font(juce::FontOptions(10.0f)));
-                    g.drawText("Chains arrive from EchoJay V2 - use the Build button in chat",
-                               area.withTrimmedTop(48), juce::Justification::centredTop);
+                    g.drawText("Building chain...", area, juce::Justification::centred);
+                }
+                else
+                {
+                    // Same two-line empty state as the main plugin's Chain tab
+                    int cy = area.getCentreY() - 20;
+                    g.drawText("Press + to add a plugin, or send a chain",
+                               area.getX(), cy, area.getWidth(), 20,
+                               juce::Justification::centred);
+                    g.drawText("from EchoJay.",
+                               area.getX(), cy + 20, area.getWidth(), 20,
+                               juce::Justification::centred);
                 }
             }
             else if (haveSel && model[(size_t)selectedIdx].missing)
@@ -605,6 +631,10 @@ private:
     juce::Rectangle<float> lightBounds;
 
     LinkChainPanel chainPanel;
+
+    // "+" block popup — same searchable picker as the main plugin's Chain
+    // tab, filtered by plugin_disabled.json
+    void showChainPluginPicker();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LinkEditor)
 };
