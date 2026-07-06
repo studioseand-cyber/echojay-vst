@@ -5962,17 +5962,45 @@ void EchoJayEditor::paintTonalBalancePanel(juce::Graphics& g, juce::Rectangle<in
     for (int i = 0; i < 6; ++i)
         if (md.macroBandDb[(size_t)i] > -119.0f) { haveBands = true; break; }
 
-    // Row budget: 6 deviation rows on top, BAND DYNAMICS group below
+    // Row budget: deviation curve on top, BAND DYNAMICS group below
     int dynH   = juce::jmin(78, area.getHeight() / 3);
     int rowsH  = area.getHeight() - 28 - dynH - 8;
-    int rowPit = juce::jmax(12, rowsH / 6);
-    int barH   = juce::jmax(7, rowPit - 6);
+
+    // Curve plot: six evenly spaced band columns, tiny-caps labels along the
+    // bottom, centre line = 0 rel dB, range -12..+12 (values clamp to edge)
+    int labelRowH = 12;
+    int plotH = juce::jmax(30, rowsH - labelRowH - 4);
+    int plotY = y;
+    float colW = (float)w / 6.0f;
+    float cy0  = (float)plotY + (float)plotH * 0.5f;
+
+    // Gridlines at +6 / -6 (subtle); centre line slightly brighter so
+    // "balanced = hugging the line" reads instantly
+    g.setColour(juce::Colours::white.withAlpha(0.05f));
+    g.drawHorizontalLine(plotY + plotH / 4,     (float)x, (float)(x + w));
+    g.drawHorizontalLine(plotY + plotH * 3 / 4, (float)x, (float)(x + w));
+    g.setColour(juce::Colours::white.withAlpha(0.16f));
+    g.drawHorizontalLine((int)cy0, (float)x, (float)(x + w));
+
+    // Band labels (tiny caps along the bottom) + range tooltips
+    for (int i = 0; i < 6; ++i)
+    {
+        auto lr = juce::Rectangle<int>(x + (int)((float)i * colW), plotY + plotH + 4,
+                                       (int)colW, labelRowH);
+        g.setColour(C::text3.withAlpha(haveBands ? 1.0f : 0.5f));
+        g.setFont(juce::Font(juce::FontOptions(7.5f, juce::Font::bold)));
+        g.drawText(bandNames[i], lr, juce::Justification::centred);
+        addMeterTip(lr, bandTips[i]);
+    }
 
     if (!haveBands)
     {
+        // Dim placeholder: flat line hugging the centre
+        g.setColour(C::text3.withAlpha(0.35f));
+        g.drawLine((float)x + colW * 0.5f, cy0, (float)(x + w) - colW * 0.5f, cy0, 1.5f);
         g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(11.0f)));
-        g.drawText("no signal", x, y, w, rowsH, juce::Justification::centred);
+        g.setFont(juce::Font(juce::FontOptions(9.0f)));
+        g.drawText("no signal", x, plotY, w, plotH / 2, juce::Justification::centred);
         tonalSmoothInit_ = false;
     }
     else
@@ -5995,54 +6023,83 @@ void EchoJayEditor::paintTonalBalancePanel(juce::Graphics& g, juce::Rectangle<in
         }
         tonalSmoothInit_ = true;
 
-        int labelW = 52, numW = 36;
-        int fieldX = x + labelW + 4;
-        int fieldW = w - labelW - numW - 10;
-        float halfW = (float)fieldW * 0.5f;
-        int cxLine  = fieldX + fieldW / 2;
-
+        // Six band points, clamped to the +/-12 range (clamp = edge, no arrows)
+        juce::Point<float> pts[6];
         for (int i = 0; i < 6; ++i)
         {
-            int ry = y + i * rowPit;
-            int by = ry + (rowPit - barH) / 2;
-            g.setColour(C::text3);
-            g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
-            g.drawText(bandNames[i], x, ry, labelW, rowPit, juce::Justification::centredLeft);
-            addMeterTip({ x, ry, labelW, rowPit }, bandTips[i]);
+            float relC = juce::jlimit(-12.0f, 12.0f, tonalSmooth_[(size_t)i]);
+            pts[i] = { (float)x + ((float)i + 0.5f) * colW,
+                       cy0 - relC / 12.0f * ((float)plotH * 0.5f) };
+        }
 
-            // Gridlines at -6 / 0 / +6
-            g.setColour(juce::Colours::white.withAlpha(0.05f));
-            g.drawVerticalLine(cxLine - (int)(halfW * 0.5f), (float)by, (float)(by + barH));
-            g.drawVerticalLine(cxLine + (int)(halfW * 0.5f), (float)by, (float)(by + barH));
-            g.setColour(juce::Colours::white.withAlpha(0.12f));
-            g.drawVerticalLine(cxLine, (float)by, (float)(by + barH));
+        // Catmull-Rom spline as beziers, endpoints duplicated so the end
+        // tangents stay flat and never overshoot; control-point y clamped
+        // into the plot so mid-segments cannot leave the range either
+        auto clampY = [&](float v) { return juce::jlimit((float)plotY, (float)(plotY + plotH), v); };
+        juce::Path curve;
+        curve.startNewSubPath(pts[0]);
+        for (int i = 0; i < 5; ++i)
+        {
+            auto p0 = pts[juce::jmax(0, i - 1)], p1 = pts[i];
+            auto p2 = pts[i + 1],                p3 = pts[juce::jmin(5, i + 2)];
+            juce::Point<float> c1(p1.x + (p2.x - p0.x) / 6.0f, clampY(p1.y + (p2.y - p0.y) / 6.0f));
+            juce::Point<float> c2(p2.x - (p3.x - p1.x) / 6.0f, clampY(p2.y - (p3.y - p1.y) / 6.0f));
+            curve.cubicTo(c1, c2, p2);
+        }
 
-            float rel = tonalSmooth_[(size_t)i];
-            float relC = juce::jlimit(-12.0f, 12.0f, rel);
-            float len = std::abs(relC) / 12.0f * halfW;
-            auto col = rel >= 0.0f ? cyan : coral;
-            g.setColour(col.withAlpha(0.85f));
-            if (rel >= 0.0f)
-                g.fillRect((float)cxLine, (float)by, len, (float)barH);
-            else
-                g.fillRect((float)cxLine - len, (float)by, len, (float)barH);
-            // Clamp marker — small arrow when the value exceeds the scale
-            if (std::abs(rel) > 12.0f)
-            {
-                juce::Path arrow;
-                float ax = rel > 0 ? (float)(fieldX + fieldW) : (float)fieldX;
-                float dir = rel > 0 ? 1.0f : -1.0f;
-                float my = (float)by + barH * 0.5f;
-                arrow.addTriangle(ax + dir * 4.0f, my,
-                                  ax, my - 3.5f, ax, my + 3.5f);
-                g.setColour(col);
-                g.fillPath(arrow);
-            }
-            g.setColour(col);
-            g.setFont(juce::Font(juce::FontOptions(8.5f)));
-            juce::String num = (rel >= 0 ? "+" : "") + juce::String(rel, 1);
-            g.drawText(num, fieldX + fieldW + 6, ry, numW, rowPit,
-                       juce::Justification::centredLeft);
+        // Area between the curve and the centre line
+        juce::Path fillArea(curve);
+        fillArea.lineTo(pts[5].x, cy0);
+        fillArea.lineTo(pts[0].x, cy0);
+        fillArea.closeSubPath();
+
+        // Two-sided colouring via clip regions: cyan above centre, coral
+        // below. Flat low-alpha fills, a wide low-alpha glow pass, then the
+        // bright stroke — no gradients, no per-pixel work.
+        auto paintSide = [&](juce::Rectangle<int> clip, juce::Colour col)
+        {
+            if (clip.isEmpty()) return;
+            g.saveState();
+            g.reduceClipRegion(clip);
+            g.setColour(col.withAlpha(0.14f));
+            g.fillPath(fillArea);
+            g.setColour(col.withAlpha(0.20f));
+            g.strokePath(curve, juce::PathStrokeType(4.5f, juce::PathStrokeType::curved,
+                                                     juce::PathStrokeType::rounded));
+            g.setColour(col.withAlpha(0.9f));
+            g.strokePath(curve, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved,
+                                                     juce::PathStrokeType::rounded));
+            g.restoreState();
+        };
+        paintSide({ x, plotY, w, (int)cy0 - plotY },                cyan);
+        paintSide({ x, (int)cy0, w, plotY + plotH - (int)cy0 },     coral);
+
+        // Hovered band column: value readout above the curve + brighter node
+        auto mp = getMouseXYRelative();
+        int hovered = -1;
+        if (mp.getY() >= plotY && mp.getY() <= plotY + plotH + labelRowH + 4
+            && mp.getX() >= x && mp.getX() < x + w)
+            hovered = juce::jlimit(0, 5, (int)((float)(mp.getX() - x) / colW));
+
+        // Node markers on the curve at each band position
+        for (int i = 0; i < 6; ++i)
+        {
+            auto col = tonalSmooth_[(size_t)i] >= 0.0f ? cyan : coral;
+            bool hov = (i == hovered);
+            float r = hov ? 3.2f : 2.2f;
+            g.setColour(hov ? col.brighter(0.6f) : col);
+            g.fillEllipse(pts[i].x - r, pts[i].y - r, r * 2.0f, r * 2.0f);
+        }
+
+        if (hovered >= 0)
+        {
+            float rel = tonalSmooth_[(size_t)hovered];
+            juce::String txt = (rel >= 0 ? "+" : "") + juce::String(rel, 1) + " dB";
+            g.setColour(C::text);
+            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+            int ty = juce::jmax(plotY, (int)pts[hovered].y - 18);
+            g.drawText(txt, (int)(pts[hovered].x - 30.0f), ty, 60, 12,
+                       juce::Justification::centred);
         }
     }
 
