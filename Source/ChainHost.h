@@ -96,6 +96,28 @@ public:
 
     juce::AudioProcessorEditor* createEditorForSlot(int i);
 
+    // ---- Shared name resolution (both hosts MUST behave identically) ----
+    // The AI feeds names in two formats: plain ("CREAM2PRE") from the chain
+    // injection, and "Name (Manufacturer)" from the general plugin feed —
+    // models copy either into chain blocks. Loose matching handles both,
+    // plus case/whitespace/punctuation/version drift via normalizeName.
+    static juce::String stripParenthetical(const juce::String& raw);
+    static bool namesMatchLoose(const juce::String& incoming,
+                                const juce::String& entryName);
+
+    // Resolve an incoming chain-entry name against the loadable entries.
+    // matchLogOut (optional) receives the match path taken, or the closest
+    // candidates on failure — for build-time diagnostics.
+    juce::PluginDescription resolveByName(const juce::String& rawName,
+                                          const juce::String& formatFilter,
+                                          juce::String* matchLogOut = nullptr) const;
+
+    // Full-entries cache (chain_entries.xml): written after every scan so
+    // the OTHER host resolves against the same list without scanning.
+    // maybeReloadEntriesCache() re-loads when another host refreshed it.
+    static juce::File getEntriesCacheFile();
+    void maybeReloadEntriesCache();
+
     // ---- Additive accessors (used by EchoJay Link hosting; main plugin
     // behaviour unchanged) ------------------------------------------------
     juce::PluginDescription getSlotDescription(int i) const;
@@ -165,6 +187,10 @@ private:
     // Resolver cache (message thread only — no mutex needed)
     std::vector<RecommendableEntry> recommendable_;
     int recommendableEnabledIn_ = 0;   // how many enabled scanner entries were fed in
+    juce::String recommendableFormat_; // filter used for the last build (fallback resolves honour it)
+
+    // Entries-cache staleness tracking (message thread)
+    juce::Time entriesCacheTime_;
 
     // Scan thread
     std::atomic<bool>  scanning_     { false };

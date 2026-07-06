@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <unordered_map>
 
+// Defined later in this file (used by the shared name resolution above it)
+static juce::String normalizeName(const juce::String& raw);
+
 // ---------------------------------------------------------------------------
 // File path helpers
 // ---------------------------------------------------------------------------
@@ -12,7 +15,8 @@ static juce::File appSupportDir()
            .getChildFile("EchoJay");
 }
 
-juce::File ChainHost::getPluginListFile() { return appSupportDir().getChildFile("chain_plugins.xml"); }
+juce::File ChainHost::getPluginListFile()   { return appSupportDir().getChildFile("chain_plugins.xml"); }
+juce::File ChainHost::getEntriesCacheFile() { return appSupportDir().getChildFile("chain_entries.xml"); }
 juce::File ChainHost::getBlacklistFile()  { return appSupportDir().getChildFile("chain_blacklist.txt"); }
 juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_load_deadman.txt"); }
 
@@ -229,6 +233,19 @@ void ChainHost::doRefresh()
     {
         std::lock_guard<std::mutex> lk(pluginsMutex_);
         entries_ = collected;
+    }
+
+    // Persist the FULL entries list so the other host (main plugin / Link)
+    // resolves against the same list without running its own scan
+    {
+        auto root = std::make_unique<juce::XmlElement>("CHAIN_ENTRIES");
+        for (auto& d : collected)
+            if (auto x = d.createXml())
+                root->addChildElement(x.release());
+        appSupportDir().createDirectory();
+        auto ecFile = getEntriesCacheFile();
+        root->writeTo(ecFile);
+        entriesCacheTime_ = ecFile.getLastModificationTime();
     }
 
     scanProgress_.store(1.0f);
@@ -561,6 +578,128 @@ void ChainHost::rebuildGraph()
 }
 
 // ---------------------------------------------------------------------------
+// Shared name resolution + entries cache
+// ---------------------------------------------------------------------------
+void ChainHost::maybeReloadEntriesCache()
+{
+    auto ecFile = getEntriesCacheFile();
+    if (!ecFile.existsAsFile()) return;
+    auto mtime = ecFile.getLastModificationTime();
+    if (mtime <= entriesCacheTime_) return;   // ours is current
+
+    if (auto doc = juce::XmlDocument::parse(ecFile);
+        doc != nullptr && doc->getTagName() == "CHAIN_ENTRIES")
+    {
+        juce::Array<juce::PluginDescription> loaded;
+        for (auto* c : doc->getChildIterator())
+        {
+            juce::PluginDescription d;
+            if (d.loadFromXml(*c)) loaded.add(d);
+        }
+        if (!loaded.isEmpty())
+        {
+            std::lock_guard<std::mutex> lock(pluginsMutex_);
+            entries_ = loaded;
+        }
+    }
+    entriesCacheTime_ = mtime;
+}
+
+juce::String ChainHost::stripParenthetical(const juce::String& raw)
+{
+    auto s = raw.trim();
+    if (s.endsWithChar(')'))
+    {
+        int open = s.lastIndexOf(" (");
+        if (open > 0) return s.substring(0, open).trim();
+    }
+    return s;
+}
+
+bool ChainHost::namesMatchLoose(const juce::String& incoming,
+                                const juce::String& entryName)
+{
+    auto in = incoming.trim(), en = entryName.trim();
+    if (in.equalsIgnoreCase(en)) return true;
+    auto inBase = stripParenthetical(in);
+    if (inBase.equalsIgnoreCase(en)) return true;
+    return normalizeName(inBase) == normalizeName(stripParenthetical(en));
+}
+
+juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
+                                                 const juce::String& formatFilter,
+                                                 juce::String* matchLogOut) const
+{
+    auto raw  = rawName.trim();
+    auto base = stripParenthetical(raw);
+    // Manufacturer from the parenthetical (if any) — disambiguation only
+    juce::String manu;
+    if (raw.endsWithChar(')') && raw.contains(" ("))
+        manu = raw.fromLastOccurrenceOf(" (", false, false)
+                  .dropLastCharacters(1).trim();
+
+    juce::Array<juce::PluginDescription> cands;
+    {
+        std::lock_guard<std::mutex> lock(pluginsMutex_);
+        for (auto& d : entries_)
+        {
+            if (formatFilter.isNotEmpty() && d.pluginFormatName != formatFilter)
+                continue;
+            cands.add(d);
+        }
+    }
+
+    auto logMatch = [&](const char* how, const juce::PluginDescription& d)
+    {
+        if (matchLogOut)
+            *matchLogOut = juce::String(how) + " -> \"" + d.name + "\" ["
+                         + d.pluginFormatName + "]";
+    };
+
+    for (auto& d : cands)
+        if (d.name.equalsIgnoreCase(raw)) { logMatch("exact", d); return d; }
+
+    // Parenthetical-stripped match, manufacturer as tie-breaker
+    juce::Array<juce::PluginDescription> baseHits;
+    for (auto& d : cands)
+        if (d.name.equalsIgnoreCase(base)) baseHits.add(d);
+    if (baseHits.size() == 1) { logMatch("stripped", baseHits[0]); return baseHits[0]; }
+    if (baseHits.size() > 1)
+    {
+        if (manu.isNotEmpty())
+            for (auto& d : baseHits)
+                if (d.manufacturerName.containsIgnoreCase(manu))
+                { logMatch("stripped+manufacturer", d); return d; }
+        logMatch("stripped (first of several)", baseHits[0]);
+        return baseHits[0];
+    }
+
+    // Normalised (case/punctuation/version-token tolerant)
+    auto keyIn = normalizeName(base);
+    for (auto& d : cands)
+        if (normalizeName(stripParenthetical(d.name)) == keyIn)
+        { logMatch("normalised", d); return d; }
+
+    if (matchLogOut)
+    {
+        juce::StringArray close;
+        for (auto& d : cands)
+        {
+            auto keyEn = normalizeName(d.name);
+            if (keyEn.contains(keyIn) || keyIn.contains(keyEn))
+            {
+                close.add(d.name);
+                if (close.size() >= 3) break;
+            }
+        }
+        *matchLogOut = "NOT FOUND; closest: "
+                     + (close.isEmpty() ? juce::String("(none)")
+                                        : close.joinIntoString(", "));
+    }
+    return {};
+}
+
+// ---------------------------------------------------------------------------
 // Additive accessors (Link hosting)
 // ---------------------------------------------------------------------------
 juce::PluginDescription ChainHost::getSlotDescription(int i) const
@@ -700,6 +839,7 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // Cache result (message thread only — no mutex)
     recommendable_          = std::move(resolved);
     recommendableEnabledIn_ = enabledCount;
+    recommendableFormat_    = formatFilter;
 }
 
 juce::StringArray ChainHost::getRecommendableNames() const
@@ -722,6 +862,20 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
             return;
         }
     }
+
+    // Loose fallback via the shared resolver — handles "Name (Manufacturer)"
+    // strings and punctuation/version drift the exact match above misses.
+    // Same resolution both hosts use, honouring the active format filter.
+    {
+        juce::String matchLog;
+        auto d = resolveByName(name, recommendableFormat_, &matchLog);
+        if (d.name.isNotEmpty())
+        {
+            loadPluginAsync(d, std::move(callback));
+            return;
+        }
+    }
+
     callback("\"" + name + "\" not found in recommendable list");
 }
 
@@ -749,6 +903,32 @@ void ChainHost::loadFromDisk()
         {
             std::lock_guard<std::mutex> lock(pluginsMutex_);
             knownPlugins_.recreateFromXml(*xmlDoc);
+        }
+    }
+
+    // Full-entries cache: written by whichever host scanned last. Loading it
+    // means THIS host can resolve chain names immediately, without its own
+    // scan — both hosts share one list.
+    {
+        auto ecFile = getEntriesCacheFile();
+        if (ecFile.existsAsFile())
+        {
+            if (auto doc = juce::XmlDocument::parse(ecFile);
+                doc != nullptr && doc->getTagName() == "CHAIN_ENTRIES")
+            {
+                juce::Array<juce::PluginDescription> loaded;
+                for (auto* c : doc->getChildIterator())
+                {
+                    juce::PluginDescription d;
+                    if (d.loadFromXml(*c)) loaded.add(d);
+                }
+                if (!loaded.isEmpty())
+                {
+                    std::lock_guard<std::mutex> lock(pluginsMutex_);
+                    entries_ = loaded;
+                }
+            }
+            entriesCacheTime_ = ecFile.getLastModificationTime();
         }
     }
     auto blFile = getBlacklistFile();

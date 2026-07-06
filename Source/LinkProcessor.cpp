@@ -1,6 +1,7 @@
 #include "LinkProcessor.h"
 #include "LinkEditor.h"
 #include "LinkShm.h"
+#include "NativeClip.h"   // EchoJay_NSLog — chain-build diagnostics
 
 LinkProcessor::LinkProcessor()
     : AudioProcessor(BusesProperties()
@@ -303,11 +304,13 @@ juce::StringArray LinkProcessor::loadDisabledUids()
 
 juce::PluginDescription LinkProcessor::resolveChainPlugin(const juce::String& name) const
 {
-    auto list = chainHost.getFilteredPlugins(juce::String(), chainFormatFilter());
-    for (auto& d : list)
-        if (d.name.equalsIgnoreCase(name.trim()))
-            return d;
-    return {};
+    // Shared loose resolver (identical behaviour to the main plugin):
+    // exact -> parenthetical-stripped (+manufacturer tie-break) -> normalised.
+    // The match path (or closest candidates) is logged per entry.
+    juce::String matchLog;
+    auto d = chainHost.resolveByName(name, chainFormatFilter(), &matchLog);
+    EchoJay_NSLog(("EJChatLink: resolve \"" + name + "\" -- " + matchLog).toRawUTF8());
+    return d;
 }
 
 void LinkProcessor::clearChainInternal()
@@ -338,10 +341,24 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
     clearChainInternal();
     notifyChainModel();
 
-    // Plugin list must exist before names can resolve. The list cache
-    // (chain_plugins.xml) is shared with the main plugin; scan if empty.
+    // Resolve against the SAME entries list the main plugin maintains: pick
+    // up the shared chain_entries.xml if another host refreshed it. Own scan
+    // is only the backstop when no cache exists at all.
+    chainHost.maybeReloadEntriesCache();
     if (chainHost.getNumPlugins() == 0 && !chainHost.isScanning())
         chainHost.startScan();
+
+    // Build-time diagnostics: list size, source, freshness
+    {
+        auto ec = ChainHost::getEntriesCacheFile();
+        EchoJay_NSLog(("EJChatLink: build start -- list=" +
+            juce::String(chainHost.getNumPlugins()) + " entries, format=" +
+            chainFormatFilter() + ", cache=" + ec.getFullPathName() +
+            (ec.existsAsFile()
+                 ? " (mtime " + ec.getLastModificationTime().toISO8601(true) + ")"
+                 : " (missing)") +
+            (chainHost.isScanning() ? ", scanning" : "")).toRawUTF8());
+    }
 
     auto results  = std::make_shared<juce::StringArray>();
     auto disabled = std::make_shared<juce::StringArray>(loadDisabledUids());

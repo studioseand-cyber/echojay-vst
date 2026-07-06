@@ -9511,7 +9511,11 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         juce::String settings = entryObj->getProperty("settings").toString().trim();
         bool found = false;
         for (auto& r : recommNames)
-            if (r.equalsIgnoreCase(name)) { found = true; break; }
+            if (ChainHost::namesMatchLoose(name, r)) { found = true; break; }
+        // The loose loadByRecommendedName fallback resolves names the
+        // recommendable list misses (e.g. "Name (Manufacturer)" strings)
+        if (!found)
+            found = ch.resolveByName(name, {}, nullptr).name.isNotEmpty();
         if (found) slots.push_back({ name, settings });
         else DBG("loadChainFromJson: skipping unknown name: " + name);
     }
