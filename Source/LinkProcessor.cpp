@@ -7,7 +7,7 @@ LinkProcessor::LinkProcessor()
           .withInput ("Input",  juce::AudioChannelSet::stereo(), true)
           .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
-    startTimerHz(1); // heartbeat bump every second
+    startTimerHz(4); // 250ms: chain-command polling; heartbeat every 4th tick
 
     // Mirror hosted chain latency into the host on EVERY chain change —
     // Link sits on parallel and phase-critical tracks, so this must track
@@ -30,15 +30,22 @@ LinkProcessor::~LinkProcessor()
 // =============================================================================
 void LinkProcessor::timerCallback()
 {
-    // Bump heartbeat so the consumer can detect we're alive vs. crashed
-    if (linkOn.load() && regSlotIdx >= 0)
+    // Heartbeat once per second (timer runs at 4Hz for command polling)
+    if (++heartbeatDivider_ >= 4)
     {
-        LinkShm::bumpHeartbeat(regMap, regSlotIdx);
-        // Mirror current heartbeat into diag for the editor to read
-        if (regMap)
-            diag.heartbeat = LinkShm::loadRelaxed(
-                &LinkShm::regSlots(regMap)[regSlotIdx].heartbeat);
+        heartbeatDivider_ = 0;
+        // Bump heartbeat so the consumer can detect we're alive vs. crashed
+        if (linkOn.load() && regSlotIdx >= 0)
+        {
+            LinkShm::bumpHeartbeat(regMap, regSlotIdx);
+            // Mirror current heartbeat into diag for the editor to read
+            if (regMap)
+                diag.heartbeat = LinkShm::loadRelaxed(
+                    &LinkShm::regSlots(regMap)[regSlotIdx].heartbeat);
+        }
     }
+
+    pollChainCommand();
 }
 
 // =============================================================================
@@ -525,6 +532,90 @@ void LinkProcessor::restoreChainFromVar(const juce::var& v)
     }
     if (!spec.empty())
         buildChainFromSpec(std::move(spec), nullptr);   // missing → named slot, no crash
+}
+
+// =============================================================================
+//  Chain transport — command/ack files in the shared link directory
+// =============================================================================
+juce::String LinkProcessor::chainInstanceId() const
+{
+    return LinkShm::makeSafeFilePart(linkName.trim());
+}
+
+void LinkProcessor::pollChainCommand()
+{
+    if (chainBuilding) return;                    // one build at a time
+    auto id = chainInstanceId();
+    if (id.isEmpty()) return;                     // unnamed Link — no identity
+
+    if (resolvedDir.isEmpty())
+    {
+        int err = 0;
+        resolvedDir = LinkShm::resolveDir(err);
+        if (resolvedDir.isEmpty()) return;
+    }
+
+    juce::File cmdFile(resolvedDir + "chain-cmd-" + id + ".json");
+    if (!cmdFile.existsAsFile()) return;
+
+    auto v = juce::JSON::parse(cmdFile.loadFileAsString());
+    auto* obj = v.getDynamicObject();
+    if (obj == nullptr) { cmdFile.deleteFile(); return; }   // malformed — drop
+
+    int ver = (int)obj->getProperty("v");
+    int seq = (int)obj->getProperty("seq");
+    if (ver != 1 || seq == lastAppliedChainSeq_ || seq == 0)
+        return;   // unknown version or already applied — leave for inspection
+
+    lastAppliedChainSeq_ = seq;
+    cmdFile.deleteFile();   // consumed
+
+    std::vector<ChainBuildItem> spec;
+    if (auto* arr = obj->getProperty("chain").getArray())
+    {
+        for (auto& ev : *arr)
+        {
+            if (auto* eo = ev.getDynamicObject())
+            {
+                ChainBuildItem item;
+                item.name     = eo->getProperty("name").toString().trim();
+                item.settings = eo->getProperty("settings").toString();
+                if (item.name.isNotEmpty())
+                    spec.push_back(std::move(item));
+            }
+        }
+    }
+
+    buildChainFromSpec(std::move(spec),
+        [this, seq](const juce::StringArray& results)
+    {
+        int failures = 0;
+        for (auto& r : results)
+            if (!r.endsWith(": ok")) ++failures;
+        juce::String status = !chainStereoOk ? "unsupported channel layout"
+                            : failures == 0  ? "ok"
+                            : failures == results.size() ? "failed" : "partial";
+        writeChainAck(seq, status, results);
+    });
+}
+
+void LinkProcessor::writeChainAck(int seq, const juce::String& status,
+                                  const juce::StringArray& results)
+{
+    if (resolvedDir.isEmpty()) return;
+    auto id = chainInstanceId();
+    if (id.isEmpty()) return;
+
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("v",      1);
+    obj->setProperty("seq",    seq);
+    obj->setProperty("status", status);
+    juce::Array<juce::var> arr;
+    for (auto& r : results) arr.add(r);
+    obj->setProperty("perPluginResults", juce::var(arr));
+
+    juce::File(resolvedDir + "chain-ack-" + id + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(obj), true));
 }
 
 juce::AudioProcessorEditor* LinkProcessor::createEditor() { return new LinkEditor(*this); }

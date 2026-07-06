@@ -156,5 +156,17 @@ private:
     juce::var  chainModelToVar() const;     // state serialise (incl. plugin blobs)
     void       restoreChainFromVar(const juce::var& v);
 
+    // ---- Chain transport: versioned command/ack files in the link dir ----
+    // chain-cmd-<instanceId>.json  {v:1, seq, chain:[{name,role,settings}], sourceNote}
+    // chain-ack-<instanceId>.json  {v:1, seq, status, perPluginResults}
+    // Polled at ~250ms on the message-thread timer; applied on seq change;
+    // the command file is deleted on consume.
+    int  lastAppliedChainSeq_ = 0;
+    int  heartbeatDivider_ = 0;
+    juce::String chainInstanceId() const;
+    void pollChainCommand();
+    void writeChainAck(int seq, const juce::String& status,
+                       const juce::StringArray& results);
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LinkProcessor)
 };
