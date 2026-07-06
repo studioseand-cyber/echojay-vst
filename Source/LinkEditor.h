@@ -26,12 +26,14 @@ public:
     {
         LinkProcessor& proc;
 
-        static constexpr int kNameRowH = 28;   // selected plugin name + popout
-        static constexpr int kStatusH  = 18;   // build results line
-        static constexpr int kStripH   = 76;
-        static constexpr int kBlockW   = 118;
-        static constexpr int kBlockH   = 50;
-        static constexpr int kBlockGap = 26;
+        static constexpr int kNameRowH  = 28;   // selected plugin name + popout
+        static constexpr int kSettingsH = 72;   // SUGGESTED SETTINGS card
+        static constexpr int kCardGap   = 8;
+        static constexpr int kStatusH   = 18;   // build results line
+        static constexpr int kStripH    = 76;
+        static constexpr int kBlockW    = 118;
+        static constexpr int kBlockH    = 50;
+        static constexpr int kBlockGap  = 26;
 
         // Pop-out fallback window (native size, always on top, close returns
         // the editor inline)
@@ -175,6 +177,10 @@ public:
         int popoutModelIdx = -1;
         juce::TextButton popBtn { juce::String::fromUTF8("\xe2\x86\x97") };
 
+        // SUGGESTED SETTINGS content — wraps, scrolls on overflow (same card
+        // as the main plugin's Chain tab)
+        juce::TextEditor settingsBox;
+
         juce::String statusText;   // build results line
 
         // ---- lifecycle ----
@@ -201,15 +207,58 @@ public:
             popBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
             popBtn.onClick = [this] { openPopoutForSelected(); };
             addChildComponent(popBtn);
+
+            settingsBox.setMultiLine(true, true);
+            settingsBox.setReadOnly(true);
+            settingsBox.setScrollbarsShown(true);
+            settingsBox.setCaretVisible(false);
+            settingsBox.setColour(juce::TextEditor::backgroundColourId,
+                                  juce::Colours::transparentBlack);
+            settingsBox.setColour(juce::TextEditor::outlineColourId,
+                                  juce::Colours::transparentBlack);
+            settingsBox.setColour(juce::TextEditor::focusedOutlineColourId,
+                                  juce::Colours::transparentBlack);
+            settingsBox.setColour(juce::TextEditor::textColourId, juce::Colour(0xff22d3ee));
+            settingsBox.setFont(juce::Font(juce::FontOptions(11.5f)));
+            addChildComponent(settingsBox);
         }
 
         ~LinkChainPanel() override { closeAllEditors(); }
 
         juce::Rectangle<int> displayArea() const
         {
+            // Space is always reserved for the settings card so the clip
+            // container rect stays stable across selection changes
             return { 12, kNameRowH,
                      juce::jmax(50, getWidth() - 24),
-                     juce::jmax(50, getHeight() - kNameRowH - kStatusH - kStripH - 8) };
+                     juce::jmax(50, getHeight() - kNameRowH - kSettingsH - kCardGap
+                                    - kStatusH - kStripH - 8) };
+        }
+
+        juce::Rectangle<int> settingsBoxRect() const
+        {
+            auto area = displayArea();
+            return { area.getX(), area.getBottom() + kCardGap,
+                     area.getWidth(), kSettingsH };
+        }
+
+        // Sync the settings card with the current selection
+        void updateSettingsCard()
+        {
+            auto& model = proc.getChainModel();
+            bool sel = selectedIdx >= 0 && selectedIdx < (int)model.size();
+            settingsBox.setVisible(sel);
+            if (!sel) return;
+            const auto& s = model[(size_t)selectedIdx];
+            bool hasGuidance = !s.missing && s.settings.isNotEmpty();
+            settingsBox.setColour(juce::TextEditor::textColourId,
+                                  hasGuidance ? juce::Colour(0xff22d3ee)
+                                              : juce::Colour(0xff606078));
+            juce::String txt = hasGuidance
+                ? s.settings
+                : juce::String("No suggested settings for this plugin");
+            if (settingsBox.getText() != txt)
+                settingsBox.setText(txt, false);
         }
 
         // ---- editor lifecycle (ONE at a time, close-before-open) ----
@@ -322,6 +371,7 @@ public:
             if (inlineModelIdx != i || inlineEditor == nullptr)
                 showInline(i);
             popBtn.setVisible(canPopOut());
+            updateSettingsCard();
             repaint();
         }
 
@@ -485,6 +535,20 @@ public:
                            area.reduced(16), juce::Justification::centred, true);
             }
 
+            // SUGGESTED SETTINGS card — same styling as the main plugin
+            if (haveSel)
+            {
+                auto sb = settingsBoxRect().toFloat();
+                g.setColour(juce::Colour(0xff080A12));
+                g.fillRoundedRectangle(sb, 8.0f);
+                g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.3f));
+                g.drawRoundedRectangle(sb.reduced(0.5f), 8.0f, 1.0f);
+                g.setColour(juce::Colour(0xffa0a0b8));
+                g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
+                g.drawText("SUGGESTED SETTINGS", (int)sb.getX() + 10, (int)sb.getY() + 5,
+                           200, 12, juce::Justification::centredLeft);
+            }
+
             // Status line
             {
                 int sy = getHeight() - kStripH - kStatusH;
@@ -509,10 +573,14 @@ public:
         void resized() override
         {
             popBtn.setBounds(getWidth() - 40, 3, 26, 22);
+            auto sb = settingsBoxRect();
+            settingsBox.setBounds(sb.getX() + 8, sb.getY() + 18,
+                                  sb.getWidth() - 16, sb.getHeight() - 24);
+            updateSettingsCard();
             stripView.setBounds(0, getHeight() - kStripH, getWidth(), kStripH);
             layoutStrip();
             layoutInline();
-            attachNative(false);
+            attachNative(false);   // re-assert the clip rect at the new size
         }
 
         void moved() override { attachNative(false); }
