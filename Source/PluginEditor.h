@@ -100,7 +100,13 @@ private:
     static constexpr int kTabBarH = 28;
     void switchToTab(Tab t);
 
-    bool compactMode = false;
+    bool compactMode = false;        // chat-only mini window (rightmost header icon)
+    Tab  prevTabBeforeCompact_ { Tab::Chat };  // restored on exit
+
+    // Same explicit-layout discipline as the visual mini view: hide EVERY
+    // child, then show only what chat-only mode owns (Capture + the chat
+    // stack). See applyVisualOnlyVisibility for the rationale.
+    void applyCompactVisibility();
     int fullModeWidth = 900;
     int fullModeHeight = 580;
     void toggleCompactMode();

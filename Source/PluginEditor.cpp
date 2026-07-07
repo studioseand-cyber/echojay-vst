@@ -1777,10 +1777,11 @@ void EchoJayEditor::showMainScreen()
     updateChannelPromptVisibility();
     updateGenrePromptVisibility();
 
-    // Mini mode: async paths (auth refresh etc.) can land here while the
-    // mini view is up — re-assert the explicit mini layout so nothing that
-    // was just re-shown leaks in
+    // Mini modes: async paths (auth refresh etc.) can land here while a
+    // mini view is up — re-assert the explicit layout so nothing that was
+    // just re-shown leaks in
     if (visualOnlyMode) applyVisualOnlyVisibility();
+    if (compactMode)    applyCompactVisibility();
 
     // Pre-fetch user settings so plugin scan won't save empty fields
     if (!settingsFetched) {
@@ -6923,7 +6924,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
     }
 
     // === V2 Tab Bar (y=32, height=kTabBarH) ===
-    if (!visualOnlyMode)
+    // Neither mini mode shows navigation — chat-only and visual-only are
+    // single-purpose windows; expand to get the tabs back
+    if (!visualOnlyMode && !compactMode)
     {
         static constexpr const char* kTabNames[] = {
             "VISUALISATION", "METERS", "CHAT", "COMPARE", "LINK", "CHAIN", "SETTINGS"
@@ -8043,8 +8046,10 @@ void EchoJayEditor::resized()
     int ty = 4, bh = 24;
     int tx = 159;
     
-    if (visualOnlyMode) {
-        // In visual-only: capture button right after logo+badge
+    if (visualOnlyMode || compactMode) {
+        // Mini modes: capture button right after logo+badge; the full-view
+        // header fields don't exist here (in the old compact layout Capture
+        // landed at x~456 in a 450px window — off screen)
         captureBtn.setBounds(tx, ty, 64, bh);
         channelTypeBox.setBounds(0, -20, 1, 1);
         genreBox.setBounds(0, -20, 1, 1);
@@ -11339,7 +11344,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     }
 
     // Tab bar click — y=32..60 (below the 32px header, height=kTabBarH)
-    if (currentScreen == Screen::Main && !visualOnlyMode
+    if (currentScreen == Screen::Main && !visualOnlyMode && !compactMode
         && pos.y >= 32 && pos.y < 32 + kTabBarH)
     {
         constexpr int kTabCount = 7;
@@ -11788,38 +11793,61 @@ void EchoJayEditor::stopChatPlayback()
     chatPlaybackOffset = 0;
 }
 
+void EchoJayEditor::applyCompactVisibility()
+{
+    if (!compactMode) return;
+    // Explicit chat-only layout: hide everything, then the allowlist —
+    // Capture in the header plus the chat stack. Invisible components are
+    // not hit-testable, so this also kills clickable leftovers wholesale.
+    for (int i = 0; i < getNumChildComponents(); ++i)
+        getChildComponent(i)->setVisible(false);
+    captureBtn.setVisible(true);
+    chatScroll.setVisible(true);
+    chatInput.setVisible(true);
+    chatSendBtn.setVisible(true);
+    chatTextSizeBtn.setVisible(true);
+    usageLabel.setVisible(true);
+    // Prompt overlays are authoritative over chat visibility (a pending
+    // channel/genre prompt must stay answerable in chat-only mode)
+    updateChannelPromptVisibility();
+    updateGenrePromptVisibility();
+}
+
 void EchoJayEditor::toggleCompactMode()
 {
     compactMode = !compactMode;
-    
+
     if (compactMode)
     {
-        // Save current size so we can restore it
-        fullModeWidth = getWidth();
+        // Save current size + tab so we can restore them
+        fullModeWidth  = getWidth();
         fullModeHeight = getHeight();
-        
-        // Switch to compact — chat only
-        setResizeLimits(420, 500, 600, 900);
-        setSize(450, 550);
-        
-        // Hide meter-side UI and force back to meters view
-        compareBtn.setVisible(false);
-        settingsBtn.setVisible(false);
-        scanBtn.setVisible(false);
+        prevTabBeforeCompact_ = currentTab;
+
         if (currentView == View::Compare) { hideCompareView(); currentView = View::Meters; }
         if (currentView == View::Settings) { hideSettingsView(); currentView = View::Meters; }
+
+        // Become the Chat tab internally, WHATEVER tab was active —
+        // switchToTab tears down the other tabs' components (hosted chain
+        // editors included) so nothing full-view leaks into the mini window
+        switchToTab(Tab::Chat);
+
+        setResizeLimits(420, 500, 600, 900);
+        setSize(450, 550);
+
+        applyCompactVisibility();
     }
     else
     {
-        // Restore full mode
+        // Restore full mode: size, main-screen components, then the tab the
+        // user left, via the normal tab-switch path
         setResizeLimits(900, 580, 1800, 1200);
         setSize(fullModeWidth, fullModeHeight);
-        
-        compareBtn.setVisible(true);
-        settingsBtn.setVisible(true);
-        scanBtn.setVisible(true);
+        showMainScreen();
+        if (prevTabBeforeCompact_ != currentTab)
+            switchToTab(prevTabBeforeCompact_);
     }
-    
+
     resized();
     repaint();
 }
