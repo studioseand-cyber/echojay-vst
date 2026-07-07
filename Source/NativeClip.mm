@@ -235,18 +235,38 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
               NativeClip2_listSubviews(peer),
               NativeClip2_listSubviews(container));
 
-        // Nothing captured — also dump the window content view so we can see
-        // WHERE the plugin view went.
+        // Nothing captured — dump the window content view TWO levels deep and
+        // enumerate this process's other windows, so we can see WHERE the
+        // plugin view went (out-of-process editors may make their own window).
         if (!plugin)
         {
             NSMutableString* wdump = [NSMutableString string];
             NSView* wcv = [[peer window] contentView];
-            if (wcv && wcv != peer)
+            if (wcv)
                 for (NSView* sv in [wcv subviews])
-                    [wdump appendFormat:@"[%@ %@] ", NSStringFromClass([sv class]),
+                {
+                    [wdump appendFormat:@"[%@ %@", NSStringFromClass([sv class]),
                                         NSStringFromRect([sv frame])];
-            NSLog(@NATIVECLIP_LOG_TAG "-diag: no plugin view. window contentView subviews: %@",
-                  [wdump length] > 0 ? wdump : @"(peer is contentView / none)");
+                    if ([[sv subviews] count] > 0)
+                    {
+                        [wdump appendString:@" {"];
+                        for (NSView* s2 in [sv subviews])
+                            [wdump appendFormat:@"[%@ %@] ", NSStringFromClass([s2 class]),
+                                                NSStringFromRect([s2 frame])];
+                        [wdump appendString:@"}"];
+                    }
+                    [wdump appendString:@"] "];
+                }
+            NSMutableString* windows = [NSMutableString string];
+            for (NSWindow* w in [NSApp windows])
+                if (w != [peer window])
+                    [windows appendFormat:@"[%@ \"%@\" cv=%@ %@] ",
+                        NSStringFromClass([w class]), [w title],
+                        NSStringFromClass([[w contentView] class]),
+                        NSStringFromRect([w frame])];
+            NSLog(@NATIVECLIP_LOG_TAG "-diag: no plugin view. window contentView tree: %@| other windows: %@",
+                  [wdump length] > 0 ? wdump : @"(none) ",
+                  [windows length] > 0 ? windows : @"(none)");
         }
     }
 

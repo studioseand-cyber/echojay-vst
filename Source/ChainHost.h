@@ -118,6 +118,17 @@ public:
     static juce::File getEntriesCacheFile();
     void maybeReloadEntriesCache();
 
+    // ---- Popout-only plugins (both hosts) ----------------------------------
+    // Plugins whose editors can only render in a floating window: out-of-
+    // process views (WaveShell etc.) attach as an AUv2ContainerView proxy
+    // that never negotiates a real size inside a clipped container, but works
+    // in its own NSWindow. Once a plugin times out inline it is remembered in
+    // ~/Library/EchoJay/popout_only.txt (normalised-name keyed, mtime-
+    // reloaded so both hosts see marks immediately) and future selections go
+    // straight to the pop-out with no failed inline attempt.
+    static bool isPopoutOnly(const juce::String& pluginName);
+    static void markPopoutOnly(const juce::String& pluginName);
+
     // ---- Additive accessors (used by EchoJay Link hosting; main plugin
     // behaviour unchanged) ------------------------------------------------
     juce::PluginDescription getSlotDescription(int i) const;

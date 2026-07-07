@@ -497,6 +497,7 @@ private:
             int  slotIdx  = 0;
             bool bypassed = false;
             bool selected = false;
+            bool popoutOnly = false;   // editor opens in a floating window
 
             juce::TextButton bypassBtn { "B" };
             juce::TextButton removeBtn { "X" };
@@ -552,6 +553,15 @@ private:
                     g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
                     g.drawText("BYPASSED", 6, 19, getWidth() - 12, 9,
                                juce::Justification::centred);
+                }
+                if (popoutOnly)
+                {
+                    // Pop-out glyph — this plugin's editor opens in a
+                    // floating window (out-of-process view, can't inline)
+                    g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.85f));
+                    g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+                    g.drawText(juce::String::fromUTF8("\xe2\x86\x97"),
+                               getWidth() - 15, 2, 12, 11, juce::Justification::centred);
                 }
             }
 
@@ -729,6 +739,16 @@ private:
             closeAllEditors();
             if (!onCreateEditor || i < 0 || i >= (int)slotInfos.size()) return;
 
+            // Known popout-only plugin (out-of-process editor): go straight
+            // to the floating window — no failed inline attempt, no timeout
+            if (ChainHost::isPopoutOnly(slotInfos[(size_t)i].name))
+            {
+                statusText = "Opens in a floating window (plugin limitation)";
+                openPopoutForSelected();
+                repaint();
+                return;
+            }
+
             juce::AudioProcessorEditor* ed = nullptr;
             try { ed = onCreateEditor(i); } catch (...) {}
             if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }
@@ -775,7 +795,25 @@ private:
                 {
                     settled = true;
                     if (!got)
-                        statusText = "Editor didn't load inline - try the pop-out button (top right).";
+                    {
+                        // Never grew past a placeholder: out-of-process
+                        // editors (WaveShell etc.) render in a view service
+                        // and won't size inline, but work in their own
+                        // window. Remember the plugin and open the pop-out
+                        // automatically — first-class, not an error.
+                        if (inlineSlot >= 0 && inlineSlot < (int)slotInfos.size())
+                        {
+                            ChainHost::markPopoutOnly(slotInfos[(size_t)inlineSlot].name);
+                            for (auto& bl : blocks)
+                                if (bl->slotIdx == inlineSlot)
+                                { bl->popoutOnly = true; bl->repaint(); }
+                        }
+                        statusText = "Opens in a floating window (plugin limitation)";
+                        openPopoutForSelected();   // destroys the inline editor first
+                        repaint();
+                        startTimer(400);
+                        return;
+                    }
                     layoutInline();
                     attachNative(true);   // log the settled geometry
                     repaint();
@@ -906,7 +944,12 @@ private:
                     if (safe == nullptr) return;
                     int s = safe->popoutSlot;
                     safe->closePopout();
-                    if (s >= 0 && s == safe->selectedIdx)
+                    // Popout-only plugins must NOT bounce back inline (that
+                    // would immediately reopen the window they just closed);
+                    // clicking the block reopens it on demand.
+                    if (s >= 0 && s == safe->selectedIdx
+                        && s < (int)safe->slotInfos.size()
+                        && !ChainHost::isPopoutOnly(safe->slotInfos[(size_t)s].name))
                         safe->showInline(s);   // sequential: popout destroyed first
                     safe->repaint();
                 });
@@ -952,6 +995,7 @@ private:
                 bl->slotIdx  = i;
                 bl->bypassed = slotInfos[(size_t)i].bypassed;
                 bl->selected = (i == selectedIdx);
+                bl->popoutOnly = ChainHost::isPopoutOnly(bl->name);
                 int ci = i;
                 bl->onSelect = [this, ci] { selectSlot(ci); };
                 bl->onBypass = [this, ci] { if (onBypassSlot) onBypassSlot(ci); };
@@ -1059,9 +1103,12 @@ private:
             }
             else if (popout != nullptr && popoutSlot == selectedIdx && inlineEditor == nullptr)
             {
+                bool po = selectedIdx < (int)slotInfos.size()
+                       && ChainHost::isPopoutOnly(slotInfos[(size_t)selectedIdx].name);
                 g.setColour(juce::Colour(0xffa0a0b8));
                 g.setFont(juce::Font(juce::FontOptions(12.0f)));
-                g.drawText("Editor is open in a floating window - click the plugin block to bring it back.",
+                g.drawText(po ? "This plugin opens in a floating window (plugin limitation)."
+                              : "Editor is open in a floating window - click the plugin block to bring it back.",
                            area.reduced(16), juce::Justification::centred, true);
             }
         }

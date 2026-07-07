@@ -71,6 +71,7 @@ public:
             bool bypassed = false;
             bool selected = false;
             bool missing  = false;
+            bool popoutOnly = false;   // editor opens in a floating window
 
             juce::TextButton bypassBtn { "B" };
             juce::TextButton removeBtn { "X" };
@@ -133,6 +134,15 @@ public:
                     g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
                     g.drawText(missing ? "MISSING" : "BYPASSED", 6, 19,
                                getWidth() - 12, 9, juce::Justification::centred);
+                }
+                if (popoutOnly)
+                {
+                    // Pop-out glyph — this plugin's editor opens in a
+                    // floating window (out-of-process view, can't inline)
+                    g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.85f));
+                    g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+                    g.drawText(juce::String::fromUTF8("\xe2\x86\x97"),
+                               getWidth() - 15, 2, 12, 11, juce::Justification::centred);
                 }
             }
 
@@ -332,6 +342,16 @@ public:
             int hostIdx = model[(size_t)modelIdx].hostIdx;
             if (model[(size_t)modelIdx].missing || hostIdx < 0) { repaint(); return; }
 
+            // Known popout-only plugin (out-of-process editor): go straight
+            // to the floating window — no failed inline attempt, no timeout
+            if (ChainHost::isPopoutOnly(model[(size_t)modelIdx].name))
+            {
+                statusText = "Opens in a floating window (plugin limitation)";
+                openPopoutForSelected();
+                repaint();
+                return;
+            }
+
             juce::AudioProcessorEditor* ed = nullptr;
             try { ed = proc.getChainHost().createEditorForSlot(hostIdx); } catch (...) {}
             if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }
@@ -362,7 +382,26 @@ public:
                 {
                     settled = true;
                     if (!got)
-                        statusText = "Editor didn't load inline - try the pop-out button.";
+                    {
+                        // Never grew past a placeholder: out-of-process
+                        // editors (WaveShell etc.) render in a view service
+                        // and won't size inline, but work in their own
+                        // window. Remember the plugin and open the pop-out
+                        // automatically — first-class, not an error.
+                        auto& model = proc.getChainModel();
+                        if (inlineModelIdx >= 0 && inlineModelIdx < (int)model.size())
+                        {
+                            ChainHost::markPopoutOnly(model[(size_t)inlineModelIdx].name);
+                            for (auto& bl : blocks)
+                                if (bl->modelIdx == inlineModelIdx)
+                                { bl->popoutOnly = true; bl->repaint(); }
+                        }
+                        statusText = "Opens in a floating window (plugin limitation)";
+                        openPopoutForSelected();   // destroys the inline editor first
+                        repaint();
+                        startTimer(400);
+                        return;
+                    }
                     layoutInline();
                     attachNative(true);
                     repaint();
@@ -420,7 +459,12 @@ public:
                     if (safe == nullptr) return;
                     int s = safe->popoutModelIdx;
                     safe->closePopout();
-                    if (s >= 0 && s == safe->selectedIdx)
+                    // Popout-only plugins must NOT bounce back inline (that
+                    // would immediately reopen the window they just closed)
+                    auto& mdl = safe->proc.getChainModel();
+                    if (s >= 0 && s == safe->selectedIdx
+                        && s < (int)mdl.size()
+                        && !ChainHost::isPopoutOnly(mdl[(size_t)s].name))
                         safe->showInline(s);
                     safe->repaint();
                 });
@@ -441,6 +485,7 @@ public:
             {
                 auto bl = std::make_unique<Block>();
                 bl->name     = model[(size_t)i].name;
+                bl->popoutOnly = ChainHost::isPopoutOnly(bl->name);
                 bl->modelIdx = i;
                 bl->bypassed = model[(size_t)i].bypassed;
                 bl->missing  = model[(size_t)i].missing;
@@ -563,9 +608,12 @@ public:
             else if (popout != nullptr && popoutModelIdx == selectedIdx
                      && inlineEditor == nullptr)
             {
+                bool po = selectedIdx < (int)model.size()
+                       && ChainHost::isPopoutOnly(model[(size_t)selectedIdx].name);
                 g.setColour(juce::Colour(0xffa0a0b8));
                 g.setFont(juce::Font(juce::FontOptions(12.0f)));
-                g.drawText("Editor is open in a floating window - click the plugin block to bring it back.",
+                g.drawText(po ? "This plugin opens in a floating window (plugin limitation)."
+                              : "Editor is open in a floating window - click the plugin block to bring it back.",
                            area.reduced(16), juce::Justification::centred, true);
             }
 

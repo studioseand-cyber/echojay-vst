@@ -21,6 +21,47 @@ juce::File ChainHost::getBlacklistFile()  { return appSupportDir().getChildFile(
 juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_load_deadman.txt"); }
 
 // ---------------------------------------------------------------------------
+// Popout-only plugins — shared local list, normalised-name keyed. The cache
+// mtime-reloads so a mark made by one host is seen by the other immediately.
+// ---------------------------------------------------------------------------
+static juce::File popoutOnlyFile() { return appSupportDir().getChildFile("popout_only.txt"); }
+static juce::StringArray& popoutOnlyCache() { static juce::StringArray c; return c; }
+static juce::Time& popoutOnlyLoadTime()     { static juce::Time t;        return t; }
+
+static void popoutOnlyReloadIfStale()
+{
+    auto f  = popoutOnlyFile();
+    auto mt = f.getLastModificationTime();
+    if (mt == popoutOnlyLoadTime()) return;
+    popoutOnlyLoadTime() = mt;
+    popoutOnlyCache().clear();
+    if (f.existsAsFile())
+    {
+        popoutOnlyCache().addLines(f.loadFileAsString());
+        popoutOnlyCache().trim();
+        popoutOnlyCache().removeEmptyStrings();
+    }
+}
+
+bool ChainHost::isPopoutOnly(const juce::String& pluginName)
+{
+    popoutOnlyReloadIfStale();
+    return popoutOnlyCache().contains(normalizeName(pluginName));
+}
+
+void ChainHost::markPopoutOnly(const juce::String& pluginName)
+{
+    popoutOnlyReloadIfStale();
+    auto key = normalizeName(pluginName);
+    if (key.isEmpty() || popoutOnlyCache().contains(key)) return;
+    popoutOnlyCache().add(key);
+    auto f = popoutOnlyFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(popoutOnlyCache().joinIntoString("\n") + "\n");
+    popoutOnlyLoadTime() = f.getLastModificationTime();
+}
+
+// ---------------------------------------------------------------------------
 // Constructor / Destructor
 // ---------------------------------------------------------------------------
 ChainHost::ChainHost()
