@@ -9487,8 +9487,9 @@ void EchoJayEditor::showChainPluginPicker()
         [safeThis, plugins](int result)
         {
             if (safeThis == nullptr || result <= 0 || result > plugins.size()) return;
-            auto desc = plugins[result - 1];
             auto& ch2 = safeThis->processorRef.getChainHost();
+            // NEW instantiation — popout-only AUs may swap to their VST3 build
+            auto desc = ch2.preferInlineHostableDesc(plugins[result - 1]);
             safeThis->chainListPanel.statusText = "Loading " + desc.name + "...";
             safeThis->chainListPanel.repaint();
 

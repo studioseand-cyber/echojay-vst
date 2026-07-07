@@ -7,7 +7,12 @@
 // on that container and the plugin view is reparented inside it at native
 // size. See the .mm for details. Diagnostics are NSLog'd with the prefix
 // "NativeClip2:" when the log flag is set.
-extern "C" bool NativeClip2_attach(void* peerHandle, int x, int y, int w, int h, bool doLog);
+// desiredW/desiredH: the JUCE editor's reported preferred size. Out-of-process
+// view proxies (AUv2ContainerView) may wait for the HOST to impose a size —
+// when the found view is still degenerate and a sane desired size is given,
+// it is imposed (logged before/after). 0/0 disables imposition.
+extern "C" bool NativeClip2_attach(void* peerHandle, int x, int y, int w, int h, bool doLog,
+                                   int desiredW, int desiredH);
 extern "C" bool NativeClip2_getPluginSize(void* peerHandle, int* outW, int* outH);
 extern "C" void NativeClip2_detach(void* peerHandle);
 
@@ -27,7 +32,8 @@ namespace NativeClip
     // coordinate space), reparent the hosted plugin view into it and centre
     // it. Call again after any layout change — it only ever re-asserts OUR
     // frame; it never resizes the container to the plugin.
-    inline bool attach(juce::Component* comp, juce::Rectangle<int> areaInComp, bool doLog)
+    inline bool attach(juce::Component* comp, juce::Rectangle<int> areaInComp, bool doLog,
+                       int desiredW = 0, int desiredH = 0)
     {
         if (!comp) return false;
         auto* top = comp->getTopLevelComponent();
@@ -35,7 +41,8 @@ namespace NativeClip
         auto* handle = top->getWindowHandle();
         if (!handle) return false;
         auto r = top->getLocalArea(comp, areaInComp);
-        return NativeClip2_attach(handle, r.getX(), r.getY(), r.getWidth(), r.getHeight(), doLog);
+        return NativeClip2_attach(handle, r.getX(), r.getY(), r.getWidth(), r.getHeight(), doLog,
+                                  desiredW, desiredH);
     }
 
     // The hosted plugin view's ACTUAL native frame size. Degenerate sizes

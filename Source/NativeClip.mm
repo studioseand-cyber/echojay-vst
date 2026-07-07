@@ -109,7 +109,8 @@ static NSString* NativeClip2_listSubviews(NSView* v)
 // TOP-LEFT coordinates of the peer view, reparents any peer-level plugin view
 // into it, and re-centres the plugin view. The container is NEVER sized from
 // the plugin. Returns true once a plugin view is inside the container.
-bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool doLog)
+bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool doLog,
+                        int desiredW, int desiredH)
 {
     if (!peerHandle) return false;
     NSView* peer = (__bridge NSView*)peerHandle;
@@ -205,12 +206,29 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
     [container setHadPlugin:(plugin != nil)];
     if (plugin)
     {
+        NSRect f = [plugin frame];
+
+        // HYPOTHESIS A (out-of-process proxies, e.g. WaveShell's
+        // AUv2ContainerView): remote view services can wait for the HOST to
+        // impose a size instead of self-sizing. If the view is still
+        // degenerate and the caller supplied the editor's reported preferred
+        // size, impose it and let the service render at that size.
+        if (desiredW > 100 && desiredH > 60
+            && (f.size.width <= 100 || f.size.height <= 60))
+        {
+            NSLog(@NATIVECLIP_LOG_TAG ": imposing %dx%d on degenerate %@ (was %@)",
+                  desiredW, desiredH, NSStringFromClass([plugin class]),
+                  NSStringFromRect(f));
+            f.size.width  = (CGFloat)desiredW;
+            f.size.height = (CGFloat)desiredH;
+            [plugin setAutoresizingMask:NSViewNotSizable];
+        }
+
         // FINAL sizing policy: native size, horizontally centred, TOP-PINNED
         // vertically — the plugin's top edge is always visible and overflow
         // trims off the BOTTOM only. The container is flipped with
         // boundsOrigin == frame.origin, so child coordinates are peer-absolute
         // top-left: top pin = the container's own y origin.
-        NSRect f = [plugin frame];
         f.origin.x = wanted.origin.x + std::floor(((CGFloat)cw - f.size.width) * 0.5);
         f.origin.y = wanted.origin.y;
         if (!NSEqualRects([plugin frame], f))

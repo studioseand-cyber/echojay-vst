@@ -465,6 +465,11 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
 
         juce::String stateB64 = item.stateBase64;
         bool wantBypass = item.bypassed;
+        // Format preference applies to NEW instantiation only: restores
+        // (stateBase64 present) keep the format their state was saved with —
+        // AU and VST3 state blobs are not interchangeable.
+        if (stateB64.isEmpty())
+            desc = self->chainHost.preferInlineHostableDesc(desc);
         self->chainHost.loadPluginAsync(desc,
             [self, results, addDetail, slot, stateB64, wantBypass, stepPtr,
              name = item.name, resolvedName = desc.name]
@@ -527,7 +532,9 @@ void LinkProcessor::addChainPluginManually(const juce::PluginDescription& desc,
         if (done) done("A chain build is in progress");
         return;
     }
-    chainHost.loadPluginAsync(desc,
+    // NEW instantiation — popout-only AUs may swap to their VST3 build
+    auto hostDesc = chainHost.preferInlineHostableDesc(desc);
+    chainHost.loadPluginAsync(hostDesc,
         [this, done, name = desc.name](const juce::String& err)
     {
         if (err.isNotEmpty()) { if (done) done(err); return; }

@@ -317,7 +317,18 @@ public:
         void attachNative(bool log)
         {
             if (inlineEditor)
-                NativeClip::attach(this, displayArea(), log);
+                NativeClip::attach(this, displayArea(), log,
+                                   inlineEditor->getWidth(), inlineEditor->getHeight());
+        }
+
+        // Slot's hosted format ("AudioUnit"/"VST3") — popout-only is per-format
+        juce::String slotFormat(int modelIdx) const
+        {
+            auto& model = proc.getChainModel();
+            if (modelIdx < 0 || modelIdx >= (int)model.size()) return {};
+            int h = model[(size_t)modelIdx].hostIdx;
+            return h >= 0 ? proc.getChainHost().getSlotDescription(h).pluginFormatName
+                          : juce::String();
         }
 
         void layoutInline()
@@ -343,8 +354,9 @@ public:
             if (model[(size_t)modelIdx].missing || hostIdx < 0) { repaint(); return; }
 
             // Known popout-only plugin (out-of-process editor): go straight
-            // to the floating window — no failed inline attempt, no timeout
-            if (ChainHost::isPopoutOnly(model[(size_t)modelIdx].name))
+            // to the floating window — no failed inline attempt, no timeout.
+            // Format-qualified: a VST3 build of the same plugin may inline fine.
+            if (ChainHost::isPopoutOnly(model[(size_t)modelIdx].name, slotFormat(modelIdx)))
             {
                 statusText = "Opens in a floating window (plugin limitation)";
                 openPopoutForSelected();
@@ -391,7 +403,8 @@ public:
                         auto& model = proc.getChainModel();
                         if (inlineModelIdx >= 0 && inlineModelIdx < (int)model.size())
                         {
-                            ChainHost::markPopoutOnly(model[(size_t)inlineModelIdx].name);
+                            ChainHost::markPopoutOnly(model[(size_t)inlineModelIdx].name,
+                                                      slotFormat(inlineModelIdx));
                             for (auto& bl : blocks)
                                 if (bl->modelIdx == inlineModelIdx)
                                 { bl->popoutOnly = true; bl->repaint(); }
@@ -464,7 +477,7 @@ public:
                     auto& mdl = safe->proc.getChainModel();
                     if (s >= 0 && s == safe->selectedIdx
                         && s < (int)mdl.size()
-                        && !ChainHost::isPopoutOnly(mdl[(size_t)s].name))
+                        && !ChainHost::isPopoutOnly(mdl[(size_t)s].name, safe->slotFormat(s)))
                         safe->showInline(s);
                     safe->repaint();
                 });
@@ -485,7 +498,7 @@ public:
             {
                 auto bl = std::make_unique<Block>();
                 bl->name     = model[(size_t)i].name;
-                bl->popoutOnly = ChainHost::isPopoutOnly(bl->name);
+                bl->popoutOnly = ChainHost::isPopoutOnly(bl->name, slotFormat(i));
                 bl->modelIdx = i;
                 bl->bypassed = model[(size_t)i].bypassed;
                 bl->missing  = model[(size_t)i].missing;
@@ -609,7 +622,8 @@ public:
                      && inlineEditor == nullptr)
             {
                 bool po = selectedIdx < (int)model.size()
-                       && ChainHost::isPopoutOnly(model[(size_t)selectedIdx].name);
+                       && ChainHost::isPopoutOnly(model[(size_t)selectedIdx].name,
+                                                  slotFormat(selectedIdx));
                 g.setColour(juce::Colour(0xffa0a0b8));
                 g.setFont(juce::Font(juce::FontOptions(12.0f)));
                 g.drawText(po ? "This plugin opens in a floating window (plugin limitation)."

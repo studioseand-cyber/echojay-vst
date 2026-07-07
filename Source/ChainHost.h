@@ -29,6 +29,7 @@ public:
         juce::String name;
         bool bypassed;
         juce::String settings;  // suggested dial-in guidance from AI (display only)
+        juce::String format;    // "AudioUnit" / "VST3" — popout-only is per-format
     };
 
     ChainHost();
@@ -123,11 +124,25 @@ public:
     // process views (WaveShell etc.) attach as an AUv2ContainerView proxy
     // that never negotiates a real size inside a clipped container, but works
     // in its own NSWindow. Once a plugin times out inline it is remembered in
-    // ~/Library/EchoJay/popout_only.txt (normalised-name keyed, mtime-
-    // reloaded so both hosts see marks immediately) and future selections go
-    // straight to the pop-out with no failed inline attempt.
-    static bool isPopoutOnly(const juce::String& pluginName);
-    static void markPopoutOnly(const juce::String& pluginName);
+    // ~/Library/EchoJay/popout_only.txt (normalised name + format keyed,
+    // mtime-reloaded so both hosts see marks immediately) and future
+    // selections go straight to the pop-out with no failed inline attempt.
+    // FORMAT-QUALIFIED because the same plugin's VST3 build is in-process
+    // and may contain fine when the AU cannot.
+    static bool isPopoutOnly(const juce::String& pluginName, const juce::String& format);
+    static void markPopoutOnly(const juce::String& pluginName, const juce::String& format);
+
+    // If `d` is a popout-only AudioUnit and a VST3 build of the same plugin
+    // can be found, return the VST3 desc instead (in-process editor —
+    // containable by the existing machinery). Applies at NEW instantiation
+    // only; restores keep their saved format. Logs the substitution.
+    juce::PluginDescription preferInlineHostableDesc(const juce::PluginDescription& d);
+
+    // VST3 build of `pluginName`: direct entry, previously deep-scanned
+    // cache, or on-demand enumeration of WaveShell VST3 modules (a single
+    // .vst3 containing many plugins; the thin scan records only the shell).
+    // Variant-aware: AU "X (m)"/"(s)" matches VST3 "X Mono"/"X Stereo".
+    juce::PluginDescription findVst3Alternative(const juce::String& pluginName);
 
     // ---- Additive accessors (used by EchoJay Link hosting; main plugin
     // behaviour unchanged) ------------------------------------------------

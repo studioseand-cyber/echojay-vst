@@ -1,5 +1,6 @@
 #include "ChainHost.h"
 #include "AUEnumerator.h"
+#include "NativeClip.h"   // EchoJay_NSLog
 #include <algorithm>
 #include <unordered_map>
 
@@ -43,22 +44,100 @@ static void popoutOnlyReloadIfStale()
     }
 }
 
-bool ChainHost::isPopoutOnly(const juce::String& pluginName)
+// Format-qualified key: the same plugin's VST3 build is in-process and may
+// contain fine when the AU proxy cannot
+static juce::String popoutOnlyKey(const juce::String& name, const juce::String& format)
 {
-    popoutOnlyReloadIfStale();
-    return popoutOnlyCache().contains(normalizeName(pluginName));
+    return normalizeName(name) + "|" + format;
 }
 
-void ChainHost::markPopoutOnly(const juce::String& pluginName)
+bool ChainHost::isPopoutOnly(const juce::String& pluginName, const juce::String& format)
 {
     popoutOnlyReloadIfStale();
-    auto key = normalizeName(pluginName);
-    if (key.isEmpty() || popoutOnlyCache().contains(key)) return;
+    return popoutOnlyCache().contains(popoutOnlyKey(pluginName, format));
+}
+
+void ChainHost::markPopoutOnly(const juce::String& pluginName, const juce::String& format)
+{
+    popoutOnlyReloadIfStale();
+    auto key = popoutOnlyKey(pluginName, format);
+    if (key.startsWith("|") || popoutOnlyCache().contains(key)) return;
     popoutOnlyCache().add(key);
     auto f = popoutOnlyFile();
     f.getParentDirectory().createDirectory();
     f.replaceWithText(popoutOnlyCache().joinIntoString("\n") + "\n");
     popoutOnlyLoadTime() = f.getLastModificationTime();
+}
+
+juce::PluginDescription ChainHost::preferInlineHostableDesc(const juce::PluginDescription& d)
+{
+    if (d.pluginFormatName != "AudioUnit") return d;
+    if (!isPopoutOnly(d.name, "AudioUnit")) return d;
+    auto alt = findVst3Alternative(d.name);
+    if (alt.name.isNotEmpty())
+    {
+        EchoJay_NSLog(("ChainHost: hosting VST3 build of \"" + d.name
+                       + "\" -> \"" + alt.name + "\" (AU editor is popout-only)").toRawUTF8());
+        return alt;
+    }
+    return d;
+}
+
+juce::PluginDescription ChainHost::findVst3Alternative(const juce::String& pluginName)
+{
+    // AU mono/stereo suffix "(m)"/"(s)" maps to VST3 shell naming "Mono"/"Stereo"
+    auto lower = pluginName.trim().toLowerCase();
+    juce::String variant = lower.endsWith("(m)") ? "mono"
+                         : lower.endsWith("(s)") ? "stereo" : juce::String();
+    auto wantNorm = normalizeName(stripParenthetical(pluginName));
+    auto matches = [&](const juce::String& entryName)
+    {
+        if (namesMatchLoose(pluginName, entryName)) return true;
+        auto en = normalizeName(entryName);
+        if (wantNorm.isEmpty() || !en.startsWith(wantNorm)) return false;
+        return variant.isEmpty() || en.contains(variant);
+    };
+
+    // 1. Direct VST3 entry / previously deep-scanned cache
+    {
+        std::lock_guard<std::mutex> lock(pluginsMutex_);
+        for (auto& d : entries_)
+            if (d.pluginFormatName == "VST3" && matches(d.name))
+                return d;
+        for (const auto& d : knownPlugins_.getTypes())
+            if (d.pluginFormatName == "VST3" && matches(d.name))
+                return d;
+    }
+
+    // 2. WaveShell VST3 modules bundle many plugins; the thin scan records
+    //    only the shell filename. Deep-enumerate on demand (instantiates the
+    //    module once; results land in knownPlugins_ so this is one-time).
+    auto* vst3 = getFormatByName("VST3");
+    if (vst3 == nullptr) return {};
+    auto paths = vst3->getDefaultLocationsToSearch();
+    for (int pi = 0; pi < paths.getNumPaths(); ++pi)
+    {
+        auto dir = paths[pi];
+        if (!dir.isDirectory()) continue;
+        for (auto& f : dir.findChildFiles(juce::File::findDirectories | juce::File::findFiles,
+                                          false, "*.vst3"))
+        {
+            if (!f.getFileName().containsIgnoreCase("WaveShell")) continue;
+            EchoJay_NSLog(("ChainHost: deep-scanning " + f.getFileName()
+                           + " for \"" + pluginName + "\"...").toRawUTF8());
+            juce::OwnedArray<juce::PluginDescription> types;
+            {
+                std::lock_guard<std::mutex> lock(pluginsMutex_);
+                knownPlugins_.scanAndAddFile(f.getFullPathName(), true, types, *vst3);
+            }
+            EchoJay_NSLog(("ChainHost: " + juce::String(types.size())
+                           + " plugins enumerated in " + f.getFileName()).toRawUTF8());
+            for (auto* d : types)
+                if (matches(d->name))
+                    return *d;
+        }
+    }
+    return {};
 }
 
 // ---------------------------------------------------------------------------
@@ -334,14 +413,15 @@ std::vector<ChainHost::SlotInfo> ChainHost::getAllSlotInfos() const
     std::vector<SlotInfo> result;
     result.reserve(slots_.size());
     for (auto& s : slots_)
-        result.push_back({ s.desc.name, s.bypassed, s.settings });
+        result.push_back({ s.desc.name, s.bypassed, s.settings, s.desc.pluginFormatName });
     return result;
 }
 
 ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
 {
-    if (i < 0 || i >= (int)slots_.size()) return { {}, false, {} };
-    return { slots_[i].desc.name, slots_[i].bypassed, slots_[i].settings };
+    if (i < 0 || i >= (int)slots_.size()) return { {}, false, {}, {} };
+    return { slots_[i].desc.name, slots_[i].bypassed, slots_[i].settings,
+             slots_[i].desc.pluginFormatName };
 }
 
 void ChainHost::setSlotSettings(int i, const juce::String& settings)
@@ -899,7 +979,8 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
     {
         if (e.displayName.toLowerCase().trim() == nameLower)
         {
-            loadPluginAsync(e.desc, std::move(callback));
+            // NEW instantiation — popout-only AUs may swap to their VST3 build
+            loadPluginAsync(preferInlineHostableDesc(e.desc), std::move(callback));
             return;
         }
     }
@@ -912,7 +993,7 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
         auto d = resolveByName(name, recommendableFormat_, &matchLog);
         if (d.name.isNotEmpty())
         {
-            loadPluginAsync(d, std::move(callback));
+            loadPluginAsync(preferInlineHostableDesc(d), std::move(callback));
             return;
         }
     }

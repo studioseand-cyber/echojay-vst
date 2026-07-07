@@ -740,8 +740,10 @@ private:
             if (!onCreateEditor || i < 0 || i >= (int)slotInfos.size()) return;
 
             // Known popout-only plugin (out-of-process editor): go straight
-            // to the floating window — no failed inline attempt, no timeout
-            if (ChainHost::isPopoutOnly(slotInfos[(size_t)i].name))
+            // to the floating window — no failed inline attempt, no timeout.
+            // Format-qualified: a VST3 build of the same plugin may inline fine.
+            if (ChainHost::isPopoutOnly(slotInfos[(size_t)i].name,
+                                        slotInfos[(size_t)i].format))
             {
                 statusText = "Opens in a floating window (plugin limitation)";
                 openPopoutForSelected();
@@ -772,10 +774,13 @@ private:
         // Reassert the fixed clipping container over the display area and
         // re-centre the plugin view inside it. The container's frame comes
         // from OUR layout only — this never resizes it to the plugin.
+        // The editor's reported size rides along so degenerate out-of-process
+        // proxies can have it imposed (hypothesis A).
         void attachNative(bool log)
         {
             if (inlineEditor)
-                NativeClip::attach(this, displayArea(), log);
+                NativeClip::attach(this, displayArea(), log,
+                                   inlineEditor->getWidth(), inlineEditor->getHeight());
         }
 
         void timerCallback() override
@@ -803,7 +808,8 @@ private:
                         // automatically — first-class, not an error.
                         if (inlineSlot >= 0 && inlineSlot < (int)slotInfos.size())
                         {
-                            ChainHost::markPopoutOnly(slotInfos[(size_t)inlineSlot].name);
+                            ChainHost::markPopoutOnly(slotInfos[(size_t)inlineSlot].name,
+                                                      slotInfos[(size_t)inlineSlot].format);
                             for (auto& bl : blocks)
                                 if (bl->slotIdx == inlineSlot)
                                 { bl->popoutOnly = true; bl->repaint(); }
@@ -949,7 +955,8 @@ private:
                     // clicking the block reopens it on demand.
                     if (s >= 0 && s == safe->selectedIdx
                         && s < (int)safe->slotInfos.size()
-                        && !ChainHost::isPopoutOnly(safe->slotInfos[(size_t)s].name))
+                        && !ChainHost::isPopoutOnly(safe->slotInfos[(size_t)s].name,
+                                                    safe->slotInfos[(size_t)s].format))
                         safe->showInline(s);   // sequential: popout destroyed first
                     safe->repaint();
                 });
@@ -995,7 +1002,7 @@ private:
                 bl->slotIdx  = i;
                 bl->bypassed = slotInfos[(size_t)i].bypassed;
                 bl->selected = (i == selectedIdx);
-                bl->popoutOnly = ChainHost::isPopoutOnly(bl->name);
+                bl->popoutOnly = ChainHost::isPopoutOnly(bl->name, slotInfos[(size_t)i].format);
                 int ci = i;
                 bl->onSelect = [this, ci] { selectSlot(ci); };
                 bl->onBypass = [this, ci] { if (onBypassSlot) onBypassSlot(ci); };
@@ -1104,7 +1111,8 @@ private:
             else if (popout != nullptr && popoutSlot == selectedIdx && inlineEditor == nullptr)
             {
                 bool po = selectedIdx < (int)slotInfos.size()
-                       && ChainHost::isPopoutOnly(slotInfos[(size_t)selectedIdx].name);
+                       && ChainHost::isPopoutOnly(slotInfos[(size_t)selectedIdx].name,
+                                                  slotInfos[(size_t)selectedIdx].format);
                 g.setColour(juce::Colour(0xffa0a0b8));
                 g.setFont(juce::Font(juce::FontOptions(12.0f)));
                 g.drawText(po ? "This plugin opens in a floating window (plugin limitation)."
