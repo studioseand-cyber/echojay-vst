@@ -2,6 +2,13 @@
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include <cmath>
 
+// Compare combo IDs: captures are 1..N, references start at this STABLE base.
+// The base used to be snaps.size()+100, so every completed capture SHIFTED
+// the reference ids; a selection restored by raw id after a capture then
+// pointed at nothing and the AI Compare button hit its empty-selection guard
+// silently. Captures can never reach this base within a session.
+static constexpr int kCompareRefIdBase = 1000;
+
 namespace
 {
 // Shared logo image cache. This MUST be explicitly cleared during editor
@@ -2732,7 +2739,7 @@ void EchoJayEditor::showCompareView()
         compareSlotBBox.addItem(snaps[i].name.substring(0, 30), i + 1);
     }
     auto refs = processorRef.getReferenceAnalyser().getReferences();
-    int refOffset = (int)snaps.size() + 100;
+    int refOffset = kCompareRefIdBase;
     for (int i = 0; i < (int)refs.size(); ++i) {
         juce::String label = refs[i].name.substring(0, 25) + " (Ref)";
         compareSlotABox.addItem(label, refOffset + i);
@@ -3216,11 +3223,19 @@ void EchoJayEditor::runAICompare()
     }
     int idA = compareSlotABox.getSelectedId();
     int idB = compareSlotBBox.getSelectedId();
-    if (idA == 0 || idB == 0) return;
+    if (idA == 0 || idB == 0)
+    {
+        // Never fail silently — an empty slot after a dropdown refresh looked
+        // like a dead button
+        chatMessages.push_back({"assistant", "Select two items to compare (A and B) first."});
+        processorRef.chatHistory.push_back({"assistant", "Select two items to compare (A and B) first."});
+        repaint();
+        return;
+    }
 
     auto snaps = processorRef.getSnapshots();
     auto refs = processorRef.getReferenceAnalyser().getReferences();
-    int refOffset = (int)snaps.size() + 100;
+    int refOffset = kCompareRefIdBase;
     juce::String compareCtx;
 
     bool aIsRef = idA >= refOffset, bIsRef = idB >= refOffset;
@@ -8919,7 +8934,7 @@ void EchoJayEditor::timerCallback()
                     compareSlotBBox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
                 }
                 auto refs2 = processorRef.getReferenceAnalyser().getReferences();
-                int refOff = (int)snaps2.size() + 100;
+                int refOff = kCompareRefIdBase;
                 for (int i = 0; i < (int)refs2.size(); ++i) {
                     compareSlotABox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
                     compareSlotBBox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
@@ -8927,6 +8942,16 @@ void EchoJayEditor::timerCallback()
                 if (prevSelA > 0) compareSlotABox.setSelectedId(prevSelA, juce::dontSendNotification);
                 else if (snaps2.size() > 0) compareSlotABox.setSelectedId((int)snaps2.size(), juce::dontSendNotification);
                 if (prevSelB > 0) compareSlotBBox.setSelectedId(prevSelB, juce::dontSendNotification);
+                // B fallback (A had one, B didn't): previous capture if there
+                // is one, else the first reference — so compare is one click
+                // away right after a capture
+                if (compareSlotBBox.getSelectedId() == 0)
+                {
+                    if (snaps2.size() > 1)
+                        compareSlotBBox.setSelectedId((int)snaps2.size() - 1, juce::dontSendNotification);
+                    else if (refs2.size() > 0)
+                        compareSlotBBox.setSelectedId(kCompareRefIdBase, juce::dontSendNotification);
+                }
             }
         }
     }
@@ -9047,7 +9072,7 @@ void EchoJayEditor::timerCallback()
                 compareSlotBBox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
             }
             auto refs2 = processorRef.getReferenceAnalyser().getReferences();
-            int refOff = (int)snaps2.size() + 100;
+            int refOff = kCompareRefIdBase;
             for (int i = 0; i < (int)refs2.size(); ++i) {
                 compareSlotABox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
                 compareSlotBBox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
@@ -11583,7 +11608,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         if (e.mods.isPopupMenu())
         {
             auto snaps = processorRef.getSnapshots();
-            int refOffset = (int)snaps.size() + 100;
+            int refOffset = kCompareRefIdBase;
             
             // Determine which card (A or B) was clicked based on mouse position
             struct SlotInfo { juce::ComboBox* box; int id; };
@@ -11697,7 +11722,7 @@ void EchoJayEditor::mouseDoubleClick(const juce::MouseEvent& e)
     if (currentView != View::Compare) return;
     
     auto snaps = processorRef.getSnapshots();
-    int refOffset = (int)snaps.size() + 100;
+    int refOffset = kCompareRefIdBase;
     
     // Determine which card by checking if click is nearer to slot A or slot B
     int distA = std::abs(pos.x - compareSlotABox.getBounds().getCentreX());
