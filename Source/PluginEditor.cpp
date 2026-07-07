@@ -1776,7 +1776,12 @@ void EchoJayEditor::showMainScreen()
 
     updateChannelPromptVisibility();
     updateGenrePromptVisibility();
-    
+
+    // Mini mode: async paths (auth refresh etc.) can land here while the
+    // mini view is up — re-assert the explicit mini layout so nothing that
+    // was just re-shown leaks in
+    if (visualOnlyMode) applyVisualOnlyVisibility();
+
     // Pre-fetch user settings so plugin scan won't save empty fields
     if (!settingsFetched) {
         auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -8015,7 +8020,7 @@ void EchoJayEditor::resized()
                                         && !updateOverlay.isVisible()
                                         && !reviewOverlay.visibleState);
     }
-    else if (isVisualTab && visualOnlyMode)
+    else if (visualOnlyMode)   // mini view: ANY tab (internally Visualisation)
     {
         if (visualMode) {
             int stripH = 28;
@@ -8747,7 +8752,7 @@ void EchoJayEditor::timerCallback()
     {
         auto savedPath = processorRef.getWaveformRecorder().getLastSavedPath();
         bool hasWav = savedPath.isNotEmpty() && juce::File(savedPath).existsAsFile();
-        playbackBtn.setVisible(hasWav && currentView == View::Meters);
+        playbackBtn.setVisible(hasWav && currentView == View::Meters && !visualOnlyMode);
 
         if (hasWav && wavSavedLabel.getText().isEmpty())
         {
@@ -8965,8 +8970,12 @@ void EchoJayEditor::timerCallback()
             usageStr += " (+" + juce::String(info.credits) + " credits)";
         usageLabel.setText(usageStr, juce::dontSendNotification);
         
-        // Show upgrade button when free/pro user is out of messages (and credits)
-        bool showUpgrade = info.tierLevel < 2 && !api.canSendMessage() && !channelPromptVisible && !genrePromptVisible;
+        // Show upgrade button when free/pro user is out of messages (and credits).
+        // NEVER in mini mode — the timer re-showing it was how its corner
+        // poked into the mini view.
+        bool showUpgrade = info.tierLevel < 2 && !api.canSendMessage()
+                        && !channelPromptVisible && !genrePromptVisible
+                        && !visualOnlyMode;
         upgradeBtn.setVisible(showUpgrade);
         if (showUpgrade)
         {
@@ -11840,61 +11849,65 @@ void EchoJayEditor::toggleVisualMode()
     repaint();
 }
 
+void EchoJayEditor::applyVisualOnlyVisibility()
+{
+    if (!visualOnlyMode) return;
+    // Explicit mini layout: nothing from the full view exists here. Hiding
+    // is the ONLY reliable de-activation in JUCE (invisible components are
+    // not hit-testable), and hiding everything beats maintaining a list of
+    // exceptions that rots every time the full view gains a component.
+    for (int i = 0; i < getNumChildComponents(); ++i)
+        getChildComponent(i)->setVisible(false);
+    captureBtn.setVisible(true);
+    particleVisualHolder.setVisible(visualMode
+                                    && !channelPromptVisible && !genrePromptVisible);
+    // (TooltipWindow re-shows itself when it has a tip to display.)
+}
+
 void EchoJayEditor::toggleVisualOnlyMode()
 {
     visualOnlyMode = !visualOnlyMode;
-    
+
     if (visualOnlyMode)
     {
-        // Save current size
-        visualOnlyWidth = getWidth();
+        // Save current size + tab
+        visualOnlyWidth  = getWidth();
         visualOnlyHeight = getHeight();
-        
-        visualMode = true;
-        
-        // Force meters view
+        prevTabBeforeVisualOnly_ = currentTab;
+
+        // Force meters view overlays down first
         if (currentView == View::Compare) { hideCompareView(); currentView = View::Meters; }
         if (currentView == View::Settings) { hideSettingsView(); currentView = View::Meters; }
-        
-        // Calculate meter panel width (same as normal layout)
+
+        // Become the Visualisation tab internally, WHATEVER tab was active:
+        // switchToTab owns starting the visual (GL attach) and tearing down
+        // the other tabs' components — the mini view must not depend on the
+        // Visualisation tab having been opened this session.
+        switchToTab(Tab::Visualisation);
+        visualMode = true;
+        if (particleVisual != nullptr) particleVisual->start();
+        particleVisualHolder.setVisible(true);
+
+        // Shrink window to just the visual panel width
         int chatW = juce::jlimit(240, 380, getWidth() * 32 / 100);
         int mW = getWidth() - chatW;
-        
-        // Shrink window to just the visual panel width
         setResizeLimits(400, 450, 1200, 1200);
         setSize(mW, getHeight());
-        
-        // Hide chat and meter-only UI (keep capture button visible)
-        compareBtn.setVisible(false);
-        settingsBtn.setVisible(false);
-        scanBtn.setVisible(false);
-        channelTypeBox.setVisible(false);
-        genreBox.setVisible(false);
-        chatInput.setVisible(false);
-        chatSendBtn.setVisible(false);
-        chatTextSizeBtn.setVisible(false);
-        chatScroll.setVisible(false);
+
+        applyVisualOnlyVisibility();
     }
     else
     {
-        // Restore full mode
+        // Restore full mode: size, main-screen components, then the tab the
+        // user left (switchToTab re-establishes its state; if they left
+        // FROM Visualisation the visual is already running and current).
         setResizeLimits(900, 580, 1800, 1200);
         setSize(visualOnlyWidth, visualOnlyHeight);
-        
-        captureBtn.setVisible(true);
-        if (!compactMode) {
-            compareBtn.setVisible(true);
-            settingsBtn.setVisible(true);
-            scanBtn.setVisible(true);
-        }
-        channelTypeBox.setVisible(true);
-        genreBox.setVisible(true);
-        chatInput.setVisible(true);
-        chatSendBtn.setVisible(true);
-        chatTextSizeBtn.setVisible(true);
-        chatScroll.setVisible(true);
+        showMainScreen();
+        if (prevTabBeforeVisualOnly_ != currentTab)
+            switchToTab(prevTabBeforeVisualOnly_);
     }
-    
+
     resized();
     repaint();
 }

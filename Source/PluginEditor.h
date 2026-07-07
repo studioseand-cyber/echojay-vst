@@ -110,6 +110,14 @@ private:
     // Visual mode
     bool visualMode = true;          // true when left panel shows particle visual instead of meters
     bool visualOnlyMode = false;     // "screensaver" mode — visual fills whole window, no chat
+    Tab  prevTabBeforeVisualOnly_ { Tab::Visualisation }; // restored on exit
+
+    // MINI MODE IS AN EXPLICIT LAYOUT: hide EVERY child component, then show
+    // only what the mini view owns (Capture + the visual holder). Painted
+    // chrome (logo/badge, mini strip, expand icon) is gated in paint().
+    // The old approach hid a hand-picked list, so full-view components
+    // (project field, Upgrade button, tab panels) leaked in.
+    void applyVisualOnlyVisibility();
     bool abBarShowing = false;       // tracks whether AB transport bar is visible (window resized)
     static constexpr int kAbBarH = 32;
     
