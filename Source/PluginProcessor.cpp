@@ -1,6 +1,18 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "NativeClip.h"   // EchoJay_NSLog (memdiag)
 #include <cmath>
+
+// ---------------------------------------------------------------------------
+// Memory diagnostics (compile flag, OFF by default). Set ECHOJAY_MEMDIAG=1 to
+// log per-capture RSS, capture-buffer bytes, save-thread state, snapshot
+// count, and accumulated chat bytes — for attributing per-pass retention.
+#ifndef ECHOJAY_MEMDIAG
+ #define ECHOJAY_MEMDIAG 0
+#endif
+#if ECHOJAY_MEMDIAG && JUCE_MAC
+ #include <mach/mach.h>
+#endif
 
 // ---------------------------------------------------------------------------
 // Teardown logging (diagnostic, OFF by default).
@@ -993,6 +1005,11 @@ void EchoJayProcessor::stopCapture()
             // Host WAV
             recorder->saveToWAV(captureDir, passName);
             auto hostPath = recorder->getLastSavedPath();
+            // Free the capture audio NOW, write succeeded or not — nothing
+            // references it after this point (playback plays the WAV file,
+            // the display uses the thumbnail). Holding it until the next
+            // capture was the per-pass RSS retention.
+            recorder->releaseAudioBuffer();
             if (hostPath.isNotEmpty())
             {
                 std::lock_guard<std::mutex> lock(*mutex);
@@ -1003,12 +1020,15 @@ void EchoJayProcessor::stopCapture()
                         (*snapshots)[(size_t)snapIdx].channels[0].wavFilePath = hostPath;
                 }
             }
-            // Per-Link WAVs
+            // Per-Link WAVs — release each channel's audio right after its
+            // write so peak memory during multi-Link saves stays one
+            // channel's worth
             for (size_t i = 0; i < linkChannels.size(); ++i)
             {
                 auto& lcc = linkChannels[i];
                 lcc->waveformRecorder.saveToWAV(captureDir, passName + " - " + lcc->name);
                 auto lp = lcc->waveformRecorder.getLastSavedPath();
+                lcc->waveformRecorder.releaseAudioBuffer();
                 if (lp.isNotEmpty())
                 {
                     std::lock_guard<std::mutex> lock(*mutex);
@@ -1021,6 +1041,11 @@ void EchoJayProcessor::stopCapture()
                     }
                 }
             }
+            // Drop the Link channels HERE, not in the destructor: this
+            // Thread object stays alive as the saveThread member until the
+            // NEXT capture replaces it, and it must not keep the channels
+            // (and whatever they own) alive for that whole time.
+            linkChannels.clear();
         }
 
         WaveformRecorder* recorder;
@@ -1035,6 +1060,28 @@ void EchoJayProcessor::stopCapture()
     saveThread = std::make_unique<SaveThread>(recorderPtr, captureDir, passName, snapIdx, mutexPtr, snapsPtr,
                                                std::move(movedLinkChannels));
     saveThread->startThread();
+
+#if ECHOJAY_MEMDIAG
+    {
+        size_t rssBytes = 0;
+       #if JUCE_MAC
+        mach_task_basic_info info;
+        mach_msg_type_number_t cnt = MACH_TASK_BASIC_INFO_COUNT;
+        if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                      (task_info_t)&info, &cnt) == KERN_SUCCESS)
+            rssBytes = (size_t)info.resident_size;
+       #endif
+        size_t chatBytes = 0;
+        for (auto& c : chatContents) chatBytes += c.getNumBytesAsUTF8();
+        EchoJay_NSLog(("EJMemDiag: post-capture rss="
+            + juce::String((juce::int64)(rssBytes / (1024 * 1024))) + "MB"
+            + " recorderBuf=" + juce::String((juce::int64)(waveformRecorder.getAllocatedBytes() / 1024)) + "KB"
+            + " snapshots=" + juce::String((int)snapshots.size())
+            + " chatMsgs=" + juce::String(chatContents.size())
+            + " chatBytes=" + juce::String((juce::int64)chatBytes)
+            + " saveRunning=" + juce::String((saveThread && saveThread->isThreadRunning()) ? 1 : 0)).toRawUTF8());
+    }
+#endif
 
     autoFeedbackReady.store(true);
 }

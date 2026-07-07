@@ -30,6 +30,17 @@ public:
     // Reset everything (clears audio + thumbnail)
     void reset();
 
+    // Free the capture audio memory (post-save). Keeps the thumbnail, the
+    // recorded totals, and the last-saved path; the buffer re-allocates on
+    // the next startRecording. Refuses while recording. The recorded audio
+    // has NO consumers once the WAV is written (playback plays the file,
+    // display uses the thumbnail), so holding tens of MB per capture until
+    // the next pass was pure retention.
+    void releaseAudioBuffer();
+
+    // Currently allocated capture-buffer bytes (memdiag)
+    size_t getAllocatedBytes() const { return (size_t)bufferCapacity * 2 * sizeof(float); }
+
     // Feed audio from processBlock (called on audio thread)
     void processBlock(const float* left, const float* right, int numSamples);
 

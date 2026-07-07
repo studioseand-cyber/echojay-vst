@@ -419,19 +419,62 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     // for in-session continuity without dragging in unrelated old captures.
     constexpr int maxHistoryMessages = 12;
     int firstIdx = juce::jmax(0, roles.size() - maxHistoryMessages);
+
+    // Byte-budget the payload on top of the message-count cap. Individual
+    // turns can be huge (capture turns embed meter context, Compare turns a
+    // full compareCtx, user turns the AVAILABLE PLUGINS injection), so twelve
+    // messages could still be hundreds of KB. Walk backwards from the newest
+    // accumulating stripped-content size; older messages fall off first. The
+    // newest message is always sent regardless of size.
+    constexpr int maxPayloadBytes = 60000;
+
+    // Per-turn injection blocks (plugin lists + chain rules) only matter on
+    // the CURRENT message — strip them from history turns before sizing.
+    auto strippedContent = [&contents](int i) -> juce::String
+    {
+        auto c = contents[i];
+        for (auto* marker : { "\n\n[AVAILABLE PLUGINS", "\n\n[USER'S FULL PLUGIN LIST" })
+        {
+            int cut = c.indexOf(marker);
+            if (cut >= 0) c = c.substring(0, cut);
+        }
+        return c;
+    };
+
+    {
+        int budget = maxPayloadBytes - (int)contents[roles.size() - 1].getNumBytesAsUTF8();
+        int cutIdx = roles.size() - 1;
+        while (cutIdx > firstIdx)
+        {
+            int sz = (int)strippedContent(cutIdx - 1).getNumBytesAsUTF8();
+            if (budget - sz < 0) break;
+            budget -= sz;
+            --cutIdx;
+        }
+        firstIdx = juce::jmax(firstIdx, cutIdx);
+    }
+
     // Anthropic API requires the first message in messages[] to be 'user'.
     // If trimming landed us on 'assistant', skip forward by one to land on user.
     while (firstIdx < roles.size() && roles[firstIdx] != "user")
         firstIdx++;
-    
+    if (firstIdx >= roles.size())          // degenerate: always send the newest
+        firstIdx = roles.size() - 1;
+
     juce::String messagesJson = "[";
     messagesJson += "{\"role\":\"system\",\"content\":" + juce::JSON::toString(systemPrompt) + "}";
     for (int i = firstIdx; i < roles.size(); ++i)
     {
-        messagesJson += ",{\"role\":" + juce::JSON::toString(roles[i]) + 
-                        ",\"content\":" + juce::JSON::toString(contents[i]) + "}";
+        // History messages go out with injections stripped; only the newest
+        // keeps its full content (its injection is the live one)
+        juce::String c = (i == roles.size() - 1) ? contents[i] : strippedContent(i);
+        messagesJson += ",{\"role\":" + juce::JSON::toString(roles[i]) +
+                        ",\"content\":" + juce::JSON::toString(c) + "}";
     }
     messagesJson += "]";
+    EchoJay_NSLog(("EJChat: payload " + juce::String((int)messagesJson.getNumBytesAsUTF8())
+                   + " bytes, " + juce::String(roles.size() - firstIdx) + "/"
+                   + juce::String(roles.size()) + " messages sent").toRawUTF8());
     
     juce::String body = "{\"messages\":" + messagesJson + ",\"max_tokens\":4096";
     juce::String metersBlob = meterJsonBlob;
