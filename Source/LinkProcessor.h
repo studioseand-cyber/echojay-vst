@@ -47,6 +47,12 @@ public:
     /// Call from editor after any change to linkOn or linkName (message thread).
     void updateShmState();
 
+    /// Fired on the message thread when linkOn/linkName change OUTSIDE the
+    /// editor (state restore, remote ctrl command) so an open editor can
+    /// sync its toggle — a stale ON toggle writing itself back into the
+    /// processor is a re-activation path.
+    std::function<void()> onLinkStateChanged;
+
     // ========================================================================
     // Chain hosting (phase 1) — chains arrive from the main plugin.
     // The MODEL is the requested chain including unresolvable slots
@@ -185,8 +191,16 @@ private:
     // the command file is deleted on consume.
     int  lastAppliedChainSeq_ = 0;
     int  heartbeatDivider_ = 0;
+    bool loggedInitState_ = false;   // item-1 diag: post-init log fired once
     juce::String chainInstanceId() const;
     void pollChainCommand();
+
+    // Remote Active control: ctrl-cmd-<instanceId>.json {v:1, seq, active},
+    // acked as ctrl-ack-<instanceId>.json {v:1, seq, active}. Authority is
+    // this processor — the command goes through the same path as the local
+    // toggle (linkOn + updateShmState + dirty-mark).
+    int  lastAppliedCtrlSeq_ = 0;
+    void pollControlCommand();
     void writeChainAck(int seq, const juce::String& status,
                        const juce::StringArray& results,
                        const juce::var& detail);

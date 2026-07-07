@@ -3316,6 +3316,8 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     int y = area.getY() + 16;
     const int fw = area.getWidth() - pad * 2;
 
+    linkToggleZones_.clear();   // repopulated per row below
+
     // Title
     g.setColour(C::blue2);
     g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
@@ -3355,7 +3357,7 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(12.0f)));
         const int emptyY = area.getY() + area.getHeight() / 2 - 20;
-        g.drawText("No active Links detected.", pad, emptyY, fw, 18,
+        g.drawText("No Links detected.", pad, emptyY, fw, 18,
                    juce::Justification::centred);
         g.setFont(juce::Font(juce::FontOptions(11.0f)));
         g.drawText("Add an EchoJay Link plugin to a channel and turn it on.",
@@ -3389,11 +3391,45 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         g.setColour(dotCol);
         g.fillEllipse(dotX, dotY, (float)dotD, (float)dotD);
 
+        // Remote Active toggle pill (left of the dot). Reflects the ACKED
+        // registry state; pending style between send and ack; NO RESP on
+        // timeout. Authority stays with the Link.
+        {
+            bool pending = false, timedOut = false, target = false;
+            for (auto& p : linkCtrlPending_)
+                if (p.name == slot.name)
+                { pending = !p.timedOut; timedOut = p.timedOut; target = p.target; }
+
+            juce::Rectangle<int> pill(cardX + cardW - dotD - 10 - 78,
+                                      y + (cardH - 22) / 2, 68, 22);
+            linkToggleZones_.push_back({ pill, slot.name });
+
+            const auto cyan  = juce::Colour(0xff22d3ee);
+            const auto amber = juce::Colour(0xfff59e0b);
+            const auto coral = juce::Colour(0xffff6d5a);
+            bool shownActive = pending ? target : slot.active;
+
+            g.setColour(timedOut ? coral.withAlpha(0.15f)
+                      : pending  ? amber.withAlpha(0.15f)
+                      : shownActive ? cyan.withAlpha(0.18f) : C::bg4);
+            g.fillRoundedRectangle(pill.toFloat(), 11.0f);
+            g.setColour(timedOut ? coral.withAlpha(0.7f)
+                      : pending  ? amber.withAlpha(0.7f)
+                      : shownActive ? cyan.withAlpha(0.6f) : C::border2);
+            g.drawRoundedRectangle(pill.toFloat().reduced(0.5f), 11.0f, 1.0f);
+            g.setColour(timedOut ? coral : pending ? amber
+                      : shownActive ? cyan : C::text3);
+            g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+            g.drawText(timedOut ? "NO RESP" : pending ? "..."
+                       : shownActive ? "ACTIVE" : "OFF",
+                       pill, juce::Justification::centred);
+        }
+
         // Name
         g.setColour(C::text);
         g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
         g.drawText(slot.name.isEmpty() ? "(unnamed)" : slot.name,
-                   cardX + 14, y + 8, cardW - dotD - 36, 18,
+                   cardX + 14, y + 8, cardW - dotD - 36 - 82, 18,
                    juce::Justification::centredLeft);
 
         // Stats line
@@ -9758,6 +9794,95 @@ void EchoJayEditor::disablePluginByName(const juce::String& name)
     }
 }
 
+// =============================================================================
+//  LINK tab — remote Active control (ctrl-cmd / ctrl-ack files)
+// =============================================================================
+void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkName, bool active)
+{
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return;
+    auto id = LinkShm::makeSafeFilePart(linkName);
+
+    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    for (auto& p : linkCtrlPending_)
+        if (p.name == linkName && p.seq >= seq)
+            seq = p.seq + 1;   // same-second re-toggle: keep seq advancing
+
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",      1);
+    cmd->setProperty("seq",    seq);
+    cmd->setProperty("active", active);
+    juce::File(dir + "ctrl-ack-" + id + ".json").deleteFile();   // stale ack
+    juce::File(dir + "ctrl-cmd-" + id + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+
+    linkCtrlPending_.erase(
+        std::remove_if(linkCtrlPending_.begin(), linkCtrlPending_.end(),
+                       [&](const LinkCtrlPending& p) { return p.name == linkName; }),
+        linkCtrlPending_.end());
+    linkCtrlPending_.push_back({ linkName, seq, active, false });
+
+    pollLinkCtrlAck(linkName, seq, 12);   // 12 x 250ms = ~3s
+    repaint();
+}
+
+void EchoJayEditor::pollLinkCtrlAck(const juce::String& linkName, int seq, int attemptsLeft)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay(250, [safeThis, linkName, seq, attemptsLeft]
+    {
+        if (safeThis == nullptr) return;
+
+        int err = 0;
+        juce::String dir = LinkShm::resolveDir(err);
+        auto id = LinkShm::makeSafeFilePart(linkName);
+        juce::File ack(dir + "ctrl-ack-" + id + ".json");
+
+        if (dir.isNotEmpty() && ack.existsAsFile())
+        {
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+                if ((int)o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();   // consumed — the registry flag is now
+                                        // the truth the row reflects
+                    safeThis->linkCtrlPending_.erase(
+                        std::remove_if(safeThis->linkCtrlPending_.begin(),
+                                       safeThis->linkCtrlPending_.end(),
+                                       [&](const LinkCtrlPending& p)
+                                       { return p.name == linkName && p.seq == seq; }),
+                        safeThis->linkCtrlPending_.end());
+                    safeThis->repaint();
+                    return;
+                }
+        }
+
+        if (attemptsLeft <= 1)
+        {
+            // Not responding — show the state briefly, then clear so the row
+            // falls back to whatever the registry reports
+            for (auto& p : safeThis->linkCtrlPending_)
+                if (p.name == linkName && p.seq == seq)
+                    p.timedOut = true;
+            safeThis->repaint();
+            juce::Timer::callAfterDelay(2500, [safeThis, linkName, seq]
+            {
+                if (safeThis == nullptr) return;
+                safeThis->linkCtrlPending_.erase(
+                    std::remove_if(safeThis->linkCtrlPending_.begin(),
+                                   safeThis->linkCtrlPending_.end(),
+                                   [&](const LinkCtrlPending& p)
+                                   { return p.name == linkName && p.seq == seq; }),
+                    safeThis->linkCtrlPending_.end());
+                safeThis->repaint();
+            });
+            return;
+        }
+        safeThis->pollLinkCtrlAck(linkName, seq, attemptsLeft - 1);
+    });
+}
+
 void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
 {
     auto parsedVar = juce::JSON::parse(chainJson);
@@ -11352,6 +11477,20 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         int idx = juce::jlimit(0, kTabCount - 1, pos.x / juce::jmax(1, tabW));
         switchToTab(static_cast<Tab>(idx));
         return;
+    }
+
+    // LINK tab — remote Active toggle pills (zones recorded during paint)
+    if (currentScreen == Screen::Main && currentTab == Tab::Link)
+    {
+        for (auto& z : linkToggleZones_)
+            if (z.first.contains(pos))
+            {
+                bool cur = true;
+                for (auto& li : processorRef.getLinkSlotInfos())
+                    if (li.name == z.second) { cur = li.active; break; }
+                sendLinkActiveCommand(z.second, !cur);
+                return;
+            }
     }
 
     // Chat wave card click — direct hit testing (works on Windows where overlays fail)

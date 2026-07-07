@@ -345,6 +345,7 @@ public:
     struct LinkSlotInfo {
         juce::String name;
         bool         connected  = false;
+        bool         active     = true;   // Link's capture/meter role (its Active toggle)
         float        sampleRate = 0.f;
         int64_t      framesRead = 0;
     };

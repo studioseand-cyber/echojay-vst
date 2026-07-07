@@ -3,6 +3,12 @@
 #include "LinkShm.h"
 #include "NativeClip.h"   // EchoJay_NSLog — chain-build diagnostics
 
+// Item-1 (Active persistence) diagnosis logging — on by default until the
+// flip point is confirmed in the field; EJLinkState: lines in the monitor.
+#ifndef ECHOJAY_LINK_STATE_DIAG
+ #define ECHOJAY_LINK_STATE_DIAG 1
+#endif
+
 LinkProcessor::LinkProcessor()
     : AudioProcessor(BusesProperties()
           .withInput ("Input",  juce::AudioChannelSet::stereo(), true)
@@ -35,8 +41,10 @@ void LinkProcessor::timerCallback()
     if (++heartbeatDivider_ >= 4)
     {
         heartbeatDivider_ = 0;
-        // Bump heartbeat so the consumer can detect we're alive vs. crashed
-        if (linkOn.load() && regSlotIdx >= 0)
+        // Bump heartbeat so the consumer can detect we're alive vs. crashed.
+        // Registered-but-inactive Links heartbeat too — they must stay
+        // visible (not reaped as stale) so remote re-activation works.
+        if (regSlotIdx >= 0)
         {
             LinkShm::bumpHeartbeat(regMap, regSlotIdx);
             // Mirror current heartbeat into diag for the editor to read
@@ -46,7 +54,66 @@ void LinkProcessor::timerCallback()
         }
     }
 
+#if ECHOJAY_LINK_STATE_DIAG
+    // Item-1 diagnosis: log the Active value once after full initialisation
+    if (!loggedInitState_)
+    {
+        loggedInitState_ = true;
+        EchoJay_NSLog(("EJLinkState: post-init linkOn="
+                       + juce::String((int)linkOn.load())
+                       + " name=\"" + linkName + "\"").toRawUTF8());
+    }
+#endif
+
     pollChainCommand();
+    pollControlCommand();
+}
+
+// ---------------------------------------------------------------------------
+// Remote Active control — ctrl-cmd-<instanceId>.json {v:1, seq, active}
+// Authority stays HERE: the command flips linkOn exactly like the local
+// toggle (same updateShmState path, same dirty-marking so it persists),
+// then the ack confirms the applied state.
+// ---------------------------------------------------------------------------
+void LinkProcessor::pollControlCommand()
+{
+    auto id = chainInstanceId();
+    if (id.isEmpty()) return;
+    if (resolvedDir.isEmpty())
+    {
+        int err = 0;
+        resolvedDir = LinkShm::resolveDir(err);
+        if (resolvedDir.isEmpty()) return;
+    }
+
+    juce::File cmdFile(resolvedDir + "ctrl-cmd-" + id + ".json");
+    if (!cmdFile.existsAsFile()) return;
+
+    auto v = juce::JSON::parse(cmdFile.loadFileAsString());
+    auto* obj = v.getDynamicObject();
+    if (obj == nullptr) { cmdFile.deleteFile(); return; }
+
+    int ver = (int)obj->getProperty("v");
+    int seq = (int)obj->getProperty("seq");
+    if (ver != 1 || seq == lastAppliedCtrlSeq_ || seq == 0)
+        return;
+
+    lastAppliedCtrlSeq_ = seq;
+    cmdFile.deleteFile();   // consumed
+
+    bool wantActive = (bool)obj->getProperty("active");
+    EchoJay_NSLog(("EJLinkState: remote set active=" + juce::String((int)wantActive)
+                   + " (seq " + juce::String(seq) + ")").toRawUTF8());
+    linkOn.store(wantActive);
+    updateShmState();                       // registry flag + ring + dirty-mark
+    if (onLinkStateChanged) onLinkStateChanged();   // open editor toggle sync
+
+    auto* ack = new juce::DynamicObject();
+    ack->setProperty("v",      1);
+    ack->setProperty("seq",    seq);
+    ack->setProperty("active", linkOn.load());
+    juce::File(resolvedDir + "ctrl-ack-" + id + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(ack), true));
 }
 
 // =============================================================================
@@ -181,11 +248,13 @@ void LinkProcessor::updateShmState()
 
     const bool on = linkOn.load();
     const bool hasName = linkName.trim().isNotEmpty();
-    const bool shouldBeActive = on && hasName;
 
-    if (!shouldBeActive)
+    // A NAMED Link stays REGISTERED whether or not it is Active — the main
+    // plugin must keep seeing it (with its active flag) so a deactivated
+    // Link can be re-activated remotely. Only the audio RING (the capture/
+    // meter feed) is gated on Active. Unnamed → fully unregistered.
+    if (!hasName)
     {
-        // Going inactive — release ring first, then registry slot
         closeRingDeferred();
         releaseRegistrySlot();
         return;
@@ -194,27 +263,33 @@ void LinkProcessor::updateShmState()
     // Ensure dir is resolved and registry is open (sets resolvedDir)
     ensureRegistryOpen();
 
-    const juce::String wantedPath = resolvedDir.isEmpty() ? juce::String{}
-        : resolvedDir + LinkShm::makeAudioFilename(linkName.trim());
-
-    // Ring: reopen if path changed or not yet open
-    if (shmOpenedKey != wantedPath || shmMap == nullptr)
-    {
-        closeRingDeferred();
-        openRing();
-    }
-
-    // Registry: claim slot if not already claimed, or if name changed
+    // Registry: claim slot if not already claimed, or re-claim on name change
     if (regSlotIdx < 0)
     {
         claimRegistrySlot();
     }
     else
     {
-        // Re-check that the slot still reflects the current name
-        // (handles name change while active)
         releaseRegistrySlot();
         claimRegistrySlot();
+    }
+    LinkShm::setSlotActive(regMap, regSlotIdx, on);
+
+    if (on)
+    {
+        const juce::String wantedPath = resolvedDir.isEmpty() ? juce::String{}
+            : resolvedDir + LinkShm::makeAudioFilename(linkName.trim());
+
+        // Ring: reopen if path changed or not yet open
+        if (shmOpenedKey != wantedPath || shmMap == nullptr)
+        {
+            closeRingDeferred();
+            openRing();
+        }
+    }
+    else
+    {
+        closeRingDeferred();   // capture/meter role dormant
     }
 }
 
@@ -736,6 +811,10 @@ juce::AudioProcessorEditor* LinkProcessor::createEditor() { return new LinkEdito
 
 void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
 {
+#if ECHOJAY_LINK_STATE_DIAG
+    EchoJay_NSLog(("EJLinkState: getState linkOn=" + juce::String((int)linkOn.load())
+                   + " name=\"" + linkName + "\"").toRawUTF8());
+#endif
     juce::DynamicObject* obj = new juce::DynamicObject();
     obj->setProperty("linkName", linkName);
     obj->setProperty("linkOn",   (bool)linkOn.load());
@@ -755,6 +834,20 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
     {
         if (obj->hasProperty("linkName")) linkName = obj->getProperty("linkName").toString();
         if (obj->hasProperty("linkOn"))   linkOn.store((bool)obj->getProperty("linkOn"));
+#if ECHOJAY_LINK_STATE_DIAG
+        EchoJay_NSLog(("EJLinkState: setState linkOn=" + juce::String((int)linkOn.load())
+                       + " (hadProp=" + juce::String((int)obj->hasProperty("linkOn"))
+                       + ") name=\"" + linkName + "\"").toRawUTF8());
+#endif
+        // An OPEN editor must sync its toggle to the restored value — a
+        // stale ON toggle writing itself back into the processor is a
+        // re-activation path. Message thread deferred: setStateInformation's
+        // calling thread is host-defined.
+        juce::MessageManager::callAsync([this]
+        {
+            updateShmState();
+            if (onLinkStateChanged) onLinkStateChanged();
+        });
         if (obj->hasProperty("editorW"))  editorW = juce::jlimit(900, 1800, (int)obj->getProperty("editorW"));
         if (obj->hasProperty("editorH"))  editorH = juce::jlimit(580, 1200, (int)obj->getProperty("editorH"));
         if (obj->hasProperty("chain"))

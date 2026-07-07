@@ -2040,16 +2040,26 @@ void EchoJayProcessor::refreshLinkRegistry()
             ps.staleCycles = 0;
         }
 
-        // Connect audio ring if not open (or if filename changed)
-        if (activeLinkSlots[i].shmKey != snap.audioFilename || activeLinkSlots[i].map == nullptr)
-            connectLinkAudioSlot(i, snap.audioFilename, snap.displayName, snap.sampleRate);
+        // Connect the audio ring only while the Link's capture role is
+        // ACTIVE — inactive Links stay registered (visible, remotely
+        // re-activatable) but publish no ring
+        if (snap.active)
+        {
+            if (activeLinkSlots[i].shmKey != snap.audioFilename || activeLinkSlots[i].map == nullptr)
+                connectLinkAudioSlot(i, snap.audioFilename, snap.displayName, snap.sampleRate);
+        }
+        else if (activeLinkSlots[i].map != nullptr)
+        {
+            disconnectLinkAudioSlot(i);
+        }
 
-        const bool connected = activeLinkSlots[i].map != nullptr;
+        const bool connected = snap.active && activeLinkSlots[i].map != nullptr;
         int64_t frames = activeLinkSlots[i].framesRead.load(std::memory_order_relaxed);
 
         LinkSlotInfo info;
         info.name       = snap.displayName;
         info.connected  = connected;
+        info.active     = snap.active;
         info.sampleRate = snap.sampleRate;
         info.framesRead = frames;
         newInfos.push_back(std::move(info));

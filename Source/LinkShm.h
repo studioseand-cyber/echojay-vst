@@ -75,13 +75,16 @@ static constexpr int      kRegStaleCycles = 60;   // ~30 s at 2 Hz probing
 // 128 bytes per slot (2 cache lines)
 struct alignas(128) RegistrySlot
 {
-    uint32_t inUse;            //  4  atomic: 0=free, 1=active
+    uint32_t inUse;            //  4  atomic: 0=free, 1=registered
     char     displayName[40];  // 40  user-visible name, null-terminated
     char     audioFile  [48];  // 48  filename only, e.g. "audio_drums.bin"
     float    sampleRate;       //  4
     uint32_t numChannels;      //  4
     uint32_t heartbeat;        //  4  bumped by producer timer ~1 Hz
-    uint8_t  _pad[24];         // 24  → total 128
+    uint32_t activeFlag;       //  4  1 = Active (capture/meter role on); carved
+                               //     from _pad so existing field offsets and the
+                               //     128-byte layout are unchanged
+    uint8_t  _pad[20];         // 20  → total 128
 };
 static_assert(sizeof(RegistrySlot) == 128, "RegistrySlot must be 128 bytes");
 
@@ -397,6 +400,7 @@ inline int claimSlot(void* regMap,
             slots[i].audioFile[sizeof(slots[i].audioFile) - 1] = 0;
             slots[i].sampleRate  = sr;
             slots[i].numChannels = ch;
+            storeRelease(&slots[i].activeFlag, 1u);   // default Active; setSlotActive() refines
             storeRelease(&slots[i].heartbeat, 1u);
             return i;
         }
@@ -412,8 +416,18 @@ inline void releaseSlot(void* regMap, int slotIdx)
     std::memset(slot->audioFile,   0, sizeof(slot->audioFile));
     slot->sampleRate  = 0;
     slot->numChannels = 0;
-    storeRelease(&slot->heartbeat, 0u);
-    storeRelease(&slot->inUse,     0u);
+    storeRelease(&slot->activeFlag, 0u);
+    storeRelease(&slot->heartbeat,  0u);
+    storeRelease(&slot->inUse,      0u);
+}
+
+/// Publish the Link's Active state (capture/meter role) without releasing
+/// the slot — a named-but-inactive Link stays visible to the main plugin so
+/// it can be re-activated remotely.
+inline void setSlotActive(void* regMap, int slotIdx, bool active)
+{
+    if (!regMap || slotIdx < 0 || slotIdx >= kRegMaxSlots) return;
+    storeRelease(&regSlots(regMap)[slotIdx].activeFlag, active ? 1u : 0u);
 }
 
 inline void bumpHeartbeat(void* regMap, int slotIdx)
@@ -430,6 +444,7 @@ struct SlotSnapshot {
     float        sampleRate;
     uint32_t     numChannels;
     uint32_t     heartbeat;
+    bool         active = true;  // capture/meter role on
 };
 
 inline bool readSlot(void* regMap, int i, SlotSnapshot& out)
@@ -443,6 +458,7 @@ inline bool readSlot(void* regMap, int i, SlotSnapshot& out)
     out.sampleRate    = slot->sampleRate;
     out.numChannels   = slot->numChannels;
     out.heartbeat     = loadRelaxed(&slot->heartbeat);
+    out.active        = loadAcquire(&slot->activeFlag) != 0;
     return true;
 }
 

@@ -20,10 +20,21 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent&) override;
 
     // Shared tooltip window — makes the chain strip / card button tooltips
     // live (700ms hover, styled by the editor's LookAndFeel)
     juce::TooltipWindow tooltipWindow_ { this, 700 };
+
+    // ---- Mini view (top-right minimise icon) ----
+    // EXPLICIT compact layout, not the full layout with parts hidden:
+    // header row (name, Active toggle, restore icon) + a status body (chain
+    // summary + status line). No chain strip / display area / settings box.
+    // Entering mini closes any hosted editor cleanly; restore re-opens the
+    // selected slot inline via the normal rebuild path.
+    bool miniMode = false;
+    int  miniSavedW_ = 0, miniSavedH_ = 0;
+    void toggleMiniMode();
 
     // ========================================================================
     struct LinkChainPanel : juce::Component, juce::Timer

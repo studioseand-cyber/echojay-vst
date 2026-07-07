@@ -42,18 +42,35 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     };
     addAndMakeVisible(nameField);
 
-    // Toggle
+    // Toggle. onClick, NOT onStateChange: onStateChange also fires on
+    // hover/press, so a toggle whose VISIBLE state had gone stale (state
+    // restored while the editor was open) would write the stale value back
+    // into the processor on a mere mouse-over — a re-activation path.
     toggleBtn.setToggleState(proc.linkOn.load(), juce::dontSendNotification);
+    EchoJay_NSLog(("EJLinkState: editor open, toggle set to "
+                   + juce::String((int)proc.linkOn.load())).toRawUTF8());
     toggleBtn.setColour(juce::ToggleButton::textColourId, kText);
     toggleBtn.setColour(juce::ToggleButton::tickColourId, kCyan);
     toggleBtn.setColour(juce::ToggleButton::tickDisabledColourId, kText2);
-    toggleBtn.onStateChange = [this]
+    toggleBtn.onClick = [this]
     {
+        EchoJay_NSLog(("EJLinkState: editor toggle -> "
+                       + juce::String((int)toggleBtn.getToggleState())).toRawUTF8());
         proc.linkOn.store(toggleBtn.getToggleState());
         proc.updateShmState();
         repaint();
     };
     addAndMakeVisible(toggleBtn);
+
+    // Keep the toggle/name in sync when the processor state changes OUTSIDE
+    // this editor (project state restore, remote Active command)
+    proc.onLinkStateChanged = [safe = juce::Component::SafePointer<LinkEditor>(this)]
+    {
+        if (safe == nullptr) return;
+        safe->toggleBtn.setToggleState(safe->proc.linkOn.load(), juce::dontSendNotification);
+        safe->nameField.setText(safe->proc.linkName, juce::dontSendNotification);
+        safe->repaint();
+    };
 
     // Chain panel fills everything below the header
     addAndMakeVisible(chainPanel);
@@ -75,6 +92,7 @@ LinkEditor::~LinkEditor()
 {
     proc.onChainModelChanged = nullptr;
     proc.onChainAboutToChange = nullptr;
+    proc.onLinkStateChanged = nullptr;
     chainPanel.closeAllEditors();
 }
 
@@ -112,16 +130,78 @@ void LinkEditor::paint(juce::Graphics& g)
     g.fillEllipse(lightBounds);
     g.setColour(lightColour.withAlpha(0.25f));
     g.fillEllipse(lightBounds.expanded(3.0f));
+
+    // Minimise / restore icon — top right of the header (same arrow style
+    // as the main plugin's mode toggles)
+    {
+        int iconX = getWidth() - 24, iconY = (kHeaderH - 16) / 2, s = 16;
+        g.setColour(kText2);
+        if (miniMode)
+        {
+            // Expand — arrows outward
+            g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + 2, (float)iconY + s - 6, 1.5f);
+            g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + 6, (float)iconY + s - 2, 1.5f);
+            g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s - 2, (float)iconY + 6, 1.5f);
+            g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s - 6, (float)iconY + 2, 1.5f);
+        }
+        else
+        {
+            // Minimise — arrows inward
+            g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + s - 2, (float)iconY + 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + s/2, (float)iconY + s/2, (float)iconX + s/2, (float)iconY + s/2 + 4, 1.5f);
+            g.drawLine((float)iconX + s/2, (float)iconY + s/2, (float)iconX + s/2 - 4, (float)iconY + s/2, 1.5f);
+            g.drawLine((float)iconX + s/2, (float)iconY + s/2, (float)iconX + s/2, (float)iconY + s/2 - 4, 1.5f);
+            g.drawLine((float)iconX + s/2, (float)iconY + s/2, (float)iconX + s/2 + 4, (float)iconY + s/2, 1.5f);
+        }
+    }
+
+    // ---- Mini body: chain summary + status line, nothing else ----
+    if (miniMode)
+    {
+        auto& model = proc.getChainModel();
+        int missing = 0;
+        for (auto& sl : model) if (sl.missing) ++missing;
+        juce::String summary = model.empty()
+            ? "No chain"
+            : juce::String((int)model.size()) + " plugin"
+              + ((int)model.size() == 1 ? "" : "s");
+        if (missing > 0)
+            summary += " (" + juce::String(missing) + " missing)";
+
+        g.setColour(kText);
+        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+        g.drawText(summary, 16, kHeaderH + 8, getWidth() - 32, 18,
+                   juce::Justification::centredLeft);
+
+        juce::String status = chainPanel.statusText;
+        if (!proc.chainLayoutSupported())
+            status += (status.isEmpty() ? "" : "  |  ")
+                    + juce::String("unsupported channel layout (chain bypassed)");
+        if (status.isEmpty())
+            status = proc.linkOn.load() ? "Active - feeding EchoJay"
+                                        : "Inactive - capture/meter role dormant";
+        g.setColour(kText2);
+        g.setFont(juce::Font(juce::FontOptions(10.0f)));
+        g.drawText(status, 16, kHeaderH + 30, getWidth() - 32, 14,
+                   juce::Justification::centredLeft);
+    }
 }
 
 void LinkEditor::resized()
 {
-    // Persist window size in the processor state
-    proc.editorW = getWidth();
-    proc.editorH = getHeight();
+    // Persist window size in the processor state — full layout only, the
+    // mini window's size must not clobber the saved editor size
+    if (!miniMode)
+    {
+        proc.editorW = getWidth();
+        proc.editorH = getHeight();
+    }
 
     int fieldX = 150;
-    int fieldW = juce::jmin(280, getWidth() - fieldX - 170);
+    int fieldW = juce::jmin(280, juce::jmax(80, getWidth() - fieldX - 170));
     nameField.setBounds(fieldX, (kHeaderH - 26) / 2, fieldW, 26);
     toggleBtn.setBounds(fieldX + fieldW + 12, (kHeaderH - 24) / 2, 76, 24);
 
@@ -129,7 +209,46 @@ void LinkEditor::resized()
     lightBounds = { (float)(fieldX + fieldW + 12 + 76 + 10),
                     (kHeaderH - lightD) * 0.5f, lightD, lightD };
 
-    chainPanel.setBounds(0, kHeaderH + 1, getWidth(), getHeight() - kHeaderH - 1);
+    if (!miniMode)
+        chainPanel.setBounds(0, kHeaderH + 1, getWidth(), getHeight() - kHeaderH - 1);
+}
+
+void LinkEditor::mouseDown(const juce::MouseEvent& e)
+{
+    auto pos = e.getPosition();
+    if (pos.y < kHeaderH && pos.x > getWidth() - 30)
+    {
+        toggleMiniMode();
+        return;
+    }
+}
+
+void LinkEditor::toggleMiniMode()
+{
+    miniMode = !miniMode;
+
+    if (miniMode)
+    {
+        miniSavedW_ = getWidth();
+        miniSavedH_ = getHeight();
+        // Hosted editors (inline or pop-out) close cleanly on entering mini;
+        // restore re-opens the selected slot inline via the rebuild path
+        chainPanel.closeAllEditors();
+        chainPanel.setVisible(false);
+        setResizeLimits(340, 120, 700, 160);
+        setSize(430, 128);
+    }
+    else
+    {
+        setResizeLimits(900, 580, 1800, 1200);
+        setSize(miniSavedW_ > 0 ? miniSavedW_ : juce::jlimit(900, 1800, proc.editorW),
+                miniSavedH_ > 0 ? miniSavedH_ : juce::jlimit(580, 1200, proc.editorH));
+        chainPanel.setVisible(true);
+        chainPanel.rebuild();
+    }
+
+    resized();
+    repaint();
 }
 
 void LinkEditor::showChainPluginPicker()

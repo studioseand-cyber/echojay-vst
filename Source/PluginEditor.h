@@ -1214,6 +1214,21 @@ private:
     void showChainBuildTargetMenu(const juce::String& chainJson);
     void sendChainToLink(const juce::String& linkName, const juce::String& chainJson);
     void pollLinkChainAck(const juce::String& linkName, int seq, int attemptsLeft);
+
+    // ---- LINK tab remote Active control ------------------------------------
+    // Per-row toggle writes ctrl-cmd-<id>.json {v:1, seq, active}; the Link
+    // applies it (authority stays with the Link) and acks; the row shows a
+    // pending style until the ack, and a NO RESP state on timeout.
+    struct LinkCtrlPending {
+        juce::String name;
+        int  seq = 0;
+        bool target = false;
+        bool timedOut = false;
+    };
+    std::vector<LinkCtrlPending> linkCtrlPending_;
+    std::vector<std::pair<juce::Rectangle<int>, juce::String>> linkToggleZones_;
+    void sendLinkActiveCommand(const juce::String& linkName, bool active);
+    void pollLinkCtrlAck(const juce::String& linkName, int seq, int attemptsLeft);
     void promptForFailedPlugins(juce::StringArray failed);
     void showNextFailPrompt(juce::StringArray names, int idx);
     // Shared disable action (local + Link build failures): untick in the
