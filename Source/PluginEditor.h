@@ -246,6 +246,19 @@ private:
     void updateProjectPromptVisibility();
     void dismissProjectPrompt(bool accepted);
     void publishProjectName();
+
+    // ---- Settings right column (ACCOUNT / WHAT'S NEW / THIS MONTH) ----
+    // Rects computed in resized(), painted in paintSettingsView(). Below
+    // ~1100px window width the cards stack under the form as a row.
+    juce::Rectangle<int> settingsAccountCard_, settingsWhatsNewCard_, settingsMonthCard_;
+    juce::Rectangle<int> settingsUpgradeRect_;   // Upgrade button slot in ACCOUNT
+    juce::var whatsNewEntries_;                  // fetched/cached release notes
+    bool whatsNewFetched_ = false;
+    // Local monthly usage counters (monthly_stats.json, month-keyed, shared
+    // across instances; no server involvement)
+    int statCaptures_ = 0, statChats_ = 0, statChains_ = 0;
+    void loadMonthlyStats();
+    void bumpMonthlyStat(const juce::String& key);
     void updateGenrePromptVisibility();
     void dismissGenrePrompt(const juce::String& selectedGenre);
     void paintGenrePromptOverlay(juce::Graphics& g, juce::Rectangle<int> bounds);

@@ -101,7 +101,12 @@ public:
     void setNextChatMeters(const juce::String& blob) { nextChatMeters_ = blob; }
     
     // ============ User Settings (synced with web app) ============
-    
+
+    // WHAT'S NEW card: GET /api/whats-new — a static JSON array of releases
+    // [{"title","line"}...]. Cached to whats_new.json; on any failure the
+    // last cache (then empty) is delivered — never an error state.
+    void fetchWhatsNew(std::function<void(const juce::var&)> onComplete);
+
     // Fetch settings from server
     void fetchSettings(std::function<void(bool success)> onComplete = nullptr);
     

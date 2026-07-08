@@ -1311,6 +1311,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // of scales so users can bump chat readability without a settings trip.
     // Uses a subtle filled background so users can actually spot it.
     loadChatTextScale();
+    loadMonthlyStats();
     // Re-apply the input font — a persisted Aa choice may differ from the
     // default the constructor used a few lines up
     chatInput.setFont(juce::Font(juce::FontOptions(12.0f * chatTextScale)));
@@ -4089,9 +4090,25 @@ void EchoJayEditor::showSettingsView()
     settingsScanBtn.setVisible(true);
     viewAllPluginsBtn.setVisible(true);
     settingsHelpBtn.setVisible(true);
-    dumpMetersBtn.setVisible(true);
+    // Dump meters is DEV-ONLY (dev_mode file) — resized() owns its
+    // visibility; never force it on here
     settingsPluginViewport.setVisible(false);
     settingsPluginSearchBox.setVisible(false);
+
+    // Right-column card data: fresh local stats + one what's-new fetch per
+    // session (cached, silent fallback)
+    loadMonthlyStats();
+    if (!whatsNewFetched_)
+    {
+        whatsNewFetched_ = true;
+        auto safeWN = juce::Component::SafePointer<EchoJayEditor>(this);
+        api.fetchWhatsNew([safeWN](const juce::var& entries)
+        {
+            if (safeWN == nullptr) return;
+            safeWN->whatsNewEntries_ = entries;
+            safeWN->repaint();
+        });
+    }
     
     // Refresh tier/usage when Settings opens — this is where users go
     // to "check" an upgrade after paying on the website. Catching it
@@ -5656,31 +5673,77 @@ juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
     return reviewId;
 }
 
+// ---------------------------------------------------------------------------
+// Local monthly usage counters — monthly_stats.json {month, captures, chats,
+// chains}. Month-keyed: a different month resets everything. Shared across
+// instances via the file (re-read before every bump). Purely local data —
+// no server involvement by design.
+// ---------------------------------------------------------------------------
+static juce::File monthlyStatsFile()
+{
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+               .getChildFile("EchoJay").getChildFile("monthly_stats.json");
+}
+static juce::String currentMonthKey()
+{
+    return juce::Time::getCurrentTime().formatted("%Y-%m");
+}
+
+void EchoJayEditor::loadMonthlyStats()
+{
+    statCaptures_ = statChats_ = statChains_ = 0;
+    auto f = monthlyStatsFile();
+    if (!f.existsAsFile()) return;
+    auto v = juce::JSON::parse(f.loadFileAsString());
+    if (auto* o = v.getDynamicObject())
+        if (o->getProperty("month").toString() == currentMonthKey())
+        {
+            statCaptures_ = (int)o->getProperty("captures");
+            statChats_    = (int)o->getProperty("chats");
+            statChains_   = (int)o->getProperty("chains");
+        }
+}
+
+void EchoJayEditor::bumpMonthlyStat(const juce::String& key)
+{
+    loadMonthlyStats();   // pick up other instances' bumps + month rollover
+    if      (key == "captures") ++statCaptures_;
+    else if (key == "chats")    ++statChats_;
+    else if (key == "chains")   ++statChains_;
+    auto* o = new juce::DynamicObject();
+    o->setProperty("month",    currentMonthKey());
+    o->setProperty("captures", statCaptures_);
+    o->setProperty("chats",    statChats_);
+    o->setProperty("chains",   statChains_);
+    auto f = monthlyStatsFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(juce::JSON::toString(juce::var(o), true));
+}
+
 void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> area)
 {
     int x = area.getX(), w = area.getWidth();
     int fh = 30, labelGap = 18;
     int y = area.getY();
+
+    // Two-column: mirror resized()'s column math so the painted labels
+    // track the form column, not the full window
+    {
+        const bool cardsStacked = getWidth() < 1100;
+        const int  cardsRightW  = cardsStacked ? 0 : juce::jmax(280, getWidth() / 3 - 20);
+        if (!cardsStacked)
+            w = juce::jmax(200, getWidth() - 40 - (cardsRightW + 16));
+    }
     
-    // === Version + credits — single dim line, bottom-right, ending just
-    // left of the Help & Support button (nothing at the top-right) ===
+    // === Version — single dim line, bottom-right, ending just left of the
+    // Help & Support button. (Credits moved into the ACCOUNT card.) ===
     if (api.isLoggedIn())
     {
-        auto info = api.getUserInfo();
-        int remaining = api.getRemainingMessages();
-        int limit = info.messageLimit;
-        int used = limit - remaining;
-
-        juce::String line = juce::String::fromUTF8("v") + ProjectInfo::versionString
-                          + juce::String::fromUTF8("  \xc2\xb7  Credits: ")
-                          + juce::String(used) + "/" + juce::String(limit);
-        if (info.credits > 0)
-            line += " (+" + juce::String(info.credits) + ")";
-
-        int dumpX = x + w - 80 - 8 - 120 - 8 - 96;   // Dump meters X in resized()
+        juce::String line = juce::String::fromUTF8("v") + ProjectInfo::versionString;
+        int endX = settingsHelpBtn.getX();
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        g.drawText(line, x, area.getBottom() - 32, dumpX - x - 12, 30,
+        g.drawText(line, x, area.getBottom() - 32, endX - x - 12, 30,
                    juce::Justification::centredRight);
     }
 
@@ -5726,6 +5789,119 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
     g.drawText("YOUR PLUGINS", x, y, w, 14, juce::Justification::centredLeft);
+
+    // === Right column cards — meters-panel styling (dark cards, tiny-caps
+    // headers, cyan accents). Rects come from resized(). ===
+    if (!settingsAccountCard_.isEmpty())
+    {
+        // ACCOUNT — plan badge, credits bar, Upgrade slot (the button itself
+        // is a component positioned into settingsUpgradeRect_ by the timer)
+        {
+            auto a = settingsAccountCard_;
+            drawPanel(g, a, "ACCOUNT", C::blue2);
+            auto info = api.getUserInfo();
+            juce::String plan = info.tierLevel >= 2 ? "STUDIO"
+                              : info.tierLevel >= 1 ? "PRO" : "FREE";
+            juce::Rectangle<int> badge(a.getX() + 14, a.getY() + 26, 56, 18);
+            g.setColour(info.tierLevel > 0 ? C::purple.withAlpha(0.3f) : C::bg4);
+            g.fillRoundedRectangle(badge.toFloat(), 9.0f);
+            g.setColour(info.tierLevel > 0 ? C::blue2 : C::text2);
+            g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+            g.drawText(plan, badge, juce::Justification::centred);
+
+            int remaining = api.getRemainingMessages();
+            int limit = juce::jmax(1, info.messageLimit);
+            juce::Rectangle<int> bar(a.getX() + 14, badge.getBottom() + 10,
+                                     a.getWidth() - 28, 8);
+            g.setColour(C::bg4);
+            g.fillRoundedRectangle(bar.toFloat(), 4.0f);
+            float frac = juce::jlimit(0.0f, 1.0f, (float)remaining / (float)limit);
+            if (frac > 0.0f)
+            {
+                g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.85f));
+                g.fillRoundedRectangle(bar.toFloat().withWidth(bar.getWidth() * frac), 4.0f);
+            }
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(10.0f)));
+            g.drawText(juce::String(remaining) + "/" + juce::String(limit) + " credits"
+                       + (info.credits > 0 ? " (+" + juce::String(info.credits) + ")" : ""),
+                       bar.getX(), bar.getBottom() + 4, bar.getWidth(), 13,
+                       juce::Justification::centredLeft);
+            // Pro/Studio users see plan status where free users get Upgrade
+            if (info.tierLevel > 0)
+            {
+                g.setColour(C::text2);
+                g.setFont(juce::Font(juce::FontOptions(10.5f)));
+                g.drawText(plan == "PRO" ? "Pro plan active" : "Studio plan active",
+                           settingsUpgradeRect_, juce::Justification::centredLeft);
+            }
+        }
+
+        // WHAT'S NEW — version + up to 3 release-note entries; silent
+        // fallback text, never an error state
+        {
+            auto wn = settingsWhatsNewCard_;
+            drawPanel(g, wn, "WHAT'S NEW", C::purple);
+            int wy = wn.getY() + 26;
+            g.setColour(C::text2);
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.drawText(juce::String("v") + ProjectInfo::versionString + " installed",
+                       wn.getX() + 14, wy, wn.getWidth() - 28, 14,
+                       juce::Justification::centredLeft);
+            wy += 20;
+            int shown = 0;
+            if (auto* arr = whatsNewEntries_.getArray())
+                for (auto& ev : *arr)
+                {
+                    if (shown >= 3 || wy + 28 > wn.getBottom() - 6) break;
+                    auto* eo = ev.getDynamicObject();
+                    if (eo == nullptr) continue;
+                    g.setColour(C::text);
+                    g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
+                    g.drawText(eo->getProperty("title").toString(),
+                               wn.getX() + 14, wy, wn.getWidth() - 28, 13,
+                               juce::Justification::centredLeft, true);
+                    g.setColour(C::text3);
+                    g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                    g.drawText(eo->getProperty("line").toString(),
+                               wn.getX() + 14, wy + 13, wn.getWidth() - 28, 12,
+                               juce::Justification::centredLeft, true);
+                    wy += 30;
+                    ++shown;
+                }
+            if (shown == 0)
+            {
+                g.setColour(C::text3);
+                g.setFont(juce::Font(juce::FontOptions(10.5f)));
+                g.drawText("You're up to date.", wn.getX() + 14, wy,
+                           wn.getWidth() - 28, 14, juce::Justification::centredLeft);
+            }
+        }
+
+        // THIS MONTH — local counters only (monthly_stats.json)
+        {
+            auto mo = settingsMonthCard_;
+            drawPanel(g, mo, "THIS MONTH", C::green);
+            struct Row { const char* label; int v; };
+            const Row rows[] = { { "Captures",     statCaptures_ },
+                                 { "Chats",        statChats_ },
+                                 { "Chains built", statChains_ } };
+            int ry = mo.getY() + 26;
+            for (auto& r : rows)
+            {
+                if (ry + 16 > mo.getBottom() - 6) break;
+                g.setColour(C::text3);
+                g.setFont(juce::Font(juce::FontOptions(10.0f)));
+                g.drawText(r.label, mo.getX() + 14, ry, mo.getWidth() - 76, 14,
+                           juce::Justification::centredLeft);
+                g.setColour(C::text);
+                g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+                g.drawText(juce::String(r.v), mo.getRight() - 58, ry, 44, 14,
+                           juce::Justification::centredRight);
+                ry += 18;
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -8523,7 +8699,13 @@ void EchoJayEditor::resized()
     // The form stretches to the full window width (no chat sidebar here);
     // reflows on every resize since this all derives from current bounds.
     if (currentView == View::Settings) {
-        int sx = 20, sy = topH + 18, sw = juce::jmax(200, b.getWidth() - 40);
+        // Two-column layout: form left (~2/3), card stack (ACCOUNT / WHAT'S
+        // NEW / THIS MONTH) right (~1/3). Below ~1100px the cards move UNDER
+        // the form as a row of three instead of squeezing it.
+        const bool cardsStacked = b.getWidth() < 1100;
+        const int  cardsRightW  = cardsStacked ? 0 : juce::jmax(280, b.getWidth() / 3 - 20);
+        int sx = 20, sy = topH + 18;
+        int sw = juce::jmax(200, b.getWidth() - 40 - (cardsStacked ? 0 : cardsRightW + 16));
         int fh = 30, labelGap = 18; // label height + space before field
 
         // YOUR NAME
@@ -8585,17 +8767,58 @@ void EchoJayEditor::resized()
         viewAllPluginsBtn.setBounds(sx + sw - viewAllW, sy, viewAllW, fh);
         sy += fh + 8;
         
-        // Save + Logout row — always pinned to bottom
+        // Save + Logout row — always pinned to bottom, spans the WINDOW
+        // width (not the form column) so Log Out stays bottom-right
+        int rowW = b.getWidth() - 40;
         saveSettingsBtn.setBounds(sx, saveRowY, 100, 30);
         settingsSavedLabel.setBounds(sx + 110, saveRowY, 150, 30);
-        logoutBtn.setBounds(sx + sw - 80, saveRowY, 80, 30);
+        logoutBtn.setBounds(sx + rowW - 80, saveRowY, 80, 30);
         // Help & Support sits just left of Log Out — an app-level link, kept
         // visually distinct from the plugins controls above.
-        settingsHelpBtn.setBounds(sx + sw - 80 - 8 - 120, saveRowY, 120, 30);
-        // Dump meters — debug affordance beside the version/credits line
-        // (the painted line in paintSettingsView ends just left of this)
-        dumpMetersBtn.setBounds(sx + sw - 80 - 8 - 120 - 8 - 96, saveRowY, 96, 30);
+        settingsHelpBtn.setBounds(sx + rowW - 80 - 8 - 120, saveRowY, 120, 30);
+        // Dump meters — DEV-ONLY debug affordance: rendered ONLY when
+        // ~/Library/EchoJay/dev_mode exists (any content). Touch that file
+        // to get the button back; end users never see it.
+        {
+            bool devMode = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                               .getChildFile("EchoJay").getChildFile("dev_mode").existsAsFile();
+            dumpMetersBtn.setVisible(devMode);
+            if (devMode)
+                dumpMetersBtn.setBounds(sx + rowW - 80 - 8 - 120 - 8 - 96, saveRowY, 96, 30);
+        }
         logoutBtn.setVisible(true);
+
+        // Right column cards (or a row of three under the form when stacked)
+        if (!cardsStacked)
+        {
+            int cx = sx + sw + 16;
+            int cw = b.getWidth() - 20 - cx;
+            int cTop = topH + 18, cBottom = saveRowY - 12;
+            int acctH = 118, monthH = 96, gap = 8;
+            int wnH = juce::jmax(110, cBottom - cTop - acctH - monthH - gap * 2);
+            settingsAccountCard_  = { cx, cTop, cw, acctH };
+            settingsWhatsNewCard_ = { cx, cTop + acctH + gap, cw, wnH };
+            settingsMonthCard_    = { cx, cTop + acctH + gap + wnH + gap, cw, monthH };
+        }
+        else
+        {
+            int cTop = sy + 8;
+            int ch = juce::jlimit(96, 150, saveRowY - 12 - cTop);
+            int gap = 8;
+            int cw = (sw - gap * 2) / 3;
+            settingsAccountCard_  = { sx,                  cTop, cw, ch };
+            settingsWhatsNewCard_ = { sx + cw + gap,       cTop, cw, ch };
+            settingsMonthCard_    = { sx + (cw + gap) * 2, cTop, sw - (cw + gap) * 2, ch };
+        }
+        // The Upgrade button's owned home: a slot at the bottom of ACCOUNT
+        settingsUpgradeRect_ = settingsAccountCard_.reduced(14, 0)
+                                   .withTrimmedTop(settingsAccountCard_.getHeight() - 38)
+                                   .withHeight(28);
+    }
+    else
+    {
+        settingsAccountCard_ = settingsWhatsNewCard_ = settingsMonthCard_ = {};
+        settingsUpgradeRect_ = {};
     }
 
     auto card = b.reduced(40, 34);
@@ -9135,6 +9358,7 @@ void EchoJayEditor::timerCallback()
             }
 
             // ── 4. Fire AI feedback ────────────────────────────────────────
+            bumpMonthlyStat("captures");   // THIS MONTH card (local counter)
             requestAIFeedback(snap, currentChatId, reviewId, passName, version, prevReview);
         
             // Refresh compare dropdowns if we're on the compare view
@@ -9193,24 +9417,37 @@ void EchoJayEditor::timerCallback()
                         || currentTab == Tab::Chat
                         || currentTab == Tab::Compare
                         || (currentTab == Tab::Chain && !chainChatCollapsed_);
-        bool showUpgrade = info.tierLevel < 2 && !api.canSendMessage()
+        // Second owned home: the ACCOUNT card on Settings shows Upgrade
+        // PERMANENTLY for free users (not just when out of messages)
+        bool onSettingsCard = currentView == View::Settings
+                           && !visualOnlyMode && !compactMode
+                           && !settingsUpgradeRect_.isEmpty();
+        bool showUpgrade = info.tierLevel < 2
                         && !channelPromptVisible && !genrePromptVisible
-                        && !visualOnlyMode && chatContext;
+                        && !visualOnlyMode
+                        && ((chatContext && !api.canSendMessage()) || onSettingsCard);
         upgradeBtn.setVisible(showUpgrade);
         if (showUpgrade)
         {
             upgradeBtn.setButtonText(info.tierLevel == 0 ? "Upgrade to Pro" : "Upgrade to Studio");
-            // The button REPLACES the input row, centred within its bounds
-            // (live bounds — the row is guaranteed on-screen in chatContext)
-            auto cb = chatInput.getBounds();
-            int btnW = 140;
-            int btnH = 30;
-            int btnX = cb.getX() + (cb.getWidth() - btnW) / 2 + 20;
-            int btnY = cb.getY() + (cb.getHeight() - btnH) / 2;
-            upgradeBtn.setBounds(btnX, btnY, btnW, btnH);
-            chatInput.setVisible(false);
-            chatSendBtn.setVisible(false);
-            chatTextSizeBtn.setVisible(false);
+            if (onSettingsCard)
+            {
+                upgradeBtn.setBounds(settingsUpgradeRect_);
+            }
+            else
+            {
+                // The button REPLACES the input row, centred within its
+                // bounds (live — the row is on-screen in chatContext)
+                auto cb = chatInput.getBounds();
+                int btnW = 140;
+                int btnH = 30;
+                int btnX = cb.getX() + (cb.getWidth() - btnW) / 2 + 20;
+                int btnY = cb.getY() + (cb.getHeight() - btnH) / 2;
+                upgradeBtn.setBounds(btnX, btnY, btnW, btnH);
+                chatInput.setVisible(false);
+                chatSendBtn.setVisible(false);
+                chatTextSizeBtn.setVisible(false);
+            }
         }
         else if (chatContext && !channelPromptVisible && !genrePromptVisible
                  && !visualOnlyMode && !chatInput.isVisible())
@@ -9580,6 +9817,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
 
     processorRef.chatRoles.add("user");
     processorRef.chatContents.add(userContent);
+    bumpMonthlyStat("chats");   // THIS MONTH card (local counter)
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         processorRef.getEffectiveChannelName(), processorRef.getGenre(),
@@ -9913,6 +10151,8 @@ void EchoJayEditor::pollLinkChainAck(const juce::String& linkName, int seq,
                         summary += "\nStatus: " + status;
                     if (!lines.isEmpty())
                         summary += "\n\n" + lines.joinIntoString("\n");
+                    if (ok > 0)
+                        safeThis->bumpMonthlyStat("chains");   // THIS MONTH card
                     safeThis->showLinkBuildResults(summary, loadFailed);
                     return;
                 }
@@ -10178,6 +10418,8 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 safeThis->chainListPanel.rebuild(ch3.getAllSlotInfos(), safeThis->chainSelectedSlot_);
                 safeThis->chainListPanel.statusText = {};
                 juce::String status = juce::String(ch3.getNumSlots()) + " slot(s) loaded";
+                if (ch3.getNumSlots() > 0)
+                    safeThis->bumpMonthlyStat("chains");   // THIS MONTH card
                 if (!skipped->isEmpty())
                     status += " (" + skipped->joinIntoString(", ") + " failed)";
                 if (!droppedDisabled.isEmpty())

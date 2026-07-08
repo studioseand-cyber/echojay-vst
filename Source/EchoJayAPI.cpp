@@ -1418,6 +1418,34 @@ UserSettings UserSettings::fromJSON(const juce::var& json)
 
 // ============ Settings Sync (via /api/data — profile field) ============
 
+void EchoJayAPI::fetchWhatsNew(std::function<void(const juce::var&)> onComplete)
+{
+    auto cacheFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                         .getChildFile("EchoJay").getChildFile("whats_new.json");
+    auto fallback = [onComplete, cacheFile]
+    {
+        // Silent fallback: last cached copy, else empty — the card shows
+        // "You're up to date", NEVER an error state
+        juce::var cached;
+        if (cacheFile.existsAsFile())
+            cached = juce::JSON::parse(cacheFile.loadFileAsString());
+        if (onComplete) onComplete(cached);
+    };
+    if (!isLoggedIn()) { fallback(); return; }
+
+    getJSON("/api/whats-new", [onComplete, cacheFile, fallback](const juce::var& json, int statusCode)
+    {
+        if (statusCode == 200 && json.isArray())
+        {
+            cacheFile.getParentDirectory().createDirectory();
+            cacheFile.replaceWithText(juce::JSON::toString(json, true));
+            if (onComplete) onComplete(json);
+            return;
+        }
+        fallback();
+    });
+}
+
 void EchoJayAPI::fetchSettings(std::function<void(bool success)> onComplete)
 {
     if (!isLoggedIn())
