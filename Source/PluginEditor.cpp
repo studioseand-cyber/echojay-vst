@@ -9025,17 +9025,27 @@ void EchoJayEditor::timerCallback()
             usageStr += " (+" + juce::String(info.credits) + " credits)";
         usageLabel.setText(usageStr, juce::dontSendNotification);
         
-        // Show upgrade button when free/pro user is out of messages (and credits).
-        // NEVER in mini mode — the timer re-showing it was how its corner
-        // poked into the mini view.
+        // OWNERSHIP: the Upgrade button belongs to the CHAT INPUT ROW and
+        // exists only where that row does — the CHAT tab, the COMPARE and
+        // CHAIN (uncollapsed) sidebars, and the chat-only compact window.
+        // Everywhere else (SETTINGS, METERS, VISUALISATION, LINK, the mini
+        // view, pop-outs) it must not exist. It used to be shown from this
+        // timer regardless of tab, positioned over chatInput's STALE bounds —
+        // which is how it floated over Settings' Log Out button and poked
+        // into the mini view.
+        bool chatContext = compactMode
+                        || currentTab == Tab::Chat
+                        || currentTab == Tab::Compare
+                        || (currentTab == Tab::Chain && !chainChatCollapsed_);
         bool showUpgrade = info.tierLevel < 2 && !api.canSendMessage()
                         && !channelPromptVisible && !genrePromptVisible
-                        && !visualOnlyMode;
+                        && !visualOnlyMode && chatContext;
         upgradeBtn.setVisible(showUpgrade);
         if (showUpgrade)
         {
             upgradeBtn.setButtonText(info.tierLevel == 0 ? "Upgrade to Pro" : "Upgrade to Studio");
-            // Centre a compact button in the chat input area
+            // The button REPLACES the input row, centred within its bounds
+            // (live bounds — the row is guaranteed on-screen in chatContext)
             auto cb = chatInput.getBounds();
             int btnW = 140;
             int btnH = 30;
@@ -9045,6 +9055,16 @@ void EchoJayEditor::timerCallback()
             chatInput.setVisible(false);
             chatSendBtn.setVisible(false);
             chatTextSizeBtn.setVisible(false);
+        }
+        else if (chatContext && !channelPromptVisible && !genrePromptVisible
+                 && !visualOnlyMode && !chatInput.isVisible())
+        {
+            // Messages came back (new day / credits / upgrade): restore the
+            // input row the button had replaced — previously it stayed
+            // hidden until a tab switch
+            chatInput.setVisible(true);
+            chatSendBtn.setVisible(true);
+            chatTextSizeBtn.setVisible(true);
         }
         
         // Colour the usage label red when out of messages
