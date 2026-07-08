@@ -247,6 +247,12 @@ private:
     void dismissProjectPrompt(bool accepted);
     void publishProjectName();
 
+    // While ANY onboarding prompt is up: child components paint ABOVE the
+    // editor's paint() scrim, and the visualiser's GL surface composites
+    // over everything regardless of component visibility — occlude them
+    // (visual hidden AND stopped, sidebar hidden); restore on dismiss.
+    void applyPromptOverlayOcclusion();
+
     // ---- Settings right column (ACCOUNT / WHAT'S NEW / THIS MONTH) ----
     // Rects computed in resized(), painted in paintSettingsView(). Below
     // ~1100px window width the cards stack under the form as a row.

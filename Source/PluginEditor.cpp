@@ -1929,6 +1929,7 @@ void EchoJayEditor::updateChannelPromptVisibility()
         customChannelBtn.toFront(false);
     }
 
+    applyPromptOverlayOcclusion();
     repaint();
 }
 
@@ -1997,6 +1998,7 @@ void EchoJayEditor::updateGenrePromptVisibility()
         genrePromptCustomBtn.toFront(false);
     }
 
+    applyPromptOverlayOcclusion();
     repaint();
 }
 
@@ -2071,6 +2073,7 @@ void EchoJayEditor::updateProjectPromptVisibility()
         projectPromptSkipBtn.toFront(false);
         projectPromptInput.grabKeyboardFocus();
     }
+    applyPromptOverlayOcclusion();
     repaint();
 }
 
@@ -2104,6 +2107,31 @@ void EchoJayEditor::publishProjectName()
     auto name = processorRef.getProjectName().trim();
     ChainHost::publishSessionProjectName(name);
     lastSeenSharedProject_ = name;
+}
+
+void EchoJayEditor::applyPromptOverlayOcclusion()
+{
+    const bool prompt = channelPromptVisible || genrePromptVisible
+                     || projectPromptVisible;
+    if (prompt)
+    {
+        // GL visual: hide AND stop — a live GL surface can draw over the
+        // scrim at its last bounds even when its component is invisible
+        particleVisualHolder.setVisible(false);
+        if (particleVisual != nullptr) particleVisual->stop();
+        // Chat tab sidebar is a ListBox (child component) — occlude it too
+        chatSidebar.setVisible(false);
+        sidebarNewChatBtn.setVisible(false);
+        sidebarNewAlbumBtn.setVisible(false);
+    }
+    else if (visualMode
+             && (currentTab == Tab::Visualisation || visualOnlyMode)
+             && particleVisual != nullptr)
+    {
+        // Resume — resized() (called by every dismiss path) re-evaluates
+        // the holder's visibility and bounds, and the sidebar's
+        particleVisual->start();
+    }
 }
 
 // --- UpdateOverlay implementation ---
@@ -8390,6 +8418,7 @@ void EchoJayEditor::resized()
         int selectorH = 30; // preset/theme selector strip
         particleVisualHolder.setBounds(0, topH, paintMW - 1, b.getHeight() - topH - stripH - selectorH - abOff);
         particleVisualHolder.setVisible(!channelPromptVisible && !genrePromptVisible
+                                        && !projectPromptVisible
                                         && !updateOverlay.isVisible()
                                         && !reviewOverlay.visibleState);
     }
@@ -8400,6 +8429,7 @@ void EchoJayEditor::resized()
             int toggleH = 24;
             particleVisualHolder.setBounds(0, topH, b.getWidth() - 2, b.getHeight() - topH - stripH - toggleH - abOff);
             particleVisualHolder.setVisible(!channelPromptVisible && !genrePromptVisible
+                                            && !projectPromptVisible
                                             && !updateOverlay.isVisible()
                                             && !reviewOverlay.visibleState);
         } else {
@@ -9584,7 +9614,8 @@ void EchoJayEditor::timerCallback()
     bool hideOverlays = (currentScreen != Screen::Main)
                      || (updateAvailable && !updateDismissed)
                      || channelPromptVisible
-                     || genrePromptVisible;
+                     || genrePromptVisible
+                     || projectPromptVisible;   // wave/chain overlay buttons
     
     if (hideOverlays)
     {
@@ -12483,7 +12514,8 @@ void EchoJayEditor::applyVisualOnlyVisibility()
         getChildComponent(i)->setVisible(false);
     captureBtn.setVisible(true);
     particleVisualHolder.setVisible(visualMode
-                                    && !channelPromptVisible && !genrePromptVisible);
+                                    && !channelPromptVisible && !genrePromptVisible
+                                    && !projectPromptVisible);
     // (TooltipWindow re-shows itself when it has a tip to display.)
 }
 
