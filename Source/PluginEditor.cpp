@@ -3391,45 +3391,59 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         g.setColour(dotCol);
         g.fillEllipse(dotX, dotY, (float)dotD, (float)dotD);
 
-        // Remote Active toggle pill (left of the dot). Reflects the ACKED
-        // registry state; pending style between send and ack; NO RESP on
-        // timeout. Authority stays with the Link.
+        // Remote Active control (left of the dot) — styled IDENTICALLY to the
+        // Link plugin's own toggle (LookAndFeel_V4 tick box: fontSize 15 →
+        // 16.5px rounded square, 4px corner, tickDisabled outline, cyan tick,
+        // plain 15px label). Reflects the ACKED registry state; pending shows
+        // a dim amber tick of the requested state + "Active..."; timeout
+        // shows a coral box outline + "no resp", then reverts to registry
+        // truth. Authority stays with the Link.
         {
             bool pending = false, timedOut = false, target = false;
             for (auto& p : linkCtrlPending_)
                 if (p.name == slot.name)
                 { pending = !p.timedOut; timedOut = p.timedOut; target = p.target; }
 
-            juce::Rectangle<int> pill(cardX + cardW - dotD - 10 - 78,
-                                      y + (cardH - 22) / 2, 68, 22);
-            linkToggleZones_.push_back({ pill, slot.name });
-
-            const auto cyan  = juce::Colour(0xff22d3ee);
+            const auto cyan  = juce::Colour(0xff22d3ee);   // Link kCyan (tick)
             const auto amber = juce::Colour(0xfff59e0b);
             const auto coral = juce::Colour(0xffff6d5a);
-            bool shownActive = pending ? target : slot.active;
+            const auto boxOutline = juce::Colour(0xffa0a0b8);   // Link tickDisabledColourId
+            const auto labelCol   = juce::Colour(0xfff0f0f5);   // Link textColourId
 
-            g.setColour(timedOut ? coral.withAlpha(0.15f)
-                      : pending  ? amber.withAlpha(0.15f)
-                      : shownActive ? cyan.withAlpha(0.18f) : C::bg4);
-            g.fillRoundedRectangle(pill.toFloat(), 11.0f);
-            g.setColour(timedOut ? coral.withAlpha(0.7f)
-                      : pending  ? amber.withAlpha(0.7f)
-                      : shownActive ? cyan.withAlpha(0.6f) : C::border2);
-            g.drawRoundedRectangle(pill.toFloat().reduced(0.5f), 11.0f, 1.0f);
-            g.setColour(timedOut ? coral : pending ? amber
-                      : shownActive ? cyan : C::text3);
-            g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
-            g.drawText(timedOut ? "NO RESP" : pending ? "..."
-                       : shownActive ? "ACTIVE" : "OFF",
-                       pill, juce::Justification::centred);
+            const float fontSize  = 15.0f;
+            const float tickWidth = fontSize * 1.1f;   // LookAndFeel_V4 metric
+
+            juce::Rectangle<int> zone(cardX + cardW - dotD - 10 - 86,
+                                      y + (cardH - 24) / 2, 76, 24);
+            linkToggleZones_.push_back({ zone, slot.name });
+
+            juce::Rectangle<float> tickBounds((float)zone.getX(),
+                                              (float)zone.getCentreY() - tickWidth * 0.5f,
+                                              tickWidth, tickWidth);
+            g.setColour(timedOut ? coral : boxOutline);
+            g.drawRoundedRectangle(tickBounds, 4.0f, 1.0f);
+
+            bool showTick = pending ? target : (!timedOut && slot.active);
+            if (showTick)
+            {
+                g.setColour(pending ? amber.withAlpha(0.6f) : cyan);
+                auto tick = getLookAndFeel().getTickShape(0.75f);
+                g.fillPath(tick, tick.getTransformToScaleToFit(
+                                     tickBounds.reduced(4.0f, 5.0f), false));
+            }
+
+            g.setColour(timedOut ? coral : labelCol);
+            g.setFont(juce::Font(juce::FontOptions(fontSize)));
+            g.drawText(timedOut ? "no resp" : pending ? "Active..." : "Active",
+                       zone.withTrimmedLeft((int)tickWidth + 6),
+                       juce::Justification::centredLeft);
         }
 
         // Name
         g.setColour(C::text);
         g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
         g.drawText(slot.name.isEmpty() ? "(unnamed)" : slot.name,
-                   cardX + 14, y + 8, cardW - dotD - 36 - 82, 18,
+                   cardX + 14, y + 8, cardW - dotD - 36 - 90, 18,
                    juce::Justification::centredLeft);
 
         // Stats line
