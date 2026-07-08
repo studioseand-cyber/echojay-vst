@@ -163,6 +163,12 @@ public:
     bool isGenrePromptDismissed() const { return genrePromptDismissed; }
     void setGenrePromptDismissed(bool dismissed) { genrePromptDismissed = dismissed; markStateDirty(); }
 
+    // Project-name prompt answered/skipped — same ownership rules. The
+    // prompt only ever shows when the instance has no own name AND no shared
+    // session value exists (see the editor's session-project flow).
+    bool isProjectPromptDismissed() const { return projectPromptDismissed; }
+    void setProjectPromptDismissed(bool dismissed) { projectPromptDismissed = dismissed; markStateDirty(); }
+
     // Project name — optional label for the current mix session.
     // Resetting the name to something new resets captureVersion to 1.
     juce::String getProjectName() const { return projectName; }
@@ -268,6 +274,7 @@ private:
     bool channelTypePromptDismissed = false;
     juce::String genre { "hip-hop" };
     bool genrePromptDismissed = false;
+    bool projectPromptDismissed = false;
 
     // Auto-detection
     

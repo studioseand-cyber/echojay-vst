@@ -42,6 +42,12 @@ public:
     // Link state (accessed by editor on message thread)
     juce::String      linkName;
     std::atomic<bool> linkOn    { false };
+
+    // Session project name (no UI here): adopted from the shared
+    // session_project.json when this instance has none of its own, follows
+    // shared edits while it matches the previous shared value, serialised
+    // with state. Own restored value always wins (never overwritten).
+    juce::String projectName;
     std::atomic<bool> didWrite  { false };  // set by audio thread on first successful produce
 
     /// Call from editor after any change to linkOn or linkName (message thread).
@@ -201,6 +207,10 @@ private:
     // toggle (linkOn + updateShmState + dirty-mark).
     int  lastAppliedCtrlSeq_ = 0;
     void pollControlCommand();
+
+    // Session project follow (see projectName above)
+    juce::String lastSeenSharedProject_;
+    void pollSessionProjectName();
     void writeChainAck(int seq, const juce::String& status,
                        const juce::StringArray& results,
                        const juce::var& detail);

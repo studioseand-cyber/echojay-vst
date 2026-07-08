@@ -69,6 +69,45 @@ void ChainHost::markPopoutOnly(const juce::String& pluginName, const juce::Strin
     popoutOnlyLoadTime() = f.getLastModificationTime();
 }
 
+// ---------------------------------------------------------------------------
+// Session project name — shared file, mtime-cached (popout_only pattern)
+// ---------------------------------------------------------------------------
+static juce::File sessionProjectFile() { return appSupportDir().getChildFile("session_project.json"); }
+static juce::String& sessionProjectCache() { static juce::String s; return s; }
+static juce::Time& sessionProjectLoadTime() { static juce::Time t; return t; }
+
+juce::String ChainHost::getSessionProjectName()
+{
+    auto f  = sessionProjectFile();
+    auto mt = f.getLastModificationTime();
+    if (mt != sessionProjectLoadTime())
+    {
+        sessionProjectLoadTime() = mt;
+        sessionProjectCache().clear();
+        if (f.existsAsFile())
+        {
+            auto v = juce::JSON::parse(f.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+                sessionProjectCache() = o->getProperty("name").toString().trim();
+        }
+    }
+    return sessionProjectCache();
+}
+
+void ChainHost::publishSessionProjectName(const juce::String& name)
+{
+    auto trimmed = name.trim();
+    if (getSessionProjectName() == trimmed) return;   // no-op republish
+    auto* o = new juce::DynamicObject();
+    o->setProperty("name",      trimmed);
+    o->setProperty("updatedAt", juce::Time::getCurrentTime().toISO8601(true));
+    auto f = sessionProjectFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(juce::JSON::toString(juce::var(o), true));
+    sessionProjectCache()    = trimmed;
+    sessionProjectLoadTime() = f.getLastModificationTime();
+}
+
 juce::PluginDescription ChainHost::preferInlineHostableDesc(const juce::PluginDescription& d)
 {
     if (d.pluginFormatName != "AudioUnit") return d;

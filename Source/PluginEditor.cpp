@@ -422,7 +422,19 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     projectInput.setColour(juce::TextEditor::outlineColourId, C::border2);
     projectInput.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff22d3ee).withAlpha(0.6f));
     projectInput.setColour(juce::TextEditor::textColourId, C::text);
+    // Session project name, rule (b): a fresh instance (no own name) adopts
+    // the shared value silently; an instance with its OWN restored name
+    // keeps it — the shared value never overwrites serialised state
+    lastSeenSharedProject_ = ChainHost::getSessionProjectName();
+    if (processorRef.getProjectName().trim().isEmpty()
+        && lastSeenSharedProject_.isNotEmpty())
+        processorRef.setProjectName(lastSeenSharedProject_);
+
     projectInput.setText(processorRef.getProjectName(), juce::dontSendNotification);
+    // Publish to the session on COMMIT (focus loss / return), not per
+    // keystroke — followers track the previous shared value
+    projectInput.onFocusLost = [this] { publishProjectName(); };
+    projectInput.onReturnKey = [this] { publishProjectName(); };
     projectInput.onTextChange = [this] {
         juce::String proj = projectInput.getText().trim();
         processorRef.setProjectName(proj);
@@ -1234,6 +1246,45 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     mkLabel(detectedLabel, C::amber);
     mkLabel(passLabel, C::text3);
 
+    // --- Project-name prompt (channel/genre-style) ---
+    projectPromptTitle.setText("What are you working on?", juce::dontSendNotification);
+    projectPromptTitle.setColour(juce::Label::textColourId, C::text);
+    projectPromptTitle.setFont(juce::Font(juce::FontOptions(22.0f, juce::Font::bold)));
+    projectPromptTitle.setJustificationType(juce::Justification::centred);
+    projectPromptTitle.setVisible(false);
+    addAndMakeVisible(projectPromptTitle);
+
+    projectPromptSubtitle.setText("Names your captures and reviews. Shared with every EchoJay and Link instance this session.",
+                                  juce::dontSendNotification);
+    projectPromptSubtitle.setColour(juce::Label::textColourId, C::text3);
+    projectPromptSubtitle.setFont(juce::Font(juce::FontOptions(11.0f)));
+    projectPromptSubtitle.setJustificationType(juce::Justification::centred);
+    projectPromptSubtitle.setVisible(false);
+    addAndMakeVisible(projectPromptSubtitle);
+
+    projectPromptInput.setFont(juce::Font(juce::FontOptions(14.0f)));
+    projectPromptInput.setTextToShowWhenEmpty("e.g. Midnight Drive", C::text3.withAlpha(0.6f));
+    projectPromptInput.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff111520));
+    projectPromptInput.setColour(juce::TextEditor::outlineColourId, C::border2);
+    projectPromptInput.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff22d3ee).withAlpha(0.6f));
+    projectPromptInput.setColour(juce::TextEditor::textColourId, C::text);
+    projectPromptInput.setJustification(juce::Justification::centred);
+    projectPromptInput.onReturnKey = [this] { dismissProjectPrompt(true); };
+    projectPromptInput.setVisible(false);
+    addAndMakeVisible(projectPromptInput);
+
+    projectPromptOkBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff0891b2));
+    projectPromptOkBtn.setColour(juce::TextButton::textColourOffId, C::text);
+    projectPromptOkBtn.onClick = [this] { dismissProjectPrompt(true); };
+    projectPromptOkBtn.setVisible(false);
+    addAndMakeVisible(projectPromptOkBtn);
+
+    projectPromptSkipBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
+    projectPromptSkipBtn.setColour(juce::TextButton::textColourOffId, C::text2);
+    projectPromptSkipBtn.onClick = [this] { dismissProjectPrompt(false); };
+    projectPromptSkipBtn.setVisible(false);
+    addAndMakeVisible(projectPromptSkipBtn);
+
     // Chat
     chatInput.setMultiLine(true, true); // multi-line with word wrap
     chatInput.setReturnKeyStartsNewLine(false); // Enter still sends
@@ -1776,6 +1827,7 @@ void EchoJayEditor::showMainScreen()
 
     updateChannelPromptVisibility();
     updateGenrePromptVisibility();
+    updateProjectPromptVisibility();
 
     // Mini modes: async paths (auth refresh etc.) can land here while a
     // mini view is up — re-assert the explicit layout so nothing that was
@@ -1893,8 +1945,9 @@ void EchoJayEditor::dismissChannelPrompt()
     compareBtn.setEnabled(true);
     captureBtn.setEnabled(true);
     settingsBtn.setEnabled(true);
-    // After channel prompt dismisses, check if genre prompt should show
+    // After channel prompt dismisses, check if genre (then project) should show
     updateGenrePromptVisibility();
+    updateProjectPromptVisibility();
     resized();
 }
 
@@ -1963,8 +2016,86 @@ void EchoJayEditor::dismissGenrePrompt(const juce::String& selectedGenre)
     compareBtn.setEnabled(true);
     captureBtn.setEnabled(true);
     settingsBtn.setEnabled(true);
+    // Genre answered — the project-name prompt is next in the chain
+    updateProjectPromptVisibility();
     resized();
     repaint();
+}
+
+// ============================================================================
+// Project-name prompt (once per session) + shared session value
+// ============================================================================
+
+bool EchoJayEditor::shouldShowProjectPrompt() const
+{
+    return currentScreen == Screen::Main
+        && !channelPromptVisible
+        && !genrePromptVisible
+        && !processorRef.isProjectPromptDismissed()
+        && processorRef.getProjectName().trim().isEmpty()
+        && ChainHost::getSessionProjectName().isEmpty();
+}
+
+void EchoJayEditor::updateProjectPromptVisibility()
+{
+    projectPromptVisible = shouldShowProjectPrompt();
+
+    projectPromptTitle.setVisible(projectPromptVisible);
+    projectPromptSubtitle.setVisible(projectPromptVisible);
+    projectPromptInput.setVisible(projectPromptVisible);
+    projectPromptOkBtn.setVisible(projectPromptVisible);
+    projectPromptSkipBtn.setVisible(projectPromptVisible);
+
+    if (projectPromptVisible)
+    {
+        chatScroll.setVisible(false);
+        chatInput.setVisible(false);
+        chatSendBtn.setVisible(false);
+        chatTextSizeBtn.setVisible(false);
+        compareBtn.setEnabled(false);
+        captureBtn.setEnabled(false);
+        settingsBtn.setEnabled(false);
+
+        projectPromptTitle.toFront(false);
+        projectPromptSubtitle.toFront(false);
+        projectPromptInput.toFront(false);
+        projectPromptOkBtn.toFront(false);
+        projectPromptSkipBtn.toFront(false);
+        projectPromptInput.grabKeyboardFocus();
+    }
+    repaint();
+}
+
+void EchoJayEditor::dismissProjectPrompt(bool accepted)
+{
+    if (accepted)
+    {
+        auto name = projectPromptInput.getText().trim();
+        if (name.isNotEmpty())
+        {
+            processorRef.setProjectName(name);
+            projectInput.setText(name, juce::dontSendNotification);
+            publishProjectName();   // rule (c): entering it publishes it
+        }
+    }
+    processorRef.setProjectPromptDismissed(true);
+    updateProjectPromptVisibility();
+    chatScroll.setVisible(currentScreen == Screen::Main);
+    chatInput.setVisible(currentScreen == Screen::Main);
+    chatSendBtn.setVisible(currentScreen == Screen::Main);
+    chatTextSizeBtn.setVisible(currentScreen == Screen::Main);
+    compareBtn.setEnabled(true);
+    captureBtn.setEnabled(true);
+    settingsBtn.setEnabled(true);
+    resized();
+    repaint();
+}
+
+void EchoJayEditor::publishProjectName()
+{
+    auto name = processorRef.getProjectName().trim();
+    ChainHost::publishSessionProjectName(name);
+    lastSeenSharedProject_ = name;
 }
 
 // --- UpdateOverlay implementation ---
@@ -8524,6 +8655,18 @@ void EchoJayEditor::resized()
     channelPromptSkipBtn.setBounds(card.getCentreX() - 115, card.getBottom() - 40, 110, 28);
     customChannelBtn.setBounds(card.getCentreX() + 5, card.getBottom() - 40, 110, 28);
 
+    // Project-name prompt layout — centred card: title, subtitle, one input,
+    // Continue / Skip
+    {
+        auto pcard = b.reduced(40, 34);
+        projectPromptTitle.setBounds(pcard.getX() + 40, pcard.getY() + 26, pcard.getWidth() - 80, 28);
+        projectPromptSubtitle.setBounds(pcard.getX() + 60, pcard.getY() + 56, pcard.getWidth() - 120, 20);
+        int iw = juce::jmin(320, pcard.getWidth() - 120);
+        projectPromptInput.setBounds(pcard.getCentreX() - iw / 2, pcard.getY() + 96, iw, 30);
+        projectPromptOkBtn.setBounds(pcard.getCentreX() - 115, pcard.getY() + 142, 110, 28);
+        projectPromptSkipBtn.setBounds(pcard.getCentreX() + 5, pcard.getY() + 142, 110, 28);
+    }
+
     // Genre prompt layout — 4 columns with group headers (like channel prompt)
     {
         auto genreCard = b.reduced(40, 34);
@@ -9075,6 +9218,23 @@ void EchoJayEditor::timerCallback()
         // cover the common upgrade-detection cases. The periodic timer
         // is a safety net for the user who keeps the plugin open and
         // visible for long stretches without interacting with Settings.
+        // Session project follow (~1 Hz): adopt a shared edit ONLY while our
+        // name equals the previous shared value — i.e. this instance was
+        // following the session; manual names are never overwritten (rule 3)
+        if ((refreshCounter % 20) == 0)
+        {
+            auto shared = ChainHost::getSessionProjectName();
+            if (shared != lastSeenSharedProject_)
+            {
+                if (processorRef.getProjectName().trim() == lastSeenSharedProject_.trim())
+                {
+                    processorRef.setProjectName(shared);
+                    projectInput.setText(shared, juce::dontSendNotification);
+                }
+                lastSeenSharedProject_ = shared;
+            }
+        }
+
         refreshCounter++;
         if (refreshCounter >= 6000) // 20fps * 300s
         {
@@ -11981,9 +12141,10 @@ void EchoJayEditor::applyCompactVisibility()
     chatTextSizeBtn.setVisible(true);
     usageLabel.setVisible(true);
     // Prompt overlays are authoritative over chat visibility (a pending
-    // channel/genre prompt must stay answerable in chat-only mode)
+    // channel/genre/project prompt must stay answerable in chat-only mode)
     updateChannelPromptVisibility();
     updateGenrePromptVisibility();
+    updateProjectPromptVisibility();
 }
 
 void EchoJayEditor::toggleCompactMode()

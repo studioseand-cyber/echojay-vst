@@ -233,6 +233,19 @@ private:
     std::array<juce::Label, kGenreGroupCount> genrePromptGroupLabels;
     std::array<juce::TextButton, kGenreOptionCount> genrePromptButtons;
     juce::TextButton genrePromptCustomBtn { "Custom..." };
+
+    // Project-name prompt (channel/genre-style, shown ONCE when the instance
+    // has no own name AND no shared session value exists) + session sharing
+    bool projectPromptVisible = false;
+    juce::Label projectPromptTitle, projectPromptSubtitle;
+    juce::TextEditor projectPromptInput;
+    juce::TextButton projectPromptOkBtn { "Continue" };
+    juce::TextButton projectPromptSkipBtn { "Skip" };
+    juce::String lastSeenSharedProject_;   // previous shared value (follow rule)
+    bool shouldShowProjectPrompt() const;
+    void updateProjectPromptVisibility();
+    void dismissProjectPrompt(bool accepted);
+    void publishProjectName();
     void updateGenrePromptVisibility();
     void dismissGenrePrompt(const juce::String& selectedGenre);
     void paintGenrePromptOverlay(juce::Graphics& g, juce::Rectangle<int> bounds);

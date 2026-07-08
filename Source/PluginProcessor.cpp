@@ -1569,6 +1569,7 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     auto state = std::make_unique<juce::DynamicObject>();
     state->setProperty("genre", genre);
     state->setProperty("genrePromptDismissed", genrePromptDismissed);
+    state->setProperty("projectPromptDismissed", projectPromptDismissed);
     state->setProperty("channelType", (int)channelType);
     state->setProperty("customChannelName", customChannelName);
     state->setProperty("channelTypePromptDismissed", channelTypePromptDismissed);
@@ -1717,6 +1718,12 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                 genrePromptDismissed = (bool)obj->getProperty("genrePromptDismissed");
             else
                 genrePromptDismissed = channelTypePromptDismissed;
+            // Project prompt: saves that predate the flag derive from having
+            // a name (named project = question already answered)
+            if (obj->hasProperty("projectPromptDismissed"))
+                projectPromptDismissed = (bool)obj->getProperty("projectPromptDismissed");
+            else
+                projectPromptDismissed = projectName.isNotEmpty();
             passCounter = (int)obj->getProperty("passCounter");
             if (obj->hasProperty("projectName"))
                 projectName = obj->getProperty("projectName").toString();

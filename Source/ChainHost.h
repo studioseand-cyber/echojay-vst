@@ -132,6 +132,16 @@ public:
     static bool isPopoutOnly(const juce::String& pluginName, const juce::String& format);
     static void markPopoutOnly(const juce::String& pluginName, const juce::String& format);
 
+    // ---- Session project name (both hosts) --------------------------------
+    // Published to session_project.json whenever a user sets/edits the
+    // project name in any instance; mtime-watched by all instances (same
+    // pattern as popout_only.txt). Session-scoped in spirit; the file
+    // persisting across sessions is accepted (a stale pre-fill is edited and
+    // republished). Precedence lives with the CALLERS: an instance's own
+    // serialised name always wins over this value.
+    static juce::String getSessionProjectName();
+    static void publishSessionProjectName(const juce::String& name);
+
     // If `d` is a popout-only AudioUnit and a VST3 build of the same plugin
     // can be found, return the VST3 desc instead (in-process editor —
     // containable by the existing machinery). Applies at NEW instantiation

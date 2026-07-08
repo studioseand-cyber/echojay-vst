@@ -67,6 +67,24 @@ void LinkProcessor::timerCallback()
 
     pollChainCommand();
     pollControlCommand();
+    pollSessionProjectName();
+}
+
+void LinkProcessor::pollSessionProjectName()
+{
+    auto shared = ChainHost::getSessionProjectName();
+    if (shared == lastSeenSharedProject_) return;
+
+    // Adopt when we have no name of our own; follow when our name equals
+    // the PREVIOUS shared value (we were following the session). A restored
+    // distinct name never gets overwritten.
+    if (projectName.trim().isEmpty()
+        || projectName.trim() == lastSeenSharedProject_.trim())
+    {
+        projectName = shared;
+        updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+    }
+    lastSeenSharedProject_ = shared;
 }
 
 // ---------------------------------------------------------------------------
@@ -818,6 +836,7 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     juce::DynamicObject* obj = new juce::DynamicObject();
     obj->setProperty("linkName", linkName);
     obj->setProperty("linkOn",   (bool)linkOn.load());
+    obj->setProperty("projectName", projectName);
     obj->setProperty("editorW",  editorW);
     obj->setProperty("editorH",  editorH);
     // Full hosted chain: identities, order, bypass flags, per-plugin state
@@ -834,6 +853,8 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
     {
         if (obj->hasProperty("linkName")) linkName = obj->getProperty("linkName").toString();
         if (obj->hasProperty("linkOn"))   linkOn.store((bool)obj->getProperty("linkOn"));
+        if (obj->hasProperty("projectName"))
+            projectName = obj->getProperty("projectName").toString();
 #if ECHOJAY_LINK_STATE_DIAG
         EchoJay_NSLog(("EJLinkState: setState linkOn=" + juce::String((int)linkOn.load())
                        + " (hadProp=" + juce::String((int)obj->hasProperty("linkOn"))
