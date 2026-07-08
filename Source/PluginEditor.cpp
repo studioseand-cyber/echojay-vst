@@ -2028,7 +2028,14 @@ void EchoJayEditor::dismissGenrePrompt(const juce::String& selectedGenre)
 
 bool EchoJayEditor::shouldShowProjectPrompt() const
 {
+    // Component-heavy tabs (Settings form, Chain rack) have real child
+    // components that would paint ABOVE the scrim — the prompt defers until
+    // the user is on a painted-content tab. Fresh instances open on
+    // Visualisation, so in practice it shows immediately.
+    bool tabOk = currentTab == Tab::Visualisation || currentTab == Tab::Meters
+              || currentTab == Tab::Chat          || currentTab == Tab::Compare;
     return currentScreen == Screen::Main
+        && tabOk
         && !channelPromptVisible
         && !genrePromptVisible
         && !processorRef.isProjectPromptDismissed()
@@ -4365,6 +4372,10 @@ void EchoJayEditor::switchToTab(Tab t)
     // on the next repaint if the chat area is visible and buttons are in view.
     for (int i = 0; i < kMaxChainBuildBtns; ++i)
         chainBuildBtns[(size_t)i].setVisible(false);
+
+    // Project prompt defers on component-heavy tabs and returns on painted
+    // ones — re-evaluate on every switch (it is never dismissed by this)
+    updateProjectPromptVisibility();
 
     resized();
     repaint();
@@ -8040,6 +8051,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
         paintChannelPromptOverlay(g, bounds);
     else if (genrePromptVisible)
         paintGenrePromptOverlay(g, bounds);
+    else if (projectPromptVisible)
+        paintGenrePromptOverlay(g, bounds);   // same scrim + card as genre
     
     // Update overlay is now a separate child component (updateOverlay) — it
     // paints itself ON TOP of all other children. See UpdateOverlay::paint.
@@ -11649,6 +11662,12 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
 void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 {
     auto pos = e.getEventRelativeTo(this).getPosition();
+
+    // Project prompt scrim blocks everything painted beneath it. This
+    // handler only fires for clicks NOT on child components, so the
+    // prompt's own input/buttons still work.
+    if (projectPromptVisible)
+        return;
 
     // Update overlay clicks are handled by the UpdateOverlay child component itself.
 
