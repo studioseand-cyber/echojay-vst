@@ -242,6 +242,7 @@ private:
     juce::TextButton projectPromptOkBtn { "Continue" };
     juce::TextButton projectPromptSkipBtn { "Skip" };
     juce::String lastSeenSharedProject_;   // previous shared value (follow rule)
+    juce::String lastSeenSharedGenre_;     // session genre follow (flag-keyed)
     bool shouldShowProjectPrompt() const;
     void updateProjectPromptVisibility();
     void dismissProjectPrompt(bool accepted);

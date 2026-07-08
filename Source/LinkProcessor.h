@@ -48,6 +48,10 @@ public:
     // shared edits while it matches the previous shared value, serialised
     // with state. Own restored value always wins (never overwritten).
     juce::String projectName;
+
+    // Session genre — same adopt/follow rules, for payload context. Empty
+    // until a session genre exists (Link has no genre default or UI).
+    juce::String genre;
     std::atomic<bool> didWrite  { false };  // set by audio thread on first successful produce
 
     /// Call from editor after any change to linkOn or linkName (message thread).
@@ -208,8 +212,9 @@ private:
     int  lastAppliedCtrlSeq_ = 0;
     void pollControlCommand();
 
-    // Session project follow (see projectName above)
+    // Session project/genre follow (see projectName/genre above)
     juce::String lastSeenSharedProject_;
+    juce::String lastSeenSharedGenre_;
     void pollSessionProjectName();
     void writeChainAck(int seq, const juce::String& status,
                        const juce::StringArray& results,

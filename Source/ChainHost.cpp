@@ -108,6 +108,43 @@ void ChainHost::publishSessionProjectName(const juce::String& name)
     sessionProjectLoadTime() = f.getLastModificationTime();
 }
 
+// Session genre — identical pattern, separate file (independent mtimes)
+static juce::File sessionGenreFile() { return appSupportDir().getChildFile("session_genre.json"); }
+static juce::String& sessionGenreCache() { static juce::String s; return s; }
+static juce::Time& sessionGenreLoadTime() { static juce::Time t; return t; }
+
+juce::String ChainHost::getSessionGenre()
+{
+    auto f  = sessionGenreFile();
+    auto mt = f.getLastModificationTime();
+    if (mt != sessionGenreLoadTime())
+    {
+        sessionGenreLoadTime() = mt;
+        sessionGenreCache().clear();
+        if (f.existsAsFile())
+        {
+            auto v = juce::JSON::parse(f.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+                sessionGenreCache() = o->getProperty("genre").toString().trim();
+        }
+    }
+    return sessionGenreCache();
+}
+
+void ChainHost::publishSessionGenre(const juce::String& genre)
+{
+    auto trimmed = genre.trim();
+    if (trimmed.isEmpty() || getSessionGenre() == trimmed) return;
+    auto* o = new juce::DynamicObject();
+    o->setProperty("genre",     trimmed);
+    o->setProperty("updatedAt", juce::Time::getCurrentTime().toISO8601(true));
+    auto f = sessionGenreFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(juce::JSON::toString(juce::var(o), true));
+    sessionGenreCache()    = trimmed;
+    sessionGenreLoadTime() = f.getLastModificationTime();
+}
+
 juce::PluginDescription ChainHost::preferInlineHostableDesc(const juce::PluginDescription& d)
 {
     if (d.pluginFormatName != "AudioUnit") return d;

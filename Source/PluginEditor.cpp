@@ -430,6 +430,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         && lastSeenSharedProject_.isNotEmpty())
         processorRef.setProjectName(lastSeenSharedProject_);
 
+    // Session genre: same adoption, but keyed off the answered FLAG (genre
+    // has a non-empty default so the value can't distinguish fresh from
+    // chosen). Adoption also sets the flag so this instance never prompts.
+    lastSeenSharedGenre_ = ChainHost::getSessionGenre();
+    if (!processorRef.isGenrePromptDismissed() && lastSeenSharedGenre_.isNotEmpty())
+    {
+        processorRef.setGenre(lastSeenSharedGenre_);
+        processorRef.setGenrePromptDismissed(true);
+    }
+
     projectInput.setText(processorRef.getProjectName(), juce::dontSendNotification);
     // Publish to the session on COMMIT (focus loss / return), not per
     // keystroke — followers track the previous shared value
@@ -1961,6 +1971,7 @@ bool EchoJayEditor::shouldShowGenrePrompt() const
 {
     return currentScreen == Screen::Main
         && !processorRef.isGenrePromptDismissed()
+        && ChainHost::getSessionGenre().isEmpty()   // session value = adopt, no prompt
         && !channelPromptVisible;  // don't overlap with channel prompt
 }
 
@@ -2006,6 +2017,9 @@ void EchoJayEditor::dismissGenrePrompt(const juce::String& selectedGenre)
 {
     processorRef.setGenrePromptDismissed(true);
     processorRef.setGenre(selectedGenre);
+    // Answering the prompt publishes the session genre (rule c)
+    ChainHost::publishSessionGenre(selectedGenre);
+    lastSeenSharedGenre_ = selectedGenre;
 
     // Sync the genre dropdown — find by text since IDs vary with submenus
     rebuildGenreBox(); // ensure custom genres are in the list
@@ -9513,6 +9527,26 @@ void EchoJayEditor::timerCallback()
                 }
                 lastSeenSharedProject_ = shared;
             }
+
+            // Session genre follow: adopt when this instance never answered
+            // the genre question (flag unset — value can't be used, genre
+            // has a non-empty default) OR when it was following the session
+            // (its genre equals the previous shared value). A deliberately
+            // divergent instance stays divergent.
+            auto sharedG = ChainHost::getSessionGenre();
+            if (sharedG != lastSeenSharedGenre_)
+            {
+                if (sharedG.isNotEmpty()
+                    && (!processorRef.isGenrePromptDismissed()
+                        || processorRef.getGenre().trim() == lastSeenSharedGenre_.trim()))
+                {
+                    processorRef.setGenre(sharedG);
+                    processorRef.setGenrePromptDismissed(true);
+                    rebuildGenreBox();                 // sync the dropdown display
+                    updateGenrePromptVisibility();     // dismiss a pending prompt
+                }
+                lastSeenSharedGenre_ = sharedG;
+            }
         }
 
         refreshCounter++;
@@ -11596,6 +11630,8 @@ void EchoJayEditor::rebuildGenreBox()
                     addCustomGenreToList(name);
                     processorRef.setGenre(name);
                     processorRef.setGenrePromptDismissed(true);
+                    ChainHost::publishSessionGenre(name);
+                    lastSeenSharedGenre_ = name;
                     rebuildGenreBox();
                 }
                 juce::MessageManager::callAsync([te]() { delete te; });
@@ -11606,6 +11642,8 @@ void EchoJayEditor::rebuildGenreBox()
                     addCustomGenreToList(name);
                     processorRef.setGenre(name);
                     processorRef.setGenrePromptDismissed(true);
+                    ChainHost::publishSessionGenre(name);
+                    lastSeenSharedGenre_ = name;
                     rebuildGenreBox();
                 }
                 juce::MessageManager::callAsync([te]() { delete te; });
@@ -11613,9 +11651,12 @@ void EchoJayEditor::rebuildGenreBox()
         }
         else
         {
-            // An explicit dropdown selection answers the genre question too
+            // An explicit dropdown selection answers the genre question too,
+            // and republishes the session genre for the followers
             processorRef.setGenre(genreBox.getText());
             processorRef.setGenrePromptDismissed(true);
+            ChainHost::publishSessionGenre(genreBox.getText());
+            lastSeenSharedGenre_ = genreBox.getText().trim();
         }
     };
 }

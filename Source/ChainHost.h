@@ -142,6 +142,14 @@ public:
     static juce::String getSessionProjectName();
     static void publishSessionProjectName(const juce::String& name);
 
+    // Session genre — separate session_genre.json (NOT folded into the
+    // project file: separate mtimes keep the two follow-watchers
+    // independent). Same publish/adopt/follow pattern; adoption is keyed
+    // off the genre-answered FLAG in the callers, never the value (genre
+    // has a non-empty default).
+    static juce::String getSessionGenre();
+    static void publishSessionGenre(const juce::String& genre);
+
     // If `d` is a popout-only AudioUnit and a VST3 build of the same plugin
     // can be found, return the VST3 desc instead (in-process editor —
     // containable by the existing machinery). Applies at NEW instantiation
