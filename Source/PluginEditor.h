@@ -234,6 +234,21 @@ private:
     std::array<juce::TextButton, kGenreOptionCount> genrePromptButtons;
     juce::TextButton genrePromptCustomBtn { "Custom..." };
 
+    // ---- ONE modal onboarding component ------------------------------------
+    // Full editor bounds, paints its OWN scrim+card (no reliance on the
+    // editor's paint chain), swallows all mouse events, re-fronted on every
+    // show and tab switch. The three pages' components are PARENTED INSIDE
+    // it — its local coordinates equal editor coordinates, so the page
+    // layout code is unchanged. channel/genre/projectPromptVisible are
+    // DERIVED page state written ONLY by updateOnboardingPrompts().
+    struct OnboardingOverlay : juce::Component
+    {
+        std::function<void(juce::Graphics&)> paintScrim;
+        void paint(juce::Graphics& g) override { if (paintScrim) paintScrim(g); }
+        void mouseDown(const juce::MouseEvent&) override {}   // swallow
+    };
+    OnboardingOverlay onboardingOverlay_;
+
     // Project-name prompt (channel/genre-style, shown ONCE when the instance
     // has no own name AND no shared session value exists) + session sharing
     bool projectPromptVisible = false;

@@ -428,7 +428,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     lastSeenSharedProject_ = ChainHost::getSessionProjectName();
     if (processorRef.getProjectName().trim().isEmpty()
         && lastSeenSharedProject_.isNotEmpty())
+    {
         processorRef.setProjectName(lastSeenSharedProject_);
+        processorRef.setProjectPromptDismissed(true);   // adoption = answered
+    }
 
     // Session genre: same adoption, but keyed off the answered FLAG (genre
     // has a non-empty default so the value can't distinguish fresh from
@@ -624,14 +627,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     channelPromptTitle.setFont(juce::Font(juce::FontOptions(24.0f, juce::Font::bold)));
     channelPromptTitle.setJustificationType(juce::Justification::centred);
     channelPromptTitle.setVisible(false);
-    addAndMakeVisible(channelPromptTitle);
+    onboardingOverlay_.addAndMakeVisible(channelPromptTitle);
 
     channelPromptSubtitle.setText("Pick the source once and EchoJay will remember it for this plugin instance.", juce::dontSendNotification);
     channelPromptSubtitle.setColour(juce::Label::textColourId, C::text3);
     channelPromptSubtitle.setFont(juce::Font(juce::FontOptions(12.0f)));
     channelPromptSubtitle.setJustificationType(juce::Justification::centred);
     channelPromptSubtitle.setVisible(false);
-    addAndMakeVisible(channelPromptSubtitle);
+    onboardingOverlay_.addAndMakeVisible(channelPromptSubtitle);
 
     for (int i = 0; i < kChannelPromptGroupCount; ++i)
     {
@@ -640,7 +643,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         channelPromptGroupLabels[(size_t)i].setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
         channelPromptGroupLabels[(size_t)i].setJustificationType(juce::Justification::centredLeft);
         channelPromptGroupLabels[(size_t)i].setVisible(false);
-        addAndMakeVisible(channelPromptGroupLabels[(size_t)i]);
+        onboardingOverlay_.addAndMakeVisible(channelPromptGroupLabels[(size_t)i]);
     }
 
     for (int i = 0; i < kChannelPromptOptionCount; ++i)
@@ -654,7 +657,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         button.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
         button.setVisible(false);
         button.onClick = [this, i] { selectChannelPromptType(kChannelPromptOptions[i].type); };
-        addAndMakeVisible(button);
+        onboardingOverlay_.addAndMakeVisible(button);
     }
 
     channelPromptSkipBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
@@ -663,7 +666,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     channelPromptSkipBtn.setButtonText("Mix Bus");
     channelPromptSkipBtn.setVisible(false);
     channelPromptSkipBtn.onClick = [this] { dismissChannelPrompt(); };
-    addAndMakeVisible(channelPromptSkipBtn);
+    onboardingOverlay_.addAndMakeVisible(channelPromptSkipBtn);
     
     customChannelBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
     customChannelBtn.setColour(juce::TextButton::textColourOffId, C::purple);
@@ -678,7 +681,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         te->setColour(juce::TextEditor::textColourId, C::text);
         te->setColour(juce::TextEditor::outlineColourId, C::purple);
         te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
-        addAndMakeVisible(te);
+        onboardingOverlay_.addAndMakeVisible(te);
         te->toFront(true);
         te->grabKeyboardFocus();
         te->onReturnKey = [this, te]() {
@@ -706,7 +709,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             juce::MessageManager::callAsync([te]() { delete te; });
         };
     };
-    addAndMakeVisible(customChannelBtn);
+    onboardingOverlay_.addAndMakeVisible(customChannelBtn);
 
     // --- Session-level genre prompt ---
     genrePromptTitle.setText("What genre is this project?", juce::dontSendNotification);
@@ -714,14 +717,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     genrePromptTitle.setFont(juce::Font(juce::FontOptions(22.0f, juce::Font::bold)));
     genrePromptTitle.setJustificationType(juce::Justification::centred);
     genrePromptTitle.setVisible(false);
-    addAndMakeVisible(genrePromptTitle);
+    onboardingOverlay_.addAndMakeVisible(genrePromptTitle);
 
     genrePromptSubtitle.setText("EchoJay uses this to judge loudness targets. Applies to all instances this session.", juce::dontSendNotification);
     genrePromptSubtitle.setColour(juce::Label::textColourId, C::text3);
     genrePromptSubtitle.setFont(juce::Font(juce::FontOptions(11.0f)));
     genrePromptSubtitle.setJustificationType(juce::Justification::centred);
     genrePromptSubtitle.setVisible(false);
-    addAndMakeVisible(genrePromptSubtitle);
+    onboardingOverlay_.addAndMakeVisible(genrePromptSubtitle);
 
     for (int i = 0; i < kGenreGroupCount; ++i)
     {
@@ -730,7 +733,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         genrePromptGroupLabels[(size_t)i].setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
         genrePromptGroupLabels[(size_t)i].setJustificationType(juce::Justification::centredLeft);
         genrePromptGroupLabels[(size_t)i].setVisible(false);
-        addAndMakeVisible(genrePromptGroupLabels[(size_t)i]);
+        onboardingOverlay_.addAndMakeVisible(genrePromptGroupLabels[(size_t)i]);
     }
 
     for (int i = 0; i < kGenreOptionCount; ++i)
@@ -744,7 +747,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         btn.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
         btn.setVisible(false);
         btn.onClick = [this, i] { dismissGenrePrompt(kGenrePromptOptions[i].label); };
-        addAndMakeVisible(btn);
+        onboardingOverlay_.addAndMakeVisible(btn);
     }
 
     genrePromptCustomBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
@@ -760,7 +763,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         te->setColour(juce::TextEditor::textColourId, C::text);
         te->setColour(juce::TextEditor::outlineColourId, C::purple);
         te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
-        addAndMakeVisible(te);
+        onboardingOverlay_.addAndMakeVisible(te);
         te->toFront(true);
         te->grabKeyboardFocus();
         te->onReturnKey = [this, te]() {
@@ -782,7 +785,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             juce::MessageManager::callAsync([te]() { delete te; });
         };
     };
-    addAndMakeVisible(genrePromptCustomBtn);
+    onboardingOverlay_.addAndMakeVisible(genrePromptCustomBtn);
 
     userLabel.setColour(juce::Label::textColourId, C::text2);
     userLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
@@ -1266,7 +1269,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     projectPromptTitle.setFont(juce::Font(juce::FontOptions(22.0f, juce::Font::bold)));
     projectPromptTitle.setJustificationType(juce::Justification::centred);
     projectPromptTitle.setVisible(false);
-    addAndMakeVisible(projectPromptTitle);
+    onboardingOverlay_.addAndMakeVisible(projectPromptTitle);
 
     projectPromptSubtitle.setText("Names your captures and reviews. Shared with every EchoJay and Link instance this session.",
                                   juce::dontSendNotification);
@@ -1274,7 +1277,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     projectPromptSubtitle.setFont(juce::Font(juce::FontOptions(11.0f)));
     projectPromptSubtitle.setJustificationType(juce::Justification::centred);
     projectPromptSubtitle.setVisible(false);
-    addAndMakeVisible(projectPromptSubtitle);
+    onboardingOverlay_.addAndMakeVisible(projectPromptSubtitle);
 
     projectPromptInput.setFont(juce::Font(juce::FontOptions(14.0f)));
     projectPromptInput.setTextToShowWhenEmpty("e.g. Midnight Drive", C::text3.withAlpha(0.6f));
@@ -1285,19 +1288,29 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     projectPromptInput.setJustification(juce::Justification::centred);
     projectPromptInput.onReturnKey = [this] { dismissProjectPrompt(true); };
     projectPromptInput.setVisible(false);
-    addAndMakeVisible(projectPromptInput);
+    onboardingOverlay_.addAndMakeVisible(projectPromptInput);
 
     projectPromptOkBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff0891b2));
     projectPromptOkBtn.setColour(juce::TextButton::textColourOffId, C::text);
     projectPromptOkBtn.onClick = [this] { dismissProjectPrompt(true); };
     projectPromptOkBtn.setVisible(false);
-    addAndMakeVisible(projectPromptOkBtn);
+    onboardingOverlay_.addAndMakeVisible(projectPromptOkBtn);
 
     projectPromptSkipBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
     projectPromptSkipBtn.setColour(juce::TextButton::textColourOffId, C::text2);
     projectPromptSkipBtn.onClick = [this] { dismissProjectPrompt(false); };
     projectPromptSkipBtn.setVisible(false);
-    addAndMakeVisible(projectPromptSkipBtn);
+    onboardingOverlay_.addAndMakeVisible(projectPromptSkipBtn);
+
+    // The modal onboarding overlay — one opaque component owning all three
+    // pages; paints the active page's scrim+card itself
+    onboardingOverlay_.paintScrim = [this](juce::Graphics& g)
+    {
+        auto ob = onboardingOverlay_.getLocalBounds();
+        if (channelPromptVisible) paintChannelPromptOverlay(g, ob);
+        else                      paintGenrePromptOverlay(g, ob);  // genre + project share the card
+    };
+    addChildComponent(onboardingOverlay_);
 
     // Chat
     chatInput.setMultiLine(true, true); // multi-line with word wrap
@@ -1946,9 +1959,15 @@ void EchoJayEditor::updateOnboardingPrompts()
     projectPromptOkBtn.setVisible(projectPromptVisible);
     projectPromptSkipBtn.setVisible(projectPromptVisible);
 
-    // ---- identical chat/topbar treatment for all three ----
+    // ---- the ONE modal overlay: visible iff any page is unanswered ----
     const bool anyPrompt = channelPromptVisible || genrePromptVisible
                         || projectPromptVisible;
+    onboardingOverlay_.setBounds(getLocalBounds());
+    onboardingOverlay_.setVisible(anyPrompt);
+    if (anyPrompt)
+        onboardingOverlay_.toFront(false);   // topmost over ANY tab's children
+
+    // ---- identical chat/topbar treatment for all three ----
     const bool chatOk = currentScreen == Screen::Main && !anyPrompt
                      && currentView != View::Settings
                      && !(currentTab == Tab::Chain && chainChatCollapsed_);
@@ -2088,11 +2107,9 @@ bool EchoJayEditor::shouldShowProjectPrompt() const
     // components that would paint ABOVE the scrim — the prompt defers until
     // the user is on a painted-content tab. Fresh instances open on
     // Visualisation, so in practice it shows immediately.
-    bool tabOk = currentTab == Tab::Visualisation || currentTab == Tab::Meters
-              || currentTab == Tab::Chat          || currentTab == Tab::Compare;
+    // No tab/view gating: the onboarding overlay is one opaque component,
+    // re-fronted on every show — it renders correctly over ANY tab
     return currentScreen == Screen::Main
-        && tabOk
-        && currentView != View::Settings   // belt: Settings is also a VIEW state
         && !channelPromptVisible
         && !genrePromptVisible
         && !processorRef.isProjectPromptDismissed()
@@ -8316,12 +8333,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
 
     } // end if (!visualOnlyMode && chatW > 0) — chat section
 
-    if (channelPromptVisible)
-        paintChannelPromptOverlay(g, bounds);
-    else if (genrePromptVisible)
-        paintGenrePromptOverlay(g, bounds);
-    else if (projectPromptVisible)
-        paintGenrePromptOverlay(g, bounds);   // same scrim + card as genre
+    // Onboarding prompts paint INSIDE onboardingOverlay_ (their own opaque
+    // component) — nothing prompt-related is painted from the editor chain
     
     // Update overlay is now a separate child component (updateOverlay) — it
     // paints itself ON TOP of all other children. See UpdateOverlay::paint.
@@ -8353,6 +8366,12 @@ void EchoJayEditor::resized()
 {
     // No transform — layout scales to actual window size
     auto b = getLocalBounds();
+
+    // Onboarding overlay tracks the editor bounds and stays above tab
+    // content (the update overlay below outranks it when both are up)
+    onboardingOverlay_.setBounds(b);
+    if (onboardingOverlay_.isVisible())
+        onboardingOverlay_.toFront(false);
 
     // Update overlay covers the full editor and is always brought to front
     updateOverlay.setBounds(b);
@@ -9549,6 +9568,8 @@ void EchoJayEditor::timerCallback()
                 if (processorRef.getProjectName().trim() == lastSeenSharedProject_.trim())
                 {
                     processorRef.setProjectName(shared);
+                    if (shared.isNotEmpty())
+                        processorRef.setProjectPromptDismissed(true);  // adoption = answered
                     projectInput.setText(shared, juce::dontSendNotification);
                 }
                 lastSeenSharedProject_ = shared;
