@@ -69,6 +69,16 @@ void WaveformRecorder::reset()
     // Don't deallocate — keep the buffer for the next recording
 }
 
+void WaveformRecorder::releaseAudioBuffer()
+{
+    // The audio thread writes the buffer only while recording — never free
+    // under it
+    if (recording.load()) return;
+    audioBuffer.setSize(0, 0, false, false, false);
+    bufferCapacity = 0;
+    writePos = 0;
+}
+
 void WaveformRecorder::ensureCapacity(int requiredSamples)
 {
     if (requiredSamples <= bufferCapacity) return;
@@ -204,12 +214,10 @@ juce::String WaveformRecorder::saveToWAV(const juce::File& directory, const juce
         return {};
     }
 
-    // Write from the audio buffer
-    juce::AudioBuffer<float> tempBuf(2, numSamples);
-    tempBuf.copyFrom(0, 0, audioBuffer, 0, 0, numSamples);
-    tempBuf.copyFrom(1, 0, audioBuffer, 1, 0, numSamples);
-
-    writer->writeFromAudioSampleBuffer(tempBuf, 0, numSamples);
+    // Write straight from the capture buffer. The old code copied the whole
+    // recording into a temp buffer first, DOUBLING peak memory per save;
+    // the writer reads a sub-range fine.
+    writer->writeFromAudioSampleBuffer(audioBuffer, 0, numSamples);
     writer.reset(); // flush and close
 
     // Store last path

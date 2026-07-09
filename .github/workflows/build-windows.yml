@@ -46,13 +46,13 @@ jobs:
           @"
           [Setup]
           AppName=EchoJay
-          AppVersion=1.6.2
+          AppVersion=1.6.3
           AppPublisher=EchoJay
           AppPublisherURL=https://echojay.ai
           DefaultDirName={autopf}\EchoJay
           DefaultGroupName=EchoJay
           OutputDir=.
-          OutputBaseFilename=EchoJay-v1.6.2-Windows-Installer
+          OutputBaseFilename=EchoJay-v1.6.3-Windows-Installer
           Compression=lzma
           SolidCompression=yes
           WizardStyle=modern
@@ -82,12 +82,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: EchoJay-Windows-Installer
-          path: EchoJay-v1.6.2-Windows-Installer.exe
+          path: EchoJay-v1.6.3-Windows-Installer.exe
 
       - name: Create Release Asset (on tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          files: EchoJay-v1.6.2-Windows-Installer.exe
+          files: EchoJay-v1.6.3-Windows-Installer.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -580,6 +580,11 @@ void EchoJayProcessor::stopCapture()
         {
             recorder->saveToWAV(captureDir, passName);
             auto savedPath = recorder->getLastSavedPath();
+            // Free the capture audio NOW, write succeeded or not — nothing
+            // references it after this point (playback plays the WAV file,
+            // the display uses the thumbnail). Holding it until the next
+            // capture was the per-pass RSS retention.
+            recorder->releaseAudioBuffer();
             if (savedPath.isNotEmpty())
             {
                 std::lock_guard<std::mutex> lock(*mutex);

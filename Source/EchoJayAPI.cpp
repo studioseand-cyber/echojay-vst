@@ -413,19 +413,62 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     // for in-session continuity without dragging in unrelated old captures.
     constexpr int maxHistoryMessages = 12;
     int firstIdx = juce::jmax(0, roles.size() - maxHistoryMessages);
+
+    // Byte-budget the payload on top of the message-count cap. Individual
+    // turns can be huge (capture turns embed meter context, Compare turns a
+    // full compareCtx, user turns the plugin-list injection), so twelve
+    // messages could still be hundreds of KB. Walk backwards from the newest
+    // accumulating stripped-content size; older messages fall off first. The
+    // newest message is always sent regardless of size.
+    constexpr int maxPayloadBytes = 60000;
+
+    // Per-turn injection blocks (plugin lists) only matter on the CURRENT
+    // message — strip them from history turns before sizing.
+    auto strippedContent = [&contents](int i) -> juce::String
+    {
+        auto c = contents[i];
+        for (auto* marker : { "\n\n[AVAILABLE PLUGINS", "\n\n[USER'S FULL PLUGIN LIST" })
+        {
+            int cut = c.indexOf(marker);
+            if (cut >= 0) c = c.substring(0, cut);
+        }
+        return c;
+    };
+
+    {
+        int budget = maxPayloadBytes - (int)contents[roles.size() - 1].getNumBytesAsUTF8();
+        int cutIdx = roles.size() - 1;
+        while (cutIdx > firstIdx)
+        {
+            int sz = (int)strippedContent(cutIdx - 1).getNumBytesAsUTF8();
+            if (budget - sz < 0) break;
+            budget -= sz;
+            --cutIdx;
+        }
+        firstIdx = juce::jmax(firstIdx, cutIdx);
+    }
+
     // Anthropic API requires the first message in messages[] to be 'user'.
     // If trimming landed us on 'assistant', skip forward by one to land on user.
     while (firstIdx < roles.size() && roles[firstIdx] != "user")
         firstIdx++;
-    
+    if (firstIdx >= roles.size())          // degenerate: always send the newest
+        firstIdx = roles.size() - 1;
+
     juce::String messagesJson = "[";
     messagesJson += "{\"role\":\"system\",\"content\":" + juce::JSON::toString(systemPrompt) + "}";
     for (int i = firstIdx; i < roles.size(); ++i)
     {
-        messagesJson += ",{\"role\":" + juce::JSON::toString(roles[i]) + 
-                        ",\"content\":" + juce::JSON::toString(contents[i]) + "}";
+        // History messages go out with injections stripped; only the newest
+        // keeps its full content (its injection is the live one)
+        juce::String c = (i == roles.size() - 1) ? contents[i] : strippedContent(i);
+        messagesJson += ",{\"role\":" + juce::JSON::toString(roles[i]) +
+                        ",\"content\":" + juce::JSON::toString(c) + "}";
     }
     messagesJson += "]";
+    juce::Logger::outputDebugString("EJChat: payload " + juce::String((int)messagesJson.getNumBytesAsUTF8())
+                                    + " bytes, " + juce::String(roles.size() - firstIdx) + "/"
+                                    + juce::String(roles.size()) + " messages sent");
     
     juce::String body = "{\"messages\":" + messagesJson + "}";
     
@@ -1306,31 +1349,42 @@ void EchoJayAPI::saveUserSettings(const UserSettings& settings,
     });
 }
 
-void EchoJayAPI::updatePluginsFromScanner(const juce::String& scannedPlugins)
+void EchoJayAPI::updatePluginsFromScanner(const juce::String& enabledScanned,
+                                          const juce::String& disabledScanned)
 {
-    // Merge scanned plugins with any manually entered ones from the web app
-    juce::StringArray existing;
-    existing.addTokens(userSettings.plugins, ",\n", "");
-    existing.trim();
-    existing.removeEmptyStrings();
-    
-    juce::StringArray scanned;
-    scanned.addTokens(scannedPlugins, ",", "");
-    scanned.trim();
-    scanned.removeEmptyStrings();
-    
-    // Add scanned plugins that aren't already in the list
-    for (auto& p : scanned)
+    auto bareName = [](const juce::String& s)
+    { return s.upToFirstOccurrenceOf(" (", false, false).trim(); };
+
+    juce::StringArray existing;  existing.addTokens(userSettings.plugins, ",\n", "");
+    existing.trim();  existing.removeEmptyStrings();
+
+    juce::StringArray enabled;   enabled.addTokens(enabledScanned, ",", "");
+    enabled.trim();   enabled.removeEmptyStrings();
+
+    juce::StringArray disabled;  disabled.addTokens(disabledScanned, ",", "");
+    disabled.trim();  disabled.removeEmptyStrings();
+
+    // Bare names the scanner saw this run (enabled OR disabled = "known").
+    juce::StringArray known;
+    for (auto& e : enabled)  known.add(bareName(e));
+    for (auto& d : disabled) known.add(bareName(d));
+
+    // Authoritative base: the enabled scanned set.
+    juce::StringArray result = enabled;
+
+    // Keep only genuine web-app entries: names the scanner never saw. An
+    // unticked plugin is in `disabled` (known), so it drops out here, which
+    // a union-only merge could never do.
+    for (auto& e : existing)
     {
-        bool found = false;
-        for (auto& e : existing)
-            if (e.containsIgnoreCase(p.upToFirstOccurrenceOf(" (", false, false)))
-            { found = true; break; }
-        
-        if (!found)
-            existing.add(p);
+        const juce::String n = bareName(e);
+        bool knownToScanner = false;
+        for (auto& k : known)  if (k.equalsIgnoreCase(n)) { knownToScanner = true; break; }
+        bool alreadyIn = false;
+        for (auto& r : result) if (bareName(r).equalsIgnoreCase(n)) { alreadyIn = true; break; }
+        if (! knownToScanner && ! alreadyIn) result.add(e);
     }
-    
-    existing.sort(true);
-    userSettings.plugins = existing.joinIntoString(", ");
+
+    result.sort(true);
+    userSettings.plugins = result.joinIntoString(", ");
 }
