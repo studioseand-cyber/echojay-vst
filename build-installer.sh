@@ -12,7 +12,7 @@ set -e
 
 PLUGIN_NAME="EchoJay"
 IDENTIFIER="com.echojay.plugin"
-VERSION="1.6.2"
+VERSION="1.6.3"
 BUILD_DIR="build-release"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PKG_DIR="/tmp/${PLUGIN_NAME}_pkg_build"
@@ -83,7 +83,7 @@ This installer will set up EchoJay on your system. The following components will
 Click <strong>Continue</strong> to proceed.
 </p>
 <p style="font-size: 12px; color: #86868b; margin-top: 30px;">
-EchoJay v1.6.2 | echojay.ai
+EchoJay v1.6.3 | echojay.ai
 </p>
 </body>
 </html>
