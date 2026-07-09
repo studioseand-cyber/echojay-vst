@@ -1860,15 +1860,10 @@ void EchoJayEditor::showMainScreen()
     userLabel.setText(userText, juce::dontSendNotification);
     userLabel.setColour(juce::Label::textColourId, info.isPro() ? C::purple : C::text2);
 
-    // REMAINING out of limit, labelled — 0/15 is the bad state, and the
-    // bare "n/15" can no longer be confused with the chain slot counter.
-    // Same direction as the Settings ACCOUNT card.
-    int remaining = api.getRemainingMessages();
-    int limit = info.messageLimit;
-    juce::String usageStr = juce::String(remaining) + "/" + juce::String(limit) + " credits";
-    if (info.credits > 0)
-        usageStr += " (+" + juce::String(info.credits) + ")";
-    usageLabel.setText(usageStr, juce::dontSendNotification);
+    // Product-wide convention: text AND colour from the shared accessors
+    // (remaining out of limit; dim >3, amber 1-3, coral 0)
+    usageLabel.setText(api.getCreditsCounterText(), juce::dontSendNotification);
+    usageLabel.setColour(juce::Label::textColourId, creditsWarnColour());
 
     updateChannelPromptVisibility();
     updateGenrePromptVisibility();
@@ -2216,6 +2211,16 @@ EchoJayEditor::ColumnLayout EchoJayEditor::computeColumns(int width) const
         c.mW = width - c.chatW;
     }
     return c;
+}
+
+juce::Colour EchoJayEditor::creditsWarnColour() const
+{
+    switch (api.getCreditsWarnLevel())
+    {
+        case 2:  return C::red;
+        case 1:  return C::amber;
+        default: return C::text3;
+    }
 }
 
 bool EchoJayEditor::assistantInputContext() const
@@ -4497,7 +4502,7 @@ void EchoJayEditor::switchToTab(Tab t)
             chatInput.setVisible(false);
             chatSendBtn.setVisible(false);
             chatTextSizeBtn.setVisible(false);
-            usageLabel.setVisible(false); // credits are painted bottom-right instead
+            usageLabel.setVisible(false); // credits live in the ACCOUNT card here
             return; // showSettingsView already called resized/repaint
 
         case Tab::Chain:
@@ -5975,8 +5980,12 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
             g.drawText(plan, badge, juce::Justification::centred);
 
+            // Product-wide convention: same shared accessors as the sidebar
+            // counter — identical number, identical colour tiers. The bar
+            // fill echoes the warn colour so amber/coral read at a glance.
             int remaining = api.getRemainingMessages();
             int limit = juce::jmax(1, info.messageLimit);
+            int warn = api.getCreditsWarnLevel();
             juce::Rectangle<int> bar(a.getX() + 14, badge.getBottom() + 10,
                                      a.getWidth() - 28, 8);
             g.setColour(C::bg4);
@@ -5984,13 +5993,12 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             float frac = juce::jlimit(0.0f, 1.0f, (float)remaining / (float)limit);
             if (frac > 0.0f)
             {
-                g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.85f));
+                g.setColour((warn == 1 ? C::amber : juce::Colour(0xff22d3ee)).withAlpha(0.85f));
                 g.fillRoundedRectangle(bar.toFloat().withWidth(bar.getWidth() * frac), 4.0f);
             }
-            g.setColour(C::text3);
+            g.setColour(creditsWarnColour());
             g.setFont(juce::Font(juce::FontOptions(10.0f)));
-            g.drawText(juce::String(remaining) + "/" + juce::String(limit) + " credits"
-                       + (info.credits > 0 ? " (+" + juce::String(info.credits) + ")" : ""),
+            g.drawText(api.getCreditsCounterText(),
                        bar.getX(), bar.getBottom() + 4, bar.getWidth(), 13,
                        juce::Justification::centredLeft);
             // Pro/Studio users see plan status where free users get Upgrade
@@ -9516,12 +9524,8 @@ void EchoJayEditor::timerCallback()
 
     if (currentScreen == Screen::Main && api.isLoggedIn()) {
         auto info = api.getUserInfo();
-        // Remaining out of limit, labelled — see the other build site
-        int remaining = api.getRemainingMessages();
-        juce::String usageStr = juce::String(remaining) + "/" + juce::String(info.messageLimit) + " credits";
-        if (info.credits > 0)
-            usageStr += " (+" + juce::String(info.credits) + ")";
-        usageLabel.setText(usageStr, juce::dontSendNotification);
+        // Product-wide convention: shared accessors only (see EchoJayAPI)
+        usageLabel.setText(api.getCreditsCounterText(), juce::dontSendNotification);
         
         // OWNERSHIP: the Upgrade button belongs to the CHAT INPUT ROW and
         // exists only where that row does — the CHAT tab, the COMPARE and
@@ -9578,8 +9582,8 @@ void EchoJayEditor::timerCallback()
             chatTextSizeBtn.setVisible(true);
         }
         
-        // Colour the usage label red when out of messages
-        usageLabel.setColour(juce::Label::textColourId, !api.canSendMessage() ? C::red : C::text3);
+        // Counter colour tiers: dim >3 usable, amber 1-3, coral 0 only
+        usageLabel.setColour(juce::Label::textColourId, creditsWarnColour());
         
         // Periodic refresh every 5 minutes to sync usage/subscription.
         // Visibility-change and Settings-open refreshes (see elsewhere)

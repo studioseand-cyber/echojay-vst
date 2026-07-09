@@ -303,6 +303,10 @@ private:
     // while Chat showed the upgrade prompt.
     bool assistantInputContext() const;
 
+    // Credits counter colour from api.getCreditsWarnLevel():
+    // dim (>3 usable) / amber (1-3) / coral (0, matches the input gate)
+    juce::Colour creditsWarnColour() const;
+
     // ---- Settings right column (ACCOUNT / WHAT'S NEW / THIS MONTH) ----
     // Rects computed in resized(), painted in paintSettingsView(). Below
     // ~1100px window width the cards stack under the form as a row.

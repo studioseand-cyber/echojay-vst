@@ -287,34 +287,64 @@ void EchoJayAPI::logout()
     saveSettings();
 }
 
-// Dev: ~/Library/EchoJay/simulate_no_credits (any content) simulates the
-// exhausted state everywhere without burning 15 real messages. Checked at
-// most every 2s so timer-rate callers stay cheap; delete the file to
-// restore live behaviour within 2s.
-static bool simulateNoCredits()
+// Dev credit-state simulation, no real credits burned. Checked at most
+// every 2s so timer-rate callers stay cheap; delete the file(s) to restore
+// live behaviour within 2s.
+//   ~/Library/EchoJay/simulate_no_credits  (any content) -> 0 usable left
+//   ~/Library/EchoJay/simulate_credits     (integer N)   -> N usable left
+//     (e.g. echo 2 > simulate_credits to see the amber state)
+// Returns -1 when no simulation is active.
+static int simulatedCreditsOverride()
 {
-    static bool sim = false;
+    static int value = -1;
     static juce::int64 lastCheck = 0;
     auto now = juce::Time::currentTimeMillis();
     if (now - lastCheck > 2000)
     {
         lastCheck = now;
-        sim = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                  .getChildFile("EchoJay").getChildFile("simulate_no_credits").existsAsFile();
+        auto dir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                       .getChildFile("EchoJay");
+        if (dir.getChildFile("simulate_no_credits").existsAsFile())
+            value = 0;
+        else
+        {
+            auto f = dir.getChildFile("simulate_credits");
+            value = f.existsAsFile() ? juce::jmax(0, f.loadFileAsString().trim().getIntValue())
+                                     : -1;
+        }
     }
-    return sim;
+    return value;
 }
 
 bool EchoJayAPI::canSendMessage() const
 {
-    if (simulateNoCredits()) return false;
+    if (int ov = simulatedCreditsOverride(); ov >= 0) return ov > 0;
     return userInfo.messagesUsedToday < (userInfo.messageLimit + userInfo.credits);
 }
 
 int EchoJayAPI::getRemainingMessages() const
 {
-    if (simulateNoCredits()) return 0;
+    if (int ov = simulatedCreditsOverride(); ov >= 0)
+        return juce::jmin(ov, userInfo.messageLimit);
     return juce::jmax(0, userInfo.messageLimit - userInfo.messagesUsedToday);
+}
+
+juce::String EchoJayAPI::getCreditsCounterText() const
+{
+    auto s = juce::String(getRemainingMessages()) + "/"
+           + juce::String(userInfo.messageLimit) + " credits";
+    if (simulatedCreditsOverride() < 0 && userInfo.credits > 0)
+        s += " (+" + juce::String(userInfo.credits) + ")";
+    return s;
+}
+
+int EchoJayAPI::getCreditsWarnLevel() const
+{
+    int usable = simulatedCreditsOverride();
+    if (usable < 0)
+        usable = juce::jmax(0, userInfo.messageLimit + userInfo.credits
+                               - userInfo.messagesUsedToday);
+    return usable == 0 ? 2 : usable <= 3 ? 1 : 0;
 }
 
 juce::String EchoJayAPI::getLimitReachedMessage() const

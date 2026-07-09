@@ -70,8 +70,22 @@ public:
     // Check if user can send a message (within monthly limit + credits)
     bool canSendMessage() const;
     
-    // Get remaining messages this period
+    // Get remaining messages this period. THE one used->remaining
+    // conversion: the backend sends USED (messagesUsedToday) + limit;
+    // every surface must count REMAINING, and must get it from here.
     int getRemainingMessages() const;
+
+    // PRODUCT-WIDE credits counter convention — every surface renders this
+    // exact string: "n/15 credits" counting REMAINING this month (15/15 =
+    // untouched, 0/15 = exhausted), bonus credits as " (+k)". One builder
+    // so a surface can't drift back to counting used.
+    juce::String getCreditsCounterText() const;
+
+    // Colour tier for the counter: 0 normal/dim, 1 amber, 2 coral.
+    // Keyed on TOTAL usable sends (monthly remaining + bonus credits) so
+    // coral coincides exactly with the input-row gate: coral == cannot
+    // send. Amber at 1-3 usable, coral at 0 only.
+    int getCreditsWarnLevel() const;
     
     // Returns the canonical "you've hit your limit" message for the current
     // tier. Mirrors the strings the SaaS returns on a 429 response so the
