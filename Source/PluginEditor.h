@@ -254,6 +254,18 @@ private:
     // (visual hidden AND stopped, sidebar hidden); restore on dismiss.
     void applyPromptOverlayOcclusion();
 
+    // ONE show path for all three onboarding prompts (channel -> genre ->
+    // project). Evaluates the chain in order, applies ALL component
+    // visibility, chat/topbar treatment, and ONE occlusion pass computed
+    // from the FINAL combined state — the old per-prompt update functions
+    // ran occlusion mid-chain, so a genre-dismiss briefly RESUMED the GL
+    // visual before the project prompt's update stopped it again, and the
+    // resulting attach/detach race left the Orb compositing over the
+    // project prompt. The per-prompt update functions are thin forwarders;
+    // the only differences between prompts are text, input-vs-buttons, and
+    // which flag they set.
+    void updateOnboardingPrompts();
+
     // ONE source of truth for the content/sidebar column split, used by
     // BOTH paint() and resized(). They previously had divergent formulas
     // (35% 280-420 painted vs 32% 240-380 laid out), which put the chat

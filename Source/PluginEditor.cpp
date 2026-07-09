@@ -1905,54 +1905,120 @@ bool EchoJayEditor::shouldShowChannelPrompt() const
         && processorRef.getChannelType() == ChannelType::FullMix;
 }
 
-void EchoJayEditor::updateChannelPromptVisibility()
-{
-    const bool wasVisible = channelPromptVisible;
-    channelPromptVisible = shouldShowChannelPrompt();
-    if (wasVisible != channelPromptVisible)
-        EchoJay_NSLog((juce::String("EJPrompt: channel ")
-            + (channelPromptVisible ? "SHOW" : "HIDE")
-            + " tab=" + juce::String((int)currentTab)
-            + " view=" + juce::String((int)currentView)
-            + " chDis=" + juce::String((int)processorRef.isChannelTypePromptDismissed())).toRawUTF8());
+// Defined later in this file (project-prompt section)
+static juce::String promptDecisionLine(const char* which, bool show,
+                                       int tab, int view,
+                                       bool chFlag, bool gnFlag, bool pjFlag,
+                                       const juce::String& name);
 
+void EchoJayEditor::updateOnboardingPrompts()
+{
+    const bool wasCh = channelPromptVisible;
+    const bool wasGn = genrePromptVisible;
+    const bool wasPj = projectPromptVisible;
+
+    // Evaluate the CHAIN in order — each should* consults the previous
+    // prompt's visibility, so the sequence matters
+    channelPromptVisible = shouldShowChannelPrompt();
+    genrePromptVisible   = shouldShowGenrePrompt();
+    projectPromptVisible = shouldShowProjectPrompt();
+
+    // ---- channel components ----
     channelPromptBlocker.setVisible(false); // no longer used for blocking
     channelPromptTitle.setVisible(channelPromptVisible);
     channelPromptSubtitle.setVisible(channelPromptVisible);
     channelPromptSkipBtn.setVisible(channelPromptVisible);
     customChannelBtn.setVisible(channelPromptVisible);
-    chatScroll.setVisible(currentScreen == Screen::Main && !channelPromptVisible && !genrePromptVisible);
-    chatInput.setVisible(currentScreen == Screen::Main && !channelPromptVisible && !genrePromptVisible);
-    chatSendBtn.setVisible(currentScreen == Screen::Main && !channelPromptVisible && !genrePromptVisible);
-    chatTextSizeBtn.setVisible(currentScreen == Screen::Main && !channelPromptVisible && !genrePromptVisible);
-    
-    // Disable top bar action buttons when prompt overlays are showing
-    bool promptActive = channelPromptVisible || genrePromptVisible;
-    compareBtn.setEnabled(!promptActive);
-    captureBtn.setEnabled(!promptActive);
-    settingsBtn.setEnabled(!promptActive);
+    for (auto& label : channelPromptGroupLabels) label.setVisible(channelPromptVisible);
+    for (auto& button : channelPromptButtons)    button.setVisible(channelPromptVisible);
 
-    for (auto& label : channelPromptGroupLabels)
-        label.setVisible(channelPromptVisible);
+    // ---- genre components ----
+    genrePromptTitle.setVisible(genrePromptVisible);
+    genrePromptSubtitle.setVisible(genrePromptVisible);
+    genrePromptCustomBtn.setVisible(genrePromptVisible);
+    for (auto& label : genrePromptGroupLabels) label.setVisible(genrePromptVisible);
+    for (auto& btn : genrePromptButtons)       btn.setVisible(genrePromptVisible);
 
-    for (auto& button : channelPromptButtons)
-        button.setVisible(channelPromptVisible);
+    // ---- project components ----
+    projectPromptTitle.setVisible(projectPromptVisible);
+    projectPromptSubtitle.setVisible(projectPromptVisible);
+    projectPromptInput.setVisible(projectPromptVisible);
+    projectPromptOkBtn.setVisible(projectPromptVisible);
+    projectPromptSkipBtn.setVisible(projectPromptVisible);
 
+    // ---- identical chat/topbar treatment for all three ----
+    const bool anyPrompt = channelPromptVisible || genrePromptVisible
+                        || projectPromptVisible;
+    const bool chatOk = currentScreen == Screen::Main && !anyPrompt
+                     && currentView != View::Settings
+                     && !(currentTab == Tab::Chain && chainChatCollapsed_);
+    chatScroll.setVisible(chatOk);
+    chatInput.setVisible(chatOk);
+    chatSendBtn.setVisible(chatOk);
+    chatTextSizeBtn.setVisible(chatOk);
+    compareBtn.setEnabled(!anyPrompt);
+    captureBtn.setEnabled(!anyPrompt);
+    settingsBtn.setEnabled(!anyPrompt);
+
+    // ---- z-order for whichever prompt is up ----
     if (channelPromptVisible)
     {
         channelPromptTitle.toFront(false);
         channelPromptSubtitle.toFront(false);
-        for (auto& label : channelPromptGroupLabels)
-            label.toFront(false);
-        for (auto& button : channelPromptButtons)
-            button.toFront(false);
+        for (auto& label : channelPromptGroupLabels) label.toFront(false);
+        for (auto& button : channelPromptButtons)    button.toFront(false);
         channelPromptSkipBtn.toFront(false);
         customChannelBtn.toFront(false);
     }
+    else if (genrePromptVisible)
+    {
+        genrePromptTitle.toFront(false);
+        genrePromptSubtitle.toFront(false);
+        for (auto& label : genrePromptGroupLabels) label.toFront(false);
+        for (auto& btn : genrePromptButtons)       btn.toFront(false);
+        genrePromptCustomBtn.toFront(false);
+    }
+    else if (projectPromptVisible)
+    {
+        projectPromptTitle.toFront(false);
+        projectPromptSubtitle.toFront(false);
+        projectPromptInput.toFront(false);
+        projectPromptOkBtn.toFront(false);
+        projectPromptSkipBtn.toFront(false);
+        projectPromptInput.grabKeyboardFocus();
+    }
 
+    // ONE occlusion pass from the FINAL combined state — never mid-chain,
+    // so the GL visual sees exactly one stop or one resume per transition
     applyPromptOverlayOcclusion();
+
+    // Decision logs — every transition carries its own diagnosis
+    if (wasCh != channelPromptVisible)
+        EchoJay_NSLog(promptDecisionLine("channel", channelPromptVisible,
+            (int)currentTab, (int)currentView,
+            processorRef.isChannelTypePromptDismissed(),
+            processorRef.isGenrePromptDismissed(),
+            processorRef.isProjectPromptDismissed(),
+            processorRef.getProjectName()).toRawUTF8());
+    if (wasGn != genrePromptVisible)
+        EchoJay_NSLog(promptDecisionLine("genre", genrePromptVisible,
+            (int)currentTab, (int)currentView,
+            processorRef.isChannelTypePromptDismissed(),
+            processorRef.isGenrePromptDismissed(),
+            processorRef.isProjectPromptDismissed(),
+            processorRef.getProjectName()).toRawUTF8());
+    if (wasPj != projectPromptVisible)
+        EchoJay_NSLog(promptDecisionLine("project", projectPromptVisible,
+            (int)currentTab, (int)currentView,
+            processorRef.isChannelTypePromptDismissed(),
+            processorRef.isGenrePromptDismissed(),
+            processorRef.isProjectPromptDismissed(),
+            processorRef.getProjectName()).toRawUTF8());
+
     repaint();
 }
+
+void EchoJayEditor::updateChannelPromptVisibility() { updateOnboardingPrompts(); }
 
 void EchoJayEditor::selectChannelPromptType(ChannelType type)
 {
@@ -1964,13 +2030,9 @@ void EchoJayEditor::dismissChannelPrompt()
     processorRef.setChannelType(ChannelType::FullMix);
     channelTypeBox.setSelectedId(1, juce::dontSendNotification);
     processorRef.setChannelTypePromptDismissed(true);
-    updateChannelPromptVisibility();
-    compareBtn.setEnabled(true);
-    captureBtn.setEnabled(true);
-    settingsBtn.setEnabled(true);
-    // After channel prompt dismisses, check if genre (then project) should show
-    updateGenrePromptVisibility();
-    updateProjectPromptVisibility();
+    // One shared pass: channel hides, genre (then project) may show next,
+    // chat/topbar restored from the FINAL state
+    updateOnboardingPrompts();
     resized();
 }
 
@@ -1986,51 +2048,7 @@ bool EchoJayEditor::shouldShowGenrePrompt() const
         && !channelPromptVisible;  // don't overlap with channel prompt
 }
 
-void EchoJayEditor::updateGenrePromptVisibility()
-{
-    const bool wasVisible = genrePromptVisible;
-    genrePromptVisible = shouldShowGenrePrompt();
-    if (wasVisible != genrePromptVisible)
-        EchoJay_NSLog((juce::String("EJPrompt: genre ")
-            + (genrePromptVisible ? "SHOW" : "HIDE")
-            + " tab=" + juce::String((int)currentTab)
-            + " view=" + juce::String((int)currentView)
-            + " gnDis=" + juce::String((int)processorRef.isGenrePromptDismissed())
-            + " sessGenre=\"" + ChainHost::getSessionGenre() + "\"").toRawUTF8());
-
-    genrePromptTitle.setVisible(genrePromptVisible);
-    genrePromptSubtitle.setVisible(genrePromptVisible);
-    genrePromptCustomBtn.setVisible(genrePromptVisible);
-
-    for (auto& label : genrePromptGroupLabels)
-        label.setVisible(genrePromptVisible);
-
-    for (auto& btn : genrePromptButtons)
-        btn.setVisible(genrePromptVisible);
-
-    if (genrePromptVisible)
-    {
-        // Hide chat and disable action buttons while genre prompt is up
-        chatScroll.setVisible(false);
-        chatInput.setVisible(false);
-        chatSendBtn.setVisible(false);
-        chatTextSizeBtn.setVisible(false);
-        compareBtn.setEnabled(false);
-        captureBtn.setEnabled(false);
-        settingsBtn.setEnabled(false);
-
-        genrePromptTitle.toFront(false);
-        genrePromptSubtitle.toFront(false);
-        for (auto& label : genrePromptGroupLabels)
-            label.toFront(false);
-        for (auto& btn : genrePromptButtons)
-            btn.toFront(false);
-        genrePromptCustomBtn.toFront(false);
-    }
-
-    applyPromptOverlayOcclusion();
-    repaint();
-}
+void EchoJayEditor::updateGenrePromptVisibility() { updateOnboardingPrompts(); }
 
 void EchoJayEditor::dismissGenrePrompt(const juce::String& selectedGenre)
 {
@@ -2043,17 +2061,9 @@ void EchoJayEditor::dismissGenrePrompt(const juce::String& selectedGenre)
     // Sync the genre dropdown — find by text since IDs vary with submenus
     rebuildGenreBox(); // ensure custom genres are in the list
     
-    updateGenrePromptVisibility();
-    // Restore chat and button state
-    chatScroll.setVisible(currentScreen == Screen::Main);
-    chatInput.setVisible(currentScreen == Screen::Main);
-    chatSendBtn.setVisible(currentScreen == Screen::Main);
-    chatTextSizeBtn.setVisible(currentScreen == Screen::Main);
-    compareBtn.setEnabled(true);
-    captureBtn.setEnabled(true);
-    settingsBtn.setEnabled(true);
-    // Genre answered — the project-name prompt is next in the chain
-    updateProjectPromptVisibility();
+    // One shared pass evaluates the whole chain (genre hides, project may
+    // show next) and restores chat/topbar from the FINAL state
+    updateOnboardingPrompts();
     resized();
     repaint();
 }
@@ -2097,44 +2107,7 @@ static juce::String promptDecisionLine(const char* which, bool show,
          + " sessGenre=\"" + ChainHost::getSessionGenre() + "\"";
 }
 
-void EchoJayEditor::updateProjectPromptVisibility()
-{
-    const bool was = projectPromptVisible;
-    projectPromptVisible = shouldShowProjectPrompt();
-    if (was != projectPromptVisible)
-        EchoJay_NSLog(promptDecisionLine("project", projectPromptVisible,
-            (int)currentTab, (int)currentView,
-            processorRef.isChannelTypePromptDismissed(),
-            processorRef.isGenrePromptDismissed(),
-            processorRef.isProjectPromptDismissed(),
-            processorRef.getProjectName()).toRawUTF8());
-
-    projectPromptTitle.setVisible(projectPromptVisible);
-    projectPromptSubtitle.setVisible(projectPromptVisible);
-    projectPromptInput.setVisible(projectPromptVisible);
-    projectPromptOkBtn.setVisible(projectPromptVisible);
-    projectPromptSkipBtn.setVisible(projectPromptVisible);
-
-    if (projectPromptVisible)
-    {
-        chatScroll.setVisible(false);
-        chatInput.setVisible(false);
-        chatSendBtn.setVisible(false);
-        chatTextSizeBtn.setVisible(false);
-        compareBtn.setEnabled(false);
-        captureBtn.setEnabled(false);
-        settingsBtn.setEnabled(false);
-
-        projectPromptTitle.toFront(false);
-        projectPromptSubtitle.toFront(false);
-        projectPromptInput.toFront(false);
-        projectPromptOkBtn.toFront(false);
-        projectPromptSkipBtn.toFront(false);
-        projectPromptInput.grabKeyboardFocus();
-    }
-    applyPromptOverlayOcclusion();
-    repaint();
-}
+void EchoJayEditor::updateProjectPromptVisibility() { updateOnboardingPrompts(); }
 
 void EchoJayEditor::dismissProjectPrompt(bool accepted)
 {
@@ -2152,14 +2125,7 @@ void EchoJayEditor::dismissProjectPrompt(bool accepted)
         }
     }
     processorRef.setProjectPromptDismissed(true);
-    updateProjectPromptVisibility();
-    chatScroll.setVisible(currentScreen == Screen::Main);
-    chatInput.setVisible(currentScreen == Screen::Main);
-    chatSendBtn.setVisible(currentScreen == Screen::Main);
-    chatTextSizeBtn.setVisible(currentScreen == Screen::Main);
-    compareBtn.setEnabled(true);
-    captureBtn.setEnabled(true);
-    settingsBtn.setEnabled(true);
+    updateOnboardingPrompts();   // shared pass restores chat/topbar
     resized();
     repaint();
 }
