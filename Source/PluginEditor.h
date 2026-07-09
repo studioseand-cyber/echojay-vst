@@ -295,6 +295,14 @@ private:
     struct ColumnLayout { int chatW = 0, mW = 0; };
     ColumnLayout computeColumns(int width) const;
 
+    // ONE source of truth for "an assistant input row exists here", used by
+    // the out-of-credits gate (upgrade button replaces the row). Every tab
+    // with the sidebar counts — Chat, Compare, Meters, Visualisation, Link,
+    // Chain (uncollapsed) — plus the chat-only compact window. A hand-listed
+    // subset here is exactly how Meters/Vis/Link once kept accepting text
+    // while Chat showed the upgrade prompt.
+    bool assistantInputContext() const;
+
     // ---- Settings right column (ACCOUNT / WHAT'S NEW / THIS MONTH) ----
     // Rects computed in resized(), painted in paintSettingsView(). Below
     // ~1100px window width the cards stack under the form as a row.

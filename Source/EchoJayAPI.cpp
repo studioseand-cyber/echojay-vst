@@ -287,13 +287,33 @@ void EchoJayAPI::logout()
     saveSettings();
 }
 
+// Dev: ~/Library/EchoJay/simulate_no_credits (any content) simulates the
+// exhausted state everywhere without burning 15 real messages. Checked at
+// most every 2s so timer-rate callers stay cheap; delete the file to
+// restore live behaviour within 2s.
+static bool simulateNoCredits()
+{
+    static bool sim = false;
+    static juce::int64 lastCheck = 0;
+    auto now = juce::Time::currentTimeMillis();
+    if (now - lastCheck > 2000)
+    {
+        lastCheck = now;
+        sim = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                  .getChildFile("EchoJay").getChildFile("simulate_no_credits").existsAsFile();
+    }
+    return sim;
+}
+
 bool EchoJayAPI::canSendMessage() const
 {
+    if (simulateNoCredits()) return false;
     return userInfo.messagesUsedToday < (userInfo.messageLimit + userInfo.credits);
 }
 
 int EchoJayAPI::getRemainingMessages() const
 {
+    if (simulateNoCredits()) return 0;
     return juce::jmax(0, userInfo.messageLimit - userInfo.messagesUsedToday);
 }
 

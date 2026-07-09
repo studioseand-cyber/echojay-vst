@@ -1530,10 +1530,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     addChildComponent(chainChatToggleBtn);
 
+    // Slot counter lives INSIDE the chain area (header strip above the
+    // rack), tiny dim caps with a unit — never the sidebar header spot,
+    // and never a bare "n/15" that could read as the credits counter.
     chainSlotCountLabel.setColour(juce::Label::textColourId, C::text3);
-    chainSlotCountLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
+    chainSlotCountLabel.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
     chainSlotCountLabel.setJustificationType(juce::Justification::centredRight);
-    chainSlotCountLabel.setText("0/" + juce::String(ChainListPanel::kMaxSlots),
+    chainSlotCountLabel.setText("0/" + juce::String(ChainListPanel::kMaxSlots) + " PLUGINS",
                                 juce::dontSendNotification);
     addChildComponent(chainSlotCountLabel);
 
@@ -1857,12 +1860,14 @@ void EchoJayEditor::showMainScreen()
     userLabel.setText(userText, juce::dontSendNotification);
     userLabel.setColour(juce::Label::textColourId, info.isPro() ? C::purple : C::text2);
 
+    // REMAINING out of limit, labelled — 0/15 is the bad state, and the
+    // bare "n/15" can no longer be confused with the chain slot counter.
+    // Same direction as the Settings ACCOUNT card.
     int remaining = api.getRemainingMessages();
     int limit = info.messageLimit;
-    int used = limit - remaining;
-    juce::String usageStr = juce::String(used) + "/" + juce::String(limit);
+    juce::String usageStr = juce::String(remaining) + "/" + juce::String(limit) + " credits";
     if (info.credits > 0)
-        usageStr += " (+" + juce::String(info.credits) + " credits)";
+        usageStr += " (+" + juce::String(info.credits) + ")";
     usageLabel.setText(usageStr, juce::dontSendNotification);
 
     updateChannelPromptVisibility();
@@ -2211,6 +2216,16 @@ EchoJayEditor::ColumnLayout EchoJayEditor::computeColumns(int width) const
         c.mW = width - c.chatW;
     }
     return c;
+}
+
+bool EchoJayEditor::assistantInputContext() const
+{
+    if (visualOnlyMode) return false;                       // mini view: no input row
+    if (currentScreen != Screen::Main) return false;
+    if (compactMode) return true;                           // chat-only window IS the input row
+    if (currentTab == Tab::Settings || currentView == View::Settings) return false;
+    if (currentTab == Tab::Chain && chainChatCollapsed_) return false;
+    return true;   // Chat, Compare, Meters, Visualisation, Link, Chain (open)
 }
 
 void EchoJayEditor::applyPromptOverlayOcclusion()
@@ -8458,6 +8473,11 @@ void EchoJayEditor::resized()
         chainChatToggleBtn.setVisible(!compactMode && !visualOnlyMode);
         chainChatToggleBtn.toFront(false);
 
+        // Slot counter — right-aligned in the chain header strip, just left
+        // of the AI toggle (inside the chain area, above the rack)
+        chainSlotCountLabel.setBounds(mW - 62 - 8 - 90, topH + 8, 90, 16);
+        chainSlotCountLabel.setVisible(!compactMode && !visualOnlyMode);
+
         if (chainChatCollapsed_ && !compactMode)
         {
             chatScroll.setVisible(false);
@@ -8479,7 +8499,10 @@ void EchoJayEditor::resized()
         chainLoadBtn.setVisible(false);
     }
     else
+    {
         chainChatToggleBtn.setVisible(false);
+        chainSlotCountLabel.setVisible(false);
+    }
 
     // Position particle visual — use paint formula for mW to match divider
     int abOff = abBarShowing ? kAbBarH : 0;
@@ -8634,16 +8657,6 @@ void EchoJayEditor::resized()
         // while chatScroll is still visible, which used to leave a stray
         // credits label floating at the top-right of the Settings form.
         usageLabel.setVisible(chatScroll.isVisible() && currentTab != Tab::Settings);
-
-        // CHAIN tab: the "n/15" slot counter takes the usage counter's spot
-        if (comingSoonTab)
-        {
-            usageLabel.setVisible(false);
-            chainSlotCountLabel.setBounds(counterX, counterY, counterW, counterH);
-            chainSlotCountLabel.setVisible(chatScroll.isVisible());
-        }
-        else
-            chainSlotCountLabel.setVisible(false);
     }
     
     // Chat scroll: top = below chat header, bottom = above chat input with gap.
@@ -9113,7 +9126,7 @@ void EchoJayEditor::timerCallback()
     {
         auto& ch = processorRef.getChainHost();
         chainSlotCountLabel.setText(juce::String(ch.getNumSlots()) + "/"
-                                        + juce::String(ChainListPanel::kMaxSlots),
+                                        + juce::String(ChainListPanel::kMaxSlots) + " PLUGINS",
                                     juce::dontSendNotification);
         bool wasScanning = ch.isScanning();
         if (wasScanning)
@@ -9503,11 +9516,11 @@ void EchoJayEditor::timerCallback()
 
     if (currentScreen == Screen::Main && api.isLoggedIn()) {
         auto info = api.getUserInfo();
+        // Remaining out of limit, labelled — see the other build site
         int remaining = api.getRemainingMessages();
-        int used = info.messageLimit - remaining;
-        juce::String usageStr = juce::String(used) + "/" + juce::String(info.messageLimit);
+        juce::String usageStr = juce::String(remaining) + "/" + juce::String(info.messageLimit) + " credits";
         if (info.credits > 0)
-            usageStr += " (+" + juce::String(info.credits) + " credits)";
+            usageStr += " (+" + juce::String(info.credits) + ")";
         usageLabel.setText(usageStr, juce::dontSendNotification);
         
         // OWNERSHIP: the Upgrade button belongs to the CHAT INPUT ROW and
@@ -9518,10 +9531,10 @@ void EchoJayEditor::timerCallback()
         // timer regardless of tab, positioned over chatInput's STALE bounds —
         // which is how it floated over Settings' Log Out button and poked
         // into the mini view.
-        bool chatContext = compactMode
-                        || currentTab == Tab::Chat
-                        || currentTab == Tab::Compare
-                        || (currentTab == Tab::Chain && !chainChatCollapsed_);
+        // ONE shared predicate for every surface with an input row — a
+        // hand-listed subset here is how Meters/Vis/Link kept accepting
+        // text while Chat showed the upgrade prompt.
+        bool chatContext = assistantInputContext();
         // Second owned home: the ACCOUNT card on Settings shows Upgrade
         // PERMANENTLY for free users (not just when out of messages)
         bool onSettingsCard = currentView == View::Settings
@@ -9830,6 +9843,20 @@ void EchoJayEditor::textEditorReturnKeyPressed(juce::TextEditor& ed)
 
 void EchoJayEditor::sendChatMessage(const juce::String& msg)
 {
+    // Single choke point for TYPED sends from every surface: the timer's
+    // upgrade-button gate normally replaces the input row first, but a
+    // message sent in the gap (or from a surface mid-transition) must get
+    // the same answer as Compare's gate — never a silent backend 429.
+    if (!api.canSendMessage())
+    {
+        auto lim = api.getLimitReachedMessage();
+        chatMessages.push_back({"assistant", lim});
+        processorRef.chatHistory.push_back({"assistant", lim});
+        chatInput.clear();
+        repaint();
+        return;
+    }
+
     // Ensure we have an active workspace chat to write into
     if (currentChatId.isEmpty())
     {
