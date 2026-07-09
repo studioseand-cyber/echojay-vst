@@ -4,6 +4,13 @@
 #include <algorithm>
 #include <unordered_map>
 
+#if JUCE_MAC
+ #include <libproc.h>
+ #include <dlfcn.h>
+ #include <unistd.h>
+ #include <sys/param.h>   // MAXCOMLEN
+#endif
+
 // Defined later in this file (used by the shared name resolution above it)
 static juce::String normalizeName(const juce::String& raw);
 
@@ -70,11 +77,162 @@ void ChainHost::markPopoutOnly(const juce::String& pluginName, const juce::Strin
 }
 
 // ---------------------------------------------------------------------------
-// Session project name — shared file, mtime-cached (popout_only pattern)
+// Host session identity — "session" means the user-facing DAW's lifetime.
+// Resolved ONCE per process (a process cannot change hosts).
+// ---------------------------------------------------------------------------
+#if JUCE_MAC
+static bool bsdInfoFor(pid_t pid, struct proc_bsdinfo& bi)
+{
+    return proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bi, (int) sizeof(bi)) == (int) sizeof(bi);
+}
+
+static juce::String procNameFor(pid_t pid)
+{
+    char nm[2 * MAXCOMLEN + 1] = {};
+    proc_name(pid, nm, sizeof(nm));
+    return juce::String(nm);
+}
+
+// Names of processes that host plugins on another app's behalf — never the
+// user-facing session identity themselves.
+static bool looksLikePluginHostHelper(const juce::String& n)
+{
+    return n.containsIgnoreCase("XPC")
+        || n.containsIgnoreCase("AUHostingService")
+        || n.containsIgnoreCase("PlugInRunner");
+}
+#endif
+
+const ChainHost::HostIdentity& ChainHost::getHostIdentity()
+{
+    static const HostIdentity identity = []
+    {
+        HostIdentity h;
+#if JUCE_MAC
+        const pid_t self = getpid();
+        pid_t host = self;
+        juce::String route = "self";
+
+        // Primary: the responsibility API maps an XPC service straight to the
+        // user-facing app it works for (Logic Pro). In-process hosts map to
+        // themselves. Private-but-stable symbol, so resolve it dynamically —
+        // a missing symbol just degrades to the walk below.
+        using RespFn = pid_t (*)(pid_t);
+        if (auto respFn = (RespFn) dlsym(RTLD_DEFAULT, "responsibility_get_pid_responsible_for_pid"))
+            if (pid_t rp = respFn(self); rp > 0)
+            {
+                host  = rp;
+                route = "responsible-pid";
+            }
+
+        // Backstop: if what we have still looks like a hosting helper, walk
+        // the parent chain toward the user-facing app. XPC services are
+        // children of launchd (pid 1), so this walk cannot cross that gap —
+        // it exists for nested/in-process helper arrangements.
+        for (int hops = 0; hops < 8; ++hops)
+        {
+            if (!looksLikePluginHostHelper(procNameFor(host))) break;
+            struct proc_bsdinfo bi {};
+            if (!bsdInfoFor(host, bi) || bi.pbi_ppid <= 1) break;
+            host  = (pid_t) bi.pbi_ppid;
+            route = "ppid-walk";
+        }
+
+        struct proc_bsdinfo bi {};
+        if (!bsdInfoFor(host, bi))
+        {
+            host  = self;                       // can't even read the candidate
+            route = "degraded-self";
+            if (!bsdInfoFor(host, bi)) { bi.pbi_start_tvsec = 0; bi.pbi_start_tvusec = 0; }
+        }
+
+        h.pid       = (int) host;
+        h.startSec  = (juce::int64) bi.pbi_start_tvsec;
+        h.startUsec = (juce::int64) bi.pbi_start_tvusec;
+        h.name      = procNameFor(host);
+        h.degraded  = looksLikePluginHostHelper(h.name) || route == "degraded-self";
+#else
+        // Non-mac hosts run plugins in-process: our own process IS the
+        // session. First-touch time stands in for process start time — it is
+        // constant within the process, which is all the match rule needs.
+        h.pid      = (int) getpid();
+        h.startSec = juce::Time::currentTimeMillis() / 1000;
+        h.name     = juce::File::getSpecialLocation(juce::File::hostApplicationPath).getFileNameWithoutExtension();
+        juce::String route = "self";
+#endif
+        EchoJay_NSLog(("EJPrompt: host identity resolved: \"" + h.name + "\" pid=" + juce::String(h.pid)
+                       + " start=" + juce::String(h.startSec) + "." + juce::String(h.startUsec)
+                       + " via " + route
+                       + (h.degraded ? " DEGRADED (sharing limited to this process)" : "")).toRawUTF8());
+        return h;
+    }();
+    return identity;
+}
+
+static juce::String describeHostIdentity()
+{
+    const auto& h = ChainHost::getHostIdentity();
+    return "\"" + h.name + "\" pid=" + juce::String(h.pid)
+         + " start=" + juce::String(h.startSec) + "." + juce::String(h.startUsec);
+}
+
+static void stampHostIdentity(juce::DynamicObject* o)
+{
+    const auto& h = ChainHost::getHostIdentity();
+    o->setProperty("hostPid",       h.pid);
+    o->setProperty("hostStartSec",  h.startSec);
+    o->setProperty("hostStartUsec", h.startUsec);
+    o->setProperty("hostName",      h.name);
+}
+
+static bool stampMatchesCurrentHost(juce::DynamicObject* o)
+{
+    const auto& h = ChainHost::getHostIdentity();
+    return (int)         o->getProperty("hostPid")       == h.pid
+        && (juce::int64) o->getProperty("hostStartSec")  == h.startSec
+        && (juce::int64) o->getProperty("hostStartUsec") == h.startUsec;
+}
+
+static juce::String describeStamp(juce::DynamicObject* o)
+{
+    return "\"" + o->getProperty("hostName").toString() + "\" pid="
+         + o->getProperty("hostPid").toString()
+         + " start=" + o->getProperty("hostStartSec").toString();
+}
+
+// ---------------------------------------------------------------------------
+// Session project name — shared file, mtime-cached (popout_only pattern).
+// The cache holds the VALIDATED value: empty when the file's host stamp does
+// not match the current host, so a previous DAW session's value is invisible
+// to all callers (they prompt instead). updatedAt stays purely informational.
 // ---------------------------------------------------------------------------
 static juce::File sessionProjectFile() { return appSupportDir().getChildFile("session_project.json"); }
 static juce::String& sessionProjectCache() { static juce::String s; return s; }
 static juce::Time& sessionProjectLoadTime() { static juce::Time t; return t; }
+
+// Shared reload for both session files: returns the validated value ("" on
+// stamp mismatch) and logs the match outcome once per file change.
+static juce::String loadValidatedSessionValue(const juce::File& f,
+                                              const juce::String& jsonKey,
+                                              const juce::String& logNoun)
+{
+    if (!f.existsAsFile()) return {};
+    auto v = juce::JSON::parse(f.loadFileAsString());
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return {};
+    auto val = o->getProperty(jsonKey).toString().trim();
+    if (val.isEmpty()) return {};
+    if (stampMatchesCurrentHost(o))
+    {
+        EchoJay_NSLog(("EJPrompt: session " + logNoun + " \"" + val
+                       + "\" same host, adopted (" + describeStamp(o) + ")").toRawUTF8());
+        return val;
+    }
+    EchoJay_NSLog(("EJPrompt: session " + logNoun + " \"" + val
+                   + "\" from previous host, ignoring, will prompt (file " + describeStamp(o)
+                   + " vs current " + describeHostIdentity() + ")").toRawUTF8());
+    return {};
+}
 
 juce::String ChainHost::getSessionProjectName()
 {
@@ -83,13 +241,7 @@ juce::String ChainHost::getSessionProjectName()
     if (mt != sessionProjectLoadTime())
     {
         sessionProjectLoadTime() = mt;
-        sessionProjectCache().clear();
-        if (f.existsAsFile())
-        {
-            auto v = juce::JSON::parse(f.loadFileAsString());
-            if (auto* o = v.getDynamicObject())
-                sessionProjectCache() = o->getProperty("name").toString().trim();
-        }
+        sessionProjectCache() = loadValidatedSessionValue(f, "name", "project");
     }
     return sessionProjectCache();
 }
@@ -97,15 +249,18 @@ juce::String ChainHost::getSessionProjectName()
 void ChainHost::publishSessionProjectName(const juce::String& name)
 {
     auto trimmed = name.trim();
-    if (getSessionProjectName() == trimmed) return;   // no-op republish
+    if (getSessionProjectName() == trimmed) return;   // no-op republish (same value, same host)
     auto* o = new juce::DynamicObject();
     o->setProperty("name",      trimmed);
     o->setProperty("updatedAt", juce::Time::getCurrentTime().toISO8601(true));
+    stampHostIdentity(o);
     auto f = sessionProjectFile();
     f.getParentDirectory().createDirectory();
     f.replaceWithText(juce::JSON::toString(juce::var(o), true));
     sessionProjectCache()    = trimmed;
     sessionProjectLoadTime() = f.getLastModificationTime();
+    EchoJay_NSLog(("EJPrompt: published session project \"" + trimmed
+                   + "\" as " + describeHostIdentity()).toRawUTF8());
 }
 
 // Session genre — identical pattern, separate file (independent mtimes)
@@ -120,13 +275,7 @@ juce::String ChainHost::getSessionGenre()
     if (mt != sessionGenreLoadTime())
     {
         sessionGenreLoadTime() = mt;
-        sessionGenreCache().clear();
-        if (f.existsAsFile())
-        {
-            auto v = juce::JSON::parse(f.loadFileAsString());
-            if (auto* o = v.getDynamicObject())
-                sessionGenreCache() = o->getProperty("genre").toString().trim();
-        }
+        sessionGenreCache() = loadValidatedSessionValue(f, "genre", "genre");
     }
     return sessionGenreCache();
 }
@@ -138,11 +287,14 @@ void ChainHost::publishSessionGenre(const juce::String& genre)
     auto* o = new juce::DynamicObject();
     o->setProperty("genre",     trimmed);
     o->setProperty("updatedAt", juce::Time::getCurrentTime().toISO8601(true));
+    stampHostIdentity(o);
     auto f = sessionGenreFile();
     f.getParentDirectory().createDirectory();
     f.replaceWithText(juce::JSON::toString(juce::var(o), true));
     sessionGenreCache()    = trimmed;
     sessionGenreLoadTime() = f.getLastModificationTime();
+    EchoJay_NSLog(("EJPrompt: published session genre \"" + trimmed
+                   + "\" as " + describeHostIdentity()).toRawUTF8());
 }
 
 juce::PluginDescription ChainHost::preferInlineHostableDesc(const juce::PluginDescription& d)

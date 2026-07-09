@@ -132,21 +132,42 @@ public:
     static bool isPopoutOnly(const juce::String& pluginName, const juce::String& format);
     static void markPopoutOnly(const juce::String& pluginName, const juce::String& format);
 
+    // ---- Host session identity ---------------------------------------------
+    // The user-facing HOST process this plugin instance ultimately belongs
+    // to. Inside an out-of-process AU host (AUHostingServiceXPC) this is the
+    // DAW itself (Logic Pro), resolved via the responsible-pid API with a
+    // parent-walk backstop; for in-process hosts it is simply our own
+    // process. startSec/startUsec come from PROC_PIDTBSDINFO so a recycled
+    // pid can never false-match. `degraded` means resolution stopped at a
+    // helper process: sharing is limited to that process, but stale values
+    // from a previous session still cannot be adopted.
+    struct HostIdentity
+    {
+        int          pid       = 0;
+        juce::int64  startSec  = 0;
+        juce::int64  startUsec = 0;
+        juce::String name;
+        bool         degraded  = false;
+    };
+    static const HostIdentity& getHostIdentity();   // resolved once per process
+
     // ---- Session project name (both hosts) --------------------------------
     // Published to session_project.json whenever a user sets/edits the
     // project name in any instance; mtime-watched by all instances (same
-    // pattern as popout_only.txt). Session-scoped in spirit; the file
-    // persisting across sessions is accepted (a stale pre-fill is edited and
-    // republished). Precedence lives with the CALLERS: an instance's own
-    // serialised name always wins over this value.
+    // pattern as popout_only.txt). Session-scoped FOR REAL: the file is
+    // stamped with the publishing host's identity, and the getter returns
+    // empty unless the stamp matches the current host — a value from a
+    // previous DAW session is invisible, so fresh instances prompt instead
+    // of silently adopting it. Precedence lives with the CALLERS: an
+    // instance's own serialised name always wins over this value.
     static juce::String getSessionProjectName();
     static void publishSessionProjectName(const juce::String& name);
 
     // Session genre — separate session_genre.json (NOT folded into the
     // project file: separate mtimes keep the two follow-watchers
-    // independent). Same publish/adopt/follow pattern; adoption is keyed
-    // off the genre-answered FLAG in the callers, never the value (genre
-    // has a non-empty default).
+    // independent). Same publish/adopt/follow pattern AND the same host
+    // identity stamp/match rule; adoption is keyed off the genre-answered
+    // FLAG in the callers, never the value (genre has a non-empty default).
     static juce::String getSessionGenre();
     static void publishSessionGenre(const juce::String& genre);
 
