@@ -2015,6 +2015,16 @@ void EchoJayEditor::updateOnboardingPrompts()
             processorRef.isProjectPromptDismissed(),
             processorRef.getProjectName()).toRawUTF8());
 
+    // Any transition: FULL-bounds repaint now AND once more next tick — a
+    // fragment must not survive under child components or a GL surface
+    // that is still attaching/detaching when this frame paints
+    if (wasCh != channelPromptVisible || wasGn != genrePromptVisible
+        || wasPj != projectPromptVisible)
+    {
+        juce::Component::SafePointer<EchoJayEditor> safe(this);
+        juce::MessageManager::callAsync([safe]
+        { if (safe != nullptr) safe->repaint(); });
+    }
     repaint();
 }
 

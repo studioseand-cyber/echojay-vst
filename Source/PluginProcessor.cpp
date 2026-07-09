@@ -279,6 +279,28 @@ EchoJayProcessor::EchoJayProcessor()
         if (isShuttingDown.load()) return;
         pluginScanner.loadCustomFolders();
     });
+
+    // Session adoption BEFORE any UI exists — synchronous, in the processor
+    // constructor, so the prompt chain can never evaluate pre-adoption state
+    // (the show-then-adopt race: prompt flashes for a tick, adoption lands,
+    // stale prompt pixels linger). setStateInformation later overrides both
+    // with the project's own serialised values, preserving precedence (a).
+    {
+        auto sp = ChainHost::getSessionProjectName();
+        if (projectName.trim().isEmpty() && sp.isNotEmpty())
+        {
+            projectName = sp;
+            projectPromptDismissed = true;
+            EchoJay_NSLog(("EJPrompt: adopted session name pre-UI \"" + sp + "\"").toRawUTF8());
+        }
+        auto sg = ChainHost::getSessionGenre();
+        if (!genrePromptDismissed && sg.isNotEmpty())
+        {
+            genre = sg;
+            genrePromptDismissed = true;
+            EchoJay_NSLog(("EJPrompt: adopted session genre pre-UI \"" + sg + "\"").toRawUTF8());
+        }
+    }
 }
 
 EchoJayProcessor::~EchoJayProcessor()
