@@ -79,6 +79,9 @@ public:
     // For per-turn injection on plugin-relevant messages.
     juce::String getFullPluginList() const;
 
+    // The disabled (unticked) effect list, comma-separated "Name (Manu)".
+    juce::String getDisabledPluginList() const;
+
     // Count of enabled effects (for the summary and for callers deciding
     // whether the full list is large enough to bother type-scoping).
     int getEnabledEffectCount() const;

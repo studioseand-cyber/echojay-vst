@@ -1193,6 +1193,16 @@ juce::String PluginScanner::getFullPluginList() const
     return arr.joinIntoString(", ");
 }
 
+juce::String PluginScanner::getDisabledPluginList() const
+{
+    std::lock_guard<std::mutex> lock(pluginMutex);
+    juce::StringArray arr;
+    for (auto& p : plugins)
+        if (p.category == "Effect" && ! p.enabled)
+            arr.add(p.name + " (" + p.manufacturer + ")");
+    return arr.joinIntoString(", ");
+}
+
 juce::String PluginScanner::getPluginSummary() const
 {
     // A short, cache-safe overview for the system prompt: total enabled effect

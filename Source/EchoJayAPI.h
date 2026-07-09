@@ -103,7 +103,8 @@ public:
     UserSettings getUserSettings() const { return userSettings; }
     
     // Update plugins list from scanner (merges with existing)
-    void updatePluginsFromScanner(const juce::String& scannedPlugins);
+    void updatePluginsFromScanner(const juce::String& enabledScanned,
+                                  const juce::String& disabledScanned);
     
     // ============ Remote Config ============
     
