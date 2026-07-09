@@ -254,6 +254,14 @@ private:
     // (visual hidden AND stopped, sidebar hidden); restore on dismiss.
     void applyPromptOverlayOcclusion();
 
+    // ONE source of truth for the content/sidebar column split, used by
+    // BOTH paint() and resized(). They previously had divergent formulas
+    // (35% 280-420 painted vs 32% 240-380 laid out), which put the chat
+    // input row short of the painted column edge — the third input-row
+    // alignment bug, and the last: there is now exactly one formula.
+    struct ColumnLayout { int chatW = 0, mW = 0; };
+    ColumnLayout computeColumns(int width) const;
+
     // ---- Settings right column (ACCOUNT / WHAT'S NEW / THIS MONTH) ----
     // Rects computed in resized(), painted in paintSettingsView(). Below
     // ~1100px window width the cards stack under the form as a row.

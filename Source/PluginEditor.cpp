@@ -2123,6 +2123,39 @@ void EchoJayEditor::publishProjectName()
     lastSeenSharedProject_ = name;
 }
 
+EchoJayEditor::ColumnLayout EchoJayEditor::computeColumns(int width) const
+{
+    ColumnLayout c;
+    if (compactMode || currentTab == Tab::Chat)
+    {
+        c.chatW = width;
+        c.mW = 0;
+    }
+    else if (visualOnlyMode)
+    {
+        c.chatW = 0;
+        c.mW = width;
+    }
+    else if (currentTab == Tab::Chain)
+    {
+        // Slim sidebar so plugin editors get maximum width
+        c.chatW = chainChatCollapsed_ ? 0 : juce::jlimit(200, 280, width * 22 / 100);
+        c.mW = width - c.chatW;
+    }
+    else if (currentTab == Tab::Settings)
+    {
+        // No AI assistant sidebar on Settings
+        c.chatW = 0;
+        c.mW = width;
+    }
+    else
+    {
+        c.chatW = juce::jlimit(280, 420, width * 35 / 100);
+        c.mW = width - c.chatW;
+    }
+    return c;
+}
+
 void EchoJayEditor::applyPromptOverlayOcclusion()
 {
     const bool prompt = channelPromptVisible || genrePromptVisible
@@ -2145,6 +2178,10 @@ void EchoJayEditor::applyPromptOverlayOcclusion()
         // Resume — resized() (called by every dismiss path) re-evaluates
         // the holder's visibility and bounds, and the sidebar's
         particleVisual->start();
+        // GL re-attach can leave stale pixels in CPU-painted regions
+        // (prompt text fragments); full repaint once the attach settles
+        juce::Component::SafePointer<EchoJayEditor> safe(this);
+        juce::MessageManager::callAsync([safe] { if (safe != nullptr) safe->repaint(); });
     }
 }
 
@@ -7202,34 +7239,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
     bool chatOnlyMode   = (currentTab == Tab::Chat);
     bool comingSoonTab  = (currentTab == Tab::Chain);
     bool linkMonitorTab = (currentTab == Tab::Link);
-    int chatW, mW;
-
-    if (compactMode || chatOnlyMode)
-    {
-        chatW = bounds.getWidth();
-        mW = 0;
-    }
-    else if (visualOnlyMode)
-    {
-        chatW = 0;
-        mW = bounds.getWidth();
-    }
-    else if (comingSoonTab)
-    {
-        chatW = chainChatCollapsed_ ? 0 : juce::jlimit(200, 280, bounds.getWidth() * 22 / 100);
-        mW = bounds.getWidth() - chatW;
-    }
-    else if (currentTab == Tab::Settings)
-    {
-        // No AI assistant sidebar on Settings — the form gets the full width
-        chatW = 0;
-        mW = bounds.getWidth();
-    }
-    else
-    {
-        chatW = juce::jlimit(280, 420, bounds.getWidth() * 35 / 100);
-        mW = bounds.getWidth() - chatW;
-    }
+    // Column split — SHARED formula with resized() (computeColumns)
+    auto cols = computeColumns(bounds.getWidth());
+    int chatW = cols.chatW, mW = cols.mW;
 
     // Top bar background (32px header band only)
     g.setColour(C::bg2);
@@ -8350,36 +8362,11 @@ void EchoJayEditor::resized()
     bool chatOnlyMode  = (currentTab == Tab::Chat);
     bool comingSoonTab  = (currentTab == Tab::Chain);
     bool linkMonitorTab = (currentTab == Tab::Link);
-    int chatW, mW;
-
-    if (compactMode || chatOnlyMode)
-    {
-        chatW = b.getWidth();
-        mW = 0;
-    }
-    else if (visualOnlyMode)
-    {
-        chatW = 0;
-        mW = b.getWidth();
-    }
-    else if (comingSoonTab)
-    {
-        // CHAIN tab: slim sidebar so plugin editors get maximum width.
-        // Collapsed sidebar → plugin display area takes the full tab width.
-        chatW = chainChatCollapsed_ ? 0 : juce::jlimit(200, 280, b.getWidth() * 22 / 100);
-        mW = b.getWidth() - chatW;
-    }
-    else if (currentTab == Tab::Settings)
-    {
-        // No AI assistant sidebar on Settings — the form gets the full width
-        chatW = 0;
-        mW = b.getWidth();
-    }
-    else
-    {
-        chatW = juce::jlimit(240, 380, b.getWidth() * 32 / 100);
-        mW = b.getWidth() - chatW;
-    }
+    // Column split — SHARED formula with paint() (computeColumns). This
+    // block previously used 32% 240-380 while paint used 35% 280-420,
+    // leaving the input row short of the painted column edge.
+    auto cols = computeColumns(b.getWidth());
+    int chatW = cols.chatW, mW = cols.mW;
 
     // Link tab: no child components to lay out — painted directly
 
@@ -9526,6 +9513,12 @@ void EchoJayEditor::timerCallback()
                     projectInput.setText(shared, juce::dontSendNotification);
                 }
                 lastSeenSharedProject_ = shared;
+                // A PENDING project prompt must dismiss itself when a session
+                // value appears — its precondition just vanished. Without
+                // this the prompt components stayed visible (the stale
+                // "session." ghost under the AI ASSISTANT header).
+                if (projectPromptVisible)
+                    updateProjectPromptVisibility();
             }
 
             // Session genre follow: adopt when this instance never answered
