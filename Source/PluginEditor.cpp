@@ -448,6 +448,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     projectInput.onTextChange = [this] {
         juce::String proj = projectInput.getText().trim();
         processorRef.setProjectName(proj);
+        // Typing a name kills a pending project prompt — its precondition
+        // (no own name) just vanished. Without this the prompt stayed up
+        // and outlived its conditions (2.9.66 regression).
+        if (projectPromptVisible) updateProjectPromptVisibility();
         // Immediately rename the current chat to match the project name
         if (currentChatId.isNotEmpty())
         {
@@ -1903,7 +1907,14 @@ bool EchoJayEditor::shouldShowChannelPrompt() const
 
 void EchoJayEditor::updateChannelPromptVisibility()
 {
+    const bool wasVisible = channelPromptVisible;
     channelPromptVisible = shouldShowChannelPrompt();
+    if (wasVisible != channelPromptVisible)
+        EchoJay_NSLog((juce::String("EJPrompt: channel ")
+            + (channelPromptVisible ? "SHOW" : "HIDE")
+            + " tab=" + juce::String((int)currentTab)
+            + " view=" + juce::String((int)currentView)
+            + " chDis=" + juce::String((int)processorRef.isChannelTypePromptDismissed())).toRawUTF8());
 
     channelPromptBlocker.setVisible(false); // no longer used for blocking
     channelPromptTitle.setVisible(channelPromptVisible);
@@ -1977,7 +1988,15 @@ bool EchoJayEditor::shouldShowGenrePrompt() const
 
 void EchoJayEditor::updateGenrePromptVisibility()
 {
+    const bool wasVisible = genrePromptVisible;
     genrePromptVisible = shouldShowGenrePrompt();
+    if (wasVisible != genrePromptVisible)
+        EchoJay_NSLog((juce::String("EJPrompt: genre ")
+            + (genrePromptVisible ? "SHOW" : "HIDE")
+            + " tab=" + juce::String((int)currentTab)
+            + " view=" + juce::String((int)currentView)
+            + " gnDis=" + juce::String((int)processorRef.isGenrePromptDismissed())
+            + " sessGenre=\"" + ChainHost::getSessionGenre() + "\"").toRawUTF8());
 
     genrePromptTitle.setVisible(genrePromptVisible);
     genrePromptSubtitle.setVisible(genrePromptVisible);
@@ -2053,6 +2072,7 @@ bool EchoJayEditor::shouldShowProjectPrompt() const
               || currentTab == Tab::Chat          || currentTab == Tab::Compare;
     return currentScreen == Screen::Main
         && tabOk
+        && currentView != View::Settings   // belt: Settings is also a VIEW state
         && !channelPromptVisible
         && !genrePromptVisible
         && !processorRef.isProjectPromptDismissed()
@@ -2060,9 +2080,34 @@ bool EchoJayEditor::shouldShowProjectPrompt() const
         && ChainHost::getSessionProjectName().isEmpty();
 }
 
+// Shared decision log — every prompt show/defer/dismiss transition carries
+// its own diagnosis (this chain has broken three times in different ways)
+static juce::String promptDecisionLine(const char* which, bool show,
+                                       int tab, int view,
+                                       bool chFlag, bool gnFlag, bool pjFlag,
+                                       const juce::String& name)
+{
+    return juce::String("EJPrompt: ") + which + (show ? " SHOW" : " HIDE")
+         + " tab=" + juce::String(tab) + " view=" + juce::String(view)
+         + " chDis=" + juce::String((int)chFlag)
+         + " gnDis=" + juce::String((int)gnFlag)
+         + " pjDis=" + juce::String((int)pjFlag)
+         + " name=\"" + name + "\""
+         + " sessName=\"" + ChainHost::getSessionProjectName() + "\""
+         + " sessGenre=\"" + ChainHost::getSessionGenre() + "\"";
+}
+
 void EchoJayEditor::updateProjectPromptVisibility()
 {
+    const bool was = projectPromptVisible;
     projectPromptVisible = shouldShowProjectPrompt();
+    if (was != projectPromptVisible)
+        EchoJay_NSLog(promptDecisionLine("project", projectPromptVisible,
+            (int)currentTab, (int)currentView,
+            processorRef.isChannelTypePromptDismissed(),
+            processorRef.isGenrePromptDismissed(),
+            processorRef.isProjectPromptDismissed(),
+            processorRef.getProjectName()).toRawUTF8());
 
     projectPromptTitle.setVisible(projectPromptVisible);
     projectPromptSubtitle.setVisible(projectPromptVisible);
@@ -2093,6 +2138,9 @@ void EchoJayEditor::updateProjectPromptVisibility()
 
 void EchoJayEditor::dismissProjectPrompt(bool accepted)
 {
+    EchoJay_NSLog((juce::String("EJPrompt: project dismiss ")
+        + (accepted ? "CONTINUE" : "SKIP")
+        + " input=\"" + projectPromptInput.getText().trim() + "\"").toRawUTF8());
     if (accepted)
     {
         auto name = projectPromptInput.getText().trim();
@@ -2160,6 +2208,13 @@ void EchoJayEditor::applyPromptOverlayOcclusion()
 {
     const bool prompt = channelPromptVisible || genrePromptVisible
                      || projectPromptVisible;
+    // Header fields are child components ABOVE the scrim and their clicks
+    // bypass the editor's mouseDown block — editing the project name or
+    // channel/genre mid-prompt must not be possible (2.9.66: a name typed
+    // into the header while the project prompt was up stranded the prompt)
+    projectInput.setEnabled(!prompt);
+    channelTypeBox.setEnabled(!prompt);
+    genreBox.setEnabled(!prompt);
     if (prompt)
     {
         // GL visual: hide AND stop — a live GL surface can draw over the
@@ -4239,7 +4294,13 @@ void EchoJayEditor::showSettingsView()
             safeThis->settingsSavedLabel.setText("Could not load settings", juce::dontSendNotification);
         }
     });
-    
+
+    // ANY entry into the Settings view re-evaluates the onboarding prompts
+    // (they must never render interleaved with Settings' child components)
+    updateChannelPromptVisibility();
+    updateGenrePromptVisibility();
+    updateProjectPromptVisibility();
+
     resized(); repaint();
 }
 
@@ -4261,6 +4322,8 @@ void EchoJayEditor::hideSettingsView()
     settingsScanBtn.setVisible(false);
     settingsHelpBtn.setVisible(false);
     dumpMetersBtn.setVisible(false);
+    // Leaving Settings: a deferred prompt may return
+    updateProjectPromptVisibility();
     resized(); repaint();
 }
 
