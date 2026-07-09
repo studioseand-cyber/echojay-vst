@@ -243,6 +243,12 @@ private:
     // DERIVED page state written ONLY by updateOnboardingPrompts().
     struct OnboardingOverlay : juce::Component
     {
+        // THE single source of truth for which page renders: 0 none,
+        // 1 channel, 2 genre, 3 project. Written ONLY by
+        // updateOnboardingPrompts(); paint() and component visibility both
+        // derive from it, so they cannot disagree.
+        int currentPage = 0;
+        int lastPaintedPage = -1;   // paint-side change log throttle
         std::function<void(juce::Graphics&)> paintScrim;
         void paint(juce::Graphics& g) override { if (paintScrim) paintScrim(g); }
         void mouseDown(const juce::MouseEvent&) override {}   // swallow
