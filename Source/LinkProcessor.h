@@ -222,9 +222,12 @@ private:
     bool     audioWasStale_ = false;   // transition logging
     void publishMeterFrame();
 
-    // Unnamed Links still register ("Untitled" rows): per-instance fallback
-    // file id keeps their ring/registry filenames unique
-    juce::String untitledId_;
+    // Per-INSTANCE identity: generated at construction, serialised with
+    // state (survives reopen), regenerated on registry collision (track
+    // duplication clones state incl. the uid). Commands/acks/registry key
+    // on THIS — the display name is a label, never an address (unnamed or
+    // same-named Links collided and toggles applied to all of them).
+    juce::String instanceUid_;
     juce::String effectiveFilePart() const;
     juce::String chainInstanceId() const;
     void pollChainCommand();

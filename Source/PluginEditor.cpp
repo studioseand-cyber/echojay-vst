@@ -4123,6 +4123,17 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         const int cardX = pad;
         const int cardW = fw;
 
+        // Row label + ADDRESS first — the toggle block below needs both.
+        // Address = per-instance uid (legacy name-derived fallback); it keys
+        // strip state, pending lookups and toggle commands. The display name
+        // is just a label ("Untitled N" for unnamed instances).
+        juce::String rowName = slot.name;
+        if (rowName.isEmpty())
+            rowName = ++untitledCount > 1 ? "Untitled " + juce::String(untitledCount)
+                                          : juce::String("Untitled");
+        const juce::String rowAddr = slot.uid.isNotEmpty()
+                                   ? slot.uid : LinkShm::makeSafeFilePart(slot.name);
+
         // Card background
         g.setColour(C::bg3);
         g.fillRoundedRectangle((float)cardX, (float)y, (float)cardW, (float)cardH, 6.f);
@@ -4150,7 +4161,7 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         {
             bool pending = false, timedOut = false, target = false;
             for (auto& p : linkCtrlPending_)
-                if (p.name == slot.name)
+                if (p.addr == rowAddr)
                 { pending = !p.timedOut; timedOut = p.timedOut; target = p.target; }
 
             const auto cyan  = juce::Colour(0xff22d3ee);   // Link kCyan (tick)
@@ -4164,7 +4175,7 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
 
             juce::Rectangle<int> zone(cardX + cardW - dotD - 10 - 86,
                                       y + (cardH - 24) / 2, 76, 24);
-            linkToggleZones_.push_back({ zone, slot.name });
+            linkToggleZones_.push_back({ zone, rowAddr });
 
             juce::Rectangle<float> tickBounds((float)zone.getX(),
                                               (float)zone.getCentreY() - tickWidth * 0.5f,
@@ -4193,11 +4204,7 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         // the Link is Active. Otherwise the strip freezes on last-known
         // values and dims — no fake motion. New frames also feed the
         // ribbon ring, so scrolling rides the 10Hz frame clock directly.
-        juce::String rowName = slot.name;
-        if (rowName.isEmpty())
-            rowName = ++untitledCount > 1 ? "Untitled " + juce::String(untitledCount)
-                                          : juce::String("Untitled");
-        auto& st = linkStripStates_[rowName];
+        auto& st = linkStripStates_[rowAddr];
         {
             LinkMeterFrame f;
             if (slot.regIdx >= 0 && processorRef.readLinkMeterFrame(slot.regIdx, f))
@@ -10669,7 +10676,7 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkName,
 {
     int err = 0;
     juce::String dir = LinkShm::resolveDir(err);
-    auto id = LinkShm::makeSafeFilePart(linkName);
+    auto id = linkAddrForName(linkName);   // per-instance uid (legacy fallback)
     if (dir.isEmpty() || id.isEmpty())
     {
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
@@ -10707,7 +10714,7 @@ void EchoJayEditor::pollLinkChainAck(const juce::String& linkName, int seq,
 
         int err = 0;
         juce::String dir = LinkShm::resolveDir(err);
-        auto id = LinkShm::makeSafeFilePart(linkName);
+        auto id = safeThis->linkAddrForName(linkName);
         juce::File ack(dir + "chain-ack-" + id + ".json");
 
         if (dir.isNotEmpty() && ack.existsAsFile())
@@ -10848,16 +10855,24 @@ void EchoJayEditor::disablePluginByName(const juce::String& name)
 // =============================================================================
 //  LINK tab — remote Active control (ctrl-cmd / ctrl-ack files)
 // =============================================================================
-void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkName, bool active)
+juce::String EchoJayEditor::linkAddrForName(const juce::String& linkName) const
+{
+    for (const auto& s : processorRef.getLinkSlotInfos())
+        if (s.name == linkName && s.uid.isNotEmpty())
+            return s.uid;
+    return LinkShm::makeSafeFilePart(linkName);   // legacy pre-uid Links
+}
+
+void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkAddr, bool active)
 {
     int err = 0;
     juce::String dir = LinkShm::resolveDir(err);
-    if (dir.isEmpty()) return;
-    auto id = LinkShm::makeSafeFilePart(linkName);
+    if (dir.isEmpty() || linkAddr.isEmpty()) return;
+    const juce::String& id = linkAddr;
 
     int seq = (int)(juce::Time::currentTimeMillis() / 1000);
     for (auto& p : linkCtrlPending_)
-        if (p.name == linkName && p.seq >= seq)
+        if (p.addr == linkAddr && p.seq >= seq)
             seq = p.seq + 1;   // same-second re-toggle: keep seq advancing
 
     auto* cmd = new juce::DynamicObject();
@@ -10870,24 +10885,24 @@ void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkName, bool act
 
     linkCtrlPending_.erase(
         std::remove_if(linkCtrlPending_.begin(), linkCtrlPending_.end(),
-                       [&](const LinkCtrlPending& p) { return p.name == linkName; }),
+                       [&](const LinkCtrlPending& p) { return p.addr == linkAddr; }),
         linkCtrlPending_.end());
-    linkCtrlPending_.push_back({ linkName, seq, active, false });
+    linkCtrlPending_.push_back({ linkAddr, seq, active, false });
 
-    pollLinkCtrlAck(linkName, seq, 12);   // 12 x 250ms = ~3s
+    pollLinkCtrlAck(linkAddr, seq, 12);   // 12 x 250ms = ~3s
     repaint();
 }
 
-void EchoJayEditor::pollLinkCtrlAck(const juce::String& linkName, int seq, int attemptsLeft)
+void EchoJayEditor::pollLinkCtrlAck(const juce::String& linkAddr, int seq, int attemptsLeft)
 {
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    juce::Timer::callAfterDelay(250, [safeThis, linkName, seq, attemptsLeft]
+    juce::Timer::callAfterDelay(250, [safeThis, linkAddr, seq, attemptsLeft]
     {
         if (safeThis == nullptr) return;
 
         int err = 0;
         juce::String dir = LinkShm::resolveDir(err);
-        auto id = LinkShm::makeSafeFilePart(linkName);
+        const juce::String& id = linkAddr;
         juce::File ack(dir + "ctrl-ack-" + id + ".json");
 
         if (dir.isNotEmpty() && ack.existsAsFile())
@@ -10902,7 +10917,7 @@ void EchoJayEditor::pollLinkCtrlAck(const juce::String& linkName, int seq, int a
                         std::remove_if(safeThis->linkCtrlPending_.begin(),
                                        safeThis->linkCtrlPending_.end(),
                                        [&](const LinkCtrlPending& p)
-                                       { return p.name == linkName && p.seq == seq; }),
+                                       { return p.addr == linkAddr && p.seq == seq; }),
                         safeThis->linkCtrlPending_.end());
                     safeThis->repaint();
                     return;
@@ -10914,23 +10929,23 @@ void EchoJayEditor::pollLinkCtrlAck(const juce::String& linkName, int seq, int a
             // Not responding — show the state briefly, then clear so the row
             // falls back to whatever the registry reports
             for (auto& p : safeThis->linkCtrlPending_)
-                if (p.name == linkName && p.seq == seq)
+                if (p.addr == linkAddr && p.seq == seq)
                     p.timedOut = true;
             safeThis->repaint();
-            juce::Timer::callAfterDelay(2500, [safeThis, linkName, seq]
+            juce::Timer::callAfterDelay(2500, [safeThis, linkAddr, seq]
             {
                 if (safeThis == nullptr) return;
                 safeThis->linkCtrlPending_.erase(
                     std::remove_if(safeThis->linkCtrlPending_.begin(),
                                    safeThis->linkCtrlPending_.end(),
                                    [&](const LinkCtrlPending& p)
-                                   { return p.name == linkName && p.seq == seq; }),
+                                   { return p.addr == linkAddr && p.seq == seq; }),
                     safeThis->linkCtrlPending_.end());
                 safeThis->repaint();
             });
             return;
         }
-        safeThis->pollLinkCtrlAck(linkName, seq, attemptsLeft - 1);
+        safeThis->pollLinkCtrlAck(linkAddr, seq, attemptsLeft - 1);
     });
 }
 
@@ -12553,7 +12568,11 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
             {
                 bool cur = true;
                 for (auto& li : processorRef.getLinkSlotInfos())
-                    if (li.name == z.second) { cur = li.active; break; }
+                {
+                    const juce::String addr = li.uid.isNotEmpty()
+                                            ? li.uid : LinkShm::makeSafeFilePart(li.name);
+                    if (addr == z.second) { cur = li.active; break; }
+                }
                 sendLinkActiveCommand(z.second, !cur);
                 return;
             }

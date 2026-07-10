@@ -84,7 +84,12 @@ struct alignas(128) RegistrySlot
     uint32_t activeFlag;       //  4  1 = Active (capture/meter role on); carved
                                //     from _pad so existing field offsets and the
                                //     128-byte layout are unchanged
-    uint8_t  _pad[20];         // 20  → total 128
+    char     instanceUid[12];  // 12  per-INSTANCE identity (v0.5.6) — commands,
+                               //     acks and row identity key on this, never
+                               //     the display name (unnamed/duplicate names
+                               //     collided). Carved from _pad; old writers
+                               //     leave it zeroed -> readers fall back.
+    uint8_t  _pad[8];          //  8  → total 128
 };
 static_assert(sizeof(RegistrySlot) == 128, "RegistrySlot must be 128 bytes");
 
@@ -437,6 +442,7 @@ inline LinkMeterFrame* meterFrames(void* regMap)
 inline int claimSlot(void* regMap,
                      const juce::String& displayName,
                      const juce::String& audioFilename,
+                     const juce::String& instanceUid,
                      float sr, uint32_t ch)
 {
     if (!regMap) return -1;
@@ -451,6 +457,9 @@ inline int claimSlot(void* regMap,
             std::strncpy(slots[i].audioFile, audioFilename.toRawUTF8(),
                          sizeof(slots[i].audioFile) - 1);
             slots[i].audioFile[sizeof(slots[i].audioFile) - 1] = 0;
+            std::strncpy(slots[i].instanceUid, instanceUid.toRawUTF8(),
+                         sizeof(slots[i].instanceUid) - 1);
+            slots[i].instanceUid[sizeof(slots[i].instanceUid) - 1] = 0;
             slots[i].sampleRate  = sr;
             slots[i].numChannels = ch;
             // Reset the slot's meter frame: a recycled slot must NEVER serve
@@ -481,6 +490,7 @@ inline void releaseSlot(void* regMap, int slotIdx)
     RegistrySlot* slot = regSlots(regMap) + slotIdx;
     std::memset(slot->displayName, 0, sizeof(slot->displayName));
     std::memset(slot->audioFile,   0, sizeof(slot->audioFile));
+    std::memset(slot->instanceUid, 0, sizeof(slot->instanceUid));
     slot->sampleRate  = 0;
     slot->numChannels = 0;
     storeRelease(&slot->activeFlag, 0u);
@@ -506,6 +516,7 @@ inline void bumpHeartbeat(void* regMap, int slotIdx)
 
 struct SlotSnapshot {
     int          idx;
+    juce::String instanceUid;    // per-instance address ("" from old writers)
     juce::String displayName;
     juce::String audioFilename;  // filename only, e.g. "audio_drums.bin"
     float        sampleRate;
@@ -521,6 +532,7 @@ inline bool readSlot(void* regMap, int i, SlotSnapshot& out)
     if (loadAcquire(&slot->inUse) == 0) return false;
     out.idx           = i;
     out.displayName   = juce::String::fromUTF8(slot->displayName);
+    out.instanceUid   = juce::String::fromUTF8(slot->instanceUid);
     out.audioFilename = juce::String::fromUTF8(slot->audioFile);
     out.sampleRate    = slot->sampleRate;
     out.numChannels   = slot->numChannels;

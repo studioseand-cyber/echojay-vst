@@ -14,9 +14,10 @@ LinkProcessor::LinkProcessor()
           .withInput ("Input",  juce::AudioChannelSet::stereo(), true)
           .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
-    // Per-instance fallback file id so UNNAMED Links can register (their
-    // ring/registry filenames must not collide with each other)
-    untitledId_ = juce::String::toHexString(juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
+    // Per-instance identity (commands/acks/registry address; also the ring
+    // file part for unnamed Links). Serialised in state; regenerated on
+    // registry collision after track duplication.
+    instanceUid_ = juce::String::toHexString(juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
     startTimerHz(10); // command polling + 10Hz meter-frame publish; heartbeat every 10th tick
 
     // Mirror hosted chain latency into the host on EVERY chain change —
@@ -65,7 +66,7 @@ void LinkProcessor::timerCallback()
         loggedInitState_ = true;
         EchoJay_NSLog(("EJLinkState: post-init linkOn="
                        + juce::String((int)linkOn.load())
-                       + " name=\"" + linkName + "\"").toRawUTF8());
+                       + " name=\"" + linkName + "\" uid=" + instanceUid_).toRawUTF8());
     }
 #endif
 
@@ -278,7 +279,7 @@ void LinkProcessor::ensureRegistryOpen()
 juce::String LinkProcessor::effectiveFilePart() const
 {
     auto safe = LinkShm::makeSafeFilePart(linkName.trim());
-    return safe.isNotEmpty() ? safe : "untitled_" + untitledId_;
+    return safe.isNotEmpty() ? safe : "untitled_" + instanceUid_;
 }
 
 void LinkProcessor::claimRegistrySlot()
@@ -286,11 +287,29 @@ void LinkProcessor::claimRegistrySlot()
     ensureRegistryOpen();
     if (!regMap || regSlotIdx >= 0) return;
 
+    // Duplication guard: Logic's track-duplicate clones our serialised
+    // state INCLUDING the uid — if another live slot already carries it,
+    // regenerate ours so the two instances stay individually addressable
+    {
+        RegistrySlot* slots = LinkShm::regSlots(regMap);   // global-scope struct
+        for (int i = 0; i < kRegMaxSlots; ++i)
+            if (LinkShm::loadAcquire(&slots[i].inUse) != 0
+                && instanceUid_ == juce::String::fromUTF8(slots[i].instanceUid))
+            {
+                auto old = instanceUid_;
+                instanceUid_ = juce::String::toHexString(
+                    juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
+                EchoJay_NSLog(("EJLinkState: uid collision (duplicated instance?) "
+                               + old + " -> regenerated " + instanceUid_).toRawUTF8());
+                break;
+            }
+    }
     const juce::String audioFilename = "audio_" + effectiveFilePart() + ".bin";
 
     regSlotIdx = LinkShm::claimSlot(regMap,
                                      linkName.trim(),
                                      audioFilename,
+                                     instanceUid_,
                                      (float)hostSampleRate,
                                      (uint32_t)hostNumChannels);
     diag.slotIdx = regSlotIdx;
@@ -866,7 +885,10 @@ void LinkProcessor::restoreChainFromVar(const juce::var& v)
 // =============================================================================
 juce::String LinkProcessor::chainInstanceId() const
 {
-    return LinkShm::makeSafeFilePart(linkName.trim());
+    // The command/ack ADDRESS is the per-instance uid — never the name
+    // (unnamed/duplicate names collapsed every same-named Link onto one
+    // command file, so a toggle addressed to one applied to all)
+    return instanceUid_;
 }
 
 void LinkProcessor::pollChainCommand()
@@ -963,6 +985,7 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     obj->setProperty("genre",       genre);
     obj->setProperty("editorW",  editorW);
     obj->setProperty("editorH",  editorH);
+    obj->setProperty("instanceUid", instanceUid_);
     // Full hosted chain: identities, order, bypass flags, per-plugin state
     obj->setProperty("chain",    chainModelToVar());
     juce::String json = juce::JSON::toString(juce::var(obj), true);
@@ -981,6 +1004,8 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             projectName = obj->getProperty("projectName").toString();
         if (obj->hasProperty("genre"))
             genre = obj->getProperty("genre").toString();
+        if (obj->getProperty("instanceUid").toString().isNotEmpty())
+            instanceUid_ = obj->getProperty("instanceUid").toString();
 #if ECHOJAY_LINK_STATE_DIAG
         EchoJay_NSLog(("EJLinkState: setState linkOn=" + juce::String((int)linkOn.load())
                        + " (hadProp=" + juce::String((int)obj->hasProperty("linkOn"))

@@ -1363,13 +1363,17 @@ private:
     // applies it (authority stays with the Link) and acks; the row shows a
     // pending style until the ack, and a NO RESP state on timeout.
     struct LinkCtrlPending {
-        juce::String name;
+        juce::String addr;   // the Link's ADDRESS (uid; legacy name-derived fallback)
         int  seq = 0;
         bool target = false;
         bool timedOut = false;
     };
     std::vector<LinkCtrlPending> linkCtrlPending_;
+    // Toggle zones carry the row's ADDRESS, not its display name
     std::vector<std::pair<juce::Rectangle<int>, juce::String>> linkToggleZones_;
+    // uid for a named Link from the registry; legacy name-derived fallback
+    // for pre-uid Links (empty uid in their slots)
+    juce::String linkAddrForName(const juce::String& linkName) const;
 
     // LINK tab mini meter strips — last frame + staleness per Link name.
     // fresh = seq advanced within the last second; otherwise the strip
@@ -1399,8 +1403,8 @@ private:
     void paintLinkMeterStrip(juce::Graphics& g, int stripX, int stripR,
                              int rowY, int rowH, LinkStripState& st,
                              bool fresh, float dim);
-    void sendLinkActiveCommand(const juce::String& linkName, bool active);
-    void pollLinkCtrlAck(const juce::String& linkName, int seq, int attemptsLeft);
+    void sendLinkActiveCommand(const juce::String& linkAddr, bool active);
+    void pollLinkCtrlAck(const juce::String& linkAddr, int seq, int attemptsLeft);
     void promptForFailedPlugins(juce::StringArray failed);
     void showNextFailPrompt(juce::StringArray names, int idx);
     // Shared disable action (local + Link build failures): untick in the

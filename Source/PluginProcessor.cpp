@@ -2087,6 +2087,7 @@ void EchoJayProcessor::refreshLinkRegistry()
 
         LinkSlotInfo info;
         info.name       = snap.displayName;
+        info.uid        = snap.instanceUid;
         info.connected  = connected;
         info.active     = snap.active;
         info.sampleRate = snap.sampleRate;

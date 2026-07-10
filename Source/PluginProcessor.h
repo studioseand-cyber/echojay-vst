@@ -351,6 +351,7 @@ private:
 public:
     struct LinkSlotInfo {
         juce::String name;
+        juce::String uid;                 // per-instance address ("" from old Links)
         bool         connected  = false;
         bool         active     = true;   // Link's capture/meter role (its Active toggle)
         float        sampleRate = 0.f;
