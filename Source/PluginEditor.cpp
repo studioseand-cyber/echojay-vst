@@ -1290,8 +1290,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     projectPromptInput.setVisible(false);
     onboardingOverlay_.addChildComponent(projectPromptInput);
 
-    projectPromptOkBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff0891b2));
-    projectPromptOkBtn.setColour(juce::TextButton::textColourOffId, C::text);
+    // Same family as the channel prompt's bottom "Mix Bus" button: 0xff06b6d4
+    // hits the LookAndFeel primary branch (dark glow + hover), light text.
+    // 0xff0891b2 missed that branch by 5 green units (isPrimary needs g>150,
+    // it has 145) and fell into the SOLID-fill branch — that was the odd one
+    // out. Skip (bg3/text2) already matches the channel grid's secondary
+    // family; no other prompt button uses a solid fill.
+    projectPromptOkBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
+    projectPromptOkBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    projectPromptOkBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     projectPromptOkBtn.onClick = [this] { dismissProjectPrompt(true); };
     projectPromptOkBtn.setVisible(false);
     onboardingOverlay_.addChildComponent(projectPromptOkBtn);
@@ -1358,9 +1365,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatTextSizeBtn.onClick = [this] { cycleChatTextScale(); };
     addChildComponent(chatTextSizeBtn);
 
-    upgradeBtn.setColour(juce::TextButton::buttonColourId, C::purple);
-    upgradeBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    upgradeBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    // Save-button family: 0xff06b6d4 lands in the LookAndFeel's "primary"
+    // branch (dark teal glow fill + hover), cyan text — NOT a solid fill.
+    // ONE component serves every Upgrade surface (ACCOUNT card slot + the
+    // out-of-credits gate CTA), so this single site styles them all.
+    upgradeBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
+    upgradeBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+    upgradeBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
     upgradeBtn.onClick = [this] {
         juce::URL("https://www.echojay.ai/?noredirect#pricing").launchInDefaultBrowser();
     };
