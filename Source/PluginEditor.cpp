@@ -3932,6 +3932,114 @@ void EchoJayEditor::runAICompare()
 // =============================================================================
 //  Link tab painter — auto-discovery list
 // =============================================================================
+
+// Shared mini meter strip: waveform history ribbon | momentary+integrated |
+// tonal ticks | correlation dot. Used by the Mix Bus row AND every Link row
+// so they cannot drift apart. Smoothing runs here at the UI frame rate: the
+// 10Hz data feed becomes smooth motion (meter attack/release); when !fresh
+// the targets freeze so the strip holds still (no fake motion) and dims.
+void EchoJayEditor::paintLinkMeterStrip(juce::Graphics& g, int stripX, int stripR,
+                                        int rowY, int rowH, LinkStripState& st,
+                                        bool fresh, float dim)
+{
+    using C = EchoJayLookAndFeel::Colours;
+    const int stripW = stripR - stripX;
+    if (stripW < 220 || !st.has) return;
+    const auto& mf = st.frame;
+
+    // Per-value smoothing toward the latest frame — only while fresh
+    if (fresh)
+    {
+        auto sm = [](float cur, float tgt, float atk, float rel)
+        { return cur + (tgt - cur) * (tgt > cur ? atk : rel); };
+        st.smMom  = sm(st.smMom,  mf.momentary,   0.5f, 0.2f);
+        st.smInt  = sm(st.smInt,  mf.integrated,  0.5f, 0.2f);
+        st.smCorr += (mf.correlation - st.smCorr) * 0.3f;
+        for (size_t i = 0; i < 6; ++i)
+            st.smBand[i] = sm(st.smBand[i], mf.bandRel[i], 0.4f, 0.2f);
+    }
+
+    const juce::Colour cyan(0xff22d3ee), coral(0xffff6d5a);
+
+    // 1) Waveform history ribbon — newest at the right, mirrored envelope:
+    //    dim cyan peak envelope, brighter RMS core, coral flecks on overs.
+    //    Same language as the Compare live waveform, miniaturised.
+    {
+        const int rw = juce::jmin(150, stripW * 38 / 100);
+        const int rh = 36;
+        const int rx = stripX, ry = rowY + (rowH - rh) / 2;
+        const float midY = (float) ry + rh * 0.5f;
+        g.setColour(C::border2.withMultipliedAlpha(dim));          // centre line
+        g.drawHorizontalLine((int) midY, (float) rx, (float) (rx + rw));
+        const int n = (int) st.ribbon.size();
+        const float sliceW = (float) rw / (float) n;
+        for (int i = 0; i < n; ++i)                                // oldest → newest
+        {
+            const auto& s = st.ribbon[(size_t) ((st.ribbonPos + i) % n)];
+            if (s.peak01 <= 0.001f) continue;                      // flatline stays a line
+            const float x  = (float) rx + sliceW * (float) i;
+            const float ph = s.peak01 * (rh * 0.5f);
+            const float ch = s.rms01  * (rh * 0.5f);
+            g.setColour(cyan.withAlpha(0.28f * dim));
+            g.fillRect(x, midY - ph, sliceW + 0.5f, ph * 2.0f);
+            g.setColour(cyan.withAlpha(0.85f * dim));
+            g.fillRect(x, midY - ch, sliceW + 0.5f, juce::jmax(1.0f, ch * 2.0f));
+            if (s.over)
+            {
+                g.setColour(coral.withAlpha(0.95f * dim));
+                g.fillRect(x, midY - ph - 2.0f, sliceW + 0.5f, 2.0f);
+            }
+        }
+    }
+
+    // 2) Momentary LUFS primary, integrated small beneath
+    {
+        const int lx = stripX + juce::jmin(150, stripW * 38 / 100) + 12;
+        auto fmt = [](float v) { return v > -90.0f ? juce::String(v, 1) : juce::String("--"); };
+        g.setColour(C::text.withMultipliedAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
+        g.drawText(fmt(st.smMom), lx, rowY + 12, 62, 18, juce::Justification::centredLeft);
+        g.setColour(C::text3.withMultipliedAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(9.0f)));
+        g.drawText("I " + fmt(st.smInt) + " LUFS",
+                   lx, rowY + 34, 74, 12, juce::Justification::centredLeft);
+    }
+
+    // 3) Tonal balance in miniature — 6 deviation ticks, cyan up/coral down
+    {
+        const int tx = stripX + juce::jmin(150, stripW * 38 / 100) + 12 + 78;
+        const int tw = juce::jmin(84, juce::jmax(48, stripR - tx - 66));
+        const int th = 30;
+        const int ty = rowY + (rowH - th) / 2;
+        const float midY = (float) ty + th * 0.5f;
+        g.setColour(C::border2.withMultipliedAlpha(dim));
+        g.drawHorizontalLine((int) midY, (float) tx, (float) (tx + tw));
+        const float segW = (float) tw / 6.0f;
+        for (int bnd = 0; bnd < 6; ++bnd)
+        {
+            const float rel = juce::jlimit(-9.0f, 9.0f, st.smBand[(size_t) bnd]);
+            const float hgt = (rel / 9.0f) * (th * 0.5f);
+            const float bx  = (float) tx + segW * (float) bnd + segW * 0.25f;
+            g.setColour((rel >= 0 ? cyan : coral).withAlpha(0.9f * dim));
+            if (hgt >= 0) g.fillRect(bx, midY - hgt, segW * 0.5f, juce::jmax(1.0f, hgt));
+            else          g.fillRect(bx, midY,       segW * 0.5f, juce::jmax(1.0f, -hgt));
+        }
+    }
+
+    // 4) Correlation dot on a -1..+1 track, coral below 0
+    {
+        const int cw = 46;
+        const int cx = stripR - cw;
+        const float cyd = (float) rowY + rowH * 0.5f;
+        g.setColour(C::border2.withMultipliedAlpha(dim));
+        g.drawHorizontalLine((int) cyd, (float) cx, (float) (cx + cw));
+        g.fillRect((float) cx + cw * 0.5f - 0.5f, cyd - 3.0f, 1.0f, 6.0f);   // 0 mark
+        const float cpos = (juce::jlimit(-1.0f, 1.0f, st.smCorr) + 1.0f) * 0.5f;
+        g.setColour((st.smCorr < 0 ? coral : cyan).withMultipliedAlpha(dim));
+        g.fillEllipse((float) cx + cw * cpos - 3.0f, cyd - 3.0f, 6.0f, 6.0f);
+    }
+}
+
 void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int> area)
 {
     using C = EchoJayLookAndFeel::Colours;
@@ -3940,6 +4048,10 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     const int fw = area.getWidth() - pad * 2;
 
     linkToggleZones_.clear();   // repopulated per row below
+    meterTips_.clear();         // row tooltips (sample rate etc.) repopulate below
+
+    auto dbNorm = [](float db) { return juce::jlimit(0.0f, 1.0f, (db + 60.0f) / 60.0f); };
+    const uint32_t nowMs = juce::Time::getMillisecondCounter();
 
     // Title
     g.setColour(C::blue2);
@@ -3947,9 +4059,11 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     g.drawText("LINK MONITOR", pad, y, fw, 18, juce::Justification::centredLeft);
     y += 26;
 
-    // Host channel card — always shown first, above Links
+    // Host channel (Mix Bus) card — always first, distinct outline as the
+    // "this instance" marker, and the SAME mini meter strip as the Link
+    // rows (data is local: the main plugin's own MeterEngine)
     {
-        const int cardH = 46;
+        const int cardH = 64;
         g.setColour(C::bg3.brighter(0.04f));
         g.fillRoundedRectangle((float)pad, (float)y, (float)fw, (float)cardH, 6.f);
         g.setColour(C::blue2.withAlpha(0.4f));
@@ -3960,14 +4074,44 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
 
         g.setColour(C::text);
         g.setFont(juce::Font(juce::FontOptions(12.5f, juce::Font::bold)));
-        g.drawText(hostLabel, pad + 12, y + 8, fw - 24, 16, juce::Justification::centredLeft);
+        const int nameW = 128;
+        g.drawText(hostLabel, pad + 14, y + 8, nameW, 16, juce::Justification::centredLeft);
 
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(10.5f)));
+        // Local frame, same shape as a published one (band rels derived the
+        // same way: db - mean of valid bands)
         auto md = processorRef.getMeterEngine().getMeterData();
-        juce::String hostStats = "Integrated: " + juce::String(md.integrated, 1) + " LUFS"
-            + "  Crest: " + juce::String(md.crestFactor, 1) + " dB";
-        g.drawText(hostStats, pad + 12, y + 26, fw - 24, 13, juce::Justification::centredLeft);
+        auto& hs = linkHostStrip_;
+        hs.frame.momentary   = md.momentary;
+        hs.frame.shortTerm   = md.shortTerm;
+        hs.frame.integrated  = md.integrated;
+        hs.frame.rmsL        = md.rmsL;   hs.frame.rmsR  = md.rmsR;
+        hs.frame.peakL       = md.peakL;  hs.frame.peakR = md.peakR;
+        hs.frame.truePeakMax = juce::jmax(md.truePeakMaxL, md.truePeakMaxR);
+        hs.frame.crest       = md.crestFactor;
+        hs.frame.correlation = md.correlation;
+        hs.frame.width       = md.width;
+        {
+            float mean = 0.0f; int n = 0;
+            for (auto db : md.macroBandDb) if (db > -119.0f) { mean += db; ++n; }
+            if (n > 0) mean /= (float) n;
+            for (size_t i = 0; i < 6; ++i)
+                hs.frame.bandRel[i] = (n > 0 && md.macroBandDb[i] > -119.0f)
+                                    ? md.macroBandDb[i] - mean : 0.0f;
+        }
+        hs.has = true;
+        // Slice clock: same 10Hz cadence as the Link frames (steady scroll)
+        if (nowMs - linkHostSliceMs_ >= 100)
+        {
+            linkHostSliceMs_ = nowMs;
+            hs.pushSlice(md.isSilent ? 0.0f : dbNorm(juce::jmax(md.peakL, md.peakR)),
+                         md.isSilent ? 0.0f : dbNorm(juce::jmax(md.rmsL, md.rmsR)),
+                         !md.isSilent && hs.frame.truePeakMax > 0.0f);
+        }
+        paintLinkMeterStrip(g, pad + 14 + nameW + 10, pad + fw - 14, y, cardH,
+                            hs, /*fresh=*/!md.isSilent, 1.0f);
+        meterTips_.emplace_back(juce::Rectangle<int>(pad, y, fw, cardH),
+                                "This EchoJay instance's channel. Sample rate: "
+                                + juce::String((int) processorRef.getSampleRate()) + " Hz");
 
         y += cardH + 6;
     }
@@ -3991,7 +4135,7 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     // One mini meter strip per slot (console overview)
     const int cardH = 64;
     const int dotD  = 10;
-    const uint32_t nowMs = juce::Time::getMillisecondCounter();
+    int untitledCount = 0;
 
     for (const auto& slot : slots)
     {
@@ -4066,8 +4210,13 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         // ---- Meter frame ingest + staleness (per Link name) --------------
         // fresh = the Link's ~10Hz seq advanced within the last second AND
         // the Link is Active. Otherwise the strip freezes on last-known
-        // values and dims — no fake motion.
-        auto& st = linkStripStates_[slot.name];
+        // values and dims — no fake motion. New frames also feed the
+        // ribbon ring, so scrolling rides the 10Hz frame clock directly.
+        juce::String rowName = slot.name;
+        if (rowName.isEmpty())
+            rowName = ++untitledCount > 1 ? "Untitled " + juce::String(untitledCount)
+                                          : juce::String("Untitled");
+        auto& st = linkStripStates_[rowName];
         {
             LinkMeterFrame f;
             if (slot.regIdx >= 0 && processorRef.readLinkMeterFrame(slot.regIdx, f))
@@ -4078,119 +4227,48 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
                     st.lastSeq = f.seq;
                     st.lastChangeMs = nowMs;
                     st.has = true;
+                    st.pushSlice(dbNorm(juce::jmax(f.peakL, f.peakR)),
+                                 dbNorm(juce::jmax(f.rmsL, f.rmsR)),
+                                 f.truePeakMax > 0.0f);
                 }
             }
         }
         const bool fresh = st.has && slot.active
                         && (nowMs - st.lastChangeMs) < 1000;
         const float dim  = fresh ? 1.0f : 0.4f;
-        const auto& mf   = st.frame;
 
-        // Name (top-left)
+        // Name (status caption only when something needs saying — the old
+        // "sr 48000" subtitle moved into the row tooltip)
         g.setColour(C::text);
         g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
         const int nameW = 128;
-        g.drawText(slot.name.isEmpty() ? "(unnamed)" : slot.name,
-                   cardX + 14, y + 8, nameW, 18, juce::Justification::centredLeft);
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(9.5f)));
-        g.drawText(!slot.active ? "inactive"
-                   : !fresh && st.has ? "stale"
-                   : !st.has ? "no data"
-                   : "sr " + juce::String((int) slot.sampleRate),
-                   cardX + 14, y + 28, nameW, 12, juce::Justification::centredLeft);
+        g.drawText(rowName, cardX + 14, y + 8, nameW, 18, juce::Justification::centredLeft);
+        if (!slot.active || !fresh || !st.has)
+        {
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(9.5f)));
+            g.drawText(!slot.active ? "inactive"
+                       : !st.has ? "no data" : "stale",
+                       cardX + 14, y + 28, nameW, 12, juce::Justification::centredLeft);
+        }
 
-        // Meter strip area: between the name column and the Active toggle
+        // Meter strip between the name column and the Active toggle
         const int stripX = cardX + 14 + nameW + 10;
         const int stripR = cardX + cardW - dotD - 10 - 86 - 12;   // toggle zone left edge
-        const int stripW = stripR - stripX;
-        if (st.has && stripW > 220)
-        {
-            auto dbNorm = [](float db) { return juce::jlimit(0.0f, 1.0f, (db + 60.0f) / 60.0f); };
-
-            // 1) Stereo level bars — RMS fill + peak tick; TP tick red >0dBTP
-            //    (Meters tab colour language: cyan fill, dim track)
-            {
-                const int bw = juce::jmin(120, stripW * 32 / 100);
-                const int bx = stripX, bh = 7, gap = 4;
-                const int by = y + (cardH - bh * 2 - gap) / 2;
-                const float tpN = dbNorm(mf.truePeakMax);
-                const bool tpOver = mf.truePeakMax > 0.0f;
-                const float rms[2]  = { dbNorm(mf.rmsL),  dbNorm(mf.rmsR)  };
-                const float peak[2] = { dbNorm(mf.peakL), dbNorm(mf.peakR) };
-                for (int chn = 0; chn < 2; ++chn)
-                {
-                    const int cy2 = by + chn * (bh + gap);
-                    g.setColour(C::bg4.withMultipliedAlpha(dim));
-                    g.fillRoundedRectangle((float) bx, (float) cy2, (float) bw, (float) bh, 2.0f);
-                    g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.85f * dim));
-                    g.fillRoundedRectangle((float) bx, (float) cy2,
-                                           (float) bw * rms[chn], (float) bh, 2.0f);
-                    g.setColour(C::text.withMultipliedAlpha(dim));           // peak tick
-                    g.fillRect((float) bx + (float) bw * peak[chn] - 1.0f, (float) cy2, 1.5f, (float) bh);
-                    g.setColour((tpOver ? C::red : C::text3).withMultipliedAlpha(dim));  // TP tick
-                    g.fillRect((float) bx + (float) bw * tpN - 1.0f, (float) cy2, 1.5f, (float) bh);
-                }
-            }
-
-            // 2) Momentary LUFS primary, integrated small beneath
-            {
-                const int lx = stripX + juce::jmin(120, stripW * 32 / 100) + 12;
-                auto fmt = [](float v) { return v > -90.0f ? juce::String(v, 1) : juce::String("--"); };
-                g.setColour(C::text.withMultipliedAlpha(dim));
-                g.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
-                g.drawText(fmt(mf.momentary), lx, y + 12, 62, 18, juce::Justification::centredLeft);
-                g.setColour(C::text3.withMultipliedAlpha(dim));
-                g.setFont(juce::Font(juce::FontOptions(9.0f)));
-                g.drawText("I " + fmt(mf.integrated) + " LUFS",
-                           lx, y + 34, 74, 12, juce::Justification::centredLeft);
-            }
-
-            // 3) Tonal balance in miniature — 6 vertical deviation ticks,
-            //    cyan up / coral down, ±9dB full-scale
-            {
-                const int tx = stripX + juce::jmin(120, stripW * 32 / 100) + 12 + 78;
-                const int tw = juce::jmin(84, juce::jmax(48, stripW - (tx - stripX) - 70));
-                const int th = 30;
-                const int ty = y + (cardH - th) / 2;
-                const float midY2 = (float) ty + th * 0.5f;
-                g.setColour(C::border2.withMultipliedAlpha(dim));
-                g.drawHorizontalLine((int) midY2, (float) tx, (float) (tx + tw));
-                const float segW = (float) tw / 6.0f;
-                for (int bnd = 0; bnd < 6; ++bnd)
-                {
-                    const float rel = juce::jlimit(-9.0f, 9.0f, mf.bandRel[bnd]);
-                    const float hgt = (rel / 9.0f) * (th * 0.5f);
-                    const float bx2 = (float) tx + segW * (float) bnd + segW * 0.25f;
-                    g.setColour((rel >= 0 ? juce::Colour(0xff22d3ee)
-                                          : juce::Colour(0xffff6d5a)).withAlpha(0.9f * dim));
-                    if (hgt >= 0) g.fillRect(bx2, midY2 - hgt, segW * 0.5f, juce::jmax(1.0f, hgt));
-                    else          g.fillRect(bx2, midY2,       segW * 0.5f, juce::jmax(1.0f, -hgt));
-                }
-            }
-
-            // 4) Correlation dot on a -1..+1 track, coral below 0
-            {
-                const int cw2 = 46;
-                const int cx2 = stripR - cw2;
-                const float cyd = (float) y + cardH * 0.5f;
-                g.setColour(C::border2.withMultipliedAlpha(dim));
-                g.drawHorizontalLine((int) cyd, (float) cx2, (float) (cx2 + cw2));
-                g.fillRect((float) cx2 + cw2 * 0.5f - 0.5f, cyd - 3.0f, 1.0f, 6.0f);  // 0 mark
-                const float cpos = (juce::jlimit(-1.0f, 1.0f, mf.correlation) + 1.0f) * 0.5f;
-                g.setColour((mf.correlation < 0 ? juce::Colour(0xffff6d5a)
-                                                : juce::Colour(0xff22d3ee)).withMultipliedAlpha(dim));
-                g.fillEllipse((float) cx2 + cw2 * cpos - 3.0f, cyd - 3.0f, 6.0f, 6.0f);
-            }
-        }
-        else if (!st.has)
+        if (st.has)
+            paintLinkMeterStrip(g, stripX, stripR, y, cardH, st, fresh, dim);
+        else
         {
             g.setColour(C::text3);
             g.setFont(juce::Font(juce::FontOptions(10.5f)));
             g.drawText(slot.connected ? "waiting for meters..." : "waiting for audio...",
-                       stripX, y, juce::jmax(60, stripW), cardH,
+                       stripX, y, juce::jmax(60, stripR - stripX), cardH,
                        juce::Justification::centredLeft);
         }
+
+        meterTips_.emplace_back(juce::Rectangle<int>(cardX, y, cardW, cardH),
+                                rowName + " — sample rate " + juce::String((int) slot.sampleRate)
+                                + " Hz, frames " + juce::String(slot.framesRead));
 
         y += cardH + 8;
         if (y > area.getBottom() - cardH) break; // don't overflow
@@ -6521,7 +6599,8 @@ juce::String EchoJayEditor::getTooltip()
     // each frame; later entries are more specific and win (reverse search).
     // Suppressed while anything modal (menu/dialog) is up; TooltipWindow
     // itself never shows while a mouse button is down (drags).
-    if (currentScreen != Screen::Main || currentTab != Tab::Meters) return {};
+    if (currentScreen != Screen::Main
+        || (currentTab != Tab::Meters && currentTab != Tab::Link)) return {};
     if (juce::Component::getCurrentlyModalComponent() != nullptr) return {};
     auto pos = getMouseXYRelative();
     for (auto it = meterTips_.rbegin(); it != meterTips_.rend(); ++it)

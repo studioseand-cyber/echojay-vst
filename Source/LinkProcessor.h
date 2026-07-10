@@ -210,7 +210,13 @@ private:
     // LinkMeterFrame into the registry, also only while Active — an
     // inactive Link publishes nothing, so its strip freezes and dims.
     MeterEngine meterEngine_;
+    int meterFramesPublished_ = 0;    // frame diagnostics counter
     void publishMeterFrame();
+
+    // Unnamed Links still register ("Untitled" rows): per-instance fallback
+    // file id keeps their ring/registry filenames unique
+    juce::String untitledId_;
+    juce::String effectiveFilePart() const;
     juce::String chainInstanceId() const;
     void pollChainCommand();
 

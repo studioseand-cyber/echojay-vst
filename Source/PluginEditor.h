@@ -1373,14 +1373,39 @@ private:
 
     // LINK tab mini meter strips — last frame + staleness per Link name.
     // fresh = seq advanced within the last second; otherwise the strip
-    // freezes on last-known values and dims (no fake motion).
+    // freezes on last-known values and dims (no fake motion). The 10Hz data
+    // feed is rendered at the UI frame rate through per-value smoothing
+    // (meter attack/release), and level history lives in a small ribbon
+    // ring (~4s at 10Hz).
     struct LinkStripState {
-        LinkMeterFrame frame;
+        LinkMeterFrame frame;              // latest raw frame
         uint32_t lastSeq = 0;
         uint32_t lastChangeMs = 0;
         bool has = false;
+        // Smoothed render values — updated each paint tick toward frame
+        float smMom = -100.0f, smInt = -100.0f, smCorr = 0.0f;
+        std::array<float, 6> smBand {};
+        // Scrolling waveform history: peak envelope + RMS core per slice,
+        // coral fleck where true peak exceeded 0 dBTP in that slice
+        struct Slice { float peak01 = 0.0f, rms01 = 0.0f; bool over = false; };
+        std::array<Slice, 40> ribbon {};   // 4s at 10Hz
+        int  ribbonPos = 0;                // next write position (oldest slice)
+        float smPeak01 = 0.0f, smRms01 = 0.0f;   // slice-entry smoothing
+        void pushSlice(float peak01, float rms01, bool over)
+        {
+            smPeak01 += (peak01 - smPeak01) * (peak01 > smPeak01 ? 0.7f : 0.35f);
+            smRms01  += (rms01  - smRms01)  * (rms01  > smRms01  ? 0.7f : 0.35f);
+            ribbon[(size_t) ribbonPos] = { smPeak01, smRms01, over };
+            ribbonPos = (ribbonPos + 1) % (int) ribbon.size();
+        }
     };
     std::map<juce::String, LinkStripState> linkStripStates_;
+    LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row
+    uint32_t linkHostSliceMs_ = 0;         // 10Hz slice clock for the host row
+    // Shared renderer for host + Link rows (ribbon | LUFS | tonal | corr)
+    void paintLinkMeterStrip(juce::Graphics& g, int stripX, int stripR,
+                             int rowY, int rowH, LinkStripState& st,
+                             bool fresh, float dim);
     void sendLinkActiveCommand(const juce::String& linkName, bool active);
     void pollLinkCtrlAck(const juce::String& linkName, int seq, int attemptsLeft);
     void promptForFailedPlugins(juce::StringArray failed);

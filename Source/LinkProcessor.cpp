@@ -14,6 +14,9 @@ LinkProcessor::LinkProcessor()
           .withInput ("Input",  juce::AudioChannelSet::stereo(), true)
           .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
+    // Per-instance fallback file id so UNNAMED Links can register (their
+    // ring/registry filenames must not collide with each other)
+    untitledId_ = juce::String::toHexString(juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
     startTimerHz(10); // command polling + 10Hz meter-frame publish; heartbeat every 10th tick
 
     // Mirror hosted chain latency into the host on EVERY chain change —
@@ -103,6 +106,17 @@ void LinkProcessor::publishMeterFrame()
             f.bandRel[i] = md.macroBandDb[i] > -119.0f ? md.macroBandDb[i] - mean : 0.0f;
     }
     LinkShm::publishMeterFrame(regMap, regSlotIdx, f);
+    // Frame diagnostics: first 3 frames after (re)activation, then 1 per 10s
+    ++meterFramesPublished_;
+    if (meterFramesPublished_ <= 3 || meterFramesPublished_ % 100 == 0)
+        EchoJay_NSLog(("EJLinkMeter: \"" + (linkName.isEmpty() ? "(untitled)" : linkName)
+                       + "\" #" + juce::String(meterFramesPublished_)
+                       + " mom=" + juce::String(f.momentary, 1)
+                       + " rms=" + juce::String(f.rmsL, 1) + "/" + juce::String(f.rmsR, 1)
+                       + " tp=" + juce::String(f.truePeakMax, 1)
+                       + " corr=" + juce::String(f.correlation, 2)
+                       + " rel=[" + juce::String(f.bandRel[0], 1) + " " + juce::String(f.bandRel[5], 1)
+                       + "]").toRawUTF8());
 }
 
 void LinkProcessor::pollSessionProjectName()
@@ -212,13 +226,18 @@ void LinkProcessor::ensureRegistryOpen()
     diag.regErrno  = err;
 }
 
+juce::String LinkProcessor::effectiveFilePart() const
+{
+    auto safe = LinkShm::makeSafeFilePart(linkName.trim());
+    return safe.isNotEmpty() ? safe : "untitled_" + untitledId_;
+}
+
 void LinkProcessor::claimRegistrySlot()
 {
     ensureRegistryOpen();
     if (!regMap || regSlotIdx >= 0) return;
 
-    const juce::String audioFilename = LinkShm::makeAudioFilename(linkName.trim());
-    if (audioFilename.isEmpty()) return;
+    const juce::String audioFilename = "audio_" + effectiveFilePart() + ".bin";
 
     regSlotIdx = LinkShm::claimSlot(regMap,
                                      linkName.trim(),
@@ -244,8 +263,7 @@ void LinkProcessor::releaseRegistrySlot()
 void LinkProcessor::openRing()
 {
     if (resolvedDir.isEmpty()) return;
-    const juce::String filename = LinkShm::makeAudioFilename(linkName.trim());
-    if (filename.isEmpty()) return;
+    const juce::String filename = "audio_" + effectiveFilePart() + ".bin";
 
     int fd = -1, err = 0;
     void* map = LinkShm::openRingProducer(resolvedDir, filename,
@@ -315,18 +333,13 @@ void LinkProcessor::updateShmState()
     updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
 
     const bool on = linkOn.load();
-    const bool hasName = linkName.trim().isNotEmpty();
 
-    // A NAMED Link stays REGISTERED whether or not it is Active — the main
-    // plugin must keep seeing it (with its active flag) so a deactivated
-    // Link can be re-activated remotely. Only the audio RING (the capture/
-    // meter feed) is gated on Active. Unnamed → fully unregistered.
-    if (!hasName)
-    {
-        closeRingDeferred();
-        releaseRegistrySlot();
-        return;
-    }
+    // A Link stays REGISTERED whether or not it is Active OR NAMED — the
+    // main plugin must keep seeing it (heartbeat = listed): unnamed Links
+    // show as "Untitled" rows and deactivated Links stay re-activatable
+    // remotely. Only the audio RING (the capture/meter feed) is gated on
+    // Active. Unnamed instances use a per-instance untitled file id so
+    // their ring/registry filenames never collide.
 
     // Ensure dir is resolved and registry is open (sets resolvedDir)
     ensureRegistryOpen();
@@ -346,7 +359,7 @@ void LinkProcessor::updateShmState()
     if (on)
     {
         const juce::String wantedPath = resolvedDir.isEmpty() ? juce::String{}
-            : resolvedDir + LinkShm::makeAudioFilename(linkName.trim());
+            : resolvedDir + "audio_" + effectiveFilePart() + ".bin";
 
         // Ring: reopen if path changed or not yet open
         if (shmOpenedKey != wantedPath || shmMap == nullptr)
