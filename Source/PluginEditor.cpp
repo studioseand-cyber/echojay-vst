@@ -2292,10 +2292,12 @@ void EchoJayEditor::SettingsOrbCard::buildFromLogo()
         return;
     }
 
-    // The O is the SECOND glyph (per spec) — take cluster #2, fall back to
-    // the widest if the logo turns out to be one merged cluster. Bounds are
-    // logged so a wrong grab is correctable from the monitor.
-    size_t pick = clusters.size() > 1 ? 1 : 0;
+    // The stylised O is the FOURTH glyph (E, c, h, O, J, a, y). Glyph #2 is
+    // the lowercase c — one session shipped rendering it; the c reads as a
+    // ring with only a RIGHT-edge gap, the O has notches on BOTH edges at
+    // mid-height (checked and logged below). Fall back to the last cluster
+    // if the wordmark merges into fewer than four.
+    size_t pick = juce::jmin(clusters.size() - 1, (size_t) 3);
     juce::String clusterDump;
     for (auto& c : clusters) clusterDump << "[" << c.x0 << ".." << c.x1 << "] ";
     const int x0 = clusters[pick].x0, x1 = clusters[pick].x1;
@@ -2304,12 +2306,26 @@ void EchoJayEditor::SettingsOrbCard::buildFromLogo()
         for (int x = x0; x <= x1; ++x)
             if (alphaAt(x, y) > 40) { y0 = juce::jmin(y0, y); y1 = juce::jmax(y1, y); break; }
     const int gw = juce::jmax(1, x1 - x0 + 1), gh = juce::jmax(1, y1 - y0 + 1);
+    // Shape check: the O is a full ring broken by TWO notches at mid-height,
+    // one on each edge — so a mid-height row band should have no ink in
+    // EITHER half. The c reads ink-left / gap-right.
+    bool leftInkAtMid = false, rightInkAtMid = false;
+    {
+        const int midY = (y0 + y1) / 2, midX = (x0 + x1) / 2;
+        for (int y = midY - 2; y <= midY + 2; ++y)
+            for (int x = x0; x <= x1; ++x)
+                if (alphaAt(x, y) > 100) (x < midX ? leftInkAtMid : rightInkAtMid) = true;
+    }
     EchoJay_NSLog(("EJOrbCard: " + juce::String((int) clusters.size()) + " glyph clusters "
                    + clusterDump + "— using #" + juce::String((int) pick + 1)
                    + " x=[" + juce::String(x0) + ".." + juce::String(x1) + "]"
                    + " y=[" + juce::String(y0) + ".." + juce::String(y1) + "]"
                    + " (" + juce::String(gw) + "x" + juce::String(gh)
-                   + ", aspect " + juce::String((float) gw / (float) gh, 2) + ")").toRawUTF8());
+                   + ", aspect " + juce::String((float) gw / (float) gh, 2) + ")"
+                   + " | mid-height notches: left=" + (leftInkAtMid ? "NO (ink)" : "YES")
+                   + " right=" + (rightInkAtMid ? "NO (ink)" : "YES")
+                   + (!leftInkAtMid && !rightInkAtMid ? " -> O confirmed"
+                                                      : " -> NOT the O, check cluster pick")).toRawUTF8());
 
     // Sample the glyph: grid stride sized for ~2200 particles, with edge
     // pixels sampled at half stride so the outline reads slightly denser.
@@ -4457,10 +4473,13 @@ void EchoJayEditor::showSettingsView()
     settingsPluginViewport.setVisible(false);
     settingsPluginSearchBox.setVisible(false);
 
-    // Right-column card data: fresh local stats + one what's-new fetch per
-    // session (cached, silent fallback)
+    // Monthly stats keep counting (cheap; Trends may want them) even though
+    // nothing on Settings renders them since the slim card was removed.
     loadMonthlyStats();
-    if (!whatsNewFetched_)
+    // What's-new fetch: DORMANT, not deleted — the card may return elsewhere.
+    // Flip the flag to re-enable the once-per-session fetch + cache.
+    constexpr bool kShowWhatsNewCard = false;
+    if (kShowWhatsNewCard && !whatsNewFetched_)
     {
         whatsNewFetched_ = true;
         auto safeWN = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -6211,88 +6230,10 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             }
         }
 
-        // Slim combined info card — WHAT'S NEW (left half) + THIS MONTH
-        // (right half) compressed into one panel. The ambient visual card
-        // above it paints itself (settingsOrbCard_ component, no chrome).
-        if (!settingsInfoCard_.isEmpty())
-        {
-            drawPanel(g, settingsInfoCard_, "", C::purple);
-            g.setColour(C::border);
-            g.drawVerticalLine(settingsMonthCard_.getX(),
-                               (float) settingsInfoCard_.getY() + 10,
-                               (float) settingsInfoCard_.getBottom() - 10);
-
-            // WHAT'S NEW — version + first release-note entry; silent
-            // fallback text, never an error state
-            {
-                auto wn = settingsWhatsNewCard_;
-                int wy = wn.getY() + 10;
-                g.setColour(C::purple);
-                g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-                g.drawText("WHAT'S NEW", wn.getX() + 14, wy, wn.getWidth() - 24, 14,
-                           juce::Justification::centredLeft);
-                wy += 18;
-                g.setColour(C::text2);
-                g.setFont(juce::Font(juce::FontOptions(9.5f)));
-                g.drawText(juce::String("v") + ProjectInfo::versionString + " installed",
-                           wn.getX() + 14, wy, wn.getWidth() - 24, 13,
-                           juce::Justification::centredLeft);
-                wy += 17;
-                bool shown = false;
-                if (auto* arr = whatsNewEntries_.getArray())
-                    for (auto& ev : *arr)
-                    {
-                        auto* eo = ev.getDynamicObject();
-                        if (eo == nullptr) continue;
-                        g.setColour(C::text);
-                        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-                        g.drawText(eo->getProperty("title").toString(),
-                                   wn.getX() + 14, wy, wn.getWidth() - 24, 13,
-                                   juce::Justification::centredLeft, true);
-                        g.setColour(C::text3);
-                        g.setFont(juce::Font(juce::FontOptions(9.0f)));
-                        g.drawText(eo->getProperty("line").toString(),
-                                   wn.getX() + 14, wy + 13, wn.getWidth() - 24, 12,
-                                   juce::Justification::centredLeft, true);
-                        shown = true;
-                        break;   // compressed card: first entry only
-                    }
-                if (!shown)
-                {
-                    g.setColour(C::text3);
-                    g.setFont(juce::Font(juce::FontOptions(10.0f)));
-                    g.drawText("You're up to date.", wn.getX() + 14, wy,
-                               wn.getWidth() - 24, 13, juce::Justification::centredLeft);
-                }
-            }
-
-            // THIS MONTH — local counters only (monthly_stats.json)
-            {
-                auto mo = settingsMonthCard_;
-                g.setColour(C::green);
-                g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-                g.drawText("THIS MONTH", mo.getX() + 14, mo.getY() + 10,
-                           mo.getWidth() - 28, 14, juce::Justification::centredLeft);
-                struct Row { const char* label; int v; };
-                const Row rows[] = { { "Captures",     statCaptures_ },
-                                     { "Chats",        statChats_ },
-                                     { "Chains built", statChains_ } };
-                int ry = mo.getY() + 28;
-                for (auto& r : rows)
-                {
-                    if (ry + 15 > mo.getBottom() - 6) break;
-                    g.setColour(C::text3);
-                    g.setFont(juce::Font(juce::FontOptions(9.5f)));
-                    g.drawText(r.label, mo.getX() + 14, ry, mo.getWidth() - 76, 13,
-                               juce::Justification::centredLeft);
-                    g.setColour(C::text);
-                    g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
-                    g.drawText(juce::String(r.v), mo.getRight() - 58, ry, 44, 13,
-                               juce::Justification::centredRight);
-                    ry += 16;
-                }
-            }
-        }
+        // (The slim WHAT'S NEW / THIS MONTH card was removed — the visual
+        // card owns everything below ACCOUNT. Monthly stats keep counting
+        // in monthly_stats.json for Trends; the what's-new fetch is dormant
+        // behind kShowWhatsNewCard.)
     }
 }
 
@@ -9133,35 +9074,28 @@ void EchoJayEditor::resized()
         logoutBtn.setVisible(true);
 
         // Right column: ACCOUNT on top (unchanged), the ambient visual card
-        // filling the middle (no chrome), one slim combined info card below
-        // (WHAT'S NEW left half, THIS MONTH right half). Stacked mode keeps
-        // a row of two cards and omits the visual — no room to breathe.
+        // filling ALL remaining height below it (no chrome). The slim
+        // WHAT'S NEW / THIS MONTH card was removed — monthly stats keep
+        // counting in monthly_stats.json (Trends may want them) and the
+        // /api/whats-new fetch sits dormant behind kShowWhatsNewCard.
         if (!cardsStacked)
         {
             int cx = sx + sw + 16;
             int cw = b.getWidth() - 20 - cx;
             int cTop = topH + 18, cBottom = saveRowY - 12;
-            int acctH = 118, infoH = 118, gap = 8;
+            int acctH = 118, gap = 8;
             settingsAccountCard_ = { cx, cTop, cw, acctH };
-            settingsInfoCard_    = { cx, cBottom - infoH, cw, infoH };
             settingsVisualCard_  = { cx, cTop + acctH + gap, cw,
-                                     juce::jmax(120, settingsInfoCard_.getY() - gap
-                                                     - (cTop + acctH + gap)) };
-            settingsWhatsNewCard_ = settingsInfoCard_.withTrimmedRight(settingsInfoCard_.getWidth() / 2);
-            settingsMonthCard_    = settingsInfoCard_.withTrimmedLeft(settingsInfoCard_.getWidth() / 2);
+                                     juce::jmax(120, cBottom - (cTop + acctH + gap)) };
         }
         else
         {
             int cTop = sy + 8;
             int ch = juce::jlimit(96, 150, saveRowY - 12 - cTop);
-            int gap = 8;
-            int cw2 = (sw - gap) / 2;
-            settingsAccountCard_ = { sx,             cTop, cw2, ch };
-            settingsInfoCard_    = { sx + cw2 + gap, cTop, sw - cw2 - gap, ch };
-            settingsWhatsNewCard_ = settingsInfoCard_.withTrimmedRight(settingsInfoCard_.getWidth() / 2);
-            settingsMonthCard_    = settingsInfoCard_.withTrimmedLeft(settingsInfoCard_.getWidth() / 2);
-            settingsVisualCard_   = {};
+            settingsAccountCard_ = { sx, cTop, juce::jmin(sw, 380), ch };
+            settingsVisualCard_  = {};   // stacked mode: no room to breathe
         }
+        settingsWhatsNewCard_ = settingsMonthCard_ = settingsInfoCard_ = {};
         settingsOrbCard_.setBounds(settingsVisualCard_);
         settingsOrbCard_.setVisible(!settingsVisualCard_.isEmpty());
         settingsOrbCard_.ensureTimerMatchesVisibility();
