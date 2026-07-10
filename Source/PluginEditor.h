@@ -332,20 +332,33 @@ private:
     // air = top). 15fps timer runs ONLY while the card is visible.
     struct SettingsOrbCard : juce::Component, private juce::Timer
     {
+        // Master reactivity — ONE knob for how hard audio moves the field
+        // (scales energy expansion, band turbulence, sparkle). Tune by feel.
+        static constexpr float kReactivity = 1.0f;
+
+        // px/py are per-particle PHASE ACCUMULATORS advanced each tick —
+        // never sin(bigTime * f): at system-uptime magnitudes float only
+        // resolves ~0.06s (visible jitter), and turbulence needs per-tick
+        // speed changes without phase jumps anyway.
         struct Pt { float hx = 0, hy = 0;            // home, glyph-normalised
                     float fx = 0, fy = 0, px = 0, py = 0, amp = 0;  // drift
                     float size = 1, bright = 1, band = 2.5f; };
         std::vector<Pt> pts;
+        // Transient sparkle pool — fixed size, no allocation per burst
+        struct Spark { float hx = 0, hy = 0, size = 2.0f, life = 0.0f; };
+        std::vector<Spark> sparks;                   // sized once in buildFromLogo
+        juce::Random sparkRng { 0x51A2 };
+        int sparkCooldown = 0;
         float breathPhase = 0.0f, loudSm = 0.0f;
-        // Drift time is a per-tick accumulator like breathPhase — NEVER the
-        // raw millisecond counter: at system-uptime magnitudes float only
-        // resolves ~0.06s, which quantised the sine args into visible jitter
-        float driftTime = 0.0f;
+        // Energy for the expansion layer: fast attack (~1 tick ≈ 50-70ms),
+        // slow release (~400ms) — separate from loudSm's gentler curve
+        float energySm = 0.0f;
         int   tickCount = 0;
         bool  hadSignal = false;
         std::array<float, 6> bandSm { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
-        // returns true when signal present; fills loudness 0..1 + band rels 0..1
-        std::function<bool(float&, std::array<float, 6>&)> fetchAudio;
+        // returns true when signal present; fills loudness 0..1, transient
+        // 0..1 (momentary rising over short-term), band rels 0..1
+        std::function<bool(float&, float&, std::array<float, 6>&)> fetchAudio;
         SettingsOrbCard() { setOpaque(true); setInterceptsMouseClicks(false, false); }
         void buildFromLogo();                        // alpha-channel extraction, logs bounds
         void ensureTimerMatchesVisibility() { if (isVisible() && isShowing()) { if (!isTimerRunning()) startTimerHz(15); } else stopTimer(); }

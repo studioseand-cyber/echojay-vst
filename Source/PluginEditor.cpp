@@ -1555,13 +1555,19 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // Settings ambient visual — glyph extracted once from the embedded logo
     // PNG's alpha; the card drives itself on a 15fps timer only while shown
     settingsOrbCard_.buildFromLogo();
-    settingsOrbCard_.fetchAudio = [this](float& loud, std::array<float, 6>& bands) -> bool
+    settingsOrbCard_.fetchAudio = [this](float& loud, float& transient,
+                                         std::array<float, 6>& bands) -> bool
     {
         auto md = processorRef.getMeterEngine().getMeterData();
         if (md.isSilent) return false;
         // -40..-8 LUFS -> 0..1: live-tuned from the 2.9.79 verification
         // stream, where -40..-10 pinned loud at 1.00 for entire playback
         loud = juce::jlimit(0.0f, 1.0f, (md.momentary + 40.0f) / 32.0f);
+        // Transient: momentary (400ms) rising over short-term (3s) —
+        // 0 below +3dB, 1 at +9dB. Drives the sparkle bursts.
+        transient = (md.momentary > -90.0f && md.shortTerm > -90.0f)
+                  ? juce::jlimit(0.0f, 1.0f, (md.momentary - md.shortTerm - 3.0f) / 6.0f)
+                  : 0.0f;
         // macroBandDb holds ABSOLUTE per-octave dB (typically -20..-50).
         // The pink-referenced "rel" is db - mean(bands) — same derivation
         // as the chat JSON's rel field. Mapping the absolute values as if
@@ -1572,15 +1578,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             if (db > -119.0f) { mean += db; ++n; }
         if (n == 0) { bands.fill(0.5f); return true; }   // spectrum warming up
         mean /= (float) n;
-        // +/-12dB window, live-tuned from the 2.9.79 verification stream:
-        // +/-6dB railed every band to 0.00/1.00 on real music (spectral
-        // tilt routinely exceeds 6dB/octave) — VU-meter behaviour, exactly
-        // what the spec forbids. +/-12 keeps a scooped master expressive
-        // (~0.25/0.75) without slamming the rails.
+        // Soft-knee rel mapping: 0.5 + 0.5*tanh(rel/12). Live-tuned twice —
+        // +/-6dB linear railed everything (2.9.79 stream), +/-12dB linear
+        // STILL railed sub/air on real material (2.9.80 heartbeats: per-
+        // octave spectra span 25-40dB, so any linear window rails). tanh is
+        // ~linear near flat (+/-6dB -> ~0.27/0.73) but approaches the rails
+        // asymptotically — always graded, never a VU meter.
         for (size_t i = 0; i < bands.size(); ++i)
             bands[i] = md.macroBandDb[i] <= -119.0f
                      ? 0.5f
-                     : juce::jlimit(0.0f, 1.0f, (md.macroBandDb[i] - mean + 12.0f) / 24.0f);
+                     : 0.5f + 0.5f * std::tanh((md.macroBandDb[i] - mean) / 12.0f);
         return true;
     };
     addChildComponent(settingsOrbCard_);
@@ -2384,6 +2391,7 @@ void EchoJayEditor::SettingsOrbCard::buildFromLogo()
                                   (1.0f - (float) (y - y0) / (float) gh) * 5.0f);
             pts.push_back(p);
         }
+    sparks.assign(96, {});   // transient sparkle pool — fixed, reused
     EchoJay_NSLog(("EJOrbCard: " + juce::String((int) pts.size())
                    + " particles (stride " + juce::String(stride)
                    + ", edge " + juce::String(eStride) + ")").toRawUTF8());
@@ -2392,18 +2400,18 @@ void EchoJayEditor::SettingsOrbCard::buildFromLogo()
 void EchoJayEditor::SettingsOrbCard::timerCallback()
 {
     if (!isShowing()) { stopTimer(); return; }
+    constexpr float dt = 1.0f / 15.0f;
     breathPhase += juce::MathConstants<float>::twoPi / (7.0f * 15.0f);   // ~7s period
     if (breathPhase > juce::MathConstants<float>::twoPi)
         breathPhase -= juce::MathConstants<float>::twoPi;
-    driftTime += 1.0f / 15.0f;       // accumulator, same trick as breathPhase
     ++tickCount;
 
-    float loud = 0.0f;
+    float loud = 0.0f, transient = 0.0f;
     std::array<float, 6> bands { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
-    const bool has = fetchAudio && fetchAudio(loud, bands);
+    const bool has = fetchAudio && fetchAudio(loud, transient, bands);
     if (!has)
     {
-        loud = 0.0f;                 // idle: baseline breath + drift continue
+        loud = 0.0f; transient = 0.0f;   // idle: baseline breath + drift continue
         bands = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
     }
     if (has != hadSignal)
@@ -2417,17 +2425,61 @@ void EchoJayEditor::SettingsOrbCard::timerCallback()
     // a heartbeat for future tuning without the flood
     if (has && tickCount % 150 == 0)
         EchoJay_NSLog(("EJOrbCard: audio loud=" + juce::String(loud, 2)
+                       + " tr=" + juce::String(transient, 2)
                        + " bands=[" + juce::String(bands[0], 2) + " " + juce::String(bands[1], 2)
                        + " " + juce::String(bands[2], 2) + " " + juce::String(bands[3], 2)
                        + " " + juce::String(bands[4], 2) + " " + juce::String(bands[5], 2)
                        + "] (sub..air, 0.5=flat)").toRawUTF8());
 
-    // Meter-style attack/release so nothing jumps
+    // Meter-style attack/release so nothing jumps (brightness/breath curve)
     auto smooth = [](float cur, float target)
     { return cur + (target - cur) * (target > cur ? 0.35f : 0.08f); };
     loudSm = smooth(loudSm, loud);
     for (size_t i = 0; i < bandSm.size(); ++i)
         bandSm[i] = smooth(bandSm[i], bands[i]);
+
+    // ENERGY EXPANSION envelope: fast attack (most of the way in one 67ms
+    // tick ≈ the ~50ms feel), slow release (~400ms) — hits push the ring
+    // out, it relaxes back
+    energySm += (loud - energySm) * (loud > energySm ? 0.75f : 0.15f);
+
+    // BAND TURBULENCE: advance each particle's drift phase at a speed
+    // scaled by its region's energy above baseline. Phase accumulators
+    // make per-tick speed changes seamless (no phase jumps).
+    for (auto& p : pts)
+    {
+        const int   b0 = (int) p.band;
+        const int   b1 = juce::jmin(5, b0 + 1);
+        const float fr = p.band - (float) b0;
+        const float bandVal = bandSm[(size_t) b0] * (1.0f - fr) + bandSm[(size_t) b1] * fr;
+        const float excess  = juce::jmax(0.0f, bandVal - 0.5f) * 2.0f * kReactivity;
+        const float speedMul = 1.0f + 3.0f * excess;      // churn: up to 4x
+        p.px += dt * juce::MathConstants<float>::twoPi * p.fx * speedMul;
+        p.py += dt * juce::MathConstants<float>::twoPi * p.fy * speedMul;
+        if (p.px > 256.0f) p.px -= 256.0f;   // keep floats small; sin is periodic
+        if (p.py > 256.0f) p.py -= 256.0f;   // (256 is arbitrary, not 2π-aligned —
+    }                                        //  a one-off phase hop, invisible in drift)
+
+    // TRANSIENT SPARKLE: burst on momentary jumping over short-term.
+    // Pooled + cooldown-gated; ~half-second decay per spark.
+    if (sparkCooldown > 0) --sparkCooldown;
+    if (has && transient > 0.5f && sparkCooldown == 0 && !pts.empty())
+    {
+        sparkCooldown = 4;                                // ~270ms between bursts
+        int spawned = 0;
+        for (auto& s : sparks)
+        {
+            if (s.life > 0.0f) continue;
+            const auto& src = pts[(size_t) sparkRng.nextInt((int) pts.size())];
+            s.hx   = src.hx; s.hy = src.hy;
+            s.size = 2.0f + sparkRng.nextFloat() * 1.5f;
+            s.life = 1.0f;
+            if (++spawned >= 32) break;                   // a few dozen per burst
+        }
+    }
+    for (auto& s : sparks)
+        if (s.life > 0.0f) s.life = juce::jmax(0.0f, s.life - dt / 0.5f);
+
     repaint();
 }
 
@@ -2441,28 +2493,44 @@ void EchoJayEditor::SettingsOrbCard::paint(juce::Graphics& g)
     if (pts.empty()) return;
 
     const float breathDepth = 0.03f + 0.035f * loudSm; // idle ±3%, audio deepens
+    // ENERGY EXPANSION rides on top of the breath: loud passages push the
+    // whole ring outward up to ~6%, transients pulse it (fast attack /
+    // slow release envelope in timerCallback)
+    const float expansion = 1.0f + 0.06f * kReactivity * energySm;
     const float scale = 0.65f * juce::jmin(r.getWidth(), r.getHeight())
-                        * (1.0f + breathDepth * std::sin(breathPhase));
+                        * (1.0f + breathDepth * std::sin(breathPhase)) * expansion;
     const float cx = r.getCentreX(), cy = r.getCentreY();
-    const float t = driftTime;   // per-tick accumulator — see header note
     const float gBright = 0.75f + 0.35f * loudSm;
     const juce::Colour cyan(0xff22d3ee), teal(0xff2dd4bf);
 
     int i = 0;
     for (const auto& p : pts)
     {
-        const float x = cx + p.hx * scale
-                        + std::sin(t * juce::MathConstants<float>::twoPi * p.fx + p.px) * p.amp;
-        const float y = cy + p.hy * scale
-                        + std::sin(t * juce::MathConstants<float>::twoPi * p.fy + p.py) * p.amp;
         const int   b0 = (int) p.band;
         const int   b1 = juce::jmin(5, b0 + 1);
         const float fr = p.band - (float) b0;
         const float bandVal = bandSm[(size_t) b0] * (1.0f - fr) + bandSm[(size_t) b1] * fr;
+        // BAND TURBULENCE: the region's energy above baseline scales drift
+        // AMPLITUDE here (speed is scaled in timerCallback) — a bass-heavy
+        // drop makes the bottom arc churn while the top stays calm
+        const float excess = juce::jmax(0.0f, bandVal - 0.5f) * 2.0f * kReactivity;
+        const float ampMul = 1.0f + 2.5f * excess;
+        const float x = cx + p.hx * scale + std::sin(p.px) * p.amp * ampMul;
+        const float y = cy + p.hy * scale + std::sin(p.py) * p.amp * ampMul;
         const float br = juce::jlimit(0.0f, 1.0f,
                                       p.bright * gBright * (0.7f + 0.6f * bandVal));
         g.setColour((++i % 3 == 0 ? teal : cyan).withAlpha(br));
         g.fillEllipse(x - p.size * 0.5f, y - p.size * 0.5f, p.size, p.size);
+    }
+
+    // TRANSIENT SPARKLE: short-lived bright points scattered along the ring
+    for (const auto& s : sparks)
+    {
+        if (s.life <= 0.0f) continue;
+        const float x = cx + s.hx * scale;
+        const float y = cy + s.hy * scale;
+        g.setColour(juce::Colour(0xffbdf3ff).withAlpha(s.life));   // near-white cyan
+        g.fillEllipse(x - s.size * 0.5f, y - s.size * 0.5f, s.size, s.size);
     }
 }
 
