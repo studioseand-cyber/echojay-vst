@@ -4,7 +4,7 @@ set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures")
 # Minimum macOS: Big Sur (11.0). Covers anything 4+ years old.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(EchoJay VERSION 2.9.81)
+project(EchoJay VERSION 2.9.82)
 
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/
@@ -144,7 +144,7 @@ endif()
 # through completely unchanged. No audio analysis yet.
 # =============================================================================
 
-set(LINK_VERSION "0.4.3")
+set(LINK_VERSION "0.5.0")
 
 # Link only ships AU + VST3 (no AAX, no Standalone for now)
 set(LINK_FORMATS AU VST3)
@@ -178,6 +178,9 @@ target_sources(EchoJayLink PRIVATE
     Source/LinkEditor.h
     Source/EchoJayLogo.h
     Source/LinkShm.h
+    # Per-Link meter frames (LINK tab mini strips) — full engine, shared source
+    Source/MeterEngine.cpp
+    Source/MeterEngine.h
     # Chain hosting — shared with the main plugin (phase 1)
     Source/ChainHost.cpp
     Source/ChainHost.h
@@ -205,6 +208,7 @@ target_link_libraries(EchoJayLink
     PRIVATE
         juce::juce_audio_utils
         juce::juce_gui_extra
+        juce::juce_dsp
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags

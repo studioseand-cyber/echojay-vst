@@ -3988,9 +3988,10 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         return;
     }
 
-    // One card per slot
-    const int cardH = 54;
+    // One mini meter strip per slot (console overview)
+    const int cardH = 64;
     const int dotD  = 10;
+    const uint32_t nowMs = juce::Time::getMillisecondCounter();
 
     for (const auto& slot : slots)
     {
@@ -4062,25 +4063,134 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
                        juce::Justification::centredLeft);
         }
 
-        // Name
+        // ---- Meter frame ingest + staleness (per Link name) --------------
+        // fresh = the Link's ~10Hz seq advanced within the last second AND
+        // the Link is Active. Otherwise the strip freezes on last-known
+        // values and dims — no fake motion.
+        auto& st = linkStripStates_[slot.name];
+        {
+            LinkMeterFrame f;
+            if (slot.regIdx >= 0 && processorRef.readLinkMeterFrame(slot.regIdx, f))
+            {
+                if (!st.has || f.seq != st.lastSeq)
+                {
+                    st.frame = f;
+                    st.lastSeq = f.seq;
+                    st.lastChangeMs = nowMs;
+                    st.has = true;
+                }
+            }
+        }
+        const bool fresh = st.has && slot.active
+                        && (nowMs - st.lastChangeMs) < 1000;
+        const float dim  = fresh ? 1.0f : 0.4f;
+        const auto& mf   = st.frame;
+
+        // Name (top-left)
         g.setColour(C::text);
         g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+        const int nameW = 128;
         g.drawText(slot.name.isEmpty() ? "(unnamed)" : slot.name,
-                   cardX + 14, y + 8, cardW - dotD - 36 - 90, 18,
-                   juce::Justification::centredLeft);
-
-        // Stats line
-        juce::String stats;
-        if (slot.connected)
-            stats = "sr " + juce::String((int)slot.sampleRate)
-                  + "  |  frames " + juce::String(slot.framesRead);
-        else
-            stats = "waiting for audio...";
-
+                   cardX + 14, y + 8, nameW, 18, juce::Justification::centredLeft);
         g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(11.0f)));
-        g.drawText(stats, cardX + 14, y + 30, cardW - dotD - 36, 14,
-                   juce::Justification::centredLeft);
+        g.setFont(juce::Font(juce::FontOptions(9.5f)));
+        g.drawText(!slot.active ? "inactive"
+                   : !fresh && st.has ? "stale"
+                   : !st.has ? "no data"
+                   : "sr " + juce::String((int) slot.sampleRate),
+                   cardX + 14, y + 28, nameW, 12, juce::Justification::centredLeft);
+
+        // Meter strip area: between the name column and the Active toggle
+        const int stripX = cardX + 14 + nameW + 10;
+        const int stripR = cardX + cardW - dotD - 10 - 86 - 12;   // toggle zone left edge
+        const int stripW = stripR - stripX;
+        if (st.has && stripW > 220)
+        {
+            auto dbNorm = [](float db) { return juce::jlimit(0.0f, 1.0f, (db + 60.0f) / 60.0f); };
+
+            // 1) Stereo level bars — RMS fill + peak tick; TP tick red >0dBTP
+            //    (Meters tab colour language: cyan fill, dim track)
+            {
+                const int bw = juce::jmin(120, stripW * 32 / 100);
+                const int bx = stripX, bh = 7, gap = 4;
+                const int by = y + (cardH - bh * 2 - gap) / 2;
+                const float tpN = dbNorm(mf.truePeakMax);
+                const bool tpOver = mf.truePeakMax > 0.0f;
+                const float rms[2]  = { dbNorm(mf.rmsL),  dbNorm(mf.rmsR)  };
+                const float peak[2] = { dbNorm(mf.peakL), dbNorm(mf.peakR) };
+                for (int chn = 0; chn < 2; ++chn)
+                {
+                    const int cy2 = by + chn * (bh + gap);
+                    g.setColour(C::bg4.withMultipliedAlpha(dim));
+                    g.fillRoundedRectangle((float) bx, (float) cy2, (float) bw, (float) bh, 2.0f);
+                    g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.85f * dim));
+                    g.fillRoundedRectangle((float) bx, (float) cy2,
+                                           (float) bw * rms[chn], (float) bh, 2.0f);
+                    g.setColour(C::text.withMultipliedAlpha(dim));           // peak tick
+                    g.fillRect((float) bx + (float) bw * peak[chn] - 1.0f, (float) cy2, 1.5f, (float) bh);
+                    g.setColour((tpOver ? C::red : C::text3).withMultipliedAlpha(dim));  // TP tick
+                    g.fillRect((float) bx + (float) bw * tpN - 1.0f, (float) cy2, 1.5f, (float) bh);
+                }
+            }
+
+            // 2) Momentary LUFS primary, integrated small beneath
+            {
+                const int lx = stripX + juce::jmin(120, stripW * 32 / 100) + 12;
+                auto fmt = [](float v) { return v > -90.0f ? juce::String(v, 1) : juce::String("--"); };
+                g.setColour(C::text.withMultipliedAlpha(dim));
+                g.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
+                g.drawText(fmt(mf.momentary), lx, y + 12, 62, 18, juce::Justification::centredLeft);
+                g.setColour(C::text3.withMultipliedAlpha(dim));
+                g.setFont(juce::Font(juce::FontOptions(9.0f)));
+                g.drawText("I " + fmt(mf.integrated) + " LUFS",
+                           lx, y + 34, 74, 12, juce::Justification::centredLeft);
+            }
+
+            // 3) Tonal balance in miniature — 6 vertical deviation ticks,
+            //    cyan up / coral down, ±9dB full-scale
+            {
+                const int tx = stripX + juce::jmin(120, stripW * 32 / 100) + 12 + 78;
+                const int tw = juce::jmin(84, juce::jmax(48, stripW - (tx - stripX) - 70));
+                const int th = 30;
+                const int ty = y + (cardH - th) / 2;
+                const float midY2 = (float) ty + th * 0.5f;
+                g.setColour(C::border2.withMultipliedAlpha(dim));
+                g.drawHorizontalLine((int) midY2, (float) tx, (float) (tx + tw));
+                const float segW = (float) tw / 6.0f;
+                for (int bnd = 0; bnd < 6; ++bnd)
+                {
+                    const float rel = juce::jlimit(-9.0f, 9.0f, mf.bandRel[bnd]);
+                    const float hgt = (rel / 9.0f) * (th * 0.5f);
+                    const float bx2 = (float) tx + segW * (float) bnd + segW * 0.25f;
+                    g.setColour((rel >= 0 ? juce::Colour(0xff22d3ee)
+                                          : juce::Colour(0xffff6d5a)).withAlpha(0.9f * dim));
+                    if (hgt >= 0) g.fillRect(bx2, midY2 - hgt, segW * 0.5f, juce::jmax(1.0f, hgt));
+                    else          g.fillRect(bx2, midY2,       segW * 0.5f, juce::jmax(1.0f, -hgt));
+                }
+            }
+
+            // 4) Correlation dot on a -1..+1 track, coral below 0
+            {
+                const int cw2 = 46;
+                const int cx2 = stripR - cw2;
+                const float cyd = (float) y + cardH * 0.5f;
+                g.setColour(C::border2.withMultipliedAlpha(dim));
+                g.drawHorizontalLine((int) cyd, (float) cx2, (float) (cx2 + cw2));
+                g.fillRect((float) cx2 + cw2 * 0.5f - 0.5f, cyd - 3.0f, 1.0f, 6.0f);  // 0 mark
+                const float cpos = (juce::jlimit(-1.0f, 1.0f, mf.correlation) + 1.0f) * 0.5f;
+                g.setColour((mf.correlation < 0 ? juce::Colour(0xffff6d5a)
+                                                : juce::Colour(0xff22d3ee)).withMultipliedAlpha(dim));
+                g.fillEllipse((float) cx2 + cw2 * cpos - 3.0f, cyd - 3.0f, 6.0f, 6.0f);
+            }
+        }
+        else if (!st.has)
+        {
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(10.5f)));
+            g.drawText(slot.connected ? "waiting for meters..." : "waiting for audio...",
+                       stripX, y, juce::jmax(60, stripW), cardH,
+                       juce::Justification::centredLeft);
+        }
 
         y += cardH + 8;
         if (y > area.getBottom() - cardH) break; // don't overflow

@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "ChainHost.h"
+#include "MeterEngine.h"
 #include <atomic>
 #include <functional>
 #include <vector>
@@ -202,6 +203,14 @@ private:
     int  lastAppliedChainSeq_ = 0;
     int  heartbeatDivider_ = 0;
     bool loggedInitState_ = false;   // item-1 diag: post-init log fired once
+
+    // Per-Link metering for the main plugin's LINK tab mini strips. The
+    // engine is fed on the audio thread (the same call the main plugin
+    // makes) ONLY while Active; the 10Hz timer publishes a compact
+    // LinkMeterFrame into the registry, also only while Active — an
+    // inactive Link publishes nothing, so its strip freezes and dims.
+    MeterEngine meterEngine_;
+    void publishMeterFrame();
     juce::String chainInstanceId() const;
     void pollChainCommand();
 

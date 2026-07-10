@@ -14,7 +14,7 @@ LinkProcessor::LinkProcessor()
           .withInput ("Input",  juce::AudioChannelSet::stereo(), true)
           .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
-    startTimerHz(4); // 250ms: chain-command polling; heartbeat every 4th tick
+    startTimerHz(10); // command polling + 10Hz meter-frame publish; heartbeat every 10th tick
 
     // Mirror hosted chain latency into the host on EVERY chain change —
     // Link sits on parallel and phase-critical tracks, so this must track
@@ -37,8 +37,9 @@ LinkProcessor::~LinkProcessor()
 // =============================================================================
 void LinkProcessor::timerCallback()
 {
-    // Heartbeat once per second (timer runs at 4Hz for command polling)
-    if (++heartbeatDivider_ >= 4)
+    // Heartbeat once per second (timer runs at 10Hz: command polling +
+    // meter-frame publish)
+    if (++heartbeatDivider_ >= 10)
     {
         heartbeatDivider_ = 0;
         // Bump heartbeat so the consumer can detect we're alive vs. crashed.
@@ -68,6 +69,40 @@ void LinkProcessor::timerCallback()
     pollChainCommand();
     pollControlCommand();
     pollSessionProjectName();
+    publishMeterFrame();
+}
+
+void LinkProcessor::publishMeterFrame()
+{
+    // Active only — an inactive Link publishes nothing new, so the main
+    // plugin's strip freezes and dims within a second (its seq stops moving)
+    if (regMap == nullptr || regSlotIdx < 0 || !linkOn.load(std::memory_order_acquire))
+        return;
+    auto md = meterEngine_.getMeterData();
+    LinkMeterFrame f;   // global-scope struct, same as RegistrySlot
+    f.momentary   = md.momentary;
+    f.shortTerm   = md.shortTerm;
+    f.integrated  = md.integrated;
+    f.rmsL        = md.rmsL;
+    f.rmsR        = md.rmsR;
+    f.peakL       = md.peakL;
+    f.peakR       = md.peakR;
+    f.truePeakMax = juce::jmax(md.truePeakMaxL, md.truePeakMaxR);
+    f.crest       = md.crestFactor;
+    f.correlation = md.correlation;
+    f.width       = md.width;
+    // Pink-referenced rels: db - mean(valid bands) — same derivation as the
+    // chat JSON; macroBandDb itself holds ABSOLUTE per-octave dB
+    float mean = 0.0f; int n = 0;
+    for (auto db : md.macroBandDb)
+        if (db > -119.0f) { mean += db; ++n; }
+    if (n > 0)
+    {
+        mean /= (float) n;
+        for (size_t i = 0; i < 6; ++i)
+            f.bandRel[i] = md.macroBandDb[i] > -119.0f ? md.macroBandDb[i] - mean : 0.0f;
+    }
+    LinkShm::publishMeterFrame(regMap, regSlotIdx, f);
 }
 
 void LinkProcessor::pollSessionProjectName()
@@ -333,6 +368,7 @@ void LinkProcessor::prepareToPlay(double sampleRate, int numChannels)
 {
     hostSampleRate  = sampleRate;
     hostNumChannels = juce::jmin(numChannels, 2);
+    meterEngine_.prepare(sampleRate, getBlockSize() > 0 ? getBlockSize() : 512);
 
     // Chain hosting: stereo only. On mono tracks the chain stays out of
     // circuit (clean passthrough) and the transport ack reports it.
@@ -365,6 +401,15 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
     // circuit entirely; mono layouts skip the chain (stereo-only phase 1).
     if (chainStereoOk)
         chainHost.process(buffer, midi);
+
+    // Metering for the LINK tab mini strips — Active only, POST-chain so
+    // the meters read the processed signal (same tap point as the ring)
+    if (linkOn.load(std::memory_order_acquire) && buffer.getNumChannels() >= 1)
+    {
+        const float* L = buffer.getReadPointer(0);
+        const float* R = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : L;
+        meterEngine_.processBlock(L, R, buffer.getNumSamples());
+    }
 
     // Write into ring buffer if active — non-blocking tryEnter
     if (linkOn.load(std::memory_order_acquire))

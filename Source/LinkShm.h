@@ -97,8 +97,34 @@ struct alignas(64) RegistryHeader
 };
 static_assert(sizeof(RegistryHeader) == 64, "");
 
+// -----------------------------------------------------------------------------
+//  Per-Link meter frame (registry v2) — one per slot, appended after the slot
+//  array. Published by the Link at ~10Hz while ACTIVE; seqlock'd (seq is odd
+//  during a write). Readers detect staleness by seq not advancing — no
+//  cross-process clocks needed.
+// -----------------------------------------------------------------------------
+struct alignas(64) LinkMeterFrame
+{
+    uint32_t seq = 0;              // seqlock; odd = write in progress
+    float momentary   = -100.0f;   // LUFS
+    float shortTerm   = -100.0f;   // LUFS
+    float integrated  = -100.0f;   // LUFS
+    float rmsL        = -100.0f;   // dBFS
+    float rmsR        = -100.0f;
+    float peakL       = -100.0f;
+    float peakR       = -100.0f;
+    float truePeakMax = -100.0f;   // dBTP, max of L/R
+    float crest       = 0.0f;      // dB
+    float correlation = 0.0f;      // -1..+1
+    float width       = 0.0f;      // 0..1
+    float bandRel[6]  = {};        // macroBand dB rel to band mean (sub..air)
+    uint8_t _pad[128 - 4 - 11 * 4 - 6 * 4];   // -> 128 (2 cache lines)
+};
+static_assert(sizeof(LinkMeterFrame) == 128, "LinkMeterFrame must be 128 bytes");
+
 static constexpr size_t kRegSize =
-    sizeof(RegistryHeader) + (size_t)kRegMaxSlots * sizeof(RegistrySlot);
+    sizeof(RegistryHeader) + (size_t)kRegMaxSlots * sizeof(RegistrySlot)
+                           + (size_t)kRegMaxSlots * sizeof(LinkMeterFrame);
 
 // =============================================================================
 //  Atomic helpers  (GCC/Clang builtins — safe on mmap'd memory, no placement-new)
@@ -187,8 +213,11 @@ inline juce::String makeAudioFilename(const juce::String& linkName)
     return "audio_" + safe + ".bin";
 }
 
-/// Registry filename (constant).
-static inline const char* kRegistryFilename = "registry.bin";
+/// Registry filename. v2 appends the LinkMeterFrame array; the name is
+/// bumped because openFileMapped ftruncates to the opener's size — an old
+/// build opening a v2 file would shrink it under a live v2 mapping (SIGBUS).
+/// Separate files mean old and new builds simply don't see each other.
+static inline const char* kRegistryFilename = "registry_v2.bin";
 
 // =============================================================================
 //  Low-level file mmap helpers
@@ -466,6 +495,51 @@ inline void reapSlot(void* regMap, int i)
 {
     if (!regMap || i < 0 || i >= kRegMaxSlots) return;
     storeRelease(&regSlots(regMap)[i].inUse, 0u);
+}
+
+// =============================================================================
+//  Meter frames (registry v2)
+// =============================================================================
+
+inline LinkMeterFrame* meterFrames(void* regMap)
+{
+    return reinterpret_cast<LinkMeterFrame*>(
+        static_cast<uint8_t*>(regMap) + sizeof(RegistryHeader)
+        + (size_t) kRegMaxSlots * sizeof(RegistrySlot));
+}
+
+/// Publish a frame (Link side, ~10Hz, message thread). Seqlock: seq goes odd
+/// during the payload write, even when stable.
+inline void publishMeterFrame(void* regMap, int slotIdx, const LinkMeterFrame& f)
+{
+    if (!regMap || slotIdx < 0 || slotIdx >= kRegMaxSlots) return;
+    LinkMeterFrame* dst = meterFrames(regMap) + slotIdx;
+    const uint32_t s = loadRelaxed(&dst->seq) & ~1u;   // last stable seq
+    storeRelease(&dst->seq, s + 1);                    // odd: writing
+    std::memcpy(reinterpret_cast<uint8_t*>(dst) + sizeof(uint32_t),
+                reinterpret_cast<const uint8_t*>(&f) + sizeof(uint32_t),
+                sizeof(LinkMeterFrame) - sizeof(uint32_t));
+    storeRelease(&dst->seq, s + 2);                    // even: stable
+}
+
+/// Read a frame (main plugin side). Returns false only if a torn read could
+/// not be resolved in a few tries (writer mid-flight) — callers just keep
+/// their previous copy. out.seq is the stable sequence number: an unchanged
+/// seq across reads means NO new frame (staleness detection).
+inline bool readMeterFrame(void* regMap, int slotIdx, LinkMeterFrame& out)
+{
+    if (!regMap || slotIdx < 0 || slotIdx >= kRegMaxSlots) return false;
+    const LinkMeterFrame* src = meterFrames(regMap) + slotIdx;
+    for (int tries = 0; tries < 4; ++tries)
+    {
+        const uint32_t s1 = loadAcquire(&src->seq);
+        if (s1 & 1u) continue;
+        LinkMeterFrame tmp;
+        std::memcpy(&tmp, src, sizeof(LinkMeterFrame));
+        const uint32_t s2 = loadAcquire(&src->seq);
+        if (s1 == s2) { out = tmp; out.seq = s1; return true; }
+    }
+    return false;
 }
 
 } // namespace LinkShm

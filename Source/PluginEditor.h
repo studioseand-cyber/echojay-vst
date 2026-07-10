@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <set>
+#include <map>
 #include "PluginProcessor.h"
 #include "ChainHost.h"
 #include "NativeClip.h"
@@ -1369,6 +1370,17 @@ private:
     };
     std::vector<LinkCtrlPending> linkCtrlPending_;
     std::vector<std::pair<juce::Rectangle<int>, juce::String>> linkToggleZones_;
+
+    // LINK tab mini meter strips — last frame + staleness per Link name.
+    // fresh = seq advanced within the last second; otherwise the strip
+    // freezes on last-known values and dims (no fake motion).
+    struct LinkStripState {
+        LinkMeterFrame frame;
+        uint32_t lastSeq = 0;
+        uint32_t lastChangeMs = 0;
+        bool has = false;
+    };
+    std::map<juce::String, LinkStripState> linkStripStates_;
     void sendLinkActiveCommand(const juce::String& linkName, bool active);
     void pollLinkCtrlAck(const juce::String& linkName, int seq, int attemptsLeft);
     void promptForFailedPlugins(juce::StringArray failed);

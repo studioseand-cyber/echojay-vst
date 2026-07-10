@@ -2091,6 +2091,7 @@ void EchoJayProcessor::refreshLinkRegistry()
         info.active     = snap.active;
         info.sampleRate = snap.sampleRate;
         info.framesRead = frames;
+        info.regIdx     = i;    // frame lookup key for readLinkMeterFrame
         newInfos.push_back(std::move(info));
     }
 
@@ -2101,4 +2102,12 @@ void EchoJayProcessor::refreshLinkRegistry()
     juce::StringArray names;
     for (const auto& s : linkSlotInfos) names.add(s.name);
     consumerDiag.nameList = names.joinIntoString(", ");
+}
+
+bool EchoJayProcessor::readLinkMeterFrame(int regIdx, LinkMeterFrame& out)
+{
+    // Message thread only (editor paint/timer) — same discipline as
+    // refreshLinkRegistry, which owns linkRegMap
+    if (linkRegMap == nullptr) return false;
+    return LinkShm::readMeterFrame(linkRegMap, regIdx, out);
 }

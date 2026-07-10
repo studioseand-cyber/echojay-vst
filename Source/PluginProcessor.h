@@ -355,11 +355,17 @@ public:
         bool         active     = true;   // Link's capture/meter role (its Active toggle)
         float        sampleRate = 0.f;
         int64_t      framesRead = 0;
+        int          regIdx     = -1;     // registry slot index (meter frame lookup)
     };
 
     /// Refresh the list of known Link slots from the registry.
     /// Call from the message thread (editor timer, ~2 Hz).
     void refreshLinkRegistry();
+
+    /// Read a Link's latest published meter frame (message thread). Returns
+    /// false on torn read / no registry — keep the previous copy. Staleness
+    /// is detected by out.seq not advancing between reads (~10Hz expected).
+    bool readLinkMeterFrame(int regIdx, LinkMeterFrame& out);
 
     /// Snapshot of currently known slots — message thread only.
     const std::vector<LinkSlotInfo>& getLinkSlotInfos() const { return linkSlotInfos; }
