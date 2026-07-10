@@ -1559,7 +1559,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     {
         auto md = processorRef.getMeterEngine().getMeterData();
         if (md.isSilent) return false;
-        loud = juce::jlimit(0.0f, 1.0f, (md.momentary + 40.0f) / 30.0f);
+        // -40..-8 LUFS -> 0..1: live-tuned from the 2.9.79 verification
+        // stream, where -40..-10 pinned loud at 1.00 for entire playback
+        loud = juce::jlimit(0.0f, 1.0f, (md.momentary + 40.0f) / 32.0f);
         // macroBandDb holds ABSOLUTE per-octave dB (typically -20..-50).
         // The pink-referenced "rel" is db - mean(bands) — same derivation
         // as the chat JSON's rel field. Mapping the absolute values as if
@@ -1570,10 +1572,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             if (db > -119.0f) { mean += db; ++n; }
         if (n == 0) { bands.fill(0.5f); return true; }   // spectrum warming up
         mean /= (float) n;
+        // +/-12dB window, live-tuned from the 2.9.79 verification stream:
+        // +/-6dB railed every band to 0.00/1.00 on real music (spectral
+        // tilt routinely exceeds 6dB/octave) — VU-meter behaviour, exactly
+        // what the spec forbids. +/-12 keeps a scooped master expressive
+        // (~0.25/0.75) without slamming the rails.
         for (size_t i = 0; i < bands.size(); ++i)
             bands[i] = md.macroBandDb[i] <= -119.0f
                      ? 0.5f
-                     : juce::jlimit(0.0f, 1.0f, (md.macroBandDb[i] - mean + 6.0f) / 12.0f);
+                     : juce::jlimit(0.0f, 1.0f, (md.macroBandDb[i] - mean + 12.0f) / 24.0f);
         return true;
     };
     addChildComponent(settingsOrbCard_);
@@ -2405,7 +2412,10 @@ void EchoJayEditor::SettingsOrbCard::timerCallback()
         EchoJay_NSLog(has ? "EJOrbCard: signal -> active"
                           : "EJOrbCard: signal lost -> idle decay");
     }
-    if (has && tickCount % 15 == 0)  // once per second while audio plays
+    // Once per 10s while audio plays — the per-second diagnostic stream
+    // (2.9.79) confirmed the data path and flooded the monitor; this keeps
+    // a heartbeat for future tuning without the flood
+    if (has && tickCount % 150 == 0)
         EchoJay_NSLog(("EJOrbCard: audio loud=" + juce::String(loud, 2)
                        + " bands=[" + juce::String(bands[0], 2) + " " + juce::String(bands[1], 2)
                        + " " + juce::String(bands[2], 2) + " " + juce::String(bands[3], 2)
