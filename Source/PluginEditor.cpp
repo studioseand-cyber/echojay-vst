@@ -1835,21 +1835,16 @@ void EchoJayEditor::showMainScreen()
     loginBtn.setVisible(false); loginErrorLabel.setVisible(false);
     signUpLabel.setVisible(false); signUpBtn.setVisible(false);
 
-    bool promptWillShow = !processorRef.isChannelTypePromptDismissed()
-                          && processorRef.getChannelType() == ChannelType::FullMix;
-    bool genrePromptWillShow = !processorRef.isGenrePromptDismissed() && !promptWillShow;
-
+    // Header-row components only — global to the Main screen. Per-tab
+    // content, sidebar, and the chat input row belong to switchToTab and
+    // updateOnboardingPrompts; showing them here regardless of currentTab
+    // is what produced the Settings-strip/Meters-content/orphan-Send
+    // composite after an account switch.
     juce::Component* mainComps[] = { &captureBtn, &scanBtn,
         &channelTypeBox, &genreBox, &projectInput, &statusLabel, &durationLabel, &detectedLabel,
         &passLabel, &userLabel, &usageLabel,
         &compareBtn, &settingsBtn, &wavSavedLabel };
     for (auto* c : mainComps) c->setVisible(true);
-    // Only show chat if no prompt overlay is covering it
-    bool chatVisible = !promptWillShow && !genrePromptWillShow;
-    chatInput.setVisible(chatVisible);
-    chatSendBtn.setVisible(chatVisible);
-    chatTextSizeBtn.setVisible(chatVisible);
-    chatScroll.setVisible(chatVisible);
     logoutBtn.setVisible(false); // logout only visible in Settings
     // playbackBtn visibility is managed by timerCallback based on WAV state
 
@@ -1865,9 +1860,8 @@ void EchoJayEditor::showMainScreen()
     usageLabel.setText(api.getCreditsCounterText(), juce::dontSendNotification);
     usageLabel.setColour(juce::Label::textColourId, creditsWarnColour());
 
-    updateChannelPromptVisibility();
-    updateGenrePromptVisibility();
-    updateProjectPromptVisibility();
+    // One shared pass owns prompt pages AND chat visibility (chatOk)
+    updateOnboardingPrompts();
 
     // Mini modes: async paths (auth refresh etc.) can land here while a
     // mini view is up — re-assert the explicit layout so nothing that was
@@ -1910,7 +1904,16 @@ void EchoJayEditor::attemptLogin()
         safeThis->loginLoading = false;
         safeThis->loginBtn.setButtonText("Log In");
         safeThis->loginBtn.setEnabled(true);
-        if (success) { safeThis->passwordInput.clear(); safeThis->showMainScreen(); }
+        if (success)
+        {
+            safeThis->passwordInput.clear();
+            safeThis->showMainScreen();
+            // Land on Visualisation (the product home) via the single
+            // writer. Never the tab logout left behind (Settings — that is
+            // the previous account's context), and force=true so component
+            // state is re-asserted even if currentTab already matches.
+            safeThis->switchToTab(Tab::Visualisation, true);
+        }
         else safeThis->loginErrorLabel.setText(error, juce::dontSendNotification);
         safeThis->repaint();
     });
@@ -4360,9 +4363,9 @@ void EchoJayEditor::hideSettingsView()
 // V2 Tab Shell
 // ============================================================================
 
-void EchoJayEditor::switchToTab(Tab t)
+void EchoJayEditor::switchToTab(Tab t, bool force)
 {
-    if (currentTab == t) return;
+    if (!force && currentTab == t) return;
     currentTab = t;
 
     // Tear down any active overlay views
@@ -12611,8 +12614,9 @@ void EchoJayEditor::toggleCompactMode()
         setResizeLimits(900, 580, 1800, 1200);
         setSize(fullModeWidth, fullModeHeight);
         showMainScreen();
-        if (prevTabBeforeCompact_ != currentTab)
-            switchToTab(prevTabBeforeCompact_);
+        // force=true: showMainScreen no longer pokes per-tab components, so
+        // the full switch pass must run even when the tab is unchanged
+        switchToTab(prevTabBeforeCompact_, true);
     }
 
     resized();
@@ -12700,8 +12704,8 @@ void EchoJayEditor::toggleVisualOnlyMode()
         setResizeLimits(900, 580, 1800, 1200);
         setSize(visualOnlyWidth, visualOnlyHeight);
         showMainScreen();
-        if (prevTabBeforeVisualOnly_ != currentTab)
-            switchToTab(prevTabBeforeVisualOnly_);
+        // force=true: same reason as the compact-mode exit above
+        switchToTab(prevTabBeforeVisualOnly_, true);
     }
 
     resized();

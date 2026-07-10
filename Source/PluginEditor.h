@@ -98,7 +98,12 @@ private:
     enum class Tab { Visualisation, Meters, Chat, Compare, Link, Chain, Settings };
     Tab currentTab { Tab::Visualisation };
     static constexpr int kTabBarH = 28;
-    void switchToTab(Tab t);
+    // THE single writer of the visible tab: strip selection (currentTab),
+    // content visibility, sidebar/input visibility, and GL start/stop all
+    // change here and nowhere else. force=true runs the full pass even when
+    // the tab is unchanged — for paths that must re-assert component state
+    // (login completion, compact/mini exits) rather than trust it.
+    void switchToTab(Tab t, bool force = false);
 
     bool compactMode = false;        // chat-only mini window (rightmost header icon)
     Tab  prevTabBeforeCompact_ { Tab::Chat };  // restored on exit
