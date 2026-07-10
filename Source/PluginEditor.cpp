@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
+#include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
 #include <cmath>
 
 // Compare combo IDs: captures are 1..N, references start at this STABLE base.
@@ -1551,6 +1552,22 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                                 juce::dontSendNotification);
     addChildComponent(chainSlotCountLabel);
 
+    // Settings ambient visual — glyph extracted once from the embedded logo
+    // PNG's alpha; the card drives itself on a 15fps timer only while shown
+    settingsOrbCard_.buildFromLogo();
+    settingsOrbCard_.fetchAudio = [this](float& loud, std::array<float, 6>& bands) -> bool
+    {
+        auto md = processorRef.getMeterEngine().getMeterData();
+        if (md.isSilent) return false;
+        loud = juce::jlimit(0.0f, 1.0f, (md.momentary + 40.0f) / 30.0f);
+        for (size_t i = 0; i < bands.size(); ++i)
+            bands[i] = md.macroBandDb[i] <= -119.0f
+                     ? 0.5f   // no data = neutral, matches idle baseline
+                     : juce::jlimit(0.0f, 1.0f, (md.macroBandDb[i] + 9.0f) / 18.0f);
+        return true;
+    };
+    addChildComponent(settingsOrbCard_);
+
     // Warning overlay removed — folded into empty editor state text
 
     // Chat sidebar — ListBox + toolbar (Phase 2a/2b).
@@ -2225,6 +2242,174 @@ EchoJayEditor::ColumnLayout EchoJayEditor::computeColumns(int width) const
         c.mW = width - c.chatW;
     }
     return c;
+}
+
+// ============================================================================
+// Settings orb card — the logo "O" as a breathing particle field
+// ============================================================================
+
+void EchoJayEditor::SettingsOrbCard::buildFromLogo()
+{
+    pts.clear();
+    auto img = juce::ImageFileFormat::loadFrom(echoJayLogoPNG, sizeof(echoJayLogoPNG));
+    if (img.isNull() || img.getWidth() < 8 || img.getHeight() < 8)
+    {
+        EchoJay_NSLog("EJOrbCard: logo PNG failed to decode — card stays empty");
+        return;
+    }
+    const int w = img.getWidth(), h = img.getHeight();
+    juce::Image::BitmapData bd(img, juce::Image::BitmapData::readOnly);
+    auto alphaAt = [&](int x, int y) -> int
+    {
+        return (int) bd.getPixelColour(juce::jlimit(0, w - 1, x),
+                                       juce::jlimit(0, h - 1, y)).getAlpha();
+    };
+
+    // Column ink profile → glyph clusters. White-on-transparent, so alpha IS
+    // ink. Small intra-glyph gaps (< minGap columns) do not split a cluster.
+    std::vector<bool> ink((size_t) w, false);
+    for (int x = 0; x < w; ++x)
+        for (int y = 0; y < h; ++y)
+            if (alphaAt(x, y) > 40) { ink[(size_t) x] = true; break; }
+
+    struct Cl { int x0, x1; };
+    std::vector<Cl> clusters;
+    const int minGap = juce::jmax(2, w / 200);
+    for (int x = 0; x < w;)
+    {
+        if (!ink[(size_t) x]) { ++x; continue; }
+        int s = x, lastInk = x;
+        while (x < w && (ink[(size_t) x] || x - lastInk <= minGap))
+        {
+            if (ink[(size_t) x]) lastInk = x;
+            ++x;
+        }
+        clusters.push_back({ s, lastInk });
+    }
+    if (clusters.empty())
+    {
+        EchoJay_NSLog("EJOrbCard: no alpha clusters found — card stays empty");
+        return;
+    }
+
+    // The O is the SECOND glyph (per spec) — take cluster #2, fall back to
+    // the widest if the logo turns out to be one merged cluster. Bounds are
+    // logged so a wrong grab is correctable from the monitor.
+    size_t pick = clusters.size() > 1 ? 1 : 0;
+    juce::String clusterDump;
+    for (auto& c : clusters) clusterDump << "[" << c.x0 << ".." << c.x1 << "] ";
+    const int x0 = clusters[pick].x0, x1 = clusters[pick].x1;
+    int y0 = h, y1 = 0;
+    for (int y = 0; y < h; ++y)
+        for (int x = x0; x <= x1; ++x)
+            if (alphaAt(x, y) > 40) { y0 = juce::jmin(y0, y); y1 = juce::jmax(y1, y); break; }
+    const int gw = juce::jmax(1, x1 - x0 + 1), gh = juce::jmax(1, y1 - y0 + 1);
+    EchoJay_NSLog(("EJOrbCard: " + juce::String((int) clusters.size()) + " glyph clusters "
+                   + clusterDump + "— using #" + juce::String((int) pick + 1)
+                   + " x=[" + juce::String(x0) + ".." + juce::String(x1) + "]"
+                   + " y=[" + juce::String(y0) + ".." + juce::String(y1) + "]"
+                   + " (" + juce::String(gw) + "x" + juce::String(gh)
+                   + ", aspect " + juce::String((float) gw / (float) gh, 2) + ")").toRawUTF8());
+
+    // Sample the glyph: grid stride sized for ~2200 particles, with edge
+    // pixels sampled at half stride so the outline reads slightly denser.
+    int inkCount = 0;
+    for (int y = y0; y <= y1; ++y)
+        for (int x = x0; x <= x1; ++x)
+            if (alphaAt(x, y) > 100) ++inkCount;
+    const int stride  = juce::jmax(1, (int) std::sqrt((double) inkCount / 2200.0));
+    const int eStride = juce::jmax(1, stride / 2);
+    const float norm  = 1.0f / (float) juce::jmax(gw, gh);
+    juce::Random rng(0x0ECB0A2D);   // fixed seed: the same field every open
+
+    for (int y = y0; y <= y1; ++y)
+        for (int x = x0; x <= x1; ++x)
+        {
+            if (alphaAt(x, y) <= 100) continue;
+            const bool edge = alphaAt(x - 1, y) < 60 || alphaAt(x + 1, y) < 60
+                           || alphaAt(x, y - 1) < 60 || alphaAt(x, y + 1) < 60;
+            const bool take = (x % stride == 0 && y % stride == 0)
+                           || (edge && x % eStride == 0 && y % eStride == 0);
+            if (!take) continue;
+            Pt p;
+            p.hx   = ((float) (x - x0) - (float) gw * 0.5f) * norm
+                     + (rng.nextFloat() - 0.5f) * norm;
+            p.hy   = ((float) (y - y0) - (float) gh * 0.5f) * norm
+                     + (rng.nextFloat() - 0.5f) * norm;
+            p.fx   = 0.10f + rng.nextFloat() * 0.25f;      // Hz
+            p.fy   = 0.10f + rng.nextFloat() * 0.25f;
+            p.px   = rng.nextFloat() * juce::MathConstants<float>::twoPi;
+            p.py   = rng.nextFloat() * juce::MathConstants<float>::twoPi;
+            p.amp  = 1.5f + rng.nextFloat() * 2.0f;        // px, "a few"
+            const float r = rng.nextFloat();               // Orb-like: mostly small
+            p.size = r < 0.7f ? 1.0f + rng.nextFloat() : 2.0f + rng.nextFloat() * 1.2f;
+            p.bright = 0.6f + rng.nextFloat() * 0.4f;
+            // Band region by height around the ring: sub(0) bottom, air(5) top
+            p.band = juce::jlimit(0.0f, 5.0f,
+                                  (1.0f - (float) (y - y0) / (float) gh) * 5.0f);
+            pts.push_back(p);
+        }
+    EchoJay_NSLog(("EJOrbCard: " + juce::String((int) pts.size())
+                   + " particles (stride " + juce::String(stride)
+                   + ", edge " + juce::String(eStride) + ")").toRawUTF8());
+}
+
+void EchoJayEditor::SettingsOrbCard::timerCallback()
+{
+    if (!isShowing()) { stopTimer(); return; }
+    breathPhase += juce::MathConstants<float>::twoPi / (7.0f * 15.0f);   // ~7s period
+    if (breathPhase > juce::MathConstants<float>::twoPi)
+        breathPhase -= juce::MathConstants<float>::twoPi;
+
+    float loud = 0.0f;
+    std::array<float, 6> bands { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+    if (!(fetchAudio && fetchAudio(loud, bands)))
+    {
+        loud = 0.0f;                 // idle: baseline breath + drift continue
+        bands = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+    }
+    // Meter-style attack/release so nothing jumps
+    auto smooth = [](float cur, float target)
+    { return cur + (target - cur) * (target > cur ? 0.35f : 0.08f); };
+    loudSm = smooth(loudSm, loud);
+    for (size_t i = 0; i < bandSm.size(); ++i)
+        bandSm[i] = smooth(bandSm[i], bands[i]);
+    repaint();
+}
+
+void EchoJayEditor::SettingsOrbCard::paint(juce::Graphics& g)
+{
+    using C = EchoJayLookAndFeel::Colours;
+    g.fillAll(C::bg);                                  // opaque backing
+    auto r = getLocalBounds().toFloat();
+    g.setColour(C::bg2);                               // navy card, NO chrome
+    g.fillRoundedRectangle(r, 10.0f);
+    if (pts.empty()) return;
+
+    const float breathDepth = 0.03f + 0.035f * loudSm; // idle ±3%, audio deepens
+    const float scale = 0.65f * juce::jmin(r.getWidth(), r.getHeight())
+                        * (1.0f + breathDepth * std::sin(breathPhase));
+    const float cx = r.getCentreX(), cy = r.getCentreY();
+    const float t = (float) (juce::Time::getMillisecondCounterHiRes() * 0.001);
+    const float gBright = 0.75f + 0.35f * loudSm;
+    const juce::Colour cyan(0xff22d3ee), teal(0xff2dd4bf);
+
+    int i = 0;
+    for (const auto& p : pts)
+    {
+        const float x = cx + p.hx * scale
+                        + std::sin(t * juce::MathConstants<float>::twoPi * p.fx + p.px) * p.amp;
+        const float y = cy + p.hy * scale
+                        + std::sin(t * juce::MathConstants<float>::twoPi * p.fy + p.py) * p.amp;
+        const int   b0 = (int) p.band;
+        const int   b1 = juce::jmin(5, b0 + 1);
+        const float fr = p.band - (float) b0;
+        const float bandVal = bandSm[(size_t) b0] * (1.0f - fr) + bandSm[(size_t) b1] * fr;
+        const float br = juce::jlimit(0.0f, 1.0f,
+                                      p.bright * gBright * (0.7f + 0.6f * bandVal));
+        g.setColour((++i % 3 == 0 ? teal : cyan).withAlpha(br));
+        g.fillEllipse(x - p.size * 0.5f, y - p.size * 0.5f, p.size, p.size);
+    }
 }
 
 juce::Colour EchoJayEditor::creditsWarnColour() const
@@ -4351,6 +4536,7 @@ void EchoJayEditor::hideSettingsView()
 {
     if (currentView != View::Settings) return;
     currentView = View::Meters;
+    settingsOrbCard_.setVisible(false);   // stops its 15fps timer immediately
     settingsBtn.setButtonText("Settings");
     settingsName.setVisible(false); settingsMonitors.setVisible(false);
     settingsHeadphones.setVisible(false); settingsGenres.setVisible(false);
@@ -6025,68 +6211,86 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             }
         }
 
-        // WHAT'S NEW — version + up to 3 release-note entries; silent
-        // fallback text, never an error state
+        // Slim combined info card — WHAT'S NEW (left half) + THIS MONTH
+        // (right half) compressed into one panel. The ambient visual card
+        // above it paints itself (settingsOrbCard_ component, no chrome).
+        if (!settingsInfoCard_.isEmpty())
         {
-            auto wn = settingsWhatsNewCard_;
-            drawPanel(g, wn, "WHAT'S NEW", C::purple);
-            int wy = wn.getY() + 26;
-            g.setColour(C::text2);
-            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-            g.drawText(juce::String("v") + ProjectInfo::versionString + " installed",
-                       wn.getX() + 14, wy, wn.getWidth() - 28, 14,
-                       juce::Justification::centredLeft);
-            wy += 20;
-            int shown = 0;
-            if (auto* arr = whatsNewEntries_.getArray())
-                for (auto& ev : *arr)
+            drawPanel(g, settingsInfoCard_, "", C::purple);
+            g.setColour(C::border);
+            g.drawVerticalLine(settingsMonthCard_.getX(),
+                               (float) settingsInfoCard_.getY() + 10,
+                               (float) settingsInfoCard_.getBottom() - 10);
+
+            // WHAT'S NEW — version + first release-note entry; silent
+            // fallback text, never an error state
+            {
+                auto wn = settingsWhatsNewCard_;
+                int wy = wn.getY() + 10;
+                g.setColour(C::purple);
+                g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+                g.drawText("WHAT'S NEW", wn.getX() + 14, wy, wn.getWidth() - 24, 14,
+                           juce::Justification::centredLeft);
+                wy += 18;
+                g.setColour(C::text2);
+                g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                g.drawText(juce::String("v") + ProjectInfo::versionString + " installed",
+                           wn.getX() + 14, wy, wn.getWidth() - 24, 13,
+                           juce::Justification::centredLeft);
+                wy += 17;
+                bool shown = false;
+                if (auto* arr = whatsNewEntries_.getArray())
+                    for (auto& ev : *arr)
+                    {
+                        auto* eo = ev.getDynamicObject();
+                        if (eo == nullptr) continue;
+                        g.setColour(C::text);
+                        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+                        g.drawText(eo->getProperty("title").toString(),
+                                   wn.getX() + 14, wy, wn.getWidth() - 24, 13,
+                                   juce::Justification::centredLeft, true);
+                        g.setColour(C::text3);
+                        g.setFont(juce::Font(juce::FontOptions(9.0f)));
+                        g.drawText(eo->getProperty("line").toString(),
+                                   wn.getX() + 14, wy + 13, wn.getWidth() - 24, 12,
+                                   juce::Justification::centredLeft, true);
+                        shown = true;
+                        break;   // compressed card: first entry only
+                    }
+                if (!shown)
                 {
-                    if (shown >= 3 || wy + 28 > wn.getBottom() - 6) break;
-                    auto* eo = ev.getDynamicObject();
-                    if (eo == nullptr) continue;
-                    g.setColour(C::text);
-                    g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
-                    g.drawText(eo->getProperty("title").toString(),
-                               wn.getX() + 14, wy, wn.getWidth() - 28, 13,
-                               juce::Justification::centredLeft, true);
+                    g.setColour(C::text3);
+                    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+                    g.drawText("You're up to date.", wn.getX() + 14, wy,
+                               wn.getWidth() - 24, 13, juce::Justification::centredLeft);
+                }
+            }
+
+            // THIS MONTH — local counters only (monthly_stats.json)
+            {
+                auto mo = settingsMonthCard_;
+                g.setColour(C::green);
+                g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+                g.drawText("THIS MONTH", mo.getX() + 14, mo.getY() + 10,
+                           mo.getWidth() - 28, 14, juce::Justification::centredLeft);
+                struct Row { const char* label; int v; };
+                const Row rows[] = { { "Captures",     statCaptures_ },
+                                     { "Chats",        statChats_ },
+                                     { "Chains built", statChains_ } };
+                int ry = mo.getY() + 28;
+                for (auto& r : rows)
+                {
+                    if (ry + 15 > mo.getBottom() - 6) break;
                     g.setColour(C::text3);
                     g.setFont(juce::Font(juce::FontOptions(9.5f)));
-                    g.drawText(eo->getProperty("line").toString(),
-                               wn.getX() + 14, wy + 13, wn.getWidth() - 28, 12,
-                               juce::Justification::centredLeft, true);
-                    wy += 30;
-                    ++shown;
+                    g.drawText(r.label, mo.getX() + 14, ry, mo.getWidth() - 76, 13,
+                               juce::Justification::centredLeft);
+                    g.setColour(C::text);
+                    g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
+                    g.drawText(juce::String(r.v), mo.getRight() - 58, ry, 44, 13,
+                               juce::Justification::centredRight);
+                    ry += 16;
                 }
-            if (shown == 0)
-            {
-                g.setColour(C::text3);
-                g.setFont(juce::Font(juce::FontOptions(10.5f)));
-                g.drawText("You're up to date.", wn.getX() + 14, wy,
-                           wn.getWidth() - 28, 14, juce::Justification::centredLeft);
-            }
-        }
-
-        // THIS MONTH — local counters only (monthly_stats.json)
-        {
-            auto mo = settingsMonthCard_;
-            drawPanel(g, mo, "THIS MONTH", C::green);
-            struct Row { const char* label; int v; };
-            const Row rows[] = { { "Captures",     statCaptures_ },
-                                 { "Chats",        statChats_ },
-                                 { "Chains built", statChains_ } };
-            int ry = mo.getY() + 26;
-            for (auto& r : rows)
-            {
-                if (ry + 16 > mo.getBottom() - 6) break;
-                g.setColour(C::text3);
-                g.setFont(juce::Font(juce::FontOptions(10.0f)));
-                g.drawText(r.label, mo.getX() + 14, ry, mo.getWidth() - 76, 14,
-                           juce::Justification::centredLeft);
-                g.setColour(C::text);
-                g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-                g.drawText(juce::String(r.v), mo.getRight() - 58, ry, 44, 14,
-                           juce::Justification::centredRight);
-                ry += 18;
             }
         }
     }
@@ -8928,28 +9132,39 @@ void EchoJayEditor::resized()
         }
         logoutBtn.setVisible(true);
 
-        // Right column cards (or a row of three under the form when stacked)
+        // Right column: ACCOUNT on top (unchanged), the ambient visual card
+        // filling the middle (no chrome), one slim combined info card below
+        // (WHAT'S NEW left half, THIS MONTH right half). Stacked mode keeps
+        // a row of two cards and omits the visual — no room to breathe.
         if (!cardsStacked)
         {
             int cx = sx + sw + 16;
             int cw = b.getWidth() - 20 - cx;
             int cTop = topH + 18, cBottom = saveRowY - 12;
-            int acctH = 118, monthH = 96, gap = 8;
-            int wnH = juce::jmax(110, cBottom - cTop - acctH - monthH - gap * 2);
-            settingsAccountCard_  = { cx, cTop, cw, acctH };
-            settingsWhatsNewCard_ = { cx, cTop + acctH + gap, cw, wnH };
-            settingsMonthCard_    = { cx, cTop + acctH + gap + wnH + gap, cw, monthH };
+            int acctH = 118, infoH = 118, gap = 8;
+            settingsAccountCard_ = { cx, cTop, cw, acctH };
+            settingsInfoCard_    = { cx, cBottom - infoH, cw, infoH };
+            settingsVisualCard_  = { cx, cTop + acctH + gap, cw,
+                                     juce::jmax(120, settingsInfoCard_.getY() - gap
+                                                     - (cTop + acctH + gap)) };
+            settingsWhatsNewCard_ = settingsInfoCard_.withTrimmedRight(settingsInfoCard_.getWidth() / 2);
+            settingsMonthCard_    = settingsInfoCard_.withTrimmedLeft(settingsInfoCard_.getWidth() / 2);
         }
         else
         {
             int cTop = sy + 8;
             int ch = juce::jlimit(96, 150, saveRowY - 12 - cTop);
             int gap = 8;
-            int cw = (sw - gap * 2) / 3;
-            settingsAccountCard_  = { sx,                  cTop, cw, ch };
-            settingsWhatsNewCard_ = { sx + cw + gap,       cTop, cw, ch };
-            settingsMonthCard_    = { sx + (cw + gap) * 2, cTop, sw - (cw + gap) * 2, ch };
+            int cw2 = (sw - gap) / 2;
+            settingsAccountCard_ = { sx,             cTop, cw2, ch };
+            settingsInfoCard_    = { sx + cw2 + gap, cTop, sw - cw2 - gap, ch };
+            settingsWhatsNewCard_ = settingsInfoCard_.withTrimmedRight(settingsInfoCard_.getWidth() / 2);
+            settingsMonthCard_    = settingsInfoCard_.withTrimmedLeft(settingsInfoCard_.getWidth() / 2);
+            settingsVisualCard_   = {};
         }
+        settingsOrbCard_.setBounds(settingsVisualCard_);
+        settingsOrbCard_.setVisible(!settingsVisualCard_.isEmpty());
+        settingsOrbCard_.ensureTimerMatchesVisibility();
         // The Upgrade button's owned home: a slot at the bottom of ACCOUNT
         settingsUpgradeRect_ = settingsAccountCard_.reduced(14, 0)
                                    .withTrimmedTop(settingsAccountCard_.getHeight() - 38)
@@ -8958,7 +9173,9 @@ void EchoJayEditor::resized()
     else
     {
         settingsAccountCard_ = settingsWhatsNewCard_ = settingsMonthCard_ = {};
+        settingsVisualCard_ = settingsInfoCard_ = {};
         settingsUpgradeRect_ = {};
+        settingsOrbCard_.setVisible(false);   // timer stops via visibilityChanged
     }
 
     auto card = b.reduced(40, 34);

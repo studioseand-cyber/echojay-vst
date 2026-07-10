@@ -312,11 +312,43 @@ private:
     // dim (>3 usable) / amber (1-3) / coral (0, matches the input gate)
     juce::Colour creditsWarnColour() const;
 
-    // ---- Settings right column (ACCOUNT / WHAT'S NEW / THIS MONTH) ----
-    // Rects computed in resized(), painted in paintSettingsView(). Below
-    // ~1100px window width the cards stack under the form as a row.
+    // ---- Settings right column (ACCOUNT / visual / slim info card) ----
+    // Rects computed in resized(), painted in paintSettingsView(). Two-column
+    // mode: ACCOUNT on top, the ambient visual card (no chrome) filling the
+    // middle, and one slim card below holding WHAT'S NEW + THIS MONTH
+    // compressed side by side (settingsWhatsNewCard_/settingsMonthCard_ are
+    // its left/right halves). Below ~1100px the cards stack under the form
+    // as a row and the visual is omitted (no room to breathe).
     juce::Rectangle<int> settingsAccountCard_, settingsWhatsNewCard_, settingsMonthCard_;
+    juce::Rectangle<int> settingsVisualCard_;    // ambient logo-O particle field
+    juce::Rectangle<int> settingsInfoCard_;      // slim combined info card
     juce::Rectangle<int> settingsUpgradeRect_;   // Upgrade button slot in ACCOUNT
+
+    // Ambient Settings visual: the logo's "O" as a breathing particle field.
+    // Point set is derived ONCE from the embedded logo PNG's alpha channel
+    // (never hand-drawn); particles drift around home positions, the whole
+    // glyph breathes (~7s), audio gently modulates breath depth/brightness
+    // and the six macroBands light angular regions (sub = bottom arc,
+    // air = top). 15fps timer runs ONLY while the card is visible.
+    struct SettingsOrbCard : juce::Component, private juce::Timer
+    {
+        struct Pt { float hx = 0, hy = 0;            // home, glyph-normalised
+                    float fx = 0, fy = 0, px = 0, py = 0, amp = 0;  // drift
+                    float size = 1, bright = 1, band = 2.5f; };
+        std::vector<Pt> pts;
+        float breathPhase = 0.0f, loudSm = 0.0f;
+        std::array<float, 6> bandSm { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+        // returns true when signal present; fills loudness 0..1 + band rels 0..1
+        std::function<bool(float&, std::array<float, 6>&)> fetchAudio;
+        SettingsOrbCard() { setOpaque(true); setInterceptsMouseClicks(false, false); }
+        void buildFromLogo();                        // alpha-channel extraction, logs bounds
+        void ensureTimerMatchesVisibility() { if (isVisible() && isShowing()) { if (!isTimerRunning()) startTimerHz(15); } else stopTimer(); }
+        void visibilityChanged() override { ensureTimerMatchesVisibility(); }
+        void parentHierarchyChanged() override { ensureTimerMatchesVisibility(); }
+        void timerCallback() override;
+        void paint(juce::Graphics& g) override;
+    };
+    SettingsOrbCard settingsOrbCard_;
     juce::var whatsNewEntries_;                  // fetched/cached release notes
     bool whatsNewFetched_ = false;
     // Local monthly usage counters (monthly_stats.json, month-keyed, shared
