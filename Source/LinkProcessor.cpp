@@ -91,6 +91,7 @@ void LinkProcessor::publishMeterFrame()
     f.peakL       = md.peakL;
     f.peakR       = md.peakR;
     f.truePeakMax = juce::jmax(md.truePeakMaxL, md.truePeakMaxR);
+    f.truePeakCur = juce::jmax(md.truePeakL, md.truePeakR);   // per-slice overs
     f.crest       = md.crestFactor;
     f.correlation = md.correlation;
     f.width       = md.width;
@@ -105,6 +106,17 @@ void LinkProcessor::publishMeterFrame()
         for (size_t i = 0; i < 6; ++i)
             f.bandRel[i] = md.macroBandDb[i] > -119.0f ? md.macroBandDb[i] - mean : 0.0f;
     }
+    // Frozen-engine guard: when the transport stops, the host stops calling
+    // processBlock, the engine's values freeze, and stamping them would keep
+    // the strip "fresh" scrolling a constant plateau forever — fake motion.
+    // Real audio NEVER produces two byte-identical frames (LUFS jitters), so
+    // an identical payload means frozen: skip the publish, seq stops
+    // advancing, and the receiver's staleness path freezes+dims the strip.
+    if (std::memcmp(reinterpret_cast<const uint8_t*>(&f) + sizeof(uint32_t),
+                    reinterpret_cast<const uint8_t*>(&lastPublishedFrame_) + sizeof(uint32_t),
+                    sizeof(LinkMeterFrame) - sizeof(uint32_t)) == 0)
+        return;
+    lastPublishedFrame_ = f;
     LinkShm::publishMeterFrame(regMap, regSlotIdx, f);
     // Frame diagnostics: first 3 frames after (re)activation, then 1 per 10s
     ++meterFramesPublished_;
@@ -114,6 +126,7 @@ void LinkProcessor::publishMeterFrame()
                        + " mom=" + juce::String(f.momentary, 1)
                        + " rms=" + juce::String(f.rmsL, 1) + "/" + juce::String(f.rmsR, 1)
                        + " tp=" + juce::String(f.truePeakMax, 1)
+                       + " tpCur=" + juce::String(f.truePeakCur, 1)
                        + " corr=" + juce::String(f.correlation, 2)
                        + " rel=[" + juce::String(f.bandRel[0], 1) + " " + juce::String(f.bandRel[5], 1)
                        + "]").toRawUTF8());

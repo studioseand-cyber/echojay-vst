@@ -118,7 +118,12 @@ struct alignas(64) LinkMeterFrame
     float correlation = 0.0f;      // -1..+1
     float width       = 0.0f;      // 0..1
     float bandRel[6]  = {};        // macroBand dB rel to band mean (sub..air)
-    uint8_t _pad[128 - 4 - 11 * 4 - 6 * 4];   // -> 128 (2 cache lines)
+    // CURRENT true peak (this frame), not the max-hold above: the overs
+    // markers need per-slice truth — truePeakMax latches after one over and
+    // painted a continuous coral line. Placed in the old pad space so all
+    // prior field offsets are unchanged (old writers leave it 0 = benign).
+    float truePeakCur = -100.0f;
+    uint8_t _pad[128 - 4 - 11 * 4 - 6 * 4 - 4];   // -> 128 (2 cache lines)
 };
 static_assert(sizeof(LinkMeterFrame) == 128, "LinkMeterFrame must be 128 bytes");
 

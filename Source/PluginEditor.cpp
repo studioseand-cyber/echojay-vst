@@ -3933,8 +3933,8 @@ void EchoJayEditor::runAICompare()
 //  Link tab painter — auto-discovery list
 // =============================================================================
 
-// Shared mini meter strip: waveform history ribbon | momentary+integrated |
-// tonal ticks | correlation dot. Used by the Mix Bus row AND every Link row
+// Shared mini meter strip: mini spectrogram | momentary+integrated | tonal
+// ticks. Used by the Mix Bus row AND every Link row
 // so they cannot drift apart. Smoothing runs here at the UI frame rate: the
 // 10Hz data feed becomes smooth motion (meter attack/release); when !fresh
 // the targets freeze so the strip holds still (no fake motion) and dims.
@@ -3961,40 +3961,67 @@ void EchoJayEditor::paintLinkMeterStrip(juce::Graphics& g, int stripX, int strip
 
     const juce::Colour cyan(0xff22d3ee), coral(0xffff6d5a);
 
-    // 1) Waveform history ribbon — newest at the right, mirrored envelope:
-    //    dim cyan peak envelope, brighter RMS core, coral flecks on overs.
-    //    Same language as the Compare live waveform, miniaturised.
+    // Layout: [mini spectrogram][LUFS numbers][tonal ticks → right edge].
+    // The correlation dot is gone; its width went to the spectrogram.
+    const int tonalW   = 84;
+    const int lufsW    = 78;
+    const int spectroW = juce::jlimit(100, 240, stripW - lufsW - tonalW - 24);
+
+    // 1) Mini spectrogram — time → (newest right, the frame-clock ring),
+    //    six macroBands stacked sub(bottom)..air(top), vertically
+    //    interpolated so it reads as a continuous field. Colour = the
+    //    EchoJay spectrogram ramp (navy → blue → cyan → light → coral);
+    //    slice loudness scales how hot the whole slice renders. A coral
+    //    tick ABOVE the strip marks slices where TP genuinely exceeded
+    //    0 dBTP (truePeakCur — the max-hold field latched forever).
     {
-        const int rw = juce::jmin(150, stripW * 38 / 100);
-        const int rh = 36;
+        const int rw = spectroW;
+        const int rh = 40;
         const int rx = stripX, ry = rowY + (rowH - rh) / 2;
-        const float midY = (float) ry + rh * 0.5f;
-        g.setColour(C::border2.withMultipliedAlpha(dim));          // centre line
-        g.drawHorizontalLine((int) midY, (float) rx, (float) (rx + rw));
+        auto ramp = [&](float v) -> juce::Colour
+        {
+            v = juce::jlimit(0.0f, 1.0f, v);
+            const juce::Colour navy(0xff080A12), blue(0xff1d4ed8),
+                               light(0xff9ff2ff);
+            if (v < 0.35f) return navy.interpolatedWith(blue,  v / 0.35f);
+            if (v < 0.65f) return blue.interpolatedWith(cyan,  (v - 0.35f) / 0.30f);
+            if (v < 0.85f) return cyan.interpolatedWith(light, (v - 0.65f) / 0.20f);
+            return light.interpolatedWith(coral, (v - 0.85f) / 0.15f);
+        };
+        g.setColour(juce::Colour(0xff080A12).withMultipliedAlpha(dim));   // navy floor
+        g.fillRect(rx, ry, rw, rh);
         const int n = (int) st.ribbon.size();
         const float sliceW = (float) rw / (float) n;
+        constexpr int vSteps = 12;
+        const float stepH = (float) rh / (float) vSteps;
         for (int i = 0; i < n; ++i)                                // oldest → newest
         {
-            const auto& s = st.ribbon[(size_t) ((st.ribbonPos + i) % n)];
-            if (s.peak01 <= 0.001f) continue;                      // flatline stays a line
-            const float x  = (float) rx + sliceW * (float) i;
-            const float ph = s.peak01 * (rh * 0.5f);
-            const float ch = s.rms01  * (rh * 0.5f);
-            g.setColour(cyan.withAlpha(0.28f * dim));
-            g.fillRect(x, midY - ph, sliceW + 0.5f, ph * 2.0f);
-            g.setColour(cyan.withAlpha(0.85f * dim));
-            g.fillRect(x, midY - ch, sliceW + 0.5f, juce::jmax(1.0f, ch * 2.0f));
-            if (s.over)
+            const auto& sl = st.ribbon[(size_t) ((st.ribbonPos + i) % n)];
+            const float x = (float) rx + sliceW * (float) i;
+            const float hot = 0.35f + 0.65f * sl.loud01;           // level = brightness
+            for (int vs = 0; vs < vSteps; ++vs)
+            {
+                // top step = air (band 5), bottom = sub (band 0)
+                const float bandPos = (1.0f - ((float) vs + 0.5f) / (float) vSteps) * 5.0f;
+                const int   b0 = (int) bandPos;
+                const int   b1 = juce::jmin(5, b0 + 1);
+                const float fr = bandPos - (float) b0;
+                const float v  = (sl.v[b0] * (1.0f - fr) + sl.v[b1] * fr) * hot;
+                if (v <= 0.02f) continue;                          // floor stays navy
+                g.setColour(ramp(v).withMultipliedAlpha(dim));
+                g.fillRect(x, (float) ry + stepH * (float) vs, sliceW + 0.5f, stepH + 0.5f);
+            }
+            if (sl.over)                                           // genuine 0dBTP over
             {
                 g.setColour(coral.withAlpha(0.95f * dim));
-                g.fillRect(x, midY - ph - 2.0f, sliceW + 0.5f, 2.0f);
+                g.fillRect(x, (float) ry - 3.0f, sliceW + 0.5f, 2.0f);
             }
         }
     }
 
     // 2) Momentary LUFS primary, integrated small beneath
     {
-        const int lx = stripX + juce::jmin(150, stripW * 38 / 100) + 12;
+        const int lx = stripX + spectroW + 12;
         auto fmt = [](float v) { return v > -90.0f ? juce::String(v, 1) : juce::String("--"); };
         g.setColour(C::text.withMultipliedAlpha(dim));
         g.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
@@ -4005,10 +4032,10 @@ void EchoJayEditor::paintLinkMeterStrip(juce::Graphics& g, int stripX, int strip
                    lx, rowY + 34, 74, 12, juce::Justification::centredLeft);
     }
 
-    // 3) Tonal balance in miniature — 6 deviation ticks, cyan up/coral down
+    // 3) Tonal balance ticks — 6 deviation ticks, cyan up/coral down
     {
-        const int tx = stripX + juce::jmin(150, stripW * 38 / 100) + 12 + 78;
-        const int tw = juce::jmin(84, juce::jmax(48, stripR - tx - 66));
+        const int tx = stripR - tonalW;
+        const int tw = tonalW;
         const int th = 30;
         const int ty = rowY + (rowH - th) / 2;
         const float midY = (float) ty + th * 0.5f;
@@ -4025,21 +4052,7 @@ void EchoJayEditor::paintLinkMeterStrip(juce::Graphics& g, int stripX, int strip
             else          g.fillRect(bx, midY,       segW * 0.5f, juce::jmax(1.0f, -hgt));
         }
     }
-
-    // 4) Correlation dot on a -1..+1 track, coral below 0
-    {
-        const int cw = 46;
-        const int cx = stripR - cw;
-        const float cyd = (float) rowY + rowH * 0.5f;
-        g.setColour(C::border2.withMultipliedAlpha(dim));
-        g.drawHorizontalLine((int) cyd, (float) cx, (float) (cx + cw));
-        g.fillRect((float) cx + cw * 0.5f - 0.5f, cyd - 3.0f, 1.0f, 6.0f);   // 0 mark
-        const float cpos = (juce::jlimit(-1.0f, 1.0f, st.smCorr) + 1.0f) * 0.5f;
-        g.setColour((st.smCorr < 0 ? coral : cyan).withMultipliedAlpha(dim));
-        g.fillEllipse((float) cx + cw * cpos - 3.0f, cyd - 3.0f, 6.0f, 6.0f);
-    }
 }
-
 void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int> area)
 {
     using C = EchoJayLookAndFeel::Colours;
@@ -4050,7 +4063,6 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     linkToggleZones_.clear();   // repopulated per row below
     meterTips_.clear();         // row tooltips (sample rate etc.) repopulate below
 
-    auto dbNorm = [](float db) { return juce::jlimit(0.0f, 1.0f, (db + 60.0f) / 60.0f); };
     const uint32_t nowMs = juce::Time::getMillisecondCounter();
 
     // Title
@@ -4099,13 +4111,16 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
                                     ? md.macroBandDb[i] - mean : 0.0f;
         }
         hs.has = true;
+        hs.frame.truePeakCur = juce::jmax(md.truePeakL, md.truePeakR);
         // Slice clock: same 10Hz cadence as the Link frames (steady scroll)
         if (nowMs - linkHostSliceMs_ >= 100)
         {
             linkHostSliceMs_ = nowMs;
-            hs.pushSlice(md.isSilent ? 0.0f : dbNorm(juce::jmax(md.peakL, md.peakR)),
-                         md.isSilent ? 0.0f : dbNorm(juce::jmax(md.rmsL, md.rmsR)),
-                         !md.isSilent && hs.frame.truePeakMax > 0.0f);
+            static const float kSilentRel[6] = {};
+            const float loud01 = md.isSilent ? 0.0f
+                : juce::jlimit(0.0f, 1.0f, (md.momentary + 40.0f) / 32.0f);
+            hs.pushSlice(md.isSilent ? kSilentRel : hs.frame.bandRel, loud01,
+                         !md.isSilent && hs.frame.truePeakCur > 0.0f);
         }
         paintLinkMeterStrip(g, pad + 14 + nameW + 10, pad + fw - 14, y, cardH,
                             hs, /*fresh=*/!md.isSilent, 1.0f);
@@ -4227,9 +4242,9 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
                     st.lastSeq = f.seq;
                     st.lastChangeMs = nowMs;
                     st.has = true;
-                    st.pushSlice(dbNorm(juce::jmax(f.peakL, f.peakR)),
-                                 dbNorm(juce::jmax(f.rmsL, f.rmsR)),
-                                 f.truePeakMax > 0.0f);
+                    st.pushSlice(f.bandRel,
+                                 juce::jlimit(0.0f, 1.0f, (f.momentary + 40.0f) / 32.0f),
+                                 f.truePeakCur > 0.0f);
                 }
             }
         }

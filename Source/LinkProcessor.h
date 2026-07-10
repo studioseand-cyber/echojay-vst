@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "ChainHost.h"
 #include "MeterEngine.h"
+#include "LinkShm.h"     // LinkMeterFrame (frozen-engine publish guard member)
 #include <atomic>
 #include <functional>
 #include <vector>
@@ -211,6 +212,7 @@ private:
     // inactive Link publishes nothing, so its strip freezes and dims.
     MeterEngine meterEngine_;
     int meterFramesPublished_ = 0;    // frame diagnostics counter
+    LinkMeterFrame lastPublishedFrame_;   // frozen-engine guard (see publish)
     void publishMeterFrame();
 
     // Unnamed Links still register ("Untitled" rows): per-instance fallback

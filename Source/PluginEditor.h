@@ -1385,17 +1385,27 @@ private:
         // Smoothed render values — updated each paint tick toward frame
         float smMom = -100.0f, smInt = -100.0f, smCorr = 0.0f;
         std::array<float, 6> smBand {};
-        // Scrolling waveform history: peak envelope + RMS core per slice,
-        // coral fleck where true peak exceeded 0 dBTP in that slice
-        struct Slice { float peak01 = 0.0f, rms01 = 0.0f; bool over = false; };
+        // Scrolling mini spectrogram: six macroBand cells per slice (sub..air),
+        // slice loudness for overall brightness, and a per-slice TP-over flag
+        // (from truePeakCur — the max-hold field painted a continuous line)
+        struct Slice { float v[6] = {}; float loud01 = 0.0f; bool over = false; };
         std::array<Slice, 40> ribbon {};   // 4s at 10Hz
         int  ribbonPos = 0;                // next write position (oldest slice)
-        float smPeak01 = 0.0f, smRms01 = 0.0f;   // slice-entry smoothing
-        void pushSlice(float peak01, float rms01, bool over)
+        std::array<float, 6> smCell {};    // slice-entry smoothing
+        float smLoud01 = 0.0f;
+        void pushSlice(const float rel[6], float loud01, bool over)
         {
-            smPeak01 += (peak01 - smPeak01) * (peak01 > smPeak01 ? 0.7f : 0.35f);
-            smRms01  += (rms01  - smRms01)  * (rms01  > smRms01  ? 0.7f : 0.35f);
-            ribbon[(size_t) ribbonPos] = { smPeak01, smRms01, over };
+            Slice sl;
+            for (size_t i = 0; i < 6; ++i)
+            {
+                const float t = juce::jlimit(0.0f, 1.0f, (rel[i] + 9.0f) / 18.0f);
+                smCell[i] += (t - smCell[i]) * (t > smCell[i] ? 0.7f : 0.35f);
+                sl.v[i] = smCell[i];
+            }
+            smLoud01 += (loud01 - smLoud01) * (loud01 > smLoud01 ? 0.7f : 0.35f);
+            sl.loud01 = smLoud01;
+            sl.over   = over;
+            ribbon[(size_t) ribbonPos] = sl;
             ribbonPos = (ribbonPos + 1) % (int) ribbon.size();
         }
     };
