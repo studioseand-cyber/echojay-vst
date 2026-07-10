@@ -91,7 +91,9 @@ void LinkProcessor::publishMeterFrame()
     f.peakL       = md.peakL;
     f.peakR       = md.peakR;
     f.truePeakMax = juce::jmax(md.truePeakMaxL, md.truePeakMaxR);
-    f.truePeakCur = juce::jmax(md.truePeakL, md.truePeakR);   // per-slice overs
+    f.truePeakCur = juce::jmax(md.truePeakL, md.truePeakR);
+    f.lra         = md.loudnessRange;
+    f.shortTermTP = md.shortTermTruePeak;
     f.crest       = md.crestFactor;
     f.correlation = md.correlation;
     f.width       = md.width;

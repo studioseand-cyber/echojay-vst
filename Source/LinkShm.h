@@ -123,7 +123,13 @@ struct alignas(64) LinkMeterFrame
     // painted a continuous coral line. Placed in the old pad space so all
     // prior field offsets are unchanged (old writers leave it 0 = benign).
     float truePeakCur = -100.0f;
-    uint8_t _pad[128 - 4 - 11 * 4 - 6 * 4 - 4];   // -> 128 (2 cache lines)
+    // Loudness-suite readouts (v0.5.4): LRA + short-term true peak (PSR =
+    // shortTermTP - shortTerm, PLR = truePeakMax - integrated, computed
+    // receiver-side exactly like the Meters tab). Appended in pad space —
+    // prior offsets unchanged; old writers leave them 0.
+    float lra         = 0.0f;      // LU
+    float shortTermTP = -100.0f;   // dBTP
+    uint8_t _pad[128 - 4 - 11 * 4 - 6 * 4 - 4 - 8];   // -> 128 (2 cache lines)
 };
 static_assert(sizeof(LinkMeterFrame) == 128, "LinkMeterFrame must be 128 bytes");
 

@@ -1383,36 +1383,14 @@ private:
         uint32_t lastChangeMs = 0;
         bool has = false;
         // Smoothed render values — updated each paint tick toward frame
-        float smMom = -100.0f, smInt = -100.0f, smCorr = 0.0f;
-        std::array<float, 6> smBand {};
-        // Scrolling mini spectrogram: six macroBand cells per slice (sub..air),
-        // slice loudness for overall brightness, and a per-slice TP-over flag
-        // (from truePeakCur — the max-hold field painted a continuous line)
-        struct Slice { float v[6] = {}; float loud01 = 0.0f; bool over = false; };
-        std::array<Slice, 40> ribbon {};   // 4s at 10Hz
-        int  ribbonPos = 0;                // next write position (oldest slice)
-        std::array<float, 6> smCell {};    // slice-entry smoothing
-        float smLoud01 = 0.0f;
-        void pushSlice(const float rel[6], float loud01, bool over)
-        {
-            Slice sl;
-            for (size_t i = 0; i < 6; ++i)
-            {
-                const float t = juce::jlimit(0.0f, 1.0f, (rel[i] + 9.0f) / 18.0f);
-                smCell[i] += (t - smCell[i]) * (t > smCell[i] ? 0.7f : 0.35f);
-                sl.v[i] = smCell[i];
-            }
-            smLoud01 += (loud01 - smLoud01) * (loud01 > smLoud01 ? 0.7f : 0.35f);
-            sl.loud01 = smLoud01;
-            sl.over   = over;
-            ribbon[(size_t) ribbonPos] = sl;
-            ribbonPos = (ribbonPos + 1) % (int) ribbon.size();
-        }
+        float smMom = -100.0f, smInt = -100.0f;
+        // Smoothed loudness-suite readouts (display-side, updated per paint
+        // tick toward the latest frame; frozen when stale)
+        float smShort = -100.0f, smLra = 0.0f, smPsr = 0.0f, smPlr = 0.0f;
     };
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row
-    uint32_t linkHostSliceMs_ = 0;         // 10Hz slice clock for the host row
-    // Shared renderer for host + Link rows (ribbon | LUFS | tonal | corr)
+    // Shared renderer for host + Link rows (loudness-suite readout cells)
     void paintLinkMeterStrip(juce::Graphics& g, int stripX, int stripR,
                              int rowY, int rowH, LinkStripState& st,
                              bool fresh, float dim);

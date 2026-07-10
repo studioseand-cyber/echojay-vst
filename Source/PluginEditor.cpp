@@ -3933,124 +3933,75 @@ void EchoJayEditor::runAICompare()
 //  Link tab painter — auto-discovery list
 // =============================================================================
 
-// Shared mini meter strip: mini spectrogram | momentary+integrated | tonal
-// ticks. Used by the Mix Bus row AND every Link row
-// so they cannot drift apart. Smoothing runs here at the UI frame rate: the
-// 10Hz data feed becomes smooth motion (meter attack/release); when !fresh
-// the targets freeze so the strip holds still (no fake motion) and dims.
+// Shared row renderer: a compact version of the METERS tab's LOUDNESS
+// suite — same labels, colours, and dash conventions, just smaller. Used by
+// the Mix Bus row AND every Link row so they cannot drift. Values smooth
+// toward the latest frame at the UI rate while fresh; freeze when stale.
+// Width budget: all six cells when they fit, else LRA drops first, then PLR
+// (leaving MOMENTARY / SHORT TERM / INTEGRATED / PSR).
 void EchoJayEditor::paintLinkMeterStrip(juce::Graphics& g, int stripX, int stripR,
                                         int rowY, int rowH, LinkStripState& st,
                                         bool fresh, float dim)
 {
     using C = EchoJayLookAndFeel::Colours;
     const int stripW = stripR - stripX;
-    if (stripW < 220 || !st.has) return;
+    if (stripW < 160 || !st.has) return;
     const auto& mf = st.frame;
 
-    // Per-value smoothing toward the latest frame — only while fresh
+    // PSR / PLR exactly as the Meters tab derives them
+    const bool psrValid = mf.shortTermTP > -90.0f && mf.shortTerm > -90.0f;
+    const bool plrValid = mf.truePeakMax > -90.0f && mf.integrated > -90.0f;
+    const float psrRaw = psrValid ? mf.shortTermTP - mf.shortTerm : 0.0f;
+    const float plrRaw = plrValid ? mf.truePeakMax - mf.integrated : 0.0f;
+
     if (fresh)
     {
         auto sm = [](float cur, float tgt, float atk, float rel)
         { return cur + (tgt - cur) * (tgt > cur ? atk : rel); };
-        st.smMom  = sm(st.smMom,  mf.momentary,   0.5f, 0.2f);
-        st.smInt  = sm(st.smInt,  mf.integrated,  0.5f, 0.2f);
-        st.smCorr += (mf.correlation - st.smCorr) * 0.3f;
-        for (size_t i = 0; i < 6; ++i)
-            st.smBand[i] = sm(st.smBand[i], mf.bandRel[i], 0.4f, 0.2f);
+        st.smMom   = sm(st.smMom,   mf.momentary,  0.5f, 0.2f);
+        st.smShort = sm(st.smShort, mf.shortTerm,  0.5f, 0.2f);
+        st.smInt   = sm(st.smInt,   mf.integrated, 0.5f, 0.2f);
+        st.smLra  += (mf.lra  - st.smLra) * 0.3f;
+        if (psrValid) st.smPsr += (psrRaw - st.smPsr) * 0.3f;
+        if (plrValid) st.smPlr += (plrRaw - st.smPlr) * 0.3f;
     }
 
-    const juce::Colour cyan(0xff22d3ee), coral(0xffff6d5a);
+    const auto coral = juce::Colour(0xffff6d5a);
+    const auto amber = juce::Colour(0xfff59e0b);
+    const auto cyan  = juce::Colour(0xff22d3ee);
 
-    // Layout: [mini spectrogram][LUFS numbers][tonal ticks → right edge].
-    // The correlation dot is gone; its width went to the spectrogram.
-    const int tonalW   = 84;
-    const int lufsW    = 78;
-    const int spectroW = juce::jlimit(100, 240, stripW - lufsW - tonalW - 24);
+    struct Cell { const char* label; float v; bool valid; const char* unit; juce::Colour col; };
+    const Cell all[6] = {
+        { "MOMENTARY",  st.smMom,   st.smMom   > -99.0f, "LUFS", st.smMom > -6.0f ? C::red : C::green },
+        { "SHORT TERM", st.smShort, st.smShort > -99.0f, "LUFS", C::blue2 },
+        { "INTEGRATED", st.smInt,   st.smInt   > -99.0f, "LUFS", C::green },
+        { "LRA",        st.smLra,   fresh || st.has,     "LU",   C::text },
+        { "PSR",        st.smPsr,   psrValid,            "dB",
+          st.smPsr < 5.0f ? coral : st.smPsr < 8.0f ? amber : cyan },   // zone colours (arc doesn't fit 64px)
+        { "PLR",        st.smPlr,   plrValid,            "dB",   C::text },
+    };
+    // Width budget: drop LRA first, then PLR
+    const int cellW = 58;
+    int count = juce::jlimit(3, 6, stripW / cellW);
+    bool useCell[6] = { true, true, true, count >= 6, true, count >= 5 };
 
-    // 1) Mini spectrogram — time → (newest right, the frame-clock ring),
-    //    six macroBands stacked sub(bottom)..air(top), vertically
-    //    interpolated so it reads as a continuous field. Colour = the
-    //    EchoJay spectrogram ramp (navy → blue → cyan → light → coral);
-    //    slice loudness scales how hot the whole slice renders. A coral
-    //    tick ABOVE the strip marks slices where TP genuinely exceeded
-    //    0 dBTP (truePeakCur — the max-hold field latched forever).
+    int cx = stripX;
+    const int actualW = juce::jmin(cellW + 6, stripW / juce::jmax(3, count));
+    for (int i = 0; i < 6; ++i)
     {
-        const int rw = spectroW;
-        const int rh = 40;
-        const int rx = stripX, ry = rowY + (rowH - rh) / 2;
-        auto ramp = [&](float v) -> juce::Colour
-        {
-            v = juce::jlimit(0.0f, 1.0f, v);
-            const juce::Colour navy(0xff080A12), blue(0xff1d4ed8),
-                               light(0xff9ff2ff);
-            if (v < 0.35f) return navy.interpolatedWith(blue,  v / 0.35f);
-            if (v < 0.65f) return blue.interpolatedWith(cyan,  (v - 0.35f) / 0.30f);
-            if (v < 0.85f) return cyan.interpolatedWith(light, (v - 0.65f) / 0.20f);
-            return light.interpolatedWith(coral, (v - 0.85f) / 0.15f);
-        };
-        g.setColour(juce::Colour(0xff080A12).withMultipliedAlpha(dim));   // navy floor
-        g.fillRect(rx, ry, rw, rh);
-        const int n = (int) st.ribbon.size();
-        const float sliceW = (float) rw / (float) n;
-        constexpr int vSteps = 12;
-        const float stepH = (float) rh / (float) vSteps;
-        for (int i = 0; i < n; ++i)                                // oldest → newest
-        {
-            const auto& sl = st.ribbon[(size_t) ((st.ribbonPos + i) % n)];
-            const float x = (float) rx + sliceW * (float) i;
-            const float hot = 0.35f + 0.65f * sl.loud01;           // level = brightness
-            for (int vs = 0; vs < vSteps; ++vs)
-            {
-                // top step = air (band 5), bottom = sub (band 0)
-                const float bandPos = (1.0f - ((float) vs + 0.5f) / (float) vSteps) * 5.0f;
-                const int   b0 = (int) bandPos;
-                const int   b1 = juce::jmin(5, b0 + 1);
-                const float fr = bandPos - (float) b0;
-                const float v  = (sl.v[b0] * (1.0f - fr) + sl.v[b1] * fr) * hot;
-                if (v <= 0.02f) continue;                          // floor stays navy
-                g.setColour(ramp(v).withMultipliedAlpha(dim));
-                g.fillRect(x, (float) ry + stepH * (float) vs, sliceW + 0.5f, stepH + 0.5f);
-            }
-            if (sl.over)                                           // genuine 0dBTP over
-            {
-                g.setColour(coral.withAlpha(0.95f * dim));
-                g.fillRect(x, (float) ry - 3.0f, sliceW + 0.5f, 2.0f);
-            }
-        }
-    }
-
-    // 2) Momentary LUFS primary, integrated small beneath
-    {
-        const int lx = stripX + spectroW + 12;
-        auto fmt = [](float v) { return v > -90.0f ? juce::String(v, 1) : juce::String("--"); };
-        g.setColour(C::text.withMultipliedAlpha(dim));
-        g.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
-        g.drawText(fmt(st.smMom), lx, rowY + 12, 62, 18, juce::Justification::centredLeft);
+        if (!useCell[i]) continue;
+        const auto& c = all[i];
         g.setColour(C::text3.withMultipliedAlpha(dim));
-        g.setFont(juce::Font(juce::FontOptions(9.0f)));
-        g.drawText("I " + fmt(st.smInt) + " LUFS",
-                   lx, rowY + 34, 74, 12, juce::Justification::centredLeft);
-    }
-
-    // 3) Tonal balance ticks — 6 deviation ticks, cyan up/coral down
-    {
-        const int tx = stripR - tonalW;
-        const int tw = tonalW;
-        const int th = 30;
-        const int ty = rowY + (rowH - th) / 2;
-        const float midY = (float) ty + th * 0.5f;
-        g.setColour(C::border2.withMultipliedAlpha(dim));
-        g.drawHorizontalLine((int) midY, (float) tx, (float) (tx + tw));
-        const float segW = (float) tw / 6.0f;
-        for (int bnd = 0; bnd < 6; ++bnd)
-        {
-            const float rel = juce::jlimit(-9.0f, 9.0f, st.smBand[(size_t) bnd]);
-            const float hgt = (rel / 9.0f) * (th * 0.5f);
-            const float bx  = (float) tx + segW * (float) bnd + segW * 0.25f;
-            g.setColour((rel >= 0 ? cyan : coral).withAlpha(0.9f * dim));
-            if (hgt >= 0) g.fillRect(bx, midY - hgt, segW * 0.5f, juce::jmax(1.0f, hgt));
-            else          g.fillRect(bx, midY,       segW * 0.5f, juce::jmax(1.0f, -hgt));
-        }
+        g.setFont(juce::Font(juce::FontOptions(8.5f)));
+        g.drawText(c.label, cx, rowY + 8, actualW, 12, juce::Justification::centred);
+        g.setColour((c.valid ? c.col : C::text3).withMultipliedAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(16.0f, juce::Font::bold)));
+        g.drawText(c.valid ? juce::String(c.v, 1) : juce::String("--"),
+                   cx, rowY + 21, actualW, 18, juce::Justification::centred);
+        g.setColour(C::text3.withMultipliedAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(8.5f)));
+        g.drawText(c.unit, cx, rowY + 42, actualW, 11, juce::Justification::centred);
+        cx += actualW;
     }
 }
 void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int> area)
@@ -4112,16 +4063,8 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         }
         hs.has = true;
         hs.frame.truePeakCur = juce::jmax(md.truePeakL, md.truePeakR);
-        // Slice clock: same 10Hz cadence as the Link frames (steady scroll)
-        if (nowMs - linkHostSliceMs_ >= 100)
-        {
-            linkHostSliceMs_ = nowMs;
-            static const float kSilentRel[6] = {};
-            const float loud01 = md.isSilent ? 0.0f
-                : juce::jlimit(0.0f, 1.0f, (md.momentary + 40.0f) / 32.0f);
-            hs.pushSlice(md.isSilent ? kSilentRel : hs.frame.bandRel, loud01,
-                         !md.isSilent && hs.frame.truePeakCur > 0.0f);
-        }
+        hs.frame.lra         = md.loudnessRange;
+        hs.frame.shortTermTP = md.shortTermTruePeak;
         paintLinkMeterStrip(g, pad + 14 + nameW + 10, pad + fw - 14, y, cardH,
                             hs, /*fresh=*/!md.isSilent, 1.0f);
         meterTips_.emplace_back(juce::Rectangle<int>(pad, y, fw, cardH),
@@ -4242,9 +4185,6 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
                     st.lastSeq = f.seq;
                     st.lastChangeMs = nowMs;
                     st.has = true;
-                    st.pushSlice(f.bandRel,
-                                 juce::jlimit(0.0f, 1.0f, (f.momentary + 40.0f) / 32.0f),
-                                 f.truePeakCur > 0.0f);
                 }
             }
         }
