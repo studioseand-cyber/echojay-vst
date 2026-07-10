@@ -1390,6 +1390,11 @@ private:
     };
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row
+    // Mix Bus audio liveness: the host can idle the MAIN plugin's channel
+    // too — detect the local engine freezing (values unchanged ~1s) and
+    // apply the same audioStale treatment as Link rows
+    float    lastHostMom_ = 0.0f, lastHostRms_ = 0.0f;
+    uint32_t lastHostAdvanceMs_ = 0;
     // Shared renderer for host + Link rows (loudness-suite readout cells)
     void paintLinkMeterStrip(juce::Graphics& g, int stripX, int stripR,
                              int rowY, int rowH, LinkStripState& st,

@@ -81,6 +81,29 @@ void LinkProcessor::publishMeterFrame()
     // plugin's strip freezes and dims within a second (its seq stops moving)
     if (regMap == nullptr || regSlotIdx < 0 || !linkOn.load(std::memory_order_acquire))
         return;
+    // Audio liveness: if processBlock hasn't advanced for ~1s, the host has
+    // idled this channel — the engine's values are frozen mid-song. Mark the
+    // frame audioStale and blank the momentary group (absent convention);
+    // integrated/LRA/PLR keep their last-programme values, mirroring how
+    // the Meters tab treats stopped audio.
+    const uint32_t blocksNow = audioBlockCounter_.load(std::memory_order_relaxed);
+    const uint32_t tNowMs    = juce::Time::getMillisecondCounter();
+    if (blocksNow != lastSeenBlockCount_)
+    {
+        lastSeenBlockCount_  = blocksNow;
+        lastBlockAdvanceMs_  = tNowMs;
+    }
+    const bool audioStale = (tNowMs - lastBlockAdvanceMs_) > 1000;
+    if (audioStale != audioWasStale_)
+    {
+        audioWasStale_ = audioStale;
+        EchoJay_NSLog(("EJLinkMeter: \"" + (linkName.isEmpty() ? "(untitled)" : linkName)
+                       + (audioStale
+                          ? "\" audio stale (blocks frozen at " + juce::String(blocksNow)
+                            + ") -> momentary group absent"
+                          : "\" audio resumed (blocks " + juce::String(blocksNow) + ")")).toRawUTF8());
+    }
+
     auto md = meterEngine_.getMeterData();
     LinkMeterFrame f;   // global-scope struct, same as RegistrySlot
     f.momentary   = md.momentary;
@@ -94,6 +117,16 @@ void LinkProcessor::publishMeterFrame()
     f.truePeakCur = juce::jmax(md.truePeakL, md.truePeakR);
     f.lra         = md.loudnessRange;
     f.shortTermTP = md.shortTermTruePeak;
+    f.audioBlocks = blocksNow;
+    f.audioStale  = audioStale ? 1u : 0u;
+    if (audioStale)
+    {
+        // Momentary group -> absent convention (dashes); rms/peak persist
+        // as last-programme values and the receiver dims them
+        f.momentary   = -100.0f;
+        f.shortTerm   = -100.0f;
+        f.shortTermTP = -100.0f;   // gates PSR to '--' like the Meters tab
+    }
     f.crest       = md.crestFactor;
     f.correlation = md.correlation;
     f.width       = md.width;
@@ -127,6 +160,7 @@ void LinkProcessor::publishMeterFrame()
                        + "\" #" + juce::String(meterFramesPublished_)
                        + " mom=" + juce::String(f.momentary, 1)
                        + " rms=" + juce::String(f.rmsL, 1) + "/" + juce::String(f.rmsR, 1)
+                       + " blocks=" + juce::String(f.audioBlocks)
                        + " tp=" + juce::String(f.truePeakMax, 1)
                        + " tpCur=" + juce::String(f.truePeakCur, 1)
                        + " corr=" + juce::String(f.correlation, 2)
@@ -420,6 +454,7 @@ void LinkProcessor::releaseResources()
 void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
+    audioBlockCounter_.fetch_add(1, std::memory_order_relaxed);   // audio liveness
     // Pass-through: silence extra output channels
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear(ch, 0, buffer.getNumSamples());

@@ -129,7 +129,13 @@ struct alignas(64) LinkMeterFrame
     // prior offsets unchanged; old writers leave them 0.
     float lra         = 0.0f;      // LU
     float shortTermTP = -100.0f;   // dBTP
-    uint8_t _pad[128 - 4 - 11 * 4 - 6 * 4 - 4 - 8];   // -> 128 (2 cache lines)
+    // Audio liveness (v0.5.5): processBlock counter + publisher-side stale
+    // flag. Logic stops calling processBlock on idle channels — the engine
+    // freezes mid-song but heartbeats/publishes continue, so the receiver
+    // cannot detect it. The PUBLISHER owns this truth.
+    uint32_t audioBlocks = 0;      // processBlock call counter at publish time
+    uint32_t audioStale  = 0;      // 1 = no audio blocks for ~1s
+    uint8_t _pad[128 - 4 - 11 * 4 - 6 * 4 - 4 - 8 - 8];   // -> 128 (2 cache lines)
 };
 static_assert(sizeof(LinkMeterFrame) == 128, "LinkMeterFrame must be 128 bytes");
 
@@ -419,6 +425,13 @@ inline void closeRegistry(void* map, int fd)
 //  Registry slot operations  (unchanged from stage 2)
 // =============================================================================
 
+inline LinkMeterFrame* meterFrames(void* regMap)
+{
+    return reinterpret_cast<LinkMeterFrame*>(
+        static_cast<uint8_t*>(regMap) + sizeof(RegistryHeader)
+        + (size_t) kRegMaxSlots * sizeof(RegistrySlot));
+}
+
 /// Claim a free slot.  Returns slot index [0..15] or -1 if full.
 /// `audioFilename` = makeAudioFilename(linkName), stored so consumer can open it.
 inline int claimSlot(void* regMap,
@@ -440,6 +453,20 @@ inline int claimSlot(void* regMap,
             slots[i].audioFile[sizeof(slots[i].audioFile) - 1] = 0;
             slots[i].sampleRate  = sr;
             slots[i].numChannels = ch;
+            // Reset the slot's meter frame: a recycled slot must NEVER serve
+            // the previous owner's last values — the receiver would see an
+            // unfamiliar seq, treat it as a fresh frame, and style frozen
+            // mid-song numbers as live. Defaults (-100s) read as dashes.
+            {
+                LinkMeterFrame* dst = meterFrames(regMap) + i;
+                const LinkMeterFrame blank {};
+                const uint32_t s0 = loadRelaxed(&dst->seq) & ~1u;
+                storeRelease(&dst->seq, s0 + 1);
+                std::memcpy(reinterpret_cast<uint8_t*>(dst) + sizeof(uint32_t),
+                            reinterpret_cast<const uint8_t*>(&blank) + sizeof(uint32_t),
+                            sizeof(LinkMeterFrame) - sizeof(uint32_t));
+                storeRelease(&dst->seq, s0 + 2);
+            }
             storeRelease(&slots[i].activeFlag, 1u);   // default Active; setSlotActive() refines
             storeRelease(&slots[i].heartbeat, 1u);
             return i;
@@ -511,13 +538,6 @@ inline void reapSlot(void* regMap, int i)
 // =============================================================================
 //  Meter frames (registry v2)
 // =============================================================================
-
-inline LinkMeterFrame* meterFrames(void* regMap)
-{
-    return reinterpret_cast<LinkMeterFrame*>(
-        static_cast<uint8_t*>(regMap) + sizeof(RegistryHeader)
-        + (size_t) kRegMaxSlots * sizeof(RegistrySlot));
-}
 
 /// Publish a frame (Link side, ~10Hz, message thread). Seqlock: seq goes odd
 /// during the payload write, even when stable.

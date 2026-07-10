@@ -3947,6 +3947,12 @@ void EchoJayEditor::paintLinkMeterStrip(juce::Graphics& g, int stripX, int strip
     const int stripW = stripR - stripX;
     if (stripW < 160 || !st.has) return;
     const auto& mf = st.frame;
+    // Publisher-declared audio staleness: momentary group arrives as -100
+    // (dashes via the valid gates below); persisted values render dimmed.
+    // Independent of heartbeat/frame liveness — the instance is alive, the
+    // METERS are honest about the host idling the channel.
+    if (mf.audioStale != 0)
+        dim = juce::jmin(dim, 0.55f);
 
     // PSR / PLR exactly as the Meters tab derives them
     const bool psrValid = mf.shortTermTP > -90.0f && mf.shortTerm > -90.0f;
@@ -4065,6 +4071,23 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         hs.frame.truePeakCur = juce::jmax(md.truePeakL, md.truePeakR);
         hs.frame.lra         = md.loudnessRange;
         hs.frame.shortTermTP = md.shortTermTruePeak;
+        // Audio liveness for the Mix Bus row: the host idles the main
+        // plugin's channel too. If the engine's values freeze for ~1s (or
+        // genuine silence), blank the momentary group — same rule as Links.
+        if (md.momentary != lastHostMom_ || md.rmsL != lastHostRms_)
+        {
+            lastHostMom_ = md.momentary;
+            lastHostRms_ = md.rmsL;
+            lastHostAdvanceMs_ = nowMs;
+        }
+        const bool hostAudioStale = md.isSilent || (nowMs - lastHostAdvanceMs_) > 1000;
+        hs.frame.audioStale = hostAudioStale ? 1u : 0u;
+        if (hostAudioStale)
+        {
+            hs.frame.momentary   = -100.0f;
+            hs.frame.shortTerm   = -100.0f;
+            hs.frame.shortTermTP = -100.0f;
+        }
         paintLinkMeterStrip(g, pad + 14 + nameW + 10, pad + fw - 14, y, cardH,
                             hs, /*fresh=*/!md.isSilent, 1.0f);
         meterTips_.emplace_back(juce::Rectangle<int>(pad, y, fw, cardH),
@@ -4198,12 +4221,13 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
         const int nameW = 128;
         g.drawText(rowName, cardX + 14, y + 8, nameW, 18, juce::Justification::centredLeft);
-        if (!slot.active || !fresh || !st.has)
+        if (!slot.active || !fresh || !st.has || st.frame.audioStale != 0)
         {
             g.setColour(C::text3);
             g.setFont(juce::Font(juce::FontOptions(9.5f)));
             g.drawText(!slot.active ? "inactive"
-                       : !st.has ? "no data" : "stale",
+                       : !st.has ? "no data"
+                       : !fresh ? "stale" : "no audio",
                        cardX + 14, y + 28, nameW, 12, juce::Justification::centredLeft);
         }
 

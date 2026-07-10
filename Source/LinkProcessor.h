@@ -213,6 +213,13 @@ private:
     MeterEngine meterEngine_;
     int meterFramesPublished_ = 0;    // frame diagnostics counter
     LinkMeterFrame lastPublishedFrame_;   // frozen-engine guard (see publish)
+    // Audio liveness: processBlock bumps this; the publisher marks frames
+    // audioStale when it stops advancing for ~1s (Logic idles silent
+    // channels — the engine freezes but heartbeats/timers keep running)
+    std::atomic<uint32_t> audioBlockCounter_ { 0 };
+    uint32_t lastSeenBlockCount_ = 0;
+    uint32_t lastBlockAdvanceMs_ = 0;
+    bool     audioWasStale_ = false;   // transition logging
     void publishMeterFrame();
 
     // Unnamed Links still register ("Untitled" rows): per-instance fallback
