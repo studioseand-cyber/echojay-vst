@@ -337,6 +337,12 @@ private:
                     float size = 1, bright = 1, band = 2.5f; };
         std::vector<Pt> pts;
         float breathPhase = 0.0f, loudSm = 0.0f;
+        // Drift time is a per-tick accumulator like breathPhase — NEVER the
+        // raw millisecond counter: at system-uptime magnitudes float only
+        // resolves ~0.06s, which quantised the sine args into visible jitter
+        float driftTime = 0.0f;
+        int   tickCount = 0;
+        bool  hadSignal = false;
         std::array<float, 6> bandSm { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
         // returns true when signal present; fills loudness 0..1 + band rels 0..1
         std::function<bool(float&, std::array<float, 6>&)> fetchAudio;

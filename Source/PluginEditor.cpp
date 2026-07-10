@@ -1560,10 +1560,20 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         auto md = processorRef.getMeterEngine().getMeterData();
         if (md.isSilent) return false;
         loud = juce::jlimit(0.0f, 1.0f, (md.momentary + 40.0f) / 30.0f);
+        // macroBandDb holds ABSOLUTE per-octave dB (typically -20..-50).
+        // The pink-referenced "rel" is db - mean(bands) — same derivation
+        // as the chat JSON's rel field. Mapping the absolute values as if
+        // they were rels clamped every band to 0 and cancelled the
+        // loudness lift: that was the "no audio reaction" bug.
+        float mean = 0.0f; int n = 0;
+        for (auto db : md.macroBandDb)
+            if (db > -119.0f) { mean += db; ++n; }
+        if (n == 0) { bands.fill(0.5f); return true; }   // spectrum warming up
+        mean /= (float) n;
         for (size_t i = 0; i < bands.size(); ++i)
             bands[i] = md.macroBandDb[i] <= -119.0f
-                     ? 0.5f   // no data = neutral, matches idle baseline
-                     : juce::jlimit(0.0f, 1.0f, (md.macroBandDb[i] + 9.0f) / 18.0f);
+                     ? 0.5f
+                     : juce::jlimit(0.0f, 1.0f, (md.macroBandDb[i] - mean + 6.0f) / 12.0f);
         return true;
     };
     addChildComponent(settingsOrbCard_);
@@ -2352,11 +2362,13 @@ void EchoJayEditor::SettingsOrbCard::buildFromLogo()
                      + (rng.nextFloat() - 0.5f) * norm;
             p.hy   = ((float) (y - y0) - (float) gh * 0.5f) * norm
                      + (rng.nextFloat() - 0.5f) * norm;
-            p.fx   = 0.10f + rng.nextFloat() * 0.25f;      // Hz
-            p.fy   = 0.10f + rng.nextFloat() * 0.25f;
+            // Motion budget: peak speed = amp * 2π * freq — these ranges top
+            // out ~1.5px/s, i.e. 1-2px of drift over a second, not per frame
+            p.fx   = 0.05f + rng.nextFloat() * 0.07f;      // Hz
+            p.fy   = 0.05f + rng.nextFloat() * 0.07f;
             p.px   = rng.nextFloat() * juce::MathConstants<float>::twoPi;
             p.py   = rng.nextFloat() * juce::MathConstants<float>::twoPi;
-            p.amp  = 1.5f + rng.nextFloat() * 2.0f;        // px, "a few"
+            p.amp  = 1.0f + rng.nextFloat() * 1.0f;        // px
             const float r = rng.nextFloat();               // Orb-like: mostly small
             p.size = r < 0.7f ? 1.0f + rng.nextFloat() : 2.0f + rng.nextFloat() * 1.2f;
             p.bright = 0.6f + rng.nextFloat() * 0.4f;
@@ -2376,14 +2388,30 @@ void EchoJayEditor::SettingsOrbCard::timerCallback()
     breathPhase += juce::MathConstants<float>::twoPi / (7.0f * 15.0f);   // ~7s period
     if (breathPhase > juce::MathConstants<float>::twoPi)
         breathPhase -= juce::MathConstants<float>::twoPi;
+    driftTime += 1.0f / 15.0f;       // accumulator, same trick as breathPhase
+    ++tickCount;
 
     float loud = 0.0f;
     std::array<float, 6> bands { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
-    if (!(fetchAudio && fetchAudio(loud, bands)))
+    const bool has = fetchAudio && fetchAudio(loud, bands);
+    if (!has)
     {
         loud = 0.0f;                 // idle: baseline breath + drift continue
         bands = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
     }
+    if (has != hadSignal)
+    {
+        hadSignal = has;
+        EchoJay_NSLog(has ? "EJOrbCard: signal -> active"
+                          : "EJOrbCard: signal lost -> idle decay");
+    }
+    if (has && tickCount % 15 == 0)  // once per second while audio plays
+        EchoJay_NSLog(("EJOrbCard: audio loud=" + juce::String(loud, 2)
+                       + " bands=[" + juce::String(bands[0], 2) + " " + juce::String(bands[1], 2)
+                       + " " + juce::String(bands[2], 2) + " " + juce::String(bands[3], 2)
+                       + " " + juce::String(bands[4], 2) + " " + juce::String(bands[5], 2)
+                       + "] (sub..air, 0.5=flat)").toRawUTF8());
+
     // Meter-style attack/release so nothing jumps
     auto smooth = [](float cur, float target)
     { return cur + (target - cur) * (target > cur ? 0.35f : 0.08f); };
@@ -2406,7 +2434,7 @@ void EchoJayEditor::SettingsOrbCard::paint(juce::Graphics& g)
     const float scale = 0.65f * juce::jmin(r.getWidth(), r.getHeight())
                         * (1.0f + breathDepth * std::sin(breathPhase));
     const float cx = r.getCentreX(), cy = r.getCentreY();
-    const float t = (float) (juce::Time::getMillisecondCounterHiRes() * 0.001);
+    const float t = driftTime;   // per-tick accumulator — see header note
     const float gBright = 0.75f + 0.35f * loudSm;
     const juce::Colour cyan(0xff22d3ee), teal(0xff2dd4bf);
 
