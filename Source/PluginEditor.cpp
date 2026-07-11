@@ -1039,6 +1039,20 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         {
             bool cur = processorRef.cmpSyncToTransport.load();
             processorRef.cmpSyncToTransport.store(!cur);
+            if (!cur)
+            {
+                // Re-engaging: zero offset (host 1:23 = reference 1:23)
+                processorRef.cmpSyncOffsetSec.store(0.0);
+            }
+            else
+            {
+                // Disengaging freezes the reference where it is
+                for (int sl = 0; sl < 2; ++sl)
+                    if (processorRef.cmpSlotIsRef[sl].load())
+                        processorRef.cmpStream[sl].playing.store(false);
+            }
+            EchoJay_NSLog(("EJCmp: sync " + juce::String(!cur ? "ON (offset reset)"
+                                                              : "OFF (reference frozen)")).toRawUTF8());
             compareSyncBtn_.setColour(juce::TextButton::buttonColourId,
                 !cur ? juce::Colour(0xff1a2d4a) : C::bg3);
             compareSyncBtn_.setColour(juce::TextButton::textColourOffId,
@@ -3727,6 +3741,19 @@ void EchoJayEditor::toggleComparePlay(bool isTop)
 
     bool wasPlaying = s.playing.load();
 
+    // Manual play on a reference slot while SYNC is on DISENGAGES sync
+    // (unlatching the button) rather than being disabled — the manual
+    // override taking over is the less surprising behaviour, and the
+    // button state stays honest.
+    if (processorRef.cmpSyncToTransport.load()
+        && processorRef.cmpSlotIsRef[slotIdx].load() && !wasPlaying)
+    {
+        processorRef.cmpSyncToTransport.store(false);
+        compareSyncBtn_.setColour(juce::TextButton::buttonColourId, C::bg3);
+        compareSyncBtn_.setColour(juce::TextButton::textColourOffId, C::text3);
+        EchoJay_NSLog("EJCmp: sync disengaged by manual play");
+    }
+
     // HONEST TRANSPORT: playback renders inside processBlock. If the host
     // has idled this channel (Logic, stopped transport), pressing play
     // cannot sound — show the hint instead of pretending. Keyed on actual
@@ -3806,6 +3833,7 @@ void EchoJayEditor::toggleCompareAudible(bool isTop)
 void EchoJayEditor::startCompareStream(int slot)
 {
     auto& s = (slot == 0) ? compareTop_ : compareBot_;
+    processorRef.cmpSlotIsRef[slot].store(s.kind == CompareSlotState::Kind::Reference);
     auto wavPath = resolveSlotWavPath(s);
     if (wavPath.isEmpty() || wavPath == "WEB")
     {
@@ -10394,6 +10422,24 @@ void EchoJayEditor::timerCallback()
         linkRefreshTick = 0;
         processorRef.refreshLinkRegistry();
     }
+    // SYNC follow diagnostics — 1/s while Compare is open and sync rolls
+    if (currentView == View::Compare && processorRef.cmpSyncToTransport.load()
+        && ++cmpSyncDiagTick_ >= 20)
+    {
+        cmpSyncDiagTick_ = 0;
+        const double host = processorRef.cmpLastHostTimeSec.load();
+        for (int sl = 0; sl < 2; ++sl)
+            if (processorRef.cmpSlotIsRef[sl].load()
+                && processorRef.cmpStream[sl].playing.load()
+                && processorRef.cmpStream[sl].sampleRate > 0)
+                EchoJay_NSLog(("EJCmp: sync host=" + juce::String(host, 1)
+                               + "s ref[" + juce::String(sl) + "]="
+                               + juce::String(processorRef.cmpStream[sl].playbackPos
+                                              / processorRef.cmpStream[sl].sampleRate, 1)
+                               + "s off=" + juce::String(processorRef.cmpSyncOffsetSec.load(), 2)
+                               + "s").toRawUTF8());
+    }
+
     // Host audio liveness for the Compare transport (see hostAudioAlive)
     {
         const uint32_t bc = processorRef.getAudioBlockCount();
@@ -13054,6 +13100,24 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
                 {
                     std::lock_guard<std::mutex> lock(processorRef.cmpMutex);
                     s.playbackPos = (int)(fraction * s.sampleCount);
+                    // Click-seek on a reference during SYNC: capture the
+                    // host->reference offset at this moment and keep it
+                    // (lining a drop up against a different arrangement)
+                    if (processorRef.cmpSyncToTransport.load()
+                        && processorRef.cmpSlotIsRef[sa.slotIdx].load()
+                        && s.sampleRate > 0)
+                    {
+                        const double host = processorRef.cmpLastHostTimeSec.load();
+                        if (host >= 0.0)
+                        {
+                            const double refSec = (double) s.playbackPos / s.sampleRate;
+                            processorRef.cmpSyncOffsetSec.store(refSec - host);
+                            EchoJay_NSLog(("EJCmp: sync offset captured "
+                                           + juce::String(refSec - host, 2) + "s"
+                                           + " (host " + juce::String(host, 1)
+                                           + "s -> ref " + juce::String(refSec, 1) + "s)").toRawUTF8());
+                        }
+                    }
                     // Start playing + make audible on seek
                     s.playing.store(true);
                     processorRef.cmpAudible.store(sa.slotIdx);

@@ -316,6 +316,7 @@ private:
     // cannot sound — the play state must not pretend (hint shown instead).
     uint32_t cmpLastBlockCount_ = 0, cmpLastBlockAdvanceMs_ = 0;
     uint32_t cmpHintUntilMs_ = 0;
+    int cmpSyncDiagTick_ = 0;   // 1Hz sync-follow diagnostic throttle
     bool hostAudioAlive() const
     { return juce::Time::getMillisecondCounter() - cmpLastBlockAdvanceMs_ < 500; }
 

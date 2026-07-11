@@ -255,6 +255,13 @@ public:
     };
     CmpStream cmpStream[2];
     std::atomic<uint32_t> audioBlocksProcessed_ { 0 };
+    // SYNC position-follow (live A + reference B): reference slots track
+    // the DAW playhead. ref time = host time + offset; offset is 0 on SYNC
+    // enable and captured when the user click-seeks the reference during
+    // sync (lining a drop up against a different arrangement).
+    std::atomic<bool>   cmpSlotIsRef[2] { { false }, { false } };  // set by editor
+    std::atomic<double> cmpSyncOffsetSec  { 0.0 };
+    std::atomic<double> cmpLastHostTimeSec { -1.0 };  // last playhead seconds
     mutable std::mutex cmpMutex;             // protects both streams' buffers
     std::atomic<int> cmpAudible { -1 };      // which stream is audible (-1 = none)
     std::atomic<bool> cmpSyncToTransport { true }; // sync capture playback to DAW transport

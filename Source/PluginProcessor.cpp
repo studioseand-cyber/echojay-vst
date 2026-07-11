@@ -434,6 +434,32 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                 }
             }
 
+            // SYNC position-follow: reference slots track the DAW playhead
+            // every block (host->reference time, zero offset by default plus
+            // any captured manual offset). Continuous host motion assigns
+            // continuous positions; loops/jumps snap by the SAME assignment
+            // - no smoothing, no chasing.
+            if (cmpSyncToTransport.load() && !cmpBothCaptures.load() && playing)
+            {
+                if (auto tSec = pos->getTimeInSeconds())
+                {
+                    cmpLastHostTimeSec.store(*tSec);
+                    const double off = cmpSyncOffsetSec.load();
+                    std::lock_guard<std::mutex> lock(cmpMutex);
+                    for (int sl = 0; sl < 2; ++sl)
+                    {
+                        auto& st = cmpStream[sl];
+                        if (!cmpSlotIsRef[sl].load() || !st.loaded.load()
+                            || st.sampleCount <= 0 || st.sampleRate <= 0) continue;
+                        const double lenSec = (double) st.sampleCount / st.sampleRate;
+                        const double refSec = juce::jlimit(0.0, lenSec, *tSec + off);
+                        st.playbackPos = juce::jmin((int)(refSec * st.sampleRate),
+                                                    st.sampleCount - 1);
+                        if (!st.playing.load()) st.playing.store(true);
+                    }
+                }
+            }
+
             wasTransportPlaying = playing;
         }
     }
