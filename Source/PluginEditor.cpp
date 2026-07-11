@@ -9189,7 +9189,12 @@ void EchoJayEditor::resized()
     // outside the viewport's right edge by symmetry of chatW - 4.
     int chatAvatarReserve = 32; // 6px left margin + 24px avatar + 2px gap
     int chatScrollTop = topH + 32;
-    int chatScrollBottom = inputY - 8;
+    // Empty-state: the viewport must NOT cover the centred input — it is
+    // added after chatInput (above it in z-order) and its empty transparent
+    // body swallows clicks. The message area effectively doesn't exist in
+    // the empty state, so the scroll ends above the greeting.
+    int chatScrollBottom = chatCentredEmpty_ ? chatEmptyHeading_.getY() - 8
+                                             : inputY - 8;
     int chatScrollH = juce::jmax(50, chatScrollBottom - chatScrollTop);
     chatScroll.setBounds(chatStartX + chatAvatarReserve, chatScrollTop,
                          chatW - chatAvatarReserve - 2, chatScrollH);
