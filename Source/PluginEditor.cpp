@@ -7374,7 +7374,12 @@ void EchoJayEditor::paintSpectrumPanel(juce::Graphics& g, juce::Rectangle<int> a
     {
         // Waterfall replaces the curve; same panel rect, same log-frequency
         // axis and pink-tilted display-bin values so the two views agree.
-        paintSpectrogramContent(g, x, y, w, barMaxH);
+        // Inset 12px below the toggle row: each frequency label draws 10px
+        // ABOVE its gridline, so the topmost (20k) at the content edge poked
+        // into the SPECTRUM/SPECTROGRAM header. The spectrum view's labels
+        // run along the BOTTOM axis, so only this view needs the clearance.
+        const int topInset = 12;
+        paintSpectrogramContent(g, x, y + topInset, w, barMaxH - topInset);
         return;
     }
     
