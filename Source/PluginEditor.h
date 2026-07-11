@@ -1369,8 +1369,24 @@ private:
         bool timedOut = false;
     };
     std::vector<LinkCtrlPending> linkCtrlPending_;
-    // Toggle zones carry the row's ADDRESS, not its display name
-    std::vector<std::pair<juce::Rectangle<int>, juce::String>> linkToggleZones_;
+
+    // LINK MONITOR row list — scrollable. The Mix Bus card stays PINNED in
+    // the panel painter above; only Link rows live in this viewport child.
+    // Rows render in LIST order: alphabetical by name, Untitleds last (by
+    // uid, so the list is stable while scrolling). The viewport preserves
+    // scroll position across 10Hz data refreshes and tab switches; the
+    // shared LookAndFeel supplies the thin EchoJay scrollbar.
+    struct LinkListView : juce::Component
+    {
+        EchoJayEditor* owner = nullptr;
+        // toggle zones in LOCAL coords, carrying the row's ADDRESS (uid)
+        std::vector<std::pair<juce::Rectangle<int>, juce::String>> zones;
+        void paint(juce::Graphics& g) override;
+        void mouseDown(const juce::MouseEvent& e) override;
+    };
+    static constexpr int kLinkRowH = 64, kLinkRowGap = 8;
+    LinkListView   linkListView_;
+    juce::Viewport linkListViewport_;
     // uid for a named Link from the registry; legacy name-derived fallback
     // for pre-uid Links (empty uid in their slots)
     juce::String linkAddrForName(const juce::String& linkName) const;

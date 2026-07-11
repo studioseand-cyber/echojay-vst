@@ -1552,6 +1552,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                                 juce::dontSendNotification);
     addChildComponent(chainSlotCountLabel);
 
+    // LINK MONITOR scrollable row list (Mix Bus card stays pinned above it)
+    linkListView_.owner = this;
+    linkListViewport_.setViewedComponent(&linkListView_, false);
+    linkListViewport_.setScrollBarsShown(true, false);
+    addChildComponent(linkListViewport_);
+
     // Settings ambient visual — glyph extracted once from the embedded logo
     // PNG's alpha; the card drives itself on a 15fps timer only while shown
     settingsOrbCard_.buildFromLogo();
@@ -1853,6 +1859,7 @@ void EchoJayEditor::showLoginScreen()
         &compareBtn, &settingsBtn, &playbackBtn, &wavSavedLabel, &upgradeBtn };
     for (auto* c : mainComps) c->setVisible(false);
     logoutBtn.setVisible(false);
+    linkListViewport_.setVisible(false);
     settingsName.setVisible(false); settingsMonitors.setVisible(false);
     settingsHeadphones.setVisible(false); settingsGenres.setVisible(false);
     settingsPlugins.setVisible(false); settingsExpLevel.setVisible(false);
@@ -4010,15 +4017,179 @@ void EchoJayEditor::paintLinkMeterStrip(juce::Graphics& g, int stripX, int strip
         cx += actualW;
     }
 }
+// =============================================================================
+//  LinkListView — the scrollable Link rows (Mix Bus card stays pinned above)
+// =============================================================================
+void EchoJayEditor::LinkListView::paint(juce::Graphics& g)
+{
+    if (owner == nullptr) return;
+    using C = EchoJayLookAndFeel::Colours;
+    auto& ed = *owner;
+    zones.clear();
+
+    // LIST order: alphabetical by name, Untitleds last (by uid) — stable
+    // while scrolling regardless of registry slot order (claim order)
+    auto sorted = ed.processorRef.getLinkSlotInfos();   // copy, message thread
+    std::stable_sort(sorted.begin(), sorted.end(),
+        [](const EchoJayProcessor::LinkSlotInfo& a, const EchoJayProcessor::LinkSlotInfo& b)
+        {
+            const bool au = a.name.isEmpty(), bu = b.name.isEmpty();
+            if (au != bu) return bu;                    // named first
+            if (au) return a.uid < b.uid;               // untitled: stable by uid
+            return a.name.compareIgnoreCase(b.name) < 0;
+        });
+
+    const uint32_t nowMs = juce::Time::getMillisecondCounter();
+    const int cardH = kLinkRowH;
+    const int dotD  = 10;
+    const int cardW = getWidth();
+    int y = 0;
+    int untitledCount = 0;
+
+    for (const auto& slot : sorted)
+    {
+        const int cardX = 0;
+
+        // Label + ADDRESS (uid; legacy name-derived fallback). The name is
+        // a label, never an address.
+        juce::String rowName = slot.name;
+        if (rowName.isEmpty())
+            rowName = ++untitledCount > 1 ? "Untitled " + juce::String(untitledCount)
+                                          : juce::String("Untitled");
+        const juce::String rowAddr = slot.uid.isNotEmpty()
+                                   ? slot.uid : LinkShm::makeSafeFilePart(slot.name);
+
+        // Card background
+        g.setColour(C::bg3);
+        g.fillRoundedRectangle((float)cardX, (float)y, (float)cardW, (float)cardH, 6.f);
+        g.setColour(C::border2);
+        g.drawRoundedRectangle((float)cardX, (float)y, (float)cardW, (float)cardH, 6.f, 1.f);
+
+        // Connection dot
+        const juce::Colour dotCol = slot.connected
+            ? juce::Colour(0xff22c55e)   // green
+            : juce::Colour(0xffef4444);  // red
+        const float dotX = (float)(cardX + cardW - dotD - 10);
+        const float dotY = (float)(y + (cardH - dotD) / 2);
+        g.setColour(dotCol.withAlpha(0.25f));
+        g.fillEllipse(dotX - 3.f, dotY - 3.f, (float)(dotD + 6), (float)(dotD + 6));
+        g.setColour(dotCol);
+        g.fillEllipse(dotX, dotY, (float)dotD, (float)dotD);
+
+        // Remote Active control — styled identically to the Link's own
+        // toggle; pending/timeout states keyed on the row ADDRESS
+        {
+            bool pending = false, timedOut = false, target = false;
+            for (auto& p : ed.linkCtrlPending_)
+                if (p.addr == rowAddr)
+                { pending = !p.timedOut; timedOut = p.timedOut; target = p.target; }
+
+            const auto cyan  = juce::Colour(0xff22d3ee);
+            const auto amber = juce::Colour(0xfff59e0b);
+            const auto coral = juce::Colour(0xffff6d5a);
+            const auto boxOutline = juce::Colour(0xffa0a0b8);
+            const auto labelCol   = juce::Colour(0xfff0f0f5);
+
+            const float fontSize  = 15.0f;
+            const float tickWidth = fontSize * 1.1f;
+
+            juce::Rectangle<int> zone(cardX + cardW - dotD - 10 - 86,
+                                      y + (cardH - 24) / 2, 76, 24);
+            zones.push_back({ zone, rowAddr });
+
+            juce::Rectangle<float> tickBounds((float)zone.getX(),
+                                              (float)zone.getCentreY() - tickWidth * 0.5f,
+                                              tickWidth, tickWidth);
+            g.setColour(timedOut ? coral : boxOutline);
+            g.drawRoundedRectangle(tickBounds, 4.0f, 1.0f);
+
+            bool showTick = pending ? target : (!timedOut && slot.active);
+            if (showTick)
+            {
+                g.setColour(pending ? amber.withAlpha(0.6f) : cyan);
+                auto tick = getLookAndFeel().getTickShape(0.75f);
+                g.fillPath(tick, tick.getTransformToScaleToFit(
+                                     tickBounds.reduced(4.0f, 5.0f), false));
+            }
+
+            g.setColour(timedOut ? coral : labelCol);
+            g.setFont(juce::Font(juce::FontOptions(fontSize)));
+            g.drawText(timedOut ? "no resp" : pending ? "Active..." : "Active",
+                       zone.getX() + (int)tickWidth + 6, zone.getY(),
+                       zone.getWidth() - (int)tickWidth - 6, zone.getHeight(),
+                       juce::Justification::centredLeft);
+        }
+
+        // ---- Meter frame ingest + staleness (keyed on the row ADDRESS) ----
+        auto& st = ed.linkStripStates_[rowAddr];
+        {
+            LinkMeterFrame f;
+            if (slot.regIdx >= 0 && ed.processorRef.readLinkMeterFrame(slot.regIdx, f))
+            {
+                if (!st.has || f.seq != st.lastSeq)
+                {
+                    st.frame = f;
+                    st.lastSeq = f.seq;
+                    st.lastChangeMs = nowMs;
+                    st.has = true;
+                }
+            }
+        }
+        const bool fresh = st.has && slot.active
+                        && (nowMs - st.lastChangeMs) < 1000;
+        const float dim  = fresh ? 1.0f : 0.4f;
+
+        // Name — vertically centred (the stale/inactive subtitle is gone;
+        // dimming, dashes, checkbox and dot carry the state)
+        g.setColour(C::text);
+        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+        const int nameW = 128;
+        g.drawText(rowName, cardX + 14, y + (cardH - 18) / 2, nameW, 18,
+                   juce::Justification::centredLeft);
+
+        // Meter strip between the name column and the Active toggle
+        const int stripX = cardX + 14 + nameW + 10;
+        const int stripR = cardX + cardW - dotD - 10 - 86 - 12;
+        if (st.has)
+            ed.paintLinkMeterStrip(g, stripX, stripR, y, cardH, st, fresh, dim);
+        else
+        {
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(10.5f)));
+            g.drawText(slot.connected ? "waiting for meters..." : "waiting for audio...",
+                       stripX, y, juce::jmax(60, stripR - stripX), cardH,
+                       juce::Justification::centredLeft);
+        }
+
+        y += cardH + kLinkRowGap;
+    }
+}
+
+void EchoJayEditor::LinkListView::mouseDown(const juce::MouseEvent& e)
+{
+    if (owner == nullptr) return;
+    const auto pos = e.getPosition();
+    for (auto& z : zones)
+        if (z.first.contains(pos))
+        {
+            bool cur = true;
+            for (auto& li : owner->processorRef.getLinkSlotInfos())
+            {
+                const juce::String addr = li.uid.isNotEmpty()
+                                        ? li.uid : LinkShm::makeSafeFilePart(li.name);
+                if (addr == z.second) { cur = li.active; break; }
+            }
+            owner->sendLinkActiveCommand(z.second, !cur);
+            return;
+        }
+}
+
 void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int> area)
 {
     using C = EchoJayLookAndFeel::Colours;
     const int pad = 32;
     int y = area.getY() + 16;
     const int fw = area.getWidth() - pad * 2;
-
-    linkToggleZones_.clear();   // repopulated per row below
-    meterTips_.clear();         // row tooltips (sample rate etc.) repopulate below
 
     const uint32_t nowMs = juce::Time::getMillisecondCounter();
 
@@ -4090,9 +4261,6 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         }
         paintLinkMeterStrip(g, pad + 14 + nameW + 10, pad + fw - 14, y, cardH,
                             hs, /*fresh=*/!md.isSilent, 1.0f);
-        meterTips_.emplace_back(juce::Rectangle<int>(pad, y, fw, cardH),
-                                "This EchoJay instance's channel. Sample rate: "
-                                + juce::String((int) processorRef.getSampleRate()) + " Hz");
 
         y += cardH + 6;
     }
@@ -4113,152 +4281,8 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
         return;
     }
 
-    // One mini meter strip per slot (console overview)
-    const int cardH = 64;
-    const int dotD  = 10;
-    int untitledCount = 0;
-
-    for (const auto& slot : slots)
-    {
-        const int cardX = pad;
-        const int cardW = fw;
-
-        // Row label + ADDRESS first — the toggle block below needs both.
-        // Address = per-instance uid (legacy name-derived fallback); it keys
-        // strip state, pending lookups and toggle commands. The display name
-        // is just a label ("Untitled N" for unnamed instances).
-        juce::String rowName = slot.name;
-        if (rowName.isEmpty())
-            rowName = ++untitledCount > 1 ? "Untitled " + juce::String(untitledCount)
-                                          : juce::String("Untitled");
-        const juce::String rowAddr = slot.uid.isNotEmpty()
-                                   ? slot.uid : LinkShm::makeSafeFilePart(slot.name);
-
-        // Card background
-        g.setColour(C::bg3);
-        g.fillRoundedRectangle((float)cardX, (float)y, (float)cardW, (float)cardH, 6.f);
-        g.setColour(C::border2);
-        g.drawRoundedRectangle((float)cardX, (float)y, (float)cardW, (float)cardH, 6.f, 1.f);
-
-        // Connection dot
-        const juce::Colour dotCol = slot.connected
-            ? juce::Colour(0xff22c55e)   // green
-            : juce::Colour(0xffef4444);  // red
-        const float dotX = (float)(cardX + cardW - dotD - 10);
-        const float dotY = (float)(y + (cardH - dotD) / 2);
-        g.setColour(dotCol.withAlpha(0.25f));
-        g.fillEllipse(dotX - 3.f, dotY - 3.f, (float)(dotD + 6), (float)(dotD + 6));
-        g.setColour(dotCol);
-        g.fillEllipse(dotX, dotY, (float)dotD, (float)dotD);
-
-        // Remote Active control (left of the dot) — styled IDENTICALLY to the
-        // Link plugin's own toggle (LookAndFeel_V4 tick box: fontSize 15 →
-        // 16.5px rounded square, 4px corner, tickDisabled outline, cyan tick,
-        // plain 15px label). Reflects the ACKED registry state; pending shows
-        // a dim amber tick of the requested state + "Active..."; timeout
-        // shows a coral box outline + "no resp", then reverts to registry
-        // truth. Authority stays with the Link.
-        {
-            bool pending = false, timedOut = false, target = false;
-            for (auto& p : linkCtrlPending_)
-                if (p.addr == rowAddr)
-                { pending = !p.timedOut; timedOut = p.timedOut; target = p.target; }
-
-            const auto cyan  = juce::Colour(0xff22d3ee);   // Link kCyan (tick)
-            const auto amber = juce::Colour(0xfff59e0b);
-            const auto coral = juce::Colour(0xffff6d5a);
-            const auto boxOutline = juce::Colour(0xffa0a0b8);   // Link tickDisabledColourId
-            const auto labelCol   = juce::Colour(0xfff0f0f5);   // Link textColourId
-
-            const float fontSize  = 15.0f;
-            const float tickWidth = fontSize * 1.1f;   // LookAndFeel_V4 metric
-
-            juce::Rectangle<int> zone(cardX + cardW - dotD - 10 - 86,
-                                      y + (cardH - 24) / 2, 76, 24);
-            linkToggleZones_.push_back({ zone, rowAddr });
-
-            juce::Rectangle<float> tickBounds((float)zone.getX(),
-                                              (float)zone.getCentreY() - tickWidth * 0.5f,
-                                              tickWidth, tickWidth);
-            g.setColour(timedOut ? coral : boxOutline);
-            g.drawRoundedRectangle(tickBounds, 4.0f, 1.0f);
-
-            bool showTick = pending ? target : (!timedOut && slot.active);
-            if (showTick)
-            {
-                g.setColour(pending ? amber.withAlpha(0.6f) : cyan);
-                auto tick = getLookAndFeel().getTickShape(0.75f);
-                g.fillPath(tick, tick.getTransformToScaleToFit(
-                                     tickBounds.reduced(4.0f, 5.0f), false));
-            }
-
-            g.setColour(timedOut ? coral : labelCol);
-            g.setFont(juce::Font(juce::FontOptions(fontSize)));
-            g.drawText(timedOut ? "no resp" : pending ? "Active..." : "Active",
-                       zone.withTrimmedLeft((int)tickWidth + 6),
-                       juce::Justification::centredLeft);
-        }
-
-        // ---- Meter frame ingest + staleness (per Link name) --------------
-        // fresh = the Link's ~10Hz seq advanced within the last second AND
-        // the Link is Active. Otherwise the strip freezes on last-known
-        // values and dims — no fake motion. New frames also feed the
-        // ribbon ring, so scrolling rides the 10Hz frame clock directly.
-        auto& st = linkStripStates_[rowAddr];
-        {
-            LinkMeterFrame f;
-            if (slot.regIdx >= 0 && processorRef.readLinkMeterFrame(slot.regIdx, f))
-            {
-                if (!st.has || f.seq != st.lastSeq)
-                {
-                    st.frame = f;
-                    st.lastSeq = f.seq;
-                    st.lastChangeMs = nowMs;
-                    st.has = true;
-                }
-            }
-        }
-        const bool fresh = st.has && slot.active
-                        && (nowMs - st.lastChangeMs) < 1000;
-        const float dim  = fresh ? 1.0f : 0.4f;
-
-        // Name (status caption only when something needs saying — the old
-        // "sr 48000" subtitle moved into the row tooltip)
-        g.setColour(C::text);
-        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-        const int nameW = 128;
-        g.drawText(rowName, cardX + 14, y + 8, nameW, 18, juce::Justification::centredLeft);
-        if (!slot.active || !fresh || !st.has || st.frame.audioStale != 0)
-        {
-            g.setColour(C::text3);
-            g.setFont(juce::Font(juce::FontOptions(9.5f)));
-            g.drawText(!slot.active ? "inactive"
-                       : !st.has ? "no data"
-                       : !fresh ? "stale" : "no audio",
-                       cardX + 14, y + 28, nameW, 12, juce::Justification::centredLeft);
-        }
-
-        // Meter strip between the name column and the Active toggle
-        const int stripX = cardX + 14 + nameW + 10;
-        const int stripR = cardX + cardW - dotD - 10 - 86 - 12;   // toggle zone left edge
-        if (st.has)
-            paintLinkMeterStrip(g, stripX, stripR, y, cardH, st, fresh, dim);
-        else
-        {
-            g.setColour(C::text3);
-            g.setFont(juce::Font(juce::FontOptions(10.5f)));
-            g.drawText(slot.connected ? "waiting for meters..." : "waiting for audio...",
-                       stripX, y, juce::jmax(60, stripR - stripX), cardH,
-                       juce::Justification::centredLeft);
-        }
-
-        meterTips_.emplace_back(juce::Rectangle<int>(cardX, y, cardW, cardH),
-                                rowName + " — sample rate " + juce::String((int) slot.sampleRate)
-                                + " Hz, frames " + juce::String(slot.framesRead));
-
-        y += cardH + 8;
-        if (y > area.getBottom() - cardH) break; // don't overflow
-    }
+    // Link rows live in linkListViewport_ / linkListView_ (scrollable,
+    // Mix Bus card above stays pinned). Painting there, not here.
 }
 
 // =============================================================================
@@ -4893,6 +4917,9 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
         if (particleVisual != nullptr)
             particleVisual->stop();
     }
+
+    // LINK MONITOR row list exists only on the Link tab (full mode)
+    linkListViewport_.setVisible(t == Tab::Link && !compactMode && !visualOnlyMode);
 
     // Per-tab setup
     switch (t)
@@ -6585,8 +6612,7 @@ juce::String EchoJayEditor::getTooltip()
     // each frame; later entries are more specific and win (reverse search).
     // Suppressed while anything modal (menu/dialog) is up; TooltipWindow
     // itself never shows while a mouse button is down (drags).
-    if (currentScreen != Screen::Main
-        || (currentTab != Tab::Meters && currentTab != Tab::Link)) return {};
+    if (currentScreen != Screen::Main || currentTab != Tab::Meters) return {};
     if (juce::Component::getCurrentlyModalComponent() != nullptr) return {};
     auto pos = getMouseXYRelative();
     for (auto it = meterTips_.rbegin(); it != meterTips_.rend(); ++it)
@@ -8905,7 +8931,18 @@ void EchoJayEditor::resized()
     auto cols = computeColumns(b.getWidth());
     int chatW = cols.chatW, mW = cols.mW;
 
-    // Link tab: no child components to lay out — painted directly
+    // Link tab: the scrollable row list is the one child component; the
+    // title + pinned Mix Bus card above it are painted directly
+    if (linkMonitorTab && !compactMode && !visualOnlyMode)
+    {
+        const int pad = 32;
+        const int abOffL = abBarShowing ? kAbBarH : 0;
+        // Below: 16 top pad + 26 title + 64 host card + 6 gap (mirrors the
+        // panel painter's layout constants)
+        const int listTop = topH + 16 + 26 + 64 + 6;
+        linkListViewport_.setBounds(pad, listTop, mW - pad * 2,
+                                    juce::jmax(50, b.getHeight() - abOffL - 8 - listTop));
+    }
 
     // CHAIN tab layout — plugin view + strip fill the left area, chat on right
     if (comingSoonTab)
@@ -10278,6 +10315,16 @@ void EchoJayEditor::timerCallback()
     {
         linkRefreshTick = 0;
         processorRef.refreshLinkRegistry();
+    }
+    if (currentTab == Tab::Link && linkListViewport_.isVisible())
+    {
+        // Child height follows the row count; the Viewport keeps its scroll
+        // position (clamped) so 10Hz refreshes never yank the view
+        const int n = (int) processorRef.getLinkSlotInfos().size();
+        const int wantH = juce::jmax(1, n * (kLinkRowH + kLinkRowGap));
+        const int wantW = linkListViewport_.getMaximumVisibleWidth();
+        if (linkListView_.getWidth() != wantW || linkListView_.getHeight() != wantH)
+            linkListView_.setSize(juce::jmax(50, wantW), wantH);
     }
 
     repaint();
@@ -12560,23 +12607,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         return;
     }
 
-    // LINK tab — remote Active toggle pills (zones recorded during paint)
-    if (currentScreen == Screen::Main && currentTab == Tab::Link)
-    {
-        for (auto& z : linkToggleZones_)
-            if (z.first.contains(pos))
-            {
-                bool cur = true;
-                for (auto& li : processorRef.getLinkSlotInfos())
-                {
-                    const juce::String addr = li.uid.isNotEmpty()
-                                            ? li.uid : LinkShm::makeSafeFilePart(li.name);
-                    if (addr == z.second) { cur = li.active; break; }
-                }
-                sendLinkActiveCommand(z.second, !cur);
-                return;
-            }
-    }
+    // LINK tab — row toggles live inside linkListView_ (its own mouseDown)
 
     // Chat wave card click — direct hit testing (works on Windows where overlays fail)
     if (currentScreen == Screen::Main && !chatWavePositions.empty())
