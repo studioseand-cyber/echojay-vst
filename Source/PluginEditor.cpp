@@ -7947,6 +7947,20 @@ void EchoJayEditor::paint(juce::Graphics& g)
         }
     }
 
+    // CHAT tab empty-state greeting — rects computed by resized()
+    if (chatCentredEmpty_ && currentScreen == Screen::Main
+        && currentTab == Tab::Chat && !chatEmptyHeading_.isEmpty()
+        && !channelPromptVisible && !genrePromptVisible && !projectPromptVisible)
+    {
+        g.setColour(C::text);
+        g.setFont(juce::Font(juce::FontOptions(26.0f)));   // light title style
+        g.drawText("Ask about your mix", chatEmptyHeading_, juce::Justification::centred);
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(12.5f)));
+        g.drawText("Feedback, chain ideas, or anything about your session.",
+                   chatEmptySub_, juce::Justification::centred);
+    }
+
     // CHAIN tab panel backgrounds and headers
     if (comingSoonTab)
     {
@@ -9113,9 +9127,31 @@ void EchoJayEditor::resized()
     int abOff4 = abBarShowing ? kAbBarH : 0;
     int inputPad = compactMode ? 16 : 10;
     int inputY = b.getHeight() - inH - inputPad - abOff4;
-    chatInput.setBounds(chatStartX + chatPadL, inputY, chatW - sendW - chatPadL - 4, inH);
-    int sendY = inputY + (inH - sendH) / 2; // vertically centred
-    chatSendBtn.setBounds(chatStartX + chatW - sendW - 2, sendY, sendW, sendH);
+    // CHAT tab, empty active chat: centre the input in the message area
+    // with the greeting above it (modern chat UX). Any message docks it.
+    chatCentredEmpty_ = currentTab == Tab::Chat && !compactMode && !visualOnlyMode
+                        && chatMessages.empty();
+    if (chatCentredEmpty_)
+    {
+        const int areaX = chatStartX + chatPadL;
+        const int areaW = chatW - chatPadL - 8;
+        const int boxW  = juce::jmin(640, areaW - 24);
+        const int bx    = areaX + (areaW - boxW) / 2;
+        const int areaTop = topH + 32;
+        const int by    = areaTop + (int) ((inputY - areaTop) * 0.50f);   // ~centre
+        chatInput.setBounds(bx, by, boxW - sendW - 8, inH);
+        chatSendBtn.setBounds(bx + boxW - sendW, by + (inH - sendH) / 2, sendW, sendH);
+        chatEmptyHeading_ = { areaX, by - 76, areaW, 34 };
+        chatEmptySub_     = { areaX, by - 38, areaW, 18 };
+        chatInput.setTextToShowWhenEmpty("Type a question...", C::text3);
+    }
+    else
+    {
+        chatInput.setBounds(chatStartX + chatPadL, inputY, chatW - sendW - chatPadL - 4, inH);
+        int sendY = inputY + (inH - sendH) / 2; // vertically centred
+        chatSendBtn.setBounds(chatStartX + chatW - sendW - 2, sendY, sendW, sendH);
+        chatInput.setTextToShowWhenEmpty("Ask about your mix...", C::text3);
+    }
 
     // Aa text-size button — sits in the chat header strip. Header is at
     // top = topH, height = 32. The usage counter sits just to the LEFT
@@ -10315,6 +10351,13 @@ void EchoJayEditor::timerCallback()
     {
         linkRefreshTick = 0;
         processorRef.refreshLinkRegistry();
+    }
+    // Empty<->active chat transition: one relayout when the state flips
+    {
+        const bool e = currentTab == Tab::Chat && !compactMode && !visualOnlyMode
+                       && chatMessages.empty();
+        if (e != chatCentredEmpty_)
+            resized();   // recomputes chatCentredEmpty_ + input bounds
     }
     if (currentTab == Tab::Link && linkListViewport_.isVisible())
     {

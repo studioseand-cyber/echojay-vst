@@ -301,6 +301,15 @@ private:
     struct ColumnLayout { int chatW = 0, mW = 0; };
     ColumnLayout computeColumns(int width) const;
 
+    // CHAT tab empty-state centred layout (Claude/ChatGPT pattern): when the
+    // ACTIVE chat has no messages, the input renders centred in the message
+    // area with a greeting above it; one or more messages = the docked
+    // layout. Flag + text rects are computed by resized() (ONE formula);
+    // paint() only reads them. Compare/Chain sidebars and the compact
+    // window keep the docked layout in both states (too narrow).
+    bool chatCentredEmpty_ = false;
+    juce::Rectangle<int> chatEmptyHeading_, chatEmptySub_;
+
     // ONE source of truth for "an assistant input row exists here", used by
     // the out-of-credits gate (upgrade button replaces the row). Every tab
     // with the sidebar counts — Chat, Compare, Meters, Visualisation, Link,
