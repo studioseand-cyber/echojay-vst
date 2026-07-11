@@ -3717,14 +3717,39 @@ void EchoJayEditor::toggleComparePlay(bool isTop)
     if (!s.loaded.load())
     {
         startCompareStream(slotIdx);
-        if (!s.loaded.load()) { DBG("  file not found"); return; }
+        if (!s.loaded.load())
+        {
+            EchoJay_NSLog(("EJCmp: play slot=" + juce::String(slotIdx)
+                           + " rejected - file not loaded").toRawUTF8());
+            return;
+        }
+    }
+
+    bool wasPlaying = s.playing.load();
+
+    // HONEST TRANSPORT: playback renders inside processBlock. If the host
+    // has idled this channel (Logic, stopped transport), pressing play
+    // cannot sound — show the hint instead of pretending. Keyed on actual
+    // block liveness, not transport state, so hosts that keep processing a
+    // stopped-transport channel still audition fine.
+    if (!wasPlaying && !hostAudioAlive())
+    {
+        cmpHintUntilMs_ = juce::Time::getMillisecondCounter() + 3500;
+        EchoJay_NSLog(("EJCmp: play slot=" + juce::String(slotIdx)
+                       + " rejected - host audio idle (blocks frozen at "
+                       + juce::String(processorRef.getAudioBlockCount())
+                       + "), hint shown").toRawUTF8());
+        repaint();
+        return;
     }
 
     // Toggle play/pause
-    bool wasPlaying = s.playing.load();
     s.playing.store(!wasPlaying);
-    DBG("  wasPlaying=" + juce::String((int)wasPlaying)
-        + " -> playing=" + juce::String((int)!wasPlaying));
+    EchoJay_NSLog(("EJCmp: slot=" + juce::String(slotIdx)
+                   + (wasPlaying ? " pause" : " play")
+                   + " pos=" + juce::String(s.playbackPos)
+                   + "/" + juce::String(s.sampleCount)
+                   + " blocks=" + juce::String(processorRef.getAudioBlockCount())).toRawUTF8());
 
     // When starting playback, also make this slot audible
     if (!wasPlaying)
@@ -4446,7 +4471,7 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
             {
                 g.setColour(juce::Colour(0xffFFAA44).withAlpha(0.85f));
                 g.setFont(juce::Font(juce::FontOptions(9.0f)));
-                g.drawText("Stored on the web \xe2\x80\x94 open echojay.ai to play",
+                g.drawText(juce::String(juce::CharPointer_UTF8("Stored on the web \xe2\x80\x94 open echojay.ai to play")),
                            botRect.reduced(8, 4), juce::Justification::centredTop, true);
             }
         }
@@ -4499,7 +4524,7 @@ void EchoJayEditor::paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int>
         {
             g.setColour(C::text3.withAlpha(0.5f));
             g.setFont(juce::Font(juce::FontOptions(11.0f)));
-            g.drawText("Waiting for signal\xe2\x80\xa6",
+            g.drawText(juce::String(juce::CharPointer_UTF8("Waiting for signal\xe2\x80\xa6")),
                        inner, juce::Justification::centred, true);
             return;
         }
@@ -7961,6 +7986,18 @@ void EchoJayEditor::paint(juce::Graphics& g)
                    chatEmptySub_, juce::Justification::centred);
     }
 
+    // Compare transport honesty hint (see toggleComparePlay) — transient
+    if (currentView == View::Compare && cmpPlayBtn_.isVisible()
+        && juce::Time::getMillisecondCounter() < cmpHintUntilMs_)
+    {
+        auto pb = cmpPlayBtn_.getBounds();
+        g.setColour(juce::Colour(0xfff59e0b));   // amber
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText("Start your DAW transport to audition",
+                   pb.getX() - 40, pb.getY() - 17, 300, 14,
+                   juce::Justification::centredLeft);
+    }
+
     // CHAIN tab panel backgrounds and headers
     if (comingSoonTab)
     {
@@ -10357,6 +10394,16 @@ void EchoJayEditor::timerCallback()
         linkRefreshTick = 0;
         processorRef.refreshLinkRegistry();
     }
+    // Host audio liveness for the Compare transport (see hostAudioAlive)
+    {
+        const uint32_t bc = processorRef.getAudioBlockCount();
+        if (bc != cmpLastBlockCount_)
+        {
+            cmpLastBlockCount_ = bc;
+            cmpLastBlockAdvanceMs_ = juce::Time::getMillisecondCounter();
+        }
+    }
+
     // Empty<->active chat transition: one relayout when the state flips
     {
         const bool e = currentTab == Tab::Chat && !compactMode && !visualOnlyMode

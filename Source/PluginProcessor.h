@@ -119,6 +119,12 @@ public:
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
 
+    // Host audio liveness: bumps every processBlock. Compare playback
+    // renders INSIDE processBlock, so when the host idles the channel
+    // (Logic, stopped transport) nothing can sound — the editor reads this
+    // to keep the transport UI honest instead of pretending to play.
+    uint32_t getAudioBlockCount() const { return audioBlocksProcessed_.load(std::memory_order_relaxed); }
+
     MeterEngine& getMeterEngine()   { return meterEngine; }
     MeterEngine& getABMeterEngine() { return abMeterEngine; }
     MeterEngine& getCompareMeter(int slot) { return (slot == 0) ? cmpMeter[0] : cmpMeter[1]; }
@@ -248,6 +254,7 @@ public:
         juce::String filePath;
     };
     CmpStream cmpStream[2];
+    std::atomic<uint32_t> audioBlocksProcessed_ { 0 };
     mutable std::mutex cmpMutex;             // protects both streams' buffers
     std::atomic<int> cmpAudible { -1 };      // which stream is audible (-1 = none)
     std::atomic<bool> cmpSyncToTransport { true }; // sync capture playback to DAW transport

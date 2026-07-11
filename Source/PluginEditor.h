@@ -310,6 +310,15 @@ private:
     bool chatCentredEmpty_ = false;
     juce::Rectangle<int> chatEmptyHeading_, chatEmptySub_;
 
+    // Host audio liveness (Compare transport honesty): sampled in the timer
+    // from the processor's block counter. Compare playback renders in
+    // processBlock, so a play press while the host has idled the channel
+    // cannot sound — the play state must not pretend (hint shown instead).
+    uint32_t cmpLastBlockCount_ = 0, cmpLastBlockAdvanceMs_ = 0;
+    uint32_t cmpHintUntilMs_ = 0;
+    bool hostAudioAlive() const
+    { return juce::Time::getMillisecondCounter() - cmpLastBlockAdvanceMs_ < 500; }
+
     // ONE source of truth for "an assistant input row exists here", used by
     // the out-of-credits gate (upgrade button replaces the row). Every tab
     // with the sidebar counts — Chat, Compare, Meters, Visualisation, Link,

@@ -378,6 +378,7 @@ void EchoJayProcessor::releaseResources()
 
 void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
+    audioBlocksProcessed_.fetch_add(1, std::memory_order_relaxed);   // host audio liveness
     juce::ScopedNoDenormals noDenormals;
     
     // Track DAW transport state (play/stop)
@@ -1559,6 +1560,10 @@ void EchoJayProcessor::loadCompareFile(int slot, const juce::String& wavPath)
     cmpStream[slot].loaded.store(true);
     cmpStream[slot].playing.store(false);  // don't auto-play; wait for user or transport
     cmpMeter[slot].reset();
+    EchoJay_NSLog(("EJCmp: loaded slot=" + juce::String(slot)
+                   + " samples=" + juce::String(cmpStream[slot].sampleCount)
+                   + " sr=" + juce::String(cmpStream[slot].sampleRate, 0)
+                   + " file=" + juce::File(wavPath).getFileName()).toRawUTF8());
 }
 
 void EchoJayProcessor::stopCompareStream(int slot)
