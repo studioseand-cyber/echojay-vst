@@ -9,10 +9,29 @@ struct UserInfo {
     juce::String email;
     juce::String tier = "free";     // "free", "pro", "studio", "its_platinum"
     int tierLevel = 0;              // 0=free, 1=pro, 2=studio (its_platinum maps to 0 here)
-    int messagesUsedToday = 0;      // field name is legacy — period is now monthly
-    int messageLimit = 15;          // 15 free, 200 pro, 400 studio (per month)
-    int credits = 0;                // bonus credits beyond monthly limit
+    int messagesUsedToday = 0;      // LEGACY fields — kept for fallback when the
+    int messageLimit = 15;          // server has not deployed usagePool yet
+    int credits = 0;
     juce::String displayName;
+
+    // usage-v2: additive usagePool object from /api/me. When absent
+    // (present=false) the client falls back to the legacy fields above and
+    // computes percent locally — the plugin must work against both server
+    // states. Weights are SERVER-ONLY; the client never sees units.
+    struct UsagePool {
+        bool  present = false;
+        int   used = 0, pool = 0;
+        float percent = 0.0f;          // 0..100
+        juce::String period;           // "daily" / "monthly"
+        juce::String resetAt;          // ISO8601
+        int   credits = 0;
+        juce::String tierLabel, capacityLabel;
+        bool  modelFast = false;
+        int   tasteRemaining = 0;
+        // optional nudge field: parsed loosely, unused (UI decided later)
+        juce::String nudge;
+    };
+    UsagePool usagePool;
 
     bool isPro() const { return tierLevel >= 1; }
     bool isStudio() const { return tierLevel >= 2; }
@@ -75,17 +94,6 @@ public:
     // every surface must count REMAINING, and must get it from here.
     int getRemainingMessages() const;
 
-    // PRODUCT-WIDE credits counter convention — every surface renders this
-    // exact string: "n/15 credits" counting REMAINING this month (15/15 =
-    // untouched, 0/15 = exhausted), bonus credits as " (+k)". One builder
-    // so a surface can't drift back to counting used.
-    juce::String getCreditsCounterText() const;
-
-    // Colour tier for the counter: 0 normal/dim, 1 amber, 2 coral.
-    // Keyed on TOTAL usable sends (monthly remaining + bonus credits) so
-    // coral coincides exactly with the input-row gate: coral == cannot
-    // send. Amber at 1-3 usable, coral at 0 only.
-    int getCreditsWarnLevel() const;
     
     // Returns the canonical "you've hit your limit" message for the current
     // tier. Mirrors the strings the SaaS returns on a 429 response so the
@@ -113,6 +121,28 @@ public:
     // request body is built, so it also survives the limit-refresh retry).
     // Alternative to passing meterJsonBlob directly.
     void setNextChatMeters(const juce::String& blob) { nextChatMeters_ = blob; }
+
+    // usage-v2 client contract: every /api/chat turn carries a turnType
+    // ("chat" default, "capture_analysis", "chain_generate",
+    // "version_compare", "link_analysis"); link turns include busCount.
+    // Staged like the meters blob, consumed at body build (so the
+    // limit-retry keeps it).
+    void setNextChatTurnType(const juce::String& t, int busCount = 0)
+    { nextChatTurnType_ = t; nextChatBusCount_ = busCount; }
+
+    // usage-v2 accessors. Percent works against BOTH server states.
+    float getUsagePercent() const
+    {
+        if (userInfo.usagePool.present)
+            return juce::jlimit(0.0f, 100.0f, userInfo.usagePool.percent);
+        const int lim = juce::jmax(1, userInfo.messageLimit);
+        return juce::jlimit(0.0f, 100.0f, 100.0f * (float) userInfo.messagesUsedToday / (float) lim);
+    }
+    juce::String getUsagePeriod() const
+    { return userInfo.usagePool.present && userInfo.usagePool.period.isNotEmpty()
+             ? userInfo.usagePool.period : juce::String(userInfo.tierLevel > 0 ? "monthly" : "daily"); }
+    int getUsageCredits() const
+    { return userInfo.usagePool.present ? userInfo.usagePool.credits : userInfo.credits; }
     
     // ============ User Settings (synced with web app) ============
 
@@ -243,6 +273,8 @@ private:
     juce::String authToken;
     juce::String deviceId;
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
+    juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
+    int          nextChatBusCount_ = 0;
     UserInfo userInfo;
     UserSettings userSettings;
     

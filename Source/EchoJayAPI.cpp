@@ -1,6 +1,9 @@
 #include "EchoJayAPI.h"
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
 
+// Defined later in this file (used by both /api/me parse sites)
+static void parseUsagePool(juce::DynamicObject* root, UserInfo& info);
+
 // Forward-declared from PluginProcessor.cpp so we can tag callAsync entry
 // points from the API thread. The diagnostic helps identify which async
 // path (if any) fires AFTER the plugin has been removed — those are the
@@ -233,6 +236,8 @@ void EchoJayAPI::login(const juce::String& email, const juce::String& password,
                     }
                 }
                 
+                parseUsagePool(obj, userInfo);   // usage-v2 (additive)
+
                 // Check for nested usage object
                 auto usageVar = obj->getProperty("usage");
                 if (auto* usageObj = usageVar.getDynamicObject())
@@ -319,6 +324,9 @@ static int simulatedCreditsOverride()
 bool EchoJayAPI::canSendMessage() const
 {
     if (int ov = simulatedCreditsOverride(); ov >= 0) return ov > 0;
+    // usage-v2: at 100 percent with zero credits the server refuses the turn
+    if (userInfo.usagePool.present)
+        return userInfo.usagePool.percent < 100.0f || userInfo.usagePool.credits > 0;
     return userInfo.messagesUsedToday < (userInfo.messageLimit + userInfo.credits);
 }
 
@@ -329,38 +337,44 @@ int EchoJayAPI::getRemainingMessages() const
     return juce::jmax(0, userInfo.messageLimit - userInfo.messagesUsedToday);
 }
 
-juce::String EchoJayAPI::getCreditsCounterText() const
-{
-    auto s = juce::String(getRemainingMessages()) + "/"
-           + juce::String(userInfo.messageLimit) + " credits";
-    if (simulatedCreditsOverride() < 0 && userInfo.credits > 0)
-        s += " (+" + juce::String(userInfo.credits) + ")";
-    return s;
-}
-
-int EchoJayAPI::getCreditsWarnLevel() const
-{
-    int usable = simulatedCreditsOverride();
-    if (usable < 0)
-        usable = juce::jmax(0, userInfo.messageLimit + userInfo.credits
-                               - userInfo.messagesUsedToday);
-    return usable == 0 ? 2 : usable <= 3 ? 1 : 0;
-}
 
 juce::String EchoJayAPI::getLimitReachedMessage() const
 {
-    // Strings MUST stay in sync with api/chat.js in the SaaS — see the
-    // `if (user.tier === 'free')` / `else if (user.tier === 'pro')` block.
-    // The SaaS sends these in the 429 response body; we mirror them here
-    // for the client-side pre-check path so the user sees identical
-    // wording regardless of which side caught the limit.
-    if (userInfo.tier == "free")
-        return "You've hit your free monthly limit. Upgrade to Pro to keep going.";
-    if (userInfo.tier == "pro")
-        return "You've hit your monthly limit. Upgrade to Studio or top up with credits to keep going.";
-    // studio, its_platinum, and any future tiers fall through to the
-    // generic "top up" message — they can't upgrade further.
-    return "You've hit your monthly limit. Top up with credits to keep going.";
+    // usage-v2 blocked-state copy: period-aware, NO numbers. Mirrors the
+    // SaaS refusal copy so client pre-check and server 429 read the same.
+    if (getUsagePeriod() == "monthly")
+        return "You've hit this month's limit. Top up or upgrade to continue.";
+    return "You've used today's free analyses. Resets at midnight UTC.";
+
+}
+
+// usage-v2: parse the additive usagePool object from an /api/me (or login)
+// response root. Absent -> present=false and the legacy fields drive a
+// locally-computed percent. Unknown sub-fields (nudge etc.) parse loosely —
+// never crash on new server fields.
+static void parseUsagePool(juce::DynamicObject* root, UserInfo& info)
+{
+    info.usagePool = {};
+    if (root == nullptr || !root->hasProperty("usagePool")) return;
+    auto* up = root->getProperty("usagePool").getDynamicObject();
+    if (up == nullptr) return;
+    auto& u = info.usagePool;
+    u.present       = true;
+    u.used          = (int) up->getProperty("used");
+    u.pool          = (int) up->getProperty("pool");
+    u.percent       = (float)(double) up->getProperty("percent");
+    u.period        = up->getProperty("period").toString();
+    u.resetAt       = up->getProperty("resetAt").toString();
+    u.credits       = (int) up->getProperty("credits");
+    u.tierLabel     = up->getProperty("tierLabel").toString();
+    u.capacityLabel = up->getProperty("capacityLabel").toString();
+    if (auto* model = up->getProperty("model").getDynamicObject())
+    {
+        u.modelFast      = (bool) model->getProperty("fast");
+        u.tasteRemaining = (int)  model->getProperty("tasteRemaining");
+    }
+    if (up->hasProperty("nudge"))
+        u.nudge = up->getProperty("nudge").toString();   // parsed, unused
 }
 
 void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
@@ -375,7 +389,8 @@ void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
     // { "user": { "email": "...", "name": "...", "tier": "pro" | "studio" | "free" },
     //   "usage": { "messagesUsedToday": 12, "messagesPerDay": 50, "remaining": 38, "credits": 15 },
     //   "tierInfo": { "name": "Pro", "model": "claude-sonnet-4-20250514" } }
-    getJSON("/api/me", [this, onComplete](const juce::var& json, int statusCode)
+    getJSON(juce::String("/api/me?appVersion=") + JucePlugin_VersionString,
+            [this, onComplete](const juce::var& json, int statusCode)
     {
         if (statusCode == 200 && json.isObject())
         {
@@ -400,6 +415,7 @@ void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
                 }
                 
                 // Parse usage object
+                parseUsagePool(root, userInfo);   // usage-v2 (additive)
                 auto usageVar = root->getProperty("usage");
                 if (auto* usageObj = usageVar.getDynamicObject())
                 {
@@ -527,6 +543,21 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
                    + juce::String(roles.size()) + " messages sent").toRawUTF8());
     
     juce::String body = "{\"messages\":" + messagesJson + ",\"max_tokens\":4096";
+    // usage-v2 client contract: version identifier + turnType on EVERY turn.
+    // turnType is staged per send ("" = plain "chat"); capture payloads only
+    // ride on explicit capture turns (the callers enforce that pairing).
+    body += ",\"appVersion\":\"" + juce::String(JucePlugin_VersionString) + "\"";
+    {
+        juce::String tt = nextChatTurnType_.isNotEmpty() ? nextChatTurnType_ : "chat";
+        body += ",\"turnType\":" + juce::JSON::toString(tt);
+        if (nextChatBusCount_ > 0)
+            body += ",\"busCount\":" + juce::String(nextChatBusCount_);
+        EchoJay_NSLog(("EJChat: turnType=" + tt
+                       + (nextChatBusCount_ > 0 ? " busCount=" + juce::String(nextChatBusCount_)
+                                                : juce::String())).toRawUTF8());
+        nextChatTurnType_.clear();
+        nextChatBusCount_ = 0;
+    }
     juce::String metersBlob = meterJsonBlob;
     if (metersBlob.isEmpty())
     {

@@ -310,6 +310,22 @@ private:
     bool chatCentredEmpty_ = false;
     juce::Rectangle<int> chatEmptyHeading_, chatEmptySub_;
 
+    // usage-v2 free-tier banner (spec section 6): shown above the chat
+    // input on the CHAT tab when tier is free, usagePool.model.fast is true
+    // and tasteRemaining is 0. Dismissible per session (per-process static
+    // so an editor rebuild in the same session stays dismissed); reappears
+    // next session. Upsell treatment, not a warning.
+    juce::Rectangle<int> chatBannerRect_, chatBannerCloseRect_;
+    bool chatBannerVisible_ = false;
+    static bool fastModelBannerDismissed_;
+    bool shouldShowFastModelBanner() const
+    {
+        const auto& up = api.getUserInfo().usagePool;
+        return !fastModelBannerDismissed_ && api.isLoggedIn()
+            && api.getUserInfo().tierLevel == 0
+            && up.present && up.modelFast && up.tasteRemaining <= 0;
+    }
+
     // Host audio liveness (Compare transport honesty): sampled in the timer
     // from the processor's block counter. Compare playback renders in
     // processBlock, so a play press while the host has idled the channel
@@ -328,9 +344,6 @@ private:
     // while Chat showed the upgrade prompt.
     bool assistantInputContext() const;
 
-    // Credits counter colour from api.getCreditsWarnLevel():
-    // dim (>3 usable) / amber (1-3) / coral (0, matches the input gate)
-    juce::Colour creditsWarnColour() const;
 
     // ---- Settings right column (ACCOUNT / visual / slim info card) ----
     // Rects computed in resized(), painted in paintSettingsView(). Two-column

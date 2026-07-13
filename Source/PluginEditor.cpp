@@ -10,6 +10,9 @@
 // silently. Captures can never reach this base within a session.
 static constexpr int kCompareRefIdBase = 1000;
 
+// usage-v2 free-tier banner: dismissed once per PROCESS session
+bool EchoJayEditor::fastModelBannerDismissed_ = false;
+
 namespace
 {
 // Shared logo image cache. This MUST be explicitly cleared during editor
@@ -793,10 +796,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     userLabel.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(userLabel);
 
-    usageLabel.setColour(juce::Label::textColourId, C::text3);
-    usageLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
-    usageLabel.setJustificationType(juce::Justification::centredRight);
-    addAndMakeVisible(usageLabel);
+    // usage-v2: numeric usage counters are GONE from the UI (top bar, chat
+    // header, everywhere). Settings is the only usage surface (percent bar).
+    // usageLabel stays as an inert member; it is never added or shown.
+    usageLabel.setVisible(false);
 
     // --- Compare view controls ---
     saveSettingsBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
@@ -1869,7 +1872,7 @@ void EchoJayEditor::showLoginScreen()
 
     juce::Component* mainComps[] = { &captureBtn, &scanBtn,
         &channelTypeBox, &genreBox, &projectInput, &statusLabel, &durationLabel, &detectedLabel,
-        &passLabel, &userLabel, &usageLabel, &chatInput, &chatSendBtn, &chatScroll,
+        &passLabel, &userLabel, &chatInput, &chatSendBtn, &chatScroll,
         &compareBtn, &settingsBtn, &playbackBtn, &wavSavedLabel, &upgradeBtn };
     for (auto* c : mainComps) c->setVisible(false);
     logoutBtn.setVisible(false);
@@ -1915,7 +1918,7 @@ void EchoJayEditor::showMainScreen()
     // composite after an account switch.
     juce::Component* mainComps[] = { &captureBtn, &scanBtn,
         &channelTypeBox, &genreBox, &projectInput, &statusLabel, &durationLabel, &detectedLabel,
-        &passLabel, &userLabel, &usageLabel,
+        &passLabel, &userLabel,
         &compareBtn, &settingsBtn, &wavSavedLabel };
     for (auto* c : mainComps) c->setVisible(true);
     logoutBtn.setVisible(false); // logout only visible in Settings
@@ -1928,10 +1931,6 @@ void EchoJayEditor::showMainScreen()
     userLabel.setText(userText, juce::dontSendNotification);
     userLabel.setColour(juce::Label::textColourId, info.isPro() ? C::purple : C::text2);
 
-    // Product-wide convention: text AND colour from the shared accessors
-    // (remaining out of limit; dim >3, amber 1-3, coral 0)
-    usageLabel.setText(api.getCreditsCounterText(), juce::dontSendNotification);
-    usageLabel.setColour(juce::Label::textColourId, creditsWarnColour());
 
     // One shared pass owns prompt pages AND chat visibility (chatOk)
     updateOnboardingPrompts();
@@ -2555,15 +2554,6 @@ void EchoJayEditor::SettingsOrbCard::paint(juce::Graphics& g)
     }
 }
 
-juce::Colour EchoJayEditor::creditsWarnColour() const
-{
-    switch (api.getCreditsWarnLevel())
-    {
-        case 2:  return C::red;
-        case 1:  return C::amber;
-        default: return C::text3;
-    }
-}
 
 bool EchoJayEditor::assistantInputContext() const
 {
@@ -3970,13 +3960,9 @@ void EchoJayEditor::runAICompare()
     // destroyed editor. The lambda then sits in the host message queue and
     // runs on the user's NEXT mouse click — the "1 second after first click"
     // freeze. Bailing on a null SafePointer makes the late callback a no-op.
-    // AI-compare turns also carry the live meter blob when audio is playing
-    // (the reviews' own psr/plr/overs are already in their stored data).
-    {
-        auto& me = processorRef.getMeterEngine();
-        api.setNextChatMeters(me.getMeterData().isSilent ? juce::String()
-                                                          : me.getMeterDataJSON());
-    }
+    // usage-v2: compare turns carry their stored compare context in the
+    // message; no live meter blob auto-attaches (spec section 5).
+    api.setNextChatTurnType("version_compare");
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis](const juce::String& reply, bool success) {
@@ -5081,7 +5067,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             chatInput.setVisible(false);
             chatSendBtn.setVisible(false);
             chatTextSizeBtn.setVisible(false);
-            usageLabel.setVisible(false); // credits live in the ACCOUNT card here
             return; // showSettingsView already called resized/repaint
 
         case Tab::Chain:
@@ -6550,8 +6535,10 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             auto a = settingsAccountCard_;
             drawPanel(g, a, "ACCOUNT", C::blue2);
             auto info = api.getUserInfo();
-            juce::String plan = info.tierLevel >= 2 ? "STUDIO"
-                              : info.tierLevel >= 1 ? "PRO" : "FREE";
+            juce::String plan = info.usagePool.present && info.usagePool.tierLabel.isNotEmpty()
+                              ? info.usagePool.tierLabel.toUpperCase()
+                              : juce::String(info.tierLevel >= 2 ? "STUDIO"
+                              : info.tierLevel >= 1 ? "PRO" : "FREE");
             juce::Rectangle<int> badge(a.getX() + 14, a.getY() + 26, 56, 18);
             g.setColour(info.tierLevel > 0 ? C::purple.withAlpha(0.3f) : C::bg4);
             g.fillRoundedRectangle(badge.toFloat(), 9.0f);
@@ -6559,27 +6546,55 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
             g.drawText(plan, badge, juce::Justification::centred);
 
-            // Product-wide convention: same shared accessors as the sidebar
-            // counter — identical number, identical colour tiers. The bar
-            // fill echoes the warn colour so amber/coral read at a glance.
-            int remaining = api.getRemainingMessages();
-            int limit = juce::jmax(1, info.messageLimit);
-            int warn = api.getCreditsWarnLevel();
+            // usage-v2: Settings is the ONLY usage surface — a percent
+            // figure + the bar filled to usagePool.percent. Never pool
+            // size, used units, weights or unit names. Bar goes coral at
+            // >= 90 percent (the refs warning treatment).
+            const float pct  = api.getUsagePercent();
+            const float frac = juce::jlimit(0.0f, 1.0f, pct / 100.0f);
             juce::Rectangle<int> bar(a.getX() + 14, badge.getBottom() + 10,
                                      a.getWidth() - 28, 8);
             g.setColour(C::bg4);
             g.fillRoundedRectangle(bar.toFloat(), 4.0f);
-            float frac = juce::jlimit(0.0f, 1.0f, (float)remaining / (float)limit);
             if (frac > 0.0f)
             {
-                g.setColour((warn == 1 ? C::amber : juce::Colour(0xff22d3ee)).withAlpha(0.85f));
+                g.setColour((pct >= 90.0f ? juce::Colour(0xffff6d5a)
+                                          : juce::Colour(0xff22d3ee)).withAlpha(0.85f));
                 g.fillRoundedRectangle(bar.toFloat().withWidth(bar.getWidth() * frac), 4.0f);
             }
-            g.setColour(creditsWarnColour());
-            g.setFont(juce::Font(juce::FontOptions(10.0f)));
-            g.drawText(api.getCreditsCounterText(),
-                       bar.getX(), bar.getBottom() + 4, bar.getWidth(), 13,
+            // "42% used" + reset line: relative for daily, absolute date for
+            // monthly (from resetAt when parseable)
+            juce::String resetLine = "Resets daily";
+            if (api.getUsagePeriod() == "monthly")
+            {
+                resetLine = "Resets monthly";
+                auto ra = info.usagePool.resetAt;
+                if (ra.isNotEmpty())
+                {
+                    auto t = juce::Time::fromISO8601(ra);
+                    if (t.toMilliseconds() > 0)
+                        resetLine = "Resets " + t.formatted("%d %b");
+                }
+            }
+            g.setColour(pct >= 90.0f ? juce::Colour(0xffff6d5a) : C::text);
+            g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
+            g.drawText(juce::String((int) std::lround(pct)) + "% used",
+                       bar.getX(), bar.getBottom() + 4, bar.getWidth() / 2, 13,
                        juce::Justification::centredLeft);
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(9.5f)));
+            g.drawText(resetLine, bar.getCentreX(), bar.getBottom() + 4,
+                       bar.getWidth() / 2, 13, juce::Justification::centredRight);
+            // Credits: top-ups the user BOUGHT — hiding them would look like
+            // theft. Only when > 0.
+            if (const int cr = api.getUsageCredits(); cr > 0)
+            {
+                g.setColour(C::text3);
+                g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                g.drawText("+" + juce::String(cr) + " credits",
+                           bar.getX(), bar.getBottom() + 19, bar.getWidth(), 12,
+                           juce::Justification::centredLeft);
+            }
             // Pro/Studio users see plan status where free users get Upgrade
             if (info.tierLevel > 0)
             {
@@ -8019,6 +8034,23 @@ void EchoJayEditor::paint(juce::Graphics& g)
                    chatEmptySub_, juce::Justification::centred);
     }
 
+    // usage-v2 free-tier banner — dark teal upsell, not a warning
+    if (chatBannerVisible_ && currentScreen == Screen::Main && currentTab == Tab::Chat)
+    {
+        auto r = chatBannerRect_.getUnion(chatBannerCloseRect_).toFloat();
+        g.setColour(juce::Colour(0xff0d2b33));                 // dark teal
+        g.fillRoundedRectangle(r, 6.0f);
+        g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.35f));
+        g.drawRoundedRectangle(r, 6.0f, 1.0f);
+        g.setColour(C::text2);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText("You're on EchoJay's fast model. Pro unlocks our most advanced feedback.",
+                   chatBannerRect_.reduced(10, 0), juce::Justification::centredLeft, true);
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        g.drawText("x", chatBannerCloseRect_, juce::Justification::centred);
+    }
+
     // Compare transport honesty hint (see toggleComparePlay) — transient
     if (currentView == View::Compare && cmpPlayBtn_.isVisible()
         && juce::Time::getMillisecondCounter() < cmpHintUntilMs_)
@@ -9201,6 +9233,7 @@ void EchoJayEditor::resized()
     // with the greeting above it (modern chat UX). Any message docks it.
     chatCentredEmpty_ = currentTab == Tab::Chat && !compactMode && !visualOnlyMode
                         && chatMessages.empty();
+    chatBannerVisible_ = false;   // recomputed below when layout permits
     if (chatCentredEmpty_)
     {
         const int areaX = chatStartX + chatPadL;
@@ -9222,6 +9255,17 @@ void EchoJayEditor::resized()
         chatSendBtn.setBounds(chatStartX + chatW - sendW - 2, sendY, sendW, sendH);
         chatInput.setTextToShowWhenEmpty("Ask about your mix...", C::text3);
     }
+    // usage-v2 free-tier banner: above the chat input, CHAT tab main panel
+    // only (sidebars and the compact window are too narrow)
+    if (currentTab == Tab::Chat && !compactMode && !visualOnlyMode
+        && shouldShowFastModelBanner())
+    {
+        auto ib = chatInput.getBounds();
+        chatBannerRect_      = { ib.getX(), ib.getY() - 30,
+                                 chatSendBtn.getRight() - ib.getX(), 24 };
+        chatBannerCloseRect_ = chatBannerRect_.removeFromRight(24);
+        chatBannerVisible_   = true;
+    }
 
     // Aa text-size button — sits in the chat header strip. Header is at
     // top = topH, height = 32. The usage counter sits just to the LEFT
@@ -9235,19 +9279,8 @@ void EchoJayEditor::resized()
         chatTextSizeBtn.setBounds(aaX, aaY, aaW, aaH);
         chatTextSizeBtn.setVisible(chatScroll.isVisible());
 
-        // Counter label — right-aligned, ending 6px before the Aa button.
-        int counterW = 130;
-        int counterH = 16;
-        int counterX = aaX - counterW - 6;
-        int counterY = topH + (32 - counterH) / 2;
-        usageLabel.setBounds(counterX, counterY, counterW, counterH);
-        usageLabel.setJustificationType(juce::Justification::centredRight);
-        usageLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::plain)));
-        usageLabel.setColour(juce::Label::textColourId, C::text3);
-        // Settings has no assistant sidebar; during the tab switch this runs
-        // while chatScroll is still visible, which used to leave a stray
-        // credits label floating at the top-right of the Settings form.
-        usageLabel.setVisible(chatScroll.isVisible() && currentTab != Tab::Settings);
+        // (usage counter removed — usage-v2: no numeric counters anywhere;
+        //  Settings' percent bar is the only usage surface)
     }
     
     // Chat scroll: top = below chat header, bottom = above chat input with gap.
@@ -10118,8 +10151,6 @@ void EchoJayEditor::timerCallback()
 
     if (currentScreen == Screen::Main && api.isLoggedIn()) {
         auto info = api.getUserInfo();
-        // Product-wide convention: shared accessors only (see EchoJayAPI)
-        usageLabel.setText(api.getCreditsCounterText(), juce::dontSendNotification);
         
         // OWNERSHIP: the Upgrade button belongs to the CHAT INPUT ROW and
         // exists only where that row does — the CHAT tab, the COMPARE and
@@ -10176,8 +10207,6 @@ void EchoJayEditor::timerCallback()
             chatTextSizeBtn.setVisible(true);
         }
         
-        // Counter colour tiers: dim >3 usable, amber 1-3, coral 0 only
-        usageLabel.setColour(juce::Label::textColourId, creditsWarnColour());
         
         // Periodic refresh every 5 minutes to sync usage/subscription.
         // Visibility-change and Settings-open refreshes (see elsewhere)
@@ -10552,42 +10581,11 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     chatLoading = true;
     repaint();
 
-    // Attach a live meter snapshot to every chat message. We tag it
-    // [LIVE METER] (not [METER] or [CAPTURE]) so Claude knows this is
-    // continuously-running data with varying precision per metric:
-    //   - momentary (400ms window) and short-term (3s window) — real
-    //     and immediate
-    //   - integrated LUFS — averaged from whenever the integrator was
-    //     last reset, could be very recent or stale
-    //   - rms / peak / crest / width / correlation — current state
-    // The system prompt's [LIVE METER] handling tells Claude to use
-    // the data, qualify once that Capture gives averaged-over-window
-    // precision, then move on. If the user's question is general
-    // (not about the mix), the QUESTION ROUTING block tells Claude
-    // to ignore the meter data and answer normally.
-    auto md = processorRef.getMeterEngine().getMeterData();
-    auto ff = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
-    juce::String ctx;
-    if (md.isSilent) {
-        // No audio playing through the plugin right now. Last meter
-        // values would be stale ghosts from the previous playback
-        // window; instead, tell the model there's no signal so it
-        // continues the conversation about earlier captures (or the
-        // user's general question) rather than analysing dead numbers.
-        ctx = "\n\n[LIVE METER: " + processorRef.getEffectiveChannelName()
-            + " (" + processorRef.getGenre() + ")] NO SIGNAL (playback stopped or no audio routed to plugin)";
-    } else {
-        ctx = "\n\n[LIVE METER: " + processorRef.getEffectiveChannelName() + " (" + processorRef.getGenre() + ")] " +
-            "Int " + ff(md.integrated) + " LUFS | Mom " + ff(md.momentary) + " | ST " + ff(md.shortTerm) +
-            " | LRA " + juce::String(md.loudnessRange, 1) + " LU | RMS " + ff(md.rmsL) + "/" + ff(md.rmsR) +
-            " | TP " + ff(md.truePeakL) + "/" + ff(md.truePeakR) + " | Crest " + juce::String(md.crestFactor, 1) +
-            " | Width " + juce::String(md.width, 1) + "% | Corr " + juce::String(md.correlation, 2) +
-            " | S/M " + juce::String(md.sideToMidRatio, 2) +
-            " | Corr-sub " + juce::String(md.corrSub, 2) +
-            " | Corr-mid " + juce::String(md.corrMid, 2) +
-            " | Corr-top " + juce::String(md.corrTop, 2);
-    }
-    juce::String userContent = msg + ctx;
+    // usage-v2 (spec section 5): plain chat turns send NO band/meter data.
+    // Live meters keep running locally; they never auto-attach. Capture and
+    // Link analysis turns attach their snapshot payloads explicitly at their
+    // own call sites.
+    juce::String userContent = msg;
 
     // Plugin/chain injection: always include chain instructions (with full plugin list)
     // when the user has recommendable plugins resolved — the model decides whether to
@@ -10627,14 +10625,10 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
         processorRef.getEffectiveChannelName(), processorRef.getGenre(),
         processorRef.getPluginScanner().getPluginSummary());
 
-    // Attach the raw meter JSON blob so psr/plr/oversCount/macroBands ride
-    // along for the backend's parseExtendedMeter. Absent = unavailable:
-    // nothing is attached while no audio is playing.
-    {
-        auto& me = processorRef.getMeterEngine();
-        api.setNextChatMeters(me.getMeterData().isSilent ? juce::String()
-                                                          : me.getMeterDataJSON());
-    }
+    // usage-v2: no meter blob on plain chat turns (see above). turnType is
+    // chain_generate when the chain-feed injection rode along (the model is
+    // being asked for a chain), plain chat otherwise.
+    api.setNextChatTurnType(chainInjection.isNotEmpty() ? "chain_generate" : "chat");
 
     juce::String activeChatId = currentChatId; // capture before async
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -12066,9 +12060,16 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         processorRef.getPluginScanner().getPluginSummary());
 
     // Capture turns attach the snapshot's meter blob (identical JSON shape,
-    // serialised from the capture's final averaged data)
+    // serialised from the capture's final averaged data). turnType: explicit
+    // capture -> capture_analysis; multi-bus (Links captured alongside the
+    // host) -> link_analysis with busCount. NEVER capture_analysis without
+    // a payload (the server 400s it) — the blob attach is unconditional here.
     api.setNextChatMeters(MeterEngine::meterDataToJSON(
         snap.averagedData, processorRef.getSampleRate()));
+    if (snap.channels.size() > 1)
+        api.setNextChatTurnType("link_analysis", (int) snap.channels.size());
+    else
+        api.setNextChatTurnType("capture_analysis");
 
     auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
     juce::String captureChatId = chatId;
@@ -12753,6 +12754,15 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         return;
     }
 
+    // usage-v2 banner dismiss (per session)
+    if (chatBannerVisible_ && chatBannerCloseRect_.contains(pos))
+    {
+        fastModelBannerDismissed_ = true;
+        chatBannerVisible_ = false;
+        resized(); repaint();
+        return;
+    }
+
     // LINK tab — row toggles live inside linkListView_ (its own mouseDown)
 
     // Chat wave card click — direct hit testing (works on Windows where overlays fail)
@@ -13225,7 +13235,6 @@ void EchoJayEditor::applyCompactVisibility()
     chatInput.setVisible(true);
     chatSendBtn.setVisible(true);
     chatTextSizeBtn.setVisible(true);
-    usageLabel.setVisible(true);
     // Prompt overlays are authoritative over chat visibility (a pending
     // channel/genre/project prompt must stay answerable in chat-only mode)
     updateChannelPromptVisibility();
