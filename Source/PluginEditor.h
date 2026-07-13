@@ -325,11 +325,14 @@ private:
     }
     juce::Rectangle<int> premiumLockRect_, premiumLockBtnRect_;
 
-    // usage-v2 free-tier banner (spec section 6): shown above the chat
-    // input on the CHAT tab when tier is free, usagePool.model.fast is true
-    // and tasteRemaining is 0. Dismissible per session (per-process static
-    // so an editor rebuild in the same session stays dismissed); reappears
-    // next session. Upsell treatment, not a warning.
+    // Model-tier banner: ONE shared implementation on every assistant
+    // surface (assistantInputContext — chat tab, Compare/Chain/etc sidebars,
+    // compact window) when tier is free, usagePool.model.fast is true and
+    // tasteRemaining is 0. Docked/sidebar: above the input, pushing the
+    // message list bound up; centred empty chat: below the input (above it
+    // collides with the subtitle). Dismissal is GLOBAL for the session (one
+    // per-process static flag — an editor rebuild stays dismissed);
+    // reappears next session. Upsell treatment, not a warning.
     juce::Rectangle<int> chatBannerRect_, chatBannerCloseRect_;
     bool chatBannerVisible_ = false;
     static bool fastModelBannerDismissed_;

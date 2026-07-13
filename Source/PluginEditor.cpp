@@ -8545,18 +8545,25 @@ void EchoJayEditor::paint(juce::Graphics& g)
                    chatEmptySub_, juce::Justification::centred);
     }
 
-    // usage-v2 free-tier banner — dark teal upsell, not a warning
-    if (chatBannerVisible_ && currentScreen == Screen::Main && currentTab == Tab::Chat)
+    // Model-tier banner — dark teal upsell, not a warning. Shared across
+    // every assistant surface; chatBannerVisible_ already encodes the
+    // layout decision (surface, state, dismissal). Copy is honest against
+    // the routing table: free CHAT runs the fast model, free premium
+    // actions already run the advanced model — so Pro "runs everything"
+    // on it rather than "unlocking" it.
+    if (chatBannerVisible_ && currentScreen == Screen::Main)
     {
         auto r = chatBannerRect_.getUnion(chatBannerCloseRect_).toFloat();
         g.setColour(juce::Colour(0xff0d2b33));                 // dark teal
         g.fillRoundedRectangle(r, 6.0f);
         g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.35f));
         g.drawRoundedRectangle(r, 6.0f, 1.0f);
+        const bool narrowBanner = chatBannerRect_.getWidth() < 340;
         g.setColour(C::text2);
-        g.setFont(juce::Font(juce::FontOptions(11.0f)));
-        g.drawText("You're on EchoJay's fast model. Pro unlocks our most advanced feedback.",
-                   chatBannerRect_.reduced(10, 0), juce::Justification::centredLeft, true);
+        g.setFont(juce::Font(juce::FontOptions(narrowBanner ? 9.5f : 11.0f)));
+        g.drawFittedText("Chats run on EchoJay's fast model. Pro runs everything on our most advanced model.",
+                         chatBannerRect_.reduced(10, 2),
+                         juce::Justification::centredLeft, narrowBanner ? 2 : 1);
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(12.0f)));
         g.drawText("x", chatBannerCloseRect_, juce::Justification::centred);
@@ -9834,14 +9841,22 @@ void EchoJayEditor::resized()
         chatSendBtn.setBounds(chatStartX + chatW - sendW - 2, sendY, sendW, sendH);
         chatInput.setTextToShowWhenEmpty("Ask about your mix...", C::text3);
     }
-    // usage-v2 free-tier banner: above the chat input, CHAT tab main panel
-    // only (sidebars and the compact window are too narrow)
-    if (currentTab == Tab::Chat && !compactMode && !visualOnlyMode
-        && shouldShowFastModelBanner())
+    // Model-tier banner: ONE shared implementation on every assistant
+    // surface (same predicate as the input row). Docked chat + sidebars +
+    // compact window: directly ABOVE the input, full column width — the
+    // message list bound moves up below (the AB-bar treatment), so it never
+    // floats over messages. Centred empty chat: BELOW the input (above it
+    // collides with the heading/subtitle). Narrow columns get a taller
+    // two-line, smaller-text variant. Dismissal is the ONE static flag, so
+    // dismissing anywhere hides it everywhere for the session.
+    if (assistantInputContext() && shouldShowFastModelBanner())
     {
         auto ib = chatInput.getBounds();
-        chatBannerRect_      = { ib.getX(), ib.getY() - 30,
-                                 chatSendBtn.getRight() - ib.getX(), 24 };
+        const int bw = chatSendBtn.getRight() - ib.getX();
+        const int bh = bw < 360 ? 34 : 24;   // narrow: wraps to two lines
+        const int by2 = chatCentredEmpty_ ? ib.getBottom() + 12
+                                          : ib.getY() - bh - 6;
+        chatBannerRect_      = { ib.getX(), by2, bw, bh };
         chatBannerCloseRect_ = chatBannerRect_.removeFromRight(24);
         chatBannerVisible_   = true;
     }
@@ -9876,7 +9891,8 @@ void EchoJayEditor::resized()
     // body swallows clicks. The message area effectively doesn't exist in
     // the empty state, so the scroll ends above the greeting.
     int chatScrollBottom = chatCentredEmpty_ ? chatEmptyHeading_.getY() - 8
-                                             : inputY - 8;
+                         : (chatBannerVisible_ ? chatBannerRect_.getY() - 6
+                                               : inputY - 8);
     int chatScrollH = juce::jmax(50, chatScrollBottom - chatScrollTop);
     chatScroll.setBounds(chatStartX + chatAvatarReserve, chatScrollTop,
                          chatW - chatAvatarReserve - 2, chatScrollH);
