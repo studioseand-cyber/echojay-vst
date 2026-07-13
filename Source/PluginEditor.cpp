@@ -8558,12 +8558,26 @@ void EchoJayEditor::paint(juce::Graphics& g)
         g.fillRoundedRectangle(r, 6.0f);
         g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.35f));
         g.drawRoundedRectangle(r, 6.0f, 1.0f);
-        const bool narrowBanner = chatBannerRect_.getWidth() < 340;
+        // Exact copy (13 Jul): two sentences; narrow columns wrap one
+        // sentence per line at the same size rather than shrinking further
+        const juce::String bl1 = "Free chats use our standard model.";
+        const juce::String bl2 = "Pro and above run on our advanced feedback model.";
+        const bool narrowBanner = chatBannerRect_.getWidth() < 440;
         g.setColour(C::text2);
-        g.setFont(juce::Font(juce::FontOptions(narrowBanner ? 9.5f : 11.0f)));
-        g.drawFittedText("Chats run on EchoJay's fast model. Pro runs everything on our most advanced model.",
-                         chatBannerRect_.reduced(10, 2),
-                         juce::Justification::centredLeft, narrowBanner ? 2 : 1);
+        if (narrowBanner)
+        {
+            g.setFont(juce::Font(juce::FontOptions(10.0f)));
+            auto tr = chatBannerRect_.reduced(10, 3);
+            g.drawFittedText(bl1, tr.removeFromTop(tr.getHeight() / 2),
+                             juce::Justification::centredLeft, 1);
+            g.drawFittedText(bl2, tr, juce::Justification::centredLeft, 1);
+        }
+        else
+        {
+            g.setFont(juce::Font(juce::FontOptions(11.0f)));
+            g.drawText(bl1 + " " + bl2, chatBannerRect_.reduced(10, 0),
+                       juce::Justification::centredLeft, true);
+        }
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(12.0f)));
         g.drawText("x", chatBannerCloseRect_, juce::Justification::centred);
@@ -9090,7 +9104,12 @@ void EchoJayEditor::paint(juce::Graphics& g)
 
     // Chat messages
     int chatTop2 = topH + 32;
-    int chatBottomEdge = bounds.getHeight() - 58;
+    // ONE bottom bound: chatScroll's bottom edge is banner-aware (resized
+    // ends it above the banner when visible). The painted clip must derive
+    // from IT — the old parallel height-58 formula didn't know about the
+    // banner, so message text painted straight over it (the banner-overlap
+    // bug: messages are EDITOR-painted, not viewport children).
+    int chatBottomEdge = chatScroll.getBottom();
     int scrollOffset = chatScroll.getViewPositionY();
     int avatarSize = 24;
     int maxBubbleW = chatW - avatarSize - 24;
@@ -9853,7 +9872,7 @@ void EchoJayEditor::resized()
     {
         auto ib = chatInput.getBounds();
         const int bw = chatSendBtn.getRight() - ib.getX();
-        const int bh = bw < 360 ? 34 : 24;   // narrow: wraps to two lines
+        const int bh = bw < 440 ? 34 : 24;   // narrow: sentence per line
         const int by2 = chatCentredEmpty_ ? ib.getBottom() + 12
                                           : ib.getY() - bh - 6;
         chatBannerRect_      = { ib.getX(), by2, bw, bh };
