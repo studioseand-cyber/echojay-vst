@@ -512,6 +512,10 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
             int cut = c.indexOf(marker);
             if (cut >= 0) c = c.substring(0, cut);
         }
+        // Pre-usage-v2 history persisted [LIVE METER] blocks inside message
+        // text — band data must not ride out on ANY turn, including history
+        int lm = c.indexOf("\n\n[LIVE METER");
+        if (lm >= 0) c = c.substring(0, lm);
         return c;
     };
 
@@ -535,13 +539,28 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     if (firstIdx >= roles.size())          // degenerate: always send the newest
         firstIdx = roles.size() - 1;
 
+    // Newest message: keep its live injection, but any meter/band TEXT is
+    // gated on the same explicit-capture flag as the meters blob — a
+    // [LIVE METER] section on a plain chat turn gets scrubbed and logged.
+    juce::String newestContent = contents[roles.size() - 1];
+    if (!nextChatIsExplicitCapture_)
+    {
+        int lm = newestContent.indexOf("\n\n[LIVE METER");
+        if (lm >= 0)
+        {
+            newestContent = newestContent.substring(0, lm);
+            EchoJay_NSLog("EJChat: SCRUBBED [LIVE METER] text from outgoing message (no explicit-capture flag)");
+        }
+    }
+    const int newestMsgBytes = (int) newestContent.getNumBytesAsUTF8();
+
     juce::String messagesJson = "[";
     messagesJson += "{\"role\":\"system\",\"content\":" + juce::JSON::toString(systemPrompt) + "}";
     for (int i = firstIdx; i < roles.size(); ++i)
     {
-        // History messages go out with injections stripped; only the newest
-        // keeps its full content (its injection is the live one)
-        juce::String c = (i == roles.size() - 1) ? contents[i] : strippedContent(i);
+        // History messages go out with injections + meter text stripped;
+        // only the newest keeps its (scrubbed) full content
+        juce::String c = (i == roles.size() - 1) ? newestContent : strippedContent(i);
         messagesJson += ",{\"role\":" + juce::JSON::toString(roles[i]) +
                         ",\"content\":" + juce::JSON::toString(c) + "}";
     }
@@ -592,7 +611,8 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
                                                 : juce::String())
                        + " payload=" + (metersBlob.isNotEmpty()
                             ? "YES (" + juce::String((int) metersBlob.getNumBytesAsUTF8()) + "b)"
-                            : juce::String("NO"))).toRawUTF8());
+                            : juce::String("NO"))
+                       + " msg=" + juce::String(newestMsgBytes) + "b").toRawUTF8());
         nextChatTurnType_.clear();
         nextChatBusCount_ = 0;
         nextChatIsExplicitCapture_ = false;   // cleared after EVERY send
