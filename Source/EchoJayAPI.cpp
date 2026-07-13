@@ -565,9 +565,19 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
                         ",\"content\":" + juce::JSON::toString(c) + "}";
     }
     messagesJson += "]";
-    EchoJay_NSLog(("EJChat: payload " + juce::String((int)messagesJson.getNumBytesAsUTF8())
-                   + " bytes, " + juce::String(roles.size() - firstIdx) + "/"
-                   + juce::String(roles.size()) + " messages sent").toRawUTF8());
+    // Field-by-field breakdown of the messages array so nothing hides:
+    // system prompt vs history vs the newest message, each in bytes
+    {
+        int histBytes = 0;
+        for (int i = firstIdx; i < roles.size() - 1; ++i)
+            histBytes += (int) strippedContent(i).getNumBytesAsUTF8();
+        EchoJay_NSLog(("EJChat: body breakdown -- system="
+                       + juce::String((int) systemPrompt.getNumBytesAsUTF8()) + "b"
+                       + " history=" + juce::String(histBytes) + "b("
+                       + juce::String(roles.size() - 1 - firstIdx) + " msgs)"
+                       + " newest=" + juce::String(newestMsgBytes) + "b"
+                       + " messagesTotal=" + juce::String((int) messagesJson.getNumBytesAsUTF8()) + "b").toRawUTF8());
+    }
     
     juce::String body = "{\"messages\":" + messagesJson + ",\"max_tokens\":4096";
     // usage-v2 client contract: version identifier + turnType on EVERY turn.
@@ -628,6 +638,23 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
         EchoJay_NSLog(("EJChat: meters " + metersBlob.substring(0, 400)).toRawUTF8());
     }
     body += "}";
+
+    // dev_mode: dump the EXACT outgoing body for diffing against server
+    // logs (same switch as the Dump meters button)
+    {
+        static const bool devMode = juce::File::getSpecialLocation(
+            juce::File::userApplicationDataDirectory)
+            .getChildFile("EchoJay").getChildFile("dev_mode").existsAsFile();
+        if (devMode)
+        {
+            auto f = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                         .getChildFile("EchoJay").getChildFile("chat-body-debug.json");
+            f.getParentDirectory().createDirectory();
+            f.replaceWithText(body);
+            EchoJay_NSLog(("EJChat: dev_mode body dump -> " + f.getFullPathName()
+                           + " (" + juce::String((int) body.getNumBytesAsUTF8()) + "b total)").toRawUTF8());
+        }
+    }
 
     postJSON("/api/chat", body, [this, onComplete](const juce::var& json, int statusCode)
     {
