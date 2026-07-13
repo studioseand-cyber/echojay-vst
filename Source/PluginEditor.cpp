@@ -929,6 +929,18 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     aiCompareBtn.setVisible(false);
     addAndMakeVisible(aiCompareBtn);
 
+    // Codec Player: transport-bar button (AI Compare styling) + modal panel
+    codecsBtn_.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
+    codecsBtn_.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+    codecsBtn_.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+    codecsBtn_.onClick = [this] { openCodecPanel(); };
+    codecsBtn_.setVisible(false);
+    addAndMakeVisible(codecsBtn_);
+    codecPanel_.owner = this;
+    codecPanel_.setWantsKeyboardFocus(true);
+    codecPanel_.setVisible(false);
+    addChildComponent(codecPanel_);
+
     compareSlotABox.setColour(juce::ComboBox::backgroundColourId, C::bg3);
     compareSlotABox.setColour(juce::ComboBox::textColourId, C::text);
     compareSlotABox.setColour(juce::ComboBox::outlineColourId, C::border2);
@@ -1892,6 +1904,8 @@ void EchoJayEditor::showLoginScreen()
     
     // Also hide compare fields
     aiCompareBtn.setVisible(false);
+    codecsBtn_.setVisible(false);
+    if (codecPanel_.isVisible()) closeCodecPanel();
     compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
     refStatusLabel.setVisible(false);
     presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false); for (auto& b : refRemoveBtns) b.setVisible(false); compareClickCatcher.setVisible(false);
@@ -3366,6 +3380,7 @@ void EchoJayEditor::showCompareView()
     compareBtn.setButtonText("Back");
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     aiCompareBtn.setVisible(true);
+    codecsBtn_.setVisible(true);
     // Stage 1: slot boxes hidden — populated silently so AI Compare still works
     compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
     refStatusLabel.setVisible(false);
@@ -3416,6 +3431,8 @@ void EchoJayEditor::hideCompareView()
     compareBtn.setButtonText("Compare");
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     aiCompareBtn.setVisible(false);
+    codecsBtn_.setVisible(false);
+    if (codecPanel_.isVisible()) closeCodecPanel();
     // Don't stop AB playback — let ref keep playing through plugin when switching views
     compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
     refStatusLabel.setVisible(false);
@@ -3584,6 +3601,10 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
                 }
             }
 
+            // Manually choosing a slot leaves codec mode (chosen content wins;
+            // the saved pre-codec slots are no longer what the user wants back)
+            safeThis->codecModeActive_ = false;
+
             // Stop old stream for this slot, then auto-start new one
             int slotIdx = isTop ? 0 : 1;
             safeThis->processorRef.stopCompareStream(slotIdx);
@@ -3701,6 +3722,9 @@ juce::String EchoJayEditor::resolveSlotWavPath(const CompareSlotState& slot) con
             }
             return {};
         }
+
+        case CompareSlotState::Kind::CodecFile:
+            return slot.codecPath;
 
         default: return {};
     }
@@ -3840,6 +3864,344 @@ bool EchoJayEditor::bothSlotsAreCaptures() const
                k != CompareSlotState::Kind::Empty;
     };
     return isCapture(compareTop_.kind) && isCapture(compareBot_.kind);
+}
+
+// ============================================================================
+// Codec Player (phase 1) — see CodecRender.h for the render/normalise policy
+// ============================================================================
+
+void EchoJayEditor::resolveCodecSource()
+{
+    codecSrcPath_ = {}; codecSrcLabel_ = {}; codecSrcIsTopSlot_ = false;
+
+    // Source = top slot when it's a capture/reference with a local file. In
+    // codec mode the on-screen top slot is already a render — use the slot it
+    // replaced, so re-rendering with another preset works on the same source.
+    const CompareSlotState& top = codecModeActive_ ? codecSavedTop_ : compareTop_;
+    if (top.kind != CompareSlotState::Kind::Live &&
+        top.kind != CompareSlotState::Kind::Empty &&
+        top.kind != CompareSlotState::Kind::CodecFile)
+    {
+        auto p = resolveSlotWavPath(top);
+        if (p.isNotEmpty() && p != "WEB" && juce::File(p).existsAsFile())
+        {
+            codecSrcPath_ = p;
+            codecSrcLabel_ = top.label;
+            codecSrcIsTopSlot_ = true;
+            return;
+        }
+    }
+
+    // Otherwise: the most recent capture with a local WAV
+    auto snaps = processorRef.getSnapshots();
+    for (int i = (int) snaps.size() - 1; i >= 0; --i)
+    {
+        if (snaps[(size_t) i].wavFilePath.isNotEmpty()
+            && juce::File(snaps[(size_t) i].wavFilePath).existsAsFile())
+        {
+            codecSrcPath_  = snaps[(size_t) i].wavFilePath;
+            codecSrcLabel_ = snaps[(size_t) i].name;
+            return;
+        }
+    }
+}
+
+void EchoJayEditor::openCodecPanel()
+{
+    resolveCodecSource();
+    codecStatus_ = {};
+    codecPanel_.hoverIdx = -1;
+    codecPanel_.setBounds(getLocalBounds());
+    codecPanel_.setVisible(true);
+    codecPanel_.toFront(true);
+    codecPanel_.grabKeyboardFocus();
+    codecPanel_.repaint();
+    EchoJay_NSLog(("EJCodec: panel open src=" + (codecSrcPath_.isEmpty()
+                    ? juce::String("NONE") : codecSrcLabel_)).toRawUTF8());
+}
+
+void EchoJayEditor::closeCodecPanel()
+{
+    codecPanel_.setVisible(false);
+}
+
+void EchoJayEditor::startCodecRender(int presetIdx)
+{
+    const auto& ps = CodecRender::presets();
+    if (presetIdx < 0 || presetIdx >= (int) ps.size()) return;
+    if (codecRendering_ >= 0 || codecSrcPath_.isEmpty()) return;
+
+    codecRendering_ = presetIdx;
+    codecStatus_ = {};
+    codecPanel_.repaint();
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    const juce::String srcPath = codecSrcPath_;
+    const bool norm = codecNormalise_;
+    juce::Thread::launch([safeThis, srcPath, presetIdx, norm]
+    {
+        auto res = CodecRender::render(srcPath, CodecRender::presets()[(size_t) presetIdx], norm);
+        juce::MessageManager::callAsync([safeThis, res, presetIdx, norm]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->codecRendering_ = -1;
+            if (!res.ok)
+            {
+                safeThis->codecStatus_ = res.error;
+                safeThis->codecPanel_.repaint();
+                EchoJay_NSLog(("EJCodec: render FAILED " + res.error).toRawUTF8());
+                return;
+            }
+            safeThis->enterCodecMode(presetIdx, norm, res);
+        });
+    });
+}
+
+void EchoJayEditor::enterCodecMode(int presetIdx, bool normalised,
+                                   const CodecRender::Result& res)
+{
+    const auto& p = CodecRender::presets()[(size_t) presetIdx];
+
+    // Save the pre-codec slots ONCE (switching preset inside codec mode keeps
+    // the original restore point)
+    if (!codecModeActive_)
+    {
+        codecSavedTop_ = compareTop_;
+        codecSavedBot_ = compareBot_;
+        codecModeActive_ = true;
+    }
+
+    processorRef.stopCompareStream(0);
+    processorRef.stopCompareStream(1);
+
+    juce::String rendLabel = juce::String(p.name)
+        + (normalised ? juce::String(juce::CharPointer_UTF8(" \xc2\xb7 normalised"))
+                      : juce::String());
+
+    compareTop_ = {};
+    compareTop_.kind       = CompareSlotState::Kind::CodecFile;
+    compareTop_.label      = "ORIGINAL";
+    compareTop_.codecPath  = res.originalWav;
+    compareTop_.codecThumb = res.origThumb;
+
+    compareBot_ = {};
+    compareBot_.kind       = CompareSlotState::Kind::CodecFile;
+    compareBot_.label      = rendLabel;
+    compareBot_.codecPath  = res.renderWav;
+    compareBot_.codecThumb = res.renderThumb;
+
+    codecChipLabel_ = rendLabel;
+
+    updateCompareSlotBtn(true);
+    updateCompareSlotBtn(false);
+    startCompareStream(0);
+    startCompareStream(1);
+    processorRef.cmpBothCaptures.store(bothSlotsAreCaptures());
+
+    // Engage SYNC through the ONE existing code path (two-captures lockstep)
+    if (!processorRef.cmpSyncToTransport.load() && compareSyncBtn_.onClick)
+        compareSyncBtn_.onClick();
+
+    // Both sides rolling from the top, ORIGINAL audible first
+    {
+        std::lock_guard<std::mutex> lock(processorRef.cmpMutex);
+        for (int sl = 0; sl < 2; ++sl)
+        {
+            auto& s = processorRef.cmpStream[sl];
+            if (s.loaded.load()) { s.playbackPos = 0; s.playing.store(true); }
+        }
+    }
+    processorRef.cmpAudible.store(0);
+
+    closeCodecPanel();
+    updateComparePlayBtns();
+    repaint();
+    EchoJay_NSLog(("EJCodec: codec mode ON " + rendLabel
+                   + (res.cacheHit ? " (cache)" : "")).toRawUTF8());
+}
+
+void EchoJayEditor::exitCodecMode()
+{
+    if (!codecModeActive_) return;
+    codecModeActive_ = false;
+
+    processorRef.stopCompareStream(0);
+    processorRef.stopCompareStream(1);
+
+    compareTop_ = codecSavedTop_;
+    compareBot_ = codecSavedBot_;
+
+    updateCompareSlotBtn(true);
+    updateCompareSlotBtn(false);
+    startCompareStream(0);
+    startCompareStream(1);
+    processorRef.cmpBothCaptures.store(bothSlotsAreCaptures());
+
+    updateComparePlayBtns();
+    repaint();
+    EchoJay_NSLog("EJCodec: codec mode OFF (slots restored)");
+}
+
+// ---- CodecPanel: modal card (scrim + card painted by THIS component) -------
+
+void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
+{
+    if (owner == nullptr) return;
+
+    g.fillAll(juce::Colour(0xcc000000));   // scrim
+
+    const auto& ps = CodecRender::presets();
+    const int nRows = ((int) ps.size() + 1) / 2;
+    const int cardH = 58, cardGap = 8;
+    const int w = juce::jmin(500, getWidth() - 60);
+    const int h = 96 + nRows * (cardH + cardGap) + 88;
+    juce::Rectangle<int> card((getWidth() - w) / 2, (getHeight() - h) / 2, w, h);
+
+    g.setColour(C::bg2);
+    g.fillRoundedRectangle(card.toFloat(), 10.0f);
+    g.setColour(C::border);
+    g.drawRoundedRectangle(card.toFloat(), 10.0f, 1.0f);
+
+    auto r = card.reduced(18, 14);
+
+    // Header + close X
+    auto head = r.removeFromTop(22);
+    closeRect = { card.getRight() - 34, card.getY() + 10, 24, 24 };
+    g.setColour(C::text);
+    g.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
+    g.drawText("CODEC PLAYER", head, juce::Justification::centredLeft);
+    g.setColour(C::text3);
+    g.setFont(juce::Font(juce::FontOptions(14.0f)));
+    g.drawText("x", closeRect, juce::Justification::centred);
+
+    g.setColour(C::text3);
+    g.setFont(juce::Font(juce::FontOptions(11.5f)));
+    g.drawText("Hear this material the way streaming platforms deliver it.",
+               r.removeFromTop(18), juce::Justification::centredLeft, true);
+
+    // Source line
+    auto srcLine = r.removeFromTop(20);
+    g.setFont(juce::Font(juce::FontOptions(11.0f)));
+    if (owner->codecSrcPath_.isNotEmpty())
+    {
+        g.setColour(C::text2);
+        g.drawText("Using capture: " + owner->codecSrcLabel_,
+                   srcLine, juce::Justification::centredLeft, true);
+    }
+    else
+    {
+        g.setColour(juce::Colour(0xfff59e0b));
+        g.drawText("No capture available. Capture your mix first.",
+                   srcLine, juce::Justification::centredLeft, true);
+    }
+    r.removeFromTop(8);
+
+    // Preset cards, 2 columns
+    cardRects.assign(ps.size(), {});
+    const bool haveSrc = owner->codecSrcPath_.isNotEmpty();
+    const int colW = (r.getWidth() - cardGap) / 2;
+    for (int i = 0; i < (int) ps.size(); ++i)
+    {
+        const int row = i / 2, col = i % 2;
+        juce::Rectangle<int> c(r.getX() + col * (colW + cardGap),
+                               r.getY() + row * (cardH + cardGap), colW, cardH);
+        cardRects[(size_t) i] = c;
+
+        const bool rendering = (owner->codecRendering_ == i);
+        const bool hovered   = (hoverIdx == i && haveSrc && owner->codecRendering_ < 0);
+        g.setColour(hovered ? C::bg3.brighter(0.08f) : C::bg3);
+        g.fillRoundedRectangle(c.toFloat(), 7.0f);
+        g.setColour(rendering ? juce::Colour(0xff22d3ee) : C::border.withAlpha(0.8f));
+        g.drawRoundedRectangle(c.toFloat(), 7.0f, 1.0f);
+
+        auto inner = c.reduced(12, 8);
+        g.setColour(haveSrc ? C::text : C::text3);
+        g.setFont(juce::Font(juce::FontOptions(12.5f, juce::Font::bold)));
+        g.drawText(ps[(size_t) i].name, inner.removeFromTop(18),
+                   juce::Justification::centredLeft, true);
+        g.setColour(rendering ? juce::Colour(0xff22d3ee) : C::text3);
+        g.setFont(juce::Font(juce::FontOptions(10.5f)));
+        g.drawText(rendering ? juce::String(juce::CharPointer_UTF8("Rendering\xe2\x80\xa6"))
+                             : juce::String(ps[(size_t) i].kbps) + " kbps "
+                               + juce::String(juce::CharPointer_UTF8("\xc2\xb7")) + " "
+                               + ps[(size_t) i].sub,
+                   inner, juce::Justification::centredLeft, true);
+    }
+    r.removeFromTop(nRows * (cardH + cardGap) + 6);
+
+    // Normalise toggle
+    auto tRow = r.removeFromTop(20);
+    normRect = tRow.withWidth(juce::jmin(tRow.getWidth(), 320));
+    auto box = tRow.removeFromLeft(16).withSizeKeepingCentre(14, 14);
+    g.setColour(C::bg3);
+    g.fillRoundedRectangle(box.toFloat(), 3.0f);
+    g.setColour(owner->codecNormalise_ ? juce::Colour(0xff22d3ee) : C::border);
+    g.drawRoundedRectangle(box.toFloat(), 3.0f, 1.2f);
+    if (owner->codecNormalise_)
+    {
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x9c\x93")),   // tick
+                   box, juce::Justification::centred);
+    }
+    g.setColour(C::text2);
+    g.setFont(juce::Font(juce::FontOptions(11.0f)));
+    g.drawText("Loudness-normalise to -14 LUFS",
+               tRow.withTrimmedLeft(8), juce::Justification::centredLeft, true);
+    g.setColour(C::text3);
+    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+    g.drawText("Gain-matched so you hear the codec, not a level drop.",
+               r.removeFromTop(16).withTrimmedLeft(24),
+               juce::Justification::centredLeft, true);
+
+    // Status / error line
+    if (owner->codecStatus_.isNotEmpty())
+    {
+        g.setColour(juce::Colour(0xfff87171));   // coral
+        g.setFont(juce::Font(juce::FontOptions(10.5f)));
+        g.drawText(owner->codecStatus_, r.removeFromTop(16),
+                   juce::Justification::centredLeft, true);
+    }
+}
+
+void EchoJayEditor::CodecPanel::mouseUp(const juce::MouseEvent& e)
+{
+    if (owner == nullptr) return;
+    const auto pos = e.getPosition();
+
+    if (closeRect.contains(pos)) { owner->closeCodecPanel(); return; }
+
+    if (owner->codecRendering_ >= 0) return;   // one render at a time
+
+    if (normRect.contains(pos))
+    {
+        owner->codecNormalise_ = !owner->codecNormalise_;
+        repaint();
+        return;
+    }
+    for (int i = 0; i < (int) cardRects.size(); ++i)
+        if (cardRects[(size_t) i].contains(pos))
+        {
+            owner->startCodecRender(i);
+            return;
+        }
+}
+
+void EchoJayEditor::CodecPanel::mouseMove(const juce::MouseEvent& e)
+{
+    int idx = -1;
+    for (int i = 0; i < (int) cardRects.size(); ++i)
+        if (cardRects[(size_t) i].contains(e.getPosition())) { idx = i; break; }
+    if (idx != hoverIdx) { hoverIdx = idx; repaint(); }
+}
+
+bool EchoJayEditor::CodecPanel::keyPressed(const juce::KeyPress& k)
+{
+    if (k == juce::KeyPress::escapeKey && owner != nullptr)
+    {
+        owner->closeCodecPanel();
+        return true;
+    }
+    return false;
 }
 
 void EchoJayEditor::updateComparePlayBtns()
@@ -4619,6 +4981,12 @@ void EchoJayEditor::paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int>
                 for (auto v : wf)
                     pts.push_back({ -std::abs(v), std::abs(v) });
             }
+            break;
+        }
+        case CompareSlotState::Kind::CodecFile:
+        {
+            for (auto v : slot.codecThumb)
+                pts.push_back({ -std::abs(v), std::abs(v) });
             break;
         }
         default: break;
@@ -8063,6 +8431,28 @@ void EchoJayEditor::paint(juce::Graphics& g)
                    juce::Justification::centredLeft);
     }
 
+    // Codec-mode chip near the transport: label + X to exit and restore slots
+    if (currentView == View::Compare && codecModeActive_ && codecsBtn_.isVisible())
+    {
+        juce::Font chipFont(juce::FontOptions(11.0f));
+        int tw = juce::GlyphArrangement::getStringWidthInt(chipFont, codecChipLabel_);
+        auto cb = codecsBtn_.getBounds();
+        juce::Rectangle<int> chip(cb.getRight() + 8, cb.getY() + 2, tw + 36, cb.getHeight() - 4);
+        g.setColour(juce::Colour(0xff0d2b33));                 // dark teal
+        g.fillRoundedRectangle(chip.toFloat(), 6.0f);
+        g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.35f));
+        g.drawRoundedRectangle(chip.toFloat(), 6.0f, 1.0f);
+        codecChipX_ = chip.removeFromRight(22);
+        g.setColour(C::text2);
+        g.setFont(chipFont);
+        g.drawText(codecChipLabel_, chip.withTrimmedLeft(10), juce::Justification::centredLeft, true);
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        g.drawText("x", codecChipX_, juce::Justification::centred);
+    }
+    else
+        codecChipX_ = {};
+
     // CHAIN tab panel backgrounds and headers
     if (comingSoonTab)
     {
@@ -9412,6 +9802,7 @@ void EchoJayEditor::resized()
         comparePlayTopBtn_.toFront(false);
         comparePlayBotBtn_.toFront(false);
         aiCompareBtn.toFront(false);
+        codecsBtn_.toFront(false);
         presetBox.toFront(false);
         savePresetBtn.toFront(false);
         deletePresetBtn.toFront(false);
@@ -9431,15 +9822,21 @@ void EchoJayEditor::resized()
             const int kPlayW = 28;
             const int kSyncW = 44;
             const int kAiW = 100;
+            const int kCodecW = 76;
             // Centre the transport group
-            int totalW = kAbW + kTGap + kAbW + kTGap + kPlayW + kTGap + kSyncW + kTGap + kAiW;
+            int totalW = kAbW + kTGap + kAbW + kTGap + kPlayW + kTGap + kSyncW + kTGap + kAiW
+                       + kTGap + kCodecW;
             int tx = (mW - totalW) / 2;
             cmpABtn_.setBounds(tx, btnY, kAbW, 26);              tx += kAbW + kTGap;
             cmpBBtn_.setBounds(tx, btnY, kAbW, 26);              tx += kAbW + kTGap;
             cmpPlayBtn_.setBounds(tx, btnY, kPlayW, 26);         tx += kPlayW + kTGap;
             compareSyncBtn_.setBounds(tx, btnY, kSyncW, 26);     tx += kSyncW + kTGap;
-            aiCompareBtn.setBounds(tx, btnY, kAiW, 26);
+            aiCompareBtn.setBounds(tx, btnY, kAiW, 26);          tx += kAiW + kTGap;
+            codecsBtn_.setBounds(tx, btnY, kCodecW, 26);
         }
+        // Codec panel is a full-bounds modal; keep it sized and on top
+        codecPanel_.setBounds(getLocalBounds());
+        if (codecPanel_.isVisible()) codecPanel_.toFront(false);
     }
 
     // Settings layout — consistent Y tracking matching paintSettingsView.
@@ -13098,6 +13495,13 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
             return;
         }
         
+        // Codec-mode chip X: exit codec mode and restore the prior slots
+        if (codecModeActive_ && !codecChipX_.isEmpty() && codecChipX_.contains(pos))
+        {
+            exitCodecMode();
+            return;
+        }
+
         // Click-to-seek on static compare waveform panels
         for (auto& sa : cmpWaveSeekAreas_)
         {

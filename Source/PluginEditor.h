@@ -10,6 +10,7 @@
 #include "ParticleVisual.h"
 #include "PluginChecklist.h"
 #include "EchoJayWorkspace.h"
+#include "CodecRender.h"
 
 class EchoJayEditor : public juce::AudioProcessorEditor,
                        private juce::Timer,
@@ -439,11 +440,13 @@ private:
 
     // Stage 2: per-slot source selection
     struct CompareSlotState {
-        enum class Kind { Empty, Live, Snapshot, WsCapture, Reference };
+        enum class Kind { Empty, Live, Snapshot, WsCapture, Reference, CodecFile };
         Kind kind = Kind::Empty;
         int  index = -1;          // Snapshot or Reference index
         juce::String wsReviewId;  // WsCapture: review ID from workspace
         juce::String label;       // display name shown in the slot button
+        juce::String codecPath;   // CodecFile: rendered temp wav path
+        std::vector<float> codecThumb;  // CodecFile: abs-peak thumbnail
     };
     CompareSlotState compareTop_, compareBot_;
     juce::TextButton compareTopSlotBtn_;
@@ -470,7 +473,44 @@ private:
     bool bothSlotsAreCaptures() const;     // true when neither slot is Live or Empty
     // Returns full path, "WEB" (web-only, no local file), or "" (no audio / empty)
     juce::String resolveSlotWavPath(const CompareSlotState& slot) const;
-    
+
+    // ---- Codec Player (COMPARE, phase 1) -----------------------------------
+    // Offline render of the source through a real codec (AAC via AudioToolbox
+    // on mac, Ogg via JUCE's bundled libvorbis), then codec mode: top=ORIGINAL,
+    // bottom=codec render, lockstep via the existing two-captures machinery.
+    // ONE modal panel component (onboarding pattern: paints its own scrim+card,
+    // swallows mouse, ESC/X closes). Layout rects computed in paint() (one
+    // formula), stored for hit testing.
+    struct CodecPanel : juce::Component
+    {
+        EchoJayEditor* owner = nullptr;
+        void paint(juce::Graphics& g) override;
+        void mouseUp(const juce::MouseEvent& e) override;
+        void mouseMove(const juce::MouseEvent& e) override;
+        void mouseDown(const juce::MouseEvent&) override {}   // swallow
+        bool keyPressed(const juce::KeyPress& k) override;
+        std::vector<juce::Rectangle<int>> cardRects;
+        juce::Rectangle<int> normRect, closeRect;
+        int hoverIdx = -1;
+    };
+    CodecPanel codecPanel_;
+    juce::TextButton codecsBtn_ { "CODECS" };
+    bool codecNormalise_ = true;                 // panel toggle, default ON
+    int  codecRendering_ = -1;                   // preset index while rendering
+    juce::String codecStatus_;                   // error line on the card
+    juce::String codecSrcPath_, codecSrcLabel_;  // resolved on panel open
+    bool codecSrcIsTopSlot_ = false;
+    bool codecModeActive_ = false;
+    CompareSlotState codecSavedTop_, codecSavedBot_;  // restored on chip X
+    juce::String codecChipLabel_;
+    juce::Rectangle<int> codecChipX_;            // painted chip close zone
+    void openCodecPanel();
+    void closeCodecPanel();
+    void resolveCodecSource();
+    void startCodecRender(int presetIdx);
+    void enterCodecMode(int presetIdx, bool normalised, const CodecRender::Result& res);
+    void exitCodecMode();
+
     // Reference Presets
     juce::ComboBox presetBox;
     juce::TextButton savePresetBtn { "Save Preset" };
