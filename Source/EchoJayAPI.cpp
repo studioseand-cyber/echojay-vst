@@ -1030,6 +1030,17 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     } // end hardcoded fallback
     
     // === DYNAMIC SECTIONS (always appended, whether remote or hardcoded) ===
+
+    // usage-v2 (2.9.98): capture-era data availability. Appended AFTER
+    // whichever base prompt is in use — including the REMOTE config prompt,
+    // which still carries live-meter-era instructions and a LIVE METER
+    // field glossary the model imitated on payload-less chats (fabricated
+    // blocks with invented values). Explicit later-override wording
+    // neutralises those sections until the SaaS prompt is updated.
+    prompt += "DATA AVAILABILITY (THIS OVERRIDES ANY EARLIER INSTRUCTION ABOUT LIVE METERS):\n";
+    prompt += "Meter data reaches you ONLY through explicit captures (a [CAPTURE ...] data block or attached capture payload) and Compare data. There is NO live meter feed on chat turns. Any earlier instruction about a LIVE METER block is obsolete: such a block will never be present, and you must NEVER produce one, imitate its format, or invent meter values.\n";
+    prompt += "If the conversation contains NO capture data: do not describe or characterise the mix's loudness, dynamics, stereo image, tonal balance, or any metric in any way - you have no data at all. Do not guess, estimate, or speak in general terms about how it probably measures. Instead, in one short sentence invite the user to hit Capture so you can look at real numbers, then answer anything else they asked.\n\n";
+
     
     // Channel type context — tells AI what kind of audio this is and what to focus on
     if (channelType != "Mix Bus" && channelType != "Master Bus")
