@@ -4058,25 +4058,36 @@ void EchoJayEditor::CodecLaunchBtn::paintButton(juce::Graphics& g, bool over, bo
 
     juce::Font f(juce::FontOptions(11.0f, juce::Font::bold));
     const int textW = juce::GlyphArrangement::getStringWidthInt(f, "CODECS");
-    const int iconW = 15, gap = 5;
+    const int iconW = 13, gap = 5;
     const int x0 = (getWidth() - (iconW + gap + textW)) / 2;
-    const float cy = (float) getHeight() * 0.5f;
+    // Optical centre of the ALL-CAPS label sits ~0.5px above the geometric
+    // centre (caps leave the descent unused); ride the glyph on that line
+    const float cy = (float) getHeight() * 0.5f - 0.5f;
 
-    // Codec glyph: three-bar waveform between brackets, ~12px
+    // Codec glyph: ONE unit built from a shared centreline — every element
+    // is a mirrored offset from cx, so left/right bracket-to-bar gaps are
+    // identical by construction (the old version placed arc CENTRES
+    // symmetrically, but an arc's ink is offset from its centre, which left
+    // a visibly larger gap after the opening bracket)
     g.setColour(cyan.withAlpha((over || active) ? 1.0f : 0.85f));
+    const float cx = (float) x0 + (float) iconW * 0.5f;
+    // Bars: centres at cx and cx ± 2.6, width 1.4
+    const float barH[3] = { 4.5f, 8.0f, 4.5f };
+    for (int i = 0; i < 3; ++i)
+    {
+        const float bcx = cx + ((float) i - 1.0f) * 2.6f;
+        g.fillRoundedRectangle(bcx - 0.7f, cy - barH[i] * 0.5f, 1.4f, barH[i], 0.7f);
+    }
+    // Brackets: arc centres at cx ± 4.0, rx 2.2 — nearest ink (the arc
+    // endpoints) lands at cx ± 5.0, a 1.7px gap off each outer bar edge
     juce::Path p;
-    const float bx = (float) x0;
-    p.addCentredArc(bx + 2.5f, cy, 2.5f, 5.5f, 0.0f,
+    p.addCentredArc(cx - 4.0f, cy, 2.2f, 5.5f, 0.0f,
                     juce::MathConstants<float>::pi * 1.15f,
                     juce::MathConstants<float>::pi * 1.85f, true);
-    p.addCentredArc(bx + (float) iconW - 2.5f, cy, 2.5f, 5.5f, 0.0f,
+    p.addCentredArc(cx + 4.0f, cy, 2.2f, 5.5f, 0.0f,
                     juce::MathConstants<float>::pi * 0.15f,
                     juce::MathConstants<float>::pi * 0.85f, true);
     g.strokePath(p, juce::PathStrokeType(1.2f));
-    const float barH[3] = { 4.0f, 8.0f, 5.0f };
-    for (int i = 0; i < 3; ++i)
-        g.fillRoundedRectangle(bx + 5.2f + (float) i * 2.6f,
-                               cy - barH[i] * 0.5f, 1.4f, barH[i], 0.7f);
 
     g.setFont(f);
     g.drawText("CODECS", x0 + iconW + gap, 0, textW + 2, getHeight(),
