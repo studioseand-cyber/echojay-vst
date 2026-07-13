@@ -1638,6 +1638,9 @@ private:
     juce::TextButton viewAllPluginsBtn { "View all" };
     juce::TextButton settingsScanBtn { "Scan Plugins" };
     juce::TextButton settingsHelpBtn { "Help & Support" };
+    // Opens https://www.echojay.ai/manual — sits beside Save on the bottom
+    // row (left cluster), same quiet link style as Help & Support
+    juce::TextButton settingsManualBtn { "Manual" };
     // Debug: dumps MeterEngine::getMeterDataJSON() to ~/Documents/EchoJay/
     // meter-debug.json + appends a one-line summary to meter-debug.log
     juce::TextButton dumpMetersBtn { "Dump meters" };

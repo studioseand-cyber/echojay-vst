@@ -373,6 +373,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         juce::URL("https://www.echojay.ai/support").launchInDefaultBrowser();
     };
 
+    // Manual — same quiet link style; beside Save on the bottom row
+    settingsManualBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    settingsManualBtn.setColour(juce::TextButton::textColourOffId, C::text3);
+    settingsManualBtn.setColour(juce::TextButton::textColourOnId, C::text2);
+    addChildComponent(settingsManualBtn);
+    settingsManualBtn.onClick = [this]()
+    {
+        juce::URL("https://www.echojay.ai/manual").launchInDefaultBrowser();
+    };
+
     // Debug meter dump — same dim text styling as Help & Support
     dumpMetersBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     dumpMetersBtn.setColour(juce::TextButton::textColourOffId, C::text3);
@@ -1898,8 +1908,9 @@ void EchoJayEditor::showLoginScreen()
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
     settingsHelpBtn.setVisible(false);
+    settingsManualBtn.setVisible(false);
     dumpMetersBtn.setVisible(false);
-    
+
     // Also hide compare fields
     aiCompareBtn.setVisible(false);
     codecsBtn_.setVisible(false);
@@ -5241,6 +5252,7 @@ void EchoJayEditor::showSettingsView()
     settingsScanBtn.setVisible(true);
     viewAllPluginsBtn.setVisible(true);
     settingsHelpBtn.setVisible(true);
+    settingsManualBtn.setVisible(true);
     // Dump meters is DEV-ONLY (dev_mode file) — resized() owns its
     // visibility; never force it on here
     settingsPluginViewport.setVisible(false);
@@ -5342,6 +5354,7 @@ void EchoJayEditor::hideSettingsView()
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
     settingsHelpBtn.setVisible(false);
+    settingsManualBtn.setVisible(false);
     dumpMetersBtn.setVisible(false);
     // Leaving Settings: a deferred prompt may return
     updateProjectPromptVisibility();
@@ -10096,7 +10109,10 @@ void EchoJayEditor::resized()
         // width (not the form column) so Log Out stays bottom-right
         int rowW = b.getWidth() - 40;
         saveSettingsBtn.setBounds(sx, saveRowY, 100, 30);
-        settingsSavedLabel.setBounds(sx + 110, saveRowY, 150, 30);
+        // Manual beside Save (left cluster); the transient Saved label
+        // moves right of it
+        settingsManualBtn.setBounds(sx + 108, saveRowY, 70, 30);
+        settingsSavedLabel.setBounds(sx + 188, saveRowY, 150, 30);
         logoutBtn.setBounds(sx + rowW - 80, saveRowY, 80, 30);
         // Help & Support sits just left of Log Out — an app-level link, kept
         // visually distinct from the plugins controls above.
