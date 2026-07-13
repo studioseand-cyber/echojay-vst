@@ -469,6 +469,14 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
             }
             
             // Server confirms we're at the limit (or refresh failed — fall back to cached state).
+            // Drop ALL staged per-turn state: a blocked capture's payload
+            // must not leak onto the next plain chat send.
+            if (nextChatMeters_.isNotEmpty() || nextChatIsExplicitCapture_)
+                EchoJay_NSLog("EJChat: staged capture payload dropped (limit reached)");
+            nextChatMeters_.clear();
+            nextChatTurnType_.clear();
+            nextChatBusCount_ = 0;
+            nextChatIsExplicitCapture_ = false;
             onComplete(getLimitReachedMessage(), false);
         });
         return;
@@ -547,22 +555,47 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     // turnType is staged per send ("" = plain "chat"); capture payloads only
     // ride on explicit capture turns (the callers enforce that pairing).
     body += ",\"appVersion\":\"" + juce::String(JucePlugin_VersionString) + "\"";
+
+    // Meter/band payload: EXPLICIT CAPTURE ONLY. Anything staged (or passed
+    // via the legacy parameter) without the flag is discarded loudly — a
+    // stray blob on a plain chat turn made the server classify it as
+    // capture_analysis / flow live.
+    juce::String metersBlob;
+    if (nextChatIsExplicitCapture_)
+        metersBlob = nextChatMeters_.isNotEmpty() ? nextChatMeters_ : meterJsonBlob;
+    else if (nextChatMeters_.isNotEmpty() || meterJsonBlob.isNotEmpty())
+        EchoJay_NSLog("EJChat: DISCARDED stray meter blob (no explicit-capture flag)");
+    nextChatMeters_.clear();
+
     {
         juce::String tt = nextChatTurnType_.isNotEmpty() ? nextChatTurnType_ : "chat";
+        if (!nextChatIsExplicitCapture_
+            && (tt == "capture_analysis" || tt == "link_analysis"))
+        {
+            EchoJay_NSLog(("EJChat: turnType " + tt
+                           + " downgraded to chat (no explicit-capture flag)").toRawUTF8());
+            tt = "chat";
+            nextChatBusCount_ = 0;
+        }
+        if (tt == "capture_analysis" && metersBlob.isEmpty())
+        {
+            // NEVER capture_analysis without a payload (server 400s it)
+            EchoJay_NSLog("EJChat: capture_analysis without payload downgraded to chat");
+            tt = "chat";
+        }
         body += ",\"turnType\":" + juce::JSON::toString(tt);
         if (nextChatBusCount_ > 0)
             body += ",\"busCount\":" + juce::String(nextChatBusCount_);
-        EchoJay_NSLog(("EJChat: turnType=" + tt
+        // Per-send verification line: turn class + whether a payload rode
+        EchoJay_NSLog(("EJChat: send turnType=" + tt
                        + (nextChatBusCount_ > 0 ? " busCount=" + juce::String(nextChatBusCount_)
-                                                : juce::String())).toRawUTF8());
+                                                : juce::String())
+                       + " payload=" + (metersBlob.isNotEmpty()
+                            ? "YES (" + juce::String((int) metersBlob.getNumBytesAsUTF8()) + "b)"
+                            : juce::String("NO"))).toRawUTF8());
         nextChatTurnType_.clear();
         nextChatBusCount_ = 0;
-    }
-    juce::String metersBlob = meterJsonBlob;
-    if (metersBlob.isEmpty())
-    {
-        metersBlob = nextChatMeters_;   // consume the staged blob
-        nextChatMeters_.clear();
+        nextChatIsExplicitCapture_ = false;   // cleared after EVERY send
     }
     if (metersBlob.isNotEmpty())
     {

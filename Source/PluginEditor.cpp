@@ -12064,12 +12064,9 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     // capture -> capture_analysis; multi-bus (Links captured alongside the
     // host) -> link_analysis with busCount. NEVER capture_analysis without
     // a payload (the server 400s it) — the blob attach is unconditional here.
-    api.setNextChatMeters(MeterEngine::meterDataToJSON(
-        snap.averagedData, processorRef.getSampleRate()));
-    if (snap.channels.size() > 1)
-        api.setNextChatTurnType("link_analysis", (int) snap.channels.size());
-    else
-        api.setNextChatTurnType("capture_analysis");
+    api.stageCapturePayload(MeterEngine::meterDataToJSON(
+                                snap.averagedData, processorRef.getSampleRate()),
+                            (int) snap.channels.size());
 
     auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
     juce::String captureChatId = chatId;

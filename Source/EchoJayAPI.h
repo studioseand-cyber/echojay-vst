@@ -130,6 +130,19 @@ public:
     void setNextChatTurnType(const juce::String& t, int busCount = 0)
     { nextChatTurnType_ = t; nextChatBusCount_ = busCount; }
 
+    // THE ONLY WAY meter/band data reaches /api/chat: the explicit-capture
+    // flag is set here (Capture button flow) and cleared after EVERY send —
+    // including the limit-failure path, so a blocked capture can never leak
+    // its payload onto the next plain chat turn. sendChat discards any
+    // staged blob that arrives without this flag (logged).
+    void stageCapturePayload(const juce::String& metersBlob, int busCount)
+    {
+        nextChatMeters_   = metersBlob;
+        nextChatBusCount_ = busCount > 1 ? busCount : 0;
+        nextChatTurnType_ = busCount > 1 ? "link_analysis" : "capture_analysis";
+        nextChatIsExplicitCapture_ = true;
+    }
+
     // usage-v2 accessors. Percent works against BOTH server states.
     float getUsagePercent() const
     {
@@ -275,6 +288,7 @@ private:
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
     int          nextChatBusCount_ = 0;
+    bool         nextChatIsExplicitCapture_ = false;   // see stageCapturePayload
     UserInfo userInfo;
     UserSettings userSettings;
     
