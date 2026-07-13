@@ -311,6 +311,20 @@ private:
     bool chatCentredEmpty_ = false;
     juce::Rectangle<int> chatEmptyHeading_, chatEmptySub_;
 
+    // FREE V2 premium lock (two-lane contract): when the monthly premium
+    // pool is spent (no credits), Link/Chain/Compare show a lock strip —
+    // visible with an upgrade affordance, never hidden tabs. The strip is
+    // painted (banner pattern); its CTA is the ONE shared upgradeBtn,
+    // positioned by the timer (chat-input gate takes priority when the
+    // chat lane is ALSO spent). Chat stays usable on its own daily lane.
+    bool premiumLocked() const
+    {
+        return api.isLoggedIn()
+            && api.getUserInfo().usagePool.twoLane()
+            && api.isPremiumExhausted();
+    }
+    juce::Rectangle<int> premiumLockRect_, premiumLockBtnRect_;
+
     // usage-v2 free-tier banner (spec section 6): shown above the chat
     // input on the CHAT tab when tier is free, usagePool.model.fast is true
     // and tasteRemaining is 0. Dismissible per session (per-process static

@@ -20,6 +20,21 @@ struct UserInfo {
     // states. Weights are SERVER-ONLY; the client never sees units.
     struct UsagePool {
         bool  present = false;
+        // FREE V2 two-lane shape (13 Jul 2026 contract; /api/me emits
+        // usagePool ONLY for free accounts now): premium actions
+        // (capture/link/chain/compare) draw the monthly pool + credits;
+        // chats draw a daily pool and NEVER touch credits. Paid accounts
+        // get no usagePool and keep the legacy single locally-computed bar.
+        struct Lane {
+            bool  present = false;
+            int   used = 0, pool = 0;
+            float percent = 0.0f;      // server-computed, 0..100
+            juce::String resetAt;      // ISO8601
+        };
+        Lane premium, chats;
+        bool twoLane() const { return premium.present && chats.present; }
+        // Legacy single-pool fields (earlier v2 shape) — still parsed so a
+        // server rollback cannot blank the UI.
         int   used = 0, pool = 0;
         float percent = 0.0f;          // 0..100
         juce::String period;           // "daily" / "monthly"
@@ -86,8 +101,19 @@ public:
     // Get current user info
     UserInfo getUserInfo() const { return userInfo; }
     
-    // Check if user can send a message (within monthly limit + credits)
+    // Check if user can send a message. Two-lane pool: this is the CHAT
+    // lane (daily, never credit-extended) — the chat input's gate. Premium
+    // surfaces must use canSendTurn/isPremiumExhausted instead.
     bool canSendMessage() const;
+
+    // FREE V2 lane gates. Premium turns (capture_analysis / link_analysis /
+    // chain_generate / version_compare) draw the monthly pool + credits;
+    // chat draws the daily pool. Legacy states (no pool / paid) fall back
+    // to canSendMessage so every tier gets ONE consistent answer.
+    bool isPremiumExhausted() const;   // two-lane free: monthly spent, no credits
+    bool canSendTurn(const juce::String& turnType) const;
+    // Lane-correct blocked copy, mirroring the server's 429 strings exactly.
+    juce::String getLimitReachedMessage(const juce::String& turnType) const;
     
     // Get remaining messages this period. THE one used->remaining
     // conversion: the backend sends USED (messagesUsedToday) + limit;

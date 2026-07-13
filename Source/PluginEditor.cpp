@@ -4316,8 +4316,10 @@ void EchoJayEditor::updateTransportBar()
 
 void EchoJayEditor::runAICompare()
 {
-    if (!api.canSendMessage()) {
-        auto msg = api.getLimitReachedMessage();
+    // AI Compare is a PREMIUM action: gate on the monthly premium lane
+    // (chat staying usable when premium is spent, per the free-v2 contract)
+    if (!api.canSendTurn("version_compare")) {
+        auto msg = api.getLimitReachedMessage("version_compare");
         chatMessages.push_back({"assistant", msg});
         processorRef.chatHistory.push_back({"assistant", msg});
         repaint(); return;
@@ -6974,6 +6976,73 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
             g.drawText(plan, badge, juce::Justification::centred);
 
+            if (info.usagePool.twoLane())
+            {
+                // FREE V2 (13 Jul 2026): two percentage-only bars matching
+                // the web copy exactly — 'Premium actions' (monthly reset
+                // date) and 'Chats' (Resets daily). NO raw counts anywhere.
+                const int bx = a.getX() + 14, bw = a.getWidth() - 28;
+                int y = badge.getBottom() + 6;
+                g.setColour(C::text3);
+                g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                g.drawText(juce::String(juce::CharPointer_UTF8(
+                               "Premium actions monthly \xc2\xb7 chats daily on our fast model")),
+                           bx, y, bw, 12, juce::Justification::centredLeft, true);
+                y += 18;
+
+                auto laneBar = [&](const juce::String& label,
+                                   const UserInfo::UsagePool::Lane& lane,
+                                   const juce::String& resetLine)
+                {
+                    const float pct  = juce::jlimit(0.0f, 100.0f, lane.percent);
+                    const float frac = pct / 100.0f;
+                    g.setColour(C::text2);
+                    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+                    g.drawText(label, bx, y, bw / 2 + 20, 13, juce::Justification::centredLeft);
+                    g.setColour(pct >= 90.0f ? juce::Colour(0xffff6d5a) : C::text);
+                    g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
+                    g.drawText(juce::String((int) std::lround(pct)) + "% used",
+                               bx, y, bw, 13, juce::Justification::centredRight);
+                    y += 15;
+                    juce::Rectangle<int> bar(bx, y, bw, 8);
+                    g.setColour(C::bg4);
+                    g.fillRoundedRectangle(bar.toFloat(), 4.0f);
+                    if (frac > 0.0f)
+                    {
+                        g.setColour((pct >= 90.0f ? juce::Colour(0xffff6d5a)
+                                                  : juce::Colour(0xff22d3ee)).withAlpha(0.85f));
+                        g.fillRoundedRectangle(bar.toFloat().withWidth(bar.getWidth() * frac), 4.0f);
+                    }
+                    y += 11;
+                    g.setColour(C::text3);
+                    g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                    g.drawText(resetLine, bx, y, bw, 11, juce::Justification::centredLeft);
+                    y += 17;
+                };
+
+                juce::String premiumReset = "Resets monthly";
+                if (auto ra = info.usagePool.premium.resetAt; ra.isNotEmpty())
+                {
+                    auto t = juce::Time::fromISO8601(ra);
+                    if (t.toMilliseconds() > 0)
+                        premiumReset = "Resets " + juce::String(t.getDayOfMonth())
+                                     + " " + t.formatted("%B");
+                }
+                laneBar("Premium actions", info.usagePool.premium, premiumReset);
+                laneBar("Chats", info.usagePool.chats, "Resets daily");
+
+                // Credits: web copy verbatim, only when > 0
+                if (const int cr = api.getUsageCredits(); cr > 0)
+                {
+                    g.setColour(C::blue2);
+                    g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+                    g.drawText(juce::String(cr) + (cr == 1 ? " credit" : " credits")
+                                   + " available for extra premium actions",
+                               bx, y, bw, 12, juce::Justification::centredLeft, true);
+                }
+            }
+            else
+            {
             // usage-v2: Settings is the ONLY usage surface — a percent
             // figure + the bar filled to usagePool.percent. Never pool
             // size, used units, weights or unit names. Bar goes coral at
@@ -7022,6 +7091,7 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
                 g.drawText("+" + juce::String(cr) + " credits",
                            bar.getX(), bar.getBottom() + 19, bar.getWidth(), 12,
                            juce::Justification::centredLeft);
+            }
             }
             // Pro/Studio users see plan status where free users get Upgrade
             if (info.tierLevel > 0)
@@ -8477,6 +8547,42 @@ void EchoJayEditor::paint(juce::Graphics& g)
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(12.0f)));
         g.drawText("x", chatBannerCloseRect_, juce::Justification::centred);
+    }
+
+    // FREE V2 premium lock strip: Link / Chain / Compare stay fully visible,
+    // but a strip states the spent premium pool with an upgrade affordance
+    // (the shared upgradeBtn is positioned into premiumLockBtnRect_ by the
+    // timer). Rects computed HERE (one formula); empty when not locked.
+    premiumLockRect_ = premiumLockBtnRect_ = {};
+    if (currentScreen == Screen::Main && premiumLocked() && !visualOnlyMode && !compactMode
+        && (currentTab == Tab::Link || currentTab == Tab::Chain || currentTab == Tab::Compare))
+    {
+        // Compare: sit above the transport row; Link/Chain: bottom edge
+        const int stripH = 26;
+        int sy = getHeight() - stripH - 6;
+        if (currentTab == Tab::Compare && cmpPlayBtn_.isVisible())
+            sy = cmpPlayBtn_.getY() - stripH - 6;
+        premiumLockRect_ = { 10, sy, mW - 20, stripH };
+        auto r = premiumLockRect_.toFloat();
+        g.setColour(juce::Colour(0xff0d2b33));                 // dark teal
+        g.fillRoundedRectangle(r, 6.0f);
+        g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.35f));
+        g.drawRoundedRectangle(r, 6.0f, 1.0f);
+
+        juce::String resetStr = "monthly";
+        auto ra = api.getUserInfo().usagePool.premium.resetAt;
+        if (ra.isNotEmpty())
+        {
+            auto t = juce::Time::fromISO8601(ra);
+            if (t.toMilliseconds() > 0)
+                resetStr = juce::String(t.getDayOfMonth()) + " " + t.formatted("%B");
+        }
+        premiumLockBtnRect_ = premiumLockRect_.reduced(4, 2).removeFromRight(118);
+        g.setColour(C::text2);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText("Premium actions used this month. Resets " + resetStr + ".",
+                   premiumLockRect_.reduced(12, 0).withTrimmedRight(122),
+                   juce::Justification::centredLeft, true);
     }
 
     // Compare transport honesty hint (see toggleComparePlay) — transient
@@ -10017,7 +10123,8 @@ void EchoJayEditor::resized()
             int cx = sx + sw + 16;
             int cw = b.getWidth() - 20 - cx;
             int cTop = topH + 18, cBottom = saveRowY - 12;
-            int acctH = 118, gap = 8;
+            // FREE V2 two-lane card needs room for two bars + credits line
+            int acctH = api.getUserInfo().usagePool.twoLane() ? 208 : 118, gap = 8;
             settingsAccountCard_ = { cx, cTop, cw, acctH };
             settingsVisualCard_  = { cx, cTop + acctH + gap, cw,
                                      juce::jmax(120, cBottom - (cTop + acctH + gap)) };
@@ -10025,7 +10132,8 @@ void EchoJayEditor::resized()
         else
         {
             int cTop = sy + 8;
-            int ch = juce::jlimit(96, 150, saveRowY - 12 - cTop);
+            int chMax = api.getUserInfo().usagePool.twoLane() ? 208 : 150;
+            int ch = juce::jlimit(96, chMax, saveRowY - 12 - cTop);
             settingsAccountCard_ = { sx, cTop, juce::jmin(sw, 380), ch };
             settingsVisualCard_  = {};   // stacked mode: no room to breathe
         }
@@ -10641,10 +10749,19 @@ void EchoJayEditor::timerCallback()
         bool onSettingsCard = currentView == View::Settings
                            && !visualOnlyMode && !compactMode
                            && !settingsUpgradeRect_.isEmpty();
+        // Third owned home (FREE V2): the premium lock strip on Link /
+        // Chain / Compare. The chat-input gate takes priority when the
+        // chat lane is ALSO spent (the strip then shows text only).
+        bool chatGate = chatContext && !api.canSendMessage();
+        bool onLockStrip = !chatGate && !premiumLockBtnRect_.isEmpty()
+                        && premiumLocked()
+                        && (currentTab == Tab::Link || currentTab == Tab::Chain
+                            || currentTab == Tab::Compare)
+                        && !visualOnlyMode && !compactMode;
         bool showUpgrade = info.tierLevel < 2
                         && !channelPromptVisible && !genrePromptVisible
                         && !visualOnlyMode
-                        && ((chatContext && !api.canSendMessage()) || onSettingsCard);
+                        && (chatGate || onSettingsCard || onLockStrip);
         upgradeBtn.setVisible(showUpgrade);
         if (showUpgrade)
         {
@@ -10652,6 +10769,10 @@ void EchoJayEditor::timerCallback()
             if (onSettingsCard)
             {
                 upgradeBtn.setBounds(settingsUpgradeRect_);
+            }
+            else if (onLockStrip)
+            {
+                upgradeBtn.setBounds(premiumLockBtnRect_);
             }
             else
             {
@@ -10680,6 +10801,11 @@ void EchoJayEditor::timerCallback()
         }
         
         
+        // Premium lock: dim the AI Compare launcher so the locked state is
+        // visible BEFORE clicking (the click itself answers with the
+        // premium-lane copy). setAlpha early-outs when unchanged.
+        aiCompareBtn.setAlpha(premiumLocked() ? 0.45f : 1.0f);
+
         // Periodic refresh every 5 minutes to sync usage/subscription.
         // Visibility-change and Settings-open refreshes (see elsewhere)
         // cover the common upgrade-detection cases. The periodic timer

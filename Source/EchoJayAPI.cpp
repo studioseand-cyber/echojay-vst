@@ -324,10 +324,38 @@ static int simulatedCreditsOverride()
 bool EchoJayAPI::canSendMessage() const
 {
     if (int ov = simulatedCreditsOverride(); ov >= 0) return ov > 0;
-    // usage-v2: at 100 percent with zero credits the server refuses the turn
+    // FREE V2 two-lane: this is the CHAT lane — daily pool, never
+    // credit-extended (mirrors the server gate exactly)
+    if (userInfo.usagePool.twoLane())
+        return userInfo.usagePool.chats.used < userInfo.usagePool.chats.pool;
+    // usage-v2 legacy single pool: at 100 percent with zero credits the
+    // server refuses the turn
     if (userInfo.usagePool.present)
         return userInfo.usagePool.percent < 100.0f || userInfo.usagePool.credits > 0;
     return userInfo.messagesUsedToday < (userInfo.messageLimit + userInfo.credits);
+}
+
+bool EchoJayAPI::isPremiumExhausted() const
+{
+    if (int ov = simulatedCreditsOverride(); ov >= 0) return ov == 0;
+    // Only the two-lane free contract has a distinct premium pool; every
+    // other state answers via the general gate so locks behave consistently.
+    if (userInfo.usagePool.twoLane())
+        return userInfo.usagePool.premium.used >= userInfo.usagePool.premium.pool
+            && userInfo.usagePool.credits <= 0;
+    return !canSendMessage();
+}
+
+static bool isPremiumTurnType(const juce::String& t)
+{
+    return t == "capture_analysis" || t == "link_analysis"
+        || t == "chain_generate"  || t == "version_compare";
+}
+
+bool EchoJayAPI::canSendTurn(const juce::String& turnType) const
+{
+    if (isPremiumTurnType(turnType)) return !isPremiumExhausted();
+    return canSendMessage();
 }
 
 int EchoJayAPI::getRemainingMessages() const
@@ -340,12 +368,24 @@ int EchoJayAPI::getRemainingMessages() const
 
 juce::String EchoJayAPI::getLimitReachedMessage() const
 {
-    // usage-v2 blocked-state copy: period-aware, NO numbers. Mirrors the
-    // SaaS refusal copy so client pre-check and server 429 read the same.
+    // FREE V2 two-lane: the no-turnType call is the chat surface's gate —
+    // chat-lane copy, EXACT server 429 string.
+    if (userInfo.usagePool.twoLane())
+        return "You've used today's free chats. They reset at midnight UTC. "
+               "Upgrade to Pro to keep the conversation going.";
+    // usage-v2 legacy blocked-state copy: period-aware, NO numbers. Mirrors
+    // the SaaS refusal copy so client pre-check and server 429 read the same.
     if (getUsagePeriod() == "monthly")
         return "You've hit this month's limit. Top up or upgrade to continue.";
     return "You've used today's free analyses. Resets at midnight UTC.";
+}
 
+juce::String EchoJayAPI::getLimitReachedMessage(const juce::String& turnType) const
+{
+    if (userInfo.usagePool.twoLane() && isPremiumTurnType(turnType))
+        return "You've used your premium actions for this month. "
+               "Upgrade to Pro for more, or top up with credits.";
+    return getLimitReachedMessage();
 }
 
 // usage-v2: parse the additive usagePool object from an /api/me (or login)
@@ -360,6 +400,21 @@ static void parseUsagePool(juce::DynamicObject* root, UserInfo& info)
     if (up == nullptr) return;
     auto& u = info.usagePool;
     u.present       = true;
+    // FREE V2 two-lane sub-objects (premium monthly / chats daily)
+    auto parseLane = [](juce::DynamicObject* pool, const char* key,
+                        UserInfo::UsagePool::Lane& lane)
+    {
+        if (auto* l = pool->getProperty(key).getDynamicObject())
+        {
+            lane.present = true;
+            lane.used    = (int) l->getProperty("used");
+            lane.pool    = (int) l->getProperty("pool");
+            lane.percent = (float)(double) l->getProperty("percent");
+            lane.resetAt = l->getProperty("resetAt").toString();
+        }
+    };
+    parseLane(up, "premium", u.premium);
+    parseLane(up, "chats",   u.chats);
     u.used          = (int) up->getProperty("used");
     u.pool          = (int) up->getProperty("pool");
     u.percent       = (float)(double) up->getProperty("percent");
@@ -449,25 +504,29 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
                            std::function<void(const juce::String& reply, bool success)> onComplete,
                            const juce::String& meterJsonBlob)
 {
-    if (!canSendMessage())
+    // FREE V2: the gate is LANE-AWARE — the staged turnType decides whether
+    // this send draws the daily chat pool or the monthly premium pool, so a
+    // spent premium pool never blocks plain chat and vice versa.
+    const juce::String gateTurnType = nextChatTurnType_;
+    if (!canSendTurn(gateTurnType))
     {
         // AUTH CACHE REFRESH — local cache says we're over limit, but the user may have
         // upgraded tier or credits since the last server sync. Refresh from /api/me first,
         // and only show "limit reached" if the server ALSO agrees we're at the limit.
         // This is the self-healing path for users who upgrade mid-session.
         auto aliveFlag = alive;
-        refreshUserInfo([this, roles, contents, systemPrompt, onComplete, aliveFlag, meterJsonBlob](bool refreshSuccess)
+        refreshUserInfo([this, roles, contents, systemPrompt, onComplete, aliveFlag, meterJsonBlob, gateTurnType](bool refreshSuccess)
         {
             if (!aliveFlag->load()) return;
 
-            if (refreshSuccess && canSendMessage())
+            if (refreshSuccess && canSendTurn(gateTurnType))
             {
                 // Refresh revealed we actually CAN send (tier upgraded, credits added, new day, etc).
                 // Retry the send as if the limit error never happened.
                 sendChat(roles, contents, systemPrompt, onComplete, meterJsonBlob);
                 return;
             }
-            
+
             // Server confirms we're at the limit (or refresh failed — fall back to cached state).
             // Drop ALL staged per-turn state: a blocked capture's payload
             // must not leak onto the next plain chat send.
@@ -477,7 +536,7 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
             nextChatTurnType_.clear();
             nextChatBusCount_ = 0;
             nextChatIsExplicitCapture_ = false;
-            onComplete(getLimitReachedMessage(), false);
+            onComplete(getLimitReachedMessage(gateTurnType), false);
         });
         return;
     }
@@ -722,13 +781,27 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
         
         if (statusCode == 429)
         {
-            // Display the server's error message directly
+            // Display the server's error message directly (the server sends
+            // the lane-correct copy). The 429 body also carries a FRESH
+            // usagePool — ingest it so Settings bars and the premium locks
+            // reflect the blocked state immediately, without waiting for
+            // the next /api/me poll.
             juce::String serverMsg;
             if (json.isObject())
             {
                 auto* obj = json.getDynamicObject();
-                if (obj && obj->hasProperty("error"))
-                    serverMsg = obj->getProperty("error").toString();
+                if (obj)
+                {
+                    if (obj->hasProperty("error"))
+                        serverMsg = obj->getProperty("error").toString();
+                    if (obj->hasProperty("usagePool"))
+                    {
+                        parseUsagePool(obj, userInfo);
+                        EchoJay_NSLog("EJChat: 429 carried usagePool -- state refreshed");
+                    }
+                    if ((bool) obj->getProperty("upgradeRequired"))
+                        EchoJay_NSLog("EJChat: 429 upgradeRequired=true");
+                }
             }
             if (serverMsg.isEmpty())
                 serverMsg = getLimitReachedMessage();
