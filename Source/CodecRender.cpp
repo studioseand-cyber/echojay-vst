@@ -17,9 +17,11 @@ const std::vector<Preset>& presets()
     static const std::vector<Preset> list = []
     {
         std::vector<Preset> p;
+        // Names exclude "kbps": the card's second line prints the bitrate,
+        // and slot/chip labels read "AAC 256 · normalised"
 #if JUCE_MAC
-        p.push_back({ "aac256", "AAC 256 kbps", "Apple Music-style",      256, true });
-        p.push_back({ "aac128", "AAC 128 kbps", "AAC, lower tier",        128, true });
+        p.push_back({ "aac256", "AAC 256", "Apple Music-style",       256, true });
+        p.push_back({ "aac128", "AAC 128", "AAC, lower tier",         128, true });
 #endif
         p.push_back({ "ogg320", "Ogg Vorbis 320", "Spotify-style, high",   320, false });
         p.push_back({ "ogg160", "Ogg Vorbis 160", "Spotify-style, normal", 160, false });

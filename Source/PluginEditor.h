@@ -494,7 +494,19 @@ private:
         int hoverIdx = -1;
     };
     CodecPanel codecPanel_;
-    juce::TextButton codecsBtn_ { "CODECS" };
+    // Feature-launcher button: right-aligned against the panel edge (NOT part
+    // of the centred transport cluster). Custom-painted: codec glyph
+    // (waveform between brackets) + label, subtle cyan 1px outline that
+    // brightens on hover and stays lit while codec mode is engaged. No solid
+    // fill — it must read as a doorway, not a toggle, and must not compete
+    // with Send/Upgrade.
+    struct CodecLaunchBtn : juce::Button
+    {
+        CodecLaunchBtn() : juce::Button("CODECS") {}
+        bool active = false;   // codec mode engaged (written by updateTransportBar)
+        void paintButton(juce::Graphics& g, bool over, bool down) override;
+    };
+    CodecLaunchBtn codecsBtn_;
     bool codecNormalise_ = true;                 // panel toggle, default ON
     int  codecRendering_ = -1;                   // preset index while rendering
     juce::String codecStatus_;                   // error line on the card

@@ -929,10 +929,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     aiCompareBtn.setVisible(false);
     addAndMakeVisible(aiCompareBtn);
 
-    // Codec Player: transport-bar button (AI Compare styling) + modal panel
-    codecsBtn_.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
-    codecsBtn_.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
-    codecsBtn_.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+    // Codec Player: feature-launcher button (custom paint, see CodecLaunchBtn)
+    // + modal panel
     codecsBtn_.onClick = [this] { openCodecPanel(); };
     codecsBtn_.setVisible(false);
     addAndMakeVisible(codecsBtn_);
@@ -4042,6 +4040,49 @@ void EchoJayEditor::exitCodecMode()
     EchoJay_NSLog("EJCodec: codec mode OFF (slots restored)");
 }
 
+// ---- CodecLaunchBtn: feature-launcher (outline doorway, not a toggle) ------
+
+void EchoJayEditor::CodecLaunchBtn::paintButton(juce::Graphics& g, bool over, bool)
+{
+    const auto cyan = juce::Colour(0xff22d3ee);
+    auto b = getLocalBounds().toFloat().reduced(0.5f);
+
+    // No solid fill; codec mode adds only a faint interior wash
+    if (active)
+    {
+        g.setColour(cyan.withAlpha(0.08f));
+        g.fillRoundedRectangle(b, 6.0f);
+    }
+    g.setColour(cyan.withAlpha(active ? 0.9f : (over ? 0.75f : 0.4f)));
+    g.drawRoundedRectangle(b, 6.0f, 1.0f);
+
+    juce::Font f(juce::FontOptions(11.0f, juce::Font::bold));
+    const int textW = juce::GlyphArrangement::getStringWidthInt(f, "CODECS");
+    const int iconW = 15, gap = 5;
+    const int x0 = (getWidth() - (iconW + gap + textW)) / 2;
+    const float cy = (float) getHeight() * 0.5f;
+
+    // Codec glyph: three-bar waveform between brackets, ~12px
+    g.setColour(cyan.withAlpha((over || active) ? 1.0f : 0.85f));
+    juce::Path p;
+    const float bx = (float) x0;
+    p.addCentredArc(bx + 2.5f, cy, 2.5f, 5.5f, 0.0f,
+                    juce::MathConstants<float>::pi * 1.15f,
+                    juce::MathConstants<float>::pi * 1.85f, true);
+    p.addCentredArc(bx + (float) iconW - 2.5f, cy, 2.5f, 5.5f, 0.0f,
+                    juce::MathConstants<float>::pi * 0.15f,
+                    juce::MathConstants<float>::pi * 0.85f, true);
+    g.strokePath(p, juce::PathStrokeType(1.2f));
+    const float barH[3] = { 4.0f, 8.0f, 5.0f };
+    for (int i = 0; i < 3; ++i)
+        g.fillRoundedRectangle(bx + 5.2f + (float) i * 2.6f,
+                               cy - barH[i] * 0.5f, 1.4f, barH[i], 0.7f);
+
+    g.setFont(f);
+    g.drawText("CODECS", x0 + iconW + gap, 0, textW + 2, getHeight(),
+               juce::Justification::centredLeft);
+}
+
 // ---- CodecPanel: modal card (scrim + card painted by THIS component) -------
 
 void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
@@ -4252,6 +4293,14 @@ void EchoJayEditor::updateTransportBar()
         : juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6"))); // ▶
     cmpPlayBtn_.setColour(juce::TextButton::textColourOffId,
                           anyPlaying ? C::green : C::text2);
+
+    // CODECS launcher stays outline-lit while codec mode is engaged (every
+    // enter/exit/slot-change path funnels through updateComparePlayBtns)
+    if (codecsBtn_.active != codecModeActive_)
+    {
+        codecsBtn_.active = codecModeActive_;
+        codecsBtn_.repaint();
+    }
 }
 
 void EchoJayEditor::runAICompare()
@@ -8431,24 +8480,34 @@ void EchoJayEditor::paint(juce::Graphics& g)
                    juce::Justification::centredLeft);
     }
 
-    // Codec-mode chip near the transport: label + X to exit and restore slots
+    // Codec-mode chip: status lives BESIDE the CODECS launcher at the right
+    // edge (chip grows leftward from the button, clamped so it never touches
+    // the centred transport cluster; label ellipsises when clamped)
     if (currentView == View::Compare && codecModeActive_ && codecsBtn_.isVisible())
     {
         juce::Font chipFont(juce::FontOptions(11.0f));
-        int tw = juce::GlyphArrangement::getStringWidthInt(chipFont, codecChipLabel_);
+        int natural = juce::GlyphArrangement::getStringWidthInt(chipFont, codecChipLabel_) + 36;
         auto cb = codecsBtn_.getBounds();
-        juce::Rectangle<int> chip(cb.getRight() + 8, cb.getY() + 2, tw + 36, cb.getHeight() - 4);
-        g.setColour(juce::Colour(0xff0d2b33));                 // dark teal
-        g.fillRoundedRectangle(chip.toFloat(), 6.0f);
-        g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.35f));
-        g.drawRoundedRectangle(chip.toFloat(), 6.0f, 1.0f);
-        codecChipX_ = chip.removeFromRight(22);
-        g.setColour(C::text2);
-        g.setFont(chipFont);
-        g.drawText(codecChipLabel_, chip.withTrimmedLeft(10), juce::Justification::centredLeft, true);
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(12.0f)));
-        g.drawText("x", codecChipX_, juce::Justification::centred);
+        int minX = aiCompareBtn.isVisible() ? aiCompareBtn.getRight() + 8 : 8;
+        int w = juce::jmin(natural, cb.getX() - 8 - minX);
+        if (w > 44)
+        {
+            juce::Rectangle<int> chip(cb.getX() - 8 - w, cb.getY() + 2, w, cb.getHeight() - 4);
+            g.setColour(juce::Colour(0xff0d2b33));                 // dark teal
+            g.fillRoundedRectangle(chip.toFloat(), 6.0f);
+            g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.35f));
+            g.drawRoundedRectangle(chip.toFloat(), 6.0f, 1.0f);
+            codecChipX_ = chip.removeFromRight(22);
+            g.setColour(C::text2);
+            g.setFont(chipFont);
+            g.drawText(codecChipLabel_, chip.withTrimmedLeft(10),
+                       juce::Justification::centredLeft, true);
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(12.0f)));
+            g.drawText("x", codecChipX_, juce::Justification::centred);
+        }
+        else
+            codecChipX_ = {};
     }
     else
         codecChipX_ = {};
@@ -9821,18 +9880,23 @@ void EchoJayEditor::resized()
             const int kAbW = 28;   // A/B buttons
             const int kPlayW = 28;
             const int kSyncW = 44;
-            const int kAiW = 100;
-            const int kCodecW = 76;
-            // Centre the transport group
-            int totalW = kAbW + kTGap + kAbW + kTGap + kPlayW + kTGap + kSyncW + kTGap + kAiW
-                       + kTGap + kCodecW;
+            // Tight panels: shorten AI Compare so the centred cluster leaves
+            // room for the right-aligned CODECS launcher + codec chip
+            const bool tightBar = (mW < 700);
+            aiCompareBtn.setButtonText(tightBar ? "AI" : "AI Compare");
+            aiCompareBtn.setTooltip(tightBar ? "AI Compare" : juce::String());
+            const int kAiW = tightBar ? 36 : 100;
+            const int kCodecW = 88;
+            // Centre the transport cluster (CODECS is NOT part of it)
+            int totalW = kAbW + kTGap + kAbW + kTGap + kPlayW + kTGap + kSyncW + kTGap + kAiW;
             int tx = (mW - totalW) / 2;
             cmpABtn_.setBounds(tx, btnY, kAbW, 26);              tx += kAbW + kTGap;
             cmpBBtn_.setBounds(tx, btnY, kAbW, 26);              tx += kAbW + kTGap;
             cmpPlayBtn_.setBounds(tx, btnY, kPlayW, 26);         tx += kPlayW + kTGap;
             compareSyncBtn_.setBounds(tx, btnY, kSyncW, 26);     tx += kSyncW + kTGap;
-            aiCompareBtn.setBounds(tx, btnY, kAiW, 26);          tx += kAiW + kTGap;
-            codecsBtn_.setBounds(tx, btnY, kCodecW, 26);
+            aiCompareBtn.setBounds(tx, btnY, kAiW, 26);
+            // Feature-launcher: right-aligned against the panel edge
+            codecsBtn_.setBounds(mW - kCodecW - 10, btnY, kCodecW, 26);
         }
         // Codec panel is a full-bounds modal; keep it sized and on top
         codecPanel_.setBounds(getLocalBounds());
