@@ -4698,17 +4698,17 @@ void EchoJayEditor::LinkListView::paint(juce::Graphics& g)
         g.drawText(rowName, cardX + 14, y + 9, nameW, 16,
                    juce::Justification::centredLeft);
         {
-            // Placement chip: BUS (cyan) / CHANNEL (dim) / SET? (dim, not amber —
-            // an unset Link is never nagged). Click opens the bus/channel chooser.
+            // Placement chip. Same colour logic as Link's own header selector:
+            // BOTH deliberately-set values (Bus / Channel) read in the cyan
+            // accent; only the UNSET state is dim (never amber — an unset Link
+            // is never nagged). Click opens the bus/channel chooser.
             juce::Rectangle<int> chip(cardX + 14, y + 32, 66, 17);
             placementZones.push_back({ chip, rowAddr });
-            juce::String pl; juce::Colour pc;
-            switch (slot.placement)
-            {
-                case 1:  pl = "BUS";     pc = juce::Colour(0xff22d3ee); break;
-                case 2:  pl = "CHANNEL"; pc = C::text3;                 break;
-                default: pl = "SET?";    pc = C::text3;                 break;
-            }
+            const juce::String pl = slot.placement == 1 ? "BUS"
+                                  : slot.placement == 2 ? "CHANNEL" : "SET?";
+            // One predicate: set → accent, unset → dim.
+            const juce::Colour pc = slot.placement == 0 ? C::text3
+                                                        : juce::Colour(0xff22d3ee);
             g.setColour(pc.withAlpha(0.15f));
             g.fillRoundedRectangle(chip.toFloat(), 4.0f);
             g.setColour(pc.withAlpha(0.7f));
