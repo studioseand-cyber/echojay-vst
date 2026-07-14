@@ -1515,6 +1515,8 @@ private:
         // custom-painted; drag/throttle state lives below.
         struct GainZone { juce::Rectangle<int> rect; juce::String addr; };
         std::vector<GainZone> gainZones;
+        // placement chips: {rect, addr} — click opens the bus/insert chooser
+        std::vector<std::pair<juce::Rectangle<int>, juce::String>> placementZones;
         // Active drag: which row's slider is being dragged, the live value,
         // and a ~10Hz send throttle (final value always sent on mouseUp).
         juce::String  dragAddr;
@@ -1567,6 +1569,9 @@ private:
     // Remote gain: ctrl-cmd carrying the CURRENT active + a new absolute
     // gainDb field, acked like Active. Authority stays with the Link.
     void sendLinkGainCommand(const juce::String& linkAddr, float gainDb);
+    // Remote placement declaration (0 unset, 1 bus, 2 insert) via ctrl-cmd.
+    void sendLinkPlacementCommand(const juce::String& linkAddr, int placement);
+    void showLinkPlacementMenu(const juce::String& linkAddr);
     // AI-driven level match: compute the absolute gain that lands this Link's
     // integrated loudness at targetLufs (from its freshest frame + current
     // gain), then send it. Returns the dB that WOULD be applied for the

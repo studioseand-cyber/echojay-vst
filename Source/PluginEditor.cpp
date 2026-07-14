@@ -4508,6 +4508,7 @@ void EchoJayEditor::LinkListView::paint(juce::Graphics& g)
     auto& ed = *owner;
     zones.clear();
     gainZones.clear();
+    placementZones.clear();
 
     // LIST order: alphabetical by name, Untitleds last (by uid) — stable
     // while scrolling regardless of registry slot order (claim order)
@@ -4621,12 +4622,32 @@ void EchoJayEditor::LinkListView::paint(juce::Graphics& g)
                         && (nowMs - st.lastChangeMs) < 1000;
         const float dim  = fresh ? 1.0f : 0.4f;
 
-        // Name — vertically centred in the left column
+        // Name (top of the left column) + placement chip below it
         g.setColour(C::text);
         g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
         const int nameW = 128;
-        g.drawText(rowName, cardX + 14, y + (cardH - 18) / 2, nameW, 18,
+        g.drawText(rowName, cardX + 14, y + 9, nameW, 16,
                    juce::Justification::centredLeft);
+        {
+            // Placement chip: BUS (cyan) / INSERT (dim) / SET? (amber) —
+            // click opens the bus/insert chooser (remote via ctrl-cmd)
+            juce::Rectangle<int> chip(cardX + 14, y + 32, 64, 17);
+            placementZones.push_back({ chip, rowAddr });
+            juce::String pl; juce::Colour pc;
+            switch (slot.placement)
+            {
+                case 1:  pl = "BUS";    pc = juce::Colour(0xff22d3ee); break;
+                case 2:  pl = "INSERT"; pc = C::text3;                 break;
+                default: pl = "SET?";   pc = juce::Colour(0xfff59e0b); break;
+            }
+            g.setColour(pc.withAlpha(0.15f));
+            g.fillRoundedRectangle(chip.toFloat(), 4.0f);
+            g.setColour(pc.withAlpha(0.7f));
+            g.drawRoundedRectangle(chip.toFloat(), 4.0f, 1.0f);
+            g.setColour(pc);
+            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+            g.drawText(pl, chip, juce::Justification::centred);
+        }
 
         // ---- Inline gain slider: track + thumb + " dB" readout, sitting
         // between the meter strip and the Active toggle. Custom-painted;
@@ -4703,6 +4724,14 @@ void EchoJayEditor::LinkListView::mouseDown(const juce::MouseEvent& e)
 {
     if (owner == nullptr) return;
     const auto pos = e.getPosition();
+
+    // Placement chip (name column, below the name)
+    for (auto& pz : placementZones)
+        if (pz.first.contains(pos))
+        {
+            owner->showLinkPlacementMenu(pz.second);
+            return;
+        }
 
     // Gain slider first (sits left of the Active toggle)
     for (auto& gz : gainZones)
@@ -7226,13 +7255,19 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
                            juce::Justification::centredLeft);
             }
             }
-            // Pro/Studio users see plan status where free users get Upgrade
+            // Pro/Studio users see plan status where free users get Upgrade.
+            // Pro STILL shows an "Upgrade to Studio" button on the same row,
+            // so split it: status text on the left, button (positioned by the
+            // timer) on the right. Studio has no button → status full width.
             if (info.tierLevel > 0)
             {
                 g.setColour(C::text2);
                 g.setFont(juce::Font(juce::FontOptions(10.5f)));
+                juce::Rectangle<int> statusR = settingsUpgradeRect_;
+                if (info.tierLevel == 1)   // pro: leave room for the button (kUpgW + gap)
+                    statusR = statusR.withTrimmedRight(140 + 10);
                 g.drawText(plan == "PRO" ? "Pro plan active" : "Studio plan active",
-                           settingsUpgradeRect_, juce::Justification::centredLeft);
+                           statusR, juce::Justification::centredLeft);
             }
         }
 
@@ -9681,13 +9716,28 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                               (float)(double)po->getProperty("proposedGain"));
                         const juce::String reason = po->getProperty("reason").toString();
                         const bool applied = (bool)po->getProperty("applied");   // persisted
+                        // faderDependent defaults TRUE when absent (safe: an
+                        // unmarked proposal on an insert Link is refused)
+                        const bool faderDep = po->hasProperty("faderDependent")
+                                            ? (bool)po->getProperty("faderDependent") : true;
                         const juce::String uid = resolveLinkProposalAddr(linkId);
                         const bool present = uid.isNotEmpty();
+                        // Placement gate: a fader-dependent match on an
+                        // insert/unknown Link is REFUSED (we can't see the fader)
+                        int place = 0;
+                        for (const auto& li : processorRef.getLinkSlotInfos())
+                        {
+                            const juce::String a = li.uid.isNotEmpty()
+                                ? li.uid : LinkShm::makeSafeFilePart(li.name);
+                            if (a == uid) { place = li.placement; break; }
+                        }
+                        const bool refused = present && faderDep && place != 1;   // not "bus"
 
                         juce::Rectangle<int> card(bubbleX, cardY, bubbleW, kGainCardH);
                         g.setColour(C::bg2);
                         g.fillRoundedRectangle(card.toFloat(), 8.0f);
-                        g.setColour(juce::Colour(0xff22d3ee).withAlpha(applied ? 0.5f : 0.3f));
+                        g.setColour(juce::Colour(refused ? 0xfff59e0b : 0xff22d3ee)
+                                        .withAlpha(applied ? 0.5f : 0.3f));
                         g.drawRoundedRectangle(card.toFloat(), 8.0f, 1.0f);
 
                         // Title: "Vocal bus: -3.0 dB"
@@ -9697,17 +9747,20 @@ void EchoJayEditor::paint(juce::Graphics& g)
                             + (propG >= 0 ? "+" : "") + juce::String(propG, 1) + " dB";
                         g.drawText(title, card.getX() + 12, card.getY() + 7,
                                    card.getWidth() - 96, 16, juce::Justification::centredLeft);
-                        // Reason line
-                        g.setColour(C::text3);
+                        // Reason line — or the refusal caveat
+                        g.setColour(refused ? juce::Colour(0xfff59e0b) : C::text3);
                         g.setFont(juce::Font(juce::FontOptions(10.5f)));
-                        g.drawText(present ? reason : "Link no longer present",
+                        g.drawText(!present ? "Link no longer present"
+                                   : refused ? "Can't match: EchoJay can't see this channel's fader"
+                                             : reason,
                                    card.getX() + 12, card.getY() + 26,
                                    card.getWidth() - 96, 16, juce::Justification::centredLeft, true);
 
-                        // Apply / Applied+Undo button(s) on the right
+                        // Apply / Applied+Undo button(s) on the right — but not
+                        // when refused (level-match refused for insert Links)
                         const bool inView = card.getY() >= chatScroll.getBounds().getY() - kGainCardH
                                          && card.getY() <= chatScroll.getBounds().getBottom();
-                        if (present && inView)
+                        if (present && !refused && inView)
                         {
                             if (!applied)
                             {
@@ -11033,7 +11086,15 @@ void EchoJayEditor::timerCallback()
             upgradeBtn.setButtonText(info.tierLevel == 0 ? "Upgrade to Pro" : "Upgrade to Studio");
             if (onSettingsCard)
             {
-                upgradeBtn.setBounds(settingsUpgradeRect_);
+                // Pro shares the row with the "Pro plan active" status text —
+                // button takes the right column (matches the paint-side split).
+                if (info.tierLevel == 1)
+                {
+                    auto r = settingsUpgradeRect_;
+                    upgradeBtn.setBounds(r.removeFromRight(140));
+                }
+                else
+                    upgradeBtn.setBounds(settingsUpgradeRect_);
             }
             else if (onLockStrip)
             {
@@ -12040,15 +12101,17 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
     processorRef.refreshLinkRegistry();
     const auto infos = processorRef.getLinkSlotInfos();
 
-    struct LvlRow { juce::String name, uid; float gain, integ, mom, tp; bool has; };
+    struct LvlRow { juce::String name, uid; float gain, integ, mom, tp; bool has; int placement; };
     std::vector<LvlRow> rows;
+    bool anyInsertOrUnknown = false;
     for (const auto& li : infos)
     {
         if (li.name.isEmpty()) continue;   // proposals need an addressable id
         LvlRow r; r.name = li.name;
         r.uid = li.uid.isNotEmpty() ? li.uid : LinkShm::makeSafeFilePart(li.name);
-        r.gain = li.gainDb; r.has = false;
+        r.gain = li.gainDb; r.has = false; r.placement = li.placement;
         r.integ = r.mom = r.tp = -100.0f;
+        if (li.placement != 1) anyInsertOrUnknown = true;   // not "bus"
         LinkMeterFrame f;
         if (li.regIdx >= 0 && processorRef.readLinkMeterFrame(li.regIdx, f)
             && f.integrated > -70.0f)
@@ -12061,11 +12124,13 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
     if (rows.empty()) return {};
 
     auto f1 = [](float v) { return juce::String(v, 1); };
+    auto placeStr = [](int p) { return p == 1 ? "bus" : p == 2 ? "insert" : "unknown"; };
     const auto busMd = processorRef.getMeterEngine().getMeterData();
 
     juce::String c;
     c << "\n\n[LINK LEVELS — internal context, do not show raw numbers unless "
-         "citing them in a gain proposal reason]\n";
+         "citing them in a gain proposal reason. All Link measurements below are "
+         "taken at the Link's INSERT POINT, before the channel fader.]\n";
     if (busMd.integrated > -70.0f)
         c << "Mix bus (this instance): integrated " << f1(busMd.integrated)
           << " LUFS, momentary " << f1(busMd.momentary)
@@ -12074,30 +12139,46 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
         c << "Mix bus (this instance): no signal captured yet\n";
     for (const auto& r : rows)
     {
-        c << "Link \"" << r.name << "\" (instanceId " << r.uid << "): gain "
-          << (r.gain >= 0 ? "+" : "") << f1(r.gain) << " dB";
+        c << "Link \"" << r.name << "\" (instanceId " << r.uid << ", placement="
+          << placeStr(r.placement) << "): gain " << (r.gain >= 0 ? "+" : "") << f1(r.gain) << " dB";
         if (r.has)
-            c << ", integrated " << f1(r.integ) << " LUFS, momentary " << f1(r.mom)
+            c << ", insert-point integrated " << f1(r.integ) << " LUFS, momentary " << f1(r.mom)
               << " LUFS, TP " << f1(r.tp) << " dBTP";
         else
             c << ", no live measurement";
         c << "\n";
     }
-    c << "\nIf — and ONLY if — the MEASURED values justify a level change (a bus "
-         "sitting hot against the others, a true-peak over, matching a target "
-         "loudness), you may propose gain changes. A proposal MUST be grounded in "
-         "these numbers and its reason MUST cite them. Do NOT propose a gain change "
-         "on taste alone; if you want to suggest a taste-based level move, say so in "
-         "prose with NO machine block. Never claim you changed a gain yourself — the "
-         "user applies it.\n"
-         "When you do propose, emit ONE block as the very last thing in your reply, "
-         "after all prose, nothing after <<<END_GAIN>>>:\n"
+    // Placement-aware rules (see the investigation: no fader access).
+    c << "\nPLACEMENT RULES — read carefully:\n"
+         "- A Link's placement is either \"bus\" (post-fader: its loudness IS what "
+         "reaches the mix), \"insert\" (pre-fader), or \"unknown\" (treat as insert).\n"
+         "- For \"bus\" Links, their loudness is their real contribution. You MAY "
+         "compare their levels to each other and to the mix bus, and MAY propose gain "
+         "changes, when the MEASURED values justify it.\n"
+         "- For \"insert\" or \"unknown\" Links, the measurements are PRE-FADER. You "
+         "CANNOT see the channel fader, so you MUST NOT propose a gain change based on "
+         "comparing them to other channels or to the mix bus, and MUST NOT claim one "
+         "channel is louder/quieter than another in the actual mix. You MAY still "
+         "comment in prose, and MAY propose a gain change for a reason that does NOT "
+         "depend on the fader (a true-peak over at the insert point, or matching an "
+         "absolute target the user asked for).\n";
+    if (anyInsertOrUnknown)
+        c << "- Because at least one Link is insert/unknown, ANY sentence comparing an "
+             "insert/unknown Link's level to anything else MUST carry this caveat once: "
+             "\"I can't see channel faders, so I can't judge how these sit in the mix.\"\n";
+    c << "- Never claim you changed a gain yourself — the user applies it.\n"
+         "\nProposal format — only when the rules above permit. Emit ONE block as the "
+         "very last thing in your reply, nothing after <<<END_GAIN>>>:\n"
          "<<<ECHOJAY_GAIN>>>\n"
          "{\"proposals\":[{\"linkId\":\"<exact Link name>\",\"currentGain\":<dB now>,"
-         "\"proposedGain\":<dB target>,\"reason\":\"<one line citing the numbers>\"}]}\n"
+         "\"proposedGain\":<dB target>,\"faderDependent\":<true if based on comparing "
+         "levels across channels/the bus; false if based only on an insert-point reason "
+         "like a TP over or an absolute target>,\"reason\":\"<one line citing the "
+         "numbers>\"}]}\n"
          "<<<END_GAIN>>>\n"
          "proposedGain is ABSOLUTE (the new gain, -24..+12), not a delta. One entry "
-         "per Link; multiple Links = multiple entries in the array.\n";
+         "per Link; multiple Links = multiple entries. Do NOT include a proposal for an "
+         "insert/unknown Link whose reason is fader-dependent.\n";
     return c;
 }
 
@@ -12152,6 +12233,63 @@ void EchoJayEditor::applyGainProposal(const GainCardZone& z)
     workspace.updateAssistantGainJson(currentChatId, cm.content, cm.gainData);
     workspace.requestMutationSync();
     repaint();
+}
+
+void EchoJayEditor::sendLinkPlacementCommand(const juce::String& linkAddr, int placement)
+{
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || linkAddr.isEmpty()) return;
+    const juce::String& id = linkAddr;
+
+    // Carry current active so the placement cmd never toggles it; no gainDb
+    bool active = true;
+    for (const auto& li : processorRef.getLinkSlotInfos())
+    {
+        const juce::String a = li.uid.isNotEmpty()
+                             ? li.uid : LinkShm::makeSafeFilePart(li.name);
+        if (a == linkAddr) { active = li.active; break; }
+    }
+    for (const auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && !p.isGain && !p.timedOut) active = p.target;
+
+    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    for (auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
+
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",         1);
+    cmd->setProperty("seq",       seq);
+    cmd->setProperty("active",    active);
+    cmd->setProperty("placement", juce::jlimit(0, 2, placement));
+    juce::File(dir + "ctrl-ack-" + id + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + id + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    pollLinkCtrlAck(linkAddr, seq, 12);
+    repaint();
+}
+
+void EchoJayEditor::showLinkPlacementMenu(const juce::String& linkAddr)
+{
+    int cur = 0;
+    juce::String name;
+    for (const auto& li : processorRef.getLinkSlotInfos())
+    {
+        const juce::String a = li.uid.isNotEmpty()
+                             ? li.uid : LinkShm::makeSafeFilePart(li.name);
+        if (a == linkAddr) { cur = li.placement; name = li.name; break; }
+    }
+    juce::PopupMenu m;
+    m.addSectionHeader((name.isEmpty() ? juce::String("Link") : name) + " placement");
+    m.addItem(1, "On a bus or aux (post-fader)",    true, cur == 1);
+    m.addItem(2, "On a channel insert (pre-fader)", true, cur == 2);
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    m.showMenuAsync(juce::PopupMenu::Options(),
+        [safeThis, linkAddr](int r)
+        {
+            if (safeThis == nullptr || r == 0) return;
+            safeThis->sendLinkPlacementCommand(linkAddr, r == 1 ? 1 : 2);
+        });
 }
 
 float EchoJayEditor::linkRowDisplayGain(const juce::String& linkAddr) const
@@ -13949,6 +14087,20 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     }
 
     // LINK tab — row toggles live inside linkListView_ (its own mouseDown)
+
+    // AI gain-proposal Apply/Undo cards — direct hit testing in the editor's
+    // OWN mouseDown (the path that actually fires; the viewport's onClickCheck
+    // does not reliably run for these, same class as the centred-input bug —
+    // the cards are editor-painted, so they need the editor-level hit test).
+    if (currentScreen == Screen::Main && !gainCardZones_.empty())
+    {
+        for (auto& gz : gainCardZones_)
+            if (gz.rect.contains(pos))
+            {
+                applyGainProposal(gz);
+                return;
+            }
+    }
 
     // Chat wave card click — direct hit testing (works on Windows where overlays fail)
     if (currentScreen == Screen::Main && !chatWavePositions.empty())

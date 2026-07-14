@@ -372,6 +372,7 @@ public:
         int64_t      framesRead = 0;
         int          regIdx     = -1;     // registry slot index (meter frame lookup)
         float        gainDb     = 0.0f;   // Link's built-in gain stage (0 = old Links)
+        int          placement  = 0;      // 0 unset/unknown, 1 bus, 2 insert
     };
 
     /// Refresh the list of known Link slots from the registry.

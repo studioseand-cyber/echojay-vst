@@ -711,6 +711,19 @@ private:
                               juce::Slider::TextBoxRight };
     juce::Label  gainCaption;   // small "GAIN" cap to the left of the slider
 
+    // ---- Placement declaration -------------------------------------------
+    // Header control (click → choose bus/insert) + a one-time prompt shown
+    // on first open while placement is unset. Link measures at its insert
+    // point; for level work it belongs on a bus. See LinkProcessor::Placement.
+    juce::TextButton placementBtn;                 // header: "On a bus" / "On an insert" / "Set placement"
+    bool placementPromptVisible = false;
+    juce::TextButton placementBusBtn    { "On a bus or aux (post-fader)" };
+    juce::TextButton placementInsertBtn { "On a channel insert (pre-fader)" };
+    void showPlacementChooser();                   // header re-edit (menu)
+    void updatePlacementBtn();
+    void applyPlacement(int p);                    // set + hide prompt + refresh
+    void paintPlacementPrompt(juce::Graphics& g);
+
     LinkChainPanel chainPanel;
 
     // "+" block popup — same searchable picker as the main plugin's Chain

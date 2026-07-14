@@ -93,7 +93,11 @@ struct alignas(128) RegistrySlot
                                //     Mirrored here so the monitor shows it
                                //     regardless of Active. Carved from _pad;
                                //     old writers leave it 0.0 = unity (benign).
-    uint8_t  _pad[4];          //  4  → total 128
+    uint8_t  placement;        //  1  Link placement (v0.6.0): 0=unset/unknown,
+                               //     1=bus (post-fader), 2=insert (pre-fader).
+                               //     Old writers leave 0 = unknown (treated as
+                               //     pre-fader for level gating). Carved from _pad.
+    uint8_t  _pad[3];          //  3  → total 128
 };
 static_assert(sizeof(RegistrySlot) == 128, "RegistrySlot must be 128 bytes");
 
@@ -469,6 +473,7 @@ inline int claimSlot(void* regMap,
             slots[i].gainDb      = 0.0f;   // recycled slot: never serve the
                                            // previous owner's gain (the owner
                                            // re-publishes its real gain at once)
+            slots[i].placement   = 0;      // recycled slot: unknown until owner republishes
             // Reset the slot's meter frame: a recycled slot must NEVER serve
             // the previous owner's last values — the receiver would see an
             // unfamiliar seq, treat it as a fresh frame, and style frozen
@@ -530,6 +535,13 @@ inline void setSlotGain(void* regMap, int slotIdx, float gainDb)
     regSlots(regMap)[slotIdx].gainDb = gainDb;
 }
 
+// Mirror the Link's placement (0 unset, 1 bus, 2 insert) for the monitor.
+inline void setSlotPlacement(void* regMap, int slotIdx, uint8_t placement)
+{
+    if (!regMap || slotIdx < 0 || slotIdx >= kRegMaxSlots) return;
+    regSlots(regMap)[slotIdx].placement = placement;
+}
+
 struct SlotSnapshot {
     int          idx;
     juce::String instanceUid;    // per-instance address ("" from old writers)
@@ -540,6 +552,7 @@ struct SlotSnapshot {
     uint32_t     heartbeat;
     bool         active = true;  // capture/meter role on
     float        gainDb = 0.0f;  // Link's built-in gain stage (0 from old writers)
+    uint8_t      placement = 0;  // 0 unset/unknown, 1 bus, 2 insert
 };
 
 inline bool readSlot(void* regMap, int i, SlotSnapshot& out)
@@ -556,6 +569,7 @@ inline bool readSlot(void* regMap, int i, SlotSnapshot& out)
     out.heartbeat     = loadRelaxed(&slot->heartbeat);
     out.active        = loadAcquire(&slot->activeFlag) != 0;
     out.gainDb        = slot->gainDb;
+    out.placement     = slot->placement;
     return true;
 }
 

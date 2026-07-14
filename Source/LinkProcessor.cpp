@@ -261,11 +261,16 @@ void LinkProcessor::pollControlCommand()
         setGainDb(g);   // snapSmoothing=false → glide (no zipper, no pop)
     }
 
+    // Remote placement declaration (from the monitor row's placement control)
+    if (obj->hasProperty("placement"))
+        setPlacement((int)obj->getProperty("placement"));
+
     auto* ack = new juce::DynamicObject();
-    ack->setProperty("v",      1);
-    ack->setProperty("seq",    seq);
-    ack->setProperty("active", linkOn.load());
-    ack->setProperty("gainDb", (double)gainDb_.load(std::memory_order_relaxed));
+    ack->setProperty("v",         1);
+    ack->setProperty("seq",       seq);
+    ack->setProperty("active",    linkOn.load());
+    ack->setProperty("gainDb",    (double)gainDb_.load(std::memory_order_relaxed));
+    ack->setProperty("placement", placement_.load(std::memory_order_relaxed));
     juce::File(resolvedDir + "ctrl-ack-" + id + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(ack), true));
 }
@@ -445,9 +450,11 @@ void LinkProcessor::updateShmState()
         claimRegistrySlot();
     }
     LinkShm::setSlotActive(regMap, regSlotIdx, on);
-    // Re-publish gain into the (possibly freshly claimed) slot so the monitor
-    // shows the real value immediately, not the claim-time 0
+    // Re-publish gain + placement into the (possibly freshly claimed) slot so
+    // the monitor shows the real values immediately, not the claim-time 0
     LinkShm::setSlotGain(regMap, regSlotIdx, gainDb_.load(std::memory_order_relaxed));
+    LinkShm::setSlotPlacement(regMap, regSlotIdx,
+                              (uint8_t) placement_.load(std::memory_order_relaxed));
 
     if (on)
     {
@@ -604,6 +611,19 @@ void LinkProcessor::setGainDb(float db, bool snapSmoothing)
     updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
 
     if (onLinkStateChanged) onLinkStateChanged();   // open editor slider sync
+}
+
+void LinkProcessor::setPlacement(int p)
+{
+    p = juce::jlimit((int) PlacementUnset, (int) PlacementInsert, p);
+    placement_.store(p, std::memory_order_relaxed);
+    if (regMap != nullptr && regSlotIdx >= 0)
+        LinkShm::setSlotPlacement(regMap, regSlotIdx, (uint8_t) p);
+    updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+    if (onLinkStateChanged) onLinkStateChanged();
+    EchoJay_NSLog(("EJLinkState: placement set to "
+                   + juce::String(p == PlacementBus ? "bus"
+                                  : p == PlacementInsert ? "insert" : "unset")).toRawUTF8());
 }
 
 // =============================================================================
@@ -1076,6 +1096,7 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     obj->setProperty("linkName", linkName);
     obj->setProperty("linkOn",   (bool)linkOn.load());
     obj->setProperty("gainDb",   (double)gainDb_.load(std::memory_order_relaxed));
+    obj->setProperty("placement", placement_.load(std::memory_order_relaxed));
     obj->setProperty("projectName", projectName);
     obj->setProperty("genre",       genre);
     obj->setProperty("editorW",  editorW);
@@ -1100,6 +1121,10 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
                                        (float)(double)obj->getProperty("gainDb")),
                           std::memory_order_relaxed);
         gainSnapPending_.store(true, std::memory_order_relaxed);  // restore: jump, don't swell
+        if (obj->hasProperty("placement"))
+            placement_.store(juce::jlimit((int)PlacementUnset, (int)PlacementInsert,
+                                          (int)obj->getProperty("placement")),
+                             std::memory_order_relaxed);
         if (obj->hasProperty("projectName"))
             projectName = obj->getProperty("projectName").toString();
         if (obj->hasProperty("genre"))

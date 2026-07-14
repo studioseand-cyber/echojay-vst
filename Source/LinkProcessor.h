@@ -61,6 +61,17 @@ public:
     // doesn't swell up from 0).
     void   setGainDb(float db, bool snapSmoothing = false);
 
+    // ---- Placement declaration (v0.6.0) ----------------------------------
+    // The plugin cannot read the channel fader or reliably detect its insert
+    // position under Logic (see the investigation), so the user declares it.
+    // 0 = unset/unknown (treated as pre-fader for level gating), 1 = bus
+    // (post-fader — loudness IS its contribution), 2 = insert (pre-fader —
+    // measurements are before the fader, not comparable across channels).
+    enum Placement { PlacementUnset = 0, PlacementBus = 1, PlacementInsert = 2 };
+    std::atomic<int> placement_ { PlacementUnset };
+    int  getPlacement() const { return placement_.load(std::memory_order_relaxed); }
+    void setPlacement(int p);   // message thread: store, mirror, dirty-mark, notify
+
     // Session project name (no UI here): adopted from the shared
     // session_project.json when this instance has none of its own, follows
     // shared edits while it matches the previous shared value, serialised
