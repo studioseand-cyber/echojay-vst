@@ -96,18 +96,15 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     addAndMakeVisible(placementBtn);
     updatePlacementBtn();
 
-    // Transparent click targets — the card visuals are painted over them
-    auto stylePromptBtn = [](juce::TextButton& b)
+    // Placement prompt overlay — the whole prompt is this one child component,
+    // added last so it sits above the header + chain panel. Its own paint()
+    // owns the scrim/card; LinkEditor::paint never draws prompt pixels.
+    placementPrompt.onChoose = [this](int c)
     {
-        b.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        b.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+        applyPlacement(c == 1 ? LinkProcessor::PlacementBus
+                              : LinkProcessor::PlacementInsert);
     };
-    stylePromptBtn(placementBusBtn);
-    stylePromptBtn(placementInsertBtn);
-    placementBusBtn.onClick    = [this] { applyPlacement(LinkProcessor::PlacementBus); };
-    placementInsertBtn.onClick = [this] { applyPlacement(LinkProcessor::PlacementInsert); };
-    addChildComponent(placementBusBtn);
-    addChildComponent(placementInsertBtn);
+    addChildComponent(placementPrompt);
 
     // First-use prompt: ask once while placement is unset
     placementPromptVisible = (proc.getPlacement() == LinkProcessor::PlacementUnset);
@@ -156,6 +153,11 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     // Poll the mono fold-down note at a low rate (repaints only on change).
     lastMonoNote_ = proc.getMonoFoldNote();
     startTimer(250);
+
+    // Lay out now that every child (incl. the placement overlay, added before
+    // the chain panel) exists, so the overlay's bounds / z-order / visibility
+    // are correct on first show.
+    resized();
 }
 
 LinkEditor::~LinkEditor()
@@ -314,9 +316,8 @@ void LinkEditor::paint(juce::Graphics& g)
         }
     }
 
-    // ---- Placement first-use prompt (over everything) ----
-    if (placementPromptVisible)
-        paintPlacementPrompt(g);
+    // The placement prompt is a dedicated child overlay (placementPrompt) — it
+    // paints itself, never here, so no prompt pixels can survive in the header.
 }
 
 void LinkEditor::resized()
@@ -370,27 +371,17 @@ void LinkEditor::resized()
         placementBtn.setBounds(getWidth() - 16 - placeW, gy, placeW, 24);
     }
 
-    // Placement prompt: occlude header/chain, compute the two option-card
-    // rects (shared by paint + the transparent click-target buttons).
+    // Placement prompt overlay covers the whole editor and lays out its own
+    // cards. Bring it to front (it was added before the chain panel) so it sits
+    // above everything, then toggle visibility. Hiding it makes JUCE repaint
+    // the region behind it, so the header always returns clean.
+    placementPrompt.setBounds(getLocalBounds());
     if (placementPromptVisible)
-    {
-        const int w = juce::jmin(480, getWidth() - 60);
-        const int h = 340;
-        juce::Rectangle<int> card((getWidth() - w) / 2, (getHeight() - h) / 2, w, h);
-        auto r = card.reduced(24, 22);
-        r.removeFromTop(30);   // title
-        r.removeFromTop(38);   // subtitle (2 lines)
-        r.removeFromTop(10);
-        placementCard1_ = r.removeFromTop(74);
-        r.removeFromTop(10);
-        placementCard2_ = r.removeFromTop(74);
-        placementBusBtn.setBounds(placementCard1_);
-        placementInsertBtn.setBounds(placementCard2_);
-    }
-    placementBusBtn.setVisible(placementPromptVisible);
-    placementInsertBtn.setVisible(placementPromptVisible);
-    // Header/chain children paint over the editor's scrim, so hide them while
-    // the prompt is up (same reasoning as the main plugin's prompt occlusion)
+        placementPrompt.toFront(false);
+    placementPrompt.setVisible(placementPromptVisible);
+
+    // Header/chain children are hidden while the prompt is up (it occludes the
+    // whole editor); the prompt is the only interactive surface then.
     const bool showMain = !placementPromptVisible;
     nameField.setVisible(showMain);
     toggleBtn.setVisible(showMain);
@@ -544,7 +535,44 @@ void LinkEditor::showPlacementChooser()
         });
 }
 
-void LinkEditor::paintPlacementPrompt(juce::Graphics& g)
+// ---------------------------------------------------------------------------
+//  PlacementPromptOverlay — owns ALL prompt painting (see the header comment).
+// ---------------------------------------------------------------------------
+LinkEditor::PlacementPromptOverlay::PlacementPromptOverlay()
+{
+    auto style = [](juce::TextButton& b)
+    {
+        b.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        b.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+    };
+    style(busBtn);
+    style(insertBtn);
+    busBtn.onClick    = [this] { if (onChoose) onChoose(1); };
+    insertBtn.onClick = [this] { if (onChoose) onChoose(2); };
+    addAndMakeVisible(busBtn);
+    addAndMakeVisible(insertBtn);
+    // Modal: catch clicks in the empty scrim (block the header beneath) while
+    // still letting the two option buttons receive theirs.
+    setInterceptsMouseClicks(true, true);
+}
+
+void LinkEditor::PlacementPromptOverlay::resized()
+{
+    const int w = juce::jmin(480, getWidth() - 60);
+    const int h = 340;
+    juce::Rectangle<int> card((getWidth() - w) / 2, (getHeight() - h) / 2, w, h);
+    auto r = card.reduced(24, 22);
+    r.removeFromTop(30);   // title
+    r.removeFromTop(38);   // subtitle (2 lines)
+    r.removeFromTop(10);
+    card1_ = r.removeFromTop(74);
+    r.removeFromTop(10);
+    card2_ = r.removeFromTop(74);
+    busBtn.setBounds(card1_);
+    insertBtn.setBounds(card2_);
+}
+
+void LinkEditor::PlacementPromptOverlay::paint(juce::Graphics& g)
 {
     // Scrim + centred card. Plain-language: ask what the user DID, not signal
     // flow. Two option cards (bold line + explainer), then a dim "not sure".
@@ -586,10 +614,10 @@ void LinkEditor::paintPlacementPrompt(juce::Graphics& g)
         g.setFont(juce::Font(juce::FontOptions(11.0f)));
         g.drawFittedText(explain, ir, juce::Justification::topLeft, 3);
     };
-    optionCard(placementCard1_, "On a bus or group",
+    optionCard(card1_, "On a bus or group",
                "A channel that other tracks are routed into, like a vocal bus, drum "
                "bus, or the master. EchoJay can compare levels here.");
-    optionCard(placementCard2_, "On a normal track",
+    optionCard(card2_, "On a normal track",
                "Directly on an instrument or audio track, like the lead vocal or the "
                "kick. EchoJay reads the level before your fader, so it will not "
                "compare it to other tracks.");
@@ -598,6 +626,6 @@ void LinkEditor::paintPlacementPrompt(juce::Graphics& g)
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
     g.drawText("Not sure? Pick 'On a normal track'. You can change this any time "
                "from the Link's header.",
-               card.getX() + 24, placementCard2_.getBottom() + 8,
+               card.getX() + 24, card2_.getBottom() + 8,
                card.getWidth() - 48, 16, juce::Justification::centredLeft);
 }
