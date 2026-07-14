@@ -431,8 +431,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 
     // --- Project input ---
     projectInput.setFont(juce::Font(juce::FontOptions(15.0f)));
-    // Vertically centre the placeholder and entered text in the field
+    // Vertically centre the placeholder and entered text. centredLeft centres
+    // within (height - topIndent - bottom); the default topIndent sat the
+    // text low in the taller row, so zero it and let the justification centre.
     projectInput.setJustification(juce::Justification::centredLeft);
+    projectInput.setIndents(6, 0);
     projectInput.setTextToShowWhenEmpty("Project name...", C::text3.withAlpha(0.5f));
     projectInput.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff111520));
     projectInput.setColour(juce::TextEditor::outlineColourId, C::border2);
@@ -1641,6 +1644,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 
     // Chat sidebar — ListBox + toolbar (Phase 2a/2b).
     sidebarModel = std::make_unique<ChatSidebarModel>();
+    loadCollapsedState(); // restore collapsed songs/albums before first refreshRows
     sidebarModel->onChatClicked = [this](const juce::String& id)
     {
         loadChatFromWorkspace(id);
@@ -1651,6 +1655,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             collapsedAlbums.erase(id);
         else
             collapsedAlbums.insert(id);
+        saveCollapsedState();
         sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
                                   workspace.getReviews(), collapsedAlbums, currentChatId);
         chatSidebar.updateContent();
@@ -1661,6 +1666,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         const juce::String key = "proj:" + projName;
         if (collapsedAlbums.count(key)) collapsedAlbums.erase(key);
         else                            collapsedAlbums.insert(key);
+        saveCollapsedState();
         sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
                                   workspace.getReviews(), collapsedAlbums, currentChatId);
         chatSidebar.updateContent();
@@ -6796,6 +6802,26 @@ void EchoJayEditor::adoptSessionAutoProjectName(const juce::String& realName)
                        + real + "\"").toRawUTF8());
         workspace.requestMutationSync();
     }
+}
+
+void EchoJayEditor::loadCollapsedState()
+{
+    auto f = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                 .getChildFile("EchoJay").getChildFile("sidebar_collapsed.json");
+    if (!f.existsAsFile()) return;
+    auto v = juce::JSON::parse(f.loadFileAsString());
+    if (auto* arr = v.getArray())
+        for (auto& x : *arr) collapsedAlbums.insert(x.toString());
+}
+
+void EchoJayEditor::saveCollapsedState() const
+{
+    juce::Array<juce::var> arr;
+    for (auto& k : collapsedAlbums) arr.add(k);
+    auto f = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                 .getChildFile("EchoJay").getChildFile("sidebar_collapsed.json");
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(juce::JSON::toString(juce::var(arr)));
 }
 
 void EchoJayEditor::createNewChat()

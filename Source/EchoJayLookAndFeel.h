@@ -149,7 +149,11 @@ public:
     void drawButtonText(juce::Graphics& g, juce::TextButton& button,
                          bool isMouseOver, bool isButtonDown) override
     {
-        auto font = juce::Font(juce::FontOptions(11.0f, juce::Font::bold));
+        // Scale with button height so the tall header buttons (Capture, plugin
+        // count at 30px) read ~14px while smaller buttons keep ~11px.
+        auto font = juce::Font(juce::FontOptions(
+            juce::jlimit(11.0f, 14.0f, (float) button.getHeight() * 0.46f),
+            juce::Font::bold));
         g.setFont(font);
         auto textCol = button.findColour(isButtonDown ? juce::TextButton::textColourOnId 
                                                       : juce::TextButton::textColourOffId);
@@ -189,7 +193,11 @@ public:
     void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override
     {
         label.setBounds(8, 0, box.getWidth() - 28, box.getHeight());
-        label.setFont(juce::Font(juce::FontOptions(11.0f)));
+        // Font scales with the box height (this drew the text, so the earlier
+        // getComboBoxFont override never took): tall header combos (30px) read
+        // ~15px, smaller combos elsewhere keep their ~11-12px.
+        label.setFont(juce::Font(juce::FontOptions(
+            juce::jlimit(11.0f, 15.5f, (float) box.getHeight() * 0.5f))));
     }
     
     // ============ PopupMenu ============
@@ -376,6 +384,13 @@ public:
             float aspect = (float)logoImg.getWidth() / (float)logoImg.getHeight();
             float drawH = bounds.getHeight() * 0.8f;
             float drawW = drawH * aspect;
+            // CLAMP to the box width: a taller header must not widen the logo
+            // past its box and under the tier badge. Preserve aspect.
+            if (drawW > bounds.getWidth())
+            {
+                drawW = bounds.getWidth();
+                drawH = drawW / aspect;
+            }
             float x = bounds.getX();
             float y = bounds.getCentreY() - drawH / 2.0f;
             g.setOpacity(1.0f);

@@ -1737,7 +1737,12 @@ private:
     static constexpr int kSidebarW = 210;
 
     // Which albums are collapsed (by album id). Default = all expanded.
+    // Album ids + "proj:<name>" keys the user has collapsed. Persisted to a
+    // global prefs file so songs stay collapsed across restart / project
+    // reopen (the active chat's project still force-expands in refreshRows).
     std::set<juce::String> collapsedAlbums;
+    void loadCollapsedState();
+    void saveCollapsedState() const;
 
     // Currently open chat id (empty = none)
     juce::String currentChatId;
