@@ -152,14 +152,34 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     {
         if (safe != nullptr) safe->chainPanel.rebuild();
     };
+
+    // Poll the mono fold-down note at a low rate (repaints only on change).
+    lastMonoNote_ = proc.getMonoFoldNote();
+    startTimer(250);
 }
 
 LinkEditor::~LinkEditor()
 {
+    stopTimer();
     proc.onChainModelChanged = nullptr;
     proc.onChainAboutToChange = nullptr;
     proc.onLinkStateChanged = nullptr;
     chainPanel.closeAllEditors();
+}
+
+void LinkEditor::timerCallback()
+{
+    // Repaint only when the mono fold-down note appears/disappears/changes, so
+    // steady-state playback never triggers a repaint (which could flicker the
+    // hosted native editor). Both status lines (mini in paint(), full in the
+    // chain panel) refresh.
+    auto note = proc.getMonoFoldNote();
+    if (note != lastMonoNote_)
+    {
+        lastMonoNote_ = note;
+        repaint();
+        chainPanel.repaint();
+    }
 }
 
 void LinkEditor::paint(juce::Graphics& g)
@@ -253,6 +273,8 @@ void LinkEditor::paint(juce::Graphics& g)
         if (!proc.chainLayoutSupported())
             status += (status.isEmpty() ? "" : "  |  ")
                     + juce::String("unsupported channel layout (chain bypassed)");
+        if (auto note = proc.getMonoFoldNote(); note.isNotEmpty())
+            status += (status.isEmpty() ? "" : "  |  ") + note;
         if (status.isEmpty())
             status = proc.linkOn.load() ? "Active - feeding EchoJay"
                                         : "Inactive - capture/meter role dormant";

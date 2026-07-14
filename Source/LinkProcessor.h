@@ -161,6 +161,10 @@ public:
     bool chainLayoutSupported() const { return chainSupported_.load(); }
     // True on a 1-channel track — the editor greys correlation/width to dashes.
     bool isMonoLayout() const { return chainMono_.load(); }
+    // Status-line note (empty when none) shown when the mono fold-down is
+    // discarding real stereo work: a hosted plugin's L and R diverge on the
+    // duplicated-mono input, so take-L is dropping its right output.
+    juce::String getMonoFoldNote() const;
 
     // Editor window size — persisted in plugin state
     int editorW = 1035, editorH = 638;
@@ -226,6 +230,15 @@ private:
     std::atomic<bool> chainMono_ { false };
     // Preallocated stereo scratch for the mono up-mix (audio thread only).
     juce::AudioBuffer<float> chainScratch_;
+    // Mono fold-down uses TAKE-LEFT (never sums — summing can cancel a widener
+    // or mid-side plugin to a hollow track). monoFoldDiverges_ is the runtime
+    // gate (audio thread): the chain output L and R diverge on the duplicated-
+    // mono input, so real stereo work is being dropped. monoStereoOnlyNames_ is
+    // the culprit list (message thread, recomputed on every chain change).
+    std::atomic<bool> monoFoldDiverges_ { false };
+    float             monoDivergeAvg_ = 0.0f;   // audio-thread leaky average
+    juce::String      monoStereoOnlyNames_;     // message thread
+    void updateMonoStereoOnlyNames();
 
     void clearChainInternal();              // closes editors first via callback
     void updateChainLatency();

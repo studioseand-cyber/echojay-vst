@@ -554,10 +554,32 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
             juce::FloatVectorOperations::copy(chans[1], src, n);
             juce::AudioBuffer<float> stereoView(chans, 2, n); // wraps scratch, no alloc
             chainHost.process(stereoView, midi);
-            // Fold the stereo result back to the mono track (conventional sum).
+            // Measure how much the chain decorrelated the duplicated-mono input:
+            // |L-R| relative to total level (0 = mono-safe, →1 = fully stereo).
+            // Leaky-averaged with a threshold + reset-on-silence so a transient
+            // doesn't toggle the status note.
+            {
+                float diff = 0.0f, sum = 0.0f;
+                for (int i = 0; i < n; ++i)
+                {
+                    diff += std::abs(chans[0][i] - chans[1][i]);
+                    sum  += std::abs(chans[0][i]) + std::abs(chans[1][i]);
+                }
+                if (sum > 1.0e-4f)   // only when there's audible signal
+                {
+                    const float ratio = diff / sum;
+                    monoDivergeAvg_ += 0.05f * (ratio - monoDivergeAvg_);
+                    monoFoldDiverges_.store(monoDivergeAvg_ > 0.03f,
+                                            std::memory_order_relaxed);
+                }
+            }
+            // Fold to mono by TAKING LEFT — never sum. Summing can cancel a
+            // widener / mid-side plugin to a quiet, hollow track (the worst
+            // silent failure). Native-mono plugins keep L==R, so take-L is
+            // lossless for them; a genuinely stereo plugin loses its right
+            // output, which is surfaced once in the status line.
             float* dst = buffer.getWritePointer(0);
-            for (int i = 0; i < n; ++i)
-                dst[i] = 0.5f * (chans[0][i] + chans[1][i]);
+            juce::FloatVectorOperations::copy(dst, chans[0], n);
         }
         else
         {
@@ -725,9 +747,46 @@ void LinkProcessor::updateChainLatency()
 
 void LinkProcessor::notifyChainModel()
 {
+    updateMonoStereoOnlyNames();
+    // Fresh chain → clear the stale fold-down flag; the audio thread re-sets it
+    // within a few blocks if the new chain still decorrelates a mono input.
+    monoFoldDiverges_.store(false, std::memory_order_relaxed);
     if (onChainModelChanged) onChainModelChanged();
     // Chain model changed → host should re-snapshot our state
     updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+}
+
+// Message thread. Names the non-bypassed hosted plugins whose main bus cannot
+// run mono — the plausible culprits when the mono fold-down drops stereo work.
+void LinkProcessor::updateMonoStereoOnlyNames()
+{
+    juce::StringArray names;
+    const int n = chainHost.getNumSlots();
+    for (int i = 0; i < n; ++i)
+    {
+        auto info = chainHost.getSlotInfo(i);
+        if (info.bypassed) continue;
+        auto* p = chainHost.getSlotProcessor(i);
+        if (p == nullptr) continue;
+        // Flip only the main bus to mono, preserving any aux/sidechain buses.
+        auto layout = p->getBusesLayout();
+        if (layout.inputBuses.size()  > 0) layout.inputBuses.getReference(0)  = juce::AudioChannelSet::mono();
+        if (layout.outputBuses.size() > 0) layout.outputBuses.getReference(0) = juce::AudioChannelSet::mono();
+        if (!p->checkBusesLayoutSupported(layout))
+            names.add(info.name);
+    }
+    monoStereoOnlyNames_ = names.joinIntoString(", ");
+}
+
+juce::String LinkProcessor::getMonoFoldNote() const
+{
+    if (!chainMono_.load() || !monoFoldDiverges_.load(std::memory_order_relaxed))
+        return {};
+    if (monoStereoOnlyNames_.isEmpty())
+        return "A stereo-only plugin; using its left output";
+    const bool many = monoStereoOnlyNames_.contains(",");
+    return monoStereoOnlyNames_ + (many ? " are stereo-only; using their left output"
+                                        : " is stereo-only; using its left output");
 }
 
 void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,

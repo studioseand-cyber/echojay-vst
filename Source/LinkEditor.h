@@ -12,7 +12,8 @@
 // at a time with sequential close-before-open, pop-out fallback. Layout
 // policy identical: native size, no scaling, centred with equal side trim,
 // top edge always visible, bottom-only trim, dark navy container.
-class LinkEditor : public juce::AudioProcessorEditor
+class LinkEditor : public juce::AudioProcessorEditor,
+                   private juce::Timer
 {
 public:
     explicit LinkEditor(LinkProcessor&);
@@ -21,6 +22,11 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
+    // Low-rate poll for the audio-thread mono fold-down note; repaints ONLY
+    // when the note text changes, so idle playback never flickers the hosted
+    // native editor.
+    void timerCallback() override;
+    juce::String lastMonoNote_;
 
     // Shared tooltip window — makes the chain strip / card button tooltips
     // live (700ms hover, styled by the editor's LookAndFeel)
@@ -672,6 +678,8 @@ public:
                 if (!proc.chainLayoutSupported())
                     line += (line.isEmpty() ? "" : "  |  ")
                           + juce::String("unsupported channel layout (chain bypassed)");
+                if (auto note = proc.getMonoFoldNote(); note.isNotEmpty())
+                    line += (line.isEmpty() ? "" : "  |  ") + note;
                 g.drawText(line, 12, sy, getWidth() - 24, kStatusH,
                            juce::Justification::centredLeft);
             }
