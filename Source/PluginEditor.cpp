@@ -4579,35 +4579,25 @@ void EchoJayEditor::LinkListView::paint(juce::Graphics& g)
     gainZones.clear();
     placementZones.clear();
 
-    // LIST order: alphabetical by name, Untitleds last (by uid) — stable
-    // while scrolling regardless of registry slot order (claim order)
-    auto sorted = ed.processorRef.getLinkSlotInfos();   // copy, message thread
-    std::stable_sort(sorted.begin(), sorted.end(),
-        [](const EchoJayProcessor::LinkSlotInfo& a, const EchoJayProcessor::LinkSlotInfo& b)
-        {
-            const bool au = a.name.isEmpty(), bu = b.name.isEmpty();
-            if (au != bu) return bu;                    // named first
-            if (au) return a.uid < b.uid;               // untitled: stable by uid
-            return a.name.compareIgnoreCase(b.name) < 0;
-        });
+    // Canonical display list — SAME order + "Untitled N" numbering the whole
+    // product uses (send-target menu, AI context), so a given instance keeps
+    // one label everywhere.
+    const auto entries = ed.processorRef.getLinkDisplayList();
 
     const uint32_t nowMs = juce::Time::getMillisecondCounter();
     const int cardH = kLinkRowH;
     const int dotD  = 10;
     const int cardW = getWidth();
     int y = 0;
-    int untitledCount = 0;
 
-    for (const auto& slot : sorted)
+    for (const auto& entry : entries)
     {
+        const auto& slot = entry.info;
         const int cardX = 0;
 
         // Label + ADDRESS (uid; legacy name-derived fallback). The name is
         // a label, never an address.
-        juce::String rowName = slot.name;
-        if (rowName.isEmpty())
-            rowName = ++untitledCount > 1 ? "Untitled " + juce::String(untitledCount)
-                                          : juce::String("Untitled");
+        const juce::String rowName = entry.displayName;
         const juce::String rowAddr = slot.uid.isNotEmpty()
                                    ? slot.uid : LinkShm::makeSafeFilePart(slot.name);
 
@@ -11935,12 +11925,14 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     juce::String chainInjection;
     if (recommendable.size() > 0)
     {
-        // Live Link names ride along so the model can tag suggestedTarget
+        // Live Link DISPLAY labels ride along so the model can tag
+        // suggestedTarget — including unnamed Links ("Untitled", "Untitled 2"),
+        // which the send-target menu matches back to the instance by uid.
         processorRef.refreshLinkRegistry();
         juce::StringArray liveLinks;
-        for (auto& li : processorRef.getLinkSlotInfos())
-            if (li.connected && li.name.isNotEmpty())
-                liveLinks.addIfNotAlreadyThere(li.name);
+        for (const auto& e : processorRef.getLinkDisplayList())
+            if (e.info.connected)
+                liveLinks.addIfNotAlreadyThere(e.displayName);
         chainInjection = EchoJayAPI::buildChainInjection(recommendable, liveLinks);
         userContent += chainInjection;
         EchoJay_NSLog(("EJChat: chain injection attached -- "
@@ -12170,24 +12162,29 @@ void EchoJayEditor::showChainPluginPicker()
 void EchoJayEditor::showChainBuildTargetMenu(const juce::String& chainJson)
 {
     processorRef.refreshLinkRegistry();
-    juce::StringArray links;
-    for (auto& li : processorRef.getLinkSlotInfos())
-        if (li.connected && li.name.isNotEmpty())
-            links.addIfNotAlreadyThere(li.name);
+
+    // EVERY live Link, named or not, with the Monitor's display label. The
+    // ADDRESS is the uid — never the name — so duplicate "Untitled" instances
+    // stay distinct. (target label, target uid) pairs.
+    struct Target { juce::String label, uid; };
+    std::vector<Target> targets;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.connected && e.info.uid.isNotEmpty())
+            targets.push_back({ e.displayName, e.info.uid });
 
     // No live Links → unchanged default behaviour
-    if (links.isEmpty()) { loadChainFromJson(chainJson); return; }
+    if (targets.empty()) { loadChainFromJson(chainJson); return; }
 
-    // Optional AI suggestion — only pre-selects when it matches a LIVE
-    // instance; the user always confirms by choosing an item.
+    // Optional AI suggestion — matches a LIVE instance by display label; the
+    // user always confirms by choosing an item.
     juce::String suggested;
     {
         auto v = juce::JSON::parse(chainJson);
         if (auto* o = v.getDynamicObject())
             suggested = o->getProperty("suggestedTarget").toString().trim();
         bool live = false;
-        for (auto& l : links)
-            if (l.equalsIgnoreCase(suggested)) { suggested = l; live = true; break; }
+        for (auto& t : targets)
+            if (t.label.equalsIgnoreCase(suggested)) { suggested = t.label; live = true; break; }
         if (!live) suggested.clear();
     }
 
@@ -12195,32 +12192,32 @@ void EchoJayEditor::showChainBuildTargetMenu(const juce::String& chainJson)
     menu.addSectionHeader("BUILD CHAIN ON");
     menu.addItem(1, "Build here (this EchoJay)", true, suggested.isEmpty());
     menu.addSeparator();
-    for (int i = 0; i < links.size(); ++i)
+    for (size_t i = 0; i < targets.size(); ++i)
     {
-        bool isSuggested = (links[i] == suggested);
-        menu.addItem(2 + i,
-                     "Link: " + links[i] + (isSuggested ? "   - suggested" : ""),
+        const bool isSuggested = (targets[i].label == suggested);
+        menu.addItem((int)(2 + i),
+                     "Link: " + targets[i].label + (isSuggested ? "   - suggested" : ""),
                      true, isSuggested);
     }
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
-        [safeThis, chainJson, links](int result)
+        [safeThis, chainJson, targets](int result)
         {
             if (safeThis == nullptr || result <= 0) return;
             if (result == 1) { safeThis->loadChainFromJson(chainJson); return; }
-            int li = result - 2;
-            if (li >= 0 && li < links.size())
-                safeThis->sendChainToLink(links[li], chainJson);
+            size_t li = (size_t)(result - 2);
+            if (li < targets.size())
+                safeThis->sendChainToLink(targets[li].uid, chainJson);
         });
 }
 
-void EchoJayEditor::sendChainToLink(const juce::String& linkName,
+void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                                     const juce::String& chainJson)
 {
     int err = 0;
     juce::String dir = LinkShm::resolveDir(err);
-    auto id = linkAddrForName(linkName);   // per-instance uid (legacy fallback)
+    const juce::String id = linkUid;   // instanceId — the address, never the name
     if (dir.isEmpty() || id.isEmpty())
     {
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
@@ -12245,20 +12242,24 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkName,
     juce::File(dir + "chain-cmd-" + id + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
 
-    pollLinkChainAck(linkName, seq, 20);   // 20 x 250ms = ~5s timeout
+    pollLinkChainAck(id, seq, 20);   // 20 x 250ms = ~5s timeout; id = uid
 }
 
-void EchoJayEditor::pollLinkChainAck(const juce::String& linkName, int seq,
+void EchoJayEditor::pollLinkChainAck(const juce::String& linkUid, int seq,
                                      int attemptsLeft)
 {
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    juce::Timer::callAfterDelay(250, [safeThis, linkName, seq, attemptsLeft]
+    juce::Timer::callAfterDelay(250, [safeThis, linkUid, seq, attemptsLeft]
     {
         if (safeThis == nullptr) return;
 
         int err = 0;
         juce::String dir = LinkShm::resolveDir(err);
-        auto id = safeThis->linkAddrForName(linkName);
+        const juce::String id = linkUid;   // the address, never the name
+        // Resolve a friendly display label from the uid for user-facing text.
+        juce::String label = id;
+        for (const auto& e : safeThis->processorRef.getLinkDisplayList())
+            if (e.info.uid == id) { label = e.displayName; break; }
         juce::File ack(dir + "chain-ack-" + id + ".json");
 
         if (dir.isNotEmpty() && ack.existsAsFile())
@@ -12299,7 +12300,7 @@ void EchoJayEditor::pollLinkChainAck(const juce::String& linkName, int seq,
                     }
                     juce::String summary = "Built " + juce::String(ok) + "/"
                                          + juce::String(lines.size())
-                                         + " on \"" + linkName + "\"";
+                                         + " on \"" + label + "\"";
                     if (!skipped.isEmpty())
                         summary += "\nSkipped: " + skipped.joinIntoString(", ");
                     if (status != "ok")
@@ -12318,11 +12319,11 @@ void EchoJayEditor::pollLinkChainAck(const juce::String& linkName, int seq,
         {
             juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
                 "Link chain build",
-                "Link instance \"" + linkName + "\" not responding. "
-                "Check the Link plugin is loaded, named, and its track is active.");
+                "Link instance \"" + label + "\" not responding. "
+                "Check the Link plugin is loaded and its track is active.");
             return;
         }
-        safeThis->pollLinkChainAck(linkName, seq, attemptsLeft - 1);
+        safeThis->pollLinkChainAck(linkUid, seq, attemptsLeft - 1);
     });
 }
 
@@ -12507,11 +12508,14 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
     std::vector<LvlRow> rows;
     bool anyInsertOrUnknown = false;
     bool anyUnset = false;
-    for (const auto& li : infos)
+    // Display list so unnamed Links appear as "Untitled"/"Untitled 2" (matching
+    // the Monitor and send-target menu) and are addressed by uid, not name.
+    for (const auto& e : processorRef.getLinkDisplayList())
     {
-        if (li.name.isEmpty()) continue;   // proposals need an addressable id
-        LvlRow r; r.name = li.name;
-        r.uid = li.uid.isNotEmpty() ? li.uid : LinkShm::makeSafeFilePart(li.name);
+        const auto& li = e.info;
+        if (li.uid.isEmpty()) continue;   // proposals need an addressable id
+        LvlRow r; r.name = e.displayName;
+        r.uid = li.uid;
         r.gain = li.gainDb; r.has = false; r.placement = li.placement;
         r.integ = r.mom = r.tp = -100.0f;
         if (li.placement != 1) anyInsertOrUnknown = true;   // not "bus"
@@ -12596,11 +12600,14 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
 
 juce::String EchoJayEditor::resolveLinkProposalAddr(const juce::String& linkId) const
 {
-    // linkId may be a name or a uid; match either against live slots
-    for (const auto& li : processorRef.getLinkSlotInfos())
+    // linkId may be a uid, a real name, or a display label ("Untitled 2") — the
+    // model is fed display labels. Resolve any of them to the instance uid, the
+    // only valid address. Match uid first, then the Monitor display label.
+    for (const auto& e : processorRef.getLinkDisplayList())
     {
+        const auto& li = e.info;
         if (li.uid == linkId && li.uid.isNotEmpty()) return li.uid;
-        if (li.name == linkId)
+        if (e.displayName == linkId || (li.name.isNotEmpty() && li.name == linkId))
             return li.uid.isNotEmpty() ? li.uid : LinkShm::makeSafeFilePart(li.name);
     }
     return {};   // Link no longer present — card will no-op
@@ -12685,11 +12692,12 @@ void EchoJayEditor::showLinkPlacementMenu(const juce::String& linkAddr)
 {
     int cur = 0;
     juce::String name;
-    for (const auto& li : processorRef.getLinkSlotInfos())
+    for (const auto& e : processorRef.getLinkDisplayList())
     {
+        const auto& li = e.info;
         const juce::String a = li.uid.isNotEmpty()
                              ? li.uid : LinkShm::makeSafeFilePart(li.name);
-        if (a == linkAddr) { cur = li.placement; name = li.name; break; }
+        if (a == linkAddr) { cur = li.placement; name = e.displayName; break; }
     }
     juce::PopupMenu m;
     m.addSectionHeader((name.isEmpty() ? juce::String("Link") : name) + " placement");

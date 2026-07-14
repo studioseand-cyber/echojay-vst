@@ -387,6 +387,20 @@ public:
     /// Snapshot of currently known slots — message thread only.
     const std::vector<LinkSlotInfo>& getLinkSlotInfos() const { return linkSlotInfos; }
 
+    /// One Link plus its Monitor-consistent display label. The label is a
+    /// display string only ("Untitled", "Untitled 2", ...); the ADDRESS is
+    /// always info.uid (never the name — duplicate "Untitled" names collide).
+    struct LinkDisplayEntry {
+        juce::String displayName;
+        LinkSlotInfo info;
+    };
+    /// Canonical list every Link-listing surface must use so the whole product
+    /// agrees on which Links exist and what they're called. Sorted named-first
+    /// (alphabetical) then untitled (stable by uid); the "Untitled N" numbering
+    /// is assigned over the FULL set so a given instance keeps the same label
+    /// in the Monitor, the send-target menu and the AI context alike.
+    std::vector<LinkDisplayEntry> getLinkDisplayList() const;
+
     // Consumer diagnostics (message thread, read by editor in paint)
     struct ConsumerDiag {
         juce::String regKey;

@@ -1501,8 +1501,8 @@ private:
     // instances. An AI suggestedTarget matching a live Link is pre-selected
     // (ticked + "suggested" marker); the user always confirms.
     void showChainBuildTargetMenu(const juce::String& chainJson);
-    void sendChainToLink(const juce::String& linkName, const juce::String& chainJson);
-    void pollLinkChainAck(const juce::String& linkName, int seq, int attemptsLeft);
+    void sendChainToLink(const juce::String& linkUid, const juce::String& chainJson);
+    void pollLinkChainAck(const juce::String& linkUid, int seq, int attemptsLeft);
 
     // ---- LINK tab remote Active control ------------------------------------
     // Per-row toggle writes ctrl-cmd-<id>.json {v:1, seq, active}; the Link

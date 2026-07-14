@@ -2138,6 +2138,36 @@ void EchoJayProcessor::refreshLinkRegistry()
     consumerDiag.nameList = names.joinIntoString(", ");
 }
 
+std::vector<EchoJayProcessor::LinkDisplayEntry>
+EchoJayProcessor::getLinkDisplayList() const
+{
+    // Same order + "Untitled N" numbering as the Link Monitor row list, so a
+    // given instance keeps ONE label everywhere. Named first (alphabetical),
+    // then untitled (stable by uid). Numbering runs over the full set.
+    auto sorted = linkSlotInfos;   // copy, message thread
+    std::stable_sort(sorted.begin(), sorted.end(),
+        [](const LinkSlotInfo& a, const LinkSlotInfo& b)
+        {
+            const bool au = a.name.isEmpty(), bu = b.name.isEmpty();
+            if (au != bu) return bu;                    // named first
+            if (au) return a.uid < b.uid;               // untitled: stable by uid
+            return a.name.compareIgnoreCase(b.name) < 0;
+        });
+
+    std::vector<LinkDisplayEntry> out;
+    out.reserve(sorted.size());
+    int untitledCount = 0;
+    for (auto& s : sorted)
+    {
+        juce::String display = s.name;
+        if (display.isEmpty())
+            display = ++untitledCount > 1 ? "Untitled " + juce::String(untitledCount)
+                                          : juce::String("Untitled");
+        out.push_back({ display, s });
+    }
+    return out;
+}
+
 bool EchoJayProcessor::readLinkMeterFrame(int regIdx, LinkMeterFrame& out)
 {
     // Message thread only (editor paint/timer) — same discipline as
