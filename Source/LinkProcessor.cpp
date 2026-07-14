@@ -477,17 +477,26 @@ void LinkProcessor::updateShmState()
 // =============================================================================
 //  AudioProcessor overrides
 // =============================================================================
-void LinkProcessor::prepareToPlay(double sampleRate, int numChannels)
+void LinkProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     hostSampleRate  = sampleRate;
-    hostNumChannels = juce::jmin(numChannels, 2);
-    meterEngine_.prepare(sampleRate, getBlockSize() > 0 ? getBlockSize() : 512);
+    // The ring is always stereo (mono is duplicated on write) so the monitor
+    // reads a consistent 2-channel layout regardless of the track format.
+    hostNumChannels = 2;
+    const int block = samplesPerBlock > 0 ? samplesPerBlock : 512;
+    meterEngine_.prepare(sampleRate, block);
 
-    // Chain hosting: stereo only. On mono tracks the chain stays out of
-    // circuit (clean passthrough) and the transport ack reports it.
-    chainStereoOk = (getTotalNumInputChannels() >= 2
-                     && getTotalNumOutputChannels() >= 2);
-    chainHost.prepare(sampleRate, getBlockSize() > 0 ? getBlockSize() : 512);
+    // Chain hosting supports mono AND stereo. The hosted graph is stereo, so a
+    // mono track is up-mixed (L duplicated to L+R) before the chain and folded
+    // back down (0.5*(L+R)) after — stereo-only plugins run duplicated-mono,
+    // native-mono plugins pass through unchanged. Only >2ch (surround /
+    // ambisonic) layouts are unsupported and leave the chain out of circuit.
+    const int nin  = getTotalNumInputChannels();
+    const int nout = getTotalNumOutputChannels();
+    chainSupported_.store(nin >= 1 && nin <= 2 && nout >= 1 && nout <= 2);
+    chainMono_.store(nin == 1 || nout == 1);
+    chainScratch_.setSize(2, block);
+    chainHost.prepare(sampleRate, block);
 
     // Gain smoother — 30 ms ramp is short enough to feel immediate but long
     // enough to kill zipper noise on a fast drag. Snap to the current target
@@ -505,6 +514,17 @@ void LinkProcessor::prepareToPlay(double sampleRate, int numChannels)
     juce::MessageManager::callAsync([this] { updateShmState(); });
 }
 
+bool LinkProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
+{
+    // Mono and stereo only (matches the main plugin). Rejects surround /
+    // ambisonic so hosts don't offer exotic layouts the chain can't fold.
+    auto in  = layouts.getMainInputChannelSet();
+    auto out = layouts.getMainOutputChannelSet();
+    if (in != out) return false;
+    return in == juce::AudioChannelSet::mono()
+        || in == juce::AudioChannelSet::stereo();
+}
+
 void LinkProcessor::releaseResources()
 {
     chainHost.release();
@@ -520,9 +540,30 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
 
     // Hosted chain runs FIRST so the ring tap (and the track) hears the
     // processed signal. Empty / all-bypassed chain = the graph stays out of
-    // circuit entirely; mono layouts skip the chain (stereo-only phase 1).
-    if (chainStereoOk)
-        chainHost.process(buffer, midi);
+    // circuit; only >2ch layouts skip it. On a mono track the signal is
+    // up-mixed into the stereo graph then folded back to mono on output.
+    if (chainSupported_.load(std::memory_order_relaxed))
+    {
+        const int n = buffer.getNumSamples();
+        if (buffer.getNumChannels() == 1 && n <= chainScratch_.getNumSamples())
+        {
+            float* chans[2] = { chainScratch_.getWritePointer(0),
+                                chainScratch_.getWritePointer(1) };
+            const float* src = buffer.getReadPointer(0);
+            juce::FloatVectorOperations::copy(chans[0], src, n);
+            juce::FloatVectorOperations::copy(chans[1], src, n);
+            juce::AudioBuffer<float> stereoView(chans, 2, n); // wraps scratch, no alloc
+            chainHost.process(stereoView, midi);
+            // Fold the stereo result back to the mono track (conventional sum).
+            float* dst = buffer.getWritePointer(0);
+            for (int i = 0; i < n; ++i)
+                dst[i] = 0.5f * (chans[0][i] + chans[1][i]);
+        }
+        else
+        {
+            chainHost.process(buffer, midi);
+        }
+    }
 
     // Built-in gain stage — POST-chain, PRE-meter-tap. This position is
     // deliberate: (1) it gains the TRACK output (the gain is a real stage on
@@ -549,10 +590,12 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
         {
             if (shmMap != nullptr)
             {
-                const float* chPtrs[2] = {
-                    buffer.getNumChannels() >= 1 ? buffer.getReadPointer(0) : nullptr,
-                    buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr
-                };
+                // Ring is always stereo: on a mono track duplicate L into R so
+                // captures record and play back as proper (dual-mono) audio
+                // instead of a dead right channel.
+                const float* L = buffer.getNumChannels() >= 1 ? buffer.getReadPointer(0) : nullptr;
+                const float* R = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : L;
+                const float* chPtrs[2] = { L, R };
                 LinkShm::ringProduce(shmMap, chPtrs, 2, buffer.getNumSamples());
                 didWrite.store(true, std::memory_order_relaxed);
             }
@@ -1055,7 +1098,7 @@ void LinkProcessor::pollChainCommand()
         int failures = 0;
         for (auto& r : results)
             if (!r.endsWith(": ok")) ++failures;
-        juce::String status = !chainStereoOk ? "unsupported channel layout"
+        juce::String status = !chainSupported_.load() ? "unsupported channel layout"
                             : failures == 0  ? "ok"
                             : failures == results.size() ? "failed" : "partial";
         writeChainAck(seq, status, results, detail);

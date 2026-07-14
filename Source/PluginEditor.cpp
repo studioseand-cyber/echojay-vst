@@ -419,6 +419,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     channelTypeBox.setColour(juce::ComboBox::backgroundColourId, C::bg3);
     channelTypeBox.setColour(juce::ComboBox::textColourId, C::text);
     channelTypeBox.setColour(juce::ComboBox::outlineColourId, C::border2);
+    channelTypeBox.getProperties().set("chromeLabel", true); // tab-label size
     addAndMakeVisible(channelTypeBox);
 
     // --- Genre ---
@@ -427,10 +428,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     genreBox.setColour(juce::ComboBox::backgroundColourId, C::bg3);
     genreBox.setColour(juce::ComboBox::textColourId, C::text);
     genreBox.setColour(juce::ComboBox::outlineColourId, C::border2);
+    genreBox.getProperties().set("chromeLabel", true); // tab-label size
     addAndMakeVisible(genreBox);
 
     // --- Project input ---
-    projectInput.setFont(juce::Font(juce::FontOptions(15.0f)));
+    // Same size + weight as the tab-strip labels and the other header controls
+    // (source/genre/Capture/plugin count) — one shared value, no drift.
+    projectInput.setFont(EchoJayChrome::labelFont());
     // Vertically centre the placeholder and entered text. centredLeft centres
     // within (height - topIndent - bottom); the default topIndent sat the
     // text low in the taller row, so zero it and let the justification centre.
@@ -518,6 +522,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             processorRef.stopCapture();
         }
     };
+    captureBtn.getProperties().set("chromeLabel", true); // tab-label size
     addAndMakeVisible(captureBtn);
 
     // (Reset button removed — auto-unfreeze handles this)
@@ -629,6 +634,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // Click opens a menu: Scan Now / Add Folder / list of custom folders to
     // remove. Keeps the default action (Scan Now) one step away while letting
     // users add or prune extra scan locations without a settings trip.
+    scanBtn.getProperties().set("chromeLabel", true); // tab-label size
     scanBtn.onClick = [this] { showScanMenu(&scanBtn); };
     addAndMakeVisible(scanBtn);
 
@@ -7903,6 +7909,11 @@ void EchoJayEditor::paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> are
 {
     drawPanel(g, area, "STEREO IMAGE", C::blue2);
 
+    // On a mono source there is no stereo relationship: width and correlation
+    // are undefined, so they read as dashes rather than a misleading 0% / +1.00.
+    // Everything else (loudness, PSR/PLR, overs, spectrum) is valid on mono.
+    const bool monoSrc = (processorRef.getTotalNumInputChannels() == 1);
+
     // Make clear whether width/correlation are the live meter values (which
     // track the last ~1.5s) or the averaged values for a completed capture.
     {
@@ -7926,17 +7937,17 @@ void EchoJayEditor::paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> are
     auto wTrack = juce::Rectangle<float>((float)(x + 64), (float)y, (float)(w - 130), 14.0f);
     g.setColour(C::bg3);
     g.fillRoundedRectangle(wTrack, 3.0f);
-    if (widthN > 0.01f) {
+    if (!monoSrc && widthN > 0.01f) {
         auto wFill = wTrack.withWidth(wTrack.getWidth() * widthN);
         juce::ColourGradient grad(C::purple.withAlpha(0.5f), wFill.getX(), 0,
                                    C::blue2, wFill.getRight(), 0, false);
         g.setGradientFill(grad);
         g.fillRoundedRectangle(wFill, 3.0f);
     }
-    g.setColour(C::text);
+    g.setColour(monoSrc ? C::text3 : C::text);
     g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-    g.drawText(juce::String(md.width, 1) + " %", (int)wTrack.getRight() + 4, y, 60, 14,
-               juce::Justification::centredRight);
+    g.drawText(monoSrc ? juce::String("--") : juce::String(md.width, 1) + " %",
+               (int)wTrack.getRight() + 4, y, 60, 14, juce::Justification::centredRight);
 
     y += 22;
 
@@ -7954,9 +7965,11 @@ void EchoJayEditor::paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> are
     float centre = cTrack.getX() + cTrack.getWidth() * 0.5f;
     float fillStart = (corrN < 0.5f) ? cTrack.getX() + cTrack.getWidth() * corrN : centre;
     float fillEnd   = (corrN < 0.5f) ? centre : cTrack.getX() + cTrack.getWidth() * corrN;
-    juce::Colour corrCol = md.correlation < 0 ? C::red : C::green;
-    g.setColour(corrCol.withAlpha(0.7f));
-    g.fillRoundedRectangle(fillStart, cTrack.getY(), fillEnd - fillStart, cTrack.getHeight(), 3.0f);
+    if (!monoSrc) {
+        juce::Colour corrCol = md.correlation < 0 ? C::red : C::green;
+        g.setColour(corrCol.withAlpha(0.7f));
+        g.fillRoundedRectangle(fillStart, cTrack.getY(), fillEnd - fillStart, cTrack.getHeight(), 3.0f);
+    }
 
     // Centre tick
     g.setColour(C::text3.withAlpha(0.5f));
@@ -7969,10 +7982,10 @@ void EchoJayEditor::paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> are
     g.drawText("0", (int)centre - 4, y + 14, 8, 10, juce::Justification::centred);
     g.drawText("+1", (int)cTrack.getRight() - 16, y + 14, 16, 10, juce::Justification::centred);
 
-    g.setColour(C::text);
+    g.setColour(monoSrc ? C::text3 : C::text);
     g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-    g.drawText(juce::String(md.correlation, 2), (int)cTrack.getRight() + 4, y, 60, 14,
-               juce::Justification::centredRight);
+    g.drawText(monoSrc ? juce::String("--") : juce::String(md.correlation, 2),
+               (int)cTrack.getRight() + 4, y, 60, 14, juce::Justification::centredRight);
 
     // === GONIOMETER / VECTORSCOPE ===
     y += 30;
@@ -9029,7 +9042,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
             // still clearly subordinate to the selected cyan tab. Font is a
             // modest +1 over the original 9 (the +2 to 11 was too big).
             g.setColour(active ? juce::Colour(0xff22d3ee) : juce::Colour(0xff7e7e93));
-            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.setFont(EchoJayChrome::labelFont()); // shared with header controls — cannot drift
             g.drawText(kTabNames[i], tx, tabY, tw, kTabBarH, juce::Justification::centred);
         }
     }

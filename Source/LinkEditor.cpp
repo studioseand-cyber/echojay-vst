@@ -121,6 +121,20 @@ LinkEditor::LinkEditor(LinkProcessor& p)
         safe->nameField.setText(safe->proc.linkName, juce::dontSendNotification);
         safe->gainSlider.setValue(safe->proc.getGainDb(), juce::dontSendNotification);
         safe->updatePlacementBtn();   // remote/restore placement change
+        // Re-derive the prompt state from the (possibly remotely-set) placement
+        // and re-run layout so child visibility matches BEFORE the repaint. A
+        // placement set from outside (e.g. the main plugin's suggested target)
+        // used to leave placementPromptVisible and the header controls out of
+        // sync, so the prompt copy ghosted behind the Active toggle / placement
+        // button. Keeping the flag, layout and paint consistent — with a full
+        // repaint() that clears the whole surface — prevents any stray text.
+        const bool wantPrompt =
+            (safe->proc.getPlacement() == LinkProcessor::PlacementUnset);
+        if (wantPrompt != safe->placementPromptVisible)
+        {
+            safe->placementPromptVisible = wantPrompt;
+            safe->resized();
+        }
         safe->repaint();
     };
 
@@ -153,21 +167,28 @@ void LinkEditor::paint(juce::Graphics& g)
     g.fillAll(kBg);
 
     // ---- Header row ----
-    g.setColour(kCard);
+    // Fill the header band with the app background (same near-black the main
+    // plugin uses behind its logo) — the previous lighter card fill lowered the
+    // wordmark's contrast and read as a dimmed logo.
+    g.setColour(kBg);
     g.fillRect(0, 0, getWidth(), kHeaderH);
     g.setColour(kBorder);
     g.drawHorizontalLine(kHeaderH, 0.f, (float)getWidth());
 
     juce::Image logo = juce::ImageCache::getFromMemory(echoJayLogoPNG,
                                                         (int)echoJayLogoPNGSize);
-    const float logoH = 22.0f, logoX = 12.0f;
-    const float logoY = (kHeaderH - logoH) * 0.5f;
+    const float logoX = 12.0f;
     if (logo.isValid())
     {
+        // Match the main plugin's drawLogo treatment exactly: full opacity,
+        // height*0.8, high-quality stretchToFit float draw (not the int overload).
         float aspect = (float)logo.getWidth() / (float)logo.getHeight();
+        float logoH  = kHeaderH * 0.8f;
         float logoW  = logoH * aspect;
-        g.drawImage(logo, (int)logoX, (int)logoY, (int)logoW, (int)logoH,
-                    0, 0, logo.getWidth(), logo.getHeight());
+        float logoY  = (kHeaderH - logoH) * 0.5f;
+        g.setOpacity(1.0f);
+        g.drawImage(logo, juce::Rectangle<float>(logoX, logoY, logoW, logoH),
+                    juce::RectanglePlacement::stretchToFit);
         g.setColour(kCyan);
         g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
         g.drawText("Link", (int)(logoX + logoW + 6.0f), 0, 80, kHeaderH,

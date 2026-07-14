@@ -2,6 +2,21 @@
 #include <JuceHeader.h>
 #include "EchoJayLogo.h"
 
+namespace EchoJayChrome
+{
+    // Single source of truth for the top-chrome label size. The tab-strip
+    // labels AND every header control (source/genre dropdowns, project field,
+    // Capture, plugin count) render at exactly this size + weight so the two
+    // rows read as one typographic family and can never drift. A header combo
+    // or button opts in by setting the client property "chromeLabel" (any
+    // value); the LnF then uses this size instead of its height-scaled default.
+    static constexpr float kLabelPt = 10.0f;
+    inline juce::Font labelFont()
+    {
+        return juce::Font(juce::FontOptions(kLabelPt, juce::Font::bold));
+    }
+}
+
 class EchoJayLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -149,11 +164,14 @@ public:
     void drawButtonText(juce::Graphics& g, juce::TextButton& button,
                          bool isMouseOver, bool isButtonDown) override
     {
-        // Scale with button height so the tall header buttons (Capture, plugin
-        // count at 30px) read ~14px while smaller buttons keep ~11px.
-        auto font = juce::Font(juce::FontOptions(
-            juce::jlimit(11.0f, 14.0f, (float) button.getHeight() * 0.46f),
-            juce::Font::bold));
+        // Header chrome buttons (Capture, plugin count) opt into the shared
+        // tab-label size so the two rows match exactly; everything else scales
+        // with button height (tall buttons ~14px, small ones ~11px).
+        auto font = button.getProperties().contains("chromeLabel")
+            ? EchoJayChrome::labelFont()
+            : juce::Font(juce::FontOptions(
+                  juce::jlimit(11.0f, 14.0f, (float) button.getHeight() * 0.46f),
+                  juce::Font::bold));
         g.setFont(font);
         auto textCol = button.findColour(isButtonDown ? juce::TextButton::textColourOnId 
                                                       : juce::TextButton::textColourOffId);
@@ -193,11 +211,13 @@ public:
     void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override
     {
         label.setBounds(8, 0, box.getWidth() - 28, box.getHeight());
-        // Font scales with the box height (this drew the text, so the earlier
-        // getComboBoxFont override never took): tall header combos (30px) read
-        // ~15px, smaller combos elsewhere keep their ~11-12px.
-        label.setFont(juce::Font(juce::FontOptions(
-            juce::jlimit(11.0f, 15.5f, (float) box.getHeight() * 0.5f))));
+        // Header chrome combos (source/genre) opt into the shared tab-label
+        // size so the header matches the tab strip exactly; other combos scale
+        // with box height (this drew the text, so getComboBoxFont never took).
+        label.setFont(box.getProperties().contains("chromeLabel")
+            ? EchoJayChrome::labelFont()
+            : juce::Font(juce::FontOptions(
+                  juce::jlimit(11.0f, 15.5f, (float) box.getHeight() * 0.5f))));
     }
     
     // ============ PopupMenu ============

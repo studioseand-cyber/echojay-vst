@@ -16,6 +16,7 @@ public:
 
     // Audio
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
+    bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void releaseResources() override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
@@ -155,8 +156,11 @@ public:
     // True while a build/restore is in flight (strip shows progress)
     bool isChainBuilding() const { return chainBuilding; }
 
-    // Stereo support flag — set in prepareToPlay; mono tracks pass through
-    bool chainLayoutSupported() const { return chainStereoOk; }
+    // Chain support flag — set in prepareToPlay. Mono AND stereo are supported
+    // now; only exotic (>2ch) layouts are unsupported (chain bypassed).
+    bool chainLayoutSupported() const { return chainSupported_.load(); }
+    // True on a 1-channel track — the editor greys correlation/width to dashes.
+    bool isMonoLayout() const { return chainMono_.load(); }
 
     // Editor window size — persisted in plugin state
     int editorW = 1035, editorH = 638;
@@ -215,7 +219,13 @@ private:
     ChainHost chainHost;                    // audio-thread process() via processBlock
     std::vector<ChainSlotSpec> chainModel;
     bool chainBuilding = false;
-    bool chainStereoOk = true;
+    // Set in prepareToPlay (host/audio thread), read on the audio thread and by
+    // the editor timer — atomic. chainSupported_ = mono OR stereo in/out;
+    // chainMono_ = a 1-channel track (needs the stereo up-mix / fold-down).
+    std::atomic<bool> chainSupported_ { true };
+    std::atomic<bool> chainMono_ { false };
+    // Preallocated stereo scratch for the mono up-mix (audio thread only).
+    juce::AudioBuffer<float> chainScratch_;
 
     void clearChainInternal();              // closes editors first via callback
     void updateChainLatency();
