@@ -246,6 +246,11 @@ public:
     // JSON/delimiters are never shown to the user, even when the closing tag is missing.
     static bool extractChainBlock(juce::String& replyInOut, juce::String& chainJsonOut);
 
+    // Same contract for the Link gain-proposal block:
+    //   <<<ECHOJAY_GAIN>>> {"proposals":[{linkId,currentGain,proposedGain,reason}]} <<<END_GAIN>>>
+    // Stripped from the visible reply; the client renders APPLY cards.
+    static bool extractGainBlock(juce::String& replyInOut, juce::String& gainJsonOut);
+
     // Recover a valid chain JSON string from a partially-written (truncated) block.
     // Scans for complete {...} objects using brace depth and reconstructs the array.
     // Returns an empty string if no complete entry can be found.

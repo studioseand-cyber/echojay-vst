@@ -1466,6 +1466,31 @@ bool EchoJayAPI::extractChainBlock(juce::String& replyInOut, juce::String& chain
     return true;
 }
 
+bool EchoJayAPI::extractGainBlock(juce::String& replyInOut, juce::String& gainJsonOut)
+{
+    const juce::String kOpen  = "<<<ECHOJAY_GAIN>>>";
+    const juce::String kClose = "<<<END_GAIN>>>";
+
+    int start = replyInOut.indexOf(kOpen);
+    if (start < 0) return false;
+
+    int jsonStart = start + (int)kOpen.length();
+    int end = replyInOut.indexOf(start, kClose);
+
+    if (end >= 0)
+    {
+        gainJsonOut = replyInOut.substring(jsonStart, end).trim();
+        replyInOut  = replyInOut.substring(0, start).trimEnd()
+                    + replyInOut.substring(end + (int)kClose.length());
+    }
+    else
+    {
+        gainJsonOut = replyInOut.substring(jsonStart).trim();
+        replyInOut  = replyInOut.substring(0, start).trimEnd();
+    }
+    return true;
+}
+
 juce::String EchoJayAPI::salvagePartialChain(const juce::String& partial)
 {
     // Find the chain array opening

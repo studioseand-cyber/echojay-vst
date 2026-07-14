@@ -629,6 +629,7 @@ private:
         float durationSeconds = 0;
         float lufs = -100;
         juce::String chainData;   // non-empty when AI returned a <<<ECHOJAY_CHAIN>>> block
+        juce::String gainData;    // non-empty when AI returned a <<<ECHOJAY_GAIN>>> block
     };
     std::vector<ChatMsg> chatMessages;
     bool chatLoading = false;
@@ -1448,6 +1449,31 @@ private:
     std::array<juce::TextButton, kMaxChainBuildBtns> chainBuildBtns;
     std::array<juce::String, kMaxChainBuildBtns> chainBuildJsons;
     int activeChainBuildBtns = 0;
+
+    // ---- AI-proposed Link gain (APPLY cards) --------------------------------
+    // The assistant may emit a <<<ECHOJAY_GAIN>>> block of measurement-backed
+    // proposals; each renders as a painted card in the reply with an Apply
+    // button (then Applied + Undo). NEVER auto-applies. Applied state +
+    // previous gain (for undo) live in a runtime map keyed by a stable hash
+    // of the proposal, so it survives repaints.
+    struct GainCardState { bool applied = false; float prevGain = 0.0f; };
+    std::map<juce::String, GainCardState> gainCardStates_;
+    // Painted click zones, rebuilt each chat paint
+    struct GainCardZone {
+        juce::Rectangle<int> rect;
+        juce::String key;        // stable proposal key (applied-state lookup)
+        juce::String uid;        // resolved Link address to send to
+        float proposed = 0.0f;   // dB to apply
+        bool  isUndo = false;    // Undo button (else Apply)
+    };
+    std::vector<GainCardZone> gainCardZones_;
+    static constexpr int kGainCardH = 52;
+    // Build the LINK LEVELS context + proposal format/grounding instructions
+    // for a chat turn; empty when there are no live Links to reason about.
+    juce::String buildLinkLevelsContext();
+    // Resolve a proposal's linkId (name or uid) to a sendable address.
+    juce::String resolveLinkProposalAddr(const juce::String& linkId) const;
+    void applyGainProposal(const GainCardZone& z);
     void showChainPluginPicker();                       // "+" button popup
     void loadChainFromJson(const juce::String& chainJson);
 
@@ -1484,12 +1510,22 @@ private:
         EchoJayEditor* owner = nullptr;
         // toggle zones in LOCAL coords, carrying the row's ADDRESS (uid)
         std::vector<std::pair<juce::Rectangle<int>, juce::String>> zones;
-        // gain zones: {rect, addr, kind} — kind -1 = nudge down, +1 = nudge
-        // up, 0 = readout (click = match/adjust menu, double-click = reset)
-        struct GainZone { juce::Rectangle<int> rect; juce::String addr; int kind; };
+        // gain slider track per row: {trackRect, addr}. The slider is
+        // custom-painted; drag/throttle state lives below.
+        struct GainZone { juce::Rectangle<int> rect; juce::String addr; };
         std::vector<GainZone> gainZones;
+        // Active drag: which row's slider is being dragged, the live value,
+        // and a ~10Hz send throttle (final value always sent on mouseUp).
+        juce::String  dragAddr;
+        float         dragValue = 0.0f;
+        uint32_t      lastGainSendMs = 0;
         void paint(juce::Graphics& g) override;
         void mouseDown(const juce::MouseEvent& e) override;
+        void mouseDrag(const juce::MouseEvent& e) override;
+        void mouseUp(const juce::MouseEvent& e) override;
+        // dB<->x for a track rect (shared by paint + drag)
+        static float gainFromX(int x, juce::Rectangle<int> track);
+        static int   xFromGain(float db, juce::Rectangle<int> track);
     };
     static constexpr int kLinkRowH = 64, kLinkRowGap = 8;
     LinkListView   linkListView_;

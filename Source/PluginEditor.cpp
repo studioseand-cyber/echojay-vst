@@ -1697,6 +1697,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // Forward clicks on chat viewport to wave card hit testing
     chatScroll.onClickCheck = [this](const juce::MouseEvent& e) -> bool {
         auto pos = e.getEventRelativeTo(this).getPosition();
+        // AI gain-proposal Apply/Undo cards (painted in editor coords)
+        for (auto& gz : gainCardZones_)
+            if (gz.rect.contains(pos))
+            {
+                applyGainProposal(gz);
+                return true;   // consumed
+            }
         for (auto& wp : chatWavePositions)
         {
             if (wp.bounds.contains(pos))
@@ -4614,48 +4621,54 @@ void EchoJayEditor::LinkListView::paint(juce::Graphics& g)
                         && (nowMs - st.lastChangeMs) < 1000;
         const float dim  = fresh ? 1.0f : 0.4f;
 
-        // Name — top of the left column; the gain control sits below it
-        // (dimming, dashes, checkbox and dot still carry meter state)
+        // Name — vertically centred in the left column
         g.setColour(C::text);
         g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
         const int nameW = 128;
-        g.drawText(rowName, cardX + 14, y + 8, nameW, 16,
+        g.drawText(rowName, cardX + 14, y + (cardH - 18) / 2, nameW, 18,
                    juce::Justification::centredLeft);
 
-        // ---- Gain control: [−] readout [+] (readout: click = adjust/match
-        // menu, double-click = reset to 0). Keyed on the row ADDRESS. ----
+        // ---- Inline gain slider: track + thumb + " dB" readout, sitting
+        // between the meter strip and the Active toggle. Custom-painted;
+        // drag handled in mouseDown/Drag/Up. Double-click resets to 0. ----
+        const int toggleZoneX = cardX + cardW - dotD - 10 - 86;
+        const int gainReadW = 46, gainTrackW = 84, gainColGap = 12;
+        const int gainColX = toggleZoneX - gainColGap - (gainTrackW + 6 + gainReadW);
         {
-            const float gDb = ed.linkRowDisplayGain(rowAddr);
-            const int gy = y + 34, gh = 18;
-            juce::Rectangle<int> minusR(cardX + 14, gy, 18, gh);
-            juce::Rectangle<int> readR (cardX + 34, gy, 74, gh);
-            juce::Rectangle<int> plusR (cardX + 110, gy, 18, gh);
-            gainZones.push_back({ minusR, rowAddr, -1 });
-            gainZones.push_back({ readR,  rowAddr,  0 });
-            gainZones.push_back({ plusR,  rowAddr, +1 });
+            // Live drag value on THIS row wins over the published/pending value
+            const bool dragging = (dragAddr == rowAddr);
+            const float gDb = dragging ? dragValue : ed.linkRowDisplayGain(rowAddr);
 
-            auto stepper = [&](juce::Rectangle<int> r, const juce::String& sym)
-            {
-                g.setColour(C::bg4);
-                g.fillRoundedRectangle(r.toFloat(), 3.0f);
-                g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.8f));
-                g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-                g.drawText(sym, r, juce::Justification::centred);
-            };
-            stepper(minusR, juce::String(juce::CharPointer_UTF8("\xe2\x88\x92")));  // −
-            stepper(plusR,  "+");
+            juce::Rectangle<int> track(gainColX, y + (cardH - 4) / 2, gainTrackW, 4);
+            juce::Rectangle<int> hitTrack(gainColX, y + (cardH - 22) / 2, gainTrackW, 22);
+            gainZones.push_back({ hitTrack, rowAddr });
 
-            // Readout — sign-explicit dB; cyan when non-zero to read as "engaged"
-            juce::String gTxt = (gDb >= 0.05f ? "+" : gDb <= -0.05f ? "" : "")
-                              + juce::String(gDb, 1) + " dB";
+            // Track groove
+            g.setColour(C::bg4);
+            g.fillRoundedRectangle(track.toFloat(), 2.0f);
+            // Filled portion from 0 dB mark to the thumb (so cuts fill left,
+            // boosts fill right of centre)
+            const int zeroX  = xFromGain(0.0f, track);
+            const int thumbX = xFromGain(gDb, track);
+            const float fillL = (float)std::min(zeroX, thumbX);
+            const float fillR = (float)std::max(zeroX, thumbX);
+            g.setColour(juce::Colour(0xff22d3ee).withAlpha(std::abs(gDb) >= 0.05f ? 0.85f : 0.4f));
+            g.fillRoundedRectangle(fillL, (float)track.getY(), fillR - fillL, 4.0f, 2.0f);
+            // Thumb
+            g.setColour(dragging ? juce::Colours::white : juce::Colour(0xff22d3ee));
+            g.fillEllipse((float)thumbX - 5.0f, (float)track.getCentreY() - 5.0f, 10.0f, 10.0f);
+
+            // Readout
+            juce::String gTxt = (gDb >= 0.05f ? "+" : "") + juce::String(gDb, 1);
             g.setColour(std::abs(gDb) >= 0.05f ? juce::Colour(0xff22d3ee) : C::text3);
-            g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)));
-            g.drawText(gTxt, readR, juce::Justification::centred);
+            g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+            g.drawText(gTxt + " dB", gainColX + gainTrackW + 6, y + (cardH - 18) / 2,
+                       gainReadW, 18, juce::Justification::centredLeft);
         }
 
-        // Meter strip between the name column and the Active toggle
+        // Meter strip between the name column and the gain slider
         const int stripX = cardX + 14 + nameW + 10;
-        const int stripR = cardX + cardW - dotD - 10 - 86 - 12;
+        const int stripR = gainColX - 10;
         if (st.has)
             ed.paintLinkMeterStrip(g, stripX, stripR, y, cardH, st, fresh, dim);
         else
@@ -4671,27 +4684,43 @@ void EchoJayEditor::LinkListView::paint(juce::Graphics& g)
     }
 }
 
+float EchoJayEditor::LinkListView::gainFromX(int x, juce::Rectangle<int> track)
+{
+    const float f = juce::jlimit(0.0f, 1.0f,
+        (float)(x - track.getX()) / (float)juce::jmax(1, track.getWidth()));
+    // -24..+12 over the track, snapped to 0.1 dB
+    return juce::jlimit(-24.0f, 12.0f,
+        std::round((-24.0f + f * 36.0f) * 10.0f) / 10.0f);
+}
+
+int EchoJayEditor::LinkListView::xFromGain(float db, juce::Rectangle<int> track)
+{
+    const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
+    return track.getX() + (int)std::round(f * track.getWidth());
+}
+
 void EchoJayEditor::LinkListView::mouseDown(const juce::MouseEvent& e)
 {
     if (owner == nullptr) return;
     const auto pos = e.getPosition();
 
-    // Gain zones first (they sit inside the name column, away from the toggle)
+    // Gain slider first (sits left of the Active toggle)
     for (auto& gz : gainZones)
         if (gz.rect.contains(pos))
         {
-            if (gz.kind == 0)   // readout: double-click resets, click = menu
+            if (e.getNumberOfClicks() >= 2)   // double-click resets to 0
             {
-                if (e.getNumberOfClicks() >= 2)
-                    owner->sendLinkGainCommand(gz.addr, 0.0f);
-                else
-                    owner->showLinkGainMenu(gz.addr);
+                dragAddr = {};
+                owner->sendLinkGainCommand(gz.addr, 0.0f);
+                repaint();
+                return;
             }
-            else                // ±0.5 dB nudge from the displayed value
-            {
-                const float cur = owner->linkRowDisplayGain(gz.addr);
-                owner->sendLinkGainCommand(gz.addr, cur + (gz.kind > 0 ? 0.5f : -0.5f));
-            }
+            // Begin drag: track rect is the hit rect (same x extent)
+            dragAddr  = gz.addr;
+            dragValue = gainFromX(pos.x, gz.rect);
+            lastGainSendMs = juce::Time::getMillisecondCounter();
+            owner->sendLinkGainCommand(dragAddr, dragValue);
+            repaint();
             return;
         }
 
@@ -4708,6 +4737,35 @@ void EchoJayEditor::LinkListView::mouseDown(const juce::MouseEvent& e)
             owner->sendLinkActiveCommand(z.second, !cur);
             return;
         }
+}
+
+void EchoJayEditor::LinkListView::mouseDrag(const juce::MouseEvent& e)
+{
+    if (owner == nullptr || dragAddr.isEmpty()) return;
+    // Recompute value from the track this addr owns (find its current rect)
+    for (auto& gz : gainZones)
+        if (gz.addr == dragAddr)
+        {
+            dragValue = gainFromX(e.getPosition().x, gz.rect);
+            break;
+        }
+    // Throttle sends to ~10Hz; the visual thumb tracks every move (repaint)
+    const uint32_t now = juce::Time::getMillisecondCounter();
+    if (now - lastGainSendMs >= 100)
+    {
+        lastGainSendMs = now;
+        owner->sendLinkGainCommand(dragAddr, dragValue);
+    }
+    repaint();
+}
+
+void EchoJayEditor::LinkListView::mouseUp(const juce::MouseEvent&)
+{
+    if (owner == nullptr || dragAddr.isEmpty()) return;
+    // Always send the FINAL value on release (the throttle may have skipped it)
+    owner->sendLinkGainCommand(dragAddr, dragValue);
+    dragAddr = {};
+    repaint();
 }
 
 void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int> area)
@@ -4785,7 +4843,16 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
             hs.frame.shortTerm   = -100.0f;
             hs.frame.shortTermTP = -100.0f;
         }
-        paintLinkMeterStrip(g, pad + 14 + nameW + 10, pad + fw - 14, y, cardH,
+        // Gain column reserved but EMPTY — the main plugin has no gain stage
+        // of its own (it is not a Link). Dim dash where a slider would be.
+        const int gainColW = 84 + 6 + 46;   // track + gap + readout (Link rows)
+        const int mixGainX = pad + fw - 14 - gainColW;
+        g.setColour(C::text3.withAlpha(0.5f));
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")),   // em dash
+                   mixGainX, y, gainColW, cardH, juce::Justification::centred);
+
+        paintLinkMeterStrip(g, pad + 14 + nameW + 10, mixGainX - 10, y, cardH,
                             hs, /*fresh=*/!md.isSilent, 1.0f);
 
         y += cardH + 6;
@@ -9173,6 +9240,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     activeWavePlayBtns = 0;
     activeChainBuildBtns = 0;
     chatWavePositions.clear();
+    gainCardZones_.clear();
 
     int msgY = 8 - scrollOffset;
     const float chatMsgFontSize = 12.0f * chatTextScale;
@@ -9205,7 +9273,22 @@ void EchoJayEditor::paint(juce::Graphics& g)
         bool hasChainBtn = !isUser && msg.chainData.isNotEmpty();
         int chainAreaH = hasChainBtn ? (kChainBtnH + 6) : 0;
 
-        int tH = isCaptureMsg ? kCaptureMsgH : (textH + waveCardH + chainAreaH);
+        // Extra height for AI gain-proposal APPLY cards
+        juce::var gainProposals;
+        int gainCardCount = 0;
+        if (!isUser && msg.gainData.isNotEmpty())
+        {
+            auto gv = juce::JSON::parse(msg.gainData);
+            if (auto* go = gv.getDynamicObject())
+            {
+                gainProposals = go->getProperty("proposals");
+                if (gainProposals.isArray())
+                    gainCardCount = gainProposals.getArray()->size();
+            }
+        }
+        int gainAreaH = gainCardCount * (kGainCardH + 6);
+
+        int tH = isCaptureMsg ? kCaptureMsgH : (textH + waveCardH + chainAreaH + gainAreaH);
         int drawY = chatTop2 + msgY;
 
         if (drawY + tH > chatTop2 - 50 && drawY < chatBottomEdge + 50)
@@ -9550,7 +9633,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 
                 int bubbleX = avX + avatarSize + 6;
                 int bubbleW = chatW - avatarSize - 20;
-                int bubbleH = tH - chainAreaH;
+                int bubbleH = tH - chainAreaH - gainAreaH;
                 g.setColour(C::bg3);
                 g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)bubbleH, 10.0f);
                 layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(bubbleH - 20) });
@@ -9577,6 +9660,84 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     {
                         chainBuildBtns[(size_t)btnIdx].setBounds(-100, -100, 1, 1);
                         chainBuildBtns[(size_t)btnIdx].setVisible(false);
+                    }
+                }
+
+                // ---- AI gain-proposal APPLY cards (painted, hit-tested in
+                // mouseDown). Each stacks below the bubble + chain button. ----
+                if (gainCardCount > 0 && gainProposals.isArray())
+                {
+                    int cardY = drawY + bubbleH + chainAreaH + 4;
+                    for (auto& pv : *gainProposals.getArray())
+                    {
+                        auto* po = pv.getDynamicObject();
+                        if (po == nullptr) { cardY += kGainCardH + 6; continue; }
+                        const juce::String linkId = po->getProperty("linkId").toString();
+                        const float curG  = (float)(double)po->getProperty("currentGain");
+                        const float propG = juce::jlimit(-24.0f, 12.0f,
+                                              (float)(double)po->getProperty("proposedGain"));
+                        const juce::String reason = po->getProperty("reason").toString();
+                        const juce::String key = linkId + "|" + juce::String(propG, 1)
+                                               + "|" + reason.substring(0, 24);
+                        const juce::String uid = resolveLinkProposalAddr(linkId);
+                        const bool present = uid.isNotEmpty();
+                        auto& cst = gainCardStates_[key];
+
+                        juce::Rectangle<int> card(bubbleX, cardY, bubbleW, kGainCardH);
+                        g.setColour(C::bg2);
+                        g.fillRoundedRectangle(card.toFloat(), 8.0f);
+                        g.setColour(juce::Colour(0xff22d3ee).withAlpha(cst.applied ? 0.5f : 0.3f));
+                        g.drawRoundedRectangle(card.toFloat(), 8.0f, 1.0f);
+
+                        // Title: "Vocal bus: -3.0 dB"
+                        g.setColour(present ? C::text : C::text3);
+                        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+                        juce::String title = linkId + ": "
+                            + (propG >= 0 ? "+" : "") + juce::String(propG, 1) + " dB";
+                        g.drawText(title, card.getX() + 12, card.getY() + 7,
+                                   card.getWidth() - 96, 16, juce::Justification::centredLeft);
+                        // Reason line
+                        g.setColour(C::text3);
+                        g.setFont(juce::Font(juce::FontOptions(10.5f)));
+                        g.drawText(present ? reason : "Link no longer present",
+                                   card.getX() + 12, card.getY() + 26,
+                                   card.getWidth() - 96, 16, juce::Justification::centredLeft, true);
+
+                        // Apply / Applied+Undo button(s) on the right
+                        const bool inView = card.getY() >= chatScroll.getBounds().getY() - kGainCardH
+                                         && card.getY() <= chatScroll.getBounds().getBottom();
+                        if (present && inView)
+                        {
+                            if (!cst.applied)
+                            {
+                                juce::Rectangle<int> ap(card.getRight() - 76, card.getY() + 12, 64, 28);
+                                g.setColour(juce::Colour(0xff0E1020));
+                                g.fillRoundedRectangle(ap.toFloat(), 6.0f);
+                                g.setColour(juce::Colour(0xff22d3ee));
+                                g.drawRoundedRectangle(ap.toFloat(), 6.0f, 1.0f);
+                                g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+                                g.drawText("Apply", ap, juce::Justification::centred);
+                                gainCardZones_.push_back({ ap, key, uid, propG, false });
+                            }
+                            else
+                            {
+                                g.setColour(juce::Colour(0xff22c55e));
+                                g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
+                                g.drawText(juce::String(juce::CharPointer_UTF8("Applied \xe2\x9c\x93")),
+                                           card.getRight() - 130, card.getY() + 12, 60, 28,
+                                           juce::Justification::centredRight);
+                                juce::Rectangle<int> un(card.getRight() - 62, card.getY() + 12, 50, 28);
+                                g.setColour(juce::Colour(0xff0E1020));
+                                g.fillRoundedRectangle(un.toFloat(), 6.0f);
+                                g.setColour(C::text3);
+                                g.drawRoundedRectangle(un.toFloat(), 6.0f, 1.0f);
+                                g.setColour(C::text2);
+                                g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+                                g.drawText("Undo", un, juce::Justification::centred);
+                                gainCardZones_.push_back({ un, key, uid, propG, true });
+                            }
+                        }
+                        cardY += kGainCardH + 6;
                     }
                 }
             }
@@ -11006,7 +11167,19 @@ void EchoJayEditor::timerCallback()
                 int textH = (int)layout.getHeight() + 20;
                 int waveCardH = (msg.hasWaveform && !msg.waveform.empty()) ? 36 : 0;
                 int chainAreaH2 = (msg.role == "assistant" && msg.chainData.isNotEmpty()) ? 32 : 0;
-                tH = textH + waveCardH + chainAreaH2;
+                // AI gain proposal cards — MUST match the paint pass reservation
+                int gainAreaH2 = 0;
+                if (msg.role == "assistant" && msg.gainData.isNotEmpty())
+                {
+                    auto gv = juce::JSON::parse(msg.gainData);
+                    if (auto* go = gv.getDynamicObject())
+                    {
+                        auto pr = go->getProperty("proposals");
+                        if (pr.isArray())
+                            gainAreaH2 = pr.getArray()->size() * (kGainCardH + 6);
+                    }
+                }
+                tH = textH + waveCardH + chainAreaH2 + gainAreaH2;
             }
             totalH += tH + 10; // matches paint msgY += tH + 10
         }
@@ -11318,6 +11491,16 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
                       "injection (chain blocks cannot be feed-validated)");
     }
 
+    // LINK LEVELS context: grounds relative level statements and enables
+    // measurement-backed gain proposals. Rides on the chat turn (does NOT
+    // change turnType — billing stays a chat turn per the spec).
+    juce::String linkLevels = buildLinkLevelsContext();
+    if (linkLevels.isNotEmpty())
+    {
+        userContent += linkLevels;
+        EchoJay_NSLog("EJChat: LINK LEVELS context attached (gain proposals enabled)");
+    }
+
     processorRef.chatRoles.add("user");
     processorRef.chatContents.add(userContent);
     bumpMonthlyStat("chats");   // THIS MONTH card (local counter)
@@ -11328,7 +11511,8 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
 
     // usage-v2: no meter blob on plain chat turns (see above). turnType is
     // chain_generate when the chain-feed injection rode along (the model is
-    // being asked for a chain), plain chat otherwise.
+    // being asked for a chain), plain chat otherwise. A gain proposal rides
+    // on whatever turn produced it — never its own turnType.
     api.setNextChatTurnType(chainInjection.isNotEmpty() ? "chain_generate" : "chat");
 
     juce::String activeChatId = currentChatId; // capture before async
@@ -11341,9 +11525,16 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
 
             juce::String visibleReply = reply;
             juce::String chainJson;
-            // Always try to extract a chain block; the model may or may not have included one.
+            juce::String gainJson;
+            // Always try to extract chain + gain blocks; the model may or may
+            // not have included either. Gain proposals are measurement-backed
+            // APPLY cards (never auto-applied).
             if (success)
+            {
                 EchoJayAPI::extractChainBlock(visibleReply, chainJson);
+                if (EchoJayAPI::extractGainBlock(visibleReply, gainJson))
+                    EchoJay_NSLog("EJChat: gain proposal block received");
+            }
 
             // If extractChainBlock returned partial/truncated JSON, try bracket-depth salvage
             // before falling through to the name-scan fallback.
@@ -11427,6 +11618,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
                 cm.role      = "assistant";
                 cm.content   = visibleReply;
                 cm.chainData = chainJson;   // empty if model didn't return a chain block
+                cm.gainData  = gainJson;    // empty if no gain proposal block
                 safeThis->chatMessages.push_back(cm);
                 safeThis->processorRef.chatHistory.push_back({"assistant", visibleReply});
                 safeThis->processorRef.chatRoles.add("assistant");
@@ -11834,6 +12026,106 @@ void EchoJayEditor::sendLinkGainCommand(const juce::String& linkAddr, float gain
     linkCtrlPending_.push_back(pend);
 
     pollLinkCtrlAck(linkAddr, seq, 12);
+    repaint();
+}
+
+// LINK LEVELS context for a chat turn: grounds relative statements and lets
+// the assistant emit measurement-backed gain proposals. Returns "" when
+// there are no live Links (so plain chats are unaffected). The instructions
+// live here (not the server prompt) so the whole feature is client-owned and
+// conditional on Links being present.
+juce::String EchoJayEditor::buildLinkLevelsContext()
+{
+    processorRef.refreshLinkRegistry();
+    const auto infos = processorRef.getLinkSlotInfos();
+
+    struct LvlRow { juce::String name, uid; float gain, integ, mom, tp; bool has; };
+    std::vector<LvlRow> rows;
+    for (const auto& li : infos)
+    {
+        if (li.name.isEmpty()) continue;   // proposals need an addressable id
+        LvlRow r; r.name = li.name;
+        r.uid = li.uid.isNotEmpty() ? li.uid : LinkShm::makeSafeFilePart(li.name);
+        r.gain = li.gainDb; r.has = false;
+        r.integ = r.mom = r.tp = -100.0f;
+        LinkMeterFrame f;
+        if (li.regIdx >= 0 && processorRef.readLinkMeterFrame(li.regIdx, f)
+            && f.integrated > -70.0f)
+        {
+            r.integ = f.integrated; r.mom = f.momentary; r.tp = f.truePeakMax;
+            r.has = true;
+        }
+        rows.push_back(r);
+    }
+    if (rows.empty()) return {};
+
+    auto f1 = [](float v) { return juce::String(v, 1); };
+    const auto busMd = processorRef.getMeterEngine().getMeterData();
+
+    juce::String c;
+    c << "\n\n[LINK LEVELS — internal context, do not show raw numbers unless "
+         "citing them in a gain proposal reason]\n";
+    if (busMd.integrated > -70.0f)
+        c << "Mix bus (this instance): integrated " << f1(busMd.integrated)
+          << " LUFS, momentary " << f1(busMd.momentary)
+          << " LUFS, TP " << f1(juce::jmax(busMd.truePeakMaxL, busMd.truePeakMaxR)) << " dBTP\n";
+    else
+        c << "Mix bus (this instance): no signal captured yet\n";
+    for (const auto& r : rows)
+    {
+        c << "Link \"" << r.name << "\": gain " << (r.gain >= 0 ? "+" : "") << f1(r.gain) << " dB";
+        if (r.has)
+            c << ", integrated " << f1(r.integ) << " LUFS, momentary " << f1(r.mom)
+              << " LUFS, TP " << f1(r.tp) << " dBTP";
+        else
+            c << ", no live measurement";
+        c << "\n";
+    }
+    c << "\nIf — and ONLY if — the MEASURED values justify a level change (a bus "
+         "sitting hot against the others, a true-peak over, matching a target "
+         "loudness), you may propose gain changes. A proposal MUST be grounded in "
+         "these numbers and its reason MUST cite them. Do NOT propose a gain change "
+         "on taste alone; if you want to suggest a taste-based level move, say so in "
+         "prose with NO machine block. Never claim you changed a gain yourself — the "
+         "user applies it.\n"
+         "When you do propose, emit ONE block as the very last thing in your reply, "
+         "after all prose, nothing after <<<END_GAIN>>>:\n"
+         "<<<ECHOJAY_GAIN>>>\n"
+         "{\"proposals\":[{\"linkId\":\"<exact Link name>\",\"currentGain\":<dB now>,"
+         "\"proposedGain\":<dB target>,\"reason\":\"<one line citing the numbers>\"}]}\n"
+         "<<<END_GAIN>>>\n"
+         "proposedGain is ABSOLUTE (the new gain, -24..+12), not a delta. One entry "
+         "per Link; multiple Links = multiple entries in the array.\n";
+    return c;
+}
+
+juce::String EchoJayEditor::resolveLinkProposalAddr(const juce::String& linkId) const
+{
+    // linkId may be a name or a uid; match either against live slots
+    for (const auto& li : processorRef.getLinkSlotInfos())
+    {
+        if (li.uid == linkId && li.uid.isNotEmpty()) return li.uid;
+        if (li.name == linkId)
+            return li.uid.isNotEmpty() ? li.uid : LinkShm::makeSafeFilePart(li.name);
+    }
+    return {};   // Link no longer present — card will no-op
+}
+
+void EchoJayEditor::applyGainProposal(const GainCardZone& z)
+{
+    if (z.uid.isEmpty()) return;
+    auto& st = gainCardStates_[z.key];
+    if (z.isUndo)
+    {
+        sendLinkGainCommand(z.uid, st.prevGain);
+        st.applied = false;
+    }
+    else
+    {
+        st.prevGain = linkRowDisplayGain(z.uid);   // capture for undo
+        sendLinkGainCommand(z.uid, z.proposed);
+        st.applied = true;
+    }
     repaint();
 }
 
