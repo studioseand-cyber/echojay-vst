@@ -430,7 +430,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addAndMakeVisible(genreBox);
 
     // --- Project input ---
-    projectInput.setFont(juce::Font(juce::FontOptions(14.0f)));
+    projectInput.setFont(juce::Font(juce::FontOptions(15.0f)));
+    // Vertically centre the placeholder and entered text in the field
+    projectInput.setJustification(juce::Justification::centredLeft);
     projectInput.setTextToShowWhenEmpty("Project name...", C::text3.withAlpha(0.5f));
     projectInput.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff111520));
     projectInput.setColour(juce::TextEditor::outlineColourId, C::border2);
@@ -2607,6 +2609,23 @@ bool EchoJayEditor::assistantInputContext() const
     if (currentTab == Tab::Settings || currentView == View::Settings) return false;
     if (currentTab == Tab::Chain && chainChatCollapsed_) return false;
     return true;   // Chat, Compare, Meters, Visualisation, Link, Chain (open)
+}
+
+EchoJayEditor::AccountLayout EchoJayEditor::accountLayout(int tierLevel, bool twoLane) const
+{
+    // Vertical stack (Ys relative to the card top), >=8px between every block:
+    //   badge (26..44) -> gap 12 -> usage bar(s) -> [gap 14 + status 16] ->
+    //   [gap 12 + button 28] -> bottom pad 12
+    AccountLayout m;
+    m.barsTop = 44 + 12;                 // badge bottom + gap
+    m.oneBarH = 14 + 3 + 7 + 4 + 11;     // label + bar + reset = 39
+    m.barGap  = 12;
+    int y = m.barsTop + (twoLane ? (m.oneBarH + m.barGap + m.oneBarH) : m.oneBarH);
+    m.statusYRel = -1; m.buttonYRel = -1;
+    if (tierLevel > 0) { y += 14; m.statusYRel = y; y += 16; }
+    if (tierLevel < 2) { y += 12; m.buttonYRel = y; y += 28; }
+    m.cardH = y + 12;
+    return m;
 }
 
 bool EchoJayEditor::assistantSidebarVisible() const
@@ -7382,6 +7401,10 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
             g.drawText(plan, badge, juce::Justification::centred);
 
+            // Same stack layout resized() used — bars start at barsTop, status
+            // at statusYRel (all relative to the card top).
+            const AccountLayout acct = accountLayout(info.tierLevel, info.usagePool.twoLane());
+
             if (info.usagePool.twoLane())
             {
                 // FREE tier: two labelled usage bars, PERCENTAGE used only —
@@ -7389,7 +7412,7 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
                 // Percentages come straight from the server usagePool lanes so
                 // weight retuning is backend-only. No counts, no "credits".
                 const int bx = a.getX() + 14, bw = a.getWidth() - 28;
-                int y = badge.getBottom() + 12;
+                int y = a.getY() + acct.barsTop;
 
                 auto laneBar = [&](const juce::String& name,
                                    const UserInfo::UsagePool::Lane& lane,
@@ -7429,7 +7452,7 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             const int bx = a.getX() + 14, bw = a.getWidth() - 28;
             const float pct  = api.getUsagePercent();
             const float frac = juce::jlimit(0.0f, 1.0f, pct / 100.0f);
-            int y = badge.getBottom() + 12;
+            int y = a.getY() + acct.barsTop;
             g.setColour(pct >= 90.0f ? juce::Colour(0xffff6d5a) : C::text);
             g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
             g.drawText("Usage: " + juce::String((int) std::lround(pct)) + "% used",
@@ -7456,19 +7479,15 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             g.setFont(juce::Font(juce::FontOptions(9.5f)));
             g.drawText(resetLine, bx, y, bw, 11, juce::Justification::centredLeft);
             }
-            // Pro/Studio users see plan status where free users get Upgrade.
-            // Pro STILL shows an "Upgrade to Studio" button on the same row,
-            // so split it: status text on the left, button (positioned by the
-            // timer) on the right. Studio has no button → status full width.
-            if (info.tierLevel > 0)
+            // Plan status on its OWN row (no overlap): above the Upgrade
+            // button for Pro, or as the last line for Studio (no button).
+            if (info.tierLevel > 0 && acct.statusYRel >= 0)
             {
                 g.setColour(C::text2);
                 g.setFont(juce::Font(juce::FontOptions(10.5f)));
-                juce::Rectangle<int> statusR = settingsUpgradeRect_;
-                if (info.tierLevel == 1)   // pro: leave room for the button (kUpgW + gap)
-                    statusR = statusR.withTrimmedRight(140 + 10);
                 g.drawText(plan == "PRO" ? "Pro plan active" : "Studio plan active",
-                           statusR, juce::Justification::centredLeft);
+                           a.getX() + 14, a.getY() + acct.statusYRel,
+                           a.getWidth() - 28, 16, juce::Justification::centredLeft);
             }
         }
 
@@ -8751,17 +8770,20 @@ void EchoJayEditor::paint(juce::Graphics& g)
     g.drawHorizontalLine(kTopBarH - 1, 0.0f, (float)bounds.getWidth());
     EchoJayLookAndFeel::drawLogo(g, juce::Rectangle<float>(12, 0, 110, (float)kTopBarH), 19.0f);
 
-    // Tier badge next to logo — vertically centred in the header
+    // Tier badge next to logo — vertically centred, clear of the wordmark.
+    // The logo box is drawn at x=12 width 110 (ends ~122); place the badge at
+    // 132 so it never sits over the "y" at any UI scale.
     const int badgeY = (kTopBarH - 16) / 2;
+    const int badgeX = 132;
     if (api.isLoggedIn())
     {
         auto info = api.getUserInfo();
         if (info.tierLevel >= 1)
-            EchoJayLookAndFeel::drawTierBadge(g, 118, badgeY, info.tierLevel);
+            EchoJayLookAndFeel::drawTierBadge(g, badgeX, badgeY, info.tierLevel);
         else
         {
             // FREE badge — subtle grey pill
-            auto freeBounds = juce::Rectangle<float>(118.0f, (float)badgeY, 36.0f, 16.0f);
+            auto freeBounds = juce::Rectangle<float>((float)badgeX, (float)badgeY, 36.0f, 16.0f);
             g.setColour(C::bg4);
             g.fillRoundedRectangle(freeBounds, 4.0f);
             g.setColour(C::text3);
@@ -8882,10 +8904,12 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 g.fillRect(tx + 2, tabY + kTabBarH - 2, tw - 4, 2);
             }
 
-            // Unselected labels lifted from text3 (too dim) to text2 so they
-            // stay clearly legible but subordinate to the selected cyan tab.
-            g.setColour(active ? juce::Colour(0xff22d3ee) : C::text2);
-            g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+            // Unselected labels: a small step up from the original text3 for
+            // legibility, but darker than text2 (the previous change overshot),
+            // still clearly subordinate to the selected cyan tab. Font is a
+            // modest +1 over the original 9 (the +2 to 11 was too big).
+            g.setColour(active ? juce::Colour(0xff22d3ee) : juce::Colour(0xff7e7e93));
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
             g.drawText(kTabNames[i], tx, tabY, tw, kTabBarH, juce::Justification::centred);
         }
     }
@@ -10257,10 +10281,11 @@ void EchoJayEditor::resized()
         particleVisualHolder.setVisible(false);
     }
 
-    // === Single top bar row === (taller controls for the larger type; the
-    // 38px header gives 5px top + 28px control + 5px bottom)
-    int ty = 5, bh = 28;
-    int tx = 159;
+    // === Single top bar row === (taller controls so the larger type fills
+    // the 38px header: 4px top + 30px control + 4px bottom). First control
+    // starts past the badge (badgeX 132 + 36 wide = 168, + margin).
+    int ty = 4, bh = 30;
+    int tx = 174;
     
     if (visualOnlyMode || compactMode) {
         // Mini modes: capture button right after logo+badge; the full-view
@@ -10684,22 +10709,22 @@ void EchoJayEditor::resized()
         // WHAT'S NEW / THIS MONTH card was removed — monthly stats keep
         // counting in monthly_stats.json (Trends may want them) and the
         // /api/whats-new fetch sits dormant behind kShowWhatsNewCard.
+        // ONE stack layout drives both the card height and the button slot.
+        auto info = api.getUserInfo();
+        const AccountLayout acct = accountLayout(info.tierLevel, info.usagePool.twoLane());
         if (!cardsStacked)
         {
             int cx = sx + sw + 16;
             int cw = b.getWidth() - 20 - cx;
             int cTop = topH + 18, cBottom = saveRowY - 12;
-            // FREE V2 two-lane card needs room for two bars + credits line
-            int acctH = api.getUserInfo().usagePool.twoLane() ? 208 : 118, gap = 8;
-            settingsAccountCard_ = { cx, cTop, cw, acctH };
-            settingsVisualCard_  = { cx, cTop + acctH + gap, cw,
-                                     juce::jmax(120, cBottom - (cTop + acctH + gap)) };
+            settingsAccountCard_ = { cx, cTop, cw, acct.cardH };
+            settingsVisualCard_  = { cx, cTop + acct.cardH + 8, cw,
+                                     juce::jmax(120, cBottom - (cTop + acct.cardH + 8)) };
         }
         else
         {
             int cTop = sy + 8;
-            int chMax = api.getUserInfo().usagePool.twoLane() ? 208 : 150;
-            int ch = juce::jlimit(96, chMax, saveRowY - 12 - cTop);
+            int ch = juce::jlimit(96, acct.cardH, saveRowY - 12 - cTop);
             settingsAccountCard_ = { sx, cTop, juce::jmin(sw, 380), ch };
             settingsVisualCard_  = {};   // stacked mode: no room to breathe
         }
@@ -10707,10 +10732,11 @@ void EchoJayEditor::resized()
         settingsOrbCard_.setBounds(settingsVisualCard_);
         settingsOrbCard_.setVisible(!settingsVisualCard_.isEmpty());
         settingsOrbCard_.ensureTimerMatchesVisibility();
-        // The Upgrade button's owned home: a slot at the bottom of ACCOUNT
-        settingsUpgradeRect_ = settingsAccountCard_.reduced(14, 0)
-                                   .withTrimmedTop(settingsAccountCard_.getHeight() - 38)
-                                   .withHeight(28);
+        // Upgrade button slot: the button row of the stack (empty for Studio).
+        settingsUpgradeRect_ = acct.buttonYRel < 0 ? juce::Rectangle<int>{}
+            : juce::Rectangle<int>(settingsAccountCard_.getX() + 14,
+                                   settingsAccountCard_.getY() + acct.buttonYRel,
+                                   settingsAccountCard_.getWidth() - 28, 28);
     }
     else
     {
@@ -11334,15 +11360,8 @@ void EchoJayEditor::timerCallback()
             upgradeBtn.setButtonText(info.tierLevel == 0 ? "Upgrade to Pro" : "Upgrade to Studio");
             if (onSettingsCard)
             {
-                // Pro shares the row with the "Pro plan active" status text —
-                // button takes the right column (matches the paint-side split).
-                if (info.tierLevel == 1)
-                {
-                    auto r = settingsUpgradeRect_;
-                    upgradeBtn.setBounds(r.removeFromRight(140));
-                }
-                else
-                    upgradeBtn.setBounds(settingsUpgradeRect_);
+                // Full-width button row (status text is on its own row above)
+                upgradeBtn.setBounds(settingsUpgradeRect_);
             }
             else if (onLockStrip)
             {

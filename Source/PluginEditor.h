@@ -104,7 +104,7 @@ private:
     // topH (= kTopBarH + kTabBarH) is the content-area top everywhere, so the
     // whole layout reflows off these two constants.
     static constexpr int kTopBarH = 38;   // header row (was a hardcoded 32)
-    static constexpr int kTabBarH = 32;   // tab strip (was 28)
+    static constexpr int kTabBarH = 29;   // tab strip (was 28; +1 for the ~10px label)
     // THE single writer of the visible tab: strip selection (currentTab),
     // content visibility, sidebar/input visibility, and GL start/stop all
     // change here and nowhere else. force=true runs the full pass even when
@@ -386,6 +386,12 @@ private:
     juce::Rectangle<int> settingsVisualCard_;    // ambient logo-O particle field
     juce::Rectangle<int> settingsInfoCard_;      // slim combined info card
     juce::Rectangle<int> settingsUpgradeRect_;   // Upgrade button slot in ACCOUNT
+    // ONE vertical-stack layout for the ACCOUNT card, shared by resized()
+    // (card height + upgrade button rect) and paintSettingsView() (element
+    // Ys), so they can't disagree. All Ys are RELATIVE to the card top.
+    // statusYRel/buttonYRel are -1 when that element doesn't apply to the tier.
+    struct AccountLayout { int cardH, barsTop, oneBarH, barGap, statusYRel, buttonYRel; };
+    AccountLayout accountLayout(int tierLevel, bool twoLane) const;
 
     // Ambient Settings visual: the logo's "O" as a breathing particle field.
     // Point set is derived ONCE from the embedded logo PNG's alpha channel

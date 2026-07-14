@@ -31,7 +31,7 @@ public:
     juce::Font getComboBoxFont(juce::ComboBox& box) override
     {
         return juce::Font(juce::FontOptions(
-            juce::jmin(16.0f, (float) box.getHeight() * 0.85f)));
+            juce::jmin(17.0f, (float) box.getHeight() * 0.85f)));
     }
 
     EchoJayLookAndFeel()
