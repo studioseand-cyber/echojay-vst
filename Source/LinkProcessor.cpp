@@ -233,17 +233,39 @@ void LinkProcessor::pollControlCommand()
     lastAppliedCtrlSeq_ = seq;
     cmdFile.deleteFile();   // consumed
 
-    bool wantActive = (bool)obj->getProperty("active");
-    EchoJay_NSLog(("EJLinkState: remote set active=" + juce::String((int)wantActive)
-                   + " (seq " + juce::String(seq) + ")").toRawUTF8());
-    linkOn.store(wantActive);
-    updateShmState();                       // registry flag + ring + dirty-mark
-    if (onLinkStateChanged) onLinkStateChanged();   // open editor toggle sync
+    // Active is applied ONLY when present. The main plugin always includes
+    // the current active in gain/match commands, so this is normally a
+    // no-op there; guarding on presence means a hand-built gain-only command
+    // can never spuriously deactivate the Link. (v stays 1: the fields are
+    // additive; a pre-gain Link ignores gainDb and reads the echoed active.)
+    if (obj->hasProperty("active"))
+    {
+        bool wantActive = (bool)obj->getProperty("active");
+        if (wantActive != linkOn.load())
+            EchoJay_NSLog(("EJLinkState: remote set active=" + juce::String((int)wantActive)
+                           + " (seq " + juce::String(seq) + ")").toRawUTF8());
+        linkOn.store(wantActive);
+        updateShmState();                   // registry flag + ring + dirty-mark
+        if (onLinkStateChanged) onLinkStateChanged();   // open editor toggle sync
+    }
+
+    // Absolute gain set (from the monitor steppers OR the AI level-match
+    // action, which the main plugin resolves to an absolute dB before
+    // sending). Authority stays here: setGainDb clamps, mirrors to the slot,
+    // dirty-marks, and syncs an open editor's slider.
+    if (obj->hasProperty("gainDb"))
+    {
+        float g = (float)(double)obj->getProperty("gainDb");
+        EchoJay_NSLog(("EJLinkState: remote set gain=" + juce::String(g, 2)
+                       + " dB (seq " + juce::String(seq) + ")").toRawUTF8());
+        setGainDb(g);   // snapSmoothing=false → glide (no zipper, no pop)
+    }
 
     auto* ack = new juce::DynamicObject();
     ack->setProperty("v",      1);
     ack->setProperty("seq",    seq);
     ack->setProperty("active", linkOn.load());
+    ack->setProperty("gainDb", (double)gainDb_.load(std::memory_order_relaxed));
     juce::File(resolvedDir + "ctrl-ack-" + id + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(ack), true));
 }
@@ -423,6 +445,9 @@ void LinkProcessor::updateShmState()
         claimRegistrySlot();
     }
     LinkShm::setSlotActive(regMap, regSlotIdx, on);
+    // Re-publish gain into the (possibly freshly claimed) slot so the monitor
+    // shows the real value immediately, not the claim-time 0
+    LinkShm::setSlotGain(regMap, regSlotIdx, gainDb_.load(std::memory_order_relaxed));
 
     if (on)
     {
@@ -457,6 +482,14 @@ void LinkProcessor::prepareToPlay(double sampleRate, int numChannels)
                      && getTotalNumOutputChannels() >= 2);
     chainHost.prepare(sampleRate, getBlockSize() > 0 ? getBlockSize() : 512);
 
+    // Gain smoother — 30 ms ramp is short enough to feel immediate but long
+    // enough to kill zipper noise on a fast drag. Snap to the current target
+    // on prepare so a restored non-zero gain doesn't swell up from unity.
+    gainSmoothed_.reset(sampleRate, 0.030);
+    gainSmoothed_.setCurrentAndTargetValue(
+        juce::Decibels::decibelsToGain(gainDb_.load(std::memory_order_relaxed)));
+    gainSnapPending_.store(false, std::memory_order_relaxed);
+
     // Always sync shm state from the message thread so that:
     //  (a) a fresh session restore with Active=on registers correctly, and
     //  (b) a sample-rate change reopens the ring with the new rate.
@@ -484,6 +517,15 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
     if (chainStereoOk)
         chainHost.process(buffer, midi);
 
+    // Built-in gain stage — POST-chain, PRE-meter-tap. This position is
+    // deliberate: (1) it gains the TRACK output (the gain is a real stage on
+    // the signal path, so the DAW hears it), and (2) the meter tap below
+    // reads the POST-gain signal, so the LINK monitor's integrated loudness
+    // reflects the gain — which is exactly what the "match level" feature
+    // needs to converge (target minus post-gain integrated IS the delta to
+    // apply). Bit-transparent at 0 dB (unity multiply skipped entirely).
+    applyGainSmoothed(buffer);
+
     // Metering for the LINK tab mini strips — Active only, POST-chain so
     // the meters read the processed signal (same tap point as the ring)
     if (linkOn.load(std::memory_order_acquire) && buffer.getNumChannels() >= 1)
@@ -510,6 +552,58 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
             shmLock.exit();
         }
     }
+}
+
+// Audio thread. Glides the smoothed linear gain toward the atomic target and
+// multiplies it into the buffer. Returns false (and touches nothing) when the
+// stage is a settled unity no-op, so 0 dB is bit-transparent.
+bool LinkProcessor::applyGainSmoothed(juce::AudioBuffer<float>& buffer)
+{
+    const float targetLin =
+        juce::Decibels::decibelsToGain(gainDb_.load(std::memory_order_relaxed));
+
+    if (gainSnapPending_.exchange(false, std::memory_order_acq_rel))
+        gainSmoothed_.setCurrentAndTargetValue(targetLin);
+    else
+        gainSmoothed_.setTargetValue(targetLin);
+
+    // Settled at unity → nothing to do (bit-transparent bypass at 0 dB)
+    if (!gainSmoothed_.isSmoothing() && gainSmoothed_.getCurrentValue() == 1.0f)
+        return false;
+
+    const int n = buffer.getNumSamples();
+    const int numCh = buffer.getNumChannels();
+    if (gainSmoothed_.isSmoothing())
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            const float g = gainSmoothed_.getNextValue();
+            for (int ch = 0; ch < numCh; ++ch)
+                buffer.getWritePointer(ch)[i] *= g;
+        }
+    }
+    else
+    {
+        buffer.applyGain(gainSmoothed_.getCurrentValue());
+    }
+    return true;
+}
+
+void LinkProcessor::setGainDb(float db, bool snapSmoothing)
+{
+    db = juce::jlimit(kGainMinDb, kGainMaxDb, db);
+    gainDb_.store(db, std::memory_order_relaxed);
+    if (snapSmoothing)
+        gainSnapPending_.store(true, std::memory_order_relaxed);
+
+    // Mirror to the registry slot so the monitor shows it (Active or not)
+    if (regMap != nullptr && regSlotIdx >= 0)
+        LinkShm::setSlotGain(regMap, regSlotIdx, db);
+
+    // Non-parameter state changed — host re-snapshots (dirty-mark)
+    updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+
+    if (onLinkStateChanged) onLinkStateChanged();   // open editor slider sync
 }
 
 // =============================================================================
@@ -981,6 +1075,7 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     juce::DynamicObject* obj = new juce::DynamicObject();
     obj->setProperty("linkName", linkName);
     obj->setProperty("linkOn",   (bool)linkOn.load());
+    obj->setProperty("gainDb",   (double)gainDb_.load(std::memory_order_relaxed));
     obj->setProperty("projectName", projectName);
     obj->setProperty("genre",       genre);
     obj->setProperty("editorW",  editorW);
@@ -1000,6 +1095,11 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
     {
         if (obj->hasProperty("linkName")) linkName = obj->getProperty("linkName").toString();
         if (obj->hasProperty("linkOn"))   linkOn.store((bool)obj->getProperty("linkOn"));
+        if (obj->hasProperty("gainDb"))
+            gainDb_.store(juce::jlimit(kGainMinDb, kGainMaxDb,
+                                       (float)(double)obj->getProperty("gainDb")),
+                          std::memory_order_relaxed);
+        gainSnapPending_.store(true, std::memory_order_relaxed);  // restore: jump, don't swell
         if (obj->hasProperty("projectName"))
             projectName = obj->getProperty("projectName").toString();
         if (obj->hasProperty("genre"))

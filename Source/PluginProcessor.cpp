@@ -2124,6 +2124,7 @@ void EchoJayProcessor::refreshLinkRegistry()
         info.sampleRate = snap.sampleRate;
         info.framesRead = frames;
         info.regIdx     = i;    // frame lookup key for readLinkMeterFrame
+        info.gainDb     = snap.gainDb;   // Link's built-in gain (0 from old Links)
         newInfos.push_back(std::move(info));
     }
 

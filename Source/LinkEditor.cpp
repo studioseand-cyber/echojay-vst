@@ -62,13 +62,41 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     };
     addAndMakeVisible(toggleBtn);
 
-    // Keep the toggle/name in sync when the processor state changes OUTSIDE
-    // this editor (project state restore, remote Active command)
+    // Gain slider — range/step/default, double-click to 0, " dB" readout.
+    gainSlider.setRange(LinkProcessor::kGainMinDb, LinkProcessor::kGainMaxDb, 0.1);
+    gainSlider.setValue(proc.getGainDb(), juce::dontSendNotification);
+    gainSlider.setDoubleClickReturnValue(true, 0.0);
+    gainSlider.setTextValueSuffix(" dB");
+    gainSlider.setNumDecimalPlacesToDisplay(1);
+    gainSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 62, 22);
+    gainSlider.setColour(juce::Slider::backgroundColourId, kBorder);
+    gainSlider.setColour(juce::Slider::trackColourId, kCyan.withAlpha(0.55f));
+    gainSlider.setColour(juce::Slider::thumbColourId, kCyan);
+    gainSlider.setColour(juce::Slider::textBoxTextColourId, kText);
+    gainSlider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+    gainSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    gainSlider.setTooltip("Link gain (post-chain). Double-click to reset to 0 dB.");
+    gainSlider.onValueChange = [this]
+    {
+        // Glide (snapSmoothing=false): a live drag must not zipper
+        proc.setGainDb((float)gainSlider.getValue());
+    };
+    addAndMakeVisible(gainSlider);
+
+    gainCaption.setText("GAIN", juce::dontSendNotification);
+    gainCaption.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+    gainCaption.setColour(juce::Label::textColourId, kText2);
+    gainCaption.setJustificationType(juce::Justification::centredRight);
+    addAndMakeVisible(gainCaption);
+
+    // Keep the toggle/name/gain in sync when the processor state changes
+    // OUTSIDE this editor (project state restore, remote Active/gain command)
     proc.onLinkStateChanged = [safe = juce::Component::SafePointer<LinkEditor>(this)]
     {
         if (safe == nullptr) return;
         safe->toggleBtn.setToggleState(safe->proc.linkOn.load(), juce::dontSendNotification);
         safe->nameField.setText(safe->proc.linkName, juce::dontSendNotification);
+        safe->gainSlider.setValue(safe->proc.getGainDb(), juce::dontSendNotification);
         safe->repaint();
     };
 
@@ -200,8 +228,20 @@ void LinkEditor::resized()
         proc.editorH = getHeight();
     }
 
+    // Gain group is right-aligned just left of the minimise icon; the name
+    // field takes the slack in the middle so nothing collides at min width.
+    const int miniIconX  = getWidth() - 30;
+    const int gainSlideW = 150;   // track + " dB" textbox
+    const int gainCapW   = 34;
+    const int gainRight  = miniIconX - 8;
+    const int gainX      = gainRight - gainSlideW;
+    const int gainCapX   = gainX - gainCapW - 2;
+
     int fieldX = 150;
-    int fieldW = juce::jmin(280, juce::jmax(80, getWidth() - fieldX - 170));
+    // Name field ends a comfortable gap before the toggle+light+gain cluster.
+    // Cluster left edge = gainCapX minus (light 10 + gap 10 + toggle 76 + 12).
+    int clusterW = 12 + 76 + 10 + 10;   // gap + toggle + gap + light diameter+pad
+    int fieldW = juce::jlimit(80, 280, gainCapX - clusterW - fieldX - 8);
     nameField.setBounds(fieldX, (kHeaderH - 26) / 2, fieldW, 26);
     toggleBtn.setBounds(fieldX + fieldW + 12, (kHeaderH - 24) / 2, 76, 24);
 
@@ -210,7 +250,20 @@ void LinkEditor::resized()
                     (kHeaderH - lightD) * 0.5f, lightD, lightD };
 
     if (!miniMode)
+    {
+        // Full: gain in the header
+        gainCaption.setBounds(gainCapX, (kHeaderH - 22) / 2, gainCapW, 22);
+        gainSlider.setBounds(gainX, (kHeaderH - 22) / 2, gainSlideW, 22);
         chainPanel.setBounds(0, kHeaderH + 1, getWidth(), getHeight() - kHeaderH - 1);
+    }
+    else
+    {
+        // Mini: gain sits on its own row in the body, under the chain summary
+        int gy = kHeaderH + 52;
+        gainCaption.setBounds(16, gy, gainCapW, 22);
+        gainSlider.setBounds(16 + gainCapW + 4, gy,
+                             juce::jmax(120, getWidth() - 32 - gainCapW - 4), 22);
+    }
 }
 
 void LinkEditor::mouseDown(const juce::MouseEvent& e)

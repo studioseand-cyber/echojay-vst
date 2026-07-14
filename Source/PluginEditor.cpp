@@ -4500,6 +4500,7 @@ void EchoJayEditor::LinkListView::paint(juce::Graphics& g)
     using C = EchoJayLookAndFeel::Colours;
     auto& ed = *owner;
     zones.clear();
+    gainZones.clear();
 
     // LIST order: alphabetical by name, Untitleds last (by uid) — stable
     // while scrolling regardless of registry slot order (claim order)
@@ -4613,13 +4614,44 @@ void EchoJayEditor::LinkListView::paint(juce::Graphics& g)
                         && (nowMs - st.lastChangeMs) < 1000;
         const float dim  = fresh ? 1.0f : 0.4f;
 
-        // Name — vertically centred (the stale/inactive subtitle is gone;
-        // dimming, dashes, checkbox and dot carry the state)
+        // Name — top of the left column; the gain control sits below it
+        // (dimming, dashes, checkbox and dot still carry meter state)
         g.setColour(C::text);
         g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
         const int nameW = 128;
-        g.drawText(rowName, cardX + 14, y + (cardH - 18) / 2, nameW, 18,
+        g.drawText(rowName, cardX + 14, y + 8, nameW, 16,
                    juce::Justification::centredLeft);
+
+        // ---- Gain control: [−] readout [+] (readout: click = adjust/match
+        // menu, double-click = reset to 0). Keyed on the row ADDRESS. ----
+        {
+            const float gDb = ed.linkRowDisplayGain(rowAddr);
+            const int gy = y + 34, gh = 18;
+            juce::Rectangle<int> minusR(cardX + 14, gy, 18, gh);
+            juce::Rectangle<int> readR (cardX + 34, gy, 74, gh);
+            juce::Rectangle<int> plusR (cardX + 110, gy, 18, gh);
+            gainZones.push_back({ minusR, rowAddr, -1 });
+            gainZones.push_back({ readR,  rowAddr,  0 });
+            gainZones.push_back({ plusR,  rowAddr, +1 });
+
+            auto stepper = [&](juce::Rectangle<int> r, const juce::String& sym)
+            {
+                g.setColour(C::bg4);
+                g.fillRoundedRectangle(r.toFloat(), 3.0f);
+                g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.8f));
+                g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+                g.drawText(sym, r, juce::Justification::centred);
+            };
+            stepper(minusR, juce::String(juce::CharPointer_UTF8("\xe2\x88\x92")));  // −
+            stepper(plusR,  "+");
+
+            // Readout — sign-explicit dB; cyan when non-zero to read as "engaged"
+            juce::String gTxt = (gDb >= 0.05f ? "+" : gDb <= -0.05f ? "" : "")
+                              + juce::String(gDb, 1) + " dB";
+            g.setColour(std::abs(gDb) >= 0.05f ? juce::Colour(0xff22d3ee) : C::text3);
+            g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)));
+            g.drawText(gTxt, readR, juce::Justification::centred);
+        }
 
         // Meter strip between the name column and the Active toggle
         const int stripX = cardX + 14 + nameW + 10;
@@ -4643,6 +4675,26 @@ void EchoJayEditor::LinkListView::mouseDown(const juce::MouseEvent& e)
 {
     if (owner == nullptr) return;
     const auto pos = e.getPosition();
+
+    // Gain zones first (they sit inside the name column, away from the toggle)
+    for (auto& gz : gainZones)
+        if (gz.rect.contains(pos))
+        {
+            if (gz.kind == 0)   // readout: double-click resets, click = menu
+            {
+                if (e.getNumberOfClicks() >= 2)
+                    owner->sendLinkGainCommand(gz.addr, 0.0f);
+                else
+                    owner->showLinkGainMenu(gz.addr);
+            }
+            else                // ±0.5 dB nudge from the displayed value
+            {
+                const float cur = owner->linkRowDisplayGain(gz.addr);
+                owner->sendLinkGainCommand(gz.addr, cur + (gz.kind > 0 ? 0.5f : -0.5f));
+            }
+            return;
+        }
+
     for (auto& z : zones)
         if (z.first.contains(pos))
         {
@@ -11711,6 +11763,8 @@ void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkAddr, bool act
         if (p.addr == linkAddr && p.seq >= seq)
             seq = p.seq + 1;   // same-second re-toggle: keep seq advancing
 
+    // Active-only command: NO gainDb field, so it never touches the Link's
+    // gain (the Link applies gain only when the field is present).
     auto* cmd = new juce::DynamicObject();
     cmd->setProperty("v",      1);
     cmd->setProperty("seq",    seq);
@@ -11719,14 +11773,164 @@ void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkAddr, bool act
     juce::File(dir + "ctrl-cmd-" + id + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
 
+    // Replace only the ACTIVE pending for this addr (leave a gain pending)
     linkCtrlPending_.erase(
         std::remove_if(linkCtrlPending_.begin(), linkCtrlPending_.end(),
-                       [&](const LinkCtrlPending& p) { return p.addr == linkAddr; }),
+                       [&](const LinkCtrlPending& p)
+                       { return p.addr == linkAddr && !p.isGain; }),
         linkCtrlPending_.end());
-    linkCtrlPending_.push_back({ linkAddr, seq, active, false });
+    LinkCtrlPending pend; pend.addr = linkAddr; pend.seq = seq;
+    pend.target = active; pend.isGain = false;
+    linkCtrlPending_.push_back(pend);
 
     pollLinkCtrlAck(linkAddr, seq, 12);   // 12 x 250ms = ~3s
     repaint();
+}
+
+// Absolute gain set. The command carries the CURRENT (or in-flight) active so
+// it can never deactivate the Link, plus the new gainDb. Acked like Active.
+void EchoJayEditor::sendLinkGainCommand(const juce::String& linkAddr, float gainDb)
+{
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || linkAddr.isEmpty()) return;
+    const juce::String& id = linkAddr;
+
+    gainDb = juce::jlimit(-24.0f, 12.0f, gainDb);
+
+    // Freshest intended active: a pending Active toggle wins over the slot,
+    // so a gain nudge moments after a toggle doesn't revert it.
+    bool active = true;
+    for (const auto& li : processorRef.getLinkSlotInfos())
+    {
+        const juce::String a = li.uid.isNotEmpty()
+                             ? li.uid : LinkShm::makeSafeFilePart(li.name);
+        if (a == linkAddr) { active = li.active; break; }
+    }
+    for (const auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && !p.isGain && !p.timedOut) active = p.target;
+
+    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    for (auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
+
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",      1);
+    cmd->setProperty("seq",    seq);
+    cmd->setProperty("active", active);
+    cmd->setProperty("gainDb", (double)gainDb);
+    juce::File(dir + "ctrl-ack-" + id + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + id + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+
+    // Replace only the GAIN pending for this addr (optimistic display value)
+    linkCtrlPending_.erase(
+        std::remove_if(linkCtrlPending_.begin(), linkCtrlPending_.end(),
+                       [&](const LinkCtrlPending& p)
+                       { return p.addr == linkAddr && p.isGain; }),
+        linkCtrlPending_.end());
+    LinkCtrlPending pend; pend.addr = linkAddr; pend.seq = seq;
+    pend.isGain = true; pend.gainDb = gainDb;
+    linkCtrlPending_.push_back(pend);
+
+    pollLinkCtrlAck(linkAddr, seq, 12);
+    repaint();
+}
+
+float EchoJayEditor::linkRowDisplayGain(const juce::String& linkAddr) const
+{
+    // Optimistic pending gain until the ack/registry catches up
+    for (const auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && p.isGain && !p.timedOut) return p.gainDb;
+    for (const auto& li : processorRef.getLinkSlotInfos())
+    {
+        const juce::String a = li.uid.isNotEmpty()
+                             ? li.uid : LinkShm::makeSafeFilePart(li.name);
+        if (a == linkAddr) return li.gainDb;
+    }
+    return 0.0f;
+}
+
+// Absolute gain that lands this Link's integrated at targetLufs. The Link's
+// frame integrated is POST-gain, so delta = target - integrated and the new
+// absolute gain = currentGain + delta. Returns currentGain unchanged when no
+// usable integrated exists (silent / stale). Computed main-side so the
+// number shown to the user is exactly what gets sent (displayed == applied).
+float EchoJayEditor::computeLinkMatchGain(const juce::String& linkAddr, float targetLufs) const
+{
+    float curGain = linkRowDisplayGain(linkAddr);
+    for (const auto& li : processorRef.getLinkSlotInfos())
+    {
+        const juce::String a = li.uid.isNotEmpty()
+                             ? li.uid : LinkShm::makeSafeFilePart(li.name);
+        if (a != linkAddr) continue;
+        LinkMeterFrame f;
+        if (li.regIdx >= 0 && const_cast<EchoJayProcessor&>(processorRef)
+                                  .readLinkMeterFrame(li.regIdx, f)
+            && f.integrated > -70.0f)
+            return juce::jlimit(-24.0f, 12.0f, curGain + (targetLufs - f.integrated));
+        break;
+    }
+    return curGain;   // no valid measurement — no-op proposal
+}
+
+void EchoJayEditor::showLinkGainMenu(const juce::String& linkAddr)
+{
+    juce::String linkName;
+    for (const auto& li : processorRef.getLinkSlotInfos())
+    {
+        const juce::String a = li.uid.isNotEmpty()
+                             ? li.uid : LinkShm::makeSafeFilePart(li.name);
+        if (a == linkAddr) { linkName = li.name; break; }
+    }
+
+    const float cur = linkRowDisplayGain(linkAddr);
+
+    // Mix bus (this instance) integrated for the "match to mix bus" option
+    const float busInteg = processorRef.getMeterEngine().getMeterData().integrated;
+
+    juce::PopupMenu m;
+    m.addSectionHeader((linkName.isEmpty() ? juce::String("Link") : linkName) + " gain");
+    m.addItem(1, "Reset to 0 dB", std::abs(cur) > 0.001f, false);
+    m.addSeparator();
+    m.addSectionHeader("Match level");
+    // Match to the mix bus (host) integrated, if we have one
+    if (busInteg > -70.0f)
+    {
+        const float g = computeLinkMatchGain(linkAddr, busInteg);
+        m.addItem(10, "To mix bus (" + juce::String(busInteg, 1) + " LUFS)  ->  "
+                      + (g >= 0 ? "+" : "") + juce::String(g, 1) + " dB");
+    }
+    else
+        m.addItem(10, "To mix bus (no signal yet)", false, false);
+    // Fixed LUFS targets
+    const std::pair<int, float> targets[] = { {11, -14.0f}, {12, -9.0f}, {13, -23.0f} };
+    for (auto& t : targets)
+    {
+        const float g = computeLinkMatchGain(linkAddr, t.second);
+        m.addItem(t.first, "To " + juce::String((int)t.second) + " LUFS  ->  "
+                           + (g >= 0 ? "+" : "") + juce::String(g, 1) + " dB");
+    }
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    m.showMenuAsync(juce::PopupMenu::Options(),
+        [safeThis, linkAddr, busInteg](int r)
+        {
+            if (safeThis == nullptr || r == 0) return;
+            if (r == 1) { safeThis->sendLinkGainCommand(linkAddr, 0.0f); return; }
+            float target = 0.0f; bool ok = true;
+            switch (r)
+            {
+                case 10: target = busInteg; break;
+                case 11: target = -14.0f;   break;
+                case 12: target = -9.0f;    break;
+                case 13: target = -23.0f;   break;
+                default: ok = false;        break;
+            }
+            if (!ok || target <= -70.0f) return;
+            safeThis->sendLinkGainCommand(linkAddr,
+                safeThis->computeLinkMatchGain(linkAddr, target));
+        });
 }
 
 void EchoJayEditor::pollLinkCtrlAck(const juce::String& linkAddr, int seq, int attemptsLeft)
@@ -12658,11 +12862,29 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
             mcCtx += "Peak: L " + ff2(md.peakMaxL) + " / R " + ff2(md.peakMaxR) + " dBFS\n";
             mcCtx += "RMS: L " + ff2(md.rmsL) + " / R " + ff2(md.rmsR) + " dB\n";
             mcCtx += "Crest: " + ff2(md.crestFactor) + " dB | Width: " + ff2(md.width) + "% | Corr: " + ff2(md.correlation) + "\n";
+            // Link gain stage (AI hook): current built-in gain for this Link,
+            // looked up by name from the registry. The integrated above is
+            // POST-gain, so a level match to target T needs delta (T minus
+            // integrated) applied on top of this current gain.
+            if (ci > 0)
+            {
+                for (const auto& li : processorRef.getLinkSlotInfos())
+                    if (li.name == sch.name)
+                    {
+                        mcCtx += "Link gain: " + (li.gainDb >= 0 ? juce::String("+") : juce::String())
+                               + ff2(li.gainDb) + " dB (built-in; user can level-match via the "
+                                 "LINK monitor's gain control)\n";
+                        break;
+                    }
+            }
             mcCtx += "\n";
         }
         mcCtx += "[Read the whole session: note any per-channel issues and how they relate. "
                  "If the host mix looks fine, check whether the individual channels suggest a balance or "
-                 "dynamics issue that might not be obvious from the full mix alone.]\n";
+                 "dynamics issue that might not be obvious from the full mix alone. "
+                 "If a Link's level should change to sit with the mix, state the exact dB (target minus "
+                 "its integrated) and tell the user they can apply it from the LINK monitor's gain "
+                 "control; never claim you changed it yourself.]\n";
         meterCtx += mcCtx;
     }
 

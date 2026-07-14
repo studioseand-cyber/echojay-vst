@@ -1468,6 +1468,8 @@ private:
         int  seq = 0;
         bool target = false;
         bool timedOut = false;
+        bool isGain = false;    // this pending is a gain change (else Active)
+        float gainDb = 0.0f;    // desired gain for optimistic row display
     };
     std::vector<LinkCtrlPending> linkCtrlPending_;
 
@@ -1482,6 +1484,10 @@ private:
         EchoJayEditor* owner = nullptr;
         // toggle zones in LOCAL coords, carrying the row's ADDRESS (uid)
         std::vector<std::pair<juce::Rectangle<int>, juce::String>> zones;
+        // gain zones: {rect, addr, kind} — kind -1 = nudge down, +1 = nudge
+        // up, 0 = readout (click = match/adjust menu, double-click = reset)
+        struct GainZone { juce::Rectangle<int> rect; juce::String addr; int kind; };
+        std::vector<GainZone> gainZones;
         void paint(juce::Graphics& g) override;
         void mouseDown(const juce::MouseEvent& e) override;
     };
@@ -1521,6 +1527,18 @@ private:
                              int rowY, int rowH, LinkStripState& st,
                              bool fresh, float dim);
     void sendLinkActiveCommand(const juce::String& linkAddr, bool active);
+    // Remote gain: ctrl-cmd carrying the CURRENT active + a new absolute
+    // gainDb field, acked like Active. Authority stays with the Link.
+    void sendLinkGainCommand(const juce::String& linkAddr, float gainDb);
+    // AI-driven level match: compute the absolute gain that lands this Link's
+    // integrated loudness at targetLufs (from its freshest frame + current
+    // gain), then send it. Returns the dB that WOULD be applied for the
+    // proposal text; applies only when apply=true (never auto).
+    float computeLinkMatchGain(const juce::String& linkAddr, float targetLufs) const;
+    void  showLinkGainMenu(const juce::String& linkAddr);   // adjust/match/reset
+    // Current gain a row should DISPLAY: optimistic pending value while a
+    // gain command is in flight, else the registry-reported gain.
+    float linkRowDisplayGain(const juce::String& linkAddr) const;
     void pollLinkCtrlAck(const juce::String& linkAddr, int seq, int attemptsLeft);
     void promptForFailedPlugins(juce::StringArray failed);
     void showNextFailPrompt(juce::StringArray names, int idx);

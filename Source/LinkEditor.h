@@ -703,6 +703,14 @@ private:
     juce::ToggleButton toggleBtn { "Active" };
     juce::Rectangle<float> lightBounds;
 
+    // Built-in gain: compact horizontal slider + numeric readout ("+2.5 dB").
+    // Lives in the header row (full) and the mini body (mini). Double-click
+    // returns to 0. onValueChange drives the processor; the processor's
+    // onLinkStateChanged pushes remote/restore changes back to the slider.
+    juce::Slider gainSlider { juce::Slider::LinearHorizontal,
+                              juce::Slider::TextBoxRight };
+    juce::Label  gainCaption;   // small "GAIN" cap to the left of the slider
+
     LinkChainPanel chainPanel;
 
     // "+" block popup — same searchable picker as the main plugin's Chain

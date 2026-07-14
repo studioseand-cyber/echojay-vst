@@ -45,6 +45,22 @@ public:
     juce::String      linkName;
     std::atomic<bool> linkOn    { false };
 
+    // ---- Built-in gain stage (v0.5.7) ------------------------------------
+    // A single wideband gain on the signal path, applied POST-chain and
+    // PRE-meter-tap (see processBlock for the justification). Range -24..+12
+    // dB, smoothed to avoid zipper noise, bit-transparent at exactly 0 dB.
+    // Target is an atomic set on the message thread (editor / remote cmd /
+    // state restore); the audio thread reads it and glides the smoothed
+    // linear gain toward it. Adds NO latency.
+    static constexpr float kGainMinDb = -24.0f, kGainMaxDb = 12.0f;
+    std::atomic<float> gainDb_ { 0.0f };
+    float  getGainDb() const { return gainDb_.load(std::memory_order_relaxed); }
+    // Message thread: clamp, store, mirror to registry slot, dirty-mark, and
+    // notify an open editor. snapSmoothing = jump the smoother to the value
+    // instead of gliding (used on state restore / prepare so a project load
+    // doesn't swell up from 0).
+    void   setGainDb(float db, bool snapSmoothing = false);
+
     // Session project name (no UI here): adopted from the shared
     // session_project.json when this instance has none of its own, follows
     // shared edits while it matches the previous shared value, serialised
@@ -153,6 +169,14 @@ private:
     // Host audio format — stored in prepareToPlay, used when opening the ring
     double hostSampleRate  = 44100.0;
     int    hostNumChannels = 2;
+
+    // Gain smoother — audio thread only; prepared in prepareToPlay (30 ms
+    // ramp). Target set from gainDb_ each block; a pending-snap flag lets
+    // the message thread request an instant jump (restore/prepare) without
+    // touching the smoother off-thread.
+    juce::LinearSmoothedValue<float> gainSmoothed_ { 1.0f };
+    std::atomic<bool> gainSnapPending_ { true };
+    bool applyGainSmoothed(juce::AudioBuffer<float>& buffer);   // false if pure unity no-op
 
     // Resolved shared directory (message thread, set once in ensureRegistryOpen)
     juce::String   resolvedDir;

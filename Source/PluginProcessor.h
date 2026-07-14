@@ -371,6 +371,7 @@ public:
         float        sampleRate = 0.f;
         int64_t      framesRead = 0;
         int          regIdx     = -1;     // registry slot index (meter frame lookup)
+        float        gainDb     = 0.0f;   // Link's built-in gain stage (0 = old Links)
     };
 
     /// Refresh the list of known Link slots from the registry.

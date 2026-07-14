@@ -89,7 +89,11 @@ struct alignas(128) RegistrySlot
                                //     the display name (unnamed/duplicate names
                                //     collided). Carved from _pad; old writers
                                //     leave it zeroed -> readers fall back.
-    uint8_t  _pad[8];          //  8  → total 128
+    float    gainDb;           //  4  Link's built-in gain stage, dB (v0.5.7).
+                               //     Mirrored here so the monitor shows it
+                               //     regardless of Active. Carved from _pad;
+                               //     old writers leave it 0.0 = unity (benign).
+    uint8_t  _pad[4];          //  4  → total 128
 };
 static_assert(sizeof(RegistrySlot) == 128, "RegistrySlot must be 128 bytes");
 
@@ -462,6 +466,9 @@ inline int claimSlot(void* regMap,
             slots[i].instanceUid[sizeof(slots[i].instanceUid) - 1] = 0;
             slots[i].sampleRate  = sr;
             slots[i].numChannels = ch;
+            slots[i].gainDb      = 0.0f;   // recycled slot: never serve the
+                                           // previous owner's gain (the owner
+                                           // re-publishes its real gain at once)
             // Reset the slot's meter frame: a recycled slot must NEVER serve
             // the previous owner's last values — the receiver would see an
             // unfamiliar seq, treat it as a fresh frame, and style frozen
@@ -514,6 +521,15 @@ inline void bumpHeartbeat(void* regMap, int slotIdx)
     storeRelease(&slot->heartbeat, loadRelaxed(&slot->heartbeat) + 1u);
 }
 
+// Mirror the Link's current gain (dB) into its slot so the monitor can show
+// it whether or not the Link is Active. Plain float store — display value,
+// no ordering requirement against other fields.
+inline void setSlotGain(void* regMap, int slotIdx, float gainDb)
+{
+    if (!regMap || slotIdx < 0 || slotIdx >= kRegMaxSlots) return;
+    regSlots(regMap)[slotIdx].gainDb = gainDb;
+}
+
 struct SlotSnapshot {
     int          idx;
     juce::String instanceUid;    // per-instance address ("" from old writers)
@@ -523,6 +539,7 @@ struct SlotSnapshot {
     uint32_t     numChannels;
     uint32_t     heartbeat;
     bool         active = true;  // capture/meter role on
+    float        gainDb = 0.0f;  // Link's built-in gain stage (0 from old writers)
 };
 
 inline bool readSlot(void* regMap, int i, SlotSnapshot& out)
@@ -538,6 +555,7 @@ inline bool readSlot(void* regMap, int i, SlotSnapshot& out)
     out.numChannels   = slot->numChannels;
     out.heartbeat     = loadRelaxed(&slot->heartbeat);
     out.active        = loadAcquire(&slot->activeFlag) != 0;
+    out.gainDb        = slot->gainDb;
     return true;
 }
 
