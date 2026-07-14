@@ -430,7 +430,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addAndMakeVisible(genreBox);
 
     // --- Project input ---
-    projectInput.setFont(juce::Font(juce::FontOptions(12.0f)));
+    projectInput.setFont(juce::Font(juce::FontOptions(14.0f)));
     projectInput.setTextToShowWhenEmpty("Project name...", C::text3.withAlpha(0.5f));
     projectInput.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff111520));
     projectInput.setColour(juce::TextEditor::outlineColourId, C::border2);
@@ -8544,8 +8544,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
     }
 
     // === Main Screen ===
-    // topH = 32px header + 28px tab bar = 60; content starts at y=60.
-    int topH = 32 + kTabBarH;
+    // topH = kTopBarH (38) header + kTabBarH (32) tab bar = 70; content starts at y=70.
+    int topH = kTopBarH + kTabBarH;
     bool chatOnlyMode   = (currentTab == Tab::Chat);
     bool comingSoonTab  = (currentTab == Tab::Chain);
     bool linkMonitorTab = (currentTab == Tab::Link);
@@ -8553,23 +8553,24 @@ void EchoJayEditor::paint(juce::Graphics& g)
     auto cols = computeColumns(bounds.getWidth());
     int chatW = cols.chatW, mW = cols.mW;
 
-    // Top bar background (32px header band only)
+    // Top bar background (header band only)
     g.setColour(C::bg2);
-    g.fillRect(0, 0, bounds.getWidth(), 32);
+    g.fillRect(0, 0, bounds.getWidth(), kTopBarH);
     g.setColour(C::border);
-    g.drawHorizontalLine(31, 0.0f, (float)bounds.getWidth());
-    EchoJayLookAndFeel::drawLogo(g, juce::Rectangle<float>(12, 0, 110, 32.0f), 18.0f);
+    g.drawHorizontalLine(kTopBarH - 1, 0.0f, (float)bounds.getWidth());
+    EchoJayLookAndFeel::drawLogo(g, juce::Rectangle<float>(12, 0, 110, (float)kTopBarH), 19.0f);
 
-    // Tier badge next to logo
+    // Tier badge next to logo — vertically centred in the header
+    const int badgeY = (kTopBarH - 16) / 2;
     if (api.isLoggedIn())
     {
         auto info = api.getUserInfo();
         if (info.tierLevel >= 1)
-            EchoJayLookAndFeel::drawTierBadge(g, 118, 8, info.tierLevel);
+            EchoJayLookAndFeel::drawTierBadge(g, 118, badgeY, info.tierLevel);
         else
         {
             // FREE badge — subtle grey pill
-            auto freeBounds = juce::Rectangle<float>(118.0f, 8.0f, 36.0f, 16.0f);
+            auto freeBounds = juce::Rectangle<float>(118.0f, (float)badgeY, 36.0f, 16.0f);
             g.setColour(C::bg4);
             g.fillRoundedRectangle(freeBounds, 4.0f);
             g.setColour(C::text3);
@@ -8577,14 +8578,14 @@ void EchoJayEditor::paint(juce::Graphics& g)
             g.drawText("FREE", freeBounds, juce::Justification::centred);
         }
     }
-    EchoJayLookAndFeel::drawGrainOverlay(g, juce::Rectangle<int>(0, 0, bounds.getWidth(), 32), 0.015f);
+    EchoJayLookAndFeel::drawGrainOverlay(g, juce::Rectangle<int>(0, 0, bounds.getWidth(), kTopBarH), 0.015f);
 
     // Teal separators between header buttons
     if (!compactMode && !visualOnlyMode && currentScreen == Screen::Main)
     {
         g.setColour(juce::Colour(0xff06b6d4).withAlpha(0.2f));
         auto drawSep = [&](int x) {
-            g.drawVerticalLine(x, 6.0f, 26.0f); // within 32px header band
+            g.drawVerticalLine(x, 6.0f, (float)(kTopBarH - 5)); // spans the header controls
         };
         // Separator between: [channel|genre|project|Capture | Plugins]
         auto scBounds = scanBtn.getBounds();
@@ -8595,7 +8596,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     if (!visualOnlyMode)
     {
         int iconX = bounds.getWidth() - 24;
-        int iconY = 8;
+        int iconY = (kTopBarH - 16) / 2;   // centred in the taller header
         int s = 16;
         g.setColour(C::text3);
         if (compactMode)
@@ -8624,7 +8625,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     if (!compactMode && !visualOnlyMode)
     {
         int iconX2 = bounds.getWidth() - 48;
-        int iconY2 = 8;
+        int iconY2 = (kTopBarH - 16) / 2;
         int s = 16;
         g.setColour(visualMode ? juce::Colour(0xff06b6d4) : C::text3);
         // Diamond shape
@@ -8644,7 +8645,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     if (visualOnlyMode)
     {
         int iconX = bounds.getWidth() - 24;
-        int iconY = 8;
+        int iconY = (kTopBarH - 16) / 2;
         int s = 16;
         g.setColour(C::text3);
         g.drawLine((float)iconX + 2, (float)iconY + s - 2, (float)iconX + s/2, (float)iconY + s/2, 1.5f);
@@ -8666,7 +8667,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         constexpr int kTabCount = 7;
         const int W  = bounds.getWidth();
         const int tabW = W / kTabCount;
-        const int tabY = 32;
+        const int tabY = kTopBarH;
 
         // Tab bar background
         g.setColour(C::bg);
@@ -8690,8 +8691,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 g.fillRect(tx + 2, tabY + kTabBarH - 2, tw - 4, 2);
             }
 
-            g.setColour(active ? juce::Colour(0xff22d3ee) : C::text3);
-            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+            // Unselected labels lifted from text3 (too dim) to text2 so they
+            // stay clearly legible but subordinate to the selected cyan tab.
+            g.setColour(active ? juce::Colour(0xff22d3ee) : C::text2);
+            g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
             g.drawText(kTabNames[i], tx, tabY, tw, kTabBarH, juce::Justification::centred);
         }
     }
@@ -9938,7 +9941,7 @@ void EchoJayEditor::resized()
     if (currentScreen == Screen::Loading)
         return;
 
-    int topH = 32 + kTabBarH; // 32px header + 28px tab bar
+    int topH = kTopBarH + kTabBarH; // 32px header + 28px tab bar
     bool chatOnlyMode  = (currentTab == Tab::Chat);
     bool comingSoonTab  = (currentTab == Tab::Chain);
     bool linkMonitorTab = (currentTab == Tab::Link);
@@ -10042,8 +10045,9 @@ void EchoJayEditor::resized()
         particleVisualHolder.setVisible(false);
     }
 
-    // === Single top bar row ===
-    int ty = 4, bh = 24;
+    // === Single top bar row === (taller controls for the larger type; the
+    // 38px header gives 5px top + 28px control + 5px bottom)
+    int ty = 5, bh = 28;
     int tx = 159;
     
     if (visualOnlyMode || compactMode) {
@@ -14097,7 +14101,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 
     // Tab bar click — y=32..60 (below the 32px header, height=kTabBarH)
     if (currentScreen == Screen::Main && !visualOnlyMode && !compactMode
-        && pos.y >= 32 && pos.y < 32 + kTabBarH)
+        && pos.y >= kTopBarH && pos.y < kTopBarH + kTabBarH)
     {
         constexpr int kTabCount = 7;
         int tabW = getWidth() / kTabCount;
@@ -14183,7 +14187,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     }
     
     // Visual-only mode — click expand icon to exit
-    if (visualOnlyMode && currentScreen == Screen::Main && pos.y < 32 && pos.x > getLocalBounds().getWidth() - 30)
+    if (visualOnlyMode && currentScreen == Screen::Main && pos.y < kTopBarH && pos.x > getLocalBounds().getWidth() - 30)
     {
         toggleVisualOnlyMode();
         return;
@@ -14246,7 +14250,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     }
     
     // Compact/expand toggle — top right of top bar
-    if (currentScreen == Screen::Main && !visualOnlyMode && pos.y < 32 && pos.x > getLocalBounds().getWidth() - 30)
+    if (currentScreen == Screen::Main && !visualOnlyMode && pos.y < kTopBarH && pos.x > getLocalBounds().getWidth() - 30)
     {
         toggleCompactMode();
         return;
@@ -14254,7 +14258,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     
     // Visual-only mode toggle — diamond icon, second from right in top bar
     if (currentScreen == Screen::Main && !compactMode && !visualOnlyMode
-        && pos.y < 32 && pos.x > getLocalBounds().getWidth() - 54 && pos.x <= getLocalBounds().getWidth() - 30)
+        && pos.y < kTopBarH && pos.x > getLocalBounds().getWidth() - 54 && pos.x <= getLocalBounds().getWidth() - 30)
     {
         toggleVisualOnlyMode();
         return;
@@ -14357,7 +14361,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     }
     
     // Logo click — open landing page
-    if (currentScreen == Screen::Main && pos.x < 120 && pos.y < 32)
+    if (currentScreen == Screen::Main && pos.x < 120 && pos.y < kTopBarH)
     {
         if (e.mods.isPopupMenu())
         {
@@ -14381,7 +14385,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     }
     
     // Right-click anywhere on top bar — also show size menu
-    if (currentScreen == Screen::Main && pos.y < 32 && e.mods.isPopupMenu())
+    if (currentScreen == Screen::Main && pos.y < kTopBarH && e.mods.isPopupMenu())
     {
         juce::PopupMenu sizeMenu;
         sizeMenu.setLookAndFeel(&lnf);

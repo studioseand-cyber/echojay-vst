@@ -99,7 +99,12 @@ private:
     // V2 six-tab shell
     enum class Tab { Visualisation, Meters, Chat, Compare, Link, Chain, Settings };
     Tab currentTab { Tab::Visualisation };
-    static constexpr int kTabBarH = 28;
+    // Top header row height (source/genre/project/Capture/plugin count) and
+    // the tab strip height. Bumped for larger, less-cramped typography;
+    // topH (= kTopBarH + kTabBarH) is the content-area top everywhere, so the
+    // whole layout reflows off these two constants.
+    static constexpr int kTopBarH = 38;   // header row (was a hardcoded 32)
+    static constexpr int kTabBarH = 32;   // tab strip (was 28)
     // THE single writer of the visible tab: strip selection (currentTab),
     // content visibility, sidebar/input visibility, and GL start/stop all
     // change here and nowhere else. force=true runs the full pass even when

@@ -24,6 +24,16 @@ public:
         static inline const juce::Colour border2   { juce::Colour::fromFloatRGBA(1, 1, 1, 0.1f) };
     };
     
+    // Lift the ComboBox font cap from JUCE's default 15 to 16 so the header
+    // source/genre dropdowns read ~1px larger (they were already at the 15
+    // cap, so a taller box alone couldn't grow them). Scales with box height,
+    // so smaller combos elsewhere are unaffected below ~19px.
+    juce::Font getComboBoxFont(juce::ComboBox& box) override
+    {
+        return juce::Font(juce::FontOptions(
+            juce::jmin(16.0f, (float) box.getHeight() * 0.85f)));
+    }
+
     EchoJayLookAndFeel()
     {
         // Try to load DM Sans from the system, fall back to a clean sans-serif
