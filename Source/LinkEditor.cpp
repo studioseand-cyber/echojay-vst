@@ -97,12 +97,9 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     addAndMakeVisible(placementBtn);
     updatePlacementBtn();
 
-    placementHelpBtn.setButtonText("?");
-    placementHelpBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
-    placementHelpBtn.setColour(juce::TextButton::textColourOffId, kText2);
-    placementHelpBtn.setTooltip("What is a bus vs a channel?");
-    placementHelpBtn.onClick = [this] { showPlacementHelp(); };
-    addAndMakeVisible(placementHelpBtn);
+    placementHelp.setTooltip("What is a bus vs a channel?");
+    placementHelp.onClick = [this] { showPlacementHelp(); };
+    addAndMakeVisible(placementHelp);
 
     // Keep the toggle/name/gain in sync when the processor state changes
     // OUTSIDE this editor (project state restore, remote Active/gain command)
@@ -318,26 +315,43 @@ void LinkEditor::resized()
     const int gainX      = gainRight - gainSlideW;
     const int gainCapX   = gainX - gainCapW - 2;
 
-    const int placeW = 78;    // placement selector ("Bus"/"Channel"/"Placement")
-    const int helpW  = 22;    // "?" button beside it
-    const int placeCluster = placeW + 3 + helpW;
-    int fieldX = 150;
-    // Name field ends before the toggle + light + placement + gain cluster.
-    int clusterW = 12 + 76 + 10 + 10 + 8 + placeCluster + 10;
+    const int placeW   = 78;   // placement selector ("Bus"/"Channel"/"Placement")
+    const int placeGap = 4;    // between the value and the "?" glyph
+    const int helpW    = 16;   // subtle inline "?" (no border)
+    const int placeCluster = placeW + placeGap + helpW;
+
+    // Name field must start clear of the "EchoJay Link" lockup (logo + word).
+    juce::Image logo = juce::ImageCache::getFromMemory(echoJayLogoPNG,
+                                                        (int)echoJayLogoPNGSize);
+    const float logoW = logo.isValid()
+        ? kHeaderH * 0.8f * ((float)logo.getWidth() / (float)logo.getHeight())
+        : 90.0f;
+    // 12 = logoX, +6 gap, +34 ≈ width of "Link" @13pt bold, +18 clearance margin.
+    int fieldX = (int)(12 + logoW + 6) + 34 + 18;
+
+    const int   toggleW  = 76;
+    const float lightD   = 10.0f;
+    const int   lightGap = 6;    // dot sits snug after the Active label
+    const int   groupGap = 16;   // normal spacing before the placement control
+
+    // Reserve space so the name field never pushes the Active/dot/placement
+    // group into the gain cluster.
+    int clusterW = 12 + toggleW + lightGap + (int)lightD + groupGap + placeCluster + 10;
     int fieldW = juce::jlimit(80, 260, gainCapX - clusterW - fieldX - 8);
     nameField.setBounds(fieldX, (kHeaderH - 26) / 2, fieldW, 26);
-    toggleBtn.setBounds(fieldX + fieldW + 12, (kHeaderH - 24) / 2, 76, 24);
 
-    const float lightD = 10.0f;
-    lightBounds = { (float)(fieldX + fieldW + 12 + 76 + 10),
+    // Active checkbox + label + status dot form ONE group.
+    const int toggleX = fieldX + fieldW + 12;
+    toggleBtn.setBounds(toggleX, (kHeaderH - 24) / 2, toggleW, 24);
+    lightBounds = { (float)(toggleX + toggleW + lightGap),
                     (kHeaderH - lightD) * 0.5f, lightD, lightD };
+    const int placeX = toggleX + toggleW + lightGap + (int)lightD + groupGap;
 
     if (!miniMode)
     {
         // Full: placement selector + "?" + gain in the header
-        const int placeX = fieldX + fieldW + 12 + 76 + 10 + 10 + 8;
         placementBtn.setBounds(placeX, (kHeaderH - 24) / 2, placeW, 24);
-        placementHelpBtn.setBounds(placeX + placeW + 3, (kHeaderH - 24) / 2, helpW, 24);
+        placementHelp.setBounds(placeX + placeW + placeGap, (kHeaderH - 24) / 2, helpW, 24);
         gainCaption.setBounds(gainCapX, (kHeaderH - 22) / 2, gainCapW, 22);
         gainSlider.setBounds(gainX, (kHeaderH - 22) / 2, gainSlideW, 22);
         chainPanel.setBounds(0, kHeaderH + 1, getWidth(), getHeight() - kHeaderH - 1);
@@ -351,7 +365,7 @@ void LinkEditor::resized()
         gainSlider.setBounds(16 + gainCapW + 4, gy,
                              juce::jmax(120, getWidth() - 32 - gainCapW - 4 - placeCluster - 8), 22);
         placementBtn.setBounds(getWidth() - 16 - placeCluster, gy, placeW, 24);
-        placementHelpBtn.setBounds(getWidth() - 16 - helpW, gy, helpW, 24);
+        placementHelp.setBounds(getWidth() - 16 - helpW, gy, helpW, 24);
     }
 }
 
@@ -459,11 +473,13 @@ void LinkEditor::updatePlacementBtn()
             placementBtn.setColour(juce::TextButton::textColourOffId, kCyan);
             break;
         case LinkProcessor::PlacementInsert:
+            // Channel is a deliberate, valid value — same accent as Bus.
             placementBtn.setButtonText("Channel");
-            placementBtn.setColour(juce::TextButton::textColourOffId, kText2);
+            placementBtn.setColour(juce::TextButton::textColourOffId, kCyan);
             break;
         default:
-            // Unset: dim, never amber/nagging. Behaves as Channel until set.
+            // Only the UNSET state is dim; never amber/nagging. Behaves as
+            // Channel until set.
             placementBtn.setButtonText("Placement");
             placementBtn.setColour(juce::TextButton::textColourOffId,
                                    kText2.withAlpha(0.55f));
@@ -481,51 +497,83 @@ void LinkEditor::applyPlacement(int p)
 
 void LinkEditor::showPlacementHelp()
 {
-    // Non-modal popover (CallOutBox), not a modal prompt. Plain-language copy.
-    auto* content = new juce::Component();
-    content->setSize(320, 196);
-
+    // Non-modal popover (CallOutBox). Sizes itself EXACTLY to its content with
+    // even padding all round — no empty gap. Wrapped-paragraph heights are
+    // measured with the same TextLayout used to paint them, so nothing clips.
     struct HelpText : juce::Component
     {
+        enum { PAD = 14, W = 300, GAP = 8 };
+        const juce::String busBody =
+            "A channel that other tracks are routed into, like a vocal bus, drum "
+            "bus, or the master. EchoJay can compare its level to your other buses.";
+        const juce::String chBody =
+            "A single instrument or audio track, like the lead vocal or the kick. "
+            "EchoJay reads the level before your fader, so it cannot compare it to "
+            "other tracks.";
+        float busH = 0.0f, chH = 0.0f;
+
+        static juce::TextLayout layoutFor(const juce::String& s, float w)
+        {
+            juce::AttributedString as;
+            as.append(s, juce::Font(juce::FontOptions(11.5f)), kText2);
+            juce::TextLayout tl; tl.createLayout(as, w);
+            return tl;
+        }
+        HelpText()
+        {
+            const float bw = (float)(W - 2 * PAD);
+            busH = layoutFor(busBody, bw).getHeight();
+            chH  = layoutFor(chBody,  bw).getHeight();
+            setSize(W, PAD + 18 + 6 + 15 + (int)std::ceil(busH) + GAP
+                        + 15 + (int)std::ceil(chH) + GAP + 15 + PAD);
+        }
         void paint(juce::Graphics& g) override
         {
             g.fillAll(kCard);
-            auto r = getLocalBounds().reduced(14, 12);
+            auto r = getLocalBounds().reduced(PAD);
             g.setColour(kText);
             g.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
-            g.drawText("Where is this Link?", r.removeFromTop(20),
-                       juce::Justification::topLeft);
+            g.drawText("Where is this Link?", r.removeFromTop(18), juce::Justification::topLeft);
             r.removeFromTop(6);
-            auto para = [&](const juce::String& lead, const juce::String& body)
+            auto para = [&](const juce::String& lead, const juce::String& body, float bh)
             {
-                auto line = r.removeFromTop(46);
                 g.setColour(kCyan);
                 g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-                g.drawText(lead, line.removeFromTop(15), juce::Justification::topLeft);
-                g.setColour(kText2);
-                g.setFont(juce::Font(juce::FontOptions(11.5f)));
-                g.drawFittedText(body, line, juce::Justification::topLeft, 3);
+                g.drawText(lead, r.removeFromTop(15), juce::Justification::topLeft);
+                auto area = r.removeFromTop((int)std::ceil(bh));
+                layoutFor(body, (float)area.getWidth()).draw(g, area.toFloat());
+                r.removeFromTop(GAP);
             };
-            para("Bus", "A channel that other tracks are routed into, like a vocal "
-                        "bus, drum bus, or the master. EchoJay can compare its level "
-                        "to your other buses.");
-            para("Channel", "A single instrument or audio track, like the lead vocal "
-                            "or the kick. EchoJay reads the level before your fader, so "
-                            "it cannot compare it to other tracks.");
-            r.removeFromTop(2);
+            para("Bus", busBody, busH);
+            para("Channel", chBody, chH);
             g.setColour(kText2.withAlpha(0.7f));
             g.setFont(juce::Font(juce::FontOptions(11.0f)));
-            g.drawText("Not sure? Leave it on Channel.", r.removeFromTop(16),
+            g.drawText("Not sure? Leave it on Channel.", r.removeFromTop(15),
                        juce::Justification::topLeft);
         }
     };
-    auto* body = new HelpText();
-    body->setBounds(content->getLocalBounds());
-    content->addAndMakeVisible(body);
 
-    juce::CallOutBox::launchAsynchronously(
-        std::unique_ptr<juce::Component>(content),
-        placementHelpBtn.getScreenBounds(), nullptr);
+    juce::CallOutBox::launchAsynchronously(std::make_unique<HelpText>(),
+                                           placementHelp.getScreenBounds(), nullptr);
+}
+
+// Subtle inline "?" glyph — dim, brightens on hover; no border.
+LinkEditor::HelpGlyph::HelpGlyph()
+{
+    setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    setInterceptsMouseClicks(true, false);
+}
+void LinkEditor::HelpGlyph::mouseEnter(const juce::MouseEvent&) { hover = true;  repaint(); }
+void LinkEditor::HelpGlyph::mouseExit (const juce::MouseEvent&) { hover = false; repaint(); }
+void LinkEditor::HelpGlyph::mouseUp(const juce::MouseEvent& e)
+{
+    if (onClick && getLocalBounds().contains(e.getPosition())) onClick();
+}
+void LinkEditor::HelpGlyph::paint(juce::Graphics& g)
+{
+    g.setColour(hover ? kText : kText2.withAlpha(0.55f));
+    g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+    g.drawText("?", getLocalBounds(), juce::Justification::centred);
 }
 
 void LinkEditor::showPlacementChooser()

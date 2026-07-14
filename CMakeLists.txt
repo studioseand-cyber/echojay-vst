@@ -146,7 +146,7 @@ endif()
 # through completely unchanged. No audio analysis yet.
 # =============================================================================
 
-set(LINK_VERSION "0.8.0")
+set(LINK_VERSION "0.8.1")
 
 # Link only ships AU + VST3 (no AAX, no Standalone for now)
 set(LINK_FORMATS AU VST3)

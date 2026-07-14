@@ -728,7 +728,20 @@ private:
     // it simply behaves as a Channel (conservative). A small "?" button beside
     // it opens a non-modal popover explaining the two options.
     juce::TextButton placementBtn;                 // "Placement" / "Bus" / "Channel"
-    juce::TextButton placementHelpBtn;             // "?" popover trigger
+
+    // Subtle inline "?" glyph beside the placement value (dim, brightens on
+    // hover) — not a bordered button.
+    struct HelpGlyph : juce::Component, juce::SettableTooltipClient
+    {
+        HelpGlyph();
+        std::function<void()> onClick;
+        bool hover = false;
+        void paint(juce::Graphics&) override;
+        void mouseEnter(const juce::MouseEvent&) override;
+        void mouseExit(const juce::MouseEvent&) override;
+        void mouseUp(const juce::MouseEvent&) override;
+    };
+    HelpGlyph placementHelp;
 
     void showPlacementChooser();                   // dropdown: Bus / Channel
     void showPlacementHelp();                       // "?" popover (CallOutBox)
