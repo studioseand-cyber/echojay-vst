@@ -6391,6 +6391,7 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             cm.content   = msg.content;
             cm.reviewId  = msg.reviewId;
             cm.chainData = msg.chainJson;  // restore persisted chain block → rebuilds Build button
+            cm.gainData  = msg.gainJson;   // restore gain proposals + their applied/undone state
 
             // Reconstruct capture block from stored review.
             // Helper lambda — populates cm from a resolved WsReview.
@@ -9244,7 +9245,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
 
     int msgY = 8 - scrollOffset;
     const float chatMsgFontSize = 12.0f * chatTextScale;
+    int msgLoopIndex = -1;
     for (auto& msg : chatMessages) {
+        ++msgLoopIndex;
         bool isUser = (msg.role == "user");
 
         // Capture messages get a unified card (waveform + label row) instead of
@@ -9668,25 +9671,23 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 if (gainCardCount > 0 && gainProposals.isArray())
                 {
                     int cardY = drawY + bubbleH + chainAreaH + 4;
-                    for (auto& pv : *gainProposals.getArray())
+                    auto* parr = gainProposals.getArray();
+                    for (int pi = 0; pi < parr->size(); ++pi)
                     {
-                        auto* po = pv.getDynamicObject();
+                        auto* po = parr->getReference(pi).getDynamicObject();
                         if (po == nullptr) { cardY += kGainCardH + 6; continue; }
                         const juce::String linkId = po->getProperty("linkId").toString();
-                        const float curG  = (float)(double)po->getProperty("currentGain");
                         const float propG = juce::jlimit(-24.0f, 12.0f,
                                               (float)(double)po->getProperty("proposedGain"));
                         const juce::String reason = po->getProperty("reason").toString();
-                        const juce::String key = linkId + "|" + juce::String(propG, 1)
-                                               + "|" + reason.substring(0, 24);
+                        const bool applied = (bool)po->getProperty("applied");   // persisted
                         const juce::String uid = resolveLinkProposalAddr(linkId);
                         const bool present = uid.isNotEmpty();
-                        auto& cst = gainCardStates_[key];
 
                         juce::Rectangle<int> card(bubbleX, cardY, bubbleW, kGainCardH);
                         g.setColour(C::bg2);
                         g.fillRoundedRectangle(card.toFloat(), 8.0f);
-                        g.setColour(juce::Colour(0xff22d3ee).withAlpha(cst.applied ? 0.5f : 0.3f));
+                        g.setColour(juce::Colour(0xff22d3ee).withAlpha(applied ? 0.5f : 0.3f));
                         g.drawRoundedRectangle(card.toFloat(), 8.0f, 1.0f);
 
                         // Title: "Vocal bus: -3.0 dB"
@@ -9708,7 +9709,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                          && card.getY() <= chatScroll.getBounds().getBottom();
                         if (present && inView)
                         {
-                            if (!cst.applied)
+                            if (!applied)
                             {
                                 juce::Rectangle<int> ap(card.getRight() - 76, card.getY() + 12, 64, 28);
                                 g.setColour(juce::Colour(0xff0E1020));
@@ -9717,7 +9718,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                 g.drawRoundedRectangle(ap.toFloat(), 6.0f, 1.0f);
                                 g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
                                 g.drawText("Apply", ap, juce::Justification::centred);
-                                gainCardZones_.push_back({ ap, key, uid, propG, false });
+                                gainCardZones_.push_back({ ap, msgLoopIndex, pi, uid, propG, false });
                             }
                             else
                             {
@@ -9734,7 +9735,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                 g.setColour(C::text2);
                                 g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
                                 g.drawText("Undo", un, juce::Justification::centred);
-                                gainCardZones_.push_back({ un, key, uid, propG, true });
+                                gainCardZones_.push_back({ un, msgLoopIndex, pi, uid, propG, true });
                             }
                         }
                         cardY += kGainCardH + 6;
@@ -11628,9 +11629,9 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
                 safeThis->processorRef.chatHistory.push_back({"assistant", reply});
             }
 
-            // Mirror assistant turn to workspace and persist (visibleReply has block stripped; chain stored separately)
+            // Mirror assistant turn to workspace and persist (visibleReply has block stripped; chain + gain stored separately)
             safeThis->workspace.appendMessageToChat(activeChatId, "assistant", visibleReply,
-                                                    {}, chainJson);
+                                                    {}, chainJson, gainJson);
             if (safeThis->sidebarModel)
             {
                 safeThis->sidebarModel->refreshRows(
@@ -12073,7 +12074,8 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
         c << "Mix bus (this instance): no signal captured yet\n";
     for (const auto& r : rows)
     {
-        c << "Link \"" << r.name << "\": gain " << (r.gain >= 0 ? "+" : "") << f1(r.gain) << " dB";
+        c << "Link \"" << r.name << "\" (instanceId " << r.uid << "): gain "
+          << (r.gain >= 0 ? "+" : "") << f1(r.gain) << " dB";
         if (r.has)
             c << ", integrated " << f1(r.integ) << " LUFS, momentary " << f1(r.mom)
               << " LUFS, TP " << f1(r.tp) << " dBTP";
@@ -12113,19 +12115,42 @@ juce::String EchoJayEditor::resolveLinkProposalAddr(const juce::String& linkId) 
 
 void EchoJayEditor::applyGainProposal(const GainCardZone& z)
 {
-    if (z.uid.isEmpty()) return;
-    auto& st = gainCardStates_[z.key];
+    if (z.uid.isEmpty() || z.msgIndex < 0 || z.msgIndex >= (int)chatMessages.size())
+        return;
+    auto& cm = chatMessages[(size_t)z.msgIndex];
+
+    // Parse, mutate the target proposal's applied/prevGain, re-serialise.
+    auto gv = juce::JSON::parse(cm.gainData);
+    auto* go = gv.getDynamicObject();
+    if (go == nullptr) return;
+    auto pr = go->getProperty("proposals");
+    if (!pr.isArray() || z.propIndex < 0 || z.propIndex >= pr.getArray()->size()) return;
+    auto* po = pr.getArray()->getReference(z.propIndex).getDynamicObject();
+    if (po == nullptr) return;
+
     if (z.isUndo)
     {
-        sendLinkGainCommand(z.uid, st.prevGain);
-        st.applied = false;
+        const float prev = (float)(double)po->getProperty("prevGain");
+        sendLinkGainCommand(z.uid, prev);
+        po->setProperty("applied", false);
+        EchoJay_NSLog(("EJChat: gain proposal UNDO -> " + juce::String(prev, 1)
+                       + " dB (" + z.uid + ")").toRawUTF8());
     }
     else
     {
-        st.prevGain = linkRowDisplayGain(z.uid);   // capture for undo
+        po->setProperty("prevGain", (double)linkRowDisplayGain(z.uid));  // capture for undo
+        po->setProperty("applied", true);
         sendLinkGainCommand(z.uid, z.proposed);
-        st.applied = true;
+        EchoJay_NSLog(("EJChat: gain proposal APPLY -> " + juce::String(z.proposed, 1)
+                       + " dB (" + z.uid + ")").toRawUTF8());
     }
+
+    cm.gainData = juce::JSON::toString(gv, true);
+    // Persist the mutated block on the stored message (survives reload).
+    // Match by content — the display list may hold transient messages that
+    // never reached the store, so an index would drift.
+    workspace.updateAssistantGainJson(currentChatId, cm.content, cm.gainData);
+    workspace.requestMutationSync();
     repaint();
 }
 

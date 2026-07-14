@@ -16,6 +16,9 @@ struct WsMessage {
     juce::String reviewId;   // non-empty on capture-review user messages; serialised as _reviewId
     juce::String meterCtx;   // optional meter snapshot text; serialised as _meterCtx
     juce::String chainJson;  // non-empty on assistant chain replies; serialised as _chain
+    juce::String gainJson;   // non-empty on assistant gain-proposal replies; serialised
+                             // as _gain. Carries the proposals AND their applied/prevGain
+                             // state (mutated on Apply/Undo) so cards reload correctly.
 };
 
 struct WsChat {
@@ -137,7 +140,15 @@ public:
                              const juce::String& role,
                              const juce::String& content,
                              const juce::String& reviewId  = juce::String(),
-                             const juce::String& chainJson = juce::String());
+                             const juce::String& chainJson = juce::String(),
+                             const juce::String& gainJson  = juce::String());
+    // Update the persisted gain-proposal block for the assistant message
+    // whose visible content matches (the display list can hold transient
+    // messages that never reached the store, so content match beats index).
+    // Used when a card's applied/undone state changes so it survives reload.
+    void updateAssistantGainJson(const juce::String& chatId,
+                                 const juce::String& matchContent,
+                                 const juce::String& gainJson);
     void setChatTitle(const juce::String& chatId, const juce::String& title);
     void setChatTrackName(const juce::String& chatId, const juce::String& trackName);
     void setChatPinned(const juce::String& chatId, bool pinned); // stamps pinnedAt

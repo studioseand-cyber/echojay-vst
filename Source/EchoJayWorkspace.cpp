@@ -121,7 +121,8 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
                                             const juce::String& role,
                                             const juce::String& content,
                                             const juce::String& reviewId,
-                                            const juce::String& chainJson)
+                                            const juce::String& chainJson,
+                                            const juce::String& gainJson)
 {
     for (auto& c : chats)
     {
@@ -133,6 +134,7 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
             m.content   = content;
             m.reviewId  = reviewId;
             m.chainJson = chainJson;
+            m.gainJson  = gainJson;
             c.messages.push_back(std::move(m));
             return first;
         }
@@ -147,9 +149,28 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
     m.content   = content;
     m.reviewId  = reviewId;
     m.chainJson = chainJson;
+    m.gainJson  = gainJson;
     c.messages.push_back(std::move(m));
     chats.insert(chats.begin(), std::move(c));
     return true; // first message
+}
+
+void EchoJayWorkspace::updateAssistantGainJson(const juce::String& chatId,
+                                               const juce::String& matchContent,
+                                               const juce::String& gainJson)
+{
+    for (auto& c : chats)
+        if (c.id == chatId)
+        {
+            // Prefer the LAST matching assistant message (most recent reply)
+            for (auto it = c.messages.rbegin(); it != c.messages.rend(); ++it)
+                if (it->role == "assistant" && it->content == matchContent)
+                {
+                    it->gainJson = gainJson;
+                    return;
+                }
+            return;
+        }
 }
 
 void EchoJayWorkspace::setChatTitle(const juce::String& chatId,
@@ -494,6 +515,7 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
                     msg.reviewId  = mObj->getProperty("_reviewId").toString();
                     msg.meterCtx  = mObj->getProperty("_meterCtx").toString();
                     msg.chainJson = mObj->getProperty("_chain").toString();
+                    msg.gainJson  = mObj->getProperty("_gain").toString();
                     c.messages.push_back(std::move(msg));
                 }
             }
@@ -661,6 +683,8 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
             mObj->setProperty("_meterCtx",  m.meterCtx);
         if (m.chainJson.isNotEmpty())
             mObj->setProperty("_chain",     m.chainJson);
+        if (m.gainJson.isNotEmpty())
+            mObj->setProperty("_gain",      m.gainJson);
         msgs.add(juce::var(mObj));
     }
     obj->setProperty("messages", juce::var(msgs));

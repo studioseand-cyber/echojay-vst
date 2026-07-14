@@ -1453,15 +1453,16 @@ private:
     // ---- AI-proposed Link gain (APPLY cards) --------------------------------
     // The assistant may emit a <<<ECHOJAY_GAIN>>> block of measurement-backed
     // proposals; each renders as a painted card in the reply with an Apply
-    // button (then Applied + Undo). NEVER auto-applies. Applied state +
-    // previous gain (for undo) live in a runtime map keyed by a stable hash
-    // of the proposal, so it survives repaints.
-    struct GainCardState { bool applied = false; float prevGain = 0.0f; };
-    std::map<juce::String, GainCardState> gainCardStates_;
-    // Painted click zones, rebuilt each chat paint
+    // button (then Applied + Undo). NEVER auto-applies. The applied flag +
+    // previous gain (for undo) are stored INSIDE the proposal JSON on the
+    // message (ChatMsg.gainData) and mirrored to the workspace, so they
+    // survive chat switches and reload (the _chain persistence pattern).
+    // Painted click zones, rebuilt each chat paint, address a proposal by
+    // (message index, proposal index) so Apply can mutate + re-persist it.
     struct GainCardZone {
         juce::Rectangle<int> rect;
-        juce::String key;        // stable proposal key (applied-state lookup)
+        int   msgIndex = -1;     // index into chatMessages
+        int   propIndex = -1;    // index into that message's proposals array
         juce::String uid;        // resolved Link address to send to
         float proposed = 0.0f;   // dB to apply
         bool  isUndo = false;    // Undo button (else Apply)
