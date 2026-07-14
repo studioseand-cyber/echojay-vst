@@ -1793,6 +1793,15 @@ private:
 
     void loadChatFromWorkspace(const juce::String& chatId);
     void createNewChat();
+    // The trackName (song/project) a NEW chat should get: the current header
+    // project name if set, else the session's auto-project ("Untitled, <date>",
+    // created once per session and adopted in place when a real name arrives).
+    // Never returns empty, so a new chat is never Ungrouped.
+    juce::String newChatProjectName();
+    juce::String ensureSessionAutoProject();   // the session auto-project name
+    // Adoption: rename the session auto-project's chats to the real name in
+    // place (called when the user sets the header project name mid-session).
+    void adoptSessionAutoProjectName(const juce::String& realName);
     void createNewAlbum();
     void showMoveToAlbumMenu(const juce::String& chatId);
     // Project (song) row context menu: Move to album... / New album... / Remove.

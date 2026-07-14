@@ -213,6 +213,18 @@ void EchoJayWorkspace::setChatTrackName(const juce::String& chatId,
         if (c.id == chatId) { c.trackName = trackName; return; }
 }
 
+void EchoJayWorkspace::renameProject(const juce::String& oldName,
+                                     const juce::String& newName)
+{
+    const juce::String a = oldName.trim(), b = newName.trim();
+    if (a.isEmpty() || b.isEmpty() || a == b) return;
+    for (auto& c : chats)
+        if (c.trackName == a) c.trackName = b;
+    for (auto& al : albums)
+        for (auto& pn : al.projectNames)
+            if (pn == a) pn = b;
+}
+
 void EchoJayWorkspace::incrementChatRevisionCount(const juce::String& chatId)
 {
     for (auto& c : chats)

@@ -297,6 +297,47 @@ void ChainHost::publishSessionGenre(const juce::String& genre)
                    + "\" as " + describeHostIdentity()).toRawUTF8());
 }
 
+static juce::File sessionAutoProjectFile() { return appSupportDir().getChildFile("session_autoproject.json"); }
+static juce::String& sessionAutoProjectCache() { static juce::String s; return s; }
+static juce::Time& sessionAutoProjectLoadTime() { static juce::Time t; return t; }
+
+juce::String ChainHost::getSessionAutoProject()
+{
+    auto f  = sessionAutoProjectFile();
+    auto mt = f.getLastModificationTime();
+    if (mt != sessionAutoProjectLoadTime())
+    {
+        sessionAutoProjectLoadTime() = mt;
+        // Reuse the shared validator but keep it quiet — this is not a prompt
+        // surface; a stamp mismatch simply means "new session, pick a name".
+        if (!f.existsAsFile()) sessionAutoProjectCache() = {};
+        else
+        {
+            auto v = juce::JSON::parse(f.loadFileAsString());
+            auto* o = v.getDynamicObject();
+            sessionAutoProjectCache() =
+                (o != nullptr && stampMatchesCurrentHost(o))
+                    ? o->getProperty("name").toString().trim() : juce::String();
+        }
+    }
+    return sessionAutoProjectCache();
+}
+
+void ChainHost::setSessionAutoProject(const juce::String& name)
+{
+    auto trimmed = name.trim();
+    if (getSessionAutoProject() == trimmed) return;
+    auto* o = new juce::DynamicObject();
+    o->setProperty("name",      trimmed);
+    o->setProperty("updatedAt", juce::Time::getCurrentTime().toISO8601(true));
+    stampHostIdentity(o);
+    auto f = sessionAutoProjectFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(juce::JSON::toString(juce::var(o), true));
+    sessionAutoProjectCache()    = trimmed;
+    sessionAutoProjectLoadTime() = f.getLastModificationTime();
+}
+
 juce::PluginDescription ChainHost::preferInlineHostableDesc(const juce::PluginDescription& d)
 {
     if (d.pluginFormatName != "AudioUnit") return d;

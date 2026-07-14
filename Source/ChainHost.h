@@ -171,6 +171,14 @@ public:
     static juce::String getSessionGenre();
     static void publishSessionGenre(const juce::String& genre);
 
+    // Session AUTO-PROJECT name (v2.17): the "Untitled, <date>" project that
+    // unnamed chats join for THIS session. Host-stamped like the others so a
+    // new DAW session gets a fresh empty getter (and picks a disambiguated
+    // name); reopened instances of the SAME session read back the stored
+    // name (no fragmentation, no re-disambiguation). Empty until set.
+    static juce::String getSessionAutoProject();
+    static void setSessionAutoProject(const juce::String& name);
+
     // If `d` is a popout-only AudioUnit and a VST3 build of the same plugin
     // can be found, return the VST3 desc instead (in-process editor —
     // containable by the existing machinery). Applies at NEW instantiation

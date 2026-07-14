@@ -134,6 +134,9 @@ public:
     void assignProjectToAlbum(const juce::String& projectName, const juce::String& albumId);
     // Create a named album and return its id (message thread).
     juce::String createAlbumWithName(const juce::String& name);
+    // Rename a project (song): set trackName on all its chats and move any
+    // album membership (projectNames) to the new name.
+    void renameProject(const juce::String& oldName, const juce::String& newName);
     void addReview(WsReview review);   // prepend to reviews list, caps at 50
     void moveChatToAlbum(const juce::String& chatId, const juce::String& albumId);
     void removeChatFromAlbum(const juce::String& chatId);

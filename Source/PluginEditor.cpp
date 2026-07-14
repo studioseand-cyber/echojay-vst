@@ -2299,6 +2299,19 @@ void EchoJayEditor::publishProjectName()
     auto name = processorRef.getProjectName().trim();
     ChainHost::publishSessionProjectName(name);
     lastSeenSharedProject_ = name;
+
+    // ADOPTION: a real name set mid-session renames the session auto-project
+    // IN PLACE (its chats move to the real name), so no sibling is spawned.
+    if (name.isNotEmpty())
+    {
+        adoptSessionAutoProjectName(name);
+        if (sidebarModel)
+        {
+            sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                      workspace.getReviews(), collapsedAlbums, currentChatId);
+            chatSidebar.updateContent();
+        }
+    }
 }
 
 EchoJayEditor::ColumnLayout EchoJayEditor::computeColumns(int width) const
@@ -6727,6 +6740,64 @@ juce::String EchoJayEditor::getCurrentAlbumId() const
     return {};
 }
 
+juce::String EchoJayEditor::ensureSessionAutoProject()
+{
+    // Same session (even across editor reopens/instances) reads back the
+    // stored name; a new DAW session gets empty and picks a fresh one.
+    auto stored = ChainHost::getSessionAutoProject();
+    if (stored.isNotEmpty()) return stored;
+
+    auto now = juce::Time::getCurrentTime();
+    const juce::String date = juce::String(now.getDayOfMonth()) + " " + now.formatted("%b");
+
+    // Disambiguate against every existing project (chats' trackNames + album
+    // projectNames), so a second unnamed session the same day becomes
+    // "Untitled 2, <date>" rather than colliding with the frozen first one.
+    std::set<juce::String> existing;
+    for (auto& ch : workspace.getChats())
+        if (ch.trackName.isNotEmpty()) existing.insert(ch.trackName);
+    for (auto& a : workspace.getAlbums())
+        for (auto& pn : a.projectNames) existing.insert(pn);
+
+    juce::String name = "Untitled, " + date;
+    for (int n = 2; existing.count(name) > 0; ++n)
+        name = "Untitled " + juce::String(n) + ", " + date;
+
+    ChainHost::setSessionAutoProject(name);
+    return name;
+}
+
+juce::String EchoJayEditor::newChatProjectName()
+{
+    auto proj = processorRef.getProjectName().trim();
+    return proj.isNotEmpty() ? proj : ensureSessionAutoProject();
+}
+
+void EchoJayEditor::adoptSessionAutoProjectName(const juce::String& realName)
+{
+    const juce::String autoName = ChainHost::getSessionAutoProject();
+    const juce::String real = realName.trim();
+    if (autoName.isEmpty() || real.isEmpty() || autoName == real) return;
+
+    // Rename the auto-project IN PLACE: every chat carrying the auto name
+    // takes the real name; the auto-project does not spawn a sibling.
+    bool changed = false;
+    for (auto& ch : workspace.getChats())
+        if (ch.trackName == autoName)
+        {
+            workspace.setChatTrackName(ch.id, real);
+            changed = true;
+        }
+    // The session's auto-project is now the real project.
+    ChainHost::setSessionAutoProject(real);
+    if (changed)
+    {
+        EchoJay_NSLog(("EJChat: adopted auto-project \"" + autoName + "\" -> \""
+                       + real + "\"").toRawUTF8());
+        workspace.requestMutationSync();
+    }
+}
+
 void EchoJayEditor::createNewChat()
 {
     // Don't create another empty chat if the current one is already empty
@@ -6736,7 +6807,7 @@ void EchoJayEditor::createNewChat()
     c.id           = juce::String(juce::Time::currentTimeMillis());
     c.title        = "New chat";
     c.created      = juce::Time::getCurrentTime().toISO8601(true);
-    c.trackName    = "";
+    c.trackName    = newChatProjectName();   // never empty → never Ungrouped
     c.albumId      = getCurrentAlbumId();
     c.revisionCount = 0;
     // messages intentionally empty — won't appear in sidebar until first send
@@ -6823,23 +6894,28 @@ void EchoJayEditor::showMoveProjectToAlbumMenu(const juce::String& projectName)
     }
 
     juce::PopupMenu menu;
-    menu.addSectionHeader("Move \"" + projectName + "\" to album");
+    menu.addSectionHeader(projectName);
     std::vector<juce::String> actions;
     int itemId = 1;
+    menu.addItem(itemId++, "Rename song...");
+    actions.push_back("__rename__");
+    menu.addSeparator();
+    juce::PopupMenu albumSub;
     for (auto& a : albums)
     {
-        menu.addItem(itemId++, (a.id == currentAlbum ? "* " : "  ") + a.name);
+        albumSub.addItem(itemId++, (a.id == currentAlbum ? "* " : "  ") + a.name);
         actions.push_back(a.id);
     }
     if (currentAlbum.isNotEmpty())
     {
-        menu.addSeparator();
-        menu.addItem(itemId++, "Remove from album");
+        albumSub.addSeparator();
+        albumSub.addItem(itemId++, "Remove from album");
         actions.push_back("__remove__");
     }
-    menu.addSeparator();
-    menu.addItem(itemId++, "New album...");
+    albumSub.addSeparator();
+    albumSub.addItem(itemId++, "New album...");
     actions.push_back("__new__");
+    menu.addSubMenu("Move to album", albumSub);
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
@@ -6862,7 +6938,25 @@ void EchoJayEditor::showMoveProjectToAlbumMenu(const juce::String& projectName)
                 safeThis->repaint();
             };
 
-            if (action == "__remove__")
+            if (action == "__rename__")
+            {
+                auto* dlg = new juce::AlertWindow("Rename Song", "New song name:",
+                                                  juce::MessageBoxIconType::QuestionIcon);
+                dlg->addTextEditor("name", projectName, "Name:");
+                dlg->addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
+                dlg->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+                dlg->enterModalState(true,
+                    juce::ModalCallbackFunction::create([safeThis, dlg, projectName, refresh](int r)
+                    {
+                        juce::String trimmed = dlg->getTextEditorContents("name").trim();
+                        delete dlg;
+                        if (safeThis == nullptr || r != 1 || trimmed.isEmpty()
+                            || trimmed == projectName) return;
+                        safeThis->workspace.renameProject(projectName, trimmed);
+                        refresh();
+                    }), true);
+            }
+            else if (action == "__remove__")
             {
                 safeThis->workspace.assignProjectToAlbum(projectName, {});
                 refresh();
@@ -11197,7 +11291,7 @@ void EchoJayEditor::timerCallback()
                 WsChat nc;
                 nc.id           = juce::String(juce::Time::currentTimeMillis());
                 nc.title        = proj.isEmpty() ? juce::Time::getCurrentTime().formatted("%d %b %Y, %H:%M") : proj;
-                nc.trackName    = proj;
+                nc.trackName    = newChatProjectName();   // never empty → never Ungrouped
                 nc.created      = juce::Time::getCurrentTime().toISO8601(true);
                 nc.albumId      = getCurrentAlbumId();
                 nc.revisionCount = 0;
@@ -11736,9 +11830,10 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     if (currentChatId.isEmpty())
     {
         WsChat c;
-        c.id      = juce::String(juce::Time::currentTimeMillis());
-        c.title   = "New chat";
-        c.created = juce::Time::getCurrentTime().toISO8601(true);
+        c.id        = juce::String(juce::Time::currentTimeMillis());
+        c.title     = "New chat";
+        c.created   = juce::Time::getCurrentTime().toISO8601(true);
+        c.trackName = newChatProjectName();   // never empty → never Ungrouped
         workspace.addChat(c);
         currentChatId = c.id;
     }
