@@ -368,23 +368,22 @@ int EchoJayAPI::getRemainingMessages() const
 
 juce::String EchoJayAPI::getLimitReachedMessage() const
 {
-    // FREE V2 two-lane: the no-turnType call is the chat surface's gate —
-    // chat-lane copy, EXACT server 429 string.
+    // FREE two-lane: the no-turnType call is the CHAT (daily) gate. Name the
+    // pool + its reset; note premium is still available. No "credits".
     if (userInfo.usagePool.twoLane())
-        return "You've used today's free chats. They reset at midnight UTC. "
-               "Upgrade to Pro to keep the conversation going.";
-    // usage-v2 legacy blocked-state copy: period-aware, NO numbers. Mirrors
-    // the SaaS refusal copy so client pre-check and server 429 read the same.
+        return "Your daily chats are used up. They reset tomorrow. "
+               "Premium actions are still available.";
+    // Legacy/paid single pool: name the reset, no counts, no "credits".
     if (getUsagePeriod() == "monthly")
-        return "You've hit this month's limit. Top up or upgrade to continue.";
-    return "You've used today's free analyses. Resets at midnight UTC.";
+        return "You've used your monthly usage. It resets on the 1st.";
+    return "You've used today's usage. It resets tomorrow.";
 }
 
 juce::String EchoJayAPI::getLimitReachedMessage(const juce::String& turnType) const
 {
+    // FREE two-lane premium (monthly) gate — name the pool + its reset.
     if (userInfo.usagePool.twoLane() && isPremiumTurnType(turnType))
-        return "You've used your premium actions for this month. "
-               "Upgrade to Pro for more, or top up with credits.";
+        return "You've used your monthly premium actions. They reset on the 1st.";
     return getLimitReachedMessage();
 }
 

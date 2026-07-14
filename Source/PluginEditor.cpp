@@ -7384,120 +7384,77 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
 
             if (info.usagePool.twoLane())
             {
-                // FREE V2 (13 Jul 2026): two percentage-only bars matching
-                // the web copy exactly — 'Premium actions' (monthly reset
-                // date) and 'Chats' (Resets daily). NO raw counts anywhere.
+                // FREE tier: two labelled usage bars, PERCENTAGE used only —
+                // "Chats" (daily) and "Premium actions" (monthly, the 1st).
+                // Percentages come straight from the server usagePool lanes so
+                // weight retuning is backend-only. No counts, no "credits".
                 const int bx = a.getX() + 14, bw = a.getWidth() - 28;
-                int y = badge.getBottom() + 6;
-                g.setColour(C::text3);
-                g.setFont(juce::Font(juce::FontOptions(9.5f)));
-                g.drawText(juce::String(juce::CharPointer_UTF8(
-                               "Premium actions monthly \xc2\xb7 chats daily on our fast model")),
-                           bx, y, bw, 12, juce::Justification::centredLeft, true);
-                y += 18;
+                int y = badge.getBottom() + 12;
 
-                auto laneBar = [&](const juce::String& label,
+                auto laneBar = [&](const juce::String& name,
                                    const UserInfo::UsagePool::Lane& lane,
                                    const juce::String& resetLine)
                 {
                     const float pct  = juce::jlimit(0.0f, 100.0f, lane.percent);
                     const float frac = pct / 100.0f;
-                    g.setColour(C::text2);
-                    g.setFont(juce::Font(juce::FontOptions(10.0f)));
-                    g.drawText(label, bx, y, bw / 2 + 20, 13, juce::Justification::centredLeft);
-                    g.setColour(pct >= 90.0f ? juce::Colour(0xffff6d5a) : C::text);
-                    g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
-                    g.drawText(juce::String((int) std::lround(pct)) + "% used",
-                               bx, y, bw, 13, juce::Justification::centredRight);
-                    y += 15;
-                    juce::Rectangle<int> bar(bx, y, bw, 8);
+                    const bool hot   = pct >= 90.0f;
+                    g.setColour(hot ? juce::Colour(0xffff6d5a) : C::text);
+                    g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+                    g.drawText(name + ": " + juce::String((int) std::lround(pct)) + "% used",
+                               bx, y, bw, 14, juce::Justification::centredLeft);
+                    y += 17;
+                    juce::Rectangle<int> bar(bx, y, bw, 7);
                     g.setColour(C::bg4);
-                    g.fillRoundedRectangle(bar.toFloat(), 4.0f);
+                    g.fillRoundedRectangle(bar.toFloat(), 3.5f);
                     if (frac > 0.0f)
                     {
-                        g.setColour((pct >= 90.0f ? juce::Colour(0xffff6d5a)
-                                                  : juce::Colour(0xff22d3ee)).withAlpha(0.85f));
-                        g.fillRoundedRectangle(bar.toFloat().withWidth(bar.getWidth() * frac), 4.0f);
+                        g.setColour((hot ? juce::Colour(0xffff6d5a)
+                                         : juce::Colour(0xff22d3ee)).withAlpha(0.85f));
+                        g.fillRoundedRectangle(bar.toFloat().withWidth(bar.getWidth() * frac), 3.5f);
                     }
-                    y += 11;
+                    y += 10;
                     g.setColour(C::text3);
                     g.setFont(juce::Font(juce::FontOptions(9.5f)));
                     g.drawText(resetLine, bx, y, bw, 11, juce::Justification::centredLeft);
-                    y += 17;
+                    y += 18;
                 };
 
-                juce::String premiumReset = "Resets monthly";
-                if (auto ra = info.usagePool.premium.resetAt; ra.isNotEmpty())
-                {
-                    auto t = juce::Time::fromISO8601(ra);
-                    if (t.toMilliseconds() > 0)
-                        premiumReset = "Resets " + juce::String(t.getDayOfMonth())
-                                     + " " + t.formatted("%B");
-                }
-                laneBar("Premium actions", info.usagePool.premium, premiumReset);
                 laneBar("Chats", info.usagePool.chats, "Resets daily");
-
-                // Credits: web copy verbatim, only when > 0
-                if (const int cr = api.getUsageCredits(); cr > 0)
-                {
-                    g.setColour(C::blue2);
-                    g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
-                    g.drawText(juce::String(cr) + (cr == 1 ? " credit" : " credits")
-                                   + " available for extra premium actions",
-                               bx, y, bw, 12, juce::Justification::centredLeft, true);
-                }
+                laneBar("Premium actions", info.usagePool.premium, "Resets monthly, on the 1st");
             }
             else
             {
-            // usage-v2: Settings is the ONLY usage surface — a percent
-            // figure + the bar filled to usagePool.percent. Never pool
-            // size, used units, weights or unit names. Bar goes coral at
-            // >= 90 percent (the refs warning treatment).
+            // PAID (Pro and above): ONE "Usage" bar, monthly, no split, no
+            // daily line, no counts, no "credits". Percent from the server.
+            const int bx = a.getX() + 14, bw = a.getWidth() - 28;
             const float pct  = api.getUsagePercent();
             const float frac = juce::jlimit(0.0f, 1.0f, pct / 100.0f);
-            juce::Rectangle<int> bar(a.getX() + 14, badge.getBottom() + 10,
-                                     a.getWidth() - 28, 8);
+            int y = badge.getBottom() + 12;
+            g.setColour(pct >= 90.0f ? juce::Colour(0xffff6d5a) : C::text);
+            g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+            g.drawText("Usage: " + juce::String((int) std::lround(pct)) + "% used",
+                       bx, y, bw, 14, juce::Justification::centredLeft);
+            y += 17;
+            juce::Rectangle<int> bar(bx, y, bw, 7);
             g.setColour(C::bg4);
-            g.fillRoundedRectangle(bar.toFloat(), 4.0f);
+            g.fillRoundedRectangle(bar.toFloat(), 3.5f);
             if (frac > 0.0f)
             {
                 g.setColour((pct >= 90.0f ? juce::Colour(0xffff6d5a)
                                           : juce::Colour(0xff22d3ee)).withAlpha(0.85f));
-                g.fillRoundedRectangle(bar.toFloat().withWidth(bar.getWidth() * frac), 4.0f);
+                g.fillRoundedRectangle(bar.toFloat().withWidth(bar.getWidth() * frac), 3.5f);
             }
-            // "42% used" + reset line: relative for daily, absolute date for
-            // monthly (from resetAt when parseable)
-            juce::String resetLine = "Resets daily";
-            if (api.getUsagePeriod() == "monthly")
+            y += 10;
+            juce::String resetLine = "Resets monthly";
+            if (auto ra = info.usagePool.resetAt; ra.isNotEmpty())
             {
-                resetLine = "Resets monthly";
-                auto ra = info.usagePool.resetAt;
-                if (ra.isNotEmpty())
-                {
-                    auto t = juce::Time::fromISO8601(ra);
-                    if (t.toMilliseconds() > 0)
-                        resetLine = "Resets " + t.formatted("%d %b");
-                }
+                auto t = juce::Time::fromISO8601(ra);
+                if (t.toMilliseconds() > 0)
+                    resetLine = "Resets " + t.formatted("%d %b");
             }
-            g.setColour(pct >= 90.0f ? juce::Colour(0xffff6d5a) : C::text);
-            g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
-            g.drawText(juce::String((int) std::lround(pct)) + "% used",
-                       bar.getX(), bar.getBottom() + 4, bar.getWidth() / 2, 13,
-                       juce::Justification::centredLeft);
             g.setColour(C::text3);
             g.setFont(juce::Font(juce::FontOptions(9.5f)));
-            g.drawText(resetLine, bar.getCentreX(), bar.getBottom() + 4,
-                       bar.getWidth() / 2, 13, juce::Justification::centredRight);
-            // Credits: top-ups the user BOUGHT — hiding them would look like
-            // theft. Only when > 0.
-            if (const int cr = api.getUsageCredits(); cr > 0)
-            {
-                g.setColour(C::text3);
-                g.setFont(juce::Font(juce::FontOptions(9.5f)));
-                g.drawText("+" + juce::String(cr) + " credits",
-                           bar.getX(), bar.getBottom() + 19, bar.getWidth(), 12,
-                           juce::Justification::centredLeft);
-            }
+            g.drawText(resetLine, bx, y, bw, 11, juce::Justification::centredLeft);
             }
             // Pro/Studio users see plan status where free users get Upgrade.
             // Pro STILL shows an "Upgrade to Studio" button on the same row,
@@ -9112,6 +9069,27 @@ void EchoJayEditor::paint(juce::Graphics& g)
         g.drawHorizontalLine(topH + kSidebarToolbarH - 1, (float)mW, (float)(mW + kSidebarW));
     }
 
+    // Compact usage footer at the bottom of the sidebar — a percentage for
+    // the pool that matters on this tier (free = daily Chats; paid = Usage).
+    // Percentage only, no counts, no "credits". Derives from the server pool.
+    if (currentTab == Tab::Chat && chatSidebar.isVisible() && api.isLoggedIn())
+    {
+        int abOffFtr = abBarShowing ? kAbBarH : 0;
+        int fy = getHeight() - 20 - abOffFtr;
+        const auto& up = api.getUserInfo().usagePool;
+        juce::String label;
+        float pct = 0.0f;
+        if (up.twoLane()) { label = "Chats"; pct = up.chats.percent; }
+        else              { label = "Usage"; pct = api.getUsagePercent(); }
+        pct = juce::jlimit(0.0f, 100.0f, pct);
+        g.setColour(C::border);
+        g.drawHorizontalLine(fy, (float)mW, (float)(mW + kSidebarW));
+        g.setColour(pct >= 90.0f ? juce::Colour(0xffff6d5a) : C::text3);
+        g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+        g.drawText(label + ": " + juce::String((int) std::lround(pct)) + "% used",
+                   mW + 10, fy, kSidebarW - 20, 20, juce::Justification::centredLeft);
+    }
+
     // === Meter Panel Content ===
     int pad = 10;
     int contentY = topH + 6;
@@ -10342,10 +10320,13 @@ void EchoJayEditor::resized()
         sidebarNewAlbumBtn.setBounds(sbX + halfW,  topH, kSidebarW - halfW, kSidebarToolbarH);
         sidebarNewChatBtn.setVisible(true);
         sidebarNewAlbumBtn.setVisible(true);
-        // ListBox fills the rest (shorten when AB bar is visible to avoid overlap)
+        // ListBox fills the rest, minus a compact usage-% footer at the very
+        // bottom (shorten further when the AB bar is visible to avoid overlap)
         int sbAbOff = abBarShowing ? kAbBarH : 0;
+        const int footerH = api.isLoggedIn() ? 20 : 0;
         chatSidebar.setBounds(sbX, topH + kSidebarToolbarH,
-                              kSidebarW, b.getHeight() - topH - kSidebarToolbarH - sbAbOff);
+                              kSidebarW,
+                              b.getHeight() - topH - kSidebarToolbarH - sbAbOff - footerH);
         chatSidebar.setVisible(true);
     }
     else
