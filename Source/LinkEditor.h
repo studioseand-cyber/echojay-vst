@@ -723,30 +723,17 @@ private:
     // Header control (click → choose bus/insert) + a one-time prompt shown
     // on first open while placement is unset. Link measures at its insert
     // point; for level work it belongs on a bus. See LinkProcessor::Placement.
-    juce::TextButton placementBtn;                 // header: "On a bus" / "On an insert" / "Set placement"
-    bool placementPromptVisible = false;
+    // Compact header selector (dropdown): "Bus" / "Channel", or a dim
+    // "Placement" when unset. No modal prompt — an unset Link is never nagged;
+    // it simply behaves as a Channel (conservative). A small "?" button beside
+    // it opens a non-modal popover explaining the two options.
+    juce::TextButton placementBtn;                 // "Placement" / "Bus" / "Channel"
+    juce::TextButton placementHelpBtn;             // "?" popover trigger
 
-    // Dedicated overlay that OWNS the placement prompt — scrim, card, option
-    // cards, explainer and the two click targets. All prompt painting lives in
-    // THIS component's paint(), never in LinkEditor::paint(), so the prompt can
-    // never leave a scrim/text fragment over the header on a partial repaint
-    // (the "dimmed logo" + ghost-text bug). Hiding the child forces the parent
-    // to repaint the region behind it, so the header always comes back clean.
-    // Mirrors the main plugin's one-modal-component onboarding discipline.
-    struct PlacementPromptOverlay : juce::Component
-    {
-        PlacementPromptOverlay();
-        void paint(juce::Graphics&) override;
-        void resized() override;
-        std::function<void(int)> onChoose;                   // 1 = bus, 2 = insert
-        juce::TextButton busBtn, insertBtn;
-        juce::Rectangle<int> card1_, card2_;                 // bus / track option cards
-    };
-    PlacementPromptOverlay placementPrompt;
-
-    void showPlacementChooser();                   // header re-edit (menu)
+    void showPlacementChooser();                   // dropdown: Bus / Channel
+    void showPlacementHelp();                       // "?" popover (CallOutBox)
     void updatePlacementBtn();
-    void applyPlacement(int p);                    // set + hide prompt + refresh
+    void applyPlacement(int p);                    // set + refresh
 
     LinkChainPanel chainPanel;
 

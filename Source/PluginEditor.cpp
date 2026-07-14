@@ -432,9 +432,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addAndMakeVisible(genreBox);
 
     // --- Project input ---
-    // Same size + weight as the tab-strip labels and the other header controls
-    // (source/genre/Capture/plugin count) — one shared value, no drift.
-    projectInput.setFont(EchoJayChrome::labelFont());
+    // Same size + weight as the other header controls (source/genre/Capture/
+    // plugin count) — headerFont is one point above the tab labels, both from
+    // the same shared constant so they cannot drift.
+    projectInput.setFont(EchoJayChrome::headerFont());
     // Vertically centre the placeholder and entered text. centredLeft centres
     // within (height - topIndent - bottom); the default topIndent sat the
     // text low in the taller row, so zero it and let the justification centre.
@@ -4697,16 +4698,16 @@ void EchoJayEditor::LinkListView::paint(juce::Graphics& g)
         g.drawText(rowName, cardX + 14, y + 9, nameW, 16,
                    juce::Justification::centredLeft);
         {
-            // Placement chip: BUS (cyan) / INSERT (dim) / SET? (amber) —
-            // click opens the bus/insert chooser (remote via ctrl-cmd)
-            juce::Rectangle<int> chip(cardX + 14, y + 32, 64, 17);
+            // Placement chip: BUS (cyan) / CHANNEL (dim) / SET? (dim, not amber —
+            // an unset Link is never nagged). Click opens the bus/channel chooser.
+            juce::Rectangle<int> chip(cardX + 14, y + 32, 66, 17);
             placementZones.push_back({ chip, rowAddr });
             juce::String pl; juce::Colour pc;
             switch (slot.placement)
             {
-                case 1:  pl = "BUS";   pc = juce::Colour(0xff22d3ee); break;
-                case 2:  pl = "TRACK"; pc = C::text3;                 break;
-                default: pl = "SET?";  pc = juce::Colour(0xfff59e0b); break;
+                case 1:  pl = "BUS";     pc = juce::Colour(0xff22d3ee); break;
+                case 2:  pl = "CHANNEL"; pc = C::text3;                 break;
+                default: pl = "SET?";    pc = C::text3;                 break;
             }
             g.setColour(pc.withAlpha(0.15f));
             g.fillRoundedRectangle(chip.toFloat(), 4.0f);
@@ -10123,8 +10124,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                             ? (bool)po->getProperty("faderDependent") : true;
                         const juce::String uid = resolveLinkProposalAddr(linkId);
                         const bool present = uid.isNotEmpty();
-                        // Placement gate: a fader-dependent match on an
-                        // insert/unknown Link is REFUSED (we can't see the fader)
+                        // Placement gate: a fader-dependent match on a
+                        // channel/unset Link is REFUSED (we can't see the fader)
                         int place = 0;
                         for (const auto& li : processorRef.getLinkSlotInfos())
                         {
@@ -12505,6 +12506,7 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
     struct LvlRow { juce::String name, uid; float gain, integ, mom, tp; bool has; int placement; };
     std::vector<LvlRow> rows;
     bool anyInsertOrUnknown = false;
+    bool anyUnset = false;
     for (const auto& li : infos)
     {
         if (li.name.isEmpty()) continue;   // proposals need an addressable id
@@ -12513,6 +12515,7 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
         r.gain = li.gainDb; r.has = false; r.placement = li.placement;
         r.integ = r.mom = r.tp = -100.0f;
         if (li.placement != 1) anyInsertOrUnknown = true;   // not "bus"
+        if (li.placement == 0) anyUnset = true;             // placement never set
         LinkMeterFrame f;
         if (li.regIdx >= 0 && processorRef.readLinkMeterFrame(li.regIdx, f)
             && f.integrated > -70.0f)
@@ -12525,7 +12528,7 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
     if (rows.empty()) return {};
 
     auto f1 = [](float v) { return juce::String(v, 1); };
-    auto placeStr = [](int p) { return p == 1 ? "bus" : p == 2 ? "insert" : "unknown"; };
+    auto placeStr = [](int p) { return p == 1 ? "bus" : p == 2 ? "channel" : "unset"; };
     const auto busMd = processorRef.getMeterEngine().getMeterData();
 
     juce::String c;
@@ -12552,11 +12555,12 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
     // Placement-aware rules (see the investigation: no fader access).
     c << "\nPLACEMENT RULES — read carefully:\n"
          "- A Link's placement is either \"bus\" (post-fader: its loudness IS what "
-         "reaches the mix), \"insert\" (pre-fader), or \"unknown\" (treat as insert).\n"
+         "reaches the mix), \"channel\" (pre-fader), or \"unset\" (user hasn't said; "
+         "treat it as channel — conservative).\n"
          "- For \"bus\" Links, their loudness is their real contribution. You MAY "
          "compare their levels to each other and to the mix bus, and MAY propose gain "
          "changes, when the MEASURED values justify it.\n"
-         "- For \"insert\" or \"unknown\" Links, the measurements are PRE-FADER. You "
+         "- For \"channel\" or \"unset\" Links, the measurements are PRE-FADER. You "
          "CANNOT see the channel fader, so you MUST NOT propose a gain change based on "
          "comparing them to other channels or to the mix bus, and MUST NOT claim one "
          "channel is louder/quieter than another in the actual mix. You MAY still "
@@ -12564,9 +12568,16 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
          "depend on the fader (a true-peak over at the insert point, or matching an "
          "absolute target the user asked for).\n";
     if (anyInsertOrUnknown)
-        c << "- Because at least one Link is insert/unknown, ANY sentence comparing an "
-             "insert/unknown Link's level to anything else MUST carry this caveat once: "
+        c << "- Because at least one Link is channel/unset, ANY sentence comparing a "
+             "channel/unset Link's level to anything else MUST carry this caveat once: "
              "\"I can't see channel faders, so I can't judge how these sit in the mix.\"\n";
+    if (anyUnset)
+        c << "- At least one relevant Link has an UNSET placement. If the user's "
+             "question is about that Link's level, include exactly ONE gentle nudge in "
+             "your reply (fold it into the caveat, not a separate paragraph, and never "
+             "more than once): \"I can compare levels properly if you tell me whether "
+             "that Link is on a bus or a channel — set it in the Link's header.\" Do "
+             "not nag beyond this one sentence, and never block the answer.\n";
     c << "- Never claim you changed a gain yourself — the user applies it.\n"
          "\nProposal format — only when the rules above permit. Emit ONE block as the "
          "very last thing in your reply, nothing after <<<END_GAIN>>>:\n"
@@ -12682,8 +12693,8 @@ void EchoJayEditor::showLinkPlacementMenu(const juce::String& linkAddr)
     }
     juce::PopupMenu m;
     m.addSectionHeader((name.isEmpty() ? juce::String("Link") : name) + " placement");
-    m.addItem(1, "On a bus or group",  true, cur == 1);
-    m.addItem(2, "On a normal track",  true, cur == 2);
+    m.addItem(1, "Bus",     true, cur == 1);
+    m.addItem(2, "Channel", true, cur == 2);
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options(),
         [safeThis, linkAddr](int r)

@@ -11,9 +11,15 @@ namespace EchoJayChrome
     // or button opts in by setting the client property "chromeLabel" (any
     // value); the LnF then uses this size instead of its height-scaled default.
     static constexpr float kLabelPt = 10.0f;
-    inline juce::Font labelFont()
+    inline juce::Font labelFont()   // tab-strip labels
     {
         return juce::Font(juce::FontOptions(kLabelPt, juce::Font::bold));
+    }
+    // Header controls read one point LARGER than the tab labels — derived from
+    // the same constant so the two can never drift apart.
+    inline juce::Font headerFont()  // source/genre/project/Capture/plugin count
+    {
+        return juce::Font(juce::FontOptions(kLabelPt + 1.0f, juce::Font::bold));
     }
 }
 
@@ -168,7 +174,7 @@ public:
         // tab-label size so the two rows match exactly; everything else scales
         // with button height (tall buttons ~14px, small ones ~11px).
         auto font = button.getProperties().contains("chromeLabel")
-            ? EchoJayChrome::labelFont()
+            ? EchoJayChrome::headerFont()
             : juce::Font(juce::FontOptions(
                   juce::jlimit(11.0f, 14.0f, (float) button.getHeight() * 0.46f),
                   juce::Font::bold));
@@ -215,7 +221,7 @@ public:
         // size so the header matches the tab strip exactly; other combos scale
         // with box height (this drew the text, so getComboBoxFont never took).
         label.setFont(box.getProperties().contains("chromeLabel")
-            ? EchoJayChrome::labelFont()
+            ? EchoJayChrome::headerFont()
             : juce::Font(juce::FontOptions(
                   juce::jlimit(11.0f, 15.5f, (float) box.getHeight() * 0.5f))));
     }

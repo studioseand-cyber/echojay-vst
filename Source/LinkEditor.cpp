@@ -89,25 +89,20 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     gainCaption.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(gainCaption);
 
-    // Placement — header button opens the chooser; prompt buttons apply it
+    // Placement — compact header dropdown (Bus / Channel / dim "Placement")
+    // plus a "?" popover. No modal prompt; an unset Link is never nagged.
     placementBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
     placementBtn.setColour(juce::TextButton::textColourOffId, kText2);
     placementBtn.onClick = [this] { showPlacementChooser(); };
     addAndMakeVisible(placementBtn);
     updatePlacementBtn();
 
-    // Placement prompt overlay — the whole prompt is this one child component,
-    // added last so it sits above the header + chain panel. Its own paint()
-    // owns the scrim/card; LinkEditor::paint never draws prompt pixels.
-    placementPrompt.onChoose = [this](int c)
-    {
-        applyPlacement(c == 1 ? LinkProcessor::PlacementBus
-                              : LinkProcessor::PlacementInsert);
-    };
-    addChildComponent(placementPrompt);
-
-    // First-use prompt: ask once while placement is unset
-    placementPromptVisible = (proc.getPlacement() == LinkProcessor::PlacementUnset);
+    placementHelpBtn.setButtonText("?");
+    placementHelpBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+    placementHelpBtn.setColour(juce::TextButton::textColourOffId, kText2);
+    placementHelpBtn.setTooltip("What is a bus vs a channel?");
+    placementHelpBtn.onClick = [this] { showPlacementHelp(); };
+    addAndMakeVisible(placementHelpBtn);
 
     // Keep the toggle/name/gain in sync when the processor state changes
     // OUTSIDE this editor (project state restore, remote Active/gain command)
@@ -118,20 +113,6 @@ LinkEditor::LinkEditor(LinkProcessor& p)
         safe->nameField.setText(safe->proc.linkName, juce::dontSendNotification);
         safe->gainSlider.setValue(safe->proc.getGainDb(), juce::dontSendNotification);
         safe->updatePlacementBtn();   // remote/restore placement change
-        // Re-derive the prompt state from the (possibly remotely-set) placement
-        // and re-run layout so child visibility matches BEFORE the repaint. A
-        // placement set from outside (e.g. the main plugin's suggested target)
-        // used to leave placementPromptVisible and the header controls out of
-        // sync, so the prompt copy ghosted behind the Active toggle / placement
-        // button. Keeping the flag, layout and paint consistent — with a full
-        // repaint() that clears the whole surface — prevents any stray text.
-        const bool wantPrompt =
-            (safe->proc.getPlacement() == LinkProcessor::PlacementUnset);
-        if (wantPrompt != safe->placementPromptVisible)
-        {
-            safe->placementPromptVisible = wantPrompt;
-            safe->resized();
-        }
         safe->repaint();
     };
 
@@ -290,7 +271,7 @@ void LinkEditor::paint(juce::Graphics& g)
     // Shown under the header when there's no chain yet (full mode). Always
     // reminds that Link measures at its insert point and belongs on a bus
     // for level work; adds a nudge while placement is still unset.
-    if (!miniMode && !placementPromptVisible && proc.getChainModel().empty())
+    if (!miniMode && proc.getChainModel().empty())
     {
         auto area = juce::Rectangle<int>(0, kHeaderH + 1, getWidth(),
                                          getHeight() - kHeaderH - 1);
@@ -316,8 +297,6 @@ void LinkEditor::paint(juce::Graphics& g)
         }
     }
 
-    // The placement prompt is a dedicated child overlay (placementPrompt) — it
-    // paints itself, never here, so no prompt pixels can survive in the header.
 }
 
 void LinkEditor::resized()
@@ -339,10 +318,12 @@ void LinkEditor::resized()
     const int gainX      = gainRight - gainSlideW;
     const int gainCapX   = gainX - gainCapW - 2;
 
-    const int placeW = 104;   // placement button in the cluster
+    const int placeW = 78;    // placement selector ("Bus"/"Channel"/"Placement")
+    const int helpW  = 22;    // "?" button beside it
+    const int placeCluster = placeW + 3 + helpW;
     int fieldX = 150;
     // Name field ends before the toggle + light + placement + gain cluster.
-    int clusterW = 12 + 76 + 10 + 10 + 8 + placeW + 10;
+    int clusterW = 12 + 76 + 10 + 10 + 8 + placeCluster + 10;
     int fieldW = juce::jlimit(80, 260, gainCapX - clusterW - fieldX - 8);
     nameField.setBounds(fieldX, (kHeaderH - 26) / 2, fieldW, 26);
     toggleBtn.setBounds(fieldX + fieldW + 12, (kHeaderH - 24) / 2, 76, 24);
@@ -353,9 +334,10 @@ void LinkEditor::resized()
 
     if (!miniMode)
     {
-        // Full: placement + gain in the header
+        // Full: placement selector + "?" + gain in the header
         const int placeX = fieldX + fieldW + 12 + 76 + 10 + 10 + 8;
         placementBtn.setBounds(placeX, (kHeaderH - 24) / 2, placeW, 24);
+        placementHelpBtn.setBounds(placeX + placeW + 3, (kHeaderH - 24) / 2, helpW, 24);
         gainCaption.setBounds(gainCapX, (kHeaderH - 22) / 2, gainCapW, 22);
         gainSlider.setBounds(gainX, (kHeaderH - 22) / 2, gainSlideW, 22);
         chainPanel.setBounds(0, kHeaderH + 1, getWidth(), getHeight() - kHeaderH - 1);
@@ -367,33 +349,14 @@ void LinkEditor::resized()
         int gy = kHeaderH + 52;
         gainCaption.setBounds(16, gy, gainCapW, 22);
         gainSlider.setBounds(16 + gainCapW + 4, gy,
-                             juce::jmax(120, getWidth() - 32 - gainCapW - 4 - placeW - 8), 22);
-        placementBtn.setBounds(getWidth() - 16 - placeW, gy, placeW, 24);
+                             juce::jmax(120, getWidth() - 32 - gainCapW - 4 - placeCluster - 8), 22);
+        placementBtn.setBounds(getWidth() - 16 - placeCluster, gy, placeW, 24);
+        placementHelpBtn.setBounds(getWidth() - 16 - helpW, gy, helpW, 24);
     }
-
-    // Placement prompt overlay covers the whole editor and lays out its own
-    // cards. Bring it to front (it was added before the chain panel) so it sits
-    // above everything, then toggle visibility. Hiding it makes JUCE repaint
-    // the region behind it, so the header always returns clean.
-    placementPrompt.setBounds(getLocalBounds());
-    if (placementPromptVisible)
-        placementPrompt.toFront(false);
-    placementPrompt.setVisible(placementPromptVisible);
-
-    // Header/chain children are hidden while the prompt is up (it occludes the
-    // whole editor); the prompt is the only interactive surface then.
-    const bool showMain = !placementPromptVisible;
-    nameField.setVisible(showMain);
-    toggleBtn.setVisible(showMain);
-    gainSlider.setVisible(showMain);
-    gainCaption.setVisible(showMain);
-    placementBtn.setVisible(showMain);
-    if (!miniMode) chainPanel.setVisible(showMain);
 }
 
 void LinkEditor::mouseDown(const juce::MouseEvent& e)
 {
-    if (placementPromptVisible) return;   // prompt is modal
     auto pos = e.getPosition();
     if (pos.y < kHeaderH && pos.x > getWidth() - 30)
     {
@@ -492,39 +455,86 @@ void LinkEditor::updatePlacementBtn()
     switch (proc.getPlacement())
     {
         case LinkProcessor::PlacementBus:
-            placementBtn.setButtonText("On a bus");
+            placementBtn.setButtonText("Bus");
             placementBtn.setColour(juce::TextButton::textColourOffId, kCyan);
             break;
         case LinkProcessor::PlacementInsert:
-            placementBtn.setButtonText("On a track");
+            placementBtn.setButtonText("Channel");
             placementBtn.setColour(juce::TextButton::textColourOffId, kText2);
             break;
         default:
-            placementBtn.setButtonText("Set placement");
+            // Unset: dim, never amber/nagging. Behaves as Channel until set.
+            placementBtn.setButtonText("Placement");
             placementBtn.setColour(juce::TextButton::textColourOffId,
-                                   juce::Colour(0xfff59e0b));   // amber: needs answering
+                                   kText2.withAlpha(0.55f));
             break;
     }
-    placementBtn.setTooltip("Where this Link sits. Link measures at its insert point; "
-                            "for level work it belongs on a bus.");
+    placementBtn.setTooltip("Is this Link on a bus or a channel? Tap '?' for help.");
 }
 
 void LinkEditor::applyPlacement(int p)
 {
     proc.setPlacement(p);
-    placementPromptVisible = false;
     updatePlacementBtn();
-    resized();
     repaint();
+}
+
+void LinkEditor::showPlacementHelp()
+{
+    // Non-modal popover (CallOutBox), not a modal prompt. Plain-language copy.
+    auto* content = new juce::Component();
+    content->setSize(320, 196);
+
+    struct HelpText : juce::Component
+    {
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(kCard);
+            auto r = getLocalBounds().reduced(14, 12);
+            g.setColour(kText);
+            g.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
+            g.drawText("Where is this Link?", r.removeFromTop(20),
+                       juce::Justification::topLeft);
+            r.removeFromTop(6);
+            auto para = [&](const juce::String& lead, const juce::String& body)
+            {
+                auto line = r.removeFromTop(46);
+                g.setColour(kCyan);
+                g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+                g.drawText(lead, line.removeFromTop(15), juce::Justification::topLeft);
+                g.setColour(kText2);
+                g.setFont(juce::Font(juce::FontOptions(11.5f)));
+                g.drawFittedText(body, line, juce::Justification::topLeft, 3);
+            };
+            para("Bus", "A channel that other tracks are routed into, like a vocal "
+                        "bus, drum bus, or the master. EchoJay can compare its level "
+                        "to your other buses.");
+            para("Channel", "A single instrument or audio track, like the lead vocal "
+                            "or the kick. EchoJay reads the level before your fader, so "
+                            "it cannot compare it to other tracks.");
+            r.removeFromTop(2);
+            g.setColour(kText2.withAlpha(0.7f));
+            g.setFont(juce::Font(juce::FontOptions(11.0f)));
+            g.drawText("Not sure? Leave it on Channel.", r.removeFromTop(16),
+                       juce::Justification::topLeft);
+        }
+    };
+    auto* body = new HelpText();
+    body->setBounds(content->getLocalBounds());
+    content->addAndMakeVisible(body);
+
+    juce::CallOutBox::launchAsynchronously(
+        std::unique_ptr<juce::Component>(content),
+        placementHelpBtn.getScreenBounds(), nullptr);
 }
 
 void LinkEditor::showPlacementChooser()
 {
     juce::PopupMenu m;
-    m.addSectionHeader("Where did you put this Link?");
+    m.addSectionHeader("Where is this Link?");
     const int cur = proc.getPlacement();
-    m.addItem(1, "On a bus or group",  true, cur == LinkProcessor::PlacementBus);
-    m.addItem(2, "On a normal track",  true, cur == LinkProcessor::PlacementInsert);
+    m.addItem(1, "Bus",     true, cur == LinkProcessor::PlacementBus);
+    m.addItem(2, "Channel", true, cur == LinkProcessor::PlacementInsert);
     auto safeThis = juce::Component::SafePointer<LinkEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&placementBtn),
         [safeThis](int r)
@@ -535,97 +545,3 @@ void LinkEditor::showPlacementChooser()
         });
 }
 
-// ---------------------------------------------------------------------------
-//  PlacementPromptOverlay — owns ALL prompt painting (see the header comment).
-// ---------------------------------------------------------------------------
-LinkEditor::PlacementPromptOverlay::PlacementPromptOverlay()
-{
-    auto style = [](juce::TextButton& b)
-    {
-        b.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        b.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
-    };
-    style(busBtn);
-    style(insertBtn);
-    busBtn.onClick    = [this] { if (onChoose) onChoose(1); };
-    insertBtn.onClick = [this] { if (onChoose) onChoose(2); };
-    addAndMakeVisible(busBtn);
-    addAndMakeVisible(insertBtn);
-    // Modal: catch clicks in the empty scrim (block the header beneath) while
-    // still letting the two option buttons receive theirs.
-    setInterceptsMouseClicks(true, true);
-}
-
-void LinkEditor::PlacementPromptOverlay::resized()
-{
-    const int w = juce::jmin(480, getWidth() - 60);
-    const int h = 340;
-    juce::Rectangle<int> card((getWidth() - w) / 2, (getHeight() - h) / 2, w, h);
-    auto r = card.reduced(24, 22);
-    r.removeFromTop(30);   // title
-    r.removeFromTop(38);   // subtitle (2 lines)
-    r.removeFromTop(10);
-    card1_ = r.removeFromTop(74);
-    r.removeFromTop(10);
-    card2_ = r.removeFromTop(74);
-    busBtn.setBounds(card1_);
-    insertBtn.setBounds(card2_);
-}
-
-void LinkEditor::PlacementPromptOverlay::paint(juce::Graphics& g)
-{
-    // Scrim + centred card. Plain-language: ask what the user DID, not signal
-    // flow. Two option cards (bold line + explainer), then a dim "not sure".
-    g.fillAll(juce::Colour(0xcc0A0C18));
-
-    const int w = juce::jmin(480, getWidth() - 60);
-    const int h = 340;
-    juce::Rectangle<int> card((getWidth() - w) / 2, (getHeight() - h) / 2, w, h);
-    g.setColour(kCard);
-    g.fillRoundedRectangle(card.toFloat(), 12.0f);
-    g.setColour(kBorder);
-    g.drawRoundedRectangle(card.toFloat(), 12.0f, 1.0f);
-
-    auto r = card.reduced(24, 22);
-    g.setColour(kText);
-    g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
-    g.drawText("Where did you put this Link?", r.removeFromTop(30),
-               juce::Justification::centredLeft);
-    g.setColour(kText2);
-    g.setFont(juce::Font(juce::FontOptions(11.5f)));
-    g.drawFittedText("This tells EchoJay whether it can compare this Link's level to "
-                     "your other tracks.",
-                     r.removeFromTop(38), juce::Justification::topLeft, 2);
-
-    // One option card: bold line + explainer, using the rects from resized()
-    auto optionCard = [&](juce::Rectangle<int> cr, const juce::String& bold,
-                          const juce::String& explain)
-    {
-        g.setColour(juce::Colour(0xff141b2e));
-        g.fillRoundedRectangle(cr.toFloat(), 8.0f);
-        g.setColour(kCyan.withAlpha(0.35f));
-        g.drawRoundedRectangle(cr.toFloat(), 8.0f, 1.0f);
-        auto ir = cr.reduced(14, 10);
-        g.setColour(kCyan);
-        g.setFont(juce::Font(juce::FontOptions(13.5f, juce::Font::bold)));
-        g.drawText(bold, ir.removeFromTop(20), juce::Justification::centredLeft);
-        ir.removeFromTop(2);
-        g.setColour(kText2);
-        g.setFont(juce::Font(juce::FontOptions(11.0f)));
-        g.drawFittedText(explain, ir, juce::Justification::topLeft, 3);
-    };
-    optionCard(card1_, "On a bus or group",
-               "A channel that other tracks are routed into, like a vocal bus, drum "
-               "bus, or the master. EchoJay can compare levels here.");
-    optionCard(card2_, "On a normal track",
-               "Directly on an instrument or audio track, like the lead vocal or the "
-               "kick. EchoJay reads the level before your fader, so it will not "
-               "compare it to other tracks.");
-
-    g.setColour(kText2.withAlpha(0.6f));
-    g.setFont(juce::Font(juce::FontOptions(10.5f)));
-    g.drawText("Not sure? Pick 'On a normal track'. You can change this any time "
-               "from the Link's header.",
-               card.getX() + 24, card2_.getBottom() + 8,
-               card.getWidth() - 48, 16, juce::Justification::centredLeft);
-}
