@@ -2595,6 +2595,16 @@ bool EchoJayEditor::assistantInputContext() const
     return true;   // Chat, Compare, Meters, Visualisation, Link, Chain (open)
 }
 
+bool EchoJayEditor::assistantSidebarVisible() const
+{
+    // Mirrors the paint guard `!visualOnlyMode && chatW > 0`: the chat sidebar
+    // (and every assistant-drawn element in it) is painted exactly when the
+    // layout gives a chat column. computeColumns is the single source of the
+    // column split, so this and paint() cannot disagree.
+    if (currentScreen != Screen::Main || visualOnlyMode) return false;
+    return computeColumns(getWidth()).chatW > 0;
+}
+
 void EchoJayEditor::applyPromptOverlayOcclusion()
 {
     const bool prompt = channelPromptVisible || genrePromptVisible
@@ -9242,7 +9252,26 @@ void EchoJayEditor::paint(juce::Graphics& g)
         chatW -= kSidebarW;
     }
 
-    if (!visualOnlyMode && chatW > 0) {
+    // STRUCTURAL GATE (single predicate, matches assistantSidebarVisible()):
+    // the assistant block below owns every assistant-DRAWN element — the chain
+    // "Build this chain" buttons, the AI gain-proposal cards, and the chat
+    // wave cards. When the sidebar is NOT painted (Settings, visual-only, mini,
+    // any tab with no chat column) the block is skipped, so we MUST reset those
+    // elements here or a Build button keeps its stale visibility/bounds and a
+    // gain/wave hit-zone stays clickable on a tab that never drew it. The block
+    // repopulates only when it actually paints; mouseDown gates on the same
+    // predicate.
+    const bool assistantVisible = (!visualOnlyMode && chatW > 0);
+    if (!assistantVisible)
+    {
+        for (int i = 0; i < kMaxChainBuildBtns; ++i) chainBuildBtns[(size_t)i].setVisible(false);
+        for (int i = 0; i < kMaxWavePlayBtns;   ++i) wavePlayOverlays[(size_t)i].setVisible(false);
+        activeChainBuildBtns = 0;
+        gainCardZones_.clear();
+        chatWavePositions.clear();
+    }
+
+    if (assistantVisible) {
     // Chat header — "AI ASSISTANT" bold, usage count right
     g.setColour(C::bg2);
     g.fillRect(chatX, topH, chatW, 32);
@@ -14088,11 +14117,16 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 
     // LINK tab — row toggles live inside linkListView_ (its own mouseDown)
 
+    // Assistant-drawn hit-zones (gain cards, wave cards) — gated on the SAME
+    // predicate as the paint block, so a stale zone can never be clicked on a
+    // tab without the sidebar even if a repaint hasn't cleared it yet.
+    const bool assistantHit = assistantSidebarVisible();
+
     // AI gain-proposal Apply/Undo cards — direct hit testing in the editor's
     // OWN mouseDown (the path that actually fires; the viewport's onClickCheck
     // does not reliably run for these, same class as the centred-input bug —
     // the cards are editor-painted, so they need the editor-level hit test).
-    if (currentScreen == Screen::Main && !gainCardZones_.empty())
+    if (assistantHit && !gainCardZones_.empty())
     {
         for (auto& gz : gainCardZones_)
             if (gz.rect.contains(pos))
@@ -14103,7 +14137,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     }
 
     // Chat wave card click — direct hit testing (works on Windows where overlays fail)
-    if (currentScreen == Screen::Main && !chatWavePositions.empty())
+    if (assistantHit && !chatWavePositions.empty())
     {
         for (int i = 0; i < (int)chatWavePositions.size(); ++i)
         {

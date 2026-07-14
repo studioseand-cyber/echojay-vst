@@ -361,6 +361,13 @@ private:
     // subset here is exactly how Meters/Vis/Link once kept accepting text
     // while Chat showed the upgrade prompt.
     bool assistantInputContext() const;
+    // ONE predicate for "the AI sidebar is painted on this tab" — the single
+    // gate for every assistant-DRAWN element (chain Build buttons, gain cards,
+    // wave cards). Consulted by BOTH paint() (early-out + cleanup) and
+    // mouseDown() (hit-test early-out), so an element can never be drawn where
+    // it isn't clickable, or clickable where it isn't drawn. False on Settings,
+    // visual-only, and any tab computeColumns gives no chat column.
+    bool assistantSidebarVisible() const;
 
 
     // ---- Settings right column (ACCOUNT / visual / slim info card) ----
