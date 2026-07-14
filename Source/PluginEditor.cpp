@@ -1654,6 +1654,20 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         chatSidebar.updateContent();
         repaint();
     };
+    sidebarModel->onProjectToggled = [this](const juce::String& projName)
+    {
+        const juce::String key = "proj:" + projName;
+        if (collapsedAlbums.count(key)) collapsedAlbums.erase(key);
+        else                            collapsedAlbums.insert(key);
+        sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                  workspace.getReviews(), collapsedAlbums, currentChatId);
+        chatSidebar.updateContent();
+        repaint();
+    };
+    sidebarModel->onProjectContextMenu = [this](const juce::String& projName)
+    {
+        showMoveProjectToAlbumMenu(projName);
+    };
     sidebarModel->onChatContextMenu = [this](const juce::String& id)
     {
         showMoveToAlbumMenu(id);
@@ -4646,9 +4660,9 @@ void EchoJayEditor::LinkListView::paint(juce::Graphics& g)
             juce::String pl; juce::Colour pc;
             switch (slot.placement)
             {
-                case 1:  pl = "BUS";    pc = juce::Colour(0xff22d3ee); break;
-                case 2:  pl = "INSERT"; pc = C::text3;                 break;
-                default: pl = "SET?";   pc = juce::Colour(0xfff59e0b); break;
+                case 1:  pl = "BUS";   pc = juce::Colour(0xff22d3ee); break;
+                case 2:  pl = "TRACK"; pc = C::text3;                 break;
+                default: pl = "SET?";  pc = juce::Colour(0xfff59e0b); break;
             }
             g.setColour(pc.withAlpha(0.15f));
             g.fillRoundedRectangle(chip.toFloat(), 4.0f);
@@ -5875,66 +5889,156 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
             rows.push_back(makeChatRow(*chat, 0));
     }
 
-    // --- Section: Albums & Chats ---
+    // === PROJECTS (songs) tree =========================================
+    // Hierarchy: ALBUM -> PROJECT (song, = chat.trackName) -> CHATS. A song
+    // with no album sits at the top level; chats with no song are Ungrouped.
+
+    // 1. Group non-pinned chats by project (trackName); collect ungrouped.
+    struct Proj { std::vector<const WsChat*> chats; juce::String recent; };
+    std::map<juce::String, Proj> projs;
+    std::vector<const WsChat*> ungrouped;
+    for (auto& ch : chats)
     {
-        Row r;
-        r.kind  = Row::Kind::SectionTitle;
-        r.label = "ALBUMS & CHATS";
-        rows.push_back(r);
+        if (ch.messages.empty() || ch.pinned) continue;
+        if (ch.trackName.isEmpty()) { ungrouped.push_back(&ch); continue; }
+        projs[ch.trackName].chats.push_back(&ch);
+    }
+    for (auto& kv : projs)
+    {
+        std::sort(kv.second.chats.begin(), kv.second.chats.end(),
+                  [](const WsChat* a, const WsChat* b) { return a->created > b->created; });
+        kv.second.recent = kv.second.chats.empty() ? juce::String()
+                                                    : kv.second.chats.front()->created;
     }
 
+    // 2. Project -> album: album.projectNames PLUS legacy derivation from its
+    //    chatIds' trackNames (so existing albums stay populated, untouched).
+    std::map<juce::String, juce::String> projAlbum;             // project -> albumId
+    std::map<juce::String, std::vector<juce::String>> albumProjs; // albumId -> projects
     for (auto& album : albums)
     {
-        bool collapsed = (collapsedSet.count(album.id) > 0);
-        int chatCount = 0;
+        std::set<juce::String> claimed;
+        for (auto& pn : album.projectNames) claimed.insert(pn);
         for (auto& cid : album.chatIds)
             for (auto& ch : chats)
-                if (ch.id == cid && !ch.messages.empty() && !ch.pinned) ++chatCount;
-
-        // Strip any leading non-ASCII characters (e.g. folder emoji stored by
-        // the web app) so the name renders cleanly in JUCE's default font.
-        juce::String albumName = album.name;
-        while (albumName.isNotEmpty() && (albumName[0] < 0 || albumName[0] > 127))
-            albumName = albumName.substring(1);
-        albumName = albumName.trimStart();
-
-        Row header;
-        header.kind      = Row::Kind::AlbumHeader;
-        header.id        = album.id;
-        header.collapsed = collapsed;
-        header.label     = albumName;
-        if (chatCount > 0) header.label += "  (" + juce::String(chatCount) + ")";
-        rows.push_back(header);
-
-        if (!collapsed)
-        {
-            for (auto& cid : album.chatIds)
+                if (ch.id == cid && ch.trackName.isNotEmpty()) claimed.insert(ch.trackName);
+        for (auto& pn : claimed)
+            if (projs.count(pn) && projAlbum.find(pn) == projAlbum.end())
             {
-                const WsChat* chat = nullptr;
-                for (auto& ch : chats)
-                    if (ch.id == cid && !ch.messages.empty() && !ch.pinned)
-                    { chat = &ch; break; }
-                if (!chat) continue;
+                projAlbum[pn] = album.id;
+                albumProjs[album.id].push_back(pn);
+            }
+    }
 
-                rows.push_back(makeChatRow(*chat, 16));
+    // 3. Active chat's project + album auto-expand (others persist).
+    juce::String activeProj;
+    for (auto& ch : chats)
+        if (ch.id == activeChatId) { activeProj = ch.trackName; break; }
+    const juce::String activeAlbum = (activeProj.isNotEmpty() && projAlbum.count(activeProj))
+                                   ? projAlbum[activeProj] : juce::String();
+    auto projKey = [](const juce::String& n) { return "proj:" + n; };
+    auto albumCollapsed = [&](const juce::String& id)
+        { return id != activeAlbum && collapsedSet.count(id) > 0; };
+    auto projCollapsed  = [&](const juce::String& n)
+        { return n != activeProj && collapsedSet.count(projKey(n)) > 0; };
+
+    // 4. Recency: project = its newest chat; album = newest across its projects.
+    auto albumRecent = [&](const juce::String& id) {
+        juce::String r;
+        for (auto& pn : albumProjs[id]) if (projs[pn].recent > r) r = projs[pn].recent;
+        return r;
+    };
+
+    // 5. Top level: albums (always shown, they're user-created drop targets)
+    //    + album-less projects, sorted by recency (newest-active floats up).
+    struct TopEntry { bool isAlbum; juce::String key; juce::String recent; };
+    std::vector<TopEntry> top;
+    for (auto& album : albums)
+        top.push_back({ true, album.id, albumRecent(album.id) });
+    for (auto& kv : projs)
+        if (projAlbum.find(kv.first) == projAlbum.end())
+            top.push_back({ false, kv.first, kv.second.recent });
+    std::stable_sort(top.begin(), top.end(),
+                     [](const TopEntry& a, const TopEntry& b) { return a.recent > b.recent; });
+
+    auto pushProject = [&](const juce::String& name, int headerIndent, int chatIndent)
+    {
+        Row ph;
+        ph.kind      = Row::Kind::ProjectHeader;
+        ph.id        = name;
+        ph.label     = name + "  (" + juce::String((int)projs[name].chats.size()) + ")";
+        ph.indent    = headerIndent;
+        ph.collapsed = projCollapsed(name);
+        ph.active    = (name == activeProj);
+        rows.push_back(ph);
+        if (!ph.collapsed)
+            for (auto* chat : projs[name].chats)
+                rows.push_back(makeChatRow(*chat, chatIndent));
+    };
+
+    if (!top.empty())
+    {
+        Row sec; sec.kind = Row::Kind::SectionTitle; sec.label = "ALBUMS & SONGS";
+        rows.push_back(sec);
+
+        for (auto& te : top)
+        {
+            if (te.isAlbum)
+            {
+                const WsAlbum* album = nullptr;
+                for (auto& a : albums) if (a.id == te.key) { album = &a; break; }
+                if (album == nullptr) continue;
+
+                juce::String albumName = album->name;   // strip leading emoji
+                while (albumName.isNotEmpty() && (albumName[0] < 0 || albumName[0] > 127))
+                    albumName = albumName.substring(1);
+                albumName = albumName.trimStart();
+
+                // Projects sorted by recency within the album
+                auto& aps = albumProjs[album->id];
+                std::stable_sort(aps.begin(), aps.end(),
+                    [&](const juce::String& x, const juce::String& y)
+                    { return projs[x].recent > projs[y].recent; });
+
+                Row header;
+                header.kind      = Row::Kind::AlbumHeader;
+                header.id        = album->id;
+                header.collapsed = albumCollapsed(album->id);
+                header.label     = albumName + "  (" + juce::String((int)aps.size()) + ")";
+                rows.push_back(header);
+
+                if (!header.collapsed)
+                {
+                    for (auto& pn : aps)
+                        pushProject(pn, 16, 32);
+                    // Legacy direct chats (album chatIds with no song)
+                    for (auto& cid : album->chatIds)
+                    {
+                        const WsChat* chat = nullptr;
+                        for (auto& ch : chats)
+                            if (ch.id == cid && !ch.messages.empty() && !ch.pinned
+                                && ch.trackName.isEmpty()) { chat = &ch; break; }
+                        if (chat) rows.push_back(makeChatRow(*chat, 16));
+                    }
+                }
+            }
+            else
+            {
+                pushProject(te.key, 0, 16);   // album-less song at the top level
             }
         }
     }
 
-    // --- Section: Ungrouped Chats (pinned ones live in the PINNED group) ---
-    std::vector<const WsChat*> ungrouped;
-    for (auto& ch : chats)
-        if (!ch.messages.empty() && !ch.pinned && albumedIds.count(ch.id) == 0)
-            ungrouped.push_back(&ch);
-
-    if (!ungrouped.empty())
+    // --- Section: Ungrouped Chats (no song, not in any album's legacy list) ---
+    std::vector<const WsChat*> ungroupedShown;
+    for (auto* chat : ungrouped)
+        if (albumedIds.count(chat->id) == 0)
+            ungroupedShown.push_back(chat);
+    if (!ungroupedShown.empty())
     {
-        Row sec;
-        sec.kind  = Row::Kind::SectionTitle;
-        sec.label = "CHATS";
+        Row sec; sec.kind = Row::Kind::SectionTitle; sec.label = "UNGROUPED";
         rows.push_back(sec);
-
-        for (auto* chat : ungrouped)
+        for (auto* chat : ungroupedShown)
             rows.push_back(makeChatRow(*chat, 0));
     }
 
@@ -6023,6 +6127,32 @@ void EchoJayEditor::ChatSidebarModel::paintListBoxItem(
         return;
     }
 
+    if (row.kind == Row::Kind::ProjectHeader)
+    {
+        // Song/project sub-section: indented, lighter than an album header,
+        // with the same collapse triangle. row.indent sets the left inset
+        // (16 under an album, 0 at the top level for an album-less song).
+        g.setColour(C::bg);
+        g.fillRect(0, 0, width, height);
+        {
+            float cx = (float)(padX + row.indent) + 5.0f;
+            float cy = (float)height * 0.5f;
+            juce::Path tri;
+            if (row.collapsed)
+                tri.addTriangle(cx - 3.0f, cy - 4.5f, cx - 3.0f, cy + 4.5f, cx + 3.5f, cy);
+            else
+                tri.addTriangle(cx - 4.5f, cy - 3.0f, cx + 4.5f, cy - 3.0f, cx, cy + 3.5f);
+            g.setColour(C::text3);
+            g.fillPath(tri);
+        }
+        g.setColour(row.active ? C::text : C::text2);
+        g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
+        g.drawText(row.label, padX + row.indent + 13, 0,
+                   width - padX * 2 - row.indent - 13, height,
+                   juce::Justification::centredLeft);
+        return;
+    }
+
     if (row.kind == Row::Kind::ChatRow)
     {
         g.setColour(row.active ? C::bg4 : C::bg);
@@ -6097,6 +6227,19 @@ void EchoJayEditor::ChatSidebarModel::listBoxItemClicked(
         else if (onAlbumToggled)
         {
             onAlbumToggled(row.id);
+        }
+        return;
+    }
+
+    if (row.kind == Row::Kind::ProjectHeader)
+    {
+        if (e.mods.isPopupMenu())
+        {
+            if (onProjectContextMenu) onProjectContextMenu(row.id);   // id = project name
+        }
+        else if (onProjectToggled)
+        {
+            onProjectToggled(row.id);
         }
         return;
     }
@@ -6638,6 +6781,97 @@ void EchoJayEditor::createNewAlbum()
             }
             safeThis->repaint();
         }), true);
+}
+
+void EchoJayEditor::showMoveProjectToAlbumMenu(const juce::String& projectName)
+{
+    auto& albums = workspace.getAlbums();
+
+    // Which album currently owns this project? (explicit projectNames OR the
+    // legacy chatIds-trackName derivation, mirroring the sidebar tree)
+    juce::String currentAlbum;
+    for (auto& a : albums)
+    {
+        if (a.projectNames.contains(projectName)) { currentAlbum = a.id; break; }
+        for (auto& cid : a.chatIds)
+        {
+            bool hit = false;
+            for (auto& ch : workspace.getChats())
+                if (ch.id == cid && ch.trackName == projectName) { hit = true; break; }
+            if (hit) { currentAlbum = a.id; break; }
+        }
+        if (currentAlbum.isNotEmpty()) break;
+    }
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("Move \"" + projectName + "\" to album");
+    std::vector<juce::String> actions;
+    int itemId = 1;
+    for (auto& a : albums)
+    {
+        menu.addItem(itemId++, (a.id == currentAlbum ? "* " : "  ") + a.name);
+        actions.push_back(a.id);
+    }
+    if (currentAlbum.isNotEmpty())
+    {
+        menu.addSeparator();
+        menu.addItem(itemId++, "Remove from album");
+        actions.push_back("__remove__");
+    }
+    menu.addSeparator();
+    menu.addItem(itemId++, "New album...");
+    actions.push_back("__new__");
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
+        [safeThis, projectName, actions](int result)
+        {
+            if (safeThis == nullptr || result <= 0) return;
+            juce::String action = actions[(size_t)(result - 1)];
+
+            auto refresh = [safeThis]()
+            {
+                if (safeThis->sidebarModel)
+                {
+                    safeThis->sidebarModel->refreshRows(
+                        safeThis->workspace.getChats(), safeThis->workspace.getAlbums(),
+                        safeThis->workspace.getReviews(), safeThis->collapsedAlbums,
+                        safeThis->currentChatId);
+                    safeThis->chatSidebar.updateContent();
+                }
+                safeThis->workspace.requestMutationSync();
+                safeThis->repaint();
+            };
+
+            if (action == "__remove__")
+            {
+                safeThis->workspace.assignProjectToAlbum(projectName, {});
+                refresh();
+            }
+            else if (action == "__new__")
+            {
+                auto* dlg = new juce::AlertWindow("New Album", "Album name:",
+                                                  juce::MessageBoxIconType::QuestionIcon);
+                dlg->addTextEditor("name", "", "Name:");
+                dlg->addButton("Create", 1, juce::KeyPress(juce::KeyPress::returnKey));
+                dlg->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+                dlg->enterModalState(true,
+                    juce::ModalCallbackFunction::create([safeThis, dlg, projectName, refresh](int r)
+                    {
+                        juce::String trimmed = dlg->getTextEditorContents("name").trim();
+                        delete dlg;
+                        if (safeThis == nullptr || r != 1 || trimmed.isEmpty()) return;
+                        auto id = safeThis->workspace.createAlbumWithName(trimmed);
+                        safeThis->workspace.assignProjectToAlbum(projectName, id);
+                        refresh();
+                    }), true);
+            }
+            else
+            {
+                safeThis->workspace.assignProjectToAlbum(projectName, action);
+                refresh();
+            }
+        });
 }
 
 void EchoJayEditor::showMoveToAlbumMenu(const juce::String& chatId)
@@ -12314,8 +12548,8 @@ void EchoJayEditor::showLinkPlacementMenu(const juce::String& linkAddr)
     }
     juce::PopupMenu m;
     m.addSectionHeader((name.isEmpty() ? juce::String("Link") : name) + " placement");
-    m.addItem(1, "On a bus or aux (post-fader)",    true, cur == 1);
-    m.addItem(2, "On a channel insert (pre-fader)", true, cur == 2);
+    m.addItem(1, "On a bus or group",  true, cur == 1);
+    m.addItem(2, "On a normal track",  true, cur == 2);
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options(),
         [safeThis, linkAddr](int r)

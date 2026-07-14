@@ -39,6 +39,10 @@ struct WsAlbum {
     juce::String created;
     juce::StringArray chatIds;
     juce::StringArray reviewIds;
+    // Projects (songs, = chat.trackName) assigned to this album. Serialised as
+    // _projects. Additive: legacy albums have none; the sidebar also derives
+    // membership from chatIds' trackNames so existing albums stay populated.
+    juce::StringArray projectNames;
 };
 
 struct WsMeasurements {
@@ -125,6 +129,11 @@ public:
     // to persist (POST first so the change survives the following GET).
     void addChat(WsChat chat);         // prepend to chats list
     void addAlbum(WsAlbum album);      // append to albums list
+    // Project (song) → album assignment. Removes the project from every
+    // album's projectNames first, then adds it to albumId (empty = orphan).
+    void assignProjectToAlbum(const juce::String& projectName, const juce::String& albumId);
+    // Create a named album and return its id (message thread).
+    juce::String createAlbumWithName(const juce::String& name);
     void addReview(WsReview review);   // prepend to reviews list, caps at 50
     void moveChatToAlbum(const juce::String& chatId, const juce::String& albumId);
     void removeChatFromAlbum(const juce::String& chatId);

@@ -49,6 +49,32 @@ void EchoJayWorkspace::addAlbum(WsAlbum album)
     albums.push_back(std::move(album));
 }
 
+void EchoJayWorkspace::assignProjectToAlbum(const juce::String& projectName,
+                                            const juce::String& albumId)
+{
+    if (projectName.isEmpty()) return;
+    for (auto& a : albums)
+        a.projectNames.removeString(projectName);   // remove from all first
+    if (albumId.isNotEmpty())
+        for (auto& a : albums)
+            if (a.id == albumId)
+            {
+                if (!a.projectNames.contains(projectName))
+                    a.projectNames.add(projectName);
+                break;
+            }
+}
+
+juce::String EchoJayWorkspace::createAlbumWithName(const juce::String& name)
+{
+    WsAlbum a;
+    a.id      = "album-" + juce::String(juce::Time::currentTimeMillis());
+    a.name    = name;
+    a.created = juce::Time::getCurrentTime().toISO8601(true);
+    albums.push_back(a);
+    return a.id;
+}
+
 void EchoJayWorkspace::addReview(WsReview review)
 {
     reviews.insert(reviews.begin(), std::move(review));
@@ -541,6 +567,10 @@ WsAlbum EchoJayWorkspace::parseAlbum(const juce::var& v)
         if (auto* arr = obj->getProperty("reviewIds").getArray())
             for (auto& x : *arr)
                 a.reviewIds.add(x.toString());
+
+        if (auto* arr = obj->getProperty("_projects").getArray())
+            for (auto& x : *arr)
+                a.projectNames.add(x.toString());
     }
     return a;
 }
@@ -698,11 +728,14 @@ juce::var EchoJayWorkspace::albumToVar(const WsAlbum& a)
     obj->setProperty("name",    a.name);
     obj->setProperty("created", a.created);
 
-    juce::Array<juce::var> cids, rids;
-    for (auto& x : a.chatIds)   cids.add(x);
-    for (auto& x : a.reviewIds) rids.add(x);
+    juce::Array<juce::var> cids, rids, projs;
+    for (auto& x : a.chatIds)      cids.add(x);
+    for (auto& x : a.reviewIds)    rids.add(x);
+    for (auto& x : a.projectNames) projs.add(x);
     obj->setProperty("chatIds",   juce::var(cids));
     obj->setProperty("reviewIds", juce::var(rids));
+    if (!projs.isEmpty())
+        obj->setProperty("_projects", juce::var(projs));
     return juce::var(obj);
 }
 

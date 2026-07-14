@@ -1749,9 +1749,9 @@ private:
     struct ChatSidebarModel : public juce::ListBoxModel
     {
         struct Row {
-            enum class Kind { SectionTitle, AlbumHeader, ChatRow, ReviewRow };
+            enum class Kind { SectionTitle, AlbumHeader, ProjectHeader, ChatRow, ReviewRow };
             Kind         kind   = Kind::SectionTitle;
-            juce::String id;
+            juce::String id;      // AlbumHeader: album id; ProjectHeader: project name
             juce::String label;
             juce::String meta;
             bool         collapsed = false;
@@ -1763,6 +1763,9 @@ private:
 
         std::function<void(const juce::String&)> onChatClicked;
         std::function<void(const juce::String&)> onAlbumToggled;
+        // Project header collapse toggle + right-click "Move to album..."
+        std::function<void(const juce::String& projectName)> onProjectToggled;
+        std::function<void(const juce::String& projectName)> onProjectContextMenu;
         // Right-click on a chat row — editor shows rename/delete/move menu
         std::function<void(const juce::String& chatId)> onChatContextMenu;
         // Right-click on an album header — editor shows rename/delete menu
@@ -1786,6 +1789,8 @@ private:
     void createNewChat();
     void createNewAlbum();
     void showMoveToAlbumMenu(const juce::String& chatId);
+    // Project (song) row context menu: Move to album... / New album... / Remove.
+    void showMoveProjectToAlbumMenu(const juce::String& projectName);
     void showAlbumContextMenu(const juce::String& albumId);
     juce::String getCurrentAlbumId() const; // album containing currentChatId
     // Returns the reviewId of the created review (empty string if not logged in)

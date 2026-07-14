@@ -96,10 +96,11 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     addAndMakeVisible(placementBtn);
     updatePlacementBtn();
 
+    // Transparent click targets — the card visuals are painted over them
     auto stylePromptBtn = [](juce::TextButton& b)
     {
-        b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1a2740));
-        b.setColour(juce::TextButton::textColourOffId, kCyan);
+        b.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        b.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
     };
     stylePromptBtn(placementBusBtn);
     stylePromptBtn(placementInsertBtn);
@@ -326,17 +327,22 @@ void LinkEditor::resized()
         placementBtn.setBounds(getWidth() - 16 - placeW, gy, placeW, 24);
     }
 
-    // Placement prompt: occlude header/chain and lay the two option buttons
-    // into the card; on dismiss restore normal visibility.
+    // Placement prompt: occlude header/chain, compute the two option-card
+    // rects (shared by paint + the transparent click-target buttons).
     if (placementPromptVisible)
     {
-        const int w = juce::jmin(460, getWidth() - 60);
-        const int h = 232;
+        const int w = juce::jmin(480, getWidth() - 60);
+        const int h = 340;
         juce::Rectangle<int> card((getWidth() - w) / 2, (getHeight() - h) / 2, w, h);
-        auto btnArea = card.reduced(24, 20).removeFromBottom(72);
-        placementBusBtn.setBounds(btnArea.removeFromTop(32));
-        btnArea.removeFromTop(8);
-        placementInsertBtn.setBounds(btnArea.removeFromTop(32));
+        auto r = card.reduced(24, 22);
+        r.removeFromTop(30);   // title
+        r.removeFromTop(38);   // subtitle (2 lines)
+        r.removeFromTop(10);
+        placementCard1_ = r.removeFromTop(74);
+        r.removeFromTop(10);
+        placementCard2_ = r.removeFromTop(74);
+        placementBusBtn.setBounds(placementCard1_);
+        placementInsertBtn.setBounds(placementCard2_);
     }
     placementBusBtn.setVisible(placementPromptVisible);
     placementInsertBtn.setVisible(placementPromptVisible);
@@ -456,7 +462,7 @@ void LinkEditor::updatePlacementBtn()
             placementBtn.setColour(juce::TextButton::textColourOffId, kCyan);
             break;
         case LinkProcessor::PlacementInsert:
-            placementBtn.setButtonText("On an insert");
+            placementBtn.setButtonText("On a track");
             placementBtn.setColour(juce::TextButton::textColourOffId, kText2);
             break;
         default:
@@ -481,10 +487,10 @@ void LinkEditor::applyPlacement(int p)
 void LinkEditor::showPlacementChooser()
 {
     juce::PopupMenu m;
-    m.addSectionHeader("Where is this Link?");
+    m.addSectionHeader("Where did you put this Link?");
     const int cur = proc.getPlacement();
-    m.addItem(1, "On a bus or aux (post-fader)",   true, cur == LinkProcessor::PlacementBus);
-    m.addItem(2, "On a channel insert (pre-fader)", true, cur == LinkProcessor::PlacementInsert);
+    m.addItem(1, "On a bus or group",  true, cur == LinkProcessor::PlacementBus);
+    m.addItem(2, "On a normal track",  true, cur == LinkProcessor::PlacementInsert);
     auto safeThis = juce::Component::SafePointer<LinkEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&placementBtn),
         [safeThis](int r)
@@ -497,29 +503,58 @@ void LinkEditor::showPlacementChooser()
 
 void LinkEditor::paintPlacementPrompt(juce::Graphics& g)
 {
-    // Scrim over the whole editor + centred card, matching the main plugin's
-    // channel-prompt treatment
+    // Scrim + centred card. Plain-language: ask what the user DID, not signal
+    // flow. Two option cards (bold line + explainer), then a dim "not sure".
     g.fillAll(juce::Colour(0xcc0A0C18));
 
-    const int w = juce::jmin(460, getWidth() - 60);
-    const int h = 232;
+    const int w = juce::jmin(480, getWidth() - 60);
+    const int h = 340;
     juce::Rectangle<int> card((getWidth() - w) / 2, (getHeight() - h) / 2, w, h);
     g.setColour(kCard);
     g.fillRoundedRectangle(card.toFloat(), 12.0f);
     g.setColour(kBorder);
     g.drawRoundedRectangle(card.toFloat(), 12.0f, 1.0f);
 
-    auto r = card.reduced(24, 20);
+    auto r = card.reduced(24, 22);
     g.setColour(kText);
-    g.setFont(juce::Font(juce::FontOptions(16.0f, juce::Font::bold)));
-    g.drawText("Where is this Link?", r.removeFromTop(26), juce::Justification::centredLeft);
-
-    r.removeFromTop(6);
+    g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
+    g.drawText("Where did you put this Link?", r.removeFromTop(30),
+               juce::Justification::centredLeft);
     g.setColour(kText2);
     g.setFont(juce::Font(juce::FontOptions(11.5f)));
-    g.drawFittedText("EchoJay Link measures at its insert point, before the channel "
-                     "fader. It cannot see the fader, so for level work it belongs on "
-                     "a bus or aux where its loudness is what reaches the mix.",
-                     r.removeFromTop(66), juce::Justification::topLeft, 4);
-    // The two option buttons are positioned in resized() below this text.
+    g.drawFittedText("This tells EchoJay whether it can compare this Link's level to "
+                     "your other tracks.",
+                     r.removeFromTop(38), juce::Justification::topLeft, 2);
+
+    // One option card: bold line + explainer, using the rects from resized()
+    auto optionCard = [&](juce::Rectangle<int> cr, const juce::String& bold,
+                          const juce::String& explain)
+    {
+        g.setColour(juce::Colour(0xff141b2e));
+        g.fillRoundedRectangle(cr.toFloat(), 8.0f);
+        g.setColour(kCyan.withAlpha(0.35f));
+        g.drawRoundedRectangle(cr.toFloat(), 8.0f, 1.0f);
+        auto ir = cr.reduced(14, 10);
+        g.setColour(kCyan);
+        g.setFont(juce::Font(juce::FontOptions(13.5f, juce::Font::bold)));
+        g.drawText(bold, ir.removeFromTop(20), juce::Justification::centredLeft);
+        ir.removeFromTop(2);
+        g.setColour(kText2);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawFittedText(explain, ir, juce::Justification::topLeft, 3);
+    };
+    optionCard(placementCard1_, "On a bus or group",
+               "A channel that other tracks are routed into, like a vocal bus, drum "
+               "bus, or the master. EchoJay can compare levels here.");
+    optionCard(placementCard2_, "On a normal track",
+               "Directly on an instrument or audio track, like the lead vocal or the "
+               "kick. EchoJay reads the level before your fader, so it will not "
+               "compare it to other tracks.");
+
+    g.setColour(kText2.withAlpha(0.6f));
+    g.setFont(juce::Font(juce::FontOptions(10.5f)));
+    g.drawText("Not sure? Pick 'On a normal track'. You can change this any time "
+               "from the Link's header.",
+               card.getX() + 24, placementCard2_.getBottom() + 8,
+               card.getWidth() - 48, 16, juce::Justification::centredLeft);
 }

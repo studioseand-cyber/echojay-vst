@@ -717,8 +717,11 @@ private:
     // point; for level work it belongs on a bus. See LinkProcessor::Placement.
     juce::TextButton placementBtn;                 // header: "On a bus" / "On an insert" / "Set placement"
     bool placementPromptVisible = false;
-    juce::TextButton placementBusBtn    { "On a bus or aux (post-fader)" };
-    juce::TextButton placementInsertBtn { "On a channel insert (pre-fader)" };
+    // Transparent full-card click targets; the rich card visuals (bold line +
+    // explainer) are painted in paintPlacementPrompt over these bounds.
+    juce::TextButton placementBusBtn;
+    juce::TextButton placementInsertBtn;
+    juce::Rectangle<int> placementCard1_, placementCard2_;   // bus / track option cards
     void showPlacementChooser();                   // header re-edit (menu)
     void updatePlacementBtn();
     void applyPlacement(int p);                    // set + hide prompt + refresh
