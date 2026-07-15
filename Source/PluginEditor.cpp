@@ -217,7 +217,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         if (sidebarModel)
         {
             sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
-                                      workspace.getReviews(), workspace.getPinnedProjects(), collapsedAlbums, currentChatId);
+                                      workspace.getReviews(), collapsedAlbums, currentChatId);
             chatSidebar.updateContent();
         }
         repaint();
@@ -497,7 +497,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             if (sidebarModel)
             {
                 sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
-                                          workspace.getReviews(), workspace.getPinnedProjects(), collapsedAlbums, currentChatId);
+                                          workspace.getReviews(), collapsedAlbums, currentChatId);
                 chatSidebar.updateContent();
             }
         }
@@ -1664,7 +1664,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             collapsedAlbums.insert(id);
         saveCollapsedState();
         sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
-                                  workspace.getReviews(), workspace.getPinnedProjects(), collapsedAlbums, currentChatId);
+                                  workspace.getReviews(), collapsedAlbums, currentChatId);
         chatSidebar.updateContent();
         repaint();
     };
@@ -1675,7 +1675,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         else                            collapsedAlbums.insert(key);
         saveCollapsedState();
         sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
-                                  workspace.getReviews(), workspace.getPinnedProjects(), collapsedAlbums, currentChatId);
+                                  workspace.getReviews(), collapsedAlbums, currentChatId);
         chatSidebar.updateContent();
         repaint();
     };
@@ -1690,27 +1690,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     sidebarModel->onAlbumContextMenu = [this](const juce::String& id)
     {
         showAlbumContextMenu(id);
-    };
-    sidebarModel->onPinnedClicked = [this](int kind, const juce::String& id)
-    {
-        using PK = ChatSidebarModel::Row::PinKind;
-        if (kind == (int)PK::Chat) { loadChatFromWorkspace(id); return; }
-        // Album/Song: expand to it in the main tree (it stays there — Pinned is
-        // a shortcut). Uncollapse the target (and a song's containing album).
-        if (kind == (int)PK::Album)
-            collapsedAlbums.erase(id);
-        else if (kind == (int)PK::Song)
-        {
-            collapsedAlbums.erase("proj:" + id);
-            for (auto& a : workspace.getAlbums())
-                if (a.projectNames.contains(id)) { collapsedAlbums.erase(a.id); break; }
-        }
-        saveCollapsedState();
-        sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
-                                  workspace.getReviews(), workspace.getPinnedProjects(),
-                                  collapsedAlbums, currentChatId);
-        chatSidebar.updateContent();
-        repaint();
     };
     chatSidebar.setModel(sidebarModel.get());
     chatSidebar.setRowHeight(36);
@@ -2342,7 +2321,7 @@ void EchoJayEditor::publishProjectName()
         if (sidebarModel)
         {
             sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
-                                      workspace.getReviews(), workspace.getPinnedProjects(), collapsedAlbums, currentChatId);
+                                      workspace.getReviews(), collapsedAlbums, currentChatId);
             chatSidebar.updateContent();
         }
     }
@@ -5897,7 +5876,6 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
     const std::vector<WsChat>&  chats,
     const std::vector<WsAlbum>& albums,
     const std::vector<WsReview>& reviews,
-    const std::vector<WsPinnedProject>& pinnedProjects,
     const std::set<juce::String>& collapsedSet,
     const juce::String& activeChatId)
 {
@@ -5908,19 +5886,6 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
     for (auto& album : albums)
         for (auto& cid : album.chatIds)
             albumedIds.insert(cid);
-
-    // AUTHORITATIVE pinned sets — the ONE decision, applied at EVERY level, for
-    // where an item renders. Any album / song / chat whose id is in here renders
-    // in the PINNED section ONLY and is excluded from the ALBUMS & SONGS tree.
-    // Real parent membership (trackName / albumId / projectNames) is never
-    // touched, so unpin just drops the id and the same filter returns the item
-    // to its original home with no second code path.
-    std::set<juce::String> pinnedChatIds;    // WsChat.pinned
-    std::set<juce::String> pinnedAlbumIds;   // WsAlbum.pinned
-    std::set<juce::String> pinnedSongs;      // pinnedProjects (by trackName)
-    for (auto& ch : chats)  if (ch.pinned) pinnedChatIds.insert(ch.id);
-    for (auto& a  : albums) if (a.pinned)  pinnedAlbumIds.insert(a.id);
-    for (auto& p  : pinnedProjects)        pinnedSongs.insert(p.name);
 
     auto makeChatRow = [&activeChatId](const WsChat& chat, int indent)
     {
@@ -5940,54 +5905,23 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         return r;
     };
 
-    // --- Section: PINNED — a FLAT list of pinned albums, songs and chats,
-    // most-recently-pinned first. EVERY pinned item (album, song OR chat)
-    // renders here and NOWHERE else: the pinned sets above remove it from the
-    // ALBUMS & SONGS tree at its level. Collapsible; collapse state rides the
-    // shared collapsed-set.
+    // --- Section: Pinned chats — always at the very top, most recently
+    // pinned first. Pinned chats are lifted OUT of the album/ungrouped rows
+    // below (album membership data is unchanged).
+    std::vector<const WsChat*> pinnedChats;
+    for (auto& ch : chats)
+        if (ch.pinned && !ch.messages.empty())
+            pinnedChats.push_back(&ch);
+    std::sort(pinnedChats.begin(), pinnedChats.end(),
+              [](const WsChat* a, const WsChat* b) { return a->pinnedAt > b->pinnedAt; });
+    if (!pinnedChats.empty())
     {
-        struct PinEntry { Row::PinKind kind; juce::String id, label, pinnedAt; };
-        std::vector<PinEntry> pins;
-        for (auto& a : albums)
-            if (a.pinned)
-                pins.push_back({ Row::PinKind::Album, a.id,
-                                 a.name.isEmpty() ? "Album" : a.name, a.pinnedAt });
-        // Only surface pinned songs that still exist as a project (have chats).
-        std::set<juce::String> existingSongs;
-        for (auto& ch : chats)
-            if (ch.trackName.isNotEmpty() && !ch.messages.empty())
-                existingSongs.insert(ch.trackName);
-        for (auto& pp : pinnedProjects)
-            if (existingSongs.count(pp.name))
-                pins.push_back({ Row::PinKind::Song, pp.name, pp.name, pp.pinnedAt });
-        for (auto& ch : chats)
-            if (pinnedChatIds.count(ch.id) && !ch.messages.empty())
-                pins.push_back({ Row::PinKind::Chat, ch.id,
-                                 ch.title.isEmpty() ? "Untitled" : ch.title, ch.pinnedAt });
-        std::sort(pins.begin(), pins.end(),
-                  [](const PinEntry& a, const PinEntry& b) { return a.pinnedAt > b.pinnedAt; });
-
-        if (!pins.empty())
-        {
-            const juce::String kPinned = "__pinned__";
-            const bool pinCollapsed = collapsedSet.count(kPinned) > 0;
-            Row sec;
-            sec.kind      = Row::Kind::SectionTitle;
-            sec.label     = "PINNED";
-            sec.id        = kPinned;         // non-empty id → collapsible section
-            sec.collapsed = pinCollapsed;
-            rows.push_back(sec);
-            if (!pinCollapsed)
-                for (auto& p : pins)
-                {
-                    Row r;
-                    r.kind    = Row::Kind::PinnedItem;
-                    r.pinKind = p.kind;
-                    r.id      = p.id;
-                    r.label   = p.label;
-                    rows.push_back(r);
-                }
-        }
+        Row sec;
+        sec.kind  = Row::Kind::SectionTitle;
+        sec.label = "PINNED";
+        rows.push_back(sec);
+        for (auto* chat : pinnedChats)
+            rows.push_back(makeChatRow(*chat, 0));
     }
 
     // === PROJECTS (songs) tree =========================================
@@ -6000,12 +5934,7 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
     std::vector<const WsChat*> ungrouped;
     for (auto& ch : chats)
     {
-        // Exclude anything pinned from the tree: a pinned chat, and every chat
-        // of a pinned SONG (the song moves to PINNED whole, so its chats go with
-        // it and don't render loose here).
-        if (ch.messages.empty()
-            || pinnedChatIds.count(ch.id)
-            || pinnedSongs.count(ch.trackName)) continue;
+        if (ch.messages.empty() || ch.pinned) continue;
         if (ch.trackName.isEmpty()) { ungrouped.push_back(&ch); continue; }
         projs[ch.trackName].chats.push_back(&ch);
     }
@@ -6055,15 +5984,12 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         return r;
     };
 
-    // 5. Top level: albums (drop targets) + album-less projects, sorted by
-    //    recency (newest-active floats up). A PINNED album moves to the PINNED
-    //    section whole, so it is excluded here (and its songs, which map to it,
-    //    are not album-less, so they don't leak to the top level either).
+    // 5. Top level: albums (always shown, they're user-created drop targets)
+    //    + album-less projects, sorted by recency (newest-active floats up).
     struct TopEntry { bool isAlbum; juce::String key; juce::String recent; };
     std::vector<TopEntry> top;
     for (auto& album : albums)
-        if (!pinnedAlbumIds.count(album.id))
-            top.push_back({ true, album.id, albumRecent(album.id) });
+        top.push_back({ true, album.id, albumRecent(album.id) });
     for (auto& kv : projs)
         if (projAlbum.find(kv.first) == projAlbum.end())
             top.push_back({ false, kv.first, kv.second.recent });
@@ -6072,21 +5998,16 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
 
     auto pushProject = [&](const juce::String& name, int headerIndent, int chatIndent)
     {
-        // A song with no visible chats (e.g. its only chat is pinned) must not
-        // leave an empty header/holder row — skip it entirely.
-        auto it = projs.find(name);
-        if (it == projs.end() || it->second.chats.empty()) return;
-
         Row ph;
         ph.kind      = Row::Kind::ProjectHeader;
         ph.id        = name;
-        ph.label     = name + "  (" + juce::String((int)it->second.chats.size()) + ")";
+        ph.label     = name + "  (" + juce::String((int)projs[name].chats.size()) + ")";
         ph.indent    = headerIndent;
         ph.collapsed = projCollapsed(name);
         ph.active    = (name == activeProj);
         rows.push_back(ph);
         if (!ph.collapsed)
-            for (auto* chat : it->second.chats)
+            for (auto* chat : projs[name].chats)
                 rows.push_back(makeChatRow(*chat, chatIndent));
     };
 
@@ -6130,8 +6051,7 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
                     {
                         const WsChat* chat = nullptr;
                         for (auto& ch : chats)
-                            if (ch.id == cid && !ch.messages.empty()
-                                && !pinnedChatIds.count(ch.id)
+                            if (ch.id == cid && !ch.messages.empty() && !ch.pinned
                                 && ch.trackName.isEmpty()) { chat = &ch; break; }
                         if (chat) rows.push_back(makeChatRow(*chat, 16));
                     }
@@ -6197,56 +6117,9 @@ void EchoJayEditor::ChatSidebarModel::paintListBoxItem(
     {
         g.setColour(juce::Colour(0xff080A12));
         g.fillRect(0, 0, width, height);
-        int labelX = padX;
-        // A section with a non-empty id (PINNED) is collapsible — draw a triangle.
-        if (row.id.isNotEmpty())
-        {
-            float cx = (float)padX + 4.0f, cy = (float)height * 0.5f;
-            juce::Path tri;
-            if (row.collapsed) tri.addTriangle(cx - 3.0f, cy - 4.0f, cx - 3.0f, cy + 4.0f, cx + 3.5f, cy);
-            else               tri.addTriangle(cx - 4.0f, cy - 3.0f, cx + 4.0f, cy - 3.0f, cx, cy + 3.5f);
-            g.setColour(C::text3);
-            g.fillPath(tri);
-            labelX = padX + 12;
-        }
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
-        g.drawText(row.label, labelX, 0, width - labelX - padX, height,
-                   juce::Justification::centredLeft);
-        return;
-    }
-
-    if (row.kind == Row::Kind::PinnedItem)
-    {
-        g.setColour(row.active ? C::bg4 : C::bg);
-        g.fillRect(0, 0, width, height);
-        g.setColour(C::border);
-        g.drawHorizontalLine(height - 1, 0.f, (float)width);
-
-        // Small type glyph (album / song / chat), accent cyan.
-        const float gx = (float)padX + 2.0f, gy = (float)height * 0.5f;
-        g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.85f));
-        if (row.pinKind == Row::PinKind::Album)
-        {
-            g.drawEllipse(gx, gy - 5.0f, 10.0f, 10.0f, 1.4f);       // vinyl ring
-            g.fillEllipse(gx + 4.0f, gy - 1.0f, 2.0f, 2.0f);        // centre hole
-        }
-        else if (row.pinKind == Row::PinKind::Song)
-        {
-            g.fillEllipse(gx, gy + 1.0f, 5.0f, 4.0f);              // note head
-            g.drawLine(gx + 4.5f, gy + 3.0f, gx + 4.5f, gy - 5.0f, 1.4f); // stem
-        }
-        else // Chat
-        {
-            g.drawRoundedRectangle(gx, gy - 5.0f, 11.0f, 8.0f, 2.0f, 1.3f); // bubble
-            juce::Path tail;
-            tail.addTriangle(gx + 2.5f, gy + 2.5f, gx + 5.5f, gy + 2.5f, gx + 3.0f, gy + 6.0f);
-            g.fillPath(tail);
-        }
-
-        g.setColour(row.active ? C::text : C::text2);
-        g.setFont(juce::Font(juce::FontOptions(11.0f)));
-        g.drawText(row.label, padX + 20, 0, width - padX - 20, height,
+        g.drawText(row.label, padX, 0, width - padX * 2, height,
                    juce::Justification::centredLeft);
         return;
     }
@@ -6379,20 +6252,6 @@ void EchoJayEditor::ChatSidebarModel::listBoxItemClicked(
 {
     if (rowNum < 0 || rowNum >= (int)rows.size()) return;
     const auto& row = rows[(size_t)rowNum];
-
-    // Collapsible section header (PINNED) — toggle via the album-toggle path so
-    // its collapse state rides the same persisted collapsed-set.
-    if (row.kind == Row::Kind::SectionTitle)
-    {
-        if (row.id.isNotEmpty() && onAlbumToggled) onAlbumToggled(row.id);
-        return;
-    }
-
-    if (row.kind == Row::Kind::PinnedItem)
-    {
-        if (onPinnedClicked) onPinnedClicked((int)row.pinKind, row.id);
-        return;
-    }
 
     if (row.kind == Row::Kind::AlbumHeader)
     {
@@ -6859,7 +6718,7 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         if (sidebarModel)
         {
             sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
-                                      workspace.getReviews(), workspace.getPinnedProjects(), collapsedAlbums, currentChatId);
+                                      workspace.getReviews(), collapsedAlbums, currentChatId);
             chatSidebar.updateContent();
         }
 
@@ -6990,7 +6849,7 @@ void EchoJayEditor::createNewChat()
     if (sidebarModel)
     {
         sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
-                                  workspace.getReviews(), workspace.getPinnedProjects(), collapsedAlbums, currentChatId);
+                                  workspace.getReviews(), collapsedAlbums, currentChatId);
         chatSidebar.updateContent();
     }
 
@@ -7029,7 +6888,7 @@ void EchoJayEditor::createNewAlbum()
                     safeThis->workspace.getChats(),
                     safeThis->workspace.getAlbums(),
                     safeThis->workspace.getReviews(),
-                    safeThis->workspace.getPinnedProjects(), safeThis->collapsedAlbums,
+                    safeThis->collapsedAlbums,
                     safeThis->currentChatId);
                 safeThis->chatSidebar.updateContent();
             }
@@ -7061,9 +6920,6 @@ void EchoJayEditor::showMoveProjectToAlbumMenu(const juce::String& projectName)
     menu.addSectionHeader(projectName);
     std::vector<juce::String> actions;
     int itemId = 1;
-    menu.addItem(itemId++, workspace.isProjectPinned(projectName) ? "Unpin" : "Pin");
-    actions.push_back("__pin__");
-    menu.addSeparator();
     menu.addItem(itemId++, "Rename song...");
     actions.push_back("__rename__");
     menu.addSeparator();
@@ -7097,7 +6953,7 @@ void EchoJayEditor::showMoveProjectToAlbumMenu(const juce::String& projectName)
                 {
                     safeThis->sidebarModel->refreshRows(
                         safeThis->workspace.getChats(), safeThis->workspace.getAlbums(),
-                        safeThis->workspace.getReviews(), safeThis->workspace.getPinnedProjects(), safeThis->collapsedAlbums,
+                        safeThis->workspace.getReviews(), safeThis->collapsedAlbums,
                         safeThis->currentChatId);
                     safeThis->chatSidebar.updateContent();
                 }
@@ -7105,13 +6961,7 @@ void EchoJayEditor::showMoveProjectToAlbumMenu(const juce::String& projectName)
                 safeThis->repaint();
             };
 
-            if (action == "__pin__")
-            {
-                safeThis->workspace.setProjectPinned(projectName,
-                    !safeThis->workspace.isProjectPinned(projectName));
-                refresh();
-            }
-            else if (action == "__rename__")
+            if (action == "__rename__")
             {
                 auto* dlg = new juce::AlertWindow("Rename Song", "New song name:",
                                                   juce::MessageBoxIconType::QuestionIcon);
@@ -7225,7 +7075,7 @@ void EchoJayEditor::showMoveToAlbumMenu(const juce::String& chatId)
                         safeThis->workspace.getChats(),
                         safeThis->workspace.getAlbums(),
                         safeThis->workspace.getReviews(),
-                        safeThis->workspace.getPinnedProjects(), safeThis->collapsedAlbums,
+                        safeThis->collapsedAlbums,
                         safeThis->currentChatId);
                     safeThis->chatSidebar.updateContent();
                 }
@@ -7323,18 +7173,15 @@ void EchoJayEditor::showAlbumContextMenu(const juce::String& albumId)
     juce::String currentName;
     for (auto& a : workspace.getAlbums())
         if (a.id == albumId) { currentName = a.name; break; }
-    const bool pinned = workspace.isAlbumPinned(albumId);
 
     juce::PopupMenu menu;
-    menu.addItem(3, pinned ? "Unpin" : "Pin");
-    menu.addSeparator();
     menu.addItem(1, "Rename...");
     menu.addItem(2, "Delete");
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
 
     menu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
-        [safeThis, albumId, currentName, pinned](int result)
+        [safeThis, albumId, currentName](int result)
         {
             if (safeThis == nullptr || result <= 0) return;
 
@@ -7346,7 +7193,7 @@ void EchoJayEditor::showAlbumContextMenu(const juce::String& albumId)
                         safeThis->workspace.getChats(),
                         safeThis->workspace.getAlbums(),
                         safeThis->workspace.getReviews(),
-                        safeThis->workspace.getPinnedProjects(), safeThis->collapsedAlbums,
+                        safeThis->collapsedAlbums,
                         safeThis->currentChatId);
                     safeThis->chatSidebar.updateContent();
                 }
@@ -7354,12 +7201,7 @@ void EchoJayEditor::showAlbumContextMenu(const juce::String& albumId)
                 safeThis->repaint();
             };
 
-            if (result == 3) // Pin / Unpin
-            {
-                safeThis->workspace.setAlbumPinned(albumId, !pinned);
-                doRefreshAndSync();
-            }
-            else if (result == 1) // Rename
+            if (result == 1) // Rename
             {
                 auto* dlg = new juce::AlertWindow("Rename Album", "New name:",
                                                    juce::MessageBoxIconType::QuestionIcon);
@@ -7531,7 +7373,7 @@ juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
     if (sidebarModel)
     {
         sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
-                                  workspace.getReviews(), workspace.getPinnedProjects(), collapsedAlbums, currentChatId);
+                                  workspace.getReviews(), collapsedAlbums, currentChatId);
         chatSidebar.updateContent();
     }
 
@@ -11492,7 +11334,7 @@ void EchoJayEditor::timerCallback()
                 if (sidebarModel)
                 {
                     sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
-                                              workspace.getReviews(), workspace.getPinnedProjects(), collapsedAlbums, currentChatId);
+                                              workspace.getReviews(), collapsedAlbums, currentChatId);
                     chatSidebar.updateContent();
                 }
             }
@@ -12059,7 +11901,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     if (sidebarModel)
     {
         sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
-                                  workspace.getReviews(), workspace.getPinnedProjects(), collapsedAlbums, currentChatId);
+                                  workspace.getReviews(), collapsedAlbums, currentChatId);
         chatSidebar.updateContent();
     }
 
@@ -12251,7 +12093,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
                     safeThis->workspace.getChats(),
                     safeThis->workspace.getAlbums(),
                     safeThis->workspace.getReviews(),
-                    safeThis->workspace.getPinnedProjects(), safeThis->collapsedAlbums,
+                    safeThis->collapsedAlbums,
                     safeThis->currentChatId);
                 safeThis->chatSidebar.updateContent();
             }
@@ -13994,7 +13836,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                         safeThis2->workspace.getChats(),
                         safeThis2->workspace.getAlbums(),
                         safeThis2->workspace.getReviews(),
-                        safeThis2->workspace.getPinnedProjects(), safeThis2->collapsedAlbums,
+                        safeThis2->collapsedAlbums,
                         safeThis2->currentChatId);
                     safeThis2->chatSidebar.updateContent();
                 }

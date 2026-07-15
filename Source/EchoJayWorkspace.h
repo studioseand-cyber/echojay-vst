@@ -40,19 +40,9 @@ struct WsAlbum {
     juce::StringArray chatIds;
     juce::StringArray reviewIds;
     // Projects (songs, = chat.trackName) assigned to this album. Serialised as
-    // the synced "projectNames" key. Additive: legacy albums have none; the
-    // sidebar also derives membership from chatIds' trackNames so existing
-    // albums stay populated.
+    // _projects. Additive: legacy albums have none; the sidebar also derives
+    // membership from chatIds' trackNames so existing albums stay populated.
     juce::StringArray projectNames;
-    bool pinned = false;         // shown in the flat PINNED sidebar group
-    juce::String pinnedAt;       // ISO timestamp — orders the group (newest first)
-};
-
-// A pinned song (project). Songs are not first-class objects (a song is just a
-// chat.trackName), so pinned songs live in a workspace-level synced list.
-struct WsPinnedProject {
-    juce::String name;
-    juce::String pinnedAt;
 };
 
 struct WsMeasurements {
@@ -174,13 +164,6 @@ public:
     void setChatTitle(const juce::String& chatId, const juce::String& title);
     void setChatTrackName(const juce::String& chatId, const juce::String& trackName);
     void setChatPinned(const juce::String& chatId, bool pinned); // stamps pinnedAt
-    void setAlbumPinned(const juce::String& albumId, bool pinned);      // stamps pinnedAt
-    void setProjectPinned(const juce::String& projectName, bool pinned); // stamps pinnedAt
-    bool isAlbumPinned(const juce::String& albumId) const;
-    bool isProjectPinned(const juce::String& projectName) const;
-    juce::String albumPinnedAt(const juce::String& albumId) const;
-    juce::String projectPinnedAt(const juce::String& projectName) const;
-    const std::vector<WsPinnedProject>& getPinnedProjects() const { return pinnedProjects; }
     void incrementChatRevisionCount(const juce::String& chatId);
 
     // Persist a local mutation: POST current state immediately, then schedule
@@ -229,7 +212,6 @@ private:
     std::vector<WsChat>   chats;
     std::vector<WsAlbum>  albums;
     std::vector<WsReview> reviews;
-    std::vector<WsPinnedProject> pinnedProjects;   // synced "pinnedProjects" list
     WsProfile             profile;
 
     LoadState loadState  = LoadState::Idle;
