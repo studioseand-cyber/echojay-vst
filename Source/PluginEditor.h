@@ -1760,11 +1760,7 @@ private:
     struct ChatSidebarModel : public juce::ListBoxModel
     {
         struct Row {
-            enum class Kind { SectionTitle, AlbumHeader, ProjectHeader, ChatRow, ReviewRow,
-                              PinnedItem };
-            // PinnedItem carries what kind of thing is pinned (for the glyph +
-            // click dispatch); id holds albumId / project name / chatId.
-            enum class PinKind { None, Album, Song, Chat };
+            enum class Kind { SectionTitle, AlbumHeader, ProjectHeader, ChatRow, ReviewRow };
             Kind         kind   = Kind::SectionTitle;
             juce::String id;      // AlbumHeader: album id; ProjectHeader: project name
             juce::String label;
@@ -1772,7 +1768,6 @@ private:
             bool         collapsed = false;
             bool         active    = false;
             bool         pinned    = false;   // ChatRow: draws the pin glyph
-            PinKind      pinKind   = PinKind::None;   // PinnedItem only
             int          indent    = 0;
         };
         std::vector<Row> rows;
@@ -1786,9 +1781,6 @@ private:
         std::function<void(const juce::String& chatId)> onChatContextMenu;
         // Right-click on an album header — editor shows rename/delete menu
         std::function<void(const juce::String& albumId)> onAlbumContextMenu;
-        // Click a row in the flat PINNED section — pinKind is Row::PinKind as int
-        // (Album/Song/Chat), id is the album id / project name / chat id.
-        std::function<void(int pinKind, const juce::String& id)> onPinnedClicked;
 
         int  getNumRows() override { return (int)rows.size(); }
         void paintListBoxItem(int rowNum, juce::Graphics& g,
