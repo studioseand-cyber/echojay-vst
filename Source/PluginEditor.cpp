@@ -5909,6 +5909,15 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         for (auto& cid : album.chatIds)
             albumedIds.insert(cid);
 
+    // AUTHORITATIVE pinned set — the ONE decision for where a chat renders. A
+    // chat whose id is in here renders in the PINNED section ONLY and is
+    // excluded from every album/song list below. The chat's trackName / albumId
+    // are never touched, so unpin simply drops it from this set and the same
+    // filter returns it to its original album/song with no second code path.
+    std::set<juce::String> pinnedIds;
+    for (auto& ch : chats)
+        if (ch.pinned) pinnedIds.insert(ch.id);
+
     auto makeChatRow = [&activeChatId](const WsChat& chat, int indent)
     {
         Row r;
@@ -5927,10 +5936,11 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         return r;
     };
 
-    // --- Section: PINNED — a FLAT shortcut list of pinned albums, songs and
-    // chats, most-recently-pinned first. A shortcut only: pinned items ALSO
-    // stay in the tree below (pinning never re-trees). Collapsible; the collapse
-    // state rides the same collapsed-set as albums/songs (persists).
+    // --- Section: PINNED — a FLAT list of pinned albums, songs and chats,
+    // most-recently-pinned first. A pinned CHAT renders here and NOWHERE else
+    // (it is removed from its album/song, decided by pinnedIds above). Pinned
+    // albums/songs are structural containers, so they also stay in the tree as
+    // expand-to shortcuts. Collapsible; collapse state rides the shared set.
     {
         struct PinEntry { Row::PinKind kind; juce::String id, label, pinnedAt; };
         std::vector<PinEntry> pins;
@@ -5947,7 +5957,7 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
             if (existingSongs.count(pp.name))
                 pins.push_back({ Row::PinKind::Song, pp.name, pp.name, pp.pinnedAt });
         for (auto& ch : chats)
-            if (ch.pinned && !ch.messages.empty())
+            if (pinnedIds.count(ch.id) && !ch.messages.empty())
                 pins.push_back({ Row::PinKind::Chat, ch.id,
                                  ch.title.isEmpty() ? "Untitled" : ch.title, ch.pinnedAt });
         std::sort(pins.begin(), pins.end(),
@@ -5986,11 +5996,8 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
     std::vector<const WsChat*> ungrouped;
     for (auto& ch : chats)
     {
-        // A pinned chat renders ONLY in the PINNED section — exclude it here so
-        // it is never listed in its album/song too (one check owns where it
-        // shows; its trackName/albumId membership is untouched, so unpin
-        // restores it in place).
-        if (ch.messages.empty() || ch.pinned) continue;
+        // Pinned chats render in PINNED only — never grouped into a song/album.
+        if (ch.messages.empty() || pinnedIds.count(ch.id)) continue;
         if (ch.trackName.isEmpty()) { ungrouped.push_back(&ch); continue; }
         projs[ch.trackName].chats.push_back(&ch);
     }
@@ -6054,16 +6061,21 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
 
     auto pushProject = [&](const juce::String& name, int headerIndent, int chatIndent)
     {
+        // A song with no visible chats (e.g. its only chat is pinned) must not
+        // leave an empty header/holder row — skip it entirely.
+        auto it = projs.find(name);
+        if (it == projs.end() || it->second.chats.empty()) return;
+
         Row ph;
         ph.kind      = Row::Kind::ProjectHeader;
         ph.id        = name;
-        ph.label     = name + "  (" + juce::String((int)projs[name].chats.size()) + ")";
+        ph.label     = name + "  (" + juce::String((int)it->second.chats.size()) + ")";
         ph.indent    = headerIndent;
         ph.collapsed = projCollapsed(name);
         ph.active    = (name == activeProj);
         rows.push_back(ph);
         if (!ph.collapsed)
-            for (auto* chat : projs[name].chats)
+            for (auto* chat : it->second.chats)
                 rows.push_back(makeChatRow(*chat, chatIndent));
     };
 
@@ -6107,7 +6119,8 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
                     {
                         const WsChat* chat = nullptr;
                         for (auto& ch : chats)
-                            if (ch.id == cid && !ch.messages.empty() && !ch.pinned
+                            if (ch.id == cid && !ch.messages.empty()
+                                && !pinnedIds.count(ch.id)
                                 && ch.trackName.isEmpty()) { chat = &ch; break; }
                         if (chat) rows.push_back(makeChatRow(*chat, 16));
                     }
