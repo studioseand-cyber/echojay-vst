@@ -5986,7 +5986,11 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
     std::vector<const WsChat*> ungrouped;
     for (auto& ch : chats)
     {
-        if (ch.messages.empty()) continue;   // pinned chats stay in the tree too
+        // A pinned chat renders ONLY in the PINNED section — exclude it here so
+        // it is never listed in its album/song too (one check owns where it
+        // shows; its trackName/albumId membership is untouched, so unpin
+        // restores it in place).
+        if (ch.messages.empty() || ch.pinned) continue;
         if (ch.trackName.isEmpty()) { ungrouped.push_back(&ch); continue; }
         projs[ch.trackName].chats.push_back(&ch);
     }
@@ -6103,7 +6107,7 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
                     {
                         const WsChat* chat = nullptr;
                         for (auto& ch : chats)
-                            if (ch.id == cid && !ch.messages.empty()
+                            if (ch.id == cid && !ch.messages.empty() && !ch.pinned
                                 && ch.trackName.isEmpty()) { chat = &ch; break; }
                         if (chat) rows.push_back(makeChatRow(*chat, 16));
                     }
