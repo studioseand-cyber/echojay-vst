@@ -13804,6 +13804,13 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                 for (const auto& li : processorRef.getLinkSlotInfos())
                     if (li.name == sch.name)
                     {
+                        // Placement (same by-name lookup as gain). Makes capture
+                        // reviews placement-aware like the chat levels context:
+                        // Bus = post-fader real contribution; Channel/unset =
+                        // pre-fader (no cross-channel level claims).
+                        const char* pl = li.placement == 1 ? "Bus"
+                                       : li.placement == 2 ? "Channel" : "unset";
+                        mcCtx += juce::String("Placement: ") + pl + "\n";
                         mcCtx += "Link gain: " + (li.gainDb >= 0 ? juce::String("+") : juce::String())
                                + ff2(li.gainDb) + " dB (built-in; user can level-match via the "
                                  "LINK monitor's gain control)\n";
