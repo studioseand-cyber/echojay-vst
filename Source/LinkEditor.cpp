@@ -28,6 +28,11 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     // Name field
     nameField.setText(proc.linkName, juce::dontSendNotification);
     nameField.setFont(juce::Font(juce::FontOptions(13.0f)));
+    // Vertically centre placeholder + entered text (matches the main plugin's
+    // project field): centredLeft centres within (height - topIndent - bottom),
+    // and a zero top indent keeps it from sitting high in the field.
+    nameField.setJustification(juce::Justification::centredLeft);
+    nameField.setIndents(6, 0);
     nameField.setColour(juce::TextEditor::backgroundColourId, kCard);
     nameField.setColour(juce::TextEditor::textColourId, kText);
     nameField.setColour(juce::TextEditor::outlineColourId, kBorder);
