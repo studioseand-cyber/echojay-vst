@@ -708,6 +708,10 @@ private:
     static constexpr int kHeaderH = 40;
 
     juce::TextEditor   nameField;
+    // Rounds the name field's corners to match the main plugin's Project name
+    // box (same shared radius). Applied to nameField only; colours/fill/size
+    // are unchanged (it reads the editor's own colours).
+    std::unique_ptr<juce::LookAndFeel_V4> nameFieldLnF;
     juce::ToggleButton toggleBtn { "Active" };
     juce::Rectangle<float> lightBounds;
 

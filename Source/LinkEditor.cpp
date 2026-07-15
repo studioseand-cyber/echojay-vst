@@ -1,5 +1,6 @@
 #include "LinkEditor.h"
 #include "EchoJayLogo.h"
+#include "EchoJayFieldStyle.h"   // EchoJayChrome::kFieldCorner (shared field radius)
 
 static const juce::Colour kBg     { 0xff0A0C18 };
 static const juce::Colour kCard   { 0xff161B22 };
@@ -7,6 +8,29 @@ static const juce::Colour kBorder { 0xff30363D };
 static const juce::Colour kText   { 0xffE6EDF3 };
 static const juce::Colour kText2  { 0xff8B949E };
 static const juce::Colour kCyan   { 0xff22d3ee };
+
+// Rounds a TextEditor's corners to the shared field radius, matching the main
+// plugin's Project name box. Reads the editor's own colours, so fill and border
+// colour are unchanged — only the corner radius differs from the JUCE default.
+struct RoundFieldLnF : juce::LookAndFeel_V4
+{
+    void fillTextEditorBackground(juce::Graphics& g, int width, int height,
+                                  juce::TextEditor& editor) override
+    {
+        g.setColour(editor.findColour(juce::TextEditor::backgroundColourId));
+        g.fillRoundedRectangle(0.0f, 0.0f, (float)width, (float)height,
+                               EchoJayChrome::kFieldCorner);
+    }
+    void drawTextEditorOutline(juce::Graphics& g, int width, int height,
+                               juce::TextEditor& editor) override
+    {
+        const bool focused = editor.hasKeyboardFocus(true);
+        g.setColour(editor.findColour(focused ? juce::TextEditor::focusedOutlineColourId
+                                              : juce::TextEditor::outlineColourId));
+        auto bounds = juce::Rectangle<float>(0, 0, (float)width, (float)height).reduced(0.5f);
+        g.drawRoundedRectangle(bounds, EchoJayChrome::kFieldCorner, focused ? 1.5f : 1.0f);
+    }
+};
 
 LinkEditor::LinkEditor(LinkProcessor& p)
     : AudioProcessorEditor(&p), proc(p), chainPanel(p)
@@ -37,6 +61,10 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     nameField.setColour(juce::TextEditor::textColourId, kText);
     nameField.setColour(juce::TextEditor::outlineColourId, kBorder);
     nameField.setColour(juce::TextEditor::focusedOutlineColourId, kCyan);
+    // Round the corners to match the main plugin's Project name box (shared
+    // radius). Colours/fill/size are untouched — the LnF reads the field's own.
+    nameFieldLnF = std::make_unique<RoundFieldLnF>();
+    nameField.setLookAndFeel(nameFieldLnF.get());
     nameField.setTextToShowWhenEmpty("Name this link (e.g. Drums)",
                                      kText2.withAlpha(0.6f));
     nameField.onTextChange = [this]
@@ -145,6 +173,7 @@ LinkEditor::LinkEditor(LinkProcessor& p)
 
 LinkEditor::~LinkEditor()
 {
+    nameField.setLookAndFeel(nullptr);   // before nameFieldLnF is destroyed
     stopTimer();
     proc.onChainModelChanged = nullptr;
     proc.onChainAboutToChange = nullptr;

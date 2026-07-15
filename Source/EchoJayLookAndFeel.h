@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "EchoJayLogo.h"
+#include "EchoJayFieldStyle.h"   // EchoJayChrome::kFieldCorner (shared field radius)
 
 namespace EchoJayChrome
 {
@@ -318,15 +319,15 @@ public:
     {
         auto bounds = juce::Rectangle<float>(0, 0, (float)width, (float)height);
         g.setColour(editor.findColour(juce::TextEditor::backgroundColourId));
-        g.fillRoundedRectangle(bounds, 8.0f);
+        g.fillRoundedRectangle(bounds, EchoJayChrome::kFieldCorner);
     }
-    
+
     void drawTextEditorOutline(juce::Graphics& g, int width, int height, juce::TextEditor& editor) override
     {
         auto bounds = juce::Rectangle<float>(0, 0, (float)width, (float)height);
         bool focused = editor.hasKeyboardFocus(true);
         g.setColour(focused ? Colours::blue.withAlpha(0.5f) : Colours::border2);
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 8.0f, focused ? 1.5f : 1.0f);
+        g.drawRoundedRectangle(bounds.reduced(0.5f), EchoJayChrome::kFieldCorner, focused ? 1.5f : 1.0f);
     }
     
     // ============ ToggleButton ============
