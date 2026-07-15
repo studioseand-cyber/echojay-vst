@@ -246,6 +246,54 @@ void EchoJayWorkspace::setChatPinned(const juce::String& chatId, bool pinned)
         }
 }
 
+void EchoJayWorkspace::setAlbumPinned(const juce::String& albumId, bool pinned)
+{
+    for (auto& a : albums)
+        if (a.id == albumId)
+        {
+            a.pinned   = pinned;
+            a.pinnedAt = pinned ? juce::Time::getCurrentTime().toISO8601(true)
+                                : juce::String();
+            return;
+        }
+}
+
+void EchoJayWorkspace::setProjectPinned(const juce::String& projectName, bool pinned)
+{
+    if (projectName.isEmpty()) return;
+    // Remove any existing entry first (unpin, or re-pin to refresh pinnedAt).
+    pinnedProjects.erase(std::remove_if(pinnedProjects.begin(), pinnedProjects.end(),
+        [&](const WsPinnedProject& p) { return p.name == projectName; }),
+        pinnedProjects.end());
+    if (pinned)
+        pinnedProjects.push_back({ projectName,
+                                   juce::Time::getCurrentTime().toISO8601(true) });
+}
+
+bool EchoJayWorkspace::isAlbumPinned(const juce::String& albumId) const
+{
+    for (auto& a : albums) if (a.id == albumId) return a.pinned;
+    return false;
+}
+
+bool EchoJayWorkspace::isProjectPinned(const juce::String& projectName) const
+{
+    for (auto& p : pinnedProjects) if (p.name == projectName) return true;
+    return false;
+}
+
+juce::String EchoJayWorkspace::albumPinnedAt(const juce::String& albumId) const
+{
+    for (auto& a : albums) if (a.id == albumId) return a.pinnedAt;
+    return {};
+}
+
+juce::String EchoJayWorkspace::projectPinnedAt(const juce::String& projectName) const
+{
+    for (auto& p : pinnedProjects) if (p.name == projectName) return p.pinnedAt;
+    return {};
+}
+
 void EchoJayWorkspace::requestMutationSync()
 {
     if (!api.isLoggedIn()) return;
@@ -356,6 +404,18 @@ void EchoJayWorkspace::doLoad()
                     }
                     albums.push_back(a);
                 }
+        }
+
+        // Pinned projects (songs) — synced list; preserve local if server omits.
+        {
+            std::vector<WsPinnedProject> serverPins;
+            if (auto* arr = root->getProperty("pinnedProjects").getArray())
+                for (auto& v : *arr)
+                    if (auto* o = v.getDynamicObject())
+                        serverPins.push_back({ o->getProperty("name").toString(),
+                                               o->getProperty("pinnedAt").toString() });
+            if (!serverPins.empty() || root->hasProperty("pinnedProjects"))
+                pinnedProjects = std::move(serverPins);
         }
 
         // Parse reviews — merge: keep locally-added reviews that the server
@@ -498,6 +558,19 @@ void EchoJayWorkspace::doSync()
                 }
         }
 
+        // Pinned projects (songs) — synced list; preserve local if server omits.
+        {
+            std::vector<WsPinnedProject> serverPins;
+            if (auto* arr = root->getProperty("pinnedProjects").getArray())
+                for (auto& v : *arr)
+                    if (auto* o = v.getDynamicObject())
+                        serverPins.push_back({ o->getProperty("name").toString(),
+                                               o->getProperty("pinnedAt").toString() });
+            if (!serverPins.empty() || root->hasProperty("pinnedProjects"))
+                pinnedProjects = std::move(serverPins);
+            // else: server didn't send the field at all — keep local.
+        }
+
         // Merge reviews — same as doLoad: preserve local-only entries + in-session spectrum
         {
             juce::StringArray serverIds;
@@ -625,6 +698,9 @@ WsAlbum EchoJayWorkspace::parseAlbum(const juce::var& v)
         else if (auto* arr = obj->getProperty("_projects").getArray())
             for (auto& x : *arr)
                 a.projectNames.add(x.toString());
+
+        a.pinned   = (bool)obj->getProperty("pinned");
+        a.pinnedAt = obj->getProperty("pinnedAt").toString();
     }
     return a;
 }
@@ -794,6 +870,10 @@ juce::var EchoJayWorkspace::albumToVar(const WsAlbum& a)
     // lost (collapse/tab/reopen). Same discipline as chat "pinned".
     if (!projs.isEmpty())
         obj->setProperty("projectNames", juce::var(projs));
+    // Pin state — plain keys so the POST keeps them and they reach the web app.
+    obj->setProperty("pinned",   a.pinned);
+    if (a.pinnedAt.isNotEmpty())
+        obj->setProperty("pinnedAt", a.pinnedAt);
     return juce::var(obj);
 }
 
@@ -927,6 +1007,17 @@ juce::String EchoJayWorkspace::buildPostBody() const
         revArr.add(v);
     }
     root->setProperty("reviews", juce::var(revArr));
+
+    // --- pinned projects (songs) — synced list (plain keys) ---
+    juce::Array<juce::var> pinArr;
+    for (auto& p : pinnedProjects)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty("name",     p.name);
+        o->setProperty("pinnedAt", p.pinnedAt);
+        pinArr.add(juce::var(o));
+    }
+    root->setProperty("pinnedProjects", juce::var(pinArr));
 
     // --- profile ---
     auto pv = profileToVar(profile);
