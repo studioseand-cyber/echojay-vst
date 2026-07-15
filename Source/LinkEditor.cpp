@@ -283,19 +283,22 @@ void LinkEditor::paint(juce::Graphics& g)
         g.drawText(summary, 16, kHeaderH + 8, getWidth() - 32, 18,
                    juce::Justification::centredLeft);
 
-        juce::String status = chainPanel.statusText;
+        juce::String status = chainPanel.statusText;   // incl. pop-out messages
         if (!proc.chainLayoutSupported())
             status += (status.isEmpty() ? "" : "  |  ")
                     + juce::String("unsupported channel layout (chain bypassed)");
         if (auto note = proc.getMonoFoldNote(); note.isNotEmpty())
             status += (status.isEmpty() ? "" : "  |  ") + note;
-        if (status.isEmpty())
-            status = proc.linkOn.load() ? "Active - feeding EchoJay"
-                                        : "Inactive - capture/meter role dormant";
-        g.setColour(kText2);
-        g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        g.drawText(status, 16, kHeaderH + 30, getWidth() - 32, 14,
-                   juce::Justification::centredLeft);
+        // Only draw when there's a real status (pop-out / unsupported / mono
+        // note). The old Active/Inactive role line is removed; when empty the
+        // slot is skipped entirely so nothing leaves a gap under "No chain".
+        if (status.isNotEmpty())
+        {
+            g.setColour(kText2);
+            g.setFont(juce::Font(juce::FontOptions(10.0f)));
+            g.drawText(status, 16, kHeaderH + 30, getWidth() - 32, 14,
+                       juce::Justification::centredLeft);
+        }
     }
 
     // ---- Full-view empty-state copy: state plainly what Link measures ----
