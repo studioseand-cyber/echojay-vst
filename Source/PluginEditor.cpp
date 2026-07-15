@@ -5909,14 +5909,18 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         for (auto& cid : album.chatIds)
             albumedIds.insert(cid);
 
-    // AUTHORITATIVE pinned set — the ONE decision for where a chat renders. A
-    // chat whose id is in here renders in the PINNED section ONLY and is
-    // excluded from every album/song list below. The chat's trackName / albumId
-    // are never touched, so unpin simply drops it from this set and the same
-    // filter returns it to its original album/song with no second code path.
-    std::set<juce::String> pinnedIds;
-    for (auto& ch : chats)
-        if (ch.pinned) pinnedIds.insert(ch.id);
+    // AUTHORITATIVE pinned sets — the ONE decision, applied at EVERY level, for
+    // where an item renders. Any album / song / chat whose id is in here renders
+    // in the PINNED section ONLY and is excluded from the ALBUMS & SONGS tree.
+    // Real parent membership (trackName / albumId / projectNames) is never
+    // touched, so unpin just drops the id and the same filter returns the item
+    // to its original home with no second code path.
+    std::set<juce::String> pinnedChatIds;    // WsChat.pinned
+    std::set<juce::String> pinnedAlbumIds;   // WsAlbum.pinned
+    std::set<juce::String> pinnedSongs;      // pinnedProjects (by trackName)
+    for (auto& ch : chats)  if (ch.pinned) pinnedChatIds.insert(ch.id);
+    for (auto& a  : albums) if (a.pinned)  pinnedAlbumIds.insert(a.id);
+    for (auto& p  : pinnedProjects)        pinnedSongs.insert(p.name);
 
     auto makeChatRow = [&activeChatId](const WsChat& chat, int indent)
     {
@@ -5937,10 +5941,10 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
     };
 
     // --- Section: PINNED — a FLAT list of pinned albums, songs and chats,
-    // most-recently-pinned first. A pinned CHAT renders here and NOWHERE else
-    // (it is removed from its album/song, decided by pinnedIds above). Pinned
-    // albums/songs are structural containers, so they also stay in the tree as
-    // expand-to shortcuts. Collapsible; collapse state rides the shared set.
+    // most-recently-pinned first. EVERY pinned item (album, song OR chat)
+    // renders here and NOWHERE else: the pinned sets above remove it from the
+    // ALBUMS & SONGS tree at its level. Collapsible; collapse state rides the
+    // shared collapsed-set.
     {
         struct PinEntry { Row::PinKind kind; juce::String id, label, pinnedAt; };
         std::vector<PinEntry> pins;
@@ -5957,7 +5961,7 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
             if (existingSongs.count(pp.name))
                 pins.push_back({ Row::PinKind::Song, pp.name, pp.name, pp.pinnedAt });
         for (auto& ch : chats)
-            if (pinnedIds.count(ch.id) && !ch.messages.empty())
+            if (pinnedChatIds.count(ch.id) && !ch.messages.empty())
                 pins.push_back({ Row::PinKind::Chat, ch.id,
                                  ch.title.isEmpty() ? "Untitled" : ch.title, ch.pinnedAt });
         std::sort(pins.begin(), pins.end(),
@@ -5996,8 +6000,12 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
     std::vector<const WsChat*> ungrouped;
     for (auto& ch : chats)
     {
-        // Pinned chats render in PINNED only — never grouped into a song/album.
-        if (ch.messages.empty() || pinnedIds.count(ch.id)) continue;
+        // Exclude anything pinned from the tree: a pinned chat, and every chat
+        // of a pinned SONG (the song moves to PINNED whole, so its chats go with
+        // it and don't render loose here).
+        if (ch.messages.empty()
+            || pinnedChatIds.count(ch.id)
+            || pinnedSongs.count(ch.trackName)) continue;
         if (ch.trackName.isEmpty()) { ungrouped.push_back(&ch); continue; }
         projs[ch.trackName].chats.push_back(&ch);
     }
@@ -6047,12 +6055,15 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         return r;
     };
 
-    // 5. Top level: albums (always shown, they're user-created drop targets)
-    //    + album-less projects, sorted by recency (newest-active floats up).
+    // 5. Top level: albums (drop targets) + album-less projects, sorted by
+    //    recency (newest-active floats up). A PINNED album moves to the PINNED
+    //    section whole, so it is excluded here (and its songs, which map to it,
+    //    are not album-less, so they don't leak to the top level either).
     struct TopEntry { bool isAlbum; juce::String key; juce::String recent; };
     std::vector<TopEntry> top;
     for (auto& album : albums)
-        top.push_back({ true, album.id, albumRecent(album.id) });
+        if (!pinnedAlbumIds.count(album.id))
+            top.push_back({ true, album.id, albumRecent(album.id) });
     for (auto& kv : projs)
         if (projAlbum.find(kv.first) == projAlbum.end())
             top.push_back({ false, kv.first, kv.second.recent });
@@ -6120,7 +6131,7 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
                         const WsChat* chat = nullptr;
                         for (auto& ch : chats)
                             if (ch.id == cid && !ch.messages.empty()
-                                && !pinnedIds.count(ch.id)
+                                && !pinnedChatIds.count(ch.id)
                                 && ch.trackName.isEmpty()) { chat = &ch; break; }
                         if (chat) rows.push_back(makeChatRow(*chat, 16));
                     }
