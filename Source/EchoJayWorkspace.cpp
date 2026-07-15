@@ -61,6 +61,9 @@ void EchoJayWorkspace::assignProjectToAlbum(const juce::String& projectName,
             {
                 if (!a.projectNames.contains(projectName))
                     a.projectNames.add(projectName);
+                ejTeardownLog("[Workspace] assignProjectToAlbum \"" + projectName
+                    + "\" -> album " + a.id + " projectNames=["
+                    + a.projectNames.joinIntoString(", ") + "]");
                 break;
             }
 }
@@ -335,11 +338,25 @@ void EchoJayWorkspace::doLoad()
             chats = std::move(merged);
         }
 
-        // Parse albums
-        albums.clear();
-        if (auto* arr = root->getProperty("albums").getArray())
-            for (auto& v : *arr)
-                albums.push_back(parseAlbum(v));
+        // Parse albums — preserve local project→album membership by id if the
+        // server omits it, so a move made before this load isn't wiped.
+        {
+            std::map<juce::String, juce::StringArray> localProjs;
+            for (auto& la : albums)
+                if (!la.projectNames.isEmpty()) localProjs[la.id] = la.projectNames;
+            albums.clear();
+            if (auto* arr = root->getProperty("albums").getArray())
+                for (auto& v : *arr)
+                {
+                    auto a = parseAlbum(v);
+                    if (a.projectNames.isEmpty())
+                    {
+                        auto it = localProjs.find(a.id);
+                        if (it != localProjs.end()) a.projectNames = it->second;
+                    }
+                    albums.push_back(a);
+                }
+        }
 
         // Parse reviews — merge: keep locally-added reviews that the server
         // hasn't confirmed yet (avoids race with requestMutationSync).
@@ -457,10 +474,29 @@ void EchoJayWorkspace::doSync()
             chats = std::move(merged);
         }
 
-        albums.clear();
-        if (auto* arr = root->getProperty("albums").getArray())
-            for (auto& v : *arr)
-                albums.push_back(parseAlbum(v));
+        // Preserve local project→album membership by album id if the server
+        // omits it (e.g. a client that strips projectNames), so an in-flight
+        // "Move to album" is never wiped by the sync GET that follows its POST.
+        {
+            std::map<juce::String, juce::StringArray> localProjs;
+            for (auto& la : albums)
+                if (!la.projectNames.isEmpty()) localProjs[la.id] = la.projectNames;
+            albums.clear();
+            if (auto* arr = root->getProperty("albums").getArray())
+                for (auto& v : *arr)
+                {
+                    auto a = parseAlbum(v);
+                    if (a.projectNames.isEmpty())
+                    {
+                        auto it = localProjs.find(a.id);
+                        if (it != localProjs.end()) a.projectNames = it->second;
+                    }
+                    if (!a.projectNames.isEmpty())
+                        ejTeardownLog("[Workspace] sync album " + a.id
+                            + " projectNames=[" + a.projectNames.joinIntoString(", ") + "]");
+                    albums.push_back(a);
+                }
+        }
 
         // Merge reviews — same as doLoad: preserve local-only entries + in-session spectrum
         {
@@ -580,7 +616,13 @@ WsAlbum EchoJayWorkspace::parseAlbum(const juce::var& v)
             for (auto& x : *arr)
                 a.reviewIds.add(x.toString());
 
-        if (auto* arr = obj->getProperty("_projects").getArray())
+        // Synced key first; fall back to the legacy underscore key so pre-fix
+        // data still reads. (Underscore data only exists in old local state,
+        // since it was always stripped before the server ever saw it.)
+        if (auto* arr = obj->getProperty("projectNames").getArray())
+            for (auto& x : *arr)
+                a.projectNames.add(x.toString());
+        else if (auto* arr = obj->getProperty("_projects").getArray())
             for (auto& x : *arr)
                 a.projectNames.add(x.toString());
     }
@@ -746,8 +788,12 @@ juce::var EchoJayWorkspace::albumToVar(const WsAlbum& a)
     for (auto& x : a.projectNames) projs.add(x);
     obj->setProperty("chatIds",   juce::var(cids));
     obj->setProperty("reviewIds", juce::var(rids));
+    // Project→album membership. MUST be a plain (non-underscore) key so the
+    // POST's stripUnderscoreKeys does NOT drop it — otherwise the server never
+    // stores it, the next sync GET rebuilds albums without it, and the move is
+    // lost (collapse/tab/reopen). Same discipline as chat "pinned".
     if (!projs.isEmpty())
-        obj->setProperty("_projects", juce::var(projs));
+        obj->setProperty("projectNames", juce::var(projs));
     return juce::var(obj);
 }
 
