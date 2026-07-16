@@ -148,8 +148,13 @@ endif()
 
 set(LINK_VERSION "0.8.4")
 
-# Link only ships AU + VST3 (no AAX, no Standalone for now)
-set(LINK_FORMATS AU VST3)
+# Link ships AU + VST3 + AAX (AAX only when the SDK is present, matching the
+# main plugin's gate). No Standalone.
+if(HAS_AAX)
+    set(LINK_FORMATS AU VST3 AAX)
+else()
+    set(LINK_FORMATS AU VST3)
+endif()
 
 juce_add_plugin(EchoJayLink
     COMPANY_NAME "EchoJay"
