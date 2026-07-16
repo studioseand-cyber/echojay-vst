@@ -40,6 +40,7 @@ AU_PATH="";        [ -d "${MAIN_ART}/AU/${PLUGIN_NAME}.component" ]   && AU_PATH
 AAX_PATH="";       [ -d "${MAIN_ART}/AAX/${PLUGIN_NAME}.aaxplugin" ]  && AAX_PATH="${MAIN_ART}/AAX/${PLUGIN_NAME}.aaxplugin"
 LINK_VST3_PATH=""; [ -d "${LINK_ART}/VST3/${LINK_NAME}.vst3" ]        && LINK_VST3_PATH="${LINK_ART}/VST3/${LINK_NAME}.vst3"
 LINK_AU_PATH="";   [ -d "${LINK_ART}/AU/${LINK_NAME}.component" ]     && LINK_AU_PATH="${LINK_ART}/AU/${LINK_NAME}.component"
+LINK_AAX_PATH="";  [ -d "${LINK_ART}/AAX/${LINK_NAME}.aaxplugin" ]    && LINK_AAX_PATH="${LINK_ART}/AAX/${LINK_NAME}.aaxplugin"
 
 if [ -z "$VST3_PATH" ] && [ -z "$AU_PATH" ] && [ -z "$AAX_PATH" ]; then
     echo "  ERROR: No built EchoJay V2 plugins found."
@@ -57,6 +58,7 @@ echo "  V2 AU:     ${AU_PATH:-not found}"
 echo "  V2 AAX:    ${AAX_PATH:-not found}"
 echo "  Link VST3: ${LINK_VST3_PATH:-not found}"
 echo "  Link AU:   ${LINK_AU_PATH:-not found}"
+echo "  Link AAX:  ${LINK_AAX_PATH:-not found}"
 echo ""
 
 # --- Create installer resources (always overwrite to keep in sync) ---
@@ -75,7 +77,7 @@ This installer will set up EchoJay V2 on your system. The following components w
 <li><strong>EchoJay V2 VST3</strong> - for Ableton, FL Studio, Reaper, Studio One, Cubase, Bitwig</li>
 <li><strong>EchoJay V2 Audio Unit (AU)</strong> - for Logic Pro, GarageBand, and AU-compatible hosts</li>
 <li><strong>EchoJay V2 AAX</strong> - for Pro Tools</li>
-<li><strong>EchoJay Link VST3 and AU</strong> - the per-channel companion plugin</li>
+<li><strong>EchoJay Link VST3, AU, and AAX</strong> - the per-channel companion plugin</li>
 </ul>
 <p style="font-size: 14px; line-height: 1.6; color: #424245;">
 Click <strong>Continue</strong> to proceed.
@@ -144,7 +146,7 @@ echo "  Created: installer/conclusion.html"
 # --- Clean previous build ---
 rm -rf "$PKG_DIR"
 mkdir -p "${PKG_DIR}/vst3_payload" "${PKG_DIR}/au_payload" "${PKG_DIR}/aax_payload" \
-         "${PKG_DIR}/link_vst3_payload" "${PKG_DIR}/link_au_payload" \
+         "${PKG_DIR}/link_vst3_payload" "${PKG_DIR}/link_au_payload" "${PKG_DIR}/link_aax_payload" \
          "${PKG_DIR}/scripts" "${PKG_DIR}/aax-scripts" "${PKG_DIR}/components"
 
 # --- Stage payloads with correct install paths ---
@@ -178,6 +180,12 @@ if [ -n "$LINK_AU_PATH" ]; then
     mkdir -p "${PKG_DIR}/link_au_payload/Library/Audio/Plug-Ins/Components"
     cp -R "$LINK_AU_PATH" "${PKG_DIR}/link_au_payload/Library/Audio/Plug-Ins/Components/"
     echo "  Staged Link AU payload"
+fi
+
+if [ -n "$LINK_AAX_PATH" ]; then
+    mkdir -p "${PKG_DIR}/link_aax_payload/Library/Application Support/Avid/Audio/Plug-Ins"
+    cp -R "$LINK_AAX_PATH" "${PKG_DIR}/link_aax_payload/Library/Application Support/Avid/Audio/Plug-Ins/"
+    echo "  Staged Link AAX payload"
 fi
 
 # --- Post-install script to reset AU cache ---
@@ -217,11 +225,14 @@ for u in $USERS; do
     fi
 done
 
-# Touch the plugin bundle so Pro Tools detects it as freshly modified
-PLUGIN_BUNDLE="/Library/Application Support/Avid/Audio/Plug-Ins/EchoJay V2.aaxplugin"
-if [ -d "$PLUGIN_BUNDLE" ]; then
-    touch "$PLUGIN_BUNDLE"
-fi
+# Touch the plugin bundles so Pro Tools detects them as freshly modified
+for PLUGIN_BUNDLE in \
+    "/Library/Application Support/Avid/Audio/Plug-Ins/EchoJay V2.aaxplugin" \
+    "/Library/Application Support/Avid/Audio/Plug-Ins/EchoJay Link.aaxplugin"; do
+    if [ -d "$PLUGIN_BUNDLE" ]; then
+        touch "$PLUGIN_BUNDLE"
+    fi
+done
 
 exit 0
 AAXPOSTINSTALL
@@ -283,6 +294,18 @@ if [ -n "$LINK_AU_PATH" ]; then
         --scripts "${PKG_DIR}/scripts" \
         "${PKG_DIR}/components/EchoJayLink-AU.pkg"
     echo "  Done: Link AU component"
+fi
+
+# Link AAX installs system-wide (needs admin for /Library/)
+if [ -n "$LINK_AAX_PATH" ]; then
+    pkgbuild \
+        --root "${PKG_DIR}/link_aax_payload" \
+        --install-location "/" \
+        --identifier "${LINK_IDENTIFIER}.aax" \
+        --version "$LINK_VERSION" \
+        --scripts "${PKG_DIR}/aax-scripts" \
+        "${PKG_DIR}/components/EchoJayLink-AAX.pkg"
+    echo "  Done: Link AAX component"
 fi
 
 # --- Build distribution XML ---
@@ -354,6 +377,19 @@ if [ -n "$LINK_AU_PATH" ]; then
     </choice>"
     PKG_REFS="${PKG_REFS}
     <pkg-ref id=\"${LINK_IDENTIFIER}.au\" version=\"${LINK_VERSION}\">EchoJayLink-AU.pkg</pkg-ref>"
+fi
+
+if [ -n "$LINK_AAX_PATH" ]; then
+    CHOICES_OUTLINE="${CHOICES_OUTLINE}        <line choice=\"linkaax\"/>\n"
+    CHOICES="${CHOICES}
+    <choice id=\"linkaax\"
+            title=\"EchoJay Link AAX (Pro Tools)\"
+            description=\"The per-channel companion plugin for Avid Pro Tools. Requires admin password during installation.\"
+            selected=\"true\">
+        <pkg-ref id=\"${LINK_IDENTIFIER}.aax\"/>
+    </choice>"
+    PKG_REFS="${PKG_REFS}
+    <pkg-ref id=\"${LINK_IDENTIFIER}.aax\" version=\"${LINK_VERSION}\">EchoJayLink-AAX.pkg</pkg-ref>"
 fi
 
 cat > "${PKG_DIR}/distribution.xml" << DISTXML
