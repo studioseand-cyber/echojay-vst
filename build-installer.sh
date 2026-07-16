@@ -81,7 +81,7 @@ This installer will set up EchoJay V2 on your system. The following components w
 Click <strong>Continue</strong> to proceed.
 </p>
 <p style="font-size: 12px; color: #86868b; margin-top: 30px;">
-EchoJay V2 | echojay.ai
+EchoJay V2 v2.23.0 | echojay.ai
 </p>
 </body>
 </html>
