@@ -3112,7 +3112,7 @@ void EchoJayEditor::layoutPluginReview()
         reviewOverlay.hintText = filtering
             ? ("Showing " + juce::String(reviewChecklist->getMatchCount()) + " of "
                + juce::String(reviewChecklist->getTotalCount()) + " plugins")
-            : (juce::String(reviewChecklist->getTotalCount()) + " plugins — tap a section to expand");
+            : (juce::String(reviewChecklist->getTotalCount()) + " plugins, tap a section to expand");
     }
 
     // List viewport: below search (+ hint), above the button row.
@@ -13016,7 +13016,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                     status += " (" + skipped->joinIntoString(", ") + " failed)";
                 if (!droppedDisabled.isEmpty())
                     status += " (skipped: " + droppedDisabled.joinIntoString(", ")
-                            + " — disabled in Settings)";
+                            + ", disabled in Settings)";
                 safeThis->chainStatusLabel.setText(status, juce::dontSendNotification);
                 // Debug: show full raw chain JSON so we can verify settings fields
                 safeThis->chainDebugJsonBox.setText(chainJson, false);

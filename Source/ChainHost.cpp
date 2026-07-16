@@ -828,7 +828,7 @@ static void pollVST3Validation(
     if (ticksLeft <= 0)
     {
         host->addToBlacklist(desc.fileOrIdentifier);
-        cb("Timed out loading \"" + desc.name + "\" — added to skip list");
+        cb("Timed out loading \"" + desc.name + "\": added to skip list");
         return;
     }
 

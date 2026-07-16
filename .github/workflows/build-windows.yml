@@ -26,9 +26,6 @@ jobs:
       - name: Build VST3
         run: cmake --build build --config Release --target EchoJay_VST3
 
-      - name: Build Standalone
-        run: cmake --build build --config Release --target EchoJay_Standalone
-
       - name: List artifacts
         run: dir build\EchoJay_artefacts\Release /s
         shell: cmd
@@ -36,9 +33,7 @@ jobs:
       - name: Stage installer files
         run: |
           mkdir installer-src\VST3
-          mkdir installer-src\Standalone
           xcopy /E /I "build\EchoJay_artefacts\Release\VST3\EchoJay.vst3" "installer-src\VST3\EchoJay.vst3\"
-          copy "build\EchoJay_artefacts\Release\Standalone\EchoJay.exe" "installer-src\Standalone\"
         shell: cmd
 
       - name: Create Inno Setup script
@@ -62,14 +57,9 @@ jobs:
 
           [Files]
           Source: "installer-src\VST3\EchoJay.vst3\*"; DestDir: "{commoncf}\VST3\EchoJay.vst3"; Flags: ignoreversion recursesubdirs createallsubdirs
-          Source: "installer-src\Standalone\EchoJay.exe"; DestDir: "{app}"; Flags: ignoreversion
 
           [Icons]
-          Name: "{group}\EchoJay"; Filename: "{app}\EchoJay.exe"
           Name: "{group}\Uninstall EchoJay"; Filename: "{uninstallexe}"
-
-          [Run]
-          Filename: "{app}\EchoJay.exe"; Description: "Launch EchoJay"; Flags: nowait postinstall skipifsilent
           "@ | Out-File -FilePath installer.iss -Encoding ASCII
         shell: pwsh
 

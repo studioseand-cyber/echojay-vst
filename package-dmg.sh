@@ -7,12 +7,12 @@
 
 set -e
 
-PLUGIN_NAME="EchoJay"
-VERSION="1.6.2"
+PLUGIN_NAME="EchoJay-V2"
+VERSION="2.23.0"
 DMG_OUTPUT="${PLUGIN_NAME}-v${VERSION}.dmg"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Find the signed pkg
+# Find the signed pkg (names match build-installer.sh output + productsign step)
 PKG_PATH="${SCRIPT_DIR}/${PLUGIN_NAME}-v${VERSION}-Installer-Signed.pkg"
 if [ ! -f "$PKG_PATH" ]; then
     PKG_PATH="${SCRIPT_DIR}/${PLUGIN_NAME}-v${VERSION}-Installer.pkg"
@@ -30,7 +30,7 @@ echo "Using: $(basename "$PKG_PATH")"
 STAGING_DIR="/tmp/${PLUGIN_NAME}_dmg_staging"
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
-cp "$PKG_PATH" "$STAGING_DIR/Install EchoJay.pkg"
+cp "$PKG_PATH" "$STAGING_DIR/Install EchoJay V2.pkg"
 
 rm -f "$DMG_OUTPUT"
 
@@ -53,7 +53,7 @@ if [ -f "$DMG_OUTPUT" ]; then
     echo "  Size: $(du -h "$DMG_OUTPUT" | cut -f1)"
     echo ""
     echo "  User opens DMG → double-clicks"
-    echo "  'Install EchoJay.pkg' → follows installer."
+    echo "  'Install EchoJay V2.pkg' → follows installer."
     echo ""
 else
     echo "ERROR: DMG creation failed."

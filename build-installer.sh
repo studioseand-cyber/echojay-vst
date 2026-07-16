@@ -1,96 +1,94 @@
 #!/bin/bash
 # ============================================================================
-# EchoJay Professional Installer Builder
-# Creates a .pkg installer with welcome, license, and component selection
+# EchoJay V2 Professional Installer Builder
+# Creates a .pkg installer with welcome, license, and component selection.
+# Packages BOTH plugins: EchoJay V2 (VST3/AU/AAX) and EchoJay Link (VST3/AU).
 # Uses pkgbuild + productbuild (built into Xcode command line tools)
 #
 # Usage: ./build-installer.sh
 # Run AFTER: cmake --build build --config Release
+# Then: productsign + notarytool + stapler (see RELEASE.md)
 # ============================================================================
 
 set -e
 
-PLUGIN_NAME="EchoJay"
-IDENTIFIER="com.echojay.plugin"
-VERSION="1.6.2"
-BUILD_DIR="build-release"
+PLUGIN_NAME="EchoJay V2"
+LINK_NAME="EchoJay Link"
+IDENTIFIER="com.echojay.plugin.v2"
+LINK_IDENTIFIER="com.echojay.link"
+VERSION="2.23.0"
+LINK_VERSION="0.8.4"
+BUILD_DIR="build"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PKG_DIR="/tmp/${PLUGIN_NAME}_pkg_build"
+PKG_DIR="/tmp/EchoJayV2_pkg_build"
 RESOURCES_DIR="${SCRIPT_DIR}/installer"
-OUTPUT="${SCRIPT_DIR}/${PLUGIN_NAME}-v${VERSION}-Installer.pkg"
+OUTPUT="${SCRIPT_DIR}/EchoJay-V2-v${VERSION}-Installer.pkg"
 
 echo ""
 echo "  ========================================"
 echo "   Building ${PLUGIN_NAME} v${VERSION} Installer"
+echo "   (includes ${LINK_NAME} v${LINK_VERSION})"
 echo "  ========================================"
 echo ""
 
-# --- Find built plugins ---
-VST3_PATH=""
-AU_PATH=""
-AAX_PATH=""
+# --- Find built plugins (paths verified against the actual build tree) ---
+MAIN_ART="${BUILD_DIR}/EchoJay_artefacts/Release"
+LINK_ART="${BUILD_DIR}/EchoJayLink_artefacts/Release"
 
-for d in "${BUILD_DIR}/${PLUGIN_NAME}_artefacts/Release/VST3" \
-         "${BUILD_DIR}/${PLUGIN_NAME}_artefacts/VST3" \
-         "${BUILD_DIR}/EchoJay_artefacts/Release/VST3" \
-         "${BUILD_DIR}/EchoJay_artefacts/VST3"; do
-    [ -d "${d}/${PLUGIN_NAME}.vst3" ] && VST3_PATH="${d}/${PLUGIN_NAME}.vst3" && break
-done
-
-for d in "${BUILD_DIR}/${PLUGIN_NAME}_artefacts/Release/AU" \
-         "${BUILD_DIR}/${PLUGIN_NAME}_artefacts/AU" \
-         "${BUILD_DIR}/EchoJay_artefacts/Release/AU" \
-         "${BUILD_DIR}/EchoJay_artefacts/AU"; do
-    [ -d "${d}/${PLUGIN_NAME}.component" ] && AU_PATH="${d}/${PLUGIN_NAME}.component" && break
-done
-
-for d in "${BUILD_DIR}/${PLUGIN_NAME}_artefacts/Release/AAX" \
-         "${BUILD_DIR}/${PLUGIN_NAME}_artefacts/AAX" \
-         "${BUILD_DIR}/EchoJay_artefacts/Release/AAX" \
-         "${BUILD_DIR}/EchoJay_artefacts/AAX"; do
-    [ -d "${d}/${PLUGIN_NAME}.aaxplugin" ] && AAX_PATH="${d}/${PLUGIN_NAME}.aaxplugin" && break
-done
+VST3_PATH="";      [ -d "${MAIN_ART}/VST3/${PLUGIN_NAME}.vst3" ]      && VST3_PATH="${MAIN_ART}/VST3/${PLUGIN_NAME}.vst3"
+AU_PATH="";        [ -d "${MAIN_ART}/AU/${PLUGIN_NAME}.component" ]   && AU_PATH="${MAIN_ART}/AU/${PLUGIN_NAME}.component"
+AAX_PATH="";       [ -d "${MAIN_ART}/AAX/${PLUGIN_NAME}.aaxplugin" ]  && AAX_PATH="${MAIN_ART}/AAX/${PLUGIN_NAME}.aaxplugin"
+LINK_VST3_PATH=""; [ -d "${LINK_ART}/VST3/${LINK_NAME}.vst3" ]        && LINK_VST3_PATH="${LINK_ART}/VST3/${LINK_NAME}.vst3"
+LINK_AU_PATH="";   [ -d "${LINK_ART}/AU/${LINK_NAME}.component" ]     && LINK_AU_PATH="${LINK_ART}/AU/${LINK_NAME}.component"
 
 if [ -z "$VST3_PATH" ] && [ -z "$AU_PATH" ] && [ -z "$AAX_PATH" ]; then
-    echo "  ERROR: No built plugins found."
+    echo "  ERROR: No built EchoJay V2 plugins found."
+    echo "  Run: cmake --build build --config Release"
+    exit 1
+fi
+if [ -z "$LINK_VST3_PATH" ] && [ -z "$LINK_AU_PATH" ]; then
+    echo "  ERROR: No built EchoJay Link plugins found."
     echo "  Run: cmake --build build --config Release"
     exit 1
 fi
 
-echo "  VST3: ${VST3_PATH:-not found}"
-echo "  AU:   ${AU_PATH:-not found}"
-echo "  AAX:  ${AAX_PATH:-not found}"
+echo "  V2 VST3:   ${VST3_PATH:-not found}"
+echo "  V2 AU:     ${AU_PATH:-not found}"
+echo "  V2 AAX:    ${AAX_PATH:-not found}"
+echo "  Link VST3: ${LINK_VST3_PATH:-not found}"
+echo "  Link AU:   ${LINK_AU_PATH:-not found}"
 echo ""
 
 # --- Create installer resources (always overwrite to keep in sync) ---
 mkdir -p "$RESOURCES_DIR"
 
-# Welcome HTML — ASCII only, no special characters
+# Welcome HTML - ASCII only, no special characters
 cat > "${RESOURCES_DIR}/welcome.html" << 'WELCOME'
 <html>
 <head><meta charset="utf-8"></head>
 <body style="font-family: -apple-system, Helvetica Neue, sans-serif; margin: 20px; color: #1d1d1f;">
-<h1 style="font-size: 22px; font-weight: 600;">EchoJay - AI Mix Assistant</h1>
+<h1 style="font-size: 22px; font-weight: 600;">EchoJay V2 - AI Mix Assistant</h1>
 <p style="font-size: 14px; line-height: 1.6; color: #424245;">
-This installer will set up EchoJay on your system. The following components will be installed:
+This installer will set up EchoJay V2 on your system. The following components will be installed:
 </p>
 <ul style="font-size: 14px; line-height: 1.8; color: #424245;">
-<li><strong>VST3 plugin</strong> - for Ableton, FL Studio, Reaper, Studio One, Cubase, Bitwig</li>
-<li><strong>Audio Unit (AU) plugin</strong> - for Logic Pro, GarageBand, and AU-compatible hosts</li>
-<li><strong>AAX plugin</strong> - for Pro Tools</li>
+<li><strong>EchoJay V2 VST3</strong> - for Ableton, FL Studio, Reaper, Studio One, Cubase, Bitwig</li>
+<li><strong>EchoJay V2 Audio Unit (AU)</strong> - for Logic Pro, GarageBand, and AU-compatible hosts</li>
+<li><strong>EchoJay V2 AAX</strong> - for Pro Tools</li>
+<li><strong>EchoJay Link VST3 and AU</strong> - the per-channel companion plugin</li>
 </ul>
 <p style="font-size: 14px; line-height: 1.6; color: #424245;">
 Click <strong>Continue</strong> to proceed.
 </p>
 <p style="font-size: 12px; color: #86868b; margin-top: 30px;">
-EchoJay v1.6.2 | echojay.ai
+EchoJay V2 | echojay.ai
 </p>
 </body>
 </html>
 WELCOME
 echo "  Created: installer/welcome.html"
 
-# License — ASCII only
+# License - ASCII only
 cat > "${RESOURCES_DIR}/license.html" << 'LICENSE'
 <html>
 <head><meta charset="utf-8"></head>
@@ -117,14 +115,14 @@ For questions, contact hello@echojay.ai
 LICENSE
 echo "  Created: installer/license.html"
 
-# Conclusion — ASCII only, no checkmark, correct support URL
+# Conclusion - ASCII only
 cat > "${RESOURCES_DIR}/conclusion.html" << 'CONCLUSION'
 <html>
 <head><meta charset="utf-8"></head>
 <body style="font-family: -apple-system, Helvetica Neue, sans-serif; margin: 20px; color: #1d1d1f;">
 <h1 style="font-size: 22px; font-weight: 600;">Installation Complete</h1>
 <p style="font-size: 14px; line-height: 1.6; color: #424245;">
-EchoJay has been installed successfully.
+EchoJay V2 has been installed successfully.
 </p>
 <p style="font-size: 14px; line-height: 1.6; color: #424245;">
 <strong>Next steps:</strong>
@@ -132,8 +130,8 @@ EchoJay has been installed successfully.
 <ol style="font-size: 14px; line-height: 1.8; color: #424245;">
 <li>Open your DAW</li>
 <li>Rescan your plugins if needed</li>
-<li>Find <strong>EchoJay</strong> in your plugin list</li>
-<li>Insert it on your mix bus and log in</li>
+<li>Insert <strong>EchoJay V2</strong> on your mix bus and log in</li>
+<li>Insert <strong>EchoJay Link</strong> on channels or buses you want EchoJay to see</li>
 </ol>
 <p style="font-size: 13px; color: #86868b; margin-top: 30px;">
 Need help? Visit echojay.ai
@@ -145,27 +143,41 @@ echo "  Created: installer/conclusion.html"
 
 # --- Clean previous build ---
 rm -rf "$PKG_DIR"
-mkdir -p "${PKG_DIR}/vst3_payload" "${PKG_DIR}/au_payload" "${PKG_DIR}/aax_payload" "${PKG_DIR}/scripts" "${PKG_DIR}/aax-scripts" "${PKG_DIR}/components"
+mkdir -p "${PKG_DIR}/vst3_payload" "${PKG_DIR}/au_payload" "${PKG_DIR}/aax_payload" \
+         "${PKG_DIR}/link_vst3_payload" "${PKG_DIR}/link_au_payload" \
+         "${PKG_DIR}/scripts" "${PKG_DIR}/aax-scripts" "${PKG_DIR}/components"
 
 # --- Stage payloads with correct install paths ---
 
 if [ -n "$VST3_PATH" ]; then
     mkdir -p "${PKG_DIR}/vst3_payload/Library/Audio/Plug-Ins/VST3"
     cp -R "$VST3_PATH" "${PKG_DIR}/vst3_payload/Library/Audio/Plug-Ins/VST3/"
-    echo "  Staged VST3 payload"
+    echo "  Staged V2 VST3 payload"
 fi
 
 if [ -n "$AU_PATH" ]; then
     mkdir -p "${PKG_DIR}/au_payload/Library/Audio/Plug-Ins/Components"
     cp -R "$AU_PATH" "${PKG_DIR}/au_payload/Library/Audio/Plug-Ins/Components/"
-    echo "  Staged AU payload"
+    echo "  Staged V2 AU payload"
 fi
 
 # AAX installs to /Library/Application Support/Avid/Audio/Plug-Ins/ (system-wide)
 if [ -n "$AAX_PATH" ]; then
     mkdir -p "${PKG_DIR}/aax_payload/Library/Application Support/Avid/Audio/Plug-Ins"
     cp -R "$AAX_PATH" "${PKG_DIR}/aax_payload/Library/Application Support/Avid/Audio/Plug-Ins/"
-    echo "  Staged AAX payload"
+    echo "  Staged V2 AAX payload"
+fi
+
+if [ -n "$LINK_VST3_PATH" ]; then
+    mkdir -p "${PKG_DIR}/link_vst3_payload/Library/Audio/Plug-Ins/VST3"
+    cp -R "$LINK_VST3_PATH" "${PKG_DIR}/link_vst3_payload/Library/Audio/Plug-Ins/VST3/"
+    echo "  Staged Link VST3 payload"
+fi
+
+if [ -n "$LINK_AU_PATH" ]; then
+    mkdir -p "${PKG_DIR}/link_au_payload/Library/Audio/Plug-Ins/Components"
+    cp -R "$LINK_AU_PATH" "${PKG_DIR}/link_au_payload/Library/Audio/Plug-Ins/Components/"
+    echo "  Staged Link AU payload"
 fi
 
 # --- Post-install script to reset AU cache ---
@@ -206,7 +218,7 @@ for u in $USERS; do
 done
 
 # Touch the plugin bundle so Pro Tools detects it as freshly modified
-PLUGIN_BUNDLE="/Library/Application Support/Avid/Audio/Plug-Ins/EchoJay.aaxplugin"
+PLUGIN_BUNDLE="/Library/Application Support/Avid/Audio/Plug-Ins/EchoJay V2.aaxplugin"
 if [ -d "$PLUGIN_BUNDLE" ]; then
     touch "$PLUGIN_BUNDLE"
 fi
@@ -225,8 +237,8 @@ if [ -n "$VST3_PATH" ]; then
         --install-location "/" \
         --identifier "${IDENTIFIER}.vst3" \
         --version "$VERSION" \
-        "${PKG_DIR}/components/EchoJay-VST3.pkg"
-    echo "  Done: VST3 component"
+        "${PKG_DIR}/components/EchoJayV2-VST3.pkg"
+    echo "  Done: V2 VST3 component"
 fi
 
 if [ -n "$AU_PATH" ]; then
@@ -236,8 +248,8 @@ if [ -n "$AU_PATH" ]; then
         --identifier "${IDENTIFIER}.au" \
         --version "$VERSION" \
         --scripts "${PKG_DIR}/scripts" \
-        "${PKG_DIR}/components/EchoJay-AU.pkg"
-    echo "  Done: AU component"
+        "${PKG_DIR}/components/EchoJayV2-AU.pkg"
+    echo "  Done: V2 AU component"
 fi
 
 # AAX installs system-wide (needs admin for /Library/)
@@ -248,8 +260,29 @@ if [ -n "$AAX_PATH" ]; then
         --identifier "${IDENTIFIER}.aax" \
         --version "$VERSION" \
         --scripts "${PKG_DIR}/aax-scripts" \
-        "${PKG_DIR}/components/EchoJay-AAX.pkg"
-    echo "  Done: AAX component"
+        "${PKG_DIR}/components/EchoJayV2-AAX.pkg"
+    echo "  Done: V2 AAX component"
+fi
+
+if [ -n "$LINK_VST3_PATH" ]; then
+    pkgbuild \
+        --root "${PKG_DIR}/link_vst3_payload" \
+        --install-location "/" \
+        --identifier "${LINK_IDENTIFIER}.vst3" \
+        --version "$LINK_VERSION" \
+        "${PKG_DIR}/components/EchoJayLink-VST3.pkg"
+    echo "  Done: Link VST3 component"
+fi
+
+if [ -n "$LINK_AU_PATH" ]; then
+    pkgbuild \
+        --root "${PKG_DIR}/link_au_payload" \
+        --install-location "/" \
+        --identifier "${LINK_IDENTIFIER}.au" \
+        --version "$LINK_VERSION" \
+        --scripts "${PKG_DIR}/scripts" \
+        "${PKG_DIR}/components/EchoJayLink-AU.pkg"
+    echo "  Done: Link AU component"
 fi
 
 # --- Build distribution XML ---
@@ -262,45 +295,71 @@ if [ -n "$VST3_PATH" ]; then
     CHOICES_OUTLINE="${CHOICES_OUTLINE}        <line choice=\"vst3\"/>\n"
     CHOICES="${CHOICES}
     <choice id=\"vst3\"
-            title=\"VST3 Plugin\"
+            title=\"EchoJay V2 VST3\"
             description=\"For Ableton, FL Studio, Reaper, Studio One, Cubase, Bitwig, and other VST3 hosts.\"
             selected=\"true\">
         <pkg-ref id=\"${IDENTIFIER}.vst3\"/>
     </choice>"
     PKG_REFS="${PKG_REFS}
-    <pkg-ref id=\"${IDENTIFIER}.vst3\" version=\"${VERSION}\">EchoJay-VST3.pkg</pkg-ref>"
+    <pkg-ref id=\"${IDENTIFIER}.vst3\" version=\"${VERSION}\">EchoJayV2-VST3.pkg</pkg-ref>"
 fi
 
 if [ -n "$AU_PATH" ]; then
     CHOICES_OUTLINE="${CHOICES_OUTLINE}        <line choice=\"au\"/>\n"
     CHOICES="${CHOICES}
     <choice id=\"au\"
-            title=\"Audio Unit Plugin\"
+            title=\"EchoJay V2 Audio Unit\"
             description=\"For Logic Pro, GarageBand, and other AU-compatible hosts.\"
             selected=\"true\">
         <pkg-ref id=\"${IDENTIFIER}.au\"/>
     </choice>"
     PKG_REFS="${PKG_REFS}
-    <pkg-ref id=\"${IDENTIFIER}.au\" version=\"${VERSION}\">EchoJay-AU.pkg</pkg-ref>"
+    <pkg-ref id=\"${IDENTIFIER}.au\" version=\"${VERSION}\">EchoJayV2-AU.pkg</pkg-ref>"
 fi
 
 if [ -n "$AAX_PATH" ]; then
     CHOICES_OUTLINE="${CHOICES_OUTLINE}        <line choice=\"aax\"/>\n"
     CHOICES="${CHOICES}
     <choice id=\"aax\"
-            title=\"AAX Plugin (Pro Tools)\"
+            title=\"EchoJay V2 AAX (Pro Tools)\"
             description=\"For Avid Pro Tools. Requires admin password during installation.\"
             selected=\"true\">
         <pkg-ref id=\"${IDENTIFIER}.aax\"/>
     </choice>"
     PKG_REFS="${PKG_REFS}
-    <pkg-ref id=\"${IDENTIFIER}.aax\" version=\"${VERSION}\">EchoJay-AAX.pkg</pkg-ref>"
+    <pkg-ref id=\"${IDENTIFIER}.aax\" version=\"${VERSION}\">EchoJayV2-AAX.pkg</pkg-ref>"
+fi
+
+if [ -n "$LINK_VST3_PATH" ]; then
+    CHOICES_OUTLINE="${CHOICES_OUTLINE}        <line choice=\"linkvst3\"/>\n"
+    CHOICES="${CHOICES}
+    <choice id=\"linkvst3\"
+            title=\"EchoJay Link VST3\"
+            description=\"The per-channel companion plugin, VST3 format.\"
+            selected=\"true\">
+        <pkg-ref id=\"${LINK_IDENTIFIER}.vst3\"/>
+    </choice>"
+    PKG_REFS="${PKG_REFS}
+    <pkg-ref id=\"${LINK_IDENTIFIER}.vst3\" version=\"${LINK_VERSION}\">EchoJayLink-VST3.pkg</pkg-ref>"
+fi
+
+if [ -n "$LINK_AU_PATH" ]; then
+    CHOICES_OUTLINE="${CHOICES_OUTLINE}        <line choice=\"linkau\"/>\n"
+    CHOICES="${CHOICES}
+    <choice id=\"linkau\"
+            title=\"EchoJay Link Audio Unit\"
+            description=\"The per-channel companion plugin, AU format.\"
+            selected=\"true\">
+        <pkg-ref id=\"${LINK_IDENTIFIER}.au\"/>
+    </choice>"
+    PKG_REFS="${PKG_REFS}
+    <pkg-ref id=\"${LINK_IDENTIFIER}.au\" version=\"${LINK_VERSION}\">EchoJayLink-AU.pkg</pkg-ref>"
 fi
 
 cat > "${PKG_DIR}/distribution.xml" << DISTXML
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>EchoJay v${VERSION}</title>
+    <title>EchoJay V2 v${VERSION}</title>
     <organization>${IDENTIFIER}</organization>
     <options customize="allow" require-scripts="false" hostArchitectures="x86_64,arm64"/>
 
@@ -340,22 +399,25 @@ if [ -f "$OUTPUT" ]; then
     echo "  Size: $(du -h "$OUTPUT" | cut -f1)"
     echo "  Path: ${OUTPUT}"
     echo ""
+    echo "  Next: productsign + notarytool + stapler (see RELEASE.md)"
+    echo ""
 else
     echo "ERROR: Installer build failed."
     exit 1
 fi
 
-# Optional: wrap in DMG
+# Optional: wrap in DMG (unsigned quick-share only; use package-dmg.sh for the
+# signed/notarized release DMG)
 read -p "  Wrap in a DMG for distribution? (y/n) " WRAP_DMG
 if [ "$WRAP_DMG" = "y" ] || [ "$WRAP_DMG" = "Y" ]; then
-    DMG_OUTPUT="${SCRIPT_DIR}/${PLUGIN_NAME}-v${VERSION}.dmg"
-    DMG_STAGING="/tmp/${PLUGIN_NAME}_dmg_wrap"
+    DMG_OUTPUT="${SCRIPT_DIR}/EchoJay-V2-v${VERSION}.dmg"
+    DMG_STAGING="/tmp/EchoJayV2_dmg_wrap"
     rm -rf "$DMG_STAGING" "$DMG_OUTPUT"
     mkdir -p "$DMG_STAGING"
     cp "$OUTPUT" "$DMG_STAGING/"
 
     hdiutil create \
-        -volname "${PLUGIN_NAME} Installer" \
+        -volname "EchoJay V2 Installer" \
         -srcfolder "$DMG_STAGING" \
         -ov -format UDZO \
         -imagekey zlib-level=9 \

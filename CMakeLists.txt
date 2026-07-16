@@ -27,9 +27,9 @@ endif()
 
 # Build formats — include AAX if SDK is available
 if(HAS_AAX)
-    set(PLUGIN_FORMATS AU VST3 AAX Standalone)
+    set(PLUGIN_FORMATS AU VST3 AAX)
 else()
-    set(PLUGIN_FORMATS AU VST3 Standalone)
+    set(PLUGIN_FORMATS AU VST3)
 endif()
 
 # Platform-conditional app icon — JUCE needs .ico on Windows, .icns on macOS
@@ -127,7 +127,7 @@ target_link_libraries(EchoJay
 # JUCE sometimes embeds an 8-byte placeholder instead of using ICON_BIG.
 # This post-build copy guarantees the real icon ends up in every bundle.
 if(APPLE)
-    foreach(target_name EchoJay_VST3 EchoJay_AU EchoJay_AAX EchoJay_Standalone)
+    foreach(target_name EchoJay_VST3 EchoJay_AU EchoJay_AAX)
         if(TARGET ${target_name})
             add_custom_command(TARGET ${target_name} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy
