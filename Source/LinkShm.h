@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <cstring>
 #include <algorithm>
+#include <atomic>
 #include <JuceHeader.h>
 
 // =============================================================================
@@ -157,17 +158,50 @@ static constexpr size_t kRegSize =
                            + (size_t)kRegMaxSlots * sizeof(LinkMeterFrame);
 
 // =============================================================================
-//  Atomic helpers  (GCC/Clang builtins — safe on mmap'd memory, no placement-new)
+//  Atomic helpers  (portable std::atomic — safe on mmap'd memory, no placement-new)
+//
+//  The shared structs keep plain uint32_t members so the mapped layout and byte
+//  offsets are identical on every platform (Mac and Windows map the same block).
+//  These helpers overlay std::atomic<uint32_t> onto those fields instead of
+//  declaring them atomic, which keeps the layout untouched while giving the same
+//  orderings the GCC __atomic_* builtins provided. std::atomic_ref would express
+//  this more directly, but it is C++20 and this project builds as C++17.
+//
+//  The overlay is sound only if std::atomic<uint32_t> is layout-identical to a
+//  bare uint32_t and never falls back to a lock — asserted below. On a locked
+//  implementation the lock would live in one process's address space and the
+//  cross-process handshake would silently break, so this must stay a hard error.
 // =============================================================================
 namespace LinkShm {
 
-inline uint32_t loadAcquire (const uint32_t* p) { return __atomic_load_n (p, __ATOMIC_ACQUIRE); }
-inline uint32_t loadRelaxed (const uint32_t* p) { return __atomic_load_n (p, __ATOMIC_RELAXED); }
-inline void     storeRelease(uint32_t* p, uint32_t v) { __atomic_store_n(p, v, __ATOMIC_RELEASE); }
+static_assert(sizeof(std::atomic<uint32_t>)  == sizeof(uint32_t),
+              "std::atomic<uint32_t> must not change the shared-memory layout");
+static_assert(alignof(std::atomic<uint32_t>) == alignof(uint32_t),
+              "std::atomic<uint32_t> must not change the shared-memory alignment");
+static_assert(std::atomic<uint32_t>::is_always_lock_free,
+              "cross-process atomics require lock-free std::atomic<uint32_t>");
+
+/// Overlay an atomic view on a shared uint32_t field. The field is a plain
+/// uint32_t in the mapping; only the access is atomic.
+inline std::atomic<uint32_t>* asAtomic (uint32_t* p)
+{
+    return reinterpret_cast<std::atomic<uint32_t>*>(p);
+}
+inline const std::atomic<uint32_t>* asAtomic (const uint32_t* p)
+{
+    return reinterpret_cast<const std::atomic<uint32_t>*>(p);
+}
+
+inline uint32_t loadAcquire (const uint32_t* p) { return asAtomic(p)->load(std::memory_order_acquire); }
+inline uint32_t loadRelaxed (const uint32_t* p) { return asAtomic(p)->load(std::memory_order_relaxed); }
+inline void     storeRelease(uint32_t* p, uint32_t v) { asAtomic(p)->store(v, std::memory_order_release); }
 inline bool casStrong(uint32_t* p, uint32_t expected, uint32_t desired)
 {
-    return __atomic_compare_exchange_n(p, &expected, desired, false,
-                                       __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+    // expected is by-value: like the __atomic_compare_exchange_n call this
+    // replaces, the witnessed value on failure is intentionally discarded.
+    return asAtomic(p)->compare_exchange_strong(expected, desired,
+                                                std::memory_order_acq_rel,
+                                                std::memory_order_acquire);
 }
 
 // =============================================================================
@@ -370,7 +404,7 @@ inline void* openRingProducer(const juce::String& dir, const juce::String& filen
     hdr->numChannels    = ch;
     hdr->capacityFrames = kLinkRingFrames;
     // Write magic last (acts as a "ready" flag for the consumer)
-    __atomic_store_n(&hdr->magic, kLinkMagic, __ATOMIC_RELEASE);
+    storeRelease(&hdr->magic, kLinkMagic);
     return map;
 }
 
