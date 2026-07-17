@@ -381,6 +381,18 @@ public:
                 return;
             }
 
+           #if ! JUCE_MAC
+            // Off macOS there is no NativeClip container — see the matching
+            // guard in PluginEditor.h ChainListPanel::showInline for the full
+            // reasoning. Decide the floating window up front rather than letting
+            // the poll below stall ~5s and then persist a popout_only mark that
+            // blames the plugin for a platform gap.
+            statusText = "Opens in a floating window";
+            openPopoutForSelected();
+            repaint();
+            return;
+           #endif
+
             juce::AudioProcessorEditor* ed = nullptr;
             try { ed = proc.getChainHost().createEditorForSlot(hostIdx); } catch (...) {}
             if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }

@@ -32,6 +32,25 @@ else()
     set(PLUGIN_FORMATS AU VST3)
 endif()
 
+# Platform-conditional native sources, shared by both plugin targets.
+#   NativeClip.mm   — Obj-C++/Cocoa: NSView clipping container for inline-hosted
+#                     plugin editors. NativeClipWin.cpp supplies the same
+#                     extern "C" surface off macOS (real logger, stubbed clip).
+#   AUEnumerator.mm — Obj-C++/CoreAudio: AU registry scan. Needs no off-Mac
+#                     counterpart — its only call site (ChainHost.cpp) is
+#                     already inside #if JUCE_MAC, so nothing references it.
+# Both are Objective-C++ and can never compile under MSVC.
+if(APPLE)
+    set(ECHOJAY_NATIVE_SOURCES
+        Source/NativeClip.mm
+        Source/AUEnumerator.mm
+    )
+else()
+    set(ECHOJAY_NATIVE_SOURCES
+        Source/NativeClipWin.cpp
+    )
+endif()
+
 # Platform-conditional app icon — JUCE needs .ico on Windows, .icns on macOS
 # We only have .icns, so only set the icon on macOS
 if(APPLE)
@@ -71,9 +90,8 @@ target_sources(EchoJay PRIVATE
     Source/PluginEditor.h
     Source/ChainHost.cpp
     Source/ChainHost.h
-    Source/AUEnumerator.mm
+    ${ECHOJAY_NATIVE_SOURCES}
     Source/AUEnumerator.h
-    Source/NativeClip.mm
     Source/NativeClip.h
     Source/MeterEngine.cpp
     Source/MeterEngine.h
@@ -191,10 +209,9 @@ target_sources(EchoJayLink PRIVATE
     # Chain hosting — shared with the main plugin (phase 1)
     Source/ChainHost.cpp
     Source/ChainHost.h
-    Source/AUEnumerator.mm
+    ${ECHOJAY_NATIVE_SOURCES}
     Source/AUEnumerator.h
     Source/PluginScanner.h
-    Source/NativeClip.mm
     Source/NativeClip.h
 )
 

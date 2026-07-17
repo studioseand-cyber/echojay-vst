@@ -1028,6 +1028,25 @@ private:
                 return;
             }
 
+           #if ! JUCE_MAC
+            // Off macOS there is no NativeClip container, so the hosted view can
+            // be neither measured nor clipped and inline hosting cannot be made
+            // safe. Take the same floating-window path, but decide it UP FRONT.
+            //
+            // Deciding here rather than letting the poll below time out matters
+            // twice over: the timeout costs ~5s of dead UI per selection, and it
+            // would then persist a popout_only mark asserting "THIS PLUGIN's
+            // editor cannot inline" — a platform fact recorded as a plugin fact.
+            // That file is per-platform (%APPDATA% here, ~/Library on the Mac),
+            // so it cannot reach the Mac, but it would still wrongly condemn the
+            // plugin on any later Windows build that CAN inline. No status suffix
+            // for the same reason: nothing here is a limitation of the plugin.
+            statusText = "Opens in a floating window";
+            openPopoutForSelected();
+            repaint();
+            return;
+           #endif
+
             juce::AudioProcessorEditor* ed = nullptr;
             try { ed = onCreateEditor(i); } catch (...) {}
             if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }
