@@ -1174,8 +1174,10 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
 {
     // Snapshot the loadable entries under lock
     juce::Array<juce::PluginDescription> loadable;
+    bool entriesEmpty = false;
     {
         std::lock_guard<std::mutex> lk(pluginsMutex_);
+        entriesEmpty = entries_.isEmpty();
         for (const auto& d : entries_)
         {
             if (formatFilter.isNotEmpty() && d.pluginFormatName != formatFilter) continue;
@@ -1230,6 +1232,11 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     recommendable_          = std::move(resolved);
     recommendableEnabledIn_ = enabledCount;
     recommendableFormat_    = formatFilter;
+
+    // Latch only when both inputs were real: a build against an empty entries
+    // list (scan still running) or an unloaded scanner cache must not count
+    // as resolved, or the retry paths would stop retrying too early.
+    hasResolved_ = !entriesEmpty && enabledCount > 0;
 }
 
 juce::StringArray ChainHost::getRecommendableNames() const

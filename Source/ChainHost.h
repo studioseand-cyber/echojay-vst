@@ -75,6 +75,12 @@ public:
     int getEnabledInputCount()    const noexcept { return recommendableEnabledIn_; }
     int getUnmatchedCount()       const noexcept { return recommendableEnabledIn_ - (int)recommendable_.size(); }
 
+    // True once buildRecommendable() has run against real inputs (non-empty
+    // entries AND ≥1 enabled scanner plugin). Distinguishes resolved (even
+    // resolved-with-zero-matches) from scanning/unresolved, where the inputs
+    // weren't ready yet and callers should keep retrying. Message thread only.
+    bool hasResolvedRecommendable() const noexcept { return hasResolved_; }
+
     // Async-load the first recommendable entry whose displayName matches `name`
     // (case-insensitive). Callback: empty string on success, error message on fail.
     void loadByRecommendedName(const juce::String& name,
@@ -261,6 +267,7 @@ private:
     std::vector<RecommendableEntry> recommendable_;
     int recommendableEnabledIn_ = 0;   // how many enabled scanner entries were fed in
     juce::String recommendableFormat_; // filter used for the last build (fallback resolves honour it)
+    bool hasResolved_ = false;         // latched by buildRecommendable once inputs were real
 
     // Entries-cache staleness tracking (message thread)
     juce::Time entriesCacheTime_;

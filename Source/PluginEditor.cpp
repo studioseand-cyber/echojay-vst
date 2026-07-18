@@ -1820,6 +1820,20 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // AND this closing pass makes construction order irrelevant.
     updateOnboardingPrompts();
 
+    // CHAIN bootstrap (chat-first sessions): entries and the recommendable
+    // resolver used to be populated only by opening the CHAIN tab, so a
+    // chat-only session had an empty recommendable list — and feed-less chain
+    // requests — for the whole session. Load the shared entries cache now if
+    // it exists; otherwise start a scan. The timer below runs the initial
+    // buildRecommendable once entries are ready (ungated by tab).
+    {
+        auto& ch = processorRef.getChainHost();
+        if (ChainHost::getEntriesCacheFile().existsAsFile())
+            ch.maybeReloadEntriesCache();
+        if (ch.getNumPlugins() == 0 && !ch.isScanning())
+            ch.startScan();
+    }
+
     startTimerHz(20);
 }
 
@@ -11110,6 +11124,20 @@ void EchoJayEditor::timerCallback()
         if (!settingsBtn.isEnabled()) settingsBtn.setEnabled(true);
     }
 
+    // Initial resolver bootstrap — deliberately NOT gated on the CHAIN tab so
+    // chat-first sessions get a populated recommendable list. Runs until the
+    // build latches (hasResolvedRecommendable: non-empty entries AND ≥1
+    // enabled scanner plugin), then never again this session.
+    {
+        auto& ch = processorRef.getChainHost();
+        if (!ch.hasResolvedRecommendable() && !ch.isScanning() && ch.getNumPlugins() > 0)
+        {
+            auto scanned = processorRef.getPluginScanner().getPlugins();
+            if (!scanned.empty())
+                ch.buildRecommendable(scanned, chainFormatFilter_);
+        }
+    }
+
     // Update CHAIN tab scan status
     if (currentTab == Tab::Chain)
     {
@@ -11128,21 +11156,19 @@ void EchoJayEditor::timerCallback()
         }
         else
         {
-            // Rebuild resolver once after scan completes (entries_ has stabilised)
-            // We detect completion by checking if the recommendable count is still 0
-            // while the entries list is non-empty.  A proper "scan just finished" flag
-            // isn't exposed, so we rebuild whenever the numbers look stale.
+            // Rebuild resolver once after scan completes (entries_ has stabilised).
+            // hasResolvedRecommendable() latches inside buildRecommendable when it
+            // ran against real inputs, replacing the old "enabled count still 0"
+            // staleness guess.
             bool entriesReady = ch.getNumPlugins() > 0;
-            bool resolverStale = (ch.getEnabledInputCount() == 0 && entriesReady);
-            if (resolverStale)
-            {
+            if (entriesReady && !ch.hasResolvedRecommendable())
                 ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
+            if (entriesReady)
                 chainRecommendLabel.setText(
                     "recommendable: " + juce::String(ch.getRecommendableCount())
                     + " resolved (" + juce::String(ch.getEnabledInputCount()) + " enabled, "
                     + juce::String(ch.getUnmatchedCount()) + " unmatched)",
                     juce::dontSendNotification);
-            }
 
             if (ch.getNumSlots() > 0)
                 chainStatusLabel.setText(juce::String(ch.getNumSlots()) + " slot(s) in chain",
