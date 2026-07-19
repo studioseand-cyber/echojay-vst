@@ -1694,6 +1694,35 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // AFTER that pass — they rendered un-evaluated over the channel page.
     // Prompt components are now addChildComponent (hidden until evaluated)
     // AND this closing pass makes construction order irrelevant.
+    // Scrollable Settings container. The settings-only children re-parent
+    // INTO the content component (every existing setVisible call keeps
+    // working; only the parent changes). upgradeBtn is deliberately NOT
+    // moved here: it is shared with the chat gate and the lock strips, and
+    // its parent is decided ONLY in the timer's upgrade block.
+    settingsViewport_.setViewedComponent(&settingsContent_, false);
+    settingsViewport_.setScrollBarsShown(true, false);
+    settingsViewport_.setScrollBarThickness(8);
+    addChildComponent(settingsViewport_);
+    settingsContent_.paintFn = [this](juce::Graphics& g)
+    {
+        if (currentView != View::Settings) return;
+        auto lb = settingsContent_.getLocalBounds();
+        // Same inset contract as the old editor-level call: 20px sides,
+        // 12px top/bottom, so paintSettingsView's Y walk stays aligned
+        // with resized()'s content-coordinate layout
+        paintSettingsView(g, { 20, 12, lb.getWidth() - 40, lb.getHeight() - 24 });
+    };
+    {
+        juce::Component* settingsMovers[] = {
+            &settingsName, &settingsMonitors, &settingsHeadphones, &settingsGenres,
+            &settingsExpLevel, &settingsLanguage, &uiScaleCombo,
+            &settingsScanBtn, &viewAllPluginsBtn,
+            &saveSettingsBtn, &settingsManualBtn, &settingsSavedLabel,
+            &settingsHelpBtn, &dumpMetersBtn, &logoutBtn, &settingsOrbCard_ };
+        for (auto* m : settingsMovers) settingsContent_.addChildComponent(*m);
+        for (auto& btn : dawButtons) settingsContent_.addChildComponent(btn);
+    }
+
     updateOnboardingPrompts();
 
     // CHAIN bootstrap (chat-first sessions): entries and the recommendable
@@ -5508,6 +5537,7 @@ void EchoJayEditor::showSettingsView()
 {
     currentView = View::Settings;
     settingsBtn.setButtonText("Back");
+    settingsViewport_.setViewPosition(0, 0);   // fresh open starts at the top
     settingsName.setVisible(true); settingsMonitors.setVisible(true);
     settingsHeadphones.setVisible(true); settingsGenres.setVisible(true);
     settingsExpLevel.setVisible(true);
@@ -7561,12 +7591,15 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     int y = area.getY();
 
     // Two-column: mirror resized()'s column math so the painted labels
-    // track the form column, not the full window
+    // track the form column, not the full window. This paints inside the
+    // scrolled content component now, so the CONTENT width drives it
+    // (area is inset 20px each side by the paint hook).
     {
-        const bool cardsStacked = getWidth() < 1100;
-        const int  cardsRightW  = cardsStacked ? 0 : juce::jmax(280, getWidth() / 3 - 20);
+        const int contentW = area.getWidth() + 40;
+        const bool cardsStacked = contentW < 1100;
+        const int  cardsRightW  = cardsStacked ? 0 : juce::jmax(280, contentW / 3 - 20);
         if (!cardsStacked)
-            w = juce::jmax(200, getWidth() - 40 - (cardsRightW + 16));
+            w = juce::jmax(200, contentW - 40 - (cardsRightW + 16));
     }
     
     // === Version — single dim line, bottom-right, ending just left of the
@@ -9390,11 +9423,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
         paintCompareView(g, cArea);
     }
     else if (currentView == View::Settings && currentTab == Tab::Settings) {
-        // Settings has no chat sidebar — the form gets the FULL window width
-        // (x/width here must match sx/sw in resized()'s Settings block)
-        auto sArea = juce::Rectangle<int>(20, topH + 12, bounds.getWidth() - 40,
-                                          bounds.getHeight() - topH - 24 - abBarOffset);
-        paintSettingsView(g, sArea);
+        // Settings paints INSIDE the scrollable content component now
+        // (settingsContent_.paintFn), so it scrolls and clips with the
+        // viewport. Nothing to draw at the editor level.
     }
     else if (channelPromptVisible || genrePromptVisible)
     {
@@ -10891,137 +10922,165 @@ void EchoJayEditor::resized()
     }
 
     // Settings layout — consistent Y tracking matching paintSettingsView.
-    // The form stretches to the full window width (no chat sidebar here);
-    // reflows on every resize since this all derives from current bounds.
+    // The whole view lives in settingsViewport_/settingsContent_: layout is
+    // computed in CONTENT coordinates, and when the natural height exceeds
+    // the viewport the content grows and scrolls, so every section (Usage
+    // included) stays reachable at any window height and the Save row lays
+    // out WITHIN the flow after the last section, never over other
+    // controls. At normal heights the content matches the viewport and the
+    // Save row sits at the window bottom exactly as before.
     if (currentView == View::Settings) {
-        // Two-column layout: form left (~2/3), card stack (ACCOUNT / WHAT'S
-        // NEW / THIS MONTH) right (~1/3). Below ~1100px the cards move UNDER
-        // the form as a row of three instead of squeezing it.
-        const bool cardsStacked = b.getWidth() < 1100;
-        const int  cardsRightW  = cardsStacked ? 0 : juce::jmax(280, b.getWidth() / 3 - 20);
-        int sx = 20, sy = topH + 18;
-        int sw = juce::jmax(200, b.getWidth() - 40 - (cardsStacked ? 0 : cardsRightW + 16));
-        int fh = 30, labelGap = 18; // label height + space before field
+        const int abOff3 = abBarShowing ? kAbBarH : 0;
+        settingsViewport_.setBounds(0, topH, b.getWidth(),
+                                    juce::jmax(50, b.getHeight() - topH - abOff3));
+        settingsViewport_.setVisible(true);
+        const int vpH = settingsViewport_.getHeight();
 
-        // YOUR NAME
-        sy += labelGap;
-        settingsName.setBounds(sx, sy, sw, fh); sy += fh + 8;
-
-        // DAW(S) — grid redistributes across the available width
-        // (row math mirrored in paintSettingsView; keep the two in sync)
-        sy += labelGap;
-        const int dawGap = 4;
-        int dawPerRow = juce::jlimit(3, 11, (sw + dawGap) / 118);
-        int dawRows   = (11 + dawPerRow - 1) / dawPerRow;
-        int bw = (sw - (dawPerRow - 1) * dawGap) / dawPerRow, bh2 = 26;
-        for (int i = 0; i < 11; ++i) {
-            int row = i / dawPerRow, col = i % dawPerRow;
-            dawButtons[(size_t)i].setBounds(sx + col * (bw + dawGap),
-                                            sy + row * (bh2 + 3), bw, bh2);
-        }
-        sy += dawRows * (bh2 + 3) + 5;
-        
-        // EXPERIENCE LEVEL + CHAT LANGUAGE — on the same row, half-width each.
-        // The 8px gap matches the inter-field vertical spacing used elsewhere,
-        // so the row visually balances with the rest of the form.
-        sy += labelGap;
+        // ONE layout pass at a given content width; returns natural height.
+        // Runs a second time when the first pass needs a scrollbar (the bar
+        // takes width, which can reflow the DAW grid and columns).
+        auto layoutSettings = [&](int cw) -> int
         {
-            int halfGap = 8;
-            int halfW = (sw - halfGap) / 2;
-            settingsExpLevel.setBounds(sx, sy, halfW, fh);
-            settingsLanguage.setBounds(sx + halfW + halfGap, sy, halfW, fh);
-        }
-        sy += fh + 8;
-        
-        // MONITORS
-        sy += labelGap;
-        settingsMonitors.setBounds(sx, sy, sw, fh); sy += fh + 8;
-        
-        // HEADPHONES
-        sy += labelGap;
-        settingsHeadphones.setBounds(sx, sy, sw, fh); sy += fh + 8;
-        
-        // GENRES
-        sy += labelGap;
-        settingsGenres.setBounds(sx, sy, sw, fh); sy += fh + 8;
+            // Two-column layout: form left (~2/3), ACCOUNT card right
+            // (~1/3). Below ~1100px the card moves UNDER the form.
+            const bool cardsStacked = cw < 1100;
+            const int  cardsRightW  = cardsStacked ? 0 : juce::jmax(280, cw / 3 - 20);
+            int sx = 20, sy = 18;
+            int sw = juce::jmax(200, cw - 40 - (cardsStacked ? 0 : cardsRightW + 16));
+            int fh = 30, labelGap = 18; // label height + space before field
 
-        // UI SCALE
-        sy += labelGap;
-        uiScaleCombo.setBounds(sx, sy, 140, fh); sy += fh + 8;
+            // YOUR NAME
+            sy += labelGap;
+            settingsName.setBounds(sx, sy, sw, fh); sy += fh + 8;
 
-        // PLUGINS — a scan button (same behaviour as the header one) with
-        // "View all" beside it. (Help & Support lives down on the Save/Log Out
-        // row, since it's an app action, not a plugins control.)
-        sy += labelGap;
+            // DAW(S): grid redistributes across the available width
+            // (row math mirrored in paintSettingsView; keep the two in sync)
+            sy += labelGap;
+            const int dawGap = 4;
+            int dawPerRow = juce::jlimit(3, 11, (sw + dawGap) / 118);
+            int dawRows   = (11 + dawPerRow - 1) / dawPerRow;
+            int bw = (sw - (dawPerRow - 1) * dawGap) / dawPerRow, bh2 = 26;
+            for (int i = 0; i < 11; ++i) {
+                int row = i / dawPerRow, col = i % dawPerRow;
+                dawButtons[(size_t)i].setBounds(sx + col * (bw + dawGap),
+                                                sy + row * (bh2 + 3), bw, bh2);
+            }
+            sy += dawRows * (bh2 + 3) + 5;
 
-        int abOff3 = abBarShowing ? kAbBarH : 0;
-        int saveRowY = b.getHeight() - 44 - abOff3;
+            // EXPERIENCE LEVEL + CHAT LANGUAGE: same row, half-width each
+            sy += labelGap;
+            {
+                int halfGap = 8;
+                int halfW = (sw - halfGap) / 2;
+                settingsExpLevel.setBounds(sx, sy, halfW, fh);
+                settingsLanguage.setBounds(sx + halfW + halfGap, sy, halfW, fh);
+            }
+            sy += fh + 8;
 
-        int viewAllW = 90, rowGap = 8;
-        settingsScanBtn.setBounds(sx, sy, sw - viewAllW - rowGap, fh);
-        viewAllPluginsBtn.setBounds(sx + sw - viewAllW, sy, viewAllW, fh);
-        sy += fh + 8;
-        
-        // Save + Logout row — always pinned to bottom, spans the WINDOW
-        // width (not the form column) so Log Out stays bottom-right
-        int rowW = b.getWidth() - 40;
-        saveSettingsBtn.setBounds(sx, saveRowY, 100, 30);
-        // Manual beside Save (left cluster); the transient Saved label
-        // moves right of it
-        settingsManualBtn.setBounds(sx + 108, saveRowY, 70, 30);
-        settingsSavedLabel.setBounds(sx + 188, saveRowY, 150, 30);
-        logoutBtn.setBounds(sx + rowW - 80, saveRowY, 80, 30);
-        // Help & Support sits just left of Log Out — an app-level link, kept
-        // visually distinct from the plugins controls above.
-        settingsHelpBtn.setBounds(sx + rowW - 80 - 8 - 120, saveRowY, 120, 30);
-        // Dump meters — DEV-ONLY debug affordance: rendered ONLY when
-        // ~/Library/EchoJay/dev_mode exists (any content). Touch that file
-        // to get the button back; end users never see it.
+            // MONITORS
+            sy += labelGap;
+            settingsMonitors.setBounds(sx, sy, sw, fh); sy += fh + 8;
+
+            // HEADPHONES
+            sy += labelGap;
+            settingsHeadphones.setBounds(sx, sy, sw, fh); sy += fh + 8;
+
+            // GENRES
+            sy += labelGap;
+            settingsGenres.setBounds(sx, sy, sw, fh); sy += fh + 8;
+
+            // UI SCALE
+            sy += labelGap;
+            uiScaleCombo.setBounds(sx, sy, 140, fh); sy += fh + 8;
+
+            // PLUGINS: scan button + "View all" beside it
+            sy += labelGap;
+            int viewAllW = 90, rowGap = 8;
+            settingsScanBtn.setBounds(sx, sy, sw - viewAllW - rowGap, fh);
+            viewAllPluginsBtn.setBounds(sx + sw - viewAllW, sy, viewAllW, fh);
+            sy += fh + 8;
+
+            // ONE stack layout drives both the card height and the button slot
+            auto info = api.getUserInfo();
+            const AccountLayout acct = accountLayout(info.tierLevel, info.usagePool.twoLane());
+
+            int flowEnd = sy;
+            if (cardsStacked)
+            {
+                // Stacked card keeps its FULL height in the flow now. The
+                // old clamp against the pinned Save row is exactly what
+                // crushed and buried Usage on short windows.
+                int cTop = sy + 8;
+                settingsAccountCard_ = { sx, cTop, juce::jmin(sw, 380), acct.cardH };
+                settingsVisualCard_  = {};
+                flowEnd = settingsAccountCard_.getBottom();
+            }
+            else
+            {
+                // Two-column: the right card is part of the flow height too,
+                // so a short window scrolls instead of cutting it off
+                flowEnd = juce::jmax(flowEnd, 18 + acct.cardH);
+            }
+
+            // Save + Logout row: after the LAST section, or at the viewport
+            // bottom when there is room (the old pinned-row look). Spans the
+            // content width so Log Out stays at the right edge.
+            const int contentH = juce::jmax(vpH, flowEnd + 12 + 30 + 14);
+            const int saveRowY = contentH - 44;
+            int rowW = cw - 40;
+            saveSettingsBtn.setBounds(sx, saveRowY, 100, 30);
+            // Manual beside Save (left cluster); the transient Saved label
+            // moves right of it
+            settingsManualBtn.setBounds(sx + 108, saveRowY, 70, 30);
+            settingsSavedLabel.setBounds(sx + 188, saveRowY, 150, 30);
+            logoutBtn.setBounds(sx + rowW - 80, saveRowY, 80, 30);
+            settingsHelpBtn.setBounds(sx + rowW - 80 - 8 - 120, saveRowY, 120, 30);
+            // Dump meters: DEV-ONLY (dev_mode file)
+            {
+                bool devMode = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                   .getChildFile("EchoJay").getChildFile("dev_mode").existsAsFile();
+                dumpMetersBtn.setVisible(devMode);
+                if (devMode)
+                    dumpMetersBtn.setBounds(sx + rowW - 80 - 8 - 120 - 8 - 96, saveRowY, 96, 30);
+            }
+            logoutBtn.setVisible(true);
+
+            if (!cardsStacked)
+            {
+                // Right column: ACCOUNT on top, ambient visual card filling
+                // the remaining height above the Save row
+                int cx = sx + sw + 16;
+                int cw2 = cw - 20 - cx;
+                int cTop = 18, cBottom = saveRowY - 12;
+                settingsAccountCard_ = { cx, cTop, cw2, acct.cardH };
+                settingsVisualCard_  = { cx, cTop + acct.cardH + 8, cw2,
+                                         juce::jmax(120, cBottom - (cTop + acct.cardH + 8)) };
+            }
+            settingsWhatsNewCard_ = settingsMonthCard_ = settingsInfoCard_ = {};
+            settingsOrbCard_.setBounds(settingsVisualCard_);
+            settingsOrbCard_.setVisible(!settingsVisualCard_.isEmpty());
+            settingsOrbCard_.ensureTimerMatchesVisibility();
+            // Upgrade button slot (CONTENT coordinates; the timer's upgrade
+            // block parents the shared button into the content for this)
+            settingsUpgradeRect_ = acct.buttonYRel < 0 ? juce::Rectangle<int>{}
+                : juce::Rectangle<int>(settingsAccountCard_.getX() + 14,
+                                       settingsAccountCard_.getY() + acct.buttonYRel,
+                                       settingsAccountCard_.getWidth() - 28, 28);
+            return contentH;
+        };
+
+        int cw = b.getWidth();
+        int contentH = layoutSettings(cw);
+        if (contentH > vpH)
         {
-            bool devMode = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                               .getChildFile("EchoJay").getChildFile("dev_mode").existsAsFile();
-            dumpMetersBtn.setVisible(devMode);
-            if (devMode)
-                dumpMetersBtn.setBounds(sx + rowW - 80 - 8 - 120 - 8 - 96, saveRowY, 96, 30);
+            cw = b.getWidth() - settingsViewport_.getScrollBarThickness();
+            contentH = layoutSettings(cw);
         }
-        logoutBtn.setVisible(true);
-
-        // Right column: ACCOUNT on top (unchanged), the ambient visual card
-        // filling ALL remaining height below it (no chrome). The slim
-        // WHAT'S NEW / THIS MONTH card was removed — monthly stats keep
-        // counting in monthly_stats.json (Trends may want them) and the
-        // /api/whats-new fetch sits dormant behind kShowWhatsNewCard.
-        // ONE stack layout drives both the card height and the button slot.
-        auto info = api.getUserInfo();
-        const AccountLayout acct = accountLayout(info.tierLevel, info.usagePool.twoLane());
-        if (!cardsStacked)
-        {
-            int cx = sx + sw + 16;
-            int cw = b.getWidth() - 20 - cx;
-            int cTop = topH + 18, cBottom = saveRowY - 12;
-            settingsAccountCard_ = { cx, cTop, cw, acct.cardH };
-            settingsVisualCard_  = { cx, cTop + acct.cardH + 8, cw,
-                                     juce::jmax(120, cBottom - (cTop + acct.cardH + 8)) };
-        }
-        else
-        {
-            int cTop = sy + 8;
-            int ch = juce::jlimit(96, acct.cardH, saveRowY - 12 - cTop);
-            settingsAccountCard_ = { sx, cTop, juce::jmin(sw, 380), ch };
-            settingsVisualCard_  = {};   // stacked mode: no room to breathe
-        }
-        settingsWhatsNewCard_ = settingsMonthCard_ = settingsInfoCard_ = {};
-        settingsOrbCard_.setBounds(settingsVisualCard_);
-        settingsOrbCard_.setVisible(!settingsVisualCard_.isEmpty());
-        settingsOrbCard_.ensureTimerMatchesVisibility();
-        // Upgrade button slot: the button row of the stack (empty for Studio).
-        settingsUpgradeRect_ = acct.buttonYRel < 0 ? juce::Rectangle<int>{}
-            : juce::Rectangle<int>(settingsAccountCard_.getX() + 14,
-                                   settingsAccountCard_.getY() + acct.buttonYRel,
-                                   settingsAccountCard_.getWidth() - 28, 28);
+        settingsContent_.setSize(cw, contentH);
     }
     else
     {
+        settingsViewport_.setVisible(false);
         settingsAccountCard_ = settingsWhatsNewCard_ = settingsMonthCard_ = {};
         settingsVisualCard_ = settingsInfoCard_ = {};
         settingsUpgradeRect_ = {};
@@ -11747,9 +11806,18 @@ void EchoJayEditor::timerCallback()
         if (showUpgrade)
         {
             upgradeBtn.setButtonText(info.tierLevel == 0 ? "Upgrade to Pro" : "Upgrade to Studio");
+            // The ACCOUNT card lives in the scrolled Settings content, so
+            // the SHARED button re-parents into the content for that surface
+            // and back onto the editor for every other one. This block is
+            // the ONLY place the button's parent is ever decided.
+            juce::Component* wantParent = onSettingsCard
+                ? (juce::Component*) &settingsContent_ : (juce::Component*) this;
+            if (upgradeBtn.getParentComponent() != wantParent)
+                wantParent->addAndMakeVisible(upgradeBtn);
             if (onSettingsCard)
             {
-                // Full-width button row (status text is on its own row above)
+                // Full-width button row (status text is on its own row above;
+                // rect is in CONTENT coordinates, scrolls with the card)
                 upgradeBtn.setBounds(settingsUpgradeRect_);
             }
             else if (onLockStrip)

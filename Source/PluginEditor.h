@@ -1772,6 +1772,22 @@ private:
     // Opens https://www.echojay.ai/manual — sits beside Save on the bottom
     // row (left cluster), same quiet link style as Help & Support
     juce::TextButton settingsManualBtn { "Manual" };
+
+    // Scrollable Settings: the settings-only children live inside
+    // settingsContent_, viewed through settingsViewport_. resized() stays
+    // the single layout authority: it lays the content out in CONTENT
+    // coordinates and grows the content past the viewport when the window
+    // is short, so every section (Usage included) stays reachable and the
+    // Save row lays out WITHIN the flow instead of floating over other
+    // controls. The painted labels/cards render in the content's paint
+    // hook so they scroll and clip with it.
+    struct SettingsContent : juce::Component
+    {
+        std::function<void(juce::Graphics&)> paintFn;
+        void paint(juce::Graphics& g) override { if (paintFn) paintFn(g); }
+    };
+    juce::Viewport settingsViewport_;
+    SettingsContent settingsContent_;
     // Debug: dumps MeterEngine::getMeterDataJSON() to ~/Documents/EchoJay/
     // meter-debug.json + appends a one-line summary to meter-debug.log
     juce::TextButton dumpMetersBtn { "Dump meters" };
