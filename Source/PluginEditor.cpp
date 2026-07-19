@@ -1151,9 +1151,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     signUpLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(signUpLabel);
 
-    signUpBtn.setColour(juce::TextButton::buttonColourId, C::purple);
-    signUpBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    signUpBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    // Same look as the Upgrade button: C::blue (0xff06b6d4) lands in the
+    // LookAndFeel primary branch (teal glow fill, 6px radius, hover ramp),
+    // cyan C::blue2 text. C::purple missed that branch by 5 green units and
+    // fell into the flat solid-fill branch, the same trap the project
+    // prompt button hit.
+    signUpBtn.setColour(juce::TextButton::buttonColourId, C::blue);
+    signUpBtn.setColour(juce::TextButton::textColourOnId, C::blue2);
+    signUpBtn.setColour(juce::TextButton::textColourOffId, C::blue2);
     signUpBtn.onClick = [this] {
         juce::URL("https://www.echojay.ai/app").launchInDefaultBrowser();
     };
