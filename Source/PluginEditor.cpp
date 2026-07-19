@@ -1110,11 +1110,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     loginTitle.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(loginTitle);
 
-    loginSubtitle.setText("Log in to get AI mix feedback", juce::dontSendNotification);
-    loginSubtitle.setColour(juce::Label::textColourId, C::text3);
-    loginSubtitle.setFont(juce::Font(juce::FontOptions(14.0f)));
-    loginSubtitle.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(loginSubtitle);
 
     emailInput.setTextToShowWhenEmpty("Email", C::text3);
     emailInput.setColour(juce::TextEditor::backgroundColourId, C::bg3);
@@ -1192,7 +1187,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     if (api.isLoggedIn())
     {
         currentScreen = Screen::Main;
-        loginTitle.setVisible(false); loginSubtitle.setVisible(false);
+        loginTitle.setVisible(false);
         emailInput.setVisible(false); passwordInput.setVisible(false);
         loginBtn.setVisible(false); loginErrorLabel.setVisible(false);
         signUpLabel.setVisible(false); signUpBtn.setVisible(false);
@@ -1840,7 +1835,7 @@ void EchoJayEditor::showLoginScreen()
     if (currentView == View::Compare) hideCompareView();
     currentView = View::Meters;
     
-    loginTitle.setVisible(true); loginSubtitle.setVisible(true);
+    loginTitle.setVisible(true);
     emailInput.setVisible(true); passwordInput.setVisible(true);
     loginBtn.setVisible(true); loginErrorLabel.setVisible(true);
     signUpLabel.setVisible(true); signUpBtn.setVisible(true);
@@ -1884,7 +1879,7 @@ void EchoJayEditor::showLoginScreen()
 void EchoJayEditor::showMainScreen()
 {
     currentScreen = Screen::Main;
-    loginTitle.setVisible(false); loginSubtitle.setVisible(false);
+    loginTitle.setVisible(false);
     emailInput.setVisible(false); passwordInput.setVisible(false);
     loginBtn.setVisible(false); loginErrorLabel.setVisible(false);
     signUpLabel.setVisible(false); signUpBtn.setVisible(false);
@@ -10448,9 +10443,11 @@ void EchoJayEditor::resized()
         
         int formW = juce::jmin(340, b.getWidth() - 60);
         int formX = (b.getWidth() - formW) / 2;
-        int y = b.getHeight() / 2 - 120;
-        loginTitle.setBounds(formX, y, formW, 40); y += 44;
-        loginSubtitle.setBounds(formX, y, formW, 24); y += 40;
+        // Subtitle removed: the logo goes straight to the form with one
+        // deliberate 56px gap, and the stack starts 14px lower so the
+        // shorter form stays visually centred
+        int y = b.getHeight() / 2 - 106;
+        loginTitle.setBounds(formX, y, formW, 40); y += 56;
         emailInput.setBounds(formX, y, formW, 36); y += 44;
         passwordInput.setBounds(formX, y, formW, 36); y += 44;
         loginBtn.setBounds(formX, y, formW, 38); y += 48;

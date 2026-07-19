@@ -197,7 +197,6 @@ private:
     juce::TextButton loginBtn { "Log In" };
     juce::Label loginErrorLabel;
     juce::Label loginTitle;
-    juce::Label loginSubtitle;
     juce::TextButton signUpBtn { "Sign Up" };
     juce::Label signUpLabel;
     bool loginLoading = false;
