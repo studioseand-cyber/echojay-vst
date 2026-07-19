@@ -10426,6 +10426,15 @@ void EchoJayEditor::resized()
 
     // channelPromptBlocker removed — overlay is painted in paint()
 
+    // The Settings viewport must NEVER survive off the main screen: the
+    // login/loading branches below return before the Settings block, and a
+    // stale visible viewport is transparent and topmost, silently eating
+    // every click (the dead-login bug after logging out from Settings).
+    // Hidden here so the early returns are safe; the Settings block later
+    // in this function is the only thing that shows it again.
+    if (currentScreen != Screen::Main)
+        settingsViewport_.setVisible(false);
+
     if (currentScreen == Screen::Login) {
         // Hide all overlay components
         for (int i = 0; i < kMaxWavePlayBtns; ++i)
