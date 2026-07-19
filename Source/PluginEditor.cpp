@@ -653,6 +653,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     intakeTitleLabel.setVisible(false);
     onboardingOverlay_.addChildComponent(intakeTitleLabel);
 
+    intakeSubLabel.setColour(juce::Label::textColourId, C::text3);
+    intakeSubLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
+    intakeSubLabel.setJustificationType(juce::Justification::centred);
+    intakeSubLabel.setVisible(false);
+    onboardingOverlay_.addChildComponent(intakeSubLabel);
+
     intakeInputBox.setFont(juce::Font(juce::FontOptions(14.0f)));
     intakeInputBox.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff111520));
     intakeInputBox.setColour(juce::TextEditor::outlineColourId, C::border2);
@@ -1981,6 +1987,7 @@ void EchoJayEditor::updateOnboardingPrompts()
     if (onboardingOverlay_.currentPage != 0)
     {
         intakeTitleLabel.toFront(false);
+        intakeSubLabel.toFront(false);
         for (auto& gl : intakeGroupLabels) gl.toFront(false);
         for (auto& chip : intakeChipBtns) chip.toFront(false);
         intakeMoreBtn.toFront(false);
@@ -2123,6 +2130,8 @@ void EchoJayEditor::configureIntakePage(int page)
         if (page == 2)
         {
             intakeTitleFull_ = "What genre is this?";
+            intakeSubLabel.setText("Type a genre or choose from the list below",
+                                   juce::dontSendNotification);
             intakeInputBox.setTextToShowWhenEmpty("Type a genre...", C::text3.withAlpha(0.6f));
             intakeMoreBtn.setButtonText("More genres...");
             intakeFeaturedCount_ = 0;
@@ -2141,6 +2150,8 @@ void EchoJayEditor::configureIntakePage(int page)
         else if (page == 1)
         {
             intakeTitleFull_ = "What type of channel is this?";
+            intakeSubLabel.setText("Type an instrument or bus, or choose below",
+                                   juce::dontSendNotification);
             intakeInputBox.setTextToShowWhenEmpty("Type an instrument or bus...", C::text3.withAlpha(0.6f));
             intakeMoreBtn.setButtonText("More channels...");
 
@@ -2163,6 +2174,7 @@ void EchoJayEditor::configureIntakePage(int page)
         else // page 3: project name, free text, optional
         {
             intakeTitleFull_ = "What's this project called?";
+            intakeSubLabel.setText({}, juce::dontSendNotification);
             intakeInputBox.setTextToShowWhenEmpty("Enter a project name...",
                                                   C::text3.withAlpha(0.6f));
             intakeSkipBtn.setButtonText("Skip");
@@ -2193,6 +2205,7 @@ void EchoJayEditor::configureIntakePage(int page)
     // stays hidden on page 0 and while the question is still typing.
     if (!show || !intakeContentRevealed_)
     {
+        intakeSubLabel.setVisible(false);
         intakeInputBox.setVisible(false);
         for (auto& chip : intakeChipBtns) chip.setVisible(false);
         for (auto& gl : intakeGroupLabels) gl.setVisible(false);
@@ -10970,9 +10983,12 @@ void EchoJayEditor::resized()
         const int page = onboardingOverlay_.currentPage;
         const bool revealed = intakeContentRevealed_;
         auto icard = b.reduced(60, 50);
-        intakeTitleLabel.setBounds(icard.getX() + 40,
-                                   icard.getY() + icard.getHeight() / 8,
-                                   icard.getWidth() - 80, 34);
+        const int titleY = icard.getY() + icard.getHeight() / 8;
+        intakeTitleLabel.setBounds(icard.getX() + 40, titleY, icard.getWidth() - 80, 34);
+        // Helper sub-line under the question: appears with the content once
+        // the typewriter finishes (empty on the project page)
+        intakeSubLabel.setBounds(icard.getX() + 40, titleY + 36, icard.getWidth() - 80, 18);
+        intakeSubLabel.setVisible(revealed && intakeSubLabel.getText().isNotEmpty());
 
         const int iw = juce::jmin(380, icard.getWidth() - 120);
         const int inputY2 = icard.getY() + icard.getHeight() / 3;
@@ -11053,8 +11069,11 @@ void EchoJayEditor::resized()
                 gapY = juce::jmin(40, spread);
                 leadPad = juce::jmax(0, (avail - total - gapY * (n - 1)) / 2);
             }
-            else if (total + (n - 1) * 8 > avail)
-                overflow = true;
+            // When the total does not fit, keep the tight gap and let the
+            // placement loop below discover overflow per block: leading
+            // blocks that fit still render, only the trailing ones hide.
+            // (Pre-setting the flag here hid EVERY block, which blanked the
+            // 9-block channel page while the 4-block genre page still fit.)
         }
 
         for (auto& gl : intakeGroupLabels) gl.setVisible(false);

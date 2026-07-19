@@ -242,6 +242,7 @@ private:
     // processor state and ChainHost session sharing stay the one source of
     // truth.
     juce::Label intakeTitleLabel;
+    juce::Label intakeSubLabel;      // muted helper line under the question
     juce::TextEditor intakeInputBox;
     // Chips: every canonical option exactly once, equal treatment, under its
     // canonical group label; the channel page additionally leads with ONE
