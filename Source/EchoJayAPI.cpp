@@ -3,6 +3,7 @@
 
 // Defined later in this file (used by both /api/me parse sites)
 static void parseUsagePool(juce::DynamicObject* root, UserInfo& info);
+static void parseTierModels(juce::DynamicObject* root, UserInfo& info);
 
 // Forward-declared from PluginProcessor.cpp so we can tag callAsync entry
 // points from the API thread. The diagnostic helps identify which async
@@ -237,6 +238,7 @@ void EchoJayAPI::login(const juce::String& email, const juce::String& password,
                 }
                 
                 parseUsagePool(obj, userInfo);   // usage-v2 (additive)
+                parseTierModels(obj, userInfo);  // tier bar labels (additive)
 
                 // Check for nested usage object
                 auto usageVar = obj->getProperty("usage");
@@ -387,6 +389,20 @@ juce::String EchoJayAPI::getLimitReachedMessage(const juce::String& turnType) co
     return getLimitReachedMessage();
 }
 
+// Always-present tier-model names ("tierModels" root object, additive):
+// FIXED per tier, they drive the Settings usage bar labels for every tier.
+// Absent or partial object leaves the names empty (labels fall back).
+static void parseTierModels(juce::DynamicObject* root, UserInfo& info)
+{
+    info.tierModels = {};
+    if (root == nullptr) return;
+    if (auto* tm = root->getProperty("tierModels").getDynamicObject())
+    {
+        info.tierModels.chat    = tm->getProperty("chat").toString().trim();
+        info.tierModels.premium = tm->getProperty("premium").toString().trim();
+    }
+}
+
 // usage-v2: parse the additive usagePool object from an /api/me (or login)
 // response root. Absent -> present=false and the legacy fields drive a
 // locally-computed percent. Unknown sub-fields (nudge etc.) parse loosely —
@@ -471,6 +487,7 @@ void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
                 
                 // Parse usage object
                 parseUsagePool(root, userInfo);   // usage-v2 (additive)
+                parseTierModels(root, userInfo);  // tier bar labels (additive)
                 auto usageVar = root->getProperty("usage");
                 if (auto* usageObj = usageVar.getDynamicObject())
                 {

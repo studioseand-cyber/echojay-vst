@@ -7651,8 +7651,7 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
 
                 auto laneBar = [&](const juce::String& name,
                                    const UserInfo::UsagePool::Lane& lane,
-                                   const juce::String& resetLine,
-                                   const juce::String& modelName = {})
+                                   const juce::String& resetLine)
                 {
                     const float pct  = juce::jlimit(0.0f, 100.0f, lane.percent);
                     const float frac = pct / 100.0f;
@@ -7661,14 +7660,6 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
                     g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
                     g.drawText(name + ": " + juce::String((int) std::lround(pct)) + "% used",
                                bx, y, bw, 14, juce::Justification::centredLeft);
-                    if (modelName.isNotEmpty())
-                    {
-                        // Server-fed model name for this lane, muted, right end
-                        // of the label line (absent field: nothing drawn)
-                        g.setColour(C::text3);
-                        g.setFont(juce::Font(juce::FontOptions(9.5f)));
-                        g.drawText(modelName, bx, y, bw, 14, juce::Justification::centredRight);
-                    }
                     y += 17;
                     juce::Rectangle<int> bar(bx, y, bw, 7);
                     g.setColour(C::bg4);
@@ -7686,9 +7677,17 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
                     y += 18;
                 };
 
-                laneBar("Chats", info.usagePool.chats, "Resets daily",
-                        info.usagePool.modelName);
-                laneBar("Premium actions", info.usagePool.premium, "Resets monthly, on the 1st");
+                // Bar labels carry the FIXED tier model names (always-present
+                // tierModels field; per-turn modelName never flips these).
+                // Absent names keep the plain copy: no guess, no suffix.
+                const auto middot = juce::String::fromUTF8(" \xc2\xb7 ");
+                const auto& tm = info.tierModels;
+                laneBar(tm.chat.isNotEmpty() ? "Chats" + middot + tm.chat
+                                             : juce::String("Chats"),
+                        info.usagePool.chats, "Resets daily");
+                laneBar(tm.premium.isNotEmpty() ? "Premium" + middot + tm.premium
+                                                : juce::String("Premium actions"),
+                        info.usagePool.premium, "Resets monthly, on the 1st");
             }
             else
             {
@@ -7700,7 +7699,12 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             int y = a.getY() + acct.barsTop;
             g.setColour(pct >= 90.0f ? juce::Colour(0xffff6d5a) : C::text);
             g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-            g.drawText("Usage: " + juce::String((int) std::lround(pct)) + "% used",
+            // Fixed tier model name suffix (always-present tierModels field);
+            // absent name keeps the plain copy
+            const auto paidLabel = info.tierModels.premium.isNotEmpty()
+                ? "Usage" + juce::String::fromUTF8(" \xc2\xb7 ") + info.tierModels.premium
+                : juce::String("Usage");
+            g.drawText(paidLabel + ": " + juce::String((int) std::lround(pct)) + "% used",
                        bx, y, bw, 14, juce::Justification::centredLeft);
             y += 17;
             juce::Rectangle<int> bar(bx, y, bw, 7);

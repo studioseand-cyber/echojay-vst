@@ -49,6 +49,14 @@ struct UserInfo {
     };
     UsagePool usagePool;
 
+    // Always-present tier model names from /api/me ("tierModels": { "chat",
+    // "premium" }): FIXED per tier, they label the Settings usage bars for
+    // every tier (unlike the per-turn chat modelName). Server-fed display
+    // names, never hardcoded; empty until the server sends them and the
+    // labels then fall back to their plain copy.
+    struct TierModels { juce::String chat, premium; };
+    TierModels tierModels;
+
     bool isPro() const { return tierLevel >= 1; }
     bool isStudio() const { return tierLevel >= 2; }
 
