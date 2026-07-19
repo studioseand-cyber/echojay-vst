@@ -126,6 +126,19 @@ static constexpr GenrePromptOption kGenrePromptOptions[] = {
     { "Dancehall", 3 }, { "Grime", 3 }, { "Phonk", 3 }, { "Jersey Club", 3 }
 };
 
+// Curated popular quick-pick chips for the intake overlay. Every value MUST
+// be an exact member of the canonical lists above (the classifier and server
+// depend on these exact strings). The More menu and the free-text input keep
+// the full sets reachable.
+static constexpr const char* kGenreQuickPicks[] = {
+    "Hip-Hop", "Pop", "R&B", "Trap", "Drill",
+    "EDM", "House", "Techno", "Rock", "Indie"
+};
+static constexpr const char* kChannelQuickPicks[] = {
+    "Lead Vocal", "Backing Vocal", "Kick", "Snare", "Drum Bus",
+    "Bass / 808", "Piano", "Electric Guitar", "Synth Lead", "Master Bus"
+};
+
 // --- Update-dismissed persistence -------------------------------------------
 // Stored at ~/Library/Application Support/EchoJay/update_dismissed.json
 // Format: { "version": "1.2.0", "dismissedAtSeconds": 1714678800 }
@@ -645,173 +658,61 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     logoutBtn.onClick = [this] { handleLogout(); };
     addAndMakeVisible(logoutBtn);
 
-    channelPromptBlocker.setVisible(false);
-    addChildComponent(channelPromptBlocker);
+    // --- Centered intake overlay (genre -> channel -> project name) ---
+    // One shared component set; configureIntakePage() swaps content per page.
+    intakeTitleLabel.setColour(juce::Label::textColourId, C::text);
+    intakeTitleLabel.setFont(juce::Font(juce::FontOptions(24.0f, juce::Font::bold)));
+    intakeTitleLabel.setJustificationType(juce::Justification::centred);
+    intakeTitleLabel.setVisible(false);
+    onboardingOverlay_.addChildComponent(intakeTitleLabel);
 
-    channelPromptTitle.setText("What type of channel is this?", juce::dontSendNotification);
-    channelPromptTitle.setColour(juce::Label::textColourId, C::text);
-    channelPromptTitle.setFont(juce::Font(juce::FontOptions(24.0f, juce::Font::bold)));
-    channelPromptTitle.setJustificationType(juce::Justification::centred);
-    channelPromptTitle.setVisible(false);
-    onboardingOverlay_.addChildComponent(channelPromptTitle);
+    intakeInputBox.setFont(juce::Font(juce::FontOptions(14.0f)));
+    intakeInputBox.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff111520));
+    intakeInputBox.setColour(juce::TextEditor::outlineColourId, C::border2);
+    intakeInputBox.setColour(juce::TextEditor::focusedOutlineColourId, C::blue2.withAlpha(0.6f));
+    intakeInputBox.setColour(juce::TextEditor::textColourId, C::text);
+    intakeInputBox.setJustification(juce::Justification::centred);
+    intakeInputBox.onReturnKey = [this] { submitIntakeInput(); };
+    intakeInputBox.setVisible(false);
+    onboardingOverlay_.addChildComponent(intakeInputBox);
 
-    channelPromptSubtitle.setText("Pick the source once and EchoJay will remember it for this plugin instance.", juce::dontSendNotification);
-    channelPromptSubtitle.setColour(juce::Label::textColourId, C::text3);
-    channelPromptSubtitle.setFont(juce::Font(juce::FontOptions(12.0f)));
-    channelPromptSubtitle.setJustificationType(juce::Justification::centred);
-    channelPromptSubtitle.setVisible(false);
-    onboardingOverlay_.addChildComponent(channelPromptSubtitle);
-
-    for (int i = 0; i < kChannelPromptGroupCount; ++i)
+    for (auto& chip : intakeChipBtns)
     {
-        channelPromptGroupLabels[(size_t)i].setText(kChannelPromptGroups[i], juce::dontSendNotification);
-        channelPromptGroupLabels[(size_t)i].setColour(juce::Label::textColourId, C::amber);
-        channelPromptGroupLabels[(size_t)i].setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-        channelPromptGroupLabels[(size_t)i].setJustificationType(juce::Justification::centredLeft);
-        channelPromptGroupLabels[(size_t)i].setVisible(false);
-        onboardingOverlay_.addChildComponent(channelPromptGroupLabels[(size_t)i]);
+        chip.setColour(juce::TextButton::buttonColourId, C::bg3);
+        chip.setColour(juce::TextButton::textColourOffId, C::text2);
+        chip.setColour(juce::TextButton::buttonOnColourId, C::blue);
+        chip.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        chip.setVisible(false);
+        // onClick is assigned per page by configureIntakePage
+        onboardingOverlay_.addChildComponent(chip);
     }
 
-    for (int i = 0; i < kChannelPromptOptionCount; ++i)
-    {
-        auto& button = channelPromptButtons[(size_t)i];
-        button.setButtonText(kChannelPromptOptions[i].label);
-        button.setColour(juce::TextButton::buttonColourId, C::bg3);
-        button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-        button.setColour(juce::TextButton::buttonOnColourId, C::blue);
-        button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        button.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
-        button.setVisible(false);
-        button.onClick = [this, i] { selectChannelPromptType(kChannelPromptOptions[i].type); };
-        onboardingOverlay_.addChildComponent(button);
-    }
+    intakeMoreBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
+    intakeMoreBtn.setColour(juce::TextButton::textColourOffId, C::purple);
+    intakeMoreBtn.setColour(juce::TextButton::textColourOnId, C::purple);
+    intakeMoreBtn.onClick = [this] { showIntakeMoreMenu(); };
+    intakeMoreBtn.setVisible(false);
+    onboardingOverlay_.addChildComponent(intakeMoreBtn);
 
-    channelPromptSkipBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
-    channelPromptSkipBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    channelPromptSkipBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    channelPromptSkipBtn.setButtonText("Mix Bus");
-    channelPromptSkipBtn.setVisible(false);
-    channelPromptSkipBtn.onClick = [this] { dismissChannelPrompt(); };
-    onboardingOverlay_.addChildComponent(channelPromptSkipBtn);
-    
-    customChannelBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
-    customChannelBtn.setColour(juce::TextButton::textColourOffId, C::purple);
-    customChannelBtn.setColour(juce::TextButton::textColourOnId, C::purple);
-    customChannelBtn.setVisible(false);
-    customChannelBtn.onClick = [this] {
-        auto* te = new juce::TextEditor();
-        te->setFont(juce::Font(juce::FontOptions(13.0f)));
-        te->setTextToShowWhenEmpty("Type instrument name...", C::text3);
-        te->setBounds(getWidth() / 2 - 110, customChannelBtn.getY() - 34, 220, 28);
-        te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
-        te->setColour(juce::TextEditor::textColourId, C::text);
-        te->setColour(juce::TextEditor::outlineColourId, C::purple);
-        te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
-        onboardingOverlay_.addAndMakeVisible(te);
-        te->toFront(true);
-        te->grabKeyboardFocus();
-        te->onReturnKey = [this, te]() {
-            auto name = te->getText().trim();
-            if (name.isNotEmpty()) {
-                processorRef.setCustomChannelName(name);
-                processorRef.setChannelType(ChannelType::Other);
-                processorRef.setChannelTypePromptDismissed(true);
-                addCustomChannelToList(name);
-                rebuildChannelTypeBox();
-                updateChannelPromptVisibility();
-                resized();
-            }
-            juce::MessageManager::callAsync([te]() { delete te; });
-        };
-        te->onFocusLost = [this, te]() {
-            auto name = te->getText().trim();
-            if (name.isNotEmpty()) {
-                processorRef.setCustomChannelName(name);
-                processorRef.setChannelType(ChannelType::Other);
-                processorRef.setChannelTypePromptDismissed(true);
-                addCustomChannelToList(name);
-                rebuildChannelTypeBox();
-            }
-            juce::MessageManager::callAsync([te]() { delete te; });
-        };
+    // 0xff06b6d4 lands in the LookAndFeel primary branch (dark glow + hover),
+    // same family as the Save buttons
+    intakeContinueBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
+    intakeContinueBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    intakeContinueBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    intakeContinueBtn.onClick = [this] { submitIntakeInput(); };
+    intakeContinueBtn.setVisible(false);
+    onboardingOverlay_.addChildComponent(intakeContinueBtn);
+
+    intakeSkipBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
+    intakeSkipBtn.setColour(juce::TextButton::textColourOffId, C::text2);
+    intakeSkipBtn.onClick = [this] {
+        // Channel page skips to the Mix Bus default; project page skips to
+        // the session auto-name. Genre has no skip (pick or type).
+        if (onboardingOverlay_.currentPage == 1)      dismissChannelPrompt();
+        else if (onboardingOverlay_.currentPage == 3) dismissProjectPrompt(false);
     };
-    onboardingOverlay_.addChildComponent(customChannelBtn);
-
-    // --- Session-level genre prompt ---
-    genrePromptTitle.setText("What genre is this project?", juce::dontSendNotification);
-    genrePromptTitle.setColour(juce::Label::textColourId, C::text);
-    genrePromptTitle.setFont(juce::Font(juce::FontOptions(22.0f, juce::Font::bold)));
-    genrePromptTitle.setJustificationType(juce::Justification::centred);
-    genrePromptTitle.setVisible(false);
-    onboardingOverlay_.addChildComponent(genrePromptTitle);
-
-    genrePromptSubtitle.setText("EchoJay uses this to judge loudness targets. Applies to all instances this session.", juce::dontSendNotification);
-    genrePromptSubtitle.setColour(juce::Label::textColourId, C::text3);
-    genrePromptSubtitle.setFont(juce::Font(juce::FontOptions(11.0f)));
-    genrePromptSubtitle.setJustificationType(juce::Justification::centred);
-    genrePromptSubtitle.setVisible(false);
-    onboardingOverlay_.addChildComponent(genrePromptSubtitle);
-
-    for (int i = 0; i < kGenreGroupCount; ++i)
-    {
-        genrePromptGroupLabels[(size_t)i].setText(kGenrePromptGroups[i], juce::dontSendNotification);
-        genrePromptGroupLabels[(size_t)i].setColour(juce::Label::textColourId, C::amber);
-        genrePromptGroupLabels[(size_t)i].setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-        genrePromptGroupLabels[(size_t)i].setJustificationType(juce::Justification::centredLeft);
-        genrePromptGroupLabels[(size_t)i].setVisible(false);
-        onboardingOverlay_.addChildComponent(genrePromptGroupLabels[(size_t)i]);
-    }
-
-    for (int i = 0; i < kGenreOptionCount; ++i)
-    {
-        auto& btn = genrePromptButtons[(size_t)i];
-        btn.setButtonText(kGenrePromptOptions[i].label);
-        btn.setColour(juce::TextButton::buttonColourId, C::bg3);
-        btn.setColour(juce::TextButton::textColourOffId, C::text2);
-        btn.setColour(juce::TextButton::buttonOnColourId, C::purple);
-        btn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        btn.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
-        btn.setVisible(false);
-        btn.onClick = [this, i] { dismissGenrePrompt(kGenrePromptOptions[i].label); };
-        onboardingOverlay_.addChildComponent(btn);
-    }
-
-    genrePromptCustomBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
-    genrePromptCustomBtn.setColour(juce::TextButton::textColourOffId, C::purple);
-    genrePromptCustomBtn.setColour(juce::TextButton::textColourOnId, C::purple);
-    genrePromptCustomBtn.setVisible(false);
-    genrePromptCustomBtn.onClick = [this] {
-        auto* te = new juce::TextEditor();
-        te->setFont(juce::Font(juce::FontOptions(13.0f)));
-        te->setTextToShowWhenEmpty("Type genre name...", C::text3);
-        te->setBounds(getWidth() / 2 - 110, genrePromptCustomBtn.getY() - 34, 220, 28);
-        te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
-        te->setColour(juce::TextEditor::textColourId, C::text);
-        te->setColour(juce::TextEditor::outlineColourId, C::purple);
-        te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
-        onboardingOverlay_.addAndMakeVisible(te);
-        te->toFront(true);
-        te->grabKeyboardFocus();
-        te->onReturnKey = [this, te]() {
-            auto name = te->getText().trim();
-            if (name.isNotEmpty()) {
-                addCustomGenreToList(name);
-                rebuildGenreBox();
-                dismissGenrePrompt(name);
-            }
-            juce::MessageManager::callAsync([te]() { delete te; });
-        };
-        te->onFocusLost = [this, te]() {
-            auto name = te->getText().trim();
-            if (name.isNotEmpty()) {
-                addCustomGenreToList(name);
-                rebuildGenreBox();
-                dismissGenrePrompt(name);
-            }
-            juce::MessageManager::callAsync([te]() { delete te; });
-        };
-    };
-    onboardingOverlay_.addChildComponent(genrePromptCustomBtn);
+    intakeSkipBtn.setVisible(false);
+    onboardingOverlay_.addChildComponent(intakeSkipBtn);
 
     userLabel.setColour(juce::Label::textColourId, C::text2);
     userLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
@@ -1313,54 +1214,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     mkLabel(detectedLabel, C::amber);
     mkLabel(passLabel, C::text3);
 
-    // --- Project-name prompt (channel/genre-style) ---
-    projectPromptTitle.setText("What are you working on?", juce::dontSendNotification);
-    projectPromptTitle.setColour(juce::Label::textColourId, C::text);
-    projectPromptTitle.setFont(juce::Font(juce::FontOptions(22.0f, juce::Font::bold)));
-    projectPromptTitle.setJustificationType(juce::Justification::centred);
-    projectPromptTitle.setVisible(false);
-    onboardingOverlay_.addChildComponent(projectPromptTitle);
-
-    projectPromptSubtitle.setText("Names your captures and reviews. Shared with every EchoJay and Link instance this session.",
-                                  juce::dontSendNotification);
-    projectPromptSubtitle.setColour(juce::Label::textColourId, C::text3);
-    projectPromptSubtitle.setFont(juce::Font(juce::FontOptions(11.0f)));
-    projectPromptSubtitle.setJustificationType(juce::Justification::centred);
-    projectPromptSubtitle.setVisible(false);
-    onboardingOverlay_.addChildComponent(projectPromptSubtitle);
-
-    projectPromptInput.setFont(juce::Font(juce::FontOptions(14.0f)));
-    projectPromptInput.setTextToShowWhenEmpty("e.g. Midnight Drive", C::text3.withAlpha(0.6f));
-    projectPromptInput.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff111520));
-    projectPromptInput.setColour(juce::TextEditor::outlineColourId, C::border2);
-    projectPromptInput.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff22d3ee).withAlpha(0.6f));
-    projectPromptInput.setColour(juce::TextEditor::textColourId, C::text);
-    projectPromptInput.setJustification(juce::Justification::centred);
-    projectPromptInput.onReturnKey = [this] { dismissProjectPrompt(true); };
-    projectPromptInput.setVisible(false);
-    onboardingOverlay_.addChildComponent(projectPromptInput);
-
-    // Same family as the channel prompt's bottom "Mix Bus" button: 0xff06b6d4
-    // hits the LookAndFeel primary branch (dark glow + hover), light text.
-    // 0xff0891b2 missed that branch by 5 green units (isPrimary needs g>150,
-    // it has 145) and fell into the SOLID-fill branch — that was the odd one
-    // out. Skip (bg3/text2) already matches the channel grid's secondary
-    // family; no other prompt button uses a solid fill.
-    projectPromptOkBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
-    projectPromptOkBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    projectPromptOkBtn.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    projectPromptOkBtn.onClick = [this] { dismissProjectPrompt(true); };
-    projectPromptOkBtn.setVisible(false);
-    onboardingOverlay_.addChildComponent(projectPromptOkBtn);
-
-    projectPromptSkipBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
-    projectPromptSkipBtn.setColour(juce::TextButton::textColourOffId, C::text2);
-    projectPromptSkipBtn.onClick = [this] { dismissProjectPrompt(false); };
-    projectPromptSkipBtn.setVisible(false);
-    onboardingOverlay_.addChildComponent(projectPromptSkipBtn);
-
-    // The modal onboarding overlay — one opaque component owning all three
-    // pages; paints the active page's scrim+card itself
+    // The modal onboarding overlay is one opaque component owning all three
+    // intake pages; paints the shared scrim+card itself
     onboardingOverlay_.paintScrim = [this](juce::Graphics& g)
     {
         auto& ov = onboardingOverlay_;
@@ -1369,11 +1224,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             ov.lastPaintedPage = ov.currentPage;
             EchoJay_NSLog(("EJPrompt: paint page=" + juce::String(ov.currentPage)).toRawUTF8());
         }
-        auto ob = ov.getLocalBounds();
-        // currentPage is the ONLY selector — paint and component visibility
-        // both derive from it and cannot disagree
-        if (ov.currentPage == 1)      paintChannelPromptOverlay(g, ob);
-        else if (ov.currentPage != 0) paintGenrePromptOverlay(g, ob); // genre + project share the card
+        // currentPage is the ONLY selector: paint and component visibility
+        // both derive from it and cannot disagree. All pages share one card.
+        if (ov.currentPage != 0) paintGenrePromptOverlay(g, ov.getLocalBounds());
     };
     addChildComponent(onboardingOverlay_);
 
@@ -2083,7 +1936,8 @@ bool EchoJayEditor::shouldShowChannelPrompt() const
 {
     return currentScreen == Screen::Main
         && !processorRef.isChannelTypePromptDismissed()
-        && processorRef.getChannelType() == ChannelType::FullMix;
+        && processorRef.getChannelType() == ChannelType::FullMix
+        && !genrePromptVisible;   // genre goes first in the intake order
 }
 
 // Defined later in this file (project-prompt section)
@@ -2098,38 +1952,19 @@ void EchoJayEditor::updateOnboardingPrompts()
     const bool wasGn = genrePromptVisible;
     const bool wasPj = projectPromptVisible;
 
-    // Evaluate the CHAIN in order — each should* consults the previous
-    // prompt's visibility, so the sequence matters
-    channelPromptVisible = shouldShowChannelPrompt();
+    // Evaluate the CHAIN in order (each should* consults the previous
+    // prompt's visibility, so the sequence matters): genre first, then
+    // channel, then project name
     genrePromptVisible   = shouldShowGenrePrompt();
+    channelPromptVisible = shouldShowChannelPrompt();
     projectPromptVisible = shouldShowProjectPrompt();
     // Single page truth for the overlay's paint (and the logs)
-    onboardingOverlay_.currentPage = channelPromptVisible ? 1
-                                   : genrePromptVisible   ? 2
+    onboardingOverlay_.currentPage = genrePromptVisible   ? 2
+                                   : channelPromptVisible ? 1
                                    : projectPromptVisible ? 3 : 0;
 
-    // ---- channel components ----
-    channelPromptBlocker.setVisible(false); // no longer used for blocking
-    channelPromptTitle.setVisible(channelPromptVisible);
-    channelPromptSubtitle.setVisible(channelPromptVisible);
-    channelPromptSkipBtn.setVisible(channelPromptVisible);
-    customChannelBtn.setVisible(channelPromptVisible);
-    for (auto& label : channelPromptGroupLabels) label.setVisible(channelPromptVisible);
-    for (auto& button : channelPromptButtons)    button.setVisible(channelPromptVisible);
-
-    // ---- genre components ----
-    genrePromptTitle.setVisible(genrePromptVisible);
-    genrePromptSubtitle.setVisible(genrePromptVisible);
-    genrePromptCustomBtn.setVisible(genrePromptVisible);
-    for (auto& label : genrePromptGroupLabels) label.setVisible(genrePromptVisible);
-    for (auto& btn : genrePromptButtons)       btn.setVisible(genrePromptVisible);
-
-    // ---- project components ----
-    projectPromptTitle.setVisible(projectPromptVisible);
-    projectPromptSubtitle.setVisible(projectPromptVisible);
-    projectPromptInput.setVisible(projectPromptVisible);
-    projectPromptOkBtn.setVisible(projectPromptVisible);
-    projectPromptSkipBtn.setVisible(projectPromptVisible);
+    // ---- ONE shared intake page: content swapped in place per page ----
+    configureIntakePage(onboardingOverlay_.currentPage);
 
     // ---- the ONE modal overlay: visible iff any page is unanswered ----
     const bool anyPrompt = channelPromptVisible || genrePromptVisible
@@ -2151,32 +1986,17 @@ void EchoJayEditor::updateOnboardingPrompts()
     captureBtn.setEnabled(!anyPrompt);
     settingsBtn.setEnabled(!anyPrompt);
 
-    // ---- z-order for whichever prompt is up ----
-    if (channelPromptVisible)
+    // ---- z-order for the shared intake set ----
+    if (onboardingOverlay_.currentPage != 0)
     {
-        channelPromptTitle.toFront(false);
-        channelPromptSubtitle.toFront(false);
-        for (auto& label : channelPromptGroupLabels) label.toFront(false);
-        for (auto& button : channelPromptButtons)    button.toFront(false);
-        channelPromptSkipBtn.toFront(false);
-        customChannelBtn.toFront(false);
-    }
-    else if (genrePromptVisible)
-    {
-        genrePromptTitle.toFront(false);
-        genrePromptSubtitle.toFront(false);
-        for (auto& label : genrePromptGroupLabels) label.toFront(false);
-        for (auto& btn : genrePromptButtons)       btn.toFront(false);
-        genrePromptCustomBtn.toFront(false);
-    }
-    else if (projectPromptVisible)
-    {
-        projectPromptTitle.toFront(false);
-        projectPromptSubtitle.toFront(false);
-        projectPromptInput.toFront(false);
-        projectPromptOkBtn.toFront(false);
-        projectPromptSkipBtn.toFront(false);
-        projectPromptInput.grabKeyboardFocus();
+        intakeTitleLabel.toFront(false);
+        for (auto& chip : intakeChipBtns) chip.toFront(false);
+        intakeMoreBtn.toFront(false);
+        intakeContinueBtn.toFront(false);
+        intakeSkipBtn.toFront(false);
+        intakeInputBox.toFront(false);
+        if (onboardingOverlay_.currentPage == 3)
+            intakeInputBox.grabKeyboardFocus();
     }
 
     // ONE occlusion pass from the FINAL combined state — never mid-chain,
@@ -2243,10 +2063,10 @@ void EchoJayEditor::dismissChannelPrompt()
 
 bool EchoJayEditor::shouldShowGenrePrompt() const
 {
+    // First page of the intake order (genre -> channel -> project name)
     return currentScreen == Screen::Main
         && !processorRef.isGenrePromptDismissed()
-        && ChainHost::getSessionGenre().isEmpty()   // session value = adopt, no prompt
-        && !channelPromptVisible;  // don't overlap with channel prompt
+        && ChainHost::getSessionGenre().isEmpty();   // session value = adopt, no prompt
 }
 
 void EchoJayEditor::updateGenrePromptVisibility() { updateOnboardingPrompts(); }
@@ -2267,6 +2087,148 @@ void EchoJayEditor::dismissGenrePrompt(const juce::String& selectedGenre)
     updateOnboardingPrompts();
     resized();
     repaint();
+}
+
+// ============================================================================
+// Centered intake overlay: shared page content, input submit, More menu
+// ============================================================================
+
+// Swaps the intake overlay content in place for the active page: 0 hides
+// everything, 1 channel, 2 genre, 3 project name. Chip labels come from the
+// curated quick-pick subsets of the canonical option lists; every answer
+// path routes through the SAME dismiss/select functions the old list UI
+// used, so processor state stays the one source of truth.
+void EchoJayEditor::configureIntakePage(int page)
+{
+    const bool show = page != 0;
+    if (show && intakeConfiguredPage_ != page)
+    {
+        intakeInputBox.setText({}, juce::dontSendNotification);
+        int chipCount = 0;
+        if (page == 2)
+        {
+            intakeTitleLabel.setText("What genre is this?", juce::dontSendNotification);
+            intakeInputBox.setTextToShowWhenEmpty("Type a genre...", C::text3.withAlpha(0.6f));
+            intakeMoreBtn.setButtonText("More genres...");
+            for (const auto* label : kGenreQuickPicks)
+            {
+                auto& chip = intakeChipBtns[(size_t)chipCount++];
+                chip.setButtonText(label);
+                chip.onClick = [this, label] { dismissGenrePrompt(label); };
+            }
+        }
+        else if (page == 1)
+        {
+            intakeTitleLabel.setText("What type of channel is this?", juce::dontSendNotification);
+            intakeInputBox.setTextToShowWhenEmpty("Type an instrument or bus...", C::text3.withAlpha(0.6f));
+            intakeMoreBtn.setButtonText("More channels...");
+            intakeSkipBtn.setButtonText("Skip (Mix Bus)");
+            for (const auto* label : kChannelQuickPicks)
+            {
+                // Resolve the curated label to its canonical ChannelType now,
+                // so the click handler is a direct select
+                for (const auto& opt : kChannelPromptOptions)
+                {
+                    if (juce::String(opt.label) == label)
+                    {
+                        auto& chip = intakeChipBtns[(size_t)chipCount++];
+                        chip.setButtonText(label);
+                        chip.onClick = [this, t = opt.type] { selectChannelPromptType(t); };
+                        break;
+                    }
+                }
+            }
+        }
+        else // page 3: project name, free text, optional
+        {
+            intakeTitleLabel.setText("What are you working on?", juce::dontSendNotification);
+            intakeInputBox.setTextToShowWhenEmpty("Project name (optional), e.g. Midnight Drive",
+                                                  C::text3.withAlpha(0.6f));
+            intakeSkipBtn.setButtonText("Skip");
+        }
+        intakeConfiguredPage_ = page;
+        intakeChipCount_ = chipCount;
+    }
+    if (!show)
+        intakeConfiguredPage_ = 0;   // force a rebuild next time a page shows
+
+    intakeTitleLabel.setVisible(show);
+    intakeInputBox.setVisible(show);
+    for (int i = 0; i < kIntakeMaxChips; ++i)
+        intakeChipBtns[(size_t)i].setVisible(show && i < intakeChipCount_);
+    intakeMoreBtn.setVisible(show && page != 3);
+    intakeContinueBtn.setVisible(show && page == 3);
+    intakeSkipBtn.setVisible(show && (page == 1 || page == 3));
+}
+
+// Free text is accepted on every step. A value matching a canonical entry
+// resolves to that exact entry (the classifier and server depend on the
+// exact strings); anything else goes through the existing custom paths.
+void EchoJayEditor::submitIntakeInput()
+{
+    const int page = onboardingOverlay_.currentPage;
+    if (page == 3) { dismissProjectPrompt(true); return; }   // reads the box itself
+
+    auto text = intakeInputBox.getText().trim();
+    if (text.isEmpty()) return;
+    if (page == 2)
+    {
+        for (const auto& opt : kGenrePromptOptions)
+            if (text.equalsIgnoreCase(opt.label)) { dismissGenrePrompt(opt.label); return; }
+        addCustomGenreToList(text);
+        rebuildGenreBox();
+        dismissGenrePrompt(text);
+    }
+    else if (page == 1)
+    {
+        for (const auto& opt : kChannelPromptOptions)
+            if (text.equalsIgnoreCase(opt.label)) { selectChannelPromptType(opt.type); return; }
+        // Same custom-channel path as the old Custom flow
+        processorRef.setCustomChannelName(text);
+        processorRef.setChannelType(ChannelType::Other);
+        processorRef.setChannelTypePromptDismissed(true);
+        addCustomChannelToList(text);
+        rebuildChannelTypeBox();
+        updateOnboardingPrompts();
+        resized();
+    }
+}
+
+// "More" fallback: the FULL canonical set, grouped exactly like the old list
+// UI, in a popup menu anchored to the More button.
+void EchoJayEditor::showIntakeMoreMenu()
+{
+    const int page = onboardingOverlay_.currentPage;
+    juce::PopupMenu menu;
+    auto opts = juce::PopupMenu::Options().withTargetComponent(&intakeMoreBtn);
+    if (page == 2)
+    {
+        for (int gi = 0; gi < kGenreGroupCount; ++gi)
+        {
+            juce::PopupMenu sub;
+            for (int i = 0; i < kGenreOptionCount; ++i)
+                if (kGenrePromptOptions[i].groupIndex == gi)
+                    sub.addItem(i + 1, kGenrePromptOptions[i].label);
+            menu.addSubMenu(kGenrePromptGroups[gi], sub);
+        }
+        menu.showMenuAsync(opts, [this](int id) {
+            if (id > 0) dismissGenrePrompt(kGenrePromptOptions[id - 1].label);
+        });
+    }
+    else if (page == 1)
+    {
+        for (int gi = 0; gi < kChannelPromptGroupCount; ++gi)
+        {
+            juce::PopupMenu sub;
+            for (int i = 0; i < kChannelPromptOptionCount; ++i)
+                if (kChannelPromptOptions[i].groupIndex == gi)
+                    sub.addItem(i + 1, kChannelPromptOptions[i].label);
+            menu.addSubMenu(kChannelPromptGroups[gi], sub);
+        }
+        menu.showMenuAsync(opts, [this](int id) {
+            if (id > 0) selectChannelPromptType(kChannelPromptOptions[id - 1].type);
+        });
+    }
 }
 
 // ============================================================================
@@ -2312,10 +2274,10 @@ void EchoJayEditor::dismissProjectPrompt(bool accepted)
 {
     EchoJay_NSLog((juce::String("EJPrompt: project dismiss ")
         + (accepted ? "CONTINUE" : "SKIP")
-        + " input=\"" + projectPromptInput.getText().trim() + "\"").toRawUTF8());
+        + " input=\"" + intakeInputBox.getText().trim() + "\"").toRawUTF8());
     if (accepted)
     {
-        auto name = projectPromptInput.getText().trim();
+        auto name = intakeInputBox.getText().trim();
         if (name.isNotEmpty())
         {
             processorRef.setProjectName(name);
@@ -10305,24 +10267,6 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // paints itself ON TOP of all other children. See UpdateOverlay::paint.
 }
 
-void EchoJayEditor::paintChannelPromptOverlay(juce::Graphics& g, juce::Rectangle<int> bounds)
-{
-    g.setColour(juce::Colours::black.withAlpha(0.72f));
-    g.fillRect(bounds);
-
-    auto card = bounds.reduced(40, 34);
-    g.setColour(C::bg2);
-    g.fillRoundedRectangle(card.toFloat(), 16.0f);
-    g.setColour(C::border2);
-    g.drawRoundedRectangle(card.toFloat(), 16.0f, 1.0f);
-
-    auto accent = card.removeFromTop(6).reduced(24, 0);
-    g.setColour(C::blue.withAlpha(0.85f));
-    g.fillRoundedRectangle(accent.removeFromLeft(card.getWidth() / 3).toFloat(), 3.0f);
-    g.setColour(C::purple.withAlpha(0.85f));
-    g.fillRoundedRectangle(accent.toFloat(), 3.0f);
-}
-
 // ============================================================================
 // Resized
 // ============================================================================
@@ -10970,142 +10914,65 @@ void EchoJayEditor::resized()
         settingsOrbCard_.setVisible(false);   // timer stops via visibilityChanged
     }
 
-    auto card = b.reduced(40, 34);
-    channelPromptTitle.setBounds(card.getX() + 40, card.getY() + 26, card.getWidth() - 80, 30);
-    channelPromptSubtitle.setBounds(card.getX() + 60, card.getY() + 58, card.getWidth() - 120, 22);
-
-    auto gridArea = card.reduced(32, 88);
-    gridArea.removeFromBottom(42);
-    const int columns = 4;
-    const int columnGap = 12;
-    const int rowGap = 22;
-    const int groupW = (gridArea.getWidth() - columnGap * (columns - 1)) / columns;
-    std::array<int, kChannelPromptGroupCount> groupOptionCounts {};
-    for (const auto& option : kChannelPromptOptions)
-        ++groupOptionCounts[(size_t)option.groupIndex];
-
-    const int topRowMaxCount = juce::jmax(
-        juce::jmax(groupOptionCounts[0], groupOptionCounts[1]),
-        juce::jmax(groupOptionCounts[2], groupOptionCounts[3]));
-    const int bottomRowMaxCount = juce::jmax(
-        juce::jmax(groupOptionCounts[4], groupOptionCounts[5]),
-        juce::jmax(groupOptionCounts[6], groupOptionCounts[7]));
-
-    auto computeRowHeight = [](int optionCount) {
-        const int headingHeight = 18;
-        const int headingGap = 6;
-        const int buttonGap = 4;
-        const int buttonHeight = 18;
-        return headingHeight + headingGap + optionCount * buttonHeight + juce::jmax(0, optionCount - 1) * buttonGap;
-    };
-
-    const int topRowHeight = computeRowHeight(topRowMaxCount);
-    const int bottomRowHeight = computeRowHeight(bottomRowMaxCount);
-    const int totalRowsHeight = topRowHeight + bottomRowHeight + rowGap;
-    const int gridTop = gridArea.getY() + juce::jmax(0, (gridArea.getHeight() - totalRowsHeight) / 2);
-    const int rowTops[2] = { gridTop, gridTop + topRowHeight + rowGap };
-    const int rowHeights[2] = { topRowHeight, bottomRowHeight };
-
-    for (int i = 0; i < kChannelPromptGroupCount; ++i)
+    // Intake overlay layout: question on top (centered), input roughly one
+    // third down, quick-pick chips below in centered wrapped rows, actions
+    // at the card bottom. Same card rect as paintGenrePromptOverlay.
     {
-        const int col = i % columns;
-        const int row = i / columns;
-        auto groupBounds = juce::Rectangle<int>(
-            gridArea.getX() + col * (groupW + columnGap),
-            rowTops[row],
-            groupW,
-            rowHeights[row]);
+        auto icard = b.reduced(60, 50);
+        intakeTitleLabel.setBounds(icard.getX() + 40,
+                                   icard.getY() + icard.getHeight() / 8,
+                                   icard.getWidth() - 80, 34);
 
-        channelPromptGroupLabels[(size_t)i].setBounds(groupBounds.getX(), groupBounds.getY(), groupBounds.getWidth(), 18);
+        const int iw = juce::jmin(380, icard.getWidth() - 120);
+        const int inputY2 = icard.getY() + icard.getHeight() / 3;
+        intakeInputBox.setBounds(icard.getCentreX() - iw / 2, inputY2, iw, 32);
 
-        auto buttonsArea = groupBounds.withTrimmedTop(24);
-        const int buttonGap = 4;
-        const int buttonHeight = 18;
-
-        int localIndex = 0;
-        for (int optionIndex = 0; optionIndex < kChannelPromptOptionCount; ++optionIndex)
-        {
-            if (kChannelPromptOptions[optionIndex].groupIndex != i)
-                continue;
-
-            channelPromptButtons[(size_t)optionIndex].setBounds(
-                buttonsArea.getX(),
-                buttonsArea.getY() + localIndex * (buttonHeight + buttonGap),
-                buttonsArea.getWidth(),
-                buttonHeight);
-            ++localIndex;
-        }
-    }
-
-    channelPromptSkipBtn.setBounds(card.getCentreX() - 115, card.getBottom() - 40, 110, 28);
-    customChannelBtn.setBounds(card.getCentreX() + 5, card.getBottom() - 40, 110, 28);
-
-    // Project-name prompt layout — centred card: title, subtitle, one input,
-    // Continue / Skip
-    {
-        auto pcard = b.reduced(40, 34);
-        projectPromptTitle.setBounds(pcard.getX() + 40, pcard.getY() + 26, pcard.getWidth() - 80, 28);
-        projectPromptSubtitle.setBounds(pcard.getX() + 60, pcard.getY() + 56, pcard.getWidth() - 120, 20);
-        int iw = juce::jmin(320, pcard.getWidth() - 120);
-        projectPromptInput.setBounds(pcard.getCentreX() - iw / 2, pcard.getY() + 96, iw, 30);
-        projectPromptOkBtn.setBounds(pcard.getCentreX() - 115, pcard.getY() + 142, 110, 28);
-        projectPromptSkipBtn.setBounds(pcard.getCentreX() + 5, pcard.getY() + 142, 110, 28);
-    }
-
-    // Genre prompt layout — 4 columns with group headers (like channel prompt)
-    {
-        auto genreCard = b.reduced(40, 34);
-        genrePromptTitle.setBounds(genreCard.getX() + 40, genreCard.getY() + 26, genreCard.getWidth() - 80, 28);
-        genrePromptSubtitle.setBounds(genreCard.getX() + 60, genreCard.getY() + 56, genreCard.getWidth() - 120, 20);
-
-        auto gridArea2 = genreCard.reduced(32, 88);
-        gridArea2.removeFromBottom(42);
-        const int columns = 4;
-        const int columnGap = 12;
-        const int rowGap = 22;
-        const int groupW = (gridArea2.getWidth() - columnGap * (columns - 1)) / columns;
-
-        // Count options per group
-        std::array<int, kGenreGroupCount> groupOptionCounts {};
-        for (int i = 0; i < kGenreOptionCount; ++i)
-            ++groupOptionCounts[(size_t)kGenrePromptOptions[i].groupIndex];
-
-        // Compute row heights
-        auto computeGenreRowHeight = [](int optionCount) {
-            const int headingH = 18, headingGap = 6, btnGap = 4, btnH = 18;
-            return headingH + headingGap + optionCount * btnH + juce::jmax(0, optionCount - 1) * btnGap;
+        // Chips: centered rows wrapping within the card, sized to their text
+        const int chipH = 26, chipGapX = 8, chipGapY = 10, chipPad = 26;
+        const int rowMaxW = juce::jmax(120, icard.getWidth() - 100);
+        const juce::Font chipFont(juce::FontOptions(12.0f));
+        auto chipW = [&](int idx) {
+            return juce::GlyphArrangement::getStringWidthInt(
+                       chipFont, intakeChipBtns[(size_t)idx].getButtonText()) + chipPad;
         };
-
-        // All 4 groups in a single row
-        int maxHeight = 0;
-        for (int i = 0; i < kGenreGroupCount; ++i)
-            maxHeight = juce::jmax(maxHeight, computeGenreRowHeight(groupOptionCounts[(size_t)i]));
-
-        const int gridTop = gridArea2.getY() + juce::jmax(0, (gridArea2.getHeight() - maxHeight) / 2);
-
-        for (int i = 0; i < kGenreGroupCount; ++i)
+        int chipY = inputY2 + 32 + 24;
+        int i = 0;
+        while (i < intakeChipCount_)
         {
-            auto groupBounds = juce::Rectangle<int>(
-                gridArea2.getX() + i * (groupW + columnGap),
-                gridTop, groupW, maxHeight);
-
-            genrePromptGroupLabels[(size_t)i].setBounds(groupBounds.getX(), groupBounds.getY(), groupBounds.getWidth(), 18);
-
-            auto buttonsArea = groupBounds.withTrimmedTop(24);
-            const int btnGap = 4, btnH = 18;
-            int localIdx = 0;
-            for (int optIdx = 0; optIdx < kGenreOptionCount; ++optIdx)
+            int rowW = 0, first = i;
+            while (i < intakeChipCount_)
             {
-                if (kGenrePromptOptions[optIdx].groupIndex != i) continue;
-                genrePromptButtons[(size_t)optIdx].setBounds(
-                    buttonsArea.getX(),
-                    buttonsArea.getY() + localIdx * (btnH + btnGap),
-                    buttonsArea.getWidth(), btnH);
-                ++localIdx;
+                const int w = chipW(i);
+                if (rowW > 0 && rowW + chipGapX + w > rowMaxW) break;
+                rowW += (rowW > 0 ? chipGapX : 0) + w;
+                ++i;
             }
+            int x = icard.getCentreX() - rowW / 2;
+            for (int j = first; j < i; ++j)
+            {
+                const int w = chipW(j);
+                intakeChipBtns[(size_t)j].setBounds(x, chipY, w, chipH);
+                x += w + chipGapX;
+            }
+            chipY += chipH + chipGapY;
         }
 
-        genrePromptCustomBtn.setBounds(genreCard.getCentreX() - 55, genreCard.getBottom() - 60, 110, 28);
+        // Actions: project page pairs Continue/Skip under the input; the
+        // chip pages put More (and channel's Skip) at the card bottom
+        if (onboardingOverlay_.currentPage == 3)
+        {
+            intakeContinueBtn.setBounds(icard.getCentreX() - 115, inputY2 + 50, 110, 28);
+            intakeSkipBtn.setBounds(icard.getCentreX() + 5, inputY2 + 50, 110, 28);
+        }
+        else if (onboardingOverlay_.currentPage == 1)
+        {
+            intakeMoreBtn.setBounds(icard.getCentreX() - 145, icard.getBottom() - 46, 140, 28);
+            intakeSkipBtn.setBounds(icard.getCentreX() + 5, icard.getBottom() - 46, 140, 28);
+        }
+        else
+        {
+            intakeMoreBtn.setBounds(icard.getCentreX() - 70, icard.getBottom() - 46, 140, 28);
+        }
     }
 }
 

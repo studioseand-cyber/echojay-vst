@@ -57,7 +57,6 @@ private:
     void updateChannelPromptVisibility();
     void selectChannelPromptType(ChannelType type);
     void dismissChannelPrompt();
-    void paintChannelPromptOverlay(juce::Graphics& g, juce::Rectangle<int> bounds);
     
     void showCompareView();
     void hideCompareView();
@@ -222,29 +221,38 @@ private:
     juce::TextButton scanBtn { "Scan Plugins" };
     juce::TextButton logoutBtn { "Log Out" };
     
-    // First-open channel prompt
-    juce::Component channelPromptBlocker;
-    juce::Label channelPromptTitle;
-    juce::Label channelPromptSubtitle;
+    // First-open channel prompt (page state; UI is the shared intake set below)
     static constexpr int kChannelPromptGroupCount = 8;
     static constexpr int kChannelPromptOptionCount = 35;
-    std::array<juce::Label, kChannelPromptGroupCount> channelPromptGroupLabels;
-    std::array<juce::TextButton, kChannelPromptOptionCount> channelPromptButtons;
-    juce::TextButton channelPromptSkipBtn { "Mix Bus" };
-    juce::TextButton customChannelBtn { "Custom..." };
     bool channelPromptVisible = false;
-    
+
     // Session-level genre prompt — shown once per DAW session across all instances
     // Genre-prompt dismissal lives in the PROCESSOR (serialised with state);
     // the old editor static re-prompted after project reload / process recycle.
     bool genrePromptVisible = false;
-    juce::Label genrePromptTitle;
-    juce::Label genrePromptSubtitle;
     static constexpr int kGenreGroupCount = 4;
     static constexpr int kGenreOptionCount = 36; // built-in genres (excludes Custom button)
-    std::array<juce::Label, kGenreGroupCount> genrePromptGroupLabels;
-    std::array<juce::TextButton, kGenreOptionCount> genrePromptButtons;
-    juce::TextButton genrePromptCustomBtn { "Custom..." };
+
+    // ---- Centered intake overlay (one question at a time) ------------------
+    // ONE shared component set serves all three pages (genre -> channel ->
+    // project name): question label on top, free-text input about a third
+    // down, popular quick-pick chips below, More / Continue / Skip actions.
+    // configureIntakePage() swaps the content in place; every answer routes
+    // through the SAME dismiss/select paths the old list UI used, so the
+    // processor state and ChainHost session sharing stay the one source of
+    // truth.
+    juce::Label intakeTitleLabel;
+    juce::TextEditor intakeInputBox;
+    static constexpr int kIntakeMaxChips = 10;
+    std::array<juce::TextButton, kIntakeMaxChips> intakeChipBtns;
+    juce::TextButton intakeMoreBtn { "More..." };
+    juce::TextButton intakeContinueBtn { "Continue" };
+    juce::TextButton intakeSkipBtn { "Skip" };
+    int intakeConfiguredPage_ = -1;  // last page whose content was built
+    int intakeChipCount_ = 0;        // chips in use on the current page
+    void configureIntakePage(int page);
+    void submitIntakeInput();
+    void showIntakeMoreMenu();
 
     // ---- ONE modal onboarding component ------------------------------------
     // Full editor bounds, paints its OWN scrim+card (no reliance on the
@@ -267,13 +275,10 @@ private:
     };
     OnboardingOverlay onboardingOverlay_;
 
-    // Project-name prompt (channel/genre-style, shown ONCE when the instance
-    // has no own name AND no shared session value exists) + session sharing
+    // Project-name prompt (shown ONCE when the instance has no own name AND
+    // no shared session value exists) + session sharing. UI is the shared
+    // intake set above; the free-text answer is read from intakeInputBox.
     bool projectPromptVisible = false;
-    juce::Label projectPromptTitle, projectPromptSubtitle;
-    juce::TextEditor projectPromptInput;
-    juce::TextButton projectPromptOkBtn { "Continue" };
-    juce::TextButton projectPromptSkipBtn { "Skip" };
     juce::String lastSeenSharedProject_;   // previous shared value (follow rule)
     juce::String lastSeenSharedGenre_;     // session genre follow (flag-keyed)
     bool shouldShowProjectPrompt() const;
