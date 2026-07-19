@@ -1290,7 +1290,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     upgradeBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
     upgradeBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
     upgradeBtn.onClick = [this] {
-        juce::URL("https://www.echojay.ai/?noredirect#pricing").launchInDefaultBrowser();
+        // Stable upgrade route: ONE fixed URL forever, the server decides
+        // where it lands. Never build a destination client-side here.
+        // www host exactly as verified: the apex serves a 308 to www first,
+        // and that extra hop rides a separate redirect config we don't own.
+        juce::URL("https://www.echojay.ai/upgrade").launchInDefaultBrowser();
     };
     addChildComponent(upgradeBtn);
 
