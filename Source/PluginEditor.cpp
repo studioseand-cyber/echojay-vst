@@ -1273,6 +1273,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatDisclaimerLabel.setInterceptsMouseClicks(false, false);
     addChildComponent(chatDisclaimerLabel);
 
+    // Model indicator: bare server-fed model name, sits quietly under the
+    // input's right edge. Text follows the latest chat response via the
+    // timer; the strip collapses when no name has ever arrived.
+    chatModelLabel.setJustificationType(juce::Justification::centredRight);
+    chatModelLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
+    chatModelLabel.setColour(juce::Label::textColourId, C::text3);
+    chatModelLabel.setInterceptsMouseClicks(false, false);
+    addChildComponent(chatModelLabel);
+
     // Save-button family: 0xff06b6d4 lands in the LookAndFeel's "primary"
     // branch (dark teal glow fill + hover), cyan text — NOT a solid fill.
     // ONE component serves every Upgrade surface (ACCOUNT card slot + the
@@ -7642,7 +7651,8 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
 
                 auto laneBar = [&](const juce::String& name,
                                    const UserInfo::UsagePool::Lane& lane,
-                                   const juce::String& resetLine)
+                                   const juce::String& resetLine,
+                                   const juce::String& modelName = {})
                 {
                     const float pct  = juce::jlimit(0.0f, 100.0f, lane.percent);
                     const float frac = pct / 100.0f;
@@ -7651,6 +7661,14 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
                     g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
                     g.drawText(name + ": " + juce::String((int) std::lround(pct)) + "% used",
                                bx, y, bw, 14, juce::Justification::centredLeft);
+                    if (modelName.isNotEmpty())
+                    {
+                        // Server-fed model name for this lane, muted, right end
+                        // of the label line (absent field: nothing drawn)
+                        g.setColour(C::text3);
+                        g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                        g.drawText(modelName, bx, y, bw, 14, juce::Justification::centredRight);
+                    }
                     y += 17;
                     juce::Rectangle<int> bar(bx, y, bw, 7);
                     g.setColour(C::bg4);
@@ -7668,7 +7686,8 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
                     y += 18;
                 };
 
-                laneBar("Chats", info.usagePool.chats, "Resets daily");
+                laneBar("Chats", info.usagePool.chats, "Resets daily",
+                        info.usagePool.modelName);
                 laneBar("Premium actions", info.usagePool.premium, "Resets monthly, on the 1st");
             }
             else
@@ -10590,8 +10609,11 @@ void EchoJayEditor::resized()
     int inputPad = compactMode ? 16 : 10;
     // Disclaimer footer strip under the input; the input row moves up to make
     // room. Bounds/text/visibility are set after the hide blocks below.
+    // Above the disclaimer, an extra strip for the model indicator when a
+    // server-fed name exists (timer keeps the label text current).
     const int discH = 14;
-    int inputY = b.getHeight() - inH - inputPad - abOff4 - discH;
+    const int modelH = chatModelLabel.getText().isNotEmpty() ? 12 : 0;
+    int inputY = b.getHeight() - inH - inputPad - abOff4 - discH - modelH;
     // CHAT tab, empty active chat: centre the input in the message area
     // with the greeting above it (modern chat UX). Any message docks it.
     chatCentredEmpty_ = currentTab == Tab::Chat && !compactMode && !visualOnlyMode
@@ -10719,6 +10741,18 @@ void EchoJayEditor::resized()
                                       b.getHeight() - abOff4 - discH - 2,
                                       chatW - chatPadL - 8, discH);
         chatDisclaimerLabel.setVisible(chatInput.isVisible());
+
+        // Model indicator: right-aligned directly under the input (its own
+        // strip above the disclaimer). In the centred-empty chat state it
+        // tucks under the floating input box instead.
+        if (chatCentredEmpty_)
+            chatModelLabel.setBounds(chatInput.getX(), chatInput.getBottom() + 2,
+                                     chatSendBtn.getRight() - chatInput.getX(), 10);
+        else
+            chatModelLabel.setBounds(chatStartX + chatPadL, inputY + inH + 2,
+                                     chatW - chatPadL - 8, modelH > 0 ? 12 : 0);
+        chatModelLabel.setVisible(chatInput.isVisible()
+                                  && chatModelLabel.getText().isNotEmpty());
     }
 
     // Logout button lives in Settings view now (positioned there)
@@ -11243,6 +11277,18 @@ void EchoJayEditor::timerCallback()
                 intakeGroupLabels[(size_t)g].setAlpha(a);
                 intakeGroupLabels[(size_t)g].setVisible(true);
             }
+        }
+    }
+
+    // Model indicator text follows the server (latest chat response, else
+    // the free lane's usagePool model). setText is a no-op when unchanged;
+    // a real change relayouts so the footer strip appears or collapses.
+    {
+        auto modelName = api.currentModelDisplayName();
+        if (modelName != chatModelLabel.getText())
+        {
+            chatModelLabel.setText(modelName, juce::dontSendNotification);
+            resized();
         }
     }
 

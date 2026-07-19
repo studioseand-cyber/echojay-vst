@@ -425,6 +425,7 @@ static void parseUsagePool(juce::DynamicObject* root, UserInfo& info)
     if (auto* model = up->getProperty("model").getDynamicObject())
     {
         u.modelFast      = (bool) model->getProperty("fast");
+        u.modelName      = model->getProperty("name").toString();
         u.tasteRemaining = (int)  model->getProperty("tasteRemaining");
     }
     if (up->hasProperty("nudge"))
@@ -722,7 +723,15 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
             if (obj && obj->hasProperty("reply"))
             {
                 juce::String reply = obj->getProperty("reply").toString();
-                
+
+                // Model that handled THIS turn, for the input-bar indicator.
+                // Absent field keeps the previous value (no blanking).
+                if (obj->hasProperty("modelName"))
+                {
+                    auto mn = obj->getProperty("modelName").toString().trim();
+                    if (mn.isNotEmpty()) lastChatModelName_ = mn;
+                }
+
                 // Check if this message used a credit (don't increment daily counter)
                 bool usedCredit = false;
                 

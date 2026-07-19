@@ -42,6 +42,7 @@ struct UserInfo {
         int   credits = 0;
         juce::String tierLabel, capacityLabel;
         bool  modelFast = false;
+        juce::String modelName;    // display name of the free lane's model
         int   tasteRemaining = 0;
         // optional nudge field: parsed loosely, unused (UI decided later)
         juce::String nudge;
@@ -182,6 +183,17 @@ public:
              ? userInfo.usagePool.period : juce::String(userInfo.tierLevel > 0 ? "monthly" : "daily"); }
     int getUsageCredits() const
     { return userInfo.usagePool.present ? userInfo.usagePool.credits : userInfo.credits; }
+
+    // Display name of the model behind the assistant, for the input-bar
+    // indicator. Prefers the model that actually handled the latest chat
+    // turn (top-level "modelName" in the /api/chat response), else the free
+    // lane's current model from usagePool ("usagePool.model.name"), else
+    // empty. Server-fed only, never hardcoded client-side.
+    juce::String currentModelDisplayName() const
+    {
+        return lastChatModelName_.isNotEmpty() ? lastChatModelName_
+                                               : userInfo.usagePool.modelName;
+    }
     
     // ============ User Settings (synced with web app) ============
 
@@ -315,6 +327,10 @@ public:
 private:
     juce::String apiEndpoint;
     juce::String authToken;
+    // Model that handled the latest chat turn (server "modelName"). Kept
+    // across turns that omit the field so the indicator never blanks mid
+    // session; empty until the server has ever sent one.
+    juce::String lastChatModelName_;
     juce::String deviceId;
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
