@@ -16,7 +16,7 @@ PLUGIN_NAME="EchoJay V2"
 LINK_NAME="EchoJay Link"
 IDENTIFIER="com.echojay.plugin.v2"
 LINK_IDENTIFIER="com.echojay.link"
-VERSION="2.23.0"
+VERSION="2.23.2"
 LINK_VERSION="0.8.4"
 BUILD_DIR="build"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -83,7 +83,7 @@ This installer will set up EchoJay V2 on your system. The following components w
 Click <strong>Continue</strong> to proceed.
 </p>
 <p style="font-size: 12px; color: #86868b; margin-top: 30px;">
-EchoJay V2 v2.23.0 | echojay.ai
+EchoJay V2 v2.23.2 | echojay.ai
 </p>
 </body>
 </html>

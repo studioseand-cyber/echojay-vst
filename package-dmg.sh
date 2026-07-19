@@ -8,7 +8,7 @@
 set -e
 
 PLUGIN_NAME="EchoJay-V2"
-VERSION="2.23.0"
+VERSION="2.23.2"
 DMG_OUTPUT="${PLUGIN_NAME}-v${VERSION}.dmg"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
