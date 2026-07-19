@@ -2042,7 +2042,18 @@ void EchoJayEditor::updateChannelPromptVisibility() { updateOnboardingPrompts();
 
 void EchoJayEditor::selectChannelPromptType(ChannelType type)
 {
-    channelTypeBox.setSelectedId(static_cast<int>(type) + 1, juce::sendNotificationSync);
+    const int id = static_cast<int>(type) + 1;
+    if (channelTypeBox.getSelectedId() == id)
+    {
+        // JUCE suppresses the ComboBox change callback when the id does not
+        // actually change. FullMix is ALWAYS the current value while the
+        // channel prompt shows (it is the prompt's own gate), so a Mix Bus
+        // pick would be a silent no-op. Invoke the SAME onChange handler
+        // directly: one writer, same state writes.
+        if (channelTypeBox.onChange) channelTypeBox.onChange();
+        return;
+    }
+    channelTypeBox.setSelectedId(id, juce::sendNotificationSync);
 }
 
 void EchoJayEditor::dismissChannelPrompt()
