@@ -678,13 +678,18 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 
     for (auto& chip : intakeChipBtns)
     {
-        chip.setColour(juce::TextButton::buttonColourId, C::bg3);
-        chip.setColour(juce::TextButton::textColourOffId, C::text2);
-        chip.setColour(juce::TextButton::buttonOnColourId, C::blue);
-        chip.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         chip.setVisible(false);
-        // onClick is assigned per page by configureIntakePage
+        // colours and onClick are assigned per page/tier by configureIntakePage
         onboardingOverlay_.addChildComponent(chip);
+    }
+
+    for (auto& gl : intakeGroupLabels)
+    {
+        gl.setColour(juce::Label::textColourId, C::amber);
+        gl.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        gl.setJustificationType(juce::Justification::centred);
+        gl.setVisible(false);
+        onboardingOverlay_.addChildComponent(gl);
     }
 
     intakeMoreBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
@@ -706,10 +711,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     intakeSkipBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
     intakeSkipBtn.setColour(juce::TextButton::textColourOffId, C::text2);
     intakeSkipBtn.onClick = [this] {
-        // Channel page skips to the Mix Bus default; project page skips to
-        // the session auto-name. Genre has no skip (pick or type).
-        if (onboardingOverlay_.currentPage == 1)      dismissChannelPrompt();
-        else if (onboardingOverlay_.currentPage == 3) dismissProjectPrompt(false);
+        // Skip exists ONLY on the project page (session auto-name default).
+        // Channel and genre are essential: no skip, Mix Bus is a chip.
+        if (onboardingOverlay_.currentPage == 3) dismissProjectPrompt(false);
     };
     intakeSkipBtn.setVisible(false);
     onboardingOverlay_.addChildComponent(intakeSkipBtn);
@@ -1990,12 +1994,13 @@ void EchoJayEditor::updateOnboardingPrompts()
     if (onboardingOverlay_.currentPage != 0)
     {
         intakeTitleLabel.toFront(false);
+        for (auto& gl : intakeGroupLabels) gl.toFront(false);
         for (auto& chip : intakeChipBtns) chip.toFront(false);
         intakeMoreBtn.toFront(false);
         intakeContinueBtn.toFront(false);
         intakeSkipBtn.toFront(false);
         intakeInputBox.toFront(false);
-        if (onboardingOverlay_.currentPage == 3)
+        if (onboardingOverlay_.currentPage == 3 && intakeContentRevealed_)
             intakeInputBox.grabKeyboardFocus();
     }
 
@@ -2094,10 +2099,13 @@ void EchoJayEditor::dismissGenrePrompt(const juce::String& selectedGenre)
 // ============================================================================
 
 // Swaps the intake overlay content in place for the active page: 0 hides
-// everything, 1 channel, 2 genre, 3 project name. Chip labels come from the
-// curated quick-pick subsets of the canonical option lists; every answer
-// path routes through the SAME dismiss/select functions the old list UI
-// used, so processor state stays the one source of truth.
+// everything, 1 channel, 2 genre, 3 project name. The popular curated row
+// comes first; the REST of the canonical set follows in a secondary
+// treatment, grouped under the canonical group labels. Every answer path
+// routes through the SAME dismiss/select functions the old list UI used, so
+// processor state stays the one source of truth. Starting a page also arms
+// the typewriter reveal: only the title shows until the line completes;
+// resized() then owns content visibility (it decides overflow too).
 void EchoJayEditor::configureIntakePage(int page)
 {
     const bool show = page != 0;
@@ -2105,60 +2113,120 @@ void EchoJayEditor::configureIntakePage(int page)
     {
         intakeInputBox.setText({}, juce::dontSendNotification);
         int chipCount = 0;
+
+        auto addChip = [&](const char* label, bool secondary, int group,
+                           std::function<void()> action)
+        {
+            if (chipCount >= kIntakeMaxChips) return;
+            auto& chip = intakeChipBtns[(size_t)chipCount];
+            chip.setButtonText(label);
+            chip.setColour(juce::TextButton::buttonColourId, secondary ? C::bg2 : C::bg3);
+            chip.setColour(juce::TextButton::textColourOffId, secondary ? C::text3 : C::text2);
+            chip.setColour(juce::TextButton::buttonOnColourId, secondary ? C::purple : C::blue);
+            chip.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+            chip.onClick = std::move(action);
+            intakeChipGroup_[(size_t)chipCount] = group;
+            ++chipCount;
+        };
+
         if (page == 2)
         {
-            intakeTitleLabel.setText("What genre is this?", juce::dontSendNotification);
+            intakeTitleFull_ = "What genre is this?";
             intakeInputBox.setTextToShowWhenEmpty("Type a genre...", C::text3.withAlpha(0.6f));
             intakeMoreBtn.setButtonText("More genres...");
+
+            auto isQuickPick = [](const char* l) {
+                for (const auto* q : kGenreQuickPicks)
+                    if (juce::String(q) == l) return true;
+                return false;
+            };
             for (const auto* label : kGenreQuickPicks)
+                addChip(label, false, -1, [this, label] { dismissGenrePrompt(label); });
+            intakePopularCount_ = chipCount;
+            for (int gi = 0; gi < kGenreGroupCount; ++gi)
             {
-                auto& chip = intakeChipBtns[(size_t)chipCount++];
-                chip.setButtonText(label);
-                chip.onClick = [this, label] { dismissGenrePrompt(label); };
+                intakeGroupLabels[(size_t)gi].setText(kGenrePromptGroups[gi], juce::dontSendNotification);
+                for (const auto& opt : kGenrePromptOptions)
+                    if (opt.groupIndex == gi && !isQuickPick(opt.label))
+                        addChip(opt.label, true, gi,
+                                [this, l = opt.label] { dismissGenrePrompt(l); });
             }
         }
         else if (page == 1)
         {
-            intakeTitleLabel.setText("What type of channel is this?", juce::dontSendNotification);
+            intakeTitleFull_ = "What type of channel is this?";
             intakeInputBox.setTextToShowWhenEmpty("Type an instrument or bus...", C::text3.withAlpha(0.6f));
             intakeMoreBtn.setButtonText("More channels...");
-            intakeSkipBtn.setButtonText("Skip (Mix Bus)");
+
+            // Mix Bus is a first-class CHOICE, not a skip: same FullMix state
+            // the old skip wrote, but through the affirmative select path
+            addChip("Mix Bus", false, -1,
+                    [this] { selectChannelPromptType(ChannelType::FullMix); });
+
+            auto isQuickPick = [](const char* l) {
+                for (const auto* q : kChannelQuickPicks)
+                    if (juce::String(q) == l) return true;
+                return false;
+            };
             for (const auto* label : kChannelQuickPicks)
             {
-                // Resolve the curated label to its canonical ChannelType now,
-                // so the click handler is a direct select
                 for (const auto& opt : kChannelPromptOptions)
                 {
                     if (juce::String(opt.label) == label)
                     {
-                        auto& chip = intakeChipBtns[(size_t)chipCount++];
-                        chip.setButtonText(label);
-                        chip.onClick = [this, t = opt.type] { selectChannelPromptType(t); };
+                        addChip(label, false, -1,
+                                [this, t = opt.type] { selectChannelPromptType(t); });
                         break;
                     }
                 }
             }
+            intakePopularCount_ = chipCount;
+            for (int gi = 0; gi < kChannelPromptGroupCount; ++gi)
+            {
+                intakeGroupLabels[(size_t)gi].setText(kChannelPromptGroups[gi], juce::dontSendNotification);
+                for (const auto& opt : kChannelPromptOptions)
+                    if (opt.groupIndex == gi && !isQuickPick(opt.label))
+                        addChip(opt.label, true, gi,
+                                [this, t = opt.type] { selectChannelPromptType(t); });
+            }
         }
         else // page 3: project name, free text, optional
         {
-            intakeTitleLabel.setText("What are you working on?", juce::dontSendNotification);
-            intakeInputBox.setTextToShowWhenEmpty("Project name (optional), e.g. Midnight Drive",
+            intakeTitleFull_ = "What's this project called?";
+            intakeInputBox.setTextToShowWhenEmpty("Enter a project name...",
                                                   C::text3.withAlpha(0.6f));
             intakeSkipBtn.setButtonText("Skip");
+            intakePopularCount_ = 0;
         }
         intakeConfiguredPage_ = page;
         intakeChipCount_ = chipCount;
+
+        // Arm the typewriter: title reveals via the editor timer, content
+        // follows when the line is complete
+        intakeTitleShown_ = 0;
+        intakeContentRevealed_ = false;
+        intakeTitleLabel.setText({}, juce::dontSendNotification);
     }
     if (!show)
+    {
         intakeConfiguredPage_ = 0;   // force a rebuild next time a page shows
+        intakeContentRevealed_ = false;
+        intakeTitleFull_.clear();
+    }
 
     intakeTitleLabel.setVisible(show);
-    intakeInputBox.setVisible(show);
-    for (int i = 0; i < kIntakeMaxChips; ++i)
-        intakeChipBtns[(size_t)i].setVisible(show && i < intakeChipCount_);
-    intakeMoreBtn.setVisible(show && page != 3);
-    intakeContinueBtn.setVisible(show && page == 3);
-    intakeSkipBtn.setVisible(show && (page == 1 || page == 3));
+    // Content visibility on an ACTIVE page belongs to resized() (the layout
+    // is the only place that knows what fits). Here we only hide: everything
+    // stays hidden on page 0 and while the question is still typing.
+    if (!show || !intakeContentRevealed_)
+    {
+        intakeInputBox.setVisible(false);
+        for (auto& chip : intakeChipBtns) chip.setVisible(false);
+        for (auto& gl : intakeGroupLabels) gl.setVisible(false);
+        intakeMoreBtn.setVisible(false);
+        intakeContinueBtn.setVisible(false);
+        intakeSkipBtn.setVisible(false);
+    }
 }
 
 // Free text is accepted on every step. A value matching a canonical entry
@@ -10915,9 +10983,16 @@ void EchoJayEditor::resized()
     }
 
     // Intake overlay layout: question on top (centered), input roughly one
-    // third down, quick-pick chips below in centered wrapped rows, actions
-    // at the card bottom. Same card rect as paintGenrePromptOverlay.
+    // third down, the popular chip row below it, then the REST of the
+    // canonical set as smaller dimmer chips under their canonical group
+    // labels. This block is the ONE authority for content visibility on an
+    // active page: nothing shows until the typewriter reveal completes, and
+    // chips/groups that do not fit are hidden with the More button as the
+    // overflow fallback. Same card rect as paintGenrePromptOverlay.
+    if (onboardingOverlay_.currentPage != 0)
     {
+        const int page = onboardingOverlay_.currentPage;
+        const bool revealed = intakeContentRevealed_;
         auto icard = b.reduced(60, 50);
         intakeTitleLabel.setBounds(icard.getX() + 40,
                                    icard.getY() + icard.getHeight() / 8,
@@ -10926,52 +11001,114 @@ void EchoJayEditor::resized()
         const int iw = juce::jmin(380, icard.getWidth() - 120);
         const int inputY2 = icard.getY() + icard.getHeight() / 3;
         intakeInputBox.setBounds(icard.getCentreX() - iw / 2, inputY2, iw, 32);
+        intakeInputBox.setVisible(revealed);
 
-        // Chips: centered rows wrapping within the card, sized to their text
-        const int chipH = 26, chipGapX = 8, chipGapY = 10, chipPad = 26;
+        // Chip metrics per tier. Widths measured with the LookAndFeel's
+        // actual button font rule (0.6 x height, capped at 16pt) so text
+        // never clips.
+        const int bigH = 26, smallH = 21;
+        const juce::Font bigFont(juce::FontOptions(juce::jmin(16.0f, bigH * 0.6f)));
+        const juce::Font smallFont(juce::FontOptions(juce::jmin(16.0f, smallH * 0.6f)));
         const int rowMaxW = juce::jmax(120, icard.getWidth() - 100);
-        const juce::Font chipFont(juce::FontOptions(12.0f));
-        auto chipW = [&](int idx) {
+        auto chipW = [&](int idx, bool secondary) {
             return juce::GlyphArrangement::getStringWidthInt(
-                       chipFont, intakeChipBtns[(size_t)idx].getButtonText()) + chipPad;
+                       secondary ? smallFont : bigFont,
+                       intakeChipBtns[(size_t)idx].getButtonText())
+                 + (secondary ? 20 : 26);
         };
-        int chipY = inputY2 + 32 + 24;
-        int i = 0;
-        while (i < intakeChipCount_)
+
+        // The action row is reserved at the card bottom; chips must not
+        // reach into it
+        const int actionTop = icard.getBottom() - 52;
+        int y = inputY2 + 32 + 20;
+        bool overflow = false;
+
+        // Lay out one centered wrapped run of chips [first, last); returns
+        // one past the last chip that fit. Chips that do not fit are hidden.
+        auto layoutRun = [&](int first, int last, bool secondary)
         {
-            int rowW = 0, first = i;
-            while (i < intakeChipCount_)
+            const int chipH = secondary ? smallH : bigH;
+            const int gapX = secondary ? 6 : 8;
+            const int gapY = secondary ? 6 : 8;
+            int i = first;
+            while (i < last)
             {
-                const int w = chipW(i);
-                if (rowW > 0 && rowW + chipGapX + w > rowMaxW) break;
-                rowW += (rowW > 0 ? chipGapX : 0) + w;
-                ++i;
+                if (overflow || y + chipH > actionTop)
+                {
+                    overflow = true;
+                    for (int j = i; j < last; ++j)
+                        intakeChipBtns[(size_t)j].setVisible(false);
+                    return;
+                }
+                int rowW = 0, rs = i;
+                while (i < last)
+                {
+                    const int w = chipW(i, secondary);
+                    if (rowW > 0 && rowW + gapX + w > rowMaxW) break;
+                    rowW += (rowW > 0 ? gapX : 0) + w;
+                    ++i;
+                }
+                int x = icard.getCentreX() - rowW / 2;
+                for (int j = rs; j < i; ++j)
+                {
+                    const int w = chipW(j, secondary);
+                    intakeChipBtns[(size_t)j].setBounds(x, y, w, chipH);
+                    intakeChipBtns[(size_t)j].setVisible(revealed);
+                    x += w + gapX;
+                }
+                y += chipH + gapY;
             }
-            int x = icard.getCentreX() - rowW / 2;
-            for (int j = first; j < i; ++j)
+        };
+
+        // Popular row(s)
+        layoutRun(0, intakePopularCount_, false);
+        y += 8;
+
+        // Secondary tier: canonical groups in order, label then that
+        // group's remaining chips (chips are stored grouped contiguously)
+        const int groupCount = page == 2 ? kGenreGroupCount
+                             : page == 1 ? kChannelPromptGroupCount : 0;
+        int idx = intakePopularCount_;
+        for (int gi = 0; gi < kIntakeMaxGroups; ++gi)
+        {
+            auto& gl = intakeGroupLabels[(size_t)gi];
+            if (gi >= groupCount) { gl.setVisible(false); continue; }
+            int gFirst = idx;
+            while (idx < intakeChipCount_ && intakeChipGroup_[(size_t)idx] == gi) ++idx;
+            if (gFirst == idx) { gl.setVisible(false); continue; }
+
+            if (overflow || y + 14 + smallH > actionTop)
             {
-                const int w = chipW(j);
-                intakeChipBtns[(size_t)j].setBounds(x, chipY, w, chipH);
-                x += w + chipGapX;
+                overflow = true;
+                gl.setVisible(false);
+                for (int j = gFirst; j < idx; ++j)
+                    intakeChipBtns[(size_t)j].setVisible(false);
+                continue;
             }
-            chipY += chipH + chipGapY;
+            gl.setBounds(icard.getX() + 40, y, icard.getWidth() - 80, 14);
+            gl.setVisible(revealed);
+            y += 18;
+            layoutRun(gFirst, idx, true);
+            y += 4;
         }
 
         // Actions: project page pairs Continue/Skip under the input; the
-        // chip pages put More (and channel's Skip) at the card bottom
-        if (onboardingOverlay_.currentPage == 3)
+        // chip pages show More only when something did not fit (it is also
+        // the custom-entry fallback alongside the free-text input)
+        if (page == 3)
         {
             intakeContinueBtn.setBounds(icard.getCentreX() - 115, inputY2 + 50, 110, 28);
             intakeSkipBtn.setBounds(icard.getCentreX() + 5, inputY2 + 50, 110, 28);
-        }
-        else if (onboardingOverlay_.currentPage == 1)
-        {
-            intakeMoreBtn.setBounds(icard.getCentreX() - 145, icard.getBottom() - 46, 140, 28);
-            intakeSkipBtn.setBounds(icard.getCentreX() + 5, icard.getBottom() - 46, 140, 28);
+            intakeContinueBtn.setVisible(revealed);
+            intakeSkipBtn.setVisible(revealed);
+            intakeMoreBtn.setVisible(false);
         }
         else
         {
             intakeMoreBtn.setBounds(icard.getCentreX() - 70, icard.getBottom() - 46, 140, 28);
+            intakeMoreBtn.setVisible(revealed && overflow);
+            intakeContinueBtn.setVisible(false);
+            intakeSkipBtn.setVisible(false);
         }
     }
 }
@@ -11017,6 +11154,25 @@ void EchoJayEditor::timerCallback()
         if (!captureBtn.isEnabled())  captureBtn.setEnabled(true);
         if (!compareBtn.isEnabled())  compareBtn.setEnabled(true);
         if (!settingsBtn.isEnabled()) settingsBtn.setEnabled(true);
+    }
+
+    // Intake typewriter: reveal the question 2 chars per 20Hz tick (~25ms
+    // per char, longest question completes in ~0.75s), then show the page
+    // content in one pass. A returning user whose intake is answered never
+    // sees this: the overlay itself does not show. Only the question
+    // animates, never chips.
+    if (onboardingOverlay_.currentPage != 0 && !intakeContentRevealed_)
+    {
+        intakeTitleShown_ = juce::jmin(intakeTitleShown_ + 2, intakeTitleFull_.length());
+        intakeTitleLabel.setText(intakeTitleFull_.substring(0, intakeTitleShown_),
+                                 juce::dontSendNotification);
+        if (intakeTitleShown_ >= intakeTitleFull_.length())
+        {
+            intakeContentRevealed_ = true;
+            resized();   // the intake layout block applies content visibility
+            if (onboardingOverlay_.currentPage == 3)
+                intakeInputBox.grabKeyboardFocus();
+        }
     }
 
     // Initial resolver bootstrap — deliberately NOT gated on the CHAIN tab so

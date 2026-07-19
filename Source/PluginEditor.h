@@ -243,13 +243,27 @@ private:
     // truth.
     juce::Label intakeTitleLabel;
     juce::TextEditor intakeInputBox;
-    static constexpr int kIntakeMaxChips = 10;
+    // Chips: a popular curated row plus the REST of the canonical set below
+    // it in a secondary treatment, grouped under the canonical group labels.
+    // 40 covers both pages (genre 36, channel 36 incl. the Mix Bus chip).
+    static constexpr int kIntakeMaxChips = 40;
+    static constexpr int kIntakeMaxGroups = 8;
     std::array<juce::TextButton, kIntakeMaxChips> intakeChipBtns;
+    std::array<int, kIntakeMaxChips> intakeChipGroup_ {};  // -1 popular, else group idx
+    std::array<juce::Label, kIntakeMaxGroups> intakeGroupLabels;
     juce::TextButton intakeMoreBtn { "More..." };
     juce::TextButton intakeContinueBtn { "Continue" };
     juce::TextButton intakeSkipBtn { "Skip" };
     int intakeConfiguredPage_ = -1;  // last page whose content was built
     int intakeChipCount_ = 0;        // chips in use on the current page
+    int intakePopularCount_ = 0;     // first N chips are the popular row
+    // Typewriter reveal: the question types out via the shared editor timer
+    // (2 chars per 20Hz tick, ~25ms per char); chips/input/actions appear
+    // when the line completes. resized() is the ONE authority for content
+    // visibility on an active page (it owns the overflow decision too).
+    juce::String intakeTitleFull_;
+    int intakeTitleShown_ = 0;
+    bool intakeContentRevealed_ = false;
     void configureIntakePage(int page);
     void submitIntakeInput();
     void showIntakeMoreMenu();
