@@ -1415,6 +1415,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatTextSizeBtn.onClick = [this] { cycleChatTextScale(); };
     addChildComponent(chatTextSizeBtn);
 
+    // Disclaimer footer under the chat input. Purely informational: no mouse,
+    // no focus. Text is chosen in resized() (compact vs full width), bounds too.
+    chatDisclaimerLabel.setJustificationType(juce::Justification::centred);
+    chatDisclaimerLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
+    chatDisclaimerLabel.setColour(juce::Label::textColourId, C::text3);
+    chatDisclaimerLabel.setInterceptsMouseClicks(false, false);
+    addChildComponent(chatDisclaimerLabel);
+
     // Save-button family: 0xff06b6d4 lands in the LookAndFeel's "primary"
     // branch (dark teal glow fill + hover), cyan text — NOT a solid fill.
     // ONE component serves every Upgrade surface (ACCOUNT card slot + the
@@ -10569,7 +10577,10 @@ void EchoJayEditor::resized()
     int chatStartX = (compactMode ? 0 : mW) + sidebarOffsetX;
     int abOff4 = abBarShowing ? kAbBarH : 0;
     int inputPad = compactMode ? 16 : 10;
-    int inputY = b.getHeight() - inH - inputPad - abOff4;
+    // Disclaimer footer strip under the input; the input row moves up to make
+    // room. Bounds/text/visibility are set after the hide blocks below.
+    const int discH = 14;
+    int inputY = b.getHeight() - inH - inputPad - abOff4 - discH;
     // CHAT tab, empty active chat: centre the input in the message area
     // with the greeting above it (modern chat UX). Any message docks it.
     chatCentredEmpty_ = currentTab == Tab::Chat && !compactMode && !visualOnlyMode
@@ -10680,6 +10691,23 @@ void EchoJayEditor::resized()
         chatSendBtn.setVisible(false);
         chatTextSizeBtn.setVisible(false);
         chatScroll.setVisible(false);
+    }
+
+    // Disclaimer footer: pinned to the very bottom of the chat column, below
+    // the input. ONE decision for the string: compactMode (pinned mini window)
+    // or a side-column layout, both read straight from the existing state and
+    // the computeColumns split above; no separate width threshold. Visibility
+    // simply follows the input, so every hide path above covers it too.
+    {
+        const bool compactChat = compactMode || mW > 0;
+        chatDisclaimerLabel.setText(
+            compactChat ? "EchoJay is AI and can make mistakes. Trust your ears."
+                        : "EchoJay is AI and can make mistakes. Trust your ears over everything else.",
+            juce::dontSendNotification);
+        chatDisclaimerLabel.setBounds(chatStartX + chatPadL,
+                                      b.getHeight() - abOff4 - discH - 2,
+                                      chatW - chatPadL - 8, discH);
+        chatDisclaimerLabel.setVisible(chatInput.isVisible());
     }
 
     // Logout button lives in Settings view now (positioned there)

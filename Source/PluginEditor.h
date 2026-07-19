@@ -678,6 +678,7 @@ private:
     juce::TextEditor chatInput;
     juce::TextButton chatSendBtn { "Send" };
     juce::TextButton chatTextSizeBtn { "Aa" };
+    juce::Label      chatDisclaimerLabel;   // AI-mistakes footer pinned under the input
     juce::TextButton upgradeBtn { "Upgrade to Pro" };
 
     // ---- CHAIN tab (stage 2: multi-plugin rack) ------------------------------
