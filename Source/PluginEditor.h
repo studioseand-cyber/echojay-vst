@@ -261,14 +261,17 @@ private:
     int intakeFeaturedCount_ = 0;    // leading featured chips (channel: Mix Bus)
     // Reveal sequence, driven by the shared 20Hz editor timer: the question
     // types out first (2 chars per tick, ~25ms per char), then the chips
-    // cascade in add-order (3 per tick, ~17ms per chip), each clickable the
-    // moment it appears. resized() is the ONE layout authority: it computes
-    // bounds plus the fits flags below and applies visibility; the timer
-    // only advances the counters and flips visibility for chips that fit.
+    // cascade in add-order (3 triggered per tick, ~17ms stagger), each
+    // FADING from alpha 0 to 1 in quarters per tick (~150ms, overlapping
+    // the stagger) and clickable the moment it starts appearing (setAlpha
+    // never affects hit testing). Pure opacity: resized() is the ONE layout
+    // authority for bounds/visibility and nothing animates position; the
+    // timer only advances counters, flips visibility and steps alphas.
     juce::String intakeTitleFull_;
     int intakeTitleShown_ = 0;
     bool intakeContentRevealed_ = false;
-    int intakeChipsShown_ = 0;       // cascade progress
+    int intakeChipsShown_ = 0;       // cascade progress (chips triggered)
+    int intakeCascadeTick_ = 0;      // ticks since the cascade started
     std::array<bool, kIntakeMaxChips> intakeChipFits_ {};
     std::array<bool, kIntakeMaxGroups> intakeGroupFits_ {};
     void configureIntakePage(int page);

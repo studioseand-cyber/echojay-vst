@@ -2199,6 +2199,7 @@ void EchoJayEditor::configureIntakePage(int page)
         // same page and never re-arm this.
         intakeTitleShown_ = 0;
         intakeChipsShown_ = 0;
+        intakeCascadeTick_ = 0;
         intakeContentRevealed_ = false;
         intakeTitleLabel.setText({}, juce::dontSendNotification);
     }
@@ -2207,6 +2208,7 @@ void EchoJayEditor::configureIntakePage(int page)
         intakeConfiguredPage_ = 0;   // force a rebuild next time a page shows
         intakeContentRevealed_ = false;
         intakeChipsShown_ = 0;
+        intakeCascadeTick_ = 0;
         intakeTitleFull_.clear();
     }
 
@@ -11202,23 +11204,45 @@ void EchoJayEditor::timerCallback()
         {
             intakeContentRevealed_ = true;
             intakeChipsShown_ = 0;
+            intakeCascadeTick_ = 0;
             resized();   // the intake layout block applies content visibility
             if (onboardingOverlay_.currentPage == 3)
                 intakeInputBox.grabKeyboardFocus();
         }
     }
-    else if (onboardingOverlay_.currentPage != 0
-             && intakeChipsShown_ < intakeChipCount_)
+    else if (onboardingOverlay_.currentPage != 0 && intakeContentRevealed_
+             && intakeChipCount_ > 0
+             && (intakeChipsShown_ < intakeChipCount_
+                 || intakeCascadeTick_ < (intakeChipCount_ - 1) / 3 + 4))
     {
+        // One cascade tick: trigger up to 3 new chips, then step every
+        // triggered chip's fade (alpha rises in quarters per tick, so a
+        // chip goes 0 to 1 in ~150ms while later chips keep triggering).
+        // setAlpha never affects hit testing: mid-fade chips are clickable.
+        ++intakeCascadeTick_;
         const int prev = intakeChipsShown_;
         intakeChipsShown_ = juce::jmin(intakeChipsShown_ + 3, intakeChipCount_);
         for (int j = prev; j < intakeChipsShown_; ++j)
         {
             if (!intakeChipFits_[(size_t)j]) continue;
+            intakeChipBtns[(size_t)j].setAlpha(0.0f);
             intakeChipBtns[(size_t)j].setVisible(true);
+        }
+        for (int j = 0; j < intakeChipsShown_; ++j)
+        {
+            if (!intakeChipFits_[(size_t)j]) continue;
+            const int triggerTick = j / 3 + 1;
+            const float a = juce::jlimit(0.0f, 1.0f,
+                (float)(intakeCascadeTick_ - triggerTick + 1) * 0.25f);
+            intakeChipBtns[(size_t)j].setAlpha(a);
+            // Group labels fade in with their group's first chip
             const int g = intakeChipGroup_[(size_t)j];
-            if (g >= 0 && intakeGroupFits_[(size_t)g])
+            if (g >= 0 && intakeGroupFits_[(size_t)g]
+                && (j == 0 || intakeChipGroup_[(size_t)(j - 1)] != g))
+            {
+                intakeGroupLabels[(size_t)g].setAlpha(a);
                 intakeGroupLabels[(size_t)g].setVisible(true);
+            }
         }
     }
 
