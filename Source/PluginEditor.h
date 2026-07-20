@@ -1419,8 +1419,7 @@ private:
             {
                 bool isErr = statusText.startsWith("Failed") || statusText.startsWith("Error");
                 bool isLd  = statusText.startsWith("Loading");
-                g.setColour(isErr ? juce::Colour(0xffdd6666)
-                                  : isLd ? juce::Colour(0xff88aadd) : juce::Colour(0xffa0a0b8));
+                g.setColour(isErr ? C::red : isLd ? C::blue2 : C::text2);
                 g.setFont(juce::Font(juce::FontOptions(13.0f)));
                 g.drawText(statusText, area.reduced(16), juce::Justification::centred, true);
             }

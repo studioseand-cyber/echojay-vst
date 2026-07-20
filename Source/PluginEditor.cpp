@@ -13198,12 +13198,22 @@ void EchoJayEditor::pollLinkCtrlAck(const juce::String& linkAddr, int seq, int a
 
 void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
 {
+    // A failed build must land the user on the Chain page with an error, not
+    // return silently (the click otherwise appears to do nothing).
+    auto showBuildFail = [this](const juce::String& why)
+    {
+        switchToTab(Tab::Chain);
+        chainListPanel.statusText = "Failed: " + why;
+        chainStatusLabel.setText(chainListPanel.statusText, juce::dontSendNotification);
+        chainListPanel.repaint();
+    };
+
     auto parsedVar = juce::JSON::parse(chainJson);
-    if (!parsedVar.isObject()) return;
+    if (!parsedVar.isObject()) { showBuildFail("chain data could not be read"); return; }
     auto* obj = parsedVar.getDynamicObject();
-    if (!obj || !obj->hasProperty("chain")) return;
+    if (!obj || !obj->hasProperty("chain")) { showBuildFail("chain data could not be read"); return; }
     auto chainArr = obj->getProperty("chain");
-    if (!chainArr.isArray()) return;
+    if (!chainArr.isArray()) { showBuildFail("chain data could not be read"); return; }
 
     auto& ch = processorRef.getChainHost();
     juce::StringArray recommNames = ch.getRecommendableNames();
@@ -13244,7 +13254,13 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         if (found) slots.push_back({ name, settings });
         else DBG("loadChainFromJson: skipping unknown name: " + name);
     }
-    if (slots.empty()) return;
+    if (slots.empty())
+    {
+        showBuildFail(droppedDisabled.isEmpty()
+                          ? "none of the chain's plugins are available"
+                          : "all chain plugins are disabled in Settings");
+        return;
+    }
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
 
@@ -13268,6 +13284,17 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         // Switch to Chain tab so the user sees loading progress
         safeThis->switchToTab(Tab::Chain);
 
+        // Loading state up front: clear the stale rows NOW and announce the
+        // first plugin, so the page never sits on the old chain looking
+        // frozen while slots instantiate (instantiation blocks the message
+        // thread per plugin, so between-stall paints are all the user gets).
+        safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(), -1);
+        safeThis->chainListPanel.statusText = "Loading " + slots[0].name
+            + " (1 of " + juce::String((int)slots.size()) + ")...";
+        safeThis->chainStatusLabel.setText(safeThis->chainListPanel.statusText,
+                                           juce::dontSendNotification);
+        safeThis->chainListPanel.repaint();
+
         // Load slots sequentially; after each success, store settings on the slot
         auto loadNextPtr = std::make_shared<std::function<void()>>();
         auto idx         = std::make_shared<int>(0);
@@ -13282,7 +13309,11 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 auto& ch3 = safeThis->processorRef.getChainHost();
                 safeThis->chainSelectedSlot_ = ch3.getNumSlots() > 0 ? 0 : -1;
                 safeThis->chainListPanel.rebuild(ch3.getAllSlotInfos(), safeThis->chainSelectedSlot_);
-                safeThis->chainListPanel.statusText = {};
+                // Every slot failing must not strand the Loading text; the
+                // "Failed" prefix picks up the panel's error style.
+                safeThis->chainListPanel.statusText =
+                    ch3.getNumSlots() > 0 ? juce::String()
+                                          : "Failed: no plugins from this chain could load";
                 juce::String status = juce::String(ch3.getNumSlots()) + " slot(s) loaded";
                 if (ch3.getNumSlots() > 0)
                     safeThis->bumpMonthlyStat("chains");   // THIS MONTH card
@@ -13303,23 +13334,38 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
             int i = (*idx)++;
             juce::String name     = slots[i].name;
             juce::String settings = slots[i].settings;
-            auto& ch3 = safeThis->processorRef.getChainHost();
-            ch3.loadByRecommendedName(name,
-                [safeThis, name, settings, skipped, loadNextPtr](const juce::String& err) mutable
-                {
-                    if (err.isNotEmpty())
+            // Status first, load on the NEXT runloop turn: instantiation
+            // blocks the message thread, so the paint must get through
+            // before the stall or the progress label never shows.
+            safeThis->chainListPanel.statusText = "Loading " + name + " ("
+                + juce::String(i + 1) + " of " + juce::String((int)slots.size()) + ")...";
+            safeThis->chainStatusLabel.setText(safeThis->chainListPanel.statusText,
+                                               juce::dontSendNotification);
+            safeThis->chainListPanel.repaint();
+            juce::Timer::callAfterDelay(30, [safeThis, name, settings, skipped, loadNextPtr]() mutable
+            {
+                if (safeThis == nullptr) return;
+                safeThis->processorRef.getChainHost().loadByRecommendedName(name,
+                    [safeThis, name, settings, skipped, loadNextPtr](const juce::String& err) mutable
                     {
-                        DBG("AI chain load failed for \"" + name + "\": " + err);
-                        skipped->add(name);
-                    }
-                    else if (settings.isNotEmpty())
-                    {
-                        // Store settings on the just-loaded slot (last slot in chain)
-                        auto& ch4 = safeThis->processorRef.getChainHost();
-                        ch4.setSlotSettings(ch4.getNumSlots() - 1, settings);
-                    }
-                    (*loadNextPtr)();
-                });
+                        if (safeThis == nullptr) return;
+                        if (err.isNotEmpty())
+                        {
+                            DBG("AI chain load failed for \"" + name + "\": " + err);
+                            skipped->add(name);
+                        }
+                        else
+                        {
+                            // Store settings on the just-loaded slot (last slot in chain)
+                            auto& ch4 = safeThis->processorRef.getChainHost();
+                            if (settings.isNotEmpty())
+                                ch4.setSlotSettings(ch4.getNumSlots() - 1, settings);
+                            // Progressive: the rack grows a row per loaded slot
+                            safeThis->chainListPanel.rebuild(ch4.getAllSlotInfos(), -1);
+                        }
+                        (*loadNextPtr)();
+                    });
+            });
         };
         (*loadNextPtr)();
         });   // end deferred rack-clear
