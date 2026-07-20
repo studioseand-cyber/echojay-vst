@@ -479,20 +479,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // (no own name) just vanished. Without this the prompt stayed up
         // and outlived its conditions (2.9.66 regression).
         if (projectPromptVisible) updateProjectPromptVisibility();
-        // Immediately rename the current chat to match the project name
+        // Regroup the current chat under the typed project name. The chat
+        // TITLE is owned by the first-message auto-titler; the project name
+        // appears on the project row only, never duplicated as the chat title.
         if (currentChatId.isNotEmpty())
         {
-            juce::String newTitle = proj;
-            if (proj.isEmpty()) {
-                for (auto& ch : workspace.getChats()) {
-                    if (ch.id == currentChatId) {
-                        if (ch.created.isNotEmpty())
-                            newTitle = juce::Time::fromISO8601(ch.created).formatted("%d %b %Y, %H:%M");
-                        break;
-                    }
-                }
-            }
-            workspace.setChatTitle(currentChatId, newTitle);
             workspace.setChatTrackName(currentChatId, proj);
             if (sidebarModel)
             {
@@ -12215,16 +12206,18 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     bool isFirstMessage = workspace.appendMessageToChat(currentChatId, "user", msg);
     if (isFirstMessage)
     {
-        // Title priority: project name (set on chat creation) > first user message >
-        // created date. Capture chats have trackName = passName so they keep it.
-        // Manual "New chat" entries have no trackName — title them from the message.
+        // Chats still on the "New chat" placeholder take their title from the
+        // first user message (same rule and 35-char cut as the web app, which
+        // writes the same synced "title" field). Capture chats (titled at
+        // creation), manual renames and web-titled chats no longer read
+        // "New chat", so they keep their titles.
         const auto& chats = workspace.getChats();
         auto chatIt = std::find_if(chats.begin(), chats.end(),
             [this](const WsChat& c) { return c.id == currentChatId; });
-        if (chatIt != chats.end() && chatIt->trackName.isEmpty())
+        if (chatIt != chats.end()
+            && (chatIt->title == "New chat" || chatIt->title.isEmpty()))
         {
-            // Use first message text (trimmed to 40 chars) as the title
-            juce::String newTitle = msg.trim().substring(0, 40);
+            juce::String newTitle = msg.trim().substring(0, 35);
             if (newTitle.isEmpty())
             {
                 // Fallback: created date/time
