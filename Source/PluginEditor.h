@@ -1174,6 +1174,13 @@ private:
             return selectedIdx >= 0 && selectedIdx < (int)slotInfos.size();
         }
 
+        // True while any editor is up (inline or floating) — the auto-open
+        // pass after an AI build stops at the first slot that yields one.
+        bool anyEditorOpen() const
+        {
+            return inlineEditor != nullptr || popout != nullptr;
+        }
+
         // Framed card layout, top to bottom: card header row (B/X + name +
         // pop-out), plugin box (the clip container, inset on all sides),
         // SUGGESTED SETTINGS box, chain strip. The plugin box IS the

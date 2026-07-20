@@ -13327,6 +13327,23 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 safeThis->chainDebugJsonBox.setText(chainJson, false);
                 safeThis->resized();
                 safeThis->repaint();
+                // Show the first loaded plugin so the display area is never
+                // blank over a full rack. Deferred a beat: this completion
+                // runs inside the final instantiation callback with layout
+                // mid-flight, which is exactly when an in-tick open can fail.
+                // Walk from slot 0 (failed loads never occupy slots, so slot
+                // 0 IS the first success); a slot whose editor cannot be
+                // created falls through to the next. No-op when rebuild's
+                // built-in auto-open already produced an editor.
+                if (ch3.getNumSlots() > 0)
+                    juce::Timer::callAfterDelay(120, [safeThis]
+                    {
+                        if (safeThis == nullptr) return;
+                        auto& panel = safeThis->chainListPanel;
+                        int nSlots = safeThis->processorRef.getChainHost().getNumSlots();
+                        for (int s = 0; s < nSlots && !panel.anyEditorOpen(); ++s)
+                            panel.selectSlot(s);
+                    });
                 if (!skipped->isEmpty())
                     safeThis->promptForFailedPlugins(*skipped);
                 return;
