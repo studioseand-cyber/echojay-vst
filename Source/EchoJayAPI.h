@@ -355,9 +355,13 @@ private:
     void postJSON(const juce::String& endpoint, const juce::String& body,
                   std::function<void(const juce::var& json, int statusCode)> onComplete);
     
-    // Helper: make a GET request with auth header
+public:
+    // Helper: make a GET request with auth header. Public: the editor uses
+    // it directly for the auto-parameter-mapping map fetches
+    // (GET /api/params/maps?fps=...).
     void getJSON(const juce::String& endpoint,
                  std::function<void(const juce::var& json, int statusCode)> onComplete);
-    
+
+private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EchoJayAPI)
 };

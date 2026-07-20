@@ -1,4 +1,6 @@
 #include "ChainHost.h"
+#include "EchoJayParamApply.h"
+#include "EchoJayParamMaps.h"
 #include "AUEnumerator.h"
 #include "NativeClip.h"   // EchoJay_NSLog
 #include <algorithm>
@@ -25,6 +27,7 @@ static juce::File appSupportDir()
 
 juce::File ChainHost::getPluginListFile()   { return appSupportDir().getChildFile("chain_plugins.xml"); }
 juce::File ChainHost::getEntriesCacheFile() { return appSupportDir().getChildFile("chain_entries.xml"); }
+juce::File ChainHost::getParamMapsCacheFile() { return appSupportDir().getChildFile("param_maps.json"); }
 juce::File ChainHost::getBlacklistFile()  { return appSupportDir().getChildFile("chain_blacklist.txt"); }
 juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_load_deadman.txt"); }
 
@@ -424,6 +427,7 @@ ChainHost::ChainHost()
 
     rebuildGraph(); // passthrough (no slots yet)
     loadFromDisk();
+    loadParamMapsFromDisk();
 
     auto deadman = getDeadmanFile();
     if (deadman.existsAsFile())
@@ -639,6 +643,12 @@ void ChainHost::doRefresh()
 
     scanProgress_.store(1.0f);
     setScanStatus({});
+
+    // Fingerprint pass: doRefresh runs on the scan thread, but instantiation
+    // is message-thread-only, so hop over. Raw `this` capture follows the
+    // established load-path precedent (ChainHost lives as long as the
+    // processor; async plugin-creation callbacks capture it the same way).
+    juce::MessageManager::callAsync([this] { startFingerprintPass(); });
 }
 
 // ---------------------------------------------------------------------------
@@ -697,6 +707,30 @@ void ChainHost::setSlotSettings(int i, const juce::String& settings)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
     slots_[i].settings = settings;
+}
+
+std::vector<ChainHost::ApplyReport>
+ChainHost::applyStructuredSettings (int slotIndex,
+                                    const juce::var& structuredSettings,
+                                    const juce::var& map)
+{
+    std::vector<ApplyReport> out;
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return out;
+
+    auto& slot = slots_[slotIndex];
+    if (slot.node == nullptr) return out;
+
+    auto* proc = slot.node->getProcessor();
+    if (proc == nullptr) return out;
+
+    auto* instance = dynamic_cast<juce::AudioPluginInstance*> (proc);
+    if (instance == nullptr) return out;
+
+    auto results = echojay::applySettings (*instance, map, structuredSettings);
+    for (auto& r : results)
+        out.push_back ({ r.semantic, r.applied, r.normalized, r.note });
+
+    return out;
 }
 
 void ChainHost::removeSlot(int i)
@@ -778,6 +812,245 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
         graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
         graph_->prepareToPlay(sampleRate_, blockSize_);
     }
+
+    // Auto-parameter-mapping: fingerprint the freshly loaded instance
+    // (format|uidHex|version|param_count — the extractor's exact scheme;
+    // param_count only exists on a LOADED instance, which is why fps are
+    // computed here and not at scan time), register identity -> fp in the
+    // persistent index so scan-time prefetch covers this plugin from now
+    // on, then apply any pending structured settings the moment a map is
+    // available.
+    const int newSlotIdx = (int)slots_.size() - 1;
+    if (auto* newProc = slots_[(size_t)newSlotIdx].node ? slots_[(size_t)newSlotIdx].node->getProcessor() : nullptr)
+    {
+        slots_[(size_t)newSlotIdx].fp =
+            echojay::fingerprintForDescription(desc, newProc->getParameters().size());
+        const auto ik = echojay::identityKeyForDescription(desc);
+        auto it = identityToFp_.find(ik);
+        if (it == identityToFp_.end() || it->second != slots_[(size_t)newSlotIdx].fp)
+        {
+            identityToFp_[ik] = slots_[(size_t)newSlotIdx].fp;
+            saveParamMapsToDisk();
+        }
+        applyStructuredIfReady(newSlotIdx);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Auto-parameter-mapping pipeline (the ONE apply path)
+// ---------------------------------------------------------------------------
+void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
+{
+    if (i < 0 || i >= (int)slots_.size()) return;
+    if (structured.isVoid() || structured.getDynamicObject() == nullptr) return;
+
+    slots_[(size_t)i].structuredSettings = structured;
+    slots_[(size_t)i].structuredApplied  = false;
+    applyStructuredIfReady(i);
+
+    // Map not cached yet (first-ever encounter of this plugin): fetch just
+    // this fingerprint; storeParamMaps applies the pending slot on arrival.
+    auto& fp = slots_[(size_t)i].fp;
+    if (!slots_[(size_t)i].structuredApplied && fp.isNotEmpty()
+        && paramMaps_.find(fp) == paramMaps_.end()
+        && !mapsRequested_.contains(fp) && onNeedParamMaps)
+    {
+        mapsRequested_.add(fp);
+        onNeedParamMaps(juce::StringArray(fp));
+    }
+}
+
+void ChainHost::storeParamMaps(const juce::var& mapsObj)
+{
+    auto* o = mapsObj.getDynamicObject();
+    if (o == nullptr) return;
+    int added = 0;
+    for (auto& p : o->getProperties())
+        if (!p.value.isVoid() && p.value.getDynamicObject() != nullptr)
+        {
+            paramMaps_[p.name.toString()] = p.value;
+            ++added;
+        }
+    if (added > 0) saveParamMapsToDisk();
+    EchoJay_NSLog(("EJParamMaps: stored " + juce::String(added) + " map(s) from server").toRawUTF8());
+    bool changed = false;
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        const bool wasApplied = slots_[(size_t)i].structuredApplied;
+        applyStructuredIfReady(i);
+        if (!wasApplied && slots_[(size_t)i].structuredApplied) changed = true;
+    }
+    if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
+}
+
+void ChainHost::requestMapPrefetch()
+{
+    if (!onNeedParamMaps) return;
+    juce::StringArray need;
+    for (auto& kv : identityToFp_)
+        if (paramMaps_.find(kv.second) == paramMaps_.end() && !mapsRequested_.contains(kv.second))
+            need.addIfNotAlreadyThere(kv.second);
+    if (need.isEmpty()) return;
+    // Batch <=500 fps per request (the endpoint's cap).
+    for (int i = 0; i < need.size(); i += 500)
+    {
+        juce::StringArray batch;
+        for (int j = i; j < juce::jmin(need.size(), i + 500); ++j)
+        {
+            batch.add(need[j]);
+            mapsRequested_.add(need[j]);
+        }
+        EchoJay_NSLog(("EJParamMaps: prefetching " + juce::String(batch.size()) + " map(s)").toRawUTF8());
+        onNeedParamMaps(batch);
+    }
+}
+
+void ChainHost::applyStructuredIfReady(int slotIndex)
+{
+    if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return;
+    auto& s = slots_[(size_t)slotIndex];
+    if (s.structuredApplied) return;
+    if (s.structuredSettings.isVoid() || s.structuredSettings.getDynamicObject() == nullptr) return;
+    if (s.fp.isEmpty()) return;
+    auto it = paramMaps_.find(s.fp);
+    if (it == paramMaps_.end()) return;   // silent skip until a map exists
+
+    auto report = applyStructuredSettings(slotIndex, s.structuredSettings, it->second);
+    s.structuredApplied = true;
+
+    EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex) + " (\"" + s.desc.name + "\"), "
+                   + juce::String((int)report.size()) + " result(s)").toRawUTF8());
+    juce::StringArray appliedSummary;
+    for (auto& r : report)
+    {
+        EchoJay_NSLog(("EJParamApply:   " + r.semantic + ": "
+                       + (r.applied ? juce::String("APPLIED ") : juce::String("manual  "))
+                       + juce::String(r.normalized, 3) + "  (" + r.note + ")").toRawUTF8());
+        if (r.applied)
+            appliedSummary.add(echojay::formatSemanticSetting(
+                r.semantic, s.structuredSettings.getProperty(r.semantic, juce::var())));
+    }
+
+    // SUGGESTED SETTINGS display contract: auto-applied slots show
+    // "Applied automatically" + a compact summary of what was set;
+    // slots with nothing applied keep the prose guidance unchanged.
+    if (!appliedSummary.isEmpty())
+        s.settings = "Applied automatically\n" + appliedSummary.joinIntoString(", ");
+}
+
+void ChainHost::loadParamMapsFromDisk()
+{
+    auto f = getParamMapsCacheFile();
+    if (!f.existsAsFile()) return;
+    auto root = juce::JSON::parse(f.loadFileAsString());
+    if (auto* idx = root.getProperty("identityToFp", juce::var()).getDynamicObject())
+        for (auto& p : idx->getProperties())
+            identityToFp_[p.name.toString()] = p.value.toString();
+    if (auto* maps = root.getProperty("maps", juce::var()).getDynamicObject())
+        for (auto& p : maps->getProperties())
+            if (p.value.getDynamicObject() != nullptr)
+                paramMaps_[p.name.toString()] = p.value;
+    if (auto* att = root.getProperty("fpAttempted", juce::var()).getArray())
+        for (auto& v : *att)
+            fpAttempted_.addIfNotAlreadyThere(v.toString());
+    EchoJay_NSLog(("EJParamMaps: cache loaded, " + juce::String((int)identityToFp_.size())
+                   + " identities, " + juce::String((int)paramMaps_.size()) + " map(s), "
+                   + juce::String(fpAttempted_.size()) + " fp skip marker(s)").toRawUTF8());
+}
+
+void ChainHost::saveParamMapsToDisk()
+{
+    juce::DynamicObject::Ptr idx = new juce::DynamicObject();
+    for (auto& kv : identityToFp_) idx->setProperty(juce::Identifier(kv.first), kv.second);
+    juce::DynamicObject::Ptr maps = new juce::DynamicObject();
+    for (auto& kv : paramMaps_) maps->setProperty(juce::Identifier(kv.first), kv.second);
+    juce::var att;
+    for (auto& s : fpAttempted_) att.append(s);
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty("identityToFp", juce::var(idx.get()));
+    root->setProperty("maps", juce::var(maps.get()));
+    root->setProperty("fpAttempted", att);
+    getParamMapsCacheFile().replaceWithText(juce::JSON::toString(juce::var(root.get())));
+}
+
+// ---------------------------------------------------------------------------
+// Fingerprint pass (scan path). See the header comment for the contract.
+// ---------------------------------------------------------------------------
+void ChainHost::startFingerprintPass()
+{
+    JUCE_ASSERT_MESSAGE_THREAD
+    if (fpPassRunning_.load() || scanning_.load()) return;
+
+    fpQueue_.clear();
+    {
+        std::lock_guard<std::mutex> lk(pluginsMutex_);
+        for (const auto& d : entries_)
+        {
+            if (d.isInstrument) continue;                       // never a chain slot
+            // Thin VST3 (unvalidated, version empty): fingerprinting now
+            // would hash a wrong basis. completeLoad covers it on first load.
+            if (d.pluginFormatName == "VST3" && d.version.isEmpty()) continue;
+            const auto ik = echojay::identityKeyForDescription(d);
+            if (identityToFp_.find(ik) != identityToFp_.end()) continue;
+            if (fpAttempted_.contains(ik)) continue;
+            fpQueue_.add(d);
+        }
+    }
+    if (fpQueue_.isEmpty()) return;
+
+    fpQueueTotal_ = fpQueue_.size();
+    fpPassRunning_.store(true);
+    EchoJay_NSLog(("EJFpPass: start, " + juce::String(fpQueueTotal_)
+                   + " plugin(s) to fingerprint").toRawUTF8());
+    fingerprintNext();
+}
+
+void ChainHost::fingerprintNext()
+{
+    if (fpQueue_.isEmpty())
+    {
+        fpPassRunning_.store(false);
+        saveParamMapsToDisk();
+        EchoJay_NSLog(("EJFpPass: done, index now "
+                       + juce::String((int)identityToFp_.size()) + " identities").toRawUTF8());
+        return;
+    }
+
+    const auto desc = fpQueue_.removeAndReturn(0);
+    const auto ik   = echojay::identityKeyForDescription(desc);
+    const int  n    = fpQueueTotal_ - fpQueue_.size();
+
+    // Death marker BEFORE the load: a plugin that crashes the host during
+    // instantiation is silently skipped on every later pass instead of
+    // crash-looping the scan. Cleared below when the load survives.
+    fpAttempted_.addIfNotAlreadyThere(ik);
+    saveParamMapsToDisk();
+
+    asyncCreatePlugin(desc,
+        [this, desc, ik, n](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+        {
+            if (inst != nullptr)
+            {
+                fpAttempted_.removeString(ik);
+                const auto fp = echojay::fingerprintForDescription(
+                    desc, (int) inst->getParameters().size());
+                identityToFp_[ik] = fp;
+                EchoJay_NSLog(("EJFpPass: (" + juce::String(n) + "/"
+                               + juce::String(fpQueueTotal_) + ") " + desc.name
+                               + " -> " + fp.substring(0, 12)).toRawUTF8());
+                inst.reset();   // release immediately; the instance was only for param_count
+            }
+            else
+            {
+                // Failed loads keep their marker: no point retrying every scan.
+                EchoJay_NSLog(("EJFpPass: (" + juce::String(n) + "/"
+                               + juce::String(fpQueueTotal_) + ") " + desc.name
+                               + " FAILED: " + err).toRawUTF8());
+            }
+            // Unwind before the next load so the message thread breathes
+            // between instantiations.
+            juce::MessageManager::callAsync([this] { fingerprintNext(); });
+        });
 }
 
 // Forward declaration for mutual recursion with the polling lambda

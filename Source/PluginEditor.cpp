@@ -411,6 +411,39 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         settingsSavedLabel.setText("Meters dumped", juce::dontSendNotification);
     };
 
+    // Auto-parameter-mapping wiring: ChainHost owns the apply pipeline and
+    // asks the editor (which owns EchoJayAPI) to fetch maps; results flow
+    // back via storeParamMaps, which also dials any slot that was waiting.
+    // SafePointer guards: ChainHost outlives the editor, so a fetch firing
+    // after close must be a silent no-op (cleared again in the destructor).
+    {
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        auto& chainHostRef = processorRef.getChainHost();
+        chainHostRef.onNeedParamMaps = [safeThis](const juce::StringArray& fps)
+        {
+            if (safeThis == nullptr || fps.isEmpty()) return;
+            safeThis->api.getJSON("/api/params/maps?fps=" + fps.joinIntoString(","),
+                [safeThis](const juce::var& json, int statusCode)
+                {
+                    if (safeThis == nullptr) return;
+                    if (statusCode != 200)
+                    {
+                        EchoJay_NSLog(("EJParamMaps: fetch failed, status "
+                                       + juce::String(statusCode)).toRawUTF8());
+                        return;
+                    }
+                    safeThis->processorRef.getChainHost()
+                        .storeParamMaps(json.getProperty("maps", juce::var()));
+                });
+        };
+        chainHostRef.onSlotSettingsChanged = [safeThis]()
+        {
+            if (safeThis == nullptr) return;
+            auto& ch = safeThis->processorRef.getChainHost();
+            safeThis->chainListPanel.rebuild(ch.getAllSlotInfos(), -1);
+        };
+    }
+
 
     // --- Channel type ---
     // Grouped channel type dropdown — uses PopupMenu with submenus via getRootMenu()
@@ -1730,6 +1763,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 
 EchoJayEditor::~EchoJayEditor() {
     ejTeardownLog("~EchoJayEditor enter");
+    // Auto-parameter-mapping callbacks capture a SafePointer to this editor;
+    // clear them so ChainHost (which outlives the editor) never invokes a
+    // stale hook. SafePointer already makes late fires no-ops; this is the
+    // belt to that brace.
+    processorRef.getChainHost().onNeedParamMaps = nullptr;
+    processorRef.getChainHost().onSlotSettingsChanged = nullptr;
     // If the user changed ticks and closed without hitting Done, commit the
     // local selection now so it isn't lost (disk persist; server is best-effort
     // and skipped during teardown).
@@ -5829,6 +5868,8 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
                 chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
                 // Rebuild resolver
                 ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
+                // Prefetch param maps for known fingerprints (throttled inside)
+                ch.requestMapPrefetch();
             }
             break;
         }
@@ -11371,7 +11412,13 @@ void EchoJayEditor::timerCallback()
         {
             auto scanned = processorRef.getPluginScanner().getPlugins();
             if (!scanned.empty())
+            {
                 ch.buildRecommendable(scanned, chainFormatFilter_);
+                // Entries just became ready: prefetch param maps for every
+                // fingerprint the persistent index knows (throttled inside),
+                // so a Build later this session needs no round trip.
+                ch.requestMapPrefetch();
+            }
         }
     }
 
@@ -13219,7 +13266,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
     juce::StringArray recommNames = ch.getRecommendableNames();
 
     // Collect names+settings from chain JSON, filtering to only those in recommendable
-    struct SlotSpec { juce::String name; juce::String settings; };
+    struct SlotSpec { juce::String name; juce::String settings; juce::var structured; };
     std::vector<SlotSpec> slots;
     juce::StringArray droppedDisabled;
     auto& scanner = processorRef.getPluginScanner();
@@ -13231,6 +13278,9 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         if (!entryObj || !entryObj->hasProperty("name")) continue;
         juce::String name     = entryObj->getProperty("name").toString().trim();
         juce::String settings = entryObj->getProperty("settings").toString().trim();
+        // settings_structured (server-validated): drives the auto-apply
+        // path; void/absent means prose-only for this slot.
+        juce::var structured  = entryObj->getProperty("settings_structured");
         bool found = false;
         for (auto& r : recommNames)
             if (ChainHost::namesMatchLoose(name, r)) { found = true; break; }
@@ -13251,7 +13301,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 else          found = true;
             }
         }
-        if (found) slots.push_back({ name, settings });
+        if (found) slots.push_back({ name, settings, structured });
         else DBG("loadChainFromJson: skipping unknown name: " + name);
     }
     if (slots.empty())
@@ -13351,6 +13401,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
             int i = (*idx)++;
             juce::String name     = slots[i].name;
             juce::String settings = slots[i].settings;
+            juce::var structured  = slots[i].structured;
             // Status first, load on the NEXT runloop turn: instantiation
             // blocks the message thread, so the paint must get through
             // before the stall or the progress label never shows.
@@ -13359,11 +13410,11 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
             safeThis->chainStatusLabel.setText(safeThis->chainListPanel.statusText,
                                                juce::dontSendNotification);
             safeThis->chainListPanel.repaint();
-            juce::Timer::callAfterDelay(30, [safeThis, name, settings, skipped, loadNextPtr]() mutable
+            juce::Timer::callAfterDelay(30, [safeThis, name, settings, structured, skipped, loadNextPtr]() mutable
             {
                 if (safeThis == nullptr) return;
                 safeThis->processorRef.getChainHost().loadByRecommendedName(name,
-                    [safeThis, name, settings, skipped, loadNextPtr](const juce::String& err) mutable
+                    [safeThis, name, settings, structured, skipped, loadNextPtr](const juce::String& err) mutable
                     {
                         if (safeThis == nullptr) return;
                         if (err.isNotEmpty())
@@ -13377,6 +13428,12 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                             auto& ch4 = safeThis->processorRef.getChainHost();
                             if (settings.isNotEmpty())
                                 ch4.setSlotSettings(ch4.getNumSlots() - 1, settings);
+                            // Auto-apply: hand the slot its structured
+                            // settings; ChainHost dials the plugin now if
+                            // its map is cached, or on fetch completion.
+                            // No structured settings -> prose only, as-is.
+                            if (structured.getDynamicObject() != nullptr)
+                                ch4.setSlotStructuredSettings(ch4.getNumSlots() - 1, structured);
                             // Progressive: the rack grows a row per loaded slot
                             safeThis->chainListPanel.rebuild(ch4.getAllSlotInfos(), -1);
                         }

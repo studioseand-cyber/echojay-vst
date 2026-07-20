@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginScanner.h"
 #include <atomic>
+#include <map>
 #include <mutex>
 #include <memory>
 #include <thread>
@@ -100,6 +101,65 @@ public:
     void moveSlot(int i, int direction);    // direction: -1 = left, +1 = right
     void setSlotBypassed(int i, bool bypassed);
     void setSlotSettings(int i, const juce::String& settings);  // store AI guidance text
+
+    // EchoJay auto-parameter-mapping: dial a slot's hosted plugin from
+    // structured settings plus the plugin's map.
+    struct ApplyReport { juce::String semantic; bool applied; float normalized; juce::String note; };
+    std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
+                                                      const juce::var& structuredSettings,
+                                                      const juce::var& map);
+
+    // ---- Auto-apply pipeline (the ONE apply path) ------------------------
+    // A chain reply's per-slot settings_structured object is handed to the
+    // slot here after load; the apply fires the moment the plugin's map is
+    // available (immediately when cached, else on fetch completion). No map
+    // or no structured settings -> silent skip, prose display stays as-is.
+    void setSlotStructuredSettings (int i, const juce::var& structured);
+
+    // Store maps fetched from GET /api/params/maps ({fp: map|null} object),
+    // persist them, and apply any slots that were waiting on them.
+    void storeParamMaps (const juce::var& mapsObj);
+
+    // Batch-prefetch (via onNeedParamMaps) maps for every fingerprint the
+    // persistent identity index knows but has no cached map for, <=500 per
+    // request. Called after scans so Build needs no round trip. Fps already
+    // requested this session are not re-requested.
+    void requestMapPrefetch();
+
+    // Fingerprint pass (scan path): computes the server fingerprint
+    // sha256(format|uidHex|version|param_count) for every scanned effect
+    // entry not yet in the persistent identity index. param_count only
+    // exists on a constructed instance, so each plugin is instantiated ONCE,
+    // sequentially, on the message thread (JUCE requires it), fingerprinted
+    // and released. Runs automatically when a scan completes. Skips: thin
+    // VST3 entries (empty version would hash a WRONG basis; their first real
+    // load fingerprints them in completeLoad), instruments (never chain
+    // slots), and identities whose previous attempt failed or crashed the
+    // host (marker persisted BEFORE each load, cleared on success).
+    void startFingerprintPass();
+    bool isFingerprintPassRunning() const { return fpPassRunning_.load(); }
+
+    // Networking is the editor's job (EchoJayAPI lives there): ChainHost
+    // asks for fps through this and receives results via storeParamMaps.
+    std::function<void(const juce::StringArray& fps)> onNeedParamMaps;
+
+    // Fired after an async auto-apply mutates a slot's settings display so
+    // the rack UI can refresh. Always called on the message thread.
+    std::function<void()> onSlotSettingsChanged;
+
+    static juce::File getParamMapsCacheFile();
+
+    // Shared dev gate. Logic hosts AUs in the sandboxed AUHostingService,
+    // where userApplicationDataDirectory resolves into the service's
+    // container, NOT the real ~/Library — so the container-relative dev_mode
+    // file is invisible in-DAW. The fixed absolute path works sandboxed; the
+    // container-relative check stays as the fallback for standalone/unboxed.
+    static bool devModeActive()
+    {
+        return juce::File("/Users/SeanD/.echojay_dev").existsAsFile()
+            || juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                   .getChildFile("EchoJay").getChildFile("dev_mode").existsAsFile();
+    }
 
     juce::AudioProcessorEditor* createEditorForSlot(int i);
 
@@ -238,7 +298,26 @@ private:
         juce::PluginDescription              desc;
         bool                                 bypassed = false;
         juce::String                         settings;   // AI-suggested dial-in guidance
+        // Auto-parameter-mapping state
+        juce::var                            structuredSettings;        // settings_structured from the chain reply
+        juce::String                         fp;                        // fingerprint (computed at load)
+        bool                                 structuredApplied = false; // one-shot guard
     };
+
+    // Auto-parameter-mapping caches (message thread only)
+    std::map<juce::String, juce::var>    paramMaps_;     // fp -> map object
+    std::map<juce::String, juce::String> identityToFp_;  // format|uid|version -> fp
+    juce::StringArray                    mapsRequested_; // fps requested this session
+    void applyStructuredIfReady (int slotIndex);
+    void loadParamMapsFromDisk();
+    void saveParamMapsToDisk();
+
+    // Fingerprint pass state (message thread only, except the atomic)
+    std::atomic<bool>                    fpPassRunning_ { false };
+    juce::Array<juce::PluginDescription> fpQueue_;
+    int                                  fpQueueTotal_ = 0;
+    juce::StringArray                    fpAttempted_;  // crash/failure skip markers, persisted
+    void fingerprintNext();
 
     juce::AudioPluginFormatManager formatManager_;
 
