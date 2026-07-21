@@ -404,14 +404,16 @@ static int runBootstrap()
         outIdentity->setProperty (juce::Identifier (ik), fp);
     }
 
-    // RECONCILE: only fps with no locally cached map need the server.
-    juce::StringArray needFetch;
-    for (const auto& fp : allFps)
-        if (! outMaps->hasProperty (juce::Identifier (fp)))
-            needFetch.add (fp);
+    // RECONCILE + REVALIDATE: every known fp is re-requested each run (not
+    // just uncached ones). The server stamps maps with a content rev, so a
+    // corrected map overwrites the stale local copy and a RETRACTED map
+    // (explicit null for an fp we have cached) is dropped. This heals
+    // machines whose bootstrap cache holds since-fixed maps.
+    juce::StringArray needFetch = allFps;
 
     const auto endpoint = resolveEndpoint();
     juce::StringArray unmappedFps;
+    int retracted = 0;
     for (int i = 0; i < needFetch.size(); i += kMapsBatch)
     {
         juce::StringArray batch;
@@ -426,9 +428,13 @@ static int runBootstrap()
                 if (p.value.getDynamicObject() != nullptr)
                     outMaps->setProperty (p.name, p.value);
                 else
+                {
+                    if (outMaps->hasProperty (p.name)) { outMaps->removeProperty (p.name); ++retracted; }
                     unmappedFps.addIfNotAlreadyThere (p.name.toString());
+                }
             }
     }
+    if (retracted > 0) logLine ("retracted " + juce::String (retracted) + " stale map(s)");
 
     juce::DynamicObject::Ptr out = new juce::DynamicObject();
     out->setProperty ("identityToFp", juce::var (outIdentity.get()));

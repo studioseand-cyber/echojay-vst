@@ -159,6 +159,15 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         if (! semanticToFloat (value, target)) { r.note = "bad value"; return r; }
         auto anchors = anchorsFromVar (mapEntry);
         if (anchors.isEmpty()) { r.note = "no anchors in map"; return r; }
+        // DEFENSIVE: a near-zero-span anchor table can only pin the knob at
+        // one end whatever value is asked (the Solid Bus Comp bug class).
+        // The map builder now rejects these at build time; this guard makes
+        // sure even a future bad map cannot slam a parameter.
+        {
+            float lo = anchors.getFirst()[0], hi = lo;
+            for (auto& a : anchors) { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
+            if (hi - lo < 1.0e-6f) { r.note = "degenerate map range, left manual"; return r; }
+        }
         norm = interpolateAnchors (anchors, target);
     }
 

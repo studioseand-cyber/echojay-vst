@@ -866,15 +866,38 @@ void ChainHost::storeParamMaps(const juce::var& mapsObj)
 {
     auto* o = mapsObj.getDynamicObject();
     if (o == nullptr) return;
-    int added = 0;
+    int added = 0, retracted = 0;
     for (auto& p : o->getProperties())
+    {
+        const auto fp = p.name.toString();
         if (!p.value.isVoid() && p.value.getDynamicObject() != nullptr)
         {
-            paramMaps_[p.name.toString()] = p.value;
+            // Rev compare: overwrite only when the map is new or its content
+            // revision differs (a cached map without a rev predates the
+            // invalidation scheme and always counts as stale once). This is
+            // what heals machines that cached a since-corrected map.
+            auto it = paramMaps_.find(fp);
+            const auto newRev = p.value.getProperty("rev", juce::var()).toString();
+            if (it != paramMaps_.end())
+            {
+                const auto oldRev = it->second.getProperty("rev", juce::var()).toString();
+                if (oldRev.isNotEmpty() && oldRev == newRev) continue;   // unchanged
+            }
+            paramMaps_[fp] = p.value;
             ++added;
         }
-    if (added > 0) saveParamMapsToDisk();
-    EchoJay_NSLog(("EJParamMaps: stored " + juce::String(added) + " map(s) from server").toRawUTF8());
+        else if (paramMaps_.find(fp) != paramMaps_.end())
+        {
+            // Explicit null for an fp we asked about and have cached: the
+            // server RETRACTED the map (defective, no valid entries). Drop
+            // the local copy so it can never be applied again.
+            paramMaps_.erase(fp);
+            ++retracted;
+        }
+    }
+    if (added > 0 || retracted > 0) saveParamMapsToDisk();
+    EchoJay_NSLog(("EJParamMaps: stored/updated " + juce::String(added)
+                   + " map(s), retracted " + juce::String(retracted) + " from server").toRawUTF8());
     bool changed = false;
     for (int i = 0; i < (int)slots_.size(); ++i)
     {
@@ -938,6 +961,17 @@ void ChainHost::requestMapPrefetch()
     for (auto& kv : identityToFp_)
         if (paramMaps_.find(kv.second) == paramMaps_.end() && !mapsRequested_.contains(kv.second))
             need.addIfNotAlreadyThere(kv.second);
+    // CACHE REVALIDATION, once per session: also re-request every fp we
+    // already have cached. storeParamMaps rev-compares the responses, so
+    // unchanged maps cost nothing, corrected maps overwrite the stale local
+    // copy, and retracted maps (explicit null) get dropped. This is how a
+    // machine that cached a since-fixed map heals without reinstalling.
+    if (!mapsRevalidated_)
+    {
+        mapsRevalidated_ = true;
+        for (auto& kv : paramMaps_)
+            need.addIfNotAlreadyThere(kv.first);
+    }
     if (need.isEmpty()) return;
     // Batch 100 fps per request. The endpoint accepts 500, but fps ride in
     // a GET URL and 500 of them is a ~32KB request line that dies at the
@@ -964,6 +998,21 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     if (s.fp.isEmpty()) return;
     auto it = paramMaps_.find(s.fp);
     if (it == paramMaps_.end()) return;   // silent skip until a map exists
+
+    // INTEGRITY: the map's own fp field must equal the slot's live
+    // fingerprint, not just the cache key it was stored under. Catches any
+    // keying bug (server response, cache merge, disk corruption) before a
+    // wrong-layout map can touch a single parameter.
+    const auto mapFp = it->second.getProperty("fp", juce::var()).toString();
+    if (mapFp != s.fp)
+    {
+        EchoJay_NSLog(("EJParamApply: map fp mismatch for slot " + juce::String(slotIndex)
+                       + " (\"" + s.desc.name + "\"): key " + s.fp.substring(0, 12)
+                       + " vs map.fp " + (mapFp.isEmpty() ? juce::String("(missing)")
+                                                          : mapFp.substring(0, 12))
+                       + ", apply refused").toRawUTF8());
+        return;
+    }
 
     auto report = applyStructuredSettings(slotIndex, s.structuredSettings, it->second);
     s.structuredApplied = true;

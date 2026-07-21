@@ -308,6 +308,7 @@ private:
     std::map<juce::String, juce::var>    paramMaps_;     // fp -> map object
     std::map<juce::String, juce::String> identityToFp_;  // format|uid|version -> fp
     juce::StringArray                    mapsRequested_; // fps requested this session
+    bool                                 mapsRevalidated_ = false; // once-per-session cache revalidation
     void applyStructuredIfReady (int slotIndex);
     void loadParamMapsFromDisk();
     void saveParamMapsToDisk();
