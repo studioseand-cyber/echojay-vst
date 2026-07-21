@@ -825,9 +825,21 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     const int newSlotIdx = (int)slots_.size() - 1;
     if (auto* newProc = slots_[(size_t)newSlotIdx].node ? slots_[(size_t)newSlotIdx].node->getProcessor() : nullptr)
     {
+        // Fingerprint from the INSTANCE's own filled-in description, not the
+        // desc that loaded it: registry-enumerated AU descs carry the AU
+        // component triple in `version` (e.g. "aufx,Ni$6,-NI-"), which can
+        // never match the extractor's real version string, so seeded AU maps
+        // were unreachable from a live session. The loaded instance knows its
+        // true identity in every format; for VST3 the fields are identical
+        // either way, so existing VST3 fingerprints do not change.
+        juce::PluginDescription liveDesc;
+        if (auto* inst = dynamic_cast<juce::AudioPluginInstance*>(newProc))
+            liveDesc = inst->getPluginDescription();
+        if (liveDesc.pluginFormatName.isEmpty() || liveDesc.version.isEmpty())
+            liveDesc = desc;   // never fingerprint from a blank description
         slots_[(size_t)newSlotIdx].fp =
-            echojay::fingerprintForDescription(desc, newProc->getParameters().size());
-        const auto ik = echojay::identityKeyForDescription(desc);
+            echojay::fingerprintForDescription(liveDesc, newProc->getParameters().size());
+        const auto ik = echojay::identityKeyForDescription(liveDesc);
         auto it = identityToFp_.find(ik);
         if (it == identityToFp_.end() || it->second != slots_[(size_t)newSlotIdx].fp)
         {
