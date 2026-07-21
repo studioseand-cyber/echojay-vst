@@ -856,6 +856,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     addAndMakeVisible(uiScaleCombo);
 
+    // Auto-dial mode toggle (Settings): applies immediately, no Save needed
+    autoDialToggle.setColour(juce::ToggleButton::textColourId, C::text2);
+    autoDialToggle.setColour(juce::ToggleButton::tickColourId, C::blue);
+    autoDialToggle.setVisible(false);
+    autoDialToggle.onClick = [this] { api.setAutoDialMode(autoDialToggle.getToggleState()); };
+    addAndMakeVisible(autoDialToggle);
+
     // Load and apply persisted scale before first paint
     loadUIScale();
     applyUIScale(uiScale_);
@@ -1735,7 +1742,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     {
         juce::Component* settingsMovers[] = {
             &settingsName, &settingsMonitors, &settingsHeadphones, &settingsGenres,
-            &settingsExpLevel, &settingsLanguage, &uiScaleCombo,
+            &settingsExpLevel, &settingsLanguage, &uiScaleCombo, &autoDialToggle,
             &settingsScanBtn, &viewAllPluginsBtn,
             &saveSettingsBtn, &settingsManualBtn, &settingsSavedLabel,
             &settingsHelpBtn, &dumpMetersBtn, &logoutBtn, &settingsOrbCard_ };
@@ -5631,6 +5638,8 @@ void EchoJayEditor::showSettingsView()
         uiScaleCombo.setSelectedId(selId, juce::dontSendNotification);
         uiScaleCombo.setVisible(true);
     }
+    autoDialToggle.setToggleState(api.getAutoDialMode(), juce::dontSendNotification);
+    autoDialToggle.setVisible(true);
 
     // Plugins row: scan button + View all + Help & Support. No inline list.
     settingsScanBtn.setVisible(true);
@@ -5732,6 +5741,7 @@ void EchoJayEditor::hideSettingsView()
     settingsLanguage.setVisible(false);
     saveSettingsBtn.setVisible(false); settingsSavedLabel.setVisible(false);
     uiScaleCombo.setVisible(false);
+    autoDialToggle.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
     settingsPluginViewport.setVisible(false);
     settingsPluginSearchBox.setVisible(false);
@@ -7732,6 +7742,7 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     label("HEADPHONES");
     label("GENRES YOU WORK WITH");
     label("UI SCALE");
+    label("CHAIN SUGGESTIONS");
 
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
@@ -11083,6 +11094,10 @@ void EchoJayEditor::resized()
             // UI SCALE
             sy += labelGap;
             uiScaleCombo.setBounds(sx, sy, 140, fh); sy += fh + 8;
+
+            // CHAIN SUGGESTIONS: auto-dial toggle (full width, honest label)
+            sy += labelGap;
+            autoDialToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
 
             // PLUGINS: scan button + "View all" beside it
             sy += labelGap;

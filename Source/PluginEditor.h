@@ -656,6 +656,11 @@ private:
     juce::TextButton saveSettingsBtn { "Save" };
     juce::Label settingsSavedLabel;
     juce::ComboBox uiScaleCombo;     // UI scale picker: 80–150%
+    // Auto-dial mode (default off): opt-in restriction of chain suggestions
+    // to plugins EchoJay can dial in automatically (server param maps).
+    // State lives in EchoJayAPI (local settings file) and rides chat bodies;
+    // the toggle applies immediately, independent of the Save button.
+    juce::ToggleButton autoDialToggle { "Only suggest plugins EchoJay can auto-dial (fewer options, every suggestion one-click)" };
     // Background-mapping consent prompt (one-shot per absence of the
     // remembered mapping_consent.json marker; see maybeShowMappingConsent)
     bool mappingConsentPromptShown_ = false;

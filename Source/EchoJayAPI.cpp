@@ -660,6 +660,10 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     // turnType is staged per send ("" = plain "chat"); capture payloads only
     // ride on explicit capture turns (the callers enforce that pairing).
     body += ",\"appVersion\":\"" + juce::String(JucePlugin_VersionString) + "\"";
+    // Auto-dial mode rides EVERY chat turn when on; the server only acts on
+    // it for chain turns with a live plugin feed and ignores it elsewhere.
+    if (autoDialMode)
+        body += ",\"autoDial\":true";
 
     // Meter/band payload: EXPLICIT CAPTURE ONLY. Anything staged (or passed
     // via the legacy parameter) without the flag is discarded loudly — a
@@ -1619,6 +1623,9 @@ void EchoJayAPI::loadSettings()
         userInfo.displayName = obj->getProperty("displayName").toString();
         if (userInfo.displayName.isEmpty())
             userInfo.displayName = userInfo.email.upToFirstOccurrenceOf("@", false, false);
+
+        // Absent property -> false: auto-dial mode defaults OFF.
+        autoDialMode = (bool) obj->getProperty("autoDialMode");
         
         // Check if the saved usage is from this period — reset if we've
         // rolled into a new month. Period is monthly across all tiers in
@@ -1651,6 +1658,7 @@ void EchoJayAPI::saveSettings() const
     obj->setProperty("displayName", userInfo.displayName);
     obj->setProperty("messagesUsedToday", userInfo.messagesUsedToday);
     obj->setProperty("usageDate", juce::Time::getCurrentTime().formatted("%Y-%m-%d"));
+    obj->setProperty("autoDialMode", autoDialMode);
     
     file.replaceWithText(juce::JSON::toString(juce::var(obj)));
 }

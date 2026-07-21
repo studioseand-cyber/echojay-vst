@@ -219,7 +219,17 @@ public:
     
     // Get current cached settings
     UserSettings getUserSettings() const { return userSettings; }
-    
+
+    // Auto-dial mode (Settings toggle, default off): when on, every
+    // /api/chat body carries "autoDial":true and the server restricts chain
+    // suggestions to plugins EchoJay has param maps for (so every suggested
+    // slot is one-click dialable). Persisted in the LOCAL settings file, not
+    // the server profile: the flag only means anything on this machine, and
+    // keeping it out of the shared profile blob means a web-side settings
+    // save can never clobber it.
+    bool getAutoDialMode() const { return autoDialMode; }
+    void setAutoDialMode(bool on) { autoDialMode = on; saveSettings(); }
+
     // Update plugins list from scanner (merges with existing)
     void updatePluginsFromScanner(const juce::String& scannedPlugins);
     
@@ -346,6 +356,7 @@ private:
     bool         nextChatIsExplicitCapture_ = false;   // see stageCapturePayload
     UserInfo userInfo;
     UserSettings userSettings;
+    bool autoDialMode = false;   // see get/setAutoDialMode()
     
     // Shared flag: set to false in destructor so in-flight callbacks
     // know the object is gone and skip any member access.
