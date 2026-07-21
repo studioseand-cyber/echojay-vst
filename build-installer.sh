@@ -242,6 +242,19 @@ MAPPERPLIST
 #!/bin/bash
 CONSOLE_USER=$(stat -f%Su /dev/console 2>/dev/null)
 CONSOLE_UID=$(id -u "$CONSOLE_USER" 2>/dev/null)
+USER_HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+# Default consent: fetch-only (auto-dial works, nothing shared). Written when
+# no marker exists or a legacy in-app "declined" would block the scan the
+# user just enabled by ticking this component. The Share choice's own
+# postinstall runs AFTER this one and upgrades to fetch-and-contribute.
+if [ -n "$USER_HOME" ] && [ -d "$USER_HOME" ]; then
+    DIR="$USER_HOME/Library/EchoJay"
+    mkdir -p "$DIR"
+    if [ ! -f "$DIR/mapping_consent.json" ] || grep -q '"declined"' "$DIR/mapping_consent.json" 2>/dev/null; then
+        printf '{"consent":"fetch-only","source":"installer-default","at":"%s"}' "$(date -u +%FT%TZ)" > "$DIR/mapping_consent.json"
+    fi
+    chown "$CONSOLE_USER" "$DIR" "$DIR/mapping_consent.json" 2>/dev/null || true
+fi
 if [ -n "$CONSOLE_UID" ] && [ "$CONSOLE_UID" -ge 500 ]; then
     launchctl bootstrap gui/"$CONSOLE_UID" /Library/LaunchAgents/com.echojay.parammapper.plist 2>/dev/null || true
 fi
@@ -379,6 +392,47 @@ if [ -n "$MAPPER_PATH" ]; then
         --scripts "${PKG_DIR}/mapper-scripts" \
         "${PKG_DIR}/components/EchoJay-ParamMapper.pkg"
     echo "  Done: background mapper component"
+
+    # Sharing consent is a CUSTOM INSTALLER PANE (installer-pane/), a real
+    # either/or with Continue blocked until a pick: built, signed, attached
+    # below via productbuild --plugins. The pane writes mapping_consent.json
+    # directly; the mapper postinstall's fetch-only default remains as the
+    # fallback if the pane could not be shown.
+    PANE_DIR="${PKG_DIR}/plugins"
+    PANE_BUNDLE="${PANE_DIR}/EchoJayConsentPane.bundle"
+    mkdir -p "${PANE_BUNDLE}/Contents/MacOS" "${PANE_BUNDLE}/Contents/Resources"
+    clang -bundle -fobjc-arc -arch arm64 -arch x86_64 \
+        -framework Cocoa -framework InstallerPlugins \
+        -o "${PANE_BUNDLE}/Contents/MacOS/EchoJayConsentPane" \
+        "${SCRIPT_DIR}/installer-pane/EchoJayConsentPane.m"
+    ibtool --compile "${PANE_BUNDLE}/Contents/Resources/EchoJayConsentPane.nib" \
+        "${SCRIPT_DIR}/installer-pane/EchoJayConsentPane.xib"
+    cp "${SCRIPT_DIR}/installer-pane/Info.plist" "${PANE_BUNDLE}/Contents/"
+    if security find-identity -v -p codesigning | grep -q "$APP_SIGN_ID"; then
+        codesign --force --options runtime --timestamp --sign "$APP_SIGN_ID" "$PANE_BUNDLE"
+        echo "  Signed consent pane bundle"
+    else
+        echo "  WARNING: consent pane left unsigned"
+    fi
+    cat > "${PANE_DIR}/InstallerSections.plist" << 'SECTIONS'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>SectionOrder</key>
+    <array>
+        <string>Introduction</string>
+        <string>ReadMe</string>
+        <string>License</string>
+        <string>Target</string>
+        <string>PackageSelection</string>
+        <string>EchoJayConsentPane.bundle</string>
+        <string>Install</string>
+    </array>
+</dict>
+</plist>
+SECTIONS
+    echo "  Consent pane staged (plugins dir)"
 fi
 
 # --- Build distribution XML ---
@@ -469,9 +523,9 @@ if [ -n "$MAPPER_PATH" ]; then
     CHOICES_OUTLINE="${CHOICES_OUTLINE}        <line choice=\"mapper\"/>\n"
     CHOICES="${CHOICES}
     <choice id=\"mapper\"
-            title=\"EchoJay background services\"
-            description=\"Support files for EchoJay's optional background plugin analysis. Nothing runs until you opt in inside EchoJay (the first-launch prompt); saying Not now leaves it fully inert.\"
-            selected=\"true\" start_visible=\"false\">
+            title=\"Set up plugin auto-mapping\"
+            description=\"Analyzes the plugins on this computer in a low-priority background process (outside your DAW) and fetches their control maps from EchoJay, so suggested chain settings can be dialed in automatically. Read-only: this setup shares nothing.\"
+            selected=\"true\">
         <pkg-ref id=\"com.echojay.parammapper\"/>
     </choice>"
     PKG_REFS="${PKG_REFS}
@@ -483,7 +537,7 @@ cat > "${PKG_DIR}/distribution.xml" << DISTXML
 <installer-gui-script minSpecVersion="2">
     <title>EchoJay V2 v${VERSION}</title>
     <organization>${IDENTIFIER}</organization>
-    <options customize="allow" require-scripts="false" hostArchitectures="x86_64,arm64"/>
+    <options customize="always" require-scripts="false" hostArchitectures="x86_64,arm64"/>
 
     <welcome file="welcome.html"/>
     <license file="license.html"/>
@@ -506,6 +560,7 @@ rm -f "$OUTPUT"
 
 productbuild \
     --distribution "${PKG_DIR}/distribution.xml" \
+    --plugins "${PKG_DIR}/plugins" \
     --resources "$RESOURCES_DIR" \
     --package-path "${PKG_DIR}/components" \
     "$OUTPUT"

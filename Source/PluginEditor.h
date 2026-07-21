@@ -670,10 +670,6 @@ private:
     // State lives in EchoJayAPI (local settings file) and rides chat bodies;
     // the toggle applies immediately, independent of the Save button.
     juce::ToggleButton autoDialToggle { "Only suggest plugins EchoJay can auto-dial (fewer options, every suggestion one-click)" };
-    // Background-mapping consent prompt (one-shot per absence of the
-    // remembered mapping_consent.json marker; see maybeShowMappingConsent)
-    bool mappingConsentPromptShown_ = false;
-    void maybeShowMappingConsent();
     float uiScale_ = 1.0f;          // current scale factor
     void applyUIScale(float scale);
     void saveUIScale() const;

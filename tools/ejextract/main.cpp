@@ -226,21 +226,33 @@ static int runBootstrap()
 {
     setpriority (PRIO_PROCESS, 0, 19);   // politeness floor; plist adds IO throttle
 
-    // CONSENT GATE. Scanning and contribution require the user's explicit
-    // in-app opt-in ("Yes, help improve" on the plugin's first-launch
-    // prompt). The plugin writes mapping_consent.json; this process only
-    // reads it. Without a granted marker we exit HERE: no folder walk, no
-    // ledger write, no network. The launchd agent may start this process,
-    // but consent always precedes any scanning or contribution.
+    // CONSENT GATE. The INSTALLER writes mapping_consent.json (the "Set up
+    // plugin auto-mapping" component + the Share / Don't share choice);
+    // this process only reads it. Two-level consent:
+    //   "fetch-only"           scan + fetch maps (read-only); NEVER contribute
+    //   "fetch-and-contribute" scan + fetch + contribute samples upstream
+    //   "granted"              legacy in-app Yes: full behaviour
+    //   "declined"             legacy in-app Not-now: exit entirely
+    //   absent                 exit entirely (no consent basis)
+    // The contribute stage below is additionally gated on contributeAllowed;
+    // the ONLY upstream write in this program is that one POST, so
+    // "fetch-only" can never share anything.
+    bool contributeAllowed = false;
     {
         auto consent = readJsonFile (echojayDir().getChildFile ("mapping_consent.json"))
                          .getProperty ("consent", juce::var()).toString();
-        if (consent != "granted")
+        const bool runAllowed = (consent == "fetch-only"
+                                 || consent == "fetch-and-contribute"
+                                 || consent == "granted");
+        contributeAllowed = (consent == "fetch-and-contribute" || consent == "granted");
+        if (! runAllowed)
         {
             std::cout << "bootstrap: consent " << (consent.isEmpty() ? "unset" : consent)
                       << ", exiting without scanning\n";
             return 0;
         }
+        std::cout << "bootstrap: consent " << consent
+                  << (contributeAllowed ? " (fetch + contribute)\n" : " (fetch only, no sharing)\n");
     }
 
     auto dir = echojayDir();
@@ -267,15 +279,17 @@ static int runBootstrap()
     if (auto* arr = led->getProperty ("contributedFps").getArray())
         for (auto& v : *arr) contributedFps.addIfNotAlreadyThere (v.toString());
 
-    // Stable anonymous contributor id (or the logged-in email if present)
+    // Stable ANONYMOUS contributor id: a random per-machine UUID, persisted
+    // in the ledger. NEVER an email or account id: the installer pane says
+    // "anonymized" and the payload honors it. The server only needs a
+    // stable id per machine for MIN_CONTRIBUTORS counting, and a random
+    // UUID is strictly more anonymous than any hash of an identifier. The
+    // "@" guard migrates ledgers written before this fix, which could have
+    // persisted a raw email as the contributor.
     juce::String contributor = led->getProperty ("contributor").toString();
-    if (contributor.isEmpty())
+    if (contributor.isEmpty() || contributor.contains ("@"))
     {
-        auto auth = readJsonFile (juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                                    .getChildFile ("Application Support/EchoJay/auth.json"));
-        contributor = auth.getProperty ("email", juce::var()).toString();
-        if (contributor.isEmpty())
-            contributor = "anon-" + juce::Uuid().toDashedString();
+        contributor = "anon-" + juce::Uuid().toDashedString();
         led->setProperty ("contributor", contributor);
     }
     auto saveLedger = [&] { writeJsonFileAtomic (ledgerFile, juce::var (led.get())); };
@@ -449,6 +463,16 @@ static int runBootstrap()
     // Contribute samples for unmapped fps not contributed before. A sample
     // is deleted once contributed (or once its map exists): the server has
     // it, and keeping it would only grow the dir forever.
+    // SHARE GATE: with "fetch-only" consent this whole stage is skipped;
+    // nothing is ever sent upstream, and samples stay local.
+    if (! contributeAllowed)
+    {
+        logLine ("share not consented: contribute stage skipped (fetch-only)");
+        led->setProperty ("lastRun", juce::Time::getCurrentTime().toISO8601 (true));
+        saveLedger();
+        logLine ("bootstrap: run complete");
+        return 0;
+    }
     juce::Array<juce::var> toContribute;
     for (const auto& f : samplesDir.findChildFiles (juce::File::findFiles, false, "*.json"))
     {
