@@ -249,3 +249,34 @@ if(APPLE)
         VERBATIM
     )
 endif()
+
+# ============================================================================
+# ejextract: the auto-parameter-mapping harness (worker + --bootstrap driver).
+# Universal2 so the driver can relaunch itself under Rosetta for Intel-only
+# plugins. Bundled by build-installer.sh into the opt-in background-mapping
+# installer choice; NEVER loaded inside a DAW.
+# ============================================================================
+juce_add_console_app(ejextract PRODUCT_NAME "ejextract")
+
+target_sources(ejextract PRIVATE tools/ejextract/main.cpp)
+target_include_directories(ejextract PRIVATE tools/ejextract)
+
+target_compile_definitions(ejextract PRIVATE
+    JUCE_PLUGINHOST_VST3=1
+    JUCE_PLUGINHOST_AU=1
+    JUCE_PLUGINHOST_LADSPA=0
+    JUCE_USE_CURL=0
+    JUCE_WEB_BROWSER=0
+    JUCE_STANDALONE_APPLICATION=1)
+
+target_link_libraries(ejextract PRIVATE
+    juce::juce_audio_processors
+    juce::juce_cryptography
+    juce::juce_gui_basics
+    juce::juce_recommended_config_flags)
+
+set_target_properties(ejextract PROPERTIES OSX_ARCHITECTURES "arm64;x86_64")
+
+if(APPLE)
+    target_link_libraries(ejextract PRIVATE "-framework CoreAudioKit")
+endif()

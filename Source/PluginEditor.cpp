@@ -2,6 +2,7 @@
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
 #include <cmath>
+#include <unistd.h>       // getuid — launchctl gui/<uid> target (consent prompt)
 
 // Compare combo IDs: captures are 1..N, references start at this STABLE base.
 // The base used to be snaps.size()+100, so every completed capture SHIFTED
@@ -1956,7 +1957,59 @@ void EchoJayEditor::showMainScreen()
     // Load workspace data on plugin open
     workspace.requestLoad();
 
+    // Background-mapping consent: one-time prompt, AFTER the main screen is
+    // up (never on the login screen). Consent precedes any bulk scanning or
+    // contribution; the launchd harness no-ops until a granted marker
+    // exists. Both answers are remembered (file present = never re-ask).
+    maybeShowMappingConsent();
+
     resized(); repaint();
+}
+
+void EchoJayEditor::maybeShowMappingConsent()
+{
+    auto marker = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                    .getChildFile("Library/EchoJay/mapping_consent.json");
+    if (marker.existsAsFile() || mappingConsentPromptShown_) return;
+    mappingConsentPromptShown_ = true;
+
+    auto* w = new juce::AlertWindow(
+        "Help EchoJay improve its feedback",
+        "Analyze your plugins in the background so EchoJay can auto-dial "
+        "settings and improve suggestions for everyone. Shares plugin info "
+        "anonymously, never your audio.",
+        juce::MessageBoxIconType::QuestionIcon, this);
+    // Explicit return values so Yes/Not-now can never be confused by
+    // platform button-index conventions.
+    w->addButton("Yes, help improve", 1);
+    w->addButton("Not now", 0);
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    w->enterModalState(true, juce::ModalCallbackFunction::create(
+        [safeThis, marker](int result)
+        {
+            juce::DynamicObject::Ptr obj = new juce::DynamicObject();
+            obj->setProperty("consent", result == 1 ? "granted" : "declined");
+            obj->setProperty("at", juce::Time::getCurrentTime().toISO8601(true));
+            marker.getParentDirectory().createDirectory();
+            marker.replaceWithText(juce::JSON::toString(juce::var(obj.get())));
+            EchoJay_NSLog(("EJMapping: consent " +
+                juce::String(result == 1 ? "granted" : "declined")).toRawUTF8());
+            if (result != 1) return;
+
+            // Start the background mapper now instead of waiting for the
+            // next login. kickstart covers a loaded agent; bootstrap covers
+            // a not-yet-loaded plist. Fire and forget: if neither works
+            // (agent choice not installed, odd launchd state), RunAtLoad
+            // starts it at next login and the consent marker does the rest.
+            const auto uid = juce::String((int) getuid());
+            juce::ChildProcess kick;
+            kick.start(juce::StringArray{ "/bin/launchctl", "kickstart",
+                                          "gui/" + uid + "/com.echojay.parammapper" });
+            juce::ChildProcess boot;
+            boot.start(juce::StringArray{ "/bin/launchctl", "bootstrap", "gui/" + uid,
+                                          "/Library/LaunchAgents/com.echojay.parammapper.plist" });
+        }), true);
 }
 
 void EchoJayEditor::attemptLogin()

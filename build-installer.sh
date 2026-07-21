@@ -59,6 +59,10 @@ echo "  V2 AAX:    ${AAX_PATH:-not found}"
 echo "  Link VST3: ${LINK_VST3_PATH:-not found}"
 echo "  Link AU:   ${LINK_AU_PATH:-not found}"
 echo "  Link AAX:  ${LINK_AAX_PATH:-not found}"
+
+# Background mapper harness (universal console binary, opt-in choice)
+MAPPER_PATH=""; [ -f "${BUILD_DIR}/ejextract_artefacts/Release/ejextract" ] && MAPPER_PATH="${BUILD_DIR}/ejextract_artefacts/Release/ejextract"
+echo "  Mapper:    ${MAPPER_PATH:-not found (opt-in analysis choice will be omitted)}"
 echo ""
 
 # --- Create installer resources (always overwrite to keep in sync) ---
@@ -147,7 +151,8 @@ echo "  Created: installer/conclusion.html"
 rm -rf "$PKG_DIR"
 mkdir -p "${PKG_DIR}/vst3_payload" "${PKG_DIR}/au_payload" "${PKG_DIR}/aax_payload" \
          "${PKG_DIR}/link_vst3_payload" "${PKG_DIR}/link_au_payload" "${PKG_DIR}/link_aax_payload" \
-         "${PKG_DIR}/scripts" "${PKG_DIR}/aax-scripts" "${PKG_DIR}/components"
+         "${PKG_DIR}/scripts" "${PKG_DIR}/aax-scripts" "${PKG_DIR}/components" \
+         "${PKG_DIR}/mapper_payload" "${PKG_DIR}/mapper-scripts"
 
 # --- Stage payloads with correct install paths ---
 
@@ -186,6 +191,63 @@ if [ -n "$LINK_AAX_PATH" ]; then
     mkdir -p "${PKG_DIR}/link_aax_payload/Library/Application Support/Avid/Audio/Plug-Ins"
     cp -R "$LINK_AAX_PATH" "${PKG_DIR}/link_aax_payload/Library/Application Support/Avid/Audio/Plug-Ins/"
     echo "  Staged Link AAX payload"
+fi
+
+# --- Background mapper: payload, LaunchAgent plist, codesign, postinstall ---
+if [ -n "$MAPPER_PATH" ]; then
+    mkdir -p "${PKG_DIR}/mapper_payload/Library/Application Support/EchoJay"
+    mkdir -p "${PKG_DIR}/mapper_payload/Library/LaunchAgents"
+    cp "$MAPPER_PATH" "${PKG_DIR}/mapper_payload/Library/Application Support/EchoJay/ejextract"
+    chmod 755 "${PKG_DIR}/mapper_payload/Library/Application Support/EchoJay/ejextract"
+
+    # Hardened-runtime Developer ID signature so the harness notarizes with
+    # the pkg. Signing the staged COPY keeps the build artefact untouched.
+    APP_SIGN_ID="Developer ID Application: Sean Donoghue (8BT5F9B887)"
+    if security find-identity -v -p codesigning | grep -q "$APP_SIGN_ID"; then
+        codesign --force --options runtime --timestamp --sign "$APP_SIGN_ID" \
+            "${PKG_DIR}/mapper_payload/Library/Application Support/EchoJay/ejextract"
+        echo "  Signed mapper harness (hardened runtime)"
+    else
+        echo "  WARNING: Developer ID Application identity not found; mapper left unsigned"
+    fi
+
+    cat > "${PKG_DIR}/mapper_payload/Library/LaunchAgents/com.echojay.parammapper.plist" << 'MAPPERPLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.echojay.parammapper</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Library/Application Support/EchoJay/ejextract</string>
+        <string>--bootstrap</string>
+    </array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><false/>
+    <key>ProcessType</key><string>Background</string>
+    <key>Nice</key><integer>19</integer>
+    <key>LowPriorityIO</key><true/>
+    <key>LowPriorityBackgroundIO</key><true/>
+    <key>StandardOutPath</key><string>/tmp/echojay-mapper.log</string>
+    <key>StandardErrorPath</key><string>/tmp/echojay-mapper.log</string>
+</dict>
+</plist>
+MAPPERPLIST
+    echo "  Staged mapper payload + LaunchAgent plist"
+
+    # Kick the agent off right away for the user sitting at the machine;
+    # for everyone else RunAtLoad starts it at next login. The harness is
+    # resumable and exits instantly once its ledger says done.
+    cat > "${PKG_DIR}/mapper-scripts/postinstall" << 'MAPPERPOST'
+#!/bin/bash
+CONSOLE_USER=$(stat -f%Su /dev/console 2>/dev/null)
+CONSOLE_UID=$(id -u "$CONSOLE_USER" 2>/dev/null)
+if [ -n "$CONSOLE_UID" ] && [ "$CONSOLE_UID" -ge 500 ]; then
+    launchctl bootstrap gui/"$CONSOLE_UID" /Library/LaunchAgents/com.echojay.parammapper.plist 2>/dev/null || true
+fi
+exit 0
+MAPPERPOST
+    chmod +x "${PKG_DIR}/mapper-scripts/postinstall"
 fi
 
 # --- Post-install script to reset AU cache ---
@@ -308,6 +370,17 @@ if [ -n "$LINK_AAX_PATH" ]; then
     echo "  Done: Link AAX component"
 fi
 
+if [ -n "$MAPPER_PATH" ]; then
+    pkgbuild \
+        --root "${PKG_DIR}/mapper_payload" \
+        --install-location "/" \
+        --identifier "com.echojay.parammapper" \
+        --version "$VERSION" \
+        --scripts "${PKG_DIR}/mapper-scripts" \
+        "${PKG_DIR}/components/EchoJay-ParamMapper.pkg"
+    echo "  Done: background mapper component"
+fi
+
 # --- Build distribution XML ---
 # Dynamically build choices based on what was found
 CHOICES_OUTLINE=""
@@ -390,6 +463,19 @@ if [ -n "$LINK_AAX_PATH" ]; then
     </choice>"
     PKG_REFS="${PKG_REFS}
     <pkg-ref id=\"${LINK_IDENTIFIER}.aax\" version=\"${LINK_VERSION}\">EchoJayLink-AAX.pkg</pkg-ref>"
+fi
+
+if [ -n "$MAPPER_PATH" ]; then
+    CHOICES_OUTLINE="${CHOICES_OUTLINE}        <line choice=\"mapper\"/>\n"
+    CHOICES="${CHOICES}
+    <choice id=\"mapper\"
+            title=\"EchoJay background services\"
+            description=\"Support files for EchoJay's optional background plugin analysis. Nothing runs until you opt in inside EchoJay (the first-launch prompt); saying Not now leaves it fully inert.\"
+            selected=\"true\" start_visible=\"false\">
+        <pkg-ref id=\"com.echojay.parammapper\"/>
+    </choice>"
+    PKG_REFS="${PKG_REFS}
+    <pkg-ref id=\"com.echojay.parammapper\" version=\"${VERSION}\">EchoJay-ParamMapper.pkg</pkg-ref>"
 fi
 
 cat > "${PKG_DIR}/distribution.xml" << DISTXML

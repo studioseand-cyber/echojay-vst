@@ -311,6 +311,11 @@ private:
     void applyStructuredIfReady (int slotIndex);
     void loadParamMapsFromDisk();
     void saveParamMapsToDisk();
+    // Read-only merge of the opt-in background mapper's output file
+    // (param_maps_bootstrap.json, written by ejextract --bootstrap).
+    // mtime-guarded; called at construction and from requestMapPrefetch.
+    void mergeBootstrapMaps();
+    juce::Time bootstrapMergedMtime_;
 
     // Fingerprint pass state (message thread only, except the atomic)
     std::atomic<bool>                    fpPassRunning_ { false };

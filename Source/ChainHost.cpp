@@ -428,6 +428,7 @@ ChainHost::ChainHost()
     rebuildGraph(); // passthrough (no slots yet)
     loadFromDisk();
     loadParamMapsFromDisk();
+    mergeBootstrapMaps();
 
     auto deadman = getDeadmanFile();
     if (deadman.existsAsFile())
@@ -644,11 +645,12 @@ void ChainHost::doRefresh()
     scanProgress_.store(1.0f);
     setScanStatus({});
 
-    // Fingerprint pass: doRefresh runs on the scan thread, but instantiation
-    // is message-thread-only, so hop over. Raw `this` capture follows the
-    // established load-path precedent (ChainHost lives as long as the
-    // processor; async plugin-creation callbacks capture it the same way).
-    juce::MessageManager::callAsync([this] { startFingerprintPass(); });
+    // NO in-DAW fingerprint pass here. Bulk fingerprinting is the opt-in
+    // post-install background mapper's job (tools/ejextract --bootstrap,
+    // installed as a launchd LaunchAgent): one plugin per PROCESS, outside
+    // any DAW. Its results arrive via mergeBootstrapMaps(). In-DAW the only
+    // instantiations are real slot loads (completeLoad fingerprints those),
+    // and the lazy per-slot map fetch covers them immediately.
 }
 
 // ---------------------------------------------------------------------------
@@ -883,19 +885,67 @@ void ChainHost::storeParamMaps(const juce::var& mapsObj)
     if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
 }
 
+void ChainHost::mergeBootstrapMaps()
+{
+    // Read-only merge of the background mapper's output. The mapper owns
+    // param_maps_bootstrap.json exclusively and writes it atomically
+    // (tmp + rename); ChainHost owns param_maps.json exclusively. Neither
+    // process ever writes the other's file, so there is no write race.
+    auto f = getParamMapsCacheFile().getSiblingFile("param_maps_bootstrap.json");
+    if (!f.existsAsFile()) return;
+    const auto mtime = f.getLastModificationTime();
+    if (mtime == bootstrapMergedMtime_) return;
+    bootstrapMergedMtime_ = mtime;
+
+    auto root = juce::JSON::parse(f.loadFileAsString());
+    int addedIds = 0, addedMaps = 0;
+    if (auto* idx = root.getProperty("identityToFp", juce::var()).getDynamicObject())
+        for (auto& p : idx->getProperties())
+            if (identityToFp_.find(p.name.toString()) == identityToFp_.end())
+            {
+                identityToFp_[p.name.toString()] = p.value.toString();
+                ++addedIds;
+            }
+    if (auto* maps = root.getProperty("maps", juce::var()).getDynamicObject())
+        for (auto& p : maps->getProperties())
+            if (p.value.getDynamicObject() != nullptr
+                && paramMaps_.find(p.name.toString()) == paramMaps_.end())
+            {
+                paramMaps_[p.name.toString()] = p.value;
+                ++addedMaps;
+            }
+    if (addedIds > 0 || addedMaps > 0)
+    {
+        saveParamMapsToDisk();
+        EchoJay_NSLog(("EJParamMaps: bootstrap merge, +" + juce::String(addedIds)
+                       + " identities, +" + juce::String(addedMaps) + " map(s)").toRawUTF8());
+        bool changed = false;
+        for (int i = 0; i < (int)slots_.size(); ++i)
+        {
+            const bool wasApplied = slots_[(size_t)i].structuredApplied;
+            applyStructuredIfReady(i);
+            if (!wasApplied && slots_[(size_t)i].structuredApplied) changed = true;
+        }
+        if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
+    }
+}
+
 void ChainHost::requestMapPrefetch()
 {
+    mergeBootstrapMaps();
     if (!onNeedParamMaps) return;
     juce::StringArray need;
     for (auto& kv : identityToFp_)
         if (paramMaps_.find(kv.second) == paramMaps_.end() && !mapsRequested_.contains(kv.second))
             need.addIfNotAlreadyThere(kv.second);
     if (need.isEmpty()) return;
-    // Batch <=500 fps per request (the endpoint's cap).
-    for (int i = 0; i < need.size(); i += 500)
+    // Batch 100 fps per request. The endpoint accepts 500, but fps ride in
+    // a GET URL and 500 of them is a ~32KB request line that dies at the
+    // transport (observed live in the bootstrap harness); 100 is ~6.5KB.
+    for (int i = 0; i < need.size(); i += 100)
     {
         juce::StringArray batch;
-        for (int j = i; j < juce::jmin(need.size(), i + 500); ++j)
+        for (int j = i; j < juce::jmin(need.size(), i + 100); ++j)
         {
             batch.add(need[j]);
             mapsRequested_.add(need[j]);
@@ -1013,6 +1063,12 @@ void ChainHost::fingerprintNext()
         saveParamMapsToDisk();
         EchoJay_NSLog(("EJFpPass: done, index now "
                        + juce::String((int)identityToFp_.size()) + " identities").toRawUTF8());
+        // Fetch maps for everything the pass just fingerprinted (batched
+        // <=500, cached in memory + param_maps.json by storeParamMaps). If
+        // no editor is attached right now, requestMapPrefetch no-ops WITHOUT
+        // marking anything requested, so the resolver-rebuild prefetch picks
+        // these fps up as soon as an editor exists.
+        requestMapPrefetch();
         return;
     }
 

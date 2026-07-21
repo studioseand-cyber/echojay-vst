@@ -656,6 +656,10 @@ private:
     juce::TextButton saveSettingsBtn { "Save" };
     juce::Label settingsSavedLabel;
     juce::ComboBox uiScaleCombo;     // UI scale picker: 80–150%
+    // Background-mapping consent prompt (one-shot per absence of the
+    // remembered mapping_consent.json marker; see maybeShowMappingConsent)
+    bool mappingConsentPromptShown_ = false;
+    void maybeShowMappingConsent();
     float uiScale_ = 1.0f;          // current scale factor
     void applyUIScale(float scale);
     void saveUIScale() const;
