@@ -19,3 +19,4 @@ cmake-build-*/
 *.xcodeproj/
 DerivedData/
 .DS_Store
+.cache/

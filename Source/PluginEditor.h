@@ -200,6 +200,15 @@ private:
     juce::TextButton signUpBtn { "Sign Up" };
     juce::Label signUpLabel;
     bool loginLoading = false;
+    // Device pairing (Sign in with browser) — additive; the email/password
+    // path above is untouched. pairingActive gates the login-screen swap.
+    juce::TextButton browserLoginBtn { "Sign in with browser" };
+    juce::Label browserLoginSub;
+    juce::Label pairCodeLabel, pairInfoLabel;
+    juce::TextButton pairCancelBtn { "Cancel" };
+    bool pairingActive = false;
+    void startBrowserPairing();
+    void cancelBrowserPairing();
     
     // Top bar — left group
     juce::TextButton captureBtn { "Capture" };

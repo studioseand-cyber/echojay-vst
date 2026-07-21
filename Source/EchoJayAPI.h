@@ -103,6 +103,24 @@ public:
     
     // Logout (clears token and user info)
     void logout();
+
+    // ============ Device pairing (Sign in with browser) ============
+    // ADDITIVE alternative to login(), for accounts created with Google or
+    // Apple on the web (no password) and anyone who prefers the browser.
+    // Flow: POST /api/device/start with this machine's deviceId, open the
+    // returned verifyUrl in the default browser (the user approves on
+    // echojay.ai, where email/password, Google and Apple all work), then
+    // poll /api/device/poll until the server hands back the SAME 30-day
+    // JWT that /api/login issues. Ends in the identical logged-in state
+    // (authToken + auth.json + userInfo + refreshUserInfo), so everything
+    // downstream is untouched.
+    //   onCode(userCode)      message thread, fires once when the code is
+    //                         minted, for the pairing UI
+    //   onComplete(ok, err)   message thread, fires exactly once
+    // cancelDeviceLogin() aborts a pairing in progress (Cancel button).
+    void startDeviceLogin(std::function<void(const juce::String& userCode)> onCode,
+                          std::function<void(bool success, const juce::String& error)> onComplete);
+    void cancelDeviceLogin();
     
     // Check if logged in
     bool isLoggedIn() const { return authToken.isNotEmpty(); }
@@ -349,6 +367,12 @@ private:
     // across turns that omit the field so the indicator never blanks mid
     // session; empty until the server has ever sent one.
     juce::String lastChatModelName_;
+    // Device pairing: cancellation flag for the in-flight poll chain (a
+    // fresh one per startDeviceLogin; cancel just flips the current one)
+    std::shared_ptr<std::atomic<bool>> devicePairCancelled_;
+    void pollDeviceCode(const juce::String& deviceCode, int intervalMs, int attemptsLeft,
+                        std::shared_ptr<std::atomic<bool>> cancelled,
+                        std::function<void(bool, const juce::String&)> onComplete);
     juce::String deviceId;
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"

@@ -287,6 +287,138 @@ void EchoJayAPI::login(const juce::String& email, const juce::String& password,
     });
 }
 
+// ============ Device pairing (Sign in with browser) ============
+// See the header comment. Deliberately does NOT share code with login():
+// the password path stays byte-identical; this is a parallel way to end up
+// holding the same token.
+void EchoJayAPI::startDeviceLogin(std::function<void(const juce::String&)> onCode,
+                                  std::function<void(bool, const juce::String&)> onComplete)
+{
+    cancelDeviceLogin();
+    auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    devicePairCancelled_ = cancelled;
+
+    juce::String body = "{\"deviceId\":" + juce::JSON::toString(deviceId) + "}";
+    postJSON("/api/device/start", body, [this, cancelled, onCode, onComplete](const juce::var& json, int statusCode)
+    {
+        if (cancelled->load()) return;
+        auto* obj = json.getDynamicObject();
+        if (statusCode != 200 || obj == nullptr)
+        {
+            if (onComplete) onComplete(false, "Could not reach the sign-in service. Check your connection and try again.");
+            return;
+        }
+        const auto userCode   = obj->getProperty("userCode").toString();
+        const auto deviceCode = obj->getProperty("deviceCode").toString();
+        const auto verifyUrl  = obj->getProperty("verifyUrl").toString();
+        int interval  = (int) obj->getProperty("interval");
+        int expiresIn = (int) obj->getProperty("expiresIn");
+        if (interval < 3)   interval = 5;
+        if (expiresIn <= 0) expiresIn = 600;
+        if (userCode.isEmpty() || deviceCode.isEmpty() || verifyUrl.isEmpty())
+        {
+            if (onComplete) onComplete(false, "Sign-in service returned an unexpected response. Try again.");
+            return;
+        }
+        if (onCode) onCode(userCode);
+        juce::URL(verifyUrl).launchInDefaultBrowser();
+        pollDeviceCode(deviceCode, interval * 1000, expiresIn / interval + 4, cancelled, onComplete);
+    });
+}
+
+void EchoJayAPI::cancelDeviceLogin()
+{
+    if (devicePairCancelled_) devicePairCancelled_->store(true);
+    devicePairCancelled_.reset();
+}
+
+void EchoJayAPI::pollDeviceCode(const juce::String& deviceCode, int intervalMs, int attemptsLeft,
+                                std::shared_ptr<std::atomic<bool>> cancelled,
+                                std::function<void(bool, const juce::String&)> onComplete)
+{
+    auto aliveFlag = alive;
+    juce::Timer::callAfterDelay(intervalMs, [this, aliveFlag, cancelled, deviceCode, intervalMs, attemptsLeft, onComplete]()
+    {
+        if (!aliveFlag->load() || cancelled->load()) return;
+        if (attemptsLeft <= 0)
+        {
+            if (onComplete) onComplete(false, "The sign-in code expired. Try again.");
+            return;
+        }
+        juce::String body = "{\"deviceCode\":" + juce::JSON::toString(deviceCode) + "}";
+        postJSON("/api/device/poll", body, [this, aliveFlag, cancelled, deviceCode, intervalMs, attemptsLeft, onComplete](const juce::var& json, int statusCode)
+        {
+            if (!aliveFlag->load() || cancelled->load()) return;
+            auto* obj = json.getDynamicObject();
+            const auto st = obj != nullptr ? obj->getProperty("status").toString() : juce::String();
+
+            if (statusCode == 429)
+            {
+                // slow_down: back off by half an interval and keep waiting
+                pollDeviceCode(deviceCode, intervalMs + intervalMs / 2, attemptsLeft - 1, cancelled, onComplete);
+                return;
+            }
+            if (statusCode == 403)
+            {
+                // device-limit: surface the server's message, same as login
+                juce::String err = "Device limit reached.";
+                if (obj != nullptr && obj->hasProperty("error")) err = obj->getProperty("error").toString();
+                if (onComplete) onComplete(false, err);
+                return;
+            }
+            if (statusCode == 200 && st == "authorised" && obj != nullptr && obj->hasProperty("token"))
+            {
+                authToken = obj->getProperty("token").toString();
+
+                // Same payload shape as /api/login: parse identically so the
+                // post-pairing state matches a password login exactly
+                auto userVar = obj->getProperty("user");
+                if (auto* userObj = userVar.getDynamicObject())
+                {
+                    userInfo.email = userObj->getProperty("email").toString();
+                    userInfo.displayName = userObj->getProperty("name").toString();
+                    juce::String tierStr = userObj->getProperty("tier").toString();
+                    if (tierStr.isNotEmpty())
+                    {
+                        userInfo.tier = tierStr;
+                        userInfo.tierLevel = UserInfo::tierStringToLevel(tierStr);
+                    }
+                }
+                parseUsagePool(obj, userInfo);   // usage-v2 (additive)
+                auto usageVar = obj->getProperty("usage");
+                if (auto* usageObj = usageVar.getDynamicObject())
+                {
+                    userInfo.messagesUsedToday = (int) usageObj->getProperty("messagesUsedToday");
+                    userInfo.messageLimit = (int) usageObj->getProperty("messagesPerDay");
+                    if (usageObj->hasProperty("credits"))
+                        userInfo.credits = (int) usageObj->getProperty("credits");
+                }
+                if (userInfo.messageLimit <= 0)
+                    userInfo.messageLimit = UserInfo::defaultLimitForTier(userInfo.tierLevel);
+                if (userInfo.displayName.isEmpty())
+                    userInfo.displayName = userInfo.email.upToFirstOccurrenceOf("@", false, false);
+
+                saveSettings();
+                refreshUserInfo(nullptr);
+                if (onComplete) onComplete(true, "");
+                return;
+            }
+            if (statusCode == 200 && st == "pending")
+            {
+                pollDeviceCode(deviceCode, intervalMs, attemptsLeft - 1, cancelled, onComplete);
+                return;
+            }
+            if (statusCode == 200 && st == "expired")
+            {
+                if (onComplete) onComplete(false, "The sign-in code expired. Try again.");
+                return;
+            }
+            // Transient failure (connection blip / 5xx): keep the cadence
+            pollDeviceCode(deviceCode, intervalMs, attemptsLeft - 1, cancelled, onComplete);
+        });
+    });
+}
+
 void EchoJayAPI::logout()
 {
     authToken = "";

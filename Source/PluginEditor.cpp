@@ -1172,6 +1172,39 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     loginErrorLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(loginErrorLabel);
 
+    // --- Device pairing (Sign in with browser) ---
+    browserLoginBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
+    browserLoginBtn.setColour(juce::TextButton::textColourOnId, C::text);
+    browserLoginBtn.setColour(juce::TextButton::textColourOffId, C::text);
+    browserLoginBtn.onClick = [this] { startBrowserPairing(); };
+    addAndMakeVisible(browserLoginBtn);
+
+    browserLoginSub.setText("Works with Google and Apple accounts", juce::dontSendNotification);
+    browserLoginSub.setColour(juce::Label::textColourId, C::text3);
+    browserLoginSub.setFont(juce::Font(juce::FontOptions(11.0f)));
+    browserLoginSub.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(browserLoginSub);
+
+    pairCodeLabel.setColour(juce::Label::textColourId, C::blue);
+    pairCodeLabel.setFont(juce::Font(juce::FontOptions(28.0f, juce::Font::bold)));
+    pairCodeLabel.setJustificationType(juce::Justification::centred);
+    pairCodeLabel.setVisible(false);
+    addAndMakeVisible(pairCodeLabel);
+    pairCodeLabel.setVisible(false);
+
+    pairInfoLabel.setColour(juce::Label::textColourId, C::text2);
+    pairInfoLabel.setFont(juce::Font(juce::FontOptions(12.5f)));
+    pairInfoLabel.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(pairInfoLabel);
+    pairInfoLabel.setVisible(false);
+
+    pairCancelBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
+    pairCancelBtn.setColour(juce::TextButton::textColourOnId, C::text2);
+    pairCancelBtn.setColour(juce::TextButton::textColourOffId, C::text2);
+    pairCancelBtn.onClick = [this] { cancelBrowserPairing(); };
+    addAndMakeVisible(pairCancelBtn);
+    pairCancelBtn.setVisible(false);
+
     signUpLabel.setText("Don't have an account?", juce::dontSendNotification);
     signUpLabel.setColour(juce::Label::textColourId, C::text3);
     signUpLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
@@ -1877,6 +1910,9 @@ void EchoJayEditor::showLoginScreen()
     emailInput.setVisible(true); passwordInput.setVisible(true);
     loginBtn.setVisible(true); loginErrorLabel.setVisible(true);
     signUpLabel.setVisible(true); signUpBtn.setVisible(true);
+    pairingActive = false;
+    browserLoginBtn.setVisible(true); browserLoginSub.setVisible(true);
+    pairCodeLabel.setVisible(false); pairInfoLabel.setVisible(false); pairCancelBtn.setVisible(false);
 
     juce::Component* mainComps[] = { &captureBtn, &scanBtn,
         &channelTypeBox, &genreBox, &projectInput, &statusLabel, &durationLabel, &detectedLabel,
@@ -1921,6 +1957,8 @@ void EchoJayEditor::showMainScreen()
     emailInput.setVisible(false); passwordInput.setVisible(false);
     loginBtn.setVisible(false); loginErrorLabel.setVisible(false);
     signUpLabel.setVisible(false); signUpBtn.setVisible(false);
+    browserLoginBtn.setVisible(false); browserLoginSub.setVisible(false);
+    pairCodeLabel.setVisible(false); pairInfoLabel.setVisible(false); pairCancelBtn.setVisible(false);
 
     // Header-row components only — global to the Main screen. Per-tab
     // content, sidebar, and the chat input row belong to switchToTab and
@@ -2052,6 +2090,57 @@ void EchoJayEditor::attemptLogin()
         else safeThis->loginErrorLabel.setText(error, juce::dontSendNotification);
         safeThis->repaint();
     });
+}
+
+// ============ Device pairing (Sign in with browser) ============
+// Swaps the login form for a pairing view (code + waiting text + Cancel),
+// drives EchoJayAPI::startDeviceLogin, and lands in the SAME post-login
+// state as attemptLogin on success. The email/password path is untouched.
+void EchoJayEditor::startBrowserPairing()
+{
+    pairingActive = true;
+    emailInput.setVisible(false); passwordInput.setVisible(false);
+    loginBtn.setVisible(false); loginErrorLabel.setVisible(false);
+    signUpLabel.setVisible(false); signUpBtn.setVisible(false);
+    browserLoginBtn.setVisible(false); browserLoginSub.setVisible(false);
+    pairCodeLabel.setText("....", juce::dontSendNotification);
+    pairInfoLabel.setText("Opening your browser...", juce::dontSendNotification);
+    pairCodeLabel.setVisible(true); pairInfoLabel.setVisible(true); pairCancelBtn.setVisible(true);
+    resized(); repaint();
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.startDeviceLogin(
+        [safeThis](const juce::String& code)
+        {
+            if (safeThis == nullptr) return;
+            safeThis->pairCodeLabel.setText(code, juce::dontSendNotification);
+            safeThis->pairInfoLabel.setText("We've opened echojay.ai in your browser.\nApprove this device there, then come back here.",
+                                            juce::dontSendNotification);
+        },
+        [safeThis](bool success, const juce::String& error)
+        {
+            if (safeThis == nullptr) return;
+            if (!safeThis->pairingActive) return; // user cancelled meanwhile
+            safeThis->pairingActive = false;
+            if (success)
+            {
+                safeThis->showMainScreen();
+                safeThis->switchToTab(Tab::Visualisation, true);
+            }
+            else
+            {
+                safeThis->showLoginScreen();
+                safeThis->loginErrorLabel.setText(error, juce::dontSendNotification);
+            }
+            safeThis->repaint();
+        });
+}
+
+void EchoJayEditor::cancelBrowserPairing()
+{
+    api.cancelDeviceLogin();
+    pairingActive = false;
+    showLoginScreen();
 }
 
 void EchoJayEditor::handleLogout()
@@ -10546,10 +10635,17 @@ void EchoJayEditor::resized()
         loginTitle.setBounds(formX, y, formW, 40); y += 56;
         emailInput.setBounds(formX, y, formW, 36); y += 44;
         passwordInput.setBounds(formX, y, formW, 36); y += 44;
-        loginBtn.setBounds(formX, y, formW, 38); y += 48;
-        loginErrorLabel.setBounds(formX, y, formW, 20); y += 30;
+        const int formTopY = y; // pairing view reuses the form's slot
+        loginBtn.setBounds(formX, y, formW, 38); y += 46;
+        browserLoginBtn.setBounds(formX, y, formW, 34); y += 36;
+        browserLoginSub.setBounds(formX, y, formW, 16); y += 22;
+        loginErrorLabel.setBounds(formX, y, formW, 20); y += 28;
         signUpLabel.setBounds(formX, y, formW, 18); y += 22;
         signUpBtn.setBounds(formX + (formW - 120) / 2, y, 120, 32);
+        // pairing view (replaces the form while pairingActive)
+        pairCodeLabel.setBounds(formX, formTopY - 80, formW, 44);
+        pairInfoLabel.setBounds(formX, formTopY - 28, formW, 52);
+        pairCancelBtn.setBounds(formX + (formW - 120) / 2, formTopY + 34, 120, 32);
         return;
     }
 
