@@ -248,6 +248,13 @@ public:
         juce::AudioBuffer<float> buffer;
         std::atomic<bool> loaded { false };   // file loaded into buffer
         std::atomic<bool> playing { false };  // actively advancing playback
+        // Click-free monitor crossfade (25 Jul 2026, codec-preview safety):
+        // monGain ramps toward (playing && audible) in processBlock (8ms).
+        // stopAtZero = fade out then self-stop on the audio thread, used to
+        // disengage codec preview without a click. monGain is audio-thread
+        // only (reset under cmpMutex on load).
+        std::atomic<bool> stopAtZero { false };
+        float monGain = 0.0f;
         int playbackPos = 0;
         int sampleCount = 0;
         double sampleRate = 44100.0;
@@ -268,8 +275,11 @@ public:
     std::atomic<bool> cmpBothCaptures { false };   // true when both slots are captures (set by editor)
     // Temp buffers for muted-stream analysis (pre-allocated, avoids alloc on audio thread)
     juce::AudioBuffer<float> cmpTmpBuf;
+    juce::AudioBuffer<float> cmpMixBuf;        // crossfade accumulation
+    std::vector<float> cmpGainScratch;         // per-sample total monitor gain
 
     void loadCompareFile(int slot, const juce::String& wavPath);
+    void fadeOutCompareStreams();   // ramp monitor gain to 0, streams self-stop (click-free)
     void stopCompareStream(int slot);
     void stopAllCompare();
 

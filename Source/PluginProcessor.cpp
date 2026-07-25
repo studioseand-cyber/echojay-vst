@@ -268,6 +268,14 @@ EchoJayProcessor::EchoJayProcessor()
         pluginScanner.setDetectedDaw(label);
     }
 
+    // Report hosted-chain latency to the DAW — same mirror EchoJay Link has
+    // always had (LinkProcessor ctor). Without this the DAW cannot
+    // delay-compensate the track when a latent plugin (lookahead limiter,
+    // linear-phase EQ) sits in the chain, and the master wet/dry's dry leg
+    // would be aligned against a host timeline that is itself off.
+    chainHost.onChainChanged = [this]
+    { setLatencySamples(chainHost.getTotalLatencySamples()); };
+
     // Defer plugin cache loading to background so constructor returns fast.
     // Tracked on loadThread (a std::thread member) so the destructor can join
     // it — see ~EchoJayProcessor. Bails immediately if shutdown began.
@@ -362,6 +370,8 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     cmpMeter[0].prepare(sampleRate, samplesPerBlock);
     cmpMeter[1].prepare(sampleRate, samplesPerBlock);
     cmpTmpBuf.setSize(2, samplesPerBlock);
+    cmpMixBuf.setSize(2, samplesPerBlock);
+    cmpGainScratch.assign((size_t)juce::jmax(1, samplesPerBlock), 0.0f);
     waveformRecorder.prepare(sampleRate, samplesPerBlock);
     hostSampleRate_      = sampleRate;
     hostSamplesPerBlock_ = samplesPerBlock;
@@ -525,11 +535,22 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         std::lock_guard<std::mutex> lock(cmpMutex);
         int numSamples = buffer.getNumSamples();
         double dawRate = getSampleRate();
+        // Monitor crossfade (25 Jul 2026): the audible stream is MIXED with
+        // the DAW signal through a per-sample 8ms gain ramp instead of a hard
+        // memcpy replace, so engage / A-B switch / codec disengage can never
+        // click. At gain 1 the result is byte-equivalent to the old replace.
+        const float gStep = (dawRate > 0) ? (float)(1.0 / (0.008 * dawRate)) : 0.01f;
+        if (cmpMixBuf.getNumSamples() < numSamples) cmpMixBuf.setSize(2, numSamples, false, false, true);
+        if ((int)cmpGainScratch.size() < numSamples) cmpGainScratch.assign((size_t)numSamples, 0.0f);
+        bool contributed = false;
 
         for (int sl = 0; sl < 2; ++sl)
         {
             auto& s = cmpStream[sl];
-            if (!s.loaded.load() || !s.playing.load() || s.sampleCount <= 0) continue;
+            if (!s.loaded.load() || s.sampleCount <= 0) continue;
+            const bool rolling = s.playing.load();
+            const float target = (rolling && sl == audible && !s.stopAtZero.load()) ? 1.0f : 0.0f;
+            if (!rolling && s.monGain <= 0.0001f) continue;   // fully idle
 
             double ratio = (s.sampleRate > 0 && dawRate > 0) ? s.sampleRate / dawRate : 1.0;
             int chans = s.buffer.getNumChannels();
@@ -548,25 +569,61 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                     out[i] = src[idx] * (1.0f - frac) + src[idx2] * frac;
                 }
             }
-            s.playbackPos = ((int)(s.playbackPos + numSamples * ratio)) % s.sampleCount;
-
-            // Feed this stream's meter from the temp buffer
-            cmpMeter[sl].processBlock(cmpTmpBuf.getReadPointer(0),
-                                       cmpTmpBuf.getReadPointer(1), numSamples);
-
-            // If this stream is the audible one, copy temp buffer to output
-            // (replaces DAW audio with the capture playback)
-            if (sl == audible)
+            if (rolling)
             {
-                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-                {
-                    float* out = buffer.getWritePointer(ch);
-                    const float* src = cmpTmpBuf.getReadPointer(std::min(ch, 1));
-                    std::memcpy(out, src, (size_t)numSamples * sizeof(float));
-                }
-                left = buffer.getReadPointer(0);
-                right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
+                s.playbackPos = ((int)(s.playbackPos + numSamples * ratio)) % s.sampleCount;
+                // Feed this stream's meter from the temp buffer
+                cmpMeter[sl].processBlock(cmpTmpBuf.getReadPointer(0),
+                                           cmpTmpBuf.getReadPointer(1), numSamples);
             }
+
+            if (target > 0.0f || s.monGain > 0.0001f)
+            {
+                if (!contributed)
+                {
+                    cmpMixBuf.clear(0, 0, numSamples);
+                    cmpMixBuf.clear(1, 0, numSamples);
+                    std::fill(cmpGainScratch.begin(), cmpGainScratch.begin() + numSamples, 0.0f);
+                    contributed = true;
+                }
+                float g = s.monGain;
+                float* mixL = cmpMixBuf.getWritePointer(0);
+                float* mixR = cmpMixBuf.getWritePointer(1);
+                const float* tL = cmpTmpBuf.getReadPointer(0);
+                const float* tR = cmpTmpBuf.getReadPointer(1);
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    g += juce::jlimit(-gStep, gStep, target - g);
+                    cmpGainScratch[(size_t)i] += g;
+                    mixL[i] += tL[i] * g;
+                    mixR[i] += tR[i] * g;
+                }
+                s.monGain = g;
+            }
+            // Fade-out complete: self-stop on the audio thread (codec
+            // disengage, editor-close safety). Buffer stays loaded; the next
+            // load replaces it under the mutex.
+            if (s.stopAtZero.load() && s.monGain <= 0.0001f)
+            {
+                s.playing.store(false);
+                s.stopAtZero.store(false);
+            }
+        }
+
+        if (contributed)
+        {
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            {
+                float* out = buffer.getWritePointer(ch);
+                const float* mix = cmpMixBuf.getReadPointer(std::min(ch, 1));
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    const float gT = juce::jmin(1.0f, cmpGainScratch[(size_t)i]);
+                    out[i] = out[i] * (1.0f - gT) + mix[i];
+                }
+            }
+            left = buffer.getReadPointer(0);
+            right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
         }
 
         // SYNC lockstep for two captures: keep positions aligned by fraction
@@ -1582,6 +1639,8 @@ void EchoJayProcessor::loadCompareFile(int slot, const juce::String& wavPath)
         s.sampleRate = reader->sampleRate;
         s.playbackPos = 0;
         s.filePath = wavPath;
+        s.monGain = 0.0f;              // new content fades IN (no click)
+        s.stopAtZero.store(false);
     }
     cmpStream[slot].loaded.store(true);
     cmpStream[slot].playing.store(false);  // don't auto-play; wait for user or transport
@@ -1590,6 +1649,15 @@ void EchoJayProcessor::loadCompareFile(int slot, const juce::String& wavPath)
                    + " samples=" + juce::String(cmpStream[slot].sampleCount)
                    + " sr=" + juce::String(cmpStream[slot].sampleRate, 0)
                    + " file=" + juce::File(wavPath).getFileName()).toRawUTF8());
+}
+
+void EchoJayProcessor::fadeOutCompareStreams()
+{
+    // Click-free disengage: monitor gain ramps to zero in processBlock (8ms),
+    // then each stream self-stops on the audio thread. Callers clear
+    // cmpAudible first so nothing re-targets gain 1.
+    cmpStream[0].stopAtZero.store(true);
+    cmpStream[1].stopAtZero.store(true);
 }
 
 void EchoJayProcessor::stopCompareStream(int slot)
