@@ -547,27 +547,36 @@ public:
     // Draw tier badge (PRO / STUDIO / FREE)
     static void drawTierBadge(juce::Graphics& g, int x, int y, int tierLevel)
     {
-        if (tierLevel >= 2)
+        // Flat pill matching the web app: dark navy bg (#0b1220) + cyan text
+        // (#22d3ee) for paid tiers. No gradients — the old purple/pink predated
+        // the plugin's navy/cyan design language.
+        if (tierLevel >= 3)
         {
-            // STUDIO — purple-to-pink gradient pill (compact)
-            auto bounds = juce::Rectangle<float>((float)x, (float)y, 36.0f, 14.0f);
-            juce::ColourGradient grad(Colours::purple, bounds.getX(), bounds.getCentreY(),
-                                       juce::Colour(0xFFE040A0), bounds.getRight(), bounds.getCentreY(), false);
-            g.setGradientFill(grad);
+            // STUDIO MAX — wider pill so the longer label never clips
+            auto bounds = juce::Rectangle<float>((float)x, (float)y, 60.0f, 14.0f);
+            g.setColour(juce::Colour(0xff0b1220));
             g.fillRoundedRectangle(bounds, 3.0f);
-            g.setColour(juce::Colours::white);
+            g.setColour(juce::Colour(0xff22d3ee));
+            g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
+            g.drawText("STUDIO MAX", bounds, juce::Justification::centred);
+        }
+        else if (tierLevel >= 2)
+        {
+            // STUDIO
+            auto bounds = juce::Rectangle<float>((float)x, (float)y, 36.0f, 14.0f);
+            g.setColour(juce::Colour(0xff0b1220));
+            g.fillRoundedRectangle(bounds, 3.0f);
+            g.setColour(juce::Colour(0xff22d3ee));
             g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
             g.drawText("STUDIO", bounds, juce::Justification::centred);
         }
         else if (tierLevel >= 1)
         {
-            // PRO — blue-to-purple gradient pill
+            // PRO
             auto bounds = juce::Rectangle<float>((float)x, (float)y, 36.0f, 16.0f);
-            juce::ColourGradient grad(Colours::blue, bounds.getX(), bounds.getCentreY(),
-                                       Colours::purple, bounds.getRight(), bounds.getCentreY(), false);
-            g.setGradientFill(grad);
+            g.setColour(juce::Colour(0xff0b1220));
             g.fillRoundedRectangle(bounds, 4.0f);
-            g.setColour(juce::Colours::white);
+            g.setColour(juce::Colour(0xff22d3ee));
             g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
             g.drawText("PRO", bounds, juce::Justification::centred);
         }

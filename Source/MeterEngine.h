@@ -150,7 +150,22 @@ public:
     int getSpectrogramFrames(int sinceCounter,
                              std::array<float, 64>* dest, int maxFrames,
                              int& counterOut) const;
-    
+
+    // ===== Visual-only FFT (SPECTRUM display detail; never serialised) =====
+    // Additive display path: a second, larger FFT so the spectrum curve can
+    // resolve Pro-Q-style peaks. Feeds ONLY getVisualSpectrum(). The 2048
+    // analysis FFT (fftData → smoothedSpectrum/macroBands → backend JSON)
+    // is a serialised data contract and is not touched by this path.
+    static constexpr int kVisFftOrder = 12;                 // 2^12 = 4096
+    static constexpr int kVisFftSize  = 1 << kVisFftOrder;
+    static constexpr int kVisBins     = kVisFftSize / 2;    // usable magnitudes
+    static constexpr int kVisHopSamples = 1024;             // ~43 FFTs/s at 44.1k
+
+    // Copies the latest visual-FFT magnitudes (dB, floor -120) and the bin
+    // width in Hz. Returns false until the first hop has been transformed
+    // (dest is still valid: all floor).
+    bool getVisualSpectrum(std::array<float, kVisBins>& dest, double& binHzOut) const;
+
 private:
     double currentSampleRate = 44100.0;
     
@@ -215,6 +230,16 @@ private:
     };
 
     void computeSpectrum(const float* left, const float* right, int numSamples);
+
+    // Visual-only FFT state (see public constants above)
+    juce::dsp::FFT visFft { kVisFftOrder };
+    std::array<float, kVisFftSize * 2> visFftData = {};
+    std::array<float, kVisFftSize>     visWindow  = {};
+    std::vector<float> visAccumulator;                     // mono ring, kVisFftSize
+    int  visWritePos = 0;
+    int  visSamplesSinceFft = 0;
+    std::array<float, kVisBins> visMagDb = {};             // dB, under dataMutex
+    bool visReady = false;                                 // under dataMutex
 
     // Smoothed macro-band per-octave levels (see MeterData::macroBandDb)
     std::array<float, 6> smoothedMacroBands = { -120,-120,-120,-120,-120,-120 };
