@@ -16,17 +16,20 @@ PLUGIN_NAME="EchoJay V2"
 LINK_NAME="EchoJay Link"
 IDENTIFIER="com.echojay.plugin.v2"
 LINK_IDENTIFIER="com.echojay.link"
-VERSION="2.23.2"
+VERSION="2.23.11"
+# Display-only: v2.MM.PP padding for FILENAMES and human text; every
+# parsed field (pkgbuild --version, plists) keeps the numeric $VERSION.
+DISPLAY_VERSION=$(echo "$VERSION" | awk -F. '{printf "%d.%02d.%02d", $1, $2, $3}')
 LINK_VERSION="0.8.4"
 BUILD_DIR="build"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PKG_DIR="/tmp/EchoJayV2_pkg_build"
 RESOURCES_DIR="${SCRIPT_DIR}/installer"
-OUTPUT="${SCRIPT_DIR}/EchoJay-V2-v${VERSION}-Installer.pkg"
+OUTPUT="${SCRIPT_DIR}/EchoJay-V2-v${DISPLAY_VERSION}-Installer.pkg"
 
 echo ""
 echo "  ========================================"
-echo "   Building ${PLUGIN_NAME} v${VERSION} Installer"
+echo "   Building ${PLUGIN_NAME} v${DISPLAY_VERSION} Installer"
 echo "   (includes ${LINK_NAME} v${LINK_VERSION})"
 echo "  ========================================"
 echo ""
@@ -92,6 +95,9 @@ EchoJay V2 v2.23.2 | echojay.ai
 </body>
 </html>
 WELCOME
+# Welcome heredoc is quoted (no expansion): stamp the CURRENT display version
+# into the footer so it can never drift from VERSION again (was hardcoded).
+sed -i '' "s/EchoJay V2 v[0-9][0-9.]*/EchoJay V2 v${DISPLAY_VERSION}/" "${RESOURCES_DIR}/welcome.html"
 echo "  Created: installer/welcome.html"
 
 # License - ASCII only
@@ -587,7 +593,7 @@ fi
 # signed/notarized release DMG)
 read -p "  Wrap in a DMG for distribution? (y/n) " WRAP_DMG
 if [ "$WRAP_DMG" = "y" ] || [ "$WRAP_DMG" = "Y" ]; then
-    DMG_OUTPUT="${SCRIPT_DIR}/EchoJay-V2-v${VERSION}.dmg"
+    DMG_OUTPUT="${SCRIPT_DIR}/EchoJay-V2-v${DISPLAY_VERSION}.dmg"
     DMG_STAGING="/tmp/EchoJayV2_dmg_wrap"
     rm -rf "$DMG_STAGING" "$DMG_OUTPUT"
     mkdir -p "$DMG_STAGING"

@@ -8,14 +8,17 @@
 set -e
 
 PLUGIN_NAME="EchoJay-V2"
-VERSION="2.23.2"
-DMG_OUTPUT="${PLUGIN_NAME}-v${VERSION}.dmg"
+VERSION="2.23.11"
+# Display-only: v2.MM.PP padding for FILENAMES and human text; every
+# parsed field (pkgbuild --version, plists) keeps the numeric $VERSION.
+DISPLAY_VERSION=$(echo "$VERSION" | awk -F. '{printf "%d.%02d.%02d", $1, $2, $3}')
+DMG_OUTPUT="${PLUGIN_NAME}-v${DISPLAY_VERSION}.dmg"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Find the signed pkg (names match build-installer.sh output + productsign step)
-PKG_PATH="${SCRIPT_DIR}/${PLUGIN_NAME}-v${VERSION}-Installer-Signed.pkg"
+PKG_PATH="${SCRIPT_DIR}/${PLUGIN_NAME}-v${DISPLAY_VERSION}-Installer-Signed.pkg"
 if [ ! -f "$PKG_PATH" ]; then
-    PKG_PATH="${SCRIPT_DIR}/${PLUGIN_NAME}-v${VERSION}-Installer.pkg"
+    PKG_PATH="${SCRIPT_DIR}/${PLUGIN_NAME}-v${DISPLAY_VERSION}-Installer.pkg"
 fi
 
 if [ ! -f "$PKG_PATH" ]; then
@@ -24,7 +27,7 @@ if [ ! -f "$PKG_PATH" ]; then
     exit 1
 fi
 
-echo "=== Packaging ${PLUGIN_NAME} v${VERSION} DMG ==="
+echo "=== Packaging ${PLUGIN_NAME} v${DISPLAY_VERSION} DMG ==="
 echo "Using: $(basename "$PKG_PATH")"
 
 STAGING_DIR="/tmp/${PLUGIN_NAME}_dmg_staging"
