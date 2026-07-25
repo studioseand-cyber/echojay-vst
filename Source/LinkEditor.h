@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "LinkProcessor.h"
+#include "ChainWetKnob.h"
 #include "NativeClip.h"
 
 // EchoJay Link editor — resizable window hosting the received chain inline.
@@ -53,8 +54,9 @@ public:
         static constexpr int kStatusH   = 18;   // build results line
         static constexpr int kStripH    = 76;
         static constexpr int kBlockW    = 118;
-        static constexpr int kBlockH    = 50;
+        static constexpr int kBlockH    = 64;   // room for the wet/dry knob row
         static constexpr int kBlockGap  = 26;
+        static constexpr int kMasterW   = 62;   // fixed master MIX knob area
 
         // Pop-out fallback window (native size, always on top, close returns
         // the editor inline)
@@ -94,11 +96,14 @@ public:
             juce::TextButton removeBtn { "X" };
             juce::TextButton prevBtn   { "<" };
             juce::TextButton nextBtn   { ">" };
+            ChainWetKnob     wetKnob;   // per-slot wet/dry (hidden for bypassed/missing)
 
-            std::function<void()>    onSelect;
-            std::function<void()>    onBypass;
-            std::function<void()>    onRemove;
-            std::function<void(int)> onMove;
+            std::function<void()>      onSelect;
+            std::function<void()>      onBypass;
+            std::function<void()>      onRemove;
+            std::function<void(int)>   onMove;
+            std::function<void(float)> onWet;
+            std::function<void()>      onWetEnd;
 
             Block()
             {
@@ -120,6 +125,9 @@ public:
                 removeBtn.onClick = [this] { if (onRemove) onRemove(); };
                 prevBtn.onClick   = [this] { if (onMove)   onMove(-1); };
                 nextBtn.onClick   = [this] { if (onMove)   onMove(+1); };
+                addAndMakeVisible(wetKnob);
+                wetKnob.onChange     = [this](float v) { if (onWet) onWet(v); };
+                wetKnob.onGestureEnd = [this] { if (onWetEnd) onWetEnd(); };
             }
 
             void mouseDown(const juce::MouseEvent&) override
@@ -171,6 +179,9 @@ public:
                 removeBtn.setBounds(m + bw + 2, by, bw, bh);
                 nextBtn.setBounds(getWidth() - m - bw, by, bw, bh);
                 prevBtn.setBounds(getWidth() - m - bw * 2 - 2, by, bw, bh);
+                // Wet/dry knob — centred between name row and button row
+                // (same geometry as the main plugin's Chain tab block)
+                wetKnob.setBounds((getWidth() - 22) / 2, 20, 22, 22);
             }
         };
 
@@ -197,6 +208,7 @@ public:
         // ---- members ----
         juce::Viewport   stripView;
         StripContent     stripContent;
+        ChainWetKnob     masterKnob;   // whole-chain wet/dry, fixed right of strip
         std::vector<std::unique_ptr<Block>> blocks;
         int selectedIdx = -1;
 
@@ -248,6 +260,14 @@ public:
             addBlock.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
             addBlock.onClick = [this] { if (onAddClick) onAddClick(); };
             stripContent.addAndMakeVisible(addBlock);
+
+            // Master chain wet/dry — fixed right of the strip, same placement
+            // and shared knob component as the main plugin's Chain tab
+            masterKnob.caption = "MIX";
+            masterKnob.setValue(proc.getChainMasterWet());
+            masterKnob.onChange     = [this](float v) { proc.setChainMasterWet(v); };
+            masterKnob.onGestureEnd = [this] { proc.commitChainWetChange(); };
+            addAndMakeVisible(masterKnob);
 
             popBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
             popBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
@@ -547,12 +567,18 @@ public:
                     else if (selectedIdx == ci + dir) selectedIdx = ci;
                     proc.moveChainSlot(ci, dir);
                 };
+                bl->wetKnob.setValue(model[(size_t)i].wet);
+                bl->wetKnob.setVisible(!model[(size_t)i].bypassed
+                                       && !model[(size_t)i].missing);
+                bl->onWet    = [this, ci](float v) { proc.setChainSlotWet(ci, v); };
+                bl->onWetEnd = [this] { proc.commitChainWetChange(); };
                 bl->prevBtn.setEnabled(i > 0);
                 bl->nextBtn.setEnabled(i < (int)model.size() - 1);
                 stripContent.addAndMakeVisible(*bl);
                 blocks.push_back(std::move(bl));
             }
             layoutStrip();
+            masterKnob.setValue(proc.getChainMasterWet());
             popBtn.setVisible(canPopOut());
 
             // Keep the inline editor in sync: the model index it was opened
@@ -704,7 +730,10 @@ public:
             settingsBox.setBounds(sb.getX() + 8, sb.getY() + 18,
                                   sb.getWidth() - 16, sb.getHeight() - 24);
             updateSettingsCard();
-            stripView.setBounds(0, getHeight() - kStripH, getWidth(), kStripH);
+            stripView.setBounds(0, getHeight() - kStripH,
+                                juce::jmax(50, getWidth() - kMasterW), kStripH);
+            masterKnob.setBounds(getWidth() - kMasterW + 9,
+                                 getHeight() - kStripH + 6, 44, 54);
             layoutStrip();
             layoutInline();
             attachNative(false);   // re-assert the clip rect at the new size

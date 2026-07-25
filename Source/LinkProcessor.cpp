@@ -877,6 +877,7 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
         slot.name     = item.name;
         slot.settings = item.settings;
         slot.bypassed = item.bypassed;
+        slot.wet      = item.wet;
 
         if (isDisabled(item.name))
         {
@@ -938,6 +939,7 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
                 int hostIdx = self->chainHost.getNumSlots() - 1;
                 slot.hostIdx = hostIdx;
                 self->chainHost.setSlotSettings(hostIdx, slot.settings);
+                self->chainHost.setSlotWet(hostIdx, slot.wet);
                 if (wantBypass)
                     self->chainHost.setSlotBypassed(hostIdx, true);
                 // Restore the hosted plugin's saved state (session restore)
@@ -1048,6 +1050,28 @@ void LinkProcessor::toggleChainSlotBypass(int idx)
     notifyChainModel();
 }
 
+void LinkProcessor::setChainSlotWet(int idx, float wet01)
+{
+    if (idx < 0 || idx >= (int)chainModel.size()) return;
+    auto& s = chainModel[(size_t)idx];
+    s.wet = juce::jlimit(0.0f, 1.0f, wet01);   // model copy = serialisation source
+    if (s.hostIdx >= 0)
+        chainHost.setSlotWet(s.hostIdx, s.wet);
+}
+
+float LinkProcessor::getChainSlotWet(int idx) const
+{
+    if (idx < 0 || idx >= (int)chainModel.size()) return 1.0f;
+    return chainModel[(size_t)idx].wet;
+}
+
+void LinkProcessor::commitChainWetChange()
+{
+    // One host re-snapshot per gesture — same signal the other chain
+    // mutations send via notifyChainModel, minus the model rebuild.
+    updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+}
+
 // ---- Chain state serialise / restore ---------------------------------------
 juce::var LinkProcessor::chainModelToVar() const
 {
@@ -1059,6 +1083,7 @@ juce::var LinkProcessor::chainModelToVar() const
         o->setProperty("settings", s.settings);
         o->setProperty("bypassed", s.bypassed);
         o->setProperty("missing",  s.missing);
+        o->setProperty("wet",      (double)s.wet);
         if (!s.missing && s.hostIdx >= 0)
         {
             if (auto* p = chainHost.getSlotProcessor(s.hostIdx))
@@ -1088,6 +1113,9 @@ void LinkProcessor::restoreChainFromVar(const juce::var& v)
         item.name        = o->getProperty("name").toString();
         item.settings    = o->getProperty("settings").toString();
         item.bypassed    = (bool)o->getProperty("bypassed");
+        item.wet         = o->hasProperty("wet")
+                             ? juce::jlimit(0.0f, 1.0f, (float)(double)o->getProperty("wet"))
+                             : 1.0f;   // pre-wet/dry sessions restore fully wet
         item.stateBase64 = o->getProperty("state").toString();
         if (item.name.isNotEmpty())
             spec.push_back(std::move(item));
@@ -1204,8 +1232,10 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     obj->setProperty("editorW",  editorW);
     obj->setProperty("editorH",  editorH);
     obj->setProperty("instanceUid", instanceUid_);
-    // Full hosted chain: identities, order, bypass flags, per-plugin state
+    // Full hosted chain: identities, order, bypass flags, wet mixes,
+    // per-plugin state
     obj->setProperty("chain",    chainModelToVar());
+    obj->setProperty("chainMasterWet", (double)chainHost.getMasterWet());
     juce::String json = juce::JSON::toString(juce::var(obj), true);
     dest.replaceAll(json.toRawUTF8(), json.getNumBytesAsUTF8());
 }
@@ -1233,6 +1263,8 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             genre = obj->getProperty("genre").toString();
         if (obj->getProperty("instanceUid").toString().isNotEmpty())
             instanceUid_ = obj->getProperty("instanceUid").toString();
+        if (obj->hasProperty("chainMasterWet"))
+            chainHost.setMasterWet((float)(double)obj->getProperty("chainMasterWet"));
 #if ECHOJAY_LINK_STATE_DIAG
         EchoJay_NSLog(("EJLinkState: setState linkOn=" + juce::String((int)linkOn.load())
                        + " (hadProp=" + juce::String((int)obj->hasProperty("linkOn"))

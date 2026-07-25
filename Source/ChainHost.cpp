@@ -415,6 +415,80 @@ juce::PluginDescription ChainHost::findVst3Alternative(const juce::String& plugi
 // ---------------------------------------------------------------------------
 // Constructor / Destructor
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Per-slot wet/dry blend node.
+//
+// Inputs 0-1 = the slot plugin's (wet) output; inputs 2-3 = the slot's dry
+// input, tapped in parallel by rebuildGraph(). JUCE's render sequence aligns
+// ALL of a node's input channels to the same max source latency (it computes
+// one maxInputLatency per node and inserts DelayChannelOps on the earlier
+// legs), so a latent plugin's dry leg arrives sample-aligned by construction.
+//
+// Phase caveat (inherent, not a bug): plugins that rotate phase — most
+// minimum-phase EQs — comb-filter against the dry signal at partial wet.
+// Latency alignment cannot remove that; it is true of every wet/dry blend.
+class SlotWetBlend : public juce::AudioProcessor
+{
+public:
+    explicit SlotWetBlend(std::shared_ptr<std::atomic<float>> wet)
+        : juce::AudioProcessor(BusesProperties()
+              .withInput("Wet", juce::AudioChannelSet::stereo(), true)
+              .withInput("Dry", juce::AudioChannelSet::stereo(), true)
+              .withOutput("Out", juce::AudioChannelSet::stereo(), true)),
+          wet_(std::move(wet)) {}
+
+    void prepareToPlay(double sampleRate, int) override
+    {
+        smooth_.reset(sampleRate, 0.05);
+        smooth_.setCurrentAndTargetValue(wet_ ? wet_->load(std::memory_order_relaxed) : 1.0f);
+    }
+    void releaseResources() override {}
+
+    void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override
+    {
+        const float target = juce::jlimit(0.0f, 1.0f,
+            wet_ ? wet_->load(std::memory_order_relaxed) : 1.0f);
+        smooth_.setTargetValue(target);
+
+        const int n = buffer.getNumSamples();
+        // Fully wet and settled: output channels 0/1 already hold the wet
+        // signal in-place — nothing to do (zero cost at the default setting).
+        if (!smooth_.isSmoothing() && target >= 0.9995f)
+            return;
+        if (buffer.getNumChannels() < 4) { smooth_.skip(n); return; }
+
+        auto* outL = buffer.getWritePointer(0);
+        auto* outR = buffer.getWritePointer(1);
+        auto* dryL = buffer.getReadPointer(2);
+        auto* dryR = buffer.getReadPointer(3);
+        for (int i = 0; i < n; ++i)
+        {
+            const float w = smooth_.getNextValue();
+            outL[i] = outL[i] * w + dryL[i] * (1.0f - w);
+            outR[i] = outR[i] * w + dryR[i] * (1.0f - w);
+        }
+    }
+
+    const juce::String getName() const override        { return "EJ Slot Wet/Dry"; }
+    bool acceptsMidi() const override                  { return false; }
+    bool producesMidi() const override                 { return false; }
+    double getTailLengthSeconds() const override       { return 0.0; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override                    { return false; }
+    int getNumPrograms() override                      { return 1; }
+    int getCurrentProgram() override                   { return 0; }
+    void setCurrentProgram(int) override               {}
+    const juce::String getProgramName(int) override    { return {}; }
+    void changeProgramName(int, const juce::String&) override {}
+    void getStateInformation(juce::MemoryBlock&) override {}
+    void setStateInformation(const void*, int) override {}
+    bool isBusesLayoutSupported(const BusesLayout&) const override { return true; }
+
+private:
+    std::shared_ptr<std::atomic<float>> wet_;
+    juce::SmoothedValue<float>          smooth_;
+};
+
 ChainHost::ChainHost()
 {
     juce::addDefaultFormatsToManager(formatManager_);
@@ -483,6 +557,15 @@ void ChainHost::prepare(double sampleRate, int blockSize)
     sampleRate_ = sampleRate;
     blockSize_  = blockSize;
     prepared_   = true;
+
+    // Master wet/dry resources — dry copy scratch + latency-alignment ring
+    dryScratch_.setSize(2, juce::jmax(blockSize, 16));
+    dryRing_.setSize(2, kDryRingLen);
+    dryRing_.clear();
+    dryRingWrite_ = 0;
+    masterWetSmooth_.reset(sampleRate, 0.05);
+    masterWetSmooth_.setCurrentAndTargetValue(masterWet_.load(std::memory_order_relaxed));
+
     graph_->setPlayConfigDetails(2, 2, sampleRate, blockSize);
     graph_->prepareToPlay(sampleRate, blockSize);
 }
@@ -498,10 +581,78 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
     // Skip the graph entirely when no plugins are loaded — pure passthrough.
     // An empty AudioProcessorGraph with only IO nodes can drop audio under
     // certain prepare/rebuild orderings; bypassing it avoids that entirely.
+    // (Also means master wet/dry costs nothing on an empty chain.)
     if (!prepared_ || !graph_ || !hasActiveSlots_.load())
         return;   // buffer passes through untouched
 
-    graph_->processBlock(buffer, midi);
+    const int n   = buffer.getNumSamples();
+    const int chs = juce::jmin(2, buffer.getNumChannels());
+    const float target = juce::jlimit(0.0f, 1.0f,
+                                      masterWet_.load(std::memory_order_relaxed));
+    masterWetSmooth_.setTargetValue(target);
+
+    // Push the pre-graph input into the dry ring EVERY block (cheap copy), so
+    // history is already aligned the moment the knob leaves 100% — no stale
+    // window on the first grab.
+    const bool ringOk = (n <= dryScratch_.getNumSamples() && chs > 0
+                         && dryRing_.getNumSamples() == kDryRingLen);
+    if (ringOk)
+    {
+        for (int rc = 0; rc < 2; ++rc)
+        {
+            const float* src = buffer.getReadPointer(juce::jmin(rc, chs - 1));
+            float* ring = dryRing_.getWritePointer(rc);
+            int w = dryRingWrite_;
+            for (int i = 0; i < n; ++i)
+            {
+                ring[w] = src[i];
+                if (++w == kDryRingLen) w = 0;
+            }
+        }
+    }
+
+    const bool blendActive = masterWetSmooth_.isSmoothing() || target < 0.9995f;
+    if (!ringOk || !blendActive)
+    {
+        // Fully wet and settled — plain graph pass, keep the smoother in time
+        if (ringOk) dryRingWrite_ = (dryRingWrite_ + n) % kDryRingLen;
+        masterWetSmooth_.skip(n);
+        graph_->processBlock(buffer, midi);
+        return;
+    }
+
+    // Read the dry leg back delayed by the chain's reported latency so wet
+    // and dry are sample-aligned. The graph maintains its own latency total
+    // (set from the render sequence), which already accounts for the per-slot
+    // blend topology. Phase caveat: latency alignment cannot undo plugins
+    // that ROTATE phase (most minimum-phase EQs) — those comb-filter against
+    // the dry signal at partial wet. Inherent to wet/dry, not a bug.
+    const int d = juce::jlimit(0, kDryRingLen - 1, graph_->getLatencySamples());
+    for (int rc = 0; rc < chs; ++rc)
+    {
+        const float* ring = dryRing_.getReadPointer(rc);
+        float* dst = dryScratch_.getWritePointer(rc);
+        int r = dryRingWrite_ - d;
+        if (r < 0) r += kDryRingLen;
+        for (int i = 0; i < n; ++i)
+        {
+            dst[i] = ring[r];
+            if (++r == kDryRingLen) r = 0;
+        }
+    }
+    dryRingWrite_ = (dryRingWrite_ + n) % kDryRingLen;
+
+    graph_->processBlock(buffer, midi);   // buffer is now the wet signal
+
+    for (int i = 0; i < n; ++i)
+    {
+        const float w = masterWetSmooth_.getNextValue();
+        for (int c = 0; c < chs; ++c)
+        {
+            float* out = buffer.getWritePointer(c);
+            out[i] = out[i] * w + dryScratch_.getReadPointer(c)[i] * (1.0f - w);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -694,21 +845,49 @@ std::vector<ChainHost::SlotInfo> ChainHost::getAllSlotInfos() const
     std::vector<SlotInfo> result;
     result.reserve(slots_.size());
     for (auto& s : slots_)
-        result.push_back({ s.desc.name, s.bypassed, s.settings, s.desc.pluginFormatName });
+        result.push_back({ s.desc.name, s.bypassed, s.settings,
+                           s.desc.pluginFormatName, s.wet });
     return result;
 }
 
 ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
 {
-    if (i < 0 || i >= (int)slots_.size()) return { {}, false, {}, {} };
+    if (i < 0 || i >= (int)slots_.size()) return { {}, false, {}, {}, 1.0f };
     return { slots_[i].desc.name, slots_[i].bypassed, slots_[i].settings,
-             slots_[i].desc.pluginFormatName };
+             slots_[i].desc.pluginFormatName, slots_[i].wet };
 }
 
 void ChainHost::setSlotSettings(int i, const juce::String& settings)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
     slots_[i].settings = settings;
+}
+
+// ---------------------------------------------------------------------------
+// Wet/dry setters — knob-drag safe: pure value writes, never a graph rebuild
+// ---------------------------------------------------------------------------
+void ChainHost::setMasterWet(float wet01)
+{
+    masterWet_.store(juce::jlimit(0.0f, 1.0f, wet01), std::memory_order_relaxed);
+    bumpChainRevision();
+}
+
+void ChainHost::setSlotWet(int i, float wet01)
+{
+    if (i < 0 || i >= (int)slots_.size()) return;
+    auto& s = slots_[(size_t)i];
+    s.wet = juce::jlimit(0.0f, 1.0f, wet01);
+    bumpChainRevision();
+    if (!s.wetShared)   // slot not rebuilt yet (e.g. restore) — value rides in s.wet
+        s.wetShared = std::make_shared<std::atomic<float>>(s.wet);
+    else
+        s.wetShared->store(s.wet, std::memory_order_relaxed);
+}
+
+float ChainHost::getSlotWet(int i) const
+{
+    if (i < 0 || i >= (int)slots_.size()) return 1.0f;
+    return slots_[(size_t)i].wet;
 }
 
 std::vector<ChainHost::ApplyReport>
@@ -750,7 +929,11 @@ void ChainHost::removeSlot(int i)
         graveyard_.push_back(slots_[i].node);
         graph_->removeNode(slots_[i].node->nodeID);
     }
+    // The wet-blend node is OURS (no third-party UI timers) — destroy for real
+    if (slots_[i].blendNode)
+        graph_->removeNode(slots_[i].blendNode->nodeID);
     slots_.erase(slots_.begin() + i);
+    bumpChainRevision();
     rebuildGraph();
     if (prepared_)
     {
@@ -765,6 +948,7 @@ void ChainHost::moveSlot(int i, int direction)
     if (i < 0 || i >= (int)slots_.size()) return;
     if (j < 0 || j >= (int)slots_.size()) return;
     std::swap(slots_[i], slots_[j]);
+    bumpChainRevision();
     rebuildGraph();
     if (prepared_)
     {
@@ -777,6 +961,7 @@ void ChainHost::setSlotBypassed(int i, bool bypassed)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
     slots_[i].bypassed = bypassed;
+    bumpChainRevision();
     rebuildGraph();
     if (prepared_)
     {
@@ -808,6 +993,7 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     slot.desc     = desc;
     slot.bypassed = false;
     slots_.push_back(std::move(slot));
+    bumpChainRevision();
     rebuildGraph();
     if (prepared_)
     {
@@ -1300,11 +1486,22 @@ void ChainHost::rebuildGraph()
     for (auto& c : graph_->getConnections())
         graph_->removeConnection(c);
 
-    // Collect active (non-bypassed) node IDs in chain order
-    std::vector<juce::AudioProcessorGraph::NodeID> active;
+    // Collect active (non-bypassed) slots in chain order. Every active slot
+    // gets a SlotWetBlend node (created lazily here, removed with the slot):
+    // ALWAYS in circuit, so wet/dry knob moves are pure atomic writes — no
+    // graph rebuild, no dropout mid-drag. At 100% wet the blend node is a
+    // settled no-op (see SlotWetBlend::processBlock).
+    struct ActivePair { juce::AudioProcessorGraph::NodeID plugin, blend; };
+    std::vector<ActivePair> active;
     for (auto& s : slots_)
         if (!s.bypassed && s.node)
-            active.push_back(s.node->nodeID);
+        {
+            if (!s.wetShared)
+                s.wetShared = std::make_shared<std::atomic<float>>(s.wet);
+            if (!s.blendNode)
+                s.blendNode = graph_->addNode(std::make_unique<SlotWetBlend>(s.wetShared));
+            active.push_back({ s.node->nodeID, s.blendNode->nodeID });
+        }
 
     hasActiveSlots_.store(!active.empty());
 
@@ -1328,31 +1525,35 @@ void ChainHost::rebuildGraph()
                       : proc->getTotalNumOutputChannels();
     };
 
-    // Input → first active slot
+    // Per-stage wiring: prev → plugin (wet path), prev → blend inputs 2/3
+    // (dry tap, latency-aligned by the graph's render sequence), plugin →
+    // blend inputs 0/1, and the blend node becomes the stage output. A
+    // mono-out plugin's uncovered wet channel gets the prev-stage signal
+    // (passthrough) so the blend never mixes against silence — the same
+    // intent as the old uncovered-channel passthrough at the chain tail.
+    juce::AudioProcessorGraph::NodeID prev = inputNode_->nodeID;   // always 2-out
+    for (auto& stage : active)
     {
-        int nIn = channelsOf(active[0], true);
+        int nIn  = channelsOf(stage.plugin, true);
+        int nOut = channelsOf(stage.plugin, false);
+
         for (int ch = 0; ch < juce::jmin(2, nIn); ++ch)
-            graph_->addConnection({{inputNode_->nodeID, ch}, {active[0], ch}});
-    }
+            graph_->addConnection({{prev, ch}, {stage.plugin, ch}});
 
-    // Each slot → next slot
-    for (int i = 0; i + 1 < (int)active.size(); ++i)
-    {
-        int nOut = channelsOf(active[i],     false);
-        int nIn2 = channelsOf(active[i + 1], true);
-        for (int ch = 0; ch < std::min({2, nOut, nIn2}); ++ch)
-            graph_->addConnection({{active[i], ch}, {active[i + 1], ch}});
-    }
+        for (int ch = 0; ch < 2; ++ch)
+            graph_->addConnection({{prev, ch}, {stage.blend, ch + 2}});   // dry tap
 
-    // Last active slot → output
-    {
-        int nOut = channelsOf(active.back(), false);
         for (int ch = 0; ch < juce::jmin(2, nOut); ++ch)
-            graph_->addConnection({{active.back(), ch}, {outputNode_->nodeID, ch}});
-        // Passthrough for any uncovered output channels
+            graph_->addConnection({{stage.plugin, ch}, {stage.blend, ch}});
         for (int ch = nOut; ch < 2; ++ch)
-            graph_->addConnection({{inputNode_->nodeID, ch}, {outputNode_->nodeID, ch}});
+            graph_->addConnection({{prev, ch}, {stage.blend, ch}});       // passthrough
+
+        prev = stage.blend;   // blend output (2ch) feeds the next stage
     }
+
+    // Last blend → output (blend always has 2 outs — no uncovered channels)
+    graph_->addConnection({{prev, 0}, {outputNode_->nodeID, 0}});
+    graph_->addConnection({{prev, 1}, {outputNode_->nodeID, 1}});
 
     if (onChainChanged) onChainChanged();
 }
@@ -1736,10 +1937,12 @@ void ChainHost::loadFromDisk()
 juce::String ChainHost::getSlotsStateXml() const
 {
     auto root = std::make_unique<juce::XmlElement>("CHAIN_SLOTS");
+    root->setAttribute("masterWet", (double)getMasterWet());
     for (auto& s : slots_)
     {
         auto* item = root->createNewChildElement("SLOT");
         item->setAttribute("bypassed", s.bypassed ? 1 : 0);
+        item->setAttribute("wet", (double)s.wet);
         if (auto descXml = s.desc.createXml())
             item->addChildElement(descXml.release());
     }
@@ -1749,14 +1952,19 @@ juce::String ChainHost::getSlotsStateXml() const
 void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx)
 {
     if (idx >= (int)items.size()) return;
-    bool wasBypassed = items[idx].bypassed;
+    bool  wasBypassed = items[idx].bypassed;
+    float savedWet    = items[idx].wet;
     loadPluginAsync(items[idx].desc,
-        [this, items = std::move(items), idx, wasBypassed](const juce::String& err) mutable
+        [this, items = std::move(items), idx, wasBypassed, savedWet](const juce::String& err) mutable
         {
-            if (err.isEmpty() && wasBypassed)
+            if (err.isEmpty())
             {
                 int lastSlot = (int)slots_.size() - 1;
-                if (lastSlot >= 0) setSlotBypassed(lastSlot, true);
+                if (lastSlot >= 0)
+                {
+                    setSlotWet(lastSlot, savedWet);
+                    if (wasBypassed) setSlotBypassed(lastSlot, true);
+                }
             }
             restoreNextSlot(std::move(items), idx + 1);
         });
@@ -1768,16 +1976,21 @@ void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml)
     auto root = juce::XmlDocument::parse(xml);
     if (!root || root->getTagName() != "CHAIN_SLOTS") return;
 
+    // Master wet applies immediately (independent of the async slot loads);
+    // absent attribute (pre-wet/dry sessions) restores as fully wet.
+    setMasterWet((float)root->getDoubleAttribute("masterWet", 1.0));
+
     std::vector<RestoreItem> items;
     for (auto* child : root->getChildIterator())
     {
         if (child->getTagName() != "SLOT") continue;
-        bool bypassed = child->getIntAttribute("bypassed", 0) != 0;
+        bool  bypassed = child->getIntAttribute("bypassed", 0) != 0;
+        float wet      = (float)child->getDoubleAttribute("wet", 1.0);
         auto* descElem = child->getFirstChildElement();
         if (!descElem) continue;
         juce::PluginDescription desc;
         if (!desc.loadFromXml(*descElem)) continue;
-        items.push_back({ desc, bypassed });
+        items.push_back({ desc, bypassed, wet });
     }
 
     if (!items.empty())

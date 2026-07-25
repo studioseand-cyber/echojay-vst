@@ -31,6 +31,7 @@ public:
         bool bypassed;
         juce::String settings;  // suggested dial-in guidance from AI (display only)
         juce::String format;    // "AudioUnit" / "VST3" — popout-only is per-format
+        float wet = 1.0f;       // per-slot wet/dry (0..1, 1 = fully wet)
     };
 
     ChainHost();
@@ -101,6 +102,25 @@ public:
     void moveSlot(int i, int direction);    // direction: -1 = left, +1 = right
     void setSlotBypassed(int i, bool bypassed);
     void setSlotSettings(int i, const juce::String& settings);  // store AI guidance text
+
+    // ---- Chain revision (CHAIN_AI_BUILD_SPEC Phase 1a staleness guard) ----
+    // Monotonic counter bumped on EVERY chain mutation: add (completeLoad),
+    // remove, move, bypass, per-slot wet, master wet. An AI edit proposal
+    // snapshots this at propose time; the apply (Phase 1c) aborts when the
+    // live value differs — the rack changed between propose and confirm.
+    // Atomic so any thread may read; mutations happen on the message thread.
+    int getChainRevision() const noexcept { return chainRevision_.load(std::memory_order_relaxed); }
+
+    // ---- Wet/dry (house pattern: internal smoothed state, NOT host params) --
+    // Per-slot: blended inside the graph by a SlotWetBlend node whose dry leg
+    // is latency-aligned by the graph's render sequence. Master: blended in
+    // process() against a latency-delayed dry copy of the chain input.
+    // Setters are message-thread; the audio thread reads atomics. Knob drags
+    // are rebuild-free — values flow through shared atomics, never rewiring.
+    void  setMasterWet(float wet01);
+    float getMasterWet() const noexcept { return masterWet_.load(std::memory_order_relaxed); }
+    void  setSlotWet(int i, float wet01);
+    float getSlotWet(int i) const;
 
     // EchoJay auto-parameter-mapping: dial a slot's hosted plugin from
     // structured settings plus the plugin's map.
@@ -267,7 +287,8 @@ public:
     int getTotalLatencySamples() const;
 
     // Fired on the message thread at the end of every graph rebuild
-    // (load / remove / move / bypass). Unset in the main plugin.
+    // (load / remove / move / bypass). Both hosts mirror chain latency into
+    // setLatencySamples from here.
     std::function<void()> onChainChanged;
 
     // ---- State persistence -----------------------------------------------
@@ -298,6 +319,12 @@ private:
         juce::PluginDescription              desc;
         bool                                 bypassed = false;
         juce::String                         settings;   // AI-suggested dial-in guidance
+        // Per-slot wet/dry: `wet` is the persisted value; `wetShared` is the
+        // audio-thread copy read by this slot's SlotWetBlend graph node.
+        // Both created lazily in rebuildGraph(), removed in removeSlot().
+        float                                    wet = 1.0f;
+        std::shared_ptr<std::atomic<float>>      wetShared;
+        juce::AudioProcessorGraph::Node::Ptr     blendNode;
         // Auto-parameter-mapping state
         juce::var                            structuredSettings;        // settings_structured from the chain reply
         juce::String                         fp;                        // fingerprint (computed at load)
@@ -347,6 +374,19 @@ private:
 
     bool   prepared_  = false;
     std::atomic<bool> hasActiveSlots_ { false };  // true when ≥1 non-bypassed slot exists
+    std::atomic<int>  chainRevision_ { 0 };       // see getChainRevision()
+    void bumpChainRevision() noexcept { chainRevision_.fetch_add(1, std::memory_order_relaxed); }
+
+    // ---- Master wet/dry state (audio thread reads, message thread writes) --
+    // dryRing_ holds the pre-graph input so the dry leg can be delayed by the
+    // chain's reported latency before blending — wet and dry stay
+    // sample-aligned. Sized for ~5s of lookahead/linear-phase latency.
+    static constexpr int kDryRingLen = 1 << 18;
+    std::atomic<float>          masterWet_ { 1.0f };
+    juce::SmoothedValue<float>  masterWetSmooth_;
+    juce::AudioBuffer<float>    dryScratch_;   // delayed-dry read buffer (blockSize)
+    juce::AudioBuffer<float>    dryRing_;      // dry history ring (2 x kDryRingLen)
+    int                         dryRingWrite_ = 0;
 
     // Resolver cache (message thread only — no mutex needed)
     std::vector<RecommendableEntry> recommendable_;
@@ -366,7 +406,7 @@ private:
     std::thread        scanThread_;
 
     // Restore helper (sequential async restore of multiple slots)
-    struct RestoreItem { juce::PluginDescription desc; bool bypassed; };
+    struct RestoreItem { juce::PluginDescription desc; bool bypassed; float wet = 1.0f; };
     void restoreNextSlot(std::vector<RestoreItem> items, int idx);
 
     // Internal helpers

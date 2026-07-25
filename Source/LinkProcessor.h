@@ -105,6 +105,7 @@ public:
         bool bypassed = false;
         bool missing  = false;     // could not be resolved/loaded
         int  hostIdx  = -1;        // index into chainHost slots, -1 if missing
+        float wet     = 1.0f;      // per-slot wet/dry (0..1), mirrors ChainHost
     };
     static constexpr int kMaxChainSlots = 15;
 
@@ -112,6 +113,7 @@ public:
         juce::String name;
         juce::String settings;
         bool bypassed = false;
+        float wet     = 1.0f;      // per-slot wet/dry (restore path)
         juce::String stateBase64;  // hosted plugin state (restore path only)
     };
 
@@ -132,6 +134,16 @@ public:
     void removeChainSlot(int idx);
     void moveChainSlot(int idx, int dir);      // dir: -1 / +1
     void toggleChainSlotBypass(int idx);
+
+    // Wet/dry (model-indexed like the other slot mutators). Setters are
+    // knob-drag cheap (atomic writes, no host-state churn); the editor calls
+    // commitChainWetChange() once on gesture end so the host re-snapshots
+    // state without being spammed during the drag.
+    void  setChainSlotWet(int idx, float wet01);
+    float getChainSlotWet(int idx) const;
+    void  setChainMasterWet(float wet01) { chainHost.setMasterWet(wet01); }
+    float getChainMasterWet() const      { return chainHost.getMasterWet(); }
+    void  commitChainWetChange();
 
     // Manual add from the "+" picker (message thread). Appends to the current
     // chain (which may have arrived via command file); no settings guidance,
