@@ -151,7 +151,8 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
                                             const juce::String& content,
                                             const juce::String& reviewId,
                                             const juce::String& chainJson,
-                                            const juce::String& gainJson)
+                                            const juce::String& gainJson,
+                                            const juce::String& askJson)
 {
     for (auto& c : chats)
     {
@@ -164,6 +165,7 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
             m.reviewId  = reviewId;
             m.chainJson = chainJson;
             m.gainJson  = gainJson;
+            m.askJson   = askJson;
             c.messages.push_back(std::move(m));
             return first;
         }
@@ -179,9 +181,24 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
     m.reviewId  = reviewId;
     m.chainJson = chainJson;
     m.gainJson  = gainJson;
+    m.askJson   = askJson;
     c.messages.push_back(std::move(m));
     chats.insert(chats.begin(), std::move(c));
     return true; // first message
+}
+
+void EchoJayWorkspace::markAskAnswered(const juce::String& chatId,
+                                       const juce::String& matchContent)
+{
+    for (auto& c : chats)
+    {
+        if (c.id != chatId) continue;
+        for (auto& m : c.messages)
+            if (m.role == "assistant" && m.askJson.isNotEmpty()
+                && m.content == matchContent)
+                m.askAnswered = true;
+        return;
+    }
 }
 
 void EchoJayWorkspace::updateAssistantGainJson(const juce::String& chatId,
@@ -663,6 +680,8 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
                     msg.meterCtx  = mObj->getProperty("_meterCtx").toString();
                     msg.chainJson = mObj->getProperty("_chain").toString();
                     msg.gainJson  = mObj->getProperty("_gain").toString();
+                    msg.askJson   = mObj->getProperty("_ask").toString();
+                    msg.askAnswered = (bool)mObj->getProperty("_askDone");
                     c.messages.push_back(std::move(msg));
                 }
             }
@@ -845,6 +864,12 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
             mObj->setProperty("_chain",     m.chainJson);
         if (m.gainJson.isNotEmpty())
             mObj->setProperty("_gain",      m.gainJson);
+        if (m.askJson.isNotEmpty())
+        {
+            mObj->setProperty("_ask",       m.askJson);
+            if (m.askAnswered)
+                mObj->setProperty("_askDone", true);
+        }
         msgs.add(juce::var(mObj));
     }
     obj->setProperty("messages", juce::var(msgs));

@@ -4,6 +4,7 @@
 #include <map>
 #include "PluginProcessor.h"
 #include "ChainHost.h"
+#include "ChainWetKnob.h"
 #include "NativeClip.h"
 #include "EchoJayAPI.h"
 #include "EchoJayLookAndFeel.h"
@@ -11,6 +12,11 @@
 #include "PluginChecklist.h"
 #include "EchoJayWorkspace.h"
 #include "CodecRender.h"
+
+// TEMP DEBUG (25 Jul 2026, review-overlay z-order diagnosis) — remove with
+// the [zdbg] sites in PluginEditor.cpp.
+extern bool gEjReviewModalDbg;
+bool gEjZdbgPaint(const char* site, juce::Component& c);
 
 class EchoJayEditor : public juce::AudioProcessorEditor,
                        private juce::Timer,
@@ -63,10 +69,11 @@ private:
     void loadReferenceFile();
     void runAICompare();
     void paintCompareView(juce::Graphics& g, juce::Rectangle<int> area);
-    // Spectrum panel for Compare tab: independent per-panel static snapshot,
-    // no shared peak-hold state (avoids top/bottom panel interference).
+    // Spectrum panel for Compare tab: independent per-panel state (avoids
+    // top/bottom interference). isTop picks the identity: A = cyan heat-map,
+    // B = pink/coral comparison colour. Renders via paintSpectrumCurve.
     void paintCompareSpectrum(juce::Graphics& g, juce::Rectangle<int> area,
-                              const MeterData& md, bool isLive);
+                              const MeterData& md, bool isLive, bool isTop);
     void showSettingsView();
     void hideSettingsView();
     void saveSettingsToServer();
@@ -150,14 +157,60 @@ private:
     std::array<float, 64> spectrumPeakHold{};
     bool spectrumPeakHoldInit = false;
 
+    // Paint-side frame-to-frame smoothing of the display bins so the curve
+    // glides instead of jumping (engine smoothing is time-based per buffer;
+    // this is per PAINT, so it also absorbs uneven repaint cadence).
+    // 64-bin buffers serve the A/B REFERENCE curve; the live curve renders
+    // from the visual FFT below.
+    std::array<float, 64> spectrumSmoothed{};
+    bool spectrumSmoothedInit = false;
+
+    // ===== Shared spectrum-curve renderer =====
+    // ONE render path (median → mean → tilt → region-aware clamped spline →
+    // heat-map fill/line) used by the main SPECTRUM panel and both Compare
+    // panels, so the look can never drift. Display-only throughout.
+    struct SpectrumCurveState {                   // per-surface frame lerp
+        std::array<float, MeterEngine::kVisBins> smoothed{};
+        bool init = false;
+    };
+    struct SpectrumCurveStyle {
+        bool cyanHeat = true;                     // false: pink/coral comparison identity
+        SpectrumCurveState* lerpState = nullptr;  // nullptr = static data, no frame lerp
+        std::array<float, MeterEngine::kVisBins>* peakHold = nullptr;  // optional
+        bool* peakHoldInit = nullptr;
+    };
+    // binsIn are LINEAR-frequency dB magnitudes spaced visBinHz apart
+    // (the visual-FFT shape). Stored 64-log-bin data enters through
+    // expandLog64Spectrum below.
+    void paintSpectrumCurve(juce::Graphics& g, int x, int y, int w, int barMaxH,
+                            const std::array<float, MeterEngine::kVisBins>& binsIn,
+                            double visBinHz, const SpectrumCurveStyle& style);
+    static std::array<float, MeterEngine::kVisBins> expandLog64Spectrum(
+        const std::array<float, 64>& logBins, double visBinHz);
+
+    SpectrumCurveState spectrumCurveState_;                            // main panel
+    SpectrumCurveState compareTopCurveState_, compareBotCurveState_;   // Compare live slots
+    std::array<float, MeterEngine::kVisBins> visPeakHold{};            // main panel only
+    bool visPeakHoldInit = false;
+
+    // Shared visualiser texture (EchoJayVisualiserTexture.h) — decoded once.
+    // SPECTRUM clips it under the curve; SPECTROGRAM samples its diagonal as
+    // the colour palette so both views share one material.
+    juce::Image visualiserTexture_;
+    std::array<juce::Colour, 256> spectroPalette_{};
+    bool spectroPaletteInit_ = false;
+    void ensureVisualiserTexture();
+
     // SPECTRUM panel view mode — false = spectrum curve (default), true =
     // scrolling spectrogram waterfall. Toggled in the panel header, persisted
     // to ~/Documents/EchoJay/spectrogram_mode.txt (same pattern as chat scale).
     bool spectrogramMode_ = false;
     void loadSpectrogramMode();
     void saveSpectrogramMode() const;
-    // Persistent history image (kSpecHistFrames x 64) — blit-scrolled one
-    // column per new frame, then drawn scaled into the panel rect.
+    // Persistent history image (kSpecHistFrames x kSpectroRows) — one column
+    // per new frame, Catmull-Rom interpolated across the 64 log display bins
+    // so rows are smooth, then drawn scaled with high resampling quality.
+    static constexpr int kSpectroRows = 256;
     juce::Image spectroImg;
     int spectroFrameCounter_ = 0;
     // Header toggle hit rects, cached during paint for mouseDown
@@ -690,6 +743,8 @@ private:
         float lufs = -100;
         juce::String chainData;   // non-empty when AI returned a <<<ECHOJAY_CHAIN>>> block
         juce::String gainData;    // non-empty when AI returned a <<<ECHOJAY_GAIN>>> block
+        juce::String askData;     // non-empty when AI returned an <<<ECHOJAY_ASK>>> block
+        bool askAnswered = false; // chip tapped — chips render disabled/hidden
     };
     std::vector<ChatMsg> chatMessages;
     bool chatLoading = false;
@@ -806,9 +861,10 @@ private:
         static constexpr int kCardGap     = 10;  // vertical gap between card boxes
         static constexpr int kStripH   = 76;   // bottom chain strip incl. scrollbar
         static constexpr int kBlockW   = 118;
-        static constexpr int kBlockH   = 50;
+        static constexpr int kBlockH   = 64;   // room for the wet/dry knob row
         static constexpr int kBlockGap = 26;   // connector-line gap between blocks
         static constexpr int kAddW     = 40;   // "+" block
+        static constexpr int kMasterW  = 62;   // fixed master MIX knob area, right of strip
 
         // Compact rounded block in the bottom strip — name + B/X/</> controls.
         // Clicking anywhere else on the block selects it (shows editor above).
@@ -824,11 +880,13 @@ private:
             juce::TextButton removeBtn { "X" };
             juce::TextButton prevBtn   { "<" };
             juce::TextButton nextBtn   { ">" };
+            ChainWetKnob     wetKnob;   // per-slot wet/dry (hidden while bypassed)
 
-            std::function<void()>    onSelect;
-            std::function<void()>    onBypass;
-            std::function<void()>    onRemove;
-            std::function<void(int)> onMove;
+            std::function<void()>      onSelect;
+            std::function<void()>      onBypass;
+            std::function<void()>      onRemove;
+            std::function<void(int)>   onMove;
+            std::function<void(float)> onWet;
 
             Block()
             {
@@ -850,6 +908,8 @@ private:
                 removeBtn.onClick = [this] { if (onRemove) onRemove(); };
                 prevBtn.onClick   = [this] { if (onMove)   onMove(-1); };
                 nextBtn.onClick   = [this] { if (onMove)   onMove(+1); };
+                addAndMakeVisible(wetKnob);
+                wetKnob.onChange = [this](float v) { if (onWet) onWet(v); };
             }
 
             void mouseDown(const juce::MouseEvent&) override
@@ -894,6 +954,8 @@ private:
                 removeBtn.setBounds(m + bw + 2, by, bw, bh);
                 nextBtn.setBounds(getWidth() - m - bw, by, bw, bh);
                 prevBtn.setBounds(getWidth() - m - bw * 2 - 2, by, bw, bh);
+                // Wet/dry knob — centred between name row and button row
+                wetKnob.setBounds((getWidth() - 22) / 2, 20, 22, 22);
             }
         };
 
@@ -914,6 +976,7 @@ private:
         juce::Viewport   stripView;
         StripContent     stripContent;
         juce::TextButton addBlock { "+" };
+        ChainWetKnob     masterKnob;   // whole-chain wet/dry, fixed right of strip
         std::vector<std::unique_ptr<Block>> blocks;
         std::vector<ChainHost::SlotInfo>    slotInfos;
         int selectedIdx = -1;
@@ -952,11 +1015,13 @@ private:
 
         juce::String statusText;
 
-        std::function<void(int)>      onSelectSlot;
-        std::function<void(int)>      onRemoveSlot;
-        std::function<void(int)>      onBypassSlot;
-        std::function<void(int, int)> onMoveSlot;
-        std::function<void()>         onAddClick;
+        std::function<void(int)>        onSelectSlot;
+        std::function<void(int)>        onRemoveSlot;
+        std::function<void(int)>        onBypassSlot;
+        std::function<void(int, int)>   onMoveSlot;
+        std::function<void()>           onAddClick;
+        std::function<void(int, float)> onSlotWet;    // slot idx, wet 0..1
+        std::function<void(float)>      onMasterWet;  // wet 0..1
         std::function<juce::AudioProcessorEditor*(int)> onCreateEditor;
 
         ChainListPanel()
@@ -986,6 +1051,12 @@ private:
             addBlock.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
             addBlock.onClick = [this] { if (onAddClick) onAddClick(); };
             stripContent.addAndMakeVisible(addBlock);
+
+            // Master chain wet/dry — fixed at the right edge of the strip
+            // (outside the scrolling viewport, always visible)
+            masterKnob.caption = "MIX";
+            masterKnob.onChange = [this](float v) { if (onMasterWet) onMasterWet(v); };
+            addAndMakeVisible(masterKnob);
 
             popBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
             popBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
@@ -1355,6 +1426,9 @@ private:
                 bl->onBypass = [this, ci] { if (onBypassSlot) onBypassSlot(ci); };
                 bl->onRemove = [this, ci] { if (onRemoveSlot) onRemoveSlot(ci); };
                 bl->onMove   = [this, ci](int dir) { if (onMoveSlot) onMoveSlot(ci, dir); };
+                bl->wetKnob.setValue(slotInfos[(size_t)i].wet);
+                bl->wetKnob.setVisible(!slotInfos[(size_t)i].bypassed);
+                bl->onWet    = [this, ci](float v) { if (onSlotWet) onSlotWet(ci, v); };
                 bl->prevBtn.setEnabled(i > 0);
                 bl->nextBtn.setEnabled(i < (int)slotInfos.size() - 1);
                 stripContent.addAndMakeVisible(*bl);
@@ -1398,6 +1472,7 @@ private:
 
         void paint(juce::Graphics& g) override
         {
+            gEjZdbgPaint("ChainListPanel", *this); // TEMP DEBUG [zdbg]
             g.fillAll(juce::Colour(0xff0A0C18));
 
             auto area = displayArea();
@@ -1479,7 +1554,10 @@ private:
             settingsBox.setBounds(sb.getX() + 8, sb.getY() + 18,
                                   sb.getWidth() - 16, sb.getHeight() - 24);
 
-            stripView.setBounds(0, getHeight() - kStripH, getWidth(), kStripH);
+            stripView.setBounds(0, getHeight() - kStripH,
+                                juce::jmax(50, getWidth() - kMasterW), kStripH);
+            masterKnob.setBounds(getWidth() - kMasterW + 9,
+                                 getHeight() - kStripH + 6, 44, 54);
             updateCard();
             layoutStrip();
             layoutInline();
@@ -1536,6 +1614,61 @@ private:
     std::array<juce::TextButton, kMaxChainBuildBtns> chainBuildBtns;
     std::array<juce::String, kMaxChainBuildBtns> chainBuildJsons;
     int activeChainBuildBtns = 0;
+
+    // ---- ASK choice chips (Phase 1b, B2 docked-shelf layout) ----------------
+    // Chips live in a SHELF docked seamlessly on top of the chat input (not
+    // under the message), shown only while a newest unanswered
+    // <<<ECHOJAY_ASK>>> exists. A tap formats the answer as
+    // Label (answering: "question") and auto-sends; ANY user send (tap or
+    // free text) supersedes the pending ask, so the shelf always vanishes on
+    // send. Reflow: the shelf rect participates in the same layout chain as
+    // the model-tier banner (chatScrollBottom), so the message viewport
+    // shrinks/grows with it and the last message is never hidden.
+    //
+    // PARITY (spec gate) — these values MIRROR public/app.html .ask-shelf /
+    // .ask-chip CSS; keep in sync:
+    //   chip: pill (fully rounded), fill cyan 9% (hover 18%), border cyan
+    //         40% (hover 70%), text 0xff7FE3F2 @ 12.5px, pad 6v/14h
+    //   shelf: input bg + 5% cyan wash, radius 12px top corners only,
+    //          hint "or type below" muted after the chips
+    struct AskChipLnF : juce::LookAndFeel_V4
+    {
+        void drawButtonBackground(juce::Graphics& g, juce::Button& b,
+                                  const juce::Colour&, bool over, bool down) override
+        {
+            auto r = b.getLocalBounds().toFloat().reduced(0.5f);
+            const auto cyan = juce::Colour(0xff22d3ee);
+            g.setColour(cyan.withAlpha(over || down ? 0.18f : 0.09f));
+            g.fillRoundedRectangle(r, r.getHeight() * 0.5f);
+            g.setColour(cyan.withAlpha(over || down ? 0.70f : 0.40f));
+            g.drawRoundedRectangle(r, r.getHeight() * 0.5f, 1.0f);
+        }
+        juce::Font getTextButtonFont(juce::TextButton&, int) override
+        { return juce::Font(juce::FontOptions(12.5f)); }
+    };
+    AskChipLnF askChipLnF_;   // declared BEFORE the buttons: destroyed after them
+    static constexpr int kMaxAskChips = 4;
+    static constexpr int kAskChipH = 27;   // 12.5px text + 6px vertical padding
+    std::array<juce::TextButton, kMaxAskChips> askChipBtns;
+    std::array<juce::String, kMaxAskChips> askChipLabels;
+    juce::String askChipQuestion_;     // question of the chips currently shown
+    int  askChipMsgIdx_ = -1;          // chatMessages index the chips belong to
+    int  activeAskChips = 0;
+    juce::Rectangle<int> askShelfRect_, askShelfHintRect_;
+    bool askShelfVisible_ = false;
+    // Newest assistant message with an unanswered ask, -1 if none
+    int findNewestUnansweredAsk() const;
+    // Mark every pending ask answered (any user send supersedes the question)
+    void supersedePendingAsks();
+    // Shared by the layout pass (height reservation + button placement) and
+    // the paint pass (shelf background + hint) — they MUST agree. Flows
+    // chips + trailing hint into rows for the given shelf width; rects are
+    // relative to the shelf origin. Returns total shelf height (0 = no shelf).
+    int measureAskShelf(const ChatMsg& msg, int shelfW,
+                        std::vector<juce::Rectangle<int>>* chipRectsOut = nullptr,
+                        juce::StringArray* labelsOut = nullptr,
+                        juce::String* questionOut = nullptr,
+                        juce::Rectangle<int>* hintRectOut = nullptr);
 
     // ---- AI-proposed Link gain (APPLY cards) --------------------------------
     // The assistant may emit a <<<ECHOJAY_GAIN>>> block of measurement-backed
@@ -1815,6 +1948,8 @@ private:
     // the constructor; invoked on review-popup Done and on Settings Save.
     std::function<void()> commitChecklistFn;
 
+    void applyReviewModalState();   // review-modal open/close: one path for all Chain-tab visibility
+    Tab reviewReturnTab_ { Tab::Visualisation }; // tab to restore when the review modal closes
     void showPluginReview();
     void hidePluginReview();
 

@@ -19,6 +19,9 @@ struct WsMessage {
     juce::String gainJson;   // non-empty on assistant gain-proposal replies; serialised
                              // as _gain. Carries the proposals AND their applied/prevGain
                              // state (mutated on Apply/Undo) so cards reload correctly.
+    juce::String askJson;    // non-empty on assistant ASK replies (question + tappable
+                             // choices, Phase 1b); serialised as _ask
+    bool askAnswered = false; // chip tapped (or question superseded); serialised as _askDone
 };
 
 struct WsChat {
@@ -163,7 +166,8 @@ public:
                              const juce::String& content,
                              const juce::String& reviewId  = juce::String(),
                              const juce::String& chainJson = juce::String(),
-                             const juce::String& gainJson  = juce::String());
+                             const juce::String& gainJson  = juce::String(),
+                             const juce::String& askJson   = juce::String());
     // Update the persisted gain-proposal block for the assistant message
     // whose visible content matches (the display list can hold transient
     // messages that never reached the store, so content match beats index).
@@ -171,6 +175,11 @@ public:
     void updateAssistantGainJson(const juce::String& chatId,
                                  const juce::String& matchContent,
                                  const juce::String& gainJson);
+    // Mark an assistant ASK message answered (chip tapped) — same
+    // content-match rule as updateAssistantGainJson, so the disabled state
+    // survives reload.
+    void markAskAnswered(const juce::String& chatId,
+                         const juce::String& matchContent);
     void setChatTitle(const juce::String& chatId, const juce::String& title);
     void setChatTrackName(const juce::String& chatId, const juce::String& trackName);
     void setChatPinned(const juce::String& chatId, bool pinned); // stamps pinnedAt

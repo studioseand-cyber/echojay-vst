@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
+#include "EchoJayVisualiserTexture.h"  // shared SPECTRUM/SPECTROGRAM texture
 #include <cmath>
 #include <unistd.h>       // getuid — launchctl gui/<uid> target (consent prompt)
 
@@ -193,11 +194,51 @@ static void recordUpdateDismissal(const juce::String& versionDismissed)
 
 }
 
+// ═══ TEMP DEBUG (25 Jul 2026, review-overlay z-order diagnosis) ═════════════
+// Remove this block + all [zdbg] call sites once the covering component is
+// identified. Logs to ~/Library/Logs/EchoJay/review-zorder.log.
+bool gEjReviewModalDbg = false; // set by applyReviewModalState()
+static void zdbg(const juce::String& msg)
+{
+    static juce::File f = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+        .getChildFile("Library/Logs/EchoJay/review-zorder.log");
+    static bool inited = false;
+    if (!inited) { f.getParentDirectory().createDirectory(); inited = true; }
+    f.appendText(juce::Time::getCurrentTime().toString(false, true, true, true) + "  " + msg + "\n");
+}
+bool gEjZdbgPaint(const char* site, juce::Component& c)
+{
+    if (!gEjReviewModalDbg) return false;
+    static juce::HashMap<juce::String, juce::uint32> last;
+    auto now = juce::Time::getMillisecondCounter();
+    auto k = juce::String(site);
+    if (last[k] != 0 && now - last[k] < 1000) return false;
+    last.set(k, now);
+    zdbg(juce::String("PAINT ") + site + " visible=" + (c.isVisible() ? "1" : "0")
+        + " showing=" + (c.isShowing() ? "1" : "0") + " bounds=" + c.getBounds().toString());
+    return true;
+}
+// ═════════════════════════════════════════════════════════════════════════
+
 // Static: genre prompt dismissed flag — persists across all instances for the DAW session
 
 // ============================================================================
 // Constructor
 // ============================================================================
+
+// Display-only version string: v2.MM.PP with minor+patch zero-padded to two
+// digits (24 Jul 2026 versioning convention). PADDING NEVER enters the stored
+// version: ProjectInfo::versionString / JucePlugin_VersionString stay numeric
+// for the AU version code, the plist, the update check (isVersionNewer vs the
+// server string) and the API appVersion cohort key. Pad ONLY where a human
+// reads it.
+static juce::String displayVersionString()
+{
+    auto seg = juce::StringArray::fromTokens(juce::String(ProjectInfo::versionString), ".", "");
+    if (seg.size() != 3) return juce::String(ProjectInfo::versionString);
+    return seg[0] + "." + juce::String(seg[1].getIntValue()).paddedLeft('0', 2)
+                  + "." + juce::String(seg[2].getIntValue()).paddedLeft('0', 2);
+}
 
 EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     : AudioProcessorEditor(&p), processorRef(p)
@@ -400,7 +441,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 
         auto d = me.getMeterData();
         juce::String line = juce::Time::getCurrentTime().toISO8601(true)
-            + "  v" + ProjectInfo::versionString
+            + "  v" + displayVersionString()
             + "  integ=" + juce::String(d.integrated, 1)
             + " st="     + juce::String(d.shortTerm, 1)
             + " tpMax="  + juce::String(juce::jmax(d.truePeakMaxL, d.truePeakMaxR), 1)
@@ -1499,6 +1540,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         repaint();
     };
     chainListPanel.onAddClick = [this] { showChainPluginPicker(); };
+    // Wet/dry: pure value writes into ChainHost (atomic, smoothed on the
+    // audio thread) — no rebuild, safe at knob-drag rate. Persisted via the
+    // chain slots XML on the next host state save.
+    chainListPanel.onSlotWet = [this](int i, float v) {
+        processorRef.getChainHost().setSlotWet(i, v);
+    };
+    chainListPanel.onMasterWet = [this](float v) {
+        processorRef.getChainHost().setMasterWet(v);
+    };
+    chainListPanel.masterKnob.setValue(processorRef.getChainHost().getMasterWet());
     addChildComponent(chainListPanel);
 
     // AI assistant sidebar toggle — collapsing gives the plugin display area
@@ -1746,6 +1797,27 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         addAndMakeVisible(chainBuildBtns[(size_t)i]);
     }
 
+    // ASK choice chips (Phase 1b, B2) — pill buttons in the shelf docked on
+    // top of the chat input. Tap = auto-send the formatted answer; the send
+    // path itself supersedes every pending ask (so the shelf also vanishes
+    // when the user ignores the chips and types free text).
+    for (int i = 0; i < kMaxAskChips; ++i)
+    {
+        askChipBtns[(size_t)i].setLookAndFeel(&askChipLnF_);
+        askChipBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
+        askChipBtns[(size_t)i].setVisible(false);
+        askChipBtns[(size_t)i].onClick = [this, i]()
+        {
+            if (!askShelfVisible_ || askChipQuestion_.isEmpty()) return;
+            // Answer format per CHAIN_AI_BUILD_SPEC: self-contained Q->A pair
+            // that survives history trimming (blocks are stripped in storage).
+            // sendChatMessage -> supersedePendingAsks marks + persists.
+            sendChatMessage(askChipLabels[(size_t)i]
+                            + " (answering: \"" + askChipQuestion_ + "\")");
+        };
+        addAndMakeVisible(askChipBtns[(size_t)i]);
+    }
+
     // Link tab has no persistent child components — painted directly.
 
     // FINAL evaluation pass, after EVERY component exists. The 2.9.70
@@ -1803,6 +1875,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 }
 
 EchoJayEditor::~EchoJayEditor() {
+    // Codec preview must never outlive its UI (25 Jul 2026): if the editor
+    // closes while codec mode is engaged, the processor would keep replacing
+    // the plugin output with the lossy render, invisibly, forever. Fade the
+    // monitor streams out; they self-stop on the audio thread.
+    if (codecModeActive_)
+    {
+        processorRef.cmpAudible.store(-1);
+        processorRef.fadeOutCompareStreams();
+    }
+
     ejTeardownLog("~EchoJayEditor enter");
     // Auto-parameter-mapping callbacks capture a SafePointer to this editor;
     // clear them so ChainHost (which outlives the editor) never invokes a
@@ -1938,7 +2020,7 @@ void EchoJayEditor::showLoginScreen()
     // Also hide compare fields
     aiCompareBtn.setVisible(false);
     codecsBtn_.setVisible(false);
-    if (codecPanel_.isVisible()) closeCodecPanel();
+    closeCodecPanel();   // also disengages codec preview if it was active
     compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
     refStatusLabel.setVisible(false);
     presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false); for (auto& b : refRemoveBtns) b.setVisible(false); compareClickCatcher.setVisible(false);
@@ -1975,7 +2057,8 @@ void EchoJayEditor::showMainScreen()
 
     auto info = api.getUserInfo();
     juce::String userText = info.displayName;
-    if (info.tierLevel >= 2) userText += "  STUDIO";
+    if (info.tierLevel >= 3) userText += "  STUDIO MAX";
+    else if (info.tierLevel >= 2) userText += "  STUDIO";
     else if (info.tierLevel >= 1) userText += "  PRO";
     userLabel.setText(userText, juce::dontSendNotification);
     userLabel.setColour(juce::Label::textColourId, info.isPro() ? C::purple : C::text2);
@@ -2148,7 +2231,12 @@ void EchoJayEditor::updateOnboardingPrompts()
     // ---- identical chat/topbar treatment for all three ----
     const bool chatOk = currentScreen == Screen::Main && !anyPrompt
                      && currentView != View::Settings
-                     && !(currentTab == Tab::Chain && chainChatCollapsed_);
+                     && !(currentTab == Tab::Chain && chainChatCollapsed_)
+                     // Review-modal flag: while the plugin-review overlay is
+                     // open it is a FULL-SCREEN modal — this per-tick pass
+                     // must not re-show the chat sidebar behind it (this was
+                     // the re-shower that defeated the earlier fixes).
+                     && !reviewOverlay.visibleState;
     chatScroll.setVisible(chatOk);
     chatInput.setVisible(chatOk);
     chatSendBtn.setVisible(chatOk);
@@ -2939,6 +3027,7 @@ void EchoJayEditor::applyPromptOverlayOcclusion()
 // the progress / status text fits without crowding the buttons.
 void EchoJayEditor::UpdateOverlay::paint(juce::Graphics& g)
 {
+    gEjZdbgPaint("UpdateOverlay", *this); // TEMP DEBUG [zdbg]
     auto bounds = getLocalBounds();
     
     // Dark backdrop covering the whole editor area we occupy
@@ -3153,6 +3242,7 @@ void EchoJayEditor::UpdateOverlay::mouseDown(const juce::MouseEvent& e)
 
 void EchoJayEditor::PluginReviewOverlay::paint(juce::Graphics& g)
 {
+    gEjZdbgPaint("PluginReviewOverlay", *this); // TEMP DEBUG [zdbg]
     // Dim everything behind the card.
     g.fillAll(juce::Colours::black.withAlpha(0.6f));
 
@@ -3285,10 +3375,74 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
         });
 }
 
+// ---- Review-modal visibility (25 Jul 2026, Option A) ----
+// SINGLE consistent path for everything behind the "Review your plugins"
+// overlay. The flag is reviewOverlay.visibleState; every place that SHOWS
+// Chain-tab content checks it (updateOnboardingPrompts chatOk, switchToTab's
+// Chain branch, resized()'s chain chrome, the timer's chat-input restore), so
+// periodic passes can never re-show hidden chrome — the failure mode behind
+// the previous four attempts. This method applies the immediate flip both
+// ways; restore is gated to the CURRENT tab exactly like switchToTab.
+void EchoJayEditor::applyReviewModalState()
+{
+    const bool modal   = reviewOverlay.visibleState;
+    const bool onChain = (currentTab == Tab::Chain);
+    // Rack (incl. hosted native editors — NSViews composite over lightweight
+    // components, so they must be HIDDEN, not out-z-ordered).
+    chainListPanel.setVisible(onChain && !modal);
+    // Chain header chrome.
+    const bool chrome = onChain && !modal && !compactMode && !visualOnlyMode;
+    chainChatToggleBtn.setVisible(chrome);
+    chainSlotCountLabel.setVisible(chrome);
+    // AI Assistant sidebar (Aa / disclaimer / model label / build + wave
+    // buttons all cascade off these in the layout + paint passes).
+    if (onChain && !compactMode)
+    {
+        const bool showChat = !modal && !chainChatCollapsed_;
+        chatScroll.setVisible(showChat);
+        chatInput.setVisible(showChat);
+        chatSendBtn.setVisible(showChat);
+        chatTextSizeBtn.setVisible(showChat);
+    }
+    if (modal)
+    {
+        for (int i = 0; i < kMaxChainBuildBtns; ++i) chainBuildBtns[(size_t)i].setVisible(false);
+        for (int i = 0; i < kMaxWavePlayBtns; ++i)  wavePlayOverlays[(size_t)i].setVisible(false);
+    }
+
+    // TEMP DEBUG [zdbg]: prove the state of every card-painting suspect the
+    // instant the modal flips.
+    gEjReviewModalDbg = modal;
+    auto st = [](juce::Component& c) {
+        return juce::String(c.isVisible() ? "VISIBLE " : "hidden  ") + c.getBounds().toString();
+    };
+    zdbg(juce::String("applyReviewModalState modal=") + (modal ? "1" : "0")
+        + " tab=" + juce::String((int)currentTab)
+        + " | chainListPanel " + st(chainListPanel)
+        + " | updateOverlay "  + st(updateOverlay)
+        + " | onboarding "     + st(onboardingOverlay_)
+        + " | reviewOverlay "  + st(reviewOverlay)
+        + " | reviewViewport " + st(reviewViewport)
+        + " | card=" + reviewOverlay.cardBounds.toString());
+}
+
 void EchoJayEditor::showPluginReview()
 {
+    // 25 Jul 2026: the review modal LIVES ON THE SETTINGS TAB. Plugin review
+    // is a settings function, and Settings has no chain rack / native hosted
+    // editor / GL surface to draw through the overlay — this ends the z-order
+    // fight at the root. Remember where the user was; Done/X returns them.
+    if (currentTab != Tab::Settings)
+    {
+        reviewReturnTab_ = currentTab;
+        switchToTab(Tab::Settings);
+    }
+    else
+        reviewReturnTab_ = Tab::Settings;
+
     reviewOverlay.visibleState = true;
     reviewOverlay.setVisible(true);
+    applyReviewModalState();   // belt-and-braces: chain set stays hidden
     resized(); // hide the (OpenGL) particle visualiser so it can't composite
                // over the overlay; also lays everything out
     reviewOverlay.toFront(false);
@@ -3302,6 +3456,11 @@ void EchoJayEditor::hidePluginReview()
 {
     reviewOverlay.visibleState = false;
     reviewOverlay.setVisible(false);
+    applyReviewModalState();   // restore, gated to the current tab
+    // Return to the tab the user came from (no-op when they opened the
+    // review from Settings itself).
+    if (currentTab == Tab::Settings && reviewReturnTab_ != Tab::Settings)
+        switchToTab(reviewReturnTab_);
     resized(); // bring the particle visualiser back
     repaint();
 }
@@ -3742,7 +3901,7 @@ void EchoJayEditor::hideCompareView()
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     aiCompareBtn.setVisible(false);
     codecsBtn_.setVisible(false);
-    if (codecPanel_.isVisible()) closeCodecPanel();
+    closeCodecPanel();   // also disengages codec preview if it was active
     // Don't stop AB playback — let ref keep playing through plugin when switching views
     compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
     refStatusLabel.setVisible(false);
@@ -4233,6 +4392,10 @@ void EchoJayEditor::openCodecPanel()
 void EchoJayEditor::closeCodecPanel()
 {
     codecPanel_.setVisible(false);
+    // SAFETY (25 Jul 2026): dismissing the codec UI by ANY route fully
+    // disengages codec preview. It is an audition tool; the plugin output
+    // must never stay on the lossy render behind a closed window.
+    if (codecModeActive_) exitCodecMode();
 }
 
 void EchoJayEditor::startCodecRender(int presetIdx)
@@ -4323,7 +4486,7 @@ void EchoJayEditor::enterCodecMode(int presetIdx, bool normalised,
     }
     processorRef.cmpAudible.store(0);
 
-    closeCodecPanel();
+    codecPanel_.setVisible(false);   // hide only: codec mode is ENGAGING here
     updateComparePlayBtns();
     repaint();
     EchoJay_NSLog(("EJCodec: codec mode ON " + rendLabel
@@ -4335,21 +4498,33 @@ void EchoJayEditor::exitCodecMode()
     if (!codecModeActive_) return;
     codecModeActive_ = false;
 
-    processorRef.stopCompareStream(0);
-    processorRef.stopCompareStream(1);
+    // Fade the lossy monitor out FIRST (8ms crossfade back to the clean DAW
+    // signal in processBlock), then restore the saved slots once the ramp is
+    // done. No click, and clean audio is back within ~10ms of dismissal.
+    processorRef.cmpAudible.store(-1);
+    processorRef.fadeOutCompareStreams();
 
-    compareTop_ = codecSavedTop_;
-    compareBot_ = codecSavedBot_;
-
-    updateCompareSlotBtn(true);
-    updateCompareSlotBtn(false);
-    startCompareStream(0);
-    startCompareStream(1);
-    processorRef.cmpBothCaptures.store(bothSlotsAreCaptures());
+    juce::Component::SafePointer<EchoJayEditor> safeThis(this);
+    juce::Timer::callAfterDelay(60, [safeThis]
+    {
+        if (safeThis == nullptr) return;
+        auto* ed = safeThis.getComponent();
+        ed->processorRef.stopCompareStream(0);
+        ed->processorRef.stopCompareStream(1);
+        ed->compareTop_ = ed->codecSavedTop_;
+        ed->compareBot_ = ed->codecSavedBot_;
+        ed->updateCompareSlotBtn(true);
+        ed->updateCompareSlotBtn(false);
+        ed->startCompareStream(0);
+        ed->startCompareStream(1);
+        ed->processorRef.cmpBothCaptures.store(ed->bothSlotsAreCaptures());
+        ed->updateComparePlayBtns();
+        ed->repaint();
+    });
 
     updateComparePlayBtns();
     repaint();
-    EchoJay_NSLog("EJCodec: codec mode OFF (slots restored)");
+    EchoJay_NSLog("EJCodec: codec mode OFF (fading out, slots restore after ramp)");
 }
 
 // ---- CodecLaunchBtn: feature-launcher (outline doorway, not a toggle) ------
@@ -4418,7 +4593,7 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
     const int nRows = ((int) ps.size() + 1) / 2;
     const int cardH = 58, cardGap = 8;
     const int w = juce::jmin(500, getWidth() - 60);
-    const int h = 96 + nRows * (cardH + cardGap) + 88;
+    const int h = 96 + nRows * (cardH + cardGap) + 108;   // +20: close-behaviour notice
     juce::Rectangle<int> card((getWidth() - w) / 2, (getHeight() - h) / 2, w, h);
 
     g.setColour(C::bg2);
@@ -4516,6 +4691,13 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
     g.drawText("Gain-matched so you hear the codec, not a level drop.",
                r.removeFromTop(16).withTrimmedLeft(24),
                juce::Justification::centredLeft, true);
+
+    // Close-behaviour notice (25 Jul 2026): closing the panel disengages
+    // codec preview entirely. Subtle cyan on dark, house style.
+    g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.75f));
+    g.setFont(juce::Font(juce::FontOptions(10.5f)));
+    g.drawText("Closing this turns codec preview off. Your audio returns to full quality.",
+               r.removeFromTop(18), juce::Justification::centredLeft, true);
 
     // Status / error line
     if (owner->codecStatus_.isNotEmpty())
@@ -5295,7 +5477,7 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
         bool topIsLive = (compareTop_.kind == CompareSlotState::Kind::Live);
         switch (compareMeterId_)
         {
-            case 1:  paintCompareSpectrum(g, topRect, md, topIsLive); break;
+            case 1:  paintCompareSpectrum(g, topRect, md, topIsLive, true); break;
             case 2:  paintLevelsPanel  (g, topRect, md); break;
             case 3:  paintStereoPanel  (g, topRect, md); break;
             case 4:  paintLoudnessPanel(g, topRect, md); break;
@@ -5342,7 +5524,7 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
             bool botIsLive = (compareBot_.kind == CompareSlotState::Kind::Live);
             switch (compareMeterId_)
             {
-                case 1:  paintCompareSpectrum(g, botRect, md, botIsLive); break;
+                case 1:  paintCompareSpectrum(g, botRect, md, botIsLive, false); break;
                 case 2:  paintLevelsPanel  (g, botRect, md); break;
                 case 3:  paintStereoPanel  (g, botRect, md); break;
                 case 4:  paintLoudnessPanel(g, botRect, md); break;
@@ -5378,6 +5560,12 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
 void EchoJayEditor::paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int> area,
                                           const CompareSlotState& slot, bool isPlaying)
 {
+    // Waveform samples are raw and unclamped (can exceed ±1.0 on hot signal),
+    // so everything this function draws is hard-clipped to the panel rect.
+    // Shared by both A and B panels — clipping here covers both by construction.
+    juce::Graphics::ScopedSaveState clipState(g);
+    g.reduceClipRegion(area);
+
     // Background
     g.setColour(C::bg2);
     g.fillRoundedRectangle(area.toFloat(), 6.0f);
@@ -5419,8 +5607,13 @@ void EchoJayEditor::paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int>
             int idx = (startIdx + i) % MeterData::waveformSize;
             auto& wp = md.waveform[(size_t)idx];
             float px  = (float)inner.getX() + (float)i * pxPerPt;
-            float top = centreY - wp.maxVal * halfH;
-            float bot = centreY - wp.minVal * halfH;
+            // Samples are unclamped (hot signal exceeds +/-1). Clamp BEFORE
+            // scaling so the bar maths itself cannot leave `inner` — the
+            // clip above is then a second line of defence, not the only one.
+            float mxv = juce::jlimit(-1.0f, 1.0f, wp.maxVal);
+            float mnv = juce::jlimit(-1.0f, 1.0f, wp.minVal);
+            float top = centreY - mxv * halfH;
+            float bot = centreY - mnv * halfH;
             float bH  = std::max(1.0f, bot - top);
             float frac = (float)i / (float)drawCount;
             g.setColour(C::blue.interpolatedWith(C::purple, frac).withAlpha(0.75f));
@@ -5525,8 +5718,10 @@ void EchoJayEditor::paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int>
     for (int i = 0; i < numPts; ++i)
     {
         float px  = (float)inner.getX() + (float)i * pxPerPt;
-        float top = centreY - pts[(size_t)i].maxVal * halfH;
-        float bot = centreY - pts[(size_t)i].minVal * halfH;
+        // Same clamp as the live path: stored thumbnails can carry hot
+        // (>|1|) points; bars must max out at the inner rect edges.
+        float top = centreY - juce::jlimit(-1.0f, 1.0f, pts[(size_t)i].maxVal) * halfH;
+        float bot = centreY - juce::jlimit(-1.0f, 1.0f, pts[(size_t)i].minVal) * halfH;
         float bH  = std::max(1.0f, bot - top);
         float frac = (float)i / (float)numPts;
         // Dim bars past the playhead when playing
@@ -5567,7 +5762,7 @@ void EchoJayEditor::paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int>
 // ============================================================================
 
 void EchoJayEditor::paintCompareSpectrum(juce::Graphics& g, juce::Rectangle<int> area,
-                                          const MeterData& md, bool isLive)
+                                          const MeterData& md, bool isLive, bool isTop)
 {
     drawPanel(g, area, "SPECTRUM", C::purple);
 
@@ -5576,14 +5771,10 @@ void EchoJayEditor::paintCompareSpectrum(juce::Graphics& g, juce::Rectangle<int>
     if (w < 4 || h < 10) return;
     int barMaxH = h - 14;
 
-    constexpr int N = MeterData::numSpecBins; // 64
-
-    // Auto-range from this panel's data only
+    // Placeholder when there is truly no data
     float peakDb = -120.0f;
-    for (int i = 0; i < N; ++i)
+    for (int i = 0; i < MeterData::numSpecBins; ++i)
         if (md.spectrum[(size_t)i] > peakDb) peakDb = md.spectrum[(size_t)i];
-
-    // Show placeholder when there is truly no data
     if (peakDb < -119.0f)
     {
         g.setColour(C::text3);
@@ -5593,58 +5784,40 @@ void EchoJayEditor::paintCompareSpectrum(juce::Graphics& g, juce::Rectangle<int>
         return;
     }
 
-    float dbMax = std::max(-20.0f, peakDb + 3.0f);
-    float dbMin = dbMax - 66.0f;
-
-    const double logMin = std::log2(20.0), logMax = std::log2(20000.0);
-    int numInterp = juce::jmin(w, 256);
-
-    // Cubic Catmull-Rom interpolation across bins
-    auto getInterp = [&](float fBin) -> float {
-        int i0  = juce::jlimit(0, N - 1, (int)fBin);
-        int i1  = juce::jlimit(0, N - 1, i0 + 1);
-        int im1 = juce::jlimit(0, N - 1, i0 - 1);
-        int i2  = juce::jlimit(0, N - 1, i0 + 2);
-        float t = fBin - (float)i0;
-        float a = md.spectrum[(size_t)im1], b = md.spectrum[(size_t)i0];
-        float c = md.spectrum[(size_t)i1],  d = md.spectrum[(size_t)i2];
-        return b + 0.5f * t * (c - a + t * (2.0f*a - 5.0f*b + 4.0f*c - d
-                                              + t * (3.0f*(b - c) + d - a)));
-    };
-
-    juce::Path fillPath, linePath;
-    fillPath.startNewSubPath((float)x, (float)(y + barMaxH));
-    bool lineStarted = false;
-
-    for (int i = 0; i < numInterp; ++i)
-    {
-        float fBin = (float)i / (float)(numInterp - 1) * (float)(N - 1);
-        float db   = juce::jlimit(dbMin, dbMax, getInterp(fBin));
-        float n    = (db - dbMin) / (dbMax - dbMin);
-        double binFreq  = 20.0 * std::pow(2.0, (double)fBin / (double)N * (logMax - logMin));
-        double normPos  = (std::log2(binFreq) - logMin) / (logMax - logMin);
-        float px = (float)x + (float)(normPos * w);
-        float py = (float)(y + barMaxH) - n * (float)barMaxH;
-        fillPath.lineTo(px, py);
-        if (!lineStarted) { linePath.startNewSubPath(px, py); lineStarted = true; }
-        else              linePath.lineTo(px, py);
-    }
-    fillPath.lineTo((float)(x + w), (float)(y + barMaxH));
-    fillPath.closeSubPath();
-
     g.saveState();
     g.reduceClipRegion(x, y, w, h);
 
-    // Filled area
-    juce::ColourGradient grad(
-        C::blue.withAlpha(0.5f),   (float)x, (float)(y + barMaxH),
-        C::purple.withAlpha(0.65f),(float)x, (float)y, false);
-    g.setGradientFill(grad);
-    g.fillPath(fillPath);
+    // Shared renderer — identical pipeline to the main SPECTRUM panel.
+    // A (top) = cyan heat-map, B (bottom) = pink/coral comparison identity.
+    // SOURCE selection mirrors getSlotMeterData: a Live slot reads the MAIN
+    // engine; a slot whose compare stream is PLAYING reads its own compare
+    // MeterEngine, which runs the identical 4096 visual FFT on that slot's
+    // audio — same processing chain, not just the same paint call. Only a
+    // truly static stored slot falls back to its 64-bin data via the
+    // log→linear adapter (its serialised format has no finer detail).
+    const int slotIdx = isTop ? 0 : 1;
+    const bool streamPlaying = processorRef.cmpStream[slotIdx].playing.load();
 
-    // Outline
-    g.setColour(juce::Colours::white.withAlpha(0.35f));
-    g.strokePath(linePath, juce::PathStrokeType(1.0f));
+    SpectrumCurveStyle style;
+    style.cyanHeat = isTop;
+    if (isLive || streamPlaying)
+    {
+        auto& eng = isLive ? processorRef.getMeterEngine()
+                           : processorRef.getCompareMeter(slotIdx);
+        std::array<float, MeterEngine::kVisBins> visDb;
+        double visBinHz = 0.0;
+        eng.getVisualSpectrum(visDb, visBinHz);
+        if (visBinHz <= 0.0) visBinHz = 44100.0 / (double)MeterEngine::kVisFftSize;
+        style.lerpState = isTop ? &compareTopCurveState_ : &compareBotCurveState_;
+        paintSpectrumCurve(g, x, y, w, barMaxH, visDb, visBinHz, style);
+    }
+    else
+    {
+        // Static stored capture: 64 log display bins resampled onto the grid
+        const double visBinHz = 44100.0 / (double)MeterEngine::kVisFftSize;
+        paintSpectrumCurve(g, x, y, w, barMaxH,
+                           expandLog64Spectrum(md.spectrum, visBinHz), visBinHz, style);
+    }
 
     g.restoreState();
 
@@ -5954,13 +6127,16 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             // Show AI assistant chat on the right (unless collapsed)
             if (!compactMode)
             {
-                bool showChat = !chainChatCollapsed_;
+                // Gated on the review-modal flag like every Chain visibility site.
+                bool showChat = !chainChatCollapsed_ && !reviewOverlay.visibleState;
                 chatScroll.setVisible(showChat);
                 chatInput.setVisible(showChat);
                 chatSendBtn.setVisible(showChat);
             }
-            // Show CHAIN tab component
-            chainListPanel.setVisible(true);
+            // Show CHAIN tab component (never above the plugin-review
+            // overlay: its hosted editor is a native NSView that would
+            // composite over the overlay regardless of z-order)
+            chainListPanel.setVisible(!reviewOverlay.visibleState);
             {
                 auto& ch = processorRef.getChainHost();
                 // Auto-start a scan on first open (data ready for picker popup)
@@ -5971,6 +6147,7 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
                 chainPluginList.updateContent();
                 // Rebuild rack strip from current chain state
                 chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+                chainListPanel.masterKnob.setValue(ch.getMasterWet());
                 // Rebuild resolver
                 ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
                 // Prefetch param maps for known fingerprints (throttled inside)
@@ -6881,6 +7058,8 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             cm.reviewId  = msg.reviewId;
             cm.chainData = msg.chainJson;  // restore persisted chain block → rebuilds Build button
             cm.gainData  = msg.gainJson;   // restore gain proposals + their applied/undone state
+            cm.askData   = msg.askJson;    // restore ask chips + answered state
+            cm.askAnswered = msg.askAnswered;
 
             // Reconstruct capture block from stored review.
             // Helper lambda — populates cm from a resolved WsReview.
@@ -7738,7 +7917,7 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     // Help & Support button. (Credits moved into the ACCOUNT card.) ===
     if (api.isLoggedIn())
     {
-        juce::String line = juce::String::fromUTF8("v") + ProjectInfo::versionString;
+        juce::String line = juce::String::fromUTF8("v") + displayVersionString();
         int endX = settingsHelpBtn.getX();
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f)));
@@ -7802,12 +7981,16 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             auto info = api.getUserInfo();
             juce::String plan = info.usagePool.present && info.usagePool.tierLabel.isNotEmpty()
                               ? info.usagePool.tierLabel.toUpperCase()
-                              : juce::String(info.tierLevel >= 2 ? "STUDIO"
+                              : juce::String(info.tierLevel >= 3 ? "STUDIO MAX"
+                              : info.tierLevel >= 2 ? "STUDIO"
                               : info.tierLevel >= 1 ? "PRO" : "FREE");
-            juce::Rectangle<int> badge(a.getX() + 14, a.getY() + 26, 56, 18);
-            g.setColour(info.tierLevel > 0 ? C::purple.withAlpha(0.3f) : C::bg4);
+            // Wider than the old 56px so "STUDIO MAX" cannot clip at 9.5pt bold.
+            juce::Rectangle<int> badge(a.getX() + 14, a.getY() + 26, 74, 18);
+            // Flat web-app palette: paid = navy #0b1220 / cyan #22d3ee, free =
+            // muted #141a24 / #94a3b8. No purple tint.
+            g.setColour(info.tierLevel > 0 ? juce::Colour(0xff0b1220) : juce::Colour(0xff141a24));
             g.fillRoundedRectangle(badge.toFloat(), 9.0f);
-            g.setColour(info.tierLevel > 0 ? C::blue2 : C::text2);
+            g.setColour(info.tierLevel > 0 ? juce::Colour(0xff22d3ee) : juce::Colour(0xff94a3b8));
             g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
             g.drawText(plan, badge, juce::Justification::centred);
 
@@ -7857,12 +8040,35 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
                 // Absent names keep the plain copy: no guess, no suffix.
                 const auto middot = juce::String::fromUTF8(" \xc2\xb7 ");
                 const auto& tm = info.tierModels;
+                // Reset copy from the server's per-lane resetAt (accurate), static
+                // fallback when null. Free chat is a rolling 24h window (resetAt =
+                // window end, null when no window is open); free premium resets on
+                // the signup anniversary.
+                auto chatResetCopy = [](const juce::String& iso) -> juce::String {
+                    if (iso.isNotEmpty()) {
+                        auto t = juce::Time::fromISO8601(iso);
+                        if (t.toMilliseconds() > 0) {
+                            auto ms = t.toMilliseconds() - juce::Time::getCurrentTime().toMilliseconds();
+                            if (ms <= 0) return "Resets soon";
+                            int hrs = juce::jmax(1, (int) std::lround(ms / 3600000.0));
+                            return "Resets in " + juce::String(hrs) + (hrs == 1 ? " hour" : " hours");
+                        }
+                    }
+                    return "Resets 24 hours after your first chat";
+                };
+                auto premiumResetCopy = [](const juce::String& iso) -> juce::String {
+                    if (iso.isNotEmpty()) {
+                        auto t = juce::Time::fromISO8601(iso);
+                        if (t.toMilliseconds() > 0) return "Resets " + t.formatted("%d %b");
+                    }
+                    return "Resets monthly on your signup date";
+                };
                 laneBar(tm.chat.isNotEmpty() ? "Chats" + middot + tm.chat
                                              : juce::String("Chats"),
-                        info.usagePool.chats, "Resets daily");
+                        info.usagePool.chats, chatResetCopy(info.usagePool.chats.resetAt));
                 laneBar(tm.premium.isNotEmpty() ? "Premium" + middot + tm.premium
                                                 : juce::String("Premium actions"),
-                        info.usagePool.premium, "Resets monthly, on the 1st");
+                        info.usagePool.premium, premiumResetCopy(info.usagePool.premium.resetAt));
             }
             else
             {
@@ -7909,7 +8115,9 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
             {
                 g.setColour(C::text2);
                 g.setFont(juce::Font(juce::FontOptions(10.5f)));
-                g.drawText(plan == "PRO" ? "Pro plan active" : "Studio plan active",
+                g.drawText(info.tierLevel >= 3 ? "Studio Max plan active"
+                         : info.tierLevel >= 2 ? "Studio plan active"
+                                               : "Pro plan active",
                            a.getX() + 14, a.getY() + acct.statusYRel,
                            a.getWidth() - 28, 16, juce::Justification::centredLeft);
             }
@@ -8585,22 +8793,53 @@ void EchoJayEditor::saveSpectrogramMode() const
 // display bins vertical, magnitude as colour. History lives in a persistent
 // kSpecHistFrames x 64 image that is blit-scrolled left one column per new
 // frame and drawn scaled — the whole history is never repainted cell by cell.
-void EchoJayEditor::paintSpectrogramContent(juce::Graphics& g, int x, int y, int w, int h)
+// Catmull-Rom across the 64 log display bins at a fractional bin position.
+// File-scope so both the spectrogram row render and (via its own lambda
+// mirror) the spectrum curve agree on interpolation behaviour.
+static float ejInterpSpecBins(const std::array<float, 64>& s, float fBin)
 {
-    constexpr int H = MeterEngine::kSpecHistFrames;
-    if (spectroImg.isNull())
-    {
-        spectroImg = juce::Image(juce::Image::ARGB, H, 64, true);
-        juce::Graphics ig(spectroImg);
-        ig.fillAll(juce::Colour(0xff080A12));
-    }
+    constexpr int N = 64;
+    int i0  = juce::jlimit(0, N - 1, (int)fBin);
+    int i1  = juce::jlimit(0, N - 1, i0 + 1);
+    int im1 = juce::jlimit(0, N - 1, i0 - 1);
+    int i2  = juce::jlimit(0, N - 1, i0 + 2);
+    float t = fBin - (float)i0;
+    float a = s[(size_t)im1], b = s[(size_t)i0];
+    float c = s[(size_t)i1], d = s[(size_t)i2];
+    return b + 0.5f * t * (c - a + t * (2.0f*a - 5.0f*b + 4.0f*c - d + t * (3.0f*(b-c) + d - a)));
+}
 
-    // Colour LUT — navy floor through cyan into coral for the top few dB.
-    // Index maps dB in [-70, 0]; mild gamma lift keeps mid-level texture
-    // visible on real material.
-    static const std::array<juce::Colour, 256> lut = []
+void EchoJayEditor::ensureVisualiserTexture()
+{
+    if (visualiserTexture_.isValid() && spectroPaletteInit_) return;
+
+    if (!visualiserTexture_.isValid())
+        visualiserTexture_ = juce::ImageFileFormat::loadFrom(
+            visualiserTexturePNG, (size_t)visualiserTexturePNGSize);
+
+    if (spectroPaletteInit_) return;
+
+    if (visualiserTexture_.isValid())
     {
-        std::array<juce::Colour, 256> t {};
+        // colourForLevel palette: walk the texture diagonally with level and
+        // scale brightness by (0.4 + level), so silence sits dim navy and
+        // peaks bloom bright — the same material the SPECTRUM fill shows.
+        const int tw = visualiserTexture_.getWidth(), th = visualiserTexture_.getHeight();
+        for (int i = 0; i < 256; ++i)
+        {
+            float level = (float)i / 255.0f;
+            auto c = visualiserTexture_.getPixelAt((int)(level * (float)(tw - 1)),
+                                                   (int)(level * (float)(th - 1)));
+            float bright = 0.4f + level;
+            spectroPalette_[(size_t)i] = juce::Colour::fromFloatRGBA(
+                juce::jmin(1.0f, c.getFloatRed()   * bright),
+                juce::jmin(1.0f, c.getFloatGreen() * bright),
+                juce::jmin(1.0f, c.getFloatBlue()  * bright), 1.0f);
+        }
+    }
+    else
+    {
+        // Decode failure fallback: previous navy→cyan→coral ramp
         const auto bg    = juce::Colour(0xff080A12);
         const auto blue  = juce::Colour(0xff1d4ed8);
         const auto cyan  = juce::Colour(0xff22d3ee);
@@ -8614,13 +8853,27 @@ void EchoJayEditor::paintSpectrogramContent(juce::Graphics& g, int x, int y, int
             else if (v < 0.75f) c = blue.interpolatedWith(cyan,  (v - 0.45f) / 0.30f);
             else if (v < 0.92f) c = cyan.interpolatedWith(light, (v - 0.75f) / 0.17f);
             else                c = light.interpolatedWith(coral,(v - 0.92f) / 0.08f);
-            t[(size_t)i] = c;
+            spectroPalette_[(size_t)i] = c;
         }
-        return t;
-    }();
+    }
+    spectroPaletteInit_ = true;
+}
+
+void EchoJayEditor::paintSpectrogramContent(juce::Graphics& g, int x, int y, int w, int h)
+{
+    constexpr int H = MeterEngine::kSpecHistFrames;
+    ensureVisualiserTexture();
+    if (spectroImg.isNull())
+    {
+        spectroImg = juce::Image(juce::Image::ARGB, H, kSpectroRows, true);
+        juce::Graphics ig(spectroImg);
+        ig.fillAll(juce::Colour(0xff080A12));
+    }
 
     // Pull new frames (engine decimates to ~25 fps, max-aggregated, frozen
-    // during silence) and blit-scroll them in
+    // during silence) and blit-scroll them in. Each column is rendered at
+    // kSpectroRows with Catmull-Rom interpolation across the 64 log bins —
+    // no bin-to-row-block snapping — coloured through the texture palette.
     std::array<std::array<float, 64>, 32> fresh;
     int newCounter = 0;
     int n = processorRef.getMeterEngine().getSpectrogramFrames(
@@ -8628,23 +8881,25 @@ void EchoJayEditor::paintSpectrogramContent(juce::Graphics& g, int x, int y, int
     spectroFrameCounter_ = newCounter;
     if (n > 0)
     {
-        spectroImg.moveImageSection(0, 0, n, 0, H - n, 64);
+        spectroImg.moveImageSection(0, 0, n, 0, H - n, kSpectroRows);
         juce::Image::BitmapData bd(spectroImg, juce::Image::BitmapData::writeOnly);
         for (int f2 = 0; f2 < n; ++f2)
         {
             int px = H - n + f2;
-            for (int b = 0; b < 64; ++b)
+            for (int r = 0; r < kSpectroRows; ++r)
             {
-                float db = fresh[(size_t)f2][(size_t)b];
+                float fBin = (float)r / (float)(kSpectroRows - 1) * 63.0f;
+                float db = ejInterpSpecBins(fresh[(size_t)f2], fBin);
                 int li = juce::jlimit(0, 255, (int)((db + 70.0f) * (255.0f / 70.0f)));
-                bd.setPixelColour(px, 63 - b, lut[(size_t)li]); // bin 0 = bottom
+                // row 0 of the image = top = highest bin
+                bd.setPixelColour(px, kSpectroRows - 1 - r, spectroPalette_[(size_t)li]);
             }
         }
     }
 
     g.saveState();
-    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
-    g.drawImage(spectroImg, x, y, w, h, 0, 0, H, 64);
+    g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+    g.drawImage(spectroImg, x, y, w, h, 0, 0, H, kSpectroRows);
     g.restoreState();
 
     // Frequency gridlines/labels — same positions as the spectrum axis
@@ -8662,6 +8917,301 @@ void EchoJayEditor::paintSpectrogramContent(juce::Graphics& g, int x, int y, int
         g.setColour(C::text3.withAlpha(0.55f));
         g.setFont(juce::Font(juce::FontOptions(7.5f)));
         g.drawText(m2.label, x + 3, fy - 10, 26, 9, juce::Justification::centredLeft);
+    }
+}
+
+// ===== SPECTRUM display tuning (display-only; the analysis FFT and its
+// serialised macroBands output are untouched by all of these) =====
+// Tilt lifts the highs so broadband material sits visually flat-ish and the
+// curve lands gracefully at 20k instead of nose-diving. Applied at draw
+// time only, referenced to 1 kHz.
+static constexpr float kSpectrumTiltDbPerOct = 4.5f;
+// Frame-to-frame lerp for the visual-FFT bins — higher = snappier, keeps
+// Pro-Q-style peaks from being rounded off.
+static constexpr float kSpectrumVisLerp = 0.5f;
+// Light frequency-axis moving average (bins, centred) — calms noise-floor
+// jitter without rounding real peaks. Keep small; 1 disables.
+static constexpr int kSpectrumSmoothBins = 5;
+// Median gate ahead of the mean — rejects SINGLE hot bins (needle spikes)
+// outright while peaks spanning multiple bins pass through, which a mean
+// cannot do. Odd, max 9; 1 disables. Order: median → mean → path.
+static constexpr int kSpectrumMedianBins = 3;
+
+// Adapter: 64 log-spaced display bins (stored captures / MeterData.spectrum)
+// resampled onto the renderer's linear-frequency grid (Catmull-Rom in
+// log-bin space). Display-only; invents nothing beyond interpolation.
+std::array<float, MeterEngine::kVisBins> EchoJayEditor::expandLog64Spectrum(
+    const std::array<float, 64>& logBins, double visBinHz)
+{
+    std::array<float, MeterEngine::kVisBins> out;
+    const double lgMin = std::log2(20.0), lgMax = std::log2(20000.0);
+    for (int k = 0; k < MeterEngine::kVisBins; ++k)
+    {
+        double f = juce::jlimit(20.0, 20000.0, (double)k * visBinHz);
+        float fBin = (float)((std::log2(f) - lgMin) / (lgMax - lgMin) * 63.0);
+        out[(size_t)k] = ejInterpSpecBins(logBins, fBin);
+    }
+    return out;
+}
+
+// The ONE spectrum-curve render path — main SPECTRUM panel and both Compare
+// panels call this, so the look can never drift. Pipeline: optional frame
+// lerp → median gate → mean smoothing → tilt + auto-range → region-aware
+// clamped Catmull-Rom spline → heat-map fill, glow, crisp line, optional
+// peak hold. All display-only; analysis FFT / macroBands untouched.
+void EchoJayEditor::paintSpectrumCurve(juce::Graphics& g, int x, int y, int w, int barMaxH,
+                                       const std::array<float, MeterEngine::kVisBins>& binsIn,
+                                       double visBinHz, const SpectrumCurveStyle& style)
+{
+    if (w < 4 || barMaxH < 10 || visBinHz <= 0.0) return;
+
+    // Optional frame-to-frame lerp (live sources); static data renders as-is
+    const std::array<float, MeterEngine::kVisBins>* src = &binsIn;
+    if (style.lerpState != nullptr)
+    {
+        auto& st = *style.lerpState;
+        if (!st.init) { st.smoothed = binsIn; st.init = true; }
+        for (int i = 0; i < MeterEngine::kVisBins; ++i)
+            st.smoothed[(size_t)i] += (binsIn[(size_t)i] - st.smoothed[(size_t)i]) * kSpectrumVisLerp;
+        src = &st.smoothed;
+    }
+    const auto& visSmoothed = *src;
+
+    // Median gate FIRST (kSpectrumMedianBins): a single hot FFT bin is an
+    // outlier against its neighbours and gets replaced by the window median;
+    // a genuine peak spanning several bins IS its own median and survives.
+    static_assert(kSpectrumMedianBins <= 9, "median window buffer is 9 wide");
+    std::array<float, MeterEngine::kVisBins> visMedian;
+    {
+        constexpr int mRadius = kSpectrumMedianBins / 2;
+        if (mRadius <= 0)
+            visMedian = visSmoothed;
+        else
+            for (int i = 0; i < MeterEngine::kVisBins; ++i)
+            {
+                float win[9];
+                int cnt = 0;
+                for (int k = juce::jmax(0, i - mRadius);
+                     k <= juce::jmin(MeterEngine::kVisBins - 1, i + mRadius); ++k)
+                    win[cnt++] = visSmoothed[(size_t)k];
+                std::sort(win, win + cnt);
+                visMedian[(size_t)i] = win[cnt / 2];
+            }
+    }
+
+    // Light frequency-axis smoothing (kSpectrumSmoothBins moving average)
+    std::array<float, MeterEngine::kVisBins> visDisplay;
+    {
+        constexpr int radius = kSpectrumSmoothBins / 2;
+        if (radius <= 0)
+            visDisplay = visMedian;
+        else
+            for (int i = 0; i < MeterEngine::kVisBins; ++i)
+            {
+                float sum = 0.0f; int cnt = 0;
+                for (int k = juce::jmax(0, i - radius);
+                     k <= juce::jmin(MeterEngine::kVisBins - 1, i + radius); ++k)
+                    { sum += visMedian[(size_t)k]; ++cnt; }
+                visDisplay[(size_t)i] = sum / (float)cnt;
+            }
+    }
+
+    // Optional peak hold — rise instantly, fall slowly
+    const bool hasPeak = style.peakHold != nullptr && style.peakHoldInit != nullptr;
+    if (hasPeak)
+    {
+        auto& ph = *style.peakHold;
+        if (!*style.peakHoldInit) { ph = visDisplay; *style.peakHoldInit = true; }
+        for (int i = 0; i < MeterEngine::kVisBins; ++i) {
+            if (visDisplay[(size_t)i] > ph[(size_t)i]) ph[(size_t)i] = visDisplay[(size_t)i];
+            else                                       ph[(size_t)i] -= 0.35f;
+        }
+    }
+
+    // Display tilt (dB at this frequency, re 1 kHz) — display-only
+    auto tilted = [](float db, double freq) {
+        return db + kSpectrumTiltDbPerOct * (float)std::log2(freq / 1000.0);
+    };
+
+    // Auto-range over TILTED values; 20 Hz .. 20 kHz bins only
+    const int binLoLimit = juce::jmax(1, (int)(20.0 / visBinHz));
+    const int binHiLimit = juce::jmin(MeterEngine::kVisBins - 1, (int)(20000.0 / visBinHz));
+    float vPeak = -200.0f;
+    for (int k = binLoLimit; k <= binHiLimit; ++k) {
+        double f = k * visBinHz;
+        vPeak = juce::jmax(vPeak, tilted(visDisplay[(size_t)k], f));
+        if (hasPeak)
+            vPeak = juce::jmax(vPeak, tilted((*style.peakHold)[(size_t)k], f));
+    }
+    const float vDbMax = std::max(-20.0f, vPeak + 3.0f);
+    const float vDbMin = vDbMax - 66.0f;
+
+    // Region-aware knot sampling + clamped Catmull-Rom spline emit
+    auto buildVisPath = [&](const std::array<float, MeterEngine::kVisBins>& bins,
+                            bool closed) -> juce::Path
+    {
+        const double lgMin = std::log2(20.0), lgMax = std::log2(20000.0);
+        const double dLog = (w > 1) ? (lgMax - lgMin) / (double)(w - 1) : 0.0;
+
+        // Region crossover: below fCross one FFT bin spans MORE than one
+        // pixel (sparse bass — per-pixel sampling would emit colinear points
+        // the spline cannot round), above it bins are denser than pixels
+        // (per-pixel peak-pick keeps the spikes).
+        const double fCross = (dLog > 0.0)
+            ? juce::jlimit(20.0, 20000.0, visBinHz / (std::pow(2.0, dLog) - 1.0))
+            : 20.0;
+
+        auto freqToX = [&](double freq) {
+            return (float)x + (float)((std::log2(freq) - lgMin) / (lgMax - lgMin)
+                                      * (double)(w - 1));
+        };
+        auto dbToY = [&](float db, double freq) {
+            db = juce::jlimit(vDbMin, vDbMax, tilted(db, freq));
+            float n2 = (db - vDbMin) / (vDbMax - vDbMin);
+            return (float)(y + barMaxH) - n2 * (float)barMaxH;
+        };
+
+        std::vector<juce::Point<float>> pts;
+        pts.reserve((size_t)juce::jmax(0, w));
+
+        // SPARSE region (20 Hz .. fCross): knots at ACTUAL bin centres so
+        // the spline has real anchors to curve between. Left edge gets a
+        // 20 Hz anchor interpolated between its straddling bins.
+        {
+            double binF = 20.0 / visBinHz;
+            int k0 = juce::jlimit(1, MeterEngine::kVisBins - 2, (int)binF);
+            float frac = juce::jlimit(0.0f, 1.0f, (float)(binF - k0));
+            float db = bins[(size_t)k0] + frac * (bins[(size_t)k0 + 1] - bins[(size_t)k0]);
+            pts.push_back({ (float)x, dbToY(db, 20.0) });
+        }
+        for (int k = juce::jmax(1, (int)std::ceil(20.0 / visBinHz));
+             k < MeterEngine::kVisBins && (double)k * visBinHz < fCross; ++k)
+        {
+            double f = (double)k * visBinHz;
+            pts.push_back({ freqToX(f), dbToY(bins[(size_t)k], f) });
+        }
+
+        // DENSE region (fCross .. 20 kHz): per-pixel peak-pick
+        int pxCross = (w > 1)
+            ? (int)std::ceil((std::log2(fCross) - lgMin) / (lgMax - lgMin) * (double)(w - 1))
+            : w;
+        pxCross = juce::jlimit(0, w, pxCross);
+        double prevBinF = (pxCross > 0)
+            ? std::pow(2.0, lgMin + (double)(pxCross - 1) * dLog) / visBinHz
+            : 20.0 / visBinHz;
+        for (int px2 = pxCross; px2 < w; ++px2)
+        {
+            double norm = (w > 1) ? (double)px2 / (double)(w - 1) : 0.0;
+            double freq = std::pow(2.0, lgMin + norm * (lgMax - lgMin));
+            double binF = freq / visBinHz;
+            int lo = juce::jlimit(1, MeterEngine::kVisBins - 1, (int)std::floor(prevBinF));
+            int hi = juce::jlimit(1, MeterEngine::kVisBins - 1, (int)std::floor(binF));
+            float db;
+            if (hi > lo)
+            {
+                float pk = -200.0f;
+                for (int k = lo; k <= hi; ++k)
+                    pk = std::max(pk, bins[(size_t)k]);
+                db = pk;
+            }
+            else
+            {
+                int k0 = juce::jlimit(1, MeterEngine::kVisBins - 2, (int)binF);
+                float frac = juce::jlimit(0.0f, 1.0f, (float)(binF - k0));
+                db = bins[(size_t)k0] + frac * (bins[(size_t)k0 + 1] - bins[(size_t)k0]);
+            }
+            pts.push_back({ (float)(x + px2), dbToY(db, freq) });
+            prevBinF = binF;
+        }
+
+        juce::Path p;
+        if (pts.empty()) return p;
+        if (closed) { p.startNewSubPath((float)x, (float)(y + barMaxH)); p.lineTo(pts[0]); }
+        else          p.startNewSubPath(pts[0]);
+        const int n = (int)pts.size();
+        for (int i = 0; i < n - 1; ++i)
+        {
+            // Catmull-Rom -> cubic bezier through pts[i] .. pts[i+1].
+            // CLAMPED: control-point Y limited to the segment's own range so
+            // a steep neighbouring segment can't fling the tangent into a
+            // single-pixel overshoot needle.
+            const auto& p0 = pts[(size_t)juce::jmax(0, i - 1)];
+            const auto& p1 = pts[(size_t)i];
+            const auto& p2 = pts[(size_t)(i + 1)];
+            const auto& p3 = pts[(size_t)juce::jmin(n - 1, i + 2)];
+            const float yLo = juce::jmin(p1.y, p2.y);
+            const float yHi = juce::jmax(p1.y, p2.y);
+            juce::Point<float> c1 { p1.x + (p2.x - p0.x) / 6.0f,
+                                    juce::jlimit(yLo, yHi, p1.y + (p2.y - p0.y) / 6.0f) };
+            juce::Point<float> c2 { p2.x - (p3.x - p1.x) / 6.0f,
+                                    juce::jlimit(yLo, yHi, p2.y - (p3.y - p1.y) / 6.0f) };
+            p.cubicTo(c1, c2, p2);
+        }
+        if (closed) { p.lineTo((float)(x + w - 1), (float)(y + barMaxH)); p.closeSubPath(); }
+        return p;
+    };
+
+    // Identity palettes — cyan heat-map (live/A) or pink/coral (comparison/B)
+    const bool cy = style.cyanHeat;
+    const juce::Colour heatTop  = cy ? juce::Colour(0xffe9fdff) : juce::Colour(0xfffff1f7);
+    const juce::Colour heatC1   = cy ? juce::Colour(0xff7ae8ff) : juce::Colour(0xffffb3cd);
+    const juce::Colour heatC2   = cy ? C::blue2                 : juce::Colour(0xffFF8FAB);
+    const juce::Colour heatC3   = cy ? juce::Colour(0xff1d4ed8) : juce::Colour(0xffd6537f);
+    const juce::Colour heatC4   = cy ? juce::Colour(0xff0e1b40) : juce::Colour(0xff3a1225);
+    const juce::Colour glowCol  = cy ? C::blue2                 : juce::Colour(0xffFF6B9D);
+    const juce::Colour lineBot  = cy ? C::blue2                 : juce::Colour(0xffFF8FAB);
+    const juce::Colour peakFill = cy ? C::blue                  : juce::Colour(0xffFF6B9D);
+
+    auto activePath = buildVisPath(visDisplay, true);
+
+    if (hasPeak)
+    {
+        auto peakPath = buildVisPath(*style.peakHold, true);
+        g.setColour(peakFill.withAlpha(0.1f));
+        g.fillPath(peakPath);
+    }
+
+    // Heat-map fill — a TINT, not a solid: bright band concentrated at the
+    // top, alpha falling away fast so the glow hugs the curve edge and the
+    // lower area stays near-background navy.
+    {
+        g.saveState();
+        g.reduceClipRegion(activePath);
+        juce::ColourGradient heat(
+            heatTop.withAlpha(0.85f), (float)x, (float)y,
+            juce::Colour(0xff080A12).withAlpha(0.0f), (float)x, (float)(y + barMaxH), false);
+        heat.addColour(0.08, heatC1.withAlpha(0.55f));
+        heat.addColour(0.20, heatC2.withAlpha(0.30f));
+        heat.addColour(0.45, heatC3.withAlpha(0.14f));
+        heat.addColour(0.75, heatC4.withAlpha(0.08f));
+        g.setGradientFill(heat);
+        g.fillRect(x, y, w, barMaxH);
+        g.restoreState();
+    }
+
+    // Single subtle glow under a crisp level-coloured line
+    auto activeLine = buildVisPath(visDisplay, false);
+    g.setColour(glowCol.withAlpha(0.15f));
+    g.strokePath(activeLine, juce::PathStrokeType(5.0f,
+                 juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    {
+        juce::ColourGradient lineGrad(
+            heatTop, (float)x, (float)y,
+            lineBot, (float)x, (float)(y + barMaxH), false);
+        g.setGradientFill(lineGrad);
+        g.strokePath(activeLine, juce::PathStrokeType(1.2f,
+                     juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
+    if (hasPeak)
+    {
+        // Peak hold line — bright, near-white at the highest tips
+        auto peakLine = buildVisPath(*style.peakHold, false);
+        juce::ColourGradient peakGrad(
+            heatTop.withAlpha(0.5f), (float)x, (float)y,
+            lineBot.withAlpha(0.25f), (float)x, (float)(y + barMaxH), false);
+        g.setGradientFill(peakGrad);
+        g.strokePath(peakLine, juce::PathStrokeType(1.0f));
     }
 }
 
@@ -8715,22 +9265,32 @@ void EchoJayEditor::paintSpectrumPanel(juce::Graphics& g, juce::Rectangle<int> a
         return;
     }
     
+    // Paint-side smoothing — the curve glides to each new frame instead of
+    // jumping (also absorbs uneven repaint cadence on top of the engine's
+    // per-buffer time smoothing)
+    if (!spectrumSmoothedInit) {
+        spectrumSmoothed = md.spectrum;
+        spectrumSmoothedInit = true;
+    }
+    for (int i = 0; i < N; ++i)
+        spectrumSmoothed[(size_t)i] += (md.spectrum[(size_t)i] - spectrumSmoothed[(size_t)i]) * 0.6f;
+
     // Update peak hold — rise instantly, fall slowly
     if (!spectrumPeakHoldInit) {
-        spectrumPeakHold = md.spectrum;
+        spectrumPeakHold = spectrumSmoothed;
         spectrumPeakHoldInit = true;
     }
     for (int i = 0; i < N; ++i) {
-        if (md.spectrum[(size_t)i] > spectrumPeakHold[(size_t)i])
-            spectrumPeakHold[(size_t)i] = md.spectrum[(size_t)i];
+        if (spectrumSmoothed[(size_t)i] > spectrumPeakHold[(size_t)i])
+            spectrumPeakHold[(size_t)i] = spectrumSmoothed[(size_t)i];
         else
             spectrumPeakHold[(size_t)i] -= 0.35f; // slow decay in dB per frame
     }
-    
+
     // Auto-range: find peak from live spectrum and peak hold only (held uses its own frozen range)
     float peakDb = -200.0f;
     for (int i = 0; i < N; ++i) {
-        if (md.spectrum[(size_t)i] > peakDb) peakDb = md.spectrum[(size_t)i];
+        if (spectrumSmoothed[(size_t)i] > peakDb) peakDb = spectrumSmoothed[(size_t)i];
         if (spectrumPeakHold[(size_t)i] > peakDb) peakDb = spectrumPeakHold[(size_t)i];
     }
     float dbMax = std::max(-20.0f, peakDb + 3.0f);
@@ -8838,46 +9398,44 @@ void EchoJayEditor::paintSpectrumPanel(juce::Graphics& g, juce::Rectangle<int> a
     }
     
     // Draw active spectrum on top
-    auto activePath = buildSpectrumPath(md.spectrum);
     bool isRef = processorRef.abPlayingRef.load();
-    
-    // Peak hold: translucent fill between current and peak
-    auto peakPath = buildSpectrumPath(spectrumPeakHold);
-    if (isRef && processorRef.abActive.load()) {
+    const bool refActive = isRef && processorRef.abActive.load();
+
+    if (refActive)
+    {
+        // A/B REFERENCE — unchanged identity: 64-bin curve, pink/coral, so
+        // ref-vs-mix stays instantly readable against the cyan live curve.
+        auto activePath = buildSpectrumPath(spectrumSmoothed);
+        auto peakPath   = buildSpectrumPath(spectrumPeakHold);
         g.setColour(juce::Colour(0xffFF6B9D).withAlpha(0.1f));
-    } else {
-        g.setColour(C::blue.withAlpha(0.1f));
-    }
-    g.fillPath(peakPath);
-    
-    // Active spectrum fill
-    if (isRef && processorRef.abActive.load()) {
+        g.fillPath(peakPath);
         juce::ColourGradient activeGrad(
             juce::Colour(0xffFF6B9D).withAlpha(0.4f), (float)x, (float)(y + barMaxH),
             juce::Colour(0xffFF8FAB).withAlpha(0.55f), (float)x, (float)y, false);
         g.setGradientFill(activeGrad);
-    } else {
-        juce::ColourGradient activeGrad(
-            C::blue.withAlpha(0.5f), (float)x, (float)(y + barMaxH),
-            C::purple.withAlpha(0.65f), (float)x, (float)y, false);
-        g.setGradientFill(activeGrad);
-    }
-    g.fillPath(activePath);
-    
-    // Active spectrum outline
-    g.setColour(isRef && processorRef.abActive.load() 
-        ? juce::Colour(0xffFF8FAB).withAlpha(0.6f) 
-        : juce::Colours::white.withAlpha(0.35f));
-    g.strokePath(activePath, juce::PathStrokeType(1.2f));
-    
-    // Peak hold line — thin bright line at the peak
-    auto peakLine = buildSpectrumLine(spectrumPeakHold);
-    if (isRef && processorRef.abActive.load()) {
+        g.fillPath(activePath);
+        g.setColour(juce::Colour(0xffFF8FAB).withAlpha(0.6f));
+        g.strokePath(activePath, juce::PathStrokeType(1.2f));
+        auto peakLine = buildSpectrumLine(spectrumPeakHold);
         g.setColour(juce::Colour(0xffFF8FAB).withAlpha(0.35f));
-    } else {
-        g.setColour(juce::Colours::white.withAlpha(0.25f));
+        g.strokePath(peakLine, juce::PathStrokeType(1.0f));
     }
-    g.strokePath(peakLine, juce::PathStrokeType(1.0f));
+    else
+    {
+        // LIVE spectrum — ONE shared render path (paintSpectrumCurve, also
+        // used by the Compare panels) with the main panel's frame lerp,
+        // peak hold and the cyan heat-map identity.
+        std::array<float, MeterEngine::kVisBins> visDb;
+        double visBinHz = 0.0;
+        processorRef.getMeterEngine().getVisualSpectrum(visDb, visBinHz);
+        if (visBinHz <= 0.0) visBinHz = 44100.0 / (double)MeterEngine::kVisFftSize;
+        SpectrumCurveStyle style;
+        style.cyanHeat     = true;
+        style.lerpState    = &spectrumCurveState_;
+        style.peakHold     = &visPeakHold;
+        style.peakHoldInit = &visPeakHoldInit;
+        paintSpectrumCurve(g, x, y, w, barMaxH, visDb, visBinHz, style);
+    }
     
     g.restoreState();
 
@@ -9213,11 +9771,12 @@ void EchoJayEditor::paint(juce::Graphics& g)
             EchoJayLookAndFeel::drawTierBadge(g, badgeX, badgeY, info.tierLevel);
         else
         {
-            // FREE badge — subtle grey pill
+            // FREE badge — muted grey pill (web palette #141a24 / #94a3b8),
+            // matched to the account-panel FREE badge.
             auto freeBounds = juce::Rectangle<float>((float)badgeX, (float)badgeY, 36.0f, 16.0f);
-            g.setColour(C::bg4);
+            g.setColour(juce::Colour(0xff141a24));
             g.fillRoundedRectangle(freeBounds, 4.0f);
-            g.setColour(C::text3);
+            g.setColour(juce::Colour(0xff94a3b8));
             g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
             g.drawText("FREE", freeBounds, juce::Justification::centred);
         }
@@ -9372,29 +9931,65 @@ void EchoJayEditor::paint(juce::Graphics& g)
         g.fillRoundedRectangle(r, 6.0f);
         g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.35f));
         g.drawRoundedRectangle(r, 6.0f, 1.0f);
-        // Exact copy (13 Jul): two sentences; narrow columns wrap one
-        // sentence per line at the same size rather than shrinking further
-        const juce::String bl1 = "Free chats use our standard model.";
-        const juce::String bl2 = "Pro and above run on our advanced feedback model.";
-        const bool narrowBanner = chatBannerRect_.getWidth() < 440;
+        // Exact copy (25 Jul, matches web renderChatDOM banner): interpolated
+        // from the server-sent tierModels display names, never hardcoded;
+        // generic phrases stand in when a name is missing so blanks can't
+        // render. Adaptive packing: the full premium sentence where it fits
+        // (>=560px), a shorter one below that; single-line mode uses fitted
+        // text so the 440-560px band shrinks a hair instead of ellipsizing.
+        // The slim Chain sidebar keeps its pre-existing fitted-shrink look.
+        const auto& tmNames = api.getUserInfo().tierModels;
+        const juce::String chatName = tmNames.chat.isNotEmpty()
+                                        ? tmNames.chat    : "our fast model";
+        const juce::String premName = tmNames.premium.isNotEmpty()
+                                        ? tmNames.premium : "our most advanced model";
+        const juce::String bl1  = "Chats use " + chatName + ".";
+        const juce::String bl2  = "Your premium actions already use " + premName + ".";
+        const juce::String bl2s = "Premium actions use " + premName + ".";
+        const juce::String bl3  = "Pro brings it to chats too.";
+        const int  bannerW      = chatBannerRect_.getWidth();
+        const bool narrowBanner = bannerW < 440;
         g.setColour(C::text2);
         if (narrowBanner)
         {
             g.setFont(juce::Font(juce::FontOptions(10.0f)));
             auto tr = chatBannerRect_.reduced(10, 3);
-            g.drawFittedText(bl1, tr.removeFromTop(tr.getHeight() / 2),
+            g.drawFittedText(bl1 + " " + bl2s, tr.removeFromTop(tr.getHeight() / 2),
                              juce::Justification::centredLeft, 1);
-            g.drawFittedText(bl2, tr, juce::Justification::centredLeft, 1);
+            g.drawFittedText(bl3, tr, juce::Justification::centredLeft, 1);
         }
         else
         {
             g.setFont(juce::Font(juce::FontOptions(11.0f)));
-            g.drawText(bl1 + " " + bl2, chatBannerRect_.reduced(10, 0),
-                       juce::Justification::centredLeft, true);
+            g.drawFittedText(bl1 + " " + (bannerW >= 560 ? bl2 : bl2s) + " " + bl3,
+                             chatBannerRect_.reduced(10, 0),
+                             juce::Justification::centredLeft, 1);
         }
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(12.0f)));
         g.drawText("x", chatBannerCloseRect_, juce::Justification::centred);
+    }
+
+    // ASK shelf (Phase 1b, B2): docked flush on the input top — rounded top
+    // corners only, square bottom under the input so there is no seam.
+    // PARITY: mirrors app.html .ask-shelf (input bg + 5% cyan wash, 12px top
+    // radius, muted "or type below" hint). Chips are real buttons placed by
+    // the layout pass; this paints only the shelf body + hint.
+    if (askShelfVisible_ && currentScreen == Screen::Main)
+    {
+        auto r = askShelfRect_.toFloat();
+        juce::Path shelf;
+        shelf.addRoundedRectangle(r.getX(), r.getY(), r.getWidth(), r.getHeight(),
+                                  12.0f, 12.0f, true, true, false, false);
+        g.setColour(C::bg3);                                     // input background
+        g.fillPath(shelf);
+        g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.05f));  // subtle cyan wash
+        g.fillPath(shelf);
+        g.setColour(C::border2);                                 // input outline colour
+        g.strokePath(shelf, juce::PathStrokeType(1.0f));
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText("or type below", askShelfHintRect_, juce::Justification::centredLeft);
     }
 
     // FREE V2 premium lock strip: Link / Chain / Compare stay fully visible,
@@ -10008,6 +10603,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         bool hasChainBtn = !isUser && msg.chainData.isNotEmpty();
         int chainAreaH = hasChainBtn ? (kChainBtnH + 6) : 0;
 
+
         // Extra height for AI gain-proposal APPLY cards
         juce::var gainProposals;
         int gainCardCount = 0;
@@ -10491,6 +11087,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         cardY += kGainCardH + 6;
                     }
                 }
+
             }
         }
         msgY += tH + 10;
@@ -10640,13 +11237,13 @@ void EchoJayEditor::resized()
         // AI sidebar toggle — right end of the "PLUGIN CHAIN" header strip
         chainChatToggleBtn.setButtonText(chainChatCollapsed_ ? "< AI" : "AI >");
         chainChatToggleBtn.setBounds(mW - 62, topH + 5, 54, 22);
-        chainChatToggleBtn.setVisible(!compactMode && !visualOnlyMode);
+        chainChatToggleBtn.setVisible(!compactMode && !visualOnlyMode && !reviewOverlay.visibleState);
         chainChatToggleBtn.toFront(false);
 
         // Slot counter — right-aligned in the chain header strip, just left
         // of the AI toggle (inside the chain area, above the rack)
         chainSlotCountLabel.setBounds(mW - 62 - 8 - 90, topH + 8, 90, 16);
-        chainSlotCountLabel.setVisible(!compactMode && !visualOnlyMode);
+        chainSlotCountLabel.setVisible(!compactMode && !visualOnlyMode && !reviewOverlay.visibleState);
 
         if (chainChatCollapsed_ && !compactMode)
         {
@@ -10712,9 +11309,12 @@ void EchoJayEditor::resized()
 
     // === Single top bar row === (taller controls so the larger type fills
     // the 38px header: 4px top + 30px control + 4px bottom). First control
-    // starts past the badge (badgeX 132 + 36 wide = 168, + margin).
+    // starts past the badge. STUDIO MAX draws a wider (60px) pill; every other
+    // tier uses 36px. Keep this in sync with the top-bar badge paint so the
+    // badge never overlaps the first control.
     int ty = 4, bh = 30;
-    int tx = 174;
+    const int badgeW = (api.getUserInfo().tierLevel >= 3) ? 60 : 36;
+    int tx = 132 + badgeW + 6;   // badgeX(132) + badge width + margin (=174 non-max)
     
     if (visualOnlyMode || compactMode) {
         // Mini modes: capture button right after logo+badge; the full-view
@@ -10843,13 +11443,57 @@ void EchoJayEditor::resized()
     // collides with the heading/subtitle). Narrow columns get a taller
     // two-line, smaller-text variant. Dismissal is the ONE static flag, so
     // dismissing anywhere hides it everywhere for the session.
+    // ASK shelf (Phase 1b, B2): docked seamlessly on TOP of the chat input —
+    // shares the input's left/right/width, bottom edge flush with the input
+    // top (no seam). Computed BEFORE the banner so the banner stacks above
+    // it. The shelf participates in the chatScrollBottom chain below, which
+    // is the reflow guarantee: appearing/disappearing resizes the message
+    // viewport instead of covering the last message. Chip buttons are
+    // positioned here (layout), painted background + hint in paint().
+    askShelfVisible_ = false;
+    {
+        const int askIdxL = findNewestUnansweredAsk();
+        if (askIdxL >= 0 && assistantInputContext() && !chatCentredEmpty_)
+        {
+            auto ib = chatInput.getBounds();
+            const int bw = chatSendBtn.getRight() - ib.getX();
+            std::vector<juce::Rectangle<int>> rects;
+            juce::StringArray labels;
+            const int shelfH = measureAskShelf(chatMessages[(size_t)askIdxL], bw,
+                                               &rects, &labels,
+                                               &askChipQuestion_, &askShelfHintRect_);
+            if (shelfH > 0)
+            {
+                askShelfRect_    = { ib.getX(), ib.getY() - shelfH, bw, shelfH };
+                askShelfVisible_ = true;
+                askChipMsgIdx_   = askIdxL;
+                activeAskChips   = juce::jmin((int)rects.size(), kMaxAskChips);
+                for (int ci = 0; ci < activeAskChips; ++ci)
+                {
+                    askChipLabels[(size_t)ci] = labels[ci];
+                    askChipBtns[(size_t)ci].setButtonText(labels[ci]);
+                    askChipBtns[(size_t)ci].setBounds(
+                        rects[(size_t)ci].translated(askShelfRect_.getX(), askShelfRect_.getY()));
+                    askChipBtns[(size_t)ci].setVisible(true);
+                    askChipBtns[(size_t)ci].toFront(false);
+                }
+                askShelfHintRect_ = askShelfHintRect_.translated(askShelfRect_.getX(),
+                                                                 askShelfRect_.getY());
+            }
+        }
+    }
+    for (int ci = askShelfVisible_ ? activeAskChips : 0; ci < kMaxAskChips; ++ci)
+        askChipBtns[(size_t)ci].setVisible(false);
+
     if (assistantInputContext() && shouldShowFastModelBanner())
     {
         auto ib = chatInput.getBounds();
         const int bw = chatSendBtn.getRight() - ib.getX();
         const int bh = bw < 440 ? 34 : 24;   // narrow: sentence per line
+        // Stacks ABOVE the ask shelf when one is docked on the input
+        const int aboveY = askShelfVisible_ ? askShelfRect_.getY() : ib.getY();
         const int by2 = chatCentredEmpty_ ? ib.getBottom() + 12
-                                          : ib.getY() - bh - 6;
+                                          : aboveY - bh - 6;
         chatBannerRect_      = { ib.getX(), by2, bw, bh };
         chatBannerCloseRect_ = chatBannerRect_.removeFromRight(24);
         chatBannerVisible_   = true;
@@ -10886,6 +11530,7 @@ void EchoJayEditor::resized()
     // the empty state, so the scroll ends above the greeting.
     int chatScrollBottom = chatCentredEmpty_ ? chatEmptyHeading_.getY() - 8
                          : (chatBannerVisible_ ? chatBannerRect_.getY() - 6
+                          : askShelfVisible_   ? askShelfRect_.getY() - 6
                                                : inputY - 8);
     int chatScrollH = juce::jmax(50, chatScrollBottom - chatScrollTop);
     chatScroll.setBounds(chatStartX + chatAvatarReserve, chatScrollTop,
@@ -11405,6 +12050,22 @@ void EchoJayEditor::resized()
             intakeSkipBtn.setVisible(false);
         }
     }
+
+    // ---- FINAL overlay re-front (24 Jul 2026 z-order fix) ----
+    // The re-fronts at the TOP of resized() run before the per-tab layout
+    // below them, which itself calls toFront on tab chrome (chainChatToggleBtn,
+    // chatScroll/chatInput/chatSendBtn on the Chain tab, the Compare click
+    // catcher, ...). Anything fronted there landed ABOVE the overlays on every
+    // layout pass — the "review overlay behind the chain panel" bug. Re-front
+    // the overlay stack LAST so it beats all of it, same relative order as the
+    // top block (review outranks update outranks onboarding when several are
+    // up). The top block stays: it covers the early-return paths above.
+    if (onboardingOverlay_.isVisible())
+        onboardingOverlay_.toFront(false);
+    if (updateOverlay.isVisible())
+        updateOverlay.toFront(false);
+    if (reviewOverlay.visibleState)
+        reviewOverlay.toFront(false);
 }
 
 // ============================================================================
@@ -12001,7 +12662,8 @@ void EchoJayEditor::timerCallback()
             }
         }
         else if (chatContext && !channelPromptVisible && !genrePromptVisible
-                 && !visualOnlyMode && !chatInput.isVisible())
+                 && !visualOnlyMode && !chatInput.isVisible()
+                 && !reviewOverlay.visibleState)
         {
             // Messages came back (new day / credits / upgrade): restore the
             // input row the button had replaced — previously it stayed
@@ -12323,6 +12985,48 @@ void EchoJayEditor::timerCallback()
             linkListView_.setSize(juce::jmax(50, wantW), wantH);
     }
 
+    // ---- FINAL overlay re-front (24 Jul 2026) ----
+    // Several blocks above re-front components EVERY tick — updateOverlay,
+    // wavePlayOverlays, and the header controls — so anything they raise
+    // landed above the plugin-review overlay ~20x/second, permanently pinning
+    // it behind them regardless of what showPluginReview()/resized() do. The
+    // "review overlay behind the empty chain panel" report was the Update
+    // Available card (same 0x0A0C18 colour family, centered mid-window) being
+    // tick-fronted over the review card's middle. Same rule as the end of
+    // resized(): the review overlay is re-fronted LAST so it outranks every
+    // per-tick raiser while open.
+    if (reviewOverlay.visibleState)
+        reviewOverlay.toFront(false);
+
+    // TEMP DEBUG [zdbg]: once per second while the modal is open, dump the
+    // editor's visible children in z-order (index 0 = bottom). Whatever
+    // paints the covering card MUST appear here above reviewOverlay — or be
+    // one of reviewOverlay's own children.
+    if (reviewOverlay.visibleState)
+    {
+        static int zdump = 0;
+        if (++zdump >= 20) // ~1s at 20fps
+        {
+            zdump = 0;
+            juce::String out = "Z-DUMP (bottom->top): ";
+            for (int i = 0; i < getNumChildComponents(); ++i)
+            {
+                auto* c = getChildComponent(i);
+                if (c == nullptr || !c->isVisible()) continue;
+                out << "[" << i << " " << typeid(*c).name() << " " << c->getBounds().toString() << "] ";
+            }
+            zdbg(out);
+            juce::String rv = "reviewOverlay children: ";
+            for (int i = 0; i < reviewOverlay.getNumChildComponents(); ++i)
+            {
+                auto* c = reviewOverlay.getChildComponent(i);
+                if (c == nullptr || !c->isVisible()) continue;
+                rv << "[" << i << " " << typeid(*c).name() << " " << c->getBounds().toString() << "] ";
+            }
+            zdbg(rv);
+        }
+    }
+
     repaint();
 }
 
@@ -12332,6 +13036,81 @@ void EchoJayEditor::textEditorReturnKeyPressed(juce::TextEditor& ed)
         auto t = chatInput.getText().trim();
         if (t.isNotEmpty()) sendChatMessage(t);
     }
+}
+
+// ---- ASK shelf: shared measure/flow (Phase 1b, B2 docked shelf) ----
+// Called from BOTH the layout pass (reservation + chip placement) and the
+// paint pass (shelf background + hint) with the same shelfW, so the reserved
+// height and the rendered content can never disagree. Rects are relative to
+// the shelf origin. Returns 0 for non-ask / answered / unparseable messages.
+int EchoJayEditor::measureAskShelf(const ChatMsg& msg, int shelfW,
+                                   std::vector<juce::Rectangle<int>>* chipRectsOut,
+                                   juce::StringArray* labelsOut,
+                                   juce::String* questionOut,
+                                   juce::Rectangle<int>* hintRectOut)
+{
+    if (msg.role != "assistant" || msg.askData.isEmpty() || msg.askAnswered)
+        return 0;
+    auto v = juce::JSON::parse(msg.askData);
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return 0;
+    auto* choices = o->getProperty("choices").getArray();
+    if (choices == nullptr || choices->size() < 2) return 0;
+
+    // Parity values — see the header comment block (mirrors app.html CSS)
+    juce::Font chipFont(juce::FontOptions(12.5f));
+    juce::Font hintFont(juce::FontOptions(11.0f));
+    const int padX = 10, padY = 8, gap = 6;
+    const int availR = juce::jmax(90, shelfW - padX);
+    int x = padX, y = padY, count = 0;
+    for (auto& cv : *choices)
+    {
+        if (count >= kMaxAskChips) break;
+        auto* co = cv.getDynamicObject();
+        if (co == nullptr) continue;
+        juce::String label = co->getProperty("label").toString().trim();
+        if (label.isEmpty()) continue;
+        int w = juce::jlimit(56, availR - padX,
+            juce::GlyphArrangement::getStringWidthInt(chipFont, label) + 28);
+        // Flow-wrap on narrow columns (sidebars)
+        if (x > padX && x + w > availR) { x = padX; y += kAskChipH + gap; }
+        if (chipRectsOut) chipRectsOut->push_back({ x, y, w, kAskChipH });
+        if (labelsOut) labelsOut->add(label);
+        x += w + gap;
+        ++count;
+    }
+    if (count == 0) return 0;
+
+    // Muted hint flows after the last chip, wrapping like a chip would
+    const int hintW = juce::GlyphArrangement::getStringWidthInt(hintFont, "or type below") + 4;
+    if (x > padX && x + hintW > availR) { x = padX; y += kAskChipH + gap; }
+    if (hintRectOut) *hintRectOut = { x, y, hintW, kAskChipH };
+
+    if (questionOut) *questionOut = o->getProperty("question").toString().trim();
+    return y + kAskChipH + padY;
+}
+
+int EchoJayEditor::findNewestUnansweredAsk() const
+{
+    for (int i = (int)chatMessages.size() - 1; i >= 0; --i)
+        if (chatMessages[(size_t)i].role == "assistant"
+            && chatMessages[(size_t)i].askData.isNotEmpty()
+            && !chatMessages[(size_t)i].askAnswered)
+            return i;
+    return -1;
+}
+
+void EchoJayEditor::supersedePendingAsks()
+{
+    bool any = false;
+    for (auto& m : chatMessages)
+        if (m.role == "assistant" && m.askData.isNotEmpty() && !m.askAnswered)
+        {
+            m.askAnswered = true;
+            workspace.markAskAnswered(currentChatId, m.content);
+            any = true;
+        }
+    if (any) workspace.requestMutationSync();
 }
 
 void EchoJayEditor::sendChatMessage(const juce::String& msg)
@@ -12348,6 +13127,17 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
         chatInput.clear();
         repaint();
         return;
+    }
+
+    // Any user send supersedes a pending ASK — chip tap or free text alike.
+    // Marking + persisting here (the single typed-send choke point) is what
+    // makes the docked shelf vanish on send; resized() reflows the message
+    // viewport back over the reclaimed space.
+    if (askShelfVisible_)
+    {
+        supersedePendingAsks();
+        askShelfVisible_ = false;
+        resized();
     }
 
     // Ensure we have an active workspace chat to write into
@@ -12443,6 +13233,21 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
                       "injection (chain blocks cannot be feed-validated)");
     }
 
+    // [CURRENT CHAIN] (CHAIN_AI_BUILD_SPEC Phase 1a): whenever a rack exists
+    // and this turn is plugin-relevant, the model sees the live chain — the
+    // prerequisite for edit intent. Rides AFTER the plugin injections so the
+    // server's typed-portion cut and the history strip both handle it; the
+    // server upgrades edit-verb turns to chain_edit only when this marker is
+    // present.
+    if (chainHost.getNumSlots() > 0
+        && (chainInjection.isNotEmpty() || EchoJayAPI::messageNeedsPlugins(msg)))
+    {
+        userContent += EchoJayAPI::buildCurrentChainInjection(chainHost);
+        EchoJay_NSLog(("EJChat: CURRENT CHAIN injection attached -- "
+                       + juce::String(chainHost.getNumSlots()) + " slots, rev "
+                       + juce::String(chainHost.getChainRevision())).toRawUTF8());
+    }
+
     // LINK LEVELS context: grounds relative level statements and enables
     // measurement-backed gain proposals. Rides on the chat turn (does NOT
     // change turnType — billing stays a chat turn per the spec).
@@ -12478,14 +13283,19 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
             juce::String visibleReply = reply;
             juce::String chainJson;
             juce::String gainJson;
-            // Always try to extract chain + gain blocks; the model may or may
-            // not have included either. Gain proposals are measurement-backed
-            // APPLY cards (never auto-applied).
+            juce::String askJson;
+            // Always try to extract chain + gain + ask blocks; the model may
+            // or may not have included any. Gain proposals are measurement-
+            // backed APPLY cards (never auto-applied); ask blocks render as
+            // tappable choice chips (Phase 1b).
+            bool hadChainOpener = false;   // reply carried <<<ECHOJAY_CHAIN>>> (even truncated)
             if (success)
             {
-                EchoJayAPI::extractChainBlock(visibleReply, chainJson);
+                hadChainOpener = EchoJayAPI::extractChainBlock(visibleReply, chainJson);
                 if (EchoJayAPI::extractGainBlock(visibleReply, gainJson))
                     EchoJay_NSLog("EJChat: gain proposal block received");
+                if (EchoJayAPI::extractAskBlock(visibleReply, askJson))
+                    EchoJay_NSLog("EJChat: ASK block received");
             }
 
             // If extractChainBlock returned partial/truncated JSON, try bracket-depth salvage
@@ -12505,7 +13315,23 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
             // Client-side fallback: if the model described a chain in prose but omitted the
             // machine block (or it couldn't be salvaged), reconstruct from mention-order scanning.
             // Triggers when ≥2 recommendable plugin names appear in the reply in order.
-            if (chainJson.isEmpty() && success)
+            //
+            // GATED (1b live-bug fix): only on turns where a chain was actually
+            // intended — the reply had a chain-block opener (truncation
+            // salvage) or the SERVER resolved this turn as chain_generate.
+            // Ungated, this synthesised Build buttons from ANY prose naming
+            // 2+ plugins: "what's in my chain?" listed the rack -> button;
+            // a chain_edit turn's slot instructions named slots -> a button
+            // whose Build would REBUILD the whole rack (the destructive trap
+            // CHAIN_EDIT_INTERIM_NOTE closes server-side, re-opened locally).
+            const bool chainTurnIntended = hadChainOpener
+                || safeThis->api.getLastResolvedTurnType() == "chain_generate";
+            if (chainJson.isEmpty() && success && !chainTurnIntended)
+                EchoJay_NSLog((juce::String("EJChat: name-scan fallback SKIPPED (turn is ")
+                              + (safeThis->api.getLastResolvedTurnType().isNotEmpty()
+                                   ? safeThis->api.getLastResolvedTurnType()
+                                   : juce::String("unknown, no opener")) + ")").toRawUTF8());
+            if (chainJson.isEmpty() && success && chainTurnIntended)
             {
                 juce::StringArray recommNames = safeThis->processorRef.getChainHost().getRecommendableNames();
                 struct Mention { juce::String name; int pos; };
@@ -12571,6 +13397,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
                 cm.content   = visibleReply;
                 cm.chainData = chainJson;   // empty if model didn't return a chain block
                 cm.gainData  = gainJson;    // empty if no gain proposal block
+                cm.askData   = askJson;     // empty if no ask block
                 safeThis->chatMessages.push_back(cm);
                 safeThis->processorRef.chatHistory.push_back({"assistant", visibleReply});
                 safeThis->processorRef.chatRoles.add("assistant");
@@ -12580,9 +13407,14 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
                 safeThis->processorRef.chatHistory.push_back({"assistant", reply});
             }
 
-            // Mirror assistant turn to workspace and persist (visibleReply has block stripped; chain + gain stored separately)
+            // Mirror assistant turn to workspace and persist (visibleReply has block stripped; chain + gain + ask stored separately)
             safeThis->workspace.appendMessageToChat(activeChatId, "assistant", visibleReply,
-                                                    {}, chainJson, gainJson);
+                                                    {}, chainJson, gainJson, askJson);
+            // Ask arrived: run the layout pass so the docked shelf appears
+            // and the message viewport reflows above it (message is now in
+            // chatMessages, so findNewestUnansweredAsk sees it)
+            if (askJson.isNotEmpty())
+                safeThis->resized();
             if (safeThis->sidebarModel)
             {
                 safeThis->sidebarModel->refreshRows(

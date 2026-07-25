@@ -5,6 +5,8 @@
 #include <atomic>
 #include <map>
 
+class ChainHost;   // buildCurrentChainInjection reads the live rack
+
 struct UserInfo {
     juce::String email;
     juce::String tier = "free";     // "free", "pro", "studio", "its_platinum"
@@ -62,8 +64,9 @@ struct UserInfo {
 
     static int tierStringToLevel(const juce::String& t)
     {
-        if (t == "studio") return 2;
-        if (t == "pro")    return 1;
+        if (t == "studio_max") return 3;   // top tier, above studio
+        if (t == "studio")     return 2;
+        if (t == "pro")        return 1;
         return 0;
     }
     static int defaultLimitForTier(int level)
@@ -220,6 +223,14 @@ public:
         return lastChatModelName_.isNotEmpty() ? lastChatModelName_
                                                : userInfo.usagePool.modelName;
     }
+
+    // Server-resolved turnType of the LAST chat reply ("chat" /
+    // "chain_generate" / "chain_edit" / ...). Empty until the server ships
+    // the resolvedTurnType response field or before the first reply. The
+    // client's staged turnType is a hint the server reclassifies — use THIS
+    // for any behaviour that depends on what the turn actually was (e.g.
+    // gating the prose name-scan chain fallback).
+    juce::String getLastResolvedTurnType() const { return lastResolvedTurnType_; }
     
     // ============ User Settings (synced with web app) ============
 
@@ -288,6 +299,13 @@ public:
     static juce::String buildChainInjection(const juce::StringArray& availablePlugins,
                                             const juce::StringArray& liveLinkNames = {});
 
+    // [CURRENT CHAIN] injection (CHAIN_AI_BUILD_SPEC Phase 1a): a numbered
+    // snapshot of the live rack (name, format, bypassed, wet, settings) so
+    // the model can see what already exists — the prerequisite for edit
+    // intent. Empty string when the rack is empty. Appended to the user turn
+    // like the other injections; sendChat strips it from history turns.
+    static juce::String buildCurrentChainInjection(const ChainHost& chainHost);
+
     // Parse the chain block out of an assistant reply.
     // Returns true and fills chainJsonOut if a block (complete or truncated) is present.
     // Always strips everything from <<<ECHOJAY_CHAIN>>> onward from replyInOut so raw
@@ -298,6 +316,12 @@ public:
     //   <<<ECHOJAY_GAIN>>> {"proposals":[{linkId,currentGain,proposedGain,reason}]} <<<END_GAIN>>>
     // Stripped from the visible reply; the client renders APPLY cards.
     static bool extractGainBlock(juce::String& replyInOut, juce::String& gainJsonOut);
+
+    // Same contract for the ASK question/choices block (Phase 1b): payload
+    // {"question","choices":[{"label","detail"}...],"allowFreeText"}.
+    // Delimiters: keep in sync with api/_blocks.js BLOCK_TYPES.ask
+    // (canonical) and extractAskBlockWeb in public/app.html.
+    static bool extractAskBlock(juce::String& replyInOut, juce::String& askJsonOut);
 
     // Recover a valid chain JSON string from a partially-written (truncated) block.
     // Scans for complete {...} objects using brace depth and reconstructs the array.
@@ -367,6 +391,7 @@ private:
     // across turns that omit the field so the indicator never blanks mid
     // session; empty until the server has ever sent one.
     juce::String lastChatModelName_;
+    juce::String lastResolvedTurnType_;   // see getLastResolvedTurnType()
     // Device pairing: cancellation flag for the in-flight poll chain (a
     // fresh one per startDeviceLogin; cancel just flips the current one)
     std::shared_ptr<std::atomic<bool>> devicePairCancelled_;

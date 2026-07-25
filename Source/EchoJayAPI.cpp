@@ -1,4 +1,5 @@
 #include "EchoJayAPI.h"
+#include "ChainHost.h"    // buildCurrentChainInjection reads the live rack
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
 
 // Defined later in this file (used by both /api/me parse sites)
@@ -715,7 +716,8 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     auto strippedContent = [&contents](int i) -> juce::String
     {
         auto c = contents[i];
-        for (auto* marker : { "\n\n[AVAILABLE PLUGINS", "\n\n[USER'S FULL PLUGIN LIST" })
+        for (auto* marker : { "\n\n[AVAILABLE PLUGINS", "\n\n[USER'S FULL PLUGIN LIST",
+                              "\n\n[CURRENT CHAIN" })
         {
             int cut = c.indexOf(marker);
             if (cut >= 0) c = c.substring(0, cut);
@@ -884,6 +886,15 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
                     auto mn = obj->getProperty("modelName").toString().trim();
                     if (mn.isNotEmpty()) lastChatModelName_ = mn;
                 }
+
+                // Server-side turn classification for THIS reply (the client
+                // turnType is a staged label the server reclassifies; this is
+                // the truth). Gates the prose name-scan chain fallback and
+                // lands in the log for live turn-class verification.
+                lastResolvedTurnType_ = obj->getProperty("resolvedTurnType").toString().trim();
+                EchoJay_NSLog(("EJChat: resolvedTurnType="
+                               + (lastResolvedTurnType_.isNotEmpty()
+                                    ? lastResolvedTurnType_ : juce::String("(absent)"))).toRawUTF8());
 
                 // Check if this message used a credit (don't increment daily counter)
                 bool usedCredit = false;
@@ -1509,7 +1520,11 @@ bool EchoJayAPI::messageNeedsPlugins(const juce::String& userMessage)
         "glue", "parallel", "harmonic", "warmth", "color", "colour",
         // mix-move verbs that usually imply a tool
         "brighten", "darken", "tame", "control the", "smooth out", "thicken",
-        "tighten", "add air", "more punch", "more presence"
+        "tighten", "add air", "more punch", "more presence",
+        // chain-edit verbs (CHAIN_AI_BUILD_SPEC Phase 1a): editing an
+        // existing rack needs the plugin feed + current-chain injection too
+        "remove", "swap", "instead of", "take out", "take off", "get rid of",
+        "reorder", "re-order", "rearrange", "move the"
     };
 
     for (auto* cue : kCues)
@@ -1603,6 +1618,40 @@ juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availableP
     return block;
 }
 
+juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
+{
+    auto slots = chainHost.getAllSlotInfos();
+    if (slots.empty()) return {};
+
+    // Numbered 0-based to match edit-op slot indices (spec block schema).
+    // Kept compact: this rides every plugin-relevant turn while a chain
+    // exists, so no prose padding. wet reported only when it departs from
+    // fully wet; settings clipped so one verbose slot cannot bloat the turn.
+    juce::String block;
+    block << "\n\n[CURRENT CHAIN — the user's rack right now, in signal-flow "
+          << "order; slot numbers are 0-based. When the user asks to change "
+          << "THIS chain (add/remove/swap/reorder), treat it as an edit of "
+          << "these slots, not a new chain from scratch.]\n";
+    for (int i = 0; i < (int)slots.size(); ++i)
+    {
+        const auto& s = slots[(size_t)i];
+        block << i << ": \"" << s.name << "\" (" << s.format;
+        if (s.bypassed) block << ", BYPASSED";
+        if (s.wet < 0.995f)
+            block << ", wet " << juce::roundToInt(s.wet * 100.0f) << "%";
+        block << ")";
+        auto settings = s.settings.trim();
+        if (settings.isNotEmpty())
+            block << " — settings: "
+                  << (settings.length() > 120 ? settings.substring(0, 120) + "…" : settings);
+        block << "\n";
+    }
+    const float masterWet = chainHost.getMasterWet();
+    if (masterWet < 0.995f)
+        block << "Master chain wet/dry: " << juce::roundToInt(masterWet * 100.0f) << "%\n";
+    return block;
+}
+
 bool EchoJayAPI::extractChainBlock(juce::String& replyInOut, juce::String& chainJsonOut)
 {
     const juce::String kOpen  = "<<<ECHOJAY_CHAIN>>>";
@@ -1653,6 +1702,37 @@ bool EchoJayAPI::extractGainBlock(juce::String& replyInOut, juce::String& gainJs
     {
         gainJsonOut = replyInOut.substring(jsonStart).trim();
         replyInOut  = replyInOut.substring(0, start).trimEnd();
+    }
+    return true;
+}
+
+// ASK question/choices block (CHAIN_AI_BUILD_SPEC Phase 1b). Same tolerant
+// truncation semantics as the chain/gain extractors. Delimiters: keep in
+// sync with api/_blocks.js BLOCK_TYPES.ask (the canonical registry) and
+// extractAskBlockWeb in public/app.html.
+bool EchoJayAPI::extractAskBlock(juce::String& replyInOut, juce::String& askJsonOut)
+{
+    const juce::String kOpen  = "<<<ECHOJAY_ASK>>>";
+    const juce::String kClose = "<<<END_ASK>>>";
+
+    int start = replyInOut.indexOf(kOpen);
+    if (start < 0) return false;
+
+    int jsonStart = start + (int)kOpen.length();
+    int end = replyInOut.indexOf(start, kClose);
+
+    if (end >= 0)
+    {
+        askJsonOut = replyInOut.substring(jsonStart, end).trim();
+        replyInOut = replyInOut.substring(0, start).trimEnd()
+                   + replyInOut.substring(end + (int)kClose.length());
+    }
+    else
+    {
+        // Truncated: strip from the opening delimiter so raw JSON never
+        // shows in chat; the (partial) payload may still parse.
+        askJsonOut = replyInOut.substring(jsonStart).trim();
+        replyInOut = replyInOut.substring(0, start).trimEnd();
     }
     return true;
 }
