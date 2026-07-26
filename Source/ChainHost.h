@@ -103,6 +103,62 @@ public:
     void setSlotBypassed(int i, bool bypassed);
     void setSlotSettings(int i, const juce::String& settings);  // store AI guidance text
 
+    // ---- Structural edit operations (CHAIN_AI_BUILD_SPEC Phase 1c) --------
+    // Ops arrive from the <<<ECHOJAY_CHAIN_EDIT>>> block; every index refers
+    // to the rack numbering the model saw (the 0-based [CURRENT CHAIN]
+    // injection), never renumbered mid-sequence — the sequencer translates
+    // through an original->current map as earlier ops shift the rack.
+    struct ChainEditOp {
+        juce::String op;        // add | remove | replace | move | bypass
+        int  slot  = -1;        // original index (remove/replace/move/bypass)
+        int  to    = -1;        // move target (original numbering)
+        int  after = -2;        // add: insert after this original slot; -1 = first
+        bool on    = false;     // bypass state
+        juce::String name;      // add/replace: name from AVAILABLE PLUGINS
+        juce::String settings;  // prose settings for the slot tile (display)
+    };
+    // Parse edit-block JSON. Returns empty on malformed payloads. Static so
+    // preview cards can humanize ops without touching a host.
+    static std::vector<ChainEditOp> parseChainEditOps(const juce::String& editJson,
+                                                      juce::StringArray* baseSlotsOut = nullptr,
+                                                      juce::String* explanationOut = nullptr);
+    // One plain-language line per op for the preview card ("+ add X after
+    // slot 1 (name)"). baseSlots supplies the slot names.
+    static juce::String describeEditOp(const ChainEditOp& op,
+                                       const juce::StringArray& baseSlots);
+
+    // Apply ops serially on the message thread (shared by main plugin and
+    // Link, like the wet/dry work). CONTRACT: the caller has closed every
+    // hosted editor at least 80ms before calling (the AMEK editor-close
+    // discipline); removeSlot itself never destroys instances (graveyard),
+    // so mid-sequence removals need no further delays.
+    //
+    // Safety model:
+    //  - expectedRevision >= 0 must equal the live chainRevision (pass -1 to
+    //    skip: cards restored from a previous session, where the in-memory
+    //    counter reset). baseSlots is ALWAYS verified against the live rack.
+    //  - every op is pre-validated against a simulated rack BEFORE any
+    //    mutation; a static problem aborts the whole edit untouched.
+    //  - within an op, fallible async work (plugin load) happens BEFORE any
+    //    destructive step, so a failed load leaves the rack unchanged by
+    //    that op. On a runtime failure: stop, keep the applied prefix, skip
+    //    the rest — never roll back, never half-apply an op.
+    // onDone(results (one line per op, or the abort reason), appliedCount,
+    //        abortedBeforeStart).
+    void applyChainEdits(std::vector<ChainEditOp> ops,
+                         int expectedRevision,
+                         const juce::StringArray& baseSlots,
+                         std::function<void(const juce::StringArray& results,
+                                            int appliedCount,
+                                            bool abortedBeforeStart)> onDone,
+                         std::function<void(const juce::String& label)> onProgress = {});
+                         // onProgress (Phase 1d): fired on the message thread
+                         // as each op STARTS, with a real present-tense label
+                         // ("Loading SPL De-Esser...") — feeds the staged
+                         // working-state shimmer. Never fires a claim that
+                         // could desync: labels describe the op being
+                         // attempted, results report what happened.
+
     // ---- Chain revision (CHAIN_AI_BUILD_SPEC Phase 1a staleness guard) ----
     // Monotonic counter bumped on EVERY chain mutation: add (completeLoad),
     // remove, move, bypass, per-slot wet, master wet. An AI edit proposal
@@ -217,6 +273,18 @@ public:
     // and may contain fine when the AU cannot.
     static bool isPopoutOnly(const juce::String& pluginName, const juce::String& format);
     static void markPopoutOnly(const juce::String& pluginName, const juce::String& format);
+
+    // ---- Session load failures (deliberately NOT persisted) ---------------
+    // A load failure means "could not authorise RIGHT NOW" (iLok not
+    // plugged into this machine, licence server unreachable, transient OS
+    // error) — NOT "not owned". Persisting exclusions from that signal
+    // would suppress genuinely-owned plugins on a machine whose dongle is
+    // elsewhere, so the set lives in memory only: it excludes plugins from
+    // the AI feed (buildRecommendable) for the REST OF THIS SESSION, and a
+    // plugin reload starts clean. Cleared per-entry by any successful load.
+    // Edit/build resolution stays unfiltered (rack plugins always
+    // referenceable; a deliberate retry remains possible).
+    // See sessionLoadFailed_ below; no public API — internal to ChainHost.
 
     // ---- Host session identity ---------------------------------------------
     // The user-facing HOST process this plugin instance ultimately belongs
@@ -397,6 +465,11 @@ private:
     // Entries-cache staleness tracking (message thread)
     juce::Time entriesCacheTime_;
 
+    // Session-scoped load failures (see the comment block in the public
+    // section): normalised "name|format" keys, message thread only,
+    // intentionally lost on plugin reload.
+    juce::StringArray sessionLoadFailed_;
+
     // Scan thread
     std::atomic<bool>  scanning_     { false };
     std::atomic<bool>  cancelFlag_   { false };
@@ -404,6 +477,10 @@ private:
     mutable std::mutex statusMutex_;
     juce::String       scanStatus_;
     std::thread        scanThread_;
+
+    // Edit sequencer internals (Phase 1c) — see applyChainEdits
+    void runNextEditOp(std::shared_ptr<void> stateErased);
+    void walkSlotTo(std::vector<int>& map, int fromCur, int toCur);
 
     // Restore helper (sequential async restore of multiple slots)
     struct RestoreItem { juce::PluginDescription desc; bool bypassed; float wet = 1.0f; };

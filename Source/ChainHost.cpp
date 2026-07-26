@@ -31,6 +31,14 @@ juce::File ChainHost::getParamMapsCacheFile() { return appSupportDir().getChildF
 juce::File ChainHost::getBlacklistFile()  { return appSupportDir().getChildFile("chain_blacklist.txt"); }
 juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_load_deadman.txt"); }
 
+// Session load-failure key (see ChainHost.h: deliberately NOT persisted —
+// a load failure means "could not authorise right now", e.g. iLok absent,
+// not "not owned")
+static juce::String sessionLoadKey(const juce::String& name, const juce::String& format)
+{
+    return normalizeName(name) + "|" + format;
+}
+
 // ---------------------------------------------------------------------------
 // Popout-only plugins — shared local list, normalised-name keyed. The cache
 // mtime-reloads so a mark made by one host is seen by the other immediately.
@@ -864,6 +872,387 @@ void ChainHost::setSlotSettings(int i, const juce::String& settings)
 }
 
 // ---------------------------------------------------------------------------
+// Structural edit operations (Phase 1c) — parse, describe, apply
+// ---------------------------------------------------------------------------
+std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
+    const juce::String& editJson,
+    juce::StringArray* baseSlotsOut,
+    juce::String* explanationOut)
+{
+    std::vector<ChainEditOp> out;
+    auto v = juce::JSON::parse(editJson);
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return out;
+    if (baseSlotsOut != nullptr)
+        if (auto* bs = o->getProperty("baseSlots").getArray())
+            for (auto& bv : *bs) baseSlotsOut->add(bv.toString().trim());
+    if (explanationOut != nullptr)
+        *explanationOut = o->getProperty("explanation").toString().trim();
+    auto* arr = o->getProperty("edit").getArray();
+    if (arr == nullptr) return out;
+    for (auto& ev : *arr)
+    {
+        auto* eo = ev.getDynamicObject();
+        if (eo == nullptr) continue;
+        ChainEditOp op;
+        op.op       = eo->getProperty("op").toString().trim().toLowerCase();
+        // ===== THE 1-based -> 0-based BOUNDARY (the only one) =====
+        // The model and the user count slots from 1 (the [CURRENT CHAIN]
+        // injection numbers them 1-based); ChainHost counts from 0. This
+        // parse is the single conversion point — every consumer downstream
+        // (pre-flight dry-run, staleness checks, the original->current map,
+        // the sequencer) sees internal 0-based indices, and display-side
+        // code (describeEditOp, result strings, the web card) converts back
+        // to 1-based only when printing. "after": 0 means insert FIRST and
+        // maps to the internal -1 convention.
+        op.slot     = eo->hasProperty("slot")  ? (int)eo->getProperty("slot")  - 1 : -1;
+        op.to       = eo->hasProperty("to")    ? (int)eo->getProperty("to")    - 1 : -1;
+        op.after    = eo->hasProperty("after") ? juce::jmax(-1, (int)eo->getProperty("after") - 1) : -2;
+        op.on       = (bool)eo->getProperty("on");
+        op.name     = eo->getProperty("name").toString().trim();
+        op.settings = eo->getProperty("settings").toString().trim();
+        if (op.op.isNotEmpty()) out.push_back(std::move(op));
+    }
+    return out;
+}
+
+juce::String ChainHost::describeEditOp(const ChainEditOp& op,
+                                       const juce::StringArray& baseSlots)
+{
+    // Display is 1-BASED (matches the [CURRENT CHAIN] injection and the
+    // model's numbering); op fields are internal 0-based post-parse.
+    auto slotName = [&baseSlots](int i) -> juce::String {
+        return (i >= 0 && i < baseSlots.size())
+            ? baseSlots[i] : ("slot " + juce::String(i + 1));
+    };
+    if (op.op == "add")
+        return juce::String::fromUTF8("+ add ") + op.name
+             + (op.after <= -1 ? juce::String(" first")
+                : op.after >= baseSlots.size()
+                    ? juce::String(" at the end of the chain")
+                    : " after slot " + juce::String(op.after + 1)
+                      + " (" + slotName(op.after) + ")");
+    if (op.op == "remove")
+        return juce::String::fromUTF8("\xe2\x88\x92 remove ") + slotName(op.slot)
+             + " (slot " + juce::String(op.slot + 1) + ")";
+    if (op.op == "replace")
+        return juce::String::fromUTF8("\xe2\x87\x84 replace ") + slotName(op.slot)
+             + " (slot " + juce::String(op.slot + 1) + ") with " + op.name;
+    if (op.op == "move")
+        return juce::String::fromUTF8("\xe2\x86\x95 move ") + slotName(op.slot)
+             + " (slot " + juce::String(op.slot + 1) + ") to position " + juce::String(op.to + 1);
+    if (op.op == "bypass")
+        return juce::String(op.on ? "\xe2\x8f\xbb bypass " : "\xe2\x8f\xbb un-bypass ")
+             + slotName(op.slot) + " (slot " + juce::String(op.slot + 1) + ")";
+    return "? unknown op: " + op.op;
+}
+
+// Sequencer state — shared_ptr-threaded through the async load callbacks,
+// exactly the restoreNextSlot / buildChainFromSpec pattern.
+namespace {
+struct EditSeqState
+{
+    std::vector<ChainHost::ChainEditOp> ops;
+    size_t idx = 0;
+    std::vector<int> map;            // original slot index -> current index
+    int applied = 0;
+    juce::StringArray results;
+    std::function<void(const juce::StringArray&, int, bool)> onDone;
+    std::function<void(const juce::String&)> onProgress;   // 1d stage labels
+};
+} // namespace
+
+void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
+                                int expectedRevision,
+                                const juce::StringArray& baseSlots,
+                                std::function<void(const juce::StringArray&,
+                                                   int, bool)> onDone,
+                                std::function<void(const juce::String&)> onProgress)
+{
+    auto abort = [&onDone](const juce::String& why)
+    { if (onDone) onDone(juce::StringArray{ why }, 0, true); };
+
+    // ---- Pre-flight guard 1: revision (same-session staleness) ----
+    if (expectedRevision >= 0 && expectedRevision != getChainRevision())
+        return abort("chain changed since this edit was proposed — ask again");
+
+    // ---- Pre-flight guard 2: baseSlots vs live rack ----
+    const int n = getNumSlots();
+    if (baseSlots.size() != n)
+        return abort("chain changed since this edit was proposed — ask again");
+    for (int i = 0; i < n; ++i)
+        if (!namesMatchLoose(baseSlots[i], slots_[(size_t)i].desc.name))
+            return abort("chain changed since this edit was proposed — ask again");
+
+    if (ops.empty()) return abort("no operations in this edit");
+
+    // ---- Pre-flight guard 3: dry-run every op against a simulated rack ----
+    // After this, the only possible runtime failure is an async plugin load.
+    {
+        std::vector<bool> alive((size_t)n, true);
+        int simCount = n;
+        for (size_t k = 0; k < ops.size(); ++k)
+        {
+            const auto& op = ops[k];
+            auto bad = [&](const juce::String& d) {
+                return abort("op " + juce::String((int)k + 1) + " invalid: " + d);
+            };
+            // Slot numbers in error text are 1-BASED (the numbering the
+            // model and user see); s itself is internal 0-based
+            auto slotLabel = [](int s) { return "slot " + juce::String(s + 1); };
+            auto validSlot = [&](int s) {
+                return s >= 0 && s < n && alive[(size_t)s];
+            };
+            if (op.op == "add")
+            {
+                if (op.name.isEmpty()) return bad("add without a plugin name");
+                if (resolveByName(op.name, {}).name.isEmpty())
+                    return bad("\"" + op.name + "\" not in the loadable plugin list");
+                // Positional target: out-of-range/removed "after" CLAMPS to
+                // append-at-end (the runtime add path already does this) —
+                // aborting the whole batch over a position was worse than an
+                // append landing one slot off. Identity refs (slot on
+                // remove/replace/bypass/move) still abort: clamping those
+                // would mutate the WRONG plugin.
+                ++simCount;
+            }
+            else if (op.op == "remove")
+            {
+                if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
+                alive[(size_t)op.slot] = false;
+                --simCount;
+                if (simCount < 0) return bad("removes more slots than exist");
+            }
+            else if (op.op == "replace")
+            {
+                if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
+                if (op.name.isEmpty()) return bad("replace without a plugin name");
+                if (resolveByName(op.name, {}).name.isEmpty())
+                    return bad("\"" + op.name + "\" not in the loadable plugin list");
+            }
+            else if (op.op == "move")
+            {
+                if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
+                // move.to is positional: clamps at runtime, never aborts
+            }
+            else if (op.op == "bypass")
+            {
+                if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
+            }
+            else return bad("unknown operation \"" + op.op + "\"");
+        }
+    }
+
+    auto st = std::make_shared<EditSeqState>();
+    st->ops = std::move(ops);
+    st->onDone = std::move(onDone);
+    st->onProgress = std::move(onProgress);
+    st->map.resize((size_t)n);
+    for (int i = 0; i < n; ++i) st->map[(size_t)i] = i;
+    runNextEditOp(st);
+}
+
+// Walk a slot from its current index to a target index via the existing
+// single-step moveSlot swaps, keeping the original->current map true after
+// every swap. Message thread; synchronous.
+void ChainHost::walkSlotTo(std::vector<int>& map, int fromCur, int toCur)
+{
+    while (fromCur != toCur)
+    {
+        const int step = toCur > fromCur ? 1 : -1;
+        const int other = fromCur + step;
+        // The map entry (if any) pointing at `other` swaps with `fromCur`
+        for (auto& m : map)
+            if (m == other) { m = fromCur; break; }
+        moveSlot(fromCur, step);
+        fromCur = other;
+    }
+}
+
+void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
+{
+    auto st = std::static_pointer_cast<EditSeqState>(stateErased);
+    if (st->idx >= st->ops.size())
+    {
+        if (st->onDone) st->onDone(st->results, st->applied, false);
+        return;
+    }
+    const auto op = st->ops[st->idx];
+
+    // 1d working-state label: present-tense attempt, fired before execution
+    if (st->onProgress)
+    {
+        juce::String label;
+        if (op.op == "remove")
+        {
+            const int cur = (op.slot >= 0 && op.slot < (int)st->map.size())
+                              ? st->map[(size_t)op.slot] : -1;
+            label = "Removing "
+                  + (cur >= 0 && cur < (int)slots_.size()
+                       ? slots_[(size_t)cur].desc.name : juce::String("a slot"))
+                  + "...";
+        }
+        else if (op.op == "add" || op.op == "replace")
+            label = "Loading " + op.name + "...";
+        else if (op.op == "move")
+            label = "Reordering the chain...";
+        else if (op.op == "bypass")
+            label = op.on ? "Bypassing a slot..." : "Un-bypassing a slot...";
+        if (label.isNotEmpty()) st->onProgress(label);
+    }
+
+    auto finishOpAndContinue = [this, st](const juce::String& line)
+    {
+        st->results.add(line);
+        ++st->applied;
+        ++st->idx;
+        // Let the message loop breathe between ops (paints, host callbacks)
+        auto self = st;
+        juce::Timer::callAfterDelay(30, [this, self] { runNextEditOp(self); });
+    };
+    // Expected runtime failure (a plugin load): the op was a clean no-op
+    // (load-before-destroy), the rack and the original->current map are
+    // exactly as if the op never existed — so INDEPENDENT later ops stay
+    // valid and we continue. Only invariant violations (a map entry that
+    // pre-flight should have made impossible) still hard-stop: if the map
+    // is wrong, continuing is what would be unsafe.
+    auto failButContinue = [this, st](const juce::String& line)
+    {
+        st->results.add(line);
+        ++st->idx;
+        auto self = st;
+        juce::Timer::callAfterDelay(30, [this, self] { runNextEditOp(self); });
+    };
+    auto failAndStop = [st](const juce::String& line)
+    {
+        st->results.add(line);
+        for (size_t r = st->idx + 1; r < st->ops.size(); ++r)
+            st->results.add("not attempted");
+        if (st->onDone) st->onDone(st->results, st->applied, false);
+    };
+
+    // Defensive current-index lookup (pre-flight guarantees validity, but a
+    // stale map entry must fail the op loudly, never index out of range)
+    auto curOf = [&st](int orig) -> int {
+        return (orig >= 0 && orig < (int)st->map.size()) ? st->map[(size_t)orig] : -1;
+    };
+
+    if (op.op == "remove")
+    {
+        const int cur = curOf(op.slot);
+        if (cur < 0) return failAndStop("remove failed: slot no longer present");
+        const juce::String nm = slots_[(size_t)cur].desc.name;
+        removeSlot(cur);
+        for (auto& m : st->map) { if (m == cur) m = -1; else if (m > cur) --m; }
+        finishOpAndContinue("removed " + nm);
+        return;
+    }
+    if (op.op == "bypass")
+    {
+        const int cur = curOf(op.slot);
+        if (cur < 0) return failAndStop("bypass failed: slot no longer present");
+        setSlotBypassed(cur, op.on);
+        finishOpAndContinue(juce::String(op.on ? "bypassed " : "un-bypassed ")
+                            + slots_[(size_t)cur].desc.name);
+        return;
+    }
+    if (op.op == "move")
+    {
+        const int cur = curOf(op.slot);
+        if (cur < 0) return failAndStop("move failed: slot no longer present");
+        // Target: current position of the original occupant of `to`, else
+        // clamp into the current rack
+        int target = curOf(op.to);
+        if (target < 0) target = juce::jlimit(0, getNumSlots() - 1, op.to);
+        const juce::String nm = slots_[(size_t)cur].desc.name;
+        walkSlotTo(st->map, cur, target);
+        // walkSlotTo fixed every displaced entry; the moved original now
+        // lives at target
+        if (op.slot >= 0 && op.slot < (int)st->map.size())
+            st->map[(size_t)op.slot] = target;
+        finishOpAndContinue("moved " + nm + " to position " + juce::String(target + 1));
+        return;
+    }
+    if (op.op == "add" || op.op == "replace")
+    {
+        // Fallible work FIRST: load (appends at the end). Only on success do
+        // we touch existing slots, so a failed load is a clean no-op and the
+        // sequence CONTINUES with the remaining independent ops.
+        auto desc = resolveByName(op.name, {});
+        if (desc.name.isEmpty())
+            return failButContinue(op.op + " failed: \"" + op.name + "\" not resolvable");
+        desc = preferInlineHostableDesc(desc);
+        auto self = st;
+        const auto theOp = op;
+        loadPluginAsync(desc, [this, self, theOp](const juce::String& err)
+        {
+            // Re-enter the sequencer context manually (we are mid-op)
+            auto finish = [this, self](const juce::String& line)
+            {
+                self->results.add(line);
+                ++self->applied;
+                ++self->idx;
+                auto keep = self;
+                juce::Timer::callAfterDelay(30, [this, keep] { runNextEditOp(keep); });
+            };
+            auto failContinue = [this, self](const juce::String& line)
+            {
+                self->results.add(line);
+                ++self->idx;
+                auto keep = self;
+                juce::Timer::callAfterDelay(30, [this, keep] { runNextEditOp(keep); });
+            };
+            auto failStop = [self](const juce::String& line)
+            {
+                self->results.add(line);
+                for (size_t r = self->idx + 1; r < self->ops.size(); ++r)
+                    self->results.add("not attempted");
+                if (self->onDone) self->onDone(self->results, self->applied, false);
+            };
+            if (err.isNotEmpty())
+                return failContinue(theOp.op + " failed: " + theOp.name
+                                    + " would not load (" + err + ")");
+
+            int newCur = getNumSlots() - 1;   // appended by completeLoad
+            if (theOp.settings.isNotEmpty())
+                setSlotSettings(newCur, theOp.settings);
+
+            if (theOp.op == "add")
+            {
+                int target = theOp.after <= -1 ? 0
+                    : (theOp.after < (int)self->map.size() && self->map[(size_t)theOp.after] >= 0
+                        ? self->map[(size_t)theOp.after] + 1
+                        : newCur);   // fallback: leave at end
+                walkSlotTo(self->map, newCur, target);
+                // Entries at/after the insert point were fixed by walkSlotTo's
+                // swap bookkeeping; nothing else to update (new slot is not
+                // addressable by original numbering).
+                finish("added " + theOp.name
+                       + (theOp.after <= -1 ? juce::String(" first")
+                                            : " after slot " + juce::String(theOp.after + 1)));
+            }
+            else // replace
+            {
+                const int oldCur = (theOp.slot >= 0 && theOp.slot < (int)self->map.size())
+                                     ? self->map[(size_t)theOp.slot] : -1;
+                if (oldCur < 0)
+                    return failStop("replace failed: slot no longer present");
+                const juce::String oldName = slots_[(size_t)oldCur].desc.name;
+                removeSlot(oldCur);
+                for (auto& m : self->map) { if (m == oldCur) m = -1; else if (m > oldCur) --m; }
+                int fromCur = getNumSlots() - 1;   // new slot after the removal shift
+                walkSlotTo(self->map, fromCur, oldCur);
+                // The replacement now answers to the original slot number
+                self->map[(size_t)theOp.slot] = oldCur;
+                finish("replaced " + oldName + " with " + theOp.name);
+            }
+        });
+        return;
+    }
+    failAndStop("unknown operation \"" + op.op + "\"");
+}
+
+// ---------------------------------------------------------------------------
 // Wet/dry setters — knob-drag safe: pure value writes, never a graph rebuild
 // ---------------------------------------------------------------------------
 void ChainHost::setMasterWet(float wet01)
@@ -988,6 +1377,9 @@ juce::AudioProcessorEditor* ChainHost::createEditorForSlot(int i)
 void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
                               const juce::PluginDescription& desc)
 {
+    // Any successful load clears a stale session load-failure mark
+    sessionLoadFailed_.removeString(sessionLoadKey(desc.name, desc.pluginFormatName));
+
     ChainSlot slot;
     slot.node     = graph_->addNode(std::move(inst));
     slot.desc     = desc;
@@ -1346,6 +1738,9 @@ void ChainHost::fingerprintNext()
             else
             {
                 // Failed loads keep their marker: no point retrying every scan.
+                // NOTE: deliberately NOT fed into the session load-failure
+                // set — a fingerprint-pass failure with the iLok unplugged
+                // would suppress owned plugins for the whole session.
                 EchoJay_NSLog(("EJFpPass: (" + juce::String(n) + "/"
                                + juce::String(fpQueueTotal_) + ") " + desc.name
                                + " FAILED: " + err).toRawUTF8());
@@ -1441,6 +1836,10 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
             {
                 if (!inst)
                 {
+                    // Session-scoped feed exclusion only (iLok may simply be
+                    // absent on this machine); gone on plugin reload.
+                    sessionLoadFailed_.addIfNotAlreadyThere(
+                        sessionLoadKey(fullDesc.name, fullDesc.pluginFormatName));
                     callback(err.isNotEmpty() ? err : "createPluginInstance returned nullptr");
                     return;
                 }
@@ -1772,6 +2171,11 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         for (const auto& d : entries_)
         {
             if (formatFilter.isNotEmpty() && d.pluginFormatName != formatFilter) continue;
+            // Session load-failure exclusion (AI feed only, THIS session):
+            // a plugin that failed to load since this instance opened is
+            // not proposed again until reload (iLok may be absent — see
+            // ChainHost.h). Edit/build resolution stays unfiltered.
+            if (sessionLoadFailed_.contains(sessionLoadKey(d.name, d.pluginFormatName))) continue;
             loadable.add(d);
         }
     }
@@ -1780,12 +2184,21 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // If multiple entries share the same normalized name, keep the first (alphabetically
     // stable since entries_ is already sorted).
     std::unordered_map<std::string, juce::PluginDescription> nameMap;
-    nameMap.reserve((size_t)loadable.size());
+    nameMap.reserve((size_t)loadable.size() * 2);
     for (const auto& d : loadable)
     {
         std::string key = normalizeName(d.name).toStdString();
         if (nameMap.find(key) == nameMap.end())
             nameMap[key] = d;
+        // Variant-suffix secondary key: WaveShell AUs register per-variant
+        // component names ("Abbey Road Plates (s)"/"(m)") while the Settings
+        // scanner lists the curated suffix-less name ("Abbey Road Plates").
+        // Without this key the exact map missed them, the plugin dropped out
+        // of the AI feed entirely, and the model told the user a plugin
+        // RUNNING IN THEIR RACK was "not in your available plugins".
+        std::string baseKey = normalizeName(stripParenthetical(d.name)).toStdString();
+        if (baseKey != key && nameMap.find(baseKey) == nameMap.end())
+            nameMap[baseKey] = d;
     }
 
     // Filter enabled scanner plugins and resolve against the map

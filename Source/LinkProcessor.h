@@ -254,6 +254,11 @@ private:
 
     void clearChainInternal();              // closes editors first via callback
     void updateChainLatency();
+    // Rebuild chainModel from the live host slots after structural edits
+    // (Phase 1c): names/bypass/hostIdx from the rack; settings text carried
+    // over by first name match from the previous model. Missing (unloadable)
+    // model entries do not survive an edit resync — the rack is truth.
+    void resyncChainModelFromHost();
     void notifyChainModel();
     juce::PluginDescription resolveChainPlugin(const juce::String& name) const;
     static juce::StringArray loadDisabledUids();

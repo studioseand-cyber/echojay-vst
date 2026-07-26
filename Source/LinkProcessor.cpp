@@ -745,6 +745,29 @@ void LinkProcessor::updateChainLatency()
     setLatencySamples(chainHost.getTotalLatencySamples());
 }
 
+void LinkProcessor::resyncChainModelFromHost()
+{
+    std::vector<ChainSlotSpec> next;
+    const int n = chainHost.getNumSlots();
+    next.reserve((size_t)n);
+    for (int i = 0; i < n; ++i)
+    {
+        auto info = chainHost.getSlotInfo(i);
+        ChainSlotSpec s;
+        s.name     = info.name;
+        s.bypassed = info.bypassed;
+        s.hostIdx  = i;
+        s.wet      = info.wet;
+        s.settings = info.settings;
+        if (s.settings.isEmpty())
+            for (auto& old : chainModel)
+                if (!old.missing && ChainHost::namesMatchLoose(old.name, s.name))
+                { s.settings = old.settings; break; }
+        next.push_back(std::move(s));
+    }
+    chainModel = std::move(next);
+}
+
 void LinkProcessor::notifyChainModel()
 {
     updateMonoStereoOnlyNames();
@@ -1157,11 +1180,54 @@ void LinkProcessor::pollChainCommand()
 
     int ver = (int)obj->getProperty("v");
     int seq = (int)obj->getProperty("seq");
-    if (ver != 1 || seq == lastAppliedChainSeq_ || seq == 0)
+    if ((ver != 1 && ver != 2) || seq == lastAppliedChainSeq_ || seq == 0)
         return;   // unknown version or already applied — leave for inspection
+                  // (older Links reject v:2 the same way: forward-safe)
 
     lastAppliedChainSeq_ = seq;
     cmdFile.deleteFile();   // consumed
+
+    // ---- v:2 editOps (Phase 1c): structural edits on the EXISTING chain ----
+    // Same shared sequencer as the main plugin (ChainHost::applyChainEdits,
+    // staleness-guarded, stop-at-failure). Editors close first via
+    // onChainAboutToChange, sequencer starts a beat later (AMEK discipline).
+    if (ver == 2)
+    {
+        if (!obj->hasProperty("editOps"))
+        { writeChainAck(seq, "failed", { "v2 command without editOps" }, {}); return; }
+
+        juce::StringArray baseSlots;
+        if (auto* bs = obj->getProperty("baseSlots").getArray())
+            for (auto& bv : *bs) baseSlots.add(bv.toString().trim());
+
+        std::vector<ChainHost::ChainEditOp> ops;
+        {
+            // Reuse the parser via a synthetic payload so op-shape rules
+            // stay single-source in ChainHost::parseChainEditOps
+            auto* wrap = new juce::DynamicObject();
+            wrap->setProperty("edit", obj->getProperty("editOps"));
+            ops = ChainHost::parseChainEditOps(juce::JSON::toString(juce::var(wrap), true));
+        }
+        if (ops.empty())
+        { writeChainAck(seq, "failed", { "editOps empty or malformed" }, {}); return; }
+
+        if (onChainAboutToChange) onChainAboutToChange();   // editors close first
+        auto self = this;   // processor outlives message-thread callbacks in-session
+        juce::Timer::callAfterDelay(80, [self, ops, baseSlots, seq]() mutable
+        {
+            self->chainHost.applyChainEdits(std::move(ops), -1, baseSlots,
+                [self, seq](const juce::StringArray& results, int applied, bool aborted)
+            {
+                self->resyncChainModelFromHost();
+                self->updateChainLatency();
+                self->notifyChainModel();
+                juce::String status = aborted ? "stale"
+                                    : (applied == results.size() ? "ok" : "partial");
+                self->writeChainAck(seq, status, results, {});
+            });
+        });
+        return;
+    }
 
     std::vector<ChainBuildItem> spec;
     if (auto* arr = obj->getProperty("chain").getArray())
