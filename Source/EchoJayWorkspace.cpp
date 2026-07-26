@@ -152,7 +152,11 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
                                             const juce::String& reviewId,
                                             const juce::String& chainJson,
                                             const juce::String& gainJson,
-                                            const juce::String& askJson)
+                                            const juce::String& askJson,
+                                            const juce::String& editJson,
+                                            const juce::String& altPrompt,
+                                            const juce::String& altLabel,
+                                            const juce::String& displayText)
 {
     for (auto& c : chats)
     {
@@ -166,6 +170,10 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
             m.chainJson = chainJson;
             m.gainJson  = gainJson;
             m.askJson   = askJson;
+            m.editJson  = editJson;
+            m.editAltPrompt = altPrompt;
+            m.editAltLabel  = altLabel;
+            m.displayText   = displayText;
             c.messages.push_back(std::move(m));
             return first;
         }
@@ -182,9 +190,48 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
     m.chainJson = chainJson;
     m.gainJson  = gainJson;
     m.askJson   = askJson;
+    m.editJson  = editJson;
+    m.editAltPrompt = altPrompt;
+    m.editAltLabel  = altLabel;
+    m.displayText   = displayText;
     c.messages.push_back(std::move(m));
     chats.insert(chats.begin(), std::move(c));
     return true; // first message
+}
+
+void EchoJayWorkspace::clearEditAltPrompt(const juce::String& chatId,
+                                          const juce::String& matchContent)
+{
+    for (auto& c : chats)
+    {
+        if (c.id != chatId) continue;
+        for (auto& m : c.messages)
+            if (m.role == "assistant" && m.content == matchContent)
+                m.editAltPrompt.clear();
+        return;
+    }
+}
+
+void EchoJayWorkspace::markEditApplied(const juce::String& chatId,
+                                       const juce::String& matchContent,
+                                       const juce::String& resultSummary,
+                                       const juce::String& altPrompt,
+                                       const juce::String& altLabel)
+{
+    for (auto& c : chats)
+    {
+        if (c.id != chatId) continue;
+        for (auto& m : c.messages)
+            if (m.role == "assistant" && m.editJson.isNotEmpty()
+                && m.content == matchContent)
+            {
+                m.editApplied   = true;
+                m.editResult    = resultSummary;
+                m.editAltPrompt = altPrompt;
+                m.editAltLabel  = altLabel;
+            }
+        return;
+    }
 }
 
 void EchoJayWorkspace::markAskAnswered(const juce::String& chatId,
@@ -682,6 +729,12 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
                     msg.gainJson  = mObj->getProperty("_gain").toString();
                     msg.askJson   = mObj->getProperty("_ask").toString();
                     msg.askAnswered = (bool)mObj->getProperty("_askDone");
+                    msg.editJson  = mObj->getProperty("_edit").toString();
+                    msg.editApplied = (bool)mObj->getProperty("_editDone");
+                    msg.editResult  = mObj->getProperty("_editResult").toString();
+                    msg.editAltPrompt = mObj->getProperty("_editAlt").toString();
+                    msg.editAltLabel  = mObj->getProperty("_editAltLbl").toString();
+                    msg.displayText   = mObj->getProperty("_display").toString();
                     c.messages.push_back(std::move(msg));
                 }
             }
@@ -870,6 +923,22 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
             if (m.askAnswered)
                 mObj->setProperty("_askDone", true);
         }
+        if (m.editJson.isNotEmpty())
+        {
+            mObj->setProperty("_edit",      m.editJson);
+            if (m.editApplied)
+                mObj->setProperty("_editDone", true);
+            if (m.editResult.isNotEmpty())
+                mObj->setProperty("_editResult", m.editResult);
+        }
+        // _editAlt is independent of _edit: build RESULT BUBBLES (plain
+        // messages) carry the Suggest-an-alternative prompt too
+        if (m.editAltPrompt.isNotEmpty())
+            mObj->setProperty("_editAlt", m.editAltPrompt);
+        if (m.editAltLabel.isNotEmpty())
+            mObj->setProperty("_editAltLbl", m.editAltLabel);
+        if (m.displayText.isNotEmpty())
+            mObj->setProperty("_display", m.displayText);
         msgs.add(juce::var(mObj));
     }
     obj->setProperty("messages", juce::var(msgs));

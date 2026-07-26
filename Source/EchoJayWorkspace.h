@@ -22,6 +22,16 @@ struct WsMessage {
     juce::String askJson;    // non-empty on assistant ASK replies (question + tappable
                              // choices, Phase 1b); serialised as _ask
     bool askAnswered = false; // chip tapped (or question superseded); serialised as _askDone
+    juce::String editJson;   // non-empty on assistant CHAIN_EDIT replies (Phase 1c);
+                             // serialised as _edit
+    bool editApplied = false;   // Apply pressed; serialised as _editDone
+    juce::String editResult; // outcome summary after apply; serialised as _editResult
+    juce::String editAltPrompt; // "Suggest an alternative" follow-up text, set only
+                                // when an op failed as a plugin LOAD failure;
+                                // serialised as _editAlt, cleared once tapped
+    juce::String editAltLabel;  // display label for that tap; serialised as _editAltLbl
+    juce::String displayText;   // tap-generated user turns: rendered text
+                                // (content = sent text); serialised as _display
 };
 
 struct WsChat {
@@ -167,7 +177,11 @@ public:
                              const juce::String& reviewId  = juce::String(),
                              const juce::String& chainJson = juce::String(),
                              const juce::String& gainJson  = juce::String(),
-                             const juce::String& askJson   = juce::String());
+                             const juce::String& askJson   = juce::String(),
+                             const juce::String& editJson  = juce::String(),
+                             const juce::String& altPrompt = juce::String(),
+                             const juce::String& altLabel  = juce::String(),
+                             const juce::String& displayText = juce::String());
     // Update the persisted gain-proposal block for the assistant message
     // whose visible content matches (the display list can hold transient
     // messages that never reached the store, so content match beats index).
@@ -180,6 +194,17 @@ public:
     // survives reload.
     void markAskAnswered(const juce::String& chatId,
                          const juce::String& matchContent);
+    // Mark an assistant CHAIN_EDIT message applied and store the outcome
+    // summary (Phase 1c) — same content-match rule.
+    // Clear a persisted Suggest-an-alternative prompt on ANY assistant
+    // message (edit cards and plain result bubbles alike) - one-shot pill.
+    void clearEditAltPrompt(const juce::String& chatId,
+                            const juce::String& matchContent);
+    void markEditApplied(const juce::String& chatId,
+                         const juce::String& matchContent,
+                         const juce::String& resultSummary,
+                         const juce::String& altPrompt = juce::String(),
+                         const juce::String& altLabel  = juce::String());
     void setChatTitle(const juce::String& chatId, const juce::String& title);
     void setChatTrackName(const juce::String& chatId, const juce::String& trackName);
     void setChatPinned(const juce::String& chatId, bool pinned); // stamps pinnedAt

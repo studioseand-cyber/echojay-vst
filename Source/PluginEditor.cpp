@@ -1797,6 +1797,38 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         addAndMakeVisible(chainBuildBtns[(size_t)i]);
     }
 
+    // "Apply changes" buttons for chain-edit preview cards (Phase 1c) —
+    // pill styling shared with the ASK chips (same LookAndFeel, same text
+    // colour) so the two conversational controls read as one family
+    for (int i = 0; i < kMaxChainBuildBtns; ++i)
+    {
+        editApplyBtns[(size_t)i].setLookAndFeel(&askChipLnF_);
+        editApplyBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
+        editApplyBtns[(size_t)i].setVisible(false);
+        editApplyBtns[(size_t)i].onClick = [this, i]() { applyChainEditFromMsg(editApplyMsgIdx[(size_t)i]); };
+        addAndMakeVisible(editApplyBtns[(size_t)i]);
+
+        editAltBtns[(size_t)i].setLookAndFeel(&askChipLnF_);
+        editAltBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
+        editAltBtns[(size_t)i].setButtonText("Suggest an alternative");
+        editAltBtns[(size_t)i].setVisible(false);
+        editAltBtns[(size_t)i].onClick = [this, i]()
+        {
+            const int mi = editAltMsgIdx[(size_t)i];
+            if (mi < 0 || mi >= (int)chatMessages.size()) return;
+            auto& am = chatMessages[(size_t)mi];
+            if (am.editAltPrompt.isEmpty()) return;
+            const juce::String prompt = am.editAltPrompt;
+            const juce::String label  = am.editAltLabel.isNotEmpty()
+                                          ? am.editAltLabel : juce::String("Find replacements");
+            am.editAltPrompt.clear();   // one-shot
+            workspace.clearEditAltPrompt(currentChatId, am.content);   // cards + bubbles
+            workspace.requestMutationSync();
+            sendChatMessage(prompt, label);    // full prompt sent; label shown
+        };
+        addAndMakeVisible(editAltBtns[(size_t)i]);
+    }
+
     // ASK choice chips (Phase 1b, B2) — pill buttons in the shelf docked on
     // top of the chat input. Tap = auto-send the formatted answer; the send
     // path itself supersedes every pending ask (so the shelf also vanishes
@@ -1813,7 +1845,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // that survives history trimming (blocks are stripped in storage).
             // sendChatMessage -> supersedePendingAsks marks + persists.
             sendChatMessage(askChipLabels[(size_t)i]
-                            + " (answering: \"" + askChipQuestion_ + "\")");
+                            + " (answering: \"" + askChipQuestion_ + "\")",
+                            askChipLabels[(size_t)i]);   // bubble shows the label only
         };
         addAndMakeVisible(askChipBtns[(size_t)i]);
     }
@@ -7060,6 +7093,12 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             cm.gainData  = msg.gainJson;   // restore gain proposals + their applied/undone state
             cm.askData   = msg.askJson;    // restore ask chips + answered state
             cm.askAnswered = msg.askAnswered;
+            cm.editData    = msg.editJson;    // restore edit card + applied state
+            cm.editApplied = msg.editApplied; // (editBaseRevision stays -1: the
+            cm.editResult  = msg.editResult;  //  revision guard is same-session only)
+            cm.editAltPrompt = msg.editAltPrompt;
+            cm.editAltLabel  = msg.editAltLabel;
+            cm.displayText   = msg.displayText;
 
             // Reconstruct capture block from stored review.
             // Helper lambda — populates cm from a resolved WsReview.
@@ -10567,6 +10606,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // Track waveform card positions for overlay buttons
     activeWavePlayBtns = 0;
     activeChainBuildBtns = 0;
+    activeEditApplyBtns = 0;
+    activeEditAltBtns = 0;
     chatWavePositions.clear();
     gainCardZones_.clear();
 
@@ -10584,7 +10625,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         static constexpr int kCaptureMsgH = 56;
 
         juce::AttributedString as;
-        as.append(msg.content, juce::Font(juce::FontOptions(chatMsgFontSize)),
+        as.append(displayedText(msg), juce::Font(juce::FontOptions(chatMsgFontSize)),
                   isUser ? C::text : C::text2);
         // ~1.4x effective line height so paragraphs breathe. MUST match the
         // height-measure pass in resized() or the scroll range drifts.
@@ -10598,10 +10639,18 @@ void EchoJayEditor::paint(juce::Graphics& g)
         if (!isCaptureMsg && msg.hasWaveform && !msg.waveform.empty())
             waveCardH = 36; // play button + waveform only
 
-        // Extra height for "Build this chain" button on assistant messages with a chain block
+        // Build card: slot lines + "Build this chain" button — height from
+        // chainCardHeight(), the SAME helper the measure pass consumes
         static constexpr int kChainBtnH = 26;
         bool hasChainBtn = !isUser && msg.chainData.isNotEmpty();
-        int chainAreaH = hasChainBtn ? (kChainBtnH + 6) : 0;
+        int chainAreaH = isUser ? 0 : chainCardHeight(msg);
+
+        // Extra height for the chain-edit preview card (op list + Apply /
+        // result line) — shared helper with the measure pass
+        int editAreaH = isUser ? 0 : editCardHeight(msg);
+        // Alt pill on PLAIN result bubbles (build failures) — same shared-
+        // helper discipline, consumed by paint AND measure
+        int altAreaH = isUser ? 0 : altPillH(msg);
 
 
         // Extra height for AI gain-proposal APPLY cards
@@ -10619,7 +10668,11 @@ void EchoJayEditor::paint(juce::Graphics& g)
         }
         int gainAreaH = gainCardCount * (kGainCardH + 6);
 
-        int tH = isCaptureMsg ? kCaptureMsgH : (textH + waveCardH + chainAreaH + gainAreaH);
+        // editAreaH MUST ride in this sum exactly like the measure pass at
+        // "tH = textH + ..." below — its omission here was the 1c card
+        // painting over the prose (bubbleH subtraction without the matching
+        // reservation), the same class of bug the ASK chips had pre-shelf.
+        int tH = isCaptureMsg ? kCaptureMsgH : (textH + waveCardH + chainAreaH + gainAreaH + editAreaH + altAreaH);
         int drawY = chatTop2 + msgY;
 
         if (drawY + tH > chatTop2 - 50 && drawY < chatBottomEdge + 50)
@@ -10964,10 +11017,51 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 
                 int bubbleX = avX + avatarSize + 6;
                 int bubbleW = chatW - avatarSize - 20;
-                int bubbleH = tH - chainAreaH - gainAreaH;
+                int bubbleH = tH - chainAreaH - gainAreaH - editAreaH - altAreaH;
                 g.setColour(C::bg3);
                 g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)bubbleH, 10.0f);
                 layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(bubbleH - 20) });
+
+                // Build card: structured slot lines (ops-card visual
+                // language: 11.5f, 16px lines, cyan names, dim settings),
+                // then the Build button below them
+                int chainLinesH = 0;
+                if (hasChainBtn)
+                {
+                    auto cv = juce::JSON::parse(msg.chainData);
+                    if (auto* co = cv.getDynamicObject())
+                        if (auto* carr = co->getProperty("chain").getArray())
+                        {
+                            int ly = drawY + bubbleH + 4;
+                            const int lx = bubbleX + 10;
+                            g.setFont(juce::Font(juce::FontOptions(11.5f)));
+                            for (int si = 0; si < carr->size(); ++si)
+                            {
+                                auto* so = carr->getReference(si).getDynamicObject();
+                                if (so == nullptr) { ly += 16; continue; }
+                                const auto nm = so->getProperty("name").toString().trim();
+                                auto set = so->getProperty("settings").toString().trim();
+                                if (set.isEmpty())
+                                    set = so->getProperty("role").toString().trim();
+                                const juce::String head = juce::String(si + 1) + ". " + nm;
+                                const int headW = juce::jmin(bubbleW - 20,
+                                    juce::GlyphArrangement::getStringWidthInt(
+                                        juce::Font(juce::FontOptions(11.5f)), head) + 4);
+                                g.setColour(juce::Colour(0xff22d3ee));
+                                g.drawText(head, lx, ly, headW, 14,
+                                           juce::Justification::centredLeft, true);
+                                if (set.isNotEmpty() && headW < bubbleW - 40)
+                                {
+                                    g.setColour(C::text2);
+                                    g.drawText(juce::String::fromUTF8(" \xe2\x80\x94 ") + set,
+                                               lx + headW, ly, bubbleW - 20 - headW, 14,
+                                               juce::Justification::centredLeft, true);
+                                }
+                                ly += 16;
+                            }
+                            chainLinesH = carr->size() * 16 + 4;
+                        }
+                }
 
                 // "Build this chain" button
                 if (hasChainBtn && activeChainBuildBtns < kMaxChainBuildBtns)
@@ -10975,7 +11069,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     int btnIdx = activeChainBuildBtns++;
                     chainBuildJsons[(size_t)btnIdx] = msg.chainData;
                     int btnX = bubbleX + 10;
-                    int btnY = drawY + bubbleH + 4;
+                    int btnY = drawY + bubbleH + 4 + chainLinesH;
                     int btnW = juce::jmin(160, bubbleW - 20);
                     chainBuildBtns[(size_t)btnIdx].setButtonText("Build this chain");
                     auto scrollBounds2 = chatScroll.getBounds();
@@ -11088,25 +11182,161 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     }
                 }
 
+                // ---- Chain-edit preview card (Phase 1c): plain-language op
+                // list + Apply changes; after apply (or abort) the retired
+                // card shows the outcome summary instead of the button ----
+                if (editAreaH > 0)
+                {
+                    juce::StringArray ebase;
+                    auto eops = ChainHost::parseChainEditOps(msg.editData, &ebase);
+                    int ey = drawY + bubbleH + chainAreaH + gainAreaH + 4;
+                    const int ex = bubbleX + 10;
+                    g.setFont(juce::Font(juce::FontOptions(11.5f)));
+                    for (auto& eop : eops)
+                    {
+                        // House palette per op kind: adds/replacements cyan,
+                        // removals (and bypass-on) muted amber, moves neutral
+                        // — mirrors app.html .eop-* classes, keep in sync
+                        g.setColour(eop.op == "add" || eop.op == "replace"
+                                        ? juce::Colour(0xff22d3ee)
+                                    : eop.op == "remove" || (eop.op == "bypass" && eop.on)
+                                        ? juce::Colour(0xfff59e0b)
+                                        : C::text2);
+                        g.drawText(ChainHost::describeEditOp(eop, ebase),
+                                   ex, ey, bubbleW - 20, 14,
+                                   juce::Justification::centredLeft, true);
+                        ey += 16;
+                    }
+                    if (msg.editApplied)
+                    {
+                        g.setColour(msg.editResult.startsWith("Applied")
+                                    ? juce::Colour(0xff22c55e) : juce::Colour(0xfff59e0b));
+                        g.setFont(juce::Font(juce::FontOptions(10.5f)));
+                        g.drawText(msg.editResult, ex, ey + 2, bubbleW - 20, 14,
+                                   juce::Justification::centredLeft, true);
+                        if (msg.editAltPrompt.isNotEmpty()
+                            && activeEditAltBtns < kMaxChainBuildBtns)
+                        {
+                            int abi = activeEditAltBtns++;
+                            editAltMsgIdx[(size_t)abi] = msgLoopIndex;
+                            editAltBtns[(size_t)abi].setButtonText(
+                                msg.editAltPrompt.startsWith("These")
+                                    ? "Suggest alternatives" : "Suggest an alternative");
+                            juce::Rectangle<int> ab(ex, ey + 20,
+                                                    juce::jmin(180, bubbleW - 20), 26);
+                            auto sb4 = chatScroll.getBounds();
+                            bool inV2 = ab.getY() >= sb4.getY()
+                                     && ab.getBottom() <= sb4.getBottom();
+                            if (inV2)
+                            {
+                                editAltBtns[(size_t)abi].setBounds(ab);
+                                editAltBtns[(size_t)abi].setVisible(true);
+                                editAltBtns[(size_t)abi].toFront(false);
+                            }
+                            else
+                            {
+                                editAltBtns[(size_t)abi].setBounds(-100, -100, 1, 1);
+                                editAltBtns[(size_t)abi].setVisible(false);
+                            }
+                        }
+                    }
+                    else if (activeEditApplyBtns < kMaxChainBuildBtns)
+                    {
+                        int bi = activeEditApplyBtns++;
+                        editApplyMsgIdx[(size_t)bi] = msgLoopIndex;
+                        editApplyBtns[(size_t)bi].setButtonText("Apply changes");
+                        juce::Rectangle<int> ar(ex, ey + 2,
+                                                juce::jmin(160, bubbleW - 20), kChainBtnH);
+                        auto sb3 = chatScroll.getBounds();
+                        bool inV = ar.getY() >= sb3.getY()
+                                && ar.getBottom() <= sb3.getBottom();
+                        if (inV)
+                        {
+                            editApplyBtns[(size_t)bi].setBounds(ar);
+                            editApplyBtns[(size_t)bi].setVisible(true);
+                            editApplyBtns[(size_t)bi].toFront(false);
+                        }
+                        else
+                        {
+                            editApplyBtns[(size_t)bi].setBounds(-100, -100, 1, 1);
+                            editApplyBtns[(size_t)bi].setVisible(false);
+                        }
+                    }
+                }
+
+                // Suggest-an-alternative pill on a PLAIN result bubble
+                // (build failures; edit cards render theirs inside the card)
+                if (altAreaH > 0 && activeEditAltBtns < kMaxChainBuildBtns)
+                {
+                    int abi2 = activeEditAltBtns++;
+                    editAltMsgIdx[(size_t)abi2] = msgLoopIndex;
+                    editAltBtns[(size_t)abi2].setButtonText(
+                        msg.editAltPrompt.startsWith("These")
+                            ? "Suggest alternatives" : "Suggest an alternative");
+                    juce::Rectangle<int> ab2(bubbleX + 10,
+                                             drawY + bubbleH + chainAreaH + gainAreaH + editAreaH + 4,
+                                             juce::jmin(180, bubbleW - 20), 26);
+                    auto sb5 = chatScroll.getBounds();
+                    bool inV3 = ab2.getY() >= sb5.getY()
+                             && ab2.getBottom() <= sb5.getBottom();
+                    if (inV3)
+                    {
+                        editAltBtns[(size_t)abi2].setBounds(ab2);
+                        editAltBtns[(size_t)abi2].setVisible(true);
+                        editAltBtns[(size_t)abi2].toFront(false);
+                    }
+                    else
+                    {
+                        editAltBtns[(size_t)abi2].setBounds(-100, -100, 1, 1);
+                        editAltBtns[(size_t)abi2].setVisible(false);
+                    }
+                }
             }
         }
         msgY += tH + 10;
     }
     
-    if (chatLoading) {
+    // Stage row (Phase 1d): model wait AND apply progress, shimmer-animated.
+    // Height comes from stageRowH() — the same helper the measure pass uses,
+    // so the reservation and this paint can never disagree.
+    if (stageRowH() > 0) {
         int drawY = chatTop2 + msgY;
         if (drawY < chatBottomEdge) {
-            // Pulsing dots animation
             int avX = chatX + 6;
             g.setColour(C::purple.withAlpha(0.5f));
             g.fillEllipse((float)avX, (float)drawY + 2, (float)avatarSize, (float)avatarSize);
             g.setColour(juce::Colours::white);
             g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
             g.drawText("E", avX, drawY + 2, avatarSize, avatarSize, juce::Justification::centred);
-            
+
+            // Real event labels (apply progress) win; the model wait gets a
+            // generic-safe line only — it has no sub-stages to claim.
+            const juce::String stxt = stageStatusText_.isNotEmpty()
+                                        ? stageStatusText_
+                                        : juce::String::fromUTF8("Thinking\xe2\x80\xa6");
+            juce::Font stageFont(juce::FontOptions(12.0f * chatTextScale));
+            juce::Rectangle<int> rowR(avX + avatarSize + 12, drawY + 4, 320, 20);
+
+            // SHIMMER (parity with app.html .stage-shimmer: 1.6s cycle, dim
+            // base, bright #7FE3F2 band): dim pass, then a bright pass
+            // clipped to a band sweeping the text width.
             g.setColour(C::text3);
-            g.setFont(juce::Font(juce::FontOptions(12.0f * chatTextScale)));
-            g.drawText("Analysing...", avX + avatarSize + 12, drawY + 4, 100, 20, juce::Justification::centredLeft);
+            g.setFont(stageFont);
+            g.drawText(stxt, rowR, juce::Justification::centredLeft, true);
+            {
+                const float phase = (float)(juce::Time::getMillisecondCounter() % 1600u)
+                                    / 1600.0f;
+                const int textW = juce::jmin(rowR.getWidth(),
+                    juce::GlyphArrangement::getStringWidthInt(stageFont, stxt));
+                const int bandW = 60;
+                const int bandX = rowR.getX() + (int)(phase * (float)(textW + bandW)) - bandW;
+                g.saveState();
+                g.reduceClipRegion(bandX, rowR.getY(), bandW, rowR.getHeight());
+                g.setColour(juce::Colour(0xff7FE3F2));
+                g.drawText(stxt, rowR, juce::Justification::centredLeft, true);
+                g.restoreState();
+            }
+            stageRowRect_ = { chatX, drawY, chatW, 30 };
         }
     }
 
@@ -11117,6 +11347,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
         wavePlayOverlays[(size_t)i].setVisible(false);
     for (int i = activeChainBuildBtns; i < kMaxChainBuildBtns; ++i)
         chainBuildBtns[(size_t)i].setVisible(false);
+    for (int i = activeEditApplyBtns; i < kMaxChainBuildBtns; ++i)
+        editApplyBtns[(size_t)i].setVisible(false);
+    for (int i = activeEditAltBtns; i < kMaxChainBuildBtns; ++i)
+        editAltBtns[(size_t)i].setVisible(false);
 
     } // end if (!visualOnlyMode && chatW > 0) — chat section
 
@@ -12769,13 +13003,13 @@ void EchoJayEditor::timerCallback()
             else
             {
                 juce::AttributedString as;
-                as.append(msg.content, juce::Font(juce::FontOptions(chatMsgFontSize2)), C::text);
+                as.append(displayedText(msg), juce::Font(juce::FontOptions(chatMsgFontSize2)), C::text);
                 as.setLineSpacing(chatMsgFontSize2 * 0.35f); // MUST match paint pass
                 juce::TextLayout layout;
                 layout.createLayout(as, (float)(maxBW - 20));
                 int textH = (int)layout.getHeight() + 20;
                 int waveCardH = (msg.hasWaveform && !msg.waveform.empty()) ? 36 : 0;
-                int chainAreaH2 = (msg.role == "assistant" && msg.chainData.isNotEmpty()) ? 32 : 0;
+                int chainAreaH2 = (msg.role == "assistant") ? chainCardHeight(msg) : 0;   // SAME helper as paint
                 // AI gain proposal cards — MUST match the paint pass reservation
                 int gainAreaH2 = 0;
                 if (msg.role == "assistant" && msg.gainData.isNotEmpty())
@@ -12788,11 +13022,15 @@ void EchoJayEditor::timerCallback()
                             gainAreaH2 = pr.getArray()->size() * (kGainCardH + 6);
                     }
                 }
-                tH = textH + waveCardH + chainAreaH2 + gainAreaH2;
+                // Chain-edit preview card — same shared helper as the paint
+                // pass so reservation always matches
+                int editAreaH2 = (msg.role == "assistant") ? editCardHeight(msg) : 0;
+                int altAreaH2  = (msg.role == "assistant") ? altPillH(msg) : 0;   // SAME helper as paint
+                tH = textH + waveCardH + chainAreaH2 + gainAreaH2 + editAreaH2 + altAreaH2;
             }
             totalH += tH + 10; // matches paint msgY += tH + 10
         }
-        if (chatLoading) totalH += 30;
+        totalH += stageRowH();   // stage row (1d): SAME helper as the paint pass
         totalH += 8; // bottom padding so last message isn't flush against the edge
         
         int visH = chatScroll.getHeight();
@@ -13090,6 +13328,225 @@ int EchoJayEditor::measureAskShelf(const ChatMsg& msg, int shelfW,
     return y + kAskChipH + padY;
 }
 
+// ---- Staged replies (Phase 1d): stage row + result bubble ----
+void EchoJayEditor::StageTicker::timerCallback()
+{
+    // Repaint only the stage row — the shimmer band moves with wall time
+    if (!ed.stageRowRect_.isEmpty())
+        ed.repaint(ed.stageRowRect_.expanded(4));
+}
+
+void EchoJayEditor::setStageStatus(const juce::String& s)
+{
+    stageStatusText_ = s;
+    if (!stageTicker_.isTimerRunning())
+        stageTicker_.startTimer(33);   // ~30fps, row-rect only
+    repaint();
+}
+
+void EchoJayEditor::clearStageStatus()
+{
+    stageStatusText_.clear();
+    if (!chatLoading) stageTicker_.stopTimer();
+    repaint();
+}
+
+void EchoJayEditor::appendLocalResultBubble(const juce::String& text,
+                                            const juce::String& altPrompt,
+                                            const juce::String& altLabel)
+{
+    if (text.isEmpty()) return;
+    ChatMsg cm;
+    cm.role    = "assistant";
+    cm.content = text;
+    cm.editAltPrompt = altPrompt;   // pill on the bubble (build failures)
+    cm.editAltLabel  = altLabel;
+    chatMessages.push_back(cm);
+    processorRef.chatHistory.push_back({ "assistant", text });
+    processorRef.chatRoles.add("assistant");
+    processorRef.chatContents.add(text);
+    workspace.appendMessageToChat(currentChatId, "assistant", text,
+                                  {}, {}, {}, {}, {}, altPrompt, altLabel);
+    workspace.requestMutationSync();
+    repaint();
+}
+
+// ---- Chain-edit preview card (Phase 1c) ----
+// Height shared by the measure and paint passes: one 16px line per op,
+// plus the Apply button (unapplied) or the outcome line (retired card).
+// Build card: one line per slot + the Build button. Parses chainData —
+// slots render as "N. Name — settings" in the ops card's visual language.
+int EchoJayEditor::chainCardHeight(const ChatMsg& msg) const
+{
+    if (msg.role != "assistant" || msg.chainData.isEmpty()) return 0;
+    static constexpr int kBtnH = 26;
+    int lines = 0;
+    auto v = juce::JSON::parse(msg.chainData);
+    if (auto* o = v.getDynamicObject())
+        if (auto* arr = o->getProperty("chain").getArray())
+            lines = arr->size();
+    return lines * 16 + (lines > 0 ? 4 : 0) + kBtnH + 8;
+}
+
+int EchoJayEditor::editCardHeight(const ChatMsg& msg) const
+{
+    if (msg.role != "assistant" || msg.editData.isEmpty()) return 0;
+    auto ops = ChainHost::parseChainEditOps(msg.editData);
+    if (ops.empty()) return 0;
+    return (int)ops.size() * 16 + 6
+         + (msg.editApplied ? (18 + (msg.editAltPrompt.isNotEmpty() ? 32 : 0))
+                            : 26 + 8);
+}
+
+void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
+{
+    if (msgIdx < 0 || msgIdx >= (int)chatMessages.size()) return;
+    auto& cm = chatMessages[(size_t)msgIdx];
+    if (cm.editApplied || cm.editData.isEmpty()) return;
+
+    juce::StringArray baseSlots;
+    auto ops = ChainHost::parseChainEditOps(cm.editData, &baseSlots);
+    if (ops.empty()) return;
+    const int total = (int)ops.size();
+    const int rev = cm.editBaseRevision;
+
+    // The rack lives on the Chain tab: switch there FIRST so the apply
+    // progress, the rebuilt rack, and any auto-opened editor land where the
+    // user can see them (from Chat, the native clip view would otherwise
+    // float over the wrong tab). Builds already do this at doLoad start.
+    switchToTab(Tab::Chain);
+
+    // AMEK discipline: close every hosted editor NOW; the sequencer starts a
+    // runloop beat later so no plugin UI timer can fire into a dying view.
+    chainListPanel.closeAllEditors();
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay(80, [safeThis, ops, baseSlots, rev, msgIdx, total]() mutable
+    {
+        if (safeThis == nullptr) return;
+        auto& ch = safeThis->processorRef.getChainHost();
+        // Explicit copy BEFORE the move: capturing `ops` in the completion
+        // lambda while std::move(ops) sits in the same call expression would
+        // be unsequenced.
+        auto opsForAlt = ops;
+        ch.applyChainEdits(std::move(ops), rev, baseSlots,
+            [safeThis, msgIdx, total, opsForAlt, baseSlots](const juce::StringArray& results,
+                                      int applied, bool aborted)
+        {
+            if (safeThis != nullptr) safeThis->clearStageStatus();
+            if (safeThis == nullptr) return;
+            if (msgIdx < 0 || msgIdx >= (int)safeThis->chatMessages.size()) return;
+            auto& cm2 = safeThis->chatMessages[(size_t)msgIdx];
+
+            juce::String summary;
+            if (aborted)
+                summary = "Not applied: " + results.joinIntoString("; ");
+            else if (applied == total)
+                summary = "Applied " + juce::String(applied)
+                        + (applied == 1 ? " change" : " changes");
+            else
+                summary = "Applied " + juce::String(applied) + " of "
+                        + juce::String(total) + " - "
+                        + results.joinIntoString("; ");
+
+            // Load-failure follow-up: offer "Suggest an alternative" ONLY
+            // when an op failed as a plugin load (unlicensed etc). Aborts
+            // (staleness/invalid) never get it — re-asking is the right
+            // move there. results align 1:1 with ops in continue mode, so
+            // the failing op is ops[r]; the prompt carries the failed
+            // plugin, its intended change, and edit-classifier phrasing so
+            // the reply is a fresh preview+Apply. Never auto-substitutes.
+            juce::String altPrompt;
+            juce::StringArray plainNames;
+            if (!aborted)
+            {
+                // ALL load failures ride ONE follow-up: per-failure offers
+                // would serially stale each other (each apply bumps
+                // chainRevision, aborting the next card's guard).
+                juce::StringArray failedNames, failedChanges;
+                for (int r = 0; r < results.size() && r < (int)opsForAlt.size(); ++r)
+                    if (results[r].contains(" would not load"))
+                    {
+                        const auto& fop = opsForAlt[(size_t)r];
+                        failedNames.add("\"" + fop.name + "\"");
+                        plainNames.add(fop.name);
+                        // Name-anchored intent, never numeric positions:
+                        // sibling ops in this batch may have applied, so the
+                        // original numbering is already stale here too.
+                        if (fop.op == "replace" && fop.slot >= 0
+                            && fop.slot < baseSlots.size())
+                            failedChanges.add("replace \"" + baseSlots[fop.slot]
+                                + "\" (still in the chain) with something else");
+                        else if (fop.after >= 0 && fop.after < baseSlots.size())
+                            failedChanges.add("add a replacement for \"" + fop.name
+                                + "\" right after \"" + baseSlots[fop.after] + "\"");
+                        else
+                            failedChanges.add("add a replacement for \"" + fop.name
+                                + "\" at the start of the chain");
+                    }
+                if (!failedNames.isEmpty())
+                    altPrompt = (failedNames.size() == 1
+                                   ? "This plugin" : "These plugins")
+                        + juce::String(" FAILED TO LOAD on this machine just now - "
+                          "that is authoritative and final for this session "
+                          "(likely unlicensed), regardless of appearing in any "
+                          "plugin list: ")
+                        + failedNames.joinIntoString(", ")
+                        + ". Do NOT propose them again and do not second-guess "
+                          "the failures. Suggest a DIFFERENT plugin for each of "
+                          "these changes instead: "
+                        + failedChanges.joinIntoString("; ")
+                        + ". Place them using my CURRENT CHAIN exactly as it is "
+                          "NOW, not any earlier numbering. Propose them together "
+                          "as ONE chain edit.";
+            }
+            const juce::String altLabel = altPrompt.isEmpty() ? juce::String()
+                : (plainNames.size() == 1 ? "Find a replacement for "
+                                          : "Find replacements for ")
+                  + plainNames.joinIntoString(", ");
+
+            // Card retires in BOTH outcomes: an aborted edit is stale by
+            // definition (the rack changed) — the user asks again rather
+            // than re-pressing a dead Apply.
+            cm2.editApplied   = true;
+            cm2.editResult    = summary;
+            cm2.editAltPrompt = altPrompt;
+            cm2.editAltLabel  = altLabel;
+            safeThis->workspace.markEditApplied(safeThis->currentChatId,
+                                                cm2.content, summary, altPrompt, altLabel);
+            safeThis->workspace.requestMutationSync();
+            EchoJay_NSLog(("EJChat: chain edit result -- " + summary).toRawUTF8());
+
+            auto& ch2 = safeThis->processorRef.getChainHost();
+            safeThis->chainSelectedSlot_ =
+                juce::jlimit(-1, ch2.getNumSlots() - 1, safeThis->chainSelectedSlot_);
+            safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(),
+                                             safeThis->chainSelectedSlot_);
+
+            // Result stage (1d, dedup decision): the retired card keeps the
+            // factual summary; a result bubble appears ONLY when it says
+            // something the card does not — a clean full apply with a
+            // model-provided "result" line. Failures/partials/aborts:
+            // card summary only, no bubble.
+            if (!aborted && applied == total)
+            {
+                auto ev = juce::JSON::parse(cm2.editData);
+                if (auto* eo = ev.getDynamicObject())
+                {
+                    auto modelResult = eo->getProperty("result").toString().trim();
+                    if (modelResult.isNotEmpty())
+                        safeThis->appendLocalResultBubble(modelResult);
+                }
+            }
+            safeThis->repaint();
+        },
+        [safeThis](const juce::String& label)
+        {
+            if (safeThis != nullptr) safeThis->setStageStatus(label);
+        });
+    });
+}
+
 int EchoJayEditor::findNewestUnansweredAsk() const
 {
     for (int i = (int)chatMessages.size() - 1; i >= 0; --i)
@@ -13113,7 +13570,8 @@ void EchoJayEditor::supersedePendingAsks()
     if (any) workspace.requestMutationSync();
 }
 
-void EchoJayEditor::sendChatMessage(const juce::String& msg)
+void EchoJayEditor::sendChatMessage(const juce::String& msg,
+                                    const juce::String& displayLabel)
 {
     // Single choke point for TYPED sends from every surface: the timer's
     // upgrade-button gate normally replaces the input row first, but a
@@ -13153,11 +13611,18 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     }
 
     // Push user turn to display list
-    chatMessages.push_back({"user", msg});
+    {
+        ChatMsg um;
+        um.role = "user";
+        um.content = msg;                 // SENT/history text, unchanged
+        um.displayText = displayLabel;    // rendered text for tap turns
+        chatMessages.push_back(std::move(um));
+    }
     processorRef.chatHistory.push_back({"user", msg});
 
     // Push to workspace (single source of truth)
-    bool isFirstMessage = workspace.appendMessageToChat(currentChatId, "user", msg);
+    bool isFirstMessage = workspace.appendMessageToChat(currentChatId, "user", msg,
+                              {}, {}, {}, {}, {}, {}, {}, displayLabel);
     if (isFirstMessage)
     {
         // Chats still on the "New chat" placeholder take their title from the
@@ -13271,6 +13736,11 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
     // being asked for a chain), plain chat otherwise. A gain proposal rides
     // on whatever turn produced it — never its own turnType.
     api.setNextChatTurnType(chainInjection.isNotEmpty() ? "chain_generate" : "chat");
+    // 1d model-wait stage: generic-safe label only (the one-shot transport
+    // has no sub-stages to report; a specific claim could desync)
+    setStageStatus(chainInjection.isNotEmpty()
+                       ? juce::String::fromUTF8("Working on your chain\xe2\x80\xa6")
+                       : juce::String::fromUTF8("Thinking\xe2\x80\xa6"));
 
     juce::String activeChatId = currentChatId; // capture before async
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -13279,11 +13749,13 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
             if (safeThis == nullptr)
                 return;
             safeThis->chatLoading = false;
+            safeThis->clearStageStatus();   // 1d: model wait over
 
             juce::String visibleReply = reply;
             juce::String chainJson;
             juce::String gainJson;
             juce::String askJson;
+            juce::String editJson;
             // Always try to extract chain + gain + ask blocks; the model may
             // or may not have included any. Gain proposals are measurement-
             // backed APPLY cards (never auto-applied); ask blocks render as
@@ -13296,6 +13768,8 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
                     EchoJay_NSLog("EJChat: gain proposal block received");
                 if (EchoJayAPI::extractAskBlock(visibleReply, askJson))
                     EchoJay_NSLog("EJChat: ASK block received");
+                if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
+                    EchoJay_NSLog("EJChat: CHAIN_EDIT block received");
             }
 
             // If extractChainBlock returned partial/truncated JSON, try bracket-depth salvage
@@ -13398,6 +13872,11 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
                 cm.chainData = chainJson;   // empty if model didn't return a chain block
                 cm.gainData  = gainJson;    // empty if no gain proposal block
                 cm.askData   = askJson;     // empty if no ask block
+                cm.editData  = editJson;    // empty if no chain-edit block
+                // Staleness anchor: the rack revision the model's baseSlots
+                // describe. -1 after reload (in-memory counter, see header).
+                if (editJson.isNotEmpty())
+                    cm.editBaseRevision = safeThis->processorRef.getChainHost().getChainRevision();
                 safeThis->chatMessages.push_back(cm);
                 safeThis->processorRef.chatHistory.push_back({"assistant", visibleReply});
                 safeThis->processorRef.chatRoles.add("assistant");
@@ -13409,7 +13888,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg)
 
             // Mirror assistant turn to workspace and persist (visibleReply has block stripped; chain + gain + ask stored separately)
             safeThis->workspace.appendMessageToChat(activeChatId, "assistant", visibleReply,
-                                                    {}, chainJson, gainJson, askJson);
+                                                    {}, chainJson, gainJson, askJson, editJson);
             // Ask arrived: run the layout pass so the docked shelf appears
             // and the message viewport reflows above it (message is now in
             // chatMessages, so findNewestUnansweredAsk sees it)
@@ -14314,6 +14793,79 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                     ch3.getNumSlots() > 0 ? juce::String()
                                           : "Failed: no plugins from this chain could load";
                 juce::String status = juce::String(ch3.getNumSlots()) + " slot(s) loaded";
+                // 1d: stage row down, result bubble up. Model "result" text
+                // only on a clean full build; otherwise compose factually.
+                safeThis->clearStageStatus();
+                {
+                    juce::String resultBubble;
+                    if (skipped->isEmpty() && ch3.getNumSlots() > 0)
+                    {
+                        auto rv = juce::JSON::parse(chainJson);
+                        if (auto* ro = rv.getDynamicObject())
+                            resultBubble = ro->getProperty("result").toString().trim();
+                        if (resultBubble.isEmpty())
+                            resultBubble = "Chain built - " + juce::String(ch3.getNumSlots())
+                                         + (ch3.getNumSlots() == 1 ? " plugin loaded." : " plugins loaded.");
+                    }
+                    else if (ch3.getNumSlots() > 0)
+                        resultBubble = "Chain built - " + juce::String(ch3.getNumSlots())
+                                     + " of " + juce::String((int)slots.size()) + " loaded ("
+                                     + skipped->joinIntoString(", ") + " failed).";
+                    else
+                        resultBubble = "The chain could not be built - no plugins loaded.";
+
+                    // Build failures get the same Suggest-an-alternative
+                    // offer as edit failures - ONE follow-up for ALL failed
+                    // slots (per-failure offers would stale each other via
+                    // the revision guard). "add ... after slot N" phrasing
+                    // keeps the follow-up classifying as a chain edit.
+                    juce::String altPrompt;
+                    juce::StringArray plainNames;
+                    if (!skipped->isEmpty())
+                    {
+                        juce::StringArray failedNames, failedSpots;
+                        for (int si2 = 0; si2 < (int)slots.size(); ++si2)
+                            if (skipped->contains(slots[(size_t)si2].name))
+                            {
+                                failedNames.add("\"" + slots[(size_t)si2].name + "\"");
+                                plainNames.add(slots[(size_t)si2].name);
+                                // Anchor by SURVIVING NEIGHBOUR NAME, never
+                                // by index: the follow-up turn carries a
+                                // fresh [CURRENT CHAIN], and stored numeric
+                                // positions go stale (a 7-slot proposal that
+                                // loaded 3 made "after slot 6" unresolvable).
+                                juce::String anchor = "at the start of the chain";
+                                for (int pj = si2 - 1; pj >= 0; --pj)
+                                    if (!skipped->contains(slots[(size_t)pj].name))
+                                    {
+                                        anchor = "right after \"" + slots[(size_t)pj].name + "\"";
+                                        break;
+                                    }
+                                failedSpots.add("add a replacement for \""
+                                    + slots[(size_t)si2].name + "\" " + anchor);
+                            }
+                        if (!failedNames.isEmpty())
+                            altPrompt = (failedNames.size() == 1
+                                           ? "This plugin" : "These plugins")
+                                + juce::String(" FAILED TO LOAD on this machine just "
+                                  "now - that is authoritative and final for this "
+                                  "session (likely unlicensed), regardless of "
+                                  "appearing in any plugin list: ")
+                                + failedNames.joinIntoString(", ")
+                                + ". Do NOT propose them again. Suggest a DIFFERENT "
+                                  "plugin for each: "
+                                + failedSpots.joinIntoString("; ")
+                                + ". Place them using my CURRENT CHAIN exactly as it "
+                                  "is NOW (the failed plugins never loaded, so earlier "
+                                  "numbering does not apply). Propose them together as "
+                                  "ONE chain edit.";
+                    }
+                    const juce::String altLabel = altPrompt.isEmpty() ? juce::String()
+                        : (plainNames.size() == 1 ? "Find a replacement for "
+                                                  : "Find replacements for ")
+                          + plainNames.joinIntoString(", ");
+                    safeThis->appendLocalResultBubble(resultBubble, altPrompt, altLabel);
+                }
                 if (ch3.getNumSlots() > 0)
                     safeThis->bumpMonthlyStat("chains");   // THIS MONTH card
                 if (!skipped->isEmpty())
@@ -14358,6 +14910,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 + juce::String(i + 1) + " of " + juce::String((int)slots.size()) + ")...";
             safeThis->chainStatusLabel.setText(safeThis->chainListPanel.statusText,
                                                juce::dontSendNotification);
+            safeThis->setStageStatus(safeThis->chainListPanel.statusText);   // 1d shimmer
             safeThis->chainListPanel.repaint();
             juce::Timer::callAfterDelay(30, [safeThis, name, settings, structured, skipped, loadNextPtr]() mutable
             {

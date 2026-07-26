@@ -317,6 +317,12 @@ public:
     // Stripped from the visible reply; the client renders APPLY cards.
     static bool extractGainBlock(juce::String& replyInOut, juce::String& gainJsonOut);
 
+    // Same contract for the CHAIN_EDIT ops block (Phase 1c): payload
+    // {"baseSlots":[...],"edit":[{op,...}],"explanation"}. Delimiters: keep
+    // in sync with api/_blocks.js BLOCK_TYPES.chain_edit (canonical) and
+    // extractChainEditBlockWeb in public/app.html.
+    static bool extractChainEditBlock(juce::String& replyInOut, juce::String& editJsonOut);
+
     // Same contract for the ASK question/choices block (Phase 1b): payload
     // {"question","choices":[{"label","detail"}...],"allowFreeText"}.
     // Delimiters: keep in sync with api/_blocks.js BLOCK_TYPES.ask

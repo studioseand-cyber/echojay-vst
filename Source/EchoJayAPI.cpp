@@ -1623,19 +1623,27 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
     auto slots = chainHost.getAllSlotInfos();
     if (slots.empty()) return {};
 
-    // Numbered 0-based to match edit-op slot indices (spec block schema).
-    // Kept compact: this rides every plugin-relevant turn while a chain
-    // exists, so no prose padding. wet reported only when it departs from
-    // fully wet; settings clipped so one verbose slot cannot bloat the turn.
+    // Numbered 1-BASED — the numbering users naturally use ("the first
+    // slot is slot 1") and therefore the numbering the model must echo in
+    // prose and edit ops. parseChainEditOps is the single point converting
+    // back to internal 0-based. Kept compact: this rides every
+    // plugin-relevant turn while a chain exists, so no prose padding. wet
+    // reported only when it departs from fully wet; settings clipped so one
+    // verbose slot cannot bloat the turn.
     juce::String block;
     block << "\n\n[CURRENT CHAIN — the user's rack right now, in signal-flow "
-          << "order; slot numbers are 0-based. When the user asks to change "
-          << "THIS chain (add/remove/swap/reorder), treat it as an edit of "
-          << "these slots, not a new chain from scratch.]\n";
+          << "order; slot numbers are 1-based (the first slot is slot 1). "
+          << "When the user asks to change THIS chain (add/remove/swap/"
+          << "reorder), treat it as an edit of these slots, not a new chain "
+          << "from scratch. Every slot listed here is loaded and running and "
+          << "may ALWAYS be referenced and edited (remove/move/bypass/"
+          << "replace), regardless of AVAILABLE PLUGINS membership or any "
+          << "auto-dial restriction — those only govern which plugins may "
+          << "fill NEW slots.]\n";
     for (int i = 0; i < (int)slots.size(); ++i)
     {
         const auto& s = slots[(size_t)i];
-        block << i << ": \"" << s.name << "\" (" << s.format;
+        block << (i + 1) << ": \"" << s.name << "\" (" << s.format;
         if (s.bypassed) block << ", BYPASSED";
         if (s.wet < 0.995f)
             block << ", wet " << juce::roundToInt(s.wet * 100.0f) << "%";
@@ -1701,6 +1709,35 @@ bool EchoJayAPI::extractGainBlock(juce::String& replyInOut, juce::String& gainJs
     else
     {
         gainJsonOut = replyInOut.substring(jsonStart).trim();
+        replyInOut  = replyInOut.substring(0, start).trimEnd();
+    }
+    return true;
+}
+
+// CHAIN_EDIT ops block (CHAIN_AI_BUILD_SPEC Phase 1c). Same tolerant
+// truncation semantics as the other extractors. Delimiters: keep in sync
+// with api/_blocks.js BLOCK_TYPES.chain_edit (canonical) and
+// extractChainEditBlockWeb in public/app.html.
+bool EchoJayAPI::extractChainEditBlock(juce::String& replyInOut, juce::String& editJsonOut)
+{
+    const juce::String kOpen  = "<<<ECHOJAY_CHAIN_EDIT>>>";
+    const juce::String kClose = "<<<END_CHAIN_EDIT>>>";
+
+    int start = replyInOut.indexOf(kOpen);
+    if (start < 0) return false;
+
+    int jsonStart = start + (int)kOpen.length();
+    int end = replyInOut.indexOf(start, kClose);
+
+    if (end >= 0)
+    {
+        editJsonOut = replyInOut.substring(jsonStart, end).trim();
+        replyInOut  = replyInOut.substring(0, start).trimEnd()
+                    + replyInOut.substring(end + (int)kClose.length());
+    }
+    else
+    {
+        editJsonOut = replyInOut.substring(jsonStart).trim();
         replyInOut  = replyInOut.substring(0, start).trimEnd();
     }
     return true;

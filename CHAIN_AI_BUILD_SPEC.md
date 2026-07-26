@@ -105,6 +105,8 @@ Plugin names come EXCLUSIVELY from the AVAILABLE PLUGINS injection.
 
 ## PHASES (each independently shippable, in order)
 
+**PHASE 1 (1a+1b+1c+1d) COMPLETE — all built, deployed and live-verified (26 Jul 2026).**
+
 ### Phase 1a — Protocol foundation ✅ BUILT + DEPLOYED (25 Jul 2026)
 - Formalize the block union server-side (extensible — adding a block type must be
   trivial, not an if-chain). Keep CHAIN/GAIN behavior byte-identical (additive,
@@ -135,16 +137,63 @@ Plugin names come EXCLUSIVELY from the AVAILABLE PLUGINS injection.
   ask-only chain replies. B2 docked-shelf restyle BUILT both surfaces
   (pending next install/deploy at time of writing).
 
-### Phase 1d — Staged messages (do before 1c; low risk, completes the feel)
+### Phase 1d — Staged messages ✅ BUILT + DEPLOYED (26 Jul 2026)
 - Intro bubble (carries the confirm button — it IS the preview) -> shimmer working
   state (real per-slot build events) -> result bubble. Result = model text on all-ok,
   factual composition from results array on any failure (never desync).
 - Web gets identical shimmer + structure.
 - After 1b+1d: the ENTIRE conversational feel is done, before any mutation code.
+- SHIPPED, with live-test refinements:
+  - Working row is the END-OF-LIST row (where "Analysing..." lived), NOT a
+    message — stages never touch per-message heights, sidestepping the
+    two-tH-sums bug class; stageRowH() is the single height source with
+    exactly two audited consumers (paint + measure).
+  - Real event labels only where real events exist (per-slot build loads,
+    applyChainEdits onProgress per op); the model wait gets generic-safe
+    lines. Shimmer: dim text3 base + #7FE3F2 band, 1.6s cycle (JUCE
+    clipped-gradient two-pass + 33ms row ticker / web gradient-text mask).
+  - STAGED REPLY RULE hardened: the ENTIRE prose is a 1-3 sentence intro;
+    per-slot detail lives in the block, never prose. Builds render a
+    structured SLOT CARD ("N. Name — settings", ops-card visual language)
+    between the intro and Build this chain, both surfaces.
+  - Result bubbles fire ONLY when they say something the retired card does
+    not (clean apply + model "result" text); failures keep the card summary
+    as the single record — no duplication.
+  - Build failures get the same Suggest-an-alternative offer as edits, ONE
+    follow-up covering ALL failures (see Gotchas), pill pluralised.
 
-### Phase 1c — Structural edits (the risky one; lands after the shell is proven)
+### Phase 1c — Structural edits ✅ BUILT + DEPLOYED (26 Jul 2026)
 - extractChainEditBlock; ops-preview card ("+ add / - remove / move") with Apply-
   changes confirm; applyChainEdits sequencer (see Apply logic); Link v:2/editOps/ack.
+- SHIPPED, with live-test refinements:
+  - Slot numbering is 1-BASED everywhere the model or user sees it (the
+    [CURRENT CHAIN] injection, prompt rules, preview cards, web card).
+    Internal ChainHost indices stay 0-based; the ONLY conversion is in
+    parseChainEditOps ("after":0 = insert first -> internal -1). The web
+    card renders raw block JSON (no parse boundary): numbers display as-is,
+    only the baseSlots array lookup shifts by -1.
+  - Failure taxonomy: EXPECTED runtime failures (plugin load, runtime
+    resolve-miss) CONTINUE — load-before-destroy makes a failed op a
+    provable no-op and op indices are original-anchored, so independent
+    later ops stay valid. Map-INVARIANT violations (tombstone lookups that
+    pre-flight makes unreachable) hard-stop with "not attempted" padding —
+    if the map is wrong, continuing is the unsafe move. Summaries are
+    per-op honest ("Applied 1 of 2 — add failed: ...; removed ...").
+  - Suggest-an-alternative: retired cards whose failure was a plugin LOAD
+    failure grow a one-shot pill (AskChipLnF family, persisted _editAlt)
+    that auto-sends a pre-formatted follow-up via the 1b answer-tap
+    machinery; the prompt states the failure is authoritative and forbids
+    re-proposing the same plugin. Never auto-substitutes. Aborts
+    (staleness/invalid) never get the pill.
+  - Load-failure feed exclusion is SESSION-SCOPED ONLY
+    (ChainHost::sessionLoadFailed_, in-memory, gone on reload; fed by live
+    chain-load failures only; consumed only by buildRecommendable; cleared
+    per-entry by a successful load). See Gotchas for why persistence was
+    rejected.
+  - Follow-ups: settings_structured enrichment does not know edit blocks
+    (prose settings on add/replace); web edit card is read-only (no rack on
+    web); main-plugin -> Link edit SENDING not wired (Link v:2 handler +
+    ack exist; sender needs a Link-rack injection first).
 
 ### Phase 2 — Parameter editing (GATED on param-mapping coverage)
 - 2a: absolute re-dial of mapped slots (set op -> existing applyStructuredSettings).
@@ -181,7 +230,56 @@ Ship at phase boundaries. Phase 1 (conversational build + edit) is a complete,
 valuable product and the differentiator vs MixingGPT — get it into v2 and learn from
 real use before Phase 2/3. Do not wait for "everything" to ship anything.
 
-## Gotchas learned (1a/1b live verification — read before 1c)
+## Gotchas learned (1a/1b/1c/1d live verification)
+- NON-ASCII IN JUCE DRAW STRINGS MUST USE EXPLICIT ESCAPES (\xe2\x80\x94
+  etc), never literal characters: raw multi-byte bytes written into a
+  string literal rendered as mojibake in the build card. The ops card's
+  escape style is the pattern; audit any generated code for raw bytes.
+- ALT-PROMPTS ARE NAME-ANCHORED, NEVER NUMERIC. The follow-up turn carries
+  a fresh [CURRENT CHAIN], so the stored prompt must do NO positioning
+  work: anchor by surviving-neighbour NAME ("right after \"X\"") or "at
+  the start". Names fail soft (model re-places against the live
+  injection); stored indices fail hard (stale by tap time -> pre-flight
+  abort). The edit path had the same flaw via describeEditOp numbering.
+- ONE FOLLOW-UP COVERING ALL FAILURES, never per-failure offers: applying
+  one replacement bumps chainRevision and the next card's staleness guard
+  correctly aborts it — per-failure offers serially kill each other.
+- PRE-FLIGHT CLAMPS POSITIONAL TARGETS, ABORTS IDENTITY TARGETS.
+  add.after / move.to out-of-range clamp to the rack end (an append one
+  slot off beats a dead batch; runtime already clamped). slot refs on
+  remove/replace/bypass/move-source still abort: clamping those would
+  mutate the WRONG plugin.
+- APPEND-AT-END NEEDS ITS EXPLICIT PROMPT FORM ("after": <last slot
+  number>). Without it the model invented out-of-range positions
+  (wrote the destination index, "after": 6 on a 5-slot rack).
+- TAP-GENERATED USER TURNS DISPLAY A SHORT LABEL while the full
+  instruction rides history unchanged (ChatMsg.displayText / _display /
+  web msg.display; displayedText() is the single render source for both
+  text-layout passes). Backend prompt text must NEVER render verbatim in
+  a chat bubble.
+- A LOAD FAILURE MEANS "CAN'T AUTHORISE RIGHT NOW", NOT "NOT OWNED". iLok
+  absence makes genuinely-owned plugins fail to load on this machine while
+  they work fine on another. NEVER persist load-failure exclusions and
+  NEVER auto-untick the checklist from a load failure — a persistent
+  load_failed.txt was built and then REVERSED for exactly this reason;
+  exclusion is session-scoped in-memory only. (Checklist tick state,
+  plugin_disabled.json, is per-machine local and must stay that way; only
+  the profile plugin-list string is account-synced.)
+- WAVES VARIANT-SUFFIX FEED KEYING: WaveShell AUs register per-variant
+  component names ("Abbey Road Plates (s)"/"(m)") while the Settings
+  scanner lists curated suffix-less names. buildRecommendable's exact
+  normalized-name map missed them, silently dropping Waves plugins from
+  the AI feed. Fixed with secondary stripParenthetical keys — keep both
+  key forms if the map is ever rebuilt.
+- AUTO-DIAL RESTRICTS NEW SLOTS ONLY; RACK PLUGINS ARE ALWAYS
+  REFERENCEABLE. With auto-dial ON, the note framed the mapped set as
+  "the ONLY valid source of chain slots" and the model told the user a
+  plugin RUNNING IN THEIR RACK was "not in your available plugins".
+  The note now carves out CURRENT CHAIN plugins (installed and running by
+  definition; edits always legitimate; say "I can't auto-dial that one",
+  never "unavailable"), and the [CURRENT CHAIN] injection states the same
+  from the client side. Any future feed narrowing must keep this rule.
+
 - CLIENT NAME-SCAN FALLBACK SYNTHESIZES CHAIN BLOCKS. PluginEditor has a
   legacy fallback that builds a chain block from ANY successful reply
   mentioning 2+ recommendable plugin names ("Chain extracted from reply

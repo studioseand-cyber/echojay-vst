@@ -44,7 +44,11 @@ private:
     void timerCallback() override;
     void textEditorReturnKeyPressed(juce::TextEditor&) override;
     
-    void sendChatMessage(const juce::String& msg);
+    // displayLabel (optional): short label rendered instead of msg for
+    // tap-generated turns (chips, alternative pills). msg always rides the
+    // history/send unchanged.
+    void sendChatMessage(const juce::String& msg,
+                         const juce::String& displayLabel = juce::String());
 
     // prevReview is non-null when this is not the first capture in the chat.
     void requestAIFeedback(const CaptureSnapshot& snap,
@@ -745,9 +749,62 @@ private:
         juce::String gainData;    // non-empty when AI returned a <<<ECHOJAY_GAIN>>> block
         juce::String askData;     // non-empty when AI returned an <<<ECHOJAY_ASK>>> block
         bool askAnswered = false; // chip tapped — chips render disabled/hidden
+        juce::String editData;    // non-empty when AI returned <<<ECHOJAY_CHAIN_EDIT>>>
+        bool editApplied = false; // Apply pressed (or edit aborted) — card retired
+        juce::String editResult;  // outcome summary shown on the retired card
+        juce::String editAltPrompt; // "Suggest an alternative" follow-up (load
+                                    // failures only); cleared once tapped
+        juce::String editAltLabel;  // short display label for the alt tap
+        juce::String displayText;   // tap-generated user turns: what the
+                                    // bubble SHOWS; content is what was SENT
+                                    // (empty = show content, i.e. typed text)
+        int  editBaseRevision = -1; // chainRevision at receive; -1 = restored from a
+                                    // previous session (revision guard skipped,
+                                    // baseSlots check still applies)
     };
     std::vector<ChatMsg> chatMessages;
+    // THE shared display source: both text-layout passes (measure + paint)
+    // MUST get their string from here so heights and pixels cannot disagree.
+    static const juce::String& displayedText(const ChatMsg& m)
+    { return m.displayText.isNotEmpty() ? m.displayText : m.content; }
     bool chatLoading = false;
+
+    // ---- Staged replies (Phase 1d): working-state stage row -----------------
+    // The shimmer status renders as the END-OF-LIST row (where "Analysing..."
+    // lived) — deliberately NOT a message, so message heights never change as
+    // stages appear/swap. That sidesteps the two-tH-sums bug class outright
+    // (ASK chips, then the ops card, both from one pass missing a term):
+    // stageRowH() is the ONE height source and BOTH the measure pass and the
+    // paint pass consume it.
+    // SHIMMER PARITY (keep in sync with app.html .stage-shimmer CSS): dim
+    // text3 base, bright 0xff7FE3F2 band, 1.6s sweep cycle.
+    juce::String stageStatusText_;      // real event labels while applying;
+                                        // generic-safe line during model wait
+    juce::Rectangle<int> stageRowRect_; // last painted row (ticker repaints it)
+    int stageRowH() const { return (chatLoading || stageStatusText_.isNotEmpty()) ? 30 : 0; }
+    void setStageStatus(const juce::String& s);
+    void clearStageStatus();
+    // Result stage: a local assistant bubble (persisted, block-less).
+    // altPrompt (optional) attaches a Suggest-an-alternative pill to the
+    // bubble (build failures) - same one-shot machinery as edit cards.
+    void appendLocalResultBubble(const juce::String& text,
+                                 const juce::String& altPrompt = juce::String(),
+                                 const juce::String& altLabel  = juce::String());
+    // Alt pill on PLAIN messages (result bubbles): height helper shared by
+    // the measure and paint passes (edit cards carry their pill inside
+    // editCardHeight; this returns 0 for them)
+    int altPillH(const ChatMsg& msg) const
+    {
+        return (msg.role == "assistant" && msg.editAltPrompt.isNotEmpty()
+                && msg.editData.isEmpty()) ? 32 : 0;
+    }
+    struct StageTicker : juce::Timer
+    {
+        EchoJayEditor& ed;
+        explicit StageTicker(EchoJayEditor& e) : ed(e) {}
+        void timerCallback() override;
+    };
+    StageTicker stageTicker_ { *this };
     
     // Custom viewport that forwards clicks to parent for wave card hit testing
     struct ChatViewport : public juce::Viewport
@@ -1614,6 +1671,28 @@ private:
     std::array<juce::TextButton, kMaxChainBuildBtns> chainBuildBtns;
     std::array<juce::String, kMaxChainBuildBtns> chainBuildJsons;
     int activeChainBuildBtns = 0;
+
+    // ---- Chain-edit preview cards (Phase 1c) --------------------------------
+    // One "Apply changes" button per assistant reply carrying a CHAIN_EDIT
+    // block; the op list is painted above it in plain language. NEVER
+    // mutates silently: ops run only on Apply, through
+    // ChainHost::applyChainEdits (staleness-guarded, stop-at-failure).
+    std::array<juce::TextButton, kMaxChainBuildBtns> editApplyBtns;
+    std::array<int, kMaxChainBuildBtns> editApplyMsgIdx { };
+    int activeEditApplyBtns = 0;
+    // "Suggest an alternative" pills on retired cards whose failure was a
+    // plugin LOAD failure (never staleness/invalid aborts — re-asking is
+    // right there). Tap auto-sends the stored follow-up through the normal
+    // send path (1b answer-tap machinery); NEVER auto-substitutes.
+    std::array<juce::TextButton, kMaxChainBuildBtns> editAltBtns;
+    std::array<int, kMaxChainBuildBtns> editAltMsgIdx { };
+    int activeEditAltBtns = 0;
+    // Shared height helpers for the measure + paint passes (must agree)
+    int  editCardHeight(const ChatMsg& msg) const;
+    // Build card (1d follow-up): structured slot lines + Build button —
+    // the ops card's visual language applied to CHAIN blocks
+    int  chainCardHeight(const ChatMsg& msg) const;
+    void applyChainEditFromMsg(int msgIdx);
 
     // ---- ASK choice chips (Phase 1b, B2 docked-shelf layout) ----------------
     // Chips live in a SHELF docked seamlessly on top of the chat input (not
