@@ -36,13 +36,14 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <sys/resource.h>
+#include <sys/stat.h>   // ::chmod for machine_id (0600)
 
 #include "EchoJayParamExtractor.h"
 
 // Same default the plugin compiles in (Source/EchoJayAPI.cpp); the real
 // endpoint is read from auth.json when the user has ever logged in.
 static const char* kDefaultEndpoint = "https://www.echojay.ai";
-static constexpr int kPerPluginTimeoutMs = 90 * 1000;
+static constexpr int kPerPluginTimeoutMs = 120 * 1000;
 // The endpoint accepts 500 fps, but they ride in a GET URL: 500 x 65 chars
 // is a ~32KB request line, which fails at the transport before the server
 // ever sees it (observed live: status 0 on a 351-fp batch). 100 fps is a
@@ -55,11 +56,44 @@ static constexpr juce::int64 kContributeBatchBytes = 3 * 1024 * 1024;
 static constexpr juce::int64 kContributeMaxSampleBytes = 4 * 1024 * 1024;
 static constexpr int kContributeBatchCount = 100;
 
+static juce::File echojayDir();
+static juce::String machineIdString();
+
+// An instantiation failure that is a LICENSE / AUTH wall, not an enumeration
+// or code problem. Kept deliberately broad: the point is to separate "this
+// machine is not authorised for this plugin" (SSL Native auth, McDSP APB
+// hardware box, an unlicensed Waves variant) from "no plugin types found",
+// which the failure triage kept re-deriving because both landed on "failed".
+static bool looksLikeLicenseError (const juce::String& err)
+{
+    const auto s = err.toLowerCase();
+    return s.contains ("licen")     || s.contains ("authoriz") || s.contains ("authoris")
+        || s.contains ("activat")   || s.contains ("ilok")     || s.contains ("demo")
+        || s.contains ("trial")     || s.contains ("not permitted")
+        || s.contains ("challenge") || s.contains ("entitle");
+}
+
 // ---------------------------------------------------------------------------
 // Worker: the original one-plugin-per-process extractor.
+//
+// Exit codes (read by runIsolatedWorker's classifier - keep in sync):
+//   0  ok             a sample was written
+//   2  no-types       findAllTypesForFile returned nothing
+//   3  no-data        instantiated, but nothing extractable was written
+//   4  license-refused every instantiation failed and at least one looked
+//                     like an auth/license wall
+//   5  load-failed    every instantiation failed for a non-license reason
+// argv target may be a file PATH (file-walk) or an AU component IDENTIFIER
+// ("AudioUnit:Effects/aufx,STEM,ksWV" from --au-registry): findAllTypesForFile
+// resolves both, so this worker needs no change to serve registry entries.
 // ---------------------------------------------------------------------------
 static int runWorker (const juce::String& pluginPath, const juce::File& outDir)
 {
+    // Provenance config: machine_id rides INSIDE each sample (v5) so a
+    // sample file is attributable on its own, not only via the run ledger.
+    echojay::ExtractorConfig cfg;
+    cfg.machineId = machineIdString();
+
     juce::AudioPluginFormatManager formatManager;
 #if JUCE_PLUGINHOST_VST3
     formatManager.addFormat (new juce::VST3PluginFormat());
@@ -81,7 +115,7 @@ static int runWorker (const juce::String& pluginPath, const juce::File& outDir)
         return 2;
     }
 
-    int okCount = 0;
+    int okCount = 0, instFail = 0, licenseFail = 0;
     for (auto* desc : descriptions)
     {
         juce::String error;
@@ -89,14 +123,20 @@ static int runWorker (const juce::String& pluginPath, const juce::File& outDir)
             formatManager.createPluginInstance (*desc, 48000.0, 512, error));
         if (instance == nullptr)
         {
+            ++instFail;
+            if (looksLikeLicenseError (error)) ++licenseFail;
             std::cerr << "Failed to instantiate: " << desc->name << " (" << error << ")\n";
             continue;
         }
-        auto file = echojay::extractToFile (*instance, outDir);
+        auto file = echojay::extractToFile (*instance, outDir, cfg);
         std::cout << "OK  " << desc->name << " -> " << file.getFileName() << "\n";
         ++okCount;
     }
-    return okCount > 0 ? 0 : 3;
+    if (okCount > 0) return 0;
+    // Nothing written. Separate the reasons so the ledger does not conflate a
+    // license wall with an opaque plugin (the SSL/McDSP triage confusion).
+    if (instFail > 0) return licenseFail > 0 ? 4 : 5;   // license-refused vs load-failed
+    return 3;                                            // all instantiated, nothing extractable
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +262,97 @@ static juce::String bundleSignature (const juce::File& bundle)
     return version + "|" + juce::String (newest);
 }
 
+// Random per-machine UUID shared with the plugin's events.jsonl telemetry
+// (~/Library/EchoJay/machine_id, minted by whichever side touches it first).
+// NEVER hostname/serial derived. 0600 on create.
+static juce::String machineIdString()
+{
+    auto f = echojayDir().getChildFile ("machine_id");
+    auto id = f.existsAsFile() ? f.loadFileAsString().trim() : juce::String();
+    if (id.length() != 36)
+    {
+        id = juce::Uuid().toDashedString();
+        echojayDir().createDirectory();
+        f.replaceWithText (id + "\n");
+        ::chmod (f.getFullPathName().toRawUTF8(), 0600);
+    }
+    return id;
+}
+
+// One isolated worker run: spawn, wait with timeout, classify the outcome.
+// A crash or hang costs ONE ledger entry, never the driver: setValue on an
+// offline instance can trigger heavy DSP reconfiguration and take the
+// process down, which is exactly why extraction stays one-plugin-per-process.
+struct WorkerResult
+{
+    juce::String status;   // ok | failed | crashed | timeout
+    juce::String reason;
+    int exitCode = -1;
+    juce::int64 elapsedMs = 0;
+};
+
+// Core: spawn one isolated worker on an arbitrary TARGET (a bundle path OR an
+// AU component identifier), optionally under a specific arch. The exit-code
+// classifier is the ONE place worker outcomes become ledger statuses.
+static WorkerResult runIsolatedWorkerOn (const juce::String& target, const juce::String& arch,
+                                         const juce::File& workDir)
+{
+    const auto self = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+    juce::StringArray args;
+    if (arch.isNotEmpty()) { args.add ("/usr/bin/arch"); args.add ("-" + arch); }
+    args.add (self.getFullPathName());
+    args.add (target);
+    args.add (workDir.getFullPathName());
+
+    WorkerResult r;
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    juce::ChildProcess worker;
+    if (! worker.start (args))
+    {
+        r.status = "failed"; r.reason = "spawn failed";
+        return r;
+    }
+    if (! worker.waitForProcessToFinish (kPerPluginTimeoutMs))
+    {
+        worker.kill();
+        r.status = "timeout"; r.reason = "killed after " + juce::String (kPerPluginTimeoutMs / 1000) + "s";
+        r.elapsedMs = (juce::int64) (juce::Time::getMillisecondCounterHiRes() - t0);
+        return r;
+    }
+    r.exitCode  = (int) worker.getExitCode();
+    r.elapsedMs = (juce::int64) (juce::Time::getMillisecondCounterHiRes() - t0);
+    // Fine-grained outcome vocabulary (runWorker exit codes). Distinguishing
+    // license-refused from no-types is the whole point of the SSL/McDSP fix;
+    // an unrecognised code is a signal/abort, i.e. a real crash.
+    switch (r.exitCode)
+    {
+        case 0:  r.status = "ok";                                                            break;
+        case 2:  r.status = "no-types";        r.reason = "no plugin types found";           break;
+        case 3:  r.status = "no-data";         r.reason = "instantiated, nothing extractable";break;
+        case 4:  r.status = "license-refused"; r.reason = "instantiation refused (auth/license)"; break;
+        case 5:  r.status = "load-failed";     r.reason = "instantiation failed (non-license)";   break;
+        default: r.status = "crashed";         r.reason = "abnormal exit " + juce::String (r.exitCode); break;
+    }
+    return r;
+}
+
+static WorkerResult runIsolatedWorker (const juce::File& bundle, const juce::File& workDir)
+{
+    return runIsolatedWorkerOn (bundle.getFullPathName(), pickArch (bundle), workDir);
+}
+
+static void stampLedgerEntry (juce::DynamicObject::Ptr& e, const juce::String& sig,
+                              const WorkerResult& r)
+{
+    e->setProperty ("sig", sig);
+    e->setProperty ("status", r.status);
+    if (r.reason.isNotEmpty()) e->setProperty ("reason", r.reason);
+    e->setProperty ("exitCode", r.exitCode);
+    e->setProperty ("elapsedMs", (double) r.elapsedMs);
+    e->setProperty ("extractorVersion", echojay::ExtractorConfig{}.extractorVersion);
+    e->setProperty ("machineId", machineIdString());
+}
+
 static int runBootstrap()
 {
     setpriority (PRIO_PROCESS, 0, 19);   // politeness floor; plist adds IO throttle
@@ -307,7 +438,6 @@ static int runBootstrap()
         for (const auto& f : home.getChildFile (d).findChildFiles (juce::File::findDirectories | juce::File::findFiles, false))
             bundles.add (f);
 
-    const auto self = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
     int fresh = 0, failed = 0, reused = 0, skippedMarked = 0;
 
     for (const auto& b : bundles)
@@ -322,11 +452,16 @@ static int runBootstrap()
         const auto priorSig    = entry.getProperty ("sig", juce::var()).toString();
         const auto priorStatus = entry.getProperty ("status", juce::var()).toString();
 
-        // INCREMENTAL SKIP: unchanged file identity. "ok" reuses the cached
-        // fps with no instantiation; "failed"/"started" is the crash or
-        // no-load marker and stays skipped until the file itself changes.
-        if (priorSig == sig && priorStatus == "ok")      { ++reused; continue; }
-        if (priorSig == sig && (priorStatus == "failed" || priorStatus == "started"))
+        // INCREMENTAL SKIP, keyed to bundle signature AND extractor version:
+        // an ok entry from an older extractor re-extracts (its samples lack
+        // the newer method/flat provenance), and a failure mark from a BAD
+        // BUILD cannot poison the ledger permanently: bumping the extractor
+        // version retries everything once. "started" is the crash marker.
+        const int priorVer = (int) entry.getProperty ("extractorVersion", 0);
+        const int curVer   = echojay::ExtractorConfig{}.extractorVersion;
+        const bool sameKey = (priorSig == sig && priorVer == curVer);
+        if (sameKey && priorStatus == "ok")               { ++reused; continue; }
+        if (sameKey && priorStatus != "ok" && priorStatus.isNotEmpty())
                                                           { ++skippedMarked; continue; }
 
         // New or changed bundle: extract in an isolated worker process.
@@ -336,6 +471,7 @@ static int runBootstrap()
             juce::DynamicObject::Ptr e = new juce::DynamicObject();
             e->setProperty ("status", "started");
             e->setProperty ("sig", sig);
+            e->setProperty ("extractorVersion", echojay::ExtractorConfig{}.extractorVersion);
             plugins->setProperty (juce::Identifier (key), juce::var (e.get()));
             saveLedger();
         }
@@ -345,21 +481,7 @@ static int runBootstrap()
         auto workDir = samplesDir.getChildFile (juce::MD5 (key.toUTF8()).toHexString());
         workDir.deleteRecursively();
 
-        juce::StringArray args;
-        const auto arch = pickArch (b);
-        if (arch.isNotEmpty()) { args.add ("/usr/bin/arch"); args.add ("-" + arch); }
-        args.add (self.getFullPathName());
-        args.add (key);
-        args.add (workDir.getFullPathName());
-
-        juce::ChildProcess worker;
-        bool ok = worker.start (args);
-        if (ok && ! worker.waitForProcessToFinish (kPerPluginTimeoutMs))
-        {
-            worker.kill();
-            ok = false;
-        }
-        if (ok) ok = (worker.getExitCode() == 0);
+        auto res = runIsolatedWorker (b, workDir);
 
         // Collect this bundle's fps, flatten samples into the shared dir.
         juce::Array<juce::var> fpList;
@@ -369,17 +491,16 @@ static int runBootstrap()
             f.moveFileTo (samplesDir.getChildFile (f.getFileName()));
         }
         workDir.deleteRecursively();
-        if (ok && fpList.isEmpty()) ok = false;
+        if (res.status == "ok" && fpList.isEmpty()) { res.status = "failed"; res.reason = "no samples written"; }
 
         juce::DynamicObject::Ptr e = new juce::DynamicObject();
-        e->setProperty ("status", ok ? "ok" : "failed");
-        e->setProperty ("sig", sig);
+        stampLedgerEntry (e, sig, res);
         e->setProperty ("fps", fpList);
         plugins->setProperty (juce::Identifier (key), juce::var (e.get()));
         saveLedger();
-        ok ? ++fresh : ++failed;
-        logLine ((ok ? "ok      " : "failed  ") + b.getFileName()
-                 + (arch.isNotEmpty() ? " [" + arch + "]" : ""));
+        (res.status == "ok") ? ++fresh : ++failed;
+        logLine (res.status.paddedRight (' ', 8) + b.getFileName()
+                 + (res.reason.isNotEmpty() ? "  (" + res.reason + ")" : ""));
     }
 
     // Union of fingerprints across every ok ledger entry (cached + fresh).
@@ -539,6 +660,330 @@ static int runBootstrap()
 }
 
 // ---------------------------------------------------------------------------
+// Targeted re-extraction driver (27 Jul 2026): the studio set-then-read run.
+//   ejextract --extract-list <listfile> [outDir]
+// <listfile>: one case-insensitive substring per line (# = comment); every
+// installed VST3/Component bundle whose FILE NAME contains a listed
+// substring is re-extracted, BOTH formats, ignoring the incremental
+// skip-lock. Samples land in outDir (default ~/Library/EchoJay/
+// retry_samples) and STAY there: this mode never fetches, never
+// contributes, and never touches param_maps_bootstrap.json, so it is safe
+// to run without the consent gate (nothing leaves the machine). The
+// bootstrap ledger IS updated (stamped entries, distinct statuses) so runs
+// are auditable and the purge/re-contribute step can key off it later.
+// ---------------------------------------------------------------------------
+static int runExtractList (const juce::File& listFile, const juce::File& outDir)
+{
+    setpriority (PRIO_PROCESS, 0, 10);
+
+    if (! listFile.existsAsFile())
+    {
+        std::cerr << "extract-list: no such file: " << listFile.getFullPathName() << "\n";
+        return 1;
+    }
+    juce::StringArray needles;
+    for (auto& line : juce::StringArray::fromLines (listFile.loadFileAsString()))
+    {
+        auto t = line.upToFirstOccurrenceOf ("#", false, false).trim();
+        if (t.isNotEmpty()) needles.add (t.toLowerCase());
+    }
+    if (needles.isEmpty()) { std::cerr << "extract-list: empty list\n"; return 1; }
+
+    auto dir = echojayDir();
+    dir.createDirectory();
+    outDir.createDirectory();
+    auto ledgerFile = dir.getChildFile ("bootstrap_ledger.json");
+    auto ledger = readJsonFile (ledgerFile);
+    juce::DynamicObject::Ptr led = ledger.getDynamicObject() != nullptr
+        ? juce::DynamicObject::Ptr (ledger.getDynamicObject())
+        : juce::DynamicObject::Ptr (new juce::DynamicObject());
+    juce::DynamicObject::Ptr plugins = led->getProperty ("plugins").getDynamicObject();
+    if (plugins == nullptr) { plugins = new juce::DynamicObject(); led->setProperty ("plugins", juce::var (plugins.get())); }
+    auto saveLedger = [&] { writeJsonFileAtomic (ledgerFile, juce::var (led.get())); };
+
+    juce::Array<juce::File> bundles;
+    auto home = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    for (const auto& root : { juce::File ("/Library/Audio/Plug-Ins/VST3"),
+                              juce::File ("/Library/Audio/Plug-Ins/Components"),
+                              home.getChildFile ("Library/Audio/Plug-Ins/VST3"),
+                              home.getChildFile ("Library/Audio/Plug-Ins/Components") })
+        for (const auto& f : root.findChildFiles (juce::File::findDirectories | juce::File::findFiles, false))
+        {
+            const auto ext = f.getFileExtension().toLowerCase();
+            if (ext != ".vst3" && ext != ".component") continue;
+            if (f.getFileName().startsWithIgnoreCase ("EchoJay")) continue;
+            const auto lower = f.getFileName().toLowerCase();
+            for (const auto& n : needles)
+                if (lower.contains (n)) { bundles.add (f); break; }
+        }
+
+    std::cout << "extract-list: " << bundles.size() << " bundle(s) matched, extractor v"
+              << echojay::ExtractorConfig{}.extractorVersion << ", machine "
+              << machineIdString().substring (0, 8) << "...\n";
+    for (const auto& b : bundles) std::cout << "  " << b.getFullPathName() << "\n";
+    std::cout.flush();
+
+    int okN = 0, failedN = 0, crashedN = 0, timeoutN = 0, allFlatN = 0;
+    int setreadTotal = 0, unextractableTotal = 0, unexBundles = 0;
+    for (const auto& b : bundles)
+    {
+        const auto key = b.getFullPathName();
+        const auto sig = bundleSignature (b);
+
+        // Started-marker before spawn, same crash discipline as bootstrap.
+        {
+            juce::DynamicObject::Ptr e = new juce::DynamicObject();
+            e->setProperty ("status", "started");
+            e->setProperty ("sig", sig);
+            e->setProperty ("extractorVersion", echojay::ExtractorConfig{}.extractorVersion);
+            plugins->setProperty (juce::Identifier (key), juce::var (e.get()));
+            saveLedger();
+        }
+
+        auto workDir = outDir.getChildFile (juce::MD5 (key.toUTF8()).toHexString());
+        workDir.deleteRecursively();
+        auto res = runIsolatedWorker (b, workDir);
+
+        juce::Array<juce::var> fpList;
+        int setreadParams = 0, unextractable = 0, allFlatSamples = 0, samples = 0;
+        for (const auto& f : workDir.findChildFiles (juce::File::findFiles, false, "*.json"))
+        {
+            ++samples;
+            fpList.add (f.getFileNameWithoutExtension());
+            auto sample = readJsonFile (f);
+            if ((bool) sample.getProperty ("all_flat", false)) ++allFlatSamples;
+            if (auto* arr = sample.getProperty ("params", juce::var()).getArray())
+                for (auto& pv : *arr)
+                {
+                    if (pv.getProperty ("method", juce::var()).toString() == "setread") ++setreadParams;
+                    if ((bool) pv.getProperty ("unextractable", false)) ++unextractable;
+                }
+            f.moveFileTo (outDir.getChildFile (f.getFileName()));
+        }
+        workDir.deleteRecursively();
+        if (res.status == "ok" && samples == 0) { res.status = "failed"; res.reason = "no samples written"; }
+        if (res.status == "ok" && samples > 0 && allFlatSamples == samples)
+        {
+            res.status = "all_flat";
+            res.reason = "no value-bearing sweep via either method";
+        }
+        if (res.status == "ok" && (setreadParams > 0 || unextractable > 0))
+        {
+            juce::StringArray parts;
+            if (setreadParams > 0)  parts.add ("setread recovered " + juce::String (setreadParams) + " param(s)");
+            if (unextractable > 0)  parts.add (juce::String (unextractable) + " unextractable");
+            res.reason = parts.joinIntoString (", ");
+        }
+
+        juce::DynamicObject::Ptr e = new juce::DynamicObject();
+        stampLedgerEntry (e, sig, res);
+        e->setProperty ("fps", fpList);
+        plugins->setProperty (juce::Identifier (key), juce::var (e.get()));
+        saveLedger();
+
+        setreadTotal += setreadParams;
+        unextractableTotal += unextractable;
+        if (unextractable > 0) ++unexBundles;
+        if (res.status == "ok") ++okN;
+        else if (res.status == "crashed") ++crashedN;
+        else if (res.status == "timeout") ++timeoutN;
+        else if (res.status == "all_flat") ++allFlatN;
+        else ++failedN;   // failed / no-types / no-data / license-refused / load-failed
+        std::cout << res.status.paddedRight (' ', 9) << b.getFileName()
+                  << "  [" << (res.elapsedMs / 1000.0) << "s]"
+                  << (res.reason.isNotEmpty() ? "  (" + res.reason + ")" : juce::String()) << "\n";
+        std::cout.flush();
+    }
+    led->setProperty ("lastExtractList", juce::Time::getCurrentTime().toISO8601 (true));
+    saveLedger();
+    std::cout << "extract-list done: ok " << okN << ", all_flat " << allFlatN
+              << ", failed " << failedN << ", crashed " << crashedN
+              << ", timeout " << timeoutN
+              << "; setread recovered " << setreadTotal << " param(s), "
+              << unextractableTotal << " unextractable across " << unexBundles
+              << " bundle(s); samples in "
+              << outDir.getFullPathName() << "\n";
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// AU registry enumeration (27 Jul 2026).
+//
+// The file walk (findAllTypesForFile on a bundle) returns only a shell's
+// DEFAULT component, so WaveShell AU gave 5 of ~614 Waves variants. The OS
+// AudioComponent registry lists every variant as its own component; enumerate
+// THAT and dispatch each identifier to the same isolated worker. No shell
+// file is opened by this driver, and the legacy VST3 shells (7.0/8.0/9.6) are
+// a different FORMAT and never touched. Vendor-agnostic: the same blindspot
+// hides SSL Native, McDSP, and others.
+//
+// Delta policy mirrors the file walk's au-done: identifiers already terminal
+// in the ledger (ok / no-types / license-refused / load-failed / no-data) are
+// skipped; only timeout / crashed are retried on a rerun. Apple system AUs and
+// EchoJay's own plugins are excluded entirely.
+//
+// This is the STANDALONE corpus driver only; wiring the registry into
+// --bootstrap (so every user machine stops under-contributing Waves AU) is a
+// shipped-binary change that rides the next plugin release, not this run.
+// ---------------------------------------------------------------------------
+static int runAuRegistry (const juce::File& outDir, bool enumerateOnly)
+{
+#if ! (JUCE_PLUGINHOST_AU && JUCE_MAC)
+    std::cerr << "AU host not built in; --au-registry is macOS/AU only\n";
+    return 1;
+#else
+    juce::AudioUnitPluginFormat au;
+    // searchPathsForPlugins enumerates the AudioComponent registry: it returns
+    // component IDENTIFIER strings ("AudioUnit:Effects/aufx,STEM,ksWV") and
+    // does NOT run plugin code. We parse vendor + identity FROM the identifier
+    // string and never resolve in this driver - findAllTypesForFile on an AU
+    // identifier actually instantiates the plugin, which would load ~1400
+    // plugins in-process (slow, and one hang kills the whole run). All
+    // instantiation stays in the isolated worker.
+    auto ids = au.searchPathsForPlugins (au.getDefaultLocationsToSearch(),
+                                         /*recursive*/ true,
+                                         /*allowAsync (AUv3)*/ false);
+
+    // Manufacturer 4-char OSType code -> display name (from the AU registry
+    // survey). Unknown codes display as the raw code; only appl and Ecjy are
+    // ever EXCLUDED.
+    auto vendorName = [] (const juce::String& code) -> juce::String
+    {
+        static const std::map<juce::String, juce::String> m {
+            { "ksWV", "Waves" }, { "appl", "Apple" }, { "SSLN", "SSL" },
+            { "McDP", "McDSP" }, { "Ecjy", "EchoJay" }, { "Brwx", "Plugin Alliance" },
+            { "-NI-", "Native Instruments" }, { "SfTb", "Softube" },
+            { "HRSN", "Harrison" }, { "VST ", "Antares" }, { "OekS", "oeksound" },
+        };
+        auto it = m.find (code);
+        return it != m.end() ? it->second : code;
+    };
+    // Parse the manufacturer OSType from an AU identifier: the last
+    // comma-separated field of the segment after the final '/'.
+    auto manuOf = [] (const juce::String& id) -> juce::String
+    {
+        auto tail = id.fromLastOccurrenceOf ("/", false, false);   // "aufx,STEM,ksWV"
+        auto code = tail.fromLastOccurrenceOf (",", false, false);
+        return code.length() == 4 ? code : juce::String();         // empty => unparsed
+    };
+
+    struct Target { juce::String id, vendor; };
+    std::vector<Target> targets;
+    std::map<juce::String, int> byVendor;
+    int excludedApple = 0, excludedEcho = 0, unparsed = 0;
+    for (const auto& id : ids)
+    {
+        const auto code = manuOf (id);
+        if (code == "appl") { ++excludedApple; continue; }   // AUGraphicEQ et al: not chain plugins
+        if (code == "Ecjy") { ++excludedEcho;  continue; }
+        if (code.isEmpty()) ++unparsed;                       // keep it; worker will resolve
+        const auto vendor = vendorName (code.isEmpty() ? juce::String ("(unparsed)") : code);
+        byVendor[vendor]++;
+        targets.push_back ({ id, vendor });
+    }
+
+    std::cout << "AU registry: " << ids.size() << " component(s) enumerated, "
+              << targets.size() << " candidate(s) after excluding Apple ("
+              << excludedApple << ") and EchoJay (" << excludedEcho << ")"
+              << (unparsed ? "; " + juce::String (unparsed) + " identifier(s) unparsed (kept)" : "")
+              << "\n";
+    std::cout << "by vendor:\n";
+    std::vector<std::pair<juce::String,int>> rows (byVendor.begin(), byVendor.end());
+    std::sort (rows.begin(), rows.end(), [] (auto& a, auto& b) { return a.second > b.second; });
+    for (auto& [v, n] : rows)
+        if (n >= 3) std::cout << "  " << v.paddedRight (' ', 22) << n << "\n";
+
+    if (enumerateOnly)
+    {
+        std::cout << "enumerate-only: no plugin instantiated, no extraction performed\n";
+        return 0;
+    }
+
+    outDir.createDirectory();
+    auto dir = echojayDir();
+    auto ledgerFile = dir.getChildFile ("au_registry_ledger.json");
+    auto ledger = readJsonFile (ledgerFile);
+    juce::DynamicObject::Ptr led = ledger.getDynamicObject() != nullptr
+        ? juce::DynamicObject::Ptr (ledger.getDynamicObject())
+        : juce::DynamicObject::Ptr (new juce::DynamicObject());
+    juce::DynamicObject::Ptr done = led->getProperty ("done").getDynamicObject();
+    if (done == nullptr) { done = new juce::DynamicObject(); led->setProperty ("done", juce::var (done.get())); }
+    auto saveLedger = [&] { writeJsonFileAtomic (ledgerFile, juce::var (led.get())); };
+
+    // Terminal statuses are NOT retried; timeout/crashed ARE (a hang may be a
+    // one-off licensing dialog that will not reappear).
+    auto isTerminal = [] (const juce::String& s) {
+        return s == "ok" || s == "no-types" || s == "no-data"
+            || s == "license-refused" || s == "load-failed";
+    };
+
+    int okN = 0, licN = 0, notypesN = 0, loadN = 0, nodataN = 0, timeoutN = 0, crashedN = 0, skipN = 0;
+    int idx = 0;
+    for (const auto& t : targets)
+    {
+        ++idx;
+        const auto keyId = juce::String (juce::MD5 (t.id.toUTF8()).toHexString());
+        const auto prior = done->getProperty (keyId).getProperty ("status", juce::var()).toString();
+        // Rerun delta by ledger only (we never resolve the uid in-driver):
+        // terminal identifiers are skipped, timeout/crashed are retried.
+        if (prior.isNotEmpty() && isTerminal (prior))
+        { ++skipN; continue; }
+
+        auto workDir = dir.getChildFile ("au_registry_work_" + juce::String (idx));
+        workDir.deleteRecursively(); workDir.createDirectory();
+        // Native arch: modern Waves/SSL AU components are universal; an
+        // x86_64-only legacy component simply records load-failed.
+        auto res = runIsolatedWorkerOn (t.id, juce::String(), workDir);
+
+        juce::StringArray fpList;
+        if (res.status == "ok")
+        {
+            int moved = 0;
+            for (const auto& f : workDir.findChildFiles (juce::File::findFiles, false, "*.json"))
+            {
+                fpList.add (f.getFileNameWithoutExtension());
+                f.moveFileTo (outDir.getChildFile (f.getFileName()));
+                ++moved;
+            }
+            if (moved == 0) { res.status = "no-data"; res.reason = "worker ok but no sample file"; }
+        }
+        workDir.deleteRecursively();
+
+        juce::DynamicObject::Ptr e = new juce::DynamicObject();
+        stampLedgerEntry (e, t.id, res);
+        e->setProperty ("identifier", t.id);
+        e->setProperty ("vendor", t.vendor);
+        e->setProperty ("fps", fpList);
+        done->setProperty (juce::Identifier (keyId), juce::var (e.get()));
+        saveLedger();
+
+        if      (res.status == "ok")              ++okN;
+        else if (res.status == "license-refused") ++licN;
+        else if (res.status == "no-types")        ++notypesN;
+        else if (res.status == "load-failed")     ++loadN;
+        else if (res.status == "no-data")         ++nodataN;
+        else if (res.status == "timeout")         ++timeoutN;
+        else if (res.status == "crashed")         ++crashedN;
+        std::cout << "[" << idx << "/" << targets.size() << "] "
+                  << res.status.paddedRight (' ', 15) << t.vendor << " / "
+                  << t.id.fromLastOccurrenceOf ("/", false, false)
+                  << "  [" << (res.elapsedMs / 1000.0) << "s]"
+                  << (res.reason.isNotEmpty() ? "  (" + res.reason + ")" : juce::String()) << "\n";
+        std::cout.flush();
+    }
+
+    led->setProperty ("lastRun", juce::Time::getCurrentTime().toISO8601 (true));
+    saveLedger();
+    std::cout << "au-registry done: ok " << okN << ", license-refused " << licN
+              << ", no-types " << notypesN << ", load-failed " << loadN
+              << ", no-data " << nodataN << ", timeout " << timeoutN
+              << ", crashed " << crashedN << ", skipped " << skipN
+              << "; samples in " << outDir.getFullPathName() << "\n";
+    return 0;
+#endif
+}
+
+// ---------------------------------------------------------------------------
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -546,9 +991,30 @@ int main (int argc, char** argv)
     if (argc >= 2 && juce::String (argv[1]) == "--bootstrap")
         return runBootstrap();
 
+    if (argc >= 3 && juce::String (argv[1]) == "--extract-list")
+        return runExtractList (juce::File (juce::String (juce::CharPointer_UTF8 (argv[2]))),
+                               argc >= 4 ? juce::File (juce::String (juce::CharPointer_UTF8 (argv[3])))
+                                         : echojayDir().getChildFile ("retry_samples"));
+
+    if (argc >= 2 && juce::String (argv[1]) == "--au-registry")
+    {
+        // ejextract --au-registry [outDir] [--enumerate]
+        bool enumerateOnly = false;
+        juce::File outDir = echojayDir().getChildFile ("au_registry_samples");
+        for (int i = 2; i < argc; ++i)
+        {
+            const juce::String a = juce::String (juce::CharPointer_UTF8 (argv[i]));
+            if (a == "--enumerate") enumerateOnly = true;
+            else outDir = juce::File (a);
+        }
+        return runAuRegistry (outDir, enumerateOnly);
+    }
+
     if (argc < 3)
     {
-        std::cerr << "Usage: ejextract <plugin-path> <output-dir> | ejextract --bootstrap\n";
+        std::cerr << "Usage: ejextract <plugin-path> <output-dir> | ejextract --bootstrap"
+                     " | ejextract --extract-list <listfile> [outDir]"
+                     " | ejextract --au-registry [outDir] [--enumerate]\n";
         return 1;
     }
     return runWorker (juce::String (juce::CharPointer_UTF8 (argv[1])),

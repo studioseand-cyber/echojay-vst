@@ -1,0 +1,69 @@
+# EchoJay set-then-read studio run, tier 1 (27 Jul 2026).
+# One case-insensitive substring per line, matched against bundle FILE NAMES
+# in /Library/Audio/Plug-Ins/{VST3,Components} and the user-domain copies.
+# Both formats extract wherever both are installed; the AU/VST3 pair data
+# answers the format-identity question as a by-product.
+# Selection basis: flat-sweep census 26-27 Jul (flat 1..99, chain-relevant,
+# instruments excluded).
+
+# Valhalla: all-flat in VST3, AU unknown, prime targets
+ValhallaVintageVerb
+ValhallaDelay
+
+# elysia (Plugin Alliance): AU maps are 1-key stubs, broken in BOTH formats
+elysia alpha master
+elysia alpha mix
+elysia mpressor
+elysia niveau filter
+
+# Vertigo (Plugin Alliance): AU healthy, VST3 flat - the format-identity probe
+Vertigo VSC-2
+Vertigo VSM-3
+
+# SPL (Plugin Alliance): identical thin maps in both formats
+SPL Free Ranger
+SPL EQ Ranger Plus
+SPL IRON
+SPL TwinTube
+SPL Vitalizer MK2-T
+
+# ADA (Plugin Alliance)
+ADA STD-1
+
+# Acon Digital restoration set
+DeNoise
+DeHum
+DeClick
+DeClip
+
+# Native Instruments Solid series
+Solid EQ
+Solid Dynamics
+Solid Bus Comp
+
+# MeldaProduction
+MLimiterMB
+
+# A.O.M. (matches Invisible Limiter, G2, LL)
+Invisible Limiter
+
+# Millennia (Plugin Alliance)
+TCL-2
+
+# Brainworx console partial
+bx_console Focusrite SC
+
+# UAD chain-relevant flat set
+UAD LA-6176
+UAD Ampex ATR-102
+UAD Manley Massive Passive
+UAD Neve 88RS
+UAD Fairchild 670
+UAD Lexicon 224
+UAD Lexicon 480L
+UAD AMS RMX16
+UAD Capitol Chambers
+UAD Hitsville Reverb Chambers
+UAD Precision Equalizer
+UAD Helios Type 69
+UAD EMT 250
