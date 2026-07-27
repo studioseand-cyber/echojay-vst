@@ -32,6 +32,11 @@ struct WsMessage {
     juce::String editAltLabel;  // display label for that tap; serialised as _editAltLbl
     juce::String displayText;   // tap-generated user turns: rendered text
                                 // (content = sent text); serialised as _display
+    juce::String editTargetUid;  // Phase R: non-empty when the edit card targets a
+                                 // LINK's rack (v:2 send, sidecar-revision guard) —
+                                 // persisted so a reloaded card can never mis-route
+                                 // to the local rack; serialised as _editTgtUid
+    juce::String editTargetName; // display label at propose time; _editTgtName
 };
 
 struct WsChat {
@@ -44,6 +49,18 @@ struct WsChat {
     int revisionCount = 0;
     bool pinned = false;       // shown in the PINNED sidebar group
     juce::String pinnedAt;     // ISO timestamp — orders the group (newest first)
+    // ---- Phase C1: channel chats ----
+    // linkUid: "" = main chat (every pre-C1 record parses to this and
+    // behaves exactly as before — silent migration, no version bump).
+    // Non-empty = this chat IS a Link channel's conversation; the uid is
+    // THE key (persisted in the Link's plugin state, survives project
+    // reopen) and is never displayed. Serialised only when non-empty, so
+    // a linkUid-less chat round-trips byte-identically.
+    // linkNameSnap: channel display name at last message time (Phase N
+    // precedence result). DISPLAY ONLY — offline rows, web fallback, the
+    // future adopt-by-name repair. Refreshed on each send while live.
+    juce::String linkUid;
+    juce::String linkNameSnap;
 };
 
 struct WsAlbum {
@@ -104,6 +121,24 @@ struct WsReview {
     juce::String audioUrl;
     juce::String origin;
     juce::var    waveform;      // kept as raw var (may be array or string)
+    // Phase C: the Link channel this capture reviewed. "" = a MAIN capture
+    // (mix bus + all Links, or a host-only review) — every pre-C review
+    // parses to this. Non-empty = a per-channel capture of that Link, so a
+    // reloaded channel chat re-associates its own captures. Serialised only
+    // when non-empty; absent parses as "" (silent migration, no bump).
+    juce::String linkUid;
+    // Phase C item 3: channel display name at capture time (Phase N
+    // precedence result). DISPLAY ONLY - a capture of a channel you closed
+    // an hour ago still labels correctly once resolveLinkDisplayName()
+    // returns empty. Serialised only when non-empty; the uid stays the key.
+    juce::String linkNameSnap;
+    // Item 2 marker: TRUE only when `data` is genuinely this channel's own
+    // measurements (routed from snap.channels), never the host full-mix.
+    // A review with linkUid but NO marker is a PRE-FIX record whose numbers
+    // are the full capture -> the Compare list labels it "Full capture",
+    // which is true of its numbers. Serialised only when true; absent parses
+    // false (silent migration). Existing records are never rewritten.
+    bool channelDataScoped = false;
     WsMeasurements data;
     std::vector<WsChannelMeasurements> channels;  // empty for single-channel (host-only) reviews
 
@@ -181,7 +216,9 @@ public:
                              const juce::String& editJson  = juce::String(),
                              const juce::String& altPrompt = juce::String(),
                              const juce::String& altLabel  = juce::String(),
-                             const juce::String& displayText = juce::String());
+                             const juce::String& displayText = juce::String(),
+                             const juce::String& editTargetUid  = juce::String(),
+                             const juce::String& editTargetName = juce::String());
     // Update the persisted gain-proposal block for the assistant message
     // whose visible content matches (the display list can hold transient
     // messages that never reached the store, so content match beats index).
@@ -223,6 +260,12 @@ public:
 
     // Parsed data accessors — message thread only.
     const std::vector<WsChat>&   getChats()   const { return chats;   }
+    WsChat* findChatById(const juce::String& id);   // nullptr when absent
+    // Round-trip self-assert (Phase C1/C3 verification): serialise->parse->
+    // serialise must be byte-stable for a pre-C1 chat (and emit NO linkUid
+    // keys for it) and for a channel chat (fields intact). Runs once per
+    // process from the processor ctor; result to stderr + return value.
+    static bool runRoundTripSelfTest();
     const std::vector<WsAlbum>&  getAlbums()  const { return albums;  }
     const std::vector<WsReview>& getReviews() const { return reviews; }
     const WsProfile&             getProfile() const { return profile; }

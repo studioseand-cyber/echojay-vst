@@ -317,15 +317,27 @@ public:
     // ============ TextEditor ============
     void fillTextEditorBackground(juce::Graphics& g, int width, int height, juce::TextEditor& editor) override
     {
+        // Chrome-less editors (e.g. the chat composer's input, which lives
+        // inside a painted container): transparent background means "draw
+        // nothing" — general rule, no per-editor special case.
+        const auto bg = editor.findColour(juce::TextEditor::backgroundColourId);
+        if (bg.isTransparent()) return;
         auto bounds = juce::Rectangle<float>(0, 0, (float)width, (float)height);
-        g.setColour(editor.findColour(juce::TextEditor::backgroundColourId));
+        g.setColour(bg);
         g.fillRoundedRectangle(bounds, EchoJayChrome::kFieldCorner);
     }
 
     void drawTextEditorOutline(juce::Graphics& g, int width, int height, juce::TextEditor& editor) override
     {
-        auto bounds = juce::Rectangle<float>(0, 0, (float)width, (float)height);
         bool focused = editor.hasKeyboardFocus(true);
+        // Same chrome-less rule as the background fill: a transparent
+        // outline colour for the CURRENT focus state suppresses the well
+        // entirely (this override used to paint unconditionally, which is
+        // exactly what drew the double outline inside the composer).
+        if (editor.findColour(focused ? juce::TextEditor::focusedOutlineColourId
+                                      : juce::TextEditor::outlineColourId).isTransparent())
+            return;
+        auto bounds = juce::Rectangle<float>(0, 0, (float)width, (float)height);
         g.setColour(focused ? Colours::blue.withAlpha(0.5f) : Colours::border2);
         g.drawRoundedRectangle(bounds.reduced(0.5f), EchoJayChrome::kFieldCorner, focused ? 1.5f : 1.0f);
     }

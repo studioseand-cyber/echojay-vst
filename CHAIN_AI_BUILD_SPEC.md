@@ -230,7 +230,35 @@ Ship at phase boundaries. Phase 1 (conversational build + edit) is a complete,
 valuable product and the differentiator vs MixingGPT — get it into v2 and learn from
 real use before Phase 2/3. Do not wait for "everything" to ship anything.
 
-## Gotchas learned (1a/1b/1c/1d live verification)
+## Gotchas learned (live verification)
+- CHANNEL SELECTOR PROJECT-SCOPING GAP (C4, known and ACCEPTED — do not
+  "fix" the stamping): the banner dropdown (which REPLACED the chip bar;
+  the queued two-row "+N" overflow cap is CANCELLED — a menu handles all
+  16 registry slots) lists live Links in the SESSION, not the current
+  project. Two DAW projects open at once put
+  Project B's Link in Project A's bar; tapping it opens a chat stamped
+  with Project A's trackName targeting a rack in Project B. Accepted:
+  the registry is per-session; Logic runs both projects in ONE process
+  (no PID/process-token discriminator to filter on); the stamping is
+  correct given the information available — the gap is upstream in what
+  the registry can tell us; and the Link monitor behaves identically, so
+  it is consistent, not a new inconsistency.
+- LOGIC RECREATES THE PLUGIN EDITOR whenever you switch between the Link
+  window and EchoJay (single plugin window) — every couple of minutes in
+  real Link work. ANY editor-instance state that matters across that
+  boundary must live on the PROCESSOR (like chatHistory) or in the
+  workspace. The constructor copy-back rebuilds role/content/waveform
+  ONLY; full block state (edit cards, Build buttons, ASK chips, retired
+  flags, edit targets) returns via the one-shot loadChatFromWorkspace
+  re-hydrate in workspace.onLoaded (guards: user has not navigated away,
+  no send in flight; one-shot because onLoaded re-fires on later syncs
+  and a re-run would clear a live conversation mid-session).
+- COMPOSE TARGET (the chat target pill) lives on the processor
+  (chatTargetLinkUid/Name) for the same reason — an editor recreate must
+  not silently retarget a Link conversation to the local rack. PER-CHAT
+  targeting is deliberately DEFERRED to Phase C of the per-Link
+  conversations plan, where the channel IS the chat — build no interim
+  per-chat machinery.
 - NON-ASCII IN JUCE DRAW STRINGS MUST USE EXPLICIT ESCAPES (\xe2\x80\x94
   etc), never literal characters: raw multi-byte bytes written into a
   string literal rendered as mojibake in the build card. The ops card's

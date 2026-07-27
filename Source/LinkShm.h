@@ -289,6 +289,46 @@ static inline const char* kRegistryFilename = "registry_v2.bin";
 
 /// Open (or create) a file, truncate to `size`, mmap RW.
 /// Returns mapped pointer or nullptr; errno_out receives errno on failure (0 ok).
+// File IDENTITY (device+inode) — the consumer binds a ring by identity, not
+// by path, so a producer that reopens the ring at the SAME filename (new
+// inode after unlink) is detected: the consumer sees the path now points at
+// a different inode than the one it mapped and treats its held mapping as
+// STALE (no data) rather than reading the dead inode's old audio. Purely
+// consumer-side: no shared-memory layout change, so any main/Link version
+// mix behaves as before except the stale case degrades to no-data.
+struct FileIdentity
+{
+    uint64_t dev = 0, ino = 0;
+    bool     valid = false;
+    bool operator==(const FileIdentity& o) const
+    { return valid && o.valid && dev == o.dev && ino == o.ino; }
+    bool operator!=(const FileIdentity& o) const { return !(*this == o); }
+};
+
+inline FileIdentity fdIdentity(int fd)
+{
+#if LINK_FILE_SUPPORTED
+    struct stat st{};
+    if (fd >= 0 && ::fstat(fd, &st) == 0)
+        return { (uint64_t)st.st_dev, (uint64_t)st.st_ino, true };
+#else
+    juce::ignoreUnused(fd);
+#endif
+    return {};
+}
+
+inline FileIdentity pathIdentity(const juce::String& path)
+{
+#if LINK_FILE_SUPPORTED
+    struct stat st{};
+    if (::stat(path.toStdString().c_str(), &st) == 0)
+        return { (uint64_t)st.st_dev, (uint64_t)st.st_ino, true };
+#else
+    juce::ignoreUnused(path);
+#endif
+    return {};
+}
+
 inline void* openFileMapped(const juce::String& path, size_t size,
                              bool readOnly, int& fd_out, int& errno_out)
 {
@@ -611,6 +651,97 @@ inline void reapSlot(void* regMap, int i)
 {
     if (!regMap || i < 0 || i >= kRegMaxSlots) return;
     storeRelease(&regSlots(regMap)[i].inUse, 0u);
+}
+
+// ============================================================================
+//  Rack sidecar (Phase R) — rack-<uid>.json in the shared dir.
+//
+//  The Link publishes its live rack whenever its ChainHost revision changes;
+//  the main plugin reads it at compose/apply time to build a targeted
+//  [CURRENT CHAIN] and to staleness-guard v:2 edit sends. Deliberately a
+//  JSON sidecar, NOT a registry extension: RegistrySlot is a fixed 128-byte
+//  layout with 3 spare bytes, rack data is variable-length, and a
+//  registry_v3 would break cross-version compatibility. Old Links simply
+//  never write one — readers treat absence/parse failure as "rack unknown"
+//  (valid=false) and fall back to build-only, never an error.
+//
+//  `revision` is the LINK's own ChainHost counter. It shares a numbering
+//  space with NOTHING else — never compare it to the main plugin's
+//  chainRevision. `name` is a write-time convenience for debugging; user-
+//  facing labels come from the registry displayName, which renames faster.
+//
+//  Writes are plain replaceWithText (same non-atomic exposure as cmd/ack
+//  files); a rare torn read parses as invalid → "rack unknown" → safe.
+struct RackSidecarSlot {
+    juce::String name, format, settings;
+    bool  bypassed = false;
+    float wet = 1.0f;
+};
+struct RackSidecar {
+    bool  valid = false;
+    juce::String uid, name;
+    int   revision = -1;
+    float masterWet = 1.0f;
+    std::vector<RackSidecarSlot> slots;
+};
+
+inline juce::String rackSidecarPath(const juce::String& dir, const juce::String& uid)
+{
+    return dir + "rack-" + uid + ".json";
+}
+
+inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
+{
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("v",         1);
+    obj->setProperty("uid",       rc.uid);
+    obj->setProperty("name",      rc.name);
+    obj->setProperty("revision",  rc.revision);
+    obj->setProperty("masterWet", rc.masterWet);
+    juce::Array<juce::var> slots;
+    for (const auto& s : rc.slots)
+    {
+        auto* so = new juce::DynamicObject();
+        so->setProperty("name",     s.name);
+        so->setProperty("format",   s.format);
+        so->setProperty("settings", s.settings);
+        so->setProperty("bypassed", s.bypassed);
+        so->setProperty("wet",      s.wet);
+        slots.add(juce::var(so));
+    }
+    obj->setProperty("slots", slots);
+    juce::File(rackSidecarPath(dir, rc.uid))
+        .replaceWithText(juce::JSON::toString(juce::var(obj), true));
+}
+
+inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& uid)
+{
+    RackSidecar rc;
+    juce::File f(rackSidecarPath(dir, uid));
+    if (!f.existsAsFile()) return rc;                      // rack unknown
+    auto v = juce::JSON::parse(f.loadFileAsString());
+    auto* obj = v.getDynamicObject();
+    if (obj == nullptr || (int)obj->getProperty("v") != 1) return rc;
+    rc.uid       = obj->getProperty("uid").toString();
+    rc.name      = obj->getProperty("name").toString();
+    rc.revision  = (int)obj->getProperty("revision");
+    rc.masterWet = obj->hasProperty("masterWet")
+                     ? (float)(double)obj->getProperty("masterWet") : 1.0f;
+    if (auto* arr = obj->getProperty("slots").getArray())
+        for (auto& sv : *arr)
+            if (auto* so = sv.getDynamicObject())
+            {
+                RackSidecarSlot s;
+                s.name     = so->getProperty("name").toString();
+                s.format   = so->getProperty("format").toString();
+                s.settings = so->getProperty("settings").toString();
+                s.bypassed = (bool)so->getProperty("bypassed");
+                s.wet      = so->hasProperty("wet")
+                               ? (float)(double)so->getProperty("wet") : 1.0f;
+                if (s.name.isNotEmpty()) rc.slots.push_back(std::move(s));
+            }
+    rc.valid = rc.uid == uid && rc.revision >= 0;
+    return rc;
 }
 
 // =============================================================================

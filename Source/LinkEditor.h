@@ -749,6 +749,7 @@ private:
     static constexpr int kHeaderH = 40;
 
     juce::TextEditor   nameField;
+    juce::String lastPlaceholderHostName_;   // Phase N placeholder change detection
     // Rounds the name field's corners to match the main plugin's Project name
     // box (same shared radius). Applied to nameField only; colours/fill/size
     // are unchanged (it reads the editor's own colours).

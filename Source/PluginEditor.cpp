@@ -13,6 +13,13 @@
 // pointed at nothing and the AI Compare button hit its empty-selection guard
 // silently. Captures can never reach this base within a session.
 static constexpr int kCompareRefIdBase = 1000;
+// ITEM 1: the main EchoJay capture covers its own audio PLUS every live Link,
+// so it is neither the mix bus nor a material type. ONE fixed constant names
+// it everywhere (banner main entry, channel dropdown first row, Compare
+// group). NEVER derived from getEffectiveChannelName() (that is the header's
+// material-type HINT, which would collide with a real channel of the same
+// name). Contrast: a channel capture is partial by definition.
+static const juce::String kFullCaptureLabel = "Full capture";
 
 // usage-v2 free-tier banner: dismissed once per PROCESS session
 bool EchoJayEditor::fastModelBannerDismissed_ = false;
@@ -263,6 +270,26 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
                                       workspace.getReviews(), workspace.getPinnedProjects(), collapsedAlbums, currentChatId);
             chatSidebar.updateContent();
+        }
+        // Re-hydrate the active chat (26 Jul editor-recreate bug): the ctor
+        // copy-back is a PLACEHOLDER — role/content/waveform only, so every
+        // unapplied card, Build button and ASK chip vanished on Logic's
+        // routine Link<->EchoJay editor recreation. Reload through the SAME
+        // path a sidebar click takes: block state returns INCLUDING retired
+        // flags (editApplied/askAnswered), so applied cards come back
+        // applied, never live. One-shot per editor instance — onLoaded can
+        // fire again on later syncs and re-running would clear a live
+        // conversation mid-session. loadChatFromWorkspace clears the display
+        // list first, so the placeholder is replaced, never doubled; a
+        // recreate mid-load simply repeats this in the next instance.
+        if (!rehydratedFromStore_)
+        {
+            rehydratedFromStore_ = true;
+            const juce::String restoreId = processorRef.activeChatId;
+            if (restoreId.isNotEmpty() && !chatLoading
+                && (currentChatId.isEmpty() || currentChatId == restoreId))
+                for (const auto& ch : workspace.getChats())
+                    if (ch.id == restoreId) { loadChatFromWorkspace(restoreId); break; }
         }
         repaint();
     };
@@ -1340,9 +1367,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatInput.setReturnKeyStartsNewLine(false); // Enter still sends
     chatInput.setScrollbarsShown(true);
     chatInput.setTextToShowWhenEmpty("Ask about your mix...", C::text3);
-    chatInput.setColour(juce::TextEditor::backgroundColourId, C::bg3);
+    // Chrome-less: the composer CONTAINER paints the box + border (focus
+    // tint included); the editor itself must draw nothing around the text.
+    chatInput.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     chatInput.setColour(juce::TextEditor::textColourId, C::text);
-    chatInput.setColour(juce::TextEditor::outlineColourId, C::border2);
+    chatInput.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    chatInput.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+    chatInput.setColour(juce::TextEditor::shadowColourId, juce::Colours::transparentBlack);
     chatInput.setFont(juce::Font(juce::FontOptions(12.0f * chatTextScale)));
     chatInput.setIndents(8, 8);
     chatInput.addListener(this);
@@ -1356,6 +1387,19 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         if (t.isNotEmpty()) sendChatMessage(t);
     };
     addChildComponent(chatSendBtn);
+
+    // Phase R: compose-time target pill. An EDIT must know its rack at
+    // compose time (the injected [CURRENT CHAIN] defines the slot numbers
+    // the model writes), so the picker sits on the input row, not on the
+    // apply step. Session state only.
+    chatTargetBtn.setColour(juce::TextButton::buttonColourId,
+                            juce::Colour(0xff06b6d4).withAlpha(0.10f));
+    chatTargetBtn.setColour(juce::TextButton::textColourOnId,  juce::Colour(0xff7FE3F2));
+    chatTargetBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
+    chatTargetBtn.onClick = [this] { showChatTargetMenu(); };
+    // No restore from processor state: the router selection is transient
+    // by design (RESET, not sticky) — every main chat opens untargeted.
+    addChildComponent(chatTargetBtn);
 
     // "Aa" text-size toggle sits in the chat header. Cycles a preset list
     // of scales so users can bump chat readability without a settings trip.
@@ -1795,7 +1839,21 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         chainBuildBtns[(size_t)i].setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff0E1020));
         chainBuildBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
         chainBuildBtns[(size_t)i].setVisible(false);
-        chainBuildBtns[(size_t)i].onClick = [this, i]() { showChainBuildTargetMenu(chainBuildJsons[(size_t)i]); };
+        chainBuildBtns[(size_t)i].onClick = [this, i]() {
+            // Router rule: the destination is NEVER ambiguous — a channel
+            // chat builds on ITS channel, a main chat builds on the local
+            // rack. The old target menu (which pre-ticked "Build here"
+            // even inside channel chats) is deleted, not conditioned.
+            const juce::String uid = effectiveChannelUid();
+            if (uid.isEmpty()) { loadChainFromJson(chainBuildJsons[(size_t)i]); return; }
+            if (!linkUidLive(uid))
+            {
+                appendLocalResultBubble("\"" + channelDisplayLabel(uid)
+                    + "\" is offline - nothing was built. Reopen it in the "
+                      "DAW and press Build again.");
+                return;
+            }
+            sendChainToLink(uid, chainBuildJsons[(size_t)i]); };
         addAndMakeVisible(chainBuildBtns[(size_t)i]);
     }
 
@@ -1831,6 +1889,21 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         addAndMakeVisible(editAltBtns[(size_t)i]);
     }
 
+    // Result-bubble chip pool (build failures): shared LnF, dispatched by
+    // the (msgIdx, kind) stamped during layout.
+    for (int i = 0; i < kMaxResultChips; ++i)
+    {
+        resultChipBtns[(size_t)i].setLookAndFeel(&askChipLnF_);
+        resultChipBtns[(size_t)i].setColour(juce::TextButton::textColourOffId,
+                                            juce::Colour(0xff7FE3F2));
+        resultChipBtns[(size_t)i].setVisible(false);
+        resultChipBtns[(size_t)i].onClick = [this, i]()
+        {
+            onResultChipTapped(resultChipMsgIdx[(size_t)i], resultChipKind[(size_t)i]);
+        };
+        addAndMakeVisible(resultChipBtns[(size_t)i]);
+    }
+
     // ASK choice chips (Phase 1b, B2) — pill buttons in the shelf docked on
     // top of the chat input. Tap = auto-send the formatted answer; the send
     // path itself supersedes every pending ask (so the shelf also vanishes
@@ -1846,9 +1919,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // Answer format per CHAIN_AI_BUILD_SPEC: self-contained Q->A pair
             // that survives history trimming (blocks are stripped in storage).
             // sendChatMessage -> supersedePendingAsks marks + persists.
+            // intent -> staged turnType (3-pre): "edit" chips act on the
+            // existing rack; server trust-but-validates as always
+            const juce::String tt = askChipIntents[(size_t)i] == "edit" ? "chain_edit"
+                                  : askChipIntents[(size_t)i] == "build" ? "chain_generate"
+                                  : juce::String();
             sendChatMessage(askChipLabels[(size_t)i]
                             + " (answering: \"" + askChipQuestion_ + "\")",
-                            askChipLabels[(size_t)i]);   // bubble shows the label only
+                            askChipLabels[(size_t)i], tt);   // bubble shows the label only
         };
         addAndMakeVisible(askChipBtns[(size_t)i]);
     }
@@ -4240,8 +4318,21 @@ void EchoJayEditor::toggleComparePlay(bool isTop)
     auto& slot = isTop ? compareTop_ : compareBot_;
     DBG("toggleComparePlay slot=" + juce::String(slotIdx)
         + " kind=" + juce::String((int)slot.kind));
-    if (slot.kind == CompareSlotState::Kind::Live ||
-        slot.kind == CompareSlotState::Kind::Empty) return;
+    if (slot.kind == CompareSlotState::Kind::Empty) return;
+    // ITEM 2: the transport hint belongs to the LIVE slot ONLY. The live
+    // signal auditions by the host running; when the transport is stopped
+    // there is nothing to hear, so the hint is correct HERE (and only here).
+    // A stored capture (below) plays regardless of what the OTHER slot holds
+    // and is never gated on the transport.
+    if (slot.kind == CompareSlotState::Kind::Live)
+    {
+        if (!hostAudioAlive())
+        {
+            cmpHintUntilMs_ = juce::Time::getMillisecondCounter() + 3500;
+            repaint();
+        }
+        return;   // live is host passthrough; no stored stream to toggle
+    }
 
     auto& s = processorRef.cmpStream[slotIdx];
 
@@ -4272,21 +4363,12 @@ void EchoJayEditor::toggleComparePlay(bool isTop)
         EchoJay_NSLog("EJCmp: sync disengaged by manual play");
     }
 
-    // HONEST TRANSPORT: playback renders inside processBlock. If the host
-    // has idled this channel (Logic, stopped transport), pressing play
-    // cannot sound — show the hint instead of pretending. Keyed on actual
-    // block liveness, not transport state, so hosts that keep processing a
-    // stopped-transport channel still audition fine.
-    if (!wasPlaying && !hostAudioAlive())
-    {
-        cmpHintUntilMs_ = juce::Time::getMillisecondCounter() + 3500;
-        EchoJay_NSLog(("EJCmp: play slot=" + juce::String(slotIdx)
-                       + " rejected - host audio idle (blocks frozen at "
-                       + juce::String(processorRef.getAudioBlockCount())
-                       + "), hint shown").toRawUTF8());
-        repaint();
-        return;
-    }
+    // A stored capture plays regardless of the transport: it renders inside
+    // processBlock, which nearly every host keeps calling on a loaded plugin
+    // even when stopped. (Logic idles a stopped channel, so there the toggle
+    // latches but stays silent until the transport runs — accepted per the
+    // audition-follows-selected-slot rule; the LIVE slot is where the
+    // transport hint lives now.)
 
     // Toggle play/pause
     s.playing.store(!wasPlaying);
@@ -4898,8 +4980,30 @@ void EchoJayEditor::runAICompare()
     chatMessages.push_back({"user", "Compare these mixes"});
     processorRef.chatHistory.push_back({"user", "Compare these mixes"});
     chatLoading = true; repaint();
+    if (askShelfVisible_)
+    {
+        supersedePendingAsks();
+        askShelfVisible_ = false;
+        resized();
+    }
     processorRef.chatRoles.add("user");
-    processorRef.chatContents.add("Give me a detailed comparison of these two.\n\n" + compareCtx);
+    // Phase 3-pre: compare rides the same injection helper as chat/capture
+    // (alwaysAttach — its typed text has no cue words), so band-level
+    // CHAIN_EDIT offers can reference the live rack.
+    juce::String compareContent = "Give me a detailed comparison of these two.\n\n" + compareCtx;
+    // ITEM 5: a compare turn in a CHANNEL chat carries STORED main-instance
+    // snapshot data into that chat. Attribute it (the SAME mainCaptureAttribution
+    // flag the capture path uses) so the model never narrates the main mix as
+    // this channel. The chain context stays the channel (STATE 2/3 via the
+    // uid); the attribution separates the DATA (main instance) from the CHAIN
+    // (this channel). Main chat: empty uid, no attribution, unchanged.
+    const juce::String cmpChanUid = effectiveChannelUid();
+    compareContent += standardChainInjections(compareContent, /*alwaysAttach*/ true,
+                                              nullptr, cmpChanUid,
+                                              /*mainCaptureAttribution*/ false,
+                                              /*captureOwnAttribution*/ false,
+                                              /*compareAttribution*/ cmpChanUid.isNotEmpty());
+    processorRef.chatContents.add(compareContent);
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         processorRef.getEffectiveChannelName(), processorRef.getGenre(),
@@ -4921,9 +5025,21 @@ void EchoJayEditor::runAICompare()
         [safeThis](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
             safeThis->chatLoading = false;
-            safeThis->chatMessages.push_back({"assistant", reply});
-            safeThis->processorRef.chatHistory.push_back({"assistant", reply});
-            if (success) { safeThis->processorRef.chatRoles.add("assistant"); safeThis->processorRef.chatContents.add(reply); }
+            // 3a: compare replies may offer a chain change as an ASK block
+            // (only block allowed on analysis turns; see capture callback)
+            juce::String visibleReply = reply;
+            juce::String askJson;
+            if (success && EchoJayAPI::extractAskBlock(visibleReply, askJson))
+                EchoJay_NSLog("EJChat: ASK block received (compare turn)");
+            ChatMsg cm;
+            cm.role    = "assistant";
+            cm.content = visibleReply;
+            cm.askData = askJson;
+            safeThis->chatMessages.push_back(cm);
+            safeThis->processorRef.chatHistory.push_back({"assistant", visibleReply});
+            if (success) { safeThis->processorRef.chatRoles.add("assistant"); safeThis->processorRef.chatContents.add(visibleReply); }
+            if (askJson.isNotEmpty())
+                safeThis->resized();
             safeThis->repaint();
         });
 }
@@ -7070,6 +7186,12 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         if (ch.id != chatId) continue;
 
         currentChatId = chatId;
+        processorRef.activeChatId = chatId;   // survives editor recreate
+        processorRef.pendingChannelUid.clear();   // any activation ends pending
+        processorRef.chatTargetLinkUid.clear();   // router selection is transient:
+        processorRef.chatTargetLinkName.clear();  // every activation resets it
+        refreshChannelBannerCache();
+        resized();
         chatMessages.clear();
         processorRef.chatHistory.clear();
         processorRef.chatRoles.clear();
@@ -7101,6 +7223,8 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             cm.editAltPrompt = msg.editAltPrompt;
             cm.editAltLabel  = msg.editAltLabel;
             cm.displayText   = msg.displayText;
+            cm.editTargetUid  = msg.editTargetUid;  // Phase R: a reloaded card
+            cm.editTargetName = msg.editTargetName; // must never mis-route local
 
             // Reconstruct capture block from stored review.
             // Helper lambda — populates cm from a resolved WsReview.
@@ -7315,8 +7439,19 @@ void EchoJayEditor::saveCollapsedState() const
 
 void EchoJayEditor::createNewChat()
 {
-    // Don't create another empty chat if the current one is already empty
-    if (chatMessages.empty()) return;
+    // "Already empty" may still be a CHANNEL context — a pending channel
+    // (chip/banner tap before first send) or a virgin channel chat — and
+    // the old early-return fired BEFORE any reset, so pending leaked into
+    // "New chat" and the banner kept reading the previous channel. New
+    // chat ALWAYS lands in a clean MAIN state; it just skips minting a
+    // record when there is nothing to leave behind.
+    if (chatMessages.empty())
+    {
+        if (effectiveChannelUid().isEmpty()) return;   // already a clean main state
+        resetToMainContext();
+        chatInput.grabKeyboardFocus();
+        return;
+    }
 
     WsChat c;
     c.id           = juce::String(juce::Time::currentTimeMillis());
@@ -7331,6 +7466,11 @@ void EchoJayEditor::createNewChat()
     // No mutation sync yet — nothing to persist until a message is added
 
     currentChatId = c.id;
+    processorRef.activeChatId = c.id;
+    processorRef.pendingChannelUid.clear();   // any activation ends pending
+    processorRef.chatTargetLinkUid.clear();   // router selection resets too
+    processorRef.chatTargetLinkName.clear();
+    refreshChannelBannerCache();              // new chat = main: clears the banner
     chatMessages.clear();
     processorRef.chatHistory.clear();
     processorRef.chatRoles.clear();
@@ -7624,6 +7764,8 @@ void EchoJayEditor::showMoveToAlbumMenu(const juce::String& chatId)
                         if (safeThis->currentChatId == chatId)
                         {
                             safeThis->currentChatId = {};
+                            safeThis->processorRef.activeChatId = {};
+                            safeThis->refreshChannelBannerCache();   // deactivation clears the banner
                             safeThis->chatMessages.clear();
                             safeThis->processorRef.chatHistory.clear();
                             safeThis->processorRef.chatRoles.clear();
@@ -7746,13 +7888,44 @@ void EchoJayEditor::showAlbumContextMenu(const juce::String& albumId)
 }
 
 juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
-                                                      const juce::String& wavPath)
+                                                      const juce::String& wavPath,
+                                                      const juce::String& linkUid)
 {
     if (!api.isLoggedIn()) return {};
 
     juce::String reviewId = juce::String(juce::Time::currentTimeMillis());
     juce::String fileName = juce::File(wavPath).getFileName();
-    auto& d = snap.averagedData;
+
+    // ITEM 1: route the CHANNEL's own measurements into the record for a
+    // channel-scoped capture (linkUid set). The channel data already exists
+    // in snap.channels (which is why the prose has always been right); this
+    // routes the correct source into the record instead of the host mix.
+    // NO-DATA EDGES never fall back to host: a channel absent from the
+    // snapshot (offline / never warmed up) or with framesReceived == 0
+    // records a no-data SENTINEL, honest about having no channel numbers,
+    // rather than the full mix under the channel's name.
+    static const MeterData kNoChannelData = [] {
+        MeterData m;   // silence-floor sentinel: integrated/peaks/rms unusable
+        m.integrated = -100.0f; m.loudnessRange = 0.0f;
+        m.rmsL = m.rmsR = -100.0f; m.peakMaxL = m.peakMaxR = -100.0f;
+        m.truePeakMaxL = m.truePeakMaxR = -100.0f;
+        m.width = 0.0f; m.correlation = 0.0f; m.crestFactor = 0.0f; m.dcOffset = 0.0f;
+        return m;
+    }();
+    const MeterData* dsrc = &snap.averagedData;   // host default (main capture / pre-fix)
+    bool dataIsChannelScoped = false;
+    if (linkUid.isNotEmpty())
+    {
+        const ChannelMeterData* ch = nullptr;
+        for (const auto& c : snap.channels)
+            if (c.uid == linkUid) { ch = &c; break; }
+        if (ch != nullptr && ch->framesReceived != 0)
+            dsrc = &ch->meterData;              // genuine channel numbers
+        else
+            dsrc = &kNoChannelData;             // NO host fallback (offline / 0 frames)
+        dataIsChannelScoped = true;             // the record IS a channel capture
+    }
+    auto& d = *dsrc;
 
     // ---- Build waveform var (array of {x, n} objects matching web format) ----
     juce::Array<juce::var> wfArr;
@@ -7767,9 +7940,15 @@ juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
     // ---- Build WsReview ----
     WsReview rev;
     rev.id          = reviewId;
+    rev.linkUid     = linkUid;   // Phase C: per-channel capture association
+    // Name snapshot (item 3): resolve the live channel name NOW so the label
+    // survives the Link being closed later. Empty for main captures.
+    if (linkUid.isNotEmpty())
+        rev.linkNameSnap = channelDisplayLabel(linkUid);
     rev.fileName    = fileName;
     rev.genre       = processorRef.getGenre();
     rev.stemType    = "mix";
+    rev.channelDataScoped = dataIsChannelScoped;   // item 2 marker
     rev.channelType = snap.getChannelDisplayName();
     rev.date        = juce::Time::getCurrentTime().toISO8601(true);
     rev.audioUrl    = "";
@@ -10016,6 +10195,22 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // PARITY: mirrors app.html .ask-shelf (input bg + 5% cyan wash, 12px top
     // radius, muted "or type below" hint). Chips are real buttons placed by
     // the layout pass; this paints only the shelf body + hint.
+    // Chat composer container: ONE rounded box — text on top, control row
+    // inside the bottom. Geometry comes EXCLUSIVELY from chatBoxRect_
+    // (stored by layoutChatBox) — this pass measures nothing. Focus is
+    // read for the border tint only, never for geometry.
+    if (chatInput.isVisible() && currentScreen == Screen::Main
+        && !chatBoxRect_.isEmpty())
+    {
+        auto r = chatBoxRect_.toFloat();
+        g.setColour(C::bg3);
+        g.fillRoundedRectangle(r, 12.0f);
+        g.setColour(chatInput.hasKeyboardFocus(true)
+                        ? juce::Colour(0xff22d3ee).withAlpha(0.55f)
+                        : C::border2);
+        g.drawRoundedRectangle(r.reduced(0.5f), 12.0f, 1.0f);
+    }
+
     if (askShelfVisible_ && currentScreen == Screen::Main)
     {
         auto r = askShelfRect_.toFloat();
@@ -10586,12 +10781,43 @@ void EchoJayEditor::paint(juce::Graphics& g)
     g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
     g.drawText("AI ASSISTANT", chatX + 14, topH, chatW, 32, juce::Justification::centredLeft);
 
+    // Channel banner: THE channel selector (mouseDown opens the menu).
+    // Paint consumes the STORED rect + CACHED text only; the rect is
+    // authored in resized() from channelBannerH(), the single height
+    // source. Empty cached text (Link tab main chat) renders the
+    // no-channel placeholder; the dropdown glyph is an explicit escape.
+    if (!channelBannerRect_.isEmpty())
+    {
+        auto r = channelBannerRect_.toFloat();
+        g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.08f));
+        g.fillRoundedRectangle(r, 6.0f);
+        g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.25f));
+        g.drawRoundedRectangle(r.reduced(0.5f), 6.0f, 1.0f);
+        const bool hasChannel = chanBannerText_.isNotEmpty();
+        g.setColour(hasChannel
+                        ? juce::Colour(0xff7FE3F2).withAlpha(chanBannerLive_ ? 1.0f : 0.55f)
+                        : C::text3);
+        g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)));
+        g.drawText(hasChannel ? chanBannerText_ : mainContextLabel(),
+                   channelBannerRect_.reduced(10, 0),
+                   juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff7FE3F2).withAlpha(0.8f));
+        g.drawText(juce::String::fromUTF8("\xe2\x96\xbe"),
+                   channelBannerRect_.reduced(10, 0),
+                   juce::Justification::centredRight);
+    }
+
     // (Credit counter intentionally removed from chat header — it lives in
     // the Settings panel only. Keeps the chat strip clean and avoids
     // duplicating info that's one click away.)
 
     // Chat messages
-    int chatTop2 = topH + 32;
+    // ONE TOP BOUND TOO: messages are EDITOR-painted, and their painted
+    // top must derive from chatScroll's own bounds — the single formula in
+    // resized() that already accounts for the channel banner. The old
+    // "topH + 32" here was a second height sum, and the first channel-chat
+    // message painted straight over the banner.
+    int chatTop2 = chatScroll.getY();
     // ONE bottom bound: chatScroll's bottom edge is banner-aware (resized
     // ends it above the banner when visible). The painted clip must derive
     // from IT — the old parallel height-58 formula didn't know about the
@@ -10610,6 +10836,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     activeChainBuildBtns = 0;
     activeEditApplyBtns = 0;
     activeEditAltBtns = 0;
+    activeResultChips = 0;
     chatWavePositions.clear();
     gainCardZones_.clear();
 
@@ -11266,31 +11493,39 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     }
                 }
 
-                // Suggest-an-alternative pill on a PLAIN result bubble
-                // (build failures; edit cards render theirs inside the card)
-                if (altAreaH > 0 && activeEditAltBtns < kMaxChainBuildBtns)
+                // Result-bubble chip LIST on a PLAIN bubble (build failures;
+                // edit cards render their single alt chip inside the card).
+                // ONE layout pass -> rects; paint only positions the pool.
+                if (altAreaH > 0)
                 {
-                    int abi2 = activeEditAltBtns++;
-                    editAltMsgIdx[(size_t)abi2] = msgLoopIndex;
-                    editAltBtns[(size_t)abi2].setButtonText(
-                        msg.editAltPrompt.startsWith("These")
-                            ? "Suggest alternatives" : "Suggest an alternative");
-                    juce::Rectangle<int> ab2(bubbleX + 10,
-                                             drawY + bubbleH + chainAreaH + gainAreaH + editAreaH + 4,
-                                             juce::jmin(180, bubbleW - 20), 26);
+                    const juce::Rectangle<int> chipArea(
+                        bubbleX + 10,
+                        drawY + bubbleH + chainAreaH + gainAreaH + editAreaH + 4,
+                        bubbleW - 20, 26);
+                    std::vector<juce::Rectangle<int>> chipRects;
+                    layoutResultChips(msg, chipArea, chipRects);
+                    const auto chips = resultChipList(msg);
                     auto sb5 = chatScroll.getBounds();
-                    bool inV3 = ab2.getY() >= sb5.getY()
-                             && ab2.getBottom() <= sb5.getBottom();
-                    if (inV3)
+                    for (size_t ci = 0; ci < chipRects.size()
+                                        && activeResultChips < kMaxResultChips; ++ci)
                     {
-                        editAltBtns[(size_t)abi2].setBounds(ab2);
-                        editAltBtns[(size_t)abi2].setVisible(true);
-                        editAltBtns[(size_t)abi2].toFront(false);
-                    }
-                    else
-                    {
-                        editAltBtns[(size_t)abi2].setBounds(-100, -100, 1, 1);
-                        editAltBtns[(size_t)abi2].setVisible(false);
+                        int rc = activeResultChips++;
+                        resultChipMsgIdx[(size_t)rc] = msgLoopIndex;
+                        resultChipKind[(size_t)rc]   = chips[ci].kind;
+                        resultChipBtns[(size_t)rc].setButtonText(chips[ci].label);
+                        const auto& br = chipRects[ci];
+                        bool inV = br.getY() >= sb5.getY() && br.getBottom() <= sb5.getBottom();
+                        if (inV)
+                        {
+                            resultChipBtns[(size_t)rc].setBounds(br);
+                            resultChipBtns[(size_t)rc].setVisible(true);
+                            resultChipBtns[(size_t)rc].toFront(false);
+                        }
+                        else
+                        {
+                            resultChipBtns[(size_t)rc].setBounds(-100, -100, 1, 1);
+                            resultChipBtns[(size_t)rc].setVisible(false);
+                        }
                     }
                 }
             }
@@ -11353,6 +11588,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
         editApplyBtns[(size_t)i].setVisible(false);
     for (int i = activeEditAltBtns; i < kMaxChainBuildBtns; ++i)
         editAltBtns[(size_t)i].setVisible(false);
+    for (int i = activeResultChips; i < kMaxResultChips; ++i)
+        resultChipBtns[(size_t)i].setVisible(false);
 
     } // end if (!visualOnlyMode && chatW > 0) — chat section
 
@@ -11626,10 +11863,7 @@ void EchoJayEditor::resized()
         chatSidebar.setVisible(false);
     }
 
-    // Chat input — 2-line height, Send centred vertically
-    int inH = 52; // ~2 lines of 13px font
-    int sendW = 56;
-    int sendH = 30;
+    // Chat composer — one rounded container (text + internal control row)
     // Flush inside the sidebar column on ALL tabs: left edge at the divider
     // plus padding, matching the message list above. (Historically -20 in
     // full mode — "20px past divider" — which overlapped the content panel;
@@ -11643,8 +11877,8 @@ void EchoJayEditor::resized()
     // Above the disclaimer, an extra strip for the model indicator when a
     // server-fed name exists (timer keeps the label text current).
     const int discH = 14;
-    const int modelH = chatModelLabel.getText().isNotEmpty() ? 12 : 0;
-    int inputY = b.getHeight() - inH - inputPad - abOff4 - discH - modelH;
+    // (model label now lives INSIDE the composer row — no footer strip)
+    int inputY = b.getHeight() - chatBoxH() - inputPad - abOff4 - discH;
     // CHAT tab, empty active chat: centre the input in the message area
     // with the greeting above it (modern chat UX). Any message docks it.
     chatCentredEmpty_ = currentTab == Tab::Chat && !compactMode && !visualOnlyMode
@@ -11658,17 +11892,15 @@ void EchoJayEditor::resized()
         const int bx    = areaX + (areaW - boxW) / 2;
         const int areaTop = topH + 32;
         const int by    = areaTop + (int) ((inputY - areaTop) * 0.50f);   // ~centre
-        chatInput.setBounds(bx, by, boxW - sendW - 8, inH);
-        chatSendBtn.setBounds(bx + boxW - sendW, by + (inH - sendH) / 2, sendW, sendH);
+        layoutChatBox({ bx, by, boxW, chatBoxH() });
         chatEmptyHeading_ = { areaX, by - 76, areaW, 34 };
         chatEmptySub_     = { areaX, by - 38, areaW, 18 };
         chatInput.setTextToShowWhenEmpty("Type a question...", C::text3);
     }
     else
     {
-        chatInput.setBounds(chatStartX + chatPadL, inputY, chatW - sendW - chatPadL - 4, inH);
-        int sendY = inputY + (inH - sendH) / 2; // vertically centred
-        chatSendBtn.setBounds(chatStartX + chatW - sendW - 2, sendY, sendW, sendH);
+        layoutChatBox({ chatStartX + chatPadL, inputY,
+                        chatW - chatPadL - 8, chatBoxH() });
         chatInput.setTextToShowWhenEmpty("Ask about your mix...", C::text3);
     }
     // Model-tier banner: ONE shared implementation on every assistant
@@ -11691,22 +11923,24 @@ void EchoJayEditor::resized()
         const int askIdxL = findNewestUnansweredAsk();
         if (askIdxL >= 0 && assistantInputContext() && !chatCentredEmpty_)
         {
-            auto ib = chatInput.getBounds();
-            const int bw = chatSendBtn.getRight() - ib.getX();
+            const int bw = chatBoxRect_.getWidth();
             std::vector<juce::Rectangle<int>> rects;
-            juce::StringArray labels;
+            juce::StringArray labels, intents;
             const int shelfH = measureAskShelf(chatMessages[(size_t)askIdxL], bw,
                                                &rects, &labels,
-                                               &askChipQuestion_, &askShelfHintRect_);
+                                               &askChipQuestion_, &askShelfHintRect_,
+                                               &intents);
             if (shelfH > 0)
             {
-                askShelfRect_    = { ib.getX(), ib.getY() - shelfH, bw, shelfH };
+                askShelfRect_    = { chatBoxRect_.getX(),
+                                     chatBoxRect_.getY() - shelfH, bw, shelfH };
                 askShelfVisible_ = true;
                 askChipMsgIdx_   = askIdxL;
                 activeAskChips   = juce::jmin((int)rects.size(), kMaxAskChips);
                 for (int ci = 0; ci < activeAskChips; ++ci)
                 {
                     askChipLabels[(size_t)ci] = labels[ci];
+                    askChipIntents[(size_t)ci] = ci < intents.size() ? intents[ci] : juce::String();
                     askChipBtns[(size_t)ci].setButtonText(labels[ci]);
                     askChipBtns[(size_t)ci].setBounds(
                         rects[(size_t)ci].translated(askShelfRect_.getX(), askShelfRect_.getY()));
@@ -11723,14 +11957,14 @@ void EchoJayEditor::resized()
 
     if (assistantInputContext() && shouldShowFastModelBanner())
     {
-        auto ib = chatInput.getBounds();
-        const int bw = chatSendBtn.getRight() - ib.getX();
+        const int bw = chatBoxRect_.getWidth();
         const int bh = bw < 440 ? 34 : 24;   // narrow: sentence per line
-        // Stacks ABOVE the ask shelf when one is docked on the input
-        const int aboveY = askShelfVisible_ ? askShelfRect_.getY() : ib.getY();
-        const int by2 = chatCentredEmpty_ ? ib.getBottom() + 12
+        // Stacks ABOVE the ask shelf when one is docked on the composer
+        const int aboveY = askShelfVisible_ ? askShelfRect_.getY()
+                                            : chatBoxRect_.getY();
+        const int by2 = chatCentredEmpty_ ? chatBoxRect_.getBottom() + 12
                                           : aboveY - bh - 6;
-        chatBannerRect_      = { ib.getX(), by2, bw, bh };
+        chatBannerRect_      = { chatBoxRect_.getX(), by2, bw, bh };
         chatBannerCloseRect_ = chatBannerRect_.removeFromRight(24);
         chatBannerVisible_   = true;
     }
@@ -11759,7 +11993,26 @@ void EchoJayEditor::resized()
     // tear during scroll. The user (U) avatar is on the right side and lives
     // outside the viewport's right edge by symmetry of chatW - 4.
     int chatAvatarReserve = 32; // 6px left margin + 24px avatar + 2px gap
-    int chatScrollTop = topH + 32;
+    // ===== Channel banner (THE channel selector; chip bar deleted) =====
+    // Sits at the top of the conversation, below the header. ONE formula
+    // authors the banner rect AND the viewport top; the editor-painted
+    // messages take their top from chatScroll's bounds, so nothing can
+    // overlap the banner regardless of scroll position. Stacking, top to
+    // bottom: header -> [banner] -> messages -> [model banner] ->
+    // [ASK shelf] -> composer; every element keys off its neighbour in
+    // ONE formula chain, never a parallel sum. Renders in EVERY state
+    // including centred-empty (pending channel = the moment the user most
+    // needs to know which room they are in), and ALWAYS on the Link tab
+    // (main chat there reads "No channel selected").
+    const int chanBannerHNow = channelBannerH();
+    if (chanBannerHNow > 0)
+        channelBannerRect_ = { chatStartX + chatPadL, topH + 32 + 4,
+                               chatW - chatPadL - 8, chanBannerHNow };
+    else
+        channelBannerRect_ = {};
+
+    int chatScrollTop = topH + 32
+                      + (chanBannerHNow > 0 ? chanBannerHNow + 8 : 0);
     // Empty-state: the viewport must NOT cover the centred input — it is
     // added after chatInput (above it in z-order) and its empty transparent
     // body swallows clicks. The message area effectively doesn't exist in
@@ -11767,7 +12020,7 @@ void EchoJayEditor::resized()
     int chatScrollBottom = chatCentredEmpty_ ? chatEmptyHeading_.getY() - 8
                          : (chatBannerVisible_ ? chatBannerRect_.getY() - 6
                           : askShelfVisible_   ? askShelfRect_.getY() - 6
-                                               : inputY - 8);
+                                               : chatBoxRect_.getY() - 8);
     int chatScrollH = juce::jmax(50, chatScrollBottom - chatScrollTop);
     chatScroll.setBounds(chatStartX + chatAvatarReserve, chatScrollTop,
                          chatW - chatAvatarReserve - 2, chatScrollH);
@@ -11817,18 +12070,7 @@ void EchoJayEditor::resized()
                                       b.getHeight() - abOff4 - discH - 2,
                                       chatW - chatPadL - 8, discH);
         chatDisclaimerLabel.setVisible(chatInput.isVisible());
-
-        // Model indicator: right-aligned directly under the input (its own
-        // strip above the disclaimer). In the centred-empty chat state it
-        // tucks under the floating input box instead.
-        if (chatCentredEmpty_)
-            chatModelLabel.setBounds(chatInput.getX(), chatInput.getBottom() + 2,
-                                     chatSendBtn.getRight() - chatInput.getX(), 10);
-        else
-            chatModelLabel.setBounds(chatStartX + chatPadL, inputY + inH + 2,
-                                     chatW - chatPadL - 8, modelH > 0 ? 12 : 0);
-        chatModelLabel.setVisible(chatInput.isVisible()
-                                  && chatModelLabel.getText().isNotEmpty());
+        // (model indicator now lives inside the composer row — layoutChatBox)
     }
 
     // Logout button lives in Settings view now (positioned there)
@@ -12310,6 +12552,28 @@ void EchoJayEditor::resized()
 
 void EchoJayEditor::timerCallback()
 {
+    // Target pill appears/disappears with Link connectivity — relayout on
+    // change (no height change; the composer row is fixed). The ACTIVE
+    // chat's target flipping live<->offline is ALSO a relayout, not a
+    // tint: "(offline)" changes the pill's TEXT WIDTH, and the pill is
+    // label-sized at layout time — paint into a stale rect would clip.
+    {
+        const bool pe = targetPillEligible();
+        const juce::String lu = effectiveChannelUid();
+        const bool ll = lu.isNotEmpty() && linkUidLive(lu);
+        const juce::String lb = lu.isNotEmpty() ? channelDisplayLabel(lu) : juce::String();
+        if (pe != lastPillEligible_ || lu != lastLockedUid_
+            || ll != lastLockedLive_ || lb != lastLockedLabel_)
+        {
+            lastPillEligible_ = pe;
+            lastLockedUid_    = lu;
+            lastLockedLive_   = ll;
+            lastLockedLabel_  = lb;   // rename changes banner text too
+            refreshChannelBannerCache();
+            resized();
+        }
+    }
+
     // Loading screen timeout — if network calls take too long, show main anyway
     if (currentScreen == Screen::Loading)
     {
@@ -12572,7 +12836,15 @@ void EchoJayEditor::timerCallback()
         statusLabel.setText("Capturing...", juce::dontSendNotification);
         waveformFrozen = false; // live while capturing
     } else {
-        captureBtn.setButtonText("Capture");
+        // ITEM 7: the button is now the only signal of WHAT pressing it will
+        // measure. Channel chat -> names the channel; main chat -> the full
+        // capture. Width authored in resized() with everything else; kept
+        // short (channel name only, "Capture" bare = full) so the header
+        // layout never breaks.
+        const juce::String capUid = effectiveChannelUid();
+        captureBtn.setButtonText(capUid.isNotEmpty()
+            ? ("Capture " + channelDisplayLabel(capUid))
+            : juce::String("Capture"));
         captureBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
         statusLabel.setText(state == CaptureState::Complete ? "Complete" : "", juce::dontSendNotification);
 
@@ -12696,6 +12968,18 @@ void EchoJayEditor::timerCallback()
             pendingAutoFeedback = false;
 
             // ── 1. Ensure a current chat ────────────────────────────────────
+            // Capture NEVER changes which conversation you are in. A PENDING
+            // channel (chip/banner tap, no record yet) leaves currentChatId
+            // empty, so without this the capture minted a plain timestamped
+            // chat and abandoned the channel — mirror sendChatMessage: the
+            // pending channel's chat is created/opened FIRST.
+            if (currentChatId.isEmpty() && processorRef.pendingChannelUid.isNotEmpty())
+            {
+                const juce::String puid = processorRef.pendingChannelUid;
+                currentChatId = findOrCreateChannelChatId(puid, channelDisplayLabel(puid));
+                processorRef.activeChatId = currentChatId;
+                processorRef.pendingChannelUid.clear();
+            }
             // Use whatever is already open; only create one if there is none.
             if (currentChatId.isEmpty())
             {
@@ -12709,6 +12993,7 @@ void EchoJayEditor::timerCallback()
                 nc.revisionCount = 0;
                 workspace.addChat(nc);
                 currentChatId = nc.id;
+                processorRef.activeChatId = nc.id;
                 chatMessages.clear();
                 processorRef.chatHistory.clear();
                 processorRef.chatRoles.clear();
@@ -12749,7 +13034,9 @@ void EchoJayEditor::timerCallback()
             // ── 3. Create review (uses passName for fileName) ──────────────
             // Override snap.name so the WAV filename uses passName
             snap.name = passName;
-            juce::String reviewId = createReviewFromCapture(snap, savedPath);
+            // Phase C: a per-channel capture stamps the review with its Link
+            // uid so a reloaded channel chat re-associates its own captures.
+            juce::String reviewId = createReviewFromCapture(snap, savedPath, activeChatLinkUid());
 
             // Push PERSISTED user message — content = passName (survives save/load
             // cleanly), _reviewId links it to the review for waveform reconstruction.
@@ -12766,7 +13053,21 @@ void EchoJayEditor::timerCallback()
             displayCm.hasWaveform = !frozenWaveform.empty();
             displayCm.waveform    = frozenWaveform;
             displayCm.durationSeconds = snap.durationSeconds;
-            displayCm.lufs    = snap.averagedData.integrated;
+            // ITEM 1: the live card's LUFS must match the record + prose. For a
+            // channel capture, read the channel's own integrated (or leave it
+            // hidden when no channel data arrived), never the host mix. The
+            // RELOADED card reads rev.data.integ, already routed above.
+            displayCm.lufs = snap.averagedData.integrated;
+            if (auto capUid = activeChatLinkUid(); capUid.isNotEmpty())
+            {
+                displayCm.lufs = -100.0f;   // hide unless real channel data exists
+                for (const auto& c : snap.channels)
+                    if (c.uid == capUid)
+                    {
+                        if (c.framesReceived != 0) displayCm.lufs = c.meterData.integrated;
+                        break;
+                    }
+            }
             if (savedPath.isNotEmpty())
             {
                 displayCm.wavFilename = juce::File(savedPath).getFileName();
@@ -12790,7 +13091,11 @@ void EchoJayEditor::timerCallback()
 
             // ── 4. Fire AI feedback ────────────────────────────────────────
             bumpMonthlyStat("captures");   // THIS MONTH card (local counter)
-            requestAIFeedback(snap, currentChatId, reviewId, passName, version, prevReview);
+            // Scope: channel chat -> that channel only; main chat -> everything
+            // (the same effectiveChannelUid the chain rule uses). Resolved
+            // AFTER the chat above, so it reads the active channel chat.
+            requestAIFeedback(snap, currentChatId, reviewId, passName, version, prevReview,
+                              activeChatLinkUid());
         
             // Refresh compare dropdowns if we're on the compare view
             if (currentView == View::Compare)
@@ -13287,7 +13592,8 @@ int EchoJayEditor::measureAskShelf(const ChatMsg& msg, int shelfW,
                                    std::vector<juce::Rectangle<int>>* chipRectsOut,
                                    juce::StringArray* labelsOut,
                                    juce::String* questionOut,
-                                   juce::Rectangle<int>* hintRectOut)
+                                   juce::Rectangle<int>* hintRectOut,
+                                   juce::StringArray* intentsOut)
 {
     if (msg.role != "assistant" || msg.askData.isEmpty() || msg.askAnswered)
         return 0;
@@ -13316,6 +13622,7 @@ int EchoJayEditor::measureAskShelf(const ChatMsg& msg, int shelfW,
         if (x > padX && x + w > availR) { x = padX; y += kAskChipH + gap; }
         if (chipRectsOut) chipRectsOut->push_back({ x, y, w, kAskChipH });
         if (labelsOut) labelsOut->add(label);
+        if (intentsOut) intentsOut->add(co->getProperty("intent").toString().trim().toLowerCase());
         x += w + gap;
         ++count;
     }
@@ -13353,9 +13660,83 @@ void EchoJayEditor::clearStageStatus()
     repaint();
 }
 
+std::vector<EchoJayEditor::ResultChip>
+EchoJayEditor::resultChipList(const ChatMsg& m) const
+{
+    // SINGLE source of which chips a result bubble carries — consumed by
+    // BOTH altPillH (height) and layoutResultChips/paint (rects). Order:
+    // alternative first, exclude second.
+    std::vector<ResultChip> chips;
+    if (m.editAltPrompt.isNotEmpty())
+        chips.push_back({ m.editAltPrompt.startsWith("These")
+                            ? "Suggest alternatives" : "Suggest an alternative", 0 });
+    if (!m.excludeNames.isEmpty())
+    {
+        if (m.excludeApplied)
+            chips.push_back({ juce::String::fromUTF8("\xe2\x9c\x93 Won't suggest ")
+                              + (m.excludeNames.size() == 1
+                                   ? "\"" + m.excludeNames[0] + "\"" : "these") + " again", 1 });
+        else
+            chips.push_back({ m.excludeNames.size() == 1
+                                ? "Stop suggesting \"" + m.excludeNames[0] + "\""
+                                : "Stop suggesting these", 1 });
+    }
+    return chips;
+}
+
+void EchoJayEditor::layoutResultChips(const ChatMsg& m, juce::Rectangle<int> area,
+                                      std::vector<juce::Rectangle<int>>& rectsOut) const
+{
+    // ONE layout pass -> rects; paint consumes these and measures nothing.
+    // One row, left to right; labels shrink to fit the area width so two
+    // chips never overflow (they fit any real bubble; see altPillH).
+    rectsOut.clear();
+    const auto chips = resultChipList(m);
+    if (chips.empty()) return;
+    const juce::Font pf(juce::FontOptions(12.0f));
+    const int chipH = 26, gap = 8;
+    int x = area.getX();
+    for (const auto& c : chips)
+    {
+        int w = juce::jmin(area.getRight() - x,
+                           pf.getStringWidth(c.label) + 24);
+        if (w < 40) w = juce::jmax(40, area.getRight() - x);
+        rectsOut.push_back({ x, area.getY(), w, chipH });
+        x += w + gap;
+    }
+}
+
+void EchoJayEditor::onResultChipTapped(int msgIdx, int kind)
+{
+    if (msgIdx < 0 || msgIdx >= (int)chatMessages.size()) return;
+    auto& m = chatMessages[(size_t)msgIdx];
+    if (kind == 0)
+    {
+        // Alternative: send the stored follow-up (1b answer-tap machinery),
+        // one-shot. Full instruction rides history; the bubble shows a label.
+        if (m.editAltPrompt.isEmpty()) return;
+        const juce::String prompt = m.editAltPrompt;
+        const juce::String label  = m.editAltLabel;
+        m.editAltPrompt.clear();
+        sendChatMessage(prompt, label);
+        return;
+    }
+    // Exclude (session-scoped, iLok rule: never persisted, never auto-
+    // unticks anything): stop suggesting ALL failed plugins from this build
+    // in ONE interaction. chainFailSessionSeen_ is the live-session state
+    // consumed by the recommendable feed's exclusion.
+    if (m.excludeApplied || m.excludeNames.isEmpty()) return;
+    for (const auto& n : m.excludeNames)
+        disablePluginByName(n);
+    m.excludeApplied = true;
+    resized();
+    repaint();
+}
+
 void EchoJayEditor::appendLocalResultBubble(const juce::String& text,
                                             const juce::String& altPrompt,
-                                            const juce::String& altLabel)
+                                            const juce::String& altLabel,
+                                            const juce::StringArray& excludeNames)
 {
     if (text.isEmpty()) return;
     ChatMsg cm;
@@ -13363,6 +13744,7 @@ void EchoJayEditor::appendLocalResultBubble(const juce::String& text,
     cm.content = text;
     cm.editAltPrompt = altPrompt;   // pill on the bubble (build failures)
     cm.editAltLabel  = altLabel;
+    cm.excludeNames  = excludeNames;   // "stop suggesting" chip (in-memory)
     chatMessages.push_back(cm);
     processorRef.chatHistory.push_back({ "assistant", text });
     processorRef.chatRoles.add("assistant");
@@ -13557,6 +13939,10 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
     const int total = (int)ops.size();
     const int rev = cm.editBaseRevision;
 
+    // Phase R: Link-targeted cards never touch the local sequencer — the
+    // ops' slot numbers refer to the LINK's rack (see editTargetUid).
+    if (cm.editTargetUid.isNotEmpty()) { applyChainEditToLink(msgIdx); return; }
+
     // The rack lives on the Chain tab: switch there FIRST so the apply
     // progress, the rebuilt rack, and any auto-opened editor land where the
     // user can see them (from Chat, the native clip view would otherwise
@@ -13603,54 +13989,12 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
             // the failing op is ops[r]; the prompt carries the failed
             // plugin, its intended change, and edit-classifier phrasing so
             // the reply is a fresh preview+Apply. Never auto-substitutes.
-            juce::String altPrompt;
-            juce::StringArray plainNames;
+            // ONE author for the alt follow-up (shared with the Link ack
+            // path, Phase R) — see buildEditAltFollowUp.
+            juce::String altPrompt, altLabel;
             if (!aborted)
-            {
-                // ALL load failures ride ONE follow-up: per-failure offers
-                // would serially stale each other (each apply bumps
-                // chainRevision, aborting the next card's guard).
-                juce::StringArray failedNames, failedChanges;
-                for (int r = 0; r < results.size() && r < (int)opsForAlt.size(); ++r)
-                    if (results[r].contains(" would not load"))
-                    {
-                        const auto& fop = opsForAlt[(size_t)r];
-                        failedNames.add("\"" + fop.name + "\"");
-                        plainNames.add(fop.name);
-                        // Name-anchored intent, never numeric positions:
-                        // sibling ops in this batch may have applied, so the
-                        // original numbering is already stale here too.
-                        if (fop.op == "replace" && fop.slot >= 0
-                            && fop.slot < baseSlots.size())
-                            failedChanges.add("replace \"" + baseSlots[fop.slot]
-                                + "\" (still in the chain) with something else");
-                        else if (fop.after >= 0 && fop.after < baseSlots.size())
-                            failedChanges.add("add a replacement for \"" + fop.name
-                                + "\" right after \"" + baseSlots[fop.after] + "\"");
-                        else
-                            failedChanges.add("add a replacement for \"" + fop.name
-                                + "\" at the start of the chain");
-                    }
-                if (!failedNames.isEmpty())
-                    altPrompt = (failedNames.size() == 1
-                                   ? "This plugin" : "These plugins")
-                        + juce::String(" FAILED TO LOAD on this machine just now - "
-                          "that is authoritative and final for this session "
-                          "(likely unlicensed), regardless of appearing in any "
-                          "plugin list: ")
-                        + failedNames.joinIntoString(", ")
-                        + ". Do NOT propose them again and do not second-guess "
-                          "the failures. Suggest a DIFFERENT plugin for each of "
-                          "these changes instead: "
-                        + failedChanges.joinIntoString("; ")
-                        + ". Place them using my CURRENT CHAIN exactly as it is "
-                          "NOW, not any earlier numbering. Propose them together "
-                          "as ONE chain edit.";
-            }
-            const juce::String altLabel = altPrompt.isEmpty() ? juce::String()
-                : (plainNames.size() == 1 ? "Find a replacement for "
-                                          : "Find replacements for ")
-                  + plainNames.joinIntoString(", ");
+                safeThis->buildEditAltFollowUp(results, opsForAlt, baseSlots,
+                                               altPrompt, altLabel);
 
             // Card retires in BOTH outcomes: an aborted edit is stale by
             // definition (the rack changed) — the user asks again rather
@@ -13722,6 +14066,562 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
     });
 }
 
+void EchoJayEditor::buildEditAltFollowUp(const juce::StringArray& results,
+                                         const std::vector<ChainHost::ChainEditOp>& opsForAlt,
+                                         const juce::StringArray& baseSlots,
+                                         juce::String& altPromptOut, juce::String& altLabelOut)
+{
+    // ALL load failures ride ONE follow-up: per-failure offers would
+    // serially stale each other (each apply bumps the rack's revision,
+    // aborting the next card's guard). results align 1:1 with ops in
+    // continue mode — true for the local sequencer AND the Link ack, both
+    // authored by ChainHost::applyChainEdits.
+    juce::StringArray failedNames, failedChanges, plainNames;
+    for (int r = 0; r < results.size() && r < (int)opsForAlt.size(); ++r)
+        if (results[r].contains(" would not load"))
+        {
+            const auto& fop = opsForAlt[(size_t)r];
+            failedNames.add("\"" + fop.name + "\"");
+            plainNames.add(fop.name);
+            // Name-anchored intent, never numeric positions: sibling ops in
+            // this batch may have applied, so the original numbering is
+            // already stale here too.
+            if (fop.op == "replace" && fop.slot >= 0
+                && fop.slot < baseSlots.size())
+                failedChanges.add("replace \"" + baseSlots[fop.slot]
+                    + "\" (still in the chain) with something else");
+            else if (fop.after >= 0 && fop.after < baseSlots.size())
+                failedChanges.add("add a replacement for \"" + fop.name
+                    + "\" right after \"" + baseSlots[fop.after] + "\"");
+            else
+                failedChanges.add("add a replacement for \"" + fop.name
+                    + "\" at the start of the chain");
+        }
+    if (failedNames.isEmpty()) return;
+    altPromptOut = (failedNames.size() == 1
+                      ? "This plugin" : "These plugins")
+        + juce::String(" FAILED TO LOAD on this machine just now - "
+          "that is authoritative and final for this session "
+          "(likely unlicensed), regardless of appearing in any "
+          "plugin list: ")
+        + failedNames.joinIntoString(", ")
+        + ". Do NOT propose them again and do not second-guess "
+          "the failures. Suggest a DIFFERENT plugin for each of "
+          "these changes instead: "
+        + failedChanges.joinIntoString("; ")
+        + ". Place them using my CURRENT CHAIN exactly as it is "
+          "NOW, not any earlier numbering. Propose them together "
+          "as ONE chain edit.";
+    altLabelOut = (plainNames.size() == 1 ? "Find a replacement for "
+                                          : "Find replacements for ")
+                  + plainNames.joinIntoString(", ");
+}
+
+void EchoJayEditor::retireLinkEditCard(const juce::String& editDataKey,
+                                       const juce::String& chatIdAtApply,
+                                       const juce::String& summary,
+                                       const juce::String& altPrompt,
+                                       const juce::String& altLabel,
+                                       const juce::String& resultBubble)
+{
+    clearStageStatus();
+    // Locate by editData content, not index: the display list can shift
+    // during the ~5s ack window (the user can keep chatting meanwhile).
+    for (auto& cm : chatMessages)
+        if (!cm.editApplied && cm.editData == editDataKey)
+        {
+            cm.editApplied   = true;
+            cm.editResult    = summary;
+            cm.editAltPrompt = altPrompt;
+            cm.editAltLabel  = altLabel;
+            workspace.markEditApplied(chatIdAtApply, cm.content, summary,
+                                      altPrompt, altLabel);
+            workspace.requestMutationSync();
+            break;
+        }
+    EchoJay_NSLog(("EJChat: link edit result -- " + summary).toRawUTF8());
+    if (resultBubble.isNotEmpty())
+        appendLocalResultBubble(resultBubble);
+    repaint();
+}
+
+void EchoJayEditor::applyChainEditToLink(int msgIdx)
+{
+    if (msgIdx < 0 || msgIdx >= (int)chatMessages.size()) return;
+    auto& cm = chatMessages[(size_t)msgIdx];
+    if (cm.editApplied || cm.editData.isEmpty() || cm.editTargetUid.isEmpty()) return;
+
+    const juce::String uid = cm.editTargetUid;
+    const juce::String key = cm.editData;
+    const juce::String chatIdAtApply = currentChatId;
+
+    juce::String label = cm.editTargetName.isNotEmpty() ? cm.editTargetName : uid;
+    bool connected = false;
+    processorRef.refreshLinkRegistry();
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) { label = e.displayName; connected = e.info.connected; break; }
+
+    if (!connected)
+    {
+        retireLinkEditCard(key, chatIdAtApply,
+            "Not applied: \"" + label + "\" is not connected right now - "
+            "nothing was changed.", {}, {}, {});
+        return;
+    }
+
+    // Staleness guard #1 (compose-side, Phase R): the sidecar revision must
+    // still be the one this card was proposed against. Guard #2
+    // (authoritative) is the Link's own baseSlots check inside
+    // applyChainEdits -> ack "stale". Both revisions here are the LINK's
+    // counter — the local chainRevision never enters this path.
+    auto rack = readLinkRackSidecar(uid);
+    if (cm.editBaseRevision >= 0 && rack.valid
+        && rack.revision != cm.editBaseRevision)
+    {
+        retireLinkEditCard(key, chatIdAtApply,
+            "Not applied: the chain on \"" + label + "\" changed since this "
+            "was proposed - ask again for a fresh preview.", {}, {}, {});
+        return;
+    }
+
+    juce::StringArray baseSlots;
+    auto ops = ChainHost::parseChainEditOps(cm.editData, &baseSlots);
+    if (ops.empty()) return;
+
+    const int seq = sendChainEditToLink(uid, cm.editData);
+    if (seq < 0)
+    {
+        retireLinkEditCard(key, chatIdAtApply,
+            "Not applied: could not reach \"" + label + "\" (shared Link "
+            "directory unavailable).", {}, {}, {});
+        return;
+    }
+    setStageStatus("Applying to \"" + label
+                   + juce::String::fromUTF8("\"\xe2\x80\xa6"));
+    pollLinkEditAck(uid, seq, 20, key, chatIdAtApply, label,
+                    (int)ops.size(), ops, baseSlots);
+}
+
+int EchoJayEditor::sendChainEditToLink(const juce::String& linkUid,
+                                       const juce::String& editJson)
+{
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || linkUid.isEmpty()) return -1;
+
+    auto v = juce::JSON::parse(editJson);
+    auto* o = v.getDynamicObject();
+    if (o == nullptr || !o->hasProperty("edit")) return -1;
+
+    // Mirror of sendChainToLink, v:2: ops + baseSlots pass through verbatim
+    // (the Link re-parses via the same ChainHost::parseChainEditOps and runs
+    // its own baseSlots staleness check — guard #2).
+    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",          2);
+    cmd->setProperty("seq",        seq);
+    cmd->setProperty("editOps",    o->getProperty("edit"));
+    cmd->setProperty("baseSlots",  o->getProperty("baseSlots"));
+    cmd->setProperty("sourceNote", "EchoJay V2 chat edit");
+
+    juce::File(dir + "chain-ack-" + linkUid + ".json").deleteFile();   // stale ack
+    juce::File(dir + "chain-cmd-" + linkUid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    return seq;
+}
+
+void EchoJayEditor::pollLinkEditAck(const juce::String& linkUid, int seq, int attemptsLeft,
+                                    const juce::String& editDataKey,
+                                    const juce::String& chatIdAtApply,
+                                    const juce::String& targetLabel, int totalOps,
+                                    const std::vector<ChainHost::ChainEditOp>& opsForAlt,
+                                    const juce::StringArray& baseSlots)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay(250, [safeThis, linkUid, seq, attemptsLeft, editDataKey,
+                                      chatIdAtApply, targetLabel, totalOps, opsForAlt,
+                                      baseSlots]
+    {
+        if (safeThis == nullptr) return;
+        int err = 0;
+        juce::String dir = LinkShm::resolveDir(err);
+        juce::File ack(dir + "chain-ack-" + linkUid + ".json");
+        if (dir.isNotEmpty() && ack.existsAsFile())
+        {
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+                if ((int)o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();   // consumed
+                    const juce::String status = o->getProperty("status").toString();
+                    juce::StringArray lines;
+                    if (auto* arr = o->getProperty("perPluginResults").getArray())
+                        for (auto& rv : *arr) lines.add(rv.toString());
+
+                    // ok/partial/stale map onto the 1c outcome UX exactly as
+                    // a local edit does: retire always; bubble only on a
+                    // clean apply with a model result line; alt pill only on
+                    // load failures.
+                    juce::String summary, altPrompt, altLabel, bubble;
+                    if (status == "ok")
+                    {
+                        summary = "Applied " + juce::String(totalOps)
+                                + (totalOps == 1 ? " change" : " changes")
+                                + " on \"" + targetLabel + "\"";
+                        auto ev = juce::JSON::parse(editDataKey);
+                        if (auto* eo = ev.getDynamicObject())
+                            bubble = eo->getProperty("result").toString().trim();
+                    }
+                    else if (status == "stale")
+                        summary = "Not applied: the chain on \"" + targetLabel
+                                + "\" changed before this could apply - ask "
+                                  "again for a fresh preview.";
+                    else if (status == "partial")
+                    {
+                        summary = "Partially applied on \"" + targetLabel + "\" - "
+                                + lines.joinIntoString("; ");
+                        safeThis->buildEditAltFollowUp(lines, opsForAlt, baseSlots,
+                                                       altPrompt, altLabel);
+                    }
+                    else
+                        summary = "Not applied on \"" + targetLabel + "\": "
+                                + (lines.isEmpty() ? status
+                                                   : lines.joinIntoString("; "));
+
+                    safeThis->retireLinkEditCard(editDataKey, chatIdAtApply,
+                                                 summary, altPrompt, altLabel, bubble);
+                    return;
+                }
+        }
+        if (attemptsLeft > 1)
+        {
+            safeThis->pollLinkEditAck(linkUid, seq, attemptsLeft - 1, editDataKey,
+                                      chatIdAtApply, targetLabel, totalOps,
+                                      opsForAlt, baseSlots);
+            return;
+        }
+        safeThis->retireLinkEditCard(editDataKey, chatIdAtApply,
+            "No response from \"" + targetLabel + "\" - is it still loaded? "
+            "Nothing was confirmed applied.", {}, {}, {});
+    });
+}
+
+juce::String EchoJayEditor::activeChatLinkUid() const
+{
+    // Derived per-call from the ACTIVE CHAT RECORD (workspace) — never
+    // editor state (Logic recreates the editor on every Link window
+    // switch; activeChatId survives on the processor and re-hydrate
+    // restores currentChatId, so this derivation survives with it).
+    auto* self = const_cast<EchoJayEditor*>(this);
+    if (auto* c = self->workspace.findChatById(currentChatId))
+        return c->linkUid;
+    return {};
+}
+
+bool EchoJayEditor::linkUidLive(const juce::String& uid) const
+{
+    if (uid.isEmpty()) return false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) return e.info.connected;
+    return false;
+}
+
+juce::String EchoJayEditor::channelDisplayLabel(const juce::String& uid) const
+{
+    // ONE accessor (processorRef.resolveLinkDisplayName, Phase N precedence)
+    // — the SAME source the capture composition, monitor row and dropdown
+    // use, so no surface can drift onto a frozen name. Falls back to the
+    // chat's stored snapshot for an offline channel (no live entry), then
+    // the raw uid (never expected).
+    if (auto live = processorRef.resolveLinkDisplayName(uid); live.isNotEmpty())
+        return live;
+    auto* self = const_cast<EchoJayEditor*>(this);
+    if (auto* c = self->workspace.findChatById(currentChatId))
+        if (c->linkUid == uid && c->linkNameSnap.isNotEmpty())
+            return c->linkNameSnap;
+    return uid;
+}
+
+juce::String EchoJayEditor::effectiveChannelUid() const
+{
+    // The active chat's channel, else the PENDING channel (tap before
+    // first send — no record exists yet, lazy-creation contract). Pending
+    // applies ONLY while no chat is active.
+    auto uid = activeChatLinkUid();
+    if (uid.isNotEmpty()) return uid;
+    return currentChatId.isEmpty() ? processorRef.pendingChannelUid : juce::String();
+}
+
+juce::String EchoJayEditor::findChannelChatId(const juce::String& linkUid) const
+{
+    // THE open-or-create lookup, and the ONLY place the pair below may be
+    // read (tap + first-send create both come through here).
+    //
+    // V1 CONSTRAINT, NOT A SCHEMA PROPERTY: one channel chat per
+    // (linkUid, trackName) pair. WsChat.id remains the REAL key — the
+    // pair is only how open-or-create finds "the" chat today. A future
+    // "New chat" for channels is a change to THIS lookup (e.g. newest
+    // matching instead of first), not a data migration. Do not read the
+    // pair as an invariant anywhere else.
+    auto* self = const_cast<EchoJayEditor*>(this);
+    const juce::String proj = self->newChatProjectName();
+    for (const auto& c : workspace.getChats())
+        if (c.linkUid == linkUid && c.trackName == proj)
+            return c.id;
+    return {};
+}
+
+juce::String EchoJayEditor::findOrCreateChannelChatId(const juce::String& linkUid,
+                                                      const juce::String& linkNameNow)
+{
+    // Create half of open-or-create (Phase C1): called at FIRST SEND only
+    // (openChannelByUid holds a pending target instead of minting an
+    // empty record on a bare tap). Lookup semantics live in
+    // findChannelChatId above.
+    if (auto existing = findChannelChatId(linkUid); existing.isNotEmpty())
+        return existing;
+
+    WsChat c;
+    c.id           = juce::String(juce::Time::currentTimeMillis());
+    c.title        = linkNameNow.isNotEmpty() ? linkNameNow : juce::String("Channel chat");
+    c.created      = juce::Time::getCurrentTime().toISO8601(true);
+    c.trackName    = newChatProjectName();   // same stamping as main chats: inherits the
+                             // auto-project label + in-place adopt rename
+    c.linkUid      = linkUid;
+    c.linkNameSnap = linkNameNow;
+    workspace.addChat(c);
+    return c.id;
+}
+
+void EchoJayEditor::refreshChannelBannerCache()
+{
+    // ONE registry resolution, on change ticks and activation points —
+    // paint consumes the cached string only (a rename still lands within
+    // a tick: the timer detector keys on the label). Empty text = main
+    // chat: the banner collapses everywhere except the Link tab, where it
+    // stays as the no-channel selector (channelBannerH).
+    const auto uid = effectiveChannelUid();
+    if (uid.isEmpty()) { chanBannerText_.clear(); chanBannerLive_ = false; return; }
+    chanBannerLive_ = linkUidLive(uid);
+    chanBannerText_ = "Working on Link: " + channelDisplayLabel(uid)
+                    + (chanBannerLive_ ? juce::String() : juce::String(" (offline)"));
+}
+
+juce::String EchoJayEditor::mainContextLabel() const
+{
+    // ITEM 1: the fixed constant, never getEffectiveChannelName() (that
+    // reversed a prior instruction — the header dropdown is a material
+    // HINT, not a routing claim, and would collide with a same-named Link).
+    return kFullCaptureLabel;
+}
+
+void EchoJayEditor::resetToMainContext()
+{
+    currentChatId = {};
+    processorRef.activeChatId = {};
+    processorRef.pendingChannelUid.clear();
+    processorRef.chatTargetLinkUid.clear();
+    processorRef.chatTargetLinkName.clear();
+    chatMessages.clear();
+    processorRef.chatHistory.clear();
+    processorRef.chatRoles.clear();
+    processorRef.chatContents.clear();
+    refreshChannelBannerCache();
+    resized();
+    repaint();
+}
+
+void EchoJayEditor::showChannelBannerMenu()
+{
+    // THE channel selector. Live channels from the registry; the current
+    // channel ticked; an offline CURRENT channel still listed (dimmed) —
+    // the room you are in remains the selection even when its Link is not
+    // running.
+    //
+    // KNOWN, ACCEPTED GAP (C4 note, moved here from the deleted chip bar —
+    // the gap belongs to the REGISTRY, not to any control): session scope
+    // is NOT project scope. With two DAW projects open at once, Project
+    // B's Link appears in Project A's list, and selecting it opens a chat
+    // stamped with Project A's trackName while targeting a rack in
+    // Project B. Accepted because:
+    //   - the registry is per-session, not per-project;
+    //   - in Logic both projects share ONE process, so no PID or
+    //     process-token discriminator exists to filter on;
+    //   - the trackName stamping is CORRECT given the information
+    //     available — the gap is upstream in what the registry can say;
+    //   - the Link monitor behaves identically, so this is consistent,
+    //     not a new inconsistency.
+    processorRef.refreshLinkRegistry();
+    const juce::String cur = effectiveChannelUid();
+    struct Row { juce::String label, uid; bool live; };
+    std::vector<Row> rows;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.connected && e.info.uid.isNotEmpty())
+            rows.push_back({ e.displayName, e.info.uid, true });
+    if (cur.isNotEmpty())
+    {
+        bool inList = false;
+        for (auto& r : rows) if (r.uid == cur) { inList = true; break; }
+        if (!inList)
+            rows.push_back({ channelDisplayLabel(cur) + " (offline)", cur, false });
+    }
+    // The MAIN instance is always the first entry — a LABEL for the
+    // existing no-channel state (empty linkUid, STATE 1, local builds),
+    // NEVER a new targeting destination: uid stays "" and selecting it
+    // runs resetToMainContext(), the same path a clean main state already
+    // takes. No sentinel value exists anywhere in the target machinery.
+    rows.insert(rows.begin(), { mainContextLabel(), juce::String(), true });
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("CHANNEL");
+    for (size_t i = 0; i < rows.size(); ++i)
+        menu.addItem((int)(1 + i), rows[i].label, rows[i].live, rows[i].uid == cur);
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
+        [safeThis, rows](int result)
+        {
+            if (safeThis == nullptr || result <= 0) return;
+            const size_t i = (size_t)(result - 1);
+            if (i >= rows.size()) return;
+            if (rows[i].uid == safeThis->effectiveChannelUid()) return;   // already here
+            if (rows[i].uid.isEmpty()) { safeThis->resetToMainContext(); return; }
+            safeThis->openChannelByUid(rows[i].uid);
+        });
+}
+
+void EchoJayEditor::openChannelByUid(const juce::String& uid)
+{
+    if (uid.isEmpty()) return;
+
+    if (auto existing = findChannelChatId(uid); existing.isNotEmpty())
+    {
+        // Open, never duplicate: the lookup found this channel's chat for
+        // the current project.
+        processorRef.pendingChannelUid.clear();
+        loadChatFromWorkspace(existing);
+        return;
+    }
+    // No record yet: HOLD the channel as pending — creation stays lazy at
+    // first send (a bare tap must not mint an empty record). Pending lives
+    // on the PROCESSOR (Logic recreates the editor on every Link window
+    // switch). The pill locks to the pending channel via
+    // effectiveChannelUid and the first send converts pending -> chat.
+    currentChatId = {};
+    processorRef.activeChatId = {};
+    processorRef.pendingChannelUid = uid;
+    processorRef.chatTargetLinkUid.clear();   // router selection resets
+    processorRef.chatTargetLinkName.clear();
+    chatMessages.clear();
+    processorRef.chatHistory.clear();
+    processorRef.chatRoles.clear();
+    processorRef.chatContents.clear();
+    refreshChannelBannerCache();
+    resized();
+    repaint();
+}
+
+bool EchoJayEditor::targetPillEligible() const
+{
+    // Pill shows when it MEANS something: a target is set, or Links exist
+    // to target. Hidden costs no height — the composer row is fixed.
+    if (processorRef.chatTargetLinkUid.isNotEmpty()) return true;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.connected && e.info.uid.isNotEmpty()) return true;
+    return false;
+}
+
+void EchoJayEditor::layoutChatBox(juce::Rectangle<int> box)
+{
+    // SOLE author of the composer internals (every surface, empty or
+    // docked). paint() consumes chatBoxRect_ only.
+    chatBoxRect_ = box;
+    auto inner = box.reduced(1);
+    auto row   = inner.removeFromBottom(kChatBoxRowH);
+    chatInput.setBounds(inner.reduced(5, 4));
+
+    auto r = row.reduced(8, 0);
+    const int sendW = 56, sendH = 24;
+    chatSendBtn.setBounds(r.removeFromRight(sendW).withSizeKeepingCentre(sendW, sendH));
+
+    // Pill = ROUTER, main chats only: it answers "where does this message
+    // go", never "what is this conversation about". EXACTLY ONE channel
+    // selector may be visible at any time — wherever the BANNER shows
+    // (every channel chat, and the Link tab always), the pill hides. So:
+    // channel chat anywhere -> banner only; main chat on the Link tab ->
+    // banner only; main chat elsewhere -> pill only. Selection stays
+    // transient (cleared on every activation and after every routed send).
+    const bool bannerShowing = channelBannerH() > 0;
+    if (!bannerShowing)
+        chatTargetBtn.setButtonText(processorRef.chatTargetLinkUid.isNotEmpty()
+            ? juce::String::fromUTF8("\xe2\x86\x92 ") + processorRef.chatTargetLinkName
+            : juce::String("This channel"));
+    chatTargetBtn.setInterceptsMouseClicks(true, true);
+    chatTargetBtn.setAlpha(1.0f);
+
+    const bool pill = !bannerShowing
+        && (processorRef.chatTargetLinkUid.isNotEmpty() || targetPillEligible());
+    if (pill)
+    {
+        const juce::Font pf(juce::FontOptions(12.5f));
+        const int pw = juce::jlimit(60, juce::jmax(60, r.getWidth() - 70),
+                                    pf.getStringWidth(chatTargetBtn.getButtonText()) + 26);
+        chatTargetBtn.setBounds(r.removeFromLeft(pw).withSizeKeepingCentre(pw, 20));
+    }
+    chatTargetBtn.setVisible(pill && chatInput.isVisible());
+
+    // Model LABEL (never a selector — routing is tier+turnType): dim text
+    // right-aligned beside Send, no chevron, mouse-transparent.
+    r.removeFromRight(6);
+    chatModelLabel.setBounds(r.reduced(4, 0));
+    chatModelLabel.setVisible(chatInput.isVisible()
+                              && chatModelLabel.getText().isNotEmpty());
+}
+
+void EchoJayEditor::showChatTargetMenu()
+{
+    if (effectiveChannelUid().isNotEmpty()) return;   // channel chat: pill is locked
+    processorRef.refreshLinkRegistry();
+    struct Target { juce::String label, uid; };
+    std::vector<Target> targets;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.connected && e.info.uid.isNotEmpty())
+            targets.push_back({ e.displayName, e.info.uid });
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("SEND TO");
+    menu.addItem(1, "This chat", true, processorRef.chatTargetLinkUid.isEmpty());
+    if (!targets.empty()) menu.addSeparator();
+    for (size_t i = 0; i < targets.size(); ++i)
+        menu.addItem((int)(2 + i), "Link: " + targets[i].label, true,
+                     targets[i].uid == processorRef.chatTargetLinkUid);
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    menu.showMenuAsync(juce::PopupMenu::Options()
+                           .withParentComponent(this)
+                           .withTargetComponent(&chatTargetBtn),
+        [safeThis, targets](int result)
+        {
+            if (safeThis == nullptr || result <= 0) return;
+            if (result == 1)
+            {
+                safeThis->processorRef.chatTargetLinkUid.clear();
+                safeThis->processorRef.chatTargetLinkName.clear();
+                safeThis->chatTargetBtn.setButtonText("This channel");
+            }
+            else
+            {
+                size_t li = (size_t)(result - 2);
+                if (li >= targets.size()) return;
+                safeThis->processorRef.chatTargetLinkUid  = targets[li].uid;
+                safeThis->processorRef.chatTargetLinkName = targets[li].label;
+                safeThis->chatTargetBtn.setButtonText(
+                    juce::String::fromUTF8("\xe2\x86\x92 ") + targets[li].label);
+            }
+            safeThis->resized();   // pill is label-sized in the strip
+        });
+}
+
 int EchoJayEditor::findNewestUnansweredAsk() const
 {
     for (int i = (int)chatMessages.size() - 1; i >= 0; --i)
@@ -13745,8 +14645,202 @@ void EchoJayEditor::supersedePendingAsks()
     if (any) workspace.requestMutationSync();
 }
 
+LinkShm::RackSidecar EchoJayEditor::readLinkRackSidecar(const juce::String& uid) const
+{
+    int err = 0;
+    auto dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || uid.isEmpty()) return {};
+    return LinkShm::readRackSidecar(dir, uid);
+}
+
+juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg,
+                                                    bool alwaysAttach,
+                                                    bool* hadChainFeedOut,
+                                                    const juce::String& targetLinkUid,
+                                                    bool mainCaptureAttribution,
+                                                    bool captureOwnAttribution,
+                                                    bool compareAttribution)
+{
+    juce::String out;
+    bool hadFeed = false;
+    auto& chainHost = processorRef.getChainHost();
+    juce::StringArray recommendable = chainHost.getRecommendableNames();
+    // targetLinkUid -> always relevant (ITEM 6, ASK-tap ordering): guarantees
+    // a server-CUT plugin marker precedes the [TARGET CHANNEL] declaration,
+    // so userTypedPortion truncates to msg and the end-anchored tap tail
+    // stays last. Never grow the server regex (typo-gotcha rule).
+    const bool relevant = alwaysAttach || EchoJayAPI::messageNeedsPlugins(typedMsg)
+                       || targetLinkUid.isNotEmpty();
+
+    if (recommendable.size() > 0)
+    {
+        // Feed attaches whenever names are resolved (chat behaviour
+        // unchanged: it always attached when the feed existed).
+        // suggestedTarget CUT (authorised): the feed no longer names other
+        // Links to the model on ANY turn — routing to a Link is solely the
+        // user's act (pill or banner selector) BEFORE the message is sent.
+        // 2.1 "(dial)" feed markers + 2.4 dialFlags (26 Jul 2026): built but
+        // DARK - kDialSignalsEnabled stays false until the server-side
+        // explainer for the marker exists. Threshold: >=2 usable CORE
+        // semantics (echojay::mapIsDialableForSignals), NOT raw usable
+        // count - spiff (mix_pct+position) must not be marked dialable.
+        if (echojay::kDialSignalsEnabled)
+        {
+            const auto dialable = chainHost.getDialableRecommendableNames();
+            for (auto& rn : recommendable)
+                if (dialable.contains(rn)) rn += " (dial)";
+            api.setNextDialFlags(dialable);
+        }
+        out += EchoJayAPI::buildChainInjection(recommendable);
+        hadFeed = true;
+        EchoJay_NSLog(("EJChat: chain injection attached -- "
+                       + juce::String(recommendable.size())
+                       + " recommendable names in feed").toRawUTF8());
+    }
+    else if (relevant)
+    {
+        out += EchoJayAPI::buildPluginInjection(
+            processorRef.getPluginScanner().getFullPluginList());
+        EchoJay_NSLog("EJChat: NO recommendable names -- full-list fallback "
+                      "injection (chain blocks cannot be feed-validated)");
+    }
+
+    // [CURRENT CHAIN]: EXACTLY ONE of THREE named states — never a
+    // fallthrough between them, never two racks on one turn.
+    //   STATE 1  NO TARGET            -> the main plugin's own rack.
+    //   STATE 2  TARGET SET AND LIVE  -> that Link's rack from its sidecar.
+    //   STATE 3  TARGET SET, OFFLINE  -> NO chain + an explicit statement
+    //            that the channel is offline and its chain is not visible.
+    // State 3 must NEVER degrade to state 1: silently analysing the wrong
+    // rack is the same failure family as the honesty violations. Absence
+    // of a block is not enough either — the model is TOLD why, so its
+    // prose can say so instead of guessing. Liveness reads the same
+    // registry poll as everything else (kRegStaleCycles ~30 s window is
+    // accepted: the ack timeout + Link-side baseSlots guard cover it).
+    if (targetLinkUid.isNotEmpty())
+    {
+        // Channel identity, resolved ONCE for both channel states, with
+        // neutral degradation: never a raw uid interpolated into prose,
+        // never an empty quoted string.
+        const juce::String label = channelDisplayLabel(targetLinkUid);
+        const juce::String channelPhrase = (label.isEmpty() || label == targetLinkUid)
+            ? juce::String("one of the user's Link channels")
+            : "the user's \"" + label + "\" Link channel";
+
+        if (linkUidLive(targetLinkUid))
+        {
+        // ── STATE 2: TARGET LINK LIVE — declare the channel, then its rack ──
+        // The declaration rides UNCONDITIONALLY — not gated on the feed,
+        // not on chain-relevance, not on the sidecar (second live bug:
+        // "what channel is this" carried no feed and no chain cue, so the
+        // model had no idea which channel it was in). If the conversation
+        // has a linkUid, the model is told, on EVERY turn. Feed-less turns
+        // append this with no preceding marker, so the wording is
+        // deliberately safe against the server's typed-portion classifiers
+        // (no EDIT_REQUEST_RE verbs; no verb followed by "chain" within 30
+        // chars for CHAIN_REQUEST_RE). Only the RACK block keeps the ride
+        // condition.
+        out += juce::String::fromUTF8("\n\n[TARGET CHANNEL \xe2\x80\x94 ")
+             + "this conversation IS " + channelPhrase
+             + ". The user already chose this channel; every chain you "
+               "build or edit in this conversation is for THIS channel. "
+               "Do NOT ask which channel or track to work on. Answer the "
+               "question the user actually asked; do NOT volunteer capture, "
+               "meter, or measurement status unless they ask about the "
+               "sound, the mix, or the numbers - availability is context "
+               "for your own reasoning, not a status report to deliver.]";
+        if (hadFeed || relevant)
+        {
+            auto rack = readLinkRackSidecar(targetLinkUid);
+            if (rack.valid && !rack.slots.empty())
+            {
+                out += EchoJayAPI::buildCurrentChainInjection(rack, label);
+                EchoJay_NSLog(("EJChat: CURRENT CHAIN injection attached (Link \""
+                               + label + "\") -- " + juce::String((int)rack.slots.size())
+                               + " slots, rev " + juce::String(rack.revision)).toRawUTF8());
+            }
+            else
+                EchoJay_NSLog("EJChat: Link target live but sidecar missing/empty -- "
+                              "channel declaration only, build-only turn");
+        }
+        }
+        else
+        {
+        // ── STATE 3: TARGET LINK OFFLINE — no chain, explicit statement ──
+        // Same ride condition as a chain block so it never leaks into the
+        // server's typed-portion cut alone (the AVAILABLE PLUGINS marker
+        // precedes it whenever anything rides; the client history strip
+        // handles it via the "[TARGET CHANNEL" marker in sendChat).
+        // Structurally unable to reach STATE 1: both channel states live
+        // inside the targeted arm. Unconditional like STATE 2's
+        // declaration — an offline room must say so on every turn too.
+        {
+            out += juce::String::fromUTF8("\n\n[TARGET CHANNEL OFFLINE \xe2\x80\x94 ")
+                 + "this conversation is about " + channelPhrase
+                 + ", but that channel's plugin is NOT RUNNING "
+                   "right now, so its chain is NOT VISIBLE to you on this turn. "
+                   "Do not guess or invent its contents, do not describe any "
+                   "other rack as if it were this channel's, and do not propose "
+                   "chain edits: say plainly that the channel is offline and "
+                   "that reopening it in the DAW brings the chain back.]";
+            EchoJay_NSLog(("EJChat: target channel OFFLINE -- no chain injected, "
+                           "offline statement attached (uid " + targetLinkUid + ")").toRawUTF8());
+        }
+        }
+
+        // Capture attribution — at most ONE rides.
+        // captureOwnAttribution: the measurements ARE this channel's own
+        // audio (per-channel capture); the model may speak about them
+        // directly. Name resolves live via the ONE accessor; empty (Link
+        // died between capture and compose) degrades to neutral phrasing,
+        // never an empty quote.
+        if (captureOwnAttribution)
+        {
+            const juce::String lbl = channelDisplayLabel(targetLinkUid);
+            const juce::String phrase = (lbl.isEmpty() || lbl == targetLinkUid)
+                ? juce::String("this Link channel") : "the \"" + lbl + "\" Link channel";
+            out += juce::String::fromUTF8("\n\n[CAPTURE ATTRIBUTION \xe2\x80\x94 ")
+                 + "the capture/meter data on this turn IS " + phrase + "'s OWN "
+                   "audio, captured directly from that channel. Speak about "
+                   "these measurements as this channel's sound.]";
+        }
+        // compareAttribution: a compare turn's data is STORED snapshots, not
+        // a live capture — say what they are. (Full capture constant; NO
+        // stale "per-channel capture unavailable" claim — that shipped false
+        // once per-channel capture landed.)
+        else if (compareAttribution)
+            out += juce::String::fromUTF8("\n\n[COMPARE ATTRIBUTION \xe2\x80\x94 ")
+                 + "the two captures compared on this turn are stored FULL "
+                   "CAPTURE snapshots (the main EchoJay's whole-project audio), "
+                   "NOT this channel's own audio. Compare them as versions of "
+                   "the full capture; do not present their differences as "
+                   "changes to this channel.]";
+        // mainCaptureAttribution: main-instance data reaching a channel chat
+        // (remaining non-capture paths) — say so. Full capture constant; the
+        // false "per-channel capture unavailable" claim is REMOVED (per-channel
+        // capture shipped two passes ago).
+        else if (mainCaptureAttribution)
+            out += juce::String::fromUTF8("\n\n[CAPTURE ATTRIBUTION \xe2\x80\x94 ")
+                 + "the capture/meter data on this turn is the MAIN EchoJay "
+                   "instance's Full capture (its whole-project audio), NOT this "
+                   "channel's own audio. Never describe these measurements as "
+                   "this channel's sound; they are the full capture.]";
+    }
+    else if (chainHost.getNumSlots() > 0 && (hadFeed || relevant))
+    {
+        // ── STATE 1: NO TARGET — the main plugin's own rack ──
+        out += EchoJayAPI::buildCurrentChainInjection(chainHost);
+        EchoJay_NSLog(("EJChat: CURRENT CHAIN injection attached -- "
+                       + juce::String(chainHost.getNumSlots()) + " slots, rev "
+                       + juce::String(chainHost.getChainRevision())).toRawUTF8());
+    }
+    if (hadChainFeedOut != nullptr) *hadChainFeedOut = hadFeed;
+    return out;
+}
+
 void EchoJayEditor::sendChatMessage(const juce::String& msg,
-                                    const juce::String& displayLabel)
+                                    const juce::String& displayLabel,
+                                    const juce::String& turnTypeOverride)
 {
     // Single choke point for TYPED sends from every surface: the timer's
     // upgrade-button gate normally replaces the input row first, but a
@@ -13773,6 +14867,43 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         resized();
     }
 
+    // ===== Pill = ROUTER (this pass) =====
+    // A main chat with a selection SENDS INTO the channel conversation:
+    // resolve/create the channel chat, ACTIVATE it first, and the message
+    // appends THERE only — the main chat's history stays byte-identical
+    // and does NOT follow (deliberate: a routed "add a de-esser to that"
+    // arrives without context and the model asks). The selection then
+    // resets — transient by design; a main chat silently pointed at a
+    // channel was the invisible mode this pass removes. If the Link is
+    // gone, STILL route: the injection gate fires STATE 3 — never a
+    // silent main-chat fallback (that was Phase R pill-as-target logic,
+    // wrong for a router).
+    if (activeChatLinkUid().isEmpty() && processorRef.pendingChannelUid.isEmpty()
+        && processorRef.chatTargetLinkUid.isNotEmpty())
+    {
+        const juce::String uid   = processorRef.chatTargetLinkUid;
+        const juce::String label = channelDisplayLabel(uid);
+        processorRef.chatTargetLinkUid.clear();
+        processorRef.chatTargetLinkName.clear();
+        const juce::String cid = findOrCreateChannelChatId(uid, label);
+        loadChatFromWorkspace(cid);   // view + sidebar selection follow
+        EchoJay_NSLog(("EJChat: routed send -> channel chat \"" + label
+                       + "\" (" + cid + ")").toRawUTF8());
+    }
+
+    // Phase C3: first send in a PENDING channel mints the record NOW (the
+    // lazy-creation contract: tap held the target, send creates). The
+    // pending state collapses into the real chat before the main-chat
+    // ensure-block below can create a plain chat instead.
+    if (currentChatId.isEmpty() && processorRef.pendingChannelUid.isNotEmpty())
+    {
+        const juce::String uid = processorRef.pendingChannelUid;
+        const juce::String cid = findOrCreateChannelChatId(uid, channelDisplayLabel(uid));
+        currentChatId = cid;
+        processorRef.activeChatId = cid;
+        processorRef.pendingChannelUid.clear();
+    }
+
     // Ensure we have an active workspace chat to write into
     if (currentChatId.isEmpty())
     {
@@ -13783,6 +14914,11 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         c.trackName = newChatProjectName();   // never empty → never Ungrouped
         workspace.addChat(c);
         currentChatId = c.id;
+        processorRef.activeChatId = c.id;
+        processorRef.pendingChannelUid.clear();
+        processorRef.chatTargetLinkUid.clear();
+        processorRef.chatTargetLinkName.clear();
+        refreshChannelBannerCache();
     }
 
     // Push user turn to display list
@@ -13841,52 +14977,29 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // own call sites.
     juce::String userContent = msg;
 
-    // Plugin/chain injection: always include chain instructions (with full plugin list)
-    // when the user has recommendable plugins resolved — the model decides whether to
-    // return a chain block. Fall back to plain plugin list only when no plugins are
-    // resolved yet (e.g. scanner hasn't run).
-    auto& chainHost = processorRef.getChainHost();
-    juce::StringArray recommendable = chainHost.getRecommendableNames();
-
-    juce::String chainInjection;
-    if (recommendable.size() > 0)
+    // ITEM 2 (router pass): the injection target derives SOLELY from the
+    // active chat record — any routing already happened above, so by here
+    // a Link-targeted turn IS a channel chat. Main chats carry no Link
+    // injection at all; the pill never feeds targetLinkUid. The Phase R
+    // vanished-Link fallback is deliberately GONE: a router never falls
+    // back to sending in the main chat (STATE 3 handles offline).
+    juce::String turnTargetUid, turnTargetName;
+    if (auto lockedUid = effectiveChannelUid(); lockedUid.isNotEmpty())
     {
-        // Live Link DISPLAY labels ride along so the model can tag
-        // suggestedTarget — including unnamed Links ("Untitled", "Untitled 2"),
-        // which the send-target menu matches back to the instance by uid.
-        processorRef.refreshLinkRegistry();
-        juce::StringArray liveLinks;
-        for (const auto& e : processorRef.getLinkDisplayList())
-            if (e.info.connected)
-                liveLinks.addIfNotAlreadyThere(e.displayName);
-        chainInjection = EchoJayAPI::buildChainInjection(recommendable, liveLinks);
-        userContent += chainInjection;
-        EchoJay_NSLog(("EJChat: chain injection attached -- "
-                       + juce::String(recommendable.size())
-                       + " recommendable names in feed").toRawUTF8());
-    }
-    else if (EchoJayAPI::messageNeedsPlugins(msg))
-    {
-        userContent += EchoJayAPI::buildPluginInjection(
-            processorRef.getPluginScanner().getFullPluginList());
-        EchoJay_NSLog("EJChat: NO recommendable names -- full-list fallback "
-                      "injection (chain blocks cannot be feed-validated)");
+        turnTargetUid  = lockedUid;
+        turnTargetName = channelDisplayLabel(lockedUid);
+        // linkNameSnap refreshes on each send WHILE LIVE (display-only
+        // snapshot; rides this turn's append mutation POST, no extra sync)
+        if (linkUidLive(lockedUid))
+            if (auto* wc = workspace.findChatById(currentChatId))
+                wc->linkNameSnap = turnTargetName;
     }
 
-    // [CURRENT CHAIN] (CHAIN_AI_BUILD_SPEC Phase 1a): whenever a rack exists
-    // and this turn is plugin-relevant, the model sees the live chain — the
-    // prerequisite for edit intent. Rides AFTER the plugin injections so the
-    // server's typed-portion cut and the history strip both handle it; the
-    // server upgrades edit-verb turns to chain_edit only when this marker is
-    // present.
-    if (chainHost.getNumSlots() > 0
-        && (chainInjection.isNotEmpty() || EchoJayAPI::messageNeedsPlugins(msg)))
-    {
-        userContent += EchoJayAPI::buildCurrentChainInjection(chainHost);
-        EchoJay_NSLog(("EJChat: CURRENT CHAIN injection attached -- "
-                       + juce::String(chainHost.getNumSlots()) + " slots, rev "
-                       + juce::String(chainHost.getChainRevision())).toRawUTF8());
-    }
+    // ONE injection path for every compose site (Phase 3-pre) — see
+    // standardChainInjections. hadChainFeed powers the turnType staging and
+    // stage label below.
+    bool hadChainFeed = false;
+    userContent += standardChainInjections(msg, false, &hadChainFeed, turnTargetUid);
 
     // LINK LEVELS context: grounds relative level statements and enables
     // measurement-backed gain proposals. Rides on the chat turn (does NOT
@@ -13910,17 +15023,22 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // chain_generate when the chain-feed injection rode along (the model is
     // being asked for a chain), plain chat otherwise. A gain proposal rides
     // on whatever turn produced it — never its own turnType.
-    api.setNextChatTurnType(chainInjection.isNotEmpty() ? "chain_generate" : "chat");
+    api.setNextChatTurnType(
+        turnTypeOverride.isNotEmpty() ? turnTypeOverride
+                                      : (hadChainFeed ? "chain_generate" : "chat"));
     // 1d model-wait stage: generic-safe label only (the one-shot transport
-    // has no sub-stages to report; a specific claim could desync)
-    setStageStatus(chainInjection.isNotEmpty()
-                       ? juce::String::fromUTF8("Working on your chain\xe2\x80\xa6")
-                       : juce::String::fromUTF8("Thinking\xe2\x80\xa6"));
+    // has no sub-stages to report; a specific claim could desync).
+    // 26 Jul 2026: ALWAYS "Thinking" here. hadChainFeed is true on
+    // effectively every send (the feed attaches whenever recommendable
+    // names exist), so a feed-keyed label claimed chain work on every
+    // plain chat turn. The server's resolvedTurnType is the first honest
+    // signal; the reply callback flips the label there.
+    setStageStatus(juce::String::fromUTF8("Thinking\xe2\x80\xa6"));
 
     juce::String activeChatId = currentChatId; // capture before async
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
-        [safeThis, activeChatId](const juce::String& reply, bool success) {
+        [safeThis, activeChatId, turnTargetUid, turnTargetName](const juce::String& reply, bool success) {
             if (safeThis == nullptr)
                 return;
             safeThis->chatLoading = false;
@@ -13973,6 +15091,15 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
             // a chain_edit turn's slot instructions named slots -> a button
             // whose Build would REBUILD the whole rack (the destructive trap
             // CHAIN_EDIT_INTERIM_NOTE closes server-side, re-opened locally).
+            // Status lifecycle (26 Jul 2026, second pass): NO label is set
+            // here. A chain_generate reply is a PROPOSAL sitting idle until
+            // the user presses Build - re-asserting "Working on your chain"
+            // from resolvedTurnType claimed work that was not happening
+            // (same class of bug as the load-gated "Done" line: UI
+            // asserting action from a classification, not observed state).
+            // The clearStageStatus() above is the correct reply-arrival
+            // state; the chain label belongs to the REAL load+dial window
+            // (Build press through result bubble) only.
             const bool chainTurnIntended = hadChainOpener
                 || safeThis->api.getLastResolvedTurnType() == "chain_generate";
             if (chainJson.isEmpty() && success && !chainTurnIntended)
@@ -14050,8 +15177,20 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                 cm.editData  = editJson;    // empty if no chain-edit block
                 // Staleness anchor: the rack revision the model's baseSlots
                 // describe. -1 after reload (in-memory counter, see header).
+                // Targeted turns (Phase R) anchor to the LINK's sidecar
+                // revision — a different rack's counter, never the local one.
                 if (editJson.isNotEmpty())
-                    cm.editBaseRevision = safeThis->processorRef.getChainHost().getChainRevision();
+                {
+                    if (turnTargetUid.isNotEmpty())
+                    {
+                        cm.editTargetUid  = turnTargetUid;
+                        cm.editTargetName = turnTargetName;
+                        auto rack = safeThis->readLinkRackSidecar(turnTargetUid);
+                        cm.editBaseRevision = rack.valid ? rack.revision : -1;
+                    }
+                    else
+                        cm.editBaseRevision = safeThis->processorRef.getChainHost().getChainRevision();
+                }
                 safeThis->chatMessages.push_back(cm);
                 safeThis->processorRef.chatHistory.push_back({"assistant", visibleReply});
                 safeThis->processorRef.chatRoles.add("assistant");
@@ -14063,7 +15202,10 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
 
             // Mirror assistant turn to workspace and persist (visibleReply has block stripped; chain + gain + ask stored separately)
             safeThis->workspace.appendMessageToChat(activeChatId, "assistant", visibleReply,
-                                                    {}, chainJson, gainJson, askJson, editJson);
+                                                    {}, chainJson, gainJson, askJson, editJson,
+                                                    {}, {}, {},
+                                                    editJson.isNotEmpty() ? turnTargetUid  : juce::String(),
+                                                    editJson.isNotEmpty() ? turnTargetName : juce::String());
             // Ask arrived: run the layout pass so the docked shelf appears
             // and the message viewport reflows above it (message is now in
             // chatMessages, so findNewestUnansweredAsk sees it)
@@ -14141,59 +15283,6 @@ void EchoJayEditor::showChainPluginPicker()
 // =============================================================================
 // Link chain send side — Build target menu, command write, ack polling
 // =============================================================================
-void EchoJayEditor::showChainBuildTargetMenu(const juce::String& chainJson)
-{
-    processorRef.refreshLinkRegistry();
-
-    // EVERY live Link, named or not, with the Monitor's display label. The
-    // ADDRESS is the uid — never the name — so duplicate "Untitled" instances
-    // stay distinct. (target label, target uid) pairs.
-    struct Target { juce::String label, uid; };
-    std::vector<Target> targets;
-    for (const auto& e : processorRef.getLinkDisplayList())
-        if (e.info.connected && e.info.uid.isNotEmpty())
-            targets.push_back({ e.displayName, e.info.uid });
-
-    // No live Links → unchanged default behaviour
-    if (targets.empty()) { loadChainFromJson(chainJson); return; }
-
-    // Optional AI suggestion — matches a LIVE instance by display label; the
-    // user always confirms by choosing an item.
-    juce::String suggested;
-    {
-        auto v = juce::JSON::parse(chainJson);
-        if (auto* o = v.getDynamicObject())
-            suggested = o->getProperty("suggestedTarget").toString().trim();
-        bool live = false;
-        for (auto& t : targets)
-            if (t.label.equalsIgnoreCase(suggested)) { suggested = t.label; live = true; break; }
-        if (!live) suggested.clear();
-    }
-
-    juce::PopupMenu menu;
-    menu.addSectionHeader("BUILD CHAIN ON");
-    menu.addItem(1, "Build here (this EchoJay)", true, suggested.isEmpty());
-    menu.addSeparator();
-    for (size_t i = 0; i < targets.size(); ++i)
-    {
-        const bool isSuggested = (targets[i].label == suggested);
-        menu.addItem((int)(2 + i),
-                     "Link: " + targets[i].label + (isSuggested ? "   - suggested" : ""),
-                     true, isSuggested);
-    }
-
-    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    menu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
-        [safeThis, chainJson, targets](int result)
-        {
-            if (safeThis == nullptr || result <= 0) return;
-            if (result == 1) { safeThis->loadChainFromJson(chainJson); return; }
-            size_t li = (size_t)(result - 2);
-            if (li < targets.size())
-                safeThis->sendChainToLink(targets[li].uid, chainJson);
-        });
-}
-
 void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                                     const juce::String& chainJson)
 {
@@ -14202,8 +15291,10 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
     const juce::String id = linkUid;   // instanceId — the address, never the name
     if (dir.isEmpty() || id.isEmpty())
     {
-        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "Link chain build", "Could not resolve the shared Link directory.");
+        // Same no-modal rule as the rest of the build flow (Logic parks
+        // AlertWindows BEHIND the plugin window and blocks input).
+        appendLocalResultBubble("Could not reach the Link transport (shared "
+                                "directory unavailable) - nothing was built.");
         return;
     }
 
@@ -14224,14 +15315,14 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
     juce::File(dir + "chain-cmd-" + id + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
 
-    pollLinkChainAck(id, seq, 20);   // 20 x 250ms = ~5s timeout; id = uid
+    pollLinkChainAck(id, seq, 20, chainJson);   // 20 x 250ms = ~5s timeout; id = uid
 }
 
 void EchoJayEditor::pollLinkChainAck(const juce::String& linkUid, int seq,
-                                     int attemptsLeft)
+                                     int attemptsLeft, const juce::String& chainJson)
 {
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    juce::Timer::callAfterDelay(250, [safeThis, linkUid, seq, attemptsLeft]
+    juce::Timer::callAfterDelay(250, [safeThis, linkUid, seq, attemptsLeft, chainJson]
     {
         if (safeThis == nullptr) return;
 
@@ -14291,7 +15382,101 @@ void EchoJayEditor::pollLinkChainAck(const juce::String& linkUid, int seq,
                         summary += "\n\n" + lines.joinIntoString("\n");
                     if (ok > 0)
                         safeThis->bumpMonthlyStat("chains");   // THIS MONTH card
-                    safeThis->showLinkBuildResults(summary, loadFailed);
+
+                    // ===== Suggest-an-alternative on LINK build failures =====
+                    // Same offer the LOCAL build path makes, so the two are
+                    // indistinguishable to the user. ONE follow-up for ALL
+                    // failures (per-failure offers serially abort through
+                    // the revision guard); name-anchored, never numeric —
+                    // and anchors come ONLY from entries the ack marks
+                    // kind=="built" (never a failed name: two adjacent
+                    // failures would otherwise anchor to a plugin that is
+                    // not in the rack). No surviving neighbour on either
+                    // side -> role wording from the REQUEST, no invented
+                    // anchor. Load failure = "can't authorise right now"
+                    // (iLok rule), session-scoped, never persisted.
+                    juce::String altPrompt, altLabel;
+                    if (auto* darr2 = o->getProperty("perPluginDetail").getArray())
+                    {
+                        struct DE { juce::String name, rackName; bool built; bool failed; };
+                        std::vector<DE> det;
+                        for (auto& dv2 : *darr2)
+                            if (auto* d2 = dv2.getDynamicObject())
+                            {
+                                DE e;
+                                e.name     = d2->getProperty("name").toString().trim();
+                                auto rn    = d2->getProperty("resolvedName").toString().trim();
+                                e.rackName = rn.isNotEmpty() ? rn : e.name;
+                                const auto kind = d2->getProperty("kind").toString();
+                                e.built  = kind == "built";
+                                e.failed = kind == "load_failed";
+                                if (e.name.isNotEmpty()) det.push_back(std::move(e));
+                            }
+                        // Roles from the REQUESTED chain (wording only)
+                        std::map<juce::String, juce::String> roleFor;
+                        {
+                            auto cv = juce::JSON::parse(chainJson);
+                            if (auto* co = cv.getDynamicObject())
+                                if (auto* carr = co->getProperty("chain").getArray())
+                                    for (auto& ev : *carr)
+                                        if (auto* eo = ev.getDynamicObject())
+                                            roleFor[eo->getProperty("name").toString().trim()]
+                                                = eo->getProperty("role").toString().trim();
+                        }
+                        juce::StringArray failedNames, failedSpots, plainNames;
+                        for (int fi = 0; fi < (int)det.size(); ++fi)
+                        {
+                            if (!det[(size_t)fi].failed) continue;
+                            failedNames.add("\"" + det[(size_t)fi].name + "\"");
+                            plainNames.add(det[(size_t)fi].name);
+                            juce::String anchor;
+                            for (int pj = fi - 1; pj >= 0; --pj)
+                                if (det[(size_t)pj].built)
+                                { anchor = "right after \"" + det[(size_t)pj].rackName + "\""; break; }
+                            if (anchor.isEmpty())
+                                for (int nj = fi + 1; nj < (int)det.size(); ++nj)
+                                    if (det[(size_t)nj].built)
+                                    { anchor = "right before \"" + det[(size_t)nj].rackName + "\""; break; }
+                            juce::String spot = "add a replacement for \""
+                                              + det[(size_t)fi].name + "\"";
+                            if (anchor.isNotEmpty())
+                                spot += " " + anchor;
+                            else if (roleFor.count(det[(size_t)fi].name)
+                                     && roleFor[det[(size_t)fi].name].isNotEmpty())
+                                spot += " for the " + roleFor[det[(size_t)fi].name] + " role";
+                            failedSpots.add(spot);
+                        }
+                        if (!failedNames.isEmpty())
+                        {
+                            altPrompt = (failedNames.size() == 1
+                                           ? "This plugin" : "These plugins")
+                                + juce::String(" FAILED TO LOAD on this machine just "
+                                  "now - that is authoritative and final for this "
+                                  "session (likely unlicensed), regardless of "
+                                  "appearing in any plugin list: ")
+                                + failedNames.joinIntoString(", ")
+                                + ". Do NOT propose them again. Suggest a DIFFERENT "
+                                  "plugin for each: "
+                                + failedSpots.joinIntoString("; ")
+                                + ". Place them using my CURRENT CHAIN exactly as it "
+                                  "is NOW (the failed plugins never loaded, so earlier "
+                                  "numbering does not apply). Propose them together as "
+                                  "ONE chain edit.";
+                            altLabel = (plainNames.size() == 1 ? "Find a replacement for "
+                                                               : "Find replacements for ")
+                                     + plainNames.joinIntoString(", ");
+                        }
+                    }
+                    // NO MODALS on this path: in Logic the AlertWindow
+                    // opened BEHIND the plugin window and blocked all input
+                    // (JUCE modal ownership inside a host). The bubble
+                    // already carries the summary, the per-plugin lines and
+                    // the alternative chip. The alert's "stop suggesting X"
+                    // The "stop suggesting" toggle returns as a SECOND CHIP
+                    // on the bubble (loadFailed names) — no modal. Exclusion
+                    // stays SESSION-scoped (iLok rule: never persisted from
+                    // a failure, never auto-unticks).
+                    safeThis->appendLocalResultBubble(summary, altPrompt, altLabel, loadFailed);
                     return;
                 }
             }
@@ -14299,62 +15484,14 @@ void EchoJayEditor::pollLinkChainAck(const juce::String& linkUid, int seq,
 
         if (attemptsLeft <= 1)
         {
-            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                "Link chain build",
-                "Link instance \"" + label + "\" not responding. "
-                "Check the Link plugin is loaded and its track is active.");
+            // Same no-modal rule as the results path.
+            safeThis->appendLocalResultBubble(
+                "No response from \"" + label + "\" - is the Link plugin "
+                "still loaded? Nothing was confirmed built.");
             return;
         }
-        safeThis->pollLinkChainAck(linkUid, seq, attemptsLeft - 1);
+        safeThis->pollLinkChainAck(linkUid, seq, attemptsLeft - 1, chainJson);
     });
-}
-
-void EchoJayEditor::showLinkBuildResults(const juce::String& summary,
-                                         juce::StringArray loadFailed)
-{
-    // Plugins the user already chose "Keep it" for this session don't get
-    // re-offered (same rule as the local promptForFailedPlugins flow).
-    juce::StringArray toPrompt;
-    for (auto& n : loadFailed)
-        if (chainFailSessionSeen_.find(n) == chainFailSessionSeen_.end())
-            toPrompt.add(n);
-
-    if (toPrompt.isEmpty())
-    {
-        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-                                               "Link chain build", summary);
-        return;
-    }
-
-    auto* w = new juce::AlertWindow("Link chain build",
-        summary + "\n\nSome plugins failed to load (licence or installation "
-        "issue?).\nTick any you want EchoJay to stop suggesting:",
-        juce::MessageBoxIconType::WarningIcon, this);
-
-    auto toggles = std::make_shared<juce::OwnedArray<juce::ToggleButton>>();
-    for (auto& n : toPrompt)
-    {
-        auto* t = new juce::ToggleButton("Don't suggest \"" + n + "\" again");
-        t->setSize(420, 24);
-        toggles->add(t);
-        w->addCustomComponent(t);
-    }
-    w->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
-
-    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    w->enterModalState(true,
-        juce::ModalCallbackFunction::create([safeThis, toggles, toPrompt](int)
-        {
-            if (safeThis == nullptr) return;
-            for (int i = 0; i < toPrompt.size(); ++i)
-            {
-                if (auto* t = (*toggles)[i]; t != nullptr && t->getToggleState())
-                    safeThis->disablePluginByName(toPrompt[i]);
-                else
-                    safeThis->chainFailSessionSeen_.insert(toPrompt[i]);
-            }
-        }),
-        true /* delete window when dismissed */);
 }
 
 void EchoJayEditor::disablePluginByName(const juce::String& name)
@@ -15198,8 +16335,19 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                                        const juce::String& reviewId,
                                        const juce::String& passName,
                                        int version,
-                                       const WsReview* prevReview)
+                                       const WsReview* prevReview,
+                                       const juce::String& scopeLinkUid)
 {
+    // Per-channel scope (Phase C): a channel chat reviews THAT channel only;
+    // a main chat reviews everything. Find the target channel in the
+    // multi-channel snapshot by uid (the capture engine already captured
+    // every channel; we SELECT one, no second engine). nullptr = not in the
+    // snapshot (the Link was not live at capture) -> offline path below.
+    const ChannelMeterData* scopedCh = nullptr;
+    if (scopeLinkUid.isNotEmpty())
+        for (const auto& c : snap.channels)
+            if (c.uid == scopeLinkUid) { scopedCh = &c; break; }
+    const bool channelScoped = scopeLinkUid.isNotEmpty();
     auto ff = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
     auto& d = snap.averagedData;
     juce::String ch = snap.getChannelDisplayName();
@@ -15828,7 +16976,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     if (!isShortElement && !isBusType)
     {
         if (snap.durationSeconds < 5.0f)
-            meterCtx += "\n⚠ PARTIAL ANALYSIS: Only " + juce::String((int)snap.durationSeconds) + 
+            meterCtx += juce::String::fromUTF8("\n⚠ PARTIAL ANALYSIS: Only ") + juce::String((int)snap.durationSeconds) + 
                 "s captured. These readings may not represent the full track. Keep your review brief and suggest they capture more of the track for a better analysis.";
         else if (snap.durationSeconds < 15.0f)
             meterCtx += "\n(Note: " + juce::String((int)snap.durationSeconds) + "s captured)";
@@ -15837,7 +16985,6 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     // (Auto-comparison now uses prevReview from workspace chat history, not snapshots)
     
     // ── Approach angle (individual channels only) ─────────────────────────
-    bool angleNeedsPlugins = false;
     if (isIndividual)
     {
         const char* angles[] = {
@@ -15851,11 +16998,12 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         };
         int angleIdx = (int)(juce::Time::currentTimeMillis() % 7);
         meterCtx += "\n[APPROACH: " + juce::String(angles[angleIdx]) + "]\n";
-        angleNeedsPlugins = (angleIdx == 0 || angleIdx == 4);
     }
 
     // ── Multi-channel context (appended to meterCtx when Links active) ────
-    if (!snap.channels.empty())
+    // Main captures only — a channel-scoped capture replaces meterCtx with
+    // its own channel review below (no whole-session dump).
+    if (!channelScoped && !snap.channels.empty())
     {
         auto ff2 = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
         juce::String mcCtx = "\n\n[MULTI-CHANNEL CAPTURE — " + juce::String((int)snap.channels.size()) + " channels]\n";
@@ -15870,15 +17018,60 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         {
             auto& sch = snap.channels[ci];
             auto& md = sch.meterData;
+            // Name resolves LIVE through the ONE accessor (Phase N
+            // precedence), keyed by the stable uid — never the name frozen
+            // into the capture at startCapture (that showed the pre-rename
+            // "Audio 1" while the banner showed the renamed track). Host
+            // (ci==0) keeps its own channel-type name.
+            juce::String chName = sch.name;
+            if (ci > 0)
+            {
+                auto live = processorRef.resolveLinkDisplayName(sch.uid);
+                if (live.isNotEmpty()) chName = live;
+            }
             juce::String header = (ci == 0)
-                ? ("[HOST — " + sch.name + "]\n")
-                : ("[LINK — " + sch.name + "]\n");
+                ? ("[HOST — " + chName + "]\n")
+                : ("[LINK — " + chName + "]\n");
             mcCtx += header;
+            // Capture honesty via the FRAMES SENTINEL (framesReceived): the
+            // two facts the injection could not tell apart are now
+            // distinct. 0 = no frames arrived (cause unknown, NEVER a claim
+            // about sound); >0 with all values at/below the silence floor =
+            // the channel was genuinely silent (a statable fact). Host
+            // channels carry -1 (n/a) and fall through to the numbers.
+            const bool noFrames    = ci > 0 && sch.framesReceived == 0;
+            const bool gotFrames   = sch.framesReceived > 0;
+            const bool silentFloor = md.integrated <= -99.0f
+                                  && md.peakMaxL   <= -99.0f
+                                  && md.peakMaxR   <= -99.0f;
+            if (noFrames)
+            {
+                mcCtx += "NO CAPTURE FRAMES were received from this Link during "
+                         "the capture window - the reason is UNKNOWN. Do NOT state "
+                         "or imply that this channel was silent or not outputting "
+                         "signal; you have no data either way. Possible causes "
+                         "include the Link having just been enabled (its audio "
+                         "feed warms up a moment after activation) or a transient "
+                         "capture-timing gap. Tell the user plainly that no data "
+                         "came through for this channel and to try the capture "
+                         "again; say nothing about how it sounds.\n";
+            }
+            else if (gotFrames && silentFloor)
+            {
+                mcCtx += "This channel WAS receiving audio during the capture, and "
+                         "its level stayed at or below the silence floor the whole "
+                         "window - it was genuinely silent (muted, or not playing). "
+                         "You may say the channel was silent; that is a real "
+                         "measurement, not a guess.\n";
+            }
+            else
+            {
             mcCtx += "(Internal — do not show raw numbers) ";
             mcCtx += "Integrated: " + ff2(md.integrated) + " LUFS | LRA: " + ff2(md.loudnessRange) + " LU\n";
             mcCtx += "Peak: L " + ff2(md.peakMaxL) + " / R " + ff2(md.peakMaxR) + " dBFS\n";
             mcCtx += "RMS: L " + ff2(md.rmsL) + " / R " + ff2(md.rmsR) + " dB\n";
             mcCtx += "Crest: " + ff2(md.crestFactor) + " dB | Width: " + ff2(md.width) + "% | Corr: " + ff2(md.correlation) + "\n";
+            }
             // Link gain stage (AI hook): current built-in gain for this Link,
             // looked up by name from the registry. The integrated above is
             // POST-gain, so a level match to target T needs delta (T minus
@@ -15912,6 +17105,65 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         meterCtx += mcCtx;
     }
 
+    // ── Channel-scoped review (Phase C): meterCtx becomes THIS channel's
+    // numbers, or an honest offline/no-data statement. Item 5 coverage: a
+    // Link that delivered a sliver of the window must not present it as the
+    // whole window.
+    bool scopedOwnLive = false;
+    if (channelScoped)
+    {
+        const juce::String chLabelRaw = processorRef.resolveLinkDisplayName(scopeLinkUid);
+        // Neutral degradation (STATE 3 channelPhrase pattern): the Link may
+        // have died between capture and composition; never an empty quote.
+        const juce::String chLabel = chLabelRaw.isNotEmpty()
+            ? ("\"" + chLabelRaw + "\"") : juce::String("this channel");
+        const juce::String dash = juce::String::fromUTF8(" \xe2\x80\x94 ");
+        if (scopedCh == nullptr || scopedCh->framesReceived == 0)
+        {
+            meterCtx = "\n\n[CHANNEL CAPTURE" + dash + chLabel
+                + " delivered NO audio to this capture (it may be offline, was "
+                  "not running, or its feed had not warmed up). NOTHING was "
+                  "captured for this channel. Do NOT substitute the mix bus or "
+                  "any other channel, and do NOT describe how this channel "
+                  "sounds - you have no data. Tell the user plainly that nothing "
+                  "came through for this channel and to check it is running, "
+                  "then capture again.]\n";
+        }
+        else
+        {
+            scopedOwnLive = true;
+            auto ff2 = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
+            const auto& md = scopedCh->meterData;
+            // Coverage: frames received vs the window's expected frames.
+            // Threshold 0.5 -> below HALF the window a windowed average (esp.
+            // integrated LUFS) represents a minority of the intended material
+            // and must be caveated, not stated as the whole window. 0.5 is the
+            // clean "less than half" line, easy to communicate as a proportion.
+            double linkSR = processorRef.getSampleRate();   // fallback (same DAW)
+            for (const auto& li : processorRef.getLinkSlotInfos())
+                if (li.uid == scopeLinkUid && li.sampleRate > 0.0f)
+                    { linkSR = (double)li.sampleRate; break; }
+            const double expected = (double)snap.durationSeconds
+                                  * juce::jmax(1.0, linkSR);
+            const double coverage = expected > 0.0
+                ? juce::jlimit(0.0, 1.0, (double)scopedCh->framesReceived / expected) : 1.0;
+            meterCtx = "\n\n[CHANNEL CAPTURE" + dash + chLabel
+                + " (Internal - do not show raw numbers)]\n"
+                + "Integrated: " + ff2(md.integrated) + " LUFS | LRA: " + ff2(md.loudnessRange) + " LU\n"
+                + "Peak: L " + ff2(md.peakMaxL) + " / R " + ff2(md.peakMaxR) + " dBFS\n"
+                + "RMS: L " + ff2(md.rmsL) + " / R " + ff2(md.rmsR) + " dB\n"
+                + "Crest: " + ff2(md.crestFactor) + " dB | Width: " + ff2(md.width)
+                + "% | Corr: " + ff2(md.correlation) + "\n";
+            if (coverage < 0.5)
+                meterCtx += juce::String::fromUTF8("\xe2\x9a\xa0 PARTIAL COVERAGE: only about ")
+                    + juce::String(juce::roundToInt(coverage * 100.0)) + "% of the "
+                    + juce::String((int)snap.durationSeconds) + "s window carried audio "
+                      "from this channel; these readings cover a fraction of the "
+                      "window, so caveat them rather than presenting them as the "
+                      "whole take.\n";
+        }
+    }
+
     // ── Build API user content ─────────────────────────────────────────────
     // If this is the first capture in the chat (no prevReview): baseline review.
     // If there IS a previous revision: user message says "v<N> of <project>",
@@ -15943,10 +17195,33 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         captureContent = userLabel + prevBlock + meterCtx;
     }
 
-    if (angleNeedsPlugins)
-        captureContent += EchoJayAPI::buildPluginInjection(
-            processorRef.getPluginScanner().getFullPluginList());
+    // Phase 3-pre: capture turns are plugin-relevant by definition, so the
+    // ONE injection helper attaches the validated feed + [CURRENT CHAIN]
+    // unconditionally (alwaysAttach) — the model can then make evidence-backed
+    // CHAIN_EDIT offers against the live rack. This retired the angle-gated
+    // full-list injection: the feed is strictly better (validated names).
+    // Channel chat active: the turn stays the channel's (declaration +
+    // that Link's rack) but the DATA is the main instance's — the
+    // attribution statement says so (false-attribution honesty fix).
+    {
+        // scopeLinkUid drives BOTH the injection target (STATE 2 live /
+        // STATE 3 offline) and attribution. captureOwnAttribution rides only
+        // when the capture IS this channel's own audio (scoped + live +
+        // frames). An offline scoped capture falls to STATE 3 (channel
+        // offline), never the "main mix" statement. Main chat: empty uid,
+        // STATE 1, no attribution.
+        captureContent += standardChainInjections(captureContent, /*alwaysAttach*/ true,
+                                                  nullptr, scopeLinkUid,
+                                                  /*mainCaptureAttribution*/ false,
+                                                  /*captureOwnAttribution*/ scopedOwnLive);
+    }
 
+    if (askShelfVisible_)
+    {
+        supersedePendingAsks();
+        askShelfVisible_ = false;
+        resized();
+    }
     processorRef.chatRoles.add("user");
     processorRef.chatContents.add(captureContent);
 
@@ -15962,6 +17237,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     api.stageCapturePayload(MeterEngine::meterDataToJSON(
                                 snap.averagedData, processorRef.getSampleRate()),
                             (int) snap.channels.size());
+    setStageStatus(juce::String::fromUTF8("Analysing your capture\xe2\x80\xa6"));
 
     auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
     juce::String captureChatId = chatId;
@@ -15970,14 +17246,30 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
             if (safeThis2 == nullptr)
                 return;
             safeThis2->chatLoading = false;
-            safeThis2->chatMessages.push_back({"assistant", reply});
-            safeThis2->processorRef.chatHistory.push_back({"assistant", reply});
-            if (success) { safeThis2->processorRef.chatRoles.add("assistant"); safeThis2->processorRef.chatContents.add(reply); }
+            safeThis2->clearStageStatus();
+            // 3a: analysis replies may carry an evidence-backed offer as an
+            // ASK block (the ONLY block allowed on analysis turns — the
+            // server note forbids CHAIN/CHAIN_EDIT here, so ASK extraction
+            // alone is complete, not partial).
+            juce::String visibleReply = reply;
+            juce::String askJson;
+            if (success && EchoJayAPI::extractAskBlock(visibleReply, askJson))
+                EchoJay_NSLog("EJChat: ASK block received (capture turn)");
+            ChatMsg cm;
+            cm.role    = "assistant";
+            cm.content = visibleReply;
+            cm.askData = askJson;
+            safeThis2->chatMessages.push_back(cm);
+            safeThis2->processorRef.chatHistory.push_back({"assistant", visibleReply});
+            if (success) { safeThis2->processorRef.chatRoles.add("assistant"); safeThis2->processorRef.chatContents.add(visibleReply); }
+            if (askJson.isNotEmpty())
+                safeThis2->resized();   // docked shelf appears + viewport reflow
 
             // Mirror assistant turn into the capture chat, increment revisionCount, persist
             if (captureChatId.isNotEmpty())
             {
-                safeThis2->workspace.appendMessageToChat(captureChatId, "assistant", reply);
+                safeThis2->workspace.appendMessageToChat(captureChatId, "assistant", visibleReply,
+                                                         {}, {}, {}, askJson);
                 safeThis2->workspace.incrementChatRevisionCount(captureChatId);
                 if (safeThis2->sidebarModel)
                 {
@@ -16622,6 +17914,15 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     // prompt's own input/buttons still work.
     if (projectPromptVisible)
         return;
+
+    // Channel banner = THE channel selector (painted control; the rect is
+    // authored in resized, so this hit test measures nothing).
+    if (currentScreen == Screen::Main && !channelBannerRect_.isEmpty()
+        && chatInput.isVisible() && channelBannerRect_.contains(pos))
+    {
+        showChannelBannerMenu();
+        return;
+    }
 
     // Update overlay clicks are handled by the UpdateOverlay child component itself.
 

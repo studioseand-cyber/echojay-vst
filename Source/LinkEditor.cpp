@@ -65,8 +65,15 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     // radius). Colours/fill/size are untouched — the LnF reads the field's own.
     nameFieldLnF = std::make_unique<RoundFieldLnF>();
     nameField.setLookAndFeel(nameFieldLnF.get());
-    nameField.setTextToShowWhenEmpty("Name this link (e.g. Drums)",
-                                     kText2.withAlpha(0.6f));
+    // Phase N: the DAW-provided track name becomes the placeholder when the
+    // user hasn't typed one — typing still overrides (linkName wins). Kept
+    // fresh in timerCallback; the generic hint returns if the host name goes.
+    lastPlaceholderHostName_ = proc.getHostTrackName();
+    nameField.setTextToShowWhenEmpty(
+        lastPlaceholderHostName_.isNotEmpty()
+            ? lastPlaceholderHostName_ + " (from DAW)"
+            : juce::String("Name this link (e.g. Drums)"),
+        kText2.withAlpha(0.6f));
     nameField.onTextChange = [this]
     {
         proc.linkName = nameField.getText();
@@ -193,6 +200,22 @@ void LinkEditor::timerCallback()
         lastMonoNote_ = note;
         repaint();
         chainPanel.repaint();
+    }
+
+    // Phase N: host track name can arrive at any time after open (the
+    // callback never fires in the ctor) — refresh the placeholder when it
+    // changes. Repaint only the field, and only when it is showing the
+    // placeholder (empty), so steady state stays repaint-free.
+    auto hn = proc.getHostTrackName();
+    if (hn != lastPlaceholderHostName_)
+    {
+        lastPlaceholderHostName_ = hn;
+        nameField.setTextToShowWhenEmpty(
+            hn.isNotEmpty() ? hn + " (from DAW)"
+                            : juce::String("Name this link (e.g. Drums)"),
+            kText2.withAlpha(0.6f));
+        if (nameField.getText().isEmpty())
+            nameField.repaint();
     }
 }
 

@@ -47,8 +47,39 @@ private:
     // displayLabel (optional): short label rendered instead of msg for
     // tap-generated turns (chips, alternative pills). msg always rides the
     // history/send unchanged.
+    // turnTypeOverride: staged turnType for tap-generated turns whose ASK
+    // choice carried an intent (Phase 3-pre; server trust-but-validates).
     void sendChatMessage(const juce::String& msg,
-                         const juce::String& displayLabel = juce::String());
+                         const juce::String& displayLabel = juce::String(),
+                         const juce::String& turnTypeOverride = juce::String());
+    // ONE injection-attach path for EVERY compose site (chat send, capture,
+    // compare) — Phase 3-pre. Returns the validated chain feed (or the
+    // full-list fallback) + [CURRENT CHAIN]. A third copy of this logic
+    // would drift exactly like the two tH sums did; call sites must add no
+    // injection logic of their own. alwaysAttach: capture/compare turns are
+    // plugin-relevant BY DEFINITION (their typed text has no cue words);
+    // chat stays cue-gated. hadChainFeedOut: true when the validated feed
+    // rode (drives chat's turnType staging).
+    // targetLinkUid (Phase R): compose against THAT Link's published rack —
+    // exactly ONE [CURRENT CHAIN] per turn, always the target's; the local
+    // rack never rides a targeted turn. Sidecar absent = rack unknown =
+    // build-only (no block, never an error).
+    // mainCaptureAttribution (capture turns in a channel chat): the
+    // capture/meter data is the MAIN instance's signal — the statement
+    // says so explicitly so the model never describes the mix bus as the
+    // channel's audio (same failure family as STATE 3 falling to STATE 1,
+    // through the capture door).
+    // captureOwnAttribution: the capture on this turn IS this channel's own
+    // audio (per-channel capture) -> the model may speak about it directly.
+    // Mutually exclusive with mainCaptureAttribution (main-instance data in
+    // a channel chat). At most one rides.
+    juce::String standardChainInjections(const juce::String& typedMsg,
+                                         bool alwaysAttach,
+                                         bool* hadChainFeedOut = nullptr,
+                                         const juce::String& targetLinkUid = juce::String(),
+                                         bool mainCaptureAttribution = false,
+                                         bool captureOwnAttribution = false,
+                                         bool compareAttribution = false);
 
     // prevReview is non-null when this is not the first capture in the chat.
     void requestAIFeedback(const CaptureSnapshot& snap,
@@ -56,7 +87,8 @@ private:
                            const juce::String& reviewId,
                            const juce::String& passName,
                            int version,
-                           const WsReview* prevReview);
+                           const WsReview* prevReview,
+                           const juce::String& scopeLinkUid = juce::String());
     void layoutChatMessages();
     
     void showLoginScreen();
@@ -755,12 +787,27 @@ private:
         juce::String editAltPrompt; // "Suggest an alternative" follow-up (load
                                     // failures only); cleared once tapped
         juce::String editAltLabel;  // short display label for the alt tap
+        // Result-bubble "stop suggesting" chip (build failures): the failed
+        // plugin names. NOT persisted — the exclusion itself is session-
+        // scoped (chainFailSessionSeen_), and the chip is a just-failed-now
+        // action, so a reloaded bubble keeps its alt chip but not this one.
+        juce::StringArray excludeNames;
+        bool excludeApplied = false;
         juce::String displayText;   // tap-generated user turns: what the
                                     // bubble SHOWS; content is what was SENT
                                     // (empty = show content, i.e. typed text)
-        int  editBaseRevision = -1; // chainRevision at receive; -1 = restored from a
+        int  editBaseRevision = -1; // revision at receive; -1 = restored from a
                                     // previous session (revision guard skipped,
-                                    // baseSlots check still applies)
+                                    // baseSlots check still applies).
+                                    // WHICH counter depends on editTargetUid:
+                                    // empty -> the LOCAL ChainHost revision;
+                                    // set   -> that LINK's sidecar revision.
+                                    // The two are separate racks' counters and
+                                    // are NEVER compared to each other.
+        juce::String editTargetUid;  // Phase R: set when this edit card targets a
+                                     // Link's rack — Apply routes v:2 to that Link,
+                                     // never the local sequencer
+        juce::String editTargetName; // display label at propose time (user text)
     };
     std::vector<ChatMsg> chatMessages;
     // THE shared display source: both text-layout passes (measure + paint)
@@ -789,7 +836,8 @@ private:
     // bubble (build failures) - same one-shot machinery as edit cards.
     void appendLocalResultBubble(const juce::String& text,
                                  const juce::String& altPrompt = juce::String(),
-                                 const juce::String& altLabel  = juce::String());
+                                 const juce::String& altLabel  = juce::String(),
+                                 const juce::StringArray& excludeNames = {});
     // ---- Apply-time honesty (26 Jul 2026) ----
     // Clean-load chain builds defer the result bubble until per-slot dial
     // state settles (async map fetches; 250ms polls, ~2s cap). Only a clean
@@ -808,8 +856,11 @@ private:
     // editCardHeight; this returns 0 for them)
     int altPillH(const ChatMsg& msg) const
     {
-        return (msg.role == "assistant" && msg.editAltPrompt.isNotEmpty()
-                && msg.editData.isEmpty()) ? 32 : 0;
+        // Result-bubble chip ROW height (single source). One 32px row: at
+        // most two chips (alt + exclude), which fit any real bubble width;
+        // layoutResultChips assumes one row and shrinks labels to fit.
+        return (msg.role == "assistant" && msg.editData.isEmpty()
+                && !resultChipList(msg).empty()) ? 32 : 0;
     }
     struct StageTicker : juce::Timer
     {
@@ -844,6 +895,61 @@ private:
     juce::Component chatContent;
     juce::TextEditor chatInput;
     juce::TextButton chatSendBtn { "Send" };
+    // Phase R compose-time target: which rack the NEXT turns talk about.
+    // An edit must know its rack at compose (the injected [CURRENT CHAIN]
+    // defines the slot numbers the model writes), so the picker lives on
+    // the input row, not on the apply step. Session state, never persisted.
+    juce::TextButton chatTargetBtn { "This channel" };
+    bool rehydratedFromStore_ = false;  // one-shot onLoaded re-hydrate
+    // Chat composer container (single rounded box: text area on top, a
+    // control row inside the bottom — target pill left, model LABEL +
+    // Send right). chatBoxH() is the ONE height source; resized() computes
+    // only the container origin/width per branch and layoutChatBox() is the
+    // SOLE author of the internals on EVERY surface (no per-surface or
+    // per-state variants — that is what fixed the sidebar empty-state
+    // divergence); paint consumes chatBoxRect_ ONLY. The model text is a
+    // Label, never a selector: routing is tier+turnType, not user choice.
+    static constexpr int kChatBoxTextH = 56;
+    static constexpr int kChatBoxRowH  = 30;
+    int  chatBoxH() const { return kChatBoxTextH + kChatBoxRowH; }
+    void layoutChatBox(juce::Rectangle<int> box);
+    bool targetPillEligible() const;   // links connected or target set
+    // ---- Phase C1: channel chats (active chat drives the target) ----
+    juce::String activeChatLinkUid() const;      // "" = main chat
+    juce::String effectiveChannelUid() const;    // active chat's, else pending
+    juce::String findChannelChatId(const juce::String& linkUid) const; // "" = none
+    bool linkUidLive(const juce::String& uid) const;
+    juce::String channelDisplayLabel(const juce::String& uid) const;
+    juce::String findOrCreateChannelChatId(const juce::String& linkUid,
+                                           const juce::String& linkNameNow);
+    juce::Rectangle<int> chatBoxRect_;
+    bool lastPillEligible_ = false;    // timer change-detect -> resized()
+    juce::String lastLockedUid_;       // } active-chat target: a live<->offline
+    bool lastLockedLive_ = false;      // } flip changes pill TEXT WIDTH -> relayout
+    juce::String lastLockedLabel_;     // } rename detection (label feeds pill width)
+    // Derived cache, never state of record: the CHANNEL BANNER text
+    // ("Working on Link: Vocals" + offline suffix). Resolved by
+    // refreshChannelBannerCache() (timer change-detector + synchronous
+    // activation points) so PAINT reads a string and never scans the
+    // registry per frame. Empty = main chat = no banner (its height
+    // collapses via channelBannerH()).
+    juce::String chanBannerText_;
+    bool chanBannerLive_ = false;
+    void refreshChannelBannerCache();
+    // Banner geometry: ONE height source; resized() authors and stores
+    // the rect; paint consumes it and measures nothing (two-tH-sums
+    // discipline, same as the ASK shelf and the composer).
+    static constexpr int kChannelBannerH = 24;
+    // Link tab: ALWAYS present (a main chat there reads "No channel
+    // selected" and the dropdown is how you pick one). Everywhere else:
+    // channel chats only (cached text non-empty).
+    int channelBannerH() const
+    {
+        return (chanBannerText_.isNotEmpty() || currentTab == Tab::Link)
+                 ? kChannelBannerH : 0;
+    }
+    juce::Rectangle<int> channelBannerRect_;
+    void showChatTargetMenu();
     juce::TextButton chatTextSizeBtn { "Aa" };
     juce::Label      chatDisclaimerLabel;   // AI-mistakes footer pinned under the input
     juce::Label      chatModelLabel;        // model name indicator by the input (server-fed)
@@ -1700,6 +1806,23 @@ private:
     std::array<juce::TextButton, kMaxChainBuildBtns> editAltBtns;
     std::array<int, kMaxChainBuildBtns> editAltMsgIdx { };
     int activeEditAltBtns = 0;
+    // ---- Result-bubble chip LIST (build failures) ----
+    // A build-result bubble carries a LIST of chips (Suggest alternative(s),
+    // Stop suggesting X). ONE layout pass (layoutResultChips) produces the
+    // rects; altPillH is the single height source both measure and paint
+    // consume; paint measures nothing. resultChipRow lists (label,kind) so
+    // the two passes cannot disagree on WHICH chips exist. kind: 0 alt,
+    // 1 exclude.
+    static constexpr int kMaxResultChips = 4;
+    std::array<juce::TextButton, kMaxResultChips> resultChipBtns;
+    std::array<int, kMaxResultChips> resultChipMsgIdx { };
+    std::array<int, kMaxResultChips> resultChipKind { };
+    int activeResultChips = 0;
+    struct ResultChip { juce::String label; int kind; };
+    std::vector<ResultChip> resultChipList(const ChatMsg& m) const;
+    void layoutResultChips(const ChatMsg& m, juce::Rectangle<int> area,
+                           std::vector<juce::Rectangle<int>>& rectsOut) const;
+    void onResultChipTapped(int msgIdx, int kind);
     // Shared height helpers for the measure + paint passes (must agree)
     int  editCardHeight(const ChatMsg& msg) const;
     // Build card (1d follow-up): structured slot lines + Build button —
@@ -1743,6 +1866,27 @@ private:
     static constexpr int kAskChipH = 27;   // 12.5px text + 6px vertical padding
     std::array<juce::TextButton, kMaxAskChips> askChipBtns;
     std::array<juce::String, kMaxAskChips> askChipLabels;
+    std::array<juce::String, kMaxAskChips> askChipIntents;   // ""|"edit"|"build" (3-pre)
+    // ---- Channel selection (banner dropdown; the chip bar is deleted) ----
+    // THE channel selector: clicking the banner opens a menu of LIVE
+    // channels from the registry (current one ticked; an offline current
+    // channel listed dimmed). Selecting uses the same open-or-pend path
+    // the chips used. EXACTLY ONE selector is visible at any time — the
+    // composer pill hides wherever the banner shows.
+    void showChannelBannerMenu();
+    void openChannelByUid(const juce::String& uid);
+    // Label for the no-channel state (dropdown first entry + banner text in
+    // a main chat on the Link tab). SAME name source as the Link Monitor's
+    // top row (getEffectiveChannelName) so the two cannot disagree. The
+    // no-channel state genuinely means both "this EchoJay's rack" (builds)
+    // and "the whole project" (analysis/capture) — one label, one state.
+    juce::String mainContextLabel() const;
+    // Reset to the clean main state (no active chat, no pending, no router
+    // selection). Selecting the main entry in the dropdown and New chat
+    // from an empty channel context both come through HERE — the main
+    // entry is a LABEL for the existing no-channel state, never a new
+    // targeting destination (no sentinel uid exists anywhere).
+    void resetToMainContext();
     juce::String askChipQuestion_;     // question of the chips currently shown
     int  askChipMsgIdx_ = -1;          // chatMessages index the chips belong to
     int  activeAskChips = 0;
@@ -1760,7 +1904,8 @@ private:
                         std::vector<juce::Rectangle<int>>* chipRectsOut = nullptr,
                         juce::StringArray* labelsOut = nullptr,
                         juce::String* questionOut = nullptr,
-                        juce::Rectangle<int>* hintRectOut = nullptr);
+                        juce::Rectangle<int>* hintRectOut = nullptr,
+                        juce::StringArray* intentsOut = nullptr);
 
     // ---- AI-proposed Link gain (APPLY cards) --------------------------------
     // The assistant may emit a <<<ECHOJAY_GAIN>>> block of measurement-backed
@@ -1790,13 +1935,38 @@ private:
     void showChainPluginPicker();                       // "+" button popup
     void loadChainFromJson(const juce::String& chainJson);
 
-    // ---- Link chain send side (phase 1) ----
-    // Build button target menu: "Build here" (default) + live Link
-    // instances. An AI suggestedTarget matching a live Link is pre-selected
-    // (ticked + "suggested" marker); the user always confirms.
-    void showChainBuildTargetMenu(const juce::String& chainJson);
+    // ---- Link chain send side ----
+    // Destination is never ambiguous under the router rule: a channel chat
+    // builds on ITS channel, a main chat on the local rack (the target
+    // menu and suggestedTarget were deleted together).
     void sendChainToLink(const juce::String& linkUid, const juce::String& chainJson);
-    void pollLinkChainAck(const juce::String& linkUid, int seq, int attemptsLeft);
+    // chainJson: the REQUESTED chain — used ONLY for role wording when a
+    // failed plugin has no surviving built neighbour; anchors themselves
+    // derive from the ack's built-only entries, never the request.
+    void pollLinkChainAck(const juce::String& linkUid, int seq, int attemptsLeft,
+                          const juce::String& chainJson = juce::String());
+    // ---- Phase R: Link-targeted edits over the v:2 cmd/ack transport ----
+    LinkShm::RackSidecar readLinkRackSidecar(const juce::String& uid) const;
+    void applyChainEditToLink(int msgIdx);
+    int  sendChainEditToLink(const juce::String& linkUid,
+                             const juce::String& editJson);   // returns seq, -1 on failure
+    void retireLinkEditCard(const juce::String& editDataKey,
+                            const juce::String& chatIdAtApply,
+                            const juce::String& summary,
+                            const juce::String& altPrompt,
+                            const juce::String& altLabel,
+                            const juce::String& resultBubble);
+    void pollLinkEditAck(const juce::String& linkUid, int seq, int attemptsLeft,
+                         const juce::String& editDataKey, const juce::String& chatIdAtApply,
+                         const juce::String& targetLabel, int totalOps,
+                         const std::vector<ChainHost::ChainEditOp>& opsForAlt,
+                         const juce::StringArray& baseSlots);
+    // ONE author for the "Suggest an alternative" follow-up (local apply +
+    // Link ack both consume it — the 1c prompt rules cannot drift apart)
+    void buildEditAltFollowUp(const juce::StringArray& results,
+                              const std::vector<ChainHost::ChainEditOp>& opsForAlt,
+                              const juce::StringArray& baseSlots,
+                              juce::String& altPromptOut, juce::String& altLabelOut);
 
     // ---- LINK tab remote Active control ------------------------------------
     // Per-row toggle writes ctrl-cmd-<id>.json {v:1, seq, active}; the Link
@@ -1901,7 +2071,6 @@ private:
     void disablePluginByName(const juce::String& name);
     // Link build results with load_failed entries: one dialog, per-plugin
     // "don't suggest again" toggle rows (no modal chain).
-    void showLinkBuildResults(const juce::String& summary, juce::StringArray loadFailed);
     std::set<juce::String> chainFailSessionSeen_; // names user chose "Keep it" this session
 
     juce::String currentlyPlayingChatWav;
@@ -2127,7 +2296,8 @@ private:
     void showAlbumContextMenu(const juce::String& albumId);
     juce::String getCurrentAlbumId() const; // album containing currentChatId
     // Returns the reviewId of the created review (empty string if not logged in)
-    juce::String createReviewFromCapture(const CaptureSnapshot& snap, const juce::String& wavPath);
+    juce::String createReviewFromCapture(const CaptureSnapshot& snap, const juce::String& wavPath,
+                                         const juce::String& linkUid = juce::String());
 
     // Shows the plugin scan menu (Scan Now / Add Folder / manage folders)
     // anchored to the given component. Shared by the header scan button and

@@ -4,6 +4,12 @@
 #
 # EJ_SELFTEST compiles the test body into a FRESH EchoJayWorkspace.o (the
 # release static lib carries only the stub); the rest links from the lib.
+#
+# ODR GUARD RAIL: this mixed build (one TU with EJ_SELFTEST, the lib
+# without) is safe ONLY while EJ_SELFTEST gates a function BODY in a .cpp.
+# It must NEVER appear in a header and must never gate anything that
+# changes struct layout, class size, or vtable shape — such a mismatch
+# fails as random runtime memory corruption, not a link error.
 set -e
 cd "$(dirname "$0")/../.."
 SCRATCH=$(mktemp -d)

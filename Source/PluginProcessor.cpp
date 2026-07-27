@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "NativeClip.h"   // EchoJay_NSLog (memdiag)
+#include "EchoJayWorkspace.h"   // runRoundTripSelfTest (C1/C3 verify)
 #include <cmath>
 
 // ---------------------------------------------------------------------------
@@ -34,6 +35,7 @@
 struct EchoJayProcessor::LinkCaptureChannel
 {
     juce::String name;
+    juce::String uid;      // stable identity; live name resolved at compose
     int          slotIdx;
 
     // Drain buffers (pre-allocated at construction to avoid audio-thread allocs)
@@ -69,8 +71,8 @@ struct EchoJayProcessor::LinkCaptureChannel
     std::array<float, 64> finalAvgSpectrum  {};
     bool hasDualSpectrum = false;
 
-    LinkCaptureChannel(const juce::String& n, int idx, double sr, int bs)
-        : name(n), slotIdx(idx),
+    LinkCaptureChannel(const juce::String& n, const juce::String& u, int idx, double sr, int bs)
+        : name(n), uid(u), slotIdx(idx),
           tmpBufL((size_t)std::max(bs * 2, 4096), 0.0f),
           tmpBufR((size_t)std::max(bs * 2, 4096), 0.0f)
     {
@@ -166,6 +168,8 @@ static ChannelMeterData finalizeLinkChannel(EchoJayProcessor::LinkCaptureChannel
 {
     ChannelMeterData result;
     result.name = lcc.name;
+    result.uid  = lcc.uid;
+    result.framesReceived = (int64_t) lcc.capTotalSamples.load();  // 0 = no frames
     result.meterData = lcc.meterEngine.getMeterData();
 
     auto toDb = [](float lin) { return lin > 1e-10f ? 20.0f * std::log10(lin) : -100.0f; };
@@ -245,6 +249,14 @@ EchoJayProcessor::EchoJayProcessor()
         .withInput("Input", juce::AudioChannelSet::stereo(), true)
         .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
+#if JUCE_DEBUG
+    // Workspace serialise/parse round-trip self-assert (Phase C1/C3): runs
+    // once per process, result to stderr. DEBUG ONLY — release builds must
+    // not carry test code or scan-time stderr noise; the runnable release
+    // check is tools/workspace_roundtrip_test/.
+    EchoJayWorkspace::runRoundTripSelfTest();
+#endif
+
     // Auto-detect the host DAW so stock plugins for the DAW the user is
     // actually running get injected without them having to tick anything in
     // Settings. juce::PluginHostType identifies the host from the loading
@@ -907,7 +919,7 @@ void EchoJayProcessor::startCapture()
             {
                 linkCaptureChannels.push_back(
                     std::make_unique<LinkCaptureChannel>(
-                        activeLinkSlots[i].displayName, i, sr, bs));
+                        activeLinkSlots[i].displayName, activeLinkSlots[i].uid, i, sr, bs));
             }
         }
     }
@@ -2063,7 +2075,8 @@ void EchoJayProcessor::closeLinkRegistryNow()
 }
 
 void EchoJayProcessor::connectLinkAudioSlot(int i, const juce::String& audioFilename,
-                                              const juce::String& displayName, float sr)
+                                              const juce::String& displayName, float sr,
+                                              const juce::String& uid)
 {
     if (i < 0 || i >= kMaxLinkSlots) return;
     if (linkResolvedDir.isEmpty()) return;
@@ -2073,6 +2086,8 @@ void EchoJayProcessor::connectLinkAudioSlot(int i, const juce::String& audioFile
     int   fd  = -1;
     void* map = LinkShm::openRingConsumer(linkResolvedDir, audioFilename, fd);
     if (!map) return;
+    // Bind to the INODE we actually mapped (stale-ring detection).
+    const LinkShm::FileIdentity id = LinkShm::fdIdentity(fd);
 
     {
         const juce::SpinLock::ScopedLockType sl(activeLinkSlots[i].lock);
@@ -2080,9 +2095,19 @@ void EchoJayProcessor::connectLinkAudioSlot(int i, const juce::String& audioFile
         activeLinkSlots[i].fd     = fd;
         activeLinkSlots[i].shmKey = audioFilename;  // track filename for change detection
         activeLinkSlots[i].displayName = displayName;
+        activeLinkSlots[i].uid     = uid;
+        activeLinkSlots[i].boundId = id;
     }
     activeLinkSlots[i].framesRead.store(0);
     juce::ignoreUnused(sr); // stored per-slot in linkSlotInfos for UI
+}
+
+juce::String EchoJayProcessor::resolveLinkDisplayName(const juce::String& uid) const
+{
+    if (uid.isEmpty()) return {};
+    for (const auto& e : getLinkDisplayList())   // Phase N precedence chain
+        if (e.info.uid == uid) return e.displayName;
+    return {};
 }
 
 void EchoJayProcessor::disconnectLinkAudioSlot(int i)
@@ -2098,6 +2123,8 @@ void EchoJayProcessor::disconnectLinkAudioSlot(int i)
         activeLinkSlots[i].fd    = -1;
         activeLinkSlots[i].shmKey = {};
         activeLinkSlots[i].displayName = {};
+        activeLinkSlots[i].uid     = {};
+        activeLinkSlots[i].boundId = {};
     }
     if (!old) return;
     // Deferred munmap — audio thread may be inside ringConsume with old pointer
@@ -2173,8 +2200,21 @@ void EchoJayProcessor::refreshLinkRegistry()
         // re-activatable) but publish no ring
         if (snap.active)
         {
-            if (activeLinkSlots[i].shmKey != snap.audioFilename || activeLinkSlots[i].map == nullptr)
-                connectLinkAudioSlot(i, snap.audioFilename, snap.displayName, snap.sampleRate);
+            // Reconnect on filename change, no mapping, OR a STALE INODE: the
+            // producer may have reopened the ring at the SAME filename (new
+            // inode after unlink), leaving our mapping pointed at a dead
+            // inode that returns the pre-reopen ring's OLD audio then
+            // silence. Identity mismatch = treat as stale, rebind to live.
+            bool staleInode = false;
+            if (activeLinkSlots[i].map != nullptr && activeLinkSlots[i].boundId.valid)
+            {
+                const auto cur = LinkShm::pathIdentity(linkResolvedDir + snap.audioFilename);
+                staleInode = cur.valid && cur != activeLinkSlots[i].boundId;
+            }
+            if (activeLinkSlots[i].shmKey != snap.audioFilename
+                || activeLinkSlots[i].map == nullptr || staleInode)
+                connectLinkAudioSlot(i, snap.audioFilename, snap.displayName,
+                                     snap.sampleRate, snap.instanceUid);
         }
         else if (activeLinkSlots[i].map != nullptr)
         {

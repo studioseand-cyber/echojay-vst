@@ -6,6 +6,7 @@
 #include <map>
 
 class ChainHost;   // buildCurrentChainInjection reads the live rack
+namespace LinkShm { struct RackSidecar; }   // Phase R: targeted-injection overload
 
 struct UserInfo {
     juce::String email;
@@ -214,14 +215,30 @@ public:
     { return userInfo.usagePool.present ? userInfo.usagePool.credits : userInfo.credits; }
 
     // Display name of the model behind the assistant, for the input-bar
-    // indicator. Prefers the model that actually handled the latest chat
-    // turn (top-level "modelName" in the /api/chat response), else the free
-    // lane's current model from usagePool ("usagePool.model.name"), else
-    // empty. Server-fed only, never hardcoded client-side.
+    // indicator. Server-fed only, never hardcoded client-side.
+    //
+    // ORDERING IS THE ENTIRE SAFETY OF THIS FUNCTION — do not reorder.
+    //   1. lastChatModelName_        what actually handled the latest turn
+    //                                (top-level "modelName" in /api/chat).
+    //   2. usagePool.modelName       FREE TIER resolves HERE: /api/me sends
+    //                                usagePool only for free (api/me.js:56),
+    //                                and its model.name is the free lane's
+    //                                CURRENT fast model (Haiku-class).
+    //   3. tierModels                always-present for EVERY tier (server
+    //                                contract) — the session-start fallback
+    //                                for PAID tiers, whose /api/me has no
+    //                                usagePool at all (label was empty until
+    //                                the first reply landed).
+    // If (3) ever moves above (2), the free tier's label silently becomes
+    // the PREMIUM model name instead of its fast-model name — tierModels is
+    // never empty, so the bug would not announce itself. Branch order is
+    // most-specific-first by design; a reordering is wrong on its face.
     juce::String currentModelDisplayName() const
     {
-        return lastChatModelName_.isNotEmpty() ? lastChatModelName_
-                                               : userInfo.usagePool.modelName;
+        if (lastChatModelName_.isNotEmpty())          return lastChatModelName_;          // (1)
+        if (userInfo.usagePool.modelName.isNotEmpty())return userInfo.usagePool.modelName;// (2) free tier
+        if (userInfo.tierModels.premium.isNotEmpty()) return userInfo.tierModels.premium; // (3) paid
+        return userInfo.tierModels.chat;                                                  // (3) fallback
     }
 
     // Server-resolved turnType of the LAST chat reply ("chat" /
@@ -231,6 +248,12 @@ public:
     // for any behaviour that depends on what the turn actually was (e.g.
     // gating the prose name-scan chain fallback).
     juce::String getLastResolvedTurnType() const { return lastResolvedTurnType_; }
+
+    // 2.4 dialFlags (26 Jul 2026, DARK): names from the AVAILABLE PLUGINS
+    // feed whose LOCAL map passes the dial-signals threshold. Staged per
+    // send by the editor only when kDialSignalsEnabled; rides the body as
+    // "dialFlags":[...] and clears after the send.
+    void setNextDialFlags(const juce::StringArray& names) { nextDialFlags_ = names; }
     
     // ============ User Settings (synced with web app) ============
 
@@ -291,20 +314,23 @@ public:
     // When present, instructs the model to: choose ONLY from these names, return
     // the chain as a <<<ECHOJAY_CHAIN>>>...<<<END_CHAIN>>> JSON block at the end
     // of the reply (in addition to the normal human-readable explanation).
-    // liveLinkNames (optional, additive): names of live EchoJay Link
-    // instances. When present the model may tag its chain JSON with an
-    // optional top-level "suggestedTarget" — used only to PRE-SELECT the
-    // Build target; sending is always user-initiated. Target-less payloads
-    // behave exactly as before.
-    static juce::String buildChainInjection(const juce::StringArray& availablePlugins,
-                                            const juce::StringArray& liveLinkNames = {});
+    static juce::String buildChainInjection(const juce::StringArray& availablePlugins);
 
     // [CURRENT CHAIN] injection (CHAIN_AI_BUILD_SPEC Phase 1a): a numbered
     // snapshot of the live rack (name, format, bypassed, wet, settings) so
     // the model can see what already exists — the prerequisite for edit
     // intent. Empty string when the rack is empty. Appended to the user turn
     // like the other injections; sendChat strips it from history turns.
+    // The ChainHost form is a thin adapter over the RackSidecar form — ONE
+    // formatter authors the block, so a local and a Link-targeted
+    // [CURRENT CHAIN] can never drift (Phase R). channelLabel empty = the
+    // local rack ("the user's rack right now"); non-empty = that Link's
+    // rack, named in the intro. The "[CURRENT CHAIN" marker prefix is
+    // byte-identical either way (server classifier + history strip key on
+    // it).
     static juce::String buildCurrentChainInjection(const ChainHost& chainHost);
+    static juce::String buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
+                                                   const juce::String& channelLabel);
 
     // Parse the chain block out of an assistant reply.
     // Returns true and fills chainJsonOut if a block (complete or truncated) is present.
@@ -407,6 +433,7 @@ private:
     juce::String deviceId;
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
+    juce::StringArray nextDialFlags_; // see setNextDialFlags(); cleared per send
     int          nextChatBusCount_ = 0;
     bool         nextChatIsExplicitCapture_ = false;   // see stageCapturePayload
     UserInfo userInfo;

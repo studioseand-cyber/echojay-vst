@@ -70,10 +70,53 @@ void LinkProcessor::timerCallback()
     }
 #endif
 
+    // Phase N: adopt a freshly arrived host track name. updateShmState is
+    // the established rename path (re-claim slot, republish displayName);
+    // repeated host renames coalesce through the dirty flag, and a restore
+    // that seeded the same name is a no-op via appliedHostName_.
+    if (hostNameDirty_.exchange(false, std::memory_order_acq_rel))
+    {
+        auto n = getHostTrackName();
+        if (n != appliedHostName_)
+        {
+            appliedHostName_ = n;
+            EchoJay_NSLog(("EJLinkState: host track name \"" + n
+                           + "\" (user name \"" + linkName + "\")").toRawUTF8());
+            updateShmState();
+        }
+    }
+
     pollChainCommand();
     pollControlCommand();
     pollSessionProjectName();
     publishMeterFrame();
+    publishRackSidecar();   // Phase R: revision-gated, usually a no-op
+}
+
+void LinkProcessor::publishRackSidecar()
+{
+    if (instanceUid_.isEmpty()) return;
+    if (resolvedDir.isEmpty())
+    {
+        int err = 0;
+        resolvedDir = LinkShm::resolveDir(err);
+        if (resolvedDir.isEmpty()) return;
+    }
+    const int rev = chainHost.getChainRevision();
+    if (rev == lastPublishedRackRev_) return;
+    lastPublishedRackRev_ = rev;
+
+    LinkShm::RackSidecar rc;
+    rc.valid     = true;
+    rc.uid       = instanceUid_;
+    rc.name      = effectiveDisplayName();
+    rc.revision  = rev;
+    rc.masterWet = chainHost.getMasterWet();
+    for (const auto& s : chainHost.getAllSlotInfos())
+        rc.slots.push_back({ s.name, s.format,
+                             s.settings.substring(0, 200),   // bound file size
+                             s.bypassed, s.wet });
+    LinkShm::writeRackSidecar(resolvedDir, rc);
 }
 
 void LinkProcessor::publishMeterFrame()
@@ -305,8 +348,41 @@ void LinkProcessor::ensureRegistryOpen()
 
 juce::String LinkProcessor::effectiveFilePart() const
 {
+    // Deliberately linkName-only (NOT effectiveDisplayName): a host track
+    // name arriving or changing must never rename the audio ring file —
+    // display is cosmetic, file identity stays stable.
     auto safe = LinkShm::makeSafeFilePart(linkName.trim());
     return safe.isNotEmpty() ? safe : "untitled_" + instanceUid_;
+}
+
+void LinkProcessor::updateTrackProperties(const TrackProperties& props)
+{
+    // ANY thread (AU property listener fires off the message thread), any
+    // number of times, fields optional (AU/AAX send name only; a VST3
+    // colour-only update carries no name). No shm or host calls from here —
+    // stash + flag, timerCallback applies on the message thread.
+    if (!props.name.has_value())
+        return;   // colour-only update: colour is deferred (Phase N scope)
+    const juce::String n = juce::String(*props.name).trim();
+    {
+        const juce::ScopedLock sl(hostNameLock_);
+        if (hostTrackName_ == n) return;
+        hostTrackName_ = n;
+    }
+    hostNameDirty_.store(true, std::memory_order_release);
+}
+
+juce::String LinkProcessor::getHostTrackName() const
+{
+    const juce::ScopedLock sl(hostNameLock_);
+    return hostTrackName_;
+}
+
+juce::String LinkProcessor::effectiveDisplayName() const
+{
+    auto user = linkName.trim();
+    if (user.isNotEmpty()) return user;   // user-typed always wins
+    return getHostTrackName().trim();     // "" -> main plugin shows Untitled N
 }
 
 void LinkProcessor::claimRegistrySlot()
@@ -334,7 +410,7 @@ void LinkProcessor::claimRegistrySlot()
     const juce::String audioFilename = "audio_" + effectiveFilePart() + ".bin";
 
     regSlotIdx = LinkShm::claimSlot(regMap,
-                                     linkName.trim(),
+                                     effectiveDisplayName(),
                                      audioFilename,
                                      instanceUid_,
                                      (float)hostSampleRate,
@@ -1219,6 +1295,7 @@ void LinkProcessor::pollChainCommand()
                 [self, seq](const juce::StringArray& results, int applied, bool aborted)
             {
                 self->resyncChainModelFromHost();
+                self->publishRackSidecar();   // Phase R: edits publish instantly
                 self->updateChainLatency();
                 self->notifyChainModel();
                 juce::String status = aborted ? "stale"
@@ -1298,6 +1375,7 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     obj->setProperty("editorW",  editorW);
     obj->setProperty("editorH",  editorH);
     obj->setProperty("instanceUid", instanceUid_);
+    obj->setProperty("hostTrackName", getHostTrackName());
     // Full hosted chain: identities, order, bypass flags, wet mixes,
     // per-plugin state
     obj->setProperty("chain",    chainModelToVar());
@@ -1329,6 +1407,18 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             genre = obj->getProperty("genre").toString();
         if (obj->getProperty("instanceUid").toString().isNotEmpty())
             instanceUid_ = obj->getProperty("instanceUid").toString();
+        if (obj->hasProperty("hostTrackName"))
+        {
+            // Seed the stash + dirty flag so the restored name shows and
+            // publishes immediately, even in a host that never re-fires the
+            // callback. setStateInformation is not guaranteed message-thread,
+            // so this takes the same stash path as the live callback.
+            {
+                const juce::ScopedLock sl(hostNameLock_);
+                hostTrackName_ = obj->getProperty("hostTrackName").toString();
+            }
+            hostNameDirty_.store(true, std::memory_order_release);
+        }
         if (obj->hasProperty("chainMasterWet"))
             chainHost.setMasterWet((float)(double)obj->getProperty("chainMasterWet"));
 #if ECHOJAY_LINK_STATE_DIAG

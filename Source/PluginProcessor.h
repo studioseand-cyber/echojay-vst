@@ -58,8 +58,14 @@ enum class CaptureState { Idle, Capturing, Complete };
 // Only populated when Links were active during capture.
 struct ChannelMeterData {
     juce::String name;
+    juce::String uid;           // Link instance uid ("" = host) — live-name key
     MeterData    meterData;
     juce::String wavFilePath;   // filled by background save thread
+    // Frames sentinel (capture honesty): -1 = host / not applicable;
+    // 0 = NO frames arrived from this Link during the window (cause unknown,
+    // never a claim about sound); >0 = real audio was received (silent
+    // values are then a genuine fact).
+    int64_t      framesReceived = -1;
 };
 
 struct CaptureSnapshot {
@@ -213,6 +219,21 @@ public:
         juce::String wavFilePath;
     };
     std::vector<ChatEntry> chatHistory;
+    // Editor-lifecycle survival (26 Jul bug): Logic recreates the plugin
+    // editor on every Link<->EchoJay window switch, so editor-instance
+    // state that must survive that boundary lives HERE, like chatHistory.
+    // activeChatId lets a recreated editor re-hydrate the conversation
+    // (full block state) from the workspace once its async load lands;
+    // the chat target pill keeps pointing at the same rack. Message
+    // thread only.
+    juce::String activeChatId;
+    juce::String chatTargetLinkUid;    // "" = local rack (compose target)
+    juce::String chatTargetLinkName;   // display label when uid set
+    // Phase C3: channel tapped but no chat record yet — creation is lazy
+    // at FIRST SEND (a bare tap must not mint an empty record), so the
+    // pending selection holds the channel here until then. Cleared when
+    // any chat activates or the first send converts it into a real chat.
+    juce::String pendingChannelUid;
     juce::StringArray chatRoles, chatContents; // for API context window
 
     // Visual mode state — persisted with DAW session
@@ -410,6 +431,11 @@ public:
     /// is assigned over the FULL set so a given instance keeps the same label
     /// in the Monitor, the send-target menu and the AI context alike.
     std::vector<LinkDisplayEntry> getLinkDisplayList() const;
+    // ONE accessor for a Link channel's display name (Phase N precedence via
+    // getLinkDisplayList) — banner, dropdown, monitor, capture composition
+    // and injections all resolve through THIS, keyed by the stable uid, so
+    // a rename can never leave one surface on a frozen name.
+    juce::String resolveLinkDisplayName(const juce::String& uid) const;
 
     // Consumer diagnostics (message thread, read by editor in paint)
     struct ConsumerDiag {
@@ -443,12 +469,17 @@ private:
         int                  fd     = -1;
         juce::String         shmKey;  // last opened key, message thread
         juce::String         displayName;  // message-thread only, set on connect
+        juce::String         uid;      // Link instance uid — stable identity for
+                                       // live name resolution (message thread)
+        LinkShm::FileIdentity boundId; // dev+inode of the mapped ring; a path
+                                       // now pointing elsewhere = stale ring
         std::atomic<int64_t> framesRead { 0 };
         // Non-copyable due to SpinLock — managed in-place via std::array
     };
     std::array<ActiveLinkSlot, kMaxLinkSlots> activeLinkSlots;
 
-    void connectLinkAudioSlot   (int i, const juce::String& key, const juce::String& displayName, float sr);
+    void connectLinkAudioSlot   (int i, const juce::String& key, const juce::String& displayName,
+                                 float sr, const juce::String& uid);
     void disconnectLinkAudioSlot(int i);
     void disconnectAllLinkSlotsNow();  // destructor
 

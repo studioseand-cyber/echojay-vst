@@ -44,7 +44,30 @@ public:
 
     // Link state (accessed by editor on message thread)
     juce::String      linkName;
-    std::atomic<bool> linkOn    { false };
+    // DEFAULT Active (27 Jul): a freshly inserted Link contributes its
+    // meters/ring immediately instead of needing a hand-tick on every
+    // channel. DEFAULT ONLY — setStateInformation applies a persisted
+    // value whenever the property exists, so a project deliberately saved
+    // inactive still loads inactive. (Projects saved by builds that never
+    // wrote the property adopt this default and come back active —
+    // accepted.) Active gates the METER ENGINE + the shared-memory RING
+    // and meter-frame publication only; the hosted chain keeps processing
+    // audio, the registry heartbeat keeps the Link visible, and remote
+    // control still works while inactive.
+    std::atomic<bool> linkOn    { true };
+
+    // ---- Host track name (Phase N) ----------------------------------------
+    // The DAW-provided channel name. Precedence everywhere a name is shown
+    // or published: user-typed linkName > hostTrackName_ > "" (the main
+    // plugin renders empty as "Untitled N"). The callback never fires in
+    // the constructor, arrives late or never (host-dependent), repeats on
+    // renames, and the AU ContextName listener can fire OFF the message
+    // thread — so writes stash under a lock + dirty flag and the 10 Hz
+    // timer (message thread) applies via the established rename path
+    // (updateShmState re-claim). Colour is VST3-only and deferred.
+    void updateTrackProperties(const TrackProperties& props) override;
+    juce::String getHostTrackName() const;      // any thread
+    juce::String effectiveDisplayName() const;  // the precedence chain
 
     // ---- Built-in gain stage (v0.5.7) ------------------------------------
     // A single wideband gain on the signal path, applied POST-chain and
@@ -303,6 +326,17 @@ private:
     // on THIS — the display name is a label, never an address (unnamed or
     // same-named Links collided and toggles applied to all of them).
     juce::String instanceUid_;
+    // Host track name stash (see the Phase N block above). appliedHostName_
+    // is message-thread-only change detection for the timer's apply pass.
+    mutable juce::CriticalSection hostNameLock_;
+    juce::String hostTrackName_;               // guarded by hostNameLock_
+    std::atomic<bool> hostNameDirty_ { false };
+    juce::String appliedHostName_;
+    // Rack sidecar (Phase R): last ChainHost revision written to
+    // rack-<uid>.json. -1 so the first tick publishes even an empty rack
+    // ("known empty" is a different fact from "rack unknown").
+    int lastPublishedRackRev_ = -1;
+    void publishRackSidecar();
     juce::String effectiveFilePart() const;
     juce::String chainInstanceId() const;
     void pollChainCommand();

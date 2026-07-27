@@ -1,5 +1,6 @@
 #include "EchoJayAPI.h"
 #include "ChainHost.h"    // buildCurrentChainInjection reads the live rack
+#include "LinkShm.h"      // RackSidecar — targeted [CURRENT CHAIN] (Phase R)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
 
 // Defined later in this file (used by both /api/me parse sites)
@@ -717,7 +718,7 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     {
         auto c = contents[i];
         for (auto* marker : { "\n\n[AVAILABLE PLUGINS", "\n\n[USER'S FULL PLUGIN LIST",
-                              "\n\n[CURRENT CHAIN" })
+                              "\n\n[CURRENT CHAIN", "\n\n[TARGET CHANNEL" })
         {
             int cut = c.indexOf(marker);
             if (cut >= 0) c = c.substring(0, cut);
@@ -798,6 +799,13 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     // it for chain turns with a live plugin feed and ignores it elsewhere.
     if (autoDialMode)
         body += ",\"autoDial\":true";
+    if (! nextDialFlags_.isEmpty())
+    {
+        juce::Array<juce::var> arr;
+        for (auto& n : nextDialFlags_) arr.add(n);
+        body += ",\"dialFlags\":" + juce::JSON::toString(juce::var(arr), true);
+        nextDialFlags_.clear();
+    }
 
     // Meter/band payload: EXPLICIT CAPTURE ONLY. Anything staged (or passed
     // via the legacy parameter) without the flag is discarded loudly — a
@@ -831,6 +839,7 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
             body += ",\"busCount\":" + juce::String(nextChatBusCount_);
         // Per-send verification line: turn class + whether a payload rode
         EchoJay_NSLog(("EJChat: send turnType=" + tt
+                       + " autoDial=" + (autoDialMode ? juce::String("on") : juce::String("off"))
                        + (nextChatBusCount_ > 0 ? " busCount=" + juce::String(nextChatBusCount_)
                                                 : juce::String())
                        + " payload=" + (metersBlob.isNotEmpty()
@@ -1547,8 +1556,7 @@ juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
     return block;
 }
 
-juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availablePlugins,
-                                             const juce::StringArray& liveLinkNames)
+juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availablePlugins)
 {
     if (availablePlugins.isEmpty()) return {};
 
@@ -1596,53 +1604,52 @@ juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availableP
           << "  This is machine data written after the prose; it must fit in the remaining response budget.\n"
           << "- Write prose first (full technical detail), then append the compact block as the final output.";
 
-    // Optional, additive: live Link targets for suggestedTarget tagging.
-    // Old clients / target-less blocks behave exactly as before.
-    if (!liveLinkNames.isEmpty())
-    {
-        juce::String linkList;
-        for (int i = 0; i < liveLinkNames.size(); ++i)
-        {
-            if (i > 0) linkList += ", ";
-            linkList += "\"" + liveLinkNames[i] + "\"";
-        }
-        block << "\n- LIVE ECHOJAY LINK TARGETS: the user also has EchoJay Link "
-              << "instances on other tracks named: " << linkList << ". "
-              << "If the chain you propose is clearly meant for one of those tracks "
-              << "(e.g. the user asked about their drum bus and a Link named \"Drums\" exists), "
-              << "add an optional top-level field \"suggestedTarget\":\"<exact Link name>\" "
-              << "to the block JSON, alongside \"chain\". Omit it when the chain is for "
-              << "the current track. This only pre-selects a build target; the user always "
-              << "confirms before anything is built.";
-    }
     return block;
 }
 
 juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
 {
-    auto slots = chainHost.getAllSlotInfos();
-    if (slots.empty()) return {};
+    // Adapter: fill a RackSidecar from the live local rack and let the ONE
+    // formatter below author the block (Phase R anti-drift discipline).
+    LinkShm::RackSidecar rack;
+    rack.valid     = true;
+    rack.revision  = chainHost.getChainRevision();
+    rack.masterWet = chainHost.getMasterWet();
+    for (const auto& s : chainHost.getAllSlotInfos())
+        rack.slots.push_back({ s.name, s.format, s.settings, s.bypassed, s.wet });
+    return buildCurrentChainInjection(rack, juce::String());
+}
 
-    // Numbered 1-BASED — the numbering users naturally use ("the first
+juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
+                                                    const juce::String& channelLabel)
+{
+    if (!rack.valid || rack.slots.empty()) return {};
+
+    // Numbered 1-BASED \xe2\x80\x94 the numbering users naturally use ("the first
     // slot is slot 1") and therefore the numbering the model must echo in
     // prose and edit ops. parseChainEditOps is the single point converting
     // back to internal 0-based. Kept compact: this rides every
     // plugin-relevant turn while a chain exists, so no prose padding. wet
     // reported only when it departs from fully wet; settings clipped so one
     // verbose slot cannot bloat the turn.
+    const juce::String owner = channelLabel.isEmpty()
+        ? juce::String("the user's rack right now")
+        : "the rack on the user's \"" + channelLabel + "\" Link channel right now";
     juce::String block;
-    block << "\n\n[CURRENT CHAIN — the user's rack right now, in signal-flow "
+    block << juce::String::fromUTF8("\n\n[CURRENT CHAIN \xe2\x80\x94 ") << owner
+          << ", in signal-flow "
           << "order; slot numbers are 1-based (the first slot is slot 1). "
           << "When the user asks to change THIS chain (add/remove/swap/"
           << "reorder), treat it as an edit of these slots, not a new chain "
           << "from scratch. Every slot listed here is loaded and running and "
           << "may ALWAYS be referenced and edited (remove/move/bypass/"
           << "replace), regardless of AVAILABLE PLUGINS membership or any "
-          << "auto-dial restriction — those only govern which plugins may "
+          << "auto-dial restriction " << juce::String::fromUTF8("\xe2\x80\x94")
+          << " those only govern which plugins may "
           << "fill NEW slots.]\n";
-    for (int i = 0; i < (int)slots.size(); ++i)
+    for (int i = 0; i < (int)rack.slots.size(); ++i)
     {
-        const auto& s = slots[(size_t)i];
+        const auto& s = rack.slots[(size_t)i];
         block << (i + 1) << ": \"" << s.name << "\" (" << s.format;
         if (s.bypassed) block << ", BYPASSED";
         if (s.wet < 0.995f)
@@ -1650,13 +1657,14 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
         block << ")";
         auto settings = s.settings.trim();
         if (settings.isNotEmpty())
-            block << " — settings: "
-                  << (settings.length() > 120 ? settings.substring(0, 120) + "…" : settings);
+            block << juce::String::fromUTF8(" \xe2\x80\x94 settings: ")
+                  << (settings.length() > 120
+                        ? settings.substring(0, 120) + juce::String::fromUTF8("\xe2\x80\xa6")
+                        : settings);
         block << "\n";
     }
-    const float masterWet = chainHost.getMasterWet();
-    if (masterWet < 0.995f)
-        block << "Master chain wet/dry: " << juce::roundToInt(masterWet * 100.0f) << "%\n";
+    if (rack.masterWet < 0.995f)
+        block << "Master chain wet/dry: " << juce::roundToInt(rack.masterWet * 100.0f) << "%\n";
     return block;
 }
 

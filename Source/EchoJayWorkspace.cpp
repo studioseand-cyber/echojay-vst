@@ -156,7 +156,9 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
                                             const juce::String& editJson,
                                             const juce::String& altPrompt,
                                             const juce::String& altLabel,
-                                            const juce::String& displayText)
+                                            const juce::String& displayText,
+                                            const juce::String& editTargetUid,
+                                            const juce::String& editTargetName)
 {
     for (auto& c : chats)
     {
@@ -174,6 +176,8 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
             m.editAltPrompt = altPrompt;
             m.editAltLabel  = altLabel;
             m.displayText   = displayText;
+            m.editTargetUid  = editTargetUid;
+            m.editTargetName = editTargetName;
             c.messages.push_back(std::move(m));
             return first;
         }
@@ -194,6 +198,8 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
     m.editAltPrompt = altPrompt;
     m.editAltLabel  = altLabel;
     m.displayText   = displayText;
+    m.editTargetUid  = editTargetUid;
+    m.editTargetName = editTargetName;
     c.messages.push_back(std::move(m));
     chats.insert(chats.begin(), std::move(c));
     return true; // first message
@@ -712,6 +718,8 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
         c.albumId       = obj->getProperty("albumId").toString();
         c.revisionCount = (int)obj->getProperty("revisionCount");
         c.pinned        = (bool)obj->getProperty("pinned");
+        c.linkUid       = obj->getProperty("linkUid").toString();      // absent -> "" = main chat
+        c.linkNameSnap  = obj->getProperty("linkNameSnap").toString();
         c.pinnedAt      = obj->getProperty("pinnedAt").toString();
 
         if (auto* msgs = obj->getProperty("messages").getArray())
@@ -735,6 +743,8 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
                     msg.editAltPrompt = mObj->getProperty("_editAlt").toString();
                     msg.editAltLabel  = mObj->getProperty("_editAltLbl").toString();
                     msg.displayText   = mObj->getProperty("_display").toString();
+                    msg.editTargetUid  = mObj->getProperty("_editTgtUid").toString();
+                    msg.editTargetName = mObj->getProperty("_editTgtName").toString();
                     c.messages.push_back(std::move(msg));
                 }
             }
@@ -792,6 +802,9 @@ WsReview EchoJayWorkspace::parseReview(const juce::var& v)
         r.date        = obj->getProperty("date").toString();
         r.audioUrl    = obj->getProperty("audioUrl").toString();
         r.origin      = obj->getProperty("origin").toString();
+        r.linkUid     = obj->getProperty("linkUid").toString();   // absent -> "" = main capture
+        r.linkNameSnap = obj->getProperty("linkNameSnap").toString();
+        r.channelDataScoped = (bool)obj->getProperty("channelDataScoped");
         r.waveform    = obj->getProperty("waveform");  // keep raw
 
         auto dataVar = obj->getProperty("data");
@@ -890,6 +903,90 @@ static void stripUnderscoreKeys(juce::DynamicObject& obj)
         obj.removeProperty(k);
 }
 
+WsChat* EchoJayWorkspace::findChatById(const juce::String& id)
+{
+    if (id.isEmpty()) return nullptr;
+    for (auto& c : chats)
+        if (c.id == id) return &c;
+    return nullptr;
+}
+
+bool EchoJayWorkspace::runRoundTripSelfTest()
+{
+#if ! (JUCE_DEBUG || defined(EJ_SELFTEST))
+    // Release: test code must not ship — no work, no stderr. EJ_SELFTEST is
+    // defined ONLY by tools/workspace_roundtrip_test/build_and_run.sh (the
+    // console harness); no CMake target defines it, so release plugin
+    // builds always take this stub.
+    //
+    // ODR GUARD RAIL: the harness compiles THIS translation unit with
+    // EJ_SELFTEST while the rest of the static library was built without
+    // it. That is benign ONLY while the define gates a function BODY in a
+    // .cpp. EJ_SELFTEST must NEVER appear in a header, and must never gate
+    // anything that changes struct layout, class size, or vtable shape —
+    // that mismatch would present as random memory corruption at runtime,
+    // not a link error. Body-only gating in a .cpp is the sole sanctioned
+    // use.
+    return true;
+#else
+    static bool done = false, lastResult = false;
+    if (done) return lastResult;
+    done = true;
+
+    auto ser = [](const WsChat& c) { return juce::JSON::toString(chatToVar(c), true); };
+
+    WsChat pre;                       // shaped like every pre-C1 record
+    pre.id = "t1"; pre.title = "pre-C1"; pre.created = "2026-01-01T00:00:00Z";
+    pre.trackName = "Proj"; pre.albumId = "alb"; pre.revisionCount = 2; pre.pinned = true;
+    WsMessage m; m.role = "user"; m.content = "hello"; pre.messages.push_back(m);
+
+    WsChat chan = pre;                // identical but a channel chat
+    chan.id = "t2"; chan.linkUid = "abc123def0"; chan.linkNameSnap = "Drums";
+
+    const auto s1  = ser(pre);
+    const auto s1b = ser(parseChat(juce::JSON::parse(s1)));
+    const auto s2  = ser(chan);
+    const auto rt2 = parseChat(juce::JSON::parse(s2));
+    const auto s2b = ser(rt2);
+
+    const bool preStable  = s1 == s1b;
+    const bool preNoKeys  = !s1.contains("linkUid") && !s1.contains("linkNameSnap");
+    const bool chanStable = s2 == s2b;
+    const bool chanFields = rt2.linkUid == "abc123def0" && rt2.linkNameSnap == "Drums";
+
+    // WsReview round-trip (Phase C item 3)
+    auto serR = [](const WsReview& r) { return juce::JSON::toString(reviewToVar(r), true); };
+    WsReview mainRev;   // pre-C shape: no linkUid
+    mainRev.id = "r1"; mainRev.label = "mix v1"; mainRev.fileName = "mix_v1.wav";
+    mainRev.channelType = "FullMix"; mainRev.date = "2026-01-01T00:00:00Z";
+    WsReview chanRev = mainRev;   // per-channel capture
+    chanRev.id = "r2"; chanRev.linkUid = "abc123def0"; chanRev.linkNameSnap = "Vocals";
+    chanRev.channelDataScoped = true;
+    const auto sr1  = serR(mainRev);
+    const auto sr1b = serR(parseReview(juce::JSON::parse(sr1)));
+    const auto sr2  = serR(chanRev);
+    const auto rrt2 = parseReview(juce::JSON::parse(sr2));
+    const bool revMainStable = sr1 == sr1b;
+    const bool revMainNoKey  = !sr1.contains("linkUid");
+    const bool revChanStable = sr2 == serR(rrt2);
+    const bool revChanField  = rrt2.linkUid == "abc123def0" && rrt2.linkNameSnap == "Vocals"
+                            && rrt2.channelDataScoped == true;
+    const bool revMainNoSnap = !sr1.contains("linkNameSnap")
+                            && !sr1.contains("channelDataScoped");
+
+    lastResult = preStable && preNoKeys && chanStable && chanFields
+              && revMainStable && revMainNoKey && revChanStable && revChanField && revMainNoSnap;
+    std::fprintf(stderr,
+        "EJWorkspace selftest: %s (preStable=%d preNoKeys=%d chanStable=%d chanFields=%d "
+        "revMainStable=%d revMainNoKey=%d revChanStable=%d revChanField=%d revMainNoSnap=%d)\n",
+        lastResult ? "PASS" : "FAIL",
+        (int)preStable, (int)preNoKeys, (int)chanStable, (int)chanFields,
+        (int)revMainStable, (int)revMainNoKey, (int)revChanStable, (int)revChanField,
+        (int)revMainNoSnap);
+    return lastResult;
+#endif
+}
+
 juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
 {
     auto* obj = new juce::DynamicObject();
@@ -902,6 +999,12 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
     obj->setProperty("pinned",        c.pinned);   // must survive the sync round-trip
     if (c.pinnedAt.isNotEmpty())
         obj->setProperty("pinnedAt",  c.pinnedAt);
+    // Phase C1: written only when non-empty — a main chat's serialised
+    // form is byte-identical to pre-C1 (silent migration guarantee).
+    if (c.linkUid.isNotEmpty())
+        obj->setProperty("linkUid",      c.linkUid);
+    if (c.linkNameSnap.isNotEmpty())
+        obj->setProperty("linkNameSnap", c.linkNameSnap);
 
     juce::Array<juce::var> msgs;
     for (auto& m : c.messages)
@@ -939,6 +1042,10 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
             mObj->setProperty("_editAltLbl", m.editAltLabel);
         if (m.displayText.isNotEmpty())
             mObj->setProperty("_display", m.displayText);
+        if (m.editTargetUid.isNotEmpty())
+            mObj->setProperty("_editTgtUid", m.editTargetUid);
+        if (m.editTargetName.isNotEmpty())
+            mObj->setProperty("_editTgtName", m.editTargetName);
         msgs.add(juce::var(mObj));
     }
     obj->setProperty("messages", juce::var(msgs));
@@ -983,6 +1090,12 @@ juce::var EchoJayWorkspace::reviewToVar(const WsReview& r)
     obj->setProperty("date",        r.date);
     obj->setProperty("audioUrl",    r.audioUrl);
     obj->setProperty("origin",      r.origin);
+    if (r.linkUid.isNotEmpty())
+        obj->setProperty("linkUid", r.linkUid);   // main captures stay byte-identical
+    if (r.linkNameSnap.isNotEmpty())
+        obj->setProperty("linkNameSnap", r.linkNameSnap);
+    if (r.channelDataScoped)
+        obj->setProperty("channelDataScoped", true);
     obj->setProperty("waveform",    r.waveform);
 
     auto* d = new juce::DynamicObject();
