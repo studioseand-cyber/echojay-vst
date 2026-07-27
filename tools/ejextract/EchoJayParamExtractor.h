@@ -8,13 +8,18 @@
     plugin's own display string across a sweep of normalized values, and builds
     a JSON sample object (fingerprint, identity, per-param sweep tables).
 
-  Key safety property:
-    Discovery is READ-ONLY. It never calls setValue on any parameter. It only
-    calls getText(normalisedValue), which asks the plugin what it WOULD display
-    at a given normalized value without moving the control. Per the VST3/AU
-    value-to-string contract this is stateless, so a sweep cannot disturb the
-    plugin's state or audio. The only physically risky moment (instantiation)
-    happens in your scanner, not here.
+  Key safety property (amended 27 Jul 2026):
+    Discovery is READ-ONLY by default: getText(normalisedValue) asks the
+    plugin what it WOULD display without moving the control. But some vendors
+    (Valhalla, elysia, Vertigo, SPL class) ignore the argument and format
+    their CURRENT state, which makes every sweep point read identically
+    (a "flat" sweep) and yields no usable map. For exactly those params a
+    conditional SET-THEN-READ retry runs: setValue(n), read
+    getCurrentValueAsText(), restore. Mutation is bracketed by a full
+    getStateInformation snapshot/restore, and a readback-verify step (two
+    distinct set points must produce distinct texts) stops us from mutating
+    plugins that ignore both paths. Only flat params ever pay this cost;
+    every param records method: "gettext" | "setread" for provenance.
 
   Integration seams (marked SEAM below):
     1. Identity: align makeIdentity() with your canonical plugin DB scheme so
@@ -38,12 +43,15 @@ namespace echojay
 
 struct ExtractorConfig
 {
-    int   extractorVersion   = 3;      // bump to trigger server re-harvest later
+    int   extractorVersion   = 5;      // 5 = machine_id stamped in samples, unextractable surfaced in run logs (4 = set-then-read retry)
     int   coarsePoints       = 11;     // initial uniform sweep resolution
     int   maxRefineDepth     = 4;      // adaptive subdivision depth for curves
     int   maxSamplesPerParam = 64;     // cap upload size
     float curvatureTol       = 0.02f;  // relative deviation before we subdivide
     int   maxStringLen       = 256;    // for getName / getText / getLabel
+    bool  retryFlatWithSetRead = true; // flat params only; never the whole sweep
+    int   setReadPoints      = 21;     // uniform points for the set-read sweep
+    juce::String machineId;            // stamped into samples when set (provenance)
 };
 
 // ---------------------------------------------------------------------------
@@ -185,6 +193,57 @@ inline juce::Array<SweepPoint> sweepDiscrete (juce::AudioProcessorParameter& par
 }
 
 // ---------------------------------------------------------------------------
+// Flat-sweep predicate + set-then-read retry (27 Jul 2026).
+// A flat sweep (>=2 points, one distinct text) carries no value information:
+// it is the signature of a plugin whose text path ignores the queried value.
+// ---------------------------------------------------------------------------
+inline bool sweepIsFlat (const juce::Array<SweepPoint>& sweep)
+{
+    if (sweep.size() < 2) return false;
+    for (int i = 1; i < sweep.size(); ++i)
+        if (sweep.getReference (i).t != sweep.getReference (0).t) return false;
+    return true;
+}
+
+// Set-then-read sweep for ONE parameter. Readback-verify first: two distinct
+// set points must yield distinct texts, else verified=false and the plugin
+// is not mutated further (some ignore both text paths; retrying those is
+// wasted risk). Restores the parameter's own value before returning; the
+// caller additionally restores full plugin state.
+inline juce::Array<SweepPoint> sweepSetRead (juce::AudioProcessorParameter& param,
+                                             const ExtractorConfig& cfg,
+                                             bool& verified)
+{
+    auto readAt = [&] (float n) -> juce::String
+    {
+        param.setValue (n);
+        return param.getCurrentValueAsText().substring (0, cfg.maxStringLen);
+    };
+
+    const float original = param.getValue();
+    const auto t0 = readAt (0.0f);
+    const auto t1 = readAt (1.0f);
+    verified = (t0 != t1);
+    juce::Array<SweepPoint> out;
+    if (! verified)
+    {
+        param.setValue (original);
+        return out;
+    }
+
+    int pts = juce::jmax (2, cfg.setReadPoints);
+    if (param.isDiscrete())
+        pts = juce::jlimit (2, 256, param.getNumSteps());
+    for (int i = 0; i < pts; ++i)
+    {
+        const float n = (float) i / (float) (pts - 1);
+        out.add ({ n, readAt (n) });
+    }
+    param.setValue (original);
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // SEAM 1: identity. Align this with your canonical plugin DB.
 // ---------------------------------------------------------------------------
 inline juce::DynamicObject::Ptr makeIdentity (juce::AudioPluginInstance& plugin,
@@ -230,6 +289,16 @@ inline juce::var extractSample (juce::AudioPluginInstance& plugin,
     auto identity = makeIdentity (plugin, params.size());
     auto fp = makeFingerprint (identity);
 
+    // Full-state snapshot BEFORE anything: the set-then-read retry moves
+    // parameters, and although each one restores its own value, a full
+    // restore guarantees the instance leaves exactly as it arrived even if
+    // moving one control side-effected another (linked params, macros).
+    juce::MemoryBlock stateBefore;
+    if (cfg.retryFlatWithSetRead)
+        plugin.getStateInformation (stateBefore);
+    bool mutated = false;
+    bool anyUsable = false;
+
     juce::Array<juce::var> paramArray;
 
     for (auto* p : params)
@@ -247,6 +316,25 @@ inline juce::var extractSample (juce::AudioPluginInstance& plugin,
         auto sweep = p->isDiscrete() ? sweepDiscrete   (*p, cfg)
                                      : sweepContinuous (*p, cfg);
 
+        // Conditional set-then-read: ONLY when the read-only sweep came
+        // back flat. method records provenance for map-building.
+        juce::String method = "gettext";
+        if (cfg.retryFlatWithSetRead && sweepIsFlat (sweep))
+        {
+            bool verified = false;
+            auto retried = sweepSetRead (*p, cfg, verified);
+            mutated = true;
+            if (verified && ! sweepIsFlat (retried))
+            {
+                sweep = retried;
+                method = "setread";
+            }
+            else
+                obj->setProperty ("unextractable", true); // flat via BOTH paths
+        }
+        if (sweep.size() >= 2 && ! sweepIsFlat (sweep))
+            anyUsable = true;
+
         juce::Array<juce::var> sweepArr;
         for (auto& sp : sweep)
         {
@@ -256,14 +344,24 @@ inline juce::var extractSample (juce::AudioPluginInstance& plugin,
             sweepArr.add (juce::var (pt));
         }
         obj->setProperty ("sweep", sweepArr);
+        obj->setProperty ("method", method);
 
         paramArray.add (juce::var (obj));
     }
+
+    if (mutated && stateBefore.getSize() > 0)
+        plugin.setStateInformation (stateBefore.getData(), (int) stateBefore.getSize());
 
     auto* sample = new juce::DynamicObject();
     sample->setProperty ("fp",       fp);
     sample->setProperty ("identity", juce::var (identity.get()));
     sample->setProperty ("params",   paramArray);
+    sample->setProperty ("extractor_version", cfg.extractorVersion);
+    if (cfg.machineId.isNotEmpty())
+        sample->setProperty ("machine_id", cfg.machineId);
+    // all_flat: nothing on this plugin produced a usable (value-bearing)
+    // sweep in either method. Downstream gates skip these entirely.
+    sample->setProperty ("all_flat", ! anyUsable && paramArray.size() > 0);
     return juce::var (sample);
 }
 
