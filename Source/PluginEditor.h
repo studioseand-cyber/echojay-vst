@@ -1881,6 +1881,16 @@ private:
     // no-channel state genuinely means both "this EchoJay's rack" (builds)
     // and "the whole project" (analysis/capture) — one label, one state.
     juce::String mainContextLabel() const;
+    // Item 2: material context the model reasons about. Channel chat -> the
+    // channel's resolved name (let the model infer the material, never
+    // classify client-side). Main chat -> the header material hint.
+    juce::String materialContextName(const juce::String& mainDefault) const;
+    // Item 3: capture-button width authored in resized() (captureBtnMaxW_);
+    // the state block fits the label to it, truncating the CHANNEL NAME and
+    // keeping "Capture" (the part that says what the button does). Decoupled
+    // via the stored width so the timer and resized() never fight the text.
+    int captureBtnMaxW_ = 64;
+    juce::String fitCaptureLabel(const juce::String& full) const;
     // Reset to the clean main state (no active chat, no pending, no router
     // selection). Selecting the main entry in the dropdown and New chat
     // from an empty channel context both come through HERE — the main

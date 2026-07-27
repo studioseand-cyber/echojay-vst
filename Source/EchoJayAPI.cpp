@@ -1296,8 +1296,18 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     prompt += "If the conversation contains NO capture data: do not describe or characterise the mix's loudness, dynamics, stereo image, tonal balance, or any metric in any way - you have no data at all. Do not guess, estimate, or speak in general terms about how it probably measures. Instead, in one short sentence invite the user to hit Capture so you can look at real numbers, then answer anything else they asked.\n\n";
 
     
-    // Channel type context — tells AI what kind of audio this is and what to focus on
-    if (channelType != "Mix Bus" && channelType != "Master Bus")
+    // Channel type context — tells AI what kind of audio this is and what to
+    // focus on. Item 2 fix: the Mix/Master Bus case is no longer SILENT — it
+    // used to skip this block entirely, so the model was told nothing about
+    // the material and would ask "is this a vocal, a bus, a synth?" even
+    // though the user had set Mix Bus. It now states the full-mix material;
+    // only the element-specific FOCUS stays gated to non-bus material.
+    if (channelType == "Mix Bus" || channelType == "Master Bus")
+    {
+        prompt += "MATERIAL: the FULL MIX (" + channelType + "). Review it as a "
+                  "complete mix, not a single element.\n\n";
+    }
+    else
     {
         prompt += "CHANNEL TYPE: \"" + channelType + "\"\n";
         prompt += "This is NOT a full mix. Focus your feedback on what matters for this specific element.\n";

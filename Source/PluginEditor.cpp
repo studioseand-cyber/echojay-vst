@@ -5006,7 +5006,7 @@ void EchoJayEditor::runAICompare()
     processorRef.chatContents.add(compareContent);
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
-        processorRef.getEffectiveChannelName(), processorRef.getGenre(),
+        materialContextName(processorRef.getEffectiveChannelName()), processorRef.getGenre(),
         processorRef.getPluginScanner().getPluginSummary());
 
     // SafePointer guard. The API's alive flag protects the API object's
@@ -5025,20 +5025,43 @@ void EchoJayEditor::runAICompare()
         [safeThis](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
             safeThis->chatLoading = false;
-            // 3a: compare replies may offer a chain change as an ASK block
-            // (only block allowed on analysis turns; see capture callback)
+            // ITEM 0 FIX (sibling of the capture path): a compare turn can
+            // also carry a CHAIN / CHAIN_EDIT / GAIN block, so extract the
+            // SAME set the chat path does or the raw <<<ECHOJAY_CHAIN>>>
+            // leaks as literal text.
             juce::String visibleReply = reply;
-            juce::String askJson;
-            if (success && EchoJayAPI::extractAskBlock(visibleReply, askJson))
-                EchoJay_NSLog("EJChat: ASK block received (compare turn)");
+            juce::String askJson, chainJson, gainJson, editJson;
+            if (success)
+            {
+                EchoJayAPI::extractChainBlock(visibleReply, chainJson);
+                EchoJayAPI::extractGainBlock(visibleReply, gainJson);
+                EchoJayAPI::extractAskBlock(visibleReply, askJson);
+                EchoJayAPI::extractChainEditBlock(visibleReply, editJson);
+            }
             ChatMsg cm;
-            cm.role    = "assistant";
-            cm.content = visibleReply;
-            cm.askData = askJson;
+            cm.role      = "assistant";
+            cm.content   = visibleReply;
+            cm.askData   = askJson;
+            cm.chainData = chainJson;
+            cm.gainData  = gainJson;
+            cm.editData  = editJson;
+            if (editJson.isNotEmpty())
+            {
+                const juce::String cUid = safeThis->activeChatLinkUid();
+                if (cUid.isNotEmpty())
+                {
+                    cm.editTargetUid  = cUid;
+                    cm.editTargetName = safeThis->channelDisplayLabel(cUid);
+                    auto rack = safeThis->readLinkRackSidecar(cUid);
+                    cm.editBaseRevision = rack.valid ? rack.revision : -1;
+                }
+                else
+                    cm.editBaseRevision = safeThis->processorRef.getChainHost().getChainRevision();
+            }
             safeThis->chatMessages.push_back(cm);
             safeThis->processorRef.chatHistory.push_back({"assistant", visibleReply});
             if (success) { safeThis->processorRef.chatRoles.add("assistant"); safeThis->processorRef.chatContents.add(visibleReply); }
-            if (askJson.isNotEmpty())
+            if (askJson.isNotEmpty() || chainJson.isNotEmpty() || editJson.isNotEmpty())
                 safeThis->resized();
             safeThis->repaint();
         });
@@ -7233,7 +7256,13 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                 cm.reviewId = rv.id;
                 if (rv.label.isNotEmpty() && cm.content.isEmpty())
                     cm.content = rv.label;
-                if (rv.waveform.isArray())
+                // ITEM 4 (honest interim): a genuinely channel-scoped review's
+                // stored waveform + WAV are the HOST's (per-channel audio isn't
+                // routed yet). Show no picture and offer no playback rather
+                // than the wrong ones. Pre-fix channel records (no marker) are
+                // full captures, so they keep their waveform.
+                const bool channelReview = rv.channelDataScoped;
+                if (rv.waveform.isArray() && !channelReview)
                 {
                     for (int wi = 0; wi < rv.waveform.size(); ++wi)
                     {
@@ -7264,7 +7293,7 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                 // uses via resolveSlotWavPath), fall back to index.json lookup.
                 // This keeps chat and Compare aligned on the same resolution logic.
                 auto tryFile = [&](const juce::String& name) -> bool {
-                    if (name.isEmpty()) return false;
+                    if (name.isEmpty() || channelReview) return false;   // ITEM 4: no host playback
                     juce::File f = captureDir.getChildFile(name);
                     if (!f.existsAsFile()) return false;
                     cm.wavFilename = name;
@@ -11801,20 +11830,25 @@ void EchoJayEditor::resized()
         channelTypeBox.setBounds(tx, ty, 100, bh); tx += 104;
         genreBox.setBounds(tx, ty, 95, bh); tx += 99;
         projectInput.setBounds(tx, ty, 90, bh); tx += 94;
-        captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
+        // ITEM 3: plugin count BEFORE the capture button, and the capture
+        // button sized to its label (channel name no longer truncates to
+        // "Capture Vo..."). scanBtn is the fixed anchor; the capture button
+        // takes the room between it and the detected label, clamped, and the
+        // state block truncates the channel name via captureBtnMaxW_.
+        scanBtn.setBounds(tx, ty, 78, bh); tx += 82;
+        const int detLabW = 140;
+        const int rightEdge = b.getWidth() - detLabW - 12;   // before detected label
+        captureBtnMaxW_ = juce::jlimit(64, 240, rightEdge - tx);
+        juce::Font cf(juce::FontOptions(13.0f, juce::Font::bold));
+        const int wantW = cf.getStringWidth(captureBtn.getButtonText()) + 20;
+        const int capW = juce::jlimit(64, captureBtnMaxW_, wantW);
+        captureBtn.setBounds(tx, ty, capW, bh); tx += capW + 4;
     }
-    
+
     if (compactMode)
     {
-        // Hide full-mode-only top bar buttons
         scanBtn.setBounds(0, -20, 1, 1);
         abSyncBtn.setBounds(-100, -100, 1, 1);
-    }
-    else
-    {
-        // Plugin count follows Capture directly (Compare/Settings header
-        // buttons removed — they live in the tab strip)
-        scanBtn.setBounds(tx, ty, 78, bh); tx += 82;
     }
     
     // Detected label — fixed position in top-right, right-aligned
@@ -12829,7 +12863,7 @@ void EchoJayEditor::timerCallback()
     }
 
     if (state == CaptureState::Capturing) {
-        captureBtn.setButtonText("Stop");
+        captureBtn.setButtonText(fitCaptureLabel("Stop"));
         captureBtn.setColour(juce::TextButton::buttonColourId, C::red);
         float dur = processorRef.getCaptureDuration();
         durationLabel.setText(juce::String::formatted("%d:%02d", (int)dur / 60, (int)dur % 60), juce::dontSendNotification);
@@ -12842,9 +12876,9 @@ void EchoJayEditor::timerCallback()
         // short (channel name only, "Capture" bare = full) so the header
         // layout never breaks.
         const juce::String capUid = effectiveChannelUid();
-        captureBtn.setButtonText(capUid.isNotEmpty()
+        captureBtn.setButtonText(fitCaptureLabel(capUid.isNotEmpty()
             ? ("Capture " + channelDisplayLabel(capUid))
-            : juce::String("Capture"));
+            : juce::String("Capture")));
         captureBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
         statusLabel.setText(state == CaptureState::Complete ? "Complete" : "", juce::dontSendNotification);
 
@@ -13050,8 +13084,16 @@ void EchoJayEditor::timerCallback()
             displayCm.content  = passName;
             displayCm.reviewId = reviewId;
             displayCm.origin   = "plugin";
-            displayCm.hasWaveform = !frozenWaveform.empty();
-            displayCm.waveform    = frozenWaveform;
+            // ITEM 4 (honest interim): the frozen waveform + saved WAV are the
+            // HOST's audio. A channel capture must NOT show them (numbers say
+            // the channel, picture/sound would say the full mix). Per-channel
+            // audio exists (lcc WAV) but routing it needs the async-save
+            // handshake + a per-channel thumbnail (not built this pass). Until
+            // then: no picture, no playback for a channel capture.
+            const bool captureIsChannel = activeChatLinkUid().isNotEmpty();
+            displayCm.hasWaveform = !captureIsChannel && !frozenWaveform.empty();
+            displayCm.waveform    = captureIsChannel ? std::vector<WaveformRecorder::ThumbnailPoint>{}
+                                                     : frozenWaveform;
             displayCm.durationSeconds = snap.durationSeconds;
             // ITEM 1: the live card's LUFS must match the record + prose. For a
             // channel capture, read the channel's own integrated (or leave it
@@ -13068,7 +13110,7 @@ void EchoJayEditor::timerCallback()
                         break;
                     }
             }
-            if (savedPath.isNotEmpty())
+            if (savedPath.isNotEmpty() && !captureIsChannel)   // ITEM 4: no host playback on a channel card
             {
                 displayCm.wavFilename = juce::File(savedPath).getFileName();
                 displayCm.wavFilePath = savedPath;
@@ -14407,6 +14449,27 @@ void EchoJayEditor::refreshChannelBannerCache()
                     + (chanBannerLive_ ? juce::String() : juce::String(" (offline)"));
 }
 
+juce::String EchoJayEditor::fitCaptureLabel(const juce::String& full) const
+{
+    juce::Font cf(juce::FontOptions(13.0f, juce::Font::bold));
+    if (cf.getStringWidth(full) + 20 <= captureBtnMaxW_) return full;
+    if (!full.startsWith("Capture ")) return full;   // "Stop" etc. never truncates
+    const juce::String base = "Capture ";
+    juce::String name = full.substring(base.length());
+    const juce::String ell = juce::String::fromUTF8("\xe2\x80\xa6");
+    while (name.length() > 1
+           && cf.getStringWidth(base + name + ell) + 20 > captureBtnMaxW_)
+        name = name.dropLastCharacters(1);
+    return base + name + ell;
+}
+
+juce::String EchoJayEditor::materialContextName(const juce::String& mainDefault) const
+{
+    if (auto uid = effectiveChannelUid(); uid.isNotEmpty())
+        return channelDisplayLabel(uid);   // the channel IS the material
+    return mainDefault;
+}
+
 juce::String EchoJayEditor::mainContextLabel() const
 {
     // ITEM 1: the fixed constant, never getEffectiveChannelName() (that
@@ -15016,7 +15079,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     bumpMonthlyStat("chats");   // THIS MONTH card (local counter)
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
-        processorRef.getEffectiveChannelName(), processorRef.getGenre(),
+        materialContextName(processorRef.getEffectiveChannelName()), processorRef.getGenre(),
         processorRef.getPluginScanner().getPluginSummary());
 
     // usage-v2: no meter blob on plain chat turns (see above). turnType is
@@ -17226,7 +17289,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     processorRef.chatContents.add(captureContent);
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
-        ch, processorRef.getGenre(),
+        materialContextName(ch), processorRef.getGenre(),
         processorRef.getPluginScanner().getPluginSummary());
 
     // Capture turns attach the snapshot's meter blob (identical JSON shape,
@@ -17247,29 +17310,65 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                 return;
             safeThis2->chatLoading = false;
             safeThis2->clearStageStatus();
-            // 3a: analysis replies may carry an evidence-backed offer as an
-            // ASK block (the ONLY block allowed on analysis turns — the
-            // server note forbids CHAIN/CHAIN_EDIT here, so ASK extraction
-            // alone is complete, not partial).
+            // ITEM 0/1 FIX: a capture turn can carry a CHAIN / CHAIN_EDIT /
+            // GAIN block too (a channel-chat capture rides the plugin feed +
+            // [CURRENT CHAIN], so the model proposes a chain). This path used
+            // to extract ONLY the ASK block, on the stale assumption that
+            // analysis turns forbid chain blocks — so the raw
+            // <<<ECHOJAY_CHAIN>>> leaked as literal text and Build was
+            // unreachable from a capture. Extract the SAME blocks the chat
+            // path does; the card + Build button then render, and Build
+            // routes to the channel's rack via effectiveChannelUid at tap.
             juce::String visibleReply = reply;
-            juce::String askJson;
-            if (success && EchoJayAPI::extractAskBlock(visibleReply, askJson))
-                EchoJay_NSLog("EJChat: ASK block received (capture turn)");
+            juce::String askJson, chainJson, gainJson, editJson;
+            if (success)
+            {
+                EchoJayAPI::extractChainBlock(visibleReply, chainJson);
+                if (EchoJayAPI::extractGainBlock(visibleReply, gainJson))
+                    EchoJay_NSLog("EJChat: gain block received (capture turn)");
+                if (EchoJayAPI::extractAskBlock(visibleReply, askJson))
+                    EchoJay_NSLog("EJChat: ASK block received (capture turn)");
+                if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
+                    EchoJay_NSLog("EJChat: CHAIN_EDIT block received (capture turn)");
+                if (chainJson.isNotEmpty())
+                    EchoJay_NSLog("EJChat: CHAIN block received (capture turn)");
+            }
             ChatMsg cm;
-            cm.role    = "assistant";
-            cm.content = visibleReply;
-            cm.askData = askJson;
+            cm.role      = "assistant";
+            cm.content   = visibleReply;
+            cm.askData   = askJson;
+            cm.chainData = chainJson;
+            cm.gainData  = gainJson;
+            cm.editData  = editJson;
+            // A CHAIN_EDIT from a capture in a channel chat targets THAT
+            // channel's rack (same anchoring as the chat path).
+            if (editJson.isNotEmpty())
+            {
+                const juce::String capUid = safeThis2->activeChatLinkUid();
+                if (capUid.isNotEmpty())
+                {
+                    cm.editTargetUid  = capUid;
+                    cm.editTargetName = safeThis2->channelDisplayLabel(capUid);
+                    auto rack = safeThis2->readLinkRackSidecar(capUid);
+                    cm.editBaseRevision = rack.valid ? rack.revision : -1;
+                }
+                else
+                    cm.editBaseRevision = safeThis2->processorRef.getChainHost().getChainRevision();
+            }
             safeThis2->chatMessages.push_back(cm);
             safeThis2->processorRef.chatHistory.push_back({"assistant", visibleReply});
             if (success) { safeThis2->processorRef.chatRoles.add("assistant"); safeThis2->processorRef.chatContents.add(visibleReply); }
-            if (askJson.isNotEmpty())
-                safeThis2->resized();   // docked shelf appears + viewport reflow
+            if (askJson.isNotEmpty() || chainJson.isNotEmpty() || editJson.isNotEmpty())
+                safeThis2->resized();   // card/shelf appears + viewport reflow
 
             // Mirror assistant turn into the capture chat, increment revisionCount, persist
             if (captureChatId.isNotEmpty())
             {
                 safeThis2->workspace.appendMessageToChat(captureChatId, "assistant", visibleReply,
-                                                         {}, {}, {}, askJson);
+                                                         {}, chainJson, gainJson, askJson, editJson,
+                                                         {}, {}, {},
+                                                         editJson.isNotEmpty() ? cm.editTargetUid  : juce::String(),
+                                                         editJson.isNotEmpty() ? cm.editTargetName : juce::String());
                 safeThis2->workspace.incrementChatRevisionCount(captureChatId);
                 if (safeThis2->sidebarModel)
                 {
