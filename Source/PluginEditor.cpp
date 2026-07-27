@@ -2,6 +2,8 @@
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
 #include "EchoJayVisualiserTexture.h"  // shared SPECTRUM/SPECTROGRAM texture
+#include "EchoJayEventLog.h"   // events.jsonl + machine_id (dial_miss telemetry)
+#include "EchoJayParamApply.h" // kDialSignalsEnabled + dial predicate (shared)
 #include <cmath>
 #include <unistd.h>       // getuid — launchctl gui/<uid> target (consent prompt)
 
@@ -13371,6 +13373,151 @@ void EchoJayEditor::appendLocalResultBubble(const juce::String& text,
     repaint();
 }
 
+// ---- Apply-time honesty (26 Jul 2026) --------------------------------------
+void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJson,
+                                                     int attemptsLeft)
+{
+    auto& ch = processorRef.getChainHost();
+    if (!ch.dialStateSettled() && attemptsLeft > 0)
+    {
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        juce::Timer::callAfterDelay(250, [safeThis, chainJson, attemptsLeft]() {
+            if (safeThis != nullptr)
+                safeThis->finishChainBubbleWhenDialSettled(chainJson, attemptsLeft - 1);
+        });
+        return;
+    }
+
+    // Partial slots state the POSITIVE first: with richer maps partial is
+    // the common case, and "X (ratio by hand) needs hand-dialing" read as a
+    // failure when threshold, attack, release, freq and gain all landed.
+    juce::StringArray appliedNames, zeroParts;
+    struct PartialPart { juce::String name; juce::StringArray manual; };
+    std::vector<PartialPart> partialParts;
+    for (const auto& di : ch.getDialInfos())
+    {
+        switch (di.status)
+        {
+            case ChainHost::DialStatus::applied:
+                appliedNames.add(di.name);
+                break;
+            case ChainHost::DialStatus::partial:
+                partialParts.push_back({ di.name, di.manual });
+                logDialMiss(di.name, di.fp, "partial", di.manual);
+                if (!di.readbackMiss.isEmpty())
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                break;
+            case ChainHost::DialStatus::noMap:
+                zeroParts.add(di.name);
+                logDialMiss(di.name, di.fp, "no_map", di.manual);
+                break;
+            case ChainHost::DialStatus::unusableMap:
+                zeroParts.add(di.name);
+                logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+                if (!di.readbackMiss.isEmpty())
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                break;
+            case ChainHost::DialStatus::pending:
+                // Fetch never answered inside the cap: NEVER fall through to
+                // the model's success line - conservative wording, and the
+                // late apply (if it lands) updates the slot card anyway.
+                zeroParts.add(di.name);
+                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual);
+                break;
+            case ChainHost::DialStatus::none:
+                break;
+        }
+    }
+
+    const int n = ch.getNumSlots();
+    juce::String bubble;
+    if (partialParts.empty() && zeroParts.isEmpty())
+    {
+        // Clean full dial (or nothing carried structured settings): the
+        // model's own result line is honest here.
+        auto rv = juce::JSON::parse(chainJson);
+        if (auto* ro = rv.getDynamicObject())
+            bubble = ro->getProperty("result").toString().trim();
+        if (bubble.isEmpty())
+            bubble = "Chain built - " + juce::String(n)
+                   + (n == 1 ? " plugin loaded." : " plugins loaded.");
+    }
+    else
+    {
+        bubble = "Chain built - " + juce::String(n)
+               + (n == 1 ? " plugin loaded." : " plugins loaded.");
+        if (!appliedNames.isEmpty())
+            bubble += " Settings applied to " + appliedNames.joinIntoString(", ") + ".";
+        for (const auto& p : partialParts)
+        {
+            const bool one = p.manual.size() == 1;
+            bubble += " Settings applied to " + p.name + ", except "
+                    + p.manual.joinIntoString(" and ")
+                    + (one ? " which needs hand-dialing - values on its card."
+                           : " which need hand-dialing - values on its card.");
+        }
+        if (!zeroParts.isEmpty())
+        {
+            const bool one = zeroParts.size() == 1;
+            bubble += " " + zeroParts.joinIntoString(" and ")
+                    + (one ? " needs hand-dialing - use the values on its card."
+                           : " need hand-dialing - use the values on their cards.");
+        }
+    }
+    clearStageStatus();   // the bubble replaces the load/dial-window label
+    appendLocalResultBubble(bubble);
+}
+
+void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
+{
+    auto& ch = processorRef.getChainHost();
+    if (!ch.dialStateSettled() && attemptsLeft > 0)
+    {
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        juce::Timer::callAfterDelay(250, [safeThis, attemptsLeft]() {
+            if (safeThis != nullptr)
+                safeThis->logDialMissesWhenSettled(attemptsLeft - 1);
+        });
+        return;
+    }
+    for (const auto& di : ch.getDialInfos())
+    {
+        if (di.status == ChainHost::DialStatus::noMap)
+            logDialMiss(di.name, di.fp, "no_map", di.manual);
+        else if (di.status == ChainHost::DialStatus::unusableMap)
+            logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+        else if (di.status == ChainHost::DialStatus::partial)
+            logDialMiss(di.name, di.fp, "partial", di.manual);
+        else if (di.status == ChainHost::DialStatus::pending)
+            logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual);
+        if ((di.status == ChainHost::DialStatus::partial
+             || di.status == ChainHost::DialStatus::unusableMap)
+            && !di.readbackMiss.isEmpty())
+            logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+    }
+}
+
+void EchoJayEditor::logDialMiss(const juce::String& plugin, const juce::String& fp,
+                                const juce::String& reason, const juce::StringArray& manual)
+{
+    // events.jsonl schema v1 (EchoJayEventLog.h): upload-ready field names.
+    auto* f = new juce::DynamicObject();
+    f->setProperty("plugin", plugin);
+    if (fp.isNotEmpty()) f->setProperty("fp", fp);
+    f->setProperty("reason", reason);
+    if (!manual.isEmpty())
+    {
+        juce::Array<juce::var> arr;
+        for (auto& m2 : manual) arr.add(m2);
+        f->setProperty("manual", arr);
+    }
+    f->setProperty("turn_type", api.getLastResolvedTurnType());
+    f->setProperty("auto_dial", api.getAutoDialMode());
+    f->setProperty("app_version", juce::String(ProjectInfo::versionString));
+    echojay::logClientEvent("dial_miss", juce::var(f));
+}
+
+
 // ---- Chain-edit preview card (Phase 1c) ----
 // Height shared by the measure and paint passes: one 16px line per op,
 // plus the Apply button (unapplied) or the outcome line (retired card).
@@ -13533,9 +13680,37 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 auto ev = juce::JSON::parse(cm2.editData);
                 if (auto* eo = ev.getDynamicObject())
                 {
+                    // Apply-time honesty (26 Jul 2026): edit ops never write
+                    // parameters (no settings_structured rides an op), so
+                    // the model's "result" line claiming a problem is
+                    // handled is only honest when nothing new needs
+                    // dialing. Added/replaced slots get factual wording,
+                    // and a dial_miss event measures the delivery gap.
+                    juce::StringArray addedNames;
+                    if (auto* ops = eo->getProperty("edit").getArray())
+                        for (auto& opv : *ops)
+                        {
+                            const auto opName = opv.getProperty("op", juce::var()).toString();
+                            const auto plug   = opv.getProperty("name", juce::var()).toString().trim();
+                            if ((opName == "add" || opName == "replace") && plug.isNotEmpty())
+                                addedNames.addIfNotAlreadyThere(plug);
+                        }
                     auto modelResult = eo->getProperty("result").toString().trim();
-                    if (modelResult.isNotEmpty())
-                        safeThis->appendLocalResultBubble(modelResult);
+                    if (addedNames.isEmpty())
+                    {
+                        if (modelResult.isNotEmpty())
+                            safeThis->appendLocalResultBubble(modelResult);
+                    }
+                    else
+                    {
+                        const bool one = addedNames.size() == 1;
+                        safeThis->appendLocalResultBubble(
+                            addedNames.joinIntoString(", ")
+                            + (one ? " is in - dial it in by hand with the values on its card."
+                                   : " are in - dial them in by hand with the values on their cards."));
+                        for (auto& an : addedNames)
+                            safeThis->logDialMiss(an, juce::String(), "edit_add_no_dial", {});
+                    }
                 }
             }
             safeThis->repaint();
@@ -14797,16 +14972,16 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 // only on a clean full build; otherwise compose factually.
                 safeThis->clearStageStatus();
                 {
+                    // Apply-time honesty (26 Jul 2026): a clean LOAD no
+                    // longer relays the model's "result" line immediately -
+                    // load success says nothing about whether settings were
+                    // written, and map fetches are still async here. The
+                    // deferred path below waits for dial state to settle
+                    // and only relays the model line on a clean FULL dial.
+                    const bool cleanLoad = skipped->isEmpty() && ch3.getNumSlots() > 0;
                     juce::String resultBubble;
-                    if (skipped->isEmpty() && ch3.getNumSlots() > 0)
-                    {
-                        auto rv = juce::JSON::parse(chainJson);
-                        if (auto* ro = rv.getDynamicObject())
-                            resultBubble = ro->getProperty("result").toString().trim();
-                        if (resultBubble.isEmpty())
-                            resultBubble = "Chain built - " + juce::String(ch3.getNumSlots())
-                                         + (ch3.getNumSlots() == 1 ? " plugin loaded." : " plugins loaded.");
-                    }
+                    if (cleanLoad)
+                        resultBubble.clear();   // composed by finishChainBubbleWhenDialSettled
                     else if (ch3.getNumSlots() > 0)
                         resultBubble = "Chain built - " + juce::String(ch3.getNumSlots())
                                      + " of " + juce::String((int)slots.size()) + " loaded ("
@@ -14864,7 +15039,20 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                         : (plainNames.size() == 1 ? "Find a replacement for "
                                                   : "Find replacements for ")
                           + plainNames.joinIntoString(", ");
-                    safeThis->appendLocalResultBubble(resultBubble, altPrompt, altLabel);
+                    if (cleanLoad)
+                    {
+                        // Loads done, dialing may still be settling (async
+                        // map fetch): real work, real label, replaced by
+                        // the result bubble in finishChainBubbleWhenDialSettled.
+                        safeThis->setStageStatus(juce::String::fromUTF8("Working on your chain\xe2\x80\xa6"));
+                        safeThis->finishChainBubbleWhenDialSettled(chainJson, 8);
+                    }
+                    else
+                    {
+                        safeThis->appendLocalResultBubble(resultBubble, altPrompt, altLabel,
+                                                          plainNames);
+                        safeThis->logDialMissesWhenSettled(8);
+                    }
                 }
                 if (ch3.getNumSlots() > 0)
                     safeThis->bumpMonthlyStat("chains");   // THIS MONTH card

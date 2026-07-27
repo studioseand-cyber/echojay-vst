@@ -790,6 +790,19 @@ private:
     void appendLocalResultBubble(const juce::String& text,
                                  const juce::String& altPrompt = juce::String(),
                                  const juce::String& altLabel  = juce::String());
+    // ---- Apply-time honesty (26 Jul 2026) ----
+    // Clean-load chain builds defer the result bubble until per-slot dial
+    // state settles (async map fetches; 250ms polls, ~2s cap). Only a clean
+    // FULL dial relays the model's "result" line; anything else composes
+    // factual wording naming the hand-dial slots and controls. On timeout
+    // the conservative wording is used, never the model line.
+    void finishChainBubbleWhenDialSettled(const juce::String& chainJson, int attemptsLeft);
+    // Non-clean-load paths keep their factual bubbles but still log
+    // dial_miss events once dial state settles.
+    void logDialMissesWhenSettled(int attemptsLeft);
+    // events.jsonl dial_miss writer (EchoJayEventLog schema v1).
+    void logDialMiss(const juce::String& plugin, const juce::String& fp,
+                     const juce::String& reason, const juce::StringArray& manual);
     // Alt pill on PLAIN messages (result bubbles): height helper shared by
     // the measure and paint passes (edit cards carry their pill inside
     // editCardHeight; this returns 0 for them)

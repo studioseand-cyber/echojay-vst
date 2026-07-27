@@ -1298,7 +1298,8 @@ ChainHost::applyStructuredSettings (int slotIndex,
 
     auto results = echojay::applySettings (*instance, map, structuredSettings);
     for (auto& r : results)
-        out.push_back ({ r.semantic, r.applied, r.normalized, r.note });
+        out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
+                         r.landedText, r.displayVerified, r.readbackMismatch });
 
     return out;
 }
@@ -1448,8 +1449,14 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
         && !mapsRequested_.contains(fp) && onNeedParamMaps)
     {
         mapsRequested_.add(fp);
+        pendingMapFps_.addIfNotAlreadyThere(fp);
         onNeedParamMaps(juce::StringArray(fp));
     }
+    // The applyStructuredIfReady above ran BEFORE the fetch kicked, so a
+    // first-encounter slot got noMap; correct it to pending while the
+    // answer is in flight.
+    if (!slots_[(size_t)i].structuredApplied && pendingMapFps_.contains(fp))
+        slots_[(size_t)i].dialStatus = DialStatus::pending;
 }
 
 void ChainHost::storeParamMaps(const juce::var& mapsObj)
@@ -1488,6 +1495,11 @@ void ChainHost::storeParamMaps(const juce::var& mapsObj)
     if (added > 0 || retracted > 0) saveParamMapsToDisk();
     EchoJay_NSLog(("EJParamMaps: stored/updated " + juce::String(added)
                    + " map(s), retracted " + juce::String(retracted) + " from server").toRawUTF8());
+    // Every fp in the response counts as ANSWERED (a map object or an
+    // explicit null both resolve the fetch); pending slots re-evaluated
+    // below settle to applied/partial/noMap accordingly.
+    for (auto& p : o->getProperties())
+        pendingMapFps_.removeString(p.name.toString());
     bool changed = false;
     for (int i = 0; i < (int)slots_.size(); ++i)
     {
@@ -1585,9 +1597,17 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     auto& s = slots_[(size_t)slotIndex];
     if (s.structuredApplied) return;
     if (s.structuredSettings.isVoid() || s.structuredSettings.getDynamicObject() == nullptr) return;
-    if (s.fp.isEmpty()) return;
+    if (s.fp.isEmpty()) { s.dialStatus = DialStatus::pending; return; } // fp arrives at load
     auto it = paramMaps_.find(s.fp);
-    if (it == paramMaps_.end()) return;   // silent skip until a map exists
+    if (it == paramMaps_.end())
+    {
+        // Apply-time honesty: never a silent skip any more. Outcome is
+        // "pending" while a fetch is in flight, "noMap" once the fetch has
+        // answered (or was never possible). The result bubble reads this.
+        s.dialStatus = pendingMapFps_.contains(s.fp) ? DialStatus::pending
+                                                     : DialStatus::noMap;
+        return;
+    }
 
     // INTEGRITY: the map's own fp field must equal the slot's live
     // fingerprint, not just the cache key it was stored under. Catches any
@@ -1601,6 +1621,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
                        + " vs map.fp " + (mapFp.isEmpty() ? juce::String("(missing)")
                                                           : mapFp.substring(0, 12))
                        + ", apply refused").toRawUTF8());
+        s.dialStatus = DialStatus::unusableMap;
         return;
     }
 
@@ -1610,15 +1631,46 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex) + " (\"" + s.desc.name + "\"), "
                    + juce::String((int)report.size()) + " result(s)").toRawUTF8());
     juce::StringArray appliedSummary;
+    s.dialManual.clear();
+    s.dialReadbackMiss.clear();
     for (auto& r : report)
     {
         EchoJay_NSLog(("EJParamApply:   " + r.semantic + ": "
                        + (r.applied ? juce::String("APPLIED ") : juce::String("manual  "))
-                       + juce::String(r.normalized, 3) + "  (" + r.note + ")").toRawUTF8());
+                       + juce::String(r.normalized, 3) + "  (" + r.note + ")"
+                       + (r.landedText.isNotEmpty() ? "  landed \"" + r.landedText.trim() + "\""
+                                                    : juce::String())).toRawUTF8());
         if (r.applied)
-            appliedSummary.add(echojay::formatSemanticSetting(
-                r.semantic, s.structuredSettings.getProperty(r.semantic, juce::var())));
+        {
+            auto line = echojay::formatSemanticSetting(
+                r.semantic, s.structuredSettings.getProperty(r.semantic, juce::var()));
+            // Read-back caveat travels to the card: a setread/unparseable
+            // write proves addressability, not correctness, and must never
+            // present the same as a display-verified write.
+            if (!r.displayVerified) line += " (unverified)";
+            appliedSummary.add(line);
+        }
+        else
+        {
+            s.dialManual.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
+            if (r.readbackMismatch)
+                s.dialReadbackMiss.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
+        }
     }
+
+    // Honest per-slot verdict: applied only when EVERY requested semantic
+    // was written; anything less is partial (some written) or unusableMap
+    // (map exists, nothing written). ">=1 written" reported as success
+    // would still overclaim (the spiff class of bug).
+    s.dialAppliedCount = (int) appliedSummary.size();
+    if (report.empty())
+        s.dialStatus = DialStatus::unusableMap;   // structured present, nothing requested survived
+    else if (s.dialManual.isEmpty())
+        s.dialStatus = DialStatus::applied;
+    else if (s.dialAppliedCount > 0)
+        s.dialStatus = DialStatus::partial;
+    else
+        s.dialStatus = DialStatus::unusableMap;
 
     // SUGGESTED SETTINGS display contract: auto-applied slots show
     // "Applied automatically" + a compact summary of what was set;
@@ -2249,6 +2301,48 @@ juce::StringArray ChainHost::getRecommendableNames() const
     for (const auto& e : recommendable_)
         names.add(e.displayName);
     return names;
+}
+
+std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
+{
+    std::vector<SlotDialInfo> out;
+    out.reserve(slots_.size());
+    for (const auto& s : slots_)
+    {
+        SlotDialInfo di;
+        di.name         = s.desc.name;
+        di.fp           = s.fp;
+        di.status       = s.dialStatus;
+        di.manual       = s.dialManual;
+        di.readbackMiss = s.dialReadbackMiss;
+        di.appliedCount = s.dialAppliedCount;
+        out.push_back(std::move(di));
+    }
+    return out;
+}
+
+bool ChainHost::dialStateSettled() const
+{
+    // A failed/never-answered fetch leaves a slot pending forever; the
+    // bubble side caps its wait and falls back to conservative wording, so
+    // this never needs its own timeout.
+    for (const auto& s : slots_)
+        if (s.dialStatus == DialStatus::pending) return false;
+    return true;
+}
+
+juce::StringArray ChainHost::getDialableRecommendableNames() const
+{
+    juce::StringArray out;
+    for (const auto& e : recommendable_)
+    {
+        auto it = identityToFp_.find(echojay::identityKeyForDescription(e.desc));
+        if (it == identityToFp_.end()) continue;
+        auto m = paramMaps_.find(it->second);
+        if (m != paramMaps_.end() && echojay::mapIsDialableForSignals(m->second))
+            out.addIfNotAlreadyThere(e.displayName);
+    }
+    return out;
 }
 
 void ChainHost::loadByRecommendedName(const juce::String& name,

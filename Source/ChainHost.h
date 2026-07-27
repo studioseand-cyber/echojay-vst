@@ -72,6 +72,35 @@ public:
     // Display names of resolved entries (for AI prompt injection).
     juce::StringArray getRecommendableNames() const;
 
+    // ---- Apply-time honesty (26 Jul 2026) ----
+    // Per-slot auto-dial outcome. The result bubble may only relay the
+    // model's "result" line when every slot that carried structuredSettings
+    // actually APPLIED in full; everything else composes factual wording
+    // naming the hand-dial slots/controls.
+    //   none        — no structuredSettings for this slot (nothing expected)
+    //   pending     — map fetch in flight, outcome unknown yet
+    //   applied     — every requested semantic written
+    //   partial     — some written, some not (manual lists the misses)
+    //   noMap       — no local map for this fingerprint, nothing written
+    //   unusableMap — map exists but none of the REQUESTED semantics were
+    //                 writable, nothing written
+    enum class DialStatus { none, pending, applied, partial, noMap, unusableMap };
+    struct SlotDialInfo {
+        juce::String      name;
+        juce::String      fp;          // fingerprint (for event logging)
+        DialStatus        status = DialStatus::none;
+        juce::StringArray manual;      // human labels of unwritten controls
+        juce::StringArray readbackMiss; // subset of manual: wrote wrong, reverted
+        int               appliedCount = 0;
+    };
+    std::vector<SlotDialInfo> getDialInfos() const;
+    // True when no slot is DialStatus::pending (bubble may compose).
+    bool dialStateSettled() const;
+    // Recommendable display names whose local map passes the dial-signals
+    // threshold (>=2 usable CORE semantics). Used by the dark 2.1 markers
+    // and 2.4 dialFlags; shares echojay::mapIsDialableForSignals.
+    juce::StringArray getDialableRecommendableNames() const;
+
     // Count stats from the last buildRecommendable() call.
     int getRecommendableCount()   const noexcept { return (int)recommendable_.size(); }
     int getEnabledInputCount()    const noexcept { return recommendableEnabledIn_; }
@@ -180,7 +209,8 @@ public:
 
     // EchoJay auto-parameter-mapping: dial a slot's hosted plugin from
     // structured settings plus the plugin's map.
-    struct ApplyReport { juce::String semantic; bool applied; float normalized; juce::String note; };
+    struct ApplyReport { juce::String semantic; bool applied; float normalized; juce::String note;
+                         juce::String landedText; bool displayVerified = false; bool readbackMismatch = false; };
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);
@@ -397,12 +427,20 @@ private:
         juce::var                            structuredSettings;        // settings_structured from the chain reply
         juce::String                         fp;                        // fingerprint (computed at load)
         bool                                 structuredApplied = false; // one-shot guard
+        DialStatus                           dialStatus = DialStatus::none;
+        juce::StringArray                    dialManual;                // unwritten control labels
+        juce::StringArray                    dialReadbackMiss;          // wrote wrong, reverted
+        int                                  dialAppliedCount = 0;
     };
 
     // Auto-parameter-mapping caches (message thread only)
     std::map<juce::String, juce::var>    paramMaps_;     // fp -> map object
     std::map<juce::String, juce::String> identityToFp_;  // format|uid|version -> fp
     juce::StringArray                    mapsRequested_; // fps requested this session
+    // fps whose fetch is IN FLIGHT (requested, no storeParamMaps answer
+    // yet). Distinct from mapsRequested_, which is never cleared (it is the
+    // don't-re-request guard). Drives DialStatus::pending vs noMap.
+    juce::StringArray                    pendingMapFps_;
     bool                                 mapsRevalidated_ = false; // once-per-session cache revalidation
     void applyStructuredIfReady (int slotIndex);
     void loadParamMapsFromDisk();
