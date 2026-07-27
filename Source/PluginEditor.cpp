@@ -4066,21 +4066,98 @@ void EchoJayEditor::updateCompareSlotBtn(bool isTop)
     btn.setColour(juce::TextButton::textColourOffId, col);
 }
 
+juce::String EchoJayEditor::compareReviewLabel(const WsReview& rev) const
+{
+    // Version suffix from the stored passName ("<project> v3" / "Capture v3").
+    juce::String ver = "v?";
+    {
+        const int vp = rev.label.lastIndexOfChar('v');
+        if (vp > 0 && juce::CharacterFunctions::isDigit(rev.label[vp + 1]))
+            ver = rev.label.substring(vp);   // "v3"
+    }
+    if (rev.channelDataScoped)
+    {
+        // Channel scope: live name, else snapshot, else neutral. Never empty,
+        // never a raw uid. Truncate the NAME, keep the version suffix.
+        juce::String name = processorRef.resolveLinkDisplayName(rev.linkUid);
+        if (name.isEmpty()) name = rev.linkNameSnap;
+        if (name.isEmpty()) name = "channel";
+        juce::String base = "Link " + name + " " + ver;
+        if (base.length() > 40)
+        {
+            const int keep = juce::jmax(4, 40 - (int)(5 + 1 + ver.length() + 1));
+            name = name.substring(0, keep) + juce::String::fromUTF8("\xe2\x80\xa6");
+            base = "Link " + name + " " + ver;
+        }
+        return base;
+    }
+    // Full capture (main scope OR pre-fix channel record). Item 2: append the
+    // capture time so two main chats' "v1"s in one project stay distinct. No
+    // stored number changes.
+    juce::String t;
+    auto dt = juce::Time::fromISO8601(rev.date);
+    if (dt.toMilliseconds() > 0)
+        t = juce::String::fromUTF8(" \xe2\x80\x93 ") + dt.formatted("%H:%M");
+    return "Full capture " + ver + t;
+}
+
 void EchoJayEditor::openCompareSlotMenu(bool isTop)
 {
     auto snaps = processorRef.getSnapshots();
     auto refs  = processorRef.getReferenceAnalyser().getReferences();
 
-    // Collect ordered, deduplicated review IDs for the current chat
-    juce::StringArray chatReviewIds;
+    // ── Project scoping (item 1) ──────────────────────────────────────────
+    // A capture's project is the trackName of the chat whose message
+    // references it (two-hop chain). Gather every review in the CURRENT
+    // PROJECT (all its chats, newest-message-first), plus reviews whose chat
+    // was DELETED (orphans -> Ungrouped). Also count evicted history: how
+    // many of this project's referencing messages no longer resolve.
+    juce::String curProject;
     for (auto& c : workspace.getChats())
+        if (c.id == currentChatId) { curProject = c.trackName; break; }
+
+    auto reviewById = [&](const juce::String& id) -> const WsReview* {
+        for (auto& r : workspace.getReviews()) if (r.id == id) return &r;
+        return nullptr;
+    };
+
+    juce::StringArray projReviewIds, orphanReviewIds;
+    int evictedCount = 0;
     {
-        if (c.id != currentChatId) continue;
-        for (auto& msg : c.messages)
-            if (msg.reviewId.isNotEmpty() && !chatReviewIds.contains(msg.reviewId))
-                chatReviewIds.add(msg.reviewId);
-        break;
+        juce::StringArray seen;
+        // Newest first: walk chats, and within each, messages last-to-first.
+        for (auto& c : workspace.getChats())
+        {
+            const bool inProject = (c.trackName == curProject);
+            for (int mi = (int)c.messages.size() - 1; mi >= 0; --mi)
+            {
+                const auto& rid = c.messages[(size_t)mi].reviewId;
+                if (rid.isEmpty() || seen.contains(rid)) continue;
+                seen.add(rid);
+                if (!inProject) continue;
+                if (reviewById(rid) != nullptr) projReviewIds.add(rid);
+                else ++evictedCount;   // referenced here but no longer stored
+            }
+        }
+        // Orphans: reviews whose referencing chat no longer exists at all.
+        juce::StringArray referenced;
+        for (auto& c : workspace.getChats())
+            for (auto& m : c.messages)
+                if (m.reviewId.isNotEmpty()) referenced.add(m.reviewId);
+        for (auto& r : workspace.getReviews())
+            if (!referenced.contains(r.id) && !seen.contains(r.id))
+                orphanReviewIds.add(r.id);
     }
+
+    // Dedup: a chat capture exists as BOTH a snapshot and a review. Skip the
+    // snapshot when a project review carries the same passName (the review
+    // wins — it has scope + persistence).
+    auto snapHasReview = [&](const juce::String& snapName) {
+        for (auto& rid : projReviewIds)
+            if (auto* r = reviewById(rid))
+                if (r->label == snapName) return true;
+        return false;
+    };
 
     auto& curSlot = isTop ? compareTop_ : compareBot_;
 
@@ -4088,27 +4165,48 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
     menu.addItem(1, "Live signal", true,
                  curSlot.kind == CompareSlotState::Kind::Live);
 
-    if (!snaps.empty())
+    // SESSION CAPTURES: full-scope snapshots with no matching project review.
     {
-        menu.addSeparator();
-        menu.addSectionHeader("SESSION CAPTURES");
+        bool hdr = false;
         for (int i = 0; i < (int)snaps.size() && i < 99; ++i)
-            menu.addItem(100 + i, snaps[i].name.substring(0, 44));
+        {
+            if (snapHasReview(snaps[i].name)) continue;   // dedup
+            if (!hdr) { menu.addSeparator(); menu.addSectionHeader("SESSION CAPTURES"); hdr = true; }
+            menu.addItem(100 + i, snaps[i].name.substring(0, 40) + " (full capture)");
+        }
     }
 
-    if (!chatReviewIds.isEmpty())
+    // CHAT CAPTURES: project reviews, scope-labelled. compareMenuReviewIds_
+    // is the ordered binding the handler indexes (no re-derivation drift).
+    compareMenuReviewIds_.clear();
+    if (!projReviewIds.isEmpty() || !orphanReviewIds.isEmpty())
     {
         menu.addSeparator();
         menu.addSectionHeader("CHAT CAPTURES");
         int wsIdx = 200;
-        for (auto& rid : chatReviewIds)
+        for (auto& rid : projReviewIds)
         {
-            juce::String lbl = rid;
-            for (auto& r : workspace.getReviews())
-                if (r.id == rid) { lbl = r.label.isNotEmpty() ? r.label : r.id; break; }
-            menu.addItem(wsIdx++, lbl.substring(0, 44));
+            const auto* r = reviewById(rid);
+            menu.addItem(wsIdx++, r ? compareReviewLabel(*r) : rid.substring(0, 40));
+            compareMenuReviewIds_.push_back(rid);
+        }
+        // Orphans (deleted chat) in their own labelled group, not hidden.
+        if (!orphanReviewIds.isEmpty())
+        {
+            menu.addSectionHeader("UNGROUPED (chat deleted)");
+            for (auto& rid : orphanReviewIds)
+            {
+                const auto* r = reviewById(rid);
+                menu.addItem(wsIdx++, r ? compareReviewLabel(*r) : rid.substring(0, 40));
+                compareMenuReviewIds_.push_back(rid);
+            }
         }
     }
+    // Evicted history (item 6): disabled, visible, not hidden.
+    if (evictedCount > 0)
+        menu.addItem(9000, juce::String(evictedCount) + " earlier capture"
+                     + (evictedCount == 1 ? "" : "s") + " no longer stored",
+                     false, false);
 
     if (!refs.empty())
     {
@@ -4147,28 +4245,17 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
             }
             else if (result >= 200 && result < 300)
             {
-                // Re-derive the Nth chat review in the same iteration order as the menu build
-                int nth = result - 200, count = 0;
-                juce::StringArray seenIds;
-                for (auto& c : safeThis->workspace.getChats())
+                // Index the stored ordered list built above — no re-derivation,
+                // so the picked label and the bound review cannot drift.
+                const int nth = result - 200;
+                if (nth >= 0 && nth < (int)safeThis->compareMenuReviewIds_.size())
                 {
-                    if (c.id != safeThis->currentChatId) continue;
-                    for (auto& msg : c.messages)
-                    {
-                        if (msg.reviewId.isEmpty() || seenIds.contains(msg.reviewId)) continue;
-                        seenIds.add(msg.reviewId);
-                        if (count++ == nth)
-                        {
-                            slot.kind       = CompareSlotState::Kind::WsCapture;
-                            slot.wsReviewId = msg.reviewId;
-                            slot.label      = msg.reviewId;
-                            for (auto& r : safeThis->workspace.getReviews())
-                                if (r.id == msg.reviewId)
-                                    { slot.label = r.label.isNotEmpty() ? r.label : r.id; break; }
-                            break;
-                        }
-                    }
-                    break;
+                    slot.kind       = CompareSlotState::Kind::WsCapture;
+                    slot.wsReviewId = safeThis->compareMenuReviewIds_[(size_t)nth];
+                    slot.label      = slot.wsReviewId;
+                    for (auto& r : safeThis->workspace.getReviews())
+                        if (r.id == slot.wsReviewId)
+                            { slot.label = safeThis->compareReviewLabel(r); break; }
                 }
             }
             else if (result >= 300 && result < 400)
@@ -7214,6 +7301,7 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         processorRef.chatTargetLinkUid.clear();   // router selection is transient:
         processorRef.chatTargetLinkName.clear();  // every activation resets it
         refreshChannelBannerCache();
+        refreshCaptureButtonLabel();   // item 4a: fit on activation, not just on capture
         resized();
         chatMessages.clear();
         processorRef.chatHistory.clear();
@@ -7262,6 +7350,7 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                 // than the wrong ones. Pre-fix channel records (no marker) are
                 // full captures, so they keep their waveform.
                 const bool channelReview = rv.channelDataScoped;
+                cm.channelCaptureNoAudio = channelReview;
                 if (rv.waveform.isArray() && !channelReview)
                 {
                     for (int wi = 0; wi < rv.waveform.size(); ++wi)
@@ -11113,7 +11202,13 @@ void EchoJayEditor::paint(juce::Graphics& g)
 
                     // Label row
                     juce::String labelLine;
-                    if (isPluginOrigin && !hasLocalFile)
+                    if (msg.channelCaptureNoAudio)
+                    {
+                        // Item 3: honest — per-channel audio isn't routed yet,
+                        // NOT a lost file. Numbers/prose above are the channel's.
+                        labelLine = "Per-channel audio not captured for this channel";
+                    }
+                    else if (isPluginOrigin && !hasLocalFile)
                     {
                         // File is not on this machine
                         labelLine = "Audio not on this device";
@@ -13091,6 +13186,7 @@ void EchoJayEditor::timerCallback()
             // handshake + a per-channel thumbnail (not built this pass). Until
             // then: no picture, no playback for a channel capture.
             const bool captureIsChannel = activeChatLinkUid().isNotEmpty();
+            displayCm.channelCaptureNoAudio = captureIsChannel;
             displayCm.hasWaveform = !captureIsChannel && !frozenWaveform.empty();
             displayCm.waveform    = captureIsChannel ? std::vector<WaveformRecorder::ThumbnailPoint>{}
                                                      : frozenWaveform;
@@ -14449,6 +14545,19 @@ void EchoJayEditor::refreshChannelBannerCache()
                     + (chanBannerLive_ ? juce::String() : juce::String(" (offline)"));
 }
 
+void EchoJayEditor::refreshCaptureButtonLabel()
+{
+    if (processorRef.getCaptureState() == CaptureState::Capturing)
+    {
+        captureBtn.setButtonText(fitCaptureLabel("Stop"));
+        return;
+    }
+    const juce::String capUid = effectiveChannelUid();
+    captureBtn.setButtonText(fitCaptureLabel(capUid.isNotEmpty()
+        ? ("Capture " + channelDisplayLabel(capUid))
+        : juce::String("Capture")));
+}
+
 juce::String EchoJayEditor::fitCaptureLabel(const juce::String& full) const
 {
     juce::Font cf(juce::FontOptions(13.0f, juce::Font::bold));
@@ -14875,9 +14984,14 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
             out += juce::String::fromUTF8("\n\n[COMPARE ATTRIBUTION \xe2\x80\x94 ")
                  + "the two captures compared on this turn are stored FULL "
                    "CAPTURE snapshots (the main EchoJay's whole-project audio), "
-                   "NOT this channel's own audio. Compare them as versions of "
-                   "the full capture; do not present their differences as "
-                   "changes to this channel.]";
+                   "NOT this channel's own audio. STATE this plainly to the user "
+                   "(these are full captures, not this channel), compare them as "
+                   "versions of the full capture, and do not present their "
+                   "differences as changes to this channel. Do NOT propose or "
+                   "build a processing chain for THIS channel from these "
+                   "full-mix measurements - they are not this channel's sound; "
+                   "if a chain would help, say it must be based on a capture of "
+                   "this channel itself.]";
         // mainCaptureAttribution: main-instance data reaching a channel chat
         // (remaining non-capture paths) — say so. Full capture constant; the
         // false "per-channel capture unavailable" claim is REMOVED (per-channel

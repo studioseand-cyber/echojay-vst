@@ -613,6 +613,16 @@ private:
     juce::TextButton compareTopSlotBtn_;
     juce::TextButton compareBotSlotBtn_;
     void openCompareSlotMenu(bool isTop);
+    // Item 1: ordered review IDs backing the compare-slot menu's CHAT
+    // CAPTURES section (project-scoped, deduped). The result handler indexes
+    // this directly instead of re-deriving by iteration, so the label the
+    // user picked and the review the slot binds can never drift.
+    std::vector<juce::String> compareMenuReviewIds_;
+    // Scope-labelled name for a capture review: "Link <name> vN" only when
+    // the data is genuinely the channel's (channelDataScoped); otherwise
+    // "Full capture vN - HH:MM" (a pre-fix channel record's numbers ARE the
+    // full mix, so it labels as a full capture — the label follows the data).
+    juce::String compareReviewLabel(const WsReview& rev) const;
     void updateCompareSlotBtn(bool isTop);
     MeterData getSlotMeterData(const CompareSlotState& slot) const;
     static MeterData meterDataFromWsReview(const WsReview& r);
@@ -808,6 +818,11 @@ private:
                                      // Link's rack — Apply routes v:2 to that Link,
                                      // never the local sequencer
         juce::String editTargetName; // display label at propose time (user text)
+        // Item 3/4: a channel capture has no host waveform/audio and no
+        // per-channel audio routed yet — the card shows no player and an
+        // HONEST reason, never "Audio not on this device" (which implies a
+        // lost file).
+        bool channelCaptureNoAudio = false;
     };
     std::vector<ChatMsg> chatMessages;
     // THE shared display source: both text-layout passes (measure + paint)
@@ -1891,6 +1906,10 @@ private:
     // via the stored width so the timer and resized() never fight the text.
     int captureBtnMaxW_ = 64;
     juce::String fitCaptureLabel(const juce::String& full) const;
+    // Item 4a: set the capture button to the fitted label for the CURRENT
+    // active chat/state. Called on chat activation (not only the capture
+    // state block), so switching into a channel chat refreshes it at once.
+    void refreshCaptureButtonLabel();
     // Reset to the clean main state (no active chat, no pending, no router
     // selection). Selecting the main entry in the dropdown and New chat
     // from an empty channel context both come through HERE — the main
