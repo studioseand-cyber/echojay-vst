@@ -1,0 +1,39 @@
+#!/bin/sh
+# EchoJay plugin-repo pre-commit gate (27 Jul 2026).
+#
+# Added after a concurrency near-miss: a parallel session was editing
+# PluginEditor.cpp in this shared checkout at the same time as client-gate
+# work, and this repo (unlike echojay-saas) had no protection. The gate's
+# FIRST job is therefore to print the branch it is committing to, loudly,
+# every time - the same defence the saas gate carries.
+#
+# Its SECOND job is to run the repo's self-tests. This is a C++ repo, so the
+# suite is the workspace round-trip test (real objects, EJ_SELFTEST body).
+# It links the release SharedCode lib, so it can only run once the tree has
+# been built; on an unbuilt tree the gate SKIPS the test with a clear notice
+# rather than blocking (a gate that fails when you simply haven't built yet
+# gets bypassed habitually, which defeats the point).
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+# Bypass (emergencies only): git commit --no-verify
+
+echo "pre-commit gate: branch $(git branch --show-current)"
+
+REPO=$(git rev-parse --show-toplevel)
+LIB="$REPO/build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a"
+
+if [ ! -f "$LIB" ] || [ ! -f "$REPO/build/compile_commands.json" ]; then
+  echo "  SKIP  workspace round-trip test (tree not built; run reinstall-v2.sh first)"
+  echo "pre-commit gate: branch printed, tests skipped (unbuilt tree)"
+  exit 0
+fi
+
+echo "  running workspace round-trip self-test..."
+out=$("$REPO/tools/workspace_roundtrip_test/build_and_run.sh" 2>&1)
+if [ $? -ne 0 ]; then
+  echo "GATE FAIL: workspace_roundtrip_test"
+  echo "$out" | tail -12
+  exit 1
+fi
+echo "  ok  workspace_roundtrip_test: $(echo "$out" | grep -iE 'pass|ok|self-test' | tail -1)"
+echo "pre-commit gate: all suites green"
