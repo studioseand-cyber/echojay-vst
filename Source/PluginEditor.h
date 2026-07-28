@@ -643,6 +643,35 @@ private:
     // live / non-channel). Used to decide same-scope vs cross-scope against
     // the active channel chat.
     juce::String slotChannelUid(const CompareSlotState& slot) const;
+    // Step 1: the display label + duration for a slot, so the compare context
+    // reads the SAME source the buttons and gate read (getSlotMeterData). Label
+    // is the scope-labelled review name (compareReviewLabel) for a WsCapture,
+    // else the snapshot/reference name or "Live signal". Duration is 0 when
+    // unknown (Live), which the length-mismatch caveat treats as "skip".
+    juce::String slotDisplayName(const CompareSlotState& slot) const;
+    float slotDurationSeconds(const CompareSlotState& slot) const;
+    // Step 2: cross-scope covers all three cases the send must ask about -
+    // channel-vs-full, channel-vs-DIFFERENT-channel, and anything-vs-Live.
+    // Keys off channelDataScoped (via slotChannelUid), never linkUid presence.
+    bool crossScope(const CompareSlotState& a, const CompareSlotState& b) const;
+    // Step 3: the cross-scope decision for a compare run. Unasked is the
+    // initial press — it triggers the ASK when the slots are cross-scope.
+    // Anyway / NumbersOnly are the two chip outcomes, both of which mean the
+    // user already chose, so the ASK is skipped (no re-prompt loop).
+    enum class CompareScope { Unasked, Anyway, NumbersOnly };
+    // Step 1/3: the compare body, parameterised on the two slots and the
+    // cross-scope decision. runAICompare() reads the visible slots and calls
+    // this Unasked; a cross-scope press routes through presentCompareScopeAsk
+    // first, whose chip re-enters here with Anyway or NumbersOnly.
+    void runAICompareWith(const CompareSlotState& slotA,
+                          const CompareSlotState& slotB,
+                          CompareScope scope);
+    // Step 3: client-side deterministic ASK shown when the two loaded slots
+    // are cross-scope. Pushes a local ASK message (cmp_anyway / cmp_numbers
+    // intents) onto the chat and persists it, so the choice survives an editor
+    // recreate instead of living only on the editor.
+    void presentCompareScopeAsk(const CompareSlotState& slotA,
+                                const CompareSlotState& slotB);
     static MeterData meterDataFromWsReview(const WsReview& r);
     void paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int> area,
                               const CompareSlotState& slot, bool isPlaying);

@@ -1991,13 +1991,28 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         askChipBtns[(size_t)i].onClick = [this, i]()
         {
             if (!askShelfVisible_ || askChipQuestion_.isEmpty()) return;
+            const juce::String intent = askChipIntents[(size_t)i];
+            // STEP 3: the compare-scope chips are handled ENTIRELY client-side —
+            // they must NOT send a chat turn. Mark the ASK answered (so the
+            // shelf clears and the state persists) and re-run the comparison
+            // with the chosen numbersOnly against the currently loaded slots.
+            if (intent == "cmp_anyway" || intent == "cmp_numbers")
+            {
+                supersedePendingAsks();     // marks + persists askAnswered
+                askShelfVisible_ = false;
+                resized();
+                runAICompareWith(compareTop_, compareBot_,
+                                 intent == "cmp_numbers" ? CompareScope::NumbersOnly
+                                                         : CompareScope::Anyway);
+                return;
+            }
             // Answer format per CHAIN_AI_BUILD_SPEC: self-contained Q->A pair
             // that survives history trimming (blocks are stripped in storage).
             // sendChatMessage -> supersedePendingAsks marks + persists.
             // intent -> staged turnType (3-pre): "edit" chips act on the
             // existing rack; server trust-but-validates as always
-            const juce::String tt = askChipIntents[(size_t)i] == "edit" ? "chain_edit"
-                                  : askChipIntents[(size_t)i] == "build" ? "chain_generate"
+            const juce::String tt = intent == "edit" ? "chain_edit"
+                                  : intent == "build" ? "chain_generate"
                                   : juce::String();
             sendChatMessage(askChipLabels[(size_t)i]
                             + " (answering: \"" + askChipQuestion_ + "\")",
@@ -4137,6 +4152,79 @@ juce::String EchoJayEditor::slotChannelUid(const CompareSlotState& slot) const
     return {};
 }
 
+juce::String EchoJayEditor::slotDisplayName(const CompareSlotState& slot) const
+{
+    switch (slot.kind)
+    {
+        case CompareSlotState::Kind::Live:
+            return "Live signal";
+        case CompareSlotState::Kind::Snapshot:
+        {
+            auto snaps = processorRef.getSnapshots();
+            if (slot.index >= 0 && slot.index < (int)snaps.size())
+                return snaps[(size_t)slot.index].name;
+            break;
+        }
+        case CompareSlotState::Kind::WsCapture:
+            for (auto& r : workspace.getReviews())
+                if (r.id == slot.wsReviewId) return compareReviewLabel(r);
+            break;
+        case CompareSlotState::Kind::Reference:
+        {
+            auto refs = processorRef.getReferenceAnalyser().getReferences();
+            if (slot.index >= 0 && slot.index < (int)refs.size())
+                return refs[(size_t)slot.index].name;
+            break;
+        }
+        default: break;
+    }
+    return slot.label.isNotEmpty() ? slot.label : juce::String("Capture");
+}
+
+float EchoJayEditor::slotDurationSeconds(const CompareSlotState& slot) const
+{
+    switch (slot.kind)
+    {
+        case CompareSlotState::Kind::Snapshot:
+        {
+            auto snaps = processorRef.getSnapshots();
+            if (slot.index >= 0 && slot.index < (int)snaps.size())
+                return snaps[(size_t)slot.index].durationSeconds;
+            break;
+        }
+        case CompareSlotState::Kind::WsCapture:
+            for (auto& r : workspace.getReviews())
+                if (r.id == slot.wsReviewId) return r.data.duration;
+            break;
+        case CompareSlotState::Kind::Reference:
+        {
+            auto refs = processorRef.getReferenceAnalyser().getReferences();
+            if (slot.index >= 0 && slot.index < (int)refs.size())
+                return refs[(size_t)slot.index].durationSeconds;
+            break;
+        }
+        default: break;   // Live: unknown length -> 0 (caveat skips)
+    }
+    return 0.0f;
+}
+
+bool EchoJayEditor::crossScope(const CompareSlotState& a, const CompareSlotState& b) const
+{
+    // Live is never a channel's own stored audio -> anything-vs-Live is cross.
+    if (a.kind == CompareSlotState::Kind::Live || b.kind == CompareSlotState::Kind::Live)
+        return true;
+    const bool ac = slotIsChannelScoped(a), bc = slotIsChannelScoped(b);
+    // Neither slot is channel-scoped: two full-scope sources, same scope.
+    if (!ac && !bc)
+        return false;
+    // At least one is channel-scoped. Same scope ONLY when both name the same
+    // channel uid; a full-capture slot ("") vs a channel ("uid"), or two
+    // DIFFERENT channels ("uidA" vs "uidB"), are both cross-scope. This is the
+    // case the old linkUid-presence check missed - two different channels in a
+    // main chat sailed through.
+    return slotChannelUid(a) != slotChannelUid(b);
+}
+
 void EchoJayEditor::updateCompareSlotBtn(bool isTop)
 {
     auto& slot = isTop ? compareTop_ : compareBot_;
@@ -5193,47 +5281,57 @@ void EchoJayEditor::runAICompare()
         processorRef.chatHistory.push_back({"assistant", msg});
         repaint(); return;
     }
-    int idA = compareSlotABox.getSelectedId();
-    int idB = compareSlotBBox.getSelectedId();
-    if (idA == 0 || idB == 0)
+    // STEP 1: the compare context reads the VISIBLE slots (compareTop_/
+    // compareBot_) via getSlotMeterData — the ONE source the buttons, audition,
+    // gate and labels already share — not the hidden compareSlotABox/B dropdown
+    // that no button ever synced. Unasked so a cross-scope pair triggers the
+    // ASK (STEP 3); the chip re-enters with Anyway / NumbersOnly.
+    runAICompareWith(compareTop_, compareBot_, CompareScope::Unasked);
+}
+
+void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
+                                     const CompareSlotState& slotB,
+                                     CompareScope scope)
+{
+    const bool numbersOnly = (scope == CompareScope::NumbersOnly);
+    if (slotA.kind == CompareSlotState::Kind::Empty
+        || slotB.kind == CompareSlotState::Kind::Empty)
     {
-        // Never fail silently — an empty slot after a dropdown refresh looked
-        // like a dead button
-        chatMessages.push_back({"assistant", "Select two items to compare (A and B) first."});
-        processorRef.chatHistory.push_back({"assistant", "Select two items to compare (A and B) first."});
+        // Never fail silently — an empty slot looked like a dead button.
+        chatMessages.push_back({"assistant", "Load two slots to compare first."});
+        processorRef.chatHistory.push_back({"assistant", "Load two slots to compare first."});
         repaint();
         return;
     }
 
-    auto snaps = processorRef.getSnapshots();
-    auto refs = processorRef.getReferenceAnalyser().getReferences();
-    int refOffset = kCompareRefIdBase;
-    juce::String compareCtx;
-
-    bool aIsRef = idA >= refOffset, bIsRef = idB >= refOffset;
-    if (!aIsRef && bIsRef) {
-        int ci = idA - 1, ri = idB - refOffset;
-        if (ci >= 0 && ci < (int)snaps.size() && ri >= 0 && ri < (int)refs.size())
-            compareCtx = processorRef.buildCompareContext(snaps[ci], refs[ri]);
-    } else if (!aIsRef && !bIsRef) {
-        int ia = idA - 1, ib = idB - 1;
-        if (ia >= 0 && ia < (int)snaps.size() && ib >= 0 && ib < (int)snaps.size() && ia != ib)
-            compareCtx = processorRef.buildCompareContext(snaps[ia], snaps[ib]);
-    } else if (aIsRef && !bIsRef) {
-        int ri = idA - refOffset, ci = idB - 1;
-        if (ci >= 0 && ci < (int)snaps.size() && ri >= 0 && ri < (int)refs.size())
-            compareCtx = processorRef.buildCompareContext(snaps[ci], refs[ri]);
-    } else if (aIsRef && bIsRef) {
-        int ra = idA - refOffset, rb = idB - refOffset;
-        if (ra >= 0 && ra < (int)refs.size() && rb >= 0 && rb < (int)refs.size() && ra != rb)
-            compareCtx = processorRef.buildCompareContext(refs[ra], refs[rb]);
+    // STEP 3: at press (Unasked), if the two loaded slots are cross-scope,
+    // DON'T send. Present two client-side deterministic chips (Compare anyway /
+    // Numbers only) via the existing ASK shelf, naming BOTH sources, and let the
+    // chip onClick re-enter this function with Anyway / NumbersOnly. This is a
+    // local ASK — not a server-advisory instruction, which the ASK note biases
+    // against. Anyway/NumbersOnly mean the user already chose, so skip.
+    if (scope == CompareScope::Unasked && crossScope(slotA, slotB))
+    {
+        presentCompareScopeAsk(slotA, slotB);
+        return;
     }
+
+    const juce::String labelA = slotDisplayName(slotA);
+    const juce::String labelB = slotDisplayName(slotB);
+    const MeterData    da     = getSlotMeterData(slotA);
+    const MeterData    db     = getSlotMeterData(slotB);
+    juce::String compareCtx = processorRef.buildCompareContext(
+        da, db, labelA, labelB,
+        slotDurationSeconds(slotA), slotDurationSeconds(slotB), numbersOnly);
 
     if (compareCtx.isEmpty()) {
         chatMessages.push_back({"assistant", "Select two different items to compare."});
         processorRef.chatHistory.push_back({"assistant", "Select two different items to compare."});
         repaint(); return;
     }
+    // numbersOnly rides into the callback so the build gate never fires on a
+    // turn that produced no chain (STEP 4).
+    const bool compareNumbersOnly = numbersOnly;
 
     chatMessages.push_back({"user", "Compare these mixes"});
     processorRef.chatHistory.push_back({"user", "Compare these mixes"});
@@ -5280,7 +5378,7 @@ void EchoJayEditor::runAICompare()
     api.setNextChatTurnType("version_compare");
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
-        [safeThis](const juce::String& reply, bool success) {
+        [safeThis, compareNumbersOnly](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
             safeThis->chatLoading = false;
             // ITEM 0 FIX (sibling of the capture path): a compare turn can
@@ -5303,25 +5401,29 @@ void EchoJayEditor::runAICompare()
             cm.chainData = chainJson;
             cm.gainData  = gainJson;
             cm.editData  = editJson;
-            // Item 4/6: suppress Build only on a GENUINE cross-scope pairing.
-            // In a channel chat, a chain is buildable when BOTH loaded slots
-            // are THIS channel's own audio; a full-capture slot, a live slot,
-            // or a DIFFERENT channel's capture makes it cross-scope and the
-            // chain would be reasoned from data that is not this channel.
-            // Same-scope (both "Link X v1" vs "Link X v2" in X's chat) keeps
-            // its Build button.
+            // STEP 4: the build gate is structural and reads the SAME unified
+            // source (compareTop_/compareBot_ via slotChannelUid) the context
+            // was built from. In a channel chat, a chain is buildable when BOTH
+            // loaded slots are THIS channel's own audio; a full-capture slot, a
+            // live slot, or a DIFFERENT channel's capture makes it foreign and
+            // the chain would be reasoned from data that is not this channel.
+            // Same-scope (both "Link X v1" vs "Link X v2" in X's chat) keeps its
+            // Build button. A "Numbers only" turn was composed to forbid a chain,
+            // so chainJson is empty here and there is nothing to suppress — we
+            // confirm that (assert-in-comment) rather than lean on the gate.
             {
                 const juce::String activeUid = safeThis->activeChatLinkUid();
-                bool crossScope = false;
+                bool foreignData = false;
                 if (activeUid.isNotEmpty())
                 {
                     auto matches = [&](const CompareSlotState& s) {
                         return safeThis->slotChannelUid(s) == activeUid;   // this channel's own audio
                     };
-                    crossScope = !(matches(safeThis->compareTop_)
-                                   && matches(safeThis->compareBot_));
+                    foreignData = !(matches(safeThis->compareTop_)
+                                    && matches(safeThis->compareBot_));
                 }
-                cm.chainBuildSuppressed = crossScope && chainJson.isNotEmpty();
+                jassert(!(compareNumbersOnly && chainJson.isNotEmpty())); // numbers-only never proposes a chain
+                cm.chainBuildSuppressed = foreignData && chainJson.isNotEmpty();
             }
             if (editJson.isNotEmpty())
             {
@@ -5343,6 +5445,57 @@ void EchoJayEditor::runAICompare()
                 safeThis->resized();
             safeThis->repaint();
         });
+}
+
+void EchoJayEditor::presentCompareScopeAsk(const CompareSlotState& slotA,
+                                           const CompareSlotState& slotB)
+{
+    // STEP 3: a client-side deterministic ASK — no server round-trip, no
+    // advisory model instruction (which the server ASK note biases against).
+    // The two chips carry special intents the chip onClick intercepts BEFORE
+    // any send: cmp_anyway re-runs the comparison as-is, cmp_numbers re-runs it
+    // meter-figures-only. The wording NAMES both sources so the choice is
+    // concrete.
+    const juce::String labelA = slotDisplayName(slotA);
+    const juce::String labelB = slotDisplayName(slotB);
+    const juce::String question =
+        "\"" + labelA + "\" and \"" + labelB + "\" are different sources, not two "
+        "versions of the same audio.";
+    const juce::String bubble = question + " Compare them anyway, or report just the numbers?";
+
+    // askData JSON: same shape measureAskShelf parses for a server ASK
+    // (question + choices[label,intent]). Built via DynamicObject so the labels
+    // and question escape correctly.
+    auto* root = new juce::DynamicObject();
+    root->setProperty("question", question);
+    juce::Array<juce::var> choices;
+    auto mk = [](const juce::String& label, const juce::String& intent)
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",  label);
+        c->setProperty("intent", intent);
+        return juce::var(c);
+    };
+    choices.add(mk("Compare anyway", "cmp_anyway"));
+    choices.add(mk("Numbers only",   "cmp_numbers"));
+    root->setProperty("choices", choices);
+    const juce::String askJson = juce::JSON::toString(juce::var(root), true);
+
+    ChatMsg cm;
+    cm.role    = "assistant";
+    cm.content = bubble;
+    cm.askData = askJson;
+    chatMessages.push_back(cm);
+    processorRef.chatHistory.push_back({ "assistant", bubble });
+    // Persist so the pending ASK survives an editor recreate — the choice lives
+    // in the persisted message's askData, NOT in editor-only state.
+    if (currentChatId.isNotEmpty())
+        workspace.appendMessageToChat(currentChatId, "assistant", bubble,
+                                      {}, {}, {}, askJson, {});
+
+    // Lay out so the shelf (which reads the newest unanswered ASK) appears.
+    resized();
+    repaint();
 }
 
 // =============================================================================

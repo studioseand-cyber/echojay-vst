@@ -161,6 +161,13 @@ public:
     juce::String buildCompareContext(const CaptureSnapshot& a, const CaptureSnapshot& b) const;
     // Build AI compare context between two references
     juce::String buildCompareContext(const ReferenceResult& a, const ReferenceResult& b) const;
+    // Slot-unified compare context (from getSlotMeterData): the ONE source
+    // AI Compare now reads, so the gate, the comparison, the suppression and
+    // the labels cannot disagree. numbersOnly: cross-scope "Numbers only"
+    // choice - meter figures only, DIFFERENT-SOURCES statement, no chain.
+    juce::String buildCompareContext(const MeterData& a, const MeterData& b,
+                                     const juce::String& labelA, const juce::String& labelB,
+                                     float durA, float durB, bool numbersOnly) const;
 
     // Tell the host non-parameter state changed so it re-snapshots our state
     // (plain updateHostDisplay() does NOT signal this — Logic could restore a

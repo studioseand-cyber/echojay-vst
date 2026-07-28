@@ -1531,6 +1531,68 @@ juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& a, con
     return ctx;
 }
 
+juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const MeterData& db,
+                                                   const juce::String& la, const juce::String& lb,
+                                                   float durA, float durB, bool numbersOnly) const
+{
+    auto ff = [](float v) { return v > -99.0f ? juce::String(v, 1) : juce::String("N/A"); };
+    juce::String ctx;
+    ctx += "[BEGIN COMPARE CONTEXT - this block is a one-off comparison, NOT an ongoing mix discussion]\n";
+    ctx += "[AI COMPARE REQUEST: " + la + " vs " + lb + "]\n\n";
+    ctx += la + ": Int " + ff(da.integrated) + " LUFS | Crest " + juce::String(da.crestFactor, 1) + " dB";
+    if (da.width < 10.0f || da.width > 55.0f) ctx += " | Width " + juce::String(da.width, 1) + "%";
+    ctx += "\n" + lb + ": Int " + ff(db.integrated) + " LUFS | Crest " + juce::String(db.crestFactor, 1) + " dB";
+    if (db.width < 10.0f || db.width > 55.0f) ctx += " | Width " + juce::String(db.width, 1) + "%";
+
+    ctx += "\n\nKEY DIFFERENCES (only mention if significant):\n";
+    const float lufsDiff = db.integrated - da.integrated;
+    ctx += std::abs(lufsDiff) > 1.5f
+        ? ("- Loudness: " + juce::String(lufsDiff, 1) + " dB difference\n")
+        : juce::String("- Loudness: practically the same\n");
+    const float crestDiff = db.crestFactor - da.crestFactor;
+    ctx += std::abs(crestDiff) > 2.0f
+        ? ("- Dynamics: Crest differs by " + juce::String(crestDiff, 1) + " dB\n")
+        : juce::String("- Dynamics: practically the same\n");
+    const float widthDiff = db.width - da.width;
+    if (std::abs(widthDiff) > 15.0f)
+        ctx += "- Width: " + juce::String(widthDiff, 1) + "% difference\n";
+
+    ctx += "\n";
+    appendTonalDiff(ctx, da.spectrum, db.spectrum, la, lb);
+
+    if (numbersOnly)
+    {
+        // Cross-scope "Numbers only": explicit DIFFERENT-SOURCES statement,
+        // figures only, NO chain proposal.
+        ctx += "\n[DIFFERENT SOURCES - \"" + la + "\" and \"" + lb + "\" are NOT two "
+               "versions of the same audio; they are different sources. Report ONLY "
+               "the meter-figure differences between them. Do NOT describe their "
+               "differences as changes to a mix, and do NOT propose or build a "
+               "processing chain from this comparison.]\n";
+    }
+    else
+    {
+        ctx += "\nINSTRUCTIONS: Only comment on differences that are genuinely significant. "
+               "Small variations (< 1.5 LUFS, < 2dB crest, < 15% width) are normal measurement "
+               "noise and should be described as practically the same. For tonal balance, speak "
+               "in plain language ('more low end', 'brighter on top') - do NOT quote dB values or "
+               "band names. Be concise - 2-3 paragraphs max.\n";
+    }
+
+    if (durA > 0 && durB > 0)
+    {
+        const float ratio = (durA > durB) ? (durA / durB) : (durB / durA);
+        const bool eitherShort = (durA < 30.0f) || (durB < 30.0f);
+        if (eitherShort && ratio > 2.5f)
+            ctx += "[LENGTH MISMATCH: " + la + " is " + juce::String((int)durA) + "s, " + lb
+                 + " is " + juce::String((int)durB) + "s - tonal balance especially will not read "
+                   "accurately across such different lengths; say so, then proceed.]\n";
+    }
+
+    ctx += "[END COMPARE CONTEXT]\n";
+    return ctx;
+}
+
 juce::String EchoJayProcessor::buildCompareContext(const ReferenceResult& a, const ReferenceResult& b) const
 {
     auto ff = [](float v) { return v > -99.0f ? juce::String(v, 1) : juce::String("N/A"); };
