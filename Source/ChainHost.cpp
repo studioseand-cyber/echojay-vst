@@ -900,6 +900,20 @@ juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(
     std::lock_guard<std::mutex> lock(pluginsMutex_);
     juce::Array<juce::PluginDescription> result;
     juce::String lf = filter.toLowerCase();
+
+    // Built-ins are pinned to the top and are NOT subject to the format
+    // filter: "EchoJay EQ" is compiled into the plugin, so it is equally
+    // available whether this instance is running as an AU or a VST3. It still
+    // honours the search text so typing narrows the list as expected.
+    {
+        const auto eq = builtinEqDescription();
+        if (lf.isEmpty()
+            || eq.name.toLowerCase().contains(lf)
+            || eq.manufacturerName.toLowerCase().contains(lf)
+            || eq.category.toLowerCase().contains(lf))
+            result.add(eq);
+    }
+
     for (auto& d : entries_)
     {
         if (formatFilter.isNotEmpty() && d.pluginFormatName != formatFilter) continue;

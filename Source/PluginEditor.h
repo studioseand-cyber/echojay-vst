@@ -1040,9 +1040,14 @@ private:
         {
             if (sel) g.fillAll(juce::Colour(0xff2a4d7a));
             if (row >= items.size()) return;
+            // Built-in EchoJay devices carry their own cyan badge so they read
+            // as part of the plugin, not as something that was scanned.
+            bool isBuiltin = ChainHost::isBuiltinDescription(items[row]);
             bool isAU = items[row].pluginFormatName == "AudioUnit";
-            juce::Colour tagCol = isAU ? juce::Colour(0xff3a7a3a) : juce::Colour(0xff2a4d7a);
-            juce::String tag    = isAU ? "AU" : "VST3";
+            juce::Colour tagCol = isBuiltin ? juce::Colour(0xff06b6d4)
+                                : isAU      ? juce::Colour(0xff3a7a3a)
+                                            : juce::Colour(0xff2a4d7a);
+            juce::String tag    = isBuiltin ? "EJ" : (isAU ? "AU" : "VST3");
             int tagW = 36;
             g.setColour(tagCol.withAlpha(0.7f));
             g.fillRoundedRectangle((float)(w - tagW - 4), (float)(h/2 - 8), (float)tagW, 16.0f, 3.0f);
