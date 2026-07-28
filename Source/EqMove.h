@@ -67,6 +67,7 @@ inline const char* bandTypeToString (BandType t) noexcept
         case BandType::Notch:     return "notch";
         case BandType::HighPass:  return "highpass";
         case BandType::LowPass:   return "lowpass";
+        case BandType::NumTypes:
         default:                  return "bell";
     }
 }

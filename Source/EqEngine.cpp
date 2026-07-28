@@ -83,6 +83,7 @@ EqEngine::Coeffs EqEngine::computeCoeffs (BandType type, double fs, float freqHz
             c.m2 = 1.0f;
             break;
         }
+        case BandType::NumTypes:
         default: c.passthrough = true; break;
     }
 

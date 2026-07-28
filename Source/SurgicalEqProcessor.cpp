@@ -7,6 +7,17 @@
 
 #include "SurgicalEqProcessor.h"
 
+#include <type_traits>
+
+// Nothing constructs a SurgicalEqProcessor yet (ChainHost integration is the
+// last step of the plan), so merely compiling this file would NOT catch an
+// unimplemented juce::AudioProcessor pure virtual — the class would just be
+// silently abstract until the day ChainHost tries to `new` it. Assert it is
+// concrete now, so that failure mode surfaces here instead of at integration.
+static_assert (! std::is_abstract<SurgicalEqProcessor>::value,
+               "SurgicalEqProcessor is abstract: a juce::AudioProcessor pure "
+               "virtual is unimplemented.");
+
 using echojay::BandSpec;
 using echojay::BandType;
 using echojay::EqMove;

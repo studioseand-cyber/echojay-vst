@@ -68,6 +68,14 @@ struct BandSpec
     float    attackMs    = 10.0f;
     float    releaseMs   = 100.0f;
 
+    // Exact bit-for-bit identity is deliberate here: this is a "did the target
+    // change since the last publish" check, not a numeric tolerance test. An
+    // epsilon compare would make genuinely distinct params compare equal and
+    // swallow small surgical edits, so -Wfloat-equal is silenced on purpose.
+   #if defined (__clang__) || defined (__GNUC__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wfloat-equal"
+   #endif
     bool operator== (const BandSpec& o) const
     {
         return enabled == o.enabled && type == o.type
@@ -77,6 +85,9 @@ struct BandSpec
             && rangeDb == o.rangeDb && attackMs == o.attackMs
             && releaseMs == o.releaseMs;
     }
+   #if defined (__clang__) || defined (__GNUC__)
+    #pragma GCC diagnostic pop
+   #endif
     bool operator!= (const BandSpec& o) const { return ! (*this == o); }
 };
 
