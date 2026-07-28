@@ -282,6 +282,61 @@ void EchoJayAPI::patchJSON(const juce::String& path, const juce::String& body,
     });
 }
 
+// ============ Generic DELETE helper ============
+//
+// No body, no retry. Same teardown discipline as the others: a request can be
+// in flight for a long time after the plugin is removed, and a callAsync
+// posted after teardown fires on the host's next message pump.
+void EchoJayAPI::deleteJSON(const juce::String& path,
+                            std::function<void(const juce::var& json, int statusCode)> onComplete)
+{
+    auto endpoint = apiEndpoint;
+    auto token = authToken;
+    auto cb = std::make_shared<std::function<void(const juce::var&, int)>>(onComplete);
+    auto aliveFlag = alive;
+
+    juce::Thread::launch([=]()
+    {
+        if (!aliveFlag->load()) return;
+
+        juce::URL url(transportEndpoint(endpoint) + path);
+
+        juce::String headers;
+        if (token.isNotEmpty())
+            headers += "Authorization: Bearer " + token + "\r\n";
+        headers += transportHeaders();   // empty in a release build
+
+        int statusCode = 0;
+        auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                           .withExtraHeaders(headers)
+                           .withConnectionTimeoutMs(kDefaultGetTimeoutMs)
+                           .withStatusCode(&statusCode)
+                           .withHttpRequestCmd("DELETE");
+
+        auto stream = url.createInputStream(options);
+
+        juce::var json;
+        if (stream != nullptr)
+        {
+            juce::MemoryBlock mb;
+            stream->readIntoMemoryBlock(mb);
+            auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
+            json = juce::JSON::parse(responseText);
+        }
+
+        auto callback = cb;
+        auto sc = statusCode;
+        auto j = json;
+        if (!aliveFlag->load()) return;
+        juce::MessageManager::callAsync([callback, j, sc, aliveFlag]() {
+            ejTeardownLog("[callAsync] deleteJSON completion firing");
+            if (!aliveFlag->load()) { ejTeardownLog("[callAsync] deleteJSON: alive=false, bailing"); return; }
+            (*callback)(j, sc);
+            ejTeardownLog("[callAsync] deleteJSON completion done");
+        });
+    });
+}
+
 // ============ Saved chains: one place that turns a failure into a sentence ==
 //
 // Codes are from session-b-plugin-kickoff.md section 6 and the backend's

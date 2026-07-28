@@ -458,6 +458,17 @@ public:
         else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
     }
 
+    // DELETE /api/v2/chains/:id -> 200 { ok: true }. SOFT delete server side:
+    // the row and its state blob survive so a mis-click stays recoverable by
+    // hand, but every read filters it out, so the client treats it as gone.
+    // A second delete answers 404, exactly like a chain that never existed.
+    void deleteChain(const juce::String& id,
+                     std::function<void(const juce::var&, int)> cb)
+    {
+        if (isLoggedIn()) deleteJSON("/api/v2/chains/" + id, std::move(cb));
+        else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
+    }
+
     // One place that turns a chain-endpoint failure into a sentence for the
     // user. Keeps the wording consistent and keeps "not enabled yet" from
     // being reported as "not found". Empty return = success.
@@ -522,6 +533,12 @@ private:
     // explicitly with withHttpRequestCmd.
     void patchJSON(const juce::String& endpoint, const juce::String& body,
                    std::function<void(const juce::var& json, int statusCode)> onComplete);
+    // DELETE, no body. Like patchJSON it does NOT retry, and here the reason
+    // is sharper: the second call answers 404 by design, so a retry after a
+    // connection dropped mid-flight would report "no longer exists" for a
+    // delete that had in fact succeeded. One attempt, one honest answer.
+    void deleteJSON(const juce::String& endpoint,
+                    std::function<void(const juce::var& json, int statusCode)> onComplete);
 
 public:
     // Helper: make a GET request with auth header. Public: the editor uses

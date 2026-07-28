@@ -17587,6 +17587,8 @@ void EchoJayEditor::showChainRowMenu(int displayIdx)
     // Reads what it will DO, not what the state is: "Favourite" on an
     // unstarred row, "Unfavourite" on a starred one.
     m.addItem(2, row.favourite ? "Unfavourite" : "Favourite");
+    m.addSeparator();
+    m.addItem(3, "Delete" + juce::String::fromUTF8("\xe2\x80\xa6"));
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this)
@@ -17597,6 +17599,7 @@ void EchoJayEditor::showChainRowMenu(int displayIdx)
             if (safeThis == nullptr) return;
             if (choice == 1) safeThis->renameChainRow(displayIdx);
             else if (choice == 2) safeThis->toggleChainFavourite(displayIdx);
+            else if (choice == 3) safeThis->deleteChainRow(displayIdx);
         });
 }
 
@@ -17630,6 +17633,72 @@ void EchoJayEditor::renameChainRow(int displayIdx)
             }
             safeThis->sendChainRename(row.id, name);
         }));
+}
+
+void EchoJayEditor::deleteChainRow(int displayIdx)
+{
+    if (displayIdx < 0 || displayIdx >= (int)chainDisplayRows_.size()) return;
+    if (chainRowIsHeading_[(size_t)displayIdx] != 0) return;
+    const auto row = chainDisplayRows_[(size_t)displayIdx];
+    if (row.id.isEmpty()) return;
+
+    // The confirm NAMES THE CHAIN. A context menu opens on whatever row the
+    // pointer was over, and on a trackpad a ctrl-click can land a row off
+    // from where the user thinks they are. "Delete this chain?" would be
+    // answered yes by someone about to lose the wrong one.
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    auto* dlg = new juce::AlertWindow(
+        "Delete Chain",
+        "Delete \"" + row.name + "\"?\n\n"
+        "Its saved plugin settings go with it, and there is no undo here.",
+        juce::MessageBoxIconType::WarningIcon);
+    dlg->addButton("Delete", 1);
+    dlg->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    dlg->enterModalState(true,
+        juce::ModalCallbackFunction::create([safeThis, dlg, row](int result)
+        {
+            delete dlg;
+            if (safeThis == nullptr || result != 1) return;
+            safeThis->sendChainDelete(row.id, row.name);
+        }));
+}
+
+void EchoJayEditor::sendChainDelete(const juce::String& id, const juce::String& name)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.deleteChain(id, [safeThis, id, name](const juce::var& resp, int sc)
+    {
+        if (safeThis == nullptr) return;
+        const auto err = EchoJayAPI::chainErrorMessage(resp, sc,
+                                                       EchoJayAPI::ChainOp::Open);
+        if (err.isNotEmpty()) { safeThis->setChainSaveStatus(err); return; }
+
+        // Gone from the list, and gone from the CACHE: a cached row that
+        // outlived its chain is the offline case that would fail on open for
+        // a reason the user cannot see.
+        safeThis->chainRows_.erase(
+            std::remove_if(safeThis->chainRows_.begin(), safeThis->chainRows_.end(),
+                           [&id](const ChainRow& r) { return r.id == id; }),
+            safeThis->chainRows_.end());
+        safeThis->writeChainRowsToCache();
+
+        // If the deleted chain was the LOADED one, the rack keeps playing but
+        // its identity is gone: Save would PATCH a row that no longer exists
+        // and get a 404. Clearing it reverts Save to Save As, which is the
+        // honest behaviour, and stops the header claiming a chain that is not
+        // there any more.
+        if (safeThis->processorRef.savedChainId == id)
+        {
+            safeThis->processorRef.savedChainId.clear();
+            safeThis->processorRef.savedChainName.clear();
+            safeThis->processorRef.markStateDirty();
+        }
+
+        safeThis->setChainSaveStatus("Deleted \"" + name + "\"");
+        safeThis->rebuildChainDisplayRows();
+        safeThis->resized();
+        safeThis->repaint();
+    });
 }
 
 void EchoJayEditor::sendChainRename(const juce::String& id, const juce::String& name)

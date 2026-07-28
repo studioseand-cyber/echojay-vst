@@ -1126,6 +1126,8 @@ private:
     void showChainRowMenu(int displayIdx);
     void renameChainRow(int displayIdx);
     void sendChainRename(const juce::String& id, const juce::String& name);
+    void deleteChainRow(int displayIdx);
+    void sendChainDelete(const juce::String& id, const juce::String& name);
     void writeChainRowsToCache();
     void paintChainSidebar(juce::Graphics& g, int chatX, int chatW, int topH, int bottomY);
     // Group order is FAVOURITES then SAVED. Imported is deliberately absent:
