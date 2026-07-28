@@ -23,7 +23,16 @@ LinkProcessor::LinkProcessor()
     // Mirror hosted chain latency into the host on EVERY chain change —
     // Link sits on parallel and phase-critical tracks, so this must track
     // build/add/remove/bypass exactly.
-    chainHost.onChainChanged = [this] { updateChainLatency(); };
+    chainHost.onChainChanged = [this]
+    {
+        updateChainLatency();
+        // Same stale-hold problem as the main plugin: the Link's own meterEngine_
+        // reads POST-rack (its mix-bus strip), so a rack change leaves its held
+        // true peak / peak / overs describing audio the rack no longer produces.
+        // Drop those holds; integrated LUFS / LRA keep accumulating. Message
+        // thread signal only.
+        meterEngine_.resetHolds();
+    };
 }
 
 LinkProcessor::~LinkProcessor()

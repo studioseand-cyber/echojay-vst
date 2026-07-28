@@ -137,6 +137,14 @@ public:
     
     // Reset integrated LUFS measurement
     void resetIntegrated();
+
+    // Reset ONLY the held/max values that describe past audio the source no
+    // longer produces — true peak (both channels), peak hold and the overs
+    // count — WITHOUT touching the integrated-LUFS / LRA long-window
+    // accumulation. Signalled from the message thread (e.g. on a chain change)
+    // and applied on the audio thread, same discipline as reset()/
+    // resetIntegrated(). See resetHoldState().
+    void resetHolds();
     
     // Get JSON string of all meter data for the WebView
     juce::String getMeterDataJSON() const;
@@ -286,6 +294,11 @@ private:
     // then clears it. Avoids data race on the unprotected vectors below.
     std::atomic<bool> pendingReset { false };
     void resetState();   // does the actual reset work — called from audio thread
+    // Partial reset: cleared holds only (true peak / peak / overs), never the
+    // LUFS/LRA accumulators. Same signal-from-message-thread, apply-on-audio-
+    // thread pattern as pendingReset.
+    std::atomic<bool> pendingHoldReset { false };
+    void resetHoldState();   // audio thread — clears held maxima + overs only
     
     // Running accumulators
     double sumSqL = 0, sumSqR = 0;

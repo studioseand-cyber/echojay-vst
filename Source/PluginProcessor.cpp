@@ -290,7 +290,16 @@ EchoJayProcessor::EchoJayProcessor()
     // linear-phase EQ) sits in the chain, and the master wet/dry's dry leg
     // would be aligned against a host timeline that is itself off.
     chainHost.onChainChanged = [this]
-    { setLatencySamples(chainHost.getTotalLatencySamples()); };
+    {
+        setLatencySamples(chainHost.getTotalLatencySamples());
+        // The chain now produces different audio, so the held true peak / peak /
+        // overs describe a signal that no longer exists (they were contradicting
+        // a capture taken seconds later). Drop those holds; integrated LUFS / LRA
+        // keep accumulating. onChainChanged fires from rebuildGraph(), which every
+        // structural op routes through (load, clear, add, remove, bypass toggle,
+        // reorder), so this covers all of them. Message-thread signal only.
+        meterEngine.resetHolds();
+    };
 
     // Hosted plugin settings survive a DAW save only if they were serialised
     // BEFORE the host asked for them: getStateInformation writes strings the

@@ -467,6 +467,10 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     // and gets handled on the NEXT block — which is fine.
     if (pendingReset.exchange(false))
         resetState();
+    // Partial hold reset (chain change): clears held maxima + overs only, never
+    // the LUFS/LRA accumulators. Independent of the full reset above.
+    if (pendingHoldReset.exchange(false))
+        resetHoldState();
 
     // ===== Silence detection: are we receiving audio right now? =====
     // Scan the block for any sample above kSilenceThreshold. If found,
@@ -958,6 +962,31 @@ void MeterEngine::resetIntegrated()
     // The full state reset will clear integrated LUFS along with everything
     // else, which is what the user wanted anyway.
     pendingReset.store(true);
+}
+
+void MeterEngine::resetHolds()
+{
+    // Message thread only signals; the audio thread applies resetHoldState() at
+    // the top of the next processBlock. Same discipline as reset(), but this
+    // clears ONLY the held maxima + overs — the integrated-LUFS / LRA
+    // long-window accumulation is deliberately left running.
+    pendingHoldReset.store(true);
+}
+
+void MeterEngine::resetHoldState()
+{
+    // The held values that describe audio the source no longer produces after a
+    // chain change: true peak (both channels), peak hold, and the inter-sample
+    // overs count (plus its in-progress over-run state, so no stale run leaks a
+    // spurious event after the reset). currentTp/currentPeak are cleared to
+    // linear 0, which getMeterData() maps through toDb -> -100 dB, i.e. it reads
+    // as no-signal-yet rather than a measured 0 dBFS. Everything else - integrated
+    // LUFS, LRA, RMS, width/correlation, spectrum - is untouched.
+    currentTpL = currentTpR = 0;
+    currentPeakL = currentPeakR = 0;
+    oversEvents = 0;
+    tpOverRun = false;
+    tp100msAccum = 0.0f;
 }
 
 juce::String MeterEngine::getMeterDataJSON() const
