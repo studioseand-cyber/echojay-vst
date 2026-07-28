@@ -15,6 +15,10 @@
 
 // Defined later in this file (used by the shared name resolution above it)
 static juce::String normalizeName(const juce::String& raw);
+// Trailing all-digits MODEL number (the token normalizeName strips as a
+// "version"), or empty. Lets resolveByName keep "AMEK EQ 250" and "AMEK EQ
+// 200" distinct while still tolerating genuine version suffixes.
+static juce::String trailingModelNumber(const juce::String& raw);
 
 // ---------------------------------------------------------------------------
 // File path helpers
@@ -2069,7 +2073,13 @@ bool ChainHost::namesMatchLoose(const juce::String& incoming,
     if (in.equalsIgnoreCase(en)) return true;
     auto inBase = stripParenthetical(in);
     if (inBase.equalsIgnoreCase(en)) return true;
-    return normalizeName(inBase) == normalizeName(stripParenthetical(en));
+    auto enBase = stripParenthetical(en);
+    if (normalizeName(inBase) != normalizeName(enBase)) return false;
+    // Model-number guard (same as resolveByName): two names that share the
+    // stripped stem but carry DIFFERENT trailing numbers are different models
+    // ("AMEK EQ 250" vs "AMEK EQ 200"), not a loose match.
+    auto ni = trailingModelNumber(inBase), ne = trailingModelNumber(enBase);
+    return ! (ni.isNotEmpty() && ne.isNotEmpty() && ni != ne);
 }
 
 juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
@@ -2120,11 +2130,22 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
         return baseHits[0];
     }
 
-    // Normalised (case/punctuation/version-token tolerant)
+    // Normalised (case/punctuation/version-token tolerant). Model-number guard:
+    // normalizeName strips a trailing number as a version, which collapses
+    // "AMEK EQ 250" and "AMEK EQ 200" to the same stem. When the request AND
+    // the candidate each carry a trailing number and they DIFFER, the number is
+    // a model, not a version, so it is not a match. A number on only one side
+    // (e.g. "Saturn 2" vs a plugin named "Saturn") still tolerates the strip.
     auto keyIn = normalizeName(base);
+    auto numIn = trailingModelNumber(base);
     for (auto& d : cands)
         if (normalizeName(stripParenthetical(d.name)) == keyIn)
-        { logMatch("normalised", d); return d; }
+        {
+            auto numCand = trailingModelNumber(stripParenthetical(d.name));
+            if (numIn.isNotEmpty() && numCand.isNotEmpty() && numIn != numCand)
+                continue;
+            logMatch("normalised", d); return d;
+        }
 
     if (matchLogOut)
     {
@@ -2223,6 +2244,24 @@ static juce::String normalizeName(const juce::String& raw)
         if (isVersion) parts.remove(parts.size() - 1);
     }
     return parts.joinIntoString(" ").trim();
+}
+
+// The trailing all-digits token normalizeName would strip, or empty. Mirrors
+// that tokenization so the number it returns is exactly the one stripped. Only
+// bare digits count as a model (v2 / II / III stay version suffixes); those are
+// still stripped and never guarded.
+static juce::String trailingModelNumber(const juce::String& raw)
+{
+    juce::String s = raw.toLowerCase().trim();
+    s = s.replace("-", " ").replace("_", " ").replace(".", " ");
+    while (s.contains("  ")) s = s.replace("  ", " ");
+    juce::StringArray parts = juce::StringArray::fromTokens(s.trim(), " ", "");
+    if (parts.size() >= 2)
+    {
+        const auto& last = parts[parts.size() - 1];
+        if (last.containsOnly("0123456789")) return last;
+    }
+    return {};
 }
 
 void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
@@ -2379,6 +2418,10 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
     {
         juce::String matchLog;
         auto d = resolveByName(name, recommendableFormat_, &matchLog);
+        // Log which stage resolved (or failed) so a future mis-resolution -
+        // like "AMEK EQ 250" landing on "AMEK EQ 200" - is diagnosable from
+        // the unified log instead of invisible.
+        EchoJay_NSLog(("EJChain: resolve \"" + name + "\" -> " + matchLog).toRawUTF8());
         if (d.name.isNotEmpty())
         {
             loadPluginAsync(preferInlineHostableDesc(d), std::move(callback));
