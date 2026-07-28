@@ -165,12 +165,17 @@ private:
     // wrong for an overlay you are reading levels off, so this window is
     // FIXED: the same signal always lands at the same height, and quiet
     // material stays near the floor where it belongs.
-    static constexpr float kSpecCeilDb  = -20.0f;
+    //
+    // 0 .. -100 dBFS, Pro-Q's range, drawn on its OWN right-hand axis. The
+    // analyzer and the EQ's gain grid measure different quantities and must
+    // never be read off each other's scale.
+    static constexpr float kSpecCeilDb  = 0.0f;
     static constexpr float kSpecFloorDb = -100.0f;
 
     void  updateSpectrum();          // timer: drain a tap, FFT, smooth
     void  rebuildSpectrumPath();     // region-aware knots + Catmull-Rom
     void  paintSpectrum (juce::Graphics& g) const;
+    void  paintAnalyzerAxis (juce::Graphics& g) const;   // right-hand dBFS scale
     float specDbToY (float db) const noexcept;   // analyzer's OWN vertical scale
 
     // ---- dynamic metering (Step B) -----------------------------------------

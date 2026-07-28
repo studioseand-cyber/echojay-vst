@@ -989,6 +989,43 @@ void SurgicalEqEditor::paintSpectrum (juce::Graphics& g) const
     g.strokePath (spectrumPath_, juce::PathStrokeType (1.0f));
 }
 
+void SurgicalEqEditor::paintAnalyzerAxis (juce::Graphics& g) const
+{
+    // The analyzer's OWN scale, on the right, the way Pro-Q does it. Without
+    // this the spectrum gets read against the EQ's ±dB gain gridlines on the
+    // left, which measure a completely different quantity — that misreading is
+    // the whole reason this axis exists.
+    //
+    // Caveat worth knowing: the 4.5 dB/oct tilt means the labels are exact
+    // dBFS at 1 kHz and progressively optimistic above it / pessimistic below.
+    // Pro-Q's tilted display has the same property; it is a reference scale
+    // for judging relative level, not a measurement readout.
+    const auto gb = graphBounds_;
+    constexpr int labelW = 26;
+    const int textX = gb.getRight() - labelW - 3;
+
+    g.setFont (uiFont (8.0f));
+
+    for (int db = -20; db >= -80; db -= 20)
+    {
+        const float y = specDbToY ((float) db);
+        if (y < (float) gb.getY() + 6.0f || y > (float) gb.getBottom() - 6.0f) continue;
+
+        // Short tick only — a full-width line here would fight the EQ grid.
+        g.setColour (C::text3.withAlpha (0.30f));
+        g.fillRect ((float) (gb.getRight() - 4), y, 4.0f, 0.5f);
+
+        g.setColour (C::text3.withAlpha (0.55f));
+        g.drawText (juce::String (db), textX, (int) y - 6, labelW, 12,
+                    juce::Justification::centredRight);
+    }
+
+    g.setColour (C::text3.withAlpha (0.45f));
+    g.setFont (uiFont (7.5f, true));
+    g.drawText ("dBFS", textX - 2, gb.getY() + 2, labelW + 2, 10,
+                juce::Justification::centredRight);
+}
+
 // ---------------------------------------------------------------------------
 // dynamic metering
 // ---------------------------------------------------------------------------
@@ -1242,7 +1279,11 @@ void SurgicalEqEditor::paint (juce::Graphics& g)
         juce::Graphics::ScopedSaveState save (g);
         g.reduceClipRegion (graphBounds_);
         paintGrid (g);
-        if (analyzerOn_) paintSpectrum (g);   // behind the curve, above the grid
+        if (analyzerOn_)
+        {
+            paintSpectrum (g);        // behind the curve, above the grid
+            paintAnalyzerAxis (g);    // over the fill so the labels stay legible
+        }
         paintCurves (g);
         paintNodes (g);
     }
