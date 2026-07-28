@@ -997,6 +997,10 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
         op.on       = (bool)eo->getProperty("on");
         op.name     = eo->getProperty("name").toString().trim();
         op.settings = eo->getProperty("settings").toString().trim();
+        // Same key the build path reads. Only add/replace consume it (they are
+        // the only ops that produce a slot to dial); reading it unconditionally
+        // costs nothing and keeps this parse a straight field copy.
+        op.structuredSettings = eo->getProperty("settings_structured");
         if (op.op.isNotEmpty()) out.push_back(std::move(op));
     }
     return out;
@@ -1302,6 +1306,18 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             int newCur = getNumSlots() - 1;   // appended by completeLoad
             if (theOp.settings.isNotEmpty())
                 setSlotSettings(newCur, theOp.settings);
+
+            // Structured settings now ride edit ops too, matching the build
+            // path. Applied HERE — at the index the slot occupies straight
+            // after loading, before any walkSlotTo shuffle — because the slot
+            // struct carries the settings with it as it moves, whereas an
+            // index captured now and used after the move would address a
+            // different slot. Routes through applyStructuredIfReady, so the
+            // built-in EQ gets its exact per-band write and third-party slots
+            // take the anchor path exactly as they already do: no new apply
+            // logic, just the same payload reaching the same consumer.
+            if (! theOp.structuredSettings.isVoid())
+                setSlotStructuredSettings(newCur, theOp.structuredSettings);
 
             if (theOp.op == "add")
             {

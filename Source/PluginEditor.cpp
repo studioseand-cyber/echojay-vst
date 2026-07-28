@@ -14946,35 +14946,42 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 auto ev = juce::JSON::parse(cm2.editData);
                 if (auto* eo = ev.getDynamicObject())
                 {
-                    // Apply-time honesty (26 Jul 2026): edit ops never write
-                    // parameters (no settings_structured rides an op), so
-                    // the model's "result" line claiming a problem is
-                    // handled is only honest when nothing new needs
-                    // dialing. Added/replaced slots get factual wording,
-                    // and a dial_miss event measures the delivery gap.
-                    juce::StringArray addedNames;
+                    // Apply-time honesty (26 Jul 2026, revised): edit ops CAN
+                    // now write parameters — settings_structured rides an
+                    // add/replace and ChainHost applies it once the slot
+                    // loads, exactly as the build path does. So the old
+                    // blanket "dial it in by hand" is no longer true for
+                    // every added slot, and claiming it for one that was just
+                    // dialled exactly would be the same overclaim in reverse.
+                    //
+                    // The distinction is per-op: a slot that carried
+                    // structured settings was dialled and the model's own
+                    // result line stands; one that did not still needs hand
+                    // dialling and still measures a delivery gap.
+                    juce::StringArray undialledNames;
                     if (auto* ops = eo->getProperty("edit").getArray())
                         for (auto& opv : *ops)
                         {
                             const auto opName = opv.getProperty("op", juce::var()).toString();
                             const auto plug   = opv.getProperty("name", juce::var()).toString().trim();
-                            if ((opName == "add" || opName == "replace") && plug.isNotEmpty())
-                                addedNames.addIfNotAlreadyThere(plug);
+                            if ((opName == "add" || opName == "replace") && plug.isNotEmpty()
+                                && opv.getProperty("settings_structured", juce::var()).isVoid())
+                                undialledNames.addIfNotAlreadyThere(plug);
                         }
                     auto modelResult = eo->getProperty("result").toString().trim();
-                    if (addedNames.isEmpty())
+                    if (undialledNames.isEmpty())
                     {
                         if (modelResult.isNotEmpty())
                             safeThis->appendLocalResultBubble(modelResult);
                     }
                     else
                     {
-                        const bool one = addedNames.size() == 1;
+                        const bool one = undialledNames.size() == 1;
                         safeThis->appendLocalResultBubble(
-                            addedNames.joinIntoString(", ")
+                            undialledNames.joinIntoString(", ")
                             + (one ? " is in - dial it in by hand with the values on its card."
                                    : " are in - dial them in by hand with the values on their cards."));
-                        for (auto& an : addedNames)
+                        for (auto& an : undialledNames)
                             safeThis->logDialMiss(an, juce::String(), "edit_add_no_dial", {});
                     }
                 }

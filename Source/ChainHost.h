@@ -145,6 +145,11 @@ public:
         bool on    = false;     // bypass state
         juce::String name;      // add/replace: name from AVAILABLE PLUGINS
         juce::String settings;  // prose settings for the slot tile (display)
+        // add/replace: the machine-readable settings_structured that rides the
+        // op, applied once the new slot has loaded. Same payload and same
+        // consumer as the build path, so an EQ added by an EDIT turn is dialled
+        // exactly like one added by a chain build instead of arriving flat.
+        juce::var    structuredSettings;
     };
     // Parse edit-block JSON. Returns empty on malformed payloads. Static so
     // preview cards can humanize ops without touching a host.
