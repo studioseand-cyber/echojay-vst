@@ -11545,6 +11545,31 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // the Settings panel only. Keeps the chat strip clean and avoids
     // duplicating info that's one click away.)
 
+    // ---- Chain sidebar: Chains mode paints the LIST, not the conversation --
+    // The header above still paints, because it carries the mode switch.
+    // From here down is the chat BODY, and in Chains mode it must not draw:
+    // chat content painting under the list would look exactly like the three
+    // overlap bugs this file has already produced, and would send the next
+    // reader into the geometry layer for what is really a missing call site.
+    //
+    // ONE predicate, consulted here and never re-derived, so the paint pass
+    // and the layout pass cannot disagree about which mode is showing.
+    if (chainSidebarInChainsMode())
+    {
+        paintChainSidebar(g, chatX, chatW, topH, chatScroll.getBottom());
+        // Hit zones belong to a paint pass that actually ran. Leaving the
+        // chat's zones populated on a pass that drew a list instead is how a
+        // click lands on a card that is not on screen: the same class of leak
+        // as a stale rect, one layer up.
+        gainCardZones_.clear();
+        chatWavePositions.clear();
+        activeChainBuildBtns = 0;
+        for (int i = 0; i < kMaxChainBuildBtns; ++i) chainBuildBtns[(size_t)i].setVisible(false);
+        for (int i = 0; i < kMaxWavePlayBtns;   ++i) wavePlayOverlays[(size_t)i].setVisible(false);
+        for (int i = 0; i < kMaxResultChips;    ++i) resultChipBtns[(size_t)i].setVisible(false);
+    }
+    else
+    {
     // Chat messages
     // ONE TOP BOUND TOO: messages are EDITOR-painted, and their painted
     // top must derive from chatScroll's own bounds — the single formula in
@@ -12336,6 +12361,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     for (int i = activeResultChips; i < kMaxResultChips; ++i)
         resultChipBtns[(size_t)i].setVisible(false);
 
+    }   // end else: AI mode chat body
     } // end if (!visualOnlyMode && chatW > 0) — chat section
 
     // Onboarding prompts paint INSIDE onboardingOverlay_ (their own opaque
