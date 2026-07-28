@@ -939,7 +939,12 @@ void EchoJayProcessor::stopCapture()
     // Then increment only the counter that was actually used.
     CaptureSnapshot snap;
     snap.id   = juce::String(juce::Time::currentTimeMillis());
-    snap.name = computePassName();   // reads passCounter+1 (no-project) or captureVersion (project)
+    // Item 1: single name source. The editor stamped the chat-revision name
+    // at press; use it so the snapshot, the review label and the card cannot
+    // diverge. computePassName() (captureVersion) is the fallback only.
+    snap.name = nextCaptureName_.isNotEmpty() ? nextCaptureName_ : computePassName();
+    snap.channelScopeUid = nextCaptureScopeUid_;   // item 1: robust scope stamp
+    nextCaptureName_.clear(); nextCaptureScopeUid_.clear();
     if (projectName.trim().isEmpty())
         passCounter++;               // "Pass N" used → next will be "Pass N+1"
     else
@@ -1240,10 +1245,10 @@ std::vector<CaptureSnapshot> EchoJayProcessor::getSnapshots() const
     return snapshots;
 }
 
-void EchoJayProcessor::setLatestSnapshotChannelScope(const juce::String& uid)
+void EchoJayProcessor::setNextCapture(const juce::String& name, const juce::String& scopeUid)
 {
-    std::lock_guard<std::mutex> lock(snapshotMutex);
-    if (!snapshots.empty()) snapshots.back().channelScopeUid = uid;
+    nextCaptureName_     = name;
+    nextCaptureScopeUid_ = scopeUid;
 }
 
 CaptureSnapshot EchoJayProcessor::getLatestSnapshot() const

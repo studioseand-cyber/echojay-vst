@@ -213,9 +213,13 @@ public:
     void renameSnapshot(int index, const juce::String& newName);
     void deleteSnapshot(int index);
     CaptureSnapshot getLatestSnapshot() const;
-    // Item 3: mark the most-recent snapshot as channel-scoped (editor knows
-    // the active channel at capture time; the processor does not).
-    void setLatestSnapshotChannelScope(const juce::String& uid);
+    // Item 1: the editor stamps the next capture's NAME and channel SCOPE at
+    // Capture-PRESS time (both derive from the single chat-revision source it
+    // owns). Stashed here and consumed when stopCapture pushes the snapshot,
+    // so an editor recreate between press and completion cannot lose them
+    // (the after-completion marker did have that window). Name empty = fall
+    // back to computePassName(); scope empty = a full capture.
+    void setNextCapture(const juce::String& name, const juce::String& scopeUid);
     // Phase C handshake: fired on the MESSAGE THREAD when the background WAV
     // save completes (host + every per-channel WAV written). The editor wires
     // this once and, in the handler, fills any channel review whose WAV
@@ -386,6 +390,8 @@ private:
     // Project naming — persisted in plugin state
     juce::String projectName;    // empty = use "Pass N" naming
     int captureVersion = 1;      // incremented after each capture when project is set; resets when name changes
+    juce::String nextCaptureName_;      // item 1: press-time override (single source)
+    juce::String nextCaptureScopeUid_;  // item 1: press-time channel scope
 
     // Auto-feedback
     mutable std::atomic<bool> autoFeedbackReady { false };

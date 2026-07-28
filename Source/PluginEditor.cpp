@@ -673,6 +673,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             frozenWaveform.clear();
             unfreezeCountdown = 0;
             captureWasSilent = false;
+            // Item 1: stamp the name + channel scope at PRESS (single source,
+            // recreate-safe) so the snapshot matches the review.
+            processorRef.setNextCapture(computeNextCaptureName(), effectiveChannelUid());
             processorRef.startCapture();
         }
         else if (s == CaptureState::Capturing)
@@ -4141,20 +4144,9 @@ void EchoJayEditor::updateCompareSlotBtn(bool isTop)
             break;
     }
 
-    // Item 6: unmissable cross-scope mark ON THE SLOT. When the two loaded
-    // slots differ in scope (one channel, one full), both are amber-flagged
-    // so the mismatch cannot be missed. Pairing stays allowed.
-    const bool bothLoaded = compareTop_.kind != CompareSlotState::Kind::Empty
-                         && compareBot_.kind != CompareSlotState::Kind::Empty;
-    if (bothLoaded
-        && slotIsChannelScoped(compareTop_) != slotIsChannelScoped(compareBot_)
-        && slot.kind != CompareSlotState::Kind::Live
-        && slot.kind != CompareSlotState::Kind::Empty)
-    {
-        text = "MIXED SCOPE - " + text;   // amber warning glyph
-        col  = juce::Colour(0xfff59e0b);
-    }
-
+    // Item 3: the cross-scope marker is removed — the scope-labelled entries
+    // are self-evident, and item 4 adds the conversational check at AI Compare
+    // press (structural, at the point analysis is requested).
     btn.setButtonText(text);
     btn.setColour(juce::TextButton::textColourOffId, col);
 }
@@ -7524,8 +7516,8 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             auto populateFromReview = [&](const WsReview& rv)
             {
                 cm.reviewId = rv.id;
-                if (rv.label.isNotEmpty() && cm.content.isEmpty())
-                    cm.content = rv.label;
+                if (cm.content.isEmpty())
+                    cm.content = compareReviewLabel(rv);   // item 1a: scope-labelled, matches Compare
                 // ITEM 4 (honest interim): a genuinely channel-scoped review's
                 // stored waveform + WAV are the HOST's (per-channel audio isn't
                 // routed yet). Show no picture and offer no playback rather
@@ -11439,16 +11431,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     }
                     else
                     {
+                        // Item 2: NAME only. LUFS + duration removed (the prose
+                        // below states the numbers with context; a bare figure
+                        // on the card invites misreading).
                         labelLine = msg.content;
-                        if (msg.lufs > -99.f)
-                            labelLine += "   " + juce::String(msg.lufs, 1) + " LUFS";
-                        if (msg.durationSeconds > 0.1f)
-                        {
-                            int secs = (int)msg.durationSeconds;
-                            int mins = secs / 60; secs %= 60;
-                            labelLine += "   " + (mins > 0 ? juce::String(mins) + ":" : "")
-                                        + juce::String(secs).paddedLeft('0', 2) + "s";
-                        }
                     }
                     g.setColour(C::text3);
                     g.setFont(juce::Font(juce::FontOptions(10.0f)));
@@ -13402,10 +13388,6 @@ void EchoJayEditor::timerCallback()
             // Phase C: a per-channel capture stamps the review with its Link
             // uid so a reloaded channel chat re-associates its own captures.
             juce::String reviewId = createReviewFromCapture(snap, savedPath, activeChatLinkUid());
-            // Item 3: a channel capture's host snapshot is not listed in
-            // Compare (the channel review is the entry); mark it so.
-            if (auto capScope = activeChatLinkUid(); capScope.isNotEmpty())
-                processorRef.setLatestSnapshotChannelScope(capScope);
 
             // Push PERSISTED user message — content = passName (survives save/load
             // cleanly), _reviewId links it to the review for waveform reconstruction.
@@ -13416,7 +13398,11 @@ void EchoJayEditor::timerCallback()
             // Local display
             ChatMsg displayCm;
             displayCm.role     = "user";
+            // Item 1a: the card shows the SAME name as the Compare list — the
+            // review's scope-labelled label, never the raw passName.
             displayCm.content  = passName;
+            for (auto& r : workspace.getReviews())
+                if (r.id == reviewId) { displayCm.content = compareReviewLabel(r); break; }
             displayCm.reviewId = reviewId;
             displayCm.origin   = "plugin";
             // ITEM 4 (honest interim): the frozen waveform + saved WAV are the
@@ -14847,6 +14833,16 @@ juce::String EchoJayEditor::fitCaptureLabel(const juce::String& full) const
            && cf.getStringWidth(base + name + ell) + 20 > captureBtnMaxW_)
         name = name.dropLastCharacters(1);
     return base + name + ell;
+}
+
+juce::String EchoJayEditor::computeNextCaptureName() const
+{
+    int version = 1;
+    for (auto& chat : workspace.getChats())
+        if (chat.id == currentChatId) { version = chat.revisionCount + 1; break; }
+    const juce::String proj = processorRef.getProjectName().trim();
+    return proj.isEmpty() ? ("Capture v" + juce::String(version))
+                          : (proj + " v" + juce::String(version));
 }
 
 juce::String EchoJayEditor::materialContextName(const juce::String& mainDefault) const

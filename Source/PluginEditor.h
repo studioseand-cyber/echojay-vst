@@ -1923,6 +1923,10 @@ private:
     // channel's resolved name (let the model infer the material, never
     // classify client-side). Main chat -> the header material hint.
     juce::String materialContextName(const juce::String& mainDefault) const;
+    // Item 1: THE capture name (single source: chat-revision + project). Used
+    // to stamp the snapshot at press and as the review passName, so the
+    // snapshot, review and card never derive from different counters.
+    juce::String computeNextCaptureName() const;
     // Item 3: capture-button width authored in resized() (captureBtnMaxW_);
     // the state block fits the label to it, truncating the CHANNEL NAME and
     // keeping "Capture" (the part that says what the button does). Decoupled
