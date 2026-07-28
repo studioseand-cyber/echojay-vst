@@ -24,3 +24,4 @@ DerivedData/
 # surgical EQ test build artifacts
 test/eqtest
 test/*.o
+test/movetest
