@@ -20,3 +20,7 @@ cmake-build-*/
 DerivedData/
 .DS_Store
 .cache/
+
+# surgical EQ test build artifacts
+test/eqtest
+test/*.o
