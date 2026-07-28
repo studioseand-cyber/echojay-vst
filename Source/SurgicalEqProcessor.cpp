@@ -6,6 +6,7 @@
 */
 
 #include "SurgicalEqProcessor.h"
+#include "SurgicalEqEditor.h"
 
 #include <type_traits>
 
@@ -21,40 +22,6 @@ static_assert (! std::is_abstract<SurgicalEqProcessor>::value,
 using echojay::BandSpec;
 using echojay::BandType;
 using echojay::EqMove;
-
-// ---------------------------------------------------------------------------
-// A minimal placeholder editor so the target builds and hosts a window today.
-// Replaced by the real curve/analyzer editor (next step in the plan).
-// ---------------------------------------------------------------------------
-namespace
-{
-class PlaceholderEditor : public juce::AudioProcessorEditor
-{
-public:
-    explicit PlaceholderEditor (SurgicalEqProcessor& p)
-        : juce::AudioProcessorEditor (p), proc_ (p) { setSize (560, 360); }
-
-    void paint (juce::Graphics& g) override
-    {
-        g.fillAll (juce::Colour (0xff101418));
-        g.setColour (juce::Colours::white);
-        g.setFont (18.0f);
-
-        int active = 0;
-        for (int i = 0; i < SurgicalEqProcessor::kNumBands; ++i)
-            if (proc_.getBand (i).enabled) ++active;
-
-        g.drawText ("EchoJay EQ  —  " + juce::String (active) + " band(s) active",
-                    getLocalBounds().removeFromTop (40), juce::Justification::centred);
-        g.setColour (juce::Colours::grey);
-        g.setFont (13.0f);
-        g.drawText ("editor pending", getLocalBounds(), juce::Justification::centred);
-    }
-
-private:
-    SurgicalEqProcessor& proc_;
-};
-} // namespace
 
 // ---------------------------------------------------------------------------
 SurgicalEqProcessor::SurgicalEqProcessor()
@@ -93,7 +60,7 @@ void SurgicalEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 // ---- editor ---------------------------------------------------------------
 juce::AudioProcessorEditor* SurgicalEqProcessor::createEditor()
 {
-    return new PlaceholderEditor (*this);
+    return new SurgicalEqEditor (*this);
 }
 
 // ---- band model -----------------------------------------------------------

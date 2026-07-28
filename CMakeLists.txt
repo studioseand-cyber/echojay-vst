@@ -142,6 +142,8 @@ target_sources(EchoJay PRIVATE
     Source/EqMove.h
     Source/SurgicalEqProcessor.cpp
     Source/SurgicalEqProcessor.h
+    Source/SurgicalEqEditor.cpp
+    Source/SurgicalEqEditor.h
 )
 
 target_compile_definitions(EchoJay PUBLIC
@@ -242,6 +244,16 @@ target_sources(EchoJayLink PRIVATE
     Source/AUEnumerator.h
     Source/PluginScanner.h
     Source/NativeClip.h
+    # --- built-in surgical EQ (feat/surgical-eq) ---
+    # Shared with the main plugin: the EQ has to run in the Link insert too, so
+    # the DSP core, the AudioProcessor wrapper and its editor all build here.
+    Source/EqEngine.cpp
+    Source/EqEngine.h
+    Source/EqMove.h
+    Source/SurgicalEqProcessor.cpp
+    Source/SurgicalEqProcessor.h
+    Source/SurgicalEqEditor.cpp
+    Source/SurgicalEqEditor.h
 )
 
 target_compile_definitions(EchoJayLink PUBLIC
