@@ -145,6 +145,7 @@ public:
         bool on    = false;     // bypass state
         juce::String name;      // add/replace: name from AVAILABLE PLUGINS
         juce::String settings;  // prose settings for the slot tile (display)
+        juce::var    settingsStructured; // machine-readable dial values (add/replace)
     };
     // Parse edit-block JSON. Returns empty on malformed payloads. Static so
     // preview cards can humanize ops without touching a host.

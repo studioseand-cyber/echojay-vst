@@ -911,6 +911,11 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
         op.on       = (bool)eo->getProperty("on");
         op.name     = eo->getProperty("name").toString().trim();
         op.settings = eo->getProperty("settings").toString().trim();
+        // Machine-readable dial values on add/replace (28 Jul 2026, surgical
+        // EQ): the server sends the same settings_structured object a chain
+        // entry carries. Read as a raw var; setSlotStructuredSettings ignores
+        // a void/non-object, so ops without it behave exactly as before.
+        op.settingsStructured = eo->getProperty("settings_structured");
         if (op.op.isNotEmpty()) out.push_back(std::move(op));
     }
     return out;
@@ -1216,6 +1221,15 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             int newCur = getNumSlots() - 1;   // appended by completeLoad
             if (theOp.settings.isNotEmpty())
                 setSlotSettings(newCur, theOp.settings);
+            // Dial the placed slot through the ONE map-gated apply pipeline, the
+            // same one loadChainFromJson uses on the build path. Until now the
+            // edit path only wrote the prose display string (setSlotSettings)
+            // and left every parameter to hand-dialing, so an add/replace that
+            // carried settings_structured silently dropped it. Pending settings
+            // live on the slot object and survive the walkSlotTo renumber below
+            // (storeParamMaps re-scans all slots when the map arrives).
+            if (theOp.settingsStructured.getDynamicObject() != nullptr)
+                setSlotStructuredSettings(newCur, theOp.settingsStructured);
 
             if (theOp.op == "add")
             {
