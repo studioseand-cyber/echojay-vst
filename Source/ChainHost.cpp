@@ -1,6 +1,7 @@
 #include "ChainHost.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
+#include "SurgicalEqProcessor.h"   // built-in EQ device (see kBuiltinFormat)
 #include "AUEnumerator.h"
 #include "NativeClip.h"   // EchoJay_NSLog
 #include <algorithm>
@@ -349,8 +350,56 @@ void ChainHost::setSessionAutoProject(const juce::String& name)
     sessionAutoProjectLoadTime() = f.getLastModificationTime();
 }
 
+// ---------------------------------------------------------------------------
+// Built-in devices
+// ---------------------------------------------------------------------------
+// A fixed uid so a saved chain restores against the same device forever.
+// 'EjEQ' — arbitrary but stable, and outside any real plugin's id space.
+static constexpr int kBuiltinEqUid = 0x456A4551;
+
+juce::PluginDescription ChainHost::builtinEqDescription()
+{
+    juce::PluginDescription d;
+    d.name              = kBuiltinEqName;
+    d.descriptiveName   = "EchoJay surgical EQ (built in)";
+    d.pluginFormatName  = kBuiltinFormat;
+    d.category          = "EQ";
+    d.manufacturerName  = "EchoJay";
+    d.version           = "1.0.0";
+    d.fileOrIdentifier  = "echojay:builtin:eq";
+    d.uniqueId          = kBuiltinEqUid;
+    d.deprecatedUid     = kBuiltinEqUid;
+    d.isInstrument      = false;
+    d.numInputChannels  = 2;
+    d.numOutputChannels = 2;
+    return d;
+}
+
+bool ChainHost::isBuiltinDescription(const juce::PluginDescription& d) noexcept
+{
+    // Format name is the primary key; the identifier is a belt-and-braces
+    // fallback for a description that came back through XML restore.
+    return d.pluginFormatName == kBuiltinFormat
+        || d.fileOrIdentifier == "echojay:builtin:eq";
+}
+
+bool ChainHost::isBuiltinEqName(const juce::String& rawName)
+{
+    const auto key = normalizeName(stripParenthetical(rawName.trim()));
+    return key == normalizeName(kBuiltinEqName)
+        || key == normalizeName("EchoJayEQ")
+        || key == normalizeName("EchoJay Surgical EQ");
+}
+
+bool ChainHost::isBuiltinEqSlot(int i) const
+{
+    if (i < 0 || i >= (int)slots_.size()) return false;
+    return isBuiltinDescription(slots_[(size_t)i].desc);
+}
+
 juce::PluginDescription ChainHost::preferInlineHostableDesc(const juce::PluginDescription& d)
 {
+    if (isBuiltinDescription(d)) return d;   // never swapped for a VST3 build
     if (d.pluginFormatName != "AudioUnit") return d;
     if (!isPopoutOnly(d.name, "AudioUnit")) return d;
     auto alt = findVst3Alternative(d.name);
@@ -1899,9 +1948,70 @@ static void pollVST3Validation(
     });
 }
 
+juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
+{
+    if (!graph_) return "chain graph not ready";
+
+    std::unique_ptr<juce::AudioProcessor> proc;
+    if (isBuiltinEqName(desc.name) || desc.uniqueId == kBuiltinEqUid)
+        proc = std::make_unique<SurgicalEqProcessor>();
+
+    if (!proc)
+        return "unknown built-in device \"" + desc.name + "\"";
+
+    proc->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+
+    ChainSlot slot;
+    slot.node = graph_->addNode(std::move(proc));
+    if (!slot.node) return "could not add the built-in node to the chain graph";
+
+    // Always store the CANONICAL description, never the one we were handed: a
+    // desc rebuilt from restore XML can be missing fields, and this is what
+    // gets written back out on the next save.
+    slot.desc     = builtinEqDescription();
+    slot.bypassed = false;
+    slots_.push_back(std::move(slot));
+
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+
+    const int idx = (int)slots_.size() - 1;
+
+    // Deliberately NO fingerprint and no identity/param-map registration. A
+    // built-in is dialled by direct typed writes; giving it a fingerprint
+    // would invite the anchor-table path this device exists to bypass.
+    applyStructuredIfReady(idx);
+
+    if (stateCacheEnabled_)
+    {
+        attachStateListener(idx);
+        captureSlotState(idx, juce::Time::getMillisecondCounterHiRes());
+    }
+
+    EchoJay_NSLog(("ChainHost: built-in \"" + slot.desc.name + "\" added as slot "
+                   + juce::String(idx)).toRawUTF8());
+    return {};
+}
+
 void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
                                 std::function<void(const juce::String& error)> callback)
 {
+    // Built-in device: constructed directly, no format manager, no scan.
+    // The callback fires synchronously — every existing caller either just
+    // updates UI or re-enters its sequencer through Timer::callAfterDelay,
+    // so there is no re-entrancy to guard against here.
+    if (isBuiltinDescription(desc))
+    {
+        const auto err = loadBuiltinNow(desc);
+        if (callback) callback(err);
+        return;
+    }
+
     bool needsValidation = (desc.pluginFormatName == "VST3" && desc.version.isEmpty());
 
     juce::PluginDescription fullDesc = desc;
@@ -2103,6 +2213,16 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
 {
     auto raw  = rawName.trim();
     auto base = stripParenthetical(raw);
+
+    // Built-ins resolve before (and regardless of) the scanned entries and the
+    // format filter: the EQ is compiled into both hosts, so it is available in
+    // an AU session and a VST3 session alike.
+    if (isBuiltinEqName(raw))
+    {
+        if (matchLogOut) *matchLogOut = juce::String("built-in -> \"") + kBuiltinEqName + "\"";
+        return builtinEqDescription();
+    }
+
     // Manufacturer from the parenthetical (if any) — disambiguation only
     juce::String manu;
     if (raw.endsWithChar(')') && raw.contains(" ("))

@@ -285,6 +285,30 @@ public:
                                           const juce::String& formatFilter,
                                           juce::String* matchLogOut = nullptr) const;
 
+    // ---- Built-in devices (EchoJay-owned nodes hosted as ordinary slots) ---
+    // The chain otherwise only hosts what formatManager_ can instantiate from
+    // a SCANNED description. EchoJay's own EQ has no scanned description, so
+    // it travels as a synthetic juce::PluginDescription whose format name is
+    // kBuiltinFormat. loadPluginAsync recognises that and builds the node
+    // directly instead of calling the format manager.
+    //
+    // Putting the branch there rather than at each caller is deliberate: the
+    // add-plugin menu, AI chain-edit ops, loadByRecommendedName and session
+    // restore ALL already funnel through loadPluginAsync, so one branch makes
+    // every one of those paths work — including restore, which cannot go
+    // through the format manager for a built-in by definition.
+    static constexpr const char* kBuiltinFormat = "EchoJayBuiltin";
+    static constexpr const char* kBuiltinEqName = "EchoJay EQ";
+
+    // Canonical synthetic description. Stable across machines and sessions:
+    // it is what gets written into the saved chain XML and matched on restore.
+    static juce::PluginDescription builtinEqDescription();
+    static bool isBuiltinDescription (const juce::PluginDescription& d) noexcept;
+    static bool isBuiltinEqName      (const juce::String& rawName);
+
+    // True when slot i holds the built-in EQ (used to route exact apply).
+    bool isBuiltinEqSlot (int i) const;
+
     // Full-entries cache (chain_entries.xml): written after every scan so
     // the OTHER host resolves against the same list without scanning.
     // maybeReloadEntriesCache() re-loads when another host refreshed it.
@@ -564,6 +588,12 @@ private:
     juce::StringArray                    pendingMapFps_;
     bool                                 mapsRevalidated_ = false; // once-per-session cache revalidation
     void applyStructuredIfReady (int slotIndex);
+    // Construct + append a built-in node synchronously. Returns an error
+    // string, empty on success. Called only from loadPluginAsync.
+    juce::String loadBuiltinNow (const juce::PluginDescription& desc);
+    // Exact per-band apply for a built-in EQ slot: parses eq_bands straight
+    // into typed BandSpecs. Returns a summary, or empty when nothing applied.
+    juce::String applyEqBandsToSlot (int slotIndex, const juce::var& structured);
     void loadParamMapsFromDisk();
     void saveParamMapsToDisk();
     // Read-only merge of the opt-in background mapper's output file
