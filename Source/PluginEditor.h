@@ -1330,6 +1330,9 @@ private:
         int  framePolls  = 0;
         bool settled     = false;   // real native frame captured; timer in maintenance mode
         bool layoutGuard = false;
+        // Inline editor is one of OUR built-in devices: a JUCE component, not
+        // a hosted plugin view. Suppresses every NativeClip interaction.
+        bool inlineIsBuiltin = false;
 
         std::unique_ptr<ChainEditorWindow> popout;
         int popoutSlot = -1;
@@ -1365,6 +1368,10 @@ private:
                 // Hosted editor resized itself — re-centre within the FIXED
                 // container (never resize the container)
                 if (layoutGuard || inlineEditor == nullptr) return;
+                // Ours already fills the display area; re-running the native
+                // measure/attach for it would be pointless and would create a
+                // clip container around a component that has no plugin view.
+                if (inlineIsBuiltin) { layoutInline(); return; }
                 int w = 0, h = 0;
                 if (NativeClip::getPluginViewSize(this, w, h) && w > 100 && h > 60)
                 { realW = w; realH = h; }
@@ -1438,12 +1445,15 @@ private:
             {
                 inlineHolder.removeChildComponent(inlineEditor.get());
                 inlineEditor.reset();
-                NativeClip::detach(this);   // remove the clip container too
+                // Only detach a container we actually attached: a built-in
+                // never created one.
+                if (!inlineIsBuiltin) NativeClip::detach(this);
             }
             inlineHolder.setVisible(false);
             inlineSlot = -1;
             realW = realH = 0;
             settled = false;
+            inlineIsBuiltin = false;
         }
 
         void closePopout()
@@ -1460,6 +1470,34 @@ private:
         {
             closeAllEditors();
             if (!onCreateEditor || i < 0 || i >= (int)slotInfos.size()) return;
+
+            // ---- EchoJay's own built-in devices --------------------------
+            // Our EQ's editor is a plain juce::Component living in THIS
+            // process. None of the NativeClip machinery below applies: there
+            // is no foreign NSView to reparent, measure or clip.
+            //
+            // It also cannot be left to the normal path. getPluginViewSize
+            // looks for a hosted plugin view and finds none for a JUCE
+            // component, so the poll would run its full ~5s, then mark our own
+            // EQ "popout only" and float it — a limitation of nothing,
+            // recorded as a limitation of the plugin.
+            if (slotInfos[(size_t)i].format == ChainHost::kBuiltinFormat)
+            {
+                juce::AudioProcessorEditor* ed = nullptr;
+                try { ed = onCreateEditor(i); } catch (...) {}
+                if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }
+
+                statusText.clear();
+                inlineEditor.reset(ed);
+                inlineSlot      = i;
+                inlineIsBuiltin = true;
+                settled         = true;    // nothing to poll, nothing to wait for
+                inlineHolder.setVisible(true);
+                inlineHolder.addAndMakeVisible(*inlineEditor);
+                layoutInline();            // fills the display area (see below)
+                repaint();
+                return;
+            }
 
             // Known popout-only plugin (out-of-process editor): go straight
             // to the floating window — no failed inline attempt, no timeout.
@@ -1519,6 +1557,7 @@ private:
         // proxies can have it imposed (hypothesis A).
         void attachNative(bool log)
         {
+            if (inlineIsBuiltin) return;   // no foreign view to clip
             if (inlineEditor)
                 NativeClip::attach(this, displayArea(), log,
                                    inlineEditor->getWidth(), inlineEditor->getHeight());
@@ -1689,6 +1728,17 @@ private:
             if (!inlineEditor) return;
             auto area = displayArea();
             inlineHolder.setBounds(area);
+
+            // A built-in editor is ours and resizes gracefully, so give it the
+            // whole display area rather than centring a fixed native size.
+            if (inlineIsBuiltin)
+            {
+                layoutGuard = true;
+                inlineEditor->setBounds(0, 0, area.getWidth(), area.getHeight());
+                layoutGuard = false;
+                return;
+            }
+
             int pw = realW > 8 ? realW : inlineEditor->getWidth();
             int ph = realH > 8 ? realH : inlineEditor->getHeight();
             pw = juce::jmax(pw, 40);
