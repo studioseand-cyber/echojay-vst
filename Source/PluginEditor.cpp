@@ -13050,10 +13050,12 @@ void EchoJayEditor::resized()
                 askChipBtns[(size_t)i].setVisible(false);
         }
     }
-    // Set chatContent width here, but DO NOT cap height to viewport — the timer
-    // callback computes the real content height from the message list and sets it
-    // there. Capping to viewport height was the bug that broke scrolling.
-    int currentContentH = std::max(chatContent.getHeight(), chatScroll.getHeight());
+    // Content height from THE single source (measureChatContentHeight), the
+    // same value the timer uses — never the old max(chatContent.getHeight(),
+    // viewportH) heuristic, which capped the extent to the viewport when its
+    // stale height sat below the real content and broke the sidebar's scroll.
+    // max(viewport, content) keeps it at least a viewport tall; grows to fit.
+    int currentContentH = std::max(chatScroll.getHeight(), measureChatContentHeight());
     chatContent.setSize(chatW - chatAvatarReserve - 4, currentContentH);
     
     // In compact mode, ensure chat components are on top
@@ -13570,6 +13572,70 @@ void EchoJayEditor::resized()
         updateOverlay.toFront(false);
     if (reviewOverlay.visibleState)
         reviewOverlay.toFront(false);
+}
+
+// THE single source of the chat scroll extent: the summed height of every
+// message EXACTLY as paint() lays them out (same width recovery, same card
+// helpers, same stage row + padding). resized() AND the timer both consume
+// this, so the content height can never be a second, weaker guess. The Chain
+// AI sidebar "cannot scroll up to a long reply" bug was resized() setting the
+// extent from max(chatContent.getHeight(), viewportH) - a viewport-floored
+// heuristic that CAPPED the scroll extent to the viewport whenever its stale
+// chatContent.getHeight() sat below the real (taller, narrower-column) content.
+// Every sidebar-hosted chat (Meters, Compare, Link, Chain, compact) shared that
+// resized() path, so all had the latent bug; the Chat tab's wider column just
+// rarely tripped it.
+int EchoJayEditor::measureChatContentHeight()
+{
+    // Mirror the paint code's geometry exactly so the scroll range matches the
+    // actual rendered height. The scroll viewport starts at chatX + 32 (avatar
+    // reserve) and is chatW - 34 wide — see resized() for details.
+    const int chatAvatarReserve = 32;
+    const int chatW2  = chatScroll.getWidth() + chatAvatarReserve + 2; // recover panel width
+    const int avatarSz = 24;
+    const int maxBW   = chatW2 - avatarSz - 24; // matches paint maxBubbleW
+    int totalH = 8; // matches paint msgY initial value
+    const float chatMsgFontSize2 = 12.0f * chatTextScale;
+    for (auto& msg : chatMessages) {
+        const bool isCaptureMsg2 = (msg.role == "user") && msg.reviewId.isNotEmpty();
+        int tH;
+        if (isCaptureMsg2)
+        {
+            tH = 56; // unified capture card — must match kCaptureMsgH in paint
+        }
+        else
+        {
+            juce::AttributedString as;
+            as.append(displayedText(msg), juce::Font(juce::FontOptions(chatMsgFontSize2)), C::text);
+            as.setLineSpacing(chatMsgFontSize2 * 0.35f); // MUST match paint pass
+            juce::TextLayout layout;
+            layout.createLayout(as, (float)(maxBW - 20));
+            int textH = (int)layout.getHeight() + 20;
+            int waveCardH = (msg.hasWaveform && !msg.waveform.empty()) ? 36 : 0;
+            int chainAreaH2 = (msg.role == "assistant") ? chainCardHeight(msg) : 0;   // SAME helper as paint
+            int figAreaH2   = (msg.role == "assistant") ? figureCardHeight(msg) : 0;  // SAME helper as paint
+            // AI gain proposal cards — MUST match the paint pass reservation
+            int gainAreaH2 = 0;
+            if (msg.role == "assistant" && msg.gainData.isNotEmpty())
+            {
+                auto gv = juce::JSON::parse(msg.gainData);
+                if (auto* go = gv.getDynamicObject())
+                {
+                    auto pr = go->getProperty("proposals");
+                    if (pr.isArray())
+                        gainAreaH2 = pr.getArray()->size() * (kGainCardH + 6);
+                }
+            }
+            // Chain-edit preview card — same shared helper as the paint pass
+            int editAreaH2 = (msg.role == "assistant") ? editCardHeight(msg) : 0;
+            int altAreaH2  = (msg.role == "assistant") ? altPillH(msg) : 0;   // SAME helper as paint
+            tH = textH + waveCardH + chainAreaH2 + gainAreaH2 + editAreaH2 + altAreaH2 + figAreaH2;
+        }
+        totalH += tH + 10; // matches paint msgY += tH + 10
+    }
+    totalH += stageRowH();   // stage row (1d): SAME helper as the paint pass
+    totalH += 8; // bottom padding so last message isn't flush against the edge
+    return totalH;
 }
 
 // ============================================================================
@@ -14366,66 +14432,18 @@ void EchoJayEditor::timerCallback()
     if (currentScreen == Screen::Main && !api.isLoggedIn())
         showLoginScreen();
 
-    // Update chat scroll content size and auto-scroll to bottom
+    // Update chat scroll content size and auto-scroll to bottom. The content
+    // height is THE single source (measureChatContentHeight), shared with
+    // resized() so the scroll extent is never a second, weaker guess.
     if (currentScreen == Screen::Main && !chatMessages.empty())
     {
-        // Mirror the paint code's geometry exactly so the scroll range matches the
-        // actual rendered height. Paint uses chatW (panel width), avatar 24, and
-        // -24 for bubble margin; the scroll viewport now starts at chatX + 32
-        // (avatar reserve) and is chatW - 34 wide — see resized() for details.
-        int chatAvatarReserve = 32;
-        int chatW2 = chatScroll.getWidth() + chatAvatarReserve + 2; // recover chat panel width
-        int avatarSz = 24;
-        int maxBW = chatW2 - avatarSz - 24; // matches paint maxBubbleW
-        int totalH = 8; // matches paint msgY initial value
-        const float chatMsgFontSize2 = 12.0f * chatTextScale;
-        for (auto& msg : chatMessages) {
-            const bool isCaptureMsg2 = (msg.role == "user") && msg.reviewId.isNotEmpty();
-            int tH;
-            if (isCaptureMsg2)
-            {
-                tH = 56; // unified capture card — must match kCaptureMsgH in paint
-            }
-            else
-            {
-                juce::AttributedString as;
-                as.append(displayedText(msg), juce::Font(juce::FontOptions(chatMsgFontSize2)), C::text);
-                as.setLineSpacing(chatMsgFontSize2 * 0.35f); // MUST match paint pass
-                juce::TextLayout layout;
-                layout.createLayout(as, (float)(maxBW - 20));
-                int textH = (int)layout.getHeight() + 20;
-                int waveCardH = (msg.hasWaveform && !msg.waveform.empty()) ? 36 : 0;
-                int chainAreaH2 = (msg.role == "assistant") ? chainCardHeight(msg) : 0;   // SAME helper as paint
-                int figAreaH2   = (msg.role == "assistant") ? figureCardHeight(msg) : 0;  // SAME helper as paint
-                // AI gain proposal cards — MUST match the paint pass reservation
-                int gainAreaH2 = 0;
-                if (msg.role == "assistant" && msg.gainData.isNotEmpty())
-                {
-                    auto gv = juce::JSON::parse(msg.gainData);
-                    if (auto* go = gv.getDynamicObject())
-                    {
-                        auto pr = go->getProperty("proposals");
-                        if (pr.isArray())
-                            gainAreaH2 = pr.getArray()->size() * (kGainCardH + 6);
-                    }
-                }
-                // Chain-edit preview card — same shared helper as the paint
-                // pass so reservation always matches
-                int editAreaH2 = (msg.role == "assistant") ? editCardHeight(msg) : 0;
-                int altAreaH2  = (msg.role == "assistant") ? altPillH(msg) : 0;   // SAME helper as paint
-                tH = textH + waveCardH + chainAreaH2 + gainAreaH2 + editAreaH2 + altAreaH2 + figAreaH2;
-            }
-            totalH += tH + 10; // matches paint msgY += tH + 10
-        }
-        totalH += stageRowH();   // stage row (1d): SAME helper as the paint pass
-        totalH += 8; // bottom padding so last message isn't flush against the edge
-        
-        int visH = chatScroll.getHeight();
+        const int totalH = measureChatContentHeight();
+        const int visH   = chatScroll.getHeight();
         if (chatContent.getHeight() != std::max(visH, totalH))
         {
             chatContent.setSize(chatScroll.getWidth() - 4, std::max(visH, totalH));
             if (totalH > visH)
-                chatScroll.setViewPosition(0, totalH - visH);
+                chatScroll.setViewPosition(0, totalH - visH);   // new content -> newest visible
         }
     }
 
@@ -14744,23 +14762,18 @@ std::vector<EchoJayEditor::ResultChip>
 EchoJayEditor::resultChipList(const ChatMsg& m) const
 {
     // SINGLE source of which chips a result bubble carries — consumed by
-    // BOTH altPillH (height) and layoutResultChips/paint (rects). Order:
-    // alternative first, exclude second.
+    // BOTH altPillH (height) and layoutResultChips/paint (rects).
+    // The "Stop suggesting" (exclude) chip was REMOVED: the post-failure
+    // exclusion popup (showChainFailurePrompt, "Don't suggest again") is the
+    // sole door to the same action, so the chip was a redundant second door -
+    // and with two chips present its label wrapped to two lines in a one-line
+    // pill. Only the alternatives chip remains; the multi-chip machinery stays
+    // for it (and any future chip). The kind==1 handler in onResultChipTapped
+    // is now unreachable but left as the documented exclude action.
     std::vector<ResultChip> chips;
     if (m.editAltPrompt.isNotEmpty())
         chips.push_back({ m.editAltPrompt.startsWith("These")
                             ? "Suggest alternatives" : "Suggest an alternative", 0 });
-    if (!m.excludeNames.isEmpty())
-    {
-        if (m.excludeApplied)
-            chips.push_back({ juce::String::fromUTF8("\xe2\x9c\x93 Won't suggest ")
-                              + (m.excludeNames.size() == 1
-                                   ? "\"" + m.excludeNames[0] + "\"" : "these") + " again", 1 });
-        else
-            chips.push_back({ m.excludeNames.size() == 1
-                                ? "Stop suggesting \"" + m.excludeNames[0] + "\""
-                                : "Stop suggesting these", 1 });
-    }
     return chips;
 }
 

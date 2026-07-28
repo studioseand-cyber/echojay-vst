@@ -935,9 +935,9 @@ private:
     // editCardHeight; this returns 0 for them)
     int altPillH(const ChatMsg& msg) const
     {
-        // Result-bubble chip ROW height (single source). One 32px row: at
-        // most two chips (alt + exclude), which fit any real bubble width;
-        // layoutResultChips assumes one row and shrinks labels to fit.
+        // Result-bubble chip ROW height (single source). One 32px row holding
+        // the single alternatives chip (the exclude chip was removed); it takes
+        // the full bubble width, and layoutResultChips shrinks its label to fit.
         return (msg.role == "assistant" && msg.editData.isEmpty()
                 && !resultChipList(msg).empty()) ? 32 : 0;
     }
@@ -2060,6 +2060,10 @@ private:
                            std::vector<juce::Rectangle<int>>& rectsOut) const;
     void onResultChipTapped(int msgIdx, int kind);
     // Shared height helpers for the measure + paint passes (must agree)
+    // THE single source of the chat scroll extent: summed message heights,
+    // consumed by BOTH the timer and resized() so the scroll range is never a
+    // second guess (fixes the sidebar "can't scroll up to a long reply" bug).
+    int  measureChatContentHeight();
     int  editCardHeight(const ChatMsg& msg) const;
     // Build card (1d follow-up): structured slot lines + Build button —
     // the ops card's visual language applied to CHAIN blocks
