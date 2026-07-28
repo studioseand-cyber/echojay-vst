@@ -61,6 +61,11 @@ struct ChannelMeterData {
     juce::String uid;           // Link instance uid ("" = host) — live-name key
     MeterData    meterData;
     juce::String wavFilePath;   // filled by background save thread
+    // Per-channel waveform thumbnail (Phase C handshake): captured
+    // SYNCHRONOUSLY at finalizeLinkChannel from this channel's OWN recorder,
+    // never the host's, so the card's picture is the channel's from the
+    // first frame. Empty when no channel frames arrived.
+    std::vector<WaveformRecorder::ThumbnailPoint> thumbnail;
     // Frames sentinel (capture honesty): -1 = host / not applicable;
     // 0 = NO frames arrived from this Link during the window (cause unknown,
     // never a claim about sound); >0 = real audio was received (silent
@@ -201,6 +206,12 @@ public:
     void renameSnapshot(int index, const juce::String& newName);
     void deleteSnapshot(int index);
     CaptureSnapshot getLatestSnapshot() const;
+    // Phase C handshake: fired on the MESSAGE THREAD when the background WAV
+    // save completes (host + every per-channel WAV written). The editor wires
+    // this once and, in the handler, fills any channel review whose WAV
+    // filename was not yet known at review-creation time. A fixed wire, not
+    // per-capture tracking state.
+    std::function<void()> onCaptureSaveComplete;
     int getSnapshotCount() const;
 
     // Returns true once when auto-feedback is ready (consumed on read)

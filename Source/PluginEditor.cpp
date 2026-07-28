@@ -260,6 +260,55 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     setOpaque(true);
 
     // Wire workspace load callback — repaint so Chat tab status line updates
+    // Phase C handshake (step b): fired on the message thread when the
+    // background WAV save finishes. Fill any channel review whose WAV
+    // filename was not yet written at review-creation time, matching the
+    // review to the snapshot channel by (passName, uid). No editor tracking
+    // state: the match is DERIVED from the snapshots the processor owns, so
+    // it survives an editor recreate. Both orderings: save-done-first ->
+    // the review already read the path at creation, nothing to do here;
+    // review-first -> this fills it.
+    processorRef.onCaptureSaveComplete = [this]()
+    {
+        bool changed = false;
+        for (const auto& snap : processorRef.getSnapshots())
+            for (const auto& ch : snap.channels)
+            {
+                if (ch.uid.isEmpty() || ch.wavFilePath.isEmpty()) continue;   // host / not written
+                const juce::String wavName = juce::File(ch.wavFilePath).getFileName();
+                // Build the channel thumbnail var from the stored thumbnail.
+                juce::Array<juce::var> wf;
+                for (auto& pt : ch.thumbnail)
+                {
+                    auto* o = new juce::DynamicObject();
+                    o->setProperty("x", (double)pt.maxVal);
+                    o->setProperty("n", (double)pt.minVal);
+                    wf.add(juce::var(o));
+                }
+                for (const auto& rv : workspace.getReviews())
+                    if (rv.linkUid == ch.uid && rv.label == snap.name
+                        && rv.fileName.isEmpty()
+                        && workspace.updateReviewAudio(rv.id, wavName, juce::var(wf)))
+                    {
+                        changed = true;
+                        // Refresh the live card if this review is shown now.
+                        for (auto& cm : chatMessages)
+                            if (cm.reviewId == rv.id)
+                            {
+                                cm.channelCaptureNoAudio = false;
+                                cm.wavFilename = wavName;
+                                cm.wavFilePath = processorRef.getCaptureFolder()
+                                                     .getChildFile(wavName).getFullPathName();
+                                cm.hasWaveform = !ch.thumbnail.empty();
+                                cm.waveform.clear();
+                                for (auto& pt : ch.thumbnail)
+                                    cm.waveform.push_back(pt);
+                            }
+                    }
+            }
+        if (changed) repaint();
+    };
+
     workspace.onLoaded = [this]()
     {
         DBG("[EchoJayWorkspace] onLoaded — chats:" << (int)workspace.getChats().size()
@@ -603,6 +652,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     captureBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     captureBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
     captureBtn.setColour(juce::TextButton::textColourOffId, C::text);
+    // Item 2b: capture target indicator — dim, secondary, NOT a control.
+    captureTargetLabel.setColour(juce::Label::textColourId, C::text3);
+    captureTargetLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+    captureTargetLabel.setJustificationType(juce::Justification::centredLeft);
+    captureTargetLabel.setInterceptsMouseClicks(false, false);
+    captureTargetLabel.setMinimumHorizontalScale(1.0f);   // truncate, don't shrink
+    addChildComponent(captureTargetLabel);
     captureBtn.onClick = [this] {
         auto s = processorRef.getCaptureState();
         if (s == CaptureState::Idle || s == CaptureState::Complete)
@@ -4038,6 +4094,14 @@ void EchoJayEditor::hideCompareView()
 // Compare stage 2 — slot selection helpers
 // ============================================================================
 
+bool EchoJayEditor::slotIsChannelScoped(const CompareSlotState& slot) const
+{
+    if (slot.kind != CompareSlotState::Kind::WsCapture) return false;
+    for (auto& r : workspace.getReviews())
+        if (r.id == slot.wsReviewId) return r.channelDataScoped;
+    return false;
+}
+
 void EchoJayEditor::updateCompareSlotBtn(bool isTop)
 {
     auto& slot = isTop ? compareTop_ : compareBot_;
@@ -4062,43 +4126,67 @@ void EchoJayEditor::updateCompareSlotBtn(bool isTop)
             break;
     }
 
+    // Item 6: unmissable cross-scope mark ON THE SLOT. When the two loaded
+    // slots differ in scope (one channel, one full), both are amber-flagged
+    // so the mismatch cannot be missed. Pairing stays allowed.
+    const bool bothLoaded = compareTop_.kind != CompareSlotState::Kind::Empty
+                         && compareBot_.kind != CompareSlotState::Kind::Empty;
+    if (bothLoaded
+        && slotIsChannelScoped(compareTop_) != slotIsChannelScoped(compareBot_)
+        && slot.kind != CompareSlotState::Kind::Live
+        && slot.kind != CompareSlotState::Kind::Empty)
+    {
+        text = juce::String::fromUTF8("â  ") + text;   // amber warning glyph
+        col  = juce::Colour(0xfff59e0b);
+    }
+
     btn.setButtonText(text);
     btn.setColour(juce::TextButton::textColourOffId, col);
 }
 
+juce::String EchoJayEditor::compareEntryDate(const juce::String& iso) const
+{
+    auto dt = juce::Time::fromISO8601(iso);
+    if (dt.toMilliseconds() <= 0) return {};
+    auto now = juce::Time::getCurrentTime();
+    auto dayStart = [](juce::Time t) {
+        return juce::Time(t.getYear(), t.getMonth(), t.getDayOfMonth(), 0, 0);
+    };
+    const auto d0 = dayStart(dt).toMilliseconds();
+    const auto today0 = dayStart(now).toMilliseconds();
+    const juce::int64 dayMs = 24LL * 60 * 60 * 1000;
+    if (d0 == today0)              return "Today "     + dt.formatted("%H:%M");
+    if (d0 == today0 - dayMs)      return "Yesterday " + dt.formatted("%H:%M");
+    return dt.formatted("%d %b %H:%M");
+}
+
 juce::String EchoJayEditor::compareReviewLabel(const WsReview& rev) const
 {
-    // Version suffix from the stored passName ("<project> v3" / "Capture v3").
-    juce::String ver = "v?";
+    // Version from the stored passName ("<project> v3"). Item 4: if genuinely
+    // unrecoverable, DROP it rather than printing "v?".
+    juce::String ver;
     {
         const int vp = rev.label.lastIndexOfChar('v');
         if (vp > 0 && juce::CharacterFunctions::isDigit(rev.label[vp + 1]))
             ver = rev.label.substring(vp);   // "v3"
     }
+    // Item 3: the date/time now rides the shortcutKeyDescription field, so
+    // the label carries only scope + version.
     if (rev.channelDataScoped)
     {
-        // Channel scope: live name, else snapshot, else neutral. Never empty,
-        // never a raw uid. Truncate the NAME, keep the version suffix.
         juce::String name = processorRef.resolveLinkDisplayName(rev.linkUid);
-        if (name.isEmpty()) name = rev.linkNameSnap;
+        if (name.isEmpty()) name = rev.linkNameSnap;   // item 4: orphan channel uses snapshot
         if (name.isEmpty()) name = "channel";
-        juce::String base = "Link " + name + " " + ver;
+        juce::String base = ver.isEmpty() ? ("Link " + name) : ("Link " + name + " " + ver);
         if (base.length() > 40)
         {
-            const int keep = juce::jmax(4, 40 - (int)(5 + 1 + ver.length() + 1));
+            const int keep = juce::jmax(4, 40 - (int)base.length() + (int)name.length());
             name = name.substring(0, keep) + juce::String::fromUTF8("\xe2\x80\xa6");
-            base = "Link " + name + " " + ver;
+            base = ver.isEmpty() ? ("Link " + name) : ("Link " + name + " " + ver);
         }
         return base;
     }
-    // Full capture (main scope OR pre-fix channel record). Item 2: append the
-    // capture time so two main chats' "v1"s in one project stay distinct. No
-    // stored number changes.
-    juce::String t;
-    auto dt = juce::Time::fromISO8601(rev.date);
-    if (dt.toMilliseconds() > 0)
-        t = juce::String::fromUTF8(" \xe2\x80\x93 ") + dt.formatted("%H:%M");
-    return "Full capture " + ver + t;
+    return ver.isEmpty() ? juce::String("Full capture") : ("Full capture " + ver);
 }
 
 void EchoJayEditor::openCompareSlotMenu(bool isTop)
@@ -4165,6 +4253,17 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
     menu.addItem(1, "Live signal", true,
                  curSlot.kind == CompareSlotState::Kind::Live);
 
+    // Item 3: capture entries carry the date/time in shortcutKeyDescription
+    // (right-aligned, dimmer), so the name column stays aligned down the list.
+    auto addCapture = [&](int id, const juce::String& text, const juce::String& iso)
+    {
+        juce::PopupMenu::Item it;
+        it.itemID = id;
+        it.text   = text;
+        it.shortcutKeyDescription = compareEntryDate(iso);
+        menu.addItem(it);
+    };
+
     // SESSION CAPTURES: full-scope snapshots with no matching project review.
     {
         bool hdr = false;
@@ -4172,7 +4271,10 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
         {
             if (snapHasReview(snaps[i].name)) continue;   // dedup
             if (!hdr) { menu.addSeparator(); menu.addSectionHeader("SESSION CAPTURES"); hdr = true; }
-            menu.addItem(100 + i, snaps[i].name.substring(0, 40) + " (full capture)");
+            addCapture(100 + i, snaps[i].name.substring(0, 40) + " (full capture)",
+                       snaps[i].id.isNotEmpty()
+                           ? juce::Time((juce::int64)snaps[i].id.getLargeIntValue()).toISO8601(true)
+                           : juce::String());
         }
     }
 
@@ -4187,19 +4289,26 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
         for (auto& rid : projReviewIds)
         {
             const auto* r = reviewById(rid);
-            menu.addItem(wsIdx++, r ? compareReviewLabel(*r) : rid.substring(0, 40));
+            addCapture(wsIdx++, r ? compareReviewLabel(*r) : rid.substring(0, 40),
+                       r ? r->date : juce::String());
             compareMenuReviewIds_.push_back(rid);
         }
         // Orphans (deleted chat) in their own labelled group, not hidden.
+        // Item 4: a "Clear these" action purges them (unreachable from any
+        // chat, pure blob weight against cap-50). Confirmed, permanent.
         if (!orphanReviewIds.isEmpty())
         {
             menu.addSectionHeader("UNGROUPED (chat deleted)");
             for (auto& rid : orphanReviewIds)
             {
                 const auto* r = reviewById(rid);
-                menu.addItem(wsIdx++, r ? compareReviewLabel(*r) : rid.substring(0, 40));
+                addCapture(wsIdx++, r ? compareReviewLabel(*r) : rid.substring(0, 40),
+                           r ? r->date : juce::String());
                 compareMenuReviewIds_.push_back(rid);
             }
+            menu.addItem(9100, juce::String::fromUTF8("â Clear ")
+                         + juce::String(orphanReviewIds.size()) + " orphaned capture"
+                         + (orphanReviewIds.size() == 1 ? "" : "s"));
         }
     }
     // Evicted history (item 6): disabled, visible, not hidden.
@@ -4218,12 +4327,35 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
 
     auto& btn = isTop ? compareTopSlotBtn_ : compareBotSlotBtn_;
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::StringArray orphansToClear = orphanReviewIds;
 
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetComponent(&btn),
-        [safeThis, isTop](int result)
+        [safeThis, isTop, orphansToClear](int result)
         {
             if (safeThis == nullptr || result == 0) return;
+
+            if (result == 9000) return;   // evicted-history row: disabled, no-op
+            if (result == 9100)
+            {
+                // Item 4: purge orphaned reviews. PERMANENT (whole-blob
+                // overwrite, no local copy) — confirm and say so.
+                juce::AlertWindow::showOkCancelBox(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Clear orphaned captures",
+                    "Permanently delete " + juce::String(orphansToClear.size())
+                    + " capture" + (orphansToClear.size() == 1 ? "" : "s")
+                    + " whose chat was deleted?\n\nThis cannot be undone - "
+                      "there is no local copy.",
+                    "Delete", "Cancel", nullptr,
+                    juce::ModalCallbackFunction::create([safeThis, orphansToClear](int r)
+                    {
+                        if (safeThis == nullptr || r != 1) return;
+                        safeThis->workspace.deleteReviews(orphansToClear);
+                        safeThis->repaint();
+                    }));
+                return;
+            }
 
             auto& slot = isTop ? safeThis->compareTop_ : safeThis->compareBot_;
 
@@ -5132,6 +5264,12 @@ void EchoJayEditor::runAICompare()
             cm.chainData = chainJson;
             cm.gainData  = gainJson;
             cm.editData  = editJson;
+            // Item 6: a compare turn in a channel chat compares FULL-CAPTURE
+            // snapshots, so any chain the model proposes is reasoned from
+            // full-mix data. Suppress the Build affordance structurally (the
+            // injection is the polite explanation; this is the actual guard).
+            cm.chainBuildSuppressed = safeThis->activeChatLinkUid().isNotEmpty()
+                                   && chainJson.isNotEmpty();
             if (editJson.isNotEmpty())
             {
                 const juce::String cUid = safeThis->activeChatLinkUid();
@@ -8032,27 +8170,56 @@ juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
     }();
     const MeterData* dsrc = &snap.averagedData;   // host default (main capture / pre-fix)
     bool dataIsChannelScoped = false;
+    const ChannelMeterData* scopedCh = nullptr;   // the channel record, when scoped + live
     if (linkUid.isNotEmpty())
     {
         const ChannelMeterData* ch = nullptr;
         for (const auto& c : snap.channels)
             if (c.uid == linkUid) { ch = &c; break; }
         if (ch != nullptr && ch->framesReceived != 0)
-            dsrc = &ch->meterData;              // genuine channel numbers
+            { dsrc = &ch->meterData; scopedCh = ch; }   // genuine channel numbers + audio
         else
             dsrc = &kNoChannelData;             // NO host fallback (offline / 0 frames)
         dataIsChannelScoped = true;             // the record IS a channel capture
     }
     auto& d = *dsrc;
 
-    // ---- Build waveform var (array of {x, n} objects matching web format) ----
+    // ---- Waveform var + WAV filename: the CHANNEL's own for a channel
+    // capture (never the host's frozenWaveform / host WAV). The channel
+    // thumbnail is captured synchronously at finalize; the channel WAV
+    // filename may not be written yet (background save), in which case it is
+    // filled by the onCaptureSaveComplete handler below. ----
     juce::Array<juce::var> wfArr;
-    for (auto& pt : frozenWaveform)
+    if (scopedCh != nullptr)
     {
-        auto* wfObj = new juce::DynamicObject();
-        wfObj->setProperty("x", (double)pt.maxVal);
-        wfObj->setProperty("n", (double)pt.minVal);
-        wfArr.add(juce::var(wfObj));
+        // Channel thumbnail (never host)
+        for (auto& pt : scopedCh->thumbnail)
+        {
+            auto* wfObj = new juce::DynamicObject();
+            wfObj->setProperty("x", (double)pt.maxVal);
+            wfObj->setProperty("n", (double)pt.minVal);
+            wfArr.add(juce::var(wfObj));
+        }
+        // Channel WAV filename if the save already wrote it; else empty, filled
+        // on completion (never the host filename).
+        fileName = scopedCh->wavFilePath.isNotEmpty()
+            ? juce::File(scopedCh->wavFilePath).getFileName() : juce::String();
+    }
+    else if (!dataIsChannelScoped)   // main capture: host waveform + host WAV
+    {
+        for (auto& pt : frozenWaveform)
+        {
+            auto* wfObj = new juce::DynamicObject();
+            wfObj->setProperty("x", (double)pt.maxVal);
+            wfObj->setProperty("n", (double)pt.minVal);
+            wfArr.add(juce::var(wfObj));
+        }
+    }
+    else
+    {
+        // Channel scoped but NO data (offline / 0 frames): no picture, no
+        // audio, honest message stays. Never host fallback.
+        fileName = juce::String();
     }
 
     // ---- Build WsReview ----
@@ -10128,9 +10295,11 @@ void EchoJayEditor::paint(juce::Graphics& g)
         auto drawSep = [&](int x) {
             g.drawVerticalLine(x, 6.0f, (float)(kTopBarH - 5)); // spans the header controls
         };
-        // Separator between: [channel|genre|project|Capture | Plugins]
-        auto scBounds = scanBtn.getBounds();
-        if (scBounds.getX() > 0) drawSep(scBounds.getX() - 2);
+        // Item 2c: separator between the plugin count and the Capture button
+        // (after the header swap the count sits left of Capture). Anchored to
+        // captureBtn's LEFT edge, not scanBtn's, so it sits in the gap.
+        auto cbBounds = captureBtn.getBounds();
+        if (cbBounds.getX() > 0) drawSep(cbBounds.getX() - 2);
     }
 
     // Compact/expand toggle — top right of main top bar
@@ -10989,7 +11158,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
         // Build card: slot lines + "Build this chain" button — height from
         // chainCardHeight(), the SAME helper the measure pass consumes
         static constexpr int kChainBtnH = 26;
-        bool hasChainBtn = !isUser && msg.chainData.isNotEmpty();
+        bool hasChainBtn = !isUser && msg.chainData.isNotEmpty()
+                        && !msg.chainBuildSuppressed;   // item 6: cross-scope guard
         int chainAreaH = isUser ? 0 : chainCardHeight(msg);
 
         // Extra height for the chain-edit preview card (op list + Apply /
@@ -11416,6 +11586,16 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         }
                 }
 
+                // Item 6: cross-scope — no Build button, one honest line why.
+                if (msg.chainBuildSuppressed && !isUser && msg.chainData.isNotEmpty())
+                {
+                    g.setColour(juce::Colour(0xfff59e0b));   // amber
+                    g.setFont(juce::Font(juce::FontOptions(10.5f)));
+                    g.drawText("Build disabled: this is a full-capture comparison, "
+                               "not this channel's audio",
+                               bubbleX + 10, drawY + bubbleH + 4 + chainLinesH,
+                               bubbleW - 20, 14, juce::Justification::centredLeft, true);
+                }
                 // "Build this chain" button
                 if (hasChainBtn && activeChainBuildBtns < kMaxChainBuildBtns)
                 {
@@ -11931,19 +12111,21 @@ void EchoJayEditor::resized()
         // takes the room between it and the detected label, clamped, and the
         // state block truncates the channel name via captureBtnMaxW_.
         scanBtn.setBounds(tx, ty, 78, bh); tx += 82;
+        // Item 2a: FIXED-width Capture button.
+        captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
+        // Item 2b: target indicator takes the room up to the detected label,
+        // truncating (it is the variable-width element now).
         const int detLabW = 140;
-        const int rightEdge = b.getWidth() - detLabW - 12;   // before detected label
-        captureBtnMaxW_ = juce::jlimit(64, 240, rightEdge - tx);
-        juce::Font cf(juce::FontOptions(13.0f, juce::Font::bold));
-        const int wantW = cf.getStringWidth(captureBtn.getButtonText()) + 20;
-        const int capW = juce::jlimit(64, captureBtnMaxW_, wantW);
-        captureBtn.setBounds(tx, ty, capW, bh); tx += capW + 4;
+        const int indR = b.getWidth() - detLabW - 12;
+        captureTargetLabel.setBounds(tx, ty, juce::jmax(0, indR - tx), bh);
+        captureTargetLabel.setVisible(indR - tx >= 30);
     }
 
     if (compactMode)
     {
         scanBtn.setBounds(0, -20, 1, 1);
         abSyncBtn.setBounds(-100, -100, 1, 1);
+        captureTargetLabel.setVisible(false);
     }
     
     // Detected label — fixed position in top-right, right-aligned
@@ -12958,7 +13140,7 @@ void EchoJayEditor::timerCallback()
     }
 
     if (state == CaptureState::Capturing) {
-        captureBtn.setButtonText(fitCaptureLabel("Stop"));
+        captureBtn.setButtonText("Stop");
         captureBtn.setColour(juce::TextButton::buttonColourId, C::red);
         float dur = processorRef.getCaptureDuration();
         durationLabel.setText(juce::String::formatted("%d:%02d", (int)dur / 60, (int)dur % 60), juce::dontSendNotification);
@@ -12970,10 +13152,10 @@ void EchoJayEditor::timerCallback()
         // capture. Width authored in resized() with everything else; kept
         // short (channel name only, "Capture" bare = full) so the header
         // layout never breaks.
-        const juce::String capUid = effectiveChannelUid();
-        captureBtn.setButtonText(fitCaptureLabel(capUid.isNotEmpty()
-            ? ("Capture " + channelDisplayLabel(capUid))
-            : juce::String("Capture")));
+        captureBtn.setButtonText("Capture");
+        captureTargetLabel.setText(effectiveChannelUid().isNotEmpty()
+            ? channelDisplayLabel(effectiveChannelUid()) : kFullCaptureLabel,
+            juce::dontSendNotification);
         captureBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
         statusLabel.setText(state == CaptureState::Complete ? "Complete" : "", juce::dontSendNotification);
 
@@ -13185,11 +13367,31 @@ void EchoJayEditor::timerCallback()
             // audio exists (lcc WAV) but routing it needs the async-save
             // handshake + a per-channel thumbnail (not built this pass). Until
             // then: no picture, no playback for a channel capture.
-            const bool captureIsChannel = activeChatLinkUid().isNotEmpty();
-            displayCm.channelCaptureNoAudio = captureIsChannel;
-            displayCm.hasWaveform = !captureIsChannel && !frozenWaveform.empty();
-            displayCm.waveform    = captureIsChannel ? std::vector<WaveformRecorder::ThumbnailPoint>{}
-                                                     : frozenWaveform;
+            // ITEM 1 (handshake): a channel capture draws the CHANNEL's own
+            // thumbnail (captured synchronously at finalize), never the host's
+            // frozenWaveform. The channel WAV path lands via onCaptureSaveComplete
+            // (filename carries a save-time timestamp, only known post-save);
+            // until then no playback, but the picture is already correct. No
+            // channel data (offline / 0 frames) -> no picture, honest message.
+            const juce::String liveCapUid = activeChatLinkUid();
+            const bool captureIsChannel = liveCapUid.isNotEmpty();
+            const ChannelMeterData* liveCh = nullptr;
+            if (captureIsChannel)
+                for (const auto& c : snap.channels)
+                    if (c.uid == liveCapUid && c.framesReceived != 0) { liveCh = &c; break; }
+            if (captureIsChannel)
+            {
+                displayCm.channelCaptureNoAudio = (liveCh == nullptr);   // only when NO channel data
+                displayCm.hasWaveform = liveCh != nullptr && !liveCh->thumbnail.empty();
+                displayCm.waveform    = liveCh != nullptr ? liveCh->thumbnail
+                                                          : std::vector<WaveformRecorder::ThumbnailPoint>{};
+            }
+            else
+            {
+                displayCm.channelCaptureNoAudio = false;
+                displayCm.hasWaveform = !frozenWaveform.empty();
+                displayCm.waveform    = frozenWaveform;
+            }
             displayCm.durationSeconds = snap.durationSeconds;
             // ITEM 1: the live card's LUFS must match the record + prose. For a
             // channel capture, read the channel's own integrated (or leave it
@@ -14547,15 +14749,16 @@ void EchoJayEditor::refreshChannelBannerCache()
 
 void EchoJayEditor::refreshCaptureButtonLabel()
 {
-    if (processorRef.getCaptureState() == CaptureState::Capturing)
-    {
-        captureBtn.setButtonText(fitCaptureLabel("Stop"));
-        return;
-    }
+    // Item 2a: FIXED label. The button reads "Capture" (or "Stop"); the SCOPE
+    // moves to the separate captureTargetLabel indicator, so the button no
+    // longer changes width.
+    captureBtn.setButtonText(processorRef.getCaptureState() == CaptureState::Capturing
+                                 ? "Stop" : "Capture");
+    // Item 2b: the target indicator.
     const juce::String capUid = effectiveChannelUid();
-    captureBtn.setButtonText(fitCaptureLabel(capUid.isNotEmpty()
-        ? ("Capture " + channelDisplayLabel(capUid))
-        : juce::String("Capture")));
+    captureTargetLabel.setText(capUid.isNotEmpty()
+                                   ? channelDisplayLabel(capUid) : kFullCaptureLabel,
+                               juce::dontSendNotification);
 }
 
 juce::String EchoJayEditor::fitCaptureLabel(const juce::String& full) const

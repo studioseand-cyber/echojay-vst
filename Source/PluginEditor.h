@@ -310,6 +310,11 @@ private:
     juce::Label statusLabel;
     juce::Label durationLabel;
     juce::Label detectedLabel;
+    // Item 2: dim, non-interactive indicator of WHAT a capture will measure
+    // (channel name in a channel chat, else the Full capture constant). Sits
+    // beside the fixed-width Capture button; the ONLY capture-scope signal on
+    // non-chat surfaces (Visualisation/Meters/Settings have no banner).
+    juce::Label captureTargetLabel;
     juce::Label passLabel;
     
     // Top bar — right group (stacked)
@@ -623,8 +628,17 @@ private:
     // "Full capture vN - HH:MM" (a pre-fix channel record's numbers ARE the
     // full mix, so it labels as a full capture — the label follows the data).
     juce::String compareReviewLabel(const WsReview& rev) const;
+    // Item 3: relative-then-absolute date string for the menu's
+    // shortcutKeyDescription field ("Today 07:23" / "Yesterday 18:06" /
+    // "27 Jul 07:23"). Empty when the date is unparseable.
+    juce::String compareEntryDate(const juce::String& iso) const;
     void updateCompareSlotBtn(bool isTop);
     MeterData getSlotMeterData(const CompareSlotState& slot) const;
+    // Item 6: a slot's DATA scope. channelDataScoped only for a WsCapture
+    // review carrying the marker; everything else (snapshot, reference, live,
+    // pre-fix review) is full-scope. The cross-scope guard keys off THIS,
+    // never off linkUid presence.
+    bool slotIsChannelScoped(const CompareSlotState& slot) const;
     static MeterData meterDataFromWsReview(const WsReview& r);
     void paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int> area,
                               const CompareSlotState& slot, bool isPlaying);
@@ -823,6 +837,11 @@ private:
         // HONEST reason, never "Audio not on this device" (which implies a
         // lost file).
         bool channelCaptureNoAudio = false;
+        // Item 6: STRUCTURAL cross-scope guard. Set when a compare turn in a
+        // CHANNEL chat carries full-capture data — the chain card renders
+        // WITHOUT a Build button (a channel chain from full-mix numbers must
+        // be unreachable, not merely discouraged by the injection).
+        bool chainBuildSuppressed = false;
     };
     std::vector<ChatMsg> chatMessages;
     // THE shared display source: both text-layout passes (measure + paint)

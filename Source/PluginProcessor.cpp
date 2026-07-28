@@ -170,6 +170,10 @@ static ChannelMeterData finalizeLinkChannel(EchoJayProcessor::LinkCaptureChannel
     result.name = lcc.name;
     result.uid  = lcc.uid;
     result.framesReceived = (int64_t) lcc.capTotalSamples.load();  // 0 = no frames
+    // Channel thumbnail (handshake step a): the channel's OWN recorder, never
+    // the host's. Only when real frames arrived (no picture for a dead feed).
+    if (result.framesReceived != 0)
+        result.thumbnail = lcc.waveformRecorder.getThumbnail();
     result.meterData = lcc.meterEngine.getMeterData();
 
     auto toDb = [](float lin) { return lin > 1e-10f ? 20.0f * std::log10(lin) : -100.0f; };
@@ -1113,10 +1117,11 @@ void EchoJayProcessor::stopCapture()
     {
         SaveThread(WaveformRecorder* rec, juce::File dir, juce::String name,
                    int idx, std::mutex* mtx, std::vector<CaptureSnapshot>* snaps,
-                   std::vector<std::unique_ptr<LinkCaptureChannel>> lcs)
+                   std::vector<std::unique_ptr<LinkCaptureChannel>> lcs,
+                   std::function<void()>* onDone)
             : juce::Thread("EchoJay WAV Save"), recorder(rec), captureDir(dir),
               passName(name), snapIdx(idx), mutex(mtx), snapshots(snaps),
-              linkChannels(std::move(lcs)) {}
+              linkChannels(std::move(lcs)), onDoneCb(onDone) {}
 
         void run() override
         {
@@ -1164,6 +1169,17 @@ void EchoJayProcessor::stopCapture()
             // NEXT capture replaces it, and it must not keep the channels
             // (and whatever they own) alive for that whole time.
             linkChannels.clear();
+
+            // Handshake completion (step b): every WAV written and the
+            // snapshot's channel paths populated under mutex. Notify the
+            // message thread so a channel review can adopt its WAV filename.
+            // callAsync copies the std::function* by value; the processor
+            // outlives the save thread, so the wire is safe to read there.
+            std::function<void()>* cb = onDoneCb;
+            juce::MessageManager::callAsync([cb]()
+            {
+                if (cb && *cb) (*cb)();
+            });
         }
 
         WaveformRecorder* recorder;
@@ -1173,10 +1189,11 @@ void EchoJayProcessor::stopCapture()
         std::mutex* mutex;
         std::vector<CaptureSnapshot>* snapshots;
         std::vector<std::unique_ptr<LinkCaptureChannel>> linkChannels;
+        std::function<void()>* onDoneCb;
     };
 
     saveThread = std::make_unique<SaveThread>(recorderPtr, captureDir, passName, snapIdx, mutexPtr, snapsPtr,
-                                               std::move(movedLinkChannels));
+                                               std::move(movedLinkChannels), &onCaptureSaveComplete);
     saveThread->startThread();
 
 #if ECHOJAY_MEMDIAG

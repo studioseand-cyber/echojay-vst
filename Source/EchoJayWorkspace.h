@@ -196,6 +196,15 @@ public:
     // album membership (projectNames) to the new name.
     void renameProject(const juce::String& oldName, const juce::String& newName);
     void addReview(WsReview review);   // prepend to reviews list, caps at 50
+    // Phase C handshake: set a review's WAV filename once the background save
+    // finished writing it (the filename carries a save-time timestamp, so it
+    // is only known then). Optional waveform var. No-op if the review is gone
+    // or already has the filename. Returns true if it changed something.
+    bool updateReviewAudio(const juce::String& reviewId,
+                           const juce::String& fileName,
+                           const juce::var& waveform = juce::var());
+    // Item 4: delete reviews by id (orphan purge). User-initiated, confirmed.
+    void deleteReviews(const juce::StringArray& ids);
     void moveChatToAlbum(const juce::String& chatId, const juce::String& albumId);
     void removeChatFromAlbum(const juce::String& chatId);
     void removeChat(const juce::String& chatId);   // remove chat + unlink from any album

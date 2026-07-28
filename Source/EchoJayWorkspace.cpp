@@ -1,4 +1,5 @@
 #include "EchoJayWorkspace.h"
+#include <algorithm>
 
 extern void ejTeardownLog(const juce::String& msg);
 
@@ -76,6 +77,31 @@ juce::String EchoJayWorkspace::createAlbumWithName(const juce::String& name)
     a.created = juce::Time::getCurrentTime().toISO8601(true);
     albums.push_back(a);
     return a.id;
+}
+
+bool EchoJayWorkspace::updateReviewAudio(const juce::String& reviewId,
+                                        const juce::String& fileName,
+                                        const juce::var& waveform)
+{
+    if (reviewId.isEmpty() || fileName.isEmpty()) return false;
+    for (auto& r : reviews)
+        if (r.id == reviewId)
+        {
+            if (r.fileName == fileName) return false;   // already set
+            r.fileName = fileName;
+            if (waveform.isArray()) r.waveform = waveform;
+            requestMutationSync();
+            return true;
+        }
+    return false;
+}
+
+void EchoJayWorkspace::deleteReviews(const juce::StringArray& ids)
+{
+    if (ids.isEmpty()) return;
+    reviews.erase(std::remove_if(reviews.begin(), reviews.end(),
+        [&](const WsReview& r) { return ids.contains(r.id); }), reviews.end());
+    requestMutationSync();
 }
 
 void EchoJayWorkspace::addReview(WsReview review)
