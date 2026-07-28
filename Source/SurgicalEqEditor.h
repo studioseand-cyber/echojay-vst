@@ -51,6 +51,11 @@ public:
 
     std::function<void()> onValueChange;     // fired live during a drag / on typed entry
 
+    // Optional custom readout formatter (must include its own units). Set it
+    // BEFORE setSpec. Used by FREQ, which wants the axis's own "87 Hz" /
+    // "1.2k" form rather than a fixed number of decimals.
+    std::function<juce::String(double)> formatValue;
+
     void resized() override;
     void paint (juce::Graphics& g) override;
 
@@ -174,10 +179,6 @@ private:
     juce::TextButton enableBtn_ { "ON" };
     juce::TextButton soloBtn_   { "S" };
     EqValueKnob      thrS_, rangeS_, atkS_, relS_;
-
-    // field captions painted above the controls (built in layoutStrip)
-    struct FieldLabel { juce::Rectangle<int> r; juce::String text; };
-    std::vector<FieldLabel> fieldLabels_;
 
     bool suppressCallbacks_ = false;
 

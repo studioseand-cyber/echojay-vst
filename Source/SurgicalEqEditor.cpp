@@ -13,10 +13,10 @@ namespace
 {
     constexpr int   kTopH        = 30;   // logo / global button bar
     constexpr int   kRowH        = 24;   // flat control height (combos, buttons)
-    constexpr int   kCapH        = 12;   // field caption height above a control
+    constexpr int   kCapH        = 12;   // caption band inside a dial
     constexpr int   kKnobW       = 62;   // dial column width
     constexpr int   kKnobH       = 58;   // caption + filmstrip + readout
-    constexpr int   kStripH      = kRowH + kCapH + 4 + kKnobH;  // selectors + dials
+    constexpr int   kStripH      = kRowH + 6 + kKnobH;   // selector row + dial row
     constexpr int   kPad         = 10;
     constexpr float kNodeR       = 5.0f;
     constexpr float kHitR        = 11.0f;
@@ -65,8 +65,14 @@ EqValueKnob::EqValueKnob()
     readout_.setEditable (false, true, false);
     readout_.onTextChange = [this]
     {
-        auto txt = readout_.getText().retainCharacters ("0123456789.,-+eE").trim();
-        const double v = txt.getDoubleValue();
+        const auto raw = readout_.getText().trim();
+        // FREQ now DISPLAYS "1.2k", so a user editing that text must be able
+        // to type it back: without this, "1.5k" would parse as 1.5 Hz and get
+        // clamped to 20 — silently destroying the value they meant to nudge.
+        const bool kilo = raw.containsIgnoreCase ("k");
+        auto txt = raw.retainCharacters ("0123456789.-+").trim();
+        double v = txt.getDoubleValue();
+        if (kilo) v *= 1000.0;
         setRealValue (range_.snapToLegalValue (v));
         if (onValueChange) onValueChange();
     };
@@ -109,7 +115,14 @@ void EqValueKnob::setDimmed (bool d)
 
 void EqValueKnob::refreshReadout()
 {
-    const juce::String txt = juce::String (value_, decimals_) + suffix_;
+    // juce::String(double, 0) does NOT mean "no decimals" — at <= 0 places it
+    // falls back to the shortest round-tripping form, which is what made FREQ
+    // read "87.1907 Hz". Integer readouts have to be rounded explicitly.
+    const juce::String txt =
+        formatValue ? formatValue (value_)
+      : decimals_ > 0 ? juce::String (value_, decimals_) + suffix_
+                      : juce::String (juce::roundToInt (value_)) + suffix_;
+
     readout_.setText (txt, juce::dontSendNotification);
     knob_.tip = caption_ + ": " + txt + "  (double-click the number to type a value)";
     knob_.setTooltip (knob_.tip);   // setValue is not the only path here
@@ -180,8 +193,10 @@ void SurgicalEqEditor::buildControls()
     // these knobs replaced.
     auto styleValue = [this] (EqValueKnob& k, double lo, double hi, double skewMid,
                               int decimals, const juce::String& suffix,
-                              const juce::String& caption, double dflt)
+                              const juce::String& caption, double dflt,
+                              std::function<juce::String(double)> fmt = {})
     {
+        k.formatValue = std::move (fmt);          // must precede setSpec
         k.setSpec (lo, hi, skewMid, decimals, suffix, caption, dflt);
         k.onValueChange = [this] { if (! suppressCallbacks_) pushControlsToBand(); };
         addAndMakeVisible (k);
@@ -233,7 +248,12 @@ void SurgicalEqEditor::buildControls()
     addAndMakeVisible (slopeBox_);
 
     // ---- numeric dials ----------------------------------------------------
-    styleValue (freqS_, kMinFreq, kMaxFreq, 1000.0, 0, " Hz", "FREQ", 1000.0);
+    // FREQ borrows the x-axis's own labelling so the readout and the gridline
+    // under the node always agree: whole Hz below 1k, "1.2k" above.
+    styleValue (freqS_, kMinFreq, kMaxFreq, 1000.0, 0, " Hz", "FREQ", 1000.0,
+                [] (double v) { return freqText ((float) v)
+                                     + (v < 1000.0 ? juce::String (" Hz")
+                                                   : juce::String()); });
     styleValue (gainS_, -kMaxGain, kMaxGain, 0.0,   1, " dB", "GAIN", 0.0);
     // Q spans the engine's usable range, not the narrower wheel-drag clamp, so a
     // high-Q band set by the AI displays truthfully instead of being pulled in.
@@ -309,23 +329,27 @@ void SurgicalEqEditor::updateStripVisibility()
 
 void SurgicalEqEditor::layoutStrip()
 {
-    fieldLabels_.clear();
     if (stripBounds_.isEmpty()) return;
 
-    // Row 1: type / slope selectors and the per-band toggles (flat controls).
+    // Row 1: type / slope selectors and the per-band toggles.
     // Row 2: the dials — freq/gain/Q, plus the dynamic four when engaged.
-    // Each knob draws its own caption and readout, so it needs no fieldLabel.
-    struct Item { juce::Component* c; int w; const char* caption; };
+    //
+    // Nothing in row 1 carries a caption. TYPE and SLOPE used to, which pushed
+    // those two down by the caption height while the buttons beside them sat
+    // at the row top, so the row never read as one line. The controls say what
+    // they are anyway ("Bell", "24 dB/oct"), so dropping the captions levels
+    // the row and buys the graph back 12px. The dials still caption
+    // themselves, drawn inside each knob.
+    struct Item { juce::Component* c; int w; };
 
     const Item row1[] = {
-        { &typeBox_,   96, "TYPE"  }, { &slopeBox_, 92, "SLOPE" },
-        { &dynBtn_,    58, ""      }, { &enableBtn_, 46, ""     },
-        { &soloBtn_,   36, ""      },
+        { &typeBox_,  96 }, { &slopeBox_, 92 }, { &dynBtn_, 58 },
+        { &enableBtn_, 46 }, { &soloBtn_,  36 },
     };
     const Item row2[] = {
-        { &freqS_, kKnobW, "" }, { &gainS_,  kKnobW, "" }, { &qS_,   kKnobW, "" },
-        { &thrS_,  kKnobW, "" }, { &rangeS_, kKnobW, "" }, { &atkS_, kKnobW, "" },
-        { &relS_,  kKnobW, "" },
+        { &freqS_, kKnobW }, { &gainS_,  kKnobW }, { &qS_,   kKnobW },
+        { &thrS_,  kKnobW }, { &rangeS_, kKnobW }, { &atkS_, kKnobW },
+        { &relS_,  kKnobW },
     };
 
     auto layoutRow = [this] (const Item* items, int count, int y, int h)
@@ -346,19 +370,14 @@ void SurgicalEqEditor::layoutStrip()
             auto& it = items[i];
             if (! it.c->isVisible()) continue;
             const int w = juce::jmax (18, (int) std::round ((float) it.w * scale));
-
-            if (juce::String (it.caption).isNotEmpty())
-                fieldLabels_.push_back ({ { x, y, w, kCapH }, it.caption });
-
-            const bool captioned = juce::String (it.caption).isNotEmpty();
-            it.c->setBounds (x, captioned ? y + kCapH : y, w, h);
+            it.c->setBounds (x, y, w, h);
             x += w + 6;
         }
     };
 
     const int y1 = stripBounds_.getY();
     layoutRow (row1, (int) std::size (row1), y1, kRowH);
-    layoutRow (row2, (int) std::size (row2), y1 + kRowH + kCapH + 4, kKnobH);
+    layoutRow (row2, (int) std::size (row2), y1 + kRowH + 6, kKnobH);
 }
 
 void SurgicalEqEditor::syncControlsFromModel()
@@ -905,11 +924,6 @@ void SurgicalEqEditor::paint (juce::Graphics& g)
                     stripBounds_, juce::Justification::centred);
     }
 
-    // ---- strip field captions + control backdrops --------------------------
-    for (const auto& fl : fieldLabels_)
-        EchoJayLookAndFeel::drawFieldLabel (g, fl.r.getX(), fl.r.getY(),
-                                            fl.r.getWidth(), fl.text);
-
-    // The dials draw their own caption/readout and the filmstrip has its own
-    // body, so they need no backing field rect — only the flat controls do.
+    // No strip captions to paint: the selector row is self-describing and each
+    // dial draws its own caption and readout inside its own bounds.
 }
