@@ -146,14 +146,23 @@ private:
     static constexpr int   kFftOrder    = 12;
     static constexpr int   kFftSize     = 1 << kFftOrder;
     static constexpr int   kSpecBins    = kFftSize / 2;
-    static constexpr float kSpecFloorDb = -100.0f;   // bottom of the graph
-    static constexpr float kSpecCeilDb  = 0.0f;      // top of the graph
-    static constexpr float kSpecFallDbPerSec = 120.0f;  // fast rise, slow fall
-    // Display treatment shared with the METERS tab so both analyzers read the
-    // same: a median gate ahead of the mean, then a tilt referenced to 1 kHz.
-    static constexpr int   kSpecMedianBins   = 3;
-    static constexpr float kSpecTiltDbPerOct = 4.5f;
-    static constexpr float kSpecOctaveFrac   = 12.0f;   // 1/12-octave smoothing
+
+    // ---- level calibration: copied from MeterEngine + the METERS renderer --
+    // These are not free parameters. The same signal has to read at the same
+    // height here as on the METERS tab, so every one of them mirrors its
+    // counterpart there; changing one in isolation desynchronises the two.
+    static constexpr float kSpecNormNumer  = 2.0f;    // MeterEngine visNorm = 2/N
+    static constexpr float kSpecRawFloorDb = -120.0f; // MeterEngine's per-bin floor
+    static constexpr float kSpecLerp       = 0.5f;    // kSpectrumVisLerp
+    static constexpr int   kSpecMedianBins = 3;       // kSpectrumMedianBins
+    static constexpr float kSpecTiltDbPerOct = 4.5f;  // kSpectrumTiltDbPerOct
+    static constexpr float kSpecOctaveFrac = 12.0f;   // 1/12-octave smoothing
+    // Auto-range, exactly as paintSpectrumCurve computes it: a fixed-height
+    // window whose ceiling floats just above the tilted peak.
+    static constexpr float kSpecRangeDb    = 66.0f;   // vDbMax - vDbMin
+    static constexpr float kSpecCeilMinDb  = -20.0f;  // ceiling never below this
+    static constexpr float kSpecHeadroomDb = 3.0f;    // ceiling above the peak
+    static constexpr float kSpecPeakFallDb = 0.35f;   // peak-hold fall, per frame
 
     void  updateSpectrum();          // timer: drain a tap, FFT, smooth
     void  rebuildSpectrumPath();     // region-aware knots + Catmull-Rom
@@ -194,14 +203,22 @@ private:
     // Analyzer state. Every buffer is sized once in the constructor and reused
     // — nothing here allocates on the timer or in paint.
     juce::dsp::FFT   fft_ { kFftOrder };
-    juce::dsp::WindowingFunction<float> window_
-        { (size_t) kFftSize, juce::dsp::WindowingFunction<float>::hann, false };
+    // Hann built with MeterEngine's own formula (periodic, /N) rather than
+    // JUCE's symmetric /(N-1) one, so the coherent gain — and therefore the
+    // level — is identical rather than merely close.
+    std::vector<float> window_;
     std::vector<float> fftScratch_;   // kFftSize  drained samples
     std::vector<float> fftData_;      // 2*kFftSize, as performFrequencyOnly… needs
     std::vector<float> specDb_;       // kSpecBins, decay-smoothed magnitudes
     std::vector<float> specWork_;     // median-gated intermediate
     std::vector<float> specDisplay_;  // fractional-octave smoothed, what is drawn
     std::vector<float> specPrefix_;   // running integral for O(n) octave averaging
+    // Peak hold. Never drawn here — it exists only because the METERS
+    // renderer folds it into the auto-range, so omitting it would put the
+    // same signal at a different height after a transient.
+    std::vector<float> specPeak_;
+    bool               specPeakInit_ = false;
+    float              specDbMin_ = -100.0f, specDbMax_ = -34.0f;  // live window
     std::vector<juce::Point<float>> specPts_;   // spline knots, reused each frame
     juce::Path         spectrumPath_;
     bool               analyzerOn_   = true;

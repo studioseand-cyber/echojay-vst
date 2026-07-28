@@ -165,11 +165,18 @@ SurgicalEqEditor::SurgicalEqEditor (SurgicalEqProcessor& p)
 
     // Analyzer scratch: sized ONCE here, reused for the life of the editor.
     // Allocating in the timer or in paint would put malloc on a 30 Hz path.
+    // Periodic Hann, MeterEngine's exact formula (see the header note).
+    window_.resize ((size_t) kFftSize);
+    for (int i = 0; i < kFftSize; ++i)
+        window_[(size_t) i] = 0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi
+                                                       * (float) i / (float) kFftSize));
+
     fftScratch_.assign  ((size_t) kFftSize, 0.0f);
     fftData_.assign     ((size_t) kFftSize * 2, 0.0f);
-    specDb_.assign      ((size_t) kSpecBins, kSpecFloorDb);
-    specWork_.assign    ((size_t) kSpecBins, kSpecFloorDb);
-    specDisplay_.assign ((size_t) kSpecBins, kSpecFloorDb);
+    specDb_.assign      ((size_t) kSpecBins, kSpecRawFloorDb);
+    specWork_.assign    ((size_t) kSpecBins, kSpecRawFloorDb);
+    specDisplay_.assign ((size_t) kSpecBins, kSpecRawFloorDb);
+    specPeak_.assign    ((size_t) kSpecBins, kSpecRawFloorDb);
     specPrefix_.assign  ((size_t) kSpecBins + 1, 0.0f);
     specPts_.reserve    ((size_t) kSpecBins + 2048);   // knots + one per pixel
 
@@ -241,7 +248,8 @@ void SurgicalEqEditor::buildControls()
             // decay state reset so re-enabling starts from silence rather
             // than from a frozen frame minutes old.
             spectrumPath_.clear();
-            std::fill (specDb_.begin(), specDb_.end(), kSpecFloorDb);
+            std::fill (specDb_.begin(), specDb_.end(), kSpecRawFloorDb);
+            specPeakInit_ = false;
         }
         sourceBtn_.setEnabled (analyzerOn_);
         repaint();
@@ -258,8 +266,10 @@ void SurgicalEqEditor::buildControls()
         analyzerPost_ = sourceBtn_.getToggleState();
         sourceBtn_.setButtonText (analyzerPost_ ? "POST" : "PRE");
         // Both rings are always captured, so the switch is instant — but the
-        // decay state belongs to the old source and would bleed across.
-        std::fill (specDb_.begin(), specDb_.end(), kSpecFloorDb);
+        // smoothing and peak state belong to the old source and would bleed
+        // across, dragging the auto-range with them.
+        std::fill (specDb_.begin(), specDb_.end(), kSpecRawFloorDb);
+        specPeakInit_ = false;
         repaint();
     };
 
@@ -764,10 +774,12 @@ void SurgicalEqEditor::resized()
 // ---------------------------------------------------------------------------
 float SurgicalEqEditor::specDbToY (float db) const noexcept
 {
-    // The analyzer has its OWN vertical scale (dBFS), independent of the EQ's
-    // ±dB grid — the two measure different things and must not share an axis.
-    const float t = juce::jlimit (0.0f, 1.0f,
-        (db - kSpecFloorDb) / (kSpecCeilDb - kSpecFloorDb));
+    // The analyzer has its OWN vertical scale, independent of the EQ's ±dB
+    // grid — the two measure different things and must not share an axis.
+    // The window is the auto-ranged one computed in updateSpectrum, matching
+    // the METERS renderer rather than a fixed floor/ceiling.
+    const float span = juce::jmax (1.0f, specDbMax_ - specDbMin_);
+    const float t    = juce::jlimit (0.0f, 1.0f, (db - specDbMin_) / span);
     return (float) graphBounds_.getBottom() - t * (float) graphBounds_.getHeight();
 }
 
@@ -775,25 +787,28 @@ void SurgicalEqEditor::updateSpectrum()
 {
     proc_.readAnalysis (fftScratch_.data(), kFftSize, analyzerPost_);
 
-    // performFrequencyOnlyForwardTransform wants 2*size; the upper half is
-    // scratch for the transform and must start zeroed.
-    std::copy (fftScratch_.begin(), fftScratch_.end(), fftData_.begin());
+    // Window and transform exactly as MeterEngine does, including the
+    // non-negative-frequencies flag. The upper half is transform scratch and
+    // must start zeroed.
+    for (int i = 0; i < kFftSize; ++i)
+        fftData_[(size_t) i] = fftScratch_[(size_t) i] * window_[(size_t) i];
     std::fill (fftData_.begin() + kFftSize, fftData_.end(), 0.0f);
 
-    window_.multiplyWithWindowingTable (fftData_.data(), (size_t) kFftSize);
-    fft_.performFrequencyOnlyForwardTransform (fftData_.data());
+    fft_.performFrequencyOnlyForwardTransform (fftData_.data(), true);
 
-    // 2/N for the two-sided transform, doubled again for the Hann window's
-    // 0.5 coherent gain: a full-scale sine then reads ~0 dBFS at its bin.
-    const float norm     = 4.0f / (float) kFftSize;
-    const float fallStep = kSpecFallDbPerSec / 30.0f;   // timer runs at 30 Hz
+    // MeterEngine's visNorm, verbatim. It was 4/N here, which is a full 6 dB
+    // hot — the single biggest reason this read louder than the METERS tab.
+    const float norm = kSpecNormNumer / (float) kFftSize;
 
     for (int k = 0; k < kSpecBins; ++k)
     {
-        const float db = juce::Decibels::gainToDecibels (fftData_[(size_t) k] * norm,
-                                                         kSpecFloorDb);
-        // Instant rise, linear fall — peaks register, the display stays legible.
-        specDb_[(size_t) k] = juce::jmax (db, specDb_[(size_t) k] - fallStep);
+        const float m  = fftData_[(size_t) k] * norm;
+        const float db = m > 1e-10f ? 20.0f * std::log10 (m) : kSpecRawFloorDb;
+
+        // Frame-to-frame lerp, matching kSpectrumVisLerp. This replaces a
+        // peak-holding decay: holding peaks displays a HIGHER level for the
+        // same signal, which is level calibration, not smoothing.
+        specDb_[(size_t) k] += (db - specDb_[(size_t) k]) * kSpecLerp;
     }
 
     // ---- median gate (same order as the METERS renderer: median -> mean) --
@@ -839,6 +854,44 @@ void SurgicalEqEditor::updateSpectrum()
         const int n = hi - lo + 1;
         specDisplay_[(size_t) k] =
             (specPrefix_[(size_t) hi + 1] - specPrefix_[(size_t) lo]) / (float) n;
+    }
+
+    // ---- peak hold --------------------------------------------------------
+    // Rise instantly, fall kSpecPeakFallDb per frame — the METERS renderer's
+    // behaviour. Not drawn; it exists purely to feed the auto-range below.
+    if (! specPeakInit_) { specPeak_ = specDisplay_; specPeakInit_ = true; }
+    for (int k = 0; k < kSpecBins; ++k)
+    {
+        if (specDisplay_[(size_t) k] > specPeak_[(size_t) k])
+            specPeak_[(size_t) k] = specDisplay_[(size_t) k];
+        else
+            specPeak_[(size_t) k] -= kSpecPeakFallDb;
+    }
+
+    // ---- auto-range -------------------------------------------------------
+    // paintSpectrumCurve's mapping, verbatim: find the loudest TILTED value
+    // across 20 Hz..20 kHz (curve and peak hold alike), sit the ceiling a
+    // little above it but never below kSpecCeilMinDb, and hang a fixed-height
+    // window underneath. A fixed floor/ceiling instead of this is what put the
+    // same signal at a different height from the METERS tab.
+    const double sr = proc_.getEngine().getSampleRate();
+    if (sr > 0.0)
+    {
+        const double binHz = sr / (double) kFftSize;
+        const int kLo = juce::jmax (1, (int) ((double) kMinFreq / binHz));
+        const int kHi = juce::jmin (kSpecBins - 1, (int) ((double) kMaxFreq / binHz));
+
+        float peak = -200.0f;
+        for (int k = kLo; k <= kHi; ++k)
+        {
+            const float tilt = kSpecTiltDbPerOct
+                             * (float) std::log2 ((double) k * binHz / 1000.0);
+            peak = juce::jmax (peak, specDisplay_[(size_t) k] + tilt);
+            peak = juce::jmax (peak, specPeak_[(size_t) k]    + tilt);
+        }
+
+        specDbMax_ = std::max (kSpecCeilMinDb, peak + kSpecHeadroomDb);
+        specDbMin_ = specDbMax_ - kSpecRangeDb;
     }
 }
 
