@@ -45,6 +45,15 @@ struct MeterData {
     // short-term LUFS. Drives PSR (= shortTermTruePeak - shortTerm).
     float shortTermTruePeak = -100.0f;
 
+    // Stored PSR / PLR carriers. Live meters compute PSR from
+    // shortTermTruePeak - shortTerm on the fly and leave these at the
+    // "unavailable" sentinel; a MeterData rebuilt from a saved review
+    // (meterDataFromWsReview) fills them from WsMeasurements.psr/plr, which is
+    // the only place a stored review's short-term reference survives. -999 =
+    // unavailable (matches the WsMeasurements convention; never serialised).
+    float psr = -999.0f;
+    float plr = -999.0f;
+
     // Inter-sample overs: count of contiguous runs above 0 dBTP (one event
     // per run, not per sample). Resets with the max-hold / on capture start.
     int oversCount = 0;

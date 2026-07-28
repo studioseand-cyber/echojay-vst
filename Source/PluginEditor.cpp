@@ -4337,9 +4337,23 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
     // PROJECT (all its chats, newest-message-first), plus reviews whose chat
     // was DELETED (orphans -> Ungrouped). Also count evicted history: how
     // many of this project's referencing messages no longer resolve.
+    // Project scope must NOT hinge on an active chat. On load and after a Logic
+    // editor recreate, currentChatId is empty until the user clicks a chat, so
+    // deriving the scope from it alone resolves to "" and silently mis-scopes
+    // the whole list (the reproduction: reopen a project, the list shows the
+    // wrong captures until you click a chat). Use the active chat's trackName
+    // when there IS one; otherwise fall to the header project
+    // (newChatProjectName -> processorRef.getProjectName(), or this session's
+    // auto label when the DAW gave no name). That value lives on the processor,
+    // so it is correct the instant the menu opens and survives a recreate. The
+    // auto label is non-empty, so an empty DAW name scopes to THIS session's
+    // chats, never to every project.
     juce::String curProject;
-    for (auto& c : workspace.getChats())
-        if (c.id == currentChatId) { curProject = c.trackName; break; }
+    if (currentChatId.isNotEmpty())
+        for (auto& c : workspace.getChats())
+            if (c.id == currentChatId) { curProject = c.trackName; break; }
+    if (curProject.isEmpty())
+        curProject = newChatProjectName();
 
     auto reviewById = [&](const juce::String& id) -> const WsReview* {
         for (auto& r : workspace.getReviews()) if (r.id == id) return &r;
@@ -4625,6 +4639,16 @@ MeterData EchoJayEditor::getSlotMeterData(const CompareSlotState& slot) const
     d.correlation   = r.data.corr;
     d.crestFactor   = r.data.crest;
     d.dcOffset      = r.data.dc;
+    // Carry the figures the review ALSO stored but this converter used to drop,
+    // so the compare context can report the full set, not just three numbers.
+    // Each keeps the review's "unavailable" sentinel (psr/plr -999, overs -1,
+    // band crest -1) so an older review missing them reads as N/A, not zero.
+    d.psr           = r.data.psr;
+    d.plr           = r.data.plr;
+    d.oversCount    = r.data.overs;                 // -1 = unavailable (older review)
+    d.bandCrestSub  = r.data.crestSub;
+    d.bandCrestMid  = r.data.crestMid;
+    d.bandCrestTop  = r.data.crestTop;
     d.isSilent      = false;
     if (r.hasSpectrum) d.spectrum = r.spectrumBands;
     return d;
