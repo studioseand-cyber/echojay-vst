@@ -1484,9 +1484,48 @@ private:
         // pop-out), plugin box (the clip container, inset on all sides),
         // SUGGESTED SETTINGS box, chain strip. The plugin box IS the
         // container clip frame — containment policy is unchanged.
+        // ---- Settings-restore notes -------------------------------------
+        // Plain sentences naming any slot whose hosted settings did not save
+        // or did not restore. A slot sitting at its defaults must never look
+        // restored, so this band is persistent (not a toast) and stays until
+        // the user clicks it away.
+        //
+        // ONE height source, as with every other reserved band here:
+        // noteBandH() authors it, displayArea() and paint() consume it, and
+        // nothing measures the text a second time.
+        static constexpr int kNoteLineH  = 17;
+        static constexpr int kNoteMaxRow = 3;
+        juce::StringArray stateNotes;
+        std::function<void()> onDismissNotes;
+
+        int noteBandH() const
+        {
+            if (stateNotes.isEmpty()) return 0;
+            return juce::jmin(kNoteMaxRow, stateNotes.size()) * kNoteLineH + 14 + kCardGap;
+        }
+
+        juce::Rectangle<int> noteBandRect() const
+        {
+            if (stateNotes.isEmpty()) return {};
+            return { kCardMargin, 4 + kCardHeaderH + kCardGap,
+                     juce::jmax(50, getWidth() - kCardMargin * 2),
+                     noteBandH() - kCardGap };
+        }
+
+        void setStateNotes(const juce::StringArray& notes)
+        {
+            if (notes == stateNotes) return;
+            const bool bandChanged = notes.isEmpty() != stateNotes.isEmpty()
+                                  || juce::jmin(kNoteMaxRow, notes.size())
+                                     != juce::jmin(kNoteMaxRow, stateNotes.size());
+            stateNotes = notes;
+            if (bandChanged) resized();   // the plugin view sits below the band
+            repaint();
+        }
+
         juce::Rectangle<int> displayArea() const
         {
-            int top    = 4 + kCardHeaderH + kCardGap;
+            int top    = 4 + kCardHeaderH + kCardGap + noteBandH();
             int bottom = getHeight() - kStripH - 8 - kSettingsH - kCardGap;
             return { kCardMargin, top,
                      juce::jmax(50, getWidth() - kCardMargin * 2),
@@ -1689,6 +1728,34 @@ private:
             gEjZdbgPaint("ChainListPanel", *this); // TEMP DEBUG [zdbg]
             g.fillAll(juce::Colour(0xff0A0C18));
 
+            // Settings-restore notes. Geometry comes from noteBandRect();
+            // this measures nothing.
+            if (auto band = noteBandRect(); !band.isEmpty())
+            {
+                g.setColour(juce::Colour(0xff2A1F08));
+                g.fillRoundedRectangle(band.toFloat(), 8.0f);
+                g.setColour(juce::Colour(0xffE0A83A).withAlpha(0.55f));
+                g.drawRoundedRectangle(band.toFloat().reduced(0.5f), 8.0f, 1.0f);
+                g.setColour(juce::Colour(0xffE8C070));
+                g.setFont(juce::Font(juce::FontOptions(11.5f)));
+                int shown = juce::jmin(kNoteMaxRow, stateNotes.size());
+                for (int i = 0; i < shown; ++i)
+                {
+                    juce::String line = stateNotes[i];
+                    if (i == kNoteMaxRow - 1 && stateNotes.size() > kNoteMaxRow)
+                        line = line + "   (+" + juce::String(stateNotes.size() - kNoteMaxRow)
+                             + " more)";
+                    g.drawText(line, band.getX() + 12, band.getY() + 7 + i * kNoteLineH,
+                               band.getWidth() - 24, kNoteLineH,
+                               juce::Justification::centredLeft, true);
+                }
+                g.setColour(juce::Colour(0xff8A7040));
+                g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                g.drawText("click to dismiss", band.getX() + 12,
+                           band.getBottom() - 12, band.getWidth() - 24, 10,
+                           juce::Justification::centredRight);
+            }
+
             auto area = displayArea();
 
             if (hasSelection())
@@ -1776,6 +1843,12 @@ private:
             layoutStrip();
             layoutInline();
             attachNative(false);   // re-assert the clip frame at the new rect
+        }
+
+        void mouseDown(const juce::MouseEvent& e) override
+        {
+            if (!stateNotes.isEmpty() && noteBandRect().contains(e.getPosition()))
+                if (onDismissNotes) onDismissNotes();
         }
 
         // The container frame is peer-relative — track pure moves too

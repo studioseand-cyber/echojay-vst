@@ -497,6 +497,16 @@ private:
     juce::SmoothedValue<float>          smooth_;
 };
 
+// Defined up here, not with the rest of the settings-cache code below:
+// ~ChainHost destroys a unique_ptr to it, so the type has to be complete
+// before the destructor.
+struct ChainHost::StateCacheTimer : juce::Timer
+{
+    explicit StateCacheTimer(ChainHost& o) : owner(o) {}
+    void timerCallback() override { owner.stateCacheTick(); }
+    ChainHost& owner;
+};
+
 ChainHost::ChainHost()
 {
     juce::addDefaultFormatsToManager(formatManager_);
@@ -539,6 +549,19 @@ ChainHost::~ChainHost()
 {
     cancelFlag_.store(true);
     if (scanThread_.joinable()) scanThread_.join();
+
+    // Stop the cache timer and drop every listener BEFORE the nodes are
+    // parked in the process-lifetime store. Those instances outlive us by
+    // design, so a listener left attached would be a call into freed memory
+    // the first time a stray plugin timer fired.
+    if (stateCacheTimer_) stateCacheTimer_->stopTimer();
+    stateCacheEnabled_ = false;
+    for (int i = 0; i < (int)slots_.size(); ++i)
+        detachStateListener(i);
+    for (auto& n : graveyard_)
+        if (n)
+            if (auto* p = n->getProcessor())
+                p->removeListener(this);
 
     // Detach nodes from the graph, then park them in the process-lifetime
     // store instead of letting them be destroyed (see leakedNodeStore above)
@@ -1307,6 +1330,10 @@ ChainHost::applyStructuredSettings (int slotIndex,
 void ChainHost::removeSlot(int i)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
+    // Before the instance goes to the graveyard, where it stays ALIVE for
+    // the session: a parked plugin with a leaked UI timer must not be able
+    // to call a listener on a ChainHost that has since gone away.
+    detachStateListener(i);
     for (auto& c : graph_->getConnections()) graph_->removeConnection(c);
     if (slots_[i].node)
     {
@@ -1426,6 +1453,18 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
             saveParamMapsToDisk();
         }
         applyStructuredIfReady(newSlotIdx);
+    }
+
+    // Hosted settings cache. No-op unless enabled (it is not in EchoJay
+    // Link, which captures live in chainModelToVar). The first capture is
+    // taken NOW rather than waiting for the debounce: a plugin added a
+    // second before the user hits Cmd-S would otherwise save as null, which
+    // reads as "your settings were dropped" for a slot nothing was wrong
+    // with. Every later capture for this slot goes through the timer.
+    if (stateCacheEnabled_)
+    {
+        attachStateListener(newSlotIdx);
+        captureSlotState(newSlotIdx, juce::Time::getMillisecondCounterHiRes());
     }
 }
 
@@ -2461,8 +2500,14 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx)
     if (idx >= (int)items.size()) return;
     bool  wasBypassed = items[idx].bypassed;
     float savedWet    = items[idx].wet;
+    // Carried into the callback with the item, never looked up by index
+    // afterwards, see the RestoreItem comment in the header.
+    juce::String stateB64   = items[idx].stateBase64;
+    bool         expectState = items[idx].expectState;
+    juce::String slotName   = items[idx].desc.name;
     loadPluginAsync(items[idx].desc,
-        [this, items = std::move(items), idx, wasBypassed, savedWet](const juce::String& err) mutable
+        [this, items = std::move(items), idx, wasBypassed, savedWet,
+         stateB64, expectState, slotName](const juce::String& err) mutable
         {
             if (err.isEmpty())
             {
@@ -2471,21 +2516,98 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx)
                 {
                     setSlotWet(lastSlot, savedWet);
                     if (wasBypassed) setSlotBypassed(lastSlot, true);
+                    applyRestoredState(lastSlot, stateB64, expectState, slotName);
                 }
+            }
+            else
+            {
+                // A load failure means "can't authorise right now", NEVER
+                // "not owned" (an absent iLok fails plugins the user owns).
+                // Session-scoped and named, so the gap in the rack is never
+                // silent, but nothing is persisted and nothing is excluded.
+                addStateNote(slotName + ": could not load on this machine right now,"
+                                        " so this slot was left out of the chain");
             }
             restoreNextSlot(std::move(items), idx + 1);
         });
 }
 
-void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml)
+void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
+                                   bool expectState, const juce::String& slotName)
+{
+    if (b64.isEmpty())
+    {
+        // Nothing saved for this slot. Say so ONLY when the session carried
+        // settings for the chain at all: on a session written before hosted
+        // settings were persisted there is nothing to have lost, and noting
+        // every slot would be noise on every pre-existing project.
+        if (expectState)
+            addStateNote(slotName + ": loaded at its default settings"
+                                    " (no settings were saved for this slot)");
+        return;
+    }
+
+    juce::MemoryOutputStream mo;
+    if (!juce::Base64::convertFromBase64(mo, b64))
+    {
+        addStateNote(slotName + ": saved settings could not be read,"
+                                " so it loaded at its defaults");
+        return;
+    }
+
+    auto* proc = getSlotProcessor(slotIdx);
+    if (proc == nullptr)
+    {
+        addStateNote(slotName + ": saved settings could not be applied,"
+                                " so it loaded at its defaults");
+        return;
+    }
+
+    try
+    {
+        proc->setStateInformation(mo.getData(), (int)mo.getDataSize());
+    }
+    catch (...)
+    {
+        addStateNote(slotName + ": rejected its saved settings,"
+                                " so it loaded at its defaults");
+        return;
+    }
+
+    // Seed the cache with what we just restored, so a save that happens
+    // before the first capture round-trips this slot instead of nulling it.
+    {
+        std::lock_guard<std::mutex> lock(stateCacheMutex_);
+        if (slotIdx >= 0 && slotIdx < (int)slots_.size())
+        {
+            auto& s = slots_[(size_t)slotIdx];
+            s.lastKnownState = b64;
+            s.lastKnownBytes = (int)mo.getDataSize();
+            s.capturedAtMs   = juce::Time::getMillisecondCounterHiRes();
+        }
+    }
+}
+
+void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml,
+                                       const juce::var& slotStates)
 {
     if (xml.isEmpty()) return;
     auto root = juce::XmlDocument::parse(xml);
     if (!root || root->getTagName() != "CHAIN_SLOTS") return;
 
+    // One session restore, one clean slate. Notes are about THIS session's
+    // chain; carrying yesterday's project's notes into today's would name
+    // slots that are not on screen.
+    clearStateNotes();
+
     // Master wet applies immediately (independent of the async slot loads);
     // absent attribute (pre-wet/dry sessions) restores as fully wet.
     setMasterWet((float)root->getDoubleAttribute("masterWet", 1.0));
+
+    // Sibling settings object, 1-based keys. Absent on every session written
+    // before hosted settings were persisted, which is the common case and
+    // restores exactly as it always did.
+    auto* statesObj = slotStates.getDynamicObject();
 
     std::vector<RestoreItem> items;
     for (auto* child : root->getChildIterator())
@@ -2497,9 +2619,248 @@ void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml)
         if (!descElem) continue;
         juce::PluginDescription desc;
         if (!desc.loadFromXml(*descElem)) continue;
-        items.push_back({ desc, bypassed, wet });
+        RestoreItem item { desc, bypassed, wet, {}, statesObj != nullptr };
+        // 1-based, matching the shared chain format and the API's `state`
+        // object. Position in the document is the slot number: keying by it
+        // makes a skipped slot explicit rather than inferred.
+        if (statesObj != nullptr)
+        {
+            const juce::String key ((int)items.size() + 1);
+            if (statesObj->hasProperty(key))
+                item.stateBase64 = statesObj->getProperty(key).toString();
+        }
+        items.push_back(std::move(item));
     }
 
     if (!items.empty())
         restoreNextSlot(std::move(items), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Hosted plugin settings: CACHE, not capture
+//
+// The host's getStateInformation only ever serialises strings already held
+// here. Everything expensive (the hosted getStateInformation calls) happens
+// ahead of time on the message thread: after a chain edit, on the debounce
+// timer, and on editor teardown. See the header for why.
+// ---------------------------------------------------------------------------
+void ChainHost::setStateCacheEnabled(bool shouldBeEnabled)
+{
+    stateCacheEnabled_ = shouldBeEnabled;
+    if (!shouldBeEnabled)
+    {
+        if (stateCacheTimer_) stateCacheTimer_->stopTimer();
+        return;
+    }
+    for (int i = 0; i < (int)slots_.size(); ++i)
+        attachStateListener(i);
+    if (stateCacheTimer_ == nullptr)
+        stateCacheTimer_ = std::make_unique<StateCacheTimer>(*this);
+    stateCacheTimer_->startTimer(kStateTickMs);
+    noteHostedChange();   // first capture on the next settled tick
+}
+
+void ChainHost::noteHostedChange() noexcept
+{
+    // Reachable from the audio thread during automation: two relaxed atomic
+    // stores, nothing else. No container access, no allocation, no lock.
+    lastChangeMs_.store(juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
+    stateDirty_.store(true, std::memory_order_relaxed);
+}
+
+void ChainHost::attachStateListener(int i)
+{
+    if (!stateCacheEnabled_) return;
+    if (i < 0 || i >= (int)slots_.size() || !slots_[(size_t)i].node) return;
+    if (auto* p = slots_[(size_t)i].node->getProcessor())
+    {
+        p->removeListener(this);   // never double-register
+        p->addListener(this);
+    }
+}
+
+void ChainHost::detachStateListener(int i)
+{
+    if (i < 0 || i >= (int)slots_.size() || !slots_[(size_t)i].node) return;
+    if (auto* p = slots_[(size_t)i].node->getProcessor())
+        p->removeListener(this);
+}
+
+void ChainHost::stateCacheTick()
+{
+    if (!stateCacheEnabled_ || slots_.empty()) return;
+
+    const double now     = juce::Time::getMillisecondCounterHiRes();
+    const bool   dirty   = stateDirty_.load(std::memory_order_relaxed);
+    const bool   settled = (now - lastChangeMs_.load(std::memory_order_relaxed))
+                             >= kStateDebounceMs;
+
+    // Still moving: let the gesture finish rather than serialising mid-drag.
+    if (dirty && !settled) return;
+
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        auto& s = slots_[(size_t)i];
+        const bool due = dirty
+                      || s.capturedAtMs <= 0.0
+                      || (now - s.capturedAtMs) >= kStateSweepMs;   // silent plugins
+        if (!due || now < s.nextCaptureMs) continue;
+        captureSlotState(i, now);
+    }
+
+    if (dirty) stateDirty_.store(false, std::memory_order_relaxed);
+}
+
+void ChainHost::refreshStateCacheIfIdle()
+{
+    if (!stateCacheEnabled_ || slots_.empty()) return;
+
+    const double now   = juce::Time::getMillisecondCounterHiRes();
+    const bool   dirty = stateDirty_.load(std::memory_order_relaxed);
+
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        auto& s = slots_[(size_t)i];
+        // Nothing observed since this slot's last capture: skip it entirely.
+        // This is what makes the teardown refresh point free in Logic, where
+        // the editor is recreated every time the user switches between the
+        // Link window and EchoJay.
+        if (!dirty && s.capturedAtMs > 0.0) continue;
+        if (now < s.nextCaptureMs) continue;   // expensive slot, still backing off
+        captureSlotState(i, now);
+    }
+    stateDirty_.store(false, std::memory_order_relaxed);
+}
+
+void ChainHost::captureSlotState(int i, double nowMs)
+{
+    if (inStateCapture_) return;   // see inStateCapture_ in the header
+    if (i < 0 || i >= (int)slots_.size()) return;
+    auto* proc = slots_[(size_t)i].node ? slots_[(size_t)i].node->getProcessor() : nullptr;
+    if (proc == nullptr) return;
+    const juce::ScopedValueSetter<bool> capturing(inStateCapture_, true);
+
+    // The hosted call happens with NO lock held. A plugin that blocks in
+    // here blocks only this message-thread tick, never a save.
+    juce::MemoryBlock mb;
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
+    try { proc->getStateInformation(mb); }
+    catch (...) { return; }   // keep whatever we last held for this slot
+    const double cost = juce::Time::getMillisecondCounterHiRes() - t0;
+
+    const int  bytes    = (int)mb.getSize();
+    const bool oversize = bytes > kSessionStateMaxSlotBytes;
+    juce::String b64;
+    if (bytes > 0 && !oversize)
+        b64 = juce::Base64::toBase64(mb.getData(), mb.getSize());
+
+    juce::String note;
+    {
+        std::lock_guard<std::mutex> lock(stateCacheMutex_);
+        auto& s = slots_[(size_t)i];
+        s.lastKnownState = b64;
+        s.lastKnownBytes = oversize ? 0 : bytes;
+        s.lastCaptureMs  = cost;
+        s.capturedAtMs   = nowMs;
+
+        // Backoff. An expensive slot earns a long minimum interval so one
+        // sampler cannot make the whole cache thrash; a slot over the cap is
+        // retried rarely, since re-serialising it only to discard it again is
+        // pure cost (it can still shrink, so this is a gate, not a ban).
+        if (oversize)
+            s.nextCaptureMs = nowMs + kStateOversizeMs;
+        else if (cost >= kStateExpensiveMs)
+            s.nextCaptureMs = nowMs + juce::jmax(5000.0, cost * kStateBackoffFactor);
+        else
+            s.nextCaptureMs = 0.0;
+
+        if (oversize && !s.oversizeReported)
+        {
+            s.oversizeReported = true;
+            note = s.desc.name + ": settings are "
+                 + juce::File::descriptionOfSizeInBytes((juce::int64)bytes)
+                 + ", over the " + juce::File::descriptionOfSizeInBytes(
+                       (juce::int64)kSessionStateMaxSlotBytes)
+                 + " limit, so they will not be saved with this session";
+        }
+        else if (!oversize && s.oversizeReported)
+        {
+            s.oversizeReported = false;   // shrank back under the cap
+        }
+    }
+    if (note.isNotEmpty()) addStateNote(note);
+}
+
+juce::var ChainHost::getCachedSlotStatesVar() const
+{
+    // Serialises the cache and NOTHING else: no call into a hosted plugin,
+    // no work that can block, so this is safe inside the host's save
+    // callback. The lock is EchoJay's own and is held for a few string
+    // copies.
+    struct Held { int n; juce::String b64; int bytes; juce::String name; };
+    std::vector<Held> held;
+    {
+        std::lock_guard<std::mutex> lock(stateCacheMutex_);
+        held.reserve(slots_.size());
+        for (int i = 0; i < (int)slots_.size(); ++i)
+        {
+            const auto& s = slots_[(size_t)i];
+            held.push_back({ i + 1, s.lastKnownState, s.lastKnownBytes, s.desc.name });
+        }
+    }
+    if (held.empty()) return {};
+
+    // Total cap: keep the smallest states that fit, drop the largest first,
+    // and name what was dropped. Degrade, never fail.
+    juce::int64 total = 0;
+    for (auto& h : held) total += h.bytes;
+    if (total > kSessionStateMaxTotalBytes)
+    {
+        std::vector<int> byLargest;
+        for (int i = 0; i < (int)held.size(); ++i)
+            if (held[(size_t)i].bytes > 0) byLargest.push_back(i);
+        std::sort(byLargest.begin(), byLargest.end(),
+                  [&held](int a, int b) { return held[(size_t)a].bytes > held[(size_t)b].bytes; });
+        for (int idx : byLargest)
+        {
+            if (total <= kSessionStateMaxTotalBytes) break;
+            auto& h = held[(size_t)idx];
+            total -= h.bytes;
+            addStateNote(h.name + ": settings were not saved with this session"
+                                  " (the chain's settings exceeded "
+                       + juce::File::descriptionOfSizeInBytes(
+                             (juce::int64)kSessionStateMaxTotalBytes) + " in total)");
+            h.b64   = {};
+            h.bytes = 0;
+        }
+    }
+
+    // Every slot gets a key, including the ones that hold nothing. A chain
+    // where NO slot captured must still write the object: it is the only
+    // signal the restore has that this session was saved by a build that
+    // persists settings, and therefore the only way it can tell the user why
+    // their plugins came back at their defaults. Explicit null beats absent.
+    auto obj = std::make_unique<juce::DynamicObject>();
+    for (auto& h : held)
+        obj->setProperty(juce::String(h.n),
+                         h.b64.isEmpty() ? juce::var() : juce::var(h.b64));
+    return juce::var(obj.release());
+}
+
+void ChainHost::addStateNote(const juce::String& note) const
+{
+    std::lock_guard<std::mutex> lock(stateCacheMutex_);
+    stateNotes_.addIfNotAlreadyThere(note);
+}
+
+juce::StringArray ChainHost::getStateNotes() const
+{
+    std::lock_guard<std::mutex> lock(stateCacheMutex_);
+    return stateNotes_;
+}
+
+void ChainHost::clearStateNotes()
+{
+    std::lock_guard<std::mutex> lock(stateCacheMutex_);
+    stateNotes_.clear();
 }

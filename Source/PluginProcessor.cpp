@@ -292,6 +292,13 @@ EchoJayProcessor::EchoJayProcessor()
     chainHost.onChainChanged = [this]
     { setLatencySamples(chainHost.getTotalLatencySamples()); };
 
+    // Hosted plugin settings survive a DAW save only if they were serialised
+    // BEFORE the host asked for them: getStateInformation writes strings the
+    // cache already holds and never calls into a hosted plugin. Enabled here
+    // and not in ChainHost's constructor because EchoJay Link shares the
+    // class and captures live in LinkProcessor::chainModelToVar instead.
+    chainHost.setStateCacheEnabled(true);
+
     // Defer plugin cache loading to background so constructor returns fast.
     // Tracked on loadThread (a std::thread member) so the destructor can join
     // it — see ~EchoJayProcessor. Bails immediately if shutdown began.
@@ -1839,8 +1846,21 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     state->setProperty("visualTheme", visualTheme);
     state->setProperty("visualModeOn", visualModeOn);
 
-    // CHAIN state
+    // CHAIN state. chainSlotsXml is slot IDENTITY and its format is frozen:
+    // byte for byte what every build since v2.4.0 has written, so a session
+    // saved here still opens in an older build. The hosted plugins' own
+    // settings ride in a SEPARATE top-level key, which an older build
+    // ignores (every read below in setStateInformation is hasProperty-gated)
+    // and which is absent entirely when there is nothing to say.
+    //
+    // Nothing here calls into a hosted plugin. getCachedSlotStatesVar only
+    // serialises strings the cache already holds, refreshed ahead of time on
+    // the message thread, because a hosted getStateInformation can take
+    // seconds and this callback is teardown-adjacent.
     state->setProperty("chainSlotsXml", chainHost.getSlotsStateXml());
+    auto chainSlotState = chainHost.getCachedSlotStatesVar();
+    if (!chainSlotState.isVoid())
+        state->setProperty("chainSlotState", chainSlotState);
     state->setProperty("chainWarningDismissed", chainHost.chainWarningDismissed);
 
     juce::String json = juce::JSON::toString(juce::var(state.release()), true);
@@ -2028,10 +2048,18 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
         else if (obj->hasProperty("chainLoadedDescXml"))
             chainLoadedDescXml = obj->getProperty("chainLoadedDescXml").toString();
 
+        // Hosted plugin settings, saved alongside the identity XML since the
+        // Session B state work. A session written before that has no such
+        // key and restores exactly as it always did: identity only, plugins
+        // at their defaults.
+        juce::var chainSlotState;
+        if (obj->hasProperty("chainSlotState"))
+            chainSlotState = obj->getProperty("chainSlotState");
+
         if (slotsXml.isNotEmpty())
         {
-            juce::MessageManager::callAsync([this, slotsXml] {
-                chainHost.tryRestoreSlotsFromXml(slotsXml);
+            juce::MessageManager::callAsync([this, slotsXml, chainSlotState] {
+                chainHost.tryRestoreSlotsFromXml(slotsXml, chainSlotState);
             });
         }
         else if (chainLoadedDescXml.isNotEmpty())

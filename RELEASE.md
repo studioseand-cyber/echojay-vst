@@ -136,6 +136,28 @@ KNOWN GAP (as of 2.23.0): the workflow still stages v1 artefact names
 be updated to the "EchoJay V2" artefact names and to include Link before a
 real v2 Windows release.
 
+## Carry into the public release notes
+
+**Hosted plugin settings now survive a DAW save, and DOWNGRADING loses them.**
+From the Session B state work, a saved session carries each hosted plugin's
+own settings in a new `chainSlotState` key alongside the existing
+`chainSlotsXml` identity block.
+
+- Opening an older session in this build works exactly as before: the chain
+  rebuilds and the plugins load at their defaults, because there was nothing
+  saved to restore.
+- Opening a NEW session in an OLDER build also works: the chain rebuilds with
+  order, bypass and wet intact, and the older build simply ignores the
+  settings key.
+- But if that older build then RE-SAVES the project, the settings are gone
+  for good. An older build cannot preserve a key it has never heard of, and
+  no change on our side can retrofit it. Anyone downgrading mid-project needs
+  to know this before they hit Cmd-S.
+
+The mitigation lives at a different layer: a chain saved through the API keeps
+its state regardless of what a downgraded build does to the session file,
+which is an argument for shipping both halves of Session B together.
+
 ## Quick checklist
 
 1. Bump versions (CMakeLists + build-installer.sh + package-dmg.sh)

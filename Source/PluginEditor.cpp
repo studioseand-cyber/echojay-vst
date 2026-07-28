@@ -570,6 +570,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         };
     }
 
+    // Settings-restore notes live on the PROCESSOR (ChainHost), not here:
+    // Logic recreates this editor every time the user switches between the
+    // Link window and EchoJay, and a note about a slot that did not restore
+    // must survive that. The panel is a view of them and nothing more.
+    chainListPanel.onDismissNotes = [this]
+    {
+        processorRef.getChainHost().clearStateNotes();
+        chainListPanel.setStateNotes({});
+    };
+
 
     // --- Channel type ---
     // Grouped channel type dropdown — uses PopupMenu with submenus via getRootMenu()
@@ -2064,6 +2074,13 @@ EchoJayEditor::~EchoJayEditor() {
     }
 
     ejTeardownLog("~EchoJayEditor enter");
+    // Hosted settings refresh point. In Logic this runs every time the user
+    // switches between the Link window and EchoJay, which is frequent, so it
+    // MUST stay free when nothing moved: refreshStateCacheIfIdle skips every
+    // slot that has been captured and not touched since, and honours the
+    // per-slot backoff that keeps an expensive plugin from being
+    // re-serialised on a window switch. Verified in a live Link session.
+    processorRef.getChainHost().refreshStateCacheIfIdle();
     // Auto-parameter-mapping callbacks capture a SafePointer to this editor;
     // clear them so ChainHost (which outlives the editor) never invokes a
     // stale hook. SafePointer already makes late fires no-ops; this is the
@@ -13055,6 +13072,10 @@ void EchoJayEditor::timerCallback()
     if (currentTab == Tab::Chain)
     {
         auto& ch = processorRef.getChainHost();
+        // Settings-restore notes: polled rather than pushed, because a
+        // restore completes asynchronously and can finish while the user is
+        // on another tab, or before this editor exists at all.
+        chainListPanel.setStateNotes(ch.getStateNotes());
         chainSlotCountLabel.setText(juce::String(ch.getNumSlots()) + "/"
                                         + juce::String(ChainListPanel::kMaxSlots) + " PLUGINS",
                                     juce::dontSendNotification);

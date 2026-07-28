@@ -22,7 +22,7 @@
 //   Bypassed slots are skipped in routing (passthrough) but remain in list.
 //   rebuildGraph() runs on the message thread; JUCE's internal graph lock
 //   makes message-thread modifications and audio-thread processBlock safe.
-class ChainHost
+class ChainHost : private juce::AudioProcessorListener
 {
 public:
     // Lightweight slot description safe to copy to the UI thread
@@ -35,7 +35,7 @@ public:
     };
 
     ChainHost();
-    ~ChainHost();
+    ~ChainHost() override;
 
     // ---- Audio thread hooks -----------------------------------------------
     void prepare(double sampleRate, int blockSize);
@@ -392,8 +392,62 @@ public:
     // ---- State persistence -----------------------------------------------
     void saveToDisk() const;
     void loadFromDisk();
+    // Slot IDENTITY only (description, bypass, wet, master wet). This string
+    // is byte-for-byte what every build since v2.4.0 has written, and it must
+    // stay that way: an older build reading a session saved by a newer one
+    // parses exactly the XML it writes itself. Hosted plugin settings ride
+    // alongside in a SEPARATE top-level key (see getCachedSlotStatesVar),
+    // which an older build ignores because every restore read is
+    // hasProperty-gated.
     juce::String getSlotsStateXml() const;
-    void tryRestoreSlotsFromXml(const juce::String& xml);
+    // slotStates: the sibling object from the session, {"1": "<base64>", ...},
+    // 1-based, absent/null meaning "nothing was saved for that slot". Empty
+    // var = a session written before hosted settings were persisted, which
+    // restores exactly as it always did.
+    void tryRestoreSlotsFromXml(const juce::String& xml,
+                                const juce::var& slotStates = {});
+
+    // ---- Hosted plugin settings: CACHE, not capture -----------------------
+    // getStateInformation on a hosted plugin can take seconds (samplers,
+    // convolution) and is not something to run inside the host's own save
+    // callback, which is a teardown-adjacent path with its own freeze
+    // history. So the settings are serialised AHEAD of the save, on the
+    // message thread, and the host's callback only writes strings already
+    // held here. The mutex below is EchoJay's alone and is never held across
+    // a call into a hosted plugin: capture happens outside it, the lock is
+    // taken only to swap the resulting string in.
+    //
+    // Off by default so EchoJay Link, which shares this class but does its
+    // own live capture in LinkProcessor::chainModelToVar, is unaffected.
+    void setStateCacheEnabled(bool shouldBeEnabled);
+    // Capture now, for any slot that is due (dirty or swept) and past its
+    // backoff. Cheap and usually a no-op: a slot nothing has touched since
+    // its last capture is skipped, so calling this on every editor teardown
+    // costs nothing when nothing changed.
+    void refreshStateCacheIfIdle();
+    // {"1": "<base64>", "2": null} for the session blob. Serialises the
+    // cache and nothing else: it never calls into a hosted plugin, so it is
+    // safe in getStateInformation. Applies the total cap, largest dropped
+    // first, and records a note for anything it drops.
+    juce::var getCachedSlotStatesVar() const;
+
+    // Session-scoped, plain-language notes about settings that did NOT
+    // capture or did NOT restore, named by plugin. Never persisted, never
+    // silent: a slot sitting at its defaults because its blob was too large
+    // or was rejected must say so rather than look restored.
+    juce::StringArray getStateNotes() const;
+    void clearStateNotes();
+
+    // SESSION caps, decoded bytes. DELIBERATELY TIGHTER than the API's
+    // 256KB per slot / 1MB total (see the caps note in
+    // SESSION_B_BUILD_SPEC.md section 5, and the same reasoning at the save
+    // path when B.1 lands). An oversized chain sent to the API is rejected
+    // by a server and the user is told; an oversized session has no server
+    // to reject it, so it silently bloats the user's project file on every
+    // single save, forever. The API cap protects a request, this one
+    // protects a document. Do NOT "fix" the inconsistency by aligning them.
+    static constexpr int kSessionStateMaxSlotBytes  = 128 * 1024;
+    static constexpr int kSessionStateMaxTotalBytes = 512 * 1024;
 
     bool chainWarningDismissed = false;
 
@@ -431,6 +485,15 @@ private:
         juce::StringArray                    dialManual;                // unwritten control labels
         juce::StringArray                    dialReadbackMiss;          // wrote wrong, reverted
         int                                  dialAppliedCount = 0;
+        // Hosted settings cache (see setStateCacheEnabled). The blob and its
+        // bookkeeping are read under stateCacheMutex_; everything else on
+        // this struct follows the existing message-thread-only rule.
+        juce::String                         lastKnownState;      // base64, empty = none held
+        int                                  lastKnownBytes = 0;  // DECODED size of the above
+        double                               lastCaptureMs = 0.0; // cost of the last capture
+        double                               capturedAtMs  = 0.0; // when it was taken (0 = never)
+        double                               nextCaptureMs = 0.0; // backoff gate
+        bool                                 oversizeReported = false;  // note said once, not per tick
     };
 
     // Auto-parameter-mapping caches (message thread only)
@@ -481,7 +544,12 @@ private:
     bool   prepared_  = false;
     std::atomic<bool> hasActiveSlots_ { false };  // true when ≥1 non-bypassed slot exists
     std::atomic<int>  chainRevision_ { 0 };       // see getChainRevision()
-    void bumpChainRevision() noexcept { chainRevision_.fetch_add(1, std::memory_order_relaxed); }
+    // Every chain mutation is also a settings-cache trigger: this is the
+    // "after a chain edit settles" refresh point, reached through the same
+    // debounce as everything else, so a burst of edit ops captures once at
+    // the end rather than once per op.
+    void bumpChainRevision() noexcept { chainRevision_.fetch_add(1, std::memory_order_relaxed);
+                                        noteHostedChange(); }
 
     // ---- Master wet/dry state (audio thread reads, message thread writes) --
     // dryRing_ holds the pre-graph input so the dry leg can be delayed by the
@@ -520,9 +588,65 @@ private:
     void runNextEditOp(std::shared_ptr<void> stateErased);
     void walkSlotTo(std::vector<int>& map, int fromCur, int toCur);
 
-    // Restore helper (sequential async restore of multiple slots)
-    struct RestoreItem { juce::PluginDescription desc; bool bypassed; float wet = 1.0f; };
+    // Restore helper (sequential async restore of multiple slots).
+    // stateBase64 is carried ON THE ITEM and applied inside that item's own
+    // load callback, never looked up by final slot index afterwards: a slot
+    // that fails to load shifts every later slot down, and an index lookup
+    // would then write slot 3's settings into slot 4. Same shape as
+    // LinkProcessor's ChainBuildItem, which solved this first.
+    // expectState: the session carried a settings object for the chain, so a
+    // slot with nothing in it is a slot whose settings we did not save,
+    // which the user is told about. False on every pre-existing session,
+    // where there is nothing to have lost and a note would be pure noise.
+    struct RestoreItem { juce::PluginDescription desc; bool bypassed; float wet = 1.0f;
+                         juce::String stateBase64; bool expectState = false; };
     void restoreNextSlot(std::vector<RestoreItem> items, int idx);
+    void applyRestoredState(int slotIdx, const juce::String& b64,
+                            bool expectState, const juce::String& slotName);
+
+    // ---- Hosted settings cache internals ---------------------------------
+    // Debounce: capture 2s after the last observed change, so one knob drag
+    // (which emits changes every few milliseconds) collapses into a single
+    // capture, while a Cmd-S essentially never lands inside that window.
+    // Sweep: plugins that never notify a change would otherwise never be
+    // recaptured, so every slot is re-read on a slow cycle regardless.
+    // Backoff: a slot whose capture proved expensive earns a long minimum
+    // interval, so one sampler cannot make the whole cache thrash.
+    static constexpr int    kStateTickMs        = 500;
+    static constexpr double kStateDebounceMs    = 2000.0;
+    static constexpr double kStateSweepMs       = 15000.0;
+    static constexpr double kStateExpensiveMs   = 250.0;   // capture cost that earns backoff
+    static constexpr double kStateBackoffFactor = 20.0;
+    static constexpr double kStateOversizeMs    = 30000.0; // retry gate for a capped slot
+
+    struct StateCacheTimer;
+    std::unique_ptr<StateCacheTimer> stateCacheTimer_;
+    mutable std::mutex               stateCacheMutex_;
+    bool                             stateCacheEnabled_ = false;
+    // A hosted getStateInformation can spin a modal loop of its own, which
+    // dispatches timers and would otherwise let a capture re-enter itself.
+    bool                             inStateCapture_ = false;
+    std::atomic<double>              lastChangeMs_ { 0.0 };  // any hosted change, any thread
+    std::atomic<bool>                stateDirty_   { false };
+    mutable juce::StringArray        stateNotes_;            // guarded by stateCacheMutex_
+
+    void  stateCacheTick();
+    void  captureSlotState(int i, double nowMs);
+    // const because the save path records the notes for anything the total
+    // cap drops, and that path is const.
+    void  addStateNote(const juce::String& note) const;
+    void  noteHostedChange() noexcept;      // callable from any thread
+    void  attachStateListener(int i);
+    void  detachStateListener(int i);
+
+    // juce::AudioProcessorListener: the hosted plugins tell us when
+    // something moved. Both can arrive on the audio thread during
+    // automation, so they touch nothing but two atomics: no container
+    // access, no allocation, no lock.
+    void audioProcessorParameterChanged (juce::AudioProcessor*, int, float) override
+        { noteHostedChange(); }
+    void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails&) override
+        { noteHostedChange(); }
 
     // Internal helpers
     void rebuildGraph();
