@@ -942,9 +942,19 @@ void SurgicalEqEditor::paintGrid (juce::Graphics& g) const
 
         if (db != 0)
         {
+            // The outermost labels (±18 / ±24) sit exactly ON the graph edge,
+            // so centring the text on the line puts half of it outside the
+            // clip region and it renders cut in two. Nudge just those inward
+            // — clamping keeps the scale fully labelled instead of dropping
+            // the two values that define its range.
+            constexpr int labelH = 14;
+            const int ly = juce::jlimit (graphBounds_.getY() + 1,
+                                         graphBounds_.getBottom() - labelH - 1,
+                                         (int) y - labelH / 2);
+
             g.setColour (C::text3.withAlpha (0.7f));
             g.drawText (juce::String (db > 0 ? "+" : "") + juce::String (db),
-                        (int) gb.getX() + 4, (int) y - 7, 30, 14,
+                        (int) gb.getX() + 4, ly, 30, labelH,
                         juce::Justification::centredLeft);
         }
     }
