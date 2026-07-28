@@ -5453,6 +5453,16 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
         da, db, labelA, labelB,
         slotDurationSeconds(slotA), slotDurationSeconds(slotB), numbersOnly);
 
+    // The figure CARD is built here, client-side, from the SAME two MeterData
+    // structs the context was built from - never from the model's reply. A
+    // cross-scope pairing (different sources) marks the card so it draws no
+    // delta between A and B. This JSON rides the assistant message (attached in
+    // the callback and persisted) so a reloaded chat redraws the card - which
+    // matters because the prose no longer restates the numbers.
+    const bool isCross = crossScope(slotA, slotB);
+    const juce::String figuresJson =
+        processorRef.buildCompareFiguresJson(da, db, labelA, labelB, isCross);
+
     if (compareCtx.isEmpty()) {
         chatMessages.push_back({"assistant", "Select two different items to compare."});
         processorRef.chatHistory.push_back({"assistant", "Select two different items to compare."});
@@ -5471,6 +5481,14 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
                                  : juce::String("Compare these mixes");
     chatMessages.push_back({"user", turnLabel});
     processorRef.chatHistory.push_back({"user", turnLabel});
+    // Persist the compare exchange so the figure card round-trips: previously
+    // compare turns were never written to the workspace (they survived only an
+    // editor recreate via chatHistory), so a reloaded chat lost them entirely.
+    // The card MUST reload (item 2), so the turn must be a real message record.
+    // The user bubble stores the short label; the assistant turn (callback
+    // below) carries the figuresJson.
+    if (currentChatId.isNotEmpty())
+        workspace.appendMessageToChat(currentChatId, "user", turnLabel);
     chatLoading = true; repaint();
     if (askShelfVisible_)
     {
@@ -5482,17 +5500,20 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     // Phase 3-pre: compare rides the same injection helper as chat/capture
     // (alwaysAttach — its typed text has no cue words), so band-level
     // CHAIN_EDIT offers can reference the live rack.
-    // The LEADING instruction must itself change for numbers-only, not just the
-    // context block: a "detailed comparison" request produces interpretation-led
-    // narrative no matter what the context says. Numbers-only asks for figures
-    // and the different-sources statement, and forbids narrative and chains
-    // (buildCompareContext(numbersOnly) states the same from the data side).
+    // The figures are ALREADY shown to the user in a figure card (built
+    // client-side above). Neither mode restates them: numbers-only adds only the
+    // one-line different-sources statement; prose interprets. The full field set
+    // still rides in compareCtx so the model can reason from the numbers - it
+    // just must not repeat them back. buildCompareContext(numbersOnly) states
+    // the matching restriction from the data side.
     juce::String compareContent = (numbersOnly
-        ? juce::String("Report ONLY the meter-figure differences between these two, and state "
-                       "plainly that they are different sources. Do NOT give an interpretation-led "
-                       "narrative, do NOT describe the differences as changes to a mix, and do NOT "
-                       "propose or build a processing chain.\n\n")
-        : juce::String("Give me a detailed comparison of these two.\n\n")) + compareCtx;
+        ? juce::String("The meter figures for both sources are already displayed to the user in a "
+                       "figure card. Do NOT restate any of them. Reply with ONLY a single short "
+                       "sentence stating that these are two different sources, not two versions of "
+                       "the same audio. No narrative, no interpretation, no chain.\n\n")
+        : juce::String("The meter figures for both are already displayed to the user in a figure "
+                       "card, so do NOT restate them. Interpret only: what the differences mean, "
+                       "what to check, and what to do.\n\n")) + compareCtx;
     // ITEM 5: a compare turn in a CHANNEL chat carries STORED main-instance
     // snapshot data into that chat. Attribute it (the SAME mainCaptureAttribution
     // flag the capture path uses) so the model never narrates the main mix as
@@ -5523,8 +5544,9 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     // message; no live meter blob auto-attaches (spec section 5).
     api.setNextChatTurnType("version_compare");
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    const juce::String cmpChatId = currentChatId;   // persist target captured at compose time
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
-        [safeThis, compareNumbersOnly](const juce::String& reply, bool success) {
+        [safeThis, compareNumbersOnly, figuresJson, cmpChatId](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
             safeThis->chatLoading = false;
             // ITEM 0 FIX (sibling of the capture path): a compare turn can
@@ -5567,6 +5589,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
             cm.chainData = chainJson;
             cm.gainData  = gainJson;
             cm.editData  = editJson;
+            cm.figuresData = figuresJson;   // client-built card, not from the reply
             // STEP 4: the build gate is structural and reads the SAME unified
             // source (compareTop_/compareBot_ via slotChannelUid) the context
             // was built from. In a channel chat, a chain is buildable when BOTH
@@ -5607,7 +5630,16 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
             safeThis->chatMessages.push_back(cm);
             safeThis->processorRef.chatHistory.push_back({"assistant", visibleReply});
             if (success) { safeThis->processorRef.chatRoles.add("assistant"); safeThis->processorRef.chatContents.add(visibleReply); }
-            if (askJson.isNotEmpty() || chainJson.isNotEmpty() || editJson.isNotEmpty())
+            // Persist the assistant turn WITH the figure card so a reloaded chat
+            // redraws it (item 2). Only on success - a failed send leaves the
+            // turn ephemeral, as compare turns were before this pass.
+            if (success && cmpChatId.isNotEmpty())
+                safeThis->workspace.appendMessageToChat(
+                    cmpChatId, "assistant", visibleReply,
+                    {}, chainJson, gainJson, askJson, editJson,
+                    {}, {}, {}, cm.editTargetUid, cm.editTargetName, figuresJson);
+            if (askJson.isNotEmpty() || chainJson.isNotEmpty() || editJson.isNotEmpty()
+                || figuresJson.isNotEmpty())
                 safeThis->resized();
             safeThis->repaint();
         });
@@ -7835,6 +7867,7 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             cm.content   = msg.content;
             cm.reviewId  = msg.reviewId;
             cm.chainData = msg.chainJson;  // restore persisted chain block → rebuilds Build button
+            cm.figuresData = msg.figuresJson; // restore compare figure card → redraws identically
             cm.gainData  = msg.gainJson;   // restore gain proposals + their applied/undone state
             cm.askData   = msg.askJson;    // restore ask chips + answered state
             cm.askAnswered = msg.askAnswered;
@@ -10560,6 +10593,45 @@ void EchoJayEditor::stopPlayback()
 }
 
 // ============================================================================
+// AI Compare figure card — ONE layout, consumed by figureCardHeight() (the
+// single height source) and drawCompareFigureCard(). Fixed section heights, so
+// height and paint cannot disagree; a value only changes what is drawn in a
+// fixed slot, never the slot's size (a cross-scope pairing adds one header line).
+// ============================================================================
+namespace {
+    struct FigLayout {
+        int total = 0;
+        int headerTop = 0, levelsTop = 0, tonalTop = 0, stereoTop = 0;
+        int headerH = 0;
+        static constexpr int kPadTop = 8, kPadBot = 10, kSecGap = 10;
+        static constexpr int kSecLabelH = 15, kBarRowH = 22, kTonalH = 64, kStereoRowH = 18;
+        static constexpr int kLevelsRows = 5, kStereoRows = 2;
+    };
+    FigLayout figCardLayout(bool cross)
+    {
+        FigLayout L;
+        L.headerH   = cross ? 34 : 20;
+        L.headerTop = FigLayout::kPadTop;
+        L.levelsTop = L.headerTop + L.headerH + FigLayout::kSecGap;
+        const int levelsH = FigLayout::kSecLabelH + FigLayout::kLevelsRows * FigLayout::kBarRowH;
+        L.tonalTop  = L.levelsTop + levelsH + FigLayout::kSecGap;
+        const int tonalH  = FigLayout::kSecLabelH + FigLayout::kTonalH;
+        L.stereoTop = L.tonalTop + tonalH + FigLayout::kSecGap;
+        const int stereoH = FigLayout::kSecLabelH + FigLayout::kStereoRows * FigLayout::kStereoRowH;
+        L.total = L.stereoTop + stereoH + FigLayout::kPadBot;
+        return L;
+    }
+    // A figure read from the card JSON: value + whether the source carried it.
+    struct FigVal { double v = 0.0; bool present = false; };
+    FigVal figRead(const juce::DynamicObject* o, const char* key)
+    {
+        FigVal r;
+        if (o != nullptr && o->hasProperty(key)) { r.present = true; r.v = (double)o->getProperty(key); }
+        return r;
+    }
+}
+
+// ============================================================================
 // Paint
 // ============================================================================
 
@@ -11633,6 +11705,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
         bool hasChainBtn = !isUser && msg.chainData.isNotEmpty()
                         && !msg.chainBuildSuppressed;   // item 6: cross-scope guard
         int chainAreaH = isUser ? 0 : chainCardHeight(msg);
+        // AI Compare figure card — appended LAST in the card stack, so bubbleH
+        // stays textH+waveCardH and no other card's Y shifts. SAME helper as the
+        // measure pass; paint measures nothing.
+        int figureAreaH = isUser ? 0 : figureCardHeight(msg);
 
         // Extra height for the chain-edit preview card (op list + Apply /
         // result line) — shared helper with the measure pass
@@ -11661,7 +11737,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         // "tH = textH + ..." below — its omission here was the 1c card
         // painting over the prose (bubbleH subtraction without the matching
         // reservation), the same class of bug the ASK chips had pre-shelf.
-        int tH = isCaptureMsg ? kCaptureMsgH : (textH + waveCardH + chainAreaH + gainAreaH + editAreaH + altAreaH);
+        int tH = isCaptureMsg ? kCaptureMsgH : (textH + waveCardH + chainAreaH + gainAreaH + editAreaH + altAreaH + figureAreaH);
         int drawY = chatTop2 + msgY;
 
         if (drawY + tH > chatTop2 - 50 && drawY < chatBottomEdge + 50)
@@ -12006,7 +12082,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 
                 int bubbleX = avX + avatarSize + 6;
                 int bubbleW = chatW - avatarSize - 20;
-                int bubbleH = tH - chainAreaH - gainAreaH - editAreaH - altAreaH;
+                int bubbleH = tH - chainAreaH - gainAreaH - editAreaH - altAreaH - figureAreaH;
                 g.setColour(C::bg3);
                 g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)bubbleH, 10.0f);
                 layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(bubbleH - 20) });
@@ -12298,11 +12374,25 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         }
                     }
                 }
+
+                // AI Compare figure card — LAST in the card stack (its area was
+                // reserved in tH and excluded from bubbleH, so its top is the
+                // sum of every preceding card area). paint consumes the rect;
+                // figureCardHeight() authored the height.
+                if (figureAreaH > 0)
+                {
+                    juce::Rectangle<int> figR(
+                        bubbleX,
+                        drawY + bubbleH + chainAreaH + gainAreaH + editAreaH + altAreaH,
+                        bubbleW, figureAreaH);
+                    if (figR.getBottom() > chatTop2 - 50 && figR.getY() < chatBottomEdge + 50)
+                        drawCompareFigureCard(g, figR, msg);
+                }
             }
         }
         msgY += tH + 10;
     }
-    
+
     // Stage row (Phase 1d): model wait AND apply progress, shimmer-animated.
     // Height comes from stageRowH() — the same helper the measure pass uses,
     // so the reservation and this paint can never disagree.
@@ -14306,6 +14396,7 @@ void EchoJayEditor::timerCallback()
                 int textH = (int)layout.getHeight() + 20;
                 int waveCardH = (msg.hasWaveform && !msg.waveform.empty()) ? 36 : 0;
                 int chainAreaH2 = (msg.role == "assistant") ? chainCardHeight(msg) : 0;   // SAME helper as paint
+                int figAreaH2   = (msg.role == "assistant") ? figureCardHeight(msg) : 0;  // SAME helper as paint
                 // AI gain proposal cards — MUST match the paint pass reservation
                 int gainAreaH2 = 0;
                 if (msg.role == "assistant" && msg.gainData.isNotEmpty())
@@ -14322,7 +14413,7 @@ void EchoJayEditor::timerCallback()
                 // pass so reservation always matches
                 int editAreaH2 = (msg.role == "assistant") ? editCardHeight(msg) : 0;
                 int altAreaH2  = (msg.role == "assistant") ? altPillH(msg) : 0;   // SAME helper as paint
-                tH = textH + waveCardH + chainAreaH2 + gainAreaH2 + editAreaH2 + altAreaH2;
+                tH = textH + waveCardH + chainAreaH2 + gainAreaH2 + editAreaH2 + altAreaH2 + figAreaH2;
             }
             totalH += tH + 10; // matches paint msgY += tH + 10
         }
@@ -14904,6 +14995,231 @@ int EchoJayEditor::chainCardHeight(const ChatMsg& msg) const
         if (auto* arr = o->getProperty("chain").getArray())
             lines = arr->size();
     return lines * 16 + (lines > 0 ? 4 : 0) + kBtnH + 8;
+}
+
+// The SINGLE height source for the AI Compare figure card. Both the measure
+// pass (chatBox height accounting) and the paint pass call this; paint draws
+// into figCardLayout() offsets and measures nothing itself.
+int EchoJayEditor::figureCardHeight(const ChatMsg& msg) const
+{
+    if (msg.role != "assistant" || msg.figuresData.isEmpty()) return 0;
+    bool cross = false;
+    auto v = juce::JSON::parse(msg.figuresData);
+    if (auto* o = v.getDynamicObject()) cross = (bool)o->getProperty("cross");
+    return figCardLayout(cross).total + 6;   // +6: gap above the card
+}
+
+// Render the compare figure card from msg.figuresData (client-built at compose
+// time; never from the model). Three families that do not share an axis: dB
+// scalars as paired bars, band relatives as an overlaid profile, stereo/counts
+// as plain readouts. N/A is drawn explicitly, never as a zero. A cross-scope
+// pairing names both sources and draws NO delta (the gap is not a change).
+void EchoJayEditor::drawCompareFigureCard(juce::Graphics& g, juce::Rectangle<int> area,
+                                          const ChatMsg& msg)
+{
+    auto v = juce::JSON::parse(msg.figuresData);
+    auto* root = v.getDynamicObject();
+    if (root == nullptr) return;
+    auto* A = root->getProperty("a").getDynamicObject();
+    auto* B = root->getProperty("b").getDynamicObject();
+    if (A == nullptr || B == nullptr) return;
+    const bool cross = (bool)root->getProperty("cross");
+    const juce::String labA = A->getProperty("label").toString();
+    const juce::String labB = B->getProperty("label").toString();
+    const juce::Colour cA = C::blue2;    // A = cyan
+    const juce::Colour cB = C::amber;    // B = amber
+    const FigLayout L = figCardLayout(cross);
+
+    // Card background
+    auto cardR = area.reduced(0).withTrimmedTop(6);   // the +6 gap lives at the top
+    g.setColour(C::bg4);
+    g.fillRoundedRectangle(cardR.toFloat(), 10.0f);
+    g.setColour(C::border2);
+    g.drawRoundedRectangle(cardR.toFloat().reduced(0.5f), 10.0f, 1.0f);
+
+    const int cx = cardR.getX() + 12;
+    const int cr = cardR.getRight() - 12;
+    const int top = cardR.getY();
+    // figCardLayout offsets are relative to the card body top (0..total).
+    auto rowY = [&](int layoutTop) { return top + layoutTop; };
+
+    // ---- Header: source legend (+ cross-scope note) ----
+    {
+        int hy = rowY(L.headerTop);
+        g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
+        // A swatch + label, then B swatch + label
+        auto swatch = [&](int x, juce::Colour col, const juce::String& lab, int wMax) {
+            g.setColour(col);
+            g.fillRoundedRectangle((float)x, (float)hy + 3.0f, 8.0f, 8.0f, 2.0f);
+            g.setColour(C::text);
+            g.drawText(lab, x + 12, hy, wMax, 14, juce::Justification::centredLeft, true);
+        };
+        const int half = (cr - cx) / 2;
+        swatch(cx, cA, labA, half - 14);
+        swatch(cx + half, cB, labB, half - 14);
+        if (cross)
+        {
+            g.setColour(C::amber);
+            g.setFont(juce::Font(juce::FontOptions(9.5f)));
+            g.drawText("different sources - the gap between them is not a change over time",
+                       cx, hy + 16, cr - cx, 14, juce::Justification::centredLeft, true);
+        }
+    }
+
+    auto secLabel = [&](int layoutTop, const juce::String& t) {
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+        g.drawText(t, cx, rowY(layoutTop), cr - cx, 13, juce::Justification::centredLeft);
+    };
+
+    // ---- (a) dB SCALARS: paired bars, shared per-metric axis, delta labelled ----
+    secLabel(L.levelsTop, "LEVELS (dB)");
+    struct Metric { const char* label; const char* key; float axLo, axHi; };
+    static const Metric metrics[5] = {
+        { "Integrated", "int",  -36.0f, -6.0f },
+        { "True peak",  "tp",   -24.0f,  0.0f },
+        { "PSR",        "psr",    0.0f, 24.0f },
+        { "PLR",        "plr",    0.0f, 24.0f },
+        { "Crest",      "crest",  0.0f, 24.0f },
+    };
+    {
+        const int nameW  = 72;
+        const int deltaW = cross ? 0 : 52;
+        const int valW   = 46;
+        const int barX   = cx + nameW + 4;
+        const int barRight = cr - (cross ? 0 : (deltaW + 6));
+        const int barVisW  = juce::jmax(24, barRight - barX - valW);
+        for (int i = 0; i < 5; ++i)
+        {
+            const int ry = rowY(L.levelsTop) + 15 + i * FigLayout::kBarRowH;
+            g.setColour(C::text2);
+            g.setFont(juce::Font(juce::FontOptions(10.5f)));
+            g.drawText(metrics[i].label, cx, ry, nameW, FigLayout::kBarRowH,
+                       juce::Justification::centredLeft, true);
+            auto fv = figRead(A, metrics[i].key);
+            auto gv = figRead(B, metrics[i].key);
+            auto frac = [&](double val) {
+                return juce::jlimit(0.0f, 1.0f,
+                    (float)((val - metrics[i].axLo) / (metrics[i].axHi - metrics[i].axLo)));
+            };
+            auto drawBar = [&](FigVal fig, juce::Colour col, int by) {
+                // Track
+                g.setColour(C::bg2);
+                g.fillRoundedRectangle((float)barX, (float)by, (float)barVisW, 6.0f, 2.0f);
+                if (fig.present)
+                {
+                    g.setColour(col);
+                    g.fillRoundedRectangle((float)barX, (float)by,
+                                           juce::jmax(2.0f, (float)barVisW * frac(fig.v)), 6.0f, 2.0f);
+                    g.setColour(C::text);
+                    g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                    g.drawText(juce::String(fig.v, 1), barX + barVisW + 2, by - 4, valW, 14,
+                               juce::Justification::centredLeft);
+                }
+                else
+                {
+                    g.setColour(C::text3);
+                    g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                    g.drawText("N/A", barX + 2, by - 4, valW, 14, juce::Justification::centredLeft);
+                }
+            };
+            drawBar(fv, cA, ry + 3);
+            drawBar(gv, cB, ry + 12);
+            // Delta only for same-scope pairings
+            if (!cross && fv.present && gv.present)
+            {
+                const double d = gv.v - fv.v;
+                g.setColour(C::text2);
+                g.setFont(juce::Font(juce::FontOptions(9.5f)));
+                g.drawText((d >= 0 ? "+" : "") + juce::String(d, 1),
+                           cr - deltaW, ry, deltaW, FigLayout::kBarRowH,
+                           juce::Justification::centredRight);
+            }
+        }
+    }
+
+    // ---- (b) BAND RELATIVES: two overlaid 6-point profiles ----
+    secLabel(L.tonalTop, "TONAL - band relatives (dB vs each source's own average)");
+    {
+        const int chTop = rowY(L.tonalTop) + 16;
+        const int chH   = FigLayout::kTonalH - 4;
+        const int chBot = chTop + chH;
+        const float relLo = -15.0f, relHi = 15.0f;
+        auto yFor = [&](double rel) {
+            return (float)chBot - juce::jlimit(0.0f, 1.0f,
+                (float)((rel - relLo) / (relHi - relLo))) * (float)chH;
+        };
+        const int n = 6;
+        const int plotL = cx + 20, plotR = cr - 6;
+        auto xAt = [&](int i) { return (float)plotL + (float)(plotR - plotL) * (float)i / (float)(n - 1); };
+        // Zero line
+        g.setColour(C::border2);
+        g.drawHorizontalLine((int)yFor(0.0), (float)plotL, (float)plotR);
+        static const char* bandLbl[6] = { "sub", "low", "lo-mid", "mid", "hi-mid", "air" };
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(8.0f)));
+        for (int i = 0; i < n; ++i)
+            g.drawText(bandLbl[i], (int)xAt(i) - 16, chBot + 1, 32, 10, juce::Justification::centred);
+        auto plot = [&](juce::var bands, juce::Colour col) {
+            auto* arr = bands.getArray();
+            if (arr == nullptr) return;
+            float prevX = 0, prevY = 0; bool havePrev = false;
+            for (int i = 0; i < n && i < arr->size(); ++i)
+            {
+                const double rel = (double)(*arr)[i];
+                if (rel <= -900.0) { havePrev = false; continue; }   // that band N/A -> gap
+                const float px = xAt(i), py = yFor(rel);
+                g.setColour(col);
+                g.fillEllipse(px - 2.0f, py - 2.0f, 4.0f, 4.0f);
+                if (havePrev) g.drawLine(prevX, prevY, px, py, 1.6f);
+                prevX = px; prevY = py; havePrev = true;
+            }
+        };
+        const bool aHasBands = A->hasProperty("bands");
+        const bool bHasBands = B->hasProperty("bands");
+        if (aHasBands) plot(A->getProperty("bands"), cA);
+        if (bHasBands) plot(B->getProperty("bands"), cB);
+        if (!aHasBands && !bHasBands)
+        {
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(10.0f)));
+            g.drawText("Band relatives N/A for both sources",
+                       plotL, chTop, plotR - plotL, chH, juce::Justification::centred);
+        }
+    }
+
+    // ---- (c) STEREO / COUNTS: plain readouts, no bars ----
+    secLabel(L.stereoTop, "STEREO / COUNTS");
+    {
+        auto readout = [&](int col, int rowIdx, const juce::String& name,
+                           const char* key, int decimals, const juce::String& unit)
+        {
+            const int colW = (cr - cx) / 2;
+            const int rx = cx + col * colW;
+            const int ry = rowY(L.stereoTop) + 15 + rowIdx * FigLayout::kStereoRowH;
+            g.setColour(C::text2);
+            g.setFont(juce::Font(juce::FontOptions(10.0f)));
+            g.drawText(name, rx, ry, 64, FigLayout::kStereoRowH, juce::Justification::centredLeft);
+            auto one = [&](FigVal fig, juce::Colour c2) {
+                if (!fig.present) return juce::String("N/A");
+                juce::ignoreUnused(c2);
+                return decimals >= 0 ? juce::String(fig.v, decimals) : juce::String((int)fig.v);
+            };
+            auto fv = figRead(A, key); auto gv = figRead(B, key);
+            g.setColour(cA); g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            const int vx = rx + 62;
+            g.drawText(one(fv, cA), vx, ry, 40, FigLayout::kStereoRowH, juce::Justification::centredLeft);
+            g.setColour(C::text3);
+            g.drawText("/", vx + 40, ry, 8, FigLayout::kStereoRowH, juce::Justification::centred);
+            g.setColour(cB);
+            g.drawText(one(gv, cB) + unit, vx + 48, ry, colW - 62 - 48, FigLayout::kStereoRowH,
+                       juce::Justification::centredLeft);
+        };
+        readout(0, 0, "Width",  "width", 0, "%");
+        readout(1, 0, "Corr",   "corr",  2, "");
+        readout(0, 1, "Overs",  "overs", -1, "");
+        readout(1, 1, "LRA",    "lra",   1, " LU");
+    }
 }
 
 int EchoJayEditor::editCardHeight(const ChatMsg& msg) const

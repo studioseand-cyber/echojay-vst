@@ -37,6 +37,10 @@ struct WsMessage {
                                  // persisted so a reloaded card can never mis-route
                                  // to the local rack; serialised as _editTgtUid
     juce::String editTargetName; // display label at propose time; _editTgtName
+    juce::String figuresJson;    // AI Compare figure card data (both sources'
+                                 // figures + labels + cross flag); serialised as
+                                 // _figures. Absent on every non-compare message
+                                 // and every pre-card message (silent migration).
 };
 
 struct WsChat {
@@ -249,7 +253,8 @@ public:
                              const juce::String& altLabel  = juce::String(),
                              const juce::String& displayText = juce::String(),
                              const juce::String& editTargetUid  = juce::String(),
-                             const juce::String& editTargetName = juce::String());
+                             const juce::String& editTargetName = juce::String(),
+                             const juce::String& figuresJson    = juce::String());
     // Update the persisted gain-proposal block for the assistant message
     // whose visible content matches (the display list can hold transient
     // messages that never reached the store, so content match beats index).

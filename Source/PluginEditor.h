@@ -882,6 +882,11 @@ private:
         // WITHOUT a Build button (a channel chain from full-mix numbers must
         // be unreachable, not merely discouraged by the injection).
         bool chainBuildSuppressed = false;
+        // AI Compare figure card: both sources' figures + labels + cross flag,
+        // built client-side at compose time (buildCompareFiguresJson). Rendered
+        // as the figure card; persisted on the message so a reloaded chat
+        // redraws it identically (the prose no longer restates the numbers).
+        juce::String figuresData;
     };
     std::vector<ChatMsg> chatMessages;
     // THE shared display source: both text-layout passes (measure + paint)
@@ -2057,6 +2062,12 @@ private:
     // Build card (1d follow-up): structured slot lines + Build button —
     // the ops card's visual language applied to CHAIN blocks
     int  chainCardHeight(const ChatMsg& msg) const;
+    // AI Compare figure card: single height source + renderer (paint-only, no
+    // buttons). figuresData is client-built at compose time and persisted, so
+    // both survive an editor recreate with no editor-instance state.
+    int  figureCardHeight(const ChatMsg& msg) const;
+    void drawCompareFigureCard(juce::Graphics& g, juce::Rectangle<int> area,
+                               const ChatMsg& msg);
     void applyChainEditFromMsg(int msgIdx);
 
     // ---- ASK choice chips (Phase 1b, B2 docked-shelf layout) ----------------

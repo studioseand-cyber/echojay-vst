@@ -168,6 +168,13 @@ public:
     juce::String buildCompareContext(const MeterData& a, const MeterData& b,
                                      const juce::String& labelA, const juce::String& labelB,
                                      float durA, float durB, bool numbersOnly) const;
+    // Figure-CARD data (client-rendered at compose time): both sources' figures
+    // + labels + a cross-scope flag, enough to redraw the card identically on
+    // reload. Only-present keys; absent = N/A. Shares computeCompareFig with the
+    // text table so the card can never disagree with the model's numbers.
+    juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
+                                         const juce::String& labelA, const juce::String& labelB,
+                                         bool crossScope) const;
 
     // Tell the host non-parameter state changed so it re-snapshots our state
     // (plain updateHostDisplay() does NOT signal this — Logic could restore a

@@ -1297,6 +1297,48 @@ juce::String EchoJayProcessor::saveCaptureWAV()
 // ============ Compare Context Builders ============
 
 namespace {
+    // ONE derivation of the compare figures, shared by the model's text table
+    // (figBlock) and the client-rendered figure card (buildCompareFiguresJson),
+    // so a visual can never disagree with the numbers the model reasons from.
+    // Sentinels are preserved: an unavailable reading stays at its sentinel
+    // (int/tp -100, lra 0, psr/plr/bandRel -999, overs -1) and renders/serialises
+    // as N/A, never a fabricated zero.
+    struct CompareFig {
+        float integrated = -100.0f, lra = 0.0f, tp = -100.0f, psr = -999.0f,
+              plr = -999.0f, crest = 0.0f, width = 0.0f, corr = 0.0f;
+        int   overs = -1;
+        std::array<float, 6> bandRel = { -999, -999, -999, -999, -999, -999 };
+        bool  bandValid = false;
+    };
+    CompareFig computeCompareFig(const MeterData& m)
+    {
+        CompareFig f;
+        f.integrated = m.integrated;
+        f.lra        = m.loudnessRange;
+        f.tp = juce::jmax(m.truePeakMaxL, m.truePeakMaxR);
+        if (f.tp <= -99.0f) f.tp = juce::jmax(m.truePeakL, m.truePeakR);
+        f.psr = (m.psr > -99.0f) ? m.psr
+              : (m.shortTermTruePeak > -99.0f && m.shortTerm > -99.0f)
+                    ? (m.shortTermTruePeak - m.shortTerm) : -999.0f;
+        f.plr = (m.plr > -99.0f) ? m.plr
+              : (f.tp > -99.0f && m.integrated > -99.0f) ? (f.tp - m.integrated) : -999.0f;
+        f.crest = m.crestFactor;
+        f.width = m.width;
+        f.corr  = m.correlation;
+        f.overs = m.oversCount;
+        float sum = 0.0f; int n = 0;
+        for (float v : m.macroBandDb) if (v > -119.0f) { sum += v; ++n; }
+        if (n > 0)
+        {
+            const float mean = sum / (float)n;
+            f.bandValid = true;
+            for (int i = 0; i < 6; ++i)
+                f.bandRel[(size_t)i] = m.macroBandDb[(size_t)i] > -119.0f
+                    ? m.macroBandDb[(size_t)i] - mean : -999.0f;
+        }
+        return f;
+    }
+
     // Aggregate 64 log-spaced spectrum bins (20Hz–20kHz) into 6 musical bands.
     // Bins are already in dB. We average in the linear (power) domain to avoid
     // log-domain skew, then convert back to dB.
@@ -1548,66 +1590,50 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
     auto na1 = [](float v) { return v > -99.0f ? juce::String(v, 1) : juce::String("N/A"); };
     auto figBlock = [&](const juce::String& label, const MeterData& m)
     {
-        float tp = juce::jmax(m.truePeakMaxL, m.truePeakMaxR);
-        if (tp <= -99.0f) tp = juce::jmax(m.truePeakL, m.truePeakR);
-        float psr = (m.psr > -99.0f) ? m.psr
-                  : (m.shortTermTruePeak > -99.0f && m.shortTerm > -99.0f)
-                        ? (m.shortTermTruePeak - m.shortTerm) : -999.0f;
-        float plr = (m.plr > -99.0f) ? m.plr
-                  : (tp > -99.0f && m.integrated > -99.0f) ? (tp - m.integrated) : -999.0f;
+        const CompareFig f = computeCompareFig(m);   // SAME values the card renders
         auto bc = [](float v) { return v >= 0.0f ? juce::String(v, 1) : juce::String("N/A"); };
         juce::String s;
         s += label + ":\n";
-        s += "  Integrated: " + na1(m.integrated) + " LUFS\n";
-        s += "  LRA: " + (m.loudnessRange > 0.0f ? juce::String(m.loudnessRange, 1) + " LU"
-                                                 : juce::String("N/A")) + "\n";
-        s += "  True peak: " + na1(tp) + " dBTP\n";
-        s += "  PSR: " + (psr > -99.0f ? juce::String(psr, 1) + " dB" : juce::String("N/A")) + "\n";
-        s += "  PLR: " + (plr > -99.0f ? juce::String(plr, 1) + " dB" : juce::String("N/A")) + "\n";
-        s += "  Crest: " + juce::String(m.crestFactor, 1) + " dB\n";
-        s += "  Width: " + juce::String(m.width, 1) + " %\n";
-        s += "  Correlation: " + juce::String(m.correlation, 2) + "\n";
-        s += "  Inter-sample overs: " + (m.oversCount >= 0 ? juce::String(m.oversCount)
-                                                          : juce::String("N/A")) + "\n";
+        s += "  Integrated: " + na1(f.integrated) + " LUFS\n";
+        s += "  LRA: " + (f.lra > 0.0f ? juce::String(f.lra, 1) + " LU" : juce::String("N/A")) + "\n";
+        s += "  True peak: " + na1(f.tp) + " dBTP\n";
+        s += "  PSR: " + (f.psr > -99.0f ? juce::String(f.psr, 1) + " dB" : juce::String("N/A")) + "\n";
+        s += "  PLR: " + (f.plr > -99.0f ? juce::String(f.plr, 1) + " dB" : juce::String("N/A")) + "\n";
+        s += "  Crest: " + juce::String(f.crest, 1) + " dB\n";
+        s += "  Width: " + juce::String(f.width, 1) + " %\n";
+        s += "  Correlation: " + juce::String(f.corr, 2) + "\n";
+        s += "  Inter-sample overs: " + (f.overs >= 0 ? juce::String(f.overs) : juce::String("N/A")) + "\n";
+        // Band crest (text only; not a card family) stays sourced from m.
         s += "  Band crest (low/mid/high): " + bc(m.bandCrestSub) + " / " + bc(m.bandCrestMid)
            + " / " + bc(m.bandCrestTop) + " dB\n";
         // Band relatives: each pink-referenced octave band vs the source's own
-        // band average - the tonal-balance figures the analysis prose quotes
-        // ("sub +7dB above the band average"). N/A when the source carries no
-        // macro-band data (older review, or reference/live with none).
+        // band average - the tonal-balance figures the analysis prose quotes.
+        if (f.bandValid)
         {
-            float sum = 0.0f; int n = 0;
-            for (float v : m.macroBandDb) if (v > -119.0f) { sum += v; ++n; }
-            if (n > 0)
-            {
-                const float mean = sum / (float)n;
-                auto rel = [&](int i) {
-                    return m.macroBandDb[(size_t)i] > -119.0f
-                        ? juce::String(m.macroBandDb[(size_t)i] - mean, 1) : juce::String("N/A");
-                };
-                s += "  Band relatives vs avg (sub/low/low-mid/mid/high-mid/air): "
-                   + rel(0) + " / " + rel(1) + " / " + rel(2) + " / " + rel(3) + " / "
-                   + rel(4) + " / " + rel(5) + " dB\n";
-            }
-            else
-                s += "  Band relatives vs avg: N/A\n";
+            auto rel = [&](int i) {
+                return f.bandRel[(size_t)i] > -99.0f
+                    ? juce::String(f.bandRel[(size_t)i], 1) : juce::String("N/A");
+            };
+            s += "  Band relatives vs avg (sub/low/low-mid/mid/high-mid/air): "
+               + rel(0) + " / " + rel(1) + " / " + rel(2) + " / " + rel(3) + " / "
+               + rel(4) + " / " + rel(5) + " dB\n";
         }
+        else
+            s += "  Band relatives vs avg: N/A\n";
         return s;
     };
 
-    ctx += "METER FIGURES (report ALL of these for BOTH sources):\n";
+    ctx += "METER FIGURES (these are ALREADY displayed to the user in a figure card - "
+           "here for YOUR reference; do NOT restate them):\n";
     ctx += figBlock(la, da);
     ctx += figBlock(lb, db);
 
     if (numbersOnly)
     {
-        ctx += "\nReport EVERY figure above for both sources, including any where one "
-               "source has a value and the other reads N/A - do not drop a figure just "
-               "because it did not change much. The ONLY restriction is on interpretation: "
-               "\"" + la + "\" and \"" + lb + "\" are DIFFERENT sources, not two versions of "
-               "the same audio, so state that plainly, do NOT give an interpretation-led "
-               "narrative, do NOT describe the differences as changes to a mix, and do NOT "
-               "propose or build a processing chain from this comparison.\n";
+        ctx += "\nThe figures above are already shown to the user in the card. Do NOT restate "
+               "any of them. Reply with ONLY a single short sentence: that \"" + la + "\" and \""
+               + lb + "\" are DIFFERENT sources, not two versions of the same audio. No narrative, "
+               "no interpretation, no chain.\n";
 
         if (durA > 0 && durB > 0)
         {
@@ -1641,12 +1667,13 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
     ctx += "\n";
     appendTonalDiff(ctx, da.spectrum, db.spectrum, la, lb);
 
-    ctx += "\nINSTRUCTIONS: You have the full figures above and MAY interpret them. Only "
-           "comment on differences that are genuinely significant. Small variations "
-           "(< 1.5 LUFS, < 2dB crest, < 15% width) are normal measurement noise and should "
-           "be described as practically the same. For tonal balance, speak in plain language "
-           "('more low end', 'brighter on top') - do NOT quote dB values or band names. Be "
-           "concise - 2-3 paragraphs max.\n";
+    ctx += "\nINSTRUCTIONS: The figures above are ALREADY shown to the user in a figure card, "
+           "so do NOT restate them - no tables, no lists of numbers. Interpret only: what the "
+           "differences mean, what to check, and what to do. Comment only on differences that "
+           "are genuinely significant; small variations (< 1.5 LUFS, < 2dB crest, < 15% width) "
+           "are normal measurement noise. For tonal balance, speak in plain language ('more low "
+           "end', 'brighter on top') - do NOT quote dB values or band names. Be concise - 2-3 "
+           "paragraphs max.\n";
 
     if (durA > 0 && durB > 0)
     {
@@ -1660,6 +1687,45 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
 
     ctx += "[END COMPARE CONTEXT]\n";
     return ctx;
+}
+
+juce::String EchoJayProcessor::buildCompareFiguresJson(const MeterData& da, const MeterData& db,
+                                                       const juce::String& la, const juce::String& lb,
+                                                       bool crossScope) const
+{
+    // The figure CARD's data - built client-side at compose time from the two
+    // MeterData structs, NOT from anything the model returns (a visual that
+    // disagreed with the measurement is the failure class this sequence closes).
+    // Uses the SAME computeCompareFig as the model's text table. Each figure is
+    // written ONLY when present, so an unavailable reading is ABSENT in the JSON
+    // and the card draws N/A - never a fabricated zero. cross:true marks a
+    // cross-scope pairing (different sources) so the card draws no delta.
+    auto src = [](const juce::String& label, const CompareFig& f)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty("label", label);
+        if (f.integrated > -99.0f) o->setProperty("int",   f.integrated);
+        if (f.lra        >   0.0f) o->setProperty("lra",   f.lra);
+        if (f.tp         > -99.0f) o->setProperty("tp",    f.tp);
+        if (f.psr        > -99.0f) o->setProperty("psr",   f.psr);
+        if (f.plr        > -99.0f) o->setProperty("plr",   f.plr);
+        o->setProperty("crest", f.crest);   // always measured for a real capture
+        o->setProperty("width", f.width);
+        o->setProperty("corr",  f.corr);
+        if (f.overs >= 0)          o->setProperty("overs", f.overs);
+        if (f.bandValid)
+        {
+            juce::Array<juce::var> b;
+            for (int i = 0; i < 6; ++i) b.add(f.bandRel[(size_t)i]);   // -999 = that band N/A
+            o->setProperty("bands", b);
+        }
+        return juce::var(o);
+    };
+    auto* root = new juce::DynamicObject();
+    root->setProperty("a", src(la, computeCompareFig(da)));
+    root->setProperty("b", src(lb, computeCompareFig(db)));
+    if (crossScope) root->setProperty("cross", true);
+    return juce::JSON::toString(juce::var(root), true);
 }
 
 juce::String EchoJayProcessor::buildCompareContext(const ReferenceResult& a, const ReferenceResult& b) const

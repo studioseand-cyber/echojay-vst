@@ -207,7 +207,8 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
                                             const juce::String& altLabel,
                                             const juce::String& displayText,
                                             const juce::String& editTargetUid,
-                                            const juce::String& editTargetName)
+                                            const juce::String& editTargetName,
+                                            const juce::String& figuresJson)
 {
     for (auto& c : chats)
     {
@@ -218,6 +219,7 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
             m.role      = role;
             m.content   = content;
             m.reviewId  = reviewId;
+            m.figuresJson = figuresJson;
             m.chainJson = chainJson;
             m.gainJson  = gainJson;
             m.askJson   = askJson;
@@ -241,6 +243,7 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
     m.role      = role;
     m.content   = content;
     m.reviewId  = reviewId;
+    m.figuresJson = figuresJson;
     m.chainJson = chainJson;
     m.gainJson  = gainJson;
     m.askJson   = askJson;
@@ -809,6 +812,7 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
                     msg.reviewId  = mObj->getProperty("_reviewId").toString();
                     msg.meterCtx  = mObj->getProperty("_meterCtx").toString();
                     msg.chainJson = mObj->getProperty("_chain").toString();
+                    msg.figuresJson = mObj->getProperty("_figures").toString();
                     msg.gainJson  = mObj->getProperty("_gain").toString();
                     msg.askJson   = mObj->getProperty("_ask").toString();
                     msg.askAnswered = (bool)mObj->getProperty("_askDone");
@@ -1069,18 +1073,35 @@ bool EchoJayWorkspace::runRoundTripSelfTest()
     const bool revMainNoSnap = !sr1.contains("linkNameSnap")
                             && !sr1.contains("channelDataScoped");
 
+    // Figure-card round-trip: an AI Compare assistant message carries
+    // figuresJson, which must survive on the message record (serialised as
+    // _figures) so a reloaded chat redraws the card; a message WITHOUT it must
+    // serialise with NO _figures key (absent parses as absent, silent migration).
+    WsChat figChat = pre; figChat.id = "t4";
+    WsMessage fm; fm.role = "assistant"; fm.content = "different sources";
+    fm.figuresJson = "{\"a\":{\"label\":\"X\",\"int\":-14.2},\"b\":{\"label\":\"Y\"},\"cross\":true}";
+    figChat.messages.push_back(fm);
+    const auto sf  = ser(figChat);
+    const auto rtf = parseChat(juce::JSON::parse(sf));
+    const bool figRoundTrip = rtf.messages.size() == 2
+                           && rtf.messages[1].figuresJson == fm.figuresJson
+                           && ser(rtf) == sf;
+    const bool figNoKey = !s1.contains("_figures");   // plain pre-C chat carries none
+
     lastResult = preStable && preNoKeys && chanStable && chanFields
               && revMainStable && revMainNoKey && revChanStable && revChanField && revMainNoSnap
-              && updNoKey && updPreserved && updFormat;
+              && updNoKey && updPreserved && updFormat
+              && figRoundTrip && figNoKey;
     std::fprintf(stderr,
         "EJWorkspace selftest: %s (preStable=%d preNoKeys=%d chanStable=%d chanFields=%d "
         "revMainStable=%d revMainNoKey=%d revChanStable=%d revChanField=%d revMainNoSnap=%d "
-        "updNoKey=%d updPreserved=%d updFormat=%d)\n",
+        "updNoKey=%d updPreserved=%d updFormat=%d figRoundTrip=%d figNoKey=%d)\n",
         lastResult ? "PASS" : "FAIL",
         (int)preStable, (int)preNoKeys, (int)chanStable, (int)chanFields,
         (int)revMainStable, (int)revMainNoKey, (int)revChanStable, (int)revChanField,
         (int)revMainNoSnap,
-        (int)updNoKey, (int)updPreserved, (int)updFormat);
+        (int)updNoKey, (int)updPreserved, (int)updFormat,
+        (int)figRoundTrip, (int)figNoKey);
     return lastResult;
 #endif
 }
@@ -1120,6 +1141,8 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
             mObj->setProperty("_meterCtx",  m.meterCtx);
         if (m.chainJson.isNotEmpty())
             mObj->setProperty("_chain",     m.chainJson);
+        if (m.figuresJson.isNotEmpty())
+            mObj->setProperty("_figures",   m.figuresJson);
         if (m.gainJson.isNotEmpty())
             mObj->setProperty("_gain",      m.gainJson);
         if (m.askJson.isNotEmpty())
