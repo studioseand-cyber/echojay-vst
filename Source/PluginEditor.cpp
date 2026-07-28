@@ -15810,10 +15810,53 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
     return out;
 }
 
+// DEV ONLY. See the header. Applies a hand-written eq_bands JSON straight to
+// the built-in EQ slot so the exact-apply path can be proven from the app
+// before the backend contract that emits eq_bands is deployed.
+void EchoJayEditor::handleDevEqTest(const juce::String& jsonArg)
+{
+    auto& ch = processorRef.getChainHost();
+
+    // Prefer the selected slot when it IS the EQ, so with several in the rack
+    // you choose by selecting; otherwise fall back to the first one.
+    int slot = ch.isBuiltinEqSlot(chainSelectedSlot_) ? chainSelectedSlot_
+                                                     : ch.findFirstBuiltinEqSlot();
+
+    juce::String reply;
+    if (slot < 0)
+        reply = "[dev] no EchoJay EQ in the chain — add one from the plugin list first.";
+    else if (jsonArg.isEmpty())
+        reply = "[dev] usage: /eqtest {\"eq_bands\":[{\"type\":\"bell\",\"freq_hz\":203,"
+                "\"gain_db\":-3,\"q\":4.5,\"band\":3}]}";
+    else
+        reply = "[dev] slot " + juce::String(slot + 1) + " — "
+              + ch.devApplyEqJson(slot, jsonArg);
+
+    chatMessages.push_back({"assistant", reply});
+    processorRef.chatHistory.push_back({"assistant", reply});
+    chatInput.clear();
+
+    // Reflect any band change the apply made in an open editor / rack card.
+    chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+    resized();
+    repaint();
+}
+
 void EchoJayEditor::sendChatMessage(const juce::String& msg,
                                     const juce::String& displayLabel,
                                     const juce::String& turnTypeOverride)
 {
+    // ---- DEV ONLY: /eqtest {...} -----------------------------------------
+    // Intercepted before the send-quota gate and before any network call, so
+    // it costs nothing and never reaches the backend. Compiled in always but
+    // unreachable without the dev-mode marker file, so release behaviour is
+    // byte-identical to before.
+    if (msg.startsWithIgnoreCase("/eqtest") && ChainHost::devModeActive())
+    {
+        handleDevEqTest(msg.fromFirstOccurrenceOf("/eqtest", false, true).trim());
+        return;
+    }
+
     // Single choke point for TYPED sends from every surface: the timer's
     // upgrade-button gate normally replaces the input row first, but a
     // message sent in the gap (or from a surface mid-transition) must get

@@ -132,8 +132,12 @@ BandSpec SurgicalEqProcessor::specFromVar (const juce::var& e, bool& disableOut,
     return s;
 }
 
-juce::String SurgicalEqProcessor::applyEqBands (const juce::var& eqBandsArray)
+juce::String SurgicalEqProcessor::applyEqBands (const juce::var& eqBandsArray,
+                                                int* appliedOut, int* skippedOut)
 {
+    if (appliedOut != nullptr) *appliedOut = 0;
+    if (skippedOut != nullptr) *skippedOut = 0;
+
     if (! eqBandsArray.isArray())
         return "eq_bands: expected an array";
 
@@ -176,6 +180,9 @@ juce::String SurgicalEqProcessor::applyEqBands (const juce::var& eqBandsArray)
                                          moves.data(), (int) moves.size(), &skipped);
         pushToEngine();
     }
+
+    if (appliedOut != nullptr) *appliedOut = applied;
+    if (skippedOut != nullptr) *skippedOut = skipped;
 
     juce::String summary = "EQ: applied " + juce::String (applied) + " band(s) — "
                          + descs.joinIntoString ("; ");

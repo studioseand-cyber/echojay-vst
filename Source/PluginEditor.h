@@ -52,6 +52,10 @@ private:
     void sendChatMessage(const juce::String& msg,
                          const juce::String& displayLabel = juce::String(),
                          const juce::String& turnTypeOverride = juce::String());
+    // DEV ONLY (`/eqtest {...}`): apply a hand-written eq_bands JSON to the
+    // built-in EQ, so the exact-apply path is testable before the backend
+    // emits eq_bands. Gated on ChainHost::devModeActive() at the call site.
+    void handleDevEqTest(const juce::String& jsonArg);
     // ONE injection-attach path for EVERY compose site (chat send, capture,
     // compare) — Phase 3-pre. Returns the validated chain feed (or the
     // full-list fallback) + [CURRENT CHAIN]. A third copy of this logic

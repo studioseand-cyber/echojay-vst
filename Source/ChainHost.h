@@ -309,6 +309,18 @@ public:
     // True when slot i holds the built-in EQ (used to route exact apply).
     bool isBuiltinEqSlot (int i) const;
 
+    // DEV ONLY. Apply a hand-written eq_bands JSON to a built-in EQ slot,
+    // exercising the exact-apply path without the backend (the server
+    // contract that emits eq_bands is not deployed yet). Returns a summary,
+    // or a human-readable reason it did nothing. Callers gate on
+    // devModeActive(); this is inert in a release session because nothing
+    // reachable calls it there.
+    juce::String devApplyEqJson (int slotIndex, const juce::String& json);
+
+    // Index of the first built-in EQ slot, or -1. Used by the dev command to
+    // pick a target when the selected slot is not an EQ.
+    int findFirstBuiltinEqSlot() const;
+
     // Full-entries cache (chain_entries.xml): written after every scan so
     // the OTHER host resolves against the same list without scanning.
     // maybeReloadEntriesCache() re-loads when another host refreshed it.
@@ -593,7 +605,9 @@ private:
     juce::String loadBuiltinNow (const juce::PluginDescription& desc);
     // Exact per-band apply for a built-in EQ slot: parses eq_bands straight
     // into typed BandSpecs. Returns a summary, or empty when nothing applied.
-    juce::String applyEqBandsToSlot (int slotIndex, const juce::var& structured);
+    juce::String applyEqBandsToSlot (int slotIndex, const juce::var& structured,
+                                     int* appliedOut = nullptr,
+                                     int* skippedOut = nullptr);
     void loadParamMapsFromDisk();
     void saveParamMapsToDisk();
     // Read-only merge of the opt-in background mapper's output file

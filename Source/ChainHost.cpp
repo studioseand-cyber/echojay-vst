@@ -1537,7 +1537,13 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
 void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
-    if (structured.isVoid() || structured.getDynamicObject() == nullptr) return;
+    if (structured.isVoid()) return;
+    // Normally settings_structured is a flat object. The built-in EQ also
+    // accepts a bare eq_bands ARRAY, so a caller can hand it the band list
+    // directly without wrapping it.
+    if (structured.getDynamicObject() == nullptr
+        && ! (structured.isArray() && isBuiltinEqSlot(i)))
+        return;
 
     slots_[(size_t)i].structuredSettings = structured;
     slots_[(size_t)i].structuredApplied  = false;
@@ -1693,12 +1699,106 @@ void ChainHost::requestMapPrefetch()
     }
 }
 
+int ChainHost::findFirstBuiltinEqSlot() const
+{
+    for (int i = 0; i < (int)slots_.size(); ++i)
+        if (isBuiltinEqSlot(i)) return i;
+    return -1;
+}
+
+juce::String ChainHost::devApplyEqJson(int slotIndex, const juce::String& json)
+{
+    if (!isBuiltinEqSlot(slotIndex))
+        return "slot " + juce::String(slotIndex + 1) + " is not the EchoJay EQ";
+
+    juce::var parsed;
+    const auto res = juce::JSON::parse(json, parsed);
+    if (res.failed())
+        return "JSON parse error: " + res.getErrorMessage();
+
+    int applied = 0, skipped = 0;
+    const auto summary = applyEqBandsToSlot(slotIndex, parsed, &applied, &skipped);
+    if (summary.isEmpty())
+        return "no eq_bands found — expected {\"eq_bands\":[...]} or a bare [...] array";
+
+    // Keep the rack card in step with what was just written.
+    if (slotIndex >= 0 && slotIndex < (int)slots_.size() && applied > 0)
+    {
+        slots_[(size_t)slotIndex].settings = "Applied automatically\n" + summary;
+        slots_[(size_t)slotIndex].dialAppliedCount = applied;
+        slots_[(size_t)slotIndex].dialStatus =
+            (skipped > 0) ? DialStatus::partial : DialStatus::applied;
+        if (onSlotSettingsChanged) onSlotSettingsChanged();
+    }
+    return summary;
+}
+
+juce::String ChainHost::applyEqBandsToSlot(int slotIndex, const juce::var& structured,
+                                           int* appliedOut, int* skippedOut)
+{
+    if (appliedOut != nullptr) *appliedOut = 0;
+    if (skippedOut != nullptr) *skippedOut = 0;
+    if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return {};
+
+    auto* eq = dynamic_cast<SurgicalEqProcessor*>(getSlotProcessor(slotIndex));
+    if (eq == nullptr) return {};
+
+    // Two accepted shapes: a bare eq_bands array, or an object carrying one
+    // under "eq_bands". Anything else (a flat semantic bag meant for the
+    // anchor path) is not something this device understands.
+    juce::var bands = structured;
+    if (! bands.isArray())
+        bands = structured.getProperty("eq_bands", juce::var());
+    if (! bands.isArray()) return {};
+
+    return eq->applyEqBands(bands, appliedOut, skippedOut);
+}
+
 void ChainHost::applyStructuredIfReady(int slotIndex)
 {
     if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return;
     auto& s = slots_[(size_t)slotIndex];
     if (s.structuredApplied) return;
-    if (s.structuredSettings.isVoid() || s.structuredSettings.getDynamicObject() == nullptr) return;
+    if (s.structuredSettings.isVoid()) return;
+
+    // ---- Built-in EQ: the exact path -------------------------------------
+    // This is the entire reason the device exists. A move becomes a direct
+    // typed setBands write: no fingerprint, no map lookup, no anchor-table
+    // interpolation, no write-then-read-back-and-revert. It MUST be handled
+    // before the fp/map gates below, which would otherwise park the slot in
+    // "pending" forever — a built-in deliberately never gets a fingerprint.
+    if (isBuiltinEqSlot(slotIndex))
+    {
+        int applied = 0, skipped = 0;
+        const auto summary = applyEqBandsToSlot(slotIndex, s.structuredSettings,
+                                                &applied, &skipped);
+        s.structuredApplied = true;
+        s.dialAppliedCount  = applied;
+
+        if (applied > 0)
+        {
+            s.settings   = "Applied automatically\n" + summary;
+            // Honest verdict, same contract as the mapped path: anything the
+            // EQ could not place (it was full) is partial, not success.
+            s.dialStatus = (skipped > 0) ? DialStatus::partial : DialStatus::applied;
+        }
+        else
+        {
+            // Structured settings arrived but carried no usable eq_bands. The
+            // EQ understands nothing else, so flat semantics are ignored.
+            s.dialStatus = DialStatus::unusableMap;
+        }
+
+        EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex)
+                       + " (\"" + s.desc.name + "\") EXACT built-in apply, "
+                       + juce::String(applied) + " band(s), "
+                       + juce::String(skipped) + " skipped").toRawUTF8());
+
+        if (onSlotSettingsChanged) onSlotSettingsChanged();
+        return;
+    }
+
+    if (s.structuredSettings.getDynamicObject() == nullptr) return;
     if (s.fp.isEmpty()) { s.dialStatus = DialStatus::pending; return; } // fp arrives at load
     auto it = paramMaps_.find(s.fp);
     if (it == paramMaps_.end())

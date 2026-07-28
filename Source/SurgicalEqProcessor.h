@@ -81,7 +81,11 @@ public:
     //           "slope_db_oct":24 (HP/LP), "disable":true (optional),
     //           "dynamic":{ "threshold_db":-20,"range_db":-6,
     //                       "attack_ms":2,"release_ms":60 } }, ...]
-    juce::String applyEqBands (const juce::var& eqBandsArray);
+    // appliedOut/skippedOut report the real per-band outcome so a caller can
+    // say what actually landed instead of assuming the whole request did.
+    juce::String applyEqBands (const juce::var& eqBandsArray,
+                               int* appliedOut = nullptr,
+                               int* skippedOut = nullptr);
 
     // Serialise the current band model back to an eq_bands var (for the AI to
     // see current state, and for chain-state round-tripping).
