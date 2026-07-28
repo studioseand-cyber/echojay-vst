@@ -21,8 +21,65 @@
 #include <JuceHeader.h>
 #include "SurgicalEqProcessor.h"
 #include "EchoJayLookAndFeel.h"
+#include "ChainWetKnob.h"
 
 #include <vector>
+
+// ---------------------------------------------------------------------------
+// A labelled rotary in real units: caption above, filmstrip knob, editable
+// numeric readout below. The knob itself IS ChainWetKnob — the same photoreal
+// 128-frame filmstrip and cyan value arc as the MIX knob, so the EQ's dials
+// and the wet knob are literally one control with one drawing path.
+//
+// The 0..1 the filmstrip understands is mapped to the band's real range by a
+// juce::NormalisableRange, which reproduces exactly the ranges and midpoint
+// skews the previous LinearBar sliders carried.
+// ---------------------------------------------------------------------------
+class EqValueKnob : public juce::Component
+{
+public:
+    EqValueKnob();
+
+    // decimals/suffix drive the readout: "429 Hz", "16.5 dB", "1.00".
+    void setSpec (double lo, double hi, double skewMidPoint,
+                  int decimals, const juce::String& suffix,
+                  const juce::String& caption, double defaultValue);
+
+    void   setRealValue (double v);          // no callback
+    double getRealValue() const noexcept { return value_; }
+    void   setDimmed (bool d);
+
+    std::function<void()> onValueChange;     // fired live during a drag / on typed entry
+
+    void resized() override;
+    void paint (juce::Graphics& g) override;
+
+private:
+    // Reuses the filmstrip; overrides only what is wet/dry-specific.
+    struct Rotary : ChainWetKnob
+    {
+        juce::String tip;
+        float        defaultNorm = 0.5f;
+        void mouseDoubleClick (const juce::MouseEvent&) override
+        {
+            setValue (defaultNorm, true);
+            if (onGestureEnd) onGestureEnd();
+        }
+        void updateTooltip() override { if (tip.isNotEmpty()) setTooltip (tip); }
+    };
+
+    void refreshReadout();
+
+    Rotary      knob_;
+    juce::Label readout_;                    // double-click to type an exact value
+    juce::String caption_, suffix_;
+    juce::NormalisableRange<double> range_ { 0.0, 1.0 };
+    double value_    = 0.0;
+    int    decimals_ = 1;
+    bool   dimmed_   = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EqValueKnob)
+};
 
 class SurgicalEqEditor : public juce::AudioProcessorEditor,
                          private juce::Timer
@@ -112,11 +169,11 @@ private:
 
     // selected-band strip
     juce::ComboBox   typeBox_, slopeBox_;
-    juce::Slider     freqS_, gainS_, qS_;
+    EqValueKnob      freqS_, gainS_, qS_;
     juce::TextButton dynBtn_    { "DYN" };
     juce::TextButton enableBtn_ { "ON" };
     juce::TextButton soloBtn_   { "S" };
-    juce::Slider     thrS_, rangeS_, atkS_, relS_;
+    EqValueKnob      thrS_, rangeS_, atkS_, relS_;
 
     // field captions painted above the controls (built in layoutStrip)
     struct FieldLabel { juce::Rectangle<int> r; juce::String text; };

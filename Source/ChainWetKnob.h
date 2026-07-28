@@ -143,13 +143,19 @@ struct ChainWetKnob : public juce::Component,
         if (onGestureEnd) onGestureEnd();
     }
 
-private:
-    void updateTooltip()
+protected:
+    // Virtual so a subclass mapping this knob onto some OTHER quantity (the
+    // surgical EQ's freq/gain/Q dials reuse the same filmstrip) can say what
+    // it actually controls instead of claiming to be a wet/dry mix. Called
+    // from the base constructor too, where it necessarily resolves to this
+    // base implementation — harmless, since every later setValue re-runs it.
+    virtual void updateTooltip()
     {
         setTooltip("Wet/dry mix: " + juce::String(juce::roundToInt(value_ * 100.0f))
                    + "% wet (double-click = 100%)");
     }
 
+private:
     float value_          = 1.0f;
     float dragStartValue_ = 1.0f;
     float dragStartY_     = 0.0f;

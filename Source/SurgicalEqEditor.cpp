@@ -11,11 +11,13 @@ using echojay::BandType;
 
 namespace
 {
-    constexpr int   kTopH        = 30;   // title / global button bar
-    constexpr int   kStripH      = 84;   // two-row band control strip
-    constexpr int   kPad         = 10;
-    constexpr int   kRowH        = 24;   // control height
+    constexpr int   kTopH        = 30;   // logo / global button bar
+    constexpr int   kRowH        = 24;   // flat control height (combos, buttons)
     constexpr int   kCapH        = 12;   // field caption height above a control
+    constexpr int   kKnobW       = 62;   // dial column width
+    constexpr int   kKnobH       = 58;   // caption + filmstrip + readout
+    constexpr int   kStripH      = kRowH + kCapH + 4 + kKnobH;  // selectors + dials
+    constexpr int   kPad         = 10;
     constexpr float kNodeR       = 5.0f;
     constexpr float kHitR        = 11.0f;
     constexpr float kCurveStepPx = 2.0f;
@@ -37,6 +39,97 @@ namespace
         return hz >= 1000.0f ? juce::String (hz / 1000.0f, hz >= 10000.0f ? 0 : 1) + "k"
                              : juce::String ((int) hz);
     }
+}
+
+// ===========================================================================
+// EqValueKnob
+// ===========================================================================
+EqValueKnob::EqValueKnob()
+{
+    addAndMakeVisible (knob_);
+    knob_.onChange = [this] (float v01)
+    {
+        value_ = range_.convertFrom0to1 ((double) v01);
+        refreshReadout();
+        if (onValueChange) onValueChange();
+    };
+
+    readout_.setJustificationType (juce::Justification::centred);
+    readout_.setColour (juce::Label::textColourId, EchoJayLookAndFeel::Colours::text);
+    readout_.setColour (juce::Label::backgroundWhenEditingColourId,
+                        EchoJayLookAndFeel::Colours::bg4);
+    readout_.setColour (juce::Label::textWhenEditingColourId,
+                        EchoJayLookAndFeel::Colours::text);
+    // Exactness is the whole point of this EQ, so the readout stays typeable:
+    // double-click it and enter the value you actually want.
+    readout_.setEditable (false, true, false);
+    readout_.onTextChange = [this]
+    {
+        auto txt = readout_.getText().retainCharacters ("0123456789.,-+eE").trim();
+        const double v = txt.getDoubleValue();
+        setRealValue (range_.snapToLegalValue (v));
+        if (onValueChange) onValueChange();
+    };
+    addAndMakeVisible (readout_);
+}
+
+void EqValueKnob::setSpec (double lo, double hi, double skewMidPoint,
+                           int decimals, const juce::String& suffix,
+                           const juce::String& caption, double defaultValue)
+{
+    range_    = juce::NormalisableRange<double> (lo, hi);
+    if (skewMidPoint > lo && skewMidPoint < hi)
+        range_.setSkewForCentre (skewMidPoint);
+    decimals_ = decimals;
+    suffix_   = suffix;
+    caption_  = caption;
+
+    knob_.defaultNorm = (float) range_.convertTo0to1 (
+        juce::jlimit (lo, hi, defaultValue));
+    setRealValue (juce::jlimit (lo, hi, defaultValue));
+}
+
+void EqValueKnob::setRealValue (double v)
+{
+    value_ = juce::jlimit (range_.start, range_.end, v);
+    knob_.setValue ((float) range_.convertTo0to1 (value_), false);
+    refreshReadout();
+}
+
+void EqValueKnob::setDimmed (bool d)
+{
+    if (dimmed_ == d) return;
+    dimmed_ = d;
+    knob_.setEnabledLook (! d);
+    readout_.setColour (juce::Label::textColourId,
+                        d ? EchoJayLookAndFeel::Colours::text3
+                          : EchoJayLookAndFeel::Colours::text);
+    repaint();
+}
+
+void EqValueKnob::refreshReadout()
+{
+    const juce::String txt = juce::String (value_, decimals_) + suffix_;
+    readout_.setText (txt, juce::dontSendNotification);
+    knob_.tip = caption_ + ": " + txt + "  (double-click the number to type a value)";
+    knob_.setTooltip (knob_.tip);   // setValue is not the only path here
+}
+
+void EqValueKnob::resized()
+{
+    auto r = getLocalBounds();
+    r.removeFromTop (kCapH);                       // caption, painted below
+    readout_.setBounds (r.removeFromBottom (13));
+    const int d = juce::jmin (r.getWidth(), r.getHeight());
+    knob_.setBounds (r.withSizeKeepingCentre (d, d));
+}
+
+void EqValueKnob::paint (juce::Graphics& g)
+{
+    g.setColour (dimmed_ ? EchoJayLookAndFeel::Colours::text3.withAlpha (0.5f)
+                         : EchoJayLookAndFeel::Colours::text3);
+    g.setFont (uiFont (9.0f, true));
+    g.drawText (caption_, 0, 0, getWidth(), kCapH, juce::Justification::centred);
 }
 
 // ---------------------------------------------------------------------------
@@ -82,22 +175,16 @@ void SurgicalEqEditor::buildControls()
         addAndMakeVisible (b);
     };
 
-    auto styleValue = [this] (juce::Slider& s, double lo, double hi, double interval,
-                              const juce::String& suffix, int decimals)
+    // lo, hi, skew midpoint, decimals, unit suffix, caption, default.
+    // Ranges and midpoint skews are carried over unchanged from the sliders
+    // these knobs replaced.
+    auto styleValue = [this] (EqValueKnob& k, double lo, double hi, double skewMid,
+                              int decimals, const juce::String& suffix,
+                              const juce::String& caption, double dflt)
     {
-        s.setSliderStyle (juce::Slider::LinearBar);
-        s.setRange (lo, hi, interval);
-        s.setTextValueSuffix (suffix);
-        s.setNumDecimalPlacesToDisplay (decimals);
-        s.setTextBoxIsEditable (true);
-        s.setVelocityBasedMode (false);
-        s.setColour (juce::Slider::trackColourId,          C::blue.withAlpha (0.28f));
-        s.setColour (juce::Slider::backgroundColourId,     juce::Colours::transparentBlack);
-        s.setColour (juce::Slider::textBoxTextColourId,    C::text);
-        s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-        s.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
-        s.onValueChange = [this] { if (! suppressCallbacks_) pushControlsToBand(); };
-        addAndMakeVisible (s);
+        k.setSpec (lo, hi, skewMid, decimals, suffix, caption, dflt);
+        k.onValueChange = [this] { if (! suppressCallbacks_) pushControlsToBand(); };
+        addAndMakeVisible (k);
     };
 
     // ---- global -----------------------------------------------------------
@@ -145,21 +232,17 @@ void SurgicalEqEditor::buildControls()
     slopeBox_.onChange = [this] { if (! suppressCallbacks_) pushControlsToBand(); };
     addAndMakeVisible (slopeBox_);
 
-    // ---- numeric fields ---------------------------------------------------
-    styleValue (freqS_,  kMinFreq, kMaxFreq, 1.0,  " Hz", 0);
-    freqS_.setSkewFactorFromMidPoint (1000.0);          // log-ish, like the x-axis
-    styleValue (gainS_,  -kMaxGain, kMaxGain, 0.1, " dB", 1);
+    // ---- numeric dials ----------------------------------------------------
+    styleValue (freqS_, kMinFreq, kMaxFreq, 1000.0, 0, " Hz", "FREQ", 1000.0);
+    styleValue (gainS_, -kMaxGain, kMaxGain, 0.0,   1, " dB", "GAIN", 0.0);
     // Q spans the engine's usable range, not the narrower wheel-drag clamp, so a
     // high-Q band set by the AI displays truthfully instead of being pulled in.
-    styleValue (qS_,     kMinQ, kSliderMaxQ, 0.01, "", 2);
-    qS_.setSkewFactorFromMidPoint (2.0);
+    styleValue (qS_,    kMinQ, kSliderMaxQ, 2.0,    2, "",    "Q",    1.0);
 
-    styleValue (thrS_,   -60.0, 0.0,   0.1, " dB", 1);
-    styleValue (rangeS_, -24.0, 24.0,  0.1, " dB", 1);
-    styleValue (atkS_,   0.1,  200.0,  0.1, " ms", 1);
-    atkS_.setSkewFactorFromMidPoint (10.0);
-    styleValue (relS_,   5.0, 1000.0,  1.0, " ms", 0);
-    relS_.setSkewFactorFromMidPoint (100.0);
+    styleValue (thrS_,   -60.0,  0.0,    0.0,   1, " dB", "THRESH",  -20.0);
+    styleValue (rangeS_, -24.0,  24.0,   0.0,   1, " dB", "RANGE",    -6.0);
+    styleValue (atkS_,     0.1,  200.0,  10.0,  1, " ms", "ATTACK",   10.0);
+    styleValue (relS_,     5.0,  1000.0, 100.0, 0, " ms", "RELEASE", 100.0);
 
     // ---- per-band toggles -------------------------------------------------
     styleButton (dynBtn_, true);
@@ -214,6 +297,12 @@ void SurgicalEqEditor::updateStripVisibility()
     // Dynamic is a Bell-only feature in the engine.
     dynBtn_.setEnabled (have && s.type == BandType::Bell);
 
+    // A disabled band's dials still work (so you can set it up before
+    // switching it on) but read dimmed, since nothing they do is audible yet.
+    const bool live = have && s.enabled;
+    for (EqValueKnob* k : { &freqS_, &gainS_, &qS_, &thrS_, &rangeS_, &atkS_, &relS_ })
+        k->setDimmed (! live);
+
     layoutStrip();
     repaint();
 }
@@ -223,28 +312,30 @@ void SurgicalEqEditor::layoutStrip()
     fieldLabels_.clear();
     if (stripBounds_.isEmpty()) return;
 
-    // Row A: type, freq, gain, Q, slope, dyn, on, solo.   Row B: dynamic params.
+    // Row 1: type / slope selectors and the per-band toggles (flat controls).
+    // Row 2: the dials — freq/gain/Q, plus the dynamic four when engaged.
+    // Each knob draws its own caption and readout, so it needs no fieldLabel.
     struct Item { juce::Component* c; int w; const char* caption; };
 
-    const Item rowA[] = {
-        { &typeBox_,   96, "TYPE"  }, { &freqS_,  84, "FREQ" },
-        { &gainS_,     76, "GAIN"  }, { &qS_,     66, "Q"    },
-        { &slopeBox_,  92, "SLOPE" }, { &dynBtn_, 58, ""     },
-        { &enableBtn_, 46, ""      }, { &soloBtn_, 36, ""    },
+    const Item row1[] = {
+        { &typeBox_,   96, "TYPE"  }, { &slopeBox_, 92, "SLOPE" },
+        { &dynBtn_,    58, ""      }, { &enableBtn_, 46, ""     },
+        { &soloBtn_,   36, ""      },
     };
-    const Item rowB[] = {
-        { &thrS_,   88, "THRESHOLD" }, { &rangeS_, 76, "RANGE"   },
-        { &atkS_,   76, "ATTACK"    }, { &relS_,   80, "RELEASE" },
+    const Item row2[] = {
+        { &freqS_, kKnobW, "" }, { &gainS_,  kKnobW, "" }, { &qS_,   kKnobW, "" },
+        { &thrS_,  kKnobW, "" }, { &rangeS_, kKnobW, "" }, { &atkS_, kKnobW, "" },
+        { &relS_,  kKnobW, "" },
     };
 
-    auto layoutRow = [this] (const Item* items, int count, int y)
+    auto layoutRow = [this] (const Item* items, int count, int y, int h)
     {
-        int needed = 0, gaps = 0;
+        int needed = 0, shown = 0;
         for (int i = 0; i < count; ++i)
-            if (items[i].c->isVisible()) { needed += items[i].w; ++gaps; }
-        if (gaps == 0) return;
-        gaps = juce::jmax (0, gaps - 1);
+            if (items[i].c->isVisible()) { needed += items[i].w; ++shown; }
+        if (shown == 0) return;
 
+        const int gaps  = juce::jmax (0, shown - 1);
         const int avail = stripBounds_.getWidth() - gaps * 6;
         const float scale = avail > 0 && needed > avail
                               ? (float) avail / (float) needed : 1.0f;
@@ -259,13 +350,15 @@ void SurgicalEqEditor::layoutStrip()
             if (juce::String (it.caption).isNotEmpty())
                 fieldLabels_.push_back ({ { x, y, w, kCapH }, it.caption });
 
-            it.c->setBounds (x, y + kCapH, w, kRowH);
+            const bool captioned = juce::String (it.caption).isNotEmpty();
+            it.c->setBounds (x, captioned ? y + kCapH : y, w, h);
             x += w + 6;
         }
     };
 
-    layoutRow (rowA, (int) std::size (rowA), stripBounds_.getY());
-    layoutRow (rowB, (int) std::size (rowB), stripBounds_.getY() + kCapH + kRowH + 6);
+    const int y1 = stripBounds_.getY();
+    layoutRow (row1, (int) std::size (row1), y1, kRowH);
+    layoutRow (row2, (int) std::size (row2), y1 + kRowH + kCapH + 4, kKnobH);
 }
 
 void SurgicalEqEditor::syncControlsFromModel()
@@ -279,16 +372,15 @@ void SurgicalEqEditor::syncControlsFromModel()
     slopeBox_.setSelectedId (juce::jlimit (1, 8, s.slopeDbPerOct / 12),
                              juce::dontSendNotification);
 
-    freqS_.setValue (s.freqHz, juce::dontSendNotification);
-    gainS_.setValue (juce::jlimit ((double) -kMaxGain, (double) kMaxGain,
-                                   (double) s.gainDb), juce::dontSendNotification);
-    qS_.setValue (juce::jlimit ((double) kMinQ, (double) kSliderMaxQ, (double) s.q),
-                  juce::dontSendNotification);
+    freqS_.setRealValue (s.freqHz);
+    gainS_.setRealValue (juce::jlimit ((double) -kMaxGain, (double) kMaxGain,
+                                       (double) s.gainDb));
+    qS_.setRealValue (juce::jlimit ((double) kMinQ, (double) kSliderMaxQ, (double) s.q));
 
-    thrS_.setValue   (s.thresholdDb, juce::dontSendNotification);
-    rangeS_.setValue (s.rangeDb,     juce::dontSendNotification);
-    atkS_.setValue   (s.attackMs,    juce::dontSendNotification);
-    relS_.setValue   (s.releaseMs,   juce::dontSendNotification);
+    thrS_.setRealValue   (s.thresholdDb);
+    rangeS_.setRealValue (s.rangeDb);
+    atkS_.setRealValue   (s.attackMs);
+    relS_.setRealValue   (s.releaseMs);
 
     dynBtn_.setToggleState    (s.dynamic, juce::dontSendNotification);
     enableBtn_.setToggleState (s.enabled, juce::dontSendNotification);
@@ -303,19 +395,19 @@ void SurgicalEqEditor::pushControlsToBand()
 
     Spec s = model_[selected_];
     s.type          = (BandType) juce::jlimit (0, 5, typeBox_.getSelectedId() - 1);
-    s.freqHz        = (float) freqS_.getValue();
-    s.q             = (float) qS_.getValue();
+    s.freqHz        = (float) freqS_.getRealValue();
+    s.q             = (float) qS_.getRealValue();
     s.slopeDbPerOct = juce::jlimit (1, 8, slopeBox_.getSelectedId()) * 12;
     if (typeHasGain (s.type))
-        s.gainDb = (float) gainS_.getValue();
+        s.gainDb = (float) gainS_.getRealValue();
 
     s.dynamic = dynBtn_.getToggleState() && s.type == BandType::Bell;
     if (s.dynamic)
     {
-        s.thresholdDb = (float) thrS_.getValue();
-        s.rangeDb     = (float) rangeS_.getValue();
-        s.attackMs    = (float) atkS_.getValue();
-        s.releaseMs   = (float) relS_.getValue();
+        s.thresholdDb = (float) thrS_.getRealValue();
+        s.rangeDb     = (float) rangeS_.getRealValue();
+        s.attackMs    = (float) atkS_.getRealValue();
+        s.releaseMs   = (float) relS_.getRealValue();
     }
 
     commitBand (selected_, s);
@@ -477,9 +569,10 @@ void SurgicalEqEditor::mouseDrag (const juce::MouseEvent& e)
 
     commitBand (dragBand_, s);
 
-    const juce::ScopedValueSetter<bool> guard (suppressCallbacks_, true);
-    freqS_.setValue (s.freqHz, juce::dontSendNotification);
-    gainS_.setValue (s.gainDb, juce::dontSendNotification);
+    // Mirror the drag into the dials. setRealValue never fires the change
+    // callback, so this cannot loop back into pushControlsToBand.
+    freqS_.setRealValue (s.freqHz);
+    gainS_.setRealValue (s.gainDb);
 }
 
 void SurgicalEqEditor::mouseUp (const juce::MouseEvent&)
@@ -512,10 +605,7 @@ void SurgicalEqEditor::mouseWheelMove (const juce::MouseEvent& e,
     commitBand (target, s);
 
     if (target == selected_)
-    {
-        const juce::ScopedValueSetter<bool> guard (suppressCallbacks_, true);
-        qS_.setValue (s.q, juce::dontSendNotification);
-    }
+        qS_.setRealValue (s.q);
 }
 
 bool SurgicalEqEditor::keyPressed (const juce::KeyPress& k)
@@ -820,13 +910,6 @@ void SurgicalEqEditor::paint (juce::Graphics& g)
         EchoJayLookAndFeel::drawFieldLabel (g, fl.r.getX(), fl.r.getY(),
                                             fl.r.getWidth(), fl.text);
 
-    for (const juce::Slider* s : { &freqS_, &gainS_, &qS_, &thrS_, &rangeS_, &atkS_, &relS_ })
-    {
-        if (! s->isVisible()) continue;
-        const auto r = s->getBounds().toFloat();
-        g.setColour (C::bg3);
-        g.fillRoundedRectangle (r, 6.0f);
-        g.setColour (C::border2);
-        g.drawRoundedRectangle (r.reduced (0.5f), 6.0f, 1.0f);
-    }
+    // The dials draw their own caption/readout and the filmstrip has its own
+    // body, so they need no backing field rect — only the flat controls do.
 }
