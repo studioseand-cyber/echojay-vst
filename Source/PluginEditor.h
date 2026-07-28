@@ -1115,6 +1115,13 @@ private:
     void refreshChainList();
     void applyChainRows(const juce::var& chains, juce::int64 fetchedAtMs, bool fromCache);
     void toggleChainFavourite(int displayIdx);
+    // Right click / ctrl-click on a row. Delete is NOT here: the API has no
+    // delete verb yet (see the note to the user), and a menu item that
+    // cannot work is worse than one that is missing.
+    void showChainRowMenu(int displayIdx);
+    void renameChainRow(int displayIdx);
+    void sendChainRename(const juce::String& id, const juce::String& name);
+    void writeChainRowsToCache();
     void paintChainSidebar(juce::Graphics& g, int chatX, int chatW, int topH, int bottomY);
     // Group order is FAVOURITES then SAVED. Imported is deliberately absent:
     // sharing does not exist until D3, and a permanently empty section is the
@@ -1968,7 +1975,11 @@ private:
     // CHAIN tab AI assistant sidebar collapse — when collapsed the plugin
     // display area takes the full tab width.
     bool chainChatCollapsed_ = false;
-    juce::TextButton chainChatToggleBtn { "AI >" };
+    // Width of the sidebar collapse chevron. ONE constant, so the rack
+    // strip's Save / Save As / Open cursor and the button itself cannot
+    // disagree about how much space it takes.
+    static constexpr int kChainToggleW = 28;
+    juce::TextButton chainChatToggleBtn { ">" };
     // "n/15" slots-used counter — sits left of the Aa button in the AI
     // ASSISTANT header (replaces the usage counter on this tab).
     juce::Label chainSlotCountLabel;

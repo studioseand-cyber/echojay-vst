@@ -11491,7 +11491,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     g.setColour(C::text2);
     g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
     g.drawText(processorRef.chainSidebarChainsMode && currentTab == Tab::Chain
-                 ? "SAVED CHAINS" : "AI ASSISTANT",
+                 ? "CHAINS" : "AI ASSISTANT",
                chatX + 14, topH, chatW, 32, juce::Justification::centredLeft);
 
     // AI | Chains segmented switch. Rects come from resized(); nothing here
@@ -12479,8 +12479,10 @@ void EchoJayEditor::resized()
         chainListPanel.setBounds(0, topH + 32, mW, contentH - 32);
 
         // AI sidebar toggle — right end of the "PLUGIN CHAIN" header strip
-        chainChatToggleBtn.setButtonText(chainChatCollapsed_ ? "< AI" : "AI >");
-        chainChatToggleBtn.setBounds(mW - 62, topH + 5, 54, 22);
+        // Just the chevron: the AI | CHAINS switch already says AI, so the
+        // label was saying it twice in two places a few pixels apart.
+        chainChatToggleBtn.setButtonText(chainChatCollapsed_ ? "<" : ">");
+        chainChatToggleBtn.setBounds(mW - kChainToggleW - 8, topH + 5, kChainToggleW, 22);
         chainChatToggleBtn.setVisible(!compactMode && !visualOnlyMode && !reviewOverlay.visibleState);
         chainChatToggleBtn.toFront(false);
 
@@ -12539,7 +12541,7 @@ void EchoJayEditor::resized()
     // a second height.
     {
         const int btnY  = topH + 5, btnH = 22;
-        const int rightEdge = mW - 62 - 10;   // left of the AI toggle
+        const int rightEdge = mW - kChainToggleW - 8 - 10;   // left of the AI toggle
         const int wOpen = 54, wSaveAs = 66, wSave = 46, gap = 6;
         const int xOpen   = rightEdge - wOpen;
         const int xSaveAs = xOpen   - gap - wSaveAs;
@@ -12801,13 +12803,46 @@ void EchoJayEditor::resized()
     // top = topH, height = 32. The usage counter sits just to the LEFT
     // of the Aa button so users can see how many messages they have left
     // without leaving the chat view.
+    // ---- THE chat header strip authority --------------------------------
+    // Everything anchored to the right of this 32px strip is placed HERE, in
+    // one pass, walking leftwards from the right margin and consuming the
+    // space it uses. Nothing else may position a control in this strip.
+    //
+    // This exists because the Aa button and the AI | CHAINS switch were laid
+    // out in two separate blocks, both right-anchored to the same edge and
+    // neither aware of the other, so they drew on top of each other. That was
+    // the FOURTH overlap bug in this file, and nudging a coordinate would
+    // have left the next control to collide all over again. A single cursor
+    // that reserves as it goes cannot produce that class of bug at all.
     {
-        int aaW = 26, aaH = 22;
-        int rightMargin = 8;
-        int aaX = chatStartX + chatW - rightMargin - aaW;
-        int aaY = topH + (32 - aaH) / 2;
-        chatTextSizeBtn.setBounds(aaX, aaY, aaW, aaH);
-        chatTextSizeBtn.setVisible(chatScroll.isVisible());
+        int cursorRight = chatStartX + chatW - 8;   // the one right margin
+
+        // Aa, always the rightmost control, on every tab.
+        const int aaW = 26, aaH = 22;
+        const int aaY = topH + (32 - aaH) / 2;
+        chatTextSizeBtn.setBounds(cursorRight - aaW, aaY, aaW, aaH);
+        chatTextSizeBtn.setVisible(chatScroll.isVisible() || chainSidebarInChainsMode());
+        cursorRight -= aaW + 8;                     // RESERVED, not just used
+
+        // AI | CHAINS, immediately left of Aa. Authored unconditionally with
+        // the mode test inside the expression, and cleared on the off path so
+        // no click can reach a switch that is not on screen.
+        const bool stripHasSwitch = (currentTab == Tab::Chain) && !compactMode
+                                 && !visualOnlyMode && !reviewOverlay.visibleState
+                                 && !chainChatCollapsed_;
+        if (stripHasSwitch)
+        {
+            const int segW = 46, segH = 18, segY = topH + 7;
+            chainModeChainsRect_ = { cursorRight - segW, segY, segW, segH };
+            chainModeAiRect_     = { cursorRight - segW * 2 - 2, segY, segW, segH };
+            cursorRight = chainModeAiRect_.getX() - 8;
+        }
+        else
+        {
+            chainModeAiRect_     = {};
+            chainModeChainsRect_ = {};
+        }
+        juce::ignoreUnused(cursorRight);   // next control starts from here
 
         // (usage counter removed — usage-v2: no numeric counters anywhere;
         //  Settings' percent bar is the only usage surface)
@@ -12866,21 +12901,11 @@ void EchoJayEditor::resized()
                                && !chainChatCollapsed_;
         const bool chainsMode   = chainSidebar && processorRef.chainSidebarChainsMode;
 
-        if (chainSidebar)
-        {
-            // Segmented switch, right-aligned in the existing AI ASSISTANT
-            // header strip. A mode on a surface that already exists, so no
-            // new band and nothing below it moves.
-            const int segW = 52, segH = 18, segY = topH + 7;
-            const int segRight = chatStartX + chatW - 10;
-            chainModeChainsRect_ = { segRight - segW, segY, segW, segH };
-            chainModeAiRect_     = { segRight - segW * 2 - 2, segY, segW, segH };
-        }
-        else
-        {
-            chainModeAiRect_ = {};
-            chainModeChainsRect_ = {};
-        }
+        // The AI | CHAINS rects are NOT authored here. They are placed by the
+        // chat header strip authority further down, which reserves the strip
+        // and positions the Aa button and the switch together. Two blocks
+        // right-anchoring into the same 32px strip is what produced the
+        // fourth overlap bug in this file.
 
         chainRowRects_.clear();
         chainRowStarRects_.clear();
@@ -17234,6 +17259,109 @@ void EchoJayEditor::rebuildChainDisplayRows()
     }
 }
 
+void EchoJayEditor::showChainRowMenu(int displayIdx)
+{
+    if (displayIdx < 0 || displayIdx >= (int)chainDisplayRows_.size()) return;
+    if (chainRowIsHeading_[(size_t)displayIdx] != 0) return;
+    const auto row = chainDisplayRows_[(size_t)displayIdx];
+    if (row.id.isEmpty()) return;
+
+    juce::PopupMenu m;
+    m.addItem(1, "Rename" + juce::String::fromUTF8("\xe2\x80\xa6"));
+    // Reads what it will DO, not what the state is: "Favourite" on an
+    // unstarred row, "Unfavourite" on a starred one.
+    m.addItem(2, row.favourite ? "Unfavourite" : "Favourite");
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this)
+                        .withTargetScreenArea({ juce::Desktop::getMousePosition().x,
+                                                juce::Desktop::getMousePosition().y, 1, 1 }),
+        [safeThis, displayIdx, row](int choice)
+        {
+            if (safeThis == nullptr) return;
+            if (choice == 1) safeThis->renameChainRow(displayIdx);
+            else if (choice == 2) safeThis->toggleChainFavourite(displayIdx);
+        });
+}
+
+void EchoJayEditor::renameChainRow(int displayIdx)
+{
+    if (displayIdx < 0 || displayIdx >= (int)chainDisplayRows_.size()) return;
+    const auto row = chainDisplayRows_[(size_t)displayIdx];
+    if (row.id.isEmpty()) return;
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    auto* dlg = new juce::AlertWindow("Rename Chain", "New name:",
+                                       juce::MessageBoxIconType::QuestionIcon);
+    dlg->addTextEditor("name", row.name, "Name:");
+    dlg->addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    dlg->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    dlg->enterModalState(true,
+        juce::ModalCallbackFunction::create([safeThis, dlg, row](int result)
+        {
+            juce::String name = dlg->getTextEditorContents("name").trim();
+            delete dlg;
+            if (safeThis == nullptr || result != 1) return;
+            if (name == row.name) return;                  // nothing to do
+            // The SAME validation the server applies (lib/dash/chains.js
+            // bad_name: 1 to 120 chars). Checking here means an obvious
+            // mistake is caught before a round trip, and the rule lives in
+            // one shape on both sides rather than two that can drift.
+            if (name.isEmpty() || name.length() > 120)
+            {
+                safeThis->setChainSaveStatus("A chain name must be 1 to 120 characters.");
+                return;
+            }
+            safeThis->sendChainRename(row.id, name);
+        }));
+}
+
+void EchoJayEditor::sendChainRename(const juce::String& id, const juce::String& name)
+{
+    auto* body = new juce::DynamicObject();
+    body->setProperty("name", name);
+    const auto json = juce::JSON::toString(juce::var(body), true);
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.patchChain(id, json, [safeThis, id, name](const juce::var& resp, int sc)
+    {
+        if (safeThis == nullptr) return;
+        const auto err = EchoJayAPI::chainErrorMessage(resp, sc,
+                                                       EchoJayAPI::ChainOp::List);
+        if (err.isNotEmpty()) { safeThis->setChainSaveStatus(err); return; }
+
+        for (auto& r : safeThis->chainRows_) if (r.id == id) r.name = name;
+        // The rack header shows the loaded chain's name, so it has to follow
+        // a rename or it keeps claiming the old one.
+        if (safeThis->processorRef.savedChainId == id)
+        {
+            safeThis->processorRef.savedChainName = name;
+            safeThis->processorRef.markStateDirty();
+        }
+        safeThis->writeChainRowsToCache();   // the new name must survive going offline
+        safeThis->rebuildChainDisplayRows();
+        safeThis->resized();
+        safeThis->repaint();
+    });
+}
+
+void EchoJayEditor::writeChainRowsToCache()
+{
+    juce::Array<juce::var> arr;
+    for (auto& r : chainRows_)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty("id",        r.id);
+        o->setProperty("name",      r.name);
+        o->setProperty("slotCount", r.slotCount);
+        o->setProperty("hasState",  r.hasState);
+        o->setProperty("favourite", r.favourite);
+        o->setProperty("updatedAt", r.updatedAt);
+        arr.add(juce::var(o));
+    }
+    writeChainListCache(api.getUserInfo().email, juce::var(arr));
+}
+
 void EchoJayEditor::toggleChainFavourite(int displayIdx)
 {
     if (displayIdx < 0 || displayIdx >= (int)chainDisplayRows_.size()) return;
@@ -17266,19 +17394,7 @@ void EchoJayEditor::toggleChainFavourite(int displayIdx)
         {
             // Persist the new star so the cached list is not a stale lie the
             // next time the user opens the pane offline.
-            juce::Array<juce::var> arr;
-            for (auto& r : safeThis->chainRows_)
-            {
-                auto* o = new juce::DynamicObject();
-                o->setProperty("id",        r.id);
-                o->setProperty("name",      r.name);
-                o->setProperty("slotCount", r.slotCount);
-                o->setProperty("hasState",  r.hasState);
-                o->setProperty("favourite", r.favourite);
-                o->setProperty("updatedAt", r.updatedAt);
-                arr.add(juce::var(o));
-            }
-            writeChainListCache(safeThis->api.getUserInfo().email, juce::var(arr));
+            safeThis->writeChainRowsToCache();
             return;
         }
         for (auto& r : safeThis->chainRows_) if (r.id == id) r.favourite = !wantFav;
@@ -19513,8 +19629,14 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     {
         if (!chainRowRects_[(size_t)i].contains(pos)) continue;
         if (chainRowIsHeading_[(size_t)i] != 0) return;      // heading, not a row
+        // isPopupMenu(), NOT "is right button": on a Mac trackpad the gesture
+        // is ctrl-click, and testing the button directly would leave every
+        // trackpad user with no context menu at all.
+        if (e.mods.isPopupMenu()) { showChainRowMenu(i); return; }
         // The star is checked FIRST: it sits inside the row rect, so a row
-        // hit test that ran first would swallow every favourite click.
+        // hit test that ran first would swallow every favourite click. It
+        // stays alongside the menu: one click to favourite is worth keeping,
+        // the menu is for discovery.
         if (chainRowStarRects_[(size_t)i].contains(pos)) { toggleChainFavourite(i); return; }
         const auto& row = chainDisplayRows_[(size_t)i];
         if (row.id.isNotEmpty()) openSavedChain(row.id, row.name);
