@@ -13,6 +13,79 @@ static void parseTierModels(juce::DynamicObject* root, UserInfo& info);
 // ones that hang Cubase on the user's next message-loop pump (next click).
 extern void ejTeardownLog(const juce::String& msg);
 
+// ===========================================================================
+// Development transport (Session B): COMPILED OUT unless ECHOJAY_DEV_TRANSPORT
+// ===========================================================================
+// Every /api/v2/* route is reachable only on a Vercel preview deployment,
+// which needs two things a release build must never contain: a base URL that
+// changes on every deploy, and the project's protection-bypass secret.
+//
+// Both live in ~/.echojay/dev.json, OUTSIDE the repo so they cannot be
+// committed, and the whole mechanism sits behind the compile guard so the
+// strings are absent from a release binary rather than merely unused. See
+// the option block in CMakeLists.txt.
+//
+// Diagnostics this shape gives you, from session-b-plugin-kickoff.md section 6:
+//   302 -> the bypass header is missing or wrong
+//   401 -> the bypass worked, the bearer token did not
+//   404 not_enabled -> you are hitting production, not a preview
+#if ECHOJAY_DEV_TRANSPORT
+namespace
+{
+    struct DevTransport
+    {
+        juce::String baseUrl;
+        juce::String bypass;
+        bool loaded = false;
+    };
+
+    // Read once per process. A dev config that appears mid-session is not
+    // worth a stat on every request.
+    const DevTransport& devTransport()
+    {
+        static DevTransport dt = []
+        {
+            DevTransport out;
+            auto f = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                         .getChildFile(".echojay").getChildFile("dev.json");
+            if (! f.existsAsFile()) return out;
+            auto parsed = juce::JSON::parse(f.loadFileAsString());
+            if (auto* obj = parsed.getDynamicObject())
+            {
+                out.baseUrl = obj->getProperty("baseUrl").toString().trim();
+                out.bypass  = obj->getProperty("protectionBypass").toString().trim();
+                out.loaded  = out.baseUrl.isNotEmpty() || out.bypass.isNotEmpty();
+            }
+            return out;
+        }();
+        return dt;
+    }
+}
+#endif
+
+// Base URL for a request: the dev override when one is configured, otherwise
+// whatever the plugin normally talks to. In a release build this is the
+// identity function and the compiler removes it.
+juce::String EchoJayAPI::transportEndpoint(const juce::String& configured)
+{
+   #if ECHOJAY_DEV_TRANSPORT
+    const auto& dt = devTransport();
+    if (dt.baseUrl.isNotEmpty()) return dt.baseUrl;
+   #endif
+    return configured;
+}
+
+// Extra request headers the dev transport needs. Empty in a release build.
+juce::String EchoJayAPI::transportHeaders()
+{
+   #if ECHOJAY_DEV_TRANSPORT
+    const auto& dt = devTransport();
+    if (dt.bypass.isNotEmpty())
+        return "x-vercel-protection-bypass: " + dt.bypass + "\r\n";
+   #endif
+    return {};
+}
+
 // Static members for remote config — shared across all plugin instances
 juce::String EchoJayAPI::remoteSystemPrompt;
 int EchoJayAPI::remotePromptVersion = 0;
@@ -89,12 +162,13 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
             // (this thread is not part of teardown and leaves no trace).
             if (!aliveFlag->load()) return;
 
-            juce::URL url(endpoint + path);
+            juce::URL url(transportEndpoint(endpoint) + path);
             url = url.withPOSTData(body);
 
             juce::String headers = "Content-Type: application/json\r\n";
             if (token.isNotEmpty())
                 headers += "Authorization: Bearer " + token + "\r\n";
+            headers += transportHeaders();   // empty in a release build
 
             statusCode = 0;
             auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
@@ -145,6 +219,112 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
     });
 }
 
+// ============ Generic PATCH helper ============
+//
+// Same teardown discipline as postJSON, and the same reason for it: a request
+// can be in flight for minutes after the plugin is removed, and a callAsync
+// posted after teardown fires on the host's next message pump.
+//
+// PATCH is NOT retried on a connection failure. postJSON retries because its
+// failures never reached the server; that reasoning does not carry to a verb
+// that overwrites an existing chain. A dropped connection after the server
+// committed the write is indistinguishable here from one before it, so a
+// retry could silently apply the same overwrite twice. One attempt, and an
+// honest error the user can act on.
+void EchoJayAPI::patchJSON(const juce::String& path, const juce::String& body,
+                           std::function<void(const juce::var& json, int statusCode)> onComplete)
+{
+    auto endpoint = apiEndpoint;
+    auto token = authToken;
+    auto cb = std::make_shared<std::function<void(const juce::var&, int)>>(onComplete);
+    auto aliveFlag = alive;
+
+    juce::Thread::launch([=]()
+    {
+        if (!aliveFlag->load()) return;
+
+        juce::URL url(transportEndpoint(endpoint) + path);
+        url = url.withPOSTData(body);
+
+        juce::String headers = "Content-Type: application/json\r\n";
+        if (token.isNotEmpty())
+            headers += "Authorization: Bearer " + token + "\r\n";
+        headers += transportHeaders();   // empty in a release build
+
+        int statusCode = 0;
+        auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
+                           .withExtraHeaders(headers)
+                           .withConnectionTimeoutMs(60000)
+                           .withStatusCode(&statusCode)
+                           .withHttpRequestCmd("PATCH");
+
+        auto stream = url.createInputStream(options);
+
+        juce::var json;
+        if (stream != nullptr)
+        {
+            juce::MemoryBlock mb;
+            stream->readIntoMemoryBlock(mb);
+            auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
+            json = juce::JSON::parse(responseText);
+        }
+
+        auto callback = cb;
+        auto sc = statusCode;
+        auto j = json;
+        if (!aliveFlag->load()) return;
+        juce::MessageManager::callAsync([callback, j, sc, aliveFlag]() {
+            ejTeardownLog("[callAsync] patchJSON completion firing");
+            if (!aliveFlag->load()) { ejTeardownLog("[callAsync] patchJSON: alive=false, bailing"); return; }
+            (*callback)(j, sc);
+            ejTeardownLog("[callAsync] patchJSON completion done");
+        });
+    });
+}
+
+// ============ Saved chains: one place that turns a failure into a sentence ==
+//
+// Codes are from session-b-plugin-kickoff.md section 6 and the backend's
+// lib/dash/chains.js. Two rules the wording has to hold to:
+//  - a 413 names the plugin problem in terms of what the user should do, and
+//    never claims the save failed outright, because the chain still saves
+//    with that slot nulled;
+//  - "not enabled yet" is never reported as "not found". They are different
+//    facts and only one of them is the user's problem.
+juce::String EchoJayAPI::chainErrorMessage(const juce::var& json, int statusCode)
+{
+    if (statusCode >= 200 && statusCode < 300) return {};
+
+    juce::String code, message;
+    if (auto* obj = json.getDynamicObject())
+    {
+        code    = obj->getProperty("error").toString();
+        message = obj->getProperty("message").toString();
+    }
+
+    if (statusCode == 0)
+        return "Could not reach EchoJay. Your chain has not been saved yet.";
+    if (statusCode == 302)
+        return "The development transport is not configured for this deployment.";
+    if (statusCode == 401)
+        return "Your session has expired. Sign in again to save chains.";
+    if (statusCode == 404 && code == "not_enabled")
+        return "Saved chains are not switched on for this build yet.";
+    if (statusCode == 404)
+        return "That chain no longer exists.";
+    if (statusCode == 402 || code == "chain_limit_reached")
+        return "You have reached the free limit of saved chains.";
+    if (code == "state_slot_too_large" || code == "state_total_too_large")
+        return "Some plugin settings were too large to save with this chain.";
+    if (statusCode == 503)
+        return "EchoJay is unavailable right now. Your chain has not been saved.";
+
+    // Anything else: prefer the server's own sentence, which names the
+    // problem, over a generic one that does not.
+    if (message.isNotEmpty()) return message;
+    return "That chain could not be saved (error " + juce::String(statusCode) + ").";
+}
+
 // ============ Generic GET helper ============
 
 void EchoJayAPI::getJSON(const juce::String& path,
@@ -163,13 +343,14 @@ void EchoJayAPI::getJSON(const juce::String& path,
         // the plugin module is what freezes the host seconds after removal.
         if (!aliveFlag->load()) return;
 
-        juce::URL url(endpoint + path);
+        juce::URL url(transportEndpoint(endpoint) + path);
         
         juce::String headers;
         if (token.isNotEmpty())
             headers += "Authorization: Bearer " + token + "\r\n";
         if (devId.isNotEmpty())
             headers += "x-device-id: " + devId + "\r\n";
+        headers += transportHeaders();   // empty in a release build
         
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)

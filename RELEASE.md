@@ -158,6 +158,29 @@ The mitigation lives at a different layer: a chain saved through the API keeps
 its state regardless of what a downgraded build does to the session file,
 which is an argument for shipping both halves of Session B together.
 
+## Release gate: the dev transport must not be in the artefact
+
+The Session B development transport (preview base URL + the Vercel
+protection-bypass secret) is compiled out unless `ECHOJAY_DEV_TRANSPORT` is
+defined, which happens automatically in Debug and otherwise only when someone
+passes `-DECHOJAY_DEV_TRANSPORT=ON`. `build-installer.sh` never does.
+
+That secret grants access to every protected deployment on the project, so
+verify the ARTEFACT rather than trusting the source. This checks what actually
+shipped, which is the only check that answers the question:
+
+```sh
+BIN="build/EchoJay_artefacts/Release/AU/EchoJay V2.component/Contents/MacOS/EchoJay V2"
+for pat in protection-bypass vercel.app dev.json protectionBypass; do
+  printf "%-20s " "$pat"
+  strings "$BIN" | grep -qi "$pat" && echo "FAIL" || echo "clean"
+done
+strings "$BIN" | grep -c "www.echojay.ai"   # must be > 0
+```
+
+All four must print `clean`, and the production endpoint must still be present.
+Run it against the AU, the VST3 and the AAX. Last verified clean on 2.23.49.
+
 ## Quick checklist
 
 1. Bump versions (CMakeLists + build-installer.sh + package-dmg.sh)

@@ -4,7 +4,7 @@ set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures")
 # Minimum macOS: Big Sur (11.0). Covers anything 4+ years old.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(EchoJay VERSION 2.23.48)
+project(EchoJay VERSION 2.23.49)
 
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/
@@ -12,6 +12,28 @@ set(JUCE_PATH "${CMAKE_SOURCE_DIR}/../JUCE" CACHE PATH "Path to JUCE framework")
 
 # Path to AAX SDK — download from developer.avid.com
 set(AAX_SDK_PATH "$ENV{HOME}/AAX_SDK" CACHE PATH "Path to AAX SDK")
+
+# ---------------------------------------------------------------------------
+# Development transport (Session B). OFF, and it must stay off for anything
+# that ships.
+#
+# The V2 API is only reachable on a Vercel PREVIEW deployment, which needs a
+# base URL that changes on every deploy plus an x-vercel-protection-bypass
+# secret. That secret grants access to every protected deployment on the
+# project, so it must never be in a release binary.
+#
+# A grep in the build script is not enough: a grep only catches what someone
+# remembered to look for. This makes it structural instead. With the flag off,
+# the code that reads ~/.echojay/dev.json, the code that sets the header, and
+# the strings themselves are NOT COMPILED, so a shipped plugin can only ever
+# talk to https://www.echojay.ai and there is nothing in the binary to extract.
+#
+# Debug builds get it automatically; Release only if someone asks for it by
+# name, which build-installer.sh never does. Verify the artefact, not the
+# source (see the strings check in RELEASE.md).
+option(ECHOJAY_DEV_TRANSPORT "Compile the dev transport: preview base URL + Vercel bypass header. NEVER for a release build." OFF)
+set(ECHOJAY_DEV_TRANSPORT_DEFS
+    "$<$<OR:$<CONFIG:Debug>,$<BOOL:${ECHOJAY_DEV_TRANSPORT}>>:ECHOJAY_DEV_TRANSPORT=1>")
 
 add_subdirectory(${JUCE_PATH} ${CMAKE_BINARY_DIR}/JUCE)
 
@@ -124,6 +146,7 @@ target_compile_definitions(EchoJay PUBLIC
     JUCE_OPENGL=1
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_VST3=1
+    ${ECHOJAY_DEV_TRANSPORT_DEFS}
 )
 
 target_link_libraries(EchoJay

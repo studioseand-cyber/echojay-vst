@@ -2871,6 +2871,36 @@ juce::var ChainHost::getCachedSlotStatesVar(int maxSlotBytes,
     return juce::var(obj.release());
 }
 
+juce::var ChainHost::buildChainSlotsVar() const
+{
+    juce::Array<juce::var> arr;
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        const auto& s = slots_[(size_t)i];
+        auto o = std::make_unique<juce::DynamicObject>();
+        // 1-BASED and contiguous. The single 0-based-to-1-based conversion
+        // for AI edit ops lives in parseChainEditOps; this is the other
+        // boundary where the outside world counts from one.
+        o->setProperty("n",            i + 1);
+        o->setProperty("plugin",       s.desc.name);
+        o->setProperty("manufacturer", s.desc.manufacturerName);
+        o->setProperty("format",       s.desc.pluginFormatName);
+        o->setProperty("version",      s.desc.version);
+        o->setProperty("uid",          juce::String(s.desc.uniqueId));
+        o->setProperty("bypassed",     s.bypassed);
+        // The AI's prose dial-in guidance is the closest thing this rack has
+        // to a role, and it is display text rather than a short label, so it
+        // is NOT sent as one. An absent role is honest; an invented one would
+        // put words in the model's mouth. Slot settings ride in `state`.
+        o->setProperty("role",         juce::var());
+        // Reserved for Phase 2. The server REJECTS a non-null params, so
+        // this key must stay null until the param map work unblocks it.
+        o->setProperty("params",       juce::var());
+        arr.add(juce::var(o.release()));
+    }
+    return juce::var(arr);
+}
+
 void ChainHost::addStateNote(const juce::String& note) const
 {
     std::lock_guard<std::mutex> lock(stateCacheMutex_);

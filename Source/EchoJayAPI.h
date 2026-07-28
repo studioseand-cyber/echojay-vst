@@ -407,6 +407,57 @@ public:
         else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
     }
 
+    // ============ Saved chains (Session B, B.1 / B.2) ============
+    // Every one of these is gated on DASHBOARD_ENABLED server side, so on
+    // production they answer 404 not_enabled until the flag is flipped. That
+    // is the dark state working, not a fault. Develop against a preview (see
+    // the dev transport).
+    //
+    // All four call back on the MESSAGE THREAD. `json` is the parsed body and
+    // `statusCode` is the HTTP status; callers map it with chainErrorMessage
+    // rather than inventing their own wording.
+
+    // POST /api/v2/chains -> 201 { chain }. Create. Body carries slots and
+    // state; the response returns hasState, never the blob itself.
+    void createChain(const juce::String& body,
+                     std::function<void(const juce::var&, int)> cb)
+    {
+        if (isLoggedIn()) postJSON("/api/v2/chains", body, std::move(cb));
+        else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
+    }
+
+    // PATCH /api/v2/chains/:id -> 200 { chain }. Save over an existing chain.
+    void patchChain(const juce::String& id, const juce::String& body,
+                    std::function<void(const juce::var&, int)> cb)
+    {
+        if (isLoggedIn()) patchJSON("/api/v2/chains/" + id, body, std::move(cb));
+        else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
+    }
+
+    // GET /api/v2/chains -> { chains: [...] }. NEVER returns state; each row
+    // carries hasState so the UI can say whether loading restores settings
+    // without fetching a megabyte to find out.
+    void listChains(std::function<void(const juce::var&, int)> cb)
+    {
+        if (isLoggedIn()) getJSON("/api/v2/chains", std::move(cb));
+        else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
+    }
+
+    // GET /api/v2/chains/:id -> { chain }. The ONLY endpoint that returns
+    // state. Ownership is enforced server side; a chain that is not yours is
+    // 404 not_found, the same answer as one that does not exist.
+    void fetchChain(const juce::String& id,
+                    std::function<void(const juce::var&, int)> cb)
+    {
+        if (isLoggedIn()) getJSON("/api/v2/chains/" + id, std::move(cb));
+        else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
+    }
+
+    // One place that turns a chain-endpoint failure into a sentence for the
+    // user. Keeps the wording consistent and keeps "not enabled yet" from
+    // being reported as "not found". Empty return = success.
+    static juce::String chainErrorMessage(const juce::var& json, int statusCode);
+
     // ============ Local Settings ============
 
     void setEndpoint(const juce::String& url) { apiEndpoint = url; }
@@ -447,7 +498,20 @@ private:
     // Helper: make a POST request with auth header
     void postJSON(const juce::String& endpoint, const juce::String& body,
                   std::function<void(const juce::var& json, int statusCode)> onComplete);
-    
+
+    // Development transport (Session B). Both are the identity/empty case in
+    // a release build: the implementations are wrapped in
+    // #if ECHOJAY_DEV_TRANSPORT, so the preview URL and the bypass secret are
+    // not merely unused but absent from the binary. See CMakeLists.txt.
+    static juce::String transportEndpoint(const juce::String& configured);
+    static juce::String transportHeaders();
+
+    // Helper: PATCH with a JSON body. Same thread and teardown discipline as
+    // postJSON; juce::URL sends POST by default, so the verb is set
+    // explicitly with withHttpRequestCmd.
+    void patchJSON(const juce::String& endpoint, const juce::String& body,
+                   std::function<void(const juce::var& json, int statusCode)> onComplete);
+
 public:
     // Helper: make a GET request with auth header. Public: the editor uses
     // it directly for the auto-parameter-mapping map fetches

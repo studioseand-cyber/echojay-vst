@@ -446,6 +446,17 @@ public:
     juce::StringArray getStateNotes() const;
     void clearStateNotes();
 
+    // ---- Saved chains (B.1) ----------------------------------------------
+    // The `slots` array in the shared chain format: 1-BASED and contiguous n,
+    // plugin name required, params null until Phase 2 (the key exists from
+    // day one so the schema never changes). The server rejects anything else
+    // outright, so this is the one place that shape is built.
+    //
+    // NOT included: `state`. It is a separate top-level field so a share can
+    // serialise slots and physically cannot pick up settings by accident.
+    // Ask getCachedSlotStatesVar for that, with the API caps.
+    juce::var buildChainSlotsVar() const;
+
     // TWO CAP PAIRS, DELIBERATELY DIFFERENT. Both in decoded bytes.
     //
     // SESSION (tighter): an oversized session has no server to reject it. It
