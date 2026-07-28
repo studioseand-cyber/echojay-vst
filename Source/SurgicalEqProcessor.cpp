@@ -39,6 +39,11 @@ void SurgicalEqProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     blockSize_  = samplesPerBlock;
     engine_.prepare (sampleRate, samplesPerBlock, 2);
     pushToEngine();
+
+    // Not RT: clear the tap so a restart never shows the previous session's
+    // audio decaying out of the analyzer.
+    analysisRing_.fill (0.0f);
+    analysisWrite_.store (0, std::memory_order_release);
 }
 
 bool SurgicalEqProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -52,9 +57,58 @@ bool SurgicalEqProcessor::isBusesLayoutSupported (const BusesLayout& layouts) co
 void SurgicalEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
+
+    // BEFORE the engine: the analyzer shows the input, which is what you are
+    // EQing against. Taking it after would show the result of the curve and
+    // make every cut look like it had already been made.
+    pushAnalysis (buffer);
+
     // engine handles bypass/solo internally; passthrough is a no-op copy-free path
     engine_.process (buffer.getArrayOfWritePointers(),
                      buffer.getNumChannels(), buffer.getNumSamples());
+}
+
+void SurgicalEqProcessor::pushAnalysis (const juce::AudioBuffer<float>& buffer) noexcept
+{
+    const int numCh = juce::jmin (buffer.getNumChannels(), 2);
+    const int n     = buffer.getNumSamples();
+    if (numCh <= 0 || n <= 0) return;
+
+    const uint32_t w = analysisWrite_.load (std::memory_order_relaxed);
+
+    if (numCh == 1)
+    {
+        const float* src = buffer.getReadPointer (0);
+        for (int i = 0; i < n; ++i)
+            analysisRing_[(size_t) ((w + (uint32_t) i) & kAnalysisRingMask)] = src[i];
+    }
+    else
+    {
+        const float* l = buffer.getReadPointer (0);
+        const float* r = buffer.getReadPointer (1);
+        for (int i = 0; i < n; ++i)
+            analysisRing_[(size_t) ((w + (uint32_t) i) & kAnalysisRingMask)]
+                = 0.5f * (l[i] + r[i]);
+    }
+
+    // Release: the samples above must be visible before the index that claims
+    // they exist. Unsigned wraparound of the index is well-defined and the
+    // mask makes it the correct ring position regardless.
+    analysisWrite_.store (w + (uint32_t) n, std::memory_order_release);
+}
+
+int SurgicalEqProcessor::readAnalysis (float* dest, int maxSamples) const noexcept
+{
+    if (dest == nullptr || maxSamples <= 0) return 0;
+
+    const int      n     = juce::jmin (maxSamples, kAnalysisRingSize);
+    const uint32_t w     = analysisWrite_.load (std::memory_order_acquire);
+    const uint32_t start = w - (uint32_t) n;      // newest n samples
+
+    for (int i = 0; i < n; ++i)
+        dest[i] = analysisRing_[(size_t) ((start + (uint32_t) i) & kAnalysisRingMask)];
+
+    return n;
 }
 
 // ---- editor ---------------------------------------------------------------

@@ -25,7 +25,9 @@
 #include <JuceHeader.h>
 #include "EqEngine.h"
 #include "EqMove.h"
+#include <array>
 #include <atomic>
+#include <cstdint>
 
 class SurgicalEqProcessor : public juce::AudioProcessor
 {
@@ -73,6 +75,22 @@ public:
     // engine handle for the editor's analyzer / dynamic metering (read-only use)
     echojay::EqEngine&   getEngine() noexcept { return engine_; }
 
+    // ---- analysis tap (audio thread writes, message thread reads) ---------
+    // A pre-EQ mono ring the editor FFTs for its spectrum overlay. Written in
+    // processBlock BEFORE the engine runs, so it shows what is arriving, which
+    // is what you EQ against.
+    //
+    // Deliberately lock-free and deliberately racy: the writer never blocks,
+    // never allocates, and never waits on the reader. A visualiser that tears
+    // one frame under contention is invisible; an audio thread that blocks is
+    // a dropout. The reader takes the most recent samples and accepts that.
+    static constexpr int kAnalysisRingSize = 8192;   // power of two
+    static constexpr int kAnalysisRingMask = kAnalysisRingSize - 1;
+
+    // Copies the most recent `maxSamples` samples in chronological order.
+    // Returns how many were written (capped at the ring size).
+    int readAnalysis (float* dest, int maxSamples) const noexcept;
+
     // ---- AI apply (exact) -------------------------------------------------
     // Parse an eq_bands move (the value of the "eq_bands" key) and apply it as a
     // per-band merge. Returns a short human-readable summary for the chat log.
@@ -92,6 +110,10 @@ public:
     juce::var    currentEqBandsVar() const;
 
 private:
+    // Audio thread. Downmixes the block to mono into analysisRing_. Strictly
+    // RT-safe: bounded fixed-array writes plus one atomic store.
+    void pushAnalysis (const juce::AudioBuffer<float>& buffer) noexcept;
+
     void pushToEngine();                    // publish whole model -> engine (msg thread)
     static echojay::BandSpec specFromVar (const juce::var& entry, bool& disableOut,
                                           int& bandOut, bool& okOut);
@@ -100,6 +122,11 @@ private:
     echojay::BandSpec     bands_[kNumBands];        // authoritative model
     juce::CriticalSection modelLock_;               // guards bands_ (message-thread edits)
     std::atomic<bool>     bypassed_ { false };
+
+    // Analysis ring. The array itself is untouched by any lock; only the write
+    // index is atomic, which is all the reader needs to find the newest span.
+    std::array<float, (size_t) kAnalysisRingSize> analysisRing_ {};
+    std::atomic<uint32_t>                        analysisWrite_ { 0 };
 
     double sampleRate_ = 44100.0;
     int    blockSize_  = 512;
