@@ -164,6 +164,71 @@ static bool isVersionNewer(const juce::String& a, const juce::String& b)
     return false;  // equal — not newer
 }
 
+// ===========================================================================
+//  Saved-chain list cache (Session B, Chain sidebar)
+// ===========================================================================
+// Without this, the Chain sidebar offline is: up to a 10s wait, then an
+// error, then nothing. The feature does not degrade, it disappears. So the
+// last successful list is kept on disk and rendered immediately, and a failed
+// refresh leaves it on screen rather than replacing it with an error.
+//
+// Keyed by a hash of the account email, so switching accounts cannot show you
+// someone else's chains, and the file never contains the address itself.
+//
+// What is NOT cached: `state`. The list has never carried it (that is the
+// point of hasState), so opening a chain still needs the network. A cached
+// row must never imply otherwise.
+static juce::File chainListCacheFile()
+{
+    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+   #if JUCE_MAC
+    return appData.getChildFile("Application Support/EchoJay/chain_list_cache.json");
+   #else
+    return appData.getChildFile("EchoJay/chain_list_cache.json");
+   #endif
+}
+
+static juce::String chainCacheAccountKey(const juce::String& email)
+{
+    if (email.isEmpty()) return {};
+    return juce::SHA256(email.trim().toLowerCase().toUTF8()).toHexString().substring(0, 16);
+}
+
+static void writeChainListCache(const juce::String& email, const juce::var& chains)
+{
+    const auto key = chainCacheAccountKey(email);
+    if (key.isEmpty() || !chains.isArray()) return;
+    auto root = std::make_unique<juce::DynamicObject>();
+    root->setProperty("account", key);
+    // Stored as EPOCH MILLIS, not a formatted string: the label is rendered
+    // in the user's current locale and timezone at paint time, so a machine
+    // that travels does not show a stale clock.
+    root->setProperty("fetchedAtMs", (juce::int64) juce::Time::currentTimeMillis());
+    root->setProperty("chains", chains);
+    auto f = chainListCacheFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(juce::JSON::toString(juce::var(root.release()), true));
+}
+
+// Returns the cached rows, or a void var when there is nothing usable for
+// THIS account. fetchedAtMsOut is 0 when nothing was read.
+static juce::var readChainListCache(const juce::String& email, juce::int64& fetchedAtMsOut)
+{
+    fetchedAtMsOut = 0;
+    const auto key = chainCacheAccountKey(email);
+    if (key.isEmpty()) return {};
+    auto f = chainListCacheFile();
+    if (!f.existsAsFile()) return {};
+    auto parsed = juce::JSON::parse(f.loadFileAsString());
+    auto* obj = parsed.getDynamicObject();
+    if (obj == nullptr) return {};
+    // A cache written by a different account is not ours to show.
+    if (obj->getProperty("account").toString() != key) return {};
+    fetchedAtMsOut = (juce::int64) obj->getProperty("fetchedAtMs");
+    auto chains = obj->getProperty("chains");
+    return chains.isArray() ? chains : juce::var();
+}
+
 static juce::File updateDismissFile()
 {
     auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
@@ -1579,7 +1644,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // Save overwrites the loaded chain; with nothing loaded it IS Save As.
     chainSaveBtn.onClick   = [this] { saveChainToApi(false); };
     chainSaveAsBtn.onClick = [this] { saveChainToApi(true);  };
-    chainOpenBtn.onClick   = [this] { showSavedChainsMenu(); };
+    // Open switches the sidebar to Chains mode rather than opening its own
+    // menu. Removing it entirely would strand anyone with the sidebar
+    // collapsed, since that is then the only route to their chains; a second
+    // popup list would be a second implementation to keep honest.
+    chainOpenBtn.onClick   = [this]
+    {
+        if (chainChatCollapsed_) { chainChatCollapsed_ = false; }
+        setChainSidebarMode(true);
+    };
 
     // Debug: raw chain JSON viewer — shown after each build, temporary
     chainDebugJsonBox.setMultiLine(true, true);
@@ -11401,7 +11474,30 @@ void EchoJayEditor::paint(juce::Graphics& g)
 
     g.setColour(C::text2);
     g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-    g.drawText("AI ASSISTANT", chatX + 14, topH, chatW, 32, juce::Justification::centredLeft);
+    g.drawText(processorRef.chainSidebarChainsMode && currentTab == Tab::Chain
+                 ? "SAVED CHAINS" : "AI ASSISTANT",
+               chatX + 14, topH, chatW, 32, juce::Justification::centredLeft);
+
+    // AI | Chains segmented switch. Rects come from resized(); nothing here
+    // measures or stores geometry.
+    if (!chainModeAiRect_.isEmpty())
+    {
+        const bool chainsMode = processorRef.chainSidebarChainsMode;
+        auto seg = [&g](juce::Rectangle<int> r, const juce::String& label, bool on)
+        {
+            g.setColour(on ? juce::Colour(0xff22d3ee).withAlpha(0.22f)
+                           : juce::Colour(0xff10131c));
+            g.fillRoundedRectangle(r.toFloat(), 4.0f);
+            g.setColour(on ? juce::Colour(0xff22d3ee).withAlpha(0.55f)
+                           : juce::Colour(0xff2a3040));
+            g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 4.0f, 1.0f);
+            g.setColour(on ? juce::Colour(0xffd8f4fa) : C::text3);
+            g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+            g.drawText(label, r, juce::Justification::centred);
+        };
+        seg(chainModeAiRect_,     "AI",     !chainsMode);
+        seg(chainModeChainsRect_, "CHAINS",  chainsMode);
+    }
 
     // Channel banner: THE channel selector (mouseDown opens the menu).
     // Paint consumes the STORED rect + CACHED text only; the rect is
@@ -12714,6 +12810,89 @@ void EchoJayEditor::resized()
     int chatScrollH = juce::jmax(50, chatScrollBottom - chatScrollTop);
     chatScroll.setBounds(chatStartX + chatAvatarReserve, chatScrollTop,
                          chatW - chatAvatarReserve - 2, chatScrollH);
+
+    // ---- Chain sidebar: AI | Chains ---------------------------------------
+    // THE SOLE GEOMETRY AUTHOR for the mode switch and the chain list. Every
+    // rect below is stored here and only consumed by paint() and mouseDown;
+    // neither measures anything. Authored UNCONDITIONALLY with the mode test
+    // inside the expression, so switching tabs or modes always runs both
+    // ways: a rect that is only written on one branch is the leak that has
+    // now cost this file three overlap bugs.
+    {
+        const bool chainSidebar = (currentTab == Tab::Chain) && !compactMode
+                               && !visualOnlyMode && !reviewOverlay.visibleState
+                               && !chainChatCollapsed_;
+        const bool chainsMode   = chainSidebar && processorRef.chainSidebarChainsMode;
+
+        if (chainSidebar)
+        {
+            // Segmented switch, right-aligned in the existing AI ASSISTANT
+            // header strip. A mode on a surface that already exists, so no
+            // new band and nothing below it moves.
+            const int segW = 52, segH = 18, segY = topH + 7;
+            const int segRight = chatStartX + chatW - 10;
+            chainModeChainsRect_ = { segRight - segW, segY, segW, segH };
+            chainModeAiRect_     = { segRight - segW * 2 - 2, segY, segW, segH };
+        }
+        else
+        {
+            chainModeAiRect_ = {};
+            chainModeChainsRect_ = {};
+        }
+
+        chainRowRects_.clear();
+        chainRowStarRects_.clear();
+        chainListStatusRect_ = {};
+
+        if (chainsMode)
+        {
+            const int listX = chatStartX + 10;
+            const int listW = chatW - 20;
+            chainListStatusRect_ = { listX, chatScrollTop + 2, listW, 14 };
+
+            int y = chainListStatusRect_.getBottom() + 8;
+            const int rowH = 38, headH = 18, gap = 4;
+            const int listBottom = chatStartX >= 0 ? chatScrollBottom : y;
+            for (int i = 0; i < (int)chainDisplayRows_.size(); ++i)
+            {
+                const bool heading = chainRowIsHeading_[(size_t)i] != 0;
+                const int h = heading ? headH : rowH;
+                if (y + h > listBottom)
+                {
+                    // Off the bottom: an EMPTY rect, so paint() skips it and
+                    // mouseDown cannot hit a row that is not on screen.
+                    chainRowRects_.push_back({});
+                    chainRowStarRects_.push_back({});
+                    continue;
+                }
+                juce::Rectangle<int> r { listX, y, listW, h };
+                chainRowRects_.push_back(r);
+                chainRowStarRects_.push_back(heading ? juce::Rectangle<int>()
+                                                     : juce::Rectangle<int>(r.getX() + 4,
+                                                                            r.getY() + 10,
+                                                                            18, 18));
+                y += h + (heading ? 2 : gap);
+            }
+        }
+
+        // Chat components are hidden in Chains mode and restored in AI mode.
+        // Hidden, NOT destroyed: the thread lives on the processor and these
+        // only render it, which is what makes coming back show the same
+        // conversation rather than a fresh one.
+        if (chainsMode)
+        {
+            chatScroll.setVisible(false);
+            chatInput.setVisible(false);
+            chatSendBtn.setVisible(false);
+            chatTextSizeBtn.setVisible(false);
+            for (int i = 0; i < kMaxChainBuildBtns; ++i)
+                chainBuildBtns[(size_t)i].setVisible(false);
+            for (int i = 0; i < kMaxWavePlayBtns; ++i)
+                wavePlayOverlays[(size_t)i].setVisible(false);
+            for (int i = 0; i < kMaxAskChips; ++i)
+                askChipBtns[(size_t)i].setVisible(false);
+        }
+    }
     // Set chatContent width here, but DO NOT cap height to viewport — the timer
     // callback computes the real content height from the message list and sets it
     // there. Capping to viewport height was the bug that broke scrolling.
@@ -16783,6 +16962,291 @@ void EchoJayEditor::pollLinkCtrlAck(const juce::String& linkAddr, int seq, int a
 //  did not choose to save is not one they want back.
 // =============================================================================
 
+// Consumes rects authored by resized(). Measures nothing, stores nothing.
+void EchoJayEditor::paintChainSidebar(juce::Graphics& g, int chatX, int chatW,
+                                      int topH, int bottomY)
+{
+    juce::ignoreUnused(topH);
+
+    // Staleness line. Says WHEN, not just "cached": the user knows whether
+    // they have saved anything since 14:32, and can judge for themselves
+    // whether this list is worth trusting. "Showing cached list" makes them
+    // guess.
+    if (!chainListStatusRect_.isEmpty())
+    {
+        juce::String line;
+        juce::Colour col = C::text3;
+        if (chainListLoading_ && chainRows_.empty())
+            line = juce::String::fromUTF8("Loading your chains\xe2\x80\xa6");
+        else if (chainListFetchedAtMs_ > 0)
+        {
+            line = "Last updated "
+                 + juce::Time(chainListFetchedAtMs_).toString(false, true, false, true);
+            if (chainListError_.isNotEmpty()) col = juce::Colour(0xffE8C070);
+        }
+        if (chainListError_.isNotEmpty() && chainRows_.empty())
+        {
+            line = chainListError_;
+            col  = juce::Colour(0xffE8C070);
+        }
+        if (line.isNotEmpty())
+        {
+            g.setColour(col);
+            g.setFont(juce::Font(juce::FontOptions(10.0f)));
+            g.drawText(line, chainListStatusRect_, juce::Justification::centredLeft, true);
+        }
+    }
+
+    for (int i = 0; i < (int)chainRowRects_.size(); ++i)
+    {
+        auto r = chainRowRects_[(size_t)i];
+        if (r.isEmpty() || r.getBottom() > bottomY) continue;
+
+        if (chainRowIsHeading_[(size_t)i] != 0)
+        {
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+            g.drawText(chainHeadingText_[(size_t)i], r.getX() + 2, r.getY(),
+                       r.getWidth(), r.getHeight(),
+                       juce::Justification::centredLeft);
+            continue;
+        }
+
+        const auto& row = chainDisplayRows_[(size_t)i];
+        const bool loaded = row.id == processorRef.savedChainId;
+
+        g.setColour(loaded ? juce::Colour(0xff16233a) : juce::Colour(0xff10131c));
+        g.fillRoundedRectangle(r.toFloat(), 5.0f);
+        if (loaded)
+        {
+            g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.45f));
+            g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, 1.0f);
+        }
+
+        auto star = chainRowStarRects_[(size_t)i];
+        g.setColour(row.favourite ? juce::Colour(0xffE8C070) : juce::Colour(0xff5a6070));
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
+        g.drawText(row.favourite ? juce::String::fromUTF8("\xe2\x98\x85")
+                                 : juce::String::fromUTF8("\xe2\x98\x86"),
+                   star, juce::Justification::centred);
+
+        const int textX = star.getRight() + 4;
+        const int textW = r.getRight() - textX - 8;
+        g.setColour(C::text);
+        g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)));
+        g.drawText(row.name, textX, r.getY() + 3, textW, 14,
+                   juce::Justification::centredLeft, true);
+
+        // hasState is the honest half of this row: a chain saved without
+        // settings rebuilds the rack and leaves every knob at its default,
+        // and the user should know BEFORE choosing it, not after.
+        juce::String sub = juce::String(row.slotCount)
+                         + (row.slotCount == 1 ? " slot" : " slots");
+        if (row.updatedAt.isNotEmpty()) sub += ", " + row.updatedAt.substring(0, 10);
+        sub += row.hasState ? ", settings saved" : ", settings not saved";
+        g.setColour(row.hasState ? C::text3 : juce::Colour(0xff8A7040));
+        g.setFont(juce::Font(juce::FontOptions(9.5f)));
+        g.drawText(sub, textX, r.getY() + 17, textW, 12,
+                   juce::Justification::centredLeft, true);
+    }
+
+    if (chainRows_.empty() && !chainListLoading_ && chainListError_.isEmpty())
+    {
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.drawText("No saved chains yet. Build a chain, then Save As.",
+                   chatX + 12, chainListStatusRect_.getBottom() + 16,
+                   chatW - 24, 34, juce::Justification::centredLeft, true);
+    }
+}
+
+// True when the chain sidebar is showing the saved-chain list instead of the
+// conversation. The chat body's paint pass consults this ONE place rather
+// than re-deriving the condition, so the two can never disagree.
+bool EchoJayEditor::chainSidebarInChainsMode() const
+{
+    return currentTab == Tab::Chain && processorRef.chainSidebarChainsMode
+        && !compactMode && !visualOnlyMode && !chainChatCollapsed_;
+}
+
+// ---- Chain sidebar: AI | Chains -------------------------------------------
+
+void EchoJayEditor::setChainSidebarMode(bool chainsMode)
+{
+    if (processorRef.chainSidebarChainsMode == chainsMode) return;
+    processorRef.chainSidebarChainsMode = chainsMode;
+
+    // NOTHING about the conversation is torn down here. The thread lives on
+    // the processor (chatHistory) and the chat components only render it, so
+    // switching modes is a visibility change and coming back shows the same
+    // thread mid-sentence. That is why this is a mode and not a second panel.
+    if (chainsMode)
+    {
+        // Show what we have IMMEDIATELY from cache, then refresh behind it.
+        // An empty pane that fills in later reads as broken even when the
+        // network is fine.
+        juce::int64 at = 0;
+        auto cached = readChainListCache(api.getUserInfo().email, at);
+        if (cached.isArray() && at > 0)
+            applyChainRows(cached, at, true);
+        refreshChainList();
+    }
+    resized();
+    repaint();
+}
+
+void EchoJayEditor::refreshChainList()
+{
+    if (chainListLoading_) return;
+    chainListLoading_ = true;
+    chainListError_.clear();
+    repaint();
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.listChains([safeThis](const juce::var& json, int sc)
+    {
+        if (safeThis == nullptr) return;
+        safeThis->chainListLoading_ = false;
+
+        const auto err = EchoJayAPI::chainErrorMessage(json, sc,
+                                                       EchoJayAPI::ChainOp::List);
+        if (err.isNotEmpty())
+        {
+            // KEEP whatever is on screen. A failed refresh must not replace a
+            // usable list with an error: the rows are still the user's best
+            // available answer, and the staleness label already says how old
+            // they are.
+            safeThis->chainListError_ = err;
+            safeThis->repaint();
+            return;
+        }
+
+        juce::var chains;
+        if (auto* obj = json.getDynamicObject())
+            chains = obj->getProperty("chains");
+        if (!chains.isArray()) { safeThis->repaint(); return; }
+
+        writeChainListCache(safeThis->api.getUserInfo().email, chains);
+        safeThis->applyChainRows(chains, juce::Time::currentTimeMillis(), false);
+    });
+}
+
+void EchoJayEditor::applyChainRows(const juce::var& chains, juce::int64 fetchedAtMs,
+                                   bool fromCache)
+{
+    chainRows_.clear();
+    if (auto* arr = chains.getArray())
+    {
+        for (auto& v : *arr)
+        {
+            auto* o = v.getDynamicObject();
+            if (o == nullptr) continue;
+            ChainRow r;
+            r.id        = o->getProperty("id").toString();
+            r.name      = o->getProperty("name").toString();
+            r.slotCount = (int)o->getProperty("slotCount");
+            r.hasState  = (bool)o->getProperty("hasState");
+            r.favourite = (bool)o->getProperty("favourite");
+            r.updatedAt = o->getProperty("updatedAt").toString();
+            if (r.id.isNotEmpty()) chainRows_.push_back(std::move(r));
+        }
+    }
+    chainListFetchedAtMs_ = fetchedAtMs;
+    chainListFromCache_   = fromCache;
+    if (!fromCache) chainListError_.clear();
+    rebuildChainDisplayRows();
+    resized();    // row rects are geometry, and geometry is resized()'s job
+    repaint();
+}
+
+void EchoJayEditor::rebuildChainDisplayRows()
+{
+    chainDisplayRows_.clear();
+    chainRowIsHeading_.clear();
+    chainHeadingText_.clear();
+
+    // One pass per group, in display order. Adding IMPORTED later is one more
+    // block here plus its filter; nothing else changes. It is NOT rendered
+    // now, because sharing does not exist until D3 and a section that is
+    // always empty teaches the user the pane is broken.
+    struct Group { const char* heading; bool wantFavourite; };
+    const Group groups[] = { { "FAVOURITES", true }, { "SAVED", false } };
+
+    for (auto& g : groups)
+    {
+        std::vector<ChainRow> members;
+        for (auto& r : chainRows_)
+            if (r.favourite == g.wantFavourite) members.push_back(r);
+        if (members.empty()) continue;   // no heading for an empty group
+
+        chainRowIsHeading_.push_back(1);
+        chainHeadingText_.push_back(g.heading);
+        chainDisplayRows_.push_back({});          // placeholder, never drawn as a row
+
+        for (auto& m : members)
+        {
+            chainRowIsHeading_.push_back(0);
+            chainHeadingText_.push_back({});
+            chainDisplayRows_.push_back(m);
+        }
+    }
+}
+
+void EchoJayEditor::toggleChainFavourite(int displayIdx)
+{
+    if (displayIdx < 0 || displayIdx >= (int)chainDisplayRows_.size()) return;
+    if (chainRowIsHeading_[(size_t)displayIdx] != 0) return;
+
+    const auto id      = chainDisplayRows_[(size_t)displayIdx].id;
+    const bool wantFav = !chainDisplayRows_[(size_t)displayIdx].favourite;
+    if (id.isEmpty()) return;
+
+    // Optimistic: the star flips now and the row regroups, because waiting on
+    // a round trip to acknowledge a star feels broken. The server is the
+    // authority though, so a failure puts it back rather than leaving a lie
+    // on screen.
+    for (auto& r : chainRows_) if (r.id == id) r.favourite = wantFav;
+    rebuildChainDisplayRows();
+    resized();
+    repaint();
+
+    auto* body = new juce::DynamicObject();
+    body->setProperty("favourite", wantFav);   // strict boolean, as the API requires
+    const auto json = juce::JSON::toString(juce::var(body), true);
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.patchChain(id, json, [safeThis, id, wantFav](const juce::var& resp, int sc)
+    {
+        if (safeThis == nullptr) return;
+        const auto err = EchoJayAPI::chainErrorMessage(resp, sc,
+                                                       EchoJayAPI::ChainOp::List);
+        if (err.isEmpty())
+        {
+            // Persist the new star so the cached list is not a stale lie the
+            // next time the user opens the pane offline.
+            juce::Array<juce::var> arr;
+            for (auto& r : safeThis->chainRows_)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty("id",        r.id);
+                o->setProperty("name",      r.name);
+                o->setProperty("slotCount", r.slotCount);
+                o->setProperty("hasState",  r.hasState);
+                o->setProperty("favourite", r.favourite);
+                o->setProperty("updatedAt", r.updatedAt);
+                arr.add(juce::var(o));
+            }
+            writeChainListCache(safeThis->api.getUserInfo().email, juce::var(arr));
+            return;
+        }
+        for (auto& r : safeThis->chainRows_) if (r.id == id) r.favourite = !wantFav;
+        safeThis->chainListError_ = err;
+        safeThis->rebuildChainDisplayRows();
+        safeThis->resized();
+        safeThis->repaint();
+    });
+}
+
 void EchoJayEditor::setChainSaveStatus(const juce::String& s)
 {
     chainSaveStatus_   = s;
@@ -18995,6 +19459,25 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     // prompt's own input/buttons still work.
     if (projectPromptVisible)
         return;
+
+    // ---- Chain sidebar: AI | Chains ----
+    // CONSUMES the rects resized() stored. An empty rect (wrong tab, wrong
+    // mode, scrolled off the bottom) cannot contain a point, so no click can
+    // reach something that is not on screen.
+    if (chainModeAiRect_.contains(pos))     { setChainSidebarMode(false); return; }
+    if (chainModeChainsRect_.contains(pos)) { setChainSidebarMode(true);  return; }
+
+    for (int i = 0; i < (int)chainRowRects_.size(); ++i)
+    {
+        if (!chainRowRects_[(size_t)i].contains(pos)) continue;
+        if (chainRowIsHeading_[(size_t)i] != 0) return;      // heading, not a row
+        // The star is checked FIRST: it sits inside the row rect, so a row
+        // hit test that ran first would swallow every favourite click.
+        if (chainRowStarRects_[(size_t)i].contains(pos)) { toggleChainFavourite(i); return; }
+        const auto& row = chainDisplayRows_[(size_t)i];
+        if (row.id.isNotEmpty()) openSavedChain(row.id, row.name);
+        return;
+    }
 
     // Channel banner = THE channel selector (painted control; the rect is
     // authored in resized, so this hit test measures nothing).

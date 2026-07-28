@@ -291,7 +291,8 @@ void EchoJayAPI::patchJSON(const juce::String& path, const juce::String& body,
 //    with that slot nulled;
 //  - "not enabled yet" is never reported as "not found". They are different
 //    facts and only one of them is the user's problem.
-juce::String EchoJayAPI::chainErrorMessage(const juce::var& json, int statusCode)
+juce::String EchoJayAPI::chainErrorMessage(const juce::var& json, int statusCode,
+                                           ChainOp op)
 {
     if (statusCode >= 200 && statusCode < 300) return {};
 
@@ -302,33 +303,55 @@ juce::String EchoJayAPI::chainErrorMessage(const juce::var& json, int statusCode
         message = obj->getProperty("message").toString();
     }
 
+    // NO CONNECTION. Worth retrying, and the wording must say so. Saying
+    // "your chain has not been saved" when the user was only LOOKING at a
+    // list sends them hunting a bug that does not exist.
     if (statusCode == 0)
+    {
+        if (op == ChainOp::List)
+            return "Could not reach EchoJay, so this list may be out of date.";
+        if (op == ChainOp::Open)
+            return "Could not reach EchoJay, so that chain could not be opened."
+                   " It is still saved; try again when you are back online.";
         return "Could not reach EchoJay. Your chain has not been saved yet.";
+    }
     if (statusCode == 302)
         return "The development transport is not configured for this deployment.";
     if (statusCode == 401)
-        return "Your session has expired. Sign in again to save chains.";
+        return op == ChainOp::Save ? "Your session has expired. Sign in again to save chains."
+                                   : "Your session has expired. Sign in again to see your chains.";
     if (statusCode == 404 && code == "not_enabled")
         return "Saved chains are not switched on for this build yet.";
+    // GONE, not unreachable. Retrying will never help, and a cached row that
+    // outlived its chain lands here: the distinction is the whole point.
     if (statusCode == 404)
-        return "That chain no longer exists.";
+        return op == ChainOp::Open
+                 ? "That chain no longer exists. It may have been deleted somewhere else."
+                 : "That chain no longer exists.";
     if (statusCode == 402 || code == "chain_limit_reached")
         return "You have reached the free limit of saved chains.";
     if (code == "state_slot_too_large" || code == "state_total_too_large")
         return "Some plugin settings were too large to save with this chain.";
     if (statusCode == 503)
-        return "EchoJay is unavailable right now. Your chain has not been saved.";
+        return op == ChainOp::Save
+                 ? "EchoJay is unavailable right now. Your chain has not been saved."
+                 : "EchoJay is unavailable right now.";
 
     // Anything else: prefer the server's own sentence, which names the
     // problem, over a generic one that does not.
     if (message.isNotEmpty()) return message;
+    if (op == ChainOp::List) return "Your chains could not be loaded (error "
+                                  + juce::String(statusCode) + ").";
+    if (op == ChainOp::Open) return "That chain could not be opened (error "
+                                  + juce::String(statusCode) + ").";
     return "That chain could not be saved (error " + juce::String(statusCode) + ").";
 }
 
 // ============ Generic GET helper ============
 
 void EchoJayAPI::getJSON(const juce::String& path,
-                          std::function<void(const juce::var& json, int statusCode)> onComplete)
+                          std::function<void(const juce::var& json, int statusCode)> onComplete,
+                          int timeoutMs)
 {
     auto endpoint = apiEndpoint;
     auto token = authToken;
@@ -355,7 +378,7 @@ void EchoJayAPI::getJSON(const juce::String& path,
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                            .withExtraHeaders(headers)
-                           .withConnectionTimeoutMs(60000)
+                           .withConnectionTimeoutMs(timeoutMs)
                            .withStatusCode(&statusCode);
         
         auto stream = url.createInputStream(options);

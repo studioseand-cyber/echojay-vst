@@ -292,6 +292,14 @@ public:
     // as Save As.
     juce::String savedChainId;
     juce::String savedChainName;
+
+    // Chain sidebar mode: false = AI assistant, true = saved-chain browser.
+    // On the processor for the same reason as the identity above: Logic
+    // recreates the editor on every Link window switch, and a mode that
+    // silently reverts mid-task is the kind of small wrongness that erodes
+    // trust in everything else. NOT persisted to plugin state: which pane
+    // you last looked at is not worth writing into a project file.
+    bool chainSidebarChainsMode = false;
     bool chainWarningDismissed = false;
 
     // A/B playback — toggle between DAW audio and reference WAV

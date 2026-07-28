@@ -1078,6 +1078,51 @@ private:
     // Transient one-liner in the chain header ("Saved \"X\""). Past tense is
     // legitimate because saving IS something the user did, but it says only
     // that a chain was saved and never implies anything about the sound.
+    // ---- Chain sidebar: AI | Chains ---------------------------------------
+    // A MODE on the existing sidebar, not new chrome. The mode itself lives
+    // on the processor (see chainSidebarChainsMode) so a Logic editor
+    // recreate cannot flip it; the CONVERSATION survives because it always
+    // lived on the processor too, and switching modes only toggles
+    // visibility. Nothing about the thread is torn down or rebuilt.
+    //
+    // GEOMETRY: every rect below is authored in resized() and consumed by
+    // paint() and mouseDown. paint() measures nothing.
+    juce::Rectangle<int> chainModeAiRect_, chainModeChainsRect_;
+    juce::Rectangle<int> chainListStatusRect_;
+
+    struct ChainRow {
+        juce::String id, name, updatedAt;
+        int  slotCount = 0;
+        bool hasState  = false;
+        bool favourite = false;
+    };
+    std::vector<ChainRow>              chainRows_;
+    // Parallel to chainRows_ AFTER grouping; index i of these is the same
+    // chain as displayRows_[i]. Authored by resized(), never by paint().
+    std::vector<ChainRow>              chainDisplayRows_;
+    std::vector<juce::Rectangle<int>>  chainRowRects_;
+    std::vector<juce::Rectangle<int>>  chainRowStarRects_;
+    // -1 = not a row (a group heading occupies the slot instead).
+    std::vector<int>                   chainRowIsHeading_;
+    std::vector<juce::String>          chainHeadingText_;
+
+    juce::int64  chainListFetchedAtMs_ = 0;   // 0 = never fetched
+    bool         chainListFromCache_   = false;
+    bool         chainListLoading_     = false;
+    juce::String chainListError_;
+
+    void setChainSidebarMode(bool chainsMode);
+    void refreshChainList();
+    void applyChainRows(const juce::var& chains, juce::int64 fetchedAtMs, bool fromCache);
+    void toggleChainFavourite(int displayIdx);
+    void paintChainSidebar(juce::Graphics& g, int chatX, int chatW, int topH, int bottomY);
+    // Group order is FAVOURITES then SAVED. Imported is deliberately absent:
+    // sharing does not exist until D3, and a permanently empty section is the
+    // same mistake as an empty rig. The grouping is a list of (heading, rows)
+    // precisely so Imported drops in as one more entry when it has content.
+    void rebuildChainDisplayRows();
+    bool chainSidebarInChainsMode() const;
+
     juce::String chainSaveStatus_;
     juce::uint32 chainSaveStatusAt_ = 0;
     bool         chainSaveInFlight_ = false;

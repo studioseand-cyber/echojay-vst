@@ -437,9 +437,14 @@ public:
     // GET /api/v2/chains -> { chains: [...] }. NEVER returns state; each row
     // carries hasState so the UI can say whether loading restores settings
     // without fetching a megabyte to find out.
+    // 10s, not the 60s default: the sidebar has a CACHED list to fall back
+    // on, so a fast honest failure beats a minute of "Loading" followed by
+    // the same failure. fetchChain below deliberately keeps the default,
+    // because opening a chain has no fallback and waiting beats failing.
+    static constexpr int kChainListTimeoutMs = 10000;
     void listChains(std::function<void(const juce::var&, int)> cb)
     {
-        if (isLoggedIn()) getJSON("/api/v2/chains", std::move(cb));
+        if (isLoggedIn()) getJSON("/api/v2/chains", std::move(cb), kChainListTimeoutMs);
         else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
     }
 
@@ -456,7 +461,13 @@ public:
     // One place that turns a chain-endpoint failure into a sentence for the
     // user. Keeps the wording consistent and keeps "not enabled yet" from
     // being reported as "not found". Empty return = success.
-    static juce::String chainErrorMessage(const juce::var& json, int statusCode);
+    // Which operation failed, because the same status means different things
+    // to a user depending on what they were doing. A list failure that says
+    // "your chain has not been saved" sends someone hunting a bug that does
+    // not exist.
+    enum class ChainOp { Save, List, Open };
+    static juce::String chainErrorMessage(const juce::var& json, int statusCode,
+                                          ChainOp op = ChainOp::Save);
 
     // ============ Local Settings ============
 
@@ -516,8 +527,17 @@ public:
     // Helper: make a GET request with auth header. Public: the editor uses
     // it directly for the auto-parameter-mapping map fetches
     // (GET /api/params/maps?fps=...).
+    // timeoutMs defaults to the value every caller has always used. Only
+    // pass something shorter where the caller has SOMETHING TO SHOW when it
+    // expires. getJSON is shared with the whole workspace blob
+    // (GET /api/data), the param-map fetch (up to 500 fingerprints per
+    // request), the startup config read and the device-pairing long poll; a
+    // blanket cut would turn "slow but working" into "fails" on a poor
+    // connection and would break pairing outright.
+    static constexpr int kDefaultGetTimeoutMs = 60000;
     void getJSON(const juce::String& endpoint,
-                 std::function<void(const juce::var& json, int statusCode)> onComplete);
+                 std::function<void(const juce::var& json, int statusCode)> onComplete,
+                 int timeoutMs = kDefaultGetTimeoutMs);
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EchoJayAPI)
