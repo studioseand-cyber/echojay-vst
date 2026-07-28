@@ -139,6 +139,22 @@ private:
     void addBandAt  (juce::Point<float> p);
     void disableBand (int i);
 
+    // ---- analyzer (Step B) --------------------------------------------------
+    static constexpr int   kFftOrder    = 11;        // 2048-point
+    static constexpr int   kFftSize     = 1 << kFftOrder;
+    static constexpr int   kSpecBins    = kFftSize / 2;
+    static constexpr float kSpecFloorDb = -100.0f;   // bottom of the graph
+    static constexpr float kSpecCeilDb  = 0.0f;      // top of the graph (dBFS)
+    static constexpr float kSpecFallDbPerSec = 120.0f;  // fast rise, slow fall
+
+    void  updateSpectrum();          // timer: drain the tap, FFT, decay-smooth
+    void  rebuildSpectrumPath();     // per-PIXEL resample onto the log axis
+    void  paintSpectrum (juce::Graphics& g) const;
+    float specDbToY (float db) const noexcept;   // analyzer's OWN vertical scale
+
+    // ---- dynamic metering (Step B) -----------------------------------------
+    bool  updateDynamicMeters();     // returns true when a value moved visibly
+
     // ---- painting -----------------------------------------------------------
     void rebuildCurves();
     void appendCurve (juce::Path& dest, int n, int step, bool closeToZeroLine) const;
@@ -166,6 +182,21 @@ private:
     juce::Path       totalCurve_, totalFill_, bandCurve_;
     std::vector<float> curveFreqs_, curveMags_;
     bool  curvesDirty_ = true;
+
+    // Analyzer state. Every buffer is sized once in the constructor and reused
+    // — nothing here allocates on the timer or in paint.
+    juce::dsp::FFT   fft_ { kFftOrder };
+    juce::dsp::WindowingFunction<float> window_
+        { (size_t) kFftSize, juce::dsp::WindowingFunction<float>::hann, false };
+    std::vector<float> fftScratch_;   // kFftSize  drained samples
+    std::vector<float> fftData_;      // 2*kFftSize, as performFrequencyOnly… needs
+    std::vector<float> specDb_;       // kSpecBins, decay-smoothed magnitudes
+    juce::Path         spectrumPath_;
+    bool               analyzerOn_ = true;
+
+    // Live dynamic-band gain reduction, polled on the timer (dB, <= 0 when
+    // the band is pulling down).
+    float dynGainDb_[kNumBands] = {};
 
     // global
     juce::TextButton bypassBtn_   { "BYPASS" };

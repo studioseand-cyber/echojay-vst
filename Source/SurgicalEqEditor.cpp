@@ -163,6 +163,12 @@ SurgicalEqEditor::SurgicalEqEditor (SurgicalEqProcessor& p)
     updateStripVisibility();
     syncControlsFromModel();
 
+    // Analyzer scratch: sized ONCE here, reused for the life of the editor.
+    // Allocating in the timer or in paint would put malloc on a 30 Hz path.
+    fftScratch_.assign ((size_t) kFftSize, 0.0f);
+    fftData_.assign    ((size_t) kFftSize * 2, 0.0f);
+    specDb_.assign     ((size_t) kSpecBins, kSpecFloorDb);
+
     setSize (640, 420);
     startTimerHz (30);
 }
@@ -220,8 +226,21 @@ void SurgicalEqEditor::buildControls()
     };
 
     styleButton (analyzerBtn_, true);
-    analyzerBtn_.setEnabled (false);          // wired in Step B
-    analyzerBtn_.setTooltip ("Spectrum analyzer — arrives in Step B");
+    analyzerBtn_.setToggleState (analyzerOn_, juce::dontSendNotification);
+    analyzerBtn_.setTooltip ("Spectrum analyzer (pre-EQ input)");
+    analyzerBtn_.onClick = [this]
+    {
+        analyzerOn_ = analyzerBtn_.getToggleState();
+        if (! analyzerOn_)
+        {
+            // Off means OFF: no FFT on the timer, nothing drawn, and the
+            // decay state reset so re-enabling starts from silence rather
+            // than from a frozen frame minutes old.
+            spectrumPath_.clear();
+            std::fill (specDb_.begin(), specDb_.end(), kSpecFloorDb);
+        }
+        repaint();
+    };
 
     // ---- band type / slope ------------------------------------------------
     typeBox_.addItem ("Bell",       1);
@@ -662,17 +681,33 @@ void SurgicalEqEditor::timerCallback()
         curvesDirty_ = true;
     }
 
+    bool needsRepaint = changed;
+
     if (bypassBtn_.getToggleState() != proc_.isBypassed())
     {
         bypassBtn_.setToggleState (proc_.isBypassed(), juce::dontSendNotification);
-        repaint();
+        needsRepaint = true;
     }
+
+    // Analyzer: no FFT and no path work at all while it is switched off.
+    if (analyzerOn_)
+    {
+        updateSpectrum();
+        rebuildSpectrumPath();
+        needsRepaint = true;
+    }
+
+    // Dynamic metering repaints only when a band's action actually moved, so
+    // a rack of static bands costs nothing per frame.
+    if (updateDynamicMeters()) needsRepaint = true;
 
     if (curvesDirty_)
     {
         rebuildCurves();
-        repaint();
+        needsRepaint = true;
     }
+
+    if (needsRepaint) repaint();
 }
 
 // ---------------------------------------------------------------------------
@@ -699,6 +734,132 @@ void SurgicalEqEditor::resized()
 
     layoutStrip();
     curvesDirty_ = true;
+}
+
+// ---------------------------------------------------------------------------
+// analyzer
+// ---------------------------------------------------------------------------
+float SurgicalEqEditor::specDbToY (float db) const noexcept
+{
+    // The analyzer has its OWN vertical scale (dBFS), independent of the EQ's
+    // ±dB grid — the two measure different things and must not share an axis.
+    const float t = juce::jlimit (0.0f, 1.0f,
+        (db - kSpecFloorDb) / (kSpecCeilDb - kSpecFloorDb));
+    return (float) graphBounds_.getBottom() - t * (float) graphBounds_.getHeight();
+}
+
+void SurgicalEqEditor::updateSpectrum()
+{
+    proc_.readAnalysis (fftScratch_.data(), kFftSize);
+
+    // performFrequencyOnlyForwardTransform wants 2*size; the upper half is
+    // scratch for the transform and must start zeroed.
+    std::copy (fftScratch_.begin(), fftScratch_.end(), fftData_.begin());
+    std::fill (fftData_.begin() + kFftSize, fftData_.end(), 0.0f);
+
+    window_.multiplyWithWindowingTable (fftData_.data(), (size_t) kFftSize);
+    fft_.performFrequencyOnlyForwardTransform (fftData_.data());
+
+    // 2/N for the two-sided transform, doubled again for the Hann window's
+    // 0.5 coherent gain: a full-scale sine then reads ~0 dBFS at its bin.
+    const float norm     = 4.0f / (float) kFftSize;
+    const float fallStep = kSpecFallDbPerSec / 30.0f;   // timer runs at 30 Hz
+
+    for (int k = 0; k < kSpecBins; ++k)
+    {
+        const float db = juce::Decibels::gainToDecibels (fftData_[(size_t) k] * norm,
+                                                         kSpecFloorDb);
+        // Instant rise, linear fall — peaks register, the display stays legible.
+        specDb_[(size_t) k] = juce::jmax (db, specDb_[(size_t) k] - fallStep);
+    }
+}
+
+void SurgicalEqEditor::rebuildSpectrumPath()
+{
+    spectrumPath_.clear();
+    if (graphBounds_.getWidth() < 4 || graphBounds_.getHeight() < 4) return;
+
+    const double sr = proc_.getEngine().getSampleRate();
+    if (sr <= 0.0) return;
+    const double binHz = sr / (double) kFftSize;
+
+    const float yBottom = (float) graphBounds_.getBottom();
+    const int   step    = 2;
+    const int   x0      = graphBounds_.getX();
+    const int   x1      = graphBounds_.getRight();
+
+    spectrumPath_.startNewSubPath ((float) x0, yBottom);
+
+    for (int x = x0; x <= x1; x += step)
+    {
+        // Resample per PIXEL by frequency, not bin-by-bin. The FFT is linear
+        // in frequency and this axis is logarithmic, so mapping bins to x
+        // would pile the whole bottom decade into a few pixels and smear the
+        // top octaves across hundreds.
+        const double fLo = (double) xToFreq ((float) x - step * 0.5f);
+        const double fHi = (double) xToFreq ((float) x + step * 0.5f);
+
+        int bLo = (int) std::floor (fLo / binHz);
+        int bHi = (int) std::ceil  (fHi / binHz);
+        bLo = juce::jlimit (0, kSpecBins - 1, bLo);
+        bHi = juce::jlimit (0, kSpecBins - 1, bHi);
+
+        float db;
+        if (bHi > bLo)
+        {
+            // A pixel spanning many bins (the high end) takes the MAX, so a
+            // narrow peak cannot be stepped over and flicker in and out.
+            db = specDb_[(size_t) bLo];
+            for (int b = bLo + 1; b <= bHi; ++b)
+                db = juce::jmax (db, specDb_[(size_t) b]);
+        }
+        else
+        {
+            // A pixel narrower than a bin (the low end) interpolates, so the
+            // curve stays smooth instead of drawing visible bin staircases.
+            const double pos = juce::jlimit (0.0, (double) kSpecBins - 1.0,
+                                             ((fLo + fHi) * 0.5) / binHz);
+            const int    i0  = juce::jlimit (0, kSpecBins - 2, (int) pos);
+            const float  t   = (float) (pos - (double) i0);
+            db = specDb_[(size_t) i0]
+               + t * (specDb_[(size_t) i0 + 1] - specDb_[(size_t) i0]);
+        }
+
+        spectrumPath_.lineTo ((float) x, specDbToY (db));
+    }
+
+    spectrumPath_.lineTo ((float) x1, yBottom);
+    spectrumPath_.closeSubPath();
+}
+
+void SurgicalEqEditor::paintSpectrum (juce::Graphics& g) const
+{
+    if (spectrumPath_.isEmpty()) return;
+
+    // Neutral cool grey rather than another cyan: it has to read as a
+    // different quantity from the EQ curve drawn over it, and stay subordinate.
+    g.setColour (C::text2.withAlpha (0.16f));
+    g.fillPath (spectrumPath_);
+    g.setColour (C::text2.withAlpha (0.34f));
+    g.strokePath (spectrumPath_, juce::PathStrokeType (1.0f));
+}
+
+// ---------------------------------------------------------------------------
+// dynamic metering
+// ---------------------------------------------------------------------------
+bool SurgicalEqEditor::updateDynamicMeters()
+{
+    bool changed = false;
+    auto& eng = proc_.getEngine();
+
+    for (int i = 0; i < kNumBands; ++i)
+    {
+        const float v = (model_[i].enabled && model_[i].dynamic)
+                          ? eng.getBandDynamicGainDb (i) : 0.0f;
+        if (std::abs (v - dynGainDb_[i]) > 0.02f) changed = true;
+        dynGainDb_[i] = v;
+    }
+    return changed;
 }
 
 // ---------------------------------------------------------------------------
@@ -854,6 +1015,32 @@ void SurgicalEqEditor::paintNodes (juce::Graphics& g) const
             g.fillEllipse (p.x - r - 4.0f, p.y - r - 4.0f, (r + 4.0f) * 2.0f, (r + 4.0f) * 2.0f);
         }
 
+        // ---- live dynamic action -----------------------------------------
+        // A bar from the band's STATIC node down (or up) to where the band is
+        // actually sitting right now, so a de-esser is visibly pumping rather
+        // than merely labelled "dynamic". The engine already envelope-smooths
+        // this value, so it needs no smoothing of its own.
+        const float dyn = dynGainDb_[i];
+        if (s.dynamic && std::abs (dyn) > 0.05f && ! proc_.isBypassed())
+        {
+            const float yLive = gainToY (juce::jlimit (-dbRange_, dbRange_,
+                                                       s.gainDb + dyn));
+            const float top   = juce::jmin (p.y, yLive);
+            const float hgt   = std::abs (yLive - p.y);
+
+            g.setColour (C::amber.withAlpha (0.5f));
+            g.fillRect (p.x - 2.0f, top, 4.0f, hgt);
+
+            // Cap marking the current effective gain.
+            g.setColour (C::amber);
+            g.fillRect (p.x - 5.0f, yLive - 1.0f, 10.0f, 2.0f);
+
+            g.setFont (uiFont (8.5f, true));
+            g.drawText (juce::String (dyn, 1) + " dB",
+                        (int) p.x - 26, (int) yLive + (dyn < 0.0f ? 3 : -14),
+                        52, 12, juce::Justification::centred);
+        }
+
         g.setColour (C::bg);
         g.fillEllipse (p.x - r - 1.0f, p.y - r - 1.0f, (r + 1.0f) * 2.0f, (r + 1.0f) * 2.0f);
         g.setColour (col);
@@ -900,6 +1087,7 @@ void SurgicalEqEditor::paint (juce::Graphics& g)
         juce::Graphics::ScopedSaveState save (g);
         g.reduceClipRegion (graphBounds_);
         paintGrid (g);
+        if (analyzerOn_) paintSpectrum (g);   // behind the curve, above the grid
         paintCurves (g);
         paintNodes (g);
     }
