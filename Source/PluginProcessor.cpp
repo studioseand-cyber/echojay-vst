@@ -1240,6 +1240,12 @@ std::vector<CaptureSnapshot> EchoJayProcessor::getSnapshots() const
     return snapshots;
 }
 
+void EchoJayProcessor::setLatestSnapshotChannelScope(const juce::String& uid)
+{
+    std::lock_guard<std::mutex> lock(snapshotMutex);
+    if (!snapshots.empty()) snapshots.back().channelScopeUid = uid;
+}
+
 CaptureSnapshot EchoJayProcessor::getLatestSnapshot() const
 {
     std::lock_guard<std::mutex> lock(snapshotMutex);

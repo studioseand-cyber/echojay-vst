@@ -285,24 +285,30 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                     o->setProperty("n", (double)pt.minVal);
                     wf.add(juce::var(o));
                 }
+                const juce::String chPath = processorRef.getCaptureFolder()
+                                               .getChildFile(wavName).getFullPathName();
                 for (const auto& rv : workspace.getReviews())
-                    if (rv.linkUid == ch.uid && rv.label == snap.name
-                        && rv.fileName.isEmpty()
-                        && workspace.updateReviewAudio(rv.id, wavName, juce::var(wf)))
+                    if (rv.linkUid == ch.uid && rv.label == snap.name)
                     {
-                        changed = true;
-                        // Refresh the live card if this review is shown now.
+                        // Persist the filename if the review did not have it
+                        // yet (review-created-before-save ordering).
+                        if (rv.fileName.isEmpty()
+                            && workspace.updateReviewAudio(rv.id, wavName, juce::var(wf)))
+                            changed = true;
+                        // Refresh the live card REGARDLESS of the persist above
+                        // (save-done-before-review ordering left the card
+                        // without a path even though rev.fileName was set).
                         for (auto& cm : chatMessages)
-                            if (cm.reviewId == rv.id)
+                            if (cm.reviewId == rv.id && cm.wavFilePath.isEmpty())
                             {
                                 cm.channelCaptureNoAudio = false;
                                 cm.wavFilename = wavName;
-                                cm.wavFilePath = processorRef.getCaptureFolder()
-                                                     .getChildFile(wavName).getFullPathName();
+                                cm.wavFilePath = chPath;
                                 cm.hasWaveform = !ch.thumbnail.empty();
                                 cm.waveform.clear();
                                 for (auto& pt : ch.thumbnail)
                                     cm.waveform.push_back(pt);
+                                changed = true;
                             }
                     }
             }
@@ -4102,6 +4108,15 @@ bool EchoJayEditor::slotIsChannelScoped(const CompareSlotState& slot) const
     return false;
 }
 
+juce::String EchoJayEditor::slotChannelUid(const CompareSlotState& slot) const
+{
+    if (slot.kind != CompareSlotState::Kind::WsCapture) return {};
+    for (auto& r : workspace.getReviews())
+        if (r.id == slot.wsReviewId)
+            return r.channelDataScoped ? r.linkUid : juce::String();
+    return {};
+}
+
 void EchoJayEditor::updateCompareSlotBtn(bool isTop)
 {
     auto& slot = isTop ? compareTop_ : compareBot_;
@@ -4136,7 +4151,7 @@ void EchoJayEditor::updateCompareSlotBtn(bool isTop)
         && slot.kind != CompareSlotState::Kind::Live
         && slot.kind != CompareSlotState::Kind::Empty)
     {
-        text = juce::String::fromUTF8("â  ") + text;   // amber warning glyph
+        text = "MIXED SCOPE - " + text;   // amber warning glyph
         col  = juce::Colour(0xfff59e0b);
     }
 
@@ -4269,9 +4284,24 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
         bool hdr = false;
         for (int i = 0; i < (int)snaps.size() && i < 99; ++i)
         {
+            if (snaps[i].channelScopeUid.isNotEmpty()) continue;   // item 3: channel capture's host snapshot
             if (snapHasReview(snaps[i].name)) continue;   // dedup
             if (!hdr) { menu.addSeparator(); menu.addSectionHeader("SESSION CAPTURES"); hdr = true; }
-            addCapture(100 + i, snaps[i].name.substring(0, 40) + " (full capture)",
+            // Item 5b: "Session pass N" (session scratch capture), so it never
+            // reads as a "vN" version of a saved review. Label-only.
+            int passN = 0;
+            {
+                const juce::String nm = snaps[i].name;
+                const int vp = nm.lastIndexOfChar('v');
+                if (vp >= 0 && vp + 1 < nm.length()
+                    && juce::CharacterFunctions::isDigit(nm[vp + 1]))
+                    passN = nm.substring(vp + 1).getIntValue();
+                else if (nm.startsWith("Pass "))
+                    passN = nm.substring(5).getIntValue();
+            }
+            addCapture(100 + i,
+                       passN > 0 ? ("Session pass " + juce::String(passN))
+                                 : juce::String("Session capture"),
                        snaps[i].id.isNotEmpty()
                            ? juce::Time((juce::int64)snaps[i].id.getLargeIntValue()).toISO8601(true)
                            : juce::String());
@@ -4306,7 +4336,7 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
                            r ? r->date : juce::String());
                 compareMenuReviewIds_.push_back(rid);
             }
-            menu.addItem(9100, juce::String::fromUTF8("â Clear ")
+            menu.addItem(9100, juce::String("Clear ")
                          + juce::String(orphanReviewIds.size()) + " orphaned capture"
                          + (orphanReviewIds.size() == 1 ? "" : "s"));
         }
@@ -5264,12 +5294,26 @@ void EchoJayEditor::runAICompare()
             cm.chainData = chainJson;
             cm.gainData  = gainJson;
             cm.editData  = editJson;
-            // Item 6: a compare turn in a channel chat compares FULL-CAPTURE
-            // snapshots, so any chain the model proposes is reasoned from
-            // full-mix data. Suppress the Build affordance structurally (the
-            // injection is the polite explanation; this is the actual guard).
-            cm.chainBuildSuppressed = safeThis->activeChatLinkUid().isNotEmpty()
-                                   && chainJson.isNotEmpty();
+            // Item 4/6: suppress Build only on a GENUINE cross-scope pairing.
+            // In a channel chat, a chain is buildable when BOTH loaded slots
+            // are THIS channel's own audio; a full-capture slot, a live slot,
+            // or a DIFFERENT channel's capture makes it cross-scope and the
+            // chain would be reasoned from data that is not this channel.
+            // Same-scope (both "Link X v1" vs "Link X v2" in X's chat) keeps
+            // its Build button.
+            {
+                const juce::String activeUid = safeThis->activeChatLinkUid();
+                bool crossScope = false;
+                if (activeUid.isNotEmpty())
+                {
+                    auto matches = [&](const CompareSlotState& s) {
+                        return safeThis->slotChannelUid(s) == activeUid;   // this channel's own audio
+                    };
+                    crossScope = !(matches(safeThis->compareTop_)
+                                   && matches(safeThis->compareBot_));
+                }
+                cm.chainBuildSuppressed = crossScope && chainJson.isNotEmpty();
+            }
             if (editJson.isNotEmpty())
             {
                 const juce::String cUid = safeThis->activeChatLinkUid();
@@ -7487,9 +7531,15 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                 // routed yet). Show no picture and offer no playback rather
                 // than the wrong ones. Pre-fix channel records (no marker) are
                 // full captures, so they keep their waveform.
-                const bool channelReview = rv.channelDataScoped;
-                cm.channelCaptureNoAudio = channelReview;
-                if (rv.waveform.isArray() && !channelReview)
+                // A channel review's waveform IS the channel's (routed by the
+                // handshake); the honest no-audio message is only for a channel
+                // review that never got audio (empty fileName). Item 1 fix:
+                // the stale "!channelReview" guards blocked the routed channel
+                // waveform/WAV, so the card fell to "Audio not on this device".
+                const bool channelReview   = rv.channelDataScoped;
+                const bool channelNoAudio  = channelReview && rv.fileName.isEmpty();
+                cm.channelCaptureNoAudio = channelNoAudio;
+                if (rv.waveform.isArray())
                 {
                     for (int wi = 0; wi < rv.waveform.size(); ++wi)
                     {
@@ -7520,8 +7570,10 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                 // uses via resolveSlotWavPath), fall back to index.json lookup.
                 // This keeps chat and Compare aligned on the same resolution logic.
                 auto tryFile = [&](const juce::String& name) -> bool {
-                    if (name.isEmpty() || channelReview) return false;   // ITEM 4: no host playback
-                    juce::File f = captureDir.getChildFile(name);
+                    if (name.isEmpty() || channelNoAudio) return false;   // no audio to resolve
+                    // SAME resolver as Compare's resolveSlotWavPath:
+                    // getCaptureFolder().getChildFile(fileName).
+                    juce::File f = processorRef.getCaptureFolder().getChildFile(name);
                     if (!f.existsAsFile()) return false;
                     cm.wavFilename = name;
                     cm.wavFilePath = f.getFullPathName();
@@ -10298,8 +10350,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
         // Item 2c: separator between the plugin count and the Capture button
         // (after the header swap the count sits left of Capture). Anchored to
         // captureBtn's LEFT edge, not scanBtn's, so it sits in the gap.
+        // Item 5a: centered in the gap (7px from the plugin count, 7px from
+        // the Capture button) rather than pressed against the button.
         auto cbBounds = captureBtn.getBounds();
-        if (cbBounds.getX() > 0) drawSep(cbBounds.getX() - 2);
+        if (cbBounds.getX() > 0) drawSep(cbBounds.getX() - 7);
     }
 
     // Compact/expand toggle — top right of main top bar
@@ -11591,8 +11645,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 {
                     g.setColour(juce::Colour(0xfff59e0b));   // amber
                     g.setFont(juce::Font(juce::FontOptions(10.5f)));
-                    g.drawText("Build disabled: this is a full-capture comparison, "
-                               "not this channel's audio",
+                    g.drawText("Build disabled: the compared captures are not this "
+                               "channel's own audio",
                                bubbleX + 10, drawY + bubbleH + 4 + chainLinesH,
                                bubbleW - 20, 14, juce::Justification::centredLeft, true);
                 }
@@ -12110,7 +12164,7 @@ void EchoJayEditor::resized()
         // "Capture Vo..."). scanBtn is the fixed anchor; the capture button
         // takes the room between it and the detected label, clamped, and the
         // state block truncates the channel name via captureBtnMaxW_.
-        scanBtn.setBounds(tx, ty, 78, bh); tx += 82;
+        scanBtn.setBounds(tx, ty, 78, bh); tx += 78 + 14;   // item 5a: wider gap
         // Item 2a: FIXED-width Capture button.
         captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
         // Item 2b: target indicator takes the room up to the detected label,
@@ -13348,6 +13402,10 @@ void EchoJayEditor::timerCallback()
             // Phase C: a per-channel capture stamps the review with its Link
             // uid so a reloaded channel chat re-associates its own captures.
             juce::String reviewId = createReviewFromCapture(snap, savedPath, activeChatLinkUid());
+            // Item 3: a channel capture's host snapshot is not listed in
+            // Compare (the channel review is the entry); mark it so.
+            if (auto capScope = activeChatLinkUid(); capScope.isNotEmpty())
+                processorRef.setLatestSnapshotChannelScope(capScope);
 
             // Push PERSISTED user message — content = passName (survives save/load
             // cleanly), _reviewId links it to the review for waveform reconstruction.
@@ -13408,7 +13466,23 @@ void EchoJayEditor::timerCallback()
                         break;
                     }
             }
-            if (savedPath.isNotEmpty() && !captureIsChannel)   // ITEM 4: no host playback on a channel card
+            if (captureIsChannel)
+            {
+                // Channel WAV only (never host). If the background save already
+                // wrote it, resolve now; otherwise onCaptureSaveComplete fills
+                // it. Same resolver as Compare (getCaptureFolder + filename).
+                if (liveCh != nullptr && liveCh->wavFilePath.isNotEmpty())
+                {
+                    const juce::String nm = juce::File(liveCh->wavFilePath).getFileName();
+                    auto f = processorRef.getCaptureFolder().getChildFile(nm);
+                    if (f.existsAsFile())
+                    {
+                        displayCm.wavFilename = nm;
+                        displayCm.wavFilePath = f.getFullPathName();
+                    }
+                }
+            }
+            else if (savedPath.isNotEmpty())
             {
                 displayCm.wavFilename = juce::File(savedPath).getFileName();
                 displayCm.wavFilePath = savedPath;

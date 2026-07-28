@@ -76,6 +76,13 @@ struct ChannelMeterData {
 struct CaptureSnapshot {
     juce::String id;
     juce::String name;
+    // Item 3: set when this capture was CHANNEL-scoped (the editor knew the
+    // active channel). The snapshot still exists (the save thread writes its
+    // channel WAV paths by index and the handshake reads them), but the
+    // Compare list SKIPS it — the channel's own review is the entry, so
+    // listing the host snapshot too read as "captured twice". Empty = a
+    // normal full-scope session capture, listed as usual.
+    juce::String channelScopeUid;
     ChannelType channelType;
     juce::String customChannelName;
     MeterData averagedData;
@@ -206,6 +213,9 @@ public:
     void renameSnapshot(int index, const juce::String& newName);
     void deleteSnapshot(int index);
     CaptureSnapshot getLatestSnapshot() const;
+    // Item 3: mark the most-recent snapshot as channel-scoped (editor knows
+    // the active channel at capture time; the processor does not).
+    void setLatestSnapshotChannelScope(const juce::String& uid);
     // Phase C handshake: fired on the MESSAGE THREAD when the background WAV
     // save completes (host + every per-channel WAV written). The editor wires
     // this once and, in the handler, fills any channel review whose WAV

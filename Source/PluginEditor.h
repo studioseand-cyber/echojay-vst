@@ -639,6 +639,10 @@ private:
     // pre-fix review) is full-scope. The cross-scope guard keys off THIS,
     // never off linkUid presence.
     bool slotIsChannelScoped(const CompareSlotState& slot) const;
+    // Item 4: the channel uid a slot's DATA belongs to ("" = full-capture /
+    // live / non-channel). Used to decide same-scope vs cross-scope against
+    // the active channel chat.
+    juce::String slotChannelUid(const CompareSlotState& slot) const;
     static MeterData meterDataFromWsReview(const WsReview& r);
     void paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int> area,
                               const CompareSlotState& slot, bool isPlaying);
