@@ -597,6 +597,13 @@ private:
     // Compare
     juce::TextButton loadRefBtn { "+ Add Mix" };
     juce::TextButton aiCompareBtn { "AI Compare" };
+    // VESTIGIAL — NOT the source of truth. These boxes are never made visible
+    // and never given bounds; they are still populated on rebuild only to keep
+    // legacy code compiling. The Compare source of truth is compareTop_ /
+    // compareBot_ (the slot buttons), read via getSlotMeterData(). Do NOT wire
+    // AI Compare, audition, or any new logic to their getSelectedId(): from
+    // v2.9.31 (2 Jul 2026) until it was repaired, runAICompare read exactly
+    // this hidden selection and analysed the wrong audio. Read the slots.
     juce::ComboBox compareSlotABox;
     juce::ComboBox compareSlotBBox;
     juce::Label refStatusLabel;

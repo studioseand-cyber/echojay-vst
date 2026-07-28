@@ -5358,8 +5358,15 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     // turn that produced no chain (STEP 4).
     const bool compareNumbersOnly = numbersOnly;
 
-    chatMessages.push_back({"user", "Compare these mixes"});
-    processorRef.chatHistory.push_back({"user", "Compare these mixes"});
+    // Distinguishable transcript labels: the bubble records WHICH choice was
+    // made (the standing rule - short display label, full instruction rides
+    // history in chatContents below). "Compare these mixes" is the same-scope
+    // (Unasked) label; the two cross-scope chips get their own.
+    const juce::String turnLabel = scope == CompareScope::NumbersOnly ? juce::String("Numbers only")
+                                 : scope == CompareScope::Anyway      ? juce::String("Compare anyway")
+                                 : juce::String("Compare these mixes");
+    chatMessages.push_back({"user", turnLabel});
+    processorRef.chatHistory.push_back({"user", turnLabel});
     chatLoading = true; repaint();
     if (askShelfVisible_)
     {
@@ -5371,7 +5378,17 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     // Phase 3-pre: compare rides the same injection helper as chat/capture
     // (alwaysAttach — its typed text has no cue words), so band-level
     // CHAIN_EDIT offers can reference the live rack.
-    juce::String compareContent = "Give me a detailed comparison of these two.\n\n" + compareCtx;
+    // The LEADING instruction must itself change for numbers-only, not just the
+    // context block: a "detailed comparison" request produces interpretation-led
+    // narrative no matter what the context says. Numbers-only asks for figures
+    // and the different-sources statement, and forbids narrative and chains
+    // (buildCompareContext(numbersOnly) states the same from the data side).
+    juce::String compareContent = (numbersOnly
+        ? juce::String("Report ONLY the meter-figure differences between these two, and state "
+                       "plainly that they are different sources. Do NOT give an interpretation-led "
+                       "narrative, do NOT describe the differences as changes to a mix, and do NOT "
+                       "propose or build a processing chain.\n\n")
+        : juce::String("Give me a detailed comparison of these two.\n\n")) + compareCtx;
     // ITEM 5: a compare turn in a CHANNEL chat carries STORED main-instance
     // snapshot data into that chat. Attribute it (the SAME mainCaptureAttribution
     // flag the capture path uses) so the model never narrates the main mix as
@@ -5419,6 +5436,26 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
                 EchoJayAPI::extractAskBlock(visibleReply, askJson);
                 EchoJayAPI::extractChainEditBlock(visibleReply, editJson);
             }
+            // RUNTIME guard (not just the dev jassert below, which compiles out
+            // in release - and this is exactly the guarantee that failed in the
+            // field): a numbers-only turn must never carry an action block. The
+            // compose and the context both forbid it, but the server can still
+            // return one on a version_compare turn. Drop chain / gain / edit so
+            // no Build button or action card can reach the bubble, and log it.
+            // extractChainBlock already stripped the markers from visibleReply,
+            // so clearing the JSON leaves clean prose behind.
+            if (compareNumbersOnly
+                && (chainJson.isNotEmpty() || gainJson.isNotEmpty() || editJson.isNotEmpty()))
+            {
+                EchoJay_NSLog(("EJCompare: numbers-only turn returned an action block; dropping it"
+                               " (chain=" + juce::String(chainJson.isNotEmpty() ? 1 : 0)
+                               + " gain="  + juce::String(gainJson.isNotEmpty()  ? 1 : 0)
+                               + " edit="  + juce::String(editJson.isNotEmpty()  ? 1 : 0) + ")")
+                              .toRawUTF8());
+                chainJson.clear();
+                gainJson.clear();
+                editJson.clear();
+            }
             ChatMsg cm;
             cm.role      = "assistant";
             cm.content   = visibleReply;
@@ -5433,9 +5470,9 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
             // live slot, or a DIFFERENT channel's capture makes it foreign and
             // the chain would be reasoned from data that is not this channel.
             // Same-scope (both "Link X v1" vs "Link X v2" in X's chat) keeps its
-            // Build button. A "Numbers only" turn was composed to forbid a chain,
-            // so chainJson is empty here and there is nothing to suppress — we
-            // confirm that (assert-in-comment) rather than lean on the gate.
+            // Build button. A "Numbers only" turn had any action block dropped
+            // above, so chainJson is already empty here; the jassert is a dev
+            // backstop, the drop above is the real defence.
             {
                 const juce::String activeUid = safeThis->activeChatLinkUid();
                 bool foreignData = false;
@@ -16767,6 +16804,13 @@ void EchoJayEditor::sendChainSave(const juce::String& id, const juce::String& na
 {
     auto& ch = processorRef.getChainHost();
 
+    // FORCE a fresh capture first. Save is a deliberate action, and the
+    // debounce exists to keep the host's own save callback fast on quit, not
+    // to serve a button the user just pressed. Without this, a knob moved a
+    // second before Save is stored at its previous value and the save still
+    // reports success, which is the worst kind of wrong.
+    ch.captureAllSlotStatesNow();
+
     // Settings come from the SAME cache the DAW session uses, asked for with
     // the API's caps rather than the session's. One capture path, two
     // policies; this is not a second capture.
@@ -16793,7 +16837,19 @@ void EchoJayEditor::sendChainSave(const juce::String& id, const juce::String& na
         safeThis->chainSaveInFlight_ = false;
 
         const auto err = EchoJayAPI::chainErrorMessage(json, sc);
-        if (err.isNotEmpty()) { safeThis->setChainSaveStatus(err); return; }
+        if (err.isNotEmpty())
+        {
+            // A FAILED save is not a transient status. The six-second line is
+            // fine for "Saved X", where nothing is owed afterwards; a failure
+            // that fades leaves the user believing a chain exists when it does
+            // not, and leaves whoever debugs it with nothing to read. Failures
+            // go to the persistent notes band, which stays until dismissed.
+            safeThis->setChainSaveStatus(err);
+            auto& ch2 = safeThis->processorRef.getChainHost();
+            ch2.addSaveFailureNote("\"" + name + "\" was not saved. " + err);
+            safeThis->chainListPanel.setStateNotes(ch2.getStateNotes());
+            return;
+        }
 
         juce::String newId;
         if (auto* obj = json.getDynamicObject())
@@ -19254,6 +19310,14 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
             std::vector<SlotInfo> slotsToCheck;
             
             // Use card positions: nearer to slot A or slot B
+            // VESTIGIAL SELECTION — compareSlotABox/BBox have no bounds (both
+            // centre on the origin, so distA==distB and A always wins) and their
+            // getSelectedId() reflects a rebuild default nothing user-facing
+            // sets. This right-click rename/delete therefore acts on a stale
+            // selection, not the visible slots. Do NOT trust it; the source of
+            // truth is compareTop_/compareBot_ via getSlotMeterData (see the
+            // box declaration in PluginEditor.h). Left as-is only to avoid a
+            // wide removal in a shared tree; retarget to the slots when touched.
             int distA = std::abs(pos.x - compareSlotABox.getBounds().getCentreX());
             int distB = std::abs(pos.x - compareSlotBBox.getBounds().getCentreX());
             if (distA <= distB)
@@ -19389,6 +19453,11 @@ void EchoJayEditor::mouseDoubleClick(const juce::MouseEvent& e)
     int refOffset = kCompareRefIdBase;
     
     // Determine which card by checking if click is nearer to slot A or slot B
+    // VESTIGIAL SELECTION — see the compareSlotABox/BBox declaration in
+    // PluginEditor.h: these boxes have no bounds and their getSelectedId() is a
+    // rebuild default nothing user-facing sets, so this picks a stale entry, not
+    // the visible slot. Source of truth is compareTop_/compareBot_ via
+    // getSlotMeterData(). Do NOT wire new logic here; retarget to the slots.
     int distA = std::abs(pos.x - compareSlotABox.getBounds().getCentreX());
     int distB = std::abs(pos.x - compareSlotBBox.getBounds().getCentreX());
     auto& box = (distA <= distB) ? compareSlotABox : compareSlotBBox;

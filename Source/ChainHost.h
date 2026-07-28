@@ -425,6 +425,17 @@ public:
     // its last capture is skipped, so calling this on every editor teardown
     // costs nothing when nothing changed.
     void refreshStateCacheIfIdle();
+    // Capture EVERY slot right now, ignoring the debounce, the sweep gate and
+    // the per-slot backoff. For DELIBERATE user actions only, currently the
+    // explicit Save.
+    //
+    // The cache exists so the host's getStateInformation stays fast on quit,
+    // where nobody asked for anything and a slow callback is a freeze. It is
+    // not a budget to spend on an action the user just took: a knob moved a
+    // second before Save would otherwise be saved at its previous value, and
+    // the save would look completely successful. Correctness beats latency
+    // when someone pressed a button and is waiting for it.
+    void captureAllSlotStatesNow();
     // {"1": "<base64>", "2": null} for a consumer that wants the settings.
     // Serialises the cache and nothing else: it never calls into a hosted
     // plugin, so it is safe inside getStateInformation. Nulls any slot over
@@ -445,6 +456,11 @@ public:
     // or was rejected must say so rather than look restored.
     juce::StringArray getStateNotes() const;
     void clearStateNotes();
+    // A save that FAILED, recorded in the same persistent band as the
+    // capture/restore notes. Public because the failure is the editor's to
+    // report; the note lives here so it survives the editor being recreated
+    // (Logic does that on every Link window switch).
+    void addSaveFailureNote(const juce::String& note) { addStateNote(note); }
 
     // ---- Saved chains (B.1) ----------------------------------------------
     // The `slots` array in the shared chain format: 1-BASED and contiguous n,

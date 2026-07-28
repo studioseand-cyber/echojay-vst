@@ -259,6 +259,23 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   targeting is deliberately DEFERRED to Phase C of the per-Link
   conversations plan, where the channel IS the chat — build no interim
   per-chat machinery.
+- VISIBILITY IS WRITTEN PER COMPONENT IN resized(), NEVER THROUGH A POINTER
+  LOOP, and every component needs an OFF path that runs on every tab.
+  Two halves, both learned the hard way (28 Jul 2026, chain header Save /
+  Save As / Open drawing on top of the Compare tab's own buttons):
+  (a) bounds AND visibility authored inside `if (currentTab == Tab::X)` means
+      the code never runs on any other tab, so the component keeps
+      visible=true at tab-X coordinates. Author it UNCONDITIONALLY with the
+      tab test inside the single visibility expression, so there is one
+      authority that always evaluates BOTH ways. Hiding it in the tab-switch
+      handler instead just moves the bug.
+  (b) `for (auto* b : {&a,&b,&c}) b->setVisible(x)` is INVISIBLE to a grep
+      for "<name>.setVisible", which is how anyone audits this file. The bug
+      above survived its author's own audit for exactly that reason. Write
+      each setVisible out per component even when it is repetitive.
+  Watch for a SECOND authority too: applyReviewModalState also sets chain
+  header chrome, and anything it re-shows must CONSUME the rect resized()
+  stored rather than deriving its own.
 - NON-ASCII IN JUCE DRAW STRINGS MUST USE EXPLICIT ESCAPES (\xe2\x80\x94
   etc), never literal characters: raw multi-byte bytes written into a
   string literal rendered as mojibake in the build card. The ops card's

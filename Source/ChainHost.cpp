@@ -2734,6 +2734,23 @@ void ChainHost::refreshStateCacheIfIdle()
     stateDirty_.store(false, std::memory_order_relaxed);
 }
 
+void ChainHost::captureAllSlotStatesNow()
+{
+    if (!stateCacheEnabled_ || slots_.empty()) return;
+
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        // Deliberately ignores nextCaptureMs. The backoff protects the
+        // BACKGROUND cadence from an expensive plugin; it must not make an
+        // explicit Save quietly write a stale blob. If a sampler takes a
+        // second here, that second belongs to the user's action.
+        captureSlotState(i, now);
+    }
+    // Everything is current as of now, so no debounced pass is owed.
+    stateDirty_.store(false, std::memory_order_relaxed);
+}
+
 void ChainHost::captureSlotState(int i, double nowMs)
 {
     if (inStateCapture_) return;   // see inStateCapture_ in the header
