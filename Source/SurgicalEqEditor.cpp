@@ -176,7 +176,6 @@ SurgicalEqEditor::SurgicalEqEditor (SurgicalEqProcessor& p)
     specDb_.assign      ((size_t) kSpecBins, kSpecRawFloorDb);
     specWork_.assign    ((size_t) kSpecBins, kSpecRawFloorDb);
     specDisplay_.assign ((size_t) kSpecBins, kSpecRawFloorDb);
-    specPeak_.assign    ((size_t) kSpecBins, kSpecRawFloorDb);
     specPrefix_.assign  ((size_t) kSpecBins + 1, 0.0f);
     specPts_.reserve    ((size_t) kSpecBins + 2048);   // knots + one per pixel
 
@@ -249,7 +248,6 @@ void SurgicalEqEditor::buildControls()
             // than from a frozen frame minutes old.
             spectrumPath_.clear();
             std::fill (specDb_.begin(), specDb_.end(), kSpecRawFloorDb);
-            specPeakInit_ = false;
         }
         sourceBtn_.setEnabled (analyzerOn_);
         repaint();
@@ -269,7 +267,6 @@ void SurgicalEqEditor::buildControls()
         // smoothing and peak state belong to the old source and would bleed
         // across, dragging the auto-range with them.
         std::fill (specDb_.begin(), specDb_.end(), kSpecRawFloorDb);
-        specPeakInit_ = false;
         repaint();
     };
 
@@ -776,10 +773,11 @@ float SurgicalEqEditor::specDbToY (float db) const noexcept
 {
     // The analyzer has its OWN vertical scale, independent of the EQ's ±dB
     // grid — the two measure different things and must not share an axis.
-    // The window is the auto-ranged one computed in updateSpectrum, matching
-    // the METERS renderer rather than a fixed floor/ceiling.
-    const float span = juce::jmax (1.0f, specDbMax_ - specDbMin_);
-    const float t    = juce::jlimit (0.0f, 1.0f, (db - specDbMin_) / span);
+    // FIXED window (see the header): absolute, so a given level always lands
+    // at the same height rather than being renormalised against the loudest
+    // bin present.
+    constexpr float span = kSpecCeilDb - kSpecFloorDb;
+    const float t = juce::jlimit (0.0f, 1.0f, (db - kSpecFloorDb) / span);
     return (float) graphBounds_.getBottom() - t * (float) graphBounds_.getHeight();
 }
 
@@ -856,43 +854,9 @@ void SurgicalEqEditor::updateSpectrum()
             (specPrefix_[(size_t) hi + 1] - specPrefix_[(size_t) lo]) / (float) n;
     }
 
-    // ---- peak hold --------------------------------------------------------
-    // Rise instantly, fall kSpecPeakFallDb per frame — the METERS renderer's
-    // behaviour. Not drawn; it exists purely to feed the auto-range below.
-    if (! specPeakInit_) { specPeak_ = specDisplay_; specPeakInit_ = true; }
-    for (int k = 0; k < kSpecBins; ++k)
-    {
-        if (specDisplay_[(size_t) k] > specPeak_[(size_t) k])
-            specPeak_[(size_t) k] = specDisplay_[(size_t) k];
-        else
-            specPeak_[(size_t) k] -= kSpecPeakFallDb;
-    }
-
-    // ---- auto-range -------------------------------------------------------
-    // paintSpectrumCurve's mapping, verbatim: find the loudest TILTED value
-    // across 20 Hz..20 kHz (curve and peak hold alike), sit the ceiling a
-    // little above it but never below kSpecCeilMinDb, and hang a fixed-height
-    // window underneath. A fixed floor/ceiling instead of this is what put the
-    // same signal at a different height from the METERS tab.
-    const double sr = proc_.getEngine().getSampleRate();
-    if (sr > 0.0)
-    {
-        const double binHz = sr / (double) kFftSize;
-        const int kLo = juce::jmax (1, (int) ((double) kMinFreq / binHz));
-        const int kHi = juce::jmin (kSpecBins - 1, (int) ((double) kMaxFreq / binHz));
-
-        float peak = -200.0f;
-        for (int k = kLo; k <= kHi; ++k)
-        {
-            const float tilt = kSpecTiltDbPerOct
-                             * (float) std::log2 ((double) k * binHz / 1000.0);
-            peak = juce::jmax (peak, specDisplay_[(size_t) k] + tilt);
-            peak = juce::jmax (peak, specPeak_[(size_t) k]    + tilt);
-        }
-
-        specDbMax_ = std::max (kSpecCeilMinDb, peak + kSpecHeadroomDb);
-        specDbMin_ = specDbMax_ - kSpecRangeDb;
-    }
+    // No peak hold and no auto-range here, deliberately. Both exist in the
+    // METERS renderer only to drive its floating ceiling; with a fixed window
+    // they would do nothing but cost time.
 }
 
 void SurgicalEqEditor::rebuildSpectrumPath()

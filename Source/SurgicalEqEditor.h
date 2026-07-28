@@ -147,22 +147,26 @@ private:
     static constexpr int   kFftSize     = 1 << kFftOrder;
     static constexpr int   kSpecBins    = kFftSize / 2;
 
-    // ---- level calibration: copied from MeterEngine + the METERS renderer --
-    // These are not free parameters. The same signal has to read at the same
-    // height here as on the METERS tab, so every one of them mirrors its
-    // counterpart there; changing one in isolation desynchronises the two.
+    // ---- level calibration -------------------------------------------------
+    // Magnitudes are produced exactly as MeterEngine produces them, so a given
+    // signal yields the same dB numbers in both places. These are not free
+    // parameters; changing one desynchronises the two.
     static constexpr float kSpecNormNumer  = 2.0f;    // MeterEngine visNorm = 2/N
     static constexpr float kSpecRawFloorDb = -120.0f; // MeterEngine's per-bin floor
     static constexpr float kSpecLerp       = 0.5f;    // kSpectrumVisLerp
     static constexpr int   kSpecMedianBins = 3;       // kSpectrumMedianBins
     static constexpr float kSpecTiltDbPerOct = 4.5f;  // kSpectrumTiltDbPerOct
     static constexpr float kSpecOctaveFrac = 12.0f;   // 1/12-octave smoothing
-    // Auto-range, exactly as paintSpectrumCurve computes it: a fixed-height
-    // window whose ceiling floats just above the tilted peak.
-    static constexpr float kSpecRangeDb    = 66.0f;   // vDbMax - vDbMin
-    static constexpr float kSpecCeilMinDb  = -20.0f;  // ceiling never below this
-    static constexpr float kSpecHeadroomDb = 3.0f;    // ceiling above the peak
-    static constexpr float kSpecPeakFallDb = 0.35f;   // peak-hold fall, per frame
+
+    // The dB->pixel mapping deliberately does NOT follow the METERS renderer.
+    // That one AUTO-RANGES: its ceiling floats to the loudest tilted bin, so
+    // the peak is always pinned near the top and quiet material climbs just as
+    // high as loud material. That is right for a dedicated spectrum panel and
+    // wrong for an overlay you are reading levels off, so this window is
+    // FIXED: the same signal always lands at the same height, and quiet
+    // material stays near the floor where it belongs.
+    static constexpr float kSpecCeilDb  = -20.0f;
+    static constexpr float kSpecFloorDb = -100.0f;
 
     void  updateSpectrum();          // timer: drain a tap, FFT, smooth
     void  rebuildSpectrumPath();     // region-aware knots + Catmull-Rom
@@ -213,12 +217,6 @@ private:
     std::vector<float> specWork_;     // median-gated intermediate
     std::vector<float> specDisplay_;  // fractional-octave smoothed, what is drawn
     std::vector<float> specPrefix_;   // running integral for O(n) octave averaging
-    // Peak hold. Never drawn here — it exists only because the METERS
-    // renderer folds it into the auto-range, so omitting it would put the
-    // same signal at a different height after a transient.
-    std::vector<float> specPeak_;
-    bool               specPeakInit_ = false;
-    float              specDbMin_ = -100.0f, specDbMax_ = -34.0f;  // live window
     std::vector<juce::Point<float>> specPts_;   // spline knots, reused each frame
     juce::Path         spectrumPath_;
     bool               analyzerOn_   = true;
