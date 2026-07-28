@@ -93,6 +93,44 @@ EqEngine::Coeffs EqEngine::computeCoeffs (BandType type, double fs, float freqHz
     return c;
 }
 
+// Fast bell rebuild when only the gain changes (g == tan(pi f/fs) precomputed).
+// Used per-sample by dynamic bands so we avoid a tan() in the audio inner loop.
+EqEngine::Coeffs EqEngine::bellCoeffsFromG (float g, float gainDb, float q) noexcept
+{
+    Coeffs c;
+    c.passthrough = false;
+    const double A  = std::pow (10.0, (double) gainDb / 40.0);
+    const double qq = std::min (std::max ((double) q, 0.025), 100.0);
+    c.g  = g;
+    c.k  = (float) (1.0 / (qq * A));
+    c.m0 = 1.0f;
+    c.m1 = (float) (c.k * (A * A - 1.0));
+    c.m2 = 0.0f;
+    const double a1 = 1.0 / (1.0 + c.g * (c.g + c.k));
+    c.a1 = (float) a1;
+    c.a2 = (float) (c.g * a1);
+    c.a3 = (float) (c.g * c.a2);
+    return c;
+}
+
+// Pure bandpass (constant-Q, unity peak) for the dynamic-band level detector.
+EqEngine::Coeffs EqEngine::bandpassCoeffs (double fs, float freqHz, float q) noexcept
+{
+    Coeffs c;
+    c.passthrough = false;
+    const double nyq = fs * 0.5;
+    const double f   = std::min (std::max ((double) freqHz, 5.0), nyq * 0.999);
+    const double qq  = std::min (std::max ((double) q, 0.1), 100.0);
+    c.g  = (float) std::tan (kPi * f / fs);
+    c.k  = (float) (1.0 / qq);
+    c.m0 = 0.0f; c.m1 = 1.0f; c.m2 = 0.0f;             // bandpass = v1 output
+    const double a1 = 1.0 / (1.0 + c.g * (c.g + c.k));
+    c.a1 = (float) a1;
+    c.a2 = (float) (c.g * a1);
+    c.a3 = (float) (c.g * c.a2);
+    return c;
+}
+
 int EqEngine::stagesForSlope (int slopeDbPerOct) noexcept
 {
     int n = (slopeDbPerOct + 6) / 12;      // 12->1, 24->2, ... ; 6 rounds to 1
@@ -171,9 +209,15 @@ void EqEngine::prepare (double sampleRate, int maxBlockSize, int numChannels)
 void EqEngine::reset()
 {
     for (auto& b : bands_)
+    {
         for (auto& st : b.state)
             for (auto& ch : st)
                 ch = StageState {};
+        for (auto& ch : b.detState)
+            ch = StageState {};
+        b.env = 0.0f;
+        b.dynGainDb = 0.0f;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -281,7 +325,28 @@ void EqEngine::process (float* const* channels, int numChannels, int numSamples)
         if (! active)
         {
             b.numStages = 0;
+            b.isDynamic = false;
             continue;
+        }
+
+        // Dynamic action is supported for Bell bands only (the surgical
+        // de-ess / resonance-taming case). Other types ignore the flag.
+        b.isDynamic = (t.dynamic && t.type == BandType::Bell);
+
+        if (b.isDynamic)
+        {
+            b.numStages   = 1;
+            b.gBell       = (float) std::tan (kPi
+                              * std::min ((double) b.curFreq, sampleRate_ * 0.4999)
+                              / sampleRate_);
+            b.detCoeffs   = bandpassCoeffs (sampleRate_, b.curFreq, std::max (b.curQ, 0.5f));
+            b.thresholdDb = t.thresholdDb;
+            b.rangeDb     = t.rangeDb;
+            const double atkSec = std::max ((double) t.attackMs,  0.05) * 0.001;
+            const double relSec = std::max ((double) t.releaseMs, 0.05) * 0.001;
+            b.atkCoeff = (float) (1.0 - std::exp (-1.0 / (atkSec * sampleRate_)));
+            b.relCoeff = (float) (1.0 - std::exp (-1.0 / (relSec * sampleRate_)));
+            continue;   // per-sample coeffs are built in the cascade
         }
 
         const bool isPassFilter = (t.type == BandType::HighPass || t.type == BandType::LowPass);
@@ -302,20 +367,60 @@ void EqEngine::process (float* const* channels, int numChannels, int numSamples)
         }
     }
 
-    // --- run the cascade, channel by channel -------------------------------
-    for (int ch = 0; ch < nCh; ++ch)
+    // --- run the cascade, band by band on the running multichannel buffer ---
+    // Static bands filter each channel a block at a time. Dynamic bands run
+    // per-sample with a stereo-linked detector so both channels share one gain.
+    for (int i = 0; i < kMaxBands; ++i)
     {
-        float* x = channels[ch];
-        for (int i = 0; i < kMaxBands; ++i)
+        BandRuntime& b = bands_[i];
+        if (b.numStages == 0) continue;
+
+        if (! b.isDynamic)
         {
-            BandRuntime& b = bands_[i];
-            if (b.numStages == 0) continue;
             for (int stg = 0; stg < b.numStages; ++stg)
             {
-                Coeffs&     c = b.coeffs[stg];
-                StageState& s = b.state[stg][ch];
-                for (int n = 0; n < numSamples; ++n)
-                    x[n] = processStage (c, s, x[n]);
+                Coeffs& c = b.coeffs[stg];
+                for (int ch = 0; ch < nCh; ++ch)
+                {
+                    StageState& s = b.state[stg][ch];
+                    float* x = channels[ch];
+                    for (int n = 0; n < numSamples; ++n)
+                        x[n] = processStage (c, s, x[n]);
+                }
+            }
+            continue;
+        }
+
+        // -- dynamic Bell: detect → envelope → gain → per-sample rebuild -----
+        const float thr   = b.thresholdDb;
+        const float rng    = b.rangeDb;
+        const float rngAbs = std::fabs (rng);
+        const float rngSgn = (rng < 0.0f) ? -1.0f : 1.0f;
+
+        for (int n = 0; n < numSamples; ++n)
+        {
+            // stereo-linked detector: peak of the band-passed signal across ch
+            float lvl = 0.0f;
+            for (int ch = 0; ch < nCh; ++ch)
+            {
+                const float d = processStage (b.detCoeffs, b.detState[ch], channels[ch][n]);
+                lvl = std::max (lvl, std::fabs (d));
+            }
+            // envelope follower (attack when rising, release when falling)
+            const float coeff = (lvl > b.env) ? b.atkCoeff : b.relCoeff;
+            b.env += (lvl - b.env) * coeff;
+
+            const float envDb     = 20.0f * std::log10 (b.env + 1.0e-9f);
+            const float overshoot = envDb - thr;
+            b.dynGainDb = (overshoot > 0.0f)
+                        ? rngSgn * std::min (overshoot, rngAbs)
+                        : 0.0f;
+
+            const Coeffs c = bellCoeffsFromG (b.gBell, b.curGain + b.dynGainDb, b.curQ);
+            for (int ch = 0; ch < nCh; ++ch)
+            {
+                StageState& s = b.state[0][ch];
+                channels[ch][n] = processStage (const_cast<Coeffs&> (c), s, channels[ch][n]);
             }
         }
     }

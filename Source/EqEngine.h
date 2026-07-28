@@ -125,6 +125,14 @@ public:
 
     double getSampleRate() const noexcept { return sampleRate_; }
 
+    // Current dynamic gain contribution (dB) a band is applying right now — for
+    // UI metering of dynamic action. Benign racy read (single float).
+    float getBandDynamicGainDb (int index) const noexcept
+    {
+        if (index < 0 || index >= kMaxBands) return 0.0f;
+        return bands_[index].dynGainDb;
+    }
+
 private:
     // -- SVF coefficient set (mix form) ------------------------------------
     struct Coeffs
@@ -149,10 +157,22 @@ private:
         bool   curEnabled = false;
         BandType curType = BandType::Bell;
         int    curSlope = 12;
+
+        // -- dynamic (threshold-driven) runtime; only used for dynamic Bells --
+        bool       isDynamic = false;
+        Coeffs     detCoeffs;                          // detector bandpass
+        StageState detState[kMaxChannels];             // detector filter state
+        float      env = 0.0f;                         // detector envelope (linear)
+        float      dynGainDb = 0.0f;                   // current dynamic contribution
+        float      gBell = 0.0f;                       // precomputed tan(pi f/fs)
+        float      atkCoeff = 1.0f, relCoeff = 1.0f;   // envelope attack/release
+        float      thresholdDb = 0.0f, rangeDb = 0.0f;
     };
 
     static Coeffs computeCoeffs (BandType type, double fs, float freqHz,
                                  float gainDb, float q) noexcept;
+    static Coeffs bellCoeffsFromG (float g, float gainDb, float q) noexcept;
+    static Coeffs bandpassCoeffs  (double fs, float freqHz, float q) noexcept;
     static int    stagesForSlope (int slopeDbPerOct) noexcept;
     static float  processStage (Coeffs& c, StageState& s, float x) noexcept;
     static std::complex<double> stageResponse (const Coeffs& c, double omega) noexcept;

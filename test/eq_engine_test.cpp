@@ -174,6 +174,63 @@ int main()
         eq.setSoloBand (-1);
     }
 
+    std::printf ("\n== dynamic EQ: engages above threshold, rests below ==\n");
+    {
+        // de-ess style band: static 0 dB bell @ 6k, cut up to 8 dB when loud,
+        // threshold -18 dB. Measure gain at a quiet level vs a loud level.
+        BandSpec b { true, BandType::Bell, 6000, 0.0f, 4.0f, 12 };
+        b.dynamic = true; b.thresholdDb = -18.0f; b.rangeDb = -8.0f;
+        b.attackMs = 1.0f; b.releaseMs = 50.0f;
+
+        auto measureAtLevel = [&] (double amp) -> double
+        {
+            oneBand (eq, b);
+            const int block = 256; const double fs2 = fs, freq = 6000.0;
+            const double dph = 2.0 * kPi * freq / fs2;
+            const int warm = (int) (fs2 * 0.4), meas = (int) (fs2 * 0.4);
+            double ph = 0, sIn = 0, sOut = 0; int done = 0; const int tot = warm + meas;
+            std::vector<float> buf (block), in (block);
+            while (done < tot)
+            {
+                int nn = std::min (block, tot - done);
+                for (int i = 0; i < nn; ++i) { buf[i] = (float) (amp * std::sin (ph)); in[i] = buf[i]; ph += dph; }
+                float* ch[1] = { buf.data() };
+                eq.process (ch, 1, nn);
+                if (done >= warm) for (int i = 0; i < nn; ++i) { sIn += (double) in[i]*in[i]; sOut += (double) buf[i]*buf[i]; }
+                done += nn;
+            }
+            return 10.0 * std::log10 (sOut / std::max (sIn, 1e-20));
+        };
+
+        // quiet tone ~ -30 dBFS (amp .0316): below threshold → ~0 dB (no cut)
+        const double quiet = measureAtLevel (0.0316);
+        check (std::abs (quiet) < 1.0, "dynamic band rests (~0 dB) below threshold: " + std::to_string (quiet));
+
+        // loud tone ~ -3 dBFS (amp .707): well above threshold → near full -8 dB cut
+        const double loud = measureAtLevel (0.707);
+        check (loud < -6.0 && loud > -9.0, "dynamic band cuts ~-8 dB when loud: " + std::to_string (loud));
+
+        // a static (non-dynamic) version of the same band must NOT cut when loud
+        BandSpec bs = b; bs.dynamic = false;
+        oneBand (eq, bs);
+        check (std::abs (measureGainDb (eq, 6000, fs)) < 0.2, "same band without dynamic flag is flat");
+    }
+
+    std::printf ("\n== dynamic EQ: range clamps the maximum action ==\n");
+    {
+        BandSpec b { true, BandType::Bell, 3000, 0.0f, 3.0f, 12 };
+        b.dynamic = true; b.thresholdDb = -40.0f; b.rangeDb = -3.0f; // easily exceeded
+        b.attackMs = 1.0f; b.releaseMs = 30.0f;
+        oneBand (eq, b);
+        // very loud tone -> overshoot huge, but action must clamp at -3 dB
+        const int block = 256; const double freq = 3000.0, dph = 2.0*kPi*freq/fs;
+        const int warm = (int)(fs*0.4), meas=(int)(fs*0.4); double ph=0,sIn=0,sOut=0; int done=0; const int tot=warm+meas;
+        std::vector<float> buf(block), in(block);
+        while (done<tot){int nn=std::min(block,tot-done);for(int i=0;i<nn;++i){buf[i]=(float)(0.9*std::sin(ph));in[i]=buf[i];ph+=dph;}float* ch[1]={buf.data()};eq.process(ch,1,nn);if(done>=warm)for(int i=0;i<nn;++i){sIn+=(double)in[i]*in[i];sOut+=(double)buf[i]*buf[i];}done+=nn;}
+        const double g = 10.0*std::log10(sOut/std::max(sIn,1e-20));
+        check (g > -3.6 && g < -2.4, "dynamic action clamps at range (-3 dB): " + std::to_string (g));
+    }
+
     std::printf ("\n%s (%d failures)\n", g_fail == 0 ? "ALL PASS" : "FAILURES", g_fail);
     return g_fail == 0 ? 0 : 1;
 }
