@@ -1535,51 +1535,72 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
                                                    const juce::String& la, const juce::String& lb,
                                                    float durA, float durB, bool numbersOnly) const
 {
-    auto ff = [](float v) { return v > -99.0f ? juce::String(v, 1) : juce::String("N/A"); };
     juce::String ctx;
     ctx += "[BEGIN COMPARE CONTEXT - this block is a one-off comparison, NOT an ongoing mix discussion]\n";
     ctx += "[AI COMPARE REQUEST: " + la + " vs " + lb + "]\n\n";
 
+    // The two modes differ ONLY in the instruction below; the DATA is
+    // identical. figBlock emits the full per-source figure set the pipeline
+    // carries, each with an N/A fallback so a figure a source never measured
+    // reads as N/A rather than a fabricated zero. (LRA 0 = unavailable per the
+    // meter convention; band crest / overs / PSR / PLR / macro bands carry
+    // their own -1 / -999 / -120 sentinels.)
+    auto na1 = [](float v) { return v > -99.0f ? juce::String(v, 1) : juce::String("N/A"); };
+    auto figBlock = [&](const juce::String& label, const MeterData& m)
+    {
+        float tp = juce::jmax(m.truePeakMaxL, m.truePeakMaxR);
+        if (tp <= -99.0f) tp = juce::jmax(m.truePeakL, m.truePeakR);
+        float psr = (m.psr > -99.0f) ? m.psr
+                  : (m.shortTermTruePeak > -99.0f && m.shortTerm > -99.0f)
+                        ? (m.shortTermTruePeak - m.shortTerm) : -999.0f;
+        float plr = (m.plr > -99.0f) ? m.plr
+                  : (tp > -99.0f && m.integrated > -99.0f) ? (tp - m.integrated) : -999.0f;
+        auto bc = [](float v) { return v >= 0.0f ? juce::String(v, 1) : juce::String("N/A"); };
+        juce::String s;
+        s += label + ":\n";
+        s += "  Integrated: " + na1(m.integrated) + " LUFS\n";
+        s += "  LRA: " + (m.loudnessRange > 0.0f ? juce::String(m.loudnessRange, 1) + " LU"
+                                                 : juce::String("N/A")) + "\n";
+        s += "  True peak: " + na1(tp) + " dBTP\n";
+        s += "  PSR: " + (psr > -99.0f ? juce::String(psr, 1) + " dB" : juce::String("N/A")) + "\n";
+        s += "  PLR: " + (plr > -99.0f ? juce::String(plr, 1) + " dB" : juce::String("N/A")) + "\n";
+        s += "  Crest: " + juce::String(m.crestFactor, 1) + " dB\n";
+        s += "  Width: " + juce::String(m.width, 1) + " %\n";
+        s += "  Correlation: " + juce::String(m.correlation, 2) + "\n";
+        s += "  Inter-sample overs: " + (m.oversCount >= 0 ? juce::String(m.oversCount)
+                                                          : juce::String("N/A")) + "\n";
+        s += "  Band crest (low/mid/high): " + bc(m.bandCrestSub) + " / " + bc(m.bandCrestMid)
+           + " / " + bc(m.bandCrestTop) + " dB\n";
+        // Band relatives: each pink-referenced octave band vs the source's own
+        // band average - the tonal-balance figures the analysis prose quotes
+        // ("sub +7dB above the band average"). N/A when the source carries no
+        // macro-band data (older review, or reference/live with none).
+        {
+            float sum = 0.0f; int n = 0;
+            for (float v : m.macroBandDb) if (v > -119.0f) { sum += v; ++n; }
+            if (n > 0)
+            {
+                const float mean = sum / (float)n;
+                auto rel = [&](int i) {
+                    return m.macroBandDb[(size_t)i] > -119.0f
+                        ? juce::String(m.macroBandDb[(size_t)i] - mean, 1) : juce::String("N/A");
+                };
+                s += "  Band relatives vs avg (sub/low/low-mid/mid/high-mid/air): "
+                   + rel(0) + " / " + rel(1) + " / " + rel(2) + " / " + rel(3) + " / "
+                   + rel(4) + " / " + rel(5) + " dB\n";
+            }
+            else
+                s += "  Band relatives vs avg: N/A\n";
+        }
+        return s;
+    };
+
+    ctx += "METER FIGURES (report ALL of these for BOTH sources):\n";
+    ctx += figBlock(la, da);
+    ctx += figBlock(lb, db);
+
     if (numbersOnly)
     {
-        // Numbers-only means NO interpretation, NOT fewer numbers. Emit the
-        // FULL figure set the pipeline carries, per source, each with an N/A
-        // fallback so a figure an older review never stored reads as N/A rather
-        // than a fake zero. The restriction below is on narrative and chains,
-        // not on coverage. (LRA 0 = unavailable per the meter convention; band
-        // crest / overs / PSR / PLR carry their own -1 / -999 sentinels.)
-        auto na1 = [](float v) { return v > -99.0f ? juce::String(v, 1) : juce::String("N/A"); };
-        auto figBlock = [&](const juce::String& label, const MeterData& m)
-        {
-            float tp = juce::jmax(m.truePeakMaxL, m.truePeakMaxR);
-            if (tp <= -99.0f) tp = juce::jmax(m.truePeakL, m.truePeakR);
-            float psr = (m.psr > -99.0f) ? m.psr
-                      : (m.shortTermTruePeak > -99.0f && m.shortTerm > -99.0f)
-                            ? (m.shortTermTruePeak - m.shortTerm) : -999.0f;
-            float plr = (m.plr > -99.0f) ? m.plr
-                      : (tp > -99.0f && m.integrated > -99.0f) ? (tp - m.integrated) : -999.0f;
-            auto bc = [](float v) { return v >= 0.0f ? juce::String(v, 1) : juce::String("N/A"); };
-            juce::String s;
-            s += label + ":\n";
-            s += "  Integrated: " + na1(m.integrated) + " LUFS\n";
-            s += "  LRA: " + (m.loudnessRange > 0.0f ? juce::String(m.loudnessRange, 1) + " LU"
-                                                     : juce::String("N/A")) + "\n";
-            s += "  True peak: " + na1(tp) + " dBTP\n";
-            s += "  PSR: " + (psr > -99.0f ? juce::String(psr, 1) + " dB" : juce::String("N/A")) + "\n";
-            s += "  PLR: " + (plr > -99.0f ? juce::String(plr, 1) + " dB" : juce::String("N/A")) + "\n";
-            s += "  Crest: " + juce::String(m.crestFactor, 1) + " dB\n";
-            s += "  Width: " + juce::String(m.width, 1) + " %\n";
-            s += "  Correlation: " + juce::String(m.correlation, 2) + "\n";
-            s += "  Inter-sample overs: " + (m.oversCount >= 0 ? juce::String(m.oversCount)
-                                                              : juce::String("N/A")) + "\n";
-            s += "  Band crest (low/mid/high): " + bc(m.bandCrestSub) + " / " + bc(m.bandCrestMid)
-               + " / " + bc(m.bandCrestTop) + " dB\n";
-            return s;
-        };
-        ctx += "METER FIGURES (report ALL of these for BOTH sources):\n";
-        ctx += figBlock(la, da);
-        ctx += figBlock(lb, db);
-
         ctx += "\nReport EVERY figure above for both sources, including any where one "
                "source has a value and the other reads N/A - do not drop a figure just "
                "because it did not change much. The ONLY restriction is on interpretation: "
@@ -1602,12 +1623,9 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
         return ctx;
     }
 
-    ctx += la + ": Int " + ff(da.integrated) + " LUFS | Crest " + juce::String(da.crestFactor, 1) + " dB";
-    if (da.width < 10.0f || da.width > 55.0f) ctx += " | Width " + juce::String(da.width, 1) + "%";
-    ctx += "\n" + lb + ": Int " + ff(db.integrated) + " LUFS | Crest " + juce::String(db.crestFactor, 1) + " dB";
-    if (db.width < 10.0f || db.width > 55.0f) ctx += " | Width " + juce::String(db.width, 1) + "%";
-
-    ctx += "\n\nKEY DIFFERENCES (only mention if significant):\n";
+    // Prose (narrative) mode: SAME figures, free to interpret. A significance
+    // summary and the band-difference narrative help it lead with what matters.
+    ctx += "\nKEY DIFFERENCES (only mention if significant):\n";
     const float lufsDiff = db.integrated - da.integrated;
     ctx += std::abs(lufsDiff) > 1.5f
         ? ("- Loudness: " + juce::String(lufsDiff, 1) + " dB difference\n")
@@ -1623,11 +1641,12 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
     ctx += "\n";
     appendTonalDiff(ctx, da.spectrum, db.spectrum, la, lb);
 
-    ctx += "\nINSTRUCTIONS: Only comment on differences that are genuinely significant. "
-           "Small variations (< 1.5 LUFS, < 2dB crest, < 15% width) are normal measurement "
-           "noise and should be described as practically the same. For tonal balance, speak "
-           "in plain language ('more low end', 'brighter on top') - do NOT quote dB values or "
-           "band names. Be concise - 2-3 paragraphs max.\n";
+    ctx += "\nINSTRUCTIONS: You have the full figures above and MAY interpret them. Only "
+           "comment on differences that are genuinely significant. Small variations "
+           "(< 1.5 LUFS, < 2dB crest, < 15% width) are normal measurement noise and should "
+           "be described as practically the same. For tonal balance, speak in plain language "
+           "('more low end', 'brighter on top') - do NOT quote dB values or band names. Be "
+           "concise - 2-3 paragraphs max.\n";
 
     if (durA > 0 && durB > 0)
     {

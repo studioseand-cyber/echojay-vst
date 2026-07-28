@@ -567,11 +567,13 @@ void EchoJayWorkspace::doLoad()
 
             // Snapshot in-memory spectrum data before overwriting (server doesn't store it)
             // Maps review id → (spectrumBands, hasSpectrum)
-            struct SpecSnap { std::array<float, 64> bands; bool has; };
+            struct SpecSnap { std::array<float, 64> bands; bool has;
+                              std::array<float, 6> macro; bool hasMacro; };
             std::vector<std::pair<juce::String, SpecSnap>> specCache;
             for (auto& lr : reviews)
-                if (lr.hasSpectrum)
-                    specCache.push_back({ lr.id, { lr.spectrumBands, true } });
+                if (lr.hasSpectrum || lr.hasMacroBands)
+                    specCache.push_back({ lr.id, { lr.spectrumBands, lr.hasSpectrum,
+                                                   lr.macroBandDb, lr.hasMacroBands } });
 
             reviews.clear();
             if (auto* arr = root->getProperty("reviews").getArray())
@@ -582,7 +584,11 @@ void EchoJayWorkspace::doLoad()
                     // Restore in-session spectrum that the server doesn't persist
                     for (auto& sc : specCache)
                         if (sc.first == r.id)
-                            { r.spectrumBands = sc.second.bands; r.hasSpectrum = true; break; }
+                        {
+                            if (sc.second.has)      { r.spectrumBands = sc.second.bands; r.hasSpectrum = true; }
+                            if (sc.second.hasMacro) { r.macroBandDb   = sc.second.macro; r.hasMacroBands = true; }
+                            break;
+                        }
                     reviews.push_back(std::move(r));
                 }
             }
@@ -716,11 +722,13 @@ void EchoJayWorkspace::doSync()
                     localOnly.push_back(lr);
 
             // Snapshot in-memory spectrum data before overwriting (server doesn't store it)
-            struct SpecSnap { std::array<float, 64> bands; bool has; };
+            struct SpecSnap { std::array<float, 64> bands; bool has;
+                              std::array<float, 6> macro; bool hasMacro; };
             std::vector<std::pair<juce::String, SpecSnap>> specCache;
             for (auto& lr : reviews)
-                if (lr.hasSpectrum)
-                    specCache.push_back({ lr.id, { lr.spectrumBands, true } });
+                if (lr.hasSpectrum || lr.hasMacroBands)
+                    specCache.push_back({ lr.id, { lr.spectrumBands, lr.hasSpectrum,
+                                                   lr.macroBandDb, lr.hasMacroBands } });
 
             reviews.clear();
             if (auto* arr = root->getProperty("reviews").getArray())
@@ -731,7 +739,11 @@ void EchoJayWorkspace::doSync()
                     // Restore in-session spectrum that the server doesn't persist
                     for (auto& sc : specCache)
                         if (sc.first == r.id)
-                            { r.spectrumBands = sc.second.bands; r.hasSpectrum = true; break; }
+                        {
+                            if (sc.second.has)      { r.spectrumBands = sc.second.bands; r.hasSpectrum = true; }
+                            if (sc.second.hasMacro) { r.macroBandDb   = sc.second.macro; r.hasMacroBands = true; }
+                            break;
+                        }
                     reviews.push_back(std::move(r));
                 }
             }

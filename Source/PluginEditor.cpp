@@ -4415,18 +4415,24 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
     // deriving the scope from it alone resolves to "" and silently mis-scopes
     // the whole list (the reproduction: reopen a project, the list shows the
     // wrong captures until you click a chat). Use the active chat's trackName
-    // when there IS one; otherwise fall to the header project
-    // (newChatProjectName -> processorRef.getProjectName(), or this session's
-    // auto label when the DAW gave no name). That value lives on the processor,
-    // so it is correct the instant the menu opens and survives a recreate. The
-    // auto label is non-empty, so an empty DAW name scopes to THIS session's
-    // chats, never to every project.
+    // when there IS one; otherwise fall to the header project. Resolve that
+    // WITHOUT newChatProjectName(): its ensureSessionAutoProject() fallback
+    // MINTS and writes a session-auto-project file, so calling it here would
+    // mutate persistent state just from opening a dropdown. getProjectName()
+    // and ChainHost::getSessionAutoProject() are both pure reads - the latter
+    // returns the label a chat already stamped this session, or "" if none has
+    // (in which case there are no project chats to scope to anyway). The value
+    // lives on the processor, so it is correct the instant the menu opens and
+    // survives a recreate; the auto label is non-empty, so an empty DAW name
+    // scopes to THIS session's chats, never to every project.
     juce::String curProject;
     if (currentChatId.isNotEmpty())
         for (auto& c : workspace.getChats())
             if (c.id == currentChatId) { curProject = c.trackName; break; }
     if (curProject.isEmpty())
-        curProject = newChatProjectName();
+        curProject = processorRef.getProjectName().trim();
+    if (curProject.isEmpty())
+        curProject = ChainHost::getSessionAutoProject();   // pure read; "" if none minted yet
 
     auto reviewById = [&](const juce::String& id) -> const WsReview* {
         for (auto& r : workspace.getReviews()) if (r.id == id) return &r;
@@ -4723,7 +4729,8 @@ MeterData EchoJayEditor::getSlotMeterData(const CompareSlotState& slot) const
     d.bandCrestMid  = r.data.crestMid;
     d.bandCrestTop  = r.data.crestTop;
     d.isSilent      = false;
-    if (r.hasSpectrum) d.spectrum = r.spectrumBands;
+    if (r.hasSpectrum)    d.spectrum    = r.spectrumBands;
+    if (r.hasMacroBands)  d.macroBandDb = r.macroBandDb;   // band relatives source
     return d;
 }
 
@@ -8641,6 +8648,15 @@ juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
         rev.data.crestMid = d.bandCrestMid;
         rev.data.crestTop = d.bandCrestTop;
     }
+
+    // Pink-referenced macro bands for per-source band relatives in Compare
+    // (same source `d` as the figures above: the channel's own for a channel
+    // capture, the host mix otherwise). Populated from the capture engine's
+    // smoothed macroBandDb; -120 = no data, mirrored session-cache lifetime as
+    // spectrumBands (not persisted to the server).
+    rev.macroBandDb = d.macroBandDb;
+    rev.hasMacroBands = false;
+    for (float v : d.macroBandDb) if (v > -119.0f) { rev.hasMacroBands = true; break; }
 
     // In-memory spectrum for Compare-page display (not persisted to server)
     if (snap.hasDualSpectrum) {

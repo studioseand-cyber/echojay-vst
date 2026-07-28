@@ -163,6 +163,12 @@ struct WsReview {
     // so that the Compare-page spectrum panel can show stored data for WsCapture slots.
     std::array<float, 64> spectrumBands = {};
     bool hasSpectrum = false;
+    // In-memory only (same lifetime as spectrumBands, session-cached across a
+    // merge). The pink-referenced per-octave macro bands, so the Compare
+    // context can report per-source band relatives (band vs the band average).
+    // -120 = no data; sub, low, lowMid, mid, highMid, air.
+    std::array<float, 6> macroBandDb = { -120, -120, -120, -120, -120, -120 };
+    bool hasMacroBands = false;
 };
 
 struct WsProfile {
