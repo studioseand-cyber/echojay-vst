@@ -425,11 +425,19 @@ public:
     // its last capture is skipped, so calling this on every editor teardown
     // costs nothing when nothing changed.
     void refreshStateCacheIfIdle();
-    // {"1": "<base64>", "2": null} for the session blob. Serialises the
-    // cache and nothing else: it never calls into a hosted plugin, so it is
-    // safe in getStateInformation. Applies the total cap, largest dropped
-    // first, and records a note for anything it drops.
-    juce::var getCachedSlotStatesVar() const;
+    // {"1": "<base64>", "2": null} for a consumer that wants the settings.
+    // Serialises the cache and nothing else: it never calls into a hosted
+    // plugin, so it is safe inside getStateInformation. Nulls any slot over
+    // maxSlotBytes, then applies maxTotalBytes largest-dropped-first, and
+    // names anything it drops in a note using `consumer` ("this session",
+    // "this saved chain").
+    //
+    // THE CAPS ARE THE CALLER'S, NOT THIS FUNCTION'S. There is exactly one
+    // capture path feeding one cache; the session and the API differ only in
+    // the numbers they ask for here. See the two cap pairs below.
+    juce::var getCachedSlotStatesVar(int maxSlotBytes,
+                                     int maxTotalBytes,
+                                     const juce::String& consumer) const;
 
     // Session-scoped, plain-language notes about settings that did NOT
     // capture or did NOT restore, named by plugin. Never persisted, never
@@ -438,16 +446,23 @@ public:
     juce::StringArray getStateNotes() const;
     void clearStateNotes();
 
-    // SESSION caps, decoded bytes. DELIBERATELY TIGHTER than the API's
-    // 256KB per slot / 1MB total (see the caps note in
-    // SESSION_B_BUILD_SPEC.md section 5, and the same reasoning at the save
-    // path when B.1 lands). An oversized chain sent to the API is rejected
-    // by a server and the user is told; an oversized session has no server
-    // to reject it, so it silently bloats the user's project file on every
-    // single save, forever. The API cap protects a request, this one
-    // protects a document. Do NOT "fix" the inconsistency by aligning them.
+    // TWO CAP PAIRS, DELIBERATELY DIFFERENT. Both in decoded bytes.
+    //
+    // SESSION (tighter): an oversized session has no server to reject it. It
+    // is written into the user's project file on every single save, it grows
+    // the file forever, and there is no undo. This cap protects a document.
+    //
+    // API (looser): mirrors MAX_STATE_BYTES_PER_SLOT / MAX_STATE_BYTES_TOTAL
+    // in the backend's lib/dash/chains.js, which rejects with 413 rather than
+    // truncating. Capping first here is what turns a failed save into an
+    // honest partial one. This cap protects a request.
+    //
+    // Do NOT "fix" the difference by aligning them, in either direction. Same
+    // note lives in SESSION_B_BUILD_SPEC.md section 5.
     static constexpr int kSessionStateMaxSlotBytes  = 128 * 1024;
     static constexpr int kSessionStateMaxTotalBytes = 512 * 1024;
+    static constexpr int kApiStateMaxSlotBytes      = 256 * 1024;
+    static constexpr int kApiStateMaxTotalBytes     = 1024 * 1024;
 
     bool chainWarningDismissed = false;
 

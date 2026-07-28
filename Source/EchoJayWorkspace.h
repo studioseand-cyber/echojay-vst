@@ -61,6 +61,22 @@ struct WsChat {
     // future adopt-by-name repair. Refreshed on each send while live.
     juce::String linkUid;
     juce::String linkNameSnap;
+    // ---- Session B.0: last activity ----
+    // The dashboard orders recentChats by `updatedAt || created`
+    // (lib/dash/adapters.js activityKey), and the web client has stamped it on
+    // every chat mutation since D1.1. The plugin sends chats WHOLE, so until
+    // now a plugin save silently dropped whatever the web wrote and those
+    // chats fell back to creation order.
+    //
+    // Two rules, both load-bearing:
+    //  - PRESERVE: parsed from the server and written back untouched for any
+    //    chat the plugin did not modify.
+    //  - SERIALISE ONLY WHEN NON-EMPTY, so a chat that has never been stamped
+    //    by either client round-trips byte-identically (the same silent
+    //    migration guarantee linkUid has).
+    // Format is exactly JavaScript's new Date().toISOString(): UTC,
+    // milliseconds, trailing Z. See isoUtcNow() in the .cpp.
+    juce::String updatedAt;
 };
 
 struct WsAlbum {

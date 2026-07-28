@@ -2748,8 +2748,12 @@ void ChainHost::captureSlotState(int i, double nowMs)
     catch (...) { return; }   // keep whatever we last held for this slot
     const double cost = juce::Time::getMillisecondCounterHiRes() - t0;
 
+    // Stored up to the LOOSEST consumer's cap, so one capture can serve both.
+    // The tighter session cap is applied where the session is written, not
+    // here: capping at storage time would silently make the API's larger cap
+    // unreachable and there would be no second capture path to fall back on.
     const int  bytes    = (int)mb.getSize();
-    const bool oversize = bytes > kSessionStateMaxSlotBytes;
+    const bool oversize = bytes > kApiStateMaxSlotBytes;
     juce::String b64;
     if (bytes > 0 && !oversize)
         b64 = juce::Base64::toBase64(mb.getData(), mb.getSize());
@@ -2780,8 +2784,8 @@ void ChainHost::captureSlotState(int i, double nowMs)
             note = s.desc.name + ": settings are "
                  + juce::File::descriptionOfSizeInBytes((juce::int64)bytes)
                  + ", over the " + juce::File::descriptionOfSizeInBytes(
-                       (juce::int64)kSessionStateMaxSlotBytes)
-                 + " limit, so they will not be saved with this session";
+                       (juce::int64)kApiStateMaxSlotBytes)
+                 + " limit, so they will not be saved";
         }
         else if (!oversize && s.oversizeReported)
         {
@@ -2791,7 +2795,9 @@ void ChainHost::captureSlotState(int i, double nowMs)
     if (note.isNotEmpty()) addStateNote(note);
 }
 
-juce::var ChainHost::getCachedSlotStatesVar() const
+juce::var ChainHost::getCachedSlotStatesVar(int maxSlotBytes,
+                                            int maxTotalBytes,
+                                            const juce::String& consumer) const
 {
     // Serialises the cache and NOTHING else: no call into a hosted plugin,
     // no work that can block, so this is safe inside the host's save
@@ -2810,11 +2816,29 @@ juce::var ChainHost::getCachedSlotStatesVar() const
     }
     if (held.empty()) return {};
 
+    // Per-slot cap for THIS consumer. The cache may hold a blob that is fine
+    // for one consumer and too big for the other; that is the whole reason
+    // the caps are parameters.
+    for (auto& h : held)
+    {
+        if (h.bytes > maxSlotBytes && h.bytes > 0)
+        {
+            addStateNote(h.name + ": settings were not saved with " + consumer
+                       + " (they are "
+                       + juce::File::descriptionOfSizeInBytes((juce::int64)h.bytes)
+                       + ", over the "
+                       + juce::File::descriptionOfSizeInBytes((juce::int64)maxSlotBytes)
+                       + " limit)");
+            h.b64   = {};
+            h.bytes = 0;
+        }
+    }
+
     // Total cap: keep the smallest states that fit, drop the largest first,
     // and name what was dropped. Degrade, never fail.
     juce::int64 total = 0;
     for (auto& h : held) total += h.bytes;
-    if (total > kSessionStateMaxTotalBytes)
+    if (total > maxTotalBytes)
     {
         std::vector<int> byLargest;
         for (int i = 0; i < (int)held.size(); ++i)
@@ -2823,13 +2847,13 @@ juce::var ChainHost::getCachedSlotStatesVar() const
                   [&held](int a, int b) { return held[(size_t)a].bytes > held[(size_t)b].bytes; });
         for (int idx : byLargest)
         {
-            if (total <= kSessionStateMaxTotalBytes) break;
+            if (total <= maxTotalBytes) break;
             auto& h = held[(size_t)idx];
             total -= h.bytes;
-            addStateNote(h.name + ": settings were not saved with this session"
-                                  " (the chain's settings exceeded "
+            addStateNote(h.name + ": settings were not saved with " + consumer
+                       + " (the chain's settings exceeded "
                        + juce::File::descriptionOfSizeInBytes(
-                             (juce::int64)kSessionStateMaxTotalBytes) + " in total)");
+                             (juce::int64)maxTotalBytes) + " in total)");
             h.b64   = {};
             h.bytes = 0;
         }

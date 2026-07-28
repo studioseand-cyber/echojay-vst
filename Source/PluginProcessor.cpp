@@ -1920,7 +1920,10 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     // the message thread, because a hosted getStateInformation can take
     // seconds and this callback is teardown-adjacent.
     state->setProperty("chainSlotsXml", chainHost.getSlotsStateXml());
-    auto chainSlotState = chainHost.getCachedSlotStatesVar();
+    auto chainSlotState = chainHost.getCachedSlotStatesVar(
+                              ChainHost::kSessionStateMaxSlotBytes,
+                              ChainHost::kSessionStateMaxTotalBytes,
+                              "this session");
     if (!chainSlotState.isVoid())
         state->setProperty("chainSlotState", chainSlotState);
     state->setProperty("chainWarningDismissed", chainHost.chainWarningDismissed);

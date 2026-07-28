@@ -4,6 +4,29 @@
 extern void ejTeardownLog(const juce::String& msg);
 
 // ============================================================================
+// B.0 — chat last-activity stamps
+// ============================================================================
+// EXACTLY JavaScript's new Date().toISOString(), which is what the web client
+// writes (api/data.js and the D1.1 chat mutations): UTC, milliseconds,
+// trailing Z. NOT juce::Time::toISO8601, which renders LOCAL time with a
+// numeric offset ("+0100"); the dashboard sorts these strings with
+// localeCompare (lib/dash/adapters.js activityKey), so a local-offset stamp
+// would order wrongly against a UTC one for the same instant.
+static juce::String isoUtcNow()
+{
+    const auto now = juce::Time::getCurrentTime();
+    // Time's component accessors are local, so shift by the local offset and
+    // read the components back as UTC. No CRT date calls, so this behaves the
+    // same on Windows.
+    const juce::Time utc (now.toMilliseconds()
+                          - (juce::int64) now.getUTCOffsetSeconds() * 1000);
+    return juce::String::formatted("%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+                                   utc.getYear(), utc.getMonth() + 1, utc.getDayOfMonth(),
+                                   utc.getHours(), utc.getMinutes(), utc.getSeconds(),
+                                   (int) (now.toMilliseconds() % 1000));
+}
+
+// ============================================================================
 // Construction / destruction
 // ============================================================================
 
@@ -120,7 +143,7 @@ void EchoJayWorkspace::moveChatToAlbum(const juce::String& chatId,
 
     // Update the chat's albumId
     for (auto& c : chats)
-        if (c.id == chatId) { c.albumId = albumId; break; }
+        if (c.id == chatId) { c.albumId = albumId; c.updatedAt = isoUtcNow(); break; }
 
     // Add to new album's chatIds (if albumId non-empty)
     if (albumId.isNotEmpty())
@@ -140,7 +163,7 @@ void EchoJayWorkspace::moveChatToAlbum(const juce::String& chatId,
 void EchoJayWorkspace::removeChatFromAlbum(const juce::String& chatId)
 {
     for (auto& c : chats)
-        if (c.id == chatId) { c.albumId = ""; break; }
+        if (c.id == chatId) { c.albumId = ""; c.updatedAt = isoUtcNow(); break; }
 
     for (auto& a : albums)
         a.chatIds.removeString(chatId);
@@ -205,6 +228,7 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
             m.editTargetUid  = editTargetUid;
             m.editTargetName = editTargetName;
             c.messages.push_back(std::move(m));
+            c.updatedAt = isoUtcNow();   // B.0: real activity on this chat
             return first;
         }
     }
@@ -227,6 +251,7 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
     m.editTargetUid  = editTargetUid;
     m.editTargetName = editTargetName;
     c.messages.push_back(std::move(m));
+    c.updatedAt = isoUtcNow();
     chats.insert(chats.begin(), std::move(c));
     return true; // first message
 }
@@ -240,6 +265,7 @@ void EchoJayWorkspace::clearEditAltPrompt(const juce::String& chatId,
         for (auto& m : c.messages)
             if (m.role == "assistant" && m.content == matchContent)
                 m.editAltPrompt.clear();
+        c.updatedAt = isoUtcNow();
         return;
     }
 }
@@ -262,6 +288,7 @@ void EchoJayWorkspace::markEditApplied(const juce::String& chatId,
                 m.editAltPrompt = altPrompt;
                 m.editAltLabel  = altLabel;
             }
+        c.updatedAt = isoUtcNow();
         return;
     }
 }
@@ -276,6 +303,7 @@ void EchoJayWorkspace::markAskAnswered(const juce::String& chatId,
             if (m.role == "assistant" && m.askJson.isNotEmpty()
                 && m.content == matchContent)
                 m.askAnswered = true;
+        c.updatedAt = isoUtcNow();
         return;
     }
 }
@@ -292,6 +320,7 @@ void EchoJayWorkspace::updateAssistantGainJson(const juce::String& chatId,
                 if (it->role == "assistant" && it->content == matchContent)
                 {
                     it->gainJson = gainJson;
+                    c.updatedAt  = isoUtcNow();
                     return;
                 }
             return;
@@ -302,14 +331,14 @@ void EchoJayWorkspace::setChatTitle(const juce::String& chatId,
                                      const juce::String& title)
 {
     for (auto& c : chats)
-        if (c.id == chatId) { c.title = title; return; }
+        if (c.id == chatId) { c.title = title; c.updatedAt = isoUtcNow(); return; }
 }
 
 void EchoJayWorkspace::setChatTrackName(const juce::String& chatId,
                                          const juce::String& trackName)
 {
     for (auto& c : chats)
-        if (c.id == chatId) { c.trackName = trackName; return; }
+        if (c.id == chatId) { c.trackName = trackName; c.updatedAt = isoUtcNow(); return; }
 }
 
 void EchoJayWorkspace::renameProject(const juce::String& oldName,
@@ -318,7 +347,7 @@ void EchoJayWorkspace::renameProject(const juce::String& oldName,
     const juce::String a = oldName.trim(), b = newName.trim();
     if (a.isEmpty() || b.isEmpty() || a == b) return;
     for (auto& c : chats)
-        if (c.trackName == a) c.trackName = b;
+        if (c.trackName == a) { c.trackName = b; c.updatedAt = isoUtcNow(); }
     for (auto& al : albums)
         for (auto& pn : al.projectNames)
             if (pn == a) pn = b;
@@ -327,9 +356,14 @@ void EchoJayWorkspace::renameProject(const juce::String& oldName,
 void EchoJayWorkspace::incrementChatRevisionCount(const juce::String& chatId)
 {
     for (auto& c : chats)
-        if (c.id == chatId) { c.revisionCount++; return; }
+        if (c.id == chatId) { c.revisionCount++; c.updatedAt = isoUtcNow(); return; }
 }
 
+// NOTE: pinning deliberately does NOT stamp updatedAt. It already has its
+// own timestamp (pinnedAt) which orders the pinned group, and it is an
+// organisational act rather than activity: bumping a chat to the top of the
+// dashboard's recents because someone pinned it would be a lie about when
+// they last worked on it.
 void EchoJayWorkspace::setChatPinned(const juce::String& chatId, bool pinned)
 {
     for (auto& c : chats)
@@ -747,6 +781,9 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
         c.linkUid       = obj->getProperty("linkUid").toString();      // absent -> "" = main chat
         c.linkNameSnap  = obj->getProperty("linkNameSnap").toString();
         c.pinnedAt      = obj->getProperty("pinnedAt").toString();
+        // B.0: whatever the web stamped. Absent on chats neither client has
+        // touched since D1.1, which is why it is only written back when set.
+        c.updatedAt     = obj->getProperty("updatedAt").toString();
 
         if (auto* msgs = obj->getProperty("messages").getArray())
         {
@@ -980,6 +1017,26 @@ bool EchoJayWorkspace::runRoundTripSelfTest()
     const bool chanStable = s2 == s2b;
     const bool chanFields = rt2.linkUid == "abc123def0" && rt2.linkNameSnap == "Drums";
 
+    // B.0: a chat neither client has stamped must serialise with NO
+    // updatedAt key at all, and a chat the WEB stamped must come back out
+    // carrying exactly what the web wrote. The second one is the whole point
+    // of the slice: both clients send chats whole, so a field this client
+    // does not own has to survive the round trip untouched.
+    const bool updNoKey = !s1.contains("updatedAt");
+    WsChat webStamped = pre;
+    webStamped.id = "t3";
+    webStamped.updatedAt = "2026-07-28T09:15:00.123Z";   // as new Date().toISOString()
+    const auto s3   = ser(webStamped);
+    const auto rt3  = parseChat(juce::JSON::parse(s3));
+    const bool updPreserved = rt3.updatedAt == "2026-07-28T09:15:00.123Z"
+                           && ser(rt3) == s3;
+    // And our own stamp must be in the web's exact shape, not JUCE's
+    // local-offset ISO: 24 chars, T at 10, dot at 19, trailing Z.
+    const auto stamp = isoUtcNow();
+    const bool updFormat = stamp.length() == 24 && stamp[10] == 'T'
+                        && stamp[19] == '.' && stamp.endsWith("Z")
+                        && !stamp.contains("+");
+
     // WsReview round-trip (Phase C item 3)
     auto serR = [](const WsReview& r) { return juce::JSON::toString(reviewToVar(r), true); };
     WsReview mainRev;   // pre-C shape: no linkUid
@@ -1001,14 +1058,17 @@ bool EchoJayWorkspace::runRoundTripSelfTest()
                             && !sr1.contains("channelDataScoped");
 
     lastResult = preStable && preNoKeys && chanStable && chanFields
-              && revMainStable && revMainNoKey && revChanStable && revChanField && revMainNoSnap;
+              && revMainStable && revMainNoKey && revChanStable && revChanField && revMainNoSnap
+              && updNoKey && updPreserved && updFormat;
     std::fprintf(stderr,
         "EJWorkspace selftest: %s (preStable=%d preNoKeys=%d chanStable=%d chanFields=%d "
-        "revMainStable=%d revMainNoKey=%d revChanStable=%d revChanField=%d revMainNoSnap=%d)\n",
+        "revMainStable=%d revMainNoKey=%d revChanStable=%d revChanField=%d revMainNoSnap=%d "
+        "updNoKey=%d updPreserved=%d updFormat=%d)\n",
         lastResult ? "PASS" : "FAIL",
         (int)preStable, (int)preNoKeys, (int)chanStable, (int)chanFields,
         (int)revMainStable, (int)revMainNoKey, (int)revChanStable, (int)revChanField,
-        (int)revMainNoSnap);
+        (int)revMainNoSnap,
+        (int)updNoKey, (int)updPreserved, (int)updFormat);
     return lastResult;
 #endif
 }
@@ -1025,6 +1085,10 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
     obj->setProperty("pinned",        c.pinned);   // must survive the sync round-trip
     if (c.pinnedAt.isNotEmpty())
         obj->setProperty("pinnedAt",  c.pinnedAt);
+    // B.0: written back whether WE stamped it or the web did. Only when
+    // non-empty, so a never-stamped chat serialises exactly as before.
+    if (c.updatedAt.isNotEmpty())
+        obj->setProperty("updatedAt", c.updatedAt);
     // Phase C1: written only when non-empty — a main chat's serialised
     // form is byte-identical to pre-C1 (silent migration guarantee).
     if (c.linkUid.isNotEmpty())
