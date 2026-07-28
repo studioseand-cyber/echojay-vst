@@ -774,7 +774,19 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
     auto* settingsObj = settings.getDynamicObject();
     if (settingsObj == nullptr) return results;
 
-    juce::DynamicObject::Ptr synthBand;   // flat freq/gain the flat map cannot serve
+    // A grouped multiband EQ: any freq/gain/q in the request is a BAND move and
+    // the whole pair must go to the band matcher as a unit. Otherwise routing
+    // each key by its own flat-usability splits one move across two controls -
+    // bx_digital's suppressed gain lands on a band while its flat freq_hz (the
+    // stray "Dynamic EQ Frequency") steals the frequency half. A stray flat
+    // control must never take half a band move.
+    bool mapHasEqBands = false;
+    if (auto* groups = map.getProperty ("groups", juce::var()).getArray())
+        for (auto& gv : *groups)
+            if (groupIsEqBand (gv.getProperty ("family", "").toString(), gv))
+            { mapHasEqBands = true; break; }
+
+    juce::DynamicObject::Ptr synthBand;   // band-class keys routed to the matcher
     for (auto& kv : settingsObj->getProperties())
     {
         const juce::String semantic = kv.name.toString();
@@ -783,10 +795,11 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
         auto mapEntry = mapParams.getProperty (semantic, juce::var());
         const bool flatUsable = mapEntry.isObject() && usableParamEntry (mapEntry);
         const bool bandClass  = (semantic == "freq_hz" || semantic == "gain_db" || semantic == "q");
-        if (bandClass && ! flatUsable)
+        if (bandClass && (mapHasEqBands || ! flatUsable))
         {
-            // Suppressed or absent on the flat map: divert to the matcher as a
-            // one-band request rather than declining outright.
+            // EQ-band map, or a suppressed/absent flat entry: divert to the
+            // matcher as one coherent band request. On a grouped EQ this fires
+            // even when a flat entry exists, so freq and gain stay together.
             if (synthBand == nullptr) synthBand = new juce::DynamicObject();
             synthBand->setProperty (semantic, kv.value);
             continue;
