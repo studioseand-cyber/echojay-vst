@@ -501,10 +501,13 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     const float* right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
     if (left == nullptr) return;
 
-    // Feed meterEngine with the live input BEFORE AB replaces the buffer.
-    // This keeps the Compare "Live" panel showing the actual input signal
-    // regardless of whether compare-slot playback is active.
-    meterEngine.processBlock(left, right, buffer.getNumSamples());
+    // meterEngine (the Live meter / Meters+Visualisation / Link Monitor mix-bus
+    // row) and the capture engine now read the POST-chain output - see the tap
+    // AFTER chainHost.process at the end of processBlock. They used to read here,
+    // pre-chain, which reported EchoJay's INPUT and made a CHAIN-tab limiter
+    // invisible to a recapture (build-recapture-verify was measuring the
+    // unprocessed input). The AB/compare monitor taps below stay pre-their-own
+    // playback because they analyse the slot audio directly.
 
     // A/B playback: replace buffer with playback audio, then analyse it into
     // abMeterEngine so the Compare playing-slot panel has its own spectrum source.
@@ -669,6 +672,97 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         }
     }
 
+    
+    // Link consumer: drain all active Links; route to capture channels when capturing.
+    {
+        const bool isCapturing = (captureState.load() == CaptureState::Capturing);
+        const bool gotLccLock  = isCapturing && linkCaptureSpinLock.tryEnter();
+
+        // O(N) slot→lcc lookup on stack
+        LinkCaptureChannel* lccBySlot[kMaxLinkSlots] = {};
+        if (gotLccLock)
+            for (auto& c : linkCaptureChannels)
+                if (c->slotIdx >= 0 && c->slotIdx < kMaxLinkSlots)
+                    lccBySlot[c->slotIdx] = c.get();
+
+        for (int li = 0; li < kMaxLinkSlots; ++li)
+        {
+            auto& ls = activeLinkSlots[li];
+            if (!ls.lock.tryEnter()) continue;
+            if (ls.map != nullptr)
+            {
+                LinkCaptureChannel* lcc = gotLccLock ? lccBySlot[li] : nullptr;
+                if (lcc != nullptr)
+                {
+                    int nReq = std::min(buffer.getNumSamples(), (int)lcc->tmpBufL.size());
+                    uint32_t n = LinkShm::ringConsume(ls.map,
+                                                       lcc->tmpBufL.data(),
+                                                       lcc->tmpBufR.data(), nReq);
+                    if (n > 0)
+                    {
+                        ls.framesRead.fetch_add((int64_t)n, std::memory_order_relaxed);
+                        accumulateLinkChannel(*lcc, lcc->tmpBufL.data(), lcc->tmpBufR.data(), (int)n);
+                    }
+                }
+                else
+                {
+                    uint32_t n = LinkShm::ringConsume(ls.map, nullptr, nullptr,
+                                                       buffer.getNumSamples());
+                    if (n > 0)
+                        ls.framesRead.fetch_add((int64_t)n, std::memory_order_relaxed);
+                }
+            }
+            ls.lock.exit();
+        }
+
+        if (gotLccLock) linkCaptureSpinLock.exit();
+    }
+
+    // Silence detection (for UI state only — does NOT auto-stop capture)
+    float peakL = 0, peakR = 0;
+    for (int i = 0; i < buffer.getNumSamples(); ++i)
+    {
+        peakL = std::max(peakL, std::abs(left[i]));
+        peakR = std::max(peakR, std::abs(right[i]));
+    }
+    bool isSilent = (peakL < 0.0001f && peakR < 0.0001f);
+    
+    if (isSilent)
+    {
+        silenceCounter++;
+        if (silenceCounter > (int)(getSampleRate() * 0.5 / buffer.getNumSamples()))
+        {
+            audioSilent.store(true);
+            wasReceivingAudio = false;
+        }
+    }
+    else
+    {
+        silenceCounter = 0;
+        audioSilent.store(false);
+        wasReceivingAudio = true;
+    }
+
+    // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
+    {
+        juce::MidiBuffer emptyMidi;
+        chainHost.process(buffer, emptyMidi);
+    }
+
+    // ===== POST-CHAIN TAP =====
+    // meterEngine and the capture engine read the buffer AFTER chainHost has
+    // processed it, so the Live meter, the Meters/Visualisation panels, the
+    // Link Monitor mix-bus row AND every capture report what actually LEAVES
+    // EchoJay (the chain output), not its input. With an empty/all-bypassed
+    // chain, chainHost.process returned the buffer untouched, so this is
+    // bit-identical to the old pre-chain tap. Nothing between the old tap and
+    // here depended on the pre-chain buffer: the Link consumer reads Link
+    // rings (not this buffer), and silence detection keeps its own pre-chain
+    // read above. chainHost rewrites in place - re-read the pointers.
+    left  = buffer.getReadPointer(0);
+    right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
+    meterEngine.processBlock(left, right, buffer.getNumSamples());
+
     // Feed capture engine if capturing
     if (captureState.load() == CaptureState::Capturing)
     {
@@ -769,83 +863,6 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                 while (st > curST && !capMaxShortTerm.compare_exchange_weak(curST, st)) {}
             }
         }
-    }
-    
-    
-    // Link consumer: drain all active Links; route to capture channels when capturing.
-    {
-        const bool isCapturing = (captureState.load() == CaptureState::Capturing);
-        const bool gotLccLock  = isCapturing && linkCaptureSpinLock.tryEnter();
-
-        // O(N) slot→lcc lookup on stack
-        LinkCaptureChannel* lccBySlot[kMaxLinkSlots] = {};
-        if (gotLccLock)
-            for (auto& c : linkCaptureChannels)
-                if (c->slotIdx >= 0 && c->slotIdx < kMaxLinkSlots)
-                    lccBySlot[c->slotIdx] = c.get();
-
-        for (int li = 0; li < kMaxLinkSlots; ++li)
-        {
-            auto& ls = activeLinkSlots[li];
-            if (!ls.lock.tryEnter()) continue;
-            if (ls.map != nullptr)
-            {
-                LinkCaptureChannel* lcc = gotLccLock ? lccBySlot[li] : nullptr;
-                if (lcc != nullptr)
-                {
-                    int nReq = std::min(buffer.getNumSamples(), (int)lcc->tmpBufL.size());
-                    uint32_t n = LinkShm::ringConsume(ls.map,
-                                                       lcc->tmpBufL.data(),
-                                                       lcc->tmpBufR.data(), nReq);
-                    if (n > 0)
-                    {
-                        ls.framesRead.fetch_add((int64_t)n, std::memory_order_relaxed);
-                        accumulateLinkChannel(*lcc, lcc->tmpBufL.data(), lcc->tmpBufR.data(), (int)n);
-                    }
-                }
-                else
-                {
-                    uint32_t n = LinkShm::ringConsume(ls.map, nullptr, nullptr,
-                                                       buffer.getNumSamples());
-                    if (n > 0)
-                        ls.framesRead.fetch_add((int64_t)n, std::memory_order_relaxed);
-                }
-            }
-            ls.lock.exit();
-        }
-
-        if (gotLccLock) linkCaptureSpinLock.exit();
-    }
-
-    // Silence detection (for UI state only — does NOT auto-stop capture)
-    float peakL = 0, peakR = 0;
-    for (int i = 0; i < buffer.getNumSamples(); ++i)
-    {
-        peakL = std::max(peakL, std::abs(left[i]));
-        peakR = std::max(peakR, std::abs(right[i]));
-    }
-    bool isSilent = (peakL < 0.0001f && peakR < 0.0001f);
-    
-    if (isSilent)
-    {
-        silenceCounter++;
-        if (silenceCounter > (int)(getSampleRate() * 0.5 / buffer.getNumSamples()))
-        {
-            audioSilent.store(true);
-            wasReceivingAudio = false;
-        }
-    }
-    else
-    {
-        silenceCounter = 0;
-        audioSilent.store(false);
-        wasReceivingAudio = true;
-    }
-
-    // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
-    {
-        juce::MidiBuffer emptyMidi;
-        chainHost.process(buffer, emptyMidi);
     }
 }
 
