@@ -165,9 +165,13 @@ SurgicalEqEditor::SurgicalEqEditor (SurgicalEqProcessor& p)
 
     // Analyzer scratch: sized ONCE here, reused for the life of the editor.
     // Allocating in the timer or in paint would put malloc on a 30 Hz path.
-    fftScratch_.assign ((size_t) kFftSize, 0.0f);
-    fftData_.assign    ((size_t) kFftSize * 2, 0.0f);
-    specDb_.assign     ((size_t) kSpecBins, kSpecFloorDb);
+    fftScratch_.assign  ((size_t) kFftSize, 0.0f);
+    fftData_.assign     ((size_t) kFftSize * 2, 0.0f);
+    specDb_.assign      ((size_t) kSpecBins, kSpecFloorDb);
+    specWork_.assign    ((size_t) kSpecBins, kSpecFloorDb);
+    specDisplay_.assign ((size_t) kSpecBins, kSpecFloorDb);
+    specPrefix_.assign  ((size_t) kSpecBins + 1, 0.0f);
+    specPts_.reserve    ((size_t) kSpecBins + 2048);   // knots + one per pixel
 
     setSize (640, 420);
     startTimerHz (30);
@@ -239,6 +243,23 @@ void SurgicalEqEditor::buildControls()
             spectrumPath_.clear();
             std::fill (specDb_.begin(), specDb_.end(), kSpecFloorDb);
         }
+        sourceBtn_.setEnabled (analyzerOn_);
+        repaint();
+    };
+
+    // Analyzer source. POST by default: the useful question while EQing is
+    // what the curve DID, and pre-EQ is one click away when you want to see
+    // what you are cutting into.
+    styleButton (sourceBtn_, true);
+    sourceBtn_.setToggleState (analyzerPost_, juce::dontSendNotification);
+    sourceBtn_.setTooltip ("Analyzer source: post-EQ (what the EQ did) or pre-EQ (the input)");
+    sourceBtn_.onClick = [this]
+    {
+        analyzerPost_ = sourceBtn_.getToggleState();
+        sourceBtn_.setButtonText (analyzerPost_ ? "POST" : "PRE");
+        // Both rings are always captured, so the switch is instant — but the
+        // decay state belongs to the old source and would bleed across.
+        std::fill (specDb_.begin(), specDb_.end(), kSpecFloorDb);
         repaint();
     };
 
@@ -730,6 +751,8 @@ void SurgicalEqEditor::resized()
     top.removeFromRight (6);
     scaleBtn_.setBounds  (top.removeFromRight (58).reduced (0, 3));
     top.removeFromRight (6);
+    sourceBtn_.setBounds (top.removeFromRight (48).reduced (0, 3));
+    top.removeFromRight (4);
     analyzerBtn_.setBounds (top.removeFromRight (32).reduced (0, 3));
 
     layoutStrip();
@@ -750,7 +773,7 @@ float SurgicalEqEditor::specDbToY (float db) const noexcept
 
 void SurgicalEqEditor::updateSpectrum()
 {
-    proc_.readAnalysis (fftScratch_.data(), kFftSize);
+    proc_.readAnalysis (fftScratch_.data(), kFftSize, analyzerPost_);
 
     // performFrequencyOnlyForwardTransform wants 2*size; the upper half is
     // scratch for the transform and must start zeroed.
@@ -772,6 +795,51 @@ void SurgicalEqEditor::updateSpectrum()
         // Instant rise, linear fall — peaks register, the display stays legible.
         specDb_[(size_t) k] = juce::jmax (db, specDb_[(size_t) k] - fallStep);
     }
+
+    // ---- median gate (same order as the METERS renderer: median -> mean) --
+    // Rejects SINGLE hot bins outright, which a mean cannot do, while a peak
+    // spanning several bins is its own median and passes through untouched.
+    constexpr int mRad = kSpecMedianBins / 2;
+    for (int k = 0; k < kSpecBins; ++k)
+    {
+        const int lo = juce::jmax (0, k - mRad);
+        const int hi = juce::jmin (kSpecBins - 1, k + mRad);
+        float win[kSpecMedianBins];
+        int cnt = 0;
+        for (int j = lo; j <= hi; ++j) win[cnt++] = specDb_[(size_t) j];
+        std::sort (win, win + cnt);
+        specWork_[(size_t) k] = win[cnt / 2];
+    }
+
+    // ---- fractional-octave smoothing --------------------------------------
+    // Constant-Q in the ear's terms: the averaging window is a fixed FRACTION
+    // OF AN OCTAVE, so it widens with frequency exactly as the log axis
+    // compresses. A fixed bin count cannot do this — it over-smooths the
+    // sparse bottom and under-smooths the crowded top.
+    //
+    // A running integral makes it O(bins) rather than O(bins * window), which
+    // matters because the top octave's window spans hundreds of bins.
+    specPrefix_[0] = 0.0f;
+    for (int k = 0; k < kSpecBins; ++k)
+        specPrefix_[(size_t) k + 1] = specPrefix_[(size_t) k] + specWork_[(size_t) k];
+
+    const float halfOct = 1.0f / (2.0f * kSpecOctaveFrac);
+    const float loMul   = std::pow (2.0f, -halfOct);
+    const float hiMul   = std::pow (2.0f,  halfOct);
+
+    for (int k = 0; k < kSpecBins; ++k)
+    {
+        // Bin index is proportional to frequency, so the octave window is
+        // simply a multiplicative span around k.
+        int lo = (int) std::floor ((float) k * loMul);
+        int hi = (int) std::ceil  ((float) k * hiMul);
+        lo = juce::jlimit (0, kSpecBins - 1, lo);
+        hi = juce::jlimit (lo, kSpecBins - 1, hi);
+
+        const int n = hi - lo + 1;
+        specDisplay_[(size_t) k] =
+            (specPrefix_[(size_t) hi + 1] - specPrefix_[(size_t) lo]) / (float) n;
+    }
 }
 
 void SurgicalEqEditor::rebuildSpectrumPath()
@@ -783,52 +851,112 @@ void SurgicalEqEditor::rebuildSpectrumPath()
     if (sr <= 0.0) return;
     const double binHz = sr / (double) kFftSize;
 
-    const float yBottom = (float) graphBounds_.getBottom();
-    const int   step    = 2;
-    const int   x0      = graphBounds_.getX();
-    const int   x1      = graphBounds_.getRight();
+    const int    w     = graphBounds_.getWidth();
+    const double lgMin = std::log2 ((double) kMinFreq);
+    const double lgMax = std::log2 ((double) kMaxFreq);
+    const double dLog  = (w > 1) ? (lgMax - lgMin) / (double) (w - 1) : 0.0;
 
-    spectrumPath_.startNewSubPath ((float) x0, yBottom);
+    // Region crossover, straight from the METERS renderer. Below fCross ONE
+    // FFT bin spans more than one pixel, so per-pixel sampling would emit runs
+    // of colinear points that no spline can round — that is exactly the "flat
+    // steps in the bass" look. Above it, bins are denser than pixels and a
+    // per-pixel peak-pick is what keeps narrow peaks alive.
+    const double fCross = (dLog > 0.0)
+        ? juce::jlimit ((double) kMinFreq, (double) kMaxFreq,
+                        binHz / (std::pow (2.0, dLog) - 1.0))
+        : (double) kMinFreq;
 
-    for (int x = x0; x <= x1; x += step)
+    auto dbToY = [this] (float db, double freq)
     {
-        // Resample per PIXEL by frequency, not bin-by-bin. The FFT is linear
-        // in frequency and this axis is logarithmic, so mapping bins to x
-        // would pile the whole bottom decade into a few pixels and smear the
-        // top octaves across hundreds.
-        const double fLo = (double) xToFreq ((float) x - step * 0.5f);
-        const double fHi = (double) xToFreq ((float) x + step * 0.5f);
+        // Same 1 kHz-referenced tilt the meters use, so broadband material
+        // sits visually flat-ish instead of nose-diving into the top corner.
+        return specDbToY (db + kSpecTiltDbPerOct * (float) std::log2 (freq / 1000.0));
+    };
 
-        int bLo = (int) std::floor (fLo / binHz);
-        int bHi = (int) std::ceil  (fHi / binHz);
-        bLo = juce::jlimit (0, kSpecBins - 1, bLo);
-        bHi = juce::jlimit (0, kSpecBins - 1, bHi);
+    auto& pts = specPts_;
+    pts.clear();
+
+    // ---- SPARSE region: knots at ACTUAL bin centres -----------------------
+    {
+        const double binF = (double) kMinFreq / binHz;
+        const int    k0   = juce::jlimit (1, kSpecBins - 2, (int) binF);
+        const float  frac = juce::jlimit (0.0f, 1.0f, (float) (binF - k0));
+        const float  db   = specDisplay_[(size_t) k0]
+                          + frac * (specDisplay_[(size_t) k0 + 1] - specDisplay_[(size_t) k0]);
+        pts.push_back ({ (float) graphBounds_.getX(), dbToY (db, (double) kMinFreq) });
+    }
+    for (int k = juce::jmax (1, (int) std::ceil ((double) kMinFreq / binHz));
+         k < kSpecBins && (double) k * binHz < fCross; ++k)
+    {
+        const double f = (double) k * binHz;
+        pts.push_back ({ freqToX ((float) f), dbToY (specDisplay_[(size_t) k], f) });
+    }
+
+    // ---- DENSE region: per-pixel peak-pick --------------------------------
+    int pxCross = (w > 1)
+        ? (int) std::ceil ((std::log2 (fCross) - lgMin) / (lgMax - lgMin) * (double) (w - 1))
+        : w;
+    pxCross = juce::jlimit (0, w, pxCross);
+
+    double prevBinF = (pxCross > 0)
+        ? std::pow (2.0, lgMin + (double) (pxCross - 1) * dLog) / binHz
+        : (double) kMinFreq / binHz;
+
+    for (int px = pxCross; px < w; ++px)
+    {
+        const double norm = (w > 1) ? (double) px / (double) (w - 1) : 0.0;
+        const double freq = std::pow (2.0, lgMin + norm * (lgMax - lgMin));
+        const double binF = freq / binHz;
+
+        const int lo = juce::jlimit (1, kSpecBins - 1, (int) std::floor (prevBinF));
+        const int hi = juce::jlimit (1, kSpecBins - 1, (int) std::floor (binF));
 
         float db;
-        if (bHi > bLo)
+        if (hi > lo)
         {
-            // A pixel spanning many bins (the high end) takes the MAX, so a
-            // narrow peak cannot be stepped over and flicker in and out.
-            db = specDb_[(size_t) bLo];
-            for (int b = bLo + 1; b <= bHi; ++b)
-                db = juce::jmax (db, specDb_[(size_t) b]);
+            db = -200.0f;
+            for (int k = lo; k <= hi; ++k) db = std::max (db, specDisplay_[(size_t) k]);
         }
         else
         {
-            // A pixel narrower than a bin (the low end) interpolates, so the
-            // curve stays smooth instead of drawing visible bin staircases.
-            const double pos = juce::jlimit (0.0, (double) kSpecBins - 1.0,
-                                             ((fLo + fHi) * 0.5) / binHz);
-            const int    i0  = juce::jlimit (0, kSpecBins - 2, (int) pos);
-            const float  t   = (float) (pos - (double) i0);
-            db = specDb_[(size_t) i0]
-               + t * (specDb_[(size_t) i0 + 1] - specDb_[(size_t) i0]);
+            const int   k0   = juce::jlimit (1, kSpecBins - 2, (int) binF);
+            const float frac = juce::jlimit (0.0f, 1.0f, (float) (binF - k0));
+            db = specDisplay_[(size_t) k0]
+               + frac * (specDisplay_[(size_t) k0 + 1] - specDisplay_[(size_t) k0]);
         }
 
-        spectrumPath_.lineTo ((float) x, specDbToY (db));
+        pts.push_back ({ (float) (graphBounds_.getX() + px), dbToY (db, freq) });
+        prevBinF = binF;
     }
 
-    spectrumPath_.lineTo ((float) x1, yBottom);
+    if (pts.empty()) return;
+
+    // ---- clamped Catmull-Rom -> cubic bezier ------------------------------
+    const float yBottom = (float) graphBounds_.getBottom();
+    spectrumPath_.startNewSubPath ((float) graphBounds_.getX(), yBottom);
+    spectrumPath_.lineTo (pts[0]);
+
+    const int n = (int) pts.size();
+    for (int i = 0; i < n - 1; ++i)
+    {
+        const auto& p0 = pts[(size_t) juce::jmax (0, i - 1)];
+        const auto& p1 = pts[(size_t) i];
+        const auto& p2 = pts[(size_t) (i + 1)];
+        const auto& p3 = pts[(size_t) juce::jmin (n - 1, i + 2)];
+
+        // Control-point Y clamped to the segment's own range, so a steep
+        // neighbouring segment cannot fling the tangent into a one-pixel
+        // overshoot needle.
+        const float yLo = juce::jmin (p1.y, p2.y);
+        const float yHi = juce::jmax (p1.y, p2.y);
+        const juce::Point<float> c1 { p1.x + (p2.x - p0.x) / 6.0f,
+                                      juce::jlimit (yLo, yHi, p1.y + (p2.y - p0.y) / 6.0f) };
+        const juce::Point<float> c2 { p2.x - (p3.x - p1.x) / 6.0f,
+                                      juce::jlimit (yLo, yHi, p2.y - (p3.y - p1.y) / 6.0f) };
+        spectrumPath_.cubicTo (c1, c2, p2);
+    }
+
+    spectrumPath_.lineTo ((float) (graphBounds_.getRight()), yBottom);
     spectrumPath_.closeSubPath();
 }
 
@@ -1085,7 +1213,7 @@ void SurgicalEqEditor::paint (juce::Graphics& g)
     g.setFont (uiFont (9.0f));
     g.drawText ("double-click: add / remove band     drag: freq + gain     wheel: Q",
                 afterLogo + 30, topBounds_.getY(),
-                juce::jmax (0, topBounds_.getRight() - (afterLogo + 30) - 180),
+                juce::jmax (0, topBounds_.getRight() - (afterLogo + 30) - 232),
                 topBounds_.getHeight(), juce::Justification::centredLeft);
 
     // ---- graph panel ------------------------------------------------------

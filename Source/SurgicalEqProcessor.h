@@ -75,10 +75,11 @@ public:
     // engine handle for the editor's analyzer / dynamic metering (read-only use)
     echojay::EqEngine&   getEngine() noexcept { return engine_; }
 
-    // ---- analysis tap (audio thread writes, message thread reads) ---------
-    // A pre-EQ mono ring the editor FFTs for its spectrum overlay. Written in
-    // processBlock BEFORE the engine runs, so it shows what is arriving, which
-    // is what you EQ against.
+    // ---- analysis taps (audio thread writes, message thread reads) --------
+    // Two mono rings the editor FFTs for its spectrum overlay: one written
+    // BEFORE the engine (the signal arriving) and one AFTER (what the EQ did).
+    // The editor picks which to show; both are always captured, so toggling is
+    // instant rather than waiting for a ring to refill.
     //
     // Deliberately lock-free and deliberately racy: the writer never blocks,
     // never allocates, and never waits on the reader. A visualiser that tears
@@ -87,9 +88,9 @@ public:
     static constexpr int kAnalysisRingSize = 8192;   // power of two
     static constexpr int kAnalysisRingMask = kAnalysisRingSize - 1;
 
-    // Copies the most recent `maxSamples` samples in chronological order.
-    // Returns how many were written (capped at the ring size).
-    int readAnalysis (float* dest, int maxSamples) const noexcept;
+    // Copies the most recent `maxSamples` samples in chronological order from
+    // the post-EQ ring (postEq) or the pre-EQ ring. Returns how many.
+    int readAnalysis (float* dest, int maxSamples, bool postEq) const noexcept;
 
     // ---- AI apply (exact) -------------------------------------------------
     // Parse an eq_bands move (the value of the "eq_bands" key) and apply it as a
@@ -110,9 +111,19 @@ public:
     juce::var    currentEqBandsVar() const;
 
 private:
-    // Audio thread. Downmixes the block to mono into analysisRing_. Strictly
-    // RT-safe: bounded fixed-array writes plus one atomic store.
-    void pushAnalysis (const juce::AudioBuffer<float>& buffer) noexcept;
+    // One lock-free mono ring. Both taps share this type so the pre and post
+    // paths cannot drift apart in their real-time safety.
+    struct AnalysisRing
+    {
+        std::array<float, (size_t) kAnalysisRingSize> data {};
+        std::atomic<uint32_t>                        write { 0 };
+
+        // Audio thread. Bounded fixed-array writes + one release store: no
+        // locks, no allocation, nothing that can block.
+        void push (const juce::AudioBuffer<float>& buffer) noexcept;
+        int  read (float* dest, int maxSamples) const noexcept;   // message thread
+        void clear() noexcept;                                    // not RT
+    };
 
     void pushToEngine();                    // publish whole model -> engine (msg thread)
     static echojay::BandSpec specFromVar (const juce::var& entry, bool& disableOut,
@@ -123,10 +134,9 @@ private:
     juce::CriticalSection modelLock_;               // guards bands_ (message-thread edits)
     std::atomic<bool>     bypassed_ { false };
 
-    // Analysis ring. The array itself is untouched by any lock; only the write
+    // Analysis taps. The arrays are untouched by any lock; only each write
     // index is atomic, which is all the reader needs to find the newest span.
-    std::array<float, (size_t) kAnalysisRingSize> analysisRing_ {};
-    std::atomic<uint32_t>                        analysisWrite_ { 0 };
+    AnalysisRing preRing_, postRing_;
 
     double sampleRate_ = 44100.0;
     int    blockSize_  = 512;

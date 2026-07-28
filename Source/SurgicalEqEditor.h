@@ -140,15 +140,23 @@ private:
     void disableBand (int i);
 
     // ---- analyzer (Step B) --------------------------------------------------
-    static constexpr int   kFftOrder    = 11;        // 2048-point
+    // 4096-point, matching MeterEngine::kVisFftOrder: at 2048 the bottom two
+    // octaves get only a handful of bins and the curve reads as flat steps
+    // there no matter how it is drawn.
+    static constexpr int   kFftOrder    = 12;
     static constexpr int   kFftSize     = 1 << kFftOrder;
     static constexpr int   kSpecBins    = kFftSize / 2;
     static constexpr float kSpecFloorDb = -100.0f;   // bottom of the graph
-    static constexpr float kSpecCeilDb  = 0.0f;      // top of the graph (dBFS)
+    static constexpr float kSpecCeilDb  = 0.0f;      // top of the graph
     static constexpr float kSpecFallDbPerSec = 120.0f;  // fast rise, slow fall
+    // Display treatment shared with the METERS tab so both analyzers read the
+    // same: a median gate ahead of the mean, then a tilt referenced to 1 kHz.
+    static constexpr int   kSpecMedianBins   = 3;
+    static constexpr float kSpecTiltDbPerOct = 4.5f;
+    static constexpr float kSpecOctaveFrac   = 12.0f;   // 1/12-octave smoothing
 
-    void  updateSpectrum();          // timer: drain the tap, FFT, decay-smooth
-    void  rebuildSpectrumPath();     // per-PIXEL resample onto the log axis
+    void  updateSpectrum();          // timer: drain a tap, FFT, smooth
+    void  rebuildSpectrumPath();     // region-aware knots + Catmull-Rom
     void  paintSpectrum (juce::Graphics& g) const;
     float specDbToY (float db) const noexcept;   // analyzer's OWN vertical scale
 
@@ -191,8 +199,13 @@ private:
     std::vector<float> fftScratch_;   // kFftSize  drained samples
     std::vector<float> fftData_;      // 2*kFftSize, as performFrequencyOnly… needs
     std::vector<float> specDb_;       // kSpecBins, decay-smoothed magnitudes
+    std::vector<float> specWork_;     // median-gated intermediate
+    std::vector<float> specDisplay_;  // fractional-octave smoothed, what is drawn
+    std::vector<float> specPrefix_;   // running integral for O(n) octave averaging
+    std::vector<juce::Point<float>> specPts_;   // spline knots, reused each frame
     juce::Path         spectrumPath_;
-    bool               analyzerOn_ = true;
+    bool               analyzerOn_   = true;
+    bool               analyzerPost_ = true;    // default POST: show what the EQ did
 
     // Live dynamic-band gain reduction, polled on the timer (dB, <= 0 when
     // the band is pulling down).
@@ -200,7 +213,8 @@ private:
 
     // global
     juce::TextButton bypassBtn_   { "BYPASS" };
-    juce::TextButton analyzerBtn_ { "A" };      // Step B
+    juce::TextButton analyzerBtn_ { "A" };
+    juce::TextButton sourceBtn_   { "POST" };   // analyzer source: PRE / POST
     juce::TextButton scaleBtn_    { "18 dB" };
 
     // selected-band strip
