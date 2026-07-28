@@ -300,6 +300,17 @@ public:
     static constexpr const char* kBuiltinFormat = "EchoJayBuiltin";
     static constexpr const char* kBuiltinEqName = "EchoJay EQ";
 
+    // Every built-in device the chain can host, by exact name. SINGLE source
+    // of truth: the AI feed advertises from here (see
+    // EchoJayAPI::buildPluginInjection), and the backend offers a built-in
+    // only when its exact name appears in that advertisement — so a future
+    // built-in becomes offerable by appending one line here, with no version
+    // pin on either side.
+    static juce::StringArray builtinDeviceNames()
+    {
+        return juce::StringArray { juce::String (kBuiltinEqName) };
+    }
+
     // Canonical synthetic description. Stable across machines and sessions:
     // it is what gets written into the saved chain XML and matched on restore.
     static juce::PluginDescription builtinEqDescription();

@@ -922,6 +922,7 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     {
         auto c = contents[i];
         for (auto* marker : { "\n\n[AVAILABLE PLUGINS", "\n\n[USER'S FULL PLUGIN LIST",
+                              "\n\n[AVAILABLE BUILTINS",
                               "\n\n[CURRENT CHAIN", "\n\n[TARGET CHANNEL" })
         {
             int cut = c.indexOf(marker);
@@ -1767,6 +1768,21 @@ juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
     juce::String block;
     block << "\n\n[USER'S FULL PLUGIN LIST — for this question, recommend only from these, using their exact names; rotate your picks rather than defaulting to the same few]:\n"
           << fullList;
+
+    // Built-in devices can never appear in the scanned feed above — they are
+    // compiled into the plugin, not installed on the machine — so the server
+    // would otherwise have no way to know this build has them. Advertising
+    // them explicitly is what lets the backend gate on a CAPABILITY the client
+    // states rather than guessing from a version number (version guessing is
+    // unreliable here: an unrelated branch can carry a higher version and no
+    // EQ at all). A client that does not send this block simply never gets
+    // built-ins offered.
+    const auto builtins = ChainHost::builtinDeviceNames();
+    if (! builtins.isEmpty())
+        block << "\n\n[AVAILABLE BUILTINS — EchoJay's own built-in devices, always "
+                 "available regardless of installed plugins; use in a chain by exact name]:\n"
+              << builtins.joinIntoString("\n");
+
     return block;
 }
 
