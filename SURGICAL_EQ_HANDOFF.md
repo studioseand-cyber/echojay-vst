@@ -21,27 +21,47 @@ All new files; **no existing EchoJay file was modified** except a 6-line additio
   ```
   Both report ALL PASS.
 
-## What is NOT yet verified
-`SurgicalEqProcessor.{h,cpp}` and the placeholder editor were written **without a compiler** (the Cowork cloud sandbox has no JUCE/Xcode). They are written against EchoJay's linked JUCE and mirror `LinkProcessor` conventions, but the **first real compile-check has not happened**. That's the immediate next action.
+## Editor (Step A) — DONE
+`Source/SurgicalEqEditor.{h,cpp}` replaced the placeholder: log-frequency curve editor with draggable band nodes, wheel-for-Q, double-click add/remove, per-band strip (type, freq/gain/Q, slope, dynamic params, enable/solo), global bypass and a ±18/±24 view toggle. The curve is `EqEngine`'s own analytic response, so what is drawn is the audio path. The Step B analyzer overlay + dynamic metering are still outstanding; the "A" button exists but is inert.
 
-## IMMEDIATE NEXT ACTION — compile-check
-Toolchain on this Mac: Command Line Tools installed, JUCE 8.0.12 at `~/JUCE`, CMake installed. Build just the VST3 (fast; also builds JUCE the first time):
+## Chain integration (Route B) — DONE
+Everything below is on `feat/surgical-eq`, rebased onto `feat/session-b-state`.
+
+- **Built-in load path.** The EQ travels as a synthetic `juce::PluginDescription` with `pluginFormatName == "EchoJayBuiltin"` and a fixed uid. `loadPluginAsync` branches on it and constructs the node directly. That one branch is what makes the add menu, AI chain-edit ops, `loadByRecommendedName` **and session restore** all work — they already funnelled through there, so `tryRestoreSlotsFromXml` needed no change at all (the saved `CHAIN_SLOTS` XML round-trips the synthetic description like any other).
+- **Menu.** `getFilteredPlugins` pins "EchoJay EQ" to the top, exempt from the AU/VST3 format filter (it is compiled in, so it is loadable either way) and badged "EJ".
+- **Exact apply.** `applyStructuredIfReady` detects a built-in EQ slot and calls `applyEqBands` directly — no fingerprint, no map, no anchor interpolation, no read-back/revert. The branch sits *before* the fp/map gates, which would otherwise park the slot in "pending" forever since a built-in never gets a fingerprint. Accepts a bare `eq_bands` array or an object carrying one; reports honest applied/skipped counts (partial, not success, when the EQ is full).
+- **Both targets.** The Eq sources build into `EchoJayLink` as well as `EchoJay`.
+
+## What is NOT done
+- **Server-side schema.** The model does not emit `eq_bands` yet — that contract lives in the backend (`/api/chat` at echojay.ai), not this repo. Until it does, the AI cannot dial the EQ by prompt. Everything on the client is ready to receive it.
+- **Chain-edit ops carry no `settings_structured`** (`PluginEditor.cpp` ~14600), so "retune the EQ already in slot 2" still needs either that path extended or a dedicated move.
+- **Step B**: analyzer overlay + dynamic metering.
+
+## Dev affordance for testing exact apply now
+Because the server does not emit `eq_bands` yet, `/eqtest` in the chat applies a hand-written JSON straight to the selected (or first) built-in EQ slot:
+```
+/eqtest {"eq_bands":[{"type":"bell","freq_hz":203,"gain_db":-3,"q":4.5,"band":3}]}
+```
+Gated on `ChainHost::devModeActive()` (the `/Users/SeanD/.echojay_dev` marker file), intercepted before the send-quota gate and before any network call. Release behaviour is unchanged.
+
+## Build + install (what was actually run)
 ```
 cd ~/echojay-vst
 cmake -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --target EchoJay_VST3 -j8
+cmake --build build --target EchoJay_VST3 -j8     # fast compile-check
+cmake --build build --target EchoJayLink  -j8     # Link shares the Eq sources
+cmake --build build --target EchoJay_AU   -j8     # Logic is AU-only
+cp -R "build/EchoJay_artefacts/Debug/AU/EchoJay V2.component" ~/Library/Audio/Plug-Ins/Components/
+xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/"EchoJay V2.component"
 ```
-If it errors in any `Eq*` / `SurgicalEq*` file, fix in place (likely a JUCE `var`/`DynamicObject`/`MemoryOutputStream` API detail). Keep `EqEngine`/`EqMove` unit tests green after any change to those.
+Unit tests (must stay green):
+```
+cd test
+g++ -std=c++17 -O2 -I../Source eq_engine_test.cpp ../Source/EqEngine.cpp -o eqtest && ./eqtest
+g++ -std=c++17 -O2 -I../Source eq_move_test.cpp -o movetest && ./movetest
+```
 
-## ROADMAP after compile-check (in order)
-1. **Real editor UI** — replace `PlaceholderEditor` in `SurgicalEqProcessor.cpp` with a curve editor: draggable band nodes (freq×gain), numeric freq/gain/Q entry, FFT analyzer overlay, per-band solo/bypass/dynamic toggles, dynamic-action metering (`EqEngine::getBandDynamicGainDb`). New Component, no host-UI changes needed — it auto-embeds via `createEditorForSlot` → `showInline` once hosted.
-2. **ChainHost integration (Route B) — the only step that touches shared/in-flight code; do it LAST, rebased onto latest `feat/session-b-state`.**
-   - Add a non-format load path so `ChainHost` can append a built-in `SurgicalEqProcessor` node without `formatManager_.createPluginInstanceAsync` (mirror the `SlotWetBlend` in-house-node pattern, `ChainHost.cpp:438`).
-   - Register its name ("EchoJay EQ") in the recommendable/entries lists so `resolveByName` finds it and the AI can target it.
-   - Extend the restore loader (`tryRestoreSlotsFromXml` → `restoreNextSlot`) with the synthetic-description branch (a built-in can't be recreated via the format manager).
-   - Route apply: in `setSlotStructuredSettings`/`applyStructuredIfReady`, detect the built-in EQ and call `SurgicalEqProcessor::applyEqBands` directly — **bypassing `EchoJayParamApply` entirely** (exact). 
-   - Add the Eq sources to the **`EchoJayLink`** target too (currently only in the `EchoJay` main target) so the EQ works in the Link insert.
-3. **AI schema (server-side)** — extend the move contract so the model emits `eq_bands` (array of `{type, freq_hz, gain_db, q, band?, slope_db_oct?, dynamic?}`) when the target is the EchoJay EQ. Client parse/dispatch already exists (`applyEqBands`). Note: chain-**edit** ops currently don't carry `settings_structured` (`PluginEditor.cpp` ~14600) — decide whether retuning an already-placed EQ needs that path extended or a dedicated move.
+> **Duplicate-AU hazard.** There is a root-owned release install at `/Library/Audio/Plug-Ins/Components/EchoJay V2.component` (v2.23.0) with the *same* component triple `aufx EcJ2 Ecjy` as the dev build in `~/Library/...` (v2.23.53). macOS resolves the collision by version, so the newer dev build currently wins — but if a dev build ever carries a version at or below the installed release, Logic will silently load the **release** binary instead. Bump the project version or `sudo rm -rf` the system copy before trusting a test.
 
 ## Conventions to follow (matched to EchoJay)
 - **No APVTS** anywhere; state is hand-rolled JSON (see `PluginProcessor.cpp` get/setStateInformation, and `SurgicalEqProcessor`).
