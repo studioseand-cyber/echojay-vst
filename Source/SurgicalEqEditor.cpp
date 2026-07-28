@@ -762,17 +762,25 @@ void SurgicalEqEditor::paint (juce::Graphics& g)
     g.fillAll (C::bg);
 
     // ---- top bar ----------------------------------------------------------
-    g.setColour (C::text);
-    g.setFont (uiFont (13.0f, true));
-    g.drawText ("ECHOJAY EQ", topBounds_.getX(), topBounds_.getY(),
-                140, topBounds_.getHeight(), juce::Justification::centredLeft);
+    // The real logo asset, same one the main plugin header draws, scaled into
+    // the header bar rather than a text title.
+    const juce::Rectangle<float> logoBox ((float) topBounds_.getX(),
+                                          (float) topBounds_.getY(),
+                                          104.0f, (float) topBounds_.getHeight());
+    EchoJayLookAndFeel::drawLogo (g, logoBox, 13.0f);
+
+    const int afterLogo = (int) logoBox.getRight() + 6;
+    g.setColour (C::text2);
+    g.setFont (uiFont (11.0f, true));
+    g.drawText ("EQ", afterLogo, topBounds_.getY(), 24, topBounds_.getHeight(),
+                juce::Justification::centredLeft);
 
     g.setColour (C::text3);
     g.setFont (uiFont (9.0f));
     g.drawText ("double-click: add / remove band     drag: freq + gain     wheel: Q",
-                topBounds_.getX() + 118, topBounds_.getY(),
-                juce::jmax (0, topBounds_.getWidth() - 300), topBounds_.getHeight(),
-                juce::Justification::centredLeft);
+                afterLogo + 30, topBounds_.getY(),
+                juce::jmax (0, topBounds_.getRight() - (afterLogo + 30) - 180),
+                topBounds_.getHeight(), juce::Justification::centredLeft);
 
     // ---- graph panel ------------------------------------------------------
     const auto gb = graphBounds_.toFloat();
