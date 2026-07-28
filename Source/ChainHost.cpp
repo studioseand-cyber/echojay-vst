@@ -2495,7 +2495,8 @@ juce::String ChainHost::getSlotsStateXml() const
     return root->toString();
 }
 
-void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx)
+void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
+                                std::function<void()> onSlotSettled)
 {
     if (idx >= (int)items.size()) return;
     bool  wasBypassed = items[idx].bypassed;
@@ -2507,7 +2508,7 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx)
     juce::String slotName   = items[idx].desc.name;
     loadPluginAsync(items[idx].desc,
         [this, items = std::move(items), idx, wasBypassed, savedWet,
-         stateB64, expectState, slotName](const juce::String& err) mutable
+         stateB64, expectState, slotName, onSlotSettled](const juce::String& err) mutable
         {
             if (err.isEmpty())
             {
@@ -2528,7 +2529,8 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx)
                 addStateNote(slotName + ": could not load on this machine right now,"
                                         " so this slot was left out of the chain");
             }
-            restoreNextSlot(std::move(items), idx + 1);
+            if (onSlotSettled) onSlotSettled();
+            restoreNextSlot(std::move(items), idx + 1, onSlotSettled);
         });
 }
 
@@ -2899,6 +2901,63 @@ juce::var ChainHost::buildChainSlotsVar() const
         arr.add(juce::var(o.release()));
     }
     return juce::var(arr);
+}
+
+void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& stateObj,
+                                  std::function<void()> onSlotSettled)
+{
+    auto* arr = slotsArr.getArray();
+    if (arr == nullptr || arr->isEmpty()) return;
+
+    // One load, one clean slate: notes are about the chain now on screen.
+    clearStateNotes();
+    auto* statesObj = stateObj.getDynamicObject();
+
+    std::vector<RestoreItem> items;
+    for (int i = 0; i < arr->size(); ++i)
+    {
+        auto* o = (*arr)[i].getDynamicObject();
+        if (o == nullptr) continue;
+        const juce::String name = o->getProperty("plugin").toString().trim();
+        if (name.isEmpty()) continue;
+
+        // The SAVED slot number, not our position. State is keyed by it, and
+        // a slot we cannot resolve must not shift anyone else's key.
+        const int n = o->hasProperty("n") ? (int)o->getProperty("n") : (i + 1);
+
+        auto desc = resolveByName(name, {}, nullptr);
+        if (desc.name.isEmpty())
+        {
+            // NEVER "not owned": a plugin the user owns looks exactly like
+            // this on a machine where it is not installed, or where it
+            // cannot authorise right now.
+            addStateNote(name + ": could not be found on this machine,"
+                                " so this slot was skipped");
+            continue;
+        }
+
+        RestoreItem item;
+        item.desc     = desc;
+        item.bypassed = (bool)o->getProperty("bypassed");
+        // The shared chain format carries no wet/dry, so a saved chain
+        // restores fully wet. Session restore keeps wet because its own XML
+        // has it. Stated here so the difference is a known gap and not a
+        // mystery the next reader has to rediscover.
+        item.wet         = 1.0f;
+        item.expectState = (statesObj != nullptr);
+        if (statesObj != nullptr)
+        {
+            const juce::String key (n);
+            if (statesObj->hasProperty(key))
+                item.stateBase64 = statesObj->getProperty(key).toString();
+        }
+        items.push_back(std::move(item));
+    }
+
+    if (!items.empty())
+        restoreNextSlot(std::move(items), 0, std::move(onSlotSettled));
+    else if (onSlotSettled)
+        onSlotSettled();   // nothing resolved: the caller still has to react
 }
 
 void ChainHost::addStateNote(const juce::String& note) const

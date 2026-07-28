@@ -457,6 +457,22 @@ public:
     // Ask getCachedSlotStatesVar for that, with the API caps.
     juce::var buildChainSlotsVar() const;
 
+    // Load a saved chain (B.2). Resolves each slot's plugin by name, then
+    // hands the result to the SAME restore path a session reload takes:
+    // state carried ON the item and applied inside that slot's own load
+    // callback, per-slot failures named rather than silent. Nothing about
+    // restoring settings is duplicated for this route.
+    //
+    // Does NOT clear the rack. The caller closes hosted editors first and
+    // clears a runloop turn later (the AMEK editor-close discipline), which
+    // is what the AI chain build already does.
+    // onSlotSettled fires on the message thread after EVERY slot attempt,
+    // success or failure, so the rack UI can show the chain filling in.
+    // Plugin instantiation blocks the message thread, so without this the
+    // panel would sit on an empty rack and then jump.
+    void restoreSavedChain(const juce::var& slotsArr, const juce::var& stateObj,
+                           std::function<void()> onSlotSettled = {});
+
     // TWO CAP PAIRS, DELIBERATELY DIFFERENT. Both in decoded bytes.
     //
     // SESSION (tighter): an oversized session has no server to reject it. It
@@ -626,7 +642,10 @@ private:
     // where there is nothing to have lost and a note would be pure noise.
     struct RestoreItem { juce::PluginDescription desc; bool bypassed; float wet = 1.0f;
                          juce::String stateBase64; bool expectState = false; };
-    void restoreNextSlot(std::vector<RestoreItem> items, int idx);
+    // onSlotSettled: see restoreSavedChain. Empty for a session restore,
+    // which builds its rack before any editor exists to watch it.
+    void restoreNextSlot(std::vector<RestoreItem> items, int idx,
+                         std::function<void()> onSlotSettled = {});
     void applyRestoredState(int slotIdx, const juce::String& b64,
                             bool expectState, const juce::String& slotName);
 

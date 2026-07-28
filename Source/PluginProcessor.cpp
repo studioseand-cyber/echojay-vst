@@ -1927,6 +1927,14 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     if (!chainSlotState.isVoid())
         state->setProperty("chainSlotState", chainSlotState);
     state->setProperty("chainWarningDismissed", chainHost.chainWarningDismissed);
+    // Saved chain identity: written only when there IS one, so a session
+    // with no saved chain grows no keys and still reads identically in an
+    // older build.
+    if (savedChainId.isNotEmpty())
+    {
+        state->setProperty("savedChainId",   savedChainId);
+        state->setProperty("savedChainName", savedChainName);
+    }
 
     juce::String json = juce::JSON::toString(juce::var(state.release()), true);
     destData.append(json.toRawUTF8(), json.getNumBytesAsUTF8());
@@ -2103,6 +2111,13 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
         // Restore CHAIN state
         if (obj->hasProperty("chainWarningDismissed"))
             chainHost.chainWarningDismissed = (bool)obj->getProperty("chainWarningDismissed");
+
+        // Saved chain identity. Absent on every session written before B.1,
+        // which simply means nothing is loaded and Save behaves as Save As.
+        if (obj->hasProperty("savedChainId"))
+            savedChainId = obj->getProperty("savedChainId").toString();
+        if (obj->hasProperty("savedChainName"))
+            savedChainName = obj->getProperty("savedChainName").toString();
 
         // Restore chain slots on message thread (after audio is set up).
         // Support both new "chainSlotsXml" key and old single-plugin "chainLoadedDescXml"

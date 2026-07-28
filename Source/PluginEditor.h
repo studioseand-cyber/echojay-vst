@@ -1054,6 +1054,32 @@ private:
     juce::ListBox    chainPluginList;
     juce::TextEditor chainSearchBox;
     juce::TextButton chainScanBtn  { "Refresh" };
+
+    // ---- Saved chains (Session B.1 / B.2) --------------------------------
+    // Explicit saves only, never auto-save: a chain you did not choose to
+    // save is not one you want back, and auto-saving would fill the
+    // dashboard with rows nobody asked for.
+    juce::TextButton chainSaveBtn   { "Save" };
+    juce::TextButton chainSaveAsBtn { "Save As" };
+    juce::TextButton chainOpenBtn   { "Open" };
+    // Save with no chain loaded behaves as Save As (prompts for a name).
+    void saveChainToApi(bool forceNew);
+    // The request itself. id empty = create, id set = overwrite that chain.
+    void sendChainSave(const juce::String& id, const juce::String& name);
+    void showSavedChainsMenu();
+    void openSavedChain(const juce::String& id, const juce::String& name);
+    // Transient one-liner in the chain header ("Saved \"X\""). Past tense is
+    // legitimate because saving IS something the user did, but it says only
+    // that a chain was saved and never implies anything about the sound.
+    juce::String chainSaveStatus_;
+    juce::uint32 chainSaveStatusAt_ = 0;
+    bool         chainSaveInFlight_ = false;
+    void setChainSaveStatus(const juce::String& s);
+    // Left edge of the Save button, stored by resized() and CONSUMED by
+    // paint(). Height reservation rule: resized() is the sole geometry
+    // author, paint() measures nothing. 0 = the buttons are hidden, so the
+    // name has the whole strip.
+    int chainSaveBtnRight_ = 0;
     juce::Label      chainStatusLabel;
     juce::TextButton chainLoadBtn  { "Add to Chain" };
     juce::Label      chainRecommendLabel;  // "recommendable: N resolved (M enabled, K unmatched)"

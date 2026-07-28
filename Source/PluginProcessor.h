@@ -275,6 +275,23 @@ public:
 
     // CHAIN state — loaded plugin desc (serialised for DAW session restore)
     juce::String chainLoadedDescXml;
+
+    // ---- Saved chain identity (Session B.1) ------------------------------
+    // Which saved chain the rack currently came from, so Save is never
+    // ambiguous about what it overwrites and the name can be shown
+    // persistently.
+    //
+    // On the PROCESSOR, like chatTargetLinkUid, because Logic recreates the
+    // editor every time the user switches between the Link window and
+    // EchoJay. Editor state would silently turn Save into Save As on a
+    // window switch, which is the worst kind of wrong: it looks like it
+    // worked and quietly makes a second chain.
+    //
+    // Persisted in plugin state, so reopening a project still knows which
+    // saved chain the rack came from. Empty = nothing loaded, Save behaves
+    // as Save As.
+    juce::String savedChainId;
+    juce::String savedChainName;
     bool chainWarningDismissed = false;
 
     // A/B playback — toggle between DAW audio and reference WAV

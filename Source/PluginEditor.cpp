@@ -1566,6 +1566,21 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
     addChildComponent(chainStatusLabel);
 
+    // ---- Saved chains: Save / Save As / Open -----------------------------
+    for (auto* b : { &chainSaveBtn, &chainSaveAsBtn, &chainOpenBtn })
+    {
+        b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff203040));
+        b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd0d8e0));
+        addChildComponent(*b);
+    }
+    chainSaveBtn.setTooltip("Save this chain");
+    chainSaveAsBtn.setTooltip("Save this chain under a new name");
+    chainOpenBtn.setTooltip("Open a saved chain");
+    // Save overwrites the loaded chain; with nothing loaded it IS Save As.
+    chainSaveBtn.onClick   = [this] { saveChainToApi(false); };
+    chainSaveAsBtn.onClick = [this] { saveChainToApi(true);  };
+    chainOpenBtn.onClick   = [this] { showSavedChainsMenu(); };
+
     // Debug: raw chain JSON viewer — shown after each build, temporary
     chainDebugJsonBox.setMultiLine(true, true);
     chainDebugJsonBox.setReadOnly(true);
@@ -10823,6 +10838,39 @@ void EchoJayEditor::paint(juce::Graphics& g)
         g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
         g.drawText("PLUGIN CHAIN", 14, topH, mW - 28, 32,
                    juce::Justification::centredLeft);
+
+        // Loaded saved chain, and the transient save result. Geometry comes
+        // from chainSaveBtnRight_, which resized() authored; nothing is
+        // measured here.
+        const int nameX = 14 + 100;
+        const int nameW = (chainSaveBtnRight_ > 0 ? chainSaveBtnRight_ : mW - 20)
+                            - nameX - 10;
+        if (nameW > 60)
+        {
+            // A save result outranks the name for a few seconds, then the
+            // name comes back. The name is the persistent thing: it answers
+            // "what does Save overwrite?" and must never be a guess.
+            const bool showStatus = chainSaveStatus_.isNotEmpty()
+                && (juce::Time::getMillisecondCounter() - chainSaveStatusAt_) < 6000;
+            juce::String text;
+            if (showStatus)
+            {
+                text = chainSaveStatus_;
+                g.setColour(C::text2);
+            }
+            else if (processorRef.savedChainName.isNotEmpty())
+            {
+                text = juce::String::fromUTF8("Saved chain: ")
+                     + processorRef.savedChainName;
+                g.setColour(C::text3);
+            }
+            if (text.isNotEmpty())
+            {
+                g.setFont(juce::Font(juce::FontOptions(11.0f)));
+                g.drawText(text, nameX, topH, nameW, 32,
+                           juce::Justification::centredLeft, true);
+            }
+        }
     }
 
     // Link monitor panel (left side only — chat occupies the right)
@@ -12231,6 +12279,32 @@ void EchoJayEditor::resized()
         // of the AI toggle (inside the chain area, above the rack)
         chainSlotCountLabel.setBounds(mW - 62 - 8 - 90, topH + 8, 90, 16);
         chainSlotCountLabel.setVisible(!compactMode && !visualOnlyMode && !reviewOverlay.visibleState);
+
+        // Save / Save As / Open: laid out right to left from the slot
+        // counter, in the strip that already exists. No new band, so no
+        // reserved height changes and the rack below does not move.
+        // Hidden on a narrow window rather than allowed to overlap the
+        // title: the strip is the ONE geometry author here.
+        {
+            const int btnY  = topH + 5, btnH = 22;
+            const int rightEdge = mW - 62 - 8 - 90 - 10;   // left of the counter
+            const int wOpen = 54, wSaveAs = 66, wSave = 46, gap = 6;
+            const int xOpen   = rightEdge - wOpen;
+            const int xSaveAs = xOpen   - gap - wSaveAs;
+            const int xSave   = xSaveAs - gap - wSave;
+            const bool room = !compactMode && !visualOnlyMode
+                           && !reviewOverlay.visibleState
+                           && xSave > 130;   // clear of the "PLUGIN CHAIN" title
+            chainSaveBtn  .setBounds(xSave,   btnY, wSave,   btnH);
+            chainSaveAsBtn.setBounds(xSaveAs, btnY, wSaveAs, btnH);
+            chainOpenBtn  .setBounds(xOpen,   btnY, wOpen,   btnH);
+            for (auto* b : { &chainSaveBtn, &chainSaveAsBtn, &chainOpenBtn })
+            {
+                b->setVisible(room);
+                if (room) b->toFront(false);
+            }
+            chainSaveBtnRight_ = room ? xSave : 0;   // paint() reads this, measures nothing
+        }
 
         if (chainChatCollapsed_ && !compactMode)
         {
@@ -16604,6 +16678,239 @@ void EchoJayEditor::pollLinkCtrlAck(const juce::String& linkAddr, int seq, int a
             return;
         }
         safeThis->pollLinkCtrlAck(linkAddr, seq, attemptsLeft - 1);
+    });
+}
+
+// =============================================================================
+//  Saved chains (Session B.1 / B.2)
+//
+//  Explicit saves only. No auto-save anywhere in this file: a chain the user
+//  did not choose to save is not one they want back.
+// =============================================================================
+
+void EchoJayEditor::setChainSaveStatus(const juce::String& s)
+{
+    chainSaveStatus_   = s;
+    chainSaveStatusAt_ = juce::Time::getMillisecondCounter();
+    repaint();
+}
+
+void EchoJayEditor::saveChainToApi(bool forceNew)
+{
+    auto& ch = processorRef.getChainHost();
+    if (ch.getNumSlots() == 0)
+    {
+        setChainSaveStatus("There are no plugins in the chain to save.");
+        return;
+    }
+    if (chainSaveInFlight_) return;
+
+    // Save overwrites the loaded chain. With nothing loaded there is nothing
+    // to overwrite, so Save IS Save As and asks for a name.
+    if (!forceNew && processorRef.savedChainId.isNotEmpty())
+    {
+        sendChainSave(processorRef.savedChainId, processorRef.savedChainName);
+        return;
+    }
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    auto* dlg = new juce::AlertWindow("Save Chain", "Name this chain:",
+                                       juce::MessageBoxIconType::QuestionIcon);
+    dlg->addTextEditor("name", processorRef.savedChainName, "Name:");
+    dlg->addButton("Save",   1, juce::KeyPress(juce::KeyPress::returnKey));
+    dlg->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    dlg->enterModalState(true,
+        juce::ModalCallbackFunction::create([safeThis, dlg](int result)
+        {
+            juce::String name = dlg->getTextEditorContents("name").trim();
+            delete dlg;
+            if (safeThis == nullptr || result != 1 || name.isEmpty()) return;
+            safeThis->sendChainSave({}, name);   // empty id = create
+        }));
+}
+
+void EchoJayEditor::sendChainSave(const juce::String& id, const juce::String& name)
+{
+    auto& ch = processorRef.getChainHost();
+
+    // Settings come from the SAME cache the DAW session uses, asked for with
+    // the API's caps rather than the session's. One capture path, two
+    // policies; this is not a second capture.
+    auto slots = ch.buildChainSlotsVar();
+    auto state = ch.getCachedSlotStatesVar(ChainHost::kApiStateMaxSlotBytes,
+                                           ChainHost::kApiStateMaxTotalBytes,
+                                           "this saved chain");
+
+    auto root = std::make_unique<juce::DynamicObject>();
+    root->setProperty("name",   name);
+    root->setProperty("source", "plugin");
+    root->setProperty("slots",  slots);
+    if (!state.isVoid())
+        root->setProperty("state", state);
+    const auto body = juce::JSON::toString(juce::var(root.release()), true);
+
+    chainSaveInFlight_ = true;
+    setChainSaveStatus(juce::String::fromUTF8("Saving\xe2\x80\xa6"));
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    auto onDone = [safeThis, name](const juce::var& json, int sc)
+    {
+        if (safeThis == nullptr) return;
+        safeThis->chainSaveInFlight_ = false;
+
+        const auto err = EchoJayAPI::chainErrorMessage(json, sc);
+        if (err.isNotEmpty()) { safeThis->setChainSaveStatus(err); return; }
+
+        juce::String newId;
+        if (auto* obj = json.getDynamicObject())
+            if (auto* c = obj->getProperty("chain").getDynamicObject())
+                newId = c->getProperty("id").toString();
+
+        if (newId.isNotEmpty()) safeThis->processorRef.savedChainId = newId;
+        safeThis->processorRef.savedChainName = name;
+        safeThis->processorRef.markStateDirty();   // the host must re-snapshot
+
+        // Past tense is legitimate: saving IS something the user just did.
+        // It says a chain was saved and nothing about the sound, because
+        // saving changes nothing about the sound.
+        safeThis->setChainSaveStatus("Saved \"" + name + "\"");
+
+        // Anything the caps dropped was named as it happened; surface it now
+        // rather than let a partial save look complete.
+        safeThis->chainListPanel.setStateNotes(
+            safeThis->processorRef.getChainHost().getStateNotes());
+    };
+
+    if (id.isEmpty()) api.createChain(body, onDone);
+    else              api.patchChain(id, body, onDone);
+}
+
+void EchoJayEditor::showSavedChainsMenu()
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    setChainSaveStatus(juce::String::fromUTF8("Loading your saved chains\xe2\x80\xa6"));
+
+    api.listChains([safeThis](const juce::var& json, int sc)
+    {
+        if (safeThis == nullptr) return;
+        const auto err = EchoJayAPI::chainErrorMessage(json, sc);
+        if (err.isNotEmpty()) { safeThis->setChainSaveStatus(err); return; }
+        safeThis->setChainSaveStatus({});
+
+        juce::Array<juce::var> rows;
+        if (auto* obj = json.getDynamicObject())
+            if (auto* arr = obj->getProperty("chains").getArray())
+                rows = *arr;
+
+        if (rows.isEmpty())
+        {
+            safeThis->setChainSaveStatus("You have not saved any chains yet.");
+            return;
+        }
+
+        juce::PopupMenu menu;
+        std::vector<juce::String> ids, names;
+        for (auto& r : rows)
+        {
+            auto* o = r.getDynamicObject();
+            if (o == nullptr) continue;
+            const auto nm    = o->getProperty("name").toString();
+            const int  count = (int)o->getProperty("slotCount");
+            const bool hasSt = (bool)o->getProperty("hasState");
+            auto when = o->getProperty("updatedAt").toString().substring(0, 10);
+
+            juce::String label = nm + "   " + juce::String(count)
+                               + (count == 1 ? " slot" : " slots");
+            if (when.isNotEmpty()) label += ", " + when;
+            // hasState comes from the LIST so this is honest without
+            // fetching the blob: a chain saved without settings will rebuild
+            // the rack but leave every plugin at its defaults, and the user
+            // should know that before they pick it, not after.
+            if (!hasSt) label += ", settings not saved";
+
+            ids.push_back(o->getProperty("id").toString());
+            names.push_back(nm);
+            menu.addItem((int)ids.size(), label);
+        }
+
+        menu.showMenuAsync(juce::PopupMenu::Options()
+                               .withTargetComponent(&safeThis->chainOpenBtn),
+            [safeThis, ids, names](int choice)
+            {
+                if (safeThis == nullptr || choice <= 0
+                    || choice > (int)ids.size()) return;
+                safeThis->openSavedChain(ids[(size_t)choice - 1],
+                                         names[(size_t)choice - 1]);
+            });
+    });
+}
+
+void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& name)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    setChainSaveStatus(juce::String::fromUTF8("Opening \"") + name
+                       + juce::String::fromUTF8("\"\xe2\x80\xa6"));
+
+    api.fetchChain(id, [safeThis, id, name](const juce::var& json, int sc)
+    {
+        if (safeThis == nullptr) return;
+        const auto err = EchoJayAPI::chainErrorMessage(json, sc);
+        if (err.isNotEmpty()) { safeThis->setChainSaveStatus(err); return; }
+
+        juce::var slots, state;
+        if (auto* obj = json.getDynamicObject())
+            if (auto* c = obj->getProperty("chain").getDynamicObject())
+            {
+                slots = c->getProperty("slots");
+                state = c->getProperty("state");
+            }
+        if (!slots.isArray())
+        {
+            safeThis->setChainSaveStatus("That chain could not be read.");
+            return;
+        }
+
+        safeThis->switchToTab(Tab::Chain);
+
+        // Close any open hosted editor FIRST and clear the rack a runloop
+        // turn later: destroying a plugin's processor in the same tick as
+        // its editor lets a final UI timer fire into freed state. Same
+        // discipline the AI chain build uses.
+        safeThis->chainListPanel.closeAllEditors();
+        juce::Timer::callAfterDelay(80, [safeThis, slots, state, id, name]
+        {
+            if (safeThis == nullptr) return;
+            auto& ch = safeThis->processorRef.getChainHost();
+            for (int i = ch.getNumSlots() - 1; i >= 0; --i) ch.removeSlot(i);
+            safeThis->chainSelectedSlot_ = -1;
+            safeThis->chainListPanel.rebuild(ch.getAllSlotInfos(), -1);
+
+            // The SAME restore path a session reload takes. The callback
+            // fires after every slot attempt, so the rack fills in visibly
+            // instead of jumping from empty to done (each instantiation
+            // blocks the message thread, so this is the only way the user
+            // sees progress at all).
+            ch.restoreSavedChain(slots, state, [safeThis]
+            {
+                if (safeThis == nullptr) return;
+                auto& ch2 = safeThis->processorRef.getChainHost();
+                if (safeThis->chainSelectedSlot_ < 0 && ch2.getNumSlots() > 0)
+                    safeThis->chainSelectedSlot_ = 0;
+                safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(),
+                                                 safeThis->chainSelectedSlot_);
+                // Per-slot degradation, visible as it happens: a plugin that
+                // would not load, or settings that would not restore, is
+                // named here. A silent default is the one outcome the user
+                // cannot see.
+                safeThis->chainListPanel.setStateNotes(ch2.getStateNotes());
+                safeThis->repaint();
+            });
+
+            safeThis->processorRef.savedChainId   = id;
+            safeThis->processorRef.savedChainName = name;
+            safeThis->processorRef.markStateDirty();
+            safeThis->setChainSaveStatus("Opened \"" + name + "\"");
+        });
     });
 }
 
