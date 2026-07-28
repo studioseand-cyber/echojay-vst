@@ -136,6 +136,12 @@ target_sources(EchoJay PRIVATE
     Source/ParticleVisual.h
     Source/ParticleVisual.cpp
     Source/LinkShm.h
+    # --- built-in surgical EQ (feat/surgical-eq) ---
+    Source/EqEngine.cpp
+    Source/EqEngine.h
+    Source/EqMove.h
+    Source/SurgicalEqProcessor.cpp
+    Source/SurgicalEqProcessor.h
 )
 
 target_compile_definitions(EchoJay PUBLIC
