@@ -3618,7 +3618,17 @@ void EchoJayEditor::applyReviewModalState()
     // Chain header chrome.
     const bool chrome = onChain && !modal && !compactMode && !visualOnlyMode;
     chainChatToggleBtn.setVisible(chrome);
-    chainSlotCountLabel.setVisible(chrome);
+    chainSlotCountLabel.setVisible(false);   // removed from the header, see resized()
+    // Save / Save As / Open ride the same chrome flag, but their bounds also
+    // depend on window width, so this CONSUMES the rect resized() stored
+    // rather than re-deriving one. chainSaveBtnRight_ == 0 means resized()
+    // decided there was no room, and a modal dismiss must not override that.
+    {
+        const bool btns = chrome && chainSaveBtnRight_ > 0;
+        chainSaveBtn  .setVisible(btns);
+        chainSaveAsBtn.setVisible(btns);
+        chainOpenBtn  .setVisible(btns);
+    }
     // AI Assistant sidebar (Aa / disclaimer / model label / build + wave
     // buttons all cascade off these in the layout + paint passes).
     if (onChain && !compactMode)
@@ -12275,36 +12285,14 @@ void EchoJayEditor::resized()
         chainChatToggleBtn.setVisible(!compactMode && !visualOnlyMode && !reviewOverlay.visibleState);
         chainChatToggleBtn.toFront(false);
 
-        // Slot counter — right-aligned in the chain header strip, just left
-        // of the AI toggle (inside the chain area, above the rack)
-        chainSlotCountLabel.setBounds(mW - 62 - 8 - 90, topH + 8, 90, 16);
-        chainSlotCountLabel.setVisible(!compactMode && !visualOnlyMode && !reviewOverlay.visibleState);
+        // Slot counter REMOVED from the chain header (28 Jul 2026). The rack
+        // shows what is in it; a count next to Save / Save As / Open was
+        // noise competing for the same strip. The label object stays because
+        // the timer still writes to it and nothing else needs changing, but
+        // it is never laid out and never shown.
 
-        // Save / Save As / Open: laid out right to left from the slot
-        // counter, in the strip that already exists. No new band, so no
-        // reserved height changes and the rack below does not move.
-        // Hidden on a narrow window rather than allowed to overlap the
-        // title: the strip is the ONE geometry author here.
-        {
-            const int btnY  = topH + 5, btnH = 22;
-            const int rightEdge = mW - 62 - 8 - 90 - 10;   // left of the counter
-            const int wOpen = 54, wSaveAs = 66, wSave = 46, gap = 6;
-            const int xOpen   = rightEdge - wOpen;
-            const int xSaveAs = xOpen   - gap - wSaveAs;
-            const int xSave   = xSaveAs - gap - wSave;
-            const bool room = !compactMode && !visualOnlyMode
-                           && !reviewOverlay.visibleState
-                           && xSave > 130;   // clear of the "PLUGIN CHAIN" title
-            chainSaveBtn  .setBounds(xSave,   btnY, wSave,   btnH);
-            chainSaveAsBtn.setBounds(xSaveAs, btnY, wSaveAs, btnH);
-            chainOpenBtn  .setBounds(xOpen,   btnY, wOpen,   btnH);
-            for (auto* b : { &chainSaveBtn, &chainSaveAsBtn, &chainOpenBtn })
-            {
-                b->setVisible(room);
-                if (room) b->toFront(false);
-            }
-            chainSaveBtnRight_ = room ? xSave : 0;   // paint() reads this, measures nothing
-        }
+        // (Save / Save As / Open are authored UNCONDITIONALLY below, outside
+        // this branch. See the note there for why they cannot live here.)
 
         if (chainChatCollapsed_ && !compactMode)
         {
@@ -12330,6 +12318,52 @@ void EchoJayEditor::resized()
     {
         chainChatToggleBtn.setVisible(false);
         chainSlotCountLabel.setVisible(false);
+    }
+
+    // ---- Chain header: Save / Save As / Open ------------------------------
+    // AUTHORED UNCONDITIONALLY, outside the Chain-tab branch above, and this
+    // is the whole point rather than a style choice.
+    //
+    // Written inside that branch, these had bounds and visibility set only
+    // while the Chain tab was current. Switching to Compare simply skipped
+    // the code, so they kept visible=true at Chain-tab coordinates and drew
+    // on top of Compare's own Save Preset and Delete buttons. A component
+    // with no "off" path is a leak waiting for the first tab switch.
+    //
+    // Each setVisible is written out per component rather than through a
+    // pointer loop: a `for (auto* b : {...}) b->setVisible(x)` is invisible
+    // to a grep for "<name>.setVisible", which is how this class of bug hides
+    // from an audit. It hid from mine.
+    //
+    // One authority, one stored rect: chainSaveBtnRight_ is written here and
+    // only consumed by paint() and applyReviewModalState(). Nothing measures
+    // a second height.
+    {
+        const int btnY  = topH + 5, btnH = 22;
+        const int rightEdge = mW - 62 - 10;   // left of the AI toggle
+        const int wOpen = 54, wSaveAs = 66, wSave = 46, gap = 6;
+        const int xOpen   = rightEdge - wOpen;
+        const int xSaveAs = xOpen   - gap - wSaveAs;
+        const int xSave   = xSaveAs - gap - wSave;
+        const bool showChainHeaderBtns =
+               (currentTab == Tab::Chain)
+            && !compactMode && !visualOnlyMode
+            && !reviewOverlay.visibleState
+            && xSave > 130;   // clear of the "PLUGIN CHAIN" title
+        chainSaveBtn  .setBounds(xSave,   btnY, wSave,   btnH);
+        chainSaveAsBtn.setBounds(xSaveAs, btnY, wSaveAs, btnH);
+        chainOpenBtn  .setBounds(xOpen,   btnY, wOpen,   btnH);
+        chainSaveBtn  .setVisible(showChainHeaderBtns);
+        chainSaveAsBtn.setVisible(showChainHeaderBtns);
+        chainOpenBtn  .setVisible(showChainHeaderBtns);
+        if (showChainHeaderBtns)
+        {
+            chainSaveBtn  .toFront(false);
+            chainSaveAsBtn.toFront(false);
+            chainOpenBtn  .toFront(false);
+        }
+        // 0 = not shown, so paint() gives the name the whole strip.
+        chainSaveBtnRight_ = showChainHeaderBtns ? xSave : 0;
     }
 
     // Position particle visual — use paint formula for mW to match divider
