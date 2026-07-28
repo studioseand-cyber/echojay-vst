@@ -348,7 +348,26 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
 
 ## Standing engineering rules (from prior work)
 - Build via ~/reinstall-v2.sh (kills AU host, bumps version, rebuilds, installs
-  atomically). Version on screen = proof of fresh binary.
-- Two Claude Code sessions must NOT build the shared repo simultaneously.
-- Confirm binary timestamp > newest source before installing.
+  atomically). It now derives REPO from `git rev-parse --show-toplevel` and
+  configures the build tree if `$BUILD/CMakeCache.txt` is missing, so it builds
+  whichever worktree you run it from and survives a `rm -rf build`.
+- BINARY VERIFICATION IS A CONTENT CHECK, NOT A VERSION OR TIMESTAMP (28 Jul
+  2026, learned the hard way). The old rule "version on screen = proof of fresh
+  binary" is WRONG and cost a full afternoon: an installed component read
+  v2.23.99 while containing object code older than three sessions' work. While
+  more than one session or worktree can install to the SAME destination
+  (~/Library/Audio/Plug-Ins/Components), the version counter and the file
+  timestamp churn independently of the linked object code — a binary can read
+  NEWER while BEING older (a stale .o linked into a freshly-stamped bundle, or a
+  competing session's reinstall). The ONLY proof that an installed binary
+  contains a given change is a CONTENT check: `strings` the installed component's
+  Mach-O for a marker string from the feature under test
+  (`strings "$HOME/Library/Audio/Plug-Ins/Components/EchoJay V2.component/Contents/MacOS/EchoJay V2" | grep -F "<marker>"`).
+  Pick a marker that is a real string literal the feature emits; a pure code
+  reorder has no marker, so verify those behaviourally instead. Neither the
+  version number nor the mtime is evidence.
+- Two Claude Code sessions must NOT build the shared repo simultaneously. Prefer
+  separate worktrees; note the install DEST is still shared (last install wins)
+  unless the branches carry distinct PRODUCT_NAME / BUNDLE_ID / PLUGIN_CODE.
+- Confirm the installed binary by CONTENT (above), not by timestamp.
 - Deploy the live backend via clean git flow; test before moving on.
