@@ -28,11 +28,17 @@ public:
     {
         // --ledger-root DIR         write the ledger somewhere throwaway
         // --selftest-reentry ID     scripted double-click proof, then quit
+        // preserveQuotedStrings keeps the quotes IN the token, and JUCE quotes
+        // any argument containing a space when it rebuilds the command line. A
+        // VST3 path like "TDR SlickEQ M.vst3" therefore arrives wrapped in
+        // literal quote characters and matches nothing in the quarantine.
         auto args = juce::StringArray::fromTokens (commandLine, true);
+        for (auto& a : args)
+            a = a.unquoted();
         juce::File ledgerRoot;
         juce::String selfTestId;
         bool cacheTest = false;
-        juce::String releaseId;
+        juce::String releaseId, quarantineId, quarantineReason;
 
         for (int i = 0; i < args.size(); ++i)
         {
@@ -44,6 +50,8 @@ public:
                 cacheTest = true;
             else if (args[i] == "--release-quarantine" && i + 1 < args.size())
                 releaseId = args[++i];
+            else if (args[i] == "--quarantine" && i + 2 < args.size())
+                { quarantineId = args[i + 1]; quarantineReason = args[i + 2]; i += 2; }
         }
 
         // Headless release, so a quarantine can be undone through the same code
@@ -55,6 +63,15 @@ public:
             l.releaseFromQuarantine (releaseId);
             std::cout << "release-quarantine: " << releaseId
                       << (was ? " -> released" : " -> was not quarantined") << std::endl;
+            quit();
+            return;
+        }
+
+        if (quarantineId.isNotEmpty())
+        {
+            ejmap::Ledger l (ledgerRoot);
+            l.quarantine (quarantineId, quarantineReason);
+            std::cout << "quarantine: " << quarantineId << " -> " << quarantineReason << std::endl;
             quit();
             return;
         }

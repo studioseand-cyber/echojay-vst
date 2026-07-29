@@ -311,19 +311,32 @@ public:
 
         if (got)
         {
-            // Same policy as crash attribution, and for the same reason: a
-            // wrongly quarantined plugin drops out of the queue permanently and
-            // release is manual. The 30 s deadline quarantined Cymatics Lotus,
-            // which instantiates in 407 ms. Retry once; a plugin that times out
-            // twice is a pattern.
-            const int priors = countPriorOutcomeLocked (r.pluginId, "timeout");
+            // THE RETRY IS FOR LOADS ONLY, and the two cases have opposite costs.
+            //
+            // A wrong LOAD quarantine silently drops a mappable plugin from the
+            // queue, and release is manual: the cost lands on one plugin, out of
+            // sight. So a first load timeout is recorded and retried, which is
+            // what Cymatics Lotus needed (it instantiates in 407 ms and was
+            // quarantined by a deadline that was too tight).
+            //
+            // A SCAN hang blocks everything behind it. Sparing it means the next
+            // scan walks into the same bundle, hangs again, and the loop never
+            // converges: TDR SlickEQ M and Solid Dynamics each cost a full 4.5
+            // minute rescan for exactly this reason. Scan probes quarantine on
+            // the first timeout.
+            const bool isScanProbe = (r.stage == "scan");
+            const int  priors      = countPriorOutcomeLocked (r.pluginId, "timeout");
+            const bool quarantineNow = isScanProbe || priors > 0;
 
-            if (priors == 0)
-                r.detail << " [not quarantined: first timeout here, it gets one retry]";
+            if (! quarantineNow)
+                r.detail << " [not quarantined: first LOAD timeout here, it gets one retry]";
+            else if (isScanProbe && priors == 0)
+                r.detail << " [quarantined on first timeout: a scan hang blocks every "
+                            "bundle behind it]";
 
             appendLocked (r);
 
-            if (r.pluginId.isNotEmpty() && priors > 0)
+            if (r.pluginId.isNotEmpty() && quarantineNow)
                 quarantineLocked (r.pluginId, quarantineReason);
             inflightFile.deleteFile();
             lock.exit();
