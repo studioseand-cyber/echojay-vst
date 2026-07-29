@@ -8,6 +8,7 @@
 #include "WaveformRecorder.h"
 #include "ChainHost.h"
 #include "EchoJayAPI.h"
+#include "DashPoll.h"
 #include "LinkShm.h"
 
 // Temporary diagnostic: append a timestamped line to the EchoJay teardown log
@@ -314,52 +315,34 @@ public:
     juce::String pendingChannelUid;
     juce::StringArray chatRoles, chatContents; // for API context window
 
-    // ===== Session C: the community poll, ON THE PROCESSOR ================
+    // ===== Session C: the community poll ==================================
     //
-    // SAME RULE AS chatHistory, and it is the reason EchoJayAPI was moved
-    // here. Logic destroys and recreates the plugin editor on every Link
-    // window switch, every couple of minutes in real Link work. A juce::Timer
-    // owned by the editor would be destroyed and reconstructed on each of
-    // those, so a 20 second poll would restart its interval constantly and
-    // the unread count would reset to zero every time the user glanced at the
-    // Link window. The badge would appear to flicker at random and nobody
-    // could reproduce it on demand.
+    // The poller is PROCESS-WIDE and shared by every EchoJay instance in the
+    // host, because the unread counts are per ACCOUNT and every instance in a
+    // process shares one account and one settings file. Eight inserts used to
+    // mean eight identical requests per tick; now it is one. See DashPoll.h.
     //
-    // So the timer and the counts live here, on the thing that outlives every
-    // editor, and the editor is a passive listener that does no network work.
+    // It is still NOT on the editor, which is the older and more important
+    // rule: Logic destroys the editor on every Link window switch, so a timer
+    // there restarts its interval constantly and the counts reset.
+    //
+    // This processor is a client of the shared poller: it lends its api for
+    // requests and forwards change notifications to its editor.
+    using DashUnread = DashPollShared::Unread;
 
-    struct DashboardUnread
-    {
-        int total = 0, announcements = 0, team = 0, direct = 0;
-        // Monotonic server counter. Starts at -1 rather than 0 because 0 is a
-        // legitimate server value: starting at 0 would make the very first
-        // poll look like "unchanged" and skip its update.
-        juce::int64 rev = -1;
-    };
+    /** Current unread counts, from the shared poller. Message thread only. */
+    const DashUnread& getDashUnread() const noexcept { return dashPoll->getUnread(); }
 
-    /** Current unread counts. MESSAGE THREAD ONLY. Written only by the poll
-        callback after it marshals back; read by the editor to draw the dot. */
-    DashboardUnread dashUnread;
+    /** Bumped only when the counts change. The editor compares this against
+        what it last drew rather than diffing four fields. */
+    int getDashUnreadGeneration() const noexcept     { return dashPoll->getGeneration(); }
 
-    /** Bumped whenever dashUnread actually changes. A recreated editor
-        compares this against what it last drew, rather than diffing four
-        fields, to decide whether it needs a repaint. */
-    int dashUnreadGeneration = 0;
-
-    /** Fired on the message thread after dashUnread changes. The editor sets
-        this in its constructor and CLEARS IT IN ITS DESTRUCTOR: a stale
-        std::function holding a dangling editor pointer is exactly the crash
-        the editor-recreation cycle would produce twice a minute. */
+    /** Fired on the message thread when the counts change. The editor sets
+        this in its constructor and CLEARS IT FIRST in its destructor: a stale
+        std::function holding a dangling editor is exactly the crash the
+        editor-recreation cycle would produce twice a minute. */
     std::function<void()> onDashUnreadChanged;
 
-    /** Start the 20s poll if it is not already running. Idempotent, because
-        the editor calls it on construction and the processor neither knows
-        nor cares how many editors have come and gone. */
-    void startDashboardPoll();
-
-    /** Stop it. Called from the processor destructor, NOT from the editor's:
-        the whole point is that the poll outlives the editor. */
-    void stopDashboardPoll();
 
     // Visual mode state — persisted with DAW session
     int visualPreset = 0;   // 0=Orb, 1=Ring, 2=Helix, 3=Scatter
@@ -467,31 +450,10 @@ private:
     // construction. See getApi() above for the lifetime argument.
     EchoJayAPI api;
 
-    // The poll timer. A nested Timer rather than making the processor inherit
-    // juce::Timer, so this cannot be confused with any other periodic work and
-    // so timerCallback has exactly one meaning in this class.
-    struct PollTimer : juce::Timer
-    {
-        std::function<void()> tick;
-        void timerCallback() override { if (tick) tick(); }
-    };
-    PollTimer dashPollTimer;
-
-    /** One poll tick. Runs on the message thread, fires the request off it. */
-    void dashPollTick();
-
-    /** Monotonic count of ticks FIRED since this processor was constructed.
-        Never reset. This is the number that answers the Link window question:
-        if it keeps climbing across an editor recreation, the timer survived;
-        if it restarts at zero, the timer was on the editor after all. */
-    juce::int64 dashPollTickCount = 0;
-
-    /** Guards against overlapping requests. A tick that lands while the
-        previous one is still in flight is SKIPPED rather than queued: at a 20
-        second interval and a 5 second timeout this should never happen, and
-        if it does the right answer is to drop the tick, not to build a queue
-        that hides a stalled network. */
-    bool dashPollInFlight = false;
+    /** The process-wide poller. juce::SharedResourcePointer creates it on
+        first use and destroys it when the last processor releases it, so the
+        lifetime is refcounted rather than a leaked static. */
+    juce::SharedResourcePointer<DashPollShared> dashPoll;
 
     ChannelType channelType { ChannelType::FullMix };
     juce::String customChannelName;

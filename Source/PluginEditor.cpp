@@ -334,13 +334,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // network work of our own.
     processorRef.onDashUnreadChanged = [this]
     {
-        // Already on the message thread: the processor only fires this from
-        // inside getJSON's callAsync completion.
-        dashUnreadSeen_ = processorRef.dashUnreadGeneration;
+        // Already on the message thread: the shared poller only fires this
+        // from inside getJSON's callAsync completion.
+        dashUnreadSeen_ = processorRef.getDashUnreadGeneration();
         repaint();
     };
-    dashUnreadSeen_ = processorRef.dashUnreadGeneration;
-    processorRef.startDashboardPoll();
+    dashUnreadSeen_ = processorRef.getDashUnreadGeneration();
 
     setLookAndFeel(&lnf);
     setSize(1170, 696);
