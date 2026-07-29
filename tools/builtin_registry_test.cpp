@@ -689,6 +689,95 @@ int main()
     }
 
     // -----------------------------------------------------------------------
+    // The goniometer is only worth having if it shows the device's OUTPUT. A tap
+    // taken before the engine would look perfectly healthy on a stereo source
+    // and would be a lie on a mono one: mono in, mono out, a vertical line, no
+    // matter how far the Haas dial is turned.
+    //
+    // So the check is the mono case specifically. Feed L == R, and the ring must
+    // come back DECORRELATED — side content the device manufactured, which is
+    // the widening made visible. Then turn the widening off and the same input
+    // must come back perfectly correlated, which is what rules out the tap
+    // simply being noisy.
+    std::printf ("== the Stereoizer's scope tap carries the WIDENED output ==\n");
+    {
+        // Correlation of the ring's two channels, the same measure the
+        // goniometer's bar shows.
+        auto ringCorrelation = [] (const echojay::viz::ScopeTap& tap)
+        {
+            std::vector<float> l (1024), r (1024);
+            const int n = tap.read (l.data(), r.data(), 1024);
+            if (n <= 0) return 2.0f;                    // sentinel: nothing tapped
+
+            double lr = 0.0, ll = 0.0, rr = 0.0;
+            for (int i = 0; i < n; ++i)
+            {
+                lr += (double) l[i] * r[i];
+                ll += (double) l[i] * l[i];
+                rr += (double) r[i] * r[i];
+            }
+            if (ll + rr < 1.0e-9) return 2.0f;          // sentinel: silence
+            const double d = std::sqrt (ll * rr);
+            return d > 1.0e-12 ? (float) (lr / d) : 1.0f;
+        };
+
+        // A MONO source: both channels identical, so every scrap of side content
+        // in the tap was made by this device.
+        auto runMono = [] (juce::AudioProcessor& p)
+        {
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            juce::Random rng (99);
+            for (int b = 0; b < 24; ++b)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = rng.nextFloat() * 1.6f - 0.8f;
+                    buf.setSample (0, i, v);
+                    buf.setSample (1, i, v);
+                }
+                p.processBlock (buf, midi);
+            }
+        };
+
+        {
+            auto proc = makeByName ("EchoJay Stereoizer");
+            auto* sz = dynamic_cast<EedStereoizerProcessor*> (proc.get());
+            auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            check (sz != nullptr, "constructed as an EedStereoizerProcessor");
+
+            device->applyStructured (paramsMove ({ { "width", 150.0 }, { "haas_ms", 20.0 },
+                                                  { "mono_maker_hz", 0.0 }, { "mix", 100.0 } }));
+            proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+            proc->prepareToPlay (48000.0, 512);
+            runMono (*proc);
+
+            const float c = ringCorrelation (sz->scopeTap());
+            check (c < 0.99f && c <= 1.0f,
+                   "mono in, DECORRELATED in the ring: the widening is visible "
+                   "(correlation " + juce::String (c, 4) + ")");
+        }
+        {
+            // Same input, widening off. If this did not come back at +1 the tap
+            // would be measuring something other than the signal.
+            auto proc = makeByName ("EchoJay Stereoizer");
+            auto* sz = dynamic_cast<EedStereoizerProcessor*> (proc.get());
+            auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+            device->applyStructured (paramsMove ({ { "width", 100.0 }, { "haas_ms", 0.0 },
+                                                  { "mono_maker_hz", 0.0 }, { "mix", 100.0 } }));
+            proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+            proc->prepareToPlay (48000.0, 512);
+            runMono (*proc);
+
+            const float c = ringCorrelation (sz->scopeTap());
+            check (c > 0.999f && c <= 1.0f,
+                   "widening off: the same mono input reads as mono "
+                   "(correlation " + juce::String (c, 4) + ")");
+        }
+    }
+
+    // -----------------------------------------------------------------------
     std::printf ("== state round-trips through the schema ==\n");
     {
         auto a = makeByName ("EchoJay Gain");

@@ -9,11 +9,17 @@ using namespace echojay::device::metrics;
 
 namespace
 {
-    // Four dials and a header. The rack sizes it down from here if it has to,
-    // and layoutContent survives that.
+    // Four dials, a header, and a goniometer seated above them. The rack sizes
+    // it down from here if it has to, and layoutContent survives that — the
+    // scope is the first thing to give up its room.
     constexpr int kDefaultW = 560;
-    constexpr int kDefaultH = 150;
+    constexpr int kScopeH   = 168;
+    constexpr int kDefaultH = 150 + kScopeH + 6;
     constexpr int kGap      = 20;
+
+    // Below this the Lissajous is a blob rather than an image, so it is dropped
+    // instead of drawn uselessly small.
+    constexpr int kMinScopeH = 60;
 }
 
 EedStereoizerEditor::EedStereoizerEditor (EedStereoizerProcessor& p)
@@ -61,9 +67,13 @@ EedStereoizerEditor::EedStereoizerEditor (EedStereoizerProcessor& p)
     setup (monoKnob_,  EedStereoizerProcessor::kMonoMakerHz, 120.0, 0, " Hz", "MONO");
     setup (mixKnob_,   EedStereoizerProcessor::kMix,           0.0, 0, " %",  "MIX");
 
+    addAndMakeVisible (scope_);
+
     // The AI can move these while the editor is open, so poll for changes the UI
-    // did not make.
-    startTimerHz (15);
+    // did not make. 20 Hz rather than the 15 the dials alone needed: the scope
+    // rides the same timer, and below about 20 Hz a Lissajous reads as a series
+    // of stills instead of as a live image.
+    startTimerHz (20);
 }
 
 EedStereoizerEditor::~EedStereoizerEditor()
@@ -74,6 +84,31 @@ EedStereoizerEditor::~EedStereoizerEditor()
 void EedStereoizerEditor::layoutContent (juce::Rectangle<int> content)
 {
     if (content.isEmpty()) return;
+
+    // The scope is reserved from the TOP out of whatever is left once the dial
+    // row is whole — it is the readout, the dials are the device, and a rack
+    // slot laid out short loses the readout first (the inline-hosting contract
+    // in DeviceEditorBase.h).
+    {
+        const int want = juce::jmin (kScopeH,
+                                     juce::jmax (0, content.getHeight() - kKnobH - 6));
+        const bool room = want >= kMinScopeH && content.getWidth() >= 80;
+
+        scope_.setVisible (room);
+        if (room)
+        {
+            auto band = content.removeFromTop (want);
+            content.removeFromTop (6);
+
+            // Centred and only as wide as it needs to be. The Lissajous itself
+            // is square (a stretched vectorscope reports a width the signal does
+            // not have), so letting the component span a 560-wide panel would
+            // buy nothing but a very long correlation bar with a small picture
+            // stranded in the middle of it.
+            const int w = juce::jmin (band.getWidth(), want + 60);
+            scope_.setBounds (band.withSizeKeepingCentre (w, band.getHeight()));
+        }
+    }
 
     // Four dial columns centred as a group, so the device stays balanced at
     // whatever width the rack gives it.
@@ -111,9 +146,44 @@ void EedStereoizerEditor::syncFromProcessor()
     pull (mixKnob_,   EedStereoizerProcessor::kMix);
 }
 
+void EedStereoizerEditor::refreshScope()
+{
+    const bool byp = proc_.isBypassed();
+    scope_.setDimmed (byp);
+
+    // A bypassed device stops writing its tap (processBlock returns early), so
+    // reading it would draw a frozen picture of processing that is not
+    // happening. Dimmed and left alone is the same choice the GR meter makes.
+    if (byp || ! scope_.isVisible()) return;
+
+    // The crossover hint, and the reason it is worth the two lines: the scope is
+    // full-band, so the mono-maker's work is invisible in it. Everything under
+    // the corner is already collapsed to the vertical, and without the caption
+    // that reads as "the widener is not doing much down there" rather than as
+    // "this is deliberate". Naming the frequency turns an absence into a
+    // statement. VizView::setCaption self-guards on change, and captionHz_ keeps
+    // the string from being rebuilt on a tick where nothing moved.
+    {
+        const int hz = juce::roundToInt (
+            proc_.getParamValue (EedStereoizerProcessor::kMonoMakerHz));
+
+        if (hz != captionHz_)
+        {
+            captionHz_ = hz;
+            scope_.setCaption (hz > 0 ? "STEREO FIELD   MONO < " + juce::String (hz) + " Hz"
+                                      : juce::String ("STEREO FIELD"));
+        }
+    }
+
+    const int n = proc_.scopeTap().read (scopeL_.data(), scopeR_.data(), kScopeFrame);
+    if (n > 0)
+        scope_.setSamples (scopeL_.data(), scopeR_.data(), n);
+}
+
 void EedStereoizerEditor::timerCallback()
 {
     syncFromProcessor();
+    refreshScope();
 
     if (bypassButton().getToggleState() != proc_.isBypassed())
         bypassButton().setToggleState (proc_.isBypassed(), juce::dontSendNotification);

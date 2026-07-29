@@ -18,6 +18,7 @@
 
 #include "EedDeviceProcessor.h"
 #include "EedStereoEngine.h"
+#include "viz/VizTap.h"
 
 class EedStereoizerProcessor : public EedDeviceProcessor
 {
@@ -46,8 +47,20 @@ public:
 
     echojay::StereoEngine& engine() noexcept { return engine_; }
 
+    // The editor's goniometer (VISUALS_PLAN.md Phase V0, the ring-tap path) —
+    // the same two lines Stereo Width carries, and for the same reason: width
+    // cannot be drawn from a parameter. It is even less drawable here, because
+    // this device widens with a Haas delay: how much image 15 ms actually buys
+    // depends entirely on what is already in the side signal, and only the
+    // samples know that.
+    //
+    // It holds the OUTPUT, post-engine and therefore post-MIX — the widening is
+    // the thing being watched, not the input it started from.
+    const echojay::viz::ScopeTap& scopeTap() const noexcept { return scopeTap_; }
+
 private:
     echojay::StereoEngine engine_;
+    echojay::viz::ScopeTap scopeTap_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedStereoizerProcessor)
 };
