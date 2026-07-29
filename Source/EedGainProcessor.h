@@ -11,12 +11,24 @@
     Note what is NOT here: no name matching, no add-menu entry, no advertisement
     text, no dispatch branch. All of that is generated from the registry entry at
     the bottom of the .cpp. This file is the whole device.
+
+    THE ONE ADDITION BEYOND THE DSP: four float taps, feeding the editor's I/O
+    meters (VISUALS_PLAN.md, Utility: "Gain: LevelMeter I/O (float tap)"). A gain
+    device is the one place a picture of the LEVEL is the whole point — "is this
+    move making it louder, and is it about to clip" is the question the device
+    exists to answer, and two numbers on a dial cannot answer it.
+
+    The taps are echojay::viz::FloatTap, the lock-free single-float contract in
+    viz/VizTap.h. They do not touch the dialable contract: nothing here is a
+    ParamSpec, nothing is advertised, and applyStructured is unchanged. Viz is
+    read-only (VISUALS_PLAN.md, "Rules carried over").
 */
 
 #pragma once
 
 #include "EedDeviceProcessor.h"
 #include "EedGainEngine.h"
+#include "viz/VizTap.h"
 
 class EedGainProcessor : public EedDeviceProcessor
 {
@@ -45,8 +57,27 @@ public:
 
     echojay::GainEngine& engine() noexcept { return engine_; }
 
+    // ---- I/O levels for the editor's meters --------------------------------
+    // Linear magnitude, not dB: the meter converts, and a linear zero is an
+    // honest silence where a dB zero is full scale. Read on the editor's timer.
+    //
+    // Measured across whatever channels the host gave us — peak is the loudest
+    // single sample on ANY channel (that is what clips), RMS is pooled across
+    // them (that is what it sounds like).
+    float inputPeak()   const noexcept { return inPeak_.get(); }
+    float inputRms()    const noexcept { return inRms_.get(); }
+    float outputPeak()  const noexcept { return outPeak_.get(); }
+    float outputRms()   const noexcept { return outRms_.get(); }
+
 private:
+    // Peak + pooled RMS of `numCh` channels, published to a pair of taps.
+    static void publishLevels (const juce::AudioBuffer<float>& buffer, int numCh,
+                               echojay::viz::FloatTap& peakTap,
+                               echojay::viz::FloatTap& rmsTap);
+
     echojay::GainEngine engine_;
+
+    echojay::viz::FloatTap inPeak_, inRms_, outPeak_, outRms_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedGainProcessor)
 };

@@ -53,6 +53,39 @@ void EedGainProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     // Snap to the current targets so a freshly restored session starts AT its
     // values rather than ramping up to them from unity on the first block.
     engine_.reset();
+
+    // Clear the meters, or a device that has just been re-prepared shows the
+    // level of whatever was playing before the transport stopped.
+    inPeak_.set (0.0f);
+    inRms_.set (0.0f);
+    outPeak_.set (0.0f);
+    outRms_.set (0.0f);
+}
+
+// Peak is the loudest single sample on ANY channel — that is what clips. RMS is
+// pooled across channels rather than taken per channel, because a meter is
+// answering "how loud is this", and that is one number for the signal, not one
+// per wire.
+void EedGainProcessor::publishLevels (const juce::AudioBuffer<float>& buffer, int numCh,
+                                      echojay::viz::FloatTap& peakTap,
+                                      echojay::viz::FloatTap& rmsTap)
+{
+    const int n = buffer.getNumSamples();
+    if (n <= 0 || numCh <= 0) return;
+
+    float  peak     = 0.0f;
+    double meanSqSum = 0.0;
+
+    for (int ch = 0; ch < numCh; ++ch)
+    {
+        peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, n));
+
+        const double r = (double) buffer.getRMSLevel (ch, 0, n);
+        meanSqSum += r * r;
+    }
+
+    peakTap.set (peak);
+    rmsTap.set ((float) std::sqrt (meanSqSum / (double) numCh));
 }
 
 void EedGainProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -64,15 +97,25 @@ void EedGainProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, buffer.getNumSamples());
 
+    // A bypassed device stops metering rather than publishing in == out. The
+    // editor dims both meters and stops reading them, the same choice the GR
+    // meter and the goniometer make: a live-looking picture of processing that
+    // is not happening is worse than no picture.
     if (isBypassed()) return;
 
     const int numCh = juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels());
     if (numCh <= 0) return;
 
+    // The input side, measured BEFORE the engine rewrites the buffer in place —
+    // there is no second copy of it afterwards.
+    publishLevels (buffer, numCh, inPeak_, inRms_);
+
     float* l = buffer.getWritePointer (0);
     float* r = numCh > 1 ? buffer.getWritePointer (1) : nullptr;
 
     engine_.process (l, r, buffer.getNumSamples());
+
+    publishLevels (buffer, numCh, outPeak_, outRms_);
 }
 
 juce::AudioProcessorEditor* EedGainProcessor::createEditor()
