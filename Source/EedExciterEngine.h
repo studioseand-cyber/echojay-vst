@@ -77,12 +77,21 @@ public:
             ch.scratch.assign ((std::size_t) maxBlock_, 0.0f);
         }
 
+        tapDry_.assign ((std::size_t) maxBlock_, 0.0f);
+        tapGain_.assign ((std::size_t) maxBlock_, 0.0f);
+        highLevel_.prepare (sampleRate_);
+
         applyCrossover();
         reset();
     }
 
     void reset() noexcept
     {
+        spectrumTap_.clear();
+        highLevel_.reset();
+        highLevelTap_.set (0.0f);
+        highPeak_ = 0.0f;
+
         for (auto& ch : channels_)
         {
             ch.ovs.reset();
@@ -129,6 +138,8 @@ public:
     {
         if (numSamples <= 0 || left == nullptr) return;
 
+        highPeak_ = 0.0f;
+
         const int maxChunk = std::max (1, channels_[0].ovs.maxBlockSize());
 
         for (int offset = 0; offset < numSamples; offset += maxChunk)
@@ -136,10 +147,30 @@ public:
             const int n = std::min (maxChunk, numSamples - offset);
             const float coeff = harmonic::blockCoefficient (sampleRate_, n, 0.020);
 
-            processChunk (channels_[0], left + offset, n, coeff);
-            if (right != nullptr) processChunk (channels_[1], right + offset, n, coeff);
+            // Only channel 0 feeds the spectrum tap. Not a shortcut: summing to
+            // mono first would let out-of-phase material cancel, and a harmonic
+            // display that reads LOWER because the source is wide would be
+            // actively misleading. One channel is a true reading of one channel.
+            processChunk (channels_[0], left + offset, n, coeff, true);
+            if (right != nullptr) processChunk (channels_[1], right + offset, n, coeff, false);
         }
+
+        highLevelTap_.set (highLevel_.push (highPeak_, numSamples));
     }
+
+    // ---- visualisation (message thread) -----------------------------------
+    // The HIGH BAND's level, 0..1 — not the input's. The curve this device
+    // shows is the one applied to the band above the split, so the dot has to
+    // ride it in that band's own domain; using the full-band level would put
+    // the dot far to the right of where the shaping is actually happening.
+    float highBandLevel() const noexcept { return highLevelTap_.get(); }
+
+    // ch0 = the dry input, ch1 = what the device GENERATED (wet - dry), sample
+    // aligned. Two signals rather than one because the bars measure the
+    // generated content against the INPUT's fundamental — see
+    // harmonicMagnitudesDb().
+    using SpectrumTap = viz::SampleTap<float, 4096, 2>;
+    const SpectrumTap& spectrumTap() const noexcept { return spectrumTap_; }
 
 private:
     struct Channel
@@ -164,7 +195,7 @@ private:
         }
     }
 
-    void processChunk (Channel& ch, float* data, int n, float coeff) noexcept
+    void processChunk (Channel& ch, float* data, int n, float coeff, bool tap) noexcept
     {
         const float amt  = std::clamp (amount_.load() * 0.01f, 0.0f, 1.0f);
         const float wet  = std::clamp (mix_.load() * 0.01f, 0.0f, 1.0f);
@@ -198,6 +229,11 @@ private:
                 const float low  = ch.split2.process (ch.split1.process (x));
                 const float high = x - low;
 
+                // Sampled once per BASE sample rather than on every oversampled
+                // one: a peak follower reading a display cannot tell the
+                // difference, and this sits in the innermost loop in the device.
+                if (tap && s == 0) highPeak_ = std::fmax (highPeak_, std::fabs (high));
+
                 const float shaped = harmonic::shape (curve, high * g) * k;
 
                 // Only what the shaper ADDS is DC-blocked, not the signal. Tube
@@ -221,8 +257,21 @@ private:
             ch.dry.write (ch.scratch[(std::size_t) i]);
             const float dry = ch.dry.readInt (latency_);
 
+            // The generated content, isolated. `y` is the excited signal and
+            // `dry` is the SAME sample delayed to meet it, and the band split
+            // reconstructs exactly — so their difference is precisely what this
+            // device added and nothing else. Taken before the mix and output
+            // gains, so the reading does not move when those do.
+            if (tap)
+            {
+                tapDry_[(std::size_t) i]  = dry;
+                tapGain_[(std::size_t) i] = y - dry;
+            }
+
             data[i] = (y * ch.wet.next() + dry * ch.dryG.next()) * ch.out.next();
         }
+
+        if (tap) spectrumTap_.write (tapDry_.data(), tapGain_.data(), n);
     }
 
     Channel channels_[2];
@@ -236,6 +285,15 @@ private:
     double sampleRate_ = 44100.0;
     int    maxBlock_   = 0;
     int    latency_    = 0;
+
+    // Staged per chunk so the tap takes one contiguous write instead of one per
+    // sample — the ring's release fence is per call, not per element.
+    std::vector<float> tapDry_, tapGain_;
+    SpectrumTap        spectrumTap_;
+
+    float                  highPeak_ = 0.0f;   // audio thread only
+    harmonic::PeakFollower highLevel_;
+    viz::FloatTap          highLevelTap_ { 0.0f };
 };
 
 } // namespace echojay

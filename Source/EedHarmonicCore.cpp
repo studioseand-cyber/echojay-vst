@@ -240,6 +240,7 @@ void HarmonicCore::prepare (double sampleRate, int maxBlockSize)
     latency_    = Oversampler::latencyForFactor (osFactor_);
 
     lastToneDb_ = toneDb_.load();
+    inputLevel_.prepare (sampleRate_);
 
     for (auto& ch : channels_)
     {
@@ -263,6 +264,9 @@ void HarmonicCore::reset() noexcept
 {
     const Curve c = getCurve();
     const float g = std::pow (10.0f, driveDb_.load() * 0.05f);
+
+    inputLevel_.reset();
+    inputLevelTap_.set (0.0f);
 
     for (auto& ch : channels_)
     {
@@ -291,6 +295,13 @@ void HarmonicCore::process (float* left, float* right, int numSamples) noexcept
         lastToneDb_ = toneDb;
         for (auto& ch : channels_) ch.tilt.setTiltDb (toneDb);
     }
+
+    // The level dot: measured on the INPUT, across both channels, before
+    // anything touches it. Read once for the whole call rather than per chunk,
+    // so the follower's release is timed off real elapsed samples.
+    inputLevelTap_.set (inputLevel_.push (std::max (blockPeak (left, numSamples),
+                                                    blockPeak (right, numSamples)),
+                                          numSamples));
 
     // The oversampler's scratch is sized to the prepared block, so a host that
     // hands us a longer buffer than it promised is chunked rather than trusted.

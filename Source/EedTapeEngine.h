@@ -86,6 +86,8 @@ public:
             ch.scratch.assign ((std::size_t) maxBlock_, 0.0f);
         }
 
+        inputLevel_.prepare (sampleRate_);
+
         applySpeedDependentFilters();
         reset();
     }
@@ -93,6 +95,10 @@ public:
     void reset() noexcept
     {
         const float g = std::pow (10.0f, driveDb_.load() * 0.05f);
+
+        inputLevel_.reset();
+        inputLevelTap_.set (0.0f);
+        transportTap_.set (0.0f);
 
         for (auto& ch : channels_)
         {
@@ -176,6 +182,10 @@ public:
     {
         if (numSamples <= 0 || left == nullptr) return;
 
+        inputLevelTap_.set (inputLevel_.push (
+            std::max (harmonic::blockPeak (left, numSamples),
+                      harmonic::blockPeak (right, numSamples)), numSamples));
+
         const int maxChunk = std::max (1, channels_[0].ovs.maxBlockSize());
 
         for (int offset = 0; offset < numSamples; offset += maxChunk)
@@ -184,6 +194,17 @@ public:
             processChunk (left + offset, right != nullptr ? right + offset : nullptr, n);
         }
     }
+
+    // ---- visualisation (message thread) -----------------------------------
+    // The level entering the shaper, 0..1, before the drive gain — the domain
+    // the WaveshaperView plots in.
+    float inputLevel() const noexcept { return inputLevelTap_.get(); }
+
+    // Where the transport currently sits, -1..+1 around its centre delay. This
+    // is the wow and flutter themselves: the number the modulated delay is
+    // actually reading at, not a re-synthesised copy of the LFOs, so the
+    // indicator cannot drift out of step with what is being heard.
+    float transportOffset() const noexcept { return transportTap_.get(); }
 
 private:
     struct Channel
@@ -261,7 +282,20 @@ private:
             flutterPhase_  += flutInc;
             flutterPhase2_ += flutInc2;
 
-            const float d = std::max (1.0f, transportSamples_ + wowMod * wowD + flutMod * flutD);
+            const float offset = wowMod * wowD + flutMod * flutD;
+            const float d = std::max (1.0f, transportSamples_ + offset);
+
+            // Published on the LAST sample of the chunk, normalised against the
+            // deepest excursion the device can produce rather than against the
+            // current depth — so turning WOW down moves the needle less, which
+            // is the thing the indicator is there to show.
+            if (i == n - 1)
+            {
+                constexpr float kMaxOffsetMs = kMaxWowMs + kMaxFlutterMs;
+                const float full = kMaxOffsetMs * 2.0f * 0.001f * (float) sampleRate_;
+                transportTap_.set (full > 0.0f
+                                   ? std::clamp (offset / full, -1.0f, 1.0f) : 0.0f);
+            }
 
             channels_[0].scratch[(std::size_t) i] = l[i];         // dry, pre-everything
             channels_[0].transport.write (l[i]);
@@ -341,6 +375,10 @@ private:
 
     double wowPhase_ = 0.0, wowPhase2_ = 0.0;
     double flutterPhase_ = 0.0, flutterPhase2_ = 0.0;
+
+    viz::FloatTap          inputLevelTap_ { 0.0f };
+    harmonic::PeakFollower inputLevel_;
+    viz::FloatTap          transportTap_  { 0.0f };
 };
 
 } // namespace echojay
