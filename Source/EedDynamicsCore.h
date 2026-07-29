@@ -164,6 +164,14 @@ struct Biquad
         return f;
     }
 
+    // Adopt another biquad's coefficients without disturbing this one's state.
+    // Coefficient changes are frequent (any dial move); state resets are not,
+    // because a state reset is audible.
+    void setCoeffs (const Biquad& src) noexcept
+    {
+        b0 = src.b0; b1 = src.b1; b2 = src.b2; a1 = src.a1; a2 = src.a2;
+    }
+
     static Biquad allpass (double sampleRate, double freq, double q) noexcept
     {
         const double w0 = 2.0 * dyn::kPi * clampFreq (freq, sampleRate) / sampleRate;
@@ -193,12 +201,15 @@ class LinkwitzRiley4
 public:
     static constexpr double kQ = 0.70710678118654752440;   // Butterworth
 
+    // Replaces the COEFFICIENTS and keeps the state. Zeroing the state instead
+    // would empty the filter's memory mid-signal, which is a click on every
+    // crossover movement — and a crossover is a dial a user drags.
     void setCutoff (double sampleRate, double freq) noexcept
     {
-        lp1_ = lp2_ = Biquad::lowpass  (sampleRate, freq, kQ);
-        hp1_ = hp2_ = Biquad::highpass (sampleRate, freq, kQ);
-        // States were just overwritten with the fresh (zeroed) prototypes, so
-        // this is also a reset. Coefficients only change at prepare/param time.
+        const auto lp = Biquad::lowpass  (sampleRate, freq, kQ);
+        const auto hp = Biquad::highpass (sampleRate, freq, kQ);
+        lp1_.setCoeffs (lp); lp2_.setCoeffs (lp);
+        hp1_.setCoeffs (hp); hp2_.setCoeffs (hp);
     }
 
     void reset() noexcept
@@ -225,7 +236,7 @@ class LR4Allpass
 public:
     void setCutoff (double sampleRate, double freq) noexcept
     {
-        ap_ = Biquad::allpass (sampleRate, freq, LinkwitzRiley4::kQ);
+        ap_.setCoeffs (Biquad::allpass (sampleRate, freq, LinkwitzRiley4::kQ));
     }
     void  reset() noexcept        { ap_.reset(); }
     float process (float x) noexcept { return ap_.process (x); }

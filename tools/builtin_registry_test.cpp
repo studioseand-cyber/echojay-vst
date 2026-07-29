@@ -510,7 +510,21 @@ int main()
 
         check (near (device->getParamValue ("crossover1_hz"), 200.0),  "crossover1 exact");
         check (near (device->getParamValue ("crossover3_hz"), 7000.0), "crossover3 exact");
-        check (near (mb->crossoverHz (1), 1200.0, 1.0), "the splitter realised crossover2");
+
+        // The splitter is rebuilt on the AUDIO thread, so a move is a target
+        // until a block runs. Processing one here is not test scaffolding — it
+        // is the same handoff a DAW performs, and asserting before it would be
+        // asserting on a state the plugin never actually plays in.
+        check (! near (mb->crossoverHz (1), 1200.0, 1.0),
+               "before a block runs, the splitter still holds the prepared value");
+
+        juce::AudioBuffer<float> buf (2, 512);
+        buf.clear();
+        juce::MidiBuffer midi;
+        proc->processBlock (buf, midi);
+
+        check (near (mb->crossoverHz (1), 1200.0, 1.0),
+               "after one block, the splitter has realised crossover2");
     }
 
     // -----------------------------------------------------------------------

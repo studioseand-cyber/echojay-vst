@@ -59,10 +59,12 @@ public:
 
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
 
-    bool isSplitMode() const noexcept { return splitMode_; }
-    bool isListening() const noexcept { return listen_; }
+    bool isSplitMode() const noexcept { return splitMode_.load(); }
+    bool isListening() const noexcept { return listen_.load(); }
 
 private:
+    // Rebuilds the coefficients for the current freqHz_. AUDIO THREAD ONLY —
+    // see the note on appliedFreqHz_.
     void updateFilters();
 
     echojay::DynamicsCore core_;
@@ -72,10 +74,23 @@ private:
     echojay::Biquad         scFilter_[2];
     echojay::LinkwitzRiley4 splitFilter_[2];
 
-    double freqHz_     = 6500.0;
+    // freq_hz is written from the message thread (a dial, or an AI move) and
+    // read on the audio thread. Rebuilding the coefficients where they are
+    // WRITTEN means the audio thread can read a biquad half-updated — and while
+    // both the old and the new filter are stable, a mixture of the two need not
+    // be, so the failure mode is a blow-up rather than a glitch.
+    //
+    // So the target is an atomic and the rebuild happens at the top of
+    // processBlock, on the audio thread, only when it has actually moved. Same
+    // discipline as EqEngine: parameters are atomics, coefficients are built
+    // where they are used.
+    std::atomic<double> freqHz_ { 6500.0 };
+    double              appliedFreqHz_ = -1.0;   // audio thread only
+
+    std::atomic<bool> splitMode_ { true };
+    std::atomic<bool> listen_    { false };
+
     double sampleRate_ = 44100.0;
-    bool   splitMode_  = true;
-    bool   listen_     = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedDeEsserProcessor)
 };

@@ -68,40 +68,41 @@ const echojay::ParamSchema& EedDeEsserProcessor::schema()
 
 bool EedDeEsserProcessor::setParamValue (const juce::String& id, double value)
 {
-    if (id == kFreqHz)      { freqHz_ = value; updateFilters();   return true; }
+    // Just the target. The audio thread picks it up and rebuilds the filters.
+    if (id == kFreqHz)      { freqHz_.store (value);                return true; }
     if (id == kRangeDb)     { core_.setRangeDb     ((float) value); return true; }
     if (id == kThresholdDb) { core_.setThresholdDb ((float) value); return true; }
     if (id == kAttackMs)    { core_.setAttackMs    (value);         return true; }
     if (id == kReleaseMs)   { core_.setReleaseMs   (value);         return true; }
-    if (id == kMode)        { splitMode_ = (value >= 0.5);          return true; }
-    if (id == kListen)      { listen_    = (value >= 0.5);          return true; }
+    if (id == kMode)        { splitMode_.store (value >= 0.5);      return true; }
+    if (id == kListen)      { listen_.store    (value >= 0.5);      return true; }
     return false;
 }
 
 double EedDeEsserProcessor::getParamValue (const juce::String& id) const
 {
-    if (id == kFreqHz)      return freqHz_;
+    if (id == kFreqHz)      return freqHz_.load();
     if (id == kRangeDb)     return (double) core_.getRangeDb();
     if (id == kThresholdDb) return (double) core_.getThresholdDb();
     if (id == kAttackMs)    return core_.getAttackMs();
     if (id == kReleaseMs)   return core_.getReleaseMs();
-    if (id == kMode)        return splitMode_ ? 1.0 : 0.0;
-    if (id == kListen)      return listen_ ? 1.0 : 0.0;
+    if (id == kMode)        return splitMode_.load() ? 1.0 : 0.0;
+    if (id == kListen)      return listen_.load() ? 1.0 : 0.0;
     return 0.0;
 }
 
 void EedDeEsserProcessor::updateFilters()
 {
+    appliedFreqHz_ = freqHz_.load();
+
+    // Coefficients are replaced, state is not: a filter reset on every dial
+    // movement is a click on every dial movement.
+    const auto bp = echojay::Biquad::bandpass (sampleRate_, appliedFreqHz_, kSidechainQ);
+
     for (int ch = 0; ch < 2; ++ch)
     {
-        // Coefficients are replaced, state is not: a filter reset on every dial
-        // movement is a click on every dial movement.
-        const auto z1 = scFilter_[ch].z1, z2 = scFilter_[ch].z2;
-        scFilter_[ch] = echojay::Biquad::bandpass (sampleRate_, freqHz_, kSidechainQ);
-        scFilter_[ch].z1 = z1;
-        scFilter_[ch].z2 = z2;
-
-        splitFilter_[ch].setCutoff (sampleRate_, freqHz_);
+        scFilter_[ch].setCoeffs (bp);
+        splitFilter_[ch].setCutoff (sampleRate_, appliedFreqHz_);
     }
 }
 
@@ -118,6 +119,7 @@ void EedDeEsserProcessor::prepareToPlay (double sampleRate, int)
     for (auto& f : scFilter_)    f.reset();
     for (auto& f : splitFilter_) f.reset();
 
+    appliedFreqHz_ = -1.0;      // force a rebuild for the new sample rate
     updateFilters();
 }
 
@@ -133,12 +135,15 @@ void EedDeEsserProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const int numCh = juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels());
     if (numCh <= 0) return;
 
+    // Pick up a moved freq_hz here, on the audio thread, once per block.
+    if (freqHz_.load() != appliedFreqHz_) updateFilters();
+
     float* l = buffer.getWritePointer (0);
     float* r = numCh > 1 ? buffer.getWritePointer (1) : nullptr;
     const int n = buffer.getNumSamples();
 
-    const bool split  = splitMode_;
-    const bool listen = listen_;
+    const bool split  = splitMode_.load();
+    const bool listen = listen_.load();
 
     for (int i = 0; i < n; ++i)
     {

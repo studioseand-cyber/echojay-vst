@@ -166,9 +166,10 @@ static int bandIndexFromId (const juce::String& id, juce::String& leafOut)
 
 bool EedMultibandProcessor::setParamValue (const juce::String& id, double value)
 {
-    if (id == kCrossover1Hz) { crossoverHz_[0] = value; pushCrossovers(); return true; }
-    if (id == kCrossover2Hz) { crossoverHz_[1] = value; pushCrossovers(); return true; }
-    if (id == kCrossover3Hz) { crossoverHz_[2] = value; pushCrossovers(); return true; }
+    // Just the targets. The audio thread picks them up and rebuilds the tree.
+    if (id == kCrossover1Hz) { crossoverHz_[0].store (value); return true; }
+    if (id == kCrossover2Hz) { crossoverHz_[1].store (value); return true; }
+    if (id == kCrossover3Hz) { crossoverHz_[2].store (value); return true; }
 
     juce::String leaf;
     const int b = bandIndexFromId (id, leaf);
@@ -181,7 +182,7 @@ bool EedMultibandProcessor::setParamValue (const juce::String& id, double value)
     if (leaf == kReleaseMs)   { c.setReleaseMs   (value);         return true; }
     if (leaf == kKneeDb)      { c.setKneeDb      ((float) value); return true; }
     if (leaf == kMakeupDb)    { c.setMakeupDb    ((float) value); return true; }
-    if (leaf == kBypass)      { bandBypass_[b] = (value >= 0.5);  return true; }
+    if (leaf == kBypass)      { bandBypass_[b].store (value >= 0.5); return true; }
     return false;
 }
 
@@ -190,9 +191,9 @@ double EedMultibandProcessor::getParamValue (const juce::String& id) const
     // The stored value, not the splitter's sorted realisation: a round-trip
     // through state has to give back what was set, or a saved session drifts a
     // little further towards sorted every time it is loaded.
-    if (id == kCrossover1Hz) return crossoverHz_[0];
-    if (id == kCrossover2Hz) return crossoverHz_[1];
-    if (id == kCrossover3Hz) return crossoverHz_[2];
+    if (id == kCrossover1Hz) return crossoverHz_[0].load();
+    if (id == kCrossover2Hz) return crossoverHz_[1].load();
+    if (id == kCrossover3Hz) return crossoverHz_[2].load();
 
     juce::String leaf;
     const int b = bandIndexFromId (id, leaf);
@@ -205,13 +206,17 @@ double EedMultibandProcessor::getParamValue (const juce::String& id) const
     if (leaf == kReleaseMs)   return c.getReleaseMs();
     if (leaf == kKneeDb)      return (double) c.getKneeDb();
     if (leaf == kMakeupDb)    return (double) c.getMakeupDb();
-    if (leaf == kBypass)      return bandBypass_[b] ? 1.0 : 0.0;
+    if (leaf == kBypass)      return bandBypass_[b].load() ? 1.0 : 0.0;
     return 0.0;
 }
 
 void EedMultibandProcessor::pushCrossovers()
 {
-    splitter_.setCrossovers (crossoverHz_[0], crossoverHz_[1], crossoverHz_[2]);
+    for (int i = 0; i < 3; ++i) appliedCrossoverHz_[i] = crossoverHz_[i].load();
+
+    splitter_.setCrossovers (appliedCrossoverHz_[0],
+                             appliedCrossoverHz_[1],
+                             appliedCrossoverHz_[2]);
 }
 
 // ---------------------------------------------------------------------------
@@ -342,6 +347,7 @@ void EedMultibandProcessor::prepareToPlay (double sampleRate, int)
 
     splitter_.prepare (sampleRate_);
     splitter_.reset();
+    for (auto& a : appliedCrossoverHz_) a = -1.0;   // force a rebuild for the new rate
     pushCrossovers();
 
     for (auto& c : cores_) { c.prepare (sampleRate_); c.reset(); }
@@ -359,13 +365,25 @@ void EedMultibandProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const int numCh = juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels());
     if (numCh <= 0) return;
 
+    // Pick up moved crossovers here, on the audio thread, once per block.
+    if (crossoverHz_[0].load() != appliedCrossoverHz_[0]
+     || crossoverHz_[1].load() != appliedCrossoverHz_[1]
+     || crossoverHz_[2].load() != appliedCrossoverHz_[2])
+        pushCrossovers();
+
     float* l = buffer.getWritePointer (0);
     float* r = numCh > 1 ? buffer.getWritePointer (1) : nullptr;
     const int n = buffer.getNumSamples();
 
+    // Read the per-band bypasses once per block rather than per sample: they
+    // cannot change mid-block in any way a listener could hear, and reading four
+    // atomics per sample is real cost in the inner loop.
+    bool bypass[kNumBands];
+    for (int b = 0; b < kNumBands; ++b) bypass[b] = bandBypass_[b].load();
+
     for (int i = 0; i < n; ++i)
     {
-        float bandsL[kNumBands], bandsR[kNumBands];
+        float bandsL[kNumBands], bandsR[kNumBands] = { 0.0f, 0.0f, 0.0f, 0.0f };
         splitter_.process (0, l[i], bandsL);
         if (r != nullptr) splitter_.process (1, r[i], bandsR);
 
@@ -376,7 +394,7 @@ void EedMultibandProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             const float bl = bandsL[b];
             const float br = r != nullptr ? bandsR[b] : bl;
 
-            if (bandBypass_[b])
+            if (bypass[b])
             {
                 // Still summed, just not compressed — a bypassed band drops out
                 // of the OUTPUT entirely if it is skipped, which would be a

@@ -93,7 +93,7 @@ public:
 
     bool isBandBypassed (int band) const noexcept
     {
-        return (band >= 0 && band < kNumBands) && bandBypass_[band];
+        return (band >= 0 && band < kNumBands) && bandBypass_[band].load();
     }
 
     // The crossovers as the splitter actually realised them — it sorts and
@@ -101,13 +101,26 @@ public:
     double crossoverHz (int i) const noexcept;
 
 private:
+    // Rebuilds the splitter for the current targets. AUDIO THREAD ONLY — see
+    // the note on appliedCrossoverHz_.
     void pushCrossovers();
 
     echojay::FourBandSplitter splitter_;
     echojay::DynamicsCore     cores_[kNumBands];
 
-    bool   bandBypass_[kNumBands] { false, false, false, false };
-    double crossoverHz_[3] { 120.0, 800.0, 5000.0 };
+    std::atomic<bool> bandBypass_[kNumBands] { {false}, {false}, {false}, {false} };
+
+    // Crossovers are written from the message thread and consumed on the audio
+    // thread, where they set twelve biquads' coefficients. Doing that from the
+    // writing thread lets the audio thread read a filter half-updated; both the
+    // old and the new filter are stable, but a mixture of the two need not be,
+    // and an unstable IIR is a blow-up rather than a glitch.
+    //
+    // So these are targets, and the rebuild happens at the top of processBlock
+    // when they have actually moved. Same discipline as EqEngine.
+    std::atomic<double> crossoverHz_[3] { {120.0}, {800.0}, {5000.0} };
+    double              appliedCrossoverHz_[3] { -1.0, -1.0, -1.0 };  // audio thread only
+
     double sampleRate_ = 44100.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedMultibandProcessor)
