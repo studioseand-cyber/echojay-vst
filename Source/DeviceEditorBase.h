@@ -45,6 +45,11 @@ public:
     void paint (juce::Graphics& g) override;
     void resized() override;
 
+    // The first layout is deferred out of the constructor (see the .cpp); these
+    // are where it gets flushed, at the two earliest moments the subclass is
+    // guaranteed to exist: being added to a parent, and being painted.
+    void parentHierarchyChanged() override;
+
 protected:
     // Lay out this device's own controls. Called from resized() once the header
     // has been placed. Everything a device draws or positions belongs in here.
@@ -80,8 +85,18 @@ protected:
     EedDeviceProcessor& deviceProcessor() noexcept { return proc_; }
 
 private:
+    // Runs the layout the constructor had to skip. Idempotent, so every caller can
+    // just ask.
+    void flushPendingLayout();
+
     EedDeviceProcessor& proc_;
     juce::String        title_, hint_;
+
+    // resized() dispatches into the SUBCLASS (layoutContent and the header
+    // hooks). The base constructor's setSize() reaches resized() before the
+    // subclass exists, so the dispatch is deferred rather than made. See the .cpp.
+    bool inConstructor_ = false;
+    bool layoutPending_ = false;
 
     // The device look is applied to the whole editor, so every child control
     // picks it up without each device re-styling.

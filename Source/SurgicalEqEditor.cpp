@@ -1065,6 +1065,10 @@ void SurgicalEqEditor::rebuildCurves()
 // ---------------------------------------------------------------------------
 void SurgicalEqEditor::paintGrid (juce::Graphics& g) const
 {
+    // A rack slot can collapse to nothing, and there is no grid to draw in it —
+    // same guard the curve painter already uses.
+    if (graphBounds_.getWidth() < 4 || graphBounds_.getHeight() < 4) return;
+
     const auto gb = graphBounds_.toFloat();
 
     // dB lines
@@ -1084,9 +1088,12 @@ void SurgicalEqEditor::paintGrid (juce::Graphics& g) const
             // — clamping keeps the scale fully labelled instead of dropping
             // the two values that define its range.
             constexpr int labelH = 14;
-            const int ly = juce::jlimit (graphBounds_.getY() + 1,
-                                         graphBounds_.getBottom() - labelH - 1,
-                                         (int) y - labelH / 2);
+            // Ordered, not assumed: a graph shorter than the label inverts these
+            // two and juce::jlimit asserts on that — which in a Debug build is an
+            // abort the host reports as a crash.
+            const int lyMin = graphBounds_.getY() + 1;
+            const int lyMax = juce::jmax (lyMin, graphBounds_.getBottom() - labelH - 1);
+            const int ly    = juce::jlimit (lyMin, lyMax, (int) y - labelH / 2);
 
             g.setColour (C::text3.withAlpha (0.7f));
             g.drawText (juce::String (db > 0 ? "+" : "") + juce::String (db),

@@ -40,6 +40,20 @@ DeviceEditorBase::DeviceEditorBase (EedDeviceProcessor& proc,
     };
     addAndMakeVisible (bypassBtn_);
 
+    // The default size has to be declared HERE — the rack reads getWidth() /
+    // getHeight() straight off a freshly created editor to decide what to open it
+    // at, so it must be right the instant the constructor returns.
+    //
+    // But juce::Component::setBounds dispatches resized() SYNCHRONOUSLY, and this
+    // is a base constructor: the subclass is not built and the vtable is still
+    // this class's, so resized()'s call to the pure virtual layoutContent() is a
+    // __cxa_pure_virtual abort — the whole plugin dying the moment ANY device
+    // editor opens (which is what took out every Wave 0 device at once).
+    //
+    // So the size is set, the base's own geometry is computed, and the dispatch
+    // into the subclass is deferred to flushPendingLayout() — which runs at the
+    // first moment the subclass is guaranteed to exist.
+    const juce::ScopedValueSetter<bool> building (inConstructor_, true);
     setSize (defaultWidth, defaultHeight);
 }
 
@@ -50,7 +64,14 @@ DeviceEditorBase::~DeviceEditorBase()
 
 void DeviceEditorBase::resized()
 {
-    auto r = getLocalBounds().reduced (kPad);
+    // juce::Rectangle::reduced happily returns a NEGATIVE-sized rectangle when the
+    // component is smaller than twice the padding — which a collapsed rack slot
+    // is. That negative would flow straight into contentBounds_ and out to every
+    // device's layoutContent, and a device is promised it can trust that rect. So
+    // the padding never takes more than there is.
+    const auto full = getLocalBounds();
+    auto r = full.reduced (juce::jmin (kPad, full.getWidth()  / 2),
+                           juce::jmin (kPad, full.getHeight() / 2));
 
     // Clamp rather than assume: the rack can lay an editor out smaller than its
     // declared default, and a negative-height content rect is how controls end
@@ -59,6 +80,17 @@ void DeviceEditorBase::resized()
     headerBounds_ = r.removeFromTop (topH);
     r.removeFromTop (6);
     contentBounds_ = r;
+
+    // Everything above is the base's own geometry and is always safe to compute.
+    // Everything below reaches into the subclass, so during the base constructor
+    // it is recorded as owed instead of called.
+    if (inConstructor_)
+    {
+        layoutPending_ = true;
+        return;
+    }
+
+    layoutPending_ = false;
 
     auto top = headerBounds_;
 
@@ -80,8 +112,25 @@ void DeviceEditorBase::resized()
     layoutContent (contentBounds_);
 }
 
+// Both of these are reached only from JUCE, never from a constructor, so by the
+// time either runs the subclass is fully built and the deferred layout can be
+// dispatched. Being added to a parent comes first when hosted inline; painting
+// covers everything else (an offscreen render, a popout).
+void DeviceEditorBase::parentHierarchyChanged() { flushPendingLayout(); }
+
+void DeviceEditorBase::flushPendingLayout()
+{
+    if (! layoutPending_) return;
+    resized();                      // clears layoutPending_
+}
+
 void DeviceEditorBase::paint (juce::Graphics& g)
 {
+    // A device must never be painted with its controls still unplaced: at the
+    // default size nothing else would trigger a layout, and every child would
+    // draw at 0x0 in the top-left corner.
+    flushPendingLayout();
+
     g.fillAll (C::bg);
 
     // The header band is DIAL height, but the logo / title / hint belong on the

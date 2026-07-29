@@ -315,6 +315,59 @@ int main()
     }
 
     // -----------------------------------------------------------------------
+    // Wave 0 refactored every device editor onto DeviceEditorBase, and a fault in
+    // that SHARED path takes out all 19 devices at once — which is exactly what
+    // happened: the base constructor called setSize(), JUCE dispatched resized()
+    // synchronously while the subclass was still unbuilt, and the base's
+    // resized() called the pure virtual layoutContent(). Every editor aborted on
+    // open, in Debug and Release alike.
+    //
+    // So the editors are constructed AND painted here, for every registered
+    // device, the same way the mojibake check pins the advertised strings: a
+    // crash in the shared shell now fails a test instead of a DAW.
+    std::printf ("== every device's editor constructs, lays out and PAINTS ==\n");
+    for (const auto& d : registry.all())
+    {
+        auto proc = d.create();
+        if (proc == nullptr) { check (false, d.name + ": no processor"); continue; }
+
+        check (proc->hasEditor(), d.name + " claims an editor");
+
+        // createEditor() returns a raw pointer the caller owns.
+        std::unique_ptr<juce::AudioProcessorEditor> ed (proc->createEditor());
+        check (ed != nullptr, d.name + " editor constructs");
+        if (ed == nullptr) continue;
+
+        // The editor declares its own default size in its constructor — that is
+        // what the rack opens it at, so that is what gets painted.
+        const int w = juce::jmax (1, ed->getWidth());
+        const int h = juce::jmax (1, ed->getHeight());
+        check (w > 1 && h > 1, d.name + " declares a default size ("
+                               + juce::String (w) + "x" + juce::String (h) + ")");
+
+        auto paintInto = [&ed] (int pw, int ph)
+        {
+            ed->setSize (pw, ph);
+            juce::Image img (juce::Image::ARGB, pw, ph, true);
+            juce::Graphics g (img);
+            ed->paintEntireComponent (g, true);
+        };
+
+        paintInto (w, h);
+        check (true, d.name + " painted at its default size");
+
+        // Inline hosting: the rack lays an editor out SMALLER than its default.
+        // DeviceEditorBase's clamp is what keeps that from producing a negative
+        // content rect, so it is exercised rather than assumed.
+        paintInto (juce::jmax (1, w / 3), juce::jmax (1, h / 3));
+        check (true, d.name + " painted at one third of its default size");
+
+        // And degenerate, which is what a collapsed rack slot hands it.
+        paintInto (1, 1);
+        check (true, d.name + " painted at 1x1 without escaping its bounds");
+    }
+
+    // -----------------------------------------------------------------------
     // juce::String's const char* constructor reads its input as ASCII, so a UTF-8
     // character in a registry literal (an em-dash is the easy mistake) arrives
     // double-encoded and ships mojibake into the AI prompt. It builds, runs, and
