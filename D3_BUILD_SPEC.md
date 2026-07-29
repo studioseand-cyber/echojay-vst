@@ -1,5 +1,9 @@
 # EchoJay v2 — D3 Chain Sharing: build spec
 
+> **MIRROR. OWNER: echojay-saas. DO NOT EDIT HERE.** Edit it in echojay-saas and
+> copy the file across. An edit made here is invisible to the owning repo and
+> will be silently overwritten by the next copy.
+
 Status: NOT STARTED. D0, D1, D2 deployed dark. Session B complete. M1 complete bar
 the plugin badge.
 Companions: `DASHBOARD_BUILD_SPEC.md` (umbrella, section 5 is the chain format),

@@ -1,5 +1,9 @@
 # EchoJay v2 — Dashboard & Community: build spec
 
+> **MIRROR. OWNER: echojay-saas. DO NOT EDIT HERE.** Edit it in echojay-saas and
+> copy the file across. An edit made here is invisible to the owning repo and
+> will be silently overwritten by the next copy.
+
 Status: DESIGN AGREED, NOT STARTED
 Companion to `CHAIN_AI_BUILD_SPEC.md`. Read that one's Gotchas section too, it still applies.
 Keep identical copies in both repos.

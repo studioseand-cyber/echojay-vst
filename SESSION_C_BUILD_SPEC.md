@@ -1,5 +1,8 @@
 # EchoJay v2 — Session C: the plugin Dashboard tab
 
+> **OWNER: this repo (echojay-vst-v200).** Edit here. Any copy in echojay-saas
+> is a mirror and must not be edited there.
+
 Status: NOT STARTED. Blocked on the plugin repo being free.
 Repo: `~/Documents/ECHOJAY FILES/ECHOJAY VST/echojay-vst-v200`
 **Replaces M1.2** (the plugin unread badge), which is absorbed into this.
@@ -16,9 +19,52 @@ Companions: `DASHBOARD_BUILD_SPEC.md` (umbrella), `D1_BUILD_SPEC.md`,
 `GET /api/v2/dashboard?surface=plugin` was built in D0 and returns deliberately
 shorter lists for exactly this consumer. Nothing has ever called it.
 
-`ProjectArt.h` and `ProjectArt.cpp` were ported byte-for-byte from the TypeScript,
-validated against a 505-seed parity fixture with zero mismatches, and have never drawn
-a tile.
+`ProjectArt.h` and `ProjectArt.cpp` were ported byte-for-byte from the TypeScript and
+have never drawn a tile.
+
+## The two errors in that sentence, which share one root
+
+Corrected 29 Jul 2026. This section used to say the port was "validated against a
+505-seed parity fixture with zero mismatches". Two separate things were wrong, and
+the pair is more instructive than either alone because **they have the same cause**.
+
+**The 505 was not re-runnable and the fixture was not the thing checked.** The
+505-seed run happened once, in a throwaway harness in a container that no longer
+exists. The fixture that actually shipped, `art_parity_fixture.json`, holds TEN
+entries at 4 decimal places, which is too coarse to detect the float32-versus-double
+difference it exists to catch.
+
+**The JUCE file had never been compiled.** `ProjectArt.h` declared
+`JUCE_DECLARE_NON_CONSTRUCTABLE_WITH_STATIC_MEMBERS`, a macro that does not exist in
+JUCE 8.0.12 or in any version. It failed on the very first build after being added
+to a CMake target, on 29 Jul 2026, which is the first time it was ever compiled at
+all.
+
+**The shared root: the harness verified a REIMPLEMENTATION, not the artifact.** What
+was compiled and checked against the 505 seeds was a standalone C++ mirror of the
+PRNG, `prng_parity_reference.cpp`, written for the harness. `ProjectArt.cpp` itself
+never went near a compiler. So the run proved that a hand-written copy of the
+algorithm agreed with the JavaScript, and said nothing whatsoever about the file that
+would ship.
+
+That is exactly the gotcha in `CHAIN_AI_BUILD_SPEC.md`: **whatever a harness supplies
+for convenience is exactly what that harness cannot check.** It was written up from
+the M1 auth incident, where a Node suite and curl both set the Authorization header
+themselves and so could not verify auth. Same shape here, in a different medium: the
+harness supplied its own implementation, so it could not verify the implementation.
+The M1 note names "a state blob assembled in a test rather than captured from a real
+hosted plugin" as the plugin equivalent. A PRNG mirror compiled instead of the real
+translation unit belongs on that list too.
+
+Worth recording that the algorithm turned out to be RIGHT: 512 cases, 18372 value
+comparisons, zero mismatches, once the file was actually built. The claim was false;
+the code was not. Which is the point. A verification that cannot fail for the right
+reason also cannot pass for the right reason.
+
+Replaced by `scripts/gen-art-parity-fixture.mjs` in echojay-saas (512 reproducible
+cases at full precision, generated from `public/js/art-core.js`) and by
+`tools/art_parity_test` here, which calls the shipping `ProjectArt::derive` and runs
+on every build-and-install via `~/reinstall-v2.sh`.
 
 The umbrella spec's core claim, **one payload, two renderers**, has only ever had one
 renderer. This is the second.
@@ -136,14 +182,37 @@ interprets it.
   the id.
 - `surface: 'web'` means open the browser.
 
-**Survey this**: does the plugin-to-web one-time token path actually exist? The
-umbrella spec describes minting a token and opening `https://echojay.ai/go?t=...` so
-the user lands signed in. D1.3 found the web app had no URL-addressable states and
-built `?view=` to fix it, but I do not know whether the token half was ever built.
+## SURVEYED 29 Jul 2026: the token path does not exist, in either repo
 
-If it does not exist, say so. Opening the browser to a login screen is worse than not
-offering the link, and building the token path is a backend slice, not something to
-improvise here.
+Searched both sides. There is no `api/go.js`, no `/go` rewrite in `vercel.json`, and
+no token-minting endpoint in echojay-saas. Every browser launch in the plugin today
+is a bare URL with no auth: `/support`, `/manual`, `/app`, `/upgrade`, `/?noredirect`.
+
+The device-code flow in `EchoJayAPI.cpp` runs the OPPOSITE direction: the plugin mints
+a device code, the user verifies in a browser, and the plugin polls `/api/device/poll`
+to receive a token. It gets auth INTO the plugin and cannot carry auth out.
+
+**So Session C links out only to things that work WITHOUT auth**, and offers nothing
+that would land on a login screen. What that leaves:
+
+| wanted | needs | verdict |
+|---|---|---|
+| Public chain page `/c/:slug` | nothing | **works**, public since D3.1 |
+| Public profile `/@handle` | a claimed handle, profile public | **works** when both hold |
+| "Claim your handle" | `/settings/profile` | inert text, not a button |
+| Announcement "read more" | community surface | not offered, no public URL |
+| Chat deep links | `?view=chat&id=` plus a session | not offered |
+| Project tiles | no web project view exists | nothing to link to |
+
+`/upgrade` already opens from the plugin signed-out and is pre-existing behaviour, not
+something this tab adds.
+
+The onboarding checklist therefore renders "Claim your handle" as a line of text
+saying what is left to do, never as a button. A button that promises a destination it
+cannot reach is worse than text.
+
+Building the token path is a BACKEND SLICE in echojay-saas, queued and deliberately
+not attempted here. It is worth roughly five surfaces today and more once M2 lands.
 
 ---
 

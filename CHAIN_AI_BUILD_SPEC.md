@@ -1,5 +1,8 @@
 # EchoJay v2 — Conversational Chain AI: Build Spec
 
+> **OWNER: this repo (echojay-vst-v200).** Edit here. Any copy in echojay-saas
+> is a mirror and must not be edited there.
+
 **Scope:** v2 web app + v2 VST ONLY. Not v1.
 **Repo note:** The V2 backend is echojay-saas. echojay-saas-v2 is the LEGACY app — do NOT edit it for this work.
 

@@ -1,5 +1,8 @@
 # EchoJay v2 — Session B: chain saving in the plugin
 
+> **OWNER: this repo (echojay-vst-v200).** Edit here. Any copy in echojay-saas
+> is a mirror and must not be edited there.
+
 Status: NOT STARTED. Blocked on the plugin repo being free.
 Repo: `~/Documents/ECHOJAY FILES/ECHOJAY VST/echojay-vst-v200`
 Backend counterpart: `echojay-saas` (the V2 backend, never `echojay-saas-v2`).
