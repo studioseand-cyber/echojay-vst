@@ -11,11 +11,17 @@ using echojay::BandType;
 
 namespace
 {
-    constexpr int   kTopH        = 30;   // logo / global button bar
+    // The header is a dial's height, not a button's: it carries the device's
+    // OUT knob, and a filmstrip dial is the same control the MIX knob is. The
+    // logo, the hint and the global buttons sit on a kBarH-tall line centred
+    // in it, so the row still reads as one bar.
+    constexpr int   kBarH        = 30;   // logo / global button line
+    constexpr int   kTopH        = 58;   // header band (= kKnobH, fits the OUT dial)
     constexpr int   kRowH        = 24;   // flat control height (combos, buttons)
     constexpr int   kCapH        = 12;   // caption band inside a dial
     constexpr int   kKnobW       = 62;   // dial column width
     constexpr int   kKnobH       = 58;   // caption + filmstrip + readout
+    constexpr int   kAutoGainW   = 52;   // auto-gain toggle + its makeup readout
     constexpr int   kStripH      = kRowH + 6 + kKnobH;   // selector row + dial row
     constexpr int   kPad         = 10;
     constexpr float kNodeR       = 5.0f;
@@ -179,7 +185,10 @@ SurgicalEqEditor::SurgicalEqEditor (SurgicalEqProcessor& p)
     specPrefix_.assign  ((size_t) kSpecBins + 1, 0.0f);
     specPts_.reserve    ((size_t) kSpecBins + 2048);   // knots + one per pixel
 
-    setSize (640, 420);
+    // Height carries the header's growth (30 -> 58 for the OUT dial) so the
+    // graph keeps exactly the area it had. Inline in the chain the editor is
+    // stretched to the display area instead; this is the popout / native size.
+    setSize (640, 448);
     startTimerHz (30);
 }
 
@@ -334,6 +343,30 @@ void SurgicalEqEditor::buildControls()
     {
         proc_.setSoloBand (soloBtn_.getToggleState() ? selected_ : -1);
     };
+
+    // ---- device-global output stage ---------------------------------------
+    // styleValue wires every dial to pushControlsToBand; this one is not a
+    // band parameter, so its callback is replaced after the fact.
+    styleValue (outS_, -24.0, 24.0, 0.0, 1, " dB", "OUT", 0.0);
+    outS_.onValueChange = [this]
+    {
+        if (suppressCallbacks_) return;
+        proc_.setOutputDb ((float) outS_.getRealValue());
+    };
+    outS_.setRealValue (proc_.getOutputDb());
+
+    styleButton (autoGainBtn_, true);
+    autoGainBtn_.setToggleState (proc_.getAutoGain(), juce::dontSendNotification);
+    autoGainBtn_.setTooltip ("Auto-gain: cancels the loudness change the bands cause, so a "
+                             "tonal move can be judged without a level change confounding "
+                             "it. The number below is the makeup being applied.");
+    autoGainBtn_.onClick = [this] { proc_.setAutoGain (autoGainBtn_.getToggleState()); };
+
+    autoGainLbl_.setJustificationType (juce::Justification::centred);
+    autoGainLbl_.setColour (juce::Label::textColourId, C::text3);
+    autoGainLbl_.setFont (uiFont (9.0f, true));
+    autoGainLbl_.setInterceptsMouseClicks (false, false);   // clicks belong to the button
+    addAndMakeVisible (autoGainLbl_);
 }
 
 void SurgicalEqEditor::updateStripVisibility()
@@ -717,6 +750,29 @@ void SurgicalEqEditor::timerCallback()
         needsRepaint = true;
     }
 
+    // ---- device-global output stage ---------------------------------------
+    // These move behind our back the same way bands do (an eq_settings apply,
+    // a state restore), and the makeup readout is live while it ramps.
+    {
+        const double outDb = (double) proc_.getOutputDb();
+        if (std::abs (outS_.getRealValue() - outDb) > 0.005)
+            outS_.setRealValue (outDb);           // setRealValue fires no callback
+
+        const bool ag = proc_.getAutoGain();
+        if (autoGainBtn_.getToggleState() != ag)
+            autoGainBtn_.setToggleState (ag, juce::dontSendNotification);
+
+        // An em dash rather than "0.0 dB" when off: nothing is being applied,
+        // and a number would read as a claim that something is.
+        const juce::String txt = ag ? juce::String (proc_.autoGainDbApplied(), 1) + " dB"
+                                    : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94"));
+        if (autoGainLbl_.getText() != txt)
+        {
+            autoGainLbl_.setColour (juce::Label::textColourId, ag ? C::blue2 : C::text3);
+            autoGainLbl_.setText (txt, juce::dontSendNotification);
+        }
+    }
+
     // Analyzer: no FFT and no path work at all while it is switched off.
     if (analyzerOn_)
     {
@@ -752,15 +808,30 @@ void SurgicalEqEditor::resized()
     r.removeFromBottom (8);
     graphBounds_ = r;
 
-    // global buttons, right-aligned in the top bar
     auto top = topBounds_;
-    bypassBtn_.setBounds (top.removeFromRight (74).reduced (0, 3));
-    top.removeFromRight (6);
-    scaleBtn_.setBounds  (top.removeFromRight (58).reduced (0, 3));
-    top.removeFromRight (6);
-    sourceBtn_.setBounds (top.removeFromRight (48).reduced (0, 3));
-    top.removeFromRight (4);
-    analyzerBtn_.setBounds (top.removeFromRight (32).reduced (0, 3));
+
+    // Hard right: the device's output stage — the OUT dial, and the auto-gain
+    // toggle stacked over the makeup it is applying.
+    outS_.setBounds (top.removeFromRight (kKnobW));
+    top.removeFromRight (8);
+    {
+        auto ag = top.removeFromRight (kAutoGainW)
+                     .withSizeKeepingCentre (kAutoGainW, kRowH + 13);
+        autoGainBtn_.setBounds (ag.removeFromTop (kRowH));
+        autoGainLbl_.setBounds (ag);
+    }
+    top.removeFromRight (12);
+
+    // Global buttons, right-aligned on a button-height line centred in the
+    // now-taller header, so they still sit level with the logo and the hint.
+    auto bar = top.withSizeKeepingCentre (top.getWidth(), kBarH);
+    bypassBtn_.setBounds (bar.removeFromRight (74).reduced (0, 3));
+    bar.removeFromRight (6);
+    scaleBtn_.setBounds  (bar.removeFromRight (58).reduced (0, 3));
+    bar.removeFromRight (6);
+    sourceBtn_.setBounds (bar.removeFromRight (48).reduced (0, 3));
+    bar.removeFromRight (4);
+    analyzerBtn_.setBounds (bar.removeFromRight (32).reduced (0, 3));
 
     layoutStrip();
     curvesDirty_ = true;
@@ -1250,25 +1321,32 @@ void SurgicalEqEditor::paint (juce::Graphics& g)
     g.fillAll (C::bg);
 
     // ---- top bar ----------------------------------------------------------
+    // The header band is dial-height, but the logo / title / hint belong on the
+    // same line as the global buttons, so they are laid out on a kBarH strip
+    // centred in it rather than filling it.
+    const auto bar = topBounds_.withSizeKeepingCentre (topBounds_.getWidth(), kBarH);
+
     // The real logo asset, same one the main plugin header draws, scaled into
     // the header bar rather than a text title.
-    const juce::Rectangle<float> logoBox ((float) topBounds_.getX(),
-                                          (float) topBounds_.getY(),
-                                          104.0f, (float) topBounds_.getHeight());
+    const juce::Rectangle<float> logoBox ((float) bar.getX(), (float) bar.getY(),
+                                          104.0f, (float) bar.getHeight());
     EchoJayLookAndFeel::drawLogo (g, logoBox, 13.0f);
 
     const int afterLogo = (int) logoBox.getRight() + 6;
     g.setColour (C::text2);
     g.setFont (uiFont (11.0f, true));
-    g.drawText ("EQ", afterLogo, topBounds_.getY(), 24, topBounds_.getHeight(),
+    g.drawText ("EQ", afterLogo, bar.getY(), 24, bar.getHeight(),
                 juce::Justification::centredLeft);
 
+    // Reserved on the right: the global buttons (232) plus the output stage
+    // (OUT dial + gap + auto-gain column + gap = 134). The hint is the first
+    // thing to give up room when the window is narrow.
     g.setColour (C::text3);
     g.setFont (uiFont (9.0f));
     g.drawText ("double-click: add / remove band     drag: freq + gain     wheel: Q",
-                afterLogo + 30, topBounds_.getY(),
-                juce::jmax (0, topBounds_.getRight() - (afterLogo + 30) - 232),
-                topBounds_.getHeight(), juce::Justification::centredLeft);
+                afterLogo + 30, bar.getY(),
+                juce::jmax (0, bar.getRight() - (afterLogo + 30) - 232 - 134),
+                bar.getHeight(), juce::Justification::centredLeft);
 
     // ---- graph panel ------------------------------------------------------
     const auto gb = graphBounds_.toFloat();

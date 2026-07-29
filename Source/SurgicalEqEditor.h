@@ -237,6 +237,13 @@ private:
     juce::TextButton sourceBtn_   { "POST" };   // analyzer source: PRE / POST
     juce::TextButton scaleBtn_    { "18 dB" };
 
+    // Device-global output stage, in the header rather than the per-band strip
+    // because it belongs to the EQ, not to whichever band happens to be
+    // selected — and the strip disappears when nothing is.
+    EqValueKnob      outS_;
+    juce::TextButton autoGainBtn_ { "AUTO" };
+    juce::Label      autoGainLbl_;              // the makeup being applied
+
     // selected-band strip
     juce::ComboBox   typeBox_, slopeBox_;
     EqValueKnob      freqS_, gainS_, qS_;
