@@ -3,7 +3,8 @@
 > **OWNER: this repo (echojay-vst-v200).** Edit here. Any copy in echojay-saas
 > is a mirror and must not be edited there.
 
-Status: NOT STARTED. Blocked on the plugin repo being free.
+Status: **BUILT 29 Jul 2026**, v2.23.60, installed and pending live Logic
+verification (section 9). See section 12 for what shipped and the decisions taken.
 Repo: `~/Documents/ECHOJAY FILES/ECHOJAY VST/echojay-vst-v200`
 **Replaces M1.2** (the plugin unread badge), which is absorbed into this.
 Companions: `DASHBOARD_BUILD_SPEC.md` (umbrella), `D1_BUILD_SPEC.md`,
@@ -329,6 +330,30 @@ it:
 - A fuller community surface, if the read-only announcements card proves people want
   more.
 
+## QUEUED, backend: `user.profileVisibility` in the dashboard payload
+
+Found 29 Jul 2026 while building the tab. A GAP, not a limitation, and small.
+
+`/@handle` is one of only two pages the plugin can link to without auth, and the
+plugin currently links to NEITHER a public profile nor an unlisted one, because it
+cannot tell them apart. `dash.profiles.visibility` defaults to `unlisted`
+(migration 0005) and `api/v2/public-profile.js` answers an unlisted handle with the
+same 404 as an unknown one, deliberately, so that an anonymous visitor cannot
+enumerate taken handles. `payload.user` carries `handle` and `hasProfile` and no
+visibility field, so the only safe reading of a handle from the plugin is "assume it
+404s", and Session C therefore renders `@handle` as plain identity text.
+
+The fix is one field in `lib/dash/payload.js` in echojay-saas: select
+`visibility` alongside `handle, display_name, avatar_url` and add
+`profileVisibility` to `DashboardUser` in `lib/dash/types.js`. It leaks nothing an
+owner does not already know about their own profile. The plugin side is then a
+one-line condition: link `@handle` when `handle` is set AND visibility is `public`,
+and keep the current text otherwise. Nothing else on this surface changes.
+
+Worth doing with the plugin-to-web token path (section 4), which is the larger
+queued backend slice and unlocks roughly five more surfaces. This one is worth
+doing on its own too, because it is small and the plugin already has the handle.
+
 ---
 
 # 11. Gotchas
@@ -366,3 +391,95 @@ New with Session C:
   the payload is five reads and four Postgres queries.
 - **Never fetch rendered art.** Send the seed, draw it locally, and keep the parity
   fixture as a test.
+
+---
+
+# 12. What shipped, 29 Jul 2026 (v2.23.60)
+
+## Files
+
+| | |
+|---|---|
+| `Source/DashboardTab.h/.cpp` | the payload parse and the whole surface, as ONE child component |
+| `Source/PluginEditor.*` | tab, fetch, cache, deep links, art fetch, unread dot |
+| `Source/PluginProcessor.h` | `lastTabIndex`, so an editor recreate returns to the tab |
+| `tools/dashboard_test/` | geometry and hit-routing self-test, wired into `~/reinstall-v2.sh` |
+
+`Tab::Dashboard` is first in the enum and `"DASHBOARD"` first in `kTabNames`; the
+existing `static_assert` ties them. `tabstrip_test` now reports 8 tabs, 112px each
+at the 900px floor, every column routing, which is the measurement section 2
+predicted.
+
+## The rules, and where each one is enforced
+
+- **Geometry.** `DashboardView::layout(width)` is the sole author. It clears every
+  rect at the top and re-authors on every pass, so a card that is not shown cannot
+  keep last pass's coordinates. `paint()` and `zoneIndexAt()` consume. There is one
+  right-anchored group on the usage strip, written in one block.
+- **Visibility.** `dashViewport_` gets bounds AND visibility UNCONDITIONALLY in
+  `resized()`, with the tab test inside the single visibility expression. Every
+  `setVisible` in the `Tab::Dashboard` case is written out per component, never
+  through a pointer loop.
+- **Leaks.** The surface is one child, so hiding the viewport hides all of it.
+  Three second authorities also had to learn about this tab, and each would have
+  been a bug: `computeColumns` (no chat column, which also turns off
+  `assistantSidebarVisible` and every assistant-drawn overlay),
+  `updateOnboardingPrompts` (a 20Hz re-shower of the chat input row), and
+  `assistantInputContext` (the upgrade button would have placed itself over
+  `chatInput`'s stale bounds for any free user out of messages).
+- **Fetch cadence.** `fetchDashboard` runs on tab open and after the payload's own
+  TTL, and from nowhere else. There is no dashboard timer. `onDashUnreadChanged`
+  repaints and does nothing else, with the reason written at the call site.
+- **Cache.** `dashboard_cache.json` beside `chain_list_cache.json`, the same
+  account-keyed pattern with epoch millis, rendered before any refresh; a failed
+  refresh keeps the content and turns the timestamp amber.
+- **Art.** `ProjectArt::getCached` for procedural seeds. Uploads fetch the image
+  once per url and cover-crop it; a failure is recorded so it is not retried, and
+  the seed art draws underneath, which is why the payload sends a seed for uploads.
+
+## Decisions taken, with reasons
+
+- **The unread dot tracks the server's COUNTS, not the generation.** The generation
+  says when to repaint and that is all it can honestly say. Clearing the dot because
+  the user opened this tab would hide a notification they never saw:
+  `community.latestAnnouncement` is still `null` on every branch of echojay-saas, so
+  there is nothing on this surface for them to have seen. Revisit when M1 starts
+  populating it.
+- **A chain row does not open the chain.** It lands on the Chain tab with the saved
+  chains list open. `openSavedChain` clears the rack and rebuilds it, destroying the
+  state of every hosted plugin; that is the explicit purpose of a click on the Chain
+  tab and is not a thing a home screen should do to a mis-click.
+- **`@handle` is text, not a link.** `dash.profiles.visibility` defaults to
+  `unlisted` (migration 0005) and `/@handle` returns the same 404 for unlisted as for
+  unknown, so linking it would 404 for most users. The payload carries no visibility
+  field to test. Only `/c/:slug` and `/upgrade` are offered. That missing field is a
+  GAP rather than a limitation and is queued in section 10.
+- **Last tab lives on the processor.** Not persisted into the state blob. It answers
+  "put me back where I was in this session", and a fresh instance reading 0 is what
+  makes Dashboard the default on first launch after update. Post-login now lands on
+  Dashboard rather than Visualisation.
+- **The surface scrolls.** A populated account lays out 776px tall against the 510px
+  of content the 900x580 floor gives. A Viewport was cheaper than fighting for room.
+
+## Verified
+
+- `tabstrip_test`, `art_parity_test`, `dashboard_test` all pass, run between a green
+  build and the install by `~/reinstall-v2.sh`.
+- **Negative control**: `strings` on the installed Mach-O for
+  `/api/v2/dashboard?surface=plugin` was 0 before (the inline `fetchDashboard` had no
+  caller, so the literal was never emitted) and is 4 now.
+- **The real payload**, fetched from the preview with the plugin's own stored token,
+  run through the shipping `DashPayload::parse` and `layout`: 5 projects, 5 recent
+  chats, 2 chains, 4 onboarding steps, continue card present, announcement null. No
+  zone escaped the content box, every zone routed to itself, no zone carried a `web`
+  target. A hand-written fixture cannot check the contract; this can.
+- Compiles both with and without `ECHOJAY_DEV_TRANSPORT`. Note the shared build tree
+  is configured `ECHOJAY_DEV_TRANSPORT=ON`, so lifting flags from
+  `compile_commands.json` gives you the DEV variant twice unless you strip the define.
+
+## NOT verified, and it needs Logic
+
+Everything in section 9 that requires a host: the tab drawn from a real payload for a
+populated and a fresh account, art parity checked visually against the web, the dot
+appearing and clearing, the poll surviving a Link window switch, deep links landing,
+the offline path, and the sweep of every other tab for leaks.
