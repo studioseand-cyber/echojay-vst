@@ -99,8 +99,14 @@ namespace
         d.name            = "EchoJay Phase Invert";
         d.category        = "Utility";
         d.descriptiveName = "EchoJay per-channel polarity flip (built in)";
+        // ASCII ONLY in registry text. juce::String's const char* constructor
+        // reads its input as ASCII (it jasserts on anything else), so a UTF-8
+        // em-dash here arrives double-encoded and ships mojibake into the AI
+        // prompt. Elsewhere in EchoJay an em-dash survives because those strings
+        // are built with operator+, which takes the UTF-8 path — the difference
+        // is invisible until you look at the bytes.
         d.summary         = "Flips the polarity of either channel independently. Reach for "
-                            "it when two sources cancel each other — a mic pair fighting in "
+                            "it when two sources cancel each other - a mic pair fighting in "
                             "the low end, or one side of a stereo pair wired backwards.";
         d.identifier      = "echojay:builtin:phaseinvert";
         d.uid             = 0x456A5049;   // 'EjPI' — frozen once shipped

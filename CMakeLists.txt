@@ -411,3 +411,49 @@ set_target_properties(ejextract PROPERTIES OSX_ARCHITECTURES "arm64;x86_64")
 if(APPLE)
     target_link_libraries(ejextract PRIVATE "-framework CoreAudioKit")
 endif()
+
+# ============================================================================
+# Built-in device framework test (BUILTIN_SUITE_PLAN.md Wave 0).
+#
+# ParamSchema and the device engines are JUCE-free and tested under plain g++ in
+# test/. The registry, the device processors and the applyStructured funnel are
+# not — they need JUCE — so they are exercised here instead, through the same
+# static registrars, the same factory and the same apply path the plugin uses.
+#
+# EXCLUDE_FROM_ALL: a normal plugin build should not pay for it. Run it with
+#   cmake --build build --target EchoJayBuiltinRegistryTest
+# ============================================================================
+juce_add_console_app(EchoJayBuiltinRegistryTest PRODUCT_NAME "EchoJayBuiltinRegistryTest")
+juce_generate_juce_header(EchoJayBuiltinRegistryTest)
+
+target_sources(EchoJayBuiltinRegistryTest PRIVATE
+    tools/builtin_registry_test.cpp
+    # The devices under test, plus what they pull in. Alphabetised, same as the
+    # plugin targets' built-in device block.
+    Source/DeviceEditorBase.cpp
+    Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EedDeviceProcessor.cpp
+    Source/EedDeviceRegistry.cpp
+    Source/EedGainEditor.cpp
+    Source/EedGainProcessor.cpp
+    Source/EedPhaseInvertEditor.cpp
+    Source/EedPhaseInvertProcessor.cpp
+    Source/EqEngine.cpp
+    Source/SurgicalEqEditor.cpp
+    Source/SurgicalEqProcessor.cpp
+)
+target_include_directories(EchoJayBuiltinRegistryTest PRIVATE Source)
+
+target_compile_definitions(EchoJayBuiltinRegistryTest PRIVATE
+    JUCE_USE_CURL=0
+    JUCE_WEB_BROWSER=0
+    JUCE_STANDALONE_APPLICATION=1)
+
+target_link_libraries(EchoJayBuiltinRegistryTest PRIVATE
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_gui_extra
+    juce::juce_recommended_config_flags)
+
+set_target_properties(EchoJayBuiltinRegistryTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
