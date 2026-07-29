@@ -384,6 +384,57 @@ int main()
         check (std::fabs (lfo.valueAt (0.3f)) < 1e-4, "taps honour depth");
     }
 
+    std::printf ("== the display phase tap follows the oscillator ==\n");
+    {
+        // The scope's playhead rides this one float. If it stops tracking, the
+        // dot freezes while the audio keeps modulating — a bug that looks like
+        // "the visualisation is broken" and is invisible to every other test.
+        LfoCore lfo;
+        lfo.prepare (kSr);
+        lfo.setRateHz (1.0f);
+        lfo.setDepthPercent (100.0f);
+        lfo.reset();
+
+        check (near (lfo.displayPhase(), 0.0, 1e-6), "a fresh LFO taps phase 0");
+
+        // reset() AFTER running, which is the case that matters: a transport
+        // stop must park the playhead at the cycle start rather than leave it
+        // wherever the last block happened to end.
+        for (int i = 0; i < 5000; ++i) lfo.advance();
+        check (lfo.displayPhase() > 0.0f, "the tap moved while running");
+        lfo.reset();
+        check (near (lfo.displayPhase(), 0.0, 1e-6), "reset republishes, it does not go stale");
+
+        // A quarter of a second at 1 Hz is a quarter of a cycle.
+        for (int i = 0; i < (int) kSr / 4; ++i) lfo.advance();
+        check (near (lfo.displayPhase(), 0.25, 0.001), "a quarter cycle in, the tap reads 0.25");
+
+        for (int i = 0; i < (int) kSr / 4; ++i) lfo.advance();
+        check (near (lfo.displayPhase(), 0.5, 0.001), "half a cycle in, the tap reads 0.5");
+
+        // It must agree with the audio thread's own phase, not drift from it.
+        check (near (lfo.displayPhase(), lfo.currentPhase(), 1e-6),
+               "the tap IS the oscillator's phase, not a second copy of it");
+
+        // And it stays in range across a wrap, so a playhead cannot fly off the plot.
+        bool inRange = true;
+        for (int i = 0; i < (int) kSr; ++i)
+        {
+            lfo.advance();
+            const float p = lfo.displayPhase();
+            if (! (p >= 0.0f && p < 1.0f)) inRange = false;
+        }
+        check (inRange, "the tap stays in [0,1) across the wrap");
+
+        // nextStereo() advances too, so a device using that path still animates.
+        LfoCore other;
+        other.prepare (kSr);
+        other.setRateHz (2.0f);
+        other.reset();
+        for (int i = 0; i < 4096; ++i) { float l, r; other.nextStereo (l, r); }
+        check (other.displayPhase() > 0.0f, "nextStereo() publishes the tap as well");
+    }
+
     std::printf ("== unipolar helper ==\n");
     {
         check (near (LfoCore::toUnipolar (-1.0f), 0.0, 1e-6), "-1 maps to 0");

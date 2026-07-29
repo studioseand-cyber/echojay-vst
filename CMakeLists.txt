@@ -274,6 +274,8 @@ target_sources(EchoJay PRIVATE
     Source/viz/LevelMeter.h
     Source/viz/LfoScopeView.cpp
     Source/viz/LfoScopeView.h
+    Source/viz/PanPositionView.cpp
+    Source/viz/PanPositionView.h
     Source/viz/SweepView.cpp
     Source/viz/SweepView.h
     Source/viz/TransferCurveView.cpp
@@ -565,6 +567,8 @@ target_sources(EchoJayLink PRIVATE
     Source/viz/LevelMeter.h
     Source/viz/LfoScopeView.cpp
     Source/viz/LfoScopeView.h
+    Source/viz/PanPositionView.cpp
+    Source/viz/PanPositionView.h
     Source/viz/SweepView.cpp
     Source/viz/SweepView.h
     Source/viz/TransferCurveView.cpp
@@ -720,6 +724,7 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/viz/HarmonicBars.cpp
     Source/viz/LevelMeter.cpp
     Source/viz/LfoScopeView.cpp
+    Source/viz/PanPositionView.cpp
     Source/viz/SweepView.cpp
     Source/viz/TransferCurveView.cpp
     Source/viz/VizView.cpp
