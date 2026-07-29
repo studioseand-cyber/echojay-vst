@@ -35,6 +35,19 @@ Then:
    `[AVAILABLE BUILTINS]` advertisement. Both are generated from the registry, so
    if the registrar ran, it is there.
 
+## Two traps worth knowing before you hit them
+
+**ASCII only in registry text.** `juce::String`'s `const char*` constructor reads
+its input as ASCII, so a UTF-8 em-dash in a device `name`/`summary`/
+`descriptiveName` arrives double-encoded and ships mojibake into the AI prompt.
+It builds and runs; you only see it in the bytes. Use a plain hyphen.
+`tools/builtin_registry_test.cpp` pins this.
+
+**Everything goes through the schema.** Have your editor call
+`setParamValue`/`getParamValue` rather than the engine directly. Then a knob turn
+and an AI move take the identical path and cannot disagree about clamping — and a
+param that is turnable is automatically also dialable.
+
 ## What you do NOT edit
 
 Nothing else. Specifically not: `ChainHost` (name matching, hosting, dispatch),
