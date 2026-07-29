@@ -37,6 +37,10 @@ public:
     // when it is bypassed or has never seen a sample.
     static constexpr float kNoLevel = -200.0f;
 
+    // Nothing to draw for the two optional overlays below.
+    static constexpr float kNoHysteresis = 0.0f;
+    static constexpr float kNoCeiling    = 1000.0f;
+
     // ---- the analytic part (no processor change) --------------------------
     // Exactly the four numbers the gain computer takes, in the schema's units.
     void setCurve (float thresholdDb, float ratio, float kneeDb, float rangeDb,
@@ -49,6 +53,32 @@ public:
     // How far down the axes run. -60 suits a compressor; a gate wants further.
     void setFloorDb (float db);
 
+    // How far UP they run. kAutoAxisTop derives it from the makeup, which is
+    // right for every face whose interesting behaviour happens below 0 dBFS.
+    //
+    // A LIMITER is the exception, and it is not a cosmetic one: with a -0.3 dB
+    // ceiling and an axis stopping at 0, the entire brick wall is the top 0.3 dB
+    // of the plot — a picture of a limiter in which the limiting is invisible.
+    // Its input routinely goes above 0 dBFS (that is what it is for), so its
+    // axis has to as well.
+    static constexpr float kAutoAxisTop = -1000.0f;
+    void setAxisTopDb (float db);
+
+    // ---- overlays two of the six faces need -------------------------------
+    // A GATE's hysteresis, in dB below the threshold. The gate opens at the
+    // threshold and closes only at threshold-hysteresis; between the two it
+    // holds whatever state it is already in, so there is no single curve through
+    // that span. Drawn as a BAND rather than folded into the curve, because a
+    // curve that picked one of the two edges would be claiming the gate is
+    // deterministic there when the whole point of hysteresis is that it is not.
+    void setHysteresisDb (float db);
+
+    // A LIMITER's ceiling, on the OUTPUT axis. The curve already flattens there
+    // (an infinite ratio does that on its own), but the flat top of a curve and
+    // a promise that nothing gets past it are different statements, and the
+    // ceiling is the one the device is actually making. kNoCeiling for none.
+    void setCeilingLineDb (float db);
+
     // ---- the one-float-tap part -------------------------------------------
     // The detector's current level, dB. kNoLevel hides the dot.
     void setInputLevelDb (float db);
@@ -58,6 +88,14 @@ public:
     // ballistics get to".
     void setGainReductionDb (float db);
 
+    // ---- one of several, for the 4-band's row of four ---------------------
+    // Recedes this curve so a sibling can be the one being edited. DELIBERATELY
+    // NOT setDimmed: dimmed means "this device is bypassed and is not doing
+    // what the picture shows", and it correctly hides the live dot. An
+    // unselected band IS still processing, so its dot has to stay — four live
+    // plots with one in front is the entire point of showing four.
+    void setSelected (bool s);
+
 protected:
     void paintPlot (juce::Graphics& g, juce::Rectangle<float> plot) override;
     void resized() override;
@@ -66,13 +104,30 @@ private:
     // Output dB for an input dB, INCLUDING makeup — the curve as heard.
     float outputDb (float inDb) const noexcept;
 
+    // The top of both axes: the explicit override when one is set, otherwise
+    // rounded up from the makeup. One function so paint and rebuild cannot
+    // disagree about where the top of the plot is.
+    float axisTopDb() const noexcept;
+
+    // Every colour in the plot is multiplied by this. Folds together the two
+    // independent reasons to fade — bypassed, and not-the-selected-band — so
+    // they compose instead of one overwriting the other.
+    float plotAlpha() const noexcept;
+
     void rebuildPath();
 
     echojay::GainCurve curve_;
-    float makeupDb_ = 0.0f;
-    float floorDb_  = -60.0f;
-    float inDb_     = kNoLevel;
-    float grDb_     = 0.0f;
+    float makeupDb_    = 0.0f;
+    float floorDb_     = -60.0f;
+    float inDb_        = kNoLevel;
+    float grDb_        = 0.0f;
+    float hysteresisDb_ = kNoHysteresis;
+    float ceilingDb_    = kNoCeiling;
+    float axisTopDb_    = kAutoAxisTop;
+
+    // True unless a device explicitly says otherwise, so the five single-curve
+    // faces never have to think about it.
+    bool  selected_     = true;
 
     // Rebuilt on a curve or size change only. Repainting is cheap; recomputing
     // 200 gain-computer evaluations at 20 Hz for a curve that has not moved is

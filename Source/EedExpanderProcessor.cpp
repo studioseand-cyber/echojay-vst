@@ -14,7 +14,11 @@ EedExpanderProcessor::EedExpanderProcessor()
     // A soft knee by default, and not dialable here: the expander publishes five
     // knobs by spec, and a hard-cornered expander is the version that sounds
     // like a gate. 6 dB is the width that keeps the slope engaging gradually.
-    core_.setKneeDb (6.0f);
+    //
+    // The constant is published (kFixedKneeDb) because the editor draws the
+    // curve from it too; a literal here and a literal there is a picture that
+    // stops matching the sound the first time one of them is changed.
+    core_.setKneeDb (kFixedKneeDb);
 
     resetParamsToDefaults();
 }

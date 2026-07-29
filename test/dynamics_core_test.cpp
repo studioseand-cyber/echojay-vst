@@ -127,6 +127,70 @@ int main()
     }
 
     // -----------------------------------------------------------------------
+    // The gate's curve is what TransferCurveView PLOTS, while the audio path
+    // goes through GateState. Those are two functions that have to agree, and
+    // this branch was previously an expander slope on a `ratio` the Gate device
+    // never sets — dead code, and silently a lie the moment it was drawn.
+    std::printf ("== gain computer: GATE is a STEP, not a steep expander ==\n");
+    {
+        GainCurve g;
+        g.mode = DynamicsMode::Gate;
+        g.thresholdDb = -40.0f; g.rangeDb = 30.0f;
+        g.ratio = 4.0f;                       // must be IGNORED
+        g.kneeDb = 6.0f;                      // must be IGNORED
+
+        check (near (g.reductionDb (-20.0f), 0.0, 1e-5), "well above threshold: open, unity");
+        check (near (g.reductionDb (-40.0f), 0.0, 1e-5), "AT the threshold: open");
+        check (near (g.reductionDb (-40.1f), -30.0, 1e-4), "just below: straight to the floor");
+        check (near (g.reductionDb (-90.0f), -30.0, 1e-4), "and no deeper however far under");
+
+        // The knee must not round the step off, and the ratio must not tilt it.
+        g.ratio = 20.0f;
+        check (near (g.reductionDb (-45.0f), -30.0, 1e-4), "ratio does not change the step");
+        g.kneeDb = 24.0f;
+        check (near (g.reductionDb (-38.0f), 0.0, 1e-5), "knee does not soften the step");
+
+        g.rangeDb = 0.0f;
+        check (near (g.reductionDb (-50.0f), -80.0, 1e-4),
+               "range 0 means the -80 dB floor, not 'no gating'");
+    }
+
+    std::printf ("== gate: the DRAWN curve and the AUDIO path share one floor ==\n");
+    {
+        // DynamicsCore's gate branch and GainCurve::reductionDb are two separate
+        // functions the user sees as one device: the meter and the picture come
+        // from one, the sound from the other. A floor defined twice is a gate
+        // that draws -40 and applies -80.
+        for (float range : { 0.0f, 12.0f, 40.0f })
+        {
+            DynamicsCore c;
+            c.prepare (kSr);
+            c.setMode (DynamicsMode::Gate);
+            c.setDetectorMode (DetectorMode::Peak);
+            c.setThresholdDb (-40.0f);
+            c.setRangeDb (range);
+            c.setHysteresisDb (0.0f);
+            c.setAttackMs (0.05); c.setReleaseMs (5.0); c.setHoldMs (0.0);
+            c.reset();
+
+            // Well below the threshold, so the gate is closed and settled.
+            const float settledDb = settledGrDb (c, -70.0f, 3.0);
+
+            GainCurve g;
+            g.mode = DynamicsMode::Gate;
+            g.thresholdDb = -40.0f;
+            g.rangeDb = range;
+            const float drawnDb = g.reductionDb (-70.0f);
+
+            char msg[140];
+            std::snprintf (msg, sizeof (msg),
+                           "range %.0f: audio settles at %.2f dB, curve draws %.2f dB",
+                           range, settledDb, drawnDb);
+            check (near (settledDb, drawnDb, 0.05), msg);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     std::printf ("== detector: peak vs RMS ==\n");
     {
         Detector d;

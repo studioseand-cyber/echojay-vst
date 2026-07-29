@@ -17,7 +17,7 @@ namespace
     // is cheap — and it is evaluated on a curve REBUILD, not on a repaint.
     constexpr int kResolution = 160;
 
-    float ceilingFor (float makeupDb) noexcept
+    float autoTopFor (float makeupDb) noexcept
     {
         // Round the makeup up to the grid so the top gridline is a labelled
         // value rather than "+7". 0 dB stays the top when there is no makeup,
@@ -73,6 +73,51 @@ void TransferCurveView::setFloorDb (float db)
     repaint();
 }
 
+void TransferCurveView::setHysteresisDb (float db)
+{
+    // No path rebuild: the band is an overlay drawn from two x coordinates, not
+    // part of the curve geometry.
+    if (! moved (db, hysteresisDb_, 0.01f)) return;
+    hysteresisDb_ = db;
+    repaint();
+}
+
+void TransferCurveView::setCeilingLineDb (float db)
+{
+    if (! moved (db, ceilingDb_, 0.01f)) return;
+    ceilingDb_ = db;
+    repaint();
+}
+
+void TransferCurveView::setAxisTopDb (float db)
+{
+    if (! moved (db, axisTopDb_, 0.01f)) return;
+    axisTopDb_ = db;
+    rebuildPath();
+    repaint();
+}
+
+float TransferCurveView::axisTopDb() const noexcept
+{
+    return axisTopDb_ > kAutoAxisTop ? axisTopDb_ : autoTopFor (makeupDb_);
+}
+
+void TransferCurveView::setSelected (bool sel)
+{
+    if (sel == selected_) return;
+    selected_ = sel;
+    repaint();
+}
+
+float TransferCurveView::plotAlpha() const noexcept
+{
+    // 0.5 is far enough back that the selected plot is unmistakably the front
+    // one, and near enough that a sibling pulling 9 dB is still legible from
+    // across the panel — which is the reason four are drawn at all.
+    constexpr float kRecede = 0.5f;
+    return dimAlpha() * (selected_ ? 1.0f : kRecede);
+}
+
 void TransferCurveView::setInputLevelDb (float db)
 {
     // A quarter of a dB is under a pixel on any plot this size, so anything
@@ -113,7 +158,7 @@ void TransferCurveView::rebuildPath()
     if (! hasPlot()) return;
 
     const auto  plot   = plotArea();
-    const float ceilDb = ceilingFor (makeupDb_);
+    const float ceilDb = axisTopDb();
     const float span   = ceilDb - floorDb_;
     if (span <= 0.0f) return;
 
@@ -156,8 +201,8 @@ void TransferCurveView::rebuildPath()
 
 void TransferCurveView::paintPlot (juce::Graphics& g, juce::Rectangle<float> plot)
 {
-    const float a      = dimAlpha();
-    const float ceilDb = ceilingFor (makeupDb_);
+    const float a      = plotAlpha();
+    const float ceilDb = axisTopDb();
     const float span   = ceilDb - floorDb_;
     if (span <= 0.0f) return;
 
@@ -210,6 +255,40 @@ void TransferCurveView::paintPlot (juce::Graphics& g, juce::Rectangle<float> plo
         g.fillPath (dashed);
     }
 
+    // ---- hysteresis band (gate) -------------------------------------------
+    // Drawn UNDER the threshold line and the curve, so it reads as a region of
+    // the plot rather than as another line competing with them.
+    if (hysteresisDb_ > kNoHysteresis)
+    {
+        const float openDb  = curve_.thresholdDb;
+        const float closeDb = curve_.thresholdDb - hysteresisDb_;
+
+        const float x0 = xForDb (juce::jmax (closeDb, floorDb_));
+        const float x1 = xForDb (juce::jmin (openDb,  ceilDb));
+
+        if (x1 > x0)
+        {
+            g.setColour (Colours::amber.withAlpha (0.10f * a));
+            g.fillRect (x0, plot.getY(), x1 - x0, plot.getHeight());
+
+            // The close edge, dashed against the threshold's solid line: the
+            // gate opens on the solid one and closes on the dashed one, and the
+            // gap between them is the chatter this device does not do.
+            if (closeDb > floorDb_)
+            {
+                juce::Path edge, dashed;
+                edge.startNewSubPath (x0, plot.getY());
+                edge.lineTo (x0, plot.getBottom());
+
+                const float dashes[] { 2.0f, 3.0f };
+                juce::PathStrokeType (1.0f).createDashedStroke (dashed, edge, dashes, 2);
+
+                g.setColour (Colours::amber.withMultipliedAlpha (0.45f * a));
+                g.fillPath (dashed);
+            }
+        }
+    }
+
     // ---- threshold --------------------------------------------------------
     if (curve_.thresholdDb > floorDb_ && curve_.thresholdDb < ceilDb)
     {
@@ -237,6 +316,30 @@ void TransferCurveView::paintPlot (juce::Graphics& g, juce::Rectangle<float> plo
                                                         juce::PathStrokeType::rounded));
     }
 
+    // ---- ceiling (limiter) ------------------------------------------------
+    // OVER the curve, not under it: the curve flattening at the ceiling is a
+    // consequence, and this is the guarantee. Everything above the line is a
+    // region the output cannot enter, so it is shaded out rather than left as
+    // empty plot the eye reads as available headroom.
+    if (ceilingDb_ < kNoCeiling && ceilingDb_ > floorDb_ && ceilingDb_ < ceilDb)
+    {
+        const float cy = yForDb (ceilingDb_);
+
+        g.setColour (Colours::red.withAlpha (0.07f * a));
+        g.fillRect (plot.getX(), plot.getY(), plot.getWidth(), cy - plot.getY());
+
+        g.setColour (Colours::red.withMultipliedAlpha (0.75f * a));
+        g.fillRect (plot.getX(), cy - 0.5f, plot.getWidth(), 1.5f);
+
+        if (plot.getWidth() > 70.0f)
+        {
+            g.setFont (uiFont (7.5f, true));
+            g.drawText (juce::String (ceilingDb_, 1),
+                        (int) plot.getRight() - 32, (int) cy - 11, 30, 10,
+                        juce::Justification::centredRight);
+        }
+    }
+
     // ---- the live dot -----------------------------------------------------
     // This is the whole reason the view is worth its pixels: a threshold set
     // 10 dB too low looks identical on the knobs and is obvious the moment the
@@ -244,21 +347,25 @@ void TransferCurveView::paintPlot (juce::Graphics& g, juce::Rectangle<float> plo
     //
     // inDb_ > floorDb_ is also what hides the dot for kNoLevel (-200 dB), which
     // is what a bypassed or never-run device reports.
+    // Gated on isDimmed(), NOT on `a`: an unselected band is receded but still
+    // processing, and its dot is the reason four plots are drawn instead of one.
+    // Only a bypassed device has no dot, because only a bypassed device has
+    // nothing to report.
     if (! isDimmed() && inDb_ > floorDb_)
     {
         const float dx = xForDb (juce::jmin (inDb_, ceilDb));
         const float dy = yForDb (juce::jlimit (floorDb_, ceilDb, outputDb (inDb_)));
 
         // A soft halo first so the dot stays findable over the shaded wedge.
-        g.setColour (Colours::amber.withAlpha (0.20f));
+        g.setColour (Colours::amber.withAlpha (0.20f * a));
         g.fillEllipse (dx - 6.0f, dy - 6.0f, 12.0f, 12.0f);
-        g.setColour (Colours::amber);
+        g.setColour (Colours::amber.withMultipliedAlpha (a));
         g.fillEllipse (dx - 3.0f, dy - 3.0f, 6.0f, 6.0f);
 
         // The number, bottom-right, where it cannot sit under the curve.
         if (plot.getWidth() > 90.0f && grDb_ < -0.05f)
         {
-            g.setColour (Colours::amber.brighter (0.2f));
+            g.setColour (Colours::amber.brighter (0.2f).withMultipliedAlpha (a));
             g.setFont (uiFont (8.5f, true));
             g.drawText (juce::String (grDb_, 1) + " dB",
                         plot.reduced (3.0f, 1.0f),

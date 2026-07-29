@@ -6,14 +6,15 @@
 #include "EedDeEsserEditor.h"
 #include "EedDeviceRegistry.h"
 
-namespace
-{
-    // The sidechain bandpass Q. Wide enough to cover a real "s" (which is not a
-    // sine) and narrow enough that the vowel underneath it does not trigger the
-    // detector — the failure mode of a broad sidechain is a de-esser that ducks
-    // on every loud word rather than on sibilance.
-    constexpr double kSidechainQ = 2.0;
-}
+// The sidechain bandpass Q. Wide enough to cover a real "s" (which is not a
+// sine) and narrow enough that the vowel underneath it does not trigger the
+// detector — the failure mode of a broad sidechain is a de-esser that ducks on
+// every loud word rather than on sibilance.
+//
+// Lives on the class (EedDeEsserProcessor::kSidechainQ) rather than in an
+// anonymous namespace here, because the editor draws this exact filter's shape:
+// the band in the picture has to be the band the detector hears.
+namespace { constexpr double kSidechainQ = EedDeEsserProcessor::kSidechainQ; }
 
 EedDeEsserProcessor::EedDeEsserProcessor()
 {
@@ -23,8 +24,12 @@ EedDeEsserProcessor::EedDeEsserProcessor()
     // A steep ratio and a soft knee: sibilance is short and loud, so what is
     // wanted is "hold it at the threshold", engaged gradually enough that the
     // reduction does not announce itself.
-    core_.setRatio (8.0f);
-    core_.setKneeDb (4.0f);
+    //
+    // Both are published constants because the editor draws this same curve; a
+    // literal here and a literal there is a picture that stops matching the
+    // sound the first time one of them is changed.
+    core_.setRatio (kFixedRatio);
+    core_.setKneeDb (kFixedKneeDb);
 
     resetParamsToDefaults();
 }

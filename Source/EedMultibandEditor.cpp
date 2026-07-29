@@ -12,7 +12,27 @@ using C = echojay::device::Colours;
 namespace
 {
     constexpr int kDefaultW = 560;
-    constexpr int kDefaultH = 300;
+    // The band-range line paintContent draws under the selector strip. Declared
+    // here because layoutContent has to reserve it — it is drawn text, not a
+    // component, so nothing else will.
+    constexpr int kBandLabelH = 11;
+
+    // Four curves across a 560 px panel is ~134 px each, which is enough to read
+    // a knee off. Shorter than the single-curve faces' 132 because there are
+    // four of them and the editor already carries three rows below.
+    constexpr int kCurveH   = 108;
+    constexpr int kDefaultH = 300 + kCurveH + 8 + kBandLabelH;
+
+    // Below either of these the four plots are smudges rather than readings, so
+    // the whole strip is dropped and the controls keep the room.
+    constexpr int kMinCurveH  = 48;
+    constexpr int kMinCurveW  = 60;      // per curve
+    constexpr int kCurveGap   = 4;
+
+
+    // Every band is a compressor over the same -60..0 working range as the
+    // single-band face, so they share its floor and read against each other.
+    constexpr float kFloorDb = -60.0f;
 
     // Per-band dial presentation. The ids are filled in per selection, since
     // they carry the band number.
@@ -60,6 +80,13 @@ EedMultibandEditor::EedMultibandEditor (EedMultibandProcessor& p)
         auto* m = bandMeters_.add (new GrMeter (24.0f));
         m->setCaption ("B" + juce::String (b + 1));
         addAndMakeVisible (m);
+
+        // And a curve per band, for the same reason: four settings that each
+        // look reasonable alone can be obviously wrong together.
+        auto* c = bandCurves_.add (new echojay::viz::TransferCurveView());
+        c->setCaption ("B" + juce::String (b + 1));
+        c->setFloorDb (kFloorDb);
+        addAndMakeVisible (c);
     }
 
     styleButton (bandBypassBtn_, true);
@@ -116,6 +143,10 @@ void EedMultibandEditor::selectBand (int band)
 
     bandBypassBtn_.setToggleState (proc_.isBandBypassed (selectedBand_),
                                    juce::dontSendNotification);
+
+    // Move the highlight immediately rather than on the next timer tick — a
+    // selector that takes 50 ms to respond reads as a dropped click.
+    refreshCurves();
     repaint();
 }
 
@@ -124,7 +155,41 @@ void EedMultibandEditor::layoutContent (juce::Rectangle<int> content)
 {
     if (content.isEmpty()) return;
 
-    // Crossovers on top: they define the bands, so they read first.
+    // The four curves take the top strip, and are the FIRST thing given up when
+    // the rack lays this editor out short — same shrink policy the face editor
+    // applies to its single curve. They are the only part of this panel that is
+    // purely a readout of numbers the controls below already state.
+    //
+    // Reserved before the crossover row so that they line up over the band
+    // buttons two rows down, which is what makes "curve 3 is band 3" need no
+    // label beyond the caption each already carries.
+    {
+        const int perCurveW = (content.getWidth() - (kNumBands - 1) * kCurveGap) / kNumBands;
+        const int availH    = content.getHeight() - kKnobH - 8;
+        const int h         = juce::jmin (kCurveH, juce::jmax (0, availH));
+
+        const bool room = h >= kMinCurveH && perCurveW >= kMinCurveW;
+
+        for (auto* c : bandCurves_) c->setVisible (room);
+
+        if (room)
+        {
+            auto strip = content.removeFromTop (h);
+            content.removeFromTop (8);
+
+            for (int b = 0; b < kNumBands; ++b)
+            {
+                // The last one takes the remainder, so integer division cannot
+                // leave a stripe of unused panel on the right.
+                auto col = strip.removeFromLeft (b == kNumBands - 1 ? strip.getWidth()
+                                                                    : perCurveW);
+                if (auto* c = bandCurves_[b]) c->setBounds (col);
+                if (b < kNumBands - 1) strip.removeFromLeft (kCurveGap);
+            }
+        }
+    }
+
+    // Crossovers next: they define the bands, so they read before the bands do.
     if (content.getHeight() > kKnobH)
     {
         auto row = content.removeFromTop (kKnobH);
@@ -139,7 +204,12 @@ void EedMultibandEditor::layoutContent (juce::Rectangle<int> content)
     if (stripH > 0)
     {
         bandRowBounds_ = content.removeFromTop (stripH);
-        content.removeFromTop (8);
+
+        // 14, not 8: paintContent draws each band's frequency range in an 11 px
+        // line immediately BELOW this strip, and that text is not a component,
+        // so nothing reserves the space for it. At 8 it lands on top of the dial
+        // captions underneath.
+        content.removeFromTop (kBandLabelH + 3);
 
         auto strip = bandRowBounds_;
         const int colW = juce::jmax (1, strip.getWidth() / kNumBands);
@@ -206,7 +276,7 @@ void EedMultibandEditor::paintContent (juce::Graphics& g)
         g.drawText (labels[b],
                     bandRowBounds_.getX() + b * colW,
                     bandRowBounds_.getBottom(),
-                    colW, 11, juce::Justification::centred);
+                    colW, kBandLabelH, juce::Justification::centred);
     }
 }
 
@@ -222,6 +292,54 @@ void EedMultibandEditor::syncAll()
     EchoJayDeviceKnob* bptrs[kBandKnobs];
     for (int i = 0; i < kBandKnobs; ++i) bptrs[i] = &bandKnobs_[i];
     syncKnobs (bptrs, bandSpecs_, kBandKnobs, proc_);
+}
+
+void EedMultibandEditor::refreshCurves()
+{
+    const bool deviceByp = proc_.isBypassed();
+
+    for (int b = 0; b < kNumBands; ++b)
+    {
+        auto* c = bandCurves_[b];
+        if (c == nullptr) continue;
+
+        const bool bandOff = deviceByp || proc_.isBandBypassed (b);
+
+        // ---- analytic: this band's own curve ------------------------------
+        // Read through getParamValue with the band's own prefixed ids, which is
+        // the same path the dials and an AI's comp_bands move take — so the
+        // four pictures cannot be looking at different numbers than the four
+        // compressors are running.
+        auto bandParam = [this, b] (const char* leaf)
+        {
+            return (float) proc_.getParamValue (
+                EedMultibandProcessor::bandParamId (b, leaf));
+        };
+
+        c->setCurve (bandParam (EedMultibandProcessor::kThresholdDb),
+                     bandParam (EedMultibandProcessor::kRatio),
+                     bandParam (EedMultibandProcessor::kKneeDb),
+                     0.0f,                                  // no range cap on a band
+                     EedMultibandProcessor::kBandMode);
+
+        c->setMakeupDb (bandParam (EedMultibandProcessor::kMakeupDb));
+
+        // ---- one float tap, per band ---------------------------------------
+        // Each band's OWN detector: a single input level would put the same dot
+        // on all four plots and say nothing about which band is being worked.
+        c->setInputLevelDb (bandOff ? echojay::viz::TransferCurveView::kNoLevel
+                                    : proc_.detectorLevelDb (b));
+        c->setGainReductionDb (bandOff ? 0.0f : proc_.gainReductionDb (b));
+
+        // Two independent fades, and they are not the same fade. DIMMED means
+        // "this band is bypassed and is not doing what the picture shows", and
+        // it takes the dot away because there is nothing to report. SELECTED is
+        // only about which band you are editing — an unselected band recedes but
+        // keeps its dot, because "one plot in front, four plots live" is the
+        // entire reason four are drawn instead of one.
+        c->setDimmed (bandOff);
+        c->setSelected (b == selectedBand_);
+    }
 }
 
 void EedMultibandEditor::timerCallback()
@@ -247,6 +365,8 @@ void EedMultibandEditor::timerCallback()
         m->setDimmed (off);
         if (! off) m->setGainReductionDb (proc_.gainReductionDb (b));
     }
+
+    refreshCurves();
 
     // The band labels follow the crossovers, which the AI can move.
     repaint (bandRowBounds_.withHeight (bandRowBounds_.getHeight() + 12));

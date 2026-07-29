@@ -325,6 +325,19 @@ struct GainCurve
     float kneeDb      = 6.0f;    // width of the soft transition, 0 = hard knee
     float rangeDb     = 0.0f;    // max reduction, 0 = unlimited (comp/limit)
 
+    // Where a CLOSED gate sits. A range of 0 means "no explicit floor", which is
+    // -80 dB rather than silence so that a closed gate still has a finite,
+    // drawable, subtractable level.
+    //
+    // Spelled once, here, because two things need the same answer: the audio
+    // path (DynamicsCore's gate branch) and the picture (reductionDb below,
+    // which is what TransferCurveView plots). Two copies of it is how a gate
+    // that draws one floor and applies another gets shipped.
+    float gateFloorDb() const noexcept
+    {
+        return rangeDb > 0.0f ? -rangeDb : -80.0f;
+    }
+
     // The reduction, in dB, this curve asks for at `inDb`. Never positive.
     float reductionDb (float inDb) const noexcept
     {
@@ -357,12 +370,27 @@ struct GainCurve
                 break;
             }
 
-            case DynamicsMode::Expand:
             case DynamicsMode::Gate:
             {
-                // Below threshold, push DOWN by (ratio - 1) x the shortfall. A
-                // gate is the same curve with a very steep ratio; what actually
-                // makes it a gate is the hysteresis + hold in GateState.
+                // A GATE IS NOT A STEEP EXPANDER, and this branch used to say it
+                // was — it ran the expander slope below, on a `ratio` the Gate
+                // device never sets. That was harmless while nothing called it
+                // (DynamicsCore's gate path goes through GateState, not through
+                // here) and became wrong the moment TransferCurveView started
+                // plotting this function: the picture would have shown a 4:1
+                // expander for a device that applies a step.
+                //
+                // What the gate actually does, ignoring the hysteresis and the
+                // ballistics that sit on top of it: unity at or above the
+                // threshold, the floor below it. Hysteresis is a property of the
+                // gate's STATE, not of this curve, so it is drawn as a band by
+                // the view rather than smuggled in here.
+                return inDb >= thresholdDb ? 0.0f : gateFloorDb();
+            }
+
+            case DynamicsMode::Expand:
+            {
+                // Below threshold, push DOWN by (ratio - 1) x the shortfall.
                 const float slope = std::max (ratio, 1.0f) - 1.0f;
                 const float under = thresholdDb - inDb;
 
@@ -379,9 +407,10 @@ struct GainCurve
             }
         }
 
-        // Range caps how far the curve is allowed to pull. For an expander/gate
-        // it is the floor the signal drops to, which is what makes a gate usable
-        // as a "duck it 20 dB" rather than an on/off switch.
+        // Range caps how far the curve is allowed to pull. For an expander it is
+        // the floor the signal drops to, which is what makes it usable as "duck
+        // it 20 dB" rather than a fade to nothing. (Gate returned above, having
+        // already applied its own floor.)
         if (rangeDb > 0.0f) g = std::max (g, -rangeDb);
 
         return g;
@@ -665,8 +694,7 @@ public:
             // Ballistics turn that into attack/hold/release; the curve's ratio
             // and knee do not apply, which is why a gate publishes neither.
             const bool open = gate_.update (levelDb, curve_.thresholdDb, hysteresisDb_);
-            const float floorDb = curve_.rangeDb > 0.0f ? -curve_.rangeDb : -80.0f;
-            targetDb = open ? 0.0f : floorDb;
+            targetDb = open ? 0.0f : curve_.gateFloorDb();
         }
         else
         {

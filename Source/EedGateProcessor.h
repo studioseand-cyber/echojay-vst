@@ -55,6 +55,10 @@ public:
 
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
 
+    // The detector's current level, for the dot riding the transfer curve. Same
+    // benign racy single-float contract as the meter above.
+    float detectorLevelDb() const noexcept { return core_.detectorLevelDb(); }
+
 private:
     echojay::DynamicsCore core_;
 

@@ -61,6 +61,7 @@ public:
     static constexpr double kMaxLookaheadMs = 10.0;
 
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
+    float detectorLevelDb()  const noexcept { return core_.detectorLevelDb(); }
 
 private:
     // Recompute the delay, the derived attack and the reported latency together.

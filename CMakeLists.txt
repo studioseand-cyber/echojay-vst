@@ -263,6 +263,8 @@ target_sources(EchoJay PRIVATE
     # what makes those additions land in different places and merge clean.
     Source/viz/DecayView.cpp
     Source/viz/DecayView.h
+    Source/viz/DeEsserBandView.cpp
+    Source/viz/DeEsserBandView.h
     Source/viz/DelayTapsView.cpp
     Source/viz/DelayTapsView.h
     Source/viz/EedGrMeter.h
@@ -554,6 +556,8 @@ target_sources(EchoJayLink PRIVATE
     # what makes those additions land in different places and merge clean.
     Source/viz/DecayView.cpp
     Source/viz/DecayView.h
+    Source/viz/DeEsserBandView.cpp
+    Source/viz/DeEsserBandView.h
     Source/viz/DelayTapsView.cpp
     Source/viz/DelayTapsView.h
     Source/viz/EedGrMeter.h
@@ -715,6 +719,7 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/SurgicalEqEditor.cpp
     Source/SurgicalEqProcessor.cpp
     Source/viz/DecayView.cpp
+    Source/viz/DeEsserBandView.cpp
     Source/viz/DelayTapsView.cpp
     Source/viz/Goniometer.cpp
     Source/viz/HarmonicBars.cpp

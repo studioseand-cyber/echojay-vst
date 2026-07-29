@@ -48,6 +48,14 @@ public:
     static constexpr const char* kRangeDb     = "range_db";
 
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
+    float detectorLevelDb()  const noexcept { return core_.detectorLevelDb(); }
+
+    // The knee this device runs, fixed rather than published (see the note in
+    // the constructor on why an expander does not hand out a hard-knee switch).
+    // Public because the editor has to draw the curve the DSP actually runs, and
+    // a 6.0 re-typed in the editor is a picture that silently stops matching the
+    // sound the day this changes.
+    static constexpr float kFixedKneeDb = 6.0f;
 
 private:
     echojay::DynamicsCore core_;

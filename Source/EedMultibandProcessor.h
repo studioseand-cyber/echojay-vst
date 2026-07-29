@@ -91,6 +91,22 @@ public:
         return (band >= 0 && band < kNumBands) ? cores_[band].gainReductionDb() : 0.0f;
     }
 
+    // The level THIS BAND's detector is seeing — the band's own content after
+    // the crossover, not the full-range input. Four independent taps, because
+    // four independent compressors is what the device is: a single input level
+    // would put the same dot on all four curves and say nothing about which band
+    // is actually being worked.
+    float detectorLevelDb (int band) const noexcept
+    {
+        return (band >= 0 && band < kNumBands) ? cores_[band].detectorLevelDb()
+                                               : echojay::dyn::kSilenceDb;
+    }
+
+    // The knee and mode every band runs, for drawing their curves. knee IS a
+    // per-band schema param, so it is read through getParamValue like the rest;
+    // this is only the mode, which is fixed.
+    static constexpr echojay::DynamicsMode kBandMode = echojay::DynamicsMode::Compress;
+
     bool isBandBypassed (int band) const noexcept
     {
         return (band >= 0 && band < kNumBands) && bandBypass_[band].load();

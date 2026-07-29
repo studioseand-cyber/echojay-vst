@@ -59,6 +59,22 @@ public:
 
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
 
+    // The level of the SIDECHAIN BAND, not of the input: this device's detector
+    // hears through a bandpass, so this is "how much sibilance is there right
+    // now" rather than "how loud is the vocal". That distinction is the whole
+    // device, and it is what the band view plots.
+    float detectorLevelDb() const noexcept { return core_.detectorLevelDb(); }
+
+    // The curve this device runs. Fixed rather than published (a de-esser that
+    // hands out a ratio is a compressor with a filter), but the editor has to
+    // draw the curve the DSP actually runs, so they are named here once instead
+    // of re-typed in the editor.
+    static constexpr float kFixedRatio  = 8.0f;
+    static constexpr float kFixedKneeDb = 4.0f;
+
+    // The sidechain bandpass Q, for drawing the band the detector listens to.
+    static constexpr double kSidechainQ = 2.0;
+
     bool isSplitMode() const noexcept { return splitMode_.load(); }
     bool isListening() const noexcept { return listen_.load(); }
 
