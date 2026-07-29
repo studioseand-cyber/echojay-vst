@@ -51,6 +51,12 @@ void EedPhaseInvertProcessor::prepareToPlay (double sampleRate, int /*samplesPer
     // playback.
     coeffL_ = invertL_.load() ? -1.0f : 1.0f;
     coeffR_ = invertR_.load() ? -1.0f : 1.0f;
+
+    // No reading yet for this configuration: the first stereo block lands on its
+    // value instead of sliding there from the previous session's.
+    corrTap_.set (kNoCorrelation);
+    corrSmoothed_ = 0.0f;
+    corrPrimed_   = false;
 }
 
 void EedPhaseInvertProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -64,6 +70,10 @@ void EedPhaseInvertProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     const int numCh      = juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels());
     if (numCh <= 0 || numSamples <= 0) return;
 
+    // NOT gated on bypass, unlike the metering on other devices: this device
+    // still runs its ramp while bypassed (below), so the buffer is still being
+    // written and the reading stays true. The editor dims the dot instead.
+    //
     // Bypass still has to run the ramp state toward unity, otherwise re-enabling
     // resumes from a stale coefficient and clicks.
     const bool  bypassed = isBypassed();
@@ -81,6 +91,57 @@ void EedPhaseInvertProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         l[i] *= coeffL_;
         if (r != nullptr) r[i] *= coeffR_;
     }
+
+    // Measured on the OUTPUT, so it reports the phase relationship the device is
+    // actually leaving behind rather than the one it was handed.
+    publishCorrelation (buffer, numCh, numSamples);
+}
+
+// Pearson correlation of L against R over the block:
+//
+//     c = sum(L*R) / sqrt(sum(L*L) * sum(R*R))
+//
+// which is exactly +1 for identical channels, -1 for one flipped against the
+// other, and 0 when they share nothing — the three readings this device's two
+// switches move between.
+void EedPhaseInvertProcessor::publishCorrelation (const juce::AudioBuffer<float>& buffer,
+                                                  int numCh, int numSamples)
+{
+    if (numCh < 2)
+    {
+        // Nothing to correlate. Say so, rather than publishing a 0 that would
+        // read as "wide" on a device that is running in mono.
+        corrTap_.set (kNoCorrelation);
+        corrPrimed_ = false;
+        return;
+    }
+
+    const float* l = buffer.getReadPointer (0);
+    const float* r = buffer.getReadPointer (1);
+
+    double lr = 0.0, ll = 0.0, rr = 0.0;
+    for (int i = 0; i < numSamples; ++i)
+    {
+        lr += (double) l[i] * (double) r[i];
+        ll += (double) l[i] * (double) l[i];
+        rr += (double) r[i] * (double) r[i];
+    }
+
+    const double denom = std::sqrt (ll * rr);
+
+    // Silence has no phase relationship. HOLD the last reading rather than
+    // publishing 0: a dot that snaps to centre in every gap between phrases
+    // reads as the signal decorrelating, which is the opposite of what happened.
+    if (! (denom > 1.0e-12)) return;
+
+    const float c = juce::jlimit (-1.0f, 1.0f, (float) (lr / denom));
+
+    // First stereo block after mono or a fresh prepare: land on the value rather
+    // than sliding to it from whatever was there before.
+    if (! corrPrimed_) { corrSmoothed_ = c; corrPrimed_ = true; }
+    else               { corrSmoothed_ += 0.15f * (c - corrSmoothed_); }
+
+    corrTap_.set (corrSmoothed_);
 }
 
 juce::AudioProcessorEditor* EedPhaseInvertProcessor::createEditor()

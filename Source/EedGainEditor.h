@@ -9,12 +9,24 @@
     than by calling the engine directly. That means a knob turn and an AI move
     take the identical path, so the two cannot disagree about clamping, and a
     param that is dialable is automatically also turnable.
+
+    The visualisation is two echojay::viz::LevelMeter, IN above OUT (VISUALS_PLAN
+    .md, Utility). This is the float-tap path rather than the analytic one: a
+    level is a property of the SIGNAL, not of the params, so unlike the delay's
+    taps or the reverb's envelope it cannot be computed from the schema.
+
+    Stacking them rather than putting them side by side is the whole point of the
+    device: the question is not "how loud is the output", it is "what did this
+    move DO", and that is a comparison. Two bars on a shared scale, one directly
+    above the other, answer it at a glance; side by side, with separate scales,
+    they do not.
 */
 
 #pragma once
 
 #include "DeviceEditorBase.h"
 #include "EedGainProcessor.h"
+#include "viz/LevelMeter.h"
 
 class EedGainEditor : public DeviceEditorBase,
                       private juce::Timer
@@ -30,10 +42,13 @@ private:
     void timerCallback() override;
     void pushToProcessor();
     void syncFromProcessor();
+    void refreshMeters();
 
     EedGainProcessor& proc_;
 
     echojay::device::EchoJayDeviceKnob levelKnob_, panKnob_;
+
+    echojay::viz::LevelMeter inMeter_, outMeter_;
 
     bool suppressCallbacks_ = false;
 

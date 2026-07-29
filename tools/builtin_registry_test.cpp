@@ -689,6 +689,95 @@ int main()
     }
 
     // -----------------------------------------------------------------------
+    // The goniometer is only worth having if it shows the device's OUTPUT. A tap
+    // taken before the engine would look perfectly healthy on a stereo source
+    // and would be a lie on a mono one: mono in, mono out, a vertical line, no
+    // matter how far the Haas dial is turned.
+    //
+    // So the check is the mono case specifically. Feed L == R, and the ring must
+    // come back DECORRELATED — side content the device manufactured, which is
+    // the widening made visible. Then turn the widening off and the same input
+    // must come back perfectly correlated, which is what rules out the tap
+    // simply being noisy.
+    std::printf ("== the Stereoizer's scope tap carries the WIDENED output ==\n");
+    {
+        // Correlation of the ring's two channels, the same measure the
+        // goniometer's bar shows.
+        auto ringCorrelation = [] (const echojay::viz::ScopeTap& tap)
+        {
+            std::vector<float> l (1024), r (1024);
+            const int n = tap.read (l.data(), r.data(), 1024);
+            if (n <= 0) return 2.0f;                    // sentinel: nothing tapped
+
+            double lr = 0.0, ll = 0.0, rr = 0.0;
+            for (int i = 0; i < n; ++i)
+            {
+                lr += (double) l[i] * r[i];
+                ll += (double) l[i] * l[i];
+                rr += (double) r[i] * r[i];
+            }
+            if (ll + rr < 1.0e-9) return 2.0f;          // sentinel: silence
+            const double d = std::sqrt (ll * rr);
+            return d > 1.0e-12 ? (float) (lr / d) : 1.0f;
+        };
+
+        // A MONO source: both channels identical, so every scrap of side content
+        // in the tap was made by this device.
+        auto runMono = [] (juce::AudioProcessor& p)
+        {
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            juce::Random rng (99);
+            for (int b = 0; b < 24; ++b)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = rng.nextFloat() * 1.6f - 0.8f;
+                    buf.setSample (0, i, v);
+                    buf.setSample (1, i, v);
+                }
+                p.processBlock (buf, midi);
+            }
+        };
+
+        {
+            auto proc = makeByName ("EchoJay Stereoizer");
+            auto* sz = dynamic_cast<EedStereoizerProcessor*> (proc.get());
+            auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            check (sz != nullptr, "constructed as an EedStereoizerProcessor");
+
+            device->applyStructured (paramsMove ({ { "width", 150.0 }, { "haas_ms", 20.0 },
+                                                  { "mono_maker_hz", 0.0 }, { "mix", 100.0 } }));
+            proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+            proc->prepareToPlay (48000.0, 512);
+            runMono (*proc);
+
+            const float c = ringCorrelation (sz->scopeTap());
+            check (c < 0.99f && c <= 1.0f,
+                   "mono in, DECORRELATED in the ring: the widening is visible "
+                   "(correlation " + juce::String (c, 4) + ")");
+        }
+        {
+            // Same input, widening off. If this did not come back at +1 the tap
+            // would be measuring something other than the signal.
+            auto proc = makeByName ("EchoJay Stereoizer");
+            auto* sz = dynamic_cast<EedStereoizerProcessor*> (proc.get());
+            auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+            device->applyStructured (paramsMove ({ { "width", 100.0 }, { "haas_ms", 0.0 },
+                                                  { "mono_maker_hz", 0.0 }, { "mix", 100.0 } }));
+            proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+            proc->prepareToPlay (48000.0, 512);
+            runMono (*proc);
+
+            const float c = ringCorrelation (sz->scopeTap());
+            check (c > 0.999f && c <= 1.0f,
+                   "widening off: the same mono input reads as mono "
+                   "(correlation " + juce::String (c, 4) + ")");
+        }
+    }
+
+    // -----------------------------------------------------------------------
     std::printf ("== state round-trips through the schema ==\n");
     {
         auto a = makeByName ("EchoJay Gain");
@@ -872,6 +961,128 @@ int main()
         for (const auto& p : d.schema.params())
             check (device->setParamValue (juce::String (p.id), p.def),
                    d.name + ": advertised id \"" + juce::String (p.id) + "\" is settable");
+    }
+
+    // -----------------------------------------------------------------------
+    // The editor-paint harness below proves a visualisation does not CRASH. It
+    // cannot prove one is telling the truth: a meter wired to the wrong tap, or
+    // reading the input where it meant the output, paints perfectly and is
+    // simply wrong. Most views are analytic and cannot drift (they read the same
+    // schema the AI writes), but the float-tap paths are real plumbing, so the
+    // numbers they publish are checked against signal that was actually pushed
+    // through the device.
+    std::printf ("== Gain's I/O meter taps read the real signal ==\n");
+    {
+        auto proc = makeByName ("EchoJay Gain");
+        auto* gain = dynamic_cast<EedGainProcessor*> (proc.get());
+        check (gain != nullptr, "constructed as an EedGainProcessor");
+
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+
+        // Full-scale DC is the cleanest probe: peak and RMS are both exactly the
+        // amplitude, so a wrong answer is unambiguous rather than approximately
+        // right. Pan stays centred, which GainEngine defines as unity.
+        auto pushBlocks = [&proc] (float amp, int blocks)
+        {
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            for (int b = 0; b < blocks; ++b)
+            {
+                for (int ch = 0; ch < 2; ++ch)
+                    juce::FloatVectorOperations::fill (buf.getWritePointer (ch), amp, 512);
+                proc->processBlock (buf, midi);
+            }
+        };
+
+        // Unity: in and out must agree, or the two taps are crossed.
+        gain->setParamValue ("level_db", 0.0);
+        gain->setParamValue ("pan", 0.0);
+        proc->prepareToPlay (48000.0, 512);
+        pushBlocks (0.5f, 40);                     // 40 blocks >> the 20 ms smoother
+
+        check (near (gain->inputPeak(),  0.5, 1e-3), "input peak reads the input amplitude");
+        check (near (gain->inputRms(),   0.5, 1e-3), "input RMS reads it too (DC)");
+        check (near (gain->outputPeak(), 0.5, 1e-3), "at 0 dB the output matches the input");
+
+        // -6 dB: the output tap must move and the input tap must NOT. This is
+        // the check that actually distinguishes the two taps from each other.
+        gain->setParamValue ("level_db", -6.0);
+        pushBlocks (0.5f, 60);
+
+        check (near (gain->inputPeak(), 0.5, 1e-3), "the INPUT tap is unchanged by the gain");
+        check (near (gain->outputPeak(), 0.5 * 0.50119, 2e-3),
+               "the OUTPUT tap halved: " + juce::String (gain->outputPeak(), 4));
+
+        // Silence has to reach the meter, or a stopped transport leaves a bar
+        // sitting at whatever was last playing.
+        pushBlocks (0.0f, 60);
+        check (gain->inputPeak() < 1e-6 && gain->outputPeak() < 1e-6,
+               "silence reads as silence on both meters");
+    }
+
+    std::printf ("== Phase Invert's correlation dot reads the real phase ==\n");
+    {
+        auto proc = makeByName ("EchoJay Phase Invert");
+        auto* pi = dynamic_cast<EedPhaseInvertProcessor*> (proc.get());
+        check (pi != nullptr, "constructed as an EedPhaseInvertProcessor");
+
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc->prepareToPlay (48000.0, 512);
+
+        // Identical channels: correlation +1. Blocks enough to clear both the
+        // 5 ms polarity ramp and the display smoother.
+        auto pushCorrelated = [&proc] (int blocks)
+        {
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            for (int b = 0; b < blocks; ++b)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float x = std::sin ((float) (b * 512 + i) * 0.03f);
+                    buf.setSample (0, i, x);
+                    buf.setSample (1, i, x);
+                }
+                proc->processBlock (buf, midi);
+            }
+        };
+
+        pushCorrelated (60);
+        check (near (pi->correlation(), 1.0, 0.02),
+               "an identical pair reads +1 (" + juce::String (pi->correlation(), 3) + ")");
+
+        // THE reading this device exists to move: flip one side and the pair
+        // goes to -1, which is the mono fold-down cancelling.
+        pi->setParamValue ("invert_left", 1.0);
+        pushCorrelated (60);
+        check (near (pi->correlation(), -1.0, 0.02),
+               "flipping ONE side swings it to -1 (" + juce::String (pi->correlation(), 3) + ")");
+
+        // Flipping BOTH is not a phase problem — it is the same signal again.
+        pi->setParamValue ("invert_right", 1.0);
+        pushCorrelated (60);
+        check (near (pi->correlation(), 1.0, 0.02),
+               "flipping BOTH is back to +1 (" + juce::String (pi->correlation(), 3) + ")");
+
+        // Mono: the sentinel, not a number. A 0 here would draw as "fully
+        // decorrelated" on a device that simply has nothing to compare.
+        auto mono = makeByName ("EchoJay Phase Invert");
+        auto* pim = dynamic_cast<EedPhaseInvertProcessor*> (mono.get());
+        mono->setPlayConfigDetails (1, 1, 48000.0, 256);
+        mono->prepareToPlay (48000.0, 256);
+        {
+            juce::AudioBuffer<float> buf (1, 256);
+            juce::MidiBuffer midi;
+            for (int b = 0; b < 8; ++b)
+            {
+                for (int i = 0; i < 256; ++i) buf.setSample (0, i, 0.4f);
+                mono->processBlock (buf, midi);
+            }
+        }
+        check (pim->correlation() == EedPhaseInvertProcessor::kNoCorrelation,
+               "mono publishes the no-reading sentinel, not 0");
+        check (std::abs (EedPhaseInvertProcessor::kNoCorrelation) > 1.0f,
+               "and that sentinel is OUTSIDE the valid range, so a drawer can spot it");
     }
 
     // -----------------------------------------------------------------------

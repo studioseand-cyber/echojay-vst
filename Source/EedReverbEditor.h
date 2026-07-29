@@ -14,12 +14,20 @@
     has — which is shorter than the decay knob at high damping, because the
     damping filter sits inside the feedback loop and shortens what it filters.
     Showing the asked-for number there would be a readout the ear disagrees with.
+
+    The visualisation is echojay::viz::DecayView (VISUALS_PLAN.md, Time), and it
+    is ANALYTIC — no tap, no processor change. It is handed the RAW decay_s and
+    the damping percentage SEPARATELY, not effectiveDecaySeconds(): the view
+    draws damping as its own second, faster envelope under the first, so passing
+    an already-damped RT60 would apply the same damping twice and show a tail
+    dying faster than the device's does.
 */
 
 #pragma once
 
 #include "DeviceEditorBase.h"
 #include "EedReverbProcessor.h"
+#include "viz/DecayView.h"
 
 class EedReverbEditor : public DeviceEditorBase,
                         private juce::Timer
@@ -36,8 +44,11 @@ private:
     void syncFromProcessor();
     void pushKnob (const char* id, const echojay::device::EchoJayDeviceKnob& k);
     void refreshHint();
+    void refreshDecay();
 
     EedReverbProcessor& proc_;
+
+    echojay::viz::DecayView decay_;
 
     echojay::device::EchoJayDeviceKnob sizeKnob_, decayKnob_, predelayKnob_, mixKnob_,
                                        dampingKnob_, lowCutKnob_, widthKnob_,

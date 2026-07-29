@@ -11,11 +11,23 @@
     the common case (a mic flipped against another), but the reason you reach for
     this device at all is often a channel-specific problem — a mis-wired cable on
     one side of a stereo pair — and a one-knob version cannot fix that.
+
+    VISUALISATION: one float, and deliberately nothing more. VISUALS_PLAN.md says
+    this device "stays minimal (a small correlation dot at most)", and that is the
+    right call — there is no curve, no spectrum and no envelope here, and a device
+    with nothing to show should not be given a panel to show it in.
+
+    Correlation is the exception worth publishing, because it is the one number
+    this device exists to move: flipping one side of a correlated pair drives it
+    to -1, which is precisely the mono fold-down cancellation that makes polarity
+    worth fixing. It is measured on the OUTPUT, after the flip, so it reports the
+    state the device is actually leaving the signal in.
 */
 
 #pragma once
 
 #include "EedDeviceProcessor.h"
+#include "viz/VizTap.h"
 
 class EedPhaseInvertProcessor : public EedDeviceProcessor
 {
@@ -38,7 +50,19 @@ public:
     static constexpr const char* kInvertL = "invert_left";
     static constexpr const char* kInvertR = "invert_right";
 
+    // ---- correlation, for the editor's dot ---------------------------------
+    // -1 fully out of phase (a mono fold-down cancels), 0 uncorrelated,
+    // +1 fully in phase. kNoCorrelation when there is no stereo pair to
+    // correlate at all — a sentinel OUTSIDE the valid range rather than a 0,
+    // because "mono, nothing to say" and "stereo, fully decorrelated" are
+    // different facts and a meter that draws them identically is lying about one.
+    static constexpr float kNoCorrelation = 2.0f;
+
+    float correlation() const noexcept { return corrTap_.get(); }
+
 private:
+    void publishCorrelation (const juce::AudioBuffer<float>& buffer, int numCh, int numSamples);
+
     // Atomics, not a lock: the audio thread reads these every block while the
     // message thread (or an AI move) writes them.
     std::atomic<bool> invertL_ { false };
@@ -51,6 +75,14 @@ private:
     float coeffL_    = 1.0f;      // audio thread only
     float coeffR_    = 1.0f;
     float rampCoeff_ = 0.0f;
+
+    echojay::viz::FloatTap corrTap_ { kNoCorrelation };
+
+    // Smoothed across blocks, audio thread only. A block-by-block correlation
+    // on real material jitters far too fast to read; this is a display number,
+    // and the eye wants the trend rather than the instantaneous value.
+    float corrSmoothed_ = 0.0f;
+    bool  corrPrimed_   = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedPhaseInvertProcessor)
 };
