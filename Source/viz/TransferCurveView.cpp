@@ -22,6 +22,82 @@ namespace
     // moving gradient becomes a sequence of gradients.
     constexpr int kGlowHz = 60;
 
+    // =======================================================================
+    // GLOW TUNING — the numbers worth nudging, in one block.
+    //
+    // (A fifth lives in EedDynamicsCore.h: dyn::kDwellTauSec, how fast energy
+    // fades out of the histogram itself. That is the one that decides whether
+    // the glow shows where the signal is hitting NOW or a smear of everywhere
+    // it has been; the ones below only shape what is already there.)
+    // =======================================================================
+
+    // CONTRAST, applied to the normalised 0..1 dwell before it is coloured.
+    // Above 1 it pushes the low-dwell tails down and leaves the peak alone, so
+    // a signal that spends most of its time in a 6 dB window reads as a core
+    // rather than as an even wash over everything it ever touched. 1.0 is the
+    // raw histogram; 2.5 is a clear hot core; past ~4 it gets so tight it stops
+    // showing the spread at all.
+    constexpr float kDwellGamma = 2.5f;
+
+    // VISIBLE FLOOR, as a fraction of the running maximum: below this the field
+    // draws nothing. Rescaled rather than hard-cut, so what it removes fades
+    // out instead of ending at a rim.
+    constexpr float kDwellFloorFrac = 0.09f;
+
+    // BLOB RADIUS — how far the soft field reaches PERPENDICULAR to the curve,
+    // in pixels. The profile below has tapered to near nothing by the time it
+    // gets here.
+    constexpr float kGlowReachPx = 11.0f;
+
+    // How bright the field's centre can get, before the plot's own dim/recede.
+    constexpr float kGlowPeakAlpha = 0.95f;
+
+    // The curve as a DIAGRAM, under the glow. Cold teal, drawn whatever the
+    // histogram says, so a silent or bypassed plot still shows its shape.
+    constexpr float kColdCurveAlpha = 0.55f;
+
+    // A near-vertical curve (a gate's step) would otherwise stretch one
+    // column's falloff over the whole plot height. Bounds the work and the smear.
+    constexpr float kMaxSlope = 12.0f;
+
+    // ---- the falloff profile ----------------------------------------------
+    // The four-layer bloom, collapsed into ONE continuous function of distance
+    // from the curve: a tight core plus three progressively wider, fainter
+    // gaussians. Layered STROKES could only sample this at their own widths,
+    // which is what made the first version read as bands; as a profile it is
+    // evaluated per pixel, so the falloff is smooth by construction.
+    constexpr int kProfileSteps = 256;
+
+    const float* glowProfile()
+    {
+        static const std::vector<float> table = []
+        {
+            std::vector<float> t ((std::size_t) kProfileSteps + 1, 0.0f);
+
+            auto gauss = [] (float d, float sigma)
+            {
+                return std::exp (-(d * d) / (2.0f * sigma * sigma));
+            };
+
+            for (int i = 0; i <= kProfileSteps; ++i)
+            {
+                const float d = (float) i / (float) kProfileSteps * kGlowReachPx;
+
+                t[(std::size_t) i] = 1.00f * gauss (d, 0.85f)    // core
+                                   + 0.42f * gauss (d, 2.10f)    // inner bloom
+                                   + 0.17f * gauss (d, 4.20f)    // mid bloom
+                                   + 0.07f * gauss (d, 7.50f);   // outer bloom
+            }
+
+            const float norm = 1.0f / t[0];
+            for (auto& v : t) v *= norm;
+
+            return t;
+        }();
+
+        return table.data();
+    }
+
     float autoTopFor (float makeupDb) noexcept
     {
         // Round the makeup up to the grid so the top gridline is a labelled
@@ -211,7 +287,7 @@ void TransferCurveView::timerCallback()
     // ---- 2: frame-rate-independent easing --------------------------------
     const float k = 1.0f - std::exp (-dtc / kEaseTauSec);
 
-    float peak = 0.0f, motion = 0.0f;
+    float motion = 0.0f;
 
     for (int i = 0; i < kDwellBins; ++i)
     {
@@ -219,13 +295,6 @@ void TransferCurveView::timerCallback()
         displayed_[(std::size_t) i] += d * k;
 
         motion = std::max (motion, std::abs (d));
-        peak   = std::max (peak, displayed_[(std::size_t) i]);
-    }
-
-    // ---- the self-scaling reference ---------------------------------------
-    {
-        const float tau = peak > runMax_ ? kMaxRiseTauSec : kMaxFallTauSec;
-        runMax_ += (peak - runMax_) * (1.0f - std::exp (-dtc / tau));
     }
 
     // ---- 3: spatial smoothing across bins ---------------------------------
@@ -258,6 +327,21 @@ void TransferCurveView::timerCallback()
         blur (scratch,    smoothed_);
     }
 
+    // ---- the self-scaling reference ---------------------------------------
+    // Taken from smoothed_, the SAME array the render samples, and not from
+    // displayed_ before the blur. Blurring lowers the peak of a narrow
+    // histogram by a lot, so normalising against the unblurred one divides
+    // every intensity by a number the picture never actually contains — and
+    // under a contrast of 2.5 that gap is the difference between a hot core and
+    // a curve that never leaves the cold end of the ramp at all.
+    float peak = 0.0f;
+    for (float v : smoothed_) peak = std::max (peak, v);
+
+    {
+        const float tau = peak > runMax_ ? kMaxRiseTauSec : kMaxFallTauSec;
+        runMax_ += (peak - runMax_) * (1.0f - std::exp (-dtc / tau));
+    }
+
     // ---- repaint only while there is something to see ---------------------
     const bool alive = peak > kQuiet || motion > kQuiet;
 
@@ -269,39 +353,55 @@ void TransferCurveView::timerCallback()
     if (! alive && ! dwellActive_) stopTimer();
 }
 
+float TransferCurveView::dwellRaw (float inDb) const noexcept
+{
+    // Position in BIN-CENTRE units. A plot shows about 30 dB, which is only
+    // ~35 of the 128 bins, so a pixel-resolution walk asks for something like
+    // ten samples between every pair of centres — exactly the regime where
+    // linear interpolation shows a crease at each centre and cubic does not.
+    const float span = echojay::dyn::kDwellTopDb - echojay::dyn::kDwellFloorDb;
+    const float f    = (inDb - echojay::dyn::kDwellFloorDb) / span * (float) kDwellBins - 0.5f;
+
+    const int   i1 = (int) std::floor (f);
+    const float t  = f - (float) i1;
+
+    auto at = [this] (int j) noexcept
+    {
+        return smoothed_[(std::size_t) juce::jlimit (0, kDwellBins - 1, j)];
+    };
+
+    // Catmull-Rom through the four nearest centres, clamped at zero: an
+    // overshooting spline can dip negative between two bins, and a negative
+    // intensity would be a dark notch through the middle of a bright core.
+    const float p0 = at (i1 - 1), p1 = at (i1), p2 = at (i1 + 1), p3 = at (i1 + 2);
+
+    const float a0 = -0.5f * p0 + 1.5f * p1 - 1.5f * p2 + 0.5f * p3;
+    const float a1 =         p0 - 2.5f * p1 + 2.0f * p2 - 0.5f * p3;
+    const float a2 = -0.5f * p0             + 0.5f * p2;
+
+    return std::max (0.0f, ((a0 * t + a1) * t + a2) * t + p1);
+}
+
 float TransferCurveView::dwellIntensity (float inDb) const noexcept
 {
     float v = 0.0f;
 
     if (runMax_ > kQuiet)
     {
-        // Interpolated between BIN CENTRES, not snapped to a bin. The bins are
-        // already smaller than a pixel on most of these plots, but snapping
-        // reintroduces a staircase at exactly the sizes where the plot is
-        // biggest and the stepping would be most obvious.
-        const float span = echojay::dyn::kDwellTopDb - echojay::dyn::kDwellFloorDb;
-        const float f    = (inDb - echojay::dyn::kDwellFloorDb) / span * (float) kDwellBins - 0.5f;
+        v = dwellRaw (inDb) / runMax_;
 
-        const int   i0   = (int) std::floor (f);
-        const float frac = f - (float) i0;
-
-        auto at = [this] (int j) noexcept
-        {
-            return smoothed_[(std::size_t) juce::jlimit (0, kDwellBins - 1, j)];
-        };
-
-        v = (at (i0) + (at (i0 + 1) - at (i0)) * frac) / runMax_;
-
-        // Normalised against the running max, then gamma-lifted. Linear
-        // intensity puts almost the whole plot in the bottom eighth of the
-        // ramp — musically the histogram is a spike on a wide quiet base, and
-        // the quiet base is most of what there is to look at.
-        v = std::sqrt (juce::jlimit (0.0f, 1.0f, v));
+        // Floor first, then contrast. The floor is RESCALED rather than simply
+        // cut, so what it removes fades out instead of ending at a rim; the
+        // contrast then pushes what is left of the tails down and leaves the
+        // peak where it is. Together they are the difference between "the
+        // signal has touched all of this" and "the signal is working HERE".
+        v = (v - kDwellFloorFrac) / (1.0f - kDwellFloorFrac);
+        v = v > 0.0f ? std::pow (v, kDwellGamma) : 0.0f;
     }
 
-    // The whisper. A gaussian, not a marker: at 2 dB sigma it is wider than
-    // the bloom it sits inside, so it reads as the curve being slightly hotter
-    // just here rather than as a thing travelling along it.
+    // The whisper. A gaussian, not a marker, and added AFTER the contrast so it
+    // is not flattened away with the tails: it reads as the curve being
+    // slightly hotter just here rather than as a thing travelling along it.
     if (inDb_ > kNoLevel)
     {
         const float d = (inDb - inDb_) / kWhisperSigmaDb;
@@ -322,47 +422,140 @@ juce::Colour TransferCurveView::dwellColour (float v)
     return Colours::amber.interpolatedWith (juce::Colours::white, (v - 0.5f) * 1.7f);
 }
 
-void TransferCurveView::strokeHeat (juce::Graphics& g, int segments, float width,
-                                    float baseAlpha, float glowAlpha, float a) const
+// ---------------------------------------------------------------------------
+// The heat, as a DENSE FIELD rather than as strokes.
+//
+// The first version of this stroked the curve in short segments, each flat-
+// coloured from the dwell at its midpoint, and it read as blocks. The
+// arithmetic says why: the histogram's 128 bins span 108 dB, a plot shows
+// about 30 of those dB, so only ~35 bins cover the whole width — and a bloom
+// layer subdivided into twenty strokes painted each one as a ~17 px slab of a
+// single colour. Every boundary between two slabs was an edge, and the eye
+// finds edges.
+//
+// So this walks PIXEL COLUMNS instead. For each column: the input dB it stands
+// at, the curve's y and slope there, and the intensity from a CUBIC lookup
+// between bins — all continuous, so no two neighbouring columns can differ by
+// a step. The soft falloff is composited straight into an ARGB image and
+// blitted once, which is both a genuinely per-pixel gradient and CHEAPER than
+// the strokes were: no path construction, no rasteriser setup, no overdraw.
+//
+// The falloff runs PERPENDICULAR to the curve, not vertically, which is what
+// the slope compensation is for. Without it the glow visibly thins wherever
+// the curve is steep — and on a transfer plot the curve sits at 45 degrees for
+// its whole lower half, so "wherever it is steep" is most of it.
+// ---------------------------------------------------------------------------
+void TransferCurveView::renderGlow (juce::Graphics& g, juce::Rectangle<float> plot, float a)
 {
     const int n = (int) curvePts_.size();
-    if (n < 2 || segments < 1) return;
+    if (n < 2 || a <= 0.01f) return;
 
-    const juce::PathStrokeType stroke (width, juce::PathStrokeType::curved,
-                                              juce::PathStrokeType::rounded);
-    juce::Path seg;
+    // Integer origin, so the field lands on the same pixels the cold curve was
+    // stroked on; the fractional part is carried into the column maths rather
+    // than resampled away by a transformed blit.
+    const float ox = std::floor (plot.getX());
+    const float oy = std::floor (plot.getY());
 
-    for (int s = 0; s < segments; ++s)
+    const int w = (int) std::ceil (plot.getRight()  - ox);
+    const int h = (int) std::ceil (plot.getBottom() - oy);
+    if (w < 2 || h < 2) return;
+
+    colE_.assign ((std::size_t) w, 0.0f);
+    colY_.assign ((std::size_t) w, 0.0f);
+
+    // ---- pass one: intensity and curve-y per column -----------------------
+    // Before touching the image, so a plot with nothing to show never pays for
+    // one at all.
+    bool any = false;
+
+    for (int ix = 0; ix < w; ++ix)
     {
-        const int i0 = (int) ((std::int64_t) s       * (n - 1) / segments);
-        const int i1 = (int) ((std::int64_t) (s + 1) * (n - 1) / segments);
-        if (i1 <= i0) continue;
+        // Where this column sits along the curve, in the same parameterisation
+        // rebuildPath used — so the field cannot drift off the line it lights.
+        const float t   = (ox + (float) ix + 0.5f - plot.getX()) / plot.getWidth();
+        const float pos = juce::jlimit (0.0f, 1.0f, t) * (float) (n - 1);
 
-        // Sampled at the segment's MIDPOINT so the colour is centred on the
-        // span it paints; sampling at an end walks the whole ramp half a
-        // segment off, which shows as the glow lagging the curve where it bends.
-        const float v = dwellIntensity (0.5f * (curveInDb_[(std::size_t) i0]
-                                              + curveInDb_[(std::size_t) i1]));
+        const int   i0   = juce::jlimit (0, n - 2, (int) pos);
+        const float frac = pos - (float) i0;
 
-        const float alpha = (baseAlpha + glowAlpha * v) * a;
+        const auto& p0 = curvePts_[(std::size_t) i0];
+        const auto& p1 = curvePts_[(std::size_t) i0 + 1];
 
-        // Where there is no dwell the bloom layers carry no base alpha, so this
-        // is what makes a silent plot cost nothing beyond its core line.
-        if (alpha <= 0.004f) continue;
+        colY_[(std::size_t) ix] = (p0.y + (p1.y - p0.y) * frac) - oy;
 
-        // Short, LOCAL paths on purpose. Collecting every segment of one colour
-        // into a single path and stroking it once sounds cheaper and measured
-        // half again as expensive: the runs of a colour are scattered along the
-        // curve, so that path's bounding box is the whole plot, and the
-        // rasteriser then does full-width work for each of them.
-        seg.clear();
-        seg.startNewSubPath (curvePts_[(std::size_t) i0]);
-        for (int i = i0 + 1; i <= i1; ++i)
-            seg.lineTo (curvePts_[(std::size_t) i]);
+        const float inDb = curveInDb_[(std::size_t) i0]
+                         + (curveInDb_[(std::size_t) i0 + 1]
+                          - curveInDb_[(std::size_t) i0]) * frac;
 
-        g.setColour (dwellColour (v).withAlpha (juce::jmin (1.0f, alpha)));
-        g.strokePath (seg, stroke);
+        const float e = dwellIntensity (inDb);
+        colE_[(std::size_t) ix] = e;
+
+        if (e > kFaintestVisible) any = true;
     }
+
+    if (! any) return;
+
+    if (glowImage_.getWidth() != w || glowImage_.getHeight() != h)
+        glowImage_ = juce::Image (juce::Image::ARGB, w, h, false);
+
+    const float* profile = glowProfile();
+
+    {
+        juce::Image::BitmapData bits (glowImage_, juce::Image::BitmapData::writeOnly);
+
+        for (int y = 0; y < h; ++y)
+            std::memset (bits.getLinePointer (y), 0,
+                         (std::size_t) w * (std::size_t) bits.pixelStride);
+
+        for (int ix = 0; ix < w; ++ix)
+        {
+            const float e = colE_[(std::size_t) ix];
+            if (e <= kFaintestVisible) continue;
+
+            // Slope from the neighbouring columns, so the reach can be stretched
+            // to keep the PERPENDICULAR width constant as the curve tilts.
+            const int   xl = ix > 0     ? ix - 1 : ix;
+            const int   xr = ix < w - 1 ? ix + 1 : ix;
+            const float dy = (colY_[(std::size_t) xr] - colY_[(std::size_t) xl])
+                           / (float) juce::jmax (1, xr - xl);
+
+            const float slope = juce::jmin (std::abs (dy), kMaxSlope);
+            const float reach = kGlowReachPx * std::sqrt (1.0f + slope * slope);
+
+            const juce::Colour c = dwellColour (e);
+            const float peak = kGlowPeakAlpha * e * a;
+
+            const float cy = colY_[(std::size_t) ix];
+            const int   y0 = juce::jmax (0,     (int) std::floor (cy - reach));
+            const int   y1 = juce::jmin (h - 1, (int) std::ceil  (cy + reach));
+
+            const float rInv = 1.0f / reach;
+            const float cr = (float) c.getRed();
+            const float cg = (float) c.getGreen();
+            const float cb = (float) c.getBlue();
+
+            for (int y = y0; y <= y1; ++y)
+            {
+                const float u = std::abs (((float) y + 0.5f) - cy) * rInv;
+                if (u >= 1.0f) continue;
+
+                const float alpha = peak * profile[(int) (u * (float) kProfileSteps)];
+                if (alpha <= 0.002f) continue;
+
+                // Written PREMULTIPLIED, which is both what juce::Image::ARGB
+                // wants and exactly what an additive composite is: colour times
+                // coverage, summed. Each column owns its own pixels, so there is
+                // nothing to accumulate and nothing to read back.
+                auto* px = bits.getPixelPointer (ix, y);
+                px[juce::PixelARGB::indexA] = (juce::uint8) juce::jmin (255, (int) (alpha * 255.0f + 0.5f));
+                px[juce::PixelARGB::indexR] = (juce::uint8) juce::jmin (255, (int) (alpha * cr + 0.5f));
+                px[juce::PixelARGB::indexG] = (juce::uint8) juce::jmin (255, (int) (alpha * cg + 0.5f));
+                px[juce::PixelARGB::indexB] = (juce::uint8) juce::jmin (255, (int) (alpha * cb + 0.5f));
+            }
+        }
+    }
+
+    g.drawImageAt (glowImage_, (int) ox, (int) oy);
 }
 
 float TransferCurveView::outputDb (float inDb) const noexcept
@@ -380,6 +573,7 @@ void TransferCurveView::rebuildPath()
 {
     curvePts_.clear();
     curveInDb_.clear();
+    curvePath_.clear();
     fillPath_.clear();
 
     if (! hasPlot()) return;
@@ -419,8 +613,8 @@ void TransferCurveView::rebuildPath()
         curvePts_.push_back (p);
         curveInDb_.push_back (inDb);
 
-        if (i == 0) fillPath_.startNewSubPath (p);
-        else        fillPath_.lineTo (p);
+        if (i == 0) { curvePath_.startNewSubPath (p); fillPath_.startNewSubPath (p); }
+        else        { curvePath_.lineTo (p);          fillPath_.lineTo (p); }
     }
 
     // The fill closes back along the UNITY diagonal, so the shaded wedge is
@@ -545,36 +739,19 @@ void TransferCurveView::paintPlot (juce::Graphics& g, juce::Rectangle<float> plo
         g.fillPath (fillPath_);
     }
 
-    // Four passes, widest and faintest first, so they sum into a soft bloom
-    // around a bright core. JUCE's software renderer has no additive blend
-    // mode, so this is the layered-stroke form of one — and layering is what
-    // gives the falloff its shape anyway: a genuinely additive single stroke
-    // would be uniformly bright out to its edge.
-    //
-    // The three bloom layers carry NO base alpha, so where there is no dwell
-    // they cost nothing and draw nothing; the core layer carries most of its
-    // alpha as base, because the curve is a diagram before it is a meter and it
-    // has to be readable with the transport stopped.
-    //
-    // Segment counts are tied to the plot's width so a wide editor gets a finer
-    // gradient and a shrunk rack slot does not pay for detail it cannot show —
-    // and each layer gets its OWN count, in inverse proportion to its width. A
-    // 12 px stroke overlaps its neighbours several times over and blends itself
-    // smooth, so subdividing it finely buys nothing visible and costs the most
-    // pixels of any layer; the 2 px core is the one whose colour steps would
-    // actually be legible.
+    // The DIAGRAM first: the curve's shape, cold, in one stroke. Drawn whether
+    // or not anything is playing, which is what makes an empty histogram — a
+    // bypassed device, a stopped transport, the editor-paint harness — a plain
+    // teal curve rather than an empty box.
+    if (! curvePath_.isEmpty())
     {
-        const float w = plot.getWidth();
-        auto segs = [w] (float per, int lo, int hi)
-        {
-            return juce::jlimit (lo, hi, (int) (w / per));
-        };
-
-        strokeHeat (g, segs (18.0f,  8, 20), 12.0f, 0.0f,  0.085f, a);
-        strokeHeat (g, segs (11.0f, 12, 32),  6.5f, 0.0f,  0.13f,  a);
-        strokeHeat (g, segs ( 7.0f, 16, 48),  3.5f, 0.0f,  0.20f,  a);
-        strokeHeat (g, segs ( 3.5f, 24, 96),  2.0f, 0.55f, 0.45f,  a);
+        g.setColour (Colours::blue2.withMultipliedAlpha (kColdCurveAlpha * a));
+        g.strokePath (curvePath_, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved,
+                                                        juce::PathStrokeType::rounded));
     }
+
+    // Then the HEAT over it, as a per-pixel soft field.
+    renderGlow (g, plot, a);
 
     // ---- ceiling (limiter) ------------------------------------------------
     // OVER the curve, not under it: the curve flattening at the ceiling is a

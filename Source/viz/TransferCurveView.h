@@ -38,6 +38,19 @@
          same speed at 60 Hz, at 24 Hz, and across a dropped frame.
       3. SPATIAL SMOOTHING across bins, so the gradient along the curve is
          continuous rather than 128 visible steps.
+      4. A PER-PIXEL RENDER. Those three make the DATA smooth; drawing it as
+         strokes then threw that away, because a stroke can only be one colour
+         and a plot only shows ~35 of the 128 bins, so each stroke was a wide
+         flat slab and every join between two was an edge. The glow is now
+         composited column by column into an image — cubic between bins, a soft
+         perpendicular falloff, blitted once — so no two adjacent pixels can
+         differ by a step.
+
+    And it is CONCENTRATED, which is the difference between a picture and a
+    decoration. Normalised to a running maximum, floored, then contrast-shaped,
+    so what you see is where the signal is working rather than everywhere it has
+    ever been. All five numbers that decide that live in one block at the top of
+    the .cpp, plus dyn::kDwellTauSec on the DSP side.
 
     The instantaneous level is still taken (setInputLevelDb) but it is now only
     a soft gaussian lift in the glow — a whisper of "and here, this instant" —
@@ -153,34 +166,50 @@ private:
     static constexpr float kEaseTauSec = 0.120f;
 
     // The self-scaling reference rises fast (a new peak IS the new maximum) and
-    // falls slowly, so the picture does not re-normalise into a blaze every
-    // time the music thins out for a bar.
+    // falls slower, so the picture does not re-normalise into a blaze every
+    // time the music thins out for a beat.
+    //
+    // The fall cannot be much slower than this, and that is not a taste call.
+    // Everything is divided by this number and then raised to kDwellGamma, so a
+    // reference still sitting 30% above the current peak does not dim the core
+    // by 30%, it dims it by more than half — the glow goes cold while the
+    // signal is still playing. Two thirds of a second is long enough to ride
+    // out a bar and short enough that the core stays hot through it.
     static constexpr float kMaxRiseTauSec = 0.25f;
-    static constexpr float kMaxFallTauSec = 2.0f;
+    static constexpr float kMaxFallTauSec = 0.65f;
 
     // Below this the histogram is nothing, and nothing is not worth a frame.
     static constexpr float kQuiet = 1.0e-4f;
 
+    // An intensity under this cannot make a pixel the eye will find, so the
+    // field skips the column rather than compositing a row of 1/255s.
+    static constexpr float kFaintestVisible = 0.004f;
+
     // The instantaneous whisper: how wide in dB, and how much it can lift the
     // local intensity. Small on purpose — it is a hint, not a marker.
     static constexpr float kWhisperSigmaDb = 2.0f;
-    static constexpr float kWhisperGain    = 0.22f;
+    static constexpr float kWhisperGain    = 0.18f;
 
-    // 0..1 intensity for an input level: the smoothed histogram there, scaled
-    // by the running maximum, gamma-lifted, plus the whisper. Zero everywhere
-    // when nothing has been published, which is what makes an empty histogram
-    // paint as a plain cold curve instead of crashing.
+    // The smoothed histogram at an input level, CUBICALLY interpolated between
+    // bin centres. Cubic and not linear because the visible span of a plot is
+    // ~30 dB, which is only ~35 of the 128 bins, so a pixel-resolution walk
+    // asks for ten samples between every pair of them — and linear
+    // interpolation across ten pixels is a visible crease at each bin centre.
+    float dwellRaw (float inDb) const noexcept;
+
+    // 0..1 intensity for an input level: dwellRaw, scaled by the running
+    // maximum, floored, contrast-shaped, plus the whisper. Zero everywhere when
+    // nothing has been published, which is what makes an empty histogram paint
+    // as a plain cold curve instead of crashing.
     float dwellIntensity (float inDb) const noexcept;
 
     static juce::Colour dwellColour (float intensity);
 
-    // One heat-coloured pass along the curve, in `segments` short strokes each
-    // taking its colour from the dwell at its own midpoint. `baseAlpha` is what
-    // it draws with NO dwell at all: zero for the bloom layers (they only exist
-    // where there is energy) and non-zero for the core line (the curve is a
-    // diagram before it is a meter, and it has to be legible in silence).
-    void strokeHeat (juce::Graphics& g, int segments, float width,
-                     float baseAlpha, float glowAlpha, float a) const;
+    // The heat, as a dense soft field: one pass over the plot's PIXEL COLUMNS,
+    // compositing a soft perpendicular falloff around the curve straight into
+    // an ARGB image, which is then drawn once. See the note above the
+    // definition for why this is a per-pixel field rather than strokes.
+    void renderGlow (juce::Graphics& g, juce::Rectangle<float> plot, float a);
 
     // Output dB for an input dB, INCLUDING makeup — the curve as heard.
     float outputDb (float inDb) const noexcept;
@@ -214,10 +243,10 @@ private:
     // 200 gain-computer evaluations at 60 Hz for a curve that has not moved is
     // not, and six dynamics editors can be open at once.
     //
-    // The curve is kept as POINTS as well as a path, because the glow strokes
-    // it in short segments with a different colour each — a single path can
-    // only carry one colour, so the points are what the heat pass walks.
-    juce::Path fillPath_;
+    // The curve is kept as POINTS as well as a path: the path draws the cold
+    // diagram in one stroke, and the points are what the glow's per-pixel walk
+    // reads its y and its slope out of.
+    juce::Path curvePath_, fillPath_;
     std::vector<juce::Point<float>> curvePts_;
     std::vector<float>              curveInDb_;
 
@@ -237,6 +266,14 @@ private:
     float  runMax_    = 0.0f;
     double lastTickMs_ = 0.0;
     bool   wasAlive_  = false;
+
+    // The glow is composited per pixel into this and drawn in one blit. Kept
+    // across frames — reallocating a plot-sized image sixty times a second is
+    // the one thing that would make a per-pixel field more expensive than the
+    // strokes it replaced. The two scratch vectors are the per-column intensity
+    // and curve-y, held for the same reason.
+    juce::Image        glowImage_;
+    std::vector<float> colE_, colY_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TransferCurveView)
 };

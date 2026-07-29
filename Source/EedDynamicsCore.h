@@ -839,11 +839,19 @@ private:
     // editor's 60 Hz timer always has something newer than its last frame.
     static constexpr int kDwellFlushSamples = 256;
 
-    // How long energy takes to fade out of a bin, seconds. Half a second is
-    // long enough that a bin lit by one transient is still visibly warm on the
-    // next frame, short enough that the glow follows an arrangement rather than
-    // slowly painting the whole axis bright.
-    static constexpr double kDwellTauSec = 0.5;
+    // How long energy takes to fade out of a bin, seconds. THE constant that
+    // decides whether the glow shows where the signal is hitting NOW or a smear
+    // of everywhere it has been: every level the music has touched in the last
+    // few time constants is still lit, so a long one integrates a whole phrase
+    // into an even wash across the working range.
+    //
+    // 180 ms is roughly a musical beat's worth of history. Long enough that a
+    // transient stays visible for a frame or two after it lands, short enough
+    // that the bright core tracks the part of the range the signal is actually
+    // living in. The editor's 120 ms ease is what keeps the motion smooth at
+    // this speed — the two are a pair, and shortening this without that ease
+    // would be where the glow started to flicker.
+    static constexpr double kDwellTauSec = 0.18;
 
     void accumulateDwell (float levelDb) noexcept
     {
