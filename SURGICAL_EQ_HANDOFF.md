@@ -57,8 +57,10 @@ xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/"EchoJay V2.c
 Unit tests (must stay green):
 ```
 cd test
-g++ -std=c++17 -O2 -I../Source eq_engine_test.cpp ../Source/EqEngine.cpp -o eqtest && ./eqtest
-g++ -std=c++17 -O2 -I../Source eq_move_test.cpp -o movetest && ./movetest
+g++ -std=c++17 -O2 -I../Source eq_engine_test.cpp   ../Source/EqEngine.cpp -o eqtest    && ./eqtest
+g++ -std=c++17 -O2 -I../Source eq_move_test.cpp                            -o movetest  && ./movetest
+g++ -std=c++17 -O2 -I../Source eq_post_tap_test.cpp ../Source/EqEngine.cpp -o posttest  && ./posttest
+g++ -std=c++17 -O2 -I../Source eq_gain_test.cpp     ../Source/EqEngine.cpp -o gaintest  && ./gaintest
 ```
 
 > **Duplicate-AU hazard.** There is a root-owned release install at `/Library/Audio/Plug-Ins/Components/EchoJay V2.component` (v2.23.0) with the *same* component triple `aufx EcJ2 Ecjy` as the dev build in `~/Library/...` (v2.23.53). macOS resolves the collision by version, so the newer dev build currently wins — but if a dev build ever carries a version at or below the installed release, Logic will silently load the **release** binary instead. Bump the project version or `sudo rm -rf` the system copy before trusting a test.

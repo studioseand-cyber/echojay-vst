@@ -138,6 +138,40 @@ int EqEngine::stagesForSlope (int slopeDbPerOct) noexcept
     return std::min (std::max (n, 1), 8);
 }
 
+// -- one description of a band's cascade, used everywhere ------------------
+// The audio path, the UI curve and the auto-gain integral all have to agree on
+// how many sections a band expands to and what Q each one runs at. Having
+// three copies of that rule is how a curve silently stops matching the audio.
+int EqEngine::stagesForBand (const BandSpec& s) noexcept
+{
+    const bool isPass = (s.type == BandType::HighPass || s.type == BandType::LowPass);
+    return isPass ? stagesForSlope (s.slopeDbPerOct) : 1;
+}
+
+float EqEngine::qForStage (const BandSpec& s, int stage, int numStages) noexcept
+{
+    const bool isPass = (s.type == BandType::HighPass || s.type == BandType::LowPass);
+    if (! isPass) return s.q;
+
+    // Butterworth Q-staggering across cascaded 2nd-order sections
+    const int order = 2 * numStages;
+    return (float) (1.0 / (2.0 * std::cos (kPi * (2.0 * stage + 1.0) / (2.0 * order))));
+}
+
+std::complex<double> EqEngine::bandResponse (const BandSpec& s, double fs,
+                                             double omega) noexcept
+{
+    std::complex<double> h { 1.0, 0.0 };
+    const int stages = stagesForBand (s);
+    for (int stg = 0; stg < stages; ++stg)
+    {
+        const Coeffs c = computeCoeffs (s.type, fs, s.freqHz, s.gainDb,
+                                        qForStage (s, stg, stages));
+        h *= stageResponse (c, omega);
+    }
+    return h;
+}
+
 float EqEngine::processStage (Coeffs& c, StageState& s, float x) noexcept
 {
     const float v3 = x - s.ic2;
@@ -205,6 +239,11 @@ void EqEngine::prepare (double sampleRate, int maxBlockSize, int numChannels)
         bands_[i].curSlope   = snap[i].slopeDbPerOct;
     }
     lastSeenPulse_ = 0xffffffff; // force a pull on first process
+
+    // The makeup depends on the sample rate (the response is evaluated at
+    // digital frequencies), so a rate change has to re-integrate the curve.
+    recomputeAutoGain();
+    gainPrimed_ = false;         // snap the output stage rather than ramping into it
 }
 
 void EqEngine::reset()
@@ -219,6 +258,7 @@ void EqEngine::reset()
         b.env = 0.0f;
         b.dynGainDb = 0.0f;
     }
+    gainPrimed_ = false;         // no ramp out of a cleared state
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +273,7 @@ void EqEngine::setBands (const BandSpec* specs, int count)
         targets_[i] = specs[i];
     seq_.store (s + 2, std::memory_order_release);      // leave write (even)
     dirtyPulse_.fetch_add (1, std::memory_order_release);
+    recomputeAutoGain();
 }
 
 void EqEngine::setBand (int index, const BandSpec& spec)
@@ -243,6 +284,79 @@ void EqEngine::setBand (int index, const BandSpec& spec)
     targets_[index] = spec;
     seq_.store (s + 2, std::memory_order_release);
     dirtyPulse_.fetch_add (1, std::memory_order_release);
+    recomputeAutoGain();
+}
+
+void EqEngine::setOutputDb (float db) noexcept
+{
+    if (! (db == db)) db = 0.0f;                        // NaN in, unity out
+    outputDb_.store (std::min (std::max (db, -24.0f), 24.0f), std::memory_order_relaxed);
+}
+
+// ---------------------------------------------------------------------------
+// auto-gain: the pink-weighted loudness delta of the enabled static bands
+// ---------------------------------------------------------------------------
+// Pink noise carries equal energy per octave, so on a LOG-spaced frequency
+// grid every point weighs the same and the mean of the linear power response
+// over that grid *is* the RMS change pink noise sees through the EQ. Its
+// inverse is the makeup. That makes this a real loudness estimate rather than
+// the "sum the band gains" hand-wave, and it costs one curve integral per
+// parameter publish — on the message thread, never on the audio thread.
+//
+// Dynamic bands are deliberately excluded: their contribution is program
+// dependent and momentary, so folding it into a static makeup would make the
+// output level breathe with the detector.
+void EqEngine::recomputeAutoGain()
+{
+    BandSpec snap[kMaxBands];
+    snapshotForAnalysis (snap);
+
+    constexpr int kGridPoints = 121;                    // 1/12 octave, 20 Hz..20 kHz
+    const double fLo = 20.0;
+    const double fHi = std::min (20000.0, sampleRate_ * 0.45);
+    if (fHi <= fLo)
+    {
+        autoGainTargetDb_.store (0.0f, std::memory_order_relaxed);
+        return;
+    }
+
+    bool any = false;
+    for (const auto& s : snap)
+        if (s.enabled && ! (s.dynamic && s.type == BandType::Bell)) { any = true; break; }
+
+    if (! any)
+    {
+        autoGainTargetDb_.store (0.0f, std::memory_order_relaxed);
+        return;
+    }
+
+    const double ratio = fHi / fLo;
+    double sumPow = 0.0;
+
+    for (int i = 0; i < kGridPoints; ++i)
+    {
+        const double t = (double) i / (double) (kGridPoints - 1);
+        const double f = fLo * std::pow (ratio, t);
+        const double omega = 2.0 * kPi * f / sampleRate_;
+
+        std::complex<double> h { 1.0, 0.0 };
+        for (const auto& s : snap)
+        {
+            if (! s.enabled) continue;
+            if (s.dynamic && s.type == BandType::Bell) continue;
+            h *= bandResponse (s, sampleRate_, omega);
+        }
+        sumPow += std::norm (h);                        // |H|^2
+    }
+
+    const double meanPow = sumPow / (double) kGridPoints;
+    const double deltaDb = 10.0 * std::log10 (std::max (meanPow, 1.0e-12));
+
+    // Clamp the makeup to the same ±24 the output trim uses: a brutal
+    // high-pass removes most of the pink spectrum, and "compensating" that
+    // with +30 dB of boost is a blown speaker, not a level match.
+    autoGainTargetDb_.store ((float) std::min (std::max (-deltaDb, -24.0), 24.0),
+                             std::memory_order_relaxed);
 }
 
 BandSpec EqEngine::getBand (int index) const
@@ -350,22 +464,16 @@ void EqEngine::process (float* const* channels, int numChannels, int numSamples)
             continue;   // per-sample coeffs are built in the cascade
         }
 
-        const bool isPassFilter = (t.type == BandType::HighPass || t.type == BandType::LowPass);
-        b.numStages = isPassFilter ? stagesForSlope (t.slopeDbPerOct) : 1;
+        b.numStages = stagesForBand (t);
 
+        // Q staggering is a property of the cascade, not of the smoothed value,
+        // so it is asked for by shape (from t) and applied to the smoothed
+        // params (curFreq/curGain/curQ) that this block actually realises.
+        BandSpec shape = t;
+        shape.q = b.curQ;
         for (int stg = 0; stg < b.numStages; ++stg)
-        {
-            float qForStage = b.curQ;
-            if (isPassFilter)
-            {
-                // Butterworth Q-staggering across cascaded 2nd-order sections
-                const int order = 2 * b.numStages;
-                qForStage = (float) (1.0 / (2.0 * std::cos (kPi * (2.0 * stg + 1.0)
-                                                            / (2.0 * order))));
-            }
-            b.coeffs[stg] = computeCoeffs (b.curType, sampleRate_, b.curFreq,
-                                           b.curGain, qForStage);
-        }
+            b.coeffs[stg] = computeCoeffs (b.curType, sampleRate_, b.curFreq, b.curGain,
+                                           qForStage (shape, stg, b.numStages));
     }
 
     // --- run the cascade, band by band on the running multichannel buffer ---
@@ -425,6 +533,46 @@ void EqEngine::process (float* const* channels, int numChannels, int numSamples)
             }
         }
     }
+
+    // --- final gain stage: auto-gain makeup, then the output trim ----------
+    // Both are smoothed in dB at block rate (same 15 ms constant as the band
+    // params) and then ramped LINEARLY across the block, so even a hard jump
+    // from an AI apply arrives as a ramp rather than a step.
+    const float agTarget  = autoGain_.load (std::memory_order_relaxed)
+                          ? autoGainTargetDb_.load (std::memory_order_relaxed) : 0.0f;
+    const float outTarget = outputDb_.load (std::memory_order_relaxed);
+
+    if (! gainPrimed_)
+    {
+        curAutoGainDb_ = agTarget;
+        curOutputDb_   = outTarget;
+        lastGainLin_   = (float) std::pow (10.0, (curAutoGainDb_ + curOutputDb_) / 20.0);
+        gainPrimed_    = true;
+    }
+    else
+    {
+        curAutoGainDb_ += (agTarget  - curAutoGainDb_) * alpha;
+        curOutputDb_   += (outTarget - curOutputDb_)   * alpha;
+    }
+
+    const float targetLin = (float) std::pow (10.0, (curAutoGainDb_ + curOutputDb_) / 20.0);
+
+    // Unity in and unity out: skip the whole pass rather than multiplying every
+    // sample by 1.0f, which is the overwhelmingly common case. Compared with a
+    // tolerance rather than ==, so this stays honest under -Wfloat-equal and
+    // does not care whether pow() returned 1.0f to the last bit.
+    constexpr float kUnityEps = 1.0e-7f;
+    if (std::fabs (targetLin - 1.0f) > kUnityEps || std::fabs (lastGainLin_ - 1.0f) > kUnityEps)
+    {
+        const float step = (targetLin - lastGainLin_) / (float) std::max (numSamples, 1);
+        for (int ch = 0; ch < nCh; ++ch)
+        {
+            float* x = channels[ch];
+            float  g = lastGainLin_;
+            for (int n = 0; n < numSamples; ++n) { g += step; x[n] *= g; }
+        }
+    }
+    lastGainLin_ = targetLin;
 }
 
 // ---------------------------------------------------------------------------
@@ -443,22 +591,7 @@ void EqEngine::getMagnitudeResponse (const float* freqsHz, float* magsDb, int n)
         {
             const BandSpec& t = analysisScratch_[bi];
             if (! t.enabled) continue;
-
-            const bool isPass = (t.type == BandType::HighPass || t.type == BandType::LowPass);
-            const int stages  = isPass ? stagesForSlope (t.slopeDbPerOct) : 1;
-            for (int stg = 0; stg < stages; ++stg)
-            {
-                float qForStage = t.q;
-                if (isPass)
-                {
-                    const int order = 2 * stages;
-                    qForStage = (float) (1.0 / (2.0 * std::cos (kPi * (2.0 * stg + 1.0)
-                                                                / (2.0 * order))));
-                }
-                const Coeffs c = computeCoeffs (t.type, sampleRate_, t.freqHz,
-                                                t.gainDb, qForStage);
-                h *= stageResponse (c, omega);
-            }
+            h *= bandResponse (t, sampleRate_, omega);
         }
 
         const double mag = std::abs (h);
@@ -481,23 +614,7 @@ void EqEngine::getBandMagnitudeResponse (int index, const float* freqsHz,
         }
         const BandSpec& t = snap[index];
         const double omega = 2.0 * kPi * (double) freqsHz[i] / sampleRate_;
-        std::complex<double> h { 1.0, 0.0 };
-
-        const bool isPass = (t.type == BandType::HighPass || t.type == BandType::LowPass);
-        const int stages  = isPass ? stagesForSlope (t.slopeDbPerOct) : 1;
-        for (int stg = 0; stg < stages; ++stg)
-        {
-            float qForStage = t.q;
-            if (isPass)
-            {
-                const int order = 2 * stages;
-                qForStage = (float) (1.0 / (2.0 * std::cos (kPi * (2.0 * stg + 1.0)
-                                                            / (2.0 * order))));
-            }
-            const Coeffs c = computeCoeffs (t.type, sampleRate_, t.freqHz,
-                                            t.gainDb, qForStage);
-            h *= stageResponse (c, omega);
-        }
+        const std::complex<double> h = bandResponse (t, sampleRate_, omega);
         magsDb[i] = (float) (20.0 * std::log10 (std::max (std::abs (h), 1.0e-9)));
     }
 }
