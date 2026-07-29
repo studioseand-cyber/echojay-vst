@@ -1690,6 +1690,20 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
         return;
     }
 
+    // Dialable-flag visibility: under the strict default (absent -> not
+    // dialable) a wiring bug and "no flag yet" both read false, so log the
+    // flag's ACTUAL state on the map this slot holds. "true"/"false" proves the
+    // server flag arrived and is readable; "ABSENT" means an old cache or a
+    // transport/parse drop - the two now look different in the log.
+    {
+        auto dv = it->second.getProperty("dialable", juce::var());
+        EchoJay_NSLog(("EJDialable: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                       + "\") fp=" + s.fp.substring(0, 12)
+                       + " dialable=" + (dv.isBool() ? (((bool) dv) ? "true" : "false") : "ABSENT")
+                       + " category=" + it->second.getProperty("category", juce::var()).toString()
+                       + " fresh=" + (mapFresh(s.fp) ? "y" : "n")).toRawUTF8());
+    }
+
     // TTL-on-use: a cached map older than the staleness bound may be a since-
     // corrected map (the AMEK suppression class that wrote Mono Maker). Do NOT
     // apply it. Refetch and block briefly; refetchStale falls back to hand-dial
