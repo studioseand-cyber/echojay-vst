@@ -208,6 +208,15 @@ target_sources(EchoJay PRIVATE
     Source/EedSaturationEditor.h
     Source/EedSaturationProcessor.cpp
     Source/EedSaturationProcessor.h
+    Source/EedStereoEngine.h
+    Source/EedStereoWidthEditor.cpp
+    Source/EedStereoWidthEditor.h
+    Source/EedStereoWidthProcessor.cpp
+    Source/EedStereoWidthProcessor.h
+    Source/EedStereoizerEditor.cpp
+    Source/EedStereoizerEditor.h
+    Source/EedStereoizerProcessor.cpp
+    Source/EedStereoizerProcessor.h
     Source/EedTapeEditor.cpp
     Source/EedTapeEditor.h
     Source/EedTapeEngine.h
@@ -435,6 +444,15 @@ target_sources(EchoJayLink PRIVATE
     Source/EedSaturationEditor.h
     Source/EedSaturationProcessor.cpp
     Source/EedSaturationProcessor.h
+    Source/EedStereoEngine.h
+    Source/EedStereoWidthEditor.cpp
+    Source/EedStereoWidthEditor.h
+    Source/EedStereoWidthProcessor.cpp
+    Source/EedStereoWidthProcessor.h
+    Source/EedStereoizerEditor.cpp
+    Source/EedStereoizerEditor.h
+    Source/EedStereoizerProcessor.cpp
+    Source/EedStereoizerProcessor.h
     Source/EedTapeEditor.cpp
     Source/EedTapeEditor.h
     Source/EedTapeEngine.h
@@ -558,6 +576,10 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EedReverbProcessor.cpp
     Source/EedSaturationEditor.cpp
     Source/EedSaturationProcessor.cpp
+    Source/EedStereoWidthEditor.cpp
+    Source/EedStereoWidthProcessor.cpp
+    Source/EedStereoizerEditor.cpp
+    Source/EedStereoizerProcessor.cpp
     Source/EedTapeEditor.cpp
     Source/EedTapeProcessor.cpp
     Source/EedTremoloEditor.cpp
