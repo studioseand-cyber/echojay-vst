@@ -41,7 +41,7 @@ public:
         juce::File ledgerRoot;
         juce::String selfTestId;
         bool cacheTest = false, progressTest = false;
-        juce::String attributeReport, afterExit;
+        juce::String attributeReport, afterExit, captureTestId;
         bool supervised = false;
         int  restartCount = 0;
         juce::String releaseId, quarantineId, quarantineReason, quarantineStage { "load" };
@@ -56,6 +56,8 @@ public:
                 cacheTest = true;
             else if (args[i] == "--selftest-progress")
                 progressTest = true;
+            else if (args[i] == "--selftest-capture" && i + 1 < args.size())
+                captureTestId = args[++i];
             else if (args[i] == "--attribute-report" && i + 1 < args.size())
                 attributeReport = args[++i];
             else if (args[i] == "--child")
@@ -151,7 +153,9 @@ public:
         // only way to assert it against the live object rather than the source.
         std::cout << "ejmap window title: " << mainWindow->getName() << std::endl;
 
-        if (progressTest && mainWindow->getMain() != nullptr)
+        if (captureTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+            mainWindow->getMain()->selfTestCapture (captureTestId);
+        else if (progressTest && mainWindow->getMain() != nullptr)
             mainWindow->getMain()->selfTestProgressAndRelease();
         else if (cacheTest && mainWindow->getMain() != nullptr)
             mainWindow->getMain()->selfTestScanCache();

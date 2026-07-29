@@ -1,0 +1,421 @@
+/*
+  EjmapCapture.h
+
+  M2 pass one: turn a human touching a knob into a parameter index.
+
+  WHAT IS SUPERSEDED FROM THE PLAN, and why.
+
+  The plan specifies a 30 Hz poll. That number is retired. Detection diffs
+  against the snapshot taken ON ARM, so a parameter that moves stays moved and a
+  later tick still sees it: detection does not depend on rate at all. Rate
+  governs two other things, sequential-edit disambiguation (two controls touched
+  inside one tick collapse into one moved set and get misread as a twin pair)
+  and ui_hint fidelity in pass two. So the rate is calibrated per plugin from
+  what a sweep actually costs, not fixed.
+
+  WHY THAT MATTERS RATHER THAN BEING TIDY. Measured: a parameter read costs
+  0.03 to 0.24 us in-process and 50 to 80 us across the XPC bridge, a factor of
+  200 to 2500. Saturn 2 has 951 parameters and Pro-Q 3 has 358. A fixed 30 Hz
+  would spend the entire frame budget reading parameters on a bridged plugin
+  with a large surface, and would be nearly free on a small native one.
+
+  CONCURRENCY, established from JUCE's source rather than assumed.
+
+    AU    getValue() takes AudioUnitPluginInstance::lock; processAudio does NOT
+          take that lock. Reads and processBlock therefore run concurrently and
+          reads never block on the pump. Safety rests on AudioUnitGetParameter
+          being callable against AudioUnitRender, which is the contract every
+          host relies on.
+    VST3  getValue() reads CachedParamValues, a lock-free float cache. No
+          contention with processBlock whatsoever.
+
+  What the same lock DOES guard is instance teardown. So the rule this engine
+  follows is the one the pump SIGSEGV taught: stop capture before unload, rather
+  than trying to serialise it against processBlock.
+*/
+
+#pragma once
+
+#include <juce_audio_processors/juce_audio_processors.h>
+
+#include <functional>
+#include <map>
+
+#include "EjmapWatchdog.h"
+
+namespace ejmap
+{
+
+class CaptureEngine : private juce::Thread
+{
+public:
+    //==========================================================================
+    struct Calibration
+    {
+        int    paramCount   = 0;
+        double sweepMicros  = 0.0;   // one full read of every parameter
+        double rateHz       = 0.0;   // derived, clamped
+        bool   valid        = false;
+        bool   reasonEmpty  = false;  // plugin exposes no automatable parameters
+
+        juce::String describe() const
+        {
+            return juce::String (paramCount) + " params, "
+                 + juce::String (sweepMicros / 1000.0, 2) + " ms/sweep, "
+                 + juce::String (rateHz, 1) + " Hz";
+        }
+    };
+
+    struct NoiseMask
+    {
+        juce::SortedSet<int> indices;
+        int    samples = 0;          // recorded next to the mask: a thin baseline is visible
+        double seconds = 0.0;
+        juce::StringArray promotions;   // retroactive additions, each with its reason
+    };
+
+    /** Every arm ends in exactly one of these, and every one carries a reason.
+        A capture that produced nothing is a recorded fact, never an absence.
+    */
+    struct Result
+    {
+        enum class Kind { captured, twins, uncorrelated, tooMany, notAutomatable, stalled };
+
+        Kind kind = Kind::notAutomatable;
+        juce::Array<int> indices;
+        juce::String reason;
+
+        juce::String kindString() const
+        {
+            switch (kind)
+            {
+                case Kind::captured:       return "captured";
+                case Kind::twins:          return "twins";
+                case Kind::uncorrelated:   return "uncorrelated";
+                case Kind::tooMany:        return "too_many";
+                case Kind::notAutomatable: return "not_automatable";
+                case Kind::stalled:        return "stalled";
+            }
+            return "not_automatable";
+        }
+    };
+
+    using ResultFn = std::function<void (const Result&)>;
+
+    //==========================================================================
+    /** Rate policy. 30% of the frame budget so capture never starves the editor,
+        floored at 4 Hz because below ~250 ms two sequential edits collapse into
+        one moved set and are misread as a linked pair, which is WRONG data
+        rather than missing data. Ceiling 30 Hz: faster buys nothing once
+        detection is snapshot-relative.
+    */
+    static constexpr double kBudgetFraction = 0.30;
+    static constexpr double kMinRateHz      = 4.0;
+    static constexpr double kMaxRateHz      = 30.0;
+
+    /** Baseline is sample-count driven, not time driven. 3 s at 145 ms/sweep is
+        20 samples, which cannot separate a slow meter from one spurious read.
+    */
+    static constexpr double kBaselineMinSeconds = 3.0;
+    static constexpr int    kBaselineMinSamples = 30;
+    static constexpr double kBaselineMaxSeconds = 10.0;
+
+    static constexpr int    kCalibrationSweeps  = 20;   // first is discarded
+    static constexpr int    kTooManyMoved       = 8;
+    static constexpr int    kNothingMovedMs     = 8000;
+
+    /** An index seen moving in this many separate arm cycles is self-changing,
+        whatever the baseline concluded. Pass two replaces this with "moved with
+        no mouse-down behind it", which is the stronger signal.
+    */
+    static constexpr int    kPromoteAfterCycles = 3;
+
+    //==========================================================================
+    explicit CaptureEngine (Watchdog& w) : juce::Thread ("ejmap capture"), watchdog (w) {}
+    ~CaptureEngine() override { stop(); }
+
+    /** Times a full sweep and derives the rate. The first sweep is discarded:
+        on a bridged plugin it pays the XPC connection setup and is not
+        representative of steady state.
+    */
+    Calibration calibrate (juce::AudioPluginInstance& inst, const juce::String& pluginId)
+    {
+        Calibration c;
+        const auto& params = inst.getParameters();
+        c.paramCount = params.size();
+        if (c.paramCount == 0)
+        {
+            c.reasonEmpty = true;
+            return c;
+        }
+
+        Watchdog::Scope guard (watchdog, "capture calibration", pluginId, {}, {}, "capture",
+                               Watchdog::kEditorCreateDeadlineMs);
+
+        float sink = 0.0f;
+        for (auto* p : params) sink += p->getValue();          // discarded warm-up
+
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        for (int i = 1; i < kCalibrationSweeps; ++i)
+            for (auto* p : params) sink += p->getValue();
+        const auto elapsedMs = juce::Time::getMillisecondCounterHiRes() - t0;
+
+        juce::ignoreUnused (sink);
+
+        c.sweepMicros = (elapsedMs * 1000.0) / (double) (kCalibrationSweeps - 1);
+        const double sweepSeconds = c.sweepMicros / 1.0e6;
+        c.rateHz = sweepSeconds > 0.0
+                     ? juce::jlimit (kMinRateHz, kMaxRateHz, kBudgetFraction / sweepSeconds)
+                     : kMaxRateHz;
+        c.valid = true;
+        return c;
+    }
+
+    /** Baseline with nothing touched. Anything that moves on its own is a meter,
+        an LFO or a gain-reduction readout, and must never be capturable.
+    */
+    NoiseMask buildNoiseMask (juce::AudioPluginInstance& inst,
+                              const Calibration& cal,
+                              const juce::String& pluginId)
+    {
+        NoiseMask mask;
+        const auto& params = inst.getParameters();
+        if (params.isEmpty() || ! cal.valid)
+            return mask;
+
+        Watchdog::Scope guard (watchdog, "capture baseline", pluginId, {}, {}, "capture",
+                               Watchdog::kEditorCreateDeadlineMs);
+
+        const int intervalMs = (int) juce::jmax (1.0, 1000.0 / cal.rateHz);
+
+        std::vector<float> ref (params.size());
+        for (int i = 0; i < params.size(); ++i) ref[(size_t) i] = params[i]->getValue();
+
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        int samples = 0;
+
+        for (;;)
+        {
+            juce::Thread::sleep (intervalMs);
+            ++samples;
+
+            for (int i = 0; i < params.size(); ++i)
+                if (std::abs (params[i]->getValue() - ref[(size_t) i]) > epsilonFor (params[i]))
+                    mask.indices.add (i);
+
+            const double secs = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
+
+            if (secs >= kBaselineMaxSeconds)
+                break;
+            if (secs >= kBaselineMinSeconds && samples >= kBaselineMinSamples)
+                break;
+        }
+
+        mask.samples = samples;
+        mask.seconds = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
+        return mask;
+    }
+
+    //==========================================================================
+    /** Snapshots and starts polling. One arm produces one Result. */
+    void arm (juce::AudioPluginInstance& inst,
+              const Calibration& cal,
+              NoiseMask& maskRef,
+              ResultFn onResult)
+    {
+        stop();
+
+        instance = &inst;
+        calibration = cal;
+        mask = &maskRef;
+        callback = std::move (onResult);
+
+        const auto& params = inst.getParameters();
+        snapshot.resize ((size_t) params.size());
+        for (int i = 0; i < params.size(); ++i)
+            snapshot[(size_t) i] = params[i]->getValue();
+
+        armedAt = juce::Time::getMillisecondCounter();
+        startThread (juce::Thread::Priority::normal);
+    }
+
+    void stop()
+    {
+        if (isThreadRunning())
+        {
+            signalThreadShouldExit();
+            notify();
+            stopThread (3000);
+        }
+        instance = nullptr;
+    }
+
+    bool isArmed() const { return isThreadRunning(); }
+
+    /** Per-parameter epsilon. A single global value misses fine controls and
+        false-fires on coarse ones: half a step for a discrete parameter, 1e-4
+        for a continuous one.
+    */
+    static float epsilonFor (const juce::AudioProcessorParameter* p)
+    {
+        const int steps = p->getNumSteps();
+        if (p->isDiscrete() && steps > 1)
+            return 0.5f / (float) (steps - 1);
+        return 1.0e-4f;
+    }
+
+private:
+    void run() override
+    {
+        const int intervalMs = (int) juce::jmax (1.0, 1000.0 / calibration.rateHz);
+
+        while (! threadShouldExit())
+        {
+            wait (intervalMs);
+            if (threadShouldExit() || instance == nullptr)
+                return;
+
+            const auto& params = instance->getParameters();
+
+            juce::Array<int> moved;
+            juce::Array<float> deltas;
+
+            for (int i = 0; i < params.size() && i < (int) snapshot.size(); ++i)
+            {
+                if (mask != nullptr && mask->indices.contains (i))
+                    continue;
+
+                const float now = params[i]->getValue();
+                const float d   = now - snapshot[(size_t) i];
+
+                if (std::abs (d) > epsilonFor (params[i]))
+                {
+                    moved.add (i);
+                    deltas.add (d);
+                }
+            }
+
+            if (moved.isEmpty())
+            {
+                if ((int) (juce::Time::getMillisecondCounter() - armedAt) >= kNothingMovedMs)
+                {
+                    Result r;
+                    r.kind = Result::Kind::notAutomatable;
+                    r.reason = "nothing moved in " + juce::String (kNothingMovedMs / 1000)
+                                 + "s; the control may exist on the GUI without an "
+                                   "automatable parameter behind it";
+                    deliver (r);
+                    return;
+                }
+                continue;
+            }
+
+            deliver (classify (moved, deltas));
+            return;
+        }
+    }
+
+    Result classify (const juce::Array<int>& moved, const juce::Array<float>& deltas)
+    {
+        Result r;
+
+        if (moved.size() > kTooManyMoved)
+        {
+            r.kind = Result::Kind::tooMany;
+            r.indices = moved;
+            r.reason = juce::String (moved.size()) + " parameters moved at once, which is a "
+                       "preset change or a modulation source rather than one control; discarded";
+            noteCycle (moved);
+            return r;
+        }
+
+        if (moved.size() == 1)
+        {
+            r.kind = Result::Kind::captured;
+            r.indices = moved;
+            r.reason = "exactly one parameter moved";
+            noteCycle (moved);
+            return r;
+        }
+
+        // Two or more. Same direction AND comparable magnitude is the channel
+        // twin / linked pair signature; anything else is a macro or a bad
+        // epsilon, and the human is asked rather than guessed at.
+        bool sameSign = true;
+        float lo = std::abs (deltas[0]), hi = lo;
+        for (int i = 1; i < deltas.size(); ++i)
+        {
+            if ((deltas[i] > 0.0f) != (deltas[0] > 0.0f)) sameSign = false;
+            lo = juce::jmin (lo, std::abs (deltas[i]));
+            hi = juce::jmax (hi, std::abs (deltas[i]));
+        }
+
+        const bool comparable = lo > 0.0f && (hi / lo) <= 1.5f;
+
+        if (sameSign && comparable)
+        {
+            r.kind = Result::Kind::twins;
+            r.indices = moved;
+            r.reason = juce::String (moved.size()) + " parameters moved together, same direction, "
+                       "magnitudes within 1.5x: channel twins or a linked pair. Confirm before use.";
+        }
+        else
+        {
+            r.kind = Result::Kind::uncorrelated;
+            r.indices = moved;
+            r.reason = juce::String (moved.size()) + " parameters moved but "
+                     + juce::String (sameSign ? "with different magnitudes"
+                                              : "in different directions")
+                     + ": a macro, or the epsilon is wrong. Wiggle again.";
+        }
+
+        noteCycle (moved);
+        return r;
+    }
+
+    /** Retroactive noise promotion. A thin baseline is provisional, so an index
+        that keeps turning up across separate arm cycles is self-changing even
+        though the baseline missed it. Pass two replaces this with the stronger
+        "moved with no mouse-down behind it".
+    */
+    void noteCycle (const juce::Array<int>& moved)
+    {
+        if (mask == nullptr)
+            return;
+
+        for (int i : moved)
+        {
+            const int n = ++cycleAppearances[i];
+            if (n >= kPromoteAfterCycles && ! mask->indices.contains (i))
+            {
+                mask->indices.add (i);
+                mask->promotions.add ("index " + juce::String (i) + " promoted to the noise mask "
+                                      "after moving in " + juce::String (n) + " separate arm cycles "
+                                      "(baseline had " + juce::String (mask->samples) + " samples)");
+            }
+        }
+    }
+
+    void deliver (const Result& r)
+    {
+        if (callback)
+        {
+            auto cb = callback;
+            auto copy = r;
+            juce::MessageManager::callAsync ([cb, copy] { cb (copy); });
+        }
+    }
+
+    Watchdog& watchdog;
+    juce::AudioPluginInstance* instance = nullptr;
+    Calibration calibration;
+    NoiseMask* mask = nullptr;
+    ResultFn callback;
+    std::vector<float> snapshot;
+    std::map<int, int> cycleAppearances;
+    juce::uint32 armedAt = 0;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CaptureEngine)
+};
+
+} // namespace ejmap

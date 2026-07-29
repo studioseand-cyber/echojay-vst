@@ -18,6 +18,7 @@
 #include "EchoJayAuRegistry.h"
 #include "EjmapScanProgress.h"
 #include "EjmapSupervisor.h"
+#include "EjmapCapture.h"
 
 #include <iostream>
 
@@ -33,7 +34,7 @@ public:
                             bool supervised = false,
                             int restartCount = 0,
                             juce::String afterExit = {})
-        : ledger (ledgerRoot), watchdog (ledger), host (scanner.getFormatManager()),
+        : ledger (ledgerRoot), watchdog (ledger), capture (watchdog), host (scanner.getFormatManager()),
           isSupervised (supervised), restartsThisSession (restartCount),
           lastExitCause (std::move (afterExit))
     {
@@ -66,6 +67,15 @@ public:
 
         // Quarantine release. Manual is right; invisible is not. Without this
         // the only route was editing quarantine.json by hand.
+        addAndMakeVisible (armButton);
+        armButton.setButtonText ("Arm");
+        armButton.setEnabled (false);
+        armButton.onClick = [this] { armCapture(); };
+
+        addAndMakeVisible (captureReadout);
+        captureReadout.setJustificationType (juce::Justification::centredLeft);
+        captureReadout.setColour (juce::Label::textColourId, juce::Colour (0xff9fd8e0));
+
         addAndMakeVisible (releaseButton);
         releaseButton.setButtonText ("Release");
         releaseButton.setEnabled (false);
@@ -138,6 +148,7 @@ public:
 
     ~MainComponent() override
     {
+        capture.stop();
         host.unload();
     }
 
@@ -350,6 +361,147 @@ public:
         juce::JUCEApplication::getInstance()->quit();
     }
 
+    /** Drives the classifier by MOVING PARAMETERS PROGRAMMATICALLY, so the
+        mechanism is provable without a human at the knobs. The wiggle test is
+        the human's; this is the part that can be measured here.
+    */
+    void selfTestCapture (const juce::String& identifier)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "CAPTURETEST: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        rows.clearQuick(); rows.add (sp); applyFilter(); list.selectRow (0);
+
+        ledger.beginLoad (sp.pluginId(), desc.name, desc.manufacturerName,
+                          desc.pluginFormatName, desc.version, "load", "createPluginInstance");
+        auto res = host.load (desc, watchdog);
+        LedgerRecord rec; rec.pluginId = sp.pluginId(); rec.name = desc.name;
+        rec.format = desc.pluginFormatName; rec.outcome = res.outcome; rec.detail = res.detail;
+        rec.paramCount = res.paramCount; ledger.endLoad (rec);
+
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "CAPTURETEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        cal  = capture.calibrate (*inst, sp.pluginId());
+        std::cout << "CAPTURETEST: " << desc.name << " | " << cal.describe() << std::endl;
+
+        mask = capture.buildNoiseMask (*inst, cal, sp.pluginId());
+        std::cout << "CAPTURETEST: noise mask " << mask.indices.size() << " of " << cal.paramCount
+                  << " over " << mask.samples << " samples / "
+                  << juce::String (mask.seconds, 1) << "s" << std::endl;
+
+        stage = 0;
+        runCaptureStage();
+    }
+
+    void quitNow() { juce::JUCEApplication::getInstance()->quit(); }
+
+    /** Each stage arms, then moves parameters, then asserts the classification. */
+    void runCaptureStage()
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr) { quitNow(); return; }
+
+        auto& params = inst->getParameters();
+
+        // QUALIFY the pool once. A parameter that is discrete, read-only, or
+        // simply ignores writes produces a delta that is not the one the test
+        // asked for, and the engine then correctly reports "uncorrelated" for
+        // what the test believed was a matched pair. Isolating the classifier
+        // from parameter semantics is the point: this test is about
+        // classification, not about how a given plugin quantises.
+        if (qualified.isEmpty())
+        {
+            for (int i = 0; i < params.size() && qualified.size() < 12; ++i)
+            {
+                if (mask.indices.contains (i)) continue;
+                auto* pp = params[i];
+                // getNumSteps() returns a large DEFAULT for continuous params,
+                // not 0, so testing it excludes everything. isDiscrete plus an
+                // actual write-and-read-back is the reliable filter.
+                if (pp->isDiscrete() || ! pp->isAutomatable()) continue;
+
+                pp->setValueNotifyingHost (0.20f);
+                juce::Thread::sleep (15);
+                const float lo = pp->getValue();
+                pp->setValueNotifyingHost (0.50f);
+                juce::Thread::sleep (15);
+                const float hi = pp->getValue();
+
+                if (std::abs (lo - 0.20f) < 0.02f && std::abs (hi - 0.50f) < 0.02f)
+                    qualified.add (i);
+            }
+            std::cout << "CAPTURETEST: qualified " << qualified.size()
+                      << " continuous, write-responsive params" << std::endl;
+        }
+
+        const auto& usable = qualified;
+        if (usable.size() < 10) { std::cout << "CAPTURETEST: too few qualified params" << std::endl; quitNow(); return; }
+
+        const char* names[] = { "one moved -> captured",
+                                "two correlated -> twins",
+                                "two opposed -> uncorrelated",
+                                "nine moved -> too_many" };
+
+        if (stage >= 4)
+        {
+            std::cout << "CAPTURETEST: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
+            std::cout.flush(); quitNow(); return;
+        }
+
+        const int st = stage;
+
+        // Pre-set to a known base BEFORE arming, so the snapshot is taken at a
+        // value we can move away from. Adding a delta to whatever the parameter
+        // happened to be clamps to a no-op when it is already near a limit,
+        // which is what made the first version of this test report failures
+        // that were the test's, not the engine's.
+        juce::Array<int> targets;
+        if      (st == 0) targets = { usable[0] };
+        else if (st == 1) targets = { usable[1], usable[2] };
+        else if (st == 2) targets = { usable[3], usable[4] };
+        else              for (int k = 0; k < 9; ++k) targets.add (usable[k]);
+
+        for (int i = 0; i < targets.size(); ++i)
+        {
+            // stage 2 wants opposed directions, so one starts high.
+            const float base = (st == 2 && i == 1) ? 0.80f : 0.20f;
+            params[targets[i]]->setValueNotifyingHost (base);
+        }
+        juce::Thread::sleep (120);      // let the base settle before the snapshot
+
+        capture.arm (*inst, cal, mask, [this, st] (const CaptureEngine::Result& r)
+        {
+            static const char* names[] = { "one moved -> captured",
+                                           "two correlated -> twins",
+                                           "two opposed -> uncorrelated",
+                                           "nine moved -> too_many" };
+            static const char* want[]  = { "captured", "twins", "uncorrelated", "too_many" };
+            const bool ok = (r.kindString() == juce::String (want[st]));
+            if (! ok) ++failures;
+            std::cout << "  " << (ok ? "ok   " : "FAIL ") << names[st]
+                      << "  -> got " << r.kindString()
+                      << " indices=" << r.indices.size() << std::endl;
+            ++stage;
+            juce::Timer::callAfterDelay (400, [this] { runCaptureStage(); });
+        });
+
+        juce::Timer::callAfterDelay (300, [this, targets, st]
+        {
+            auto* in = host.getInstance();
+            if (in == nullptr) return;
+            auto& ps = in->getParameters();
+            for (int i = 0; i < targets.size(); ++i)
+            {
+                const float to = (st == 2 && i == 1) ? 0.50f : 0.50f;   // +0.30 / -0.30
+                ps[targets[i]]->setValueNotifyingHost (to);
+            }
+        });
+    }
+
     void resized() override
     {
         auto r = getLocalBounds().reduced (8);
@@ -358,6 +510,8 @@ public:
         scanButton.setBounds (top.removeFromLeft (90));
         top.removeFromLeft (6);
         loadButton.setBounds (top.removeFromLeft (130));
+        top.removeFromLeft (6);
+        armButton.setBounds (top.removeFromLeft (70));
         top.removeFromLeft (6);
         releaseButton.setBounds (top.removeFromLeft (90));
         top.removeFromLeft (6);
@@ -374,6 +528,10 @@ public:
             prog.removeFromLeft (10);
             progressLabel.setBounds (prog);
         }
+
+        // Capture readout sits under the top row, full width.
+        r.removeFromTop (4);
+        captureReadout.setBounds (r.removeFromTop (20));
 
         r.removeFromTop (8);
         auto left = r.removeFromLeft (420);
@@ -416,6 +574,7 @@ private:
             owner.list.setEnabled (false);
             owner.filterBox.setEnabled (false);
             owner.releaseButton.setEnabled (false);
+            owner.armButton.setEnabled (false);
         }
 
         ~BusyScope()
@@ -846,6 +1005,75 @@ private:
         loadOkMarker (ledger.getRoot()).replaceWithText ("ok");
     }
 
+    /** Runs ONLY after load() has returned, which means the editor-ready wait
+        has already settled. A bridged editor reaches real size about 2.5 s in,
+        and calibrating against a half-constructed plugin would measure the
+        wrong thing.
+    */
+    void prepareCapture (const juce::String& name, const juce::String& pluginId)
+    {
+        capture.stop();
+        cal = CaptureEngine::Calibration();
+        mask = CaptureEngine::NoiseMask();
+        armButton.setEnabled (false);
+
+        auto* inst = host.getInstance();
+        if (inst == nullptr)
+            return;
+
+        cal = capture.calibrate (*inst, pluginId);
+        if (! cal.valid)
+        {
+            captureReadout.setText (name + ": no automatable parameters, nothing to capture",
+                                    juce::dontSendNotification);
+            return;
+        }
+
+        captureReadout.setText ("Calibrating " + name + ": " + cal.describe()
+                                  + "  -  baseline...", juce::dontSendNotification);
+
+        mask = capture.buildNoiseMask (*inst, cal, pluginId);
+
+        juce::String t;
+        t << name << "  -  " << cal.describe()
+          << "  -  noise mask " << mask.indices.size() << " of " << cal.paramCount
+          << " (" << mask.samples << " samples over " << juce::String (mask.seconds, 1) << "s)";
+        captureReadout.setText (t, juce::dontSendNotification);
+
+        armButton.setEnabled (true);
+    }
+
+    void armCapture()
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr || ! cal.valid)
+            return;
+
+        armButton.setEnabled (false);
+        captureReadout.setText ("ARMED at " + juce::String (cal.rateHz, 1)
+                                  + " Hz - move one control", juce::dontSendNotification);
+
+        capture.arm (*inst, cal, mask, [this] (const CaptureEngine::Result& r)
+        {
+            juce::String t;
+            t << r.kindString().toUpperCase();
+            if (! r.indices.isEmpty())
+            {
+                t << "  indices [";
+                for (int i = 0; i < r.indices.size(); ++i)
+                    t << (i ? ", " : "") << r.indices[i];
+                t << "]";
+            }
+            t << "  -  " << r.reason;
+            if (! mask.promotions.isEmpty())
+                t << "   |  " << mask.promotions[mask.promotions.size() - 1];
+
+            captureReadout.setText (t, juce::dontSendNotification);
+            std::cout << "CAPTURE: " << t << std::endl;
+            armButton.setEnabled (true);
+        });
+    }
+
     void writeRunSummary()
     {
         juce::StringArray out;
@@ -962,6 +1190,7 @@ private:
             return;
         }
 
+        capture.stop();          // before unload: teardown is what a read can race
         detachEditor();
         host.unload();
 
@@ -988,6 +1217,7 @@ private:
         {
             markLoadSucceeded();
             attachEditor();
+            prepareCapture (sp.desc.name, id);
             status.setText (sp.desc.name + ": " + juce::String (result.paramCount)
                               + " params, editor open in " + juce::String (elapsed) + " ms",
                             juce::dontSendNotification);
@@ -1077,6 +1307,7 @@ private:
     //==========================================================================
     Ledger        ledger;
     Watchdog      watchdog;
+    CaptureEngine capture;
     PluginScanner scanner;
     PluginHost    host;
 
@@ -1085,7 +1316,12 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
-    juce::TextButton scanButton, loadButton, releaseButton, summaryButton;
+    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton;
+    juce::Label      captureReadout;
+    CaptureEngine::Calibration cal;
+    CaptureEngine::NoiseMask   mask;
+    int stage = 0, failures = 0;
+    juce::Array<int> qualified;
     bool busy = false;
     int  loadDepth = 0, maxLoadDepth = 0, loadCalls = 0, loadRejected = 0;
 
