@@ -19,6 +19,7 @@
 
 #include "EedDeviceProcessor.h"
 #include "EedStereoEngine.h"
+#include "viz/VizTap.h"
 
 class EedStereoWidthProcessor : public EedDeviceProcessor
 {
@@ -48,8 +49,19 @@ public:
 
     echojay::StereoEngine& engine() noexcept { return engine_; }
 
+    // The editor's goniometer (VISUALS_PLAN.md Phase V0, the ring-tap path).
+    // Width is the one thing in EchoJay that CANNOT be drawn analytically: 140%
+    // on a mono source is still a vertical line and 140% on a wide pad is a
+    // wall, and only the samples know which. So this device carries the two
+    // lines that make a tap: the ring below, and the write in processBlock.
+    //
+    // It holds the OUTPUT, post-engine — the widening is the thing being
+    // watched, not the input it started from.
+    const echojay::viz::ScopeTap& scopeTap() const noexcept { return scopeTap_; }
+
 private:
     echojay::StereoEngine engine_;
+    echojay::viz::ScopeTap scopeTap_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedStereoWidthProcessor)
 };

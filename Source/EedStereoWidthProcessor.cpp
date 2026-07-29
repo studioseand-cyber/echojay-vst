@@ -76,6 +76,11 @@ void EedStereoWidthProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     // Snap to the current targets so a freshly restored session starts AT its
     // values rather than gliding up to them across the first block.
     engine_.reset();
+
+    // Not on the audio thread: prepareToPlay is where the EQ's analysis rings
+    // clear too, so a re-prepare cannot leave the scope drawing the last
+    // session's material.
+    scopeTap_.clear();
 }
 
 void EedStereoWidthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -96,6 +101,12 @@ void EedStereoWidthProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     float* r = numCh > 1 ? buffer.getWritePointer (1) : nullptr;
 
     engine_.process (l, r, buffer.getNumSamples());
+
+    // The tap. Lock-free, allocation-free, and deliberately racy — the same
+    // contract SurgicalEqProcessor's analysis rings run on. A goniometer frame
+    // that tears under contention is invisible; an audio thread that blocks is
+    // a dropout.
+    scopeTap_.write (l, r, buffer.getNumSamples());
 }
 
 juce::AudioProcessorEditor* EedStereoWidthProcessor::createEditor()
