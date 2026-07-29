@@ -40,7 +40,28 @@ DeviceEditorBase::DeviceEditorBase (EedDeviceProcessor& proc,
     };
     addAndMakeVisible (bypassBtn_);
 
+    // setSize dispatches resized() SYNCHRONOUSLY, and we are still inside the
+    // base constructor: the derived editor does not exist yet, so the vtable
+    // entry for layoutContent() is still the pure-virtual thunk and calling it
+    // aborts the process with "pure virtual function called". Not a subtle
+    // corruption — an immediate crash, on every built-in device editor, the
+    // moment the host opens one.
+    //
+    // The size still has to be right the instant createEditor() returns, since
+    // the rack sizes the slot from it. So: set it, but tell resized() to skip
+    // the content pass while the base is the most-derived type it will ever be.
+    inBaseConstruction_ = true;
     setSize (defaultWidth, defaultHeight);
+    inBaseConstruction_ = false;
+
+    // Then lay the content out for real, once the derived constructor has run
+    // and its controls exist. Async is what buys that ordering; a SafePointer
+    // because an editor closed inside the same message cycle is ordinary.
+    juce::Component::SafePointer<DeviceEditorBase> self (this);
+    juce::MessageManager::callAsync ([self]
+    {
+        if (auto* c = self.getComponent()) c->resized();
+    });
 }
 
 DeviceEditorBase::~DeviceEditorBase()
@@ -77,7 +98,12 @@ void DeviceEditorBase::resized()
 
     textRight_ = bar.getRight();
 
-    layoutContent (contentBounds_);
+    // See the constructor: during base construction the derived override does
+    // not exist yet, and layoutContent is pure. The header above is safe to
+    // place (its hooks have real default implementations); the content pass is
+    // deferred to the async re-layout the constructor queues.
+    if (! inBaseConstruction_)
+        layoutContent (contentBounds_);
 }
 
 void DeviceEditorBase::paint (juce::Graphics& g)

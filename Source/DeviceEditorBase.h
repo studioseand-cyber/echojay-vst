@@ -92,5 +92,10 @@ private:
     juce::Rectangle<int> headerBounds_, contentBounds_;
     int textLeft_ = 0, textRight_ = 0;
 
+    // True only for the window in which the base constructor's setSize() is
+    // dispatching resized(), when layoutContent is still pure virtual. See the
+    // constructor for why the content pass has to be skipped there.
+    bool inBaseConstruction_ = false;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeviceEditorBase)
 };

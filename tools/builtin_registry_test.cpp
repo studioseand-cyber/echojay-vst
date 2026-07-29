@@ -426,6 +426,40 @@ int main()
     }
 
     // -----------------------------------------------------------------------
+    // The editors are hosted INLINE in the chain rack, which sizes them to
+    // whatever space it has rather than to the default they ask for. So the
+    // thing worth checking is not that they look right (they cannot be seen from
+    // here) but that constructing one and squeezing it does not assert or leave
+    // a control outside its parent -- the two ways an inline editor breaks the
+    // rack rather than just itself.
+    std::printf ("== every device's editor builds and survives being squeezed ==\n");
+    for (const auto& d : registry.all())
+    {
+        auto proc = d.create();
+        std::unique_ptr<juce::AudioProcessorEditor> ed (proc->createEditor());
+        check (ed != nullptr, d.name + ": createEditor returns an editor");
+        if (ed == nullptr) continue;
+
+        check (ed->getWidth() > 0 && ed->getHeight() > 0,
+               d.name + ": opens at a real default size ("
+               + juce::String (ed->getWidth()) + "x" + juce::String (ed->getHeight()) + ")");
+
+        bool escaped = false;
+        for (int w : { 240, 320, 640, 1200 })
+        {
+            ed->setSize (w, 110);
+            for (int i = 0; i < ed->getNumChildComponents(); ++i)
+            {
+                auto* c = ed->getChildComponent (i);
+                if (c != nullptr && c->isVisible()
+                    && ! ed->getLocalBounds().contains (c->getBounds()))
+                    escaped = true;
+            }
+        }
+        check (! escaped, d.name + ": no control escapes the editor at any width");
+    }
+
+    // -----------------------------------------------------------------------
     std::printf ("== every device publishes a dialable contract ==\n");
     for (const auto& d : registry.all())
     {
