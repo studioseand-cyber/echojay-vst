@@ -156,6 +156,9 @@ void SurgicalEqProcessor::setBypassed (bool b)
 void SurgicalEqProcessor::setSoloBand (int index) { engine_.setSoloBand (index); }
 int  SurgicalEqProcessor::getSoloBand() const     { return engine_.getSoloBand(); }
 
+void SurgicalEqProcessor::setOutputDb (float db) { engine_.setOutputDb (db); }
+void SurgicalEqProcessor::setAutoGain (bool on)  { engine_.setAutoGain (on); }
+
 void SurgicalEqProcessor::pushToEngine()
 {
     engine_.setBands (bands_, kNumBands);
@@ -258,6 +261,125 @@ juce::String SurgicalEqProcessor::applyEqBands (const juce::var& eqBandsArray,
     return summary;
 }
 
+// ---- device-global settings ------------------------------------------------
+juce::String SurgicalEqProcessor::applyEqSettings (const juce::var& settings)
+{
+    if (! settings.isObject()) return {};
+
+    juce::StringArray notes;
+
+    // Merge semantics throughout: a key that isn't present leaves the current
+    // value alone. That is what lets a turn flip auto_gain without having to
+    // restate the output trim it doesn't care about.
+    if (settings.hasProperty ("output_db"))
+    {
+        const float db = juce::jlimit (-24.0f, 24.0f,
+                                       (float) (double) settings.getProperty ("output_db", 0.0));
+        setOutputDb (db);
+        notes.add ("output " + juce::String (db, 1) + " dB");
+    }
+
+    if (settings.hasProperty ("auto_gain"))
+    {
+        const bool on = (bool) settings.getProperty ("auto_gain", false);
+        setAutoGain (on);
+        notes.add (on ? "auto-gain on (" + juce::String (autoGainDbTarget(), 1) + " dB)"
+                      : juce::String ("auto-gain off"));
+    }
+
+    // phase_mode / ms_mode are parsed and stored here but not acted on until
+    // P4 / P2. Storing them from P1 keeps the schema stable: the backend can
+    // emit them as soon as they are documented without the client dropping the
+    // key on the floor, and state files do not change shape when the DSP lands.
+    if (settings.hasProperty ("phase_mode"))
+    {
+        const juce::String pm = settings.getProperty ("phase_mode", "zero")
+                                        .toString().trim().toLowerCase();
+        const bool linear = pm.startsWith ("lin");
+        setPhaseMode (linear ? PhaseMode::Linear : PhaseMode::Zero);
+        notes.add (juce::String ("phase ") + (linear ? "linear" : "zero")
+                   + (linear ? " (stored; DSP lands in P4)" : ""));
+    }
+
+    if (settings.hasProperty ("ms_mode"))
+    {
+        const bool ms = (bool) settings.getProperty ("ms_mode", false);
+        setMsMode (ms);
+        notes.add (juce::String ("M/S view ") + (ms ? "on (stored; DSP lands in P2)" : "off"));
+    }
+
+    if (notes.isEmpty()) return {};
+    return "settings: " + notes.joinIntoString (", ");
+}
+
+// ---- the one funnel --------------------------------------------------------
+juce::String SurgicalEqProcessor::applyStructured (const juce::var& structured,
+                                                   int* appliedOut, int* skippedOut)
+{
+    if (appliedOut != nullptr) *appliedOut = 0;
+    if (skippedOut != nullptr) *skippedOut = 0;
+
+    // Legacy shape: a bare array IS eq_bands. Unchanged behaviour, forever.
+    if (structured.isArray())
+        return applyEqBands (structured, appliedOut, skippedOut);
+
+    if (! structured.isObject()) return {};
+
+    juce::StringArray parts;
+
+    // Order is load-bearing (SURGICAL_EQ_ENHANCEMENTS §0): a preset lays the
+    // foundation, explicit settings and bands override it, and an action runs
+    // last so it operates on the finished state rather than a half-built one.
+    if (structured.hasProperty ("eq_preset"))
+    {
+        // P5. Named so a move carrying one is reported honestly instead of
+        // being silently ignored — a preset that quietly does nothing is worse
+        // than one that says it isn't here yet.
+        const juce::String name = structured.getProperty ("eq_preset", "").toString().trim();
+        if (name.isNotEmpty())
+            parts.add ("preset \"" + name + "\" not available yet (phase 5)");
+    }
+
+    if (structured.hasProperty ("eq_settings"))
+    {
+        const auto s = applyEqSettings (structured.getProperty ("eq_settings", juce::var()));
+        if (s.isNotEmpty()) parts.add (s);
+    }
+
+    if (structured.hasProperty ("eq_bands"))
+    {
+        const juce::var bands = structured.getProperty ("eq_bands", juce::var());
+        if (bands.isArray())
+        {
+            const auto b = applyEqBands (bands, appliedOut, skippedOut);
+            if (b.isNotEmpty()) parts.add (b);
+        }
+    }
+
+    if (structured.hasProperty ("eq_action"))
+    {
+        // P3. Same honesty rule as eq_preset.
+        const juce::var a = structured.getProperty ("eq_action", juce::var());
+        const juce::String type = a.isObject() ? a.getProperty ("type", "").toString().trim()
+                                               : a.toString().trim();
+        if (type.isNotEmpty())
+            parts.add ("action \"" + type + "\" not available yet (phase 3)");
+    }
+
+    if (parts.isEmpty()) return {};
+    return parts.joinIntoString ("; ");
+}
+
+juce::var SurgicalEqProcessor::currentEqSettingsVar() const
+{
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    o->setProperty ("output_db", (double) getOutputDb());
+    o->setProperty ("auto_gain", getAutoGain());
+    o->setProperty ("phase_mode", phaseMode_ == PhaseMode::Linear ? "linear" : "zero");
+    o->setProperty ("ms_mode", msMode_);
+    return juce::var (o.get());
+}
+
 juce::var SurgicalEqProcessor::currentEqBandsVar() const
 {
     juce::Array<juce::var> out;
@@ -292,9 +414,13 @@ juce::var SurgicalEqProcessor::currentEqBandsVar() const
 void SurgicalEqProcessor::getStateInformation (juce::MemoryBlock& dest)
 {
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
-    root->setProperty ("v", 1);
+    // v2 adds the eq_settings sibling. v1 (bands only) still reads — see
+    // setStateInformation; the version is here to make that explicit rather
+    // than inferred from a missing key.
+    root->setProperty ("v", 2);
     root->setProperty ("bypassed", bypassed_.load());
     root->setProperty ("eq_bands", currentEqBandsVar());
+    root->setProperty ("eq_settings", currentEqSettingsVar());
 
     const juce::String json = juce::JSON::toString (juce::var (root.get()), true);
     juce::MemoryOutputStream mos (dest, false);
@@ -309,10 +435,20 @@ void SurgicalEqProcessor::setStateInformation (const void* data, int sizeInBytes
 
     setBypassed ((bool) parsed.getProperty ("bypassed", false));
 
+    // Settings are a full replace on restore, not a merge: a saved state is
+    // the whole device, and a v1 file (no eq_settings) must load as DEFAULTS
+    // rather than inheriting whatever the previous instance happened to have.
+    setOutputDb (0.0f);
+    setAutoGain (false);
+    setPhaseMode (PhaseMode::Zero);
+    setMsMode (false);
+    applyEqSettings (parsed.getProperty ("eq_settings", juce::var()));
+
     // full replace: clear model, then apply the saved bands by explicit index
     {
         const juce::ScopedLock sl (modelLock_);
         for (int i = 0; i < kNumBands; ++i) bands_[i] = BandSpec {};
+        pushToEngine();     // the cleared model is what auto-gain must integrate
     }
     applyEqBands (parsed.getProperty ("eq_bands", juce::var()));
 }

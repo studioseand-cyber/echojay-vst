@@ -72,6 +72,27 @@ public:
     void                 setSoloBand (int index);            // -1 == none
     int                  getSoloBand() const;
 
+    // ---- device-global settings (message thread; used by editor + AI) ------
+    void  setOutputDb (float db);                 // clamped to ±24
+    float getOutputDb() const { return engine_.getOutputDb(); }
+    void  setAutoGain (bool on);
+    bool  getAutoGain() const { return engine_.getAutoGain(); }
+    // Makeup currently applied (dB, 0 when auto-gain is off), and what it WOULD
+    // apply for the current bands — the UI shows the first when lit and can
+    // preview the second.
+    float autoGainDbApplied() const { return engine_.autoGainDbApplied(); }
+    float autoGainDbTarget()  const { return engine_.autoGainDbTarget(); }
+
+    // Parsed and stored now, acted on in later phases (P2 = ms_mode routing,
+    // P4 = linear phase). Stored from P1 so the move schema is stable and a
+    // backend can start emitting them without the client silently dropping the
+    // key or a state file changing shape when the DSP lands.
+    enum class PhaseMode { Zero = 0, Linear };
+    void      setPhaseMode (PhaseMode m) { phaseMode_ = m; }
+    PhaseMode getPhaseMode() const       { return phaseMode_; }
+    void      setMsMode (bool on)        { msMode_ = on; }
+    bool      getMsMode() const          { return msMode_; }
+
     // engine handle for the editor's analyzer / dynamic metering (read-only use)
     echojay::EqEngine&   getEngine() noexcept { return engine_; }
 
@@ -106,9 +127,35 @@ public:
                                int* appliedOut = nullptr,
                                int* skippedOut = nullptr);
 
+    // THE entry point for an AI move — the one funnel every caller uses (chain
+    // build path, chain edit path, /eqtest, state restore).
+    //
+    // Accepts both shapes of settings_structured, which is the whole point:
+    //   * an ARRAY  → legacy, treated as eq_bands verbatim. No existing move
+    //                 breaks, ever.
+    //   * an OBJECT → resolved in a deliberate order (SURGICAL_EQ_ENHANCEMENTS
+    //                 §0): eq_preset lays a base, eq_settings merges over it,
+    //                 eq_bands overrides per band, eq_action runs last so it
+    //                 sees the finished state. Every key is optional.
+    //
+    // Returns a human-readable summary, or an EMPTY string when the var carried
+    // nothing this device understands — that is how a caller tells "applied
+    // zero bands on purpose" (an eq_settings-only move) from "this wasn't for
+    // me". appliedOut/skippedOut count bands only.
+    juce::String applyStructured (const juce::var& structured,
+                                  int* appliedOut = nullptr,
+                                  int* skippedOut = nullptr);
+
+    // Device-global settings merge: absent key = leave as-is. Returns a summary
+    // of what actually changed, empty if nothing did.
+    juce::String applyEqSettings (const juce::var& settings);
+
     // Serialise the current band model back to an eq_bands var (for the AI to
     // see current state, and for chain-state round-tripping).
     juce::var    currentEqBandsVar() const;
+
+    // The eq_settings counterpart, same purpose.
+    juce::var    currentEqSettingsVar() const;
 
 private:
     // One lock-free mono ring. Both taps share this type so the pre and post
@@ -133,6 +180,12 @@ private:
     echojay::BandSpec     bands_[kNumBands];        // authoritative model
     juce::CriticalSection modelLock_;               // guards bands_ (message-thread edits)
     std::atomic<bool>     bypassed_ { false };
+
+    // Device-global settings. output_db / auto_gain live in the engine (it is
+    // the thing that applies them); these two are message-thread only until
+    // their DSP lands in P2/P4.
+    PhaseMode phaseMode_ = PhaseMode::Zero;
+    bool      msMode_    = false;
 
     // Analysis taps. The arrays are untouched by any lock; only each write
     // index is atomic, which is all the reader needs to find the newest span.
