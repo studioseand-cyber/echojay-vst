@@ -11,13 +11,11 @@
 #include "MainComponent.h"
 #include "EjmapSchema.h"
 
-#ifndef EJMAP_GIT_HASH
- #define EJMAP_GIT_HASH "nogit"
-#endif
-
-#ifndef EJMAP_VERSION
- #define EJMAP_VERSION "0.1.0"
-#endif
+// Generated on every build by cmake/StampBuildInfo.cmake. Carries the git short
+// hash of the commit actually compiled, plus "-dirty" when tracked files were
+// modified. Deliberately has no #ifndef fallback: a build with no stamp should
+// fail to compile rather than quietly claim a version it cannot know.
+#include "EjmapBuildInfo.h"
 
 class EjmapApplication  : public juce::JUCEApplication
 {

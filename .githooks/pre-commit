@@ -1,5 +1,5 @@
 #!/bin/sh
-# EchoJay plugin-repo pre-commit gate (27 Jul 2026).
+# EchoJay plugin-repo pre-commit gate (29 Jul 2026).
 #
 # Added after a concurrency near-miss: a parallel session was editing
 # PluginEditor.cpp in this shared checkout at the same time as client-gate
@@ -7,33 +7,117 @@
 # FIRST job is therefore to print the branch it is committing to, loudly,
 # every time - the same defence the saas gate carries.
 #
-# Its SECOND job is to run the repo's self-tests. This is a C++ repo, so the
-# suite is the workspace round-trip test (real objects, EJ_SELFTEST body).
-# It links the release SharedCode lib, so it can only run once the tree has
-# been built; on an unbuilt tree the gate SKIPS the test with a clear notice
-# rather than blocking (a gate that fails when you simply haven't built yet
-# gets bypassed habitually, which defeats the point).
+# Its SECOND job is to run the repo's self-tests.
+#
+# NO SKIPS. The previous version skipped the suite when the tree was unbuilt,
+# on the reasoning that a gate which fails on an unbuilt tree gets bypassed
+# habitually. That reasoning was wrong in the way this project keeps being
+# wrong: it made an unbuilt tree indistinguishable from a passing one, and the
+# ejmap M0 commit sailed through printing "tests skipped" while the drift guard
+# the plan names as the defence against shared-header drift had never run.
+# An unbuilt or stale tree is now a HARD FAILURE with the command to fix it.
+#
+# SCOPE, so that "no skips" means something. A suite is in scope when the
+# commit touches code it covers. Out of scope is not the same as skipped:
+#   - touches Source/ or the root CMakeLists  -> workspace_roundtrip_test
+#     (shared code: this is what both binaries compile)
+#   - touches tools/ejmap/ or tools/ejextract/ -> ejmap-roundtrip-test
+#   - on feat/ejmap, ejmap-roundtrip-test is ALWAYS in scope
+# Every in-scope suite must build and pass, or the commit is blocked. A build
+# failure counts as a gate failure: the schema drift guard is a static_assert,
+# so drift shows up as a compile error, not a failing assertion.
 #
 # Enable once per clone:   git config core.hooksPath .githooks
 # Bypass (emergencies only): git commit --no-verify
 
-echo "pre-commit gate: branch $(git branch --show-current)"
+BRANCH=$(git branch --show-current)
+echo "pre-commit gate: branch $BRANCH"
 
 REPO=$(git rev-parse --show-toplevel)
-LIB="$REPO/build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a"
+STAGED=$(git diff --cached --name-only)
+FAILED=0
+RAN=""
 
-if [ ! -f "$LIB" ] || [ ! -f "$REPO/build/compile_commands.json" ]; then
-  echo "  SKIP  workspace round-trip test (tree not built; run reinstall-v2.sh first)"
-  echo "pre-commit gate: branch printed, tests skipped (unbuilt tree)"
-  exit 0
+# --- is anything newer than the artefact it produced? -----------------------
+is_stale() {
+  artefact="$1"; shift
+  for d in "$@"; do
+    [ -d "$d" ] || continue
+    hit=$(find "$d" -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.mm' -o -name 'CMakeLists.txt' \) \
+            -newer "$artefact" -print -quit 2>/dev/null)
+    [ -n "$hit" ] && { echo "$hit"; return 0; }
+  done
+  return 1
+}
+
+# --- suite 1: workspace round-trip (shared plugin code) ---------------------
+if echo "$STAGED" | grep -qE '^(Source/|CMakeLists\.txt$)'; then
+  RAN="$RAN workspace_roundtrip_test"
+  LIB="$REPO/build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a"
+  if [ ! -f "$LIB" ] || [ ! -f "$REPO/build/compile_commands.json" ]; then
+    echo "GATE FAIL: this commit touches shared plugin code but build/ is missing."
+    echo "           Build it first:  ./reinstall-v2.sh"
+    echo "           (was a SKIP before 29 Jul 2026; an unbuilt tree is not a pass)"
+    FAILED=1
+  elif s=$(is_stale "$LIB" "$REPO/Source"); then
+    echo "GATE FAIL: build/ is stale. Newer than the built library: $s"
+    echo "           Rebuild:  ./reinstall-v2.sh"
+    FAILED=1
+  else
+    echo "  running workspace round-trip self-test..."
+    out=$("$REPO/tools/workspace_roundtrip_test/build_and_run.sh" 2>&1)
+    if [ $? -ne 0 ]; then
+      echo "GATE FAIL: workspace_roundtrip_test"
+      echo "$out" | tail -12
+      FAILED=1
+    else
+      echo "  ok  workspace_roundtrip_test: $(echo "$out" | grep -iE 'pass|ok|self-test' | tail -1)"
+    fi
+  fi
 fi
 
-echo "  running workspace round-trip self-test..."
-out=$("$REPO/tools/workspace_roundtrip_test/build_and_run.sh" 2>&1)
-if [ $? -ne 0 ]; then
-  echo "GATE FAIL: workspace_roundtrip_test"
-  echo "$out" | tail -12
-  exit 1
+# --- suite 2: ejmap round-trip (the shared-header drift guard) --------------
+# Plan section 1.4 and the risk register both name this as THE guard against
+# EchoJayParamApply.h drifting away from what ejmap verified. M0 listed it and
+# did not wire it. Wired here.
+if [ "$BRANCH" = "feat/ejmap" ] || echo "$STAGED" | grep -qE '^tools/(ejmap|ejextract)/'; then
+  RAN="$RAN ejmap-roundtrip-test"
+  BUILD="$REPO/build-ejmap"
+  TEST="$BUILD/tools/ejmap/ejmap-roundtrip-test_artefacts/RelWithDebInfo/ejmap-roundtrip-test"
+  if [ ! -d "$BUILD" ]; then
+    echo "GATE FAIL: build-ejmap/ is missing and this commit is in ejmap scope."
+    echo "           cmake -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo"
+    FAILED=1
+  else
+    echo "  building ejmap-roundtrip-test..."
+    # Rebuild every time. The drift guard is a static_assert in a header, so it
+    # fires at COMPILE time; running a stale binary would prove nothing.
+    bout=$(cmake --build "$BUILD" --target ejmap-roundtrip-test -j8 2>&1)
+    if [ $? -ne 0 ]; then
+      echo "GATE FAIL: ejmap-roundtrip-test did not BUILD (this is what schema/header drift looks like)"
+      echo "$bout" | grep -E 'error:|static assertion' | head -8
+      FAILED=1
+    elif [ ! -x "$TEST" ]; then
+      echo "GATE FAIL: ejmap-roundtrip-test built but the binary is missing at $TEST"
+      FAILED=1
+    else
+      echo "  running ejmap-roundtrip-test..."
+      out=$("$TEST" 2>&1)
+      if [ $? -ne 0 ]; then
+        echo "GATE FAIL: ejmap-roundtrip-test"
+        echo "$out" | tail -12
+        FAILED=1
+      else
+        echo "  ok  ejmap-roundtrip-test: $(echo "$out" | grep -E 'checks' | tail -1)"
+      fi
+    fi
+  fi
 fi
-echo "  ok  workspace_roundtrip_test: $(echo "$out" | grep -iE 'pass|ok|self-test' | tail -1)"
-echo "pre-commit gate: all suites green"
+
+if [ -z "$RAN" ]; then
+  echo "  no suite in scope for these files (touches neither shared code nor tools/ejmap)"
+fi
+
+[ $FAILED -ne 0 ] && { echo "pre-commit gate: BLOCKED"; exit 1; }
+echo "pre-commit gate: green ($RAN )"
+exit 0

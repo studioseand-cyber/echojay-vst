@@ -16,17 +16,33 @@ cmake_minimum_required(VERSION 3.22)
 
 set(EJMAP_VERSION "0.1.0")
 
-# Git short hash into the title bar. The on-screen version is the only proof of
-# what is loaded.
-execute_process(
-    COMMAND git rev-parse --short HEAD
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    OUTPUT_VARIABLE EJMAP_GIT_HASH
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET)
-if(NOT EJMAP_GIT_HASH)
-    set(EJMAP_GIT_HASH "nogit")
-endif()
+# Git short hash into the title bar, stamped at BUILD time.
+#
+# This used to be an execute_process here, at configure time. That is wrong for
+# the one job it has: after a commit, a plain rebuild kept the old hash, so the
+# title bar could name a commit the binary predated. It also could not say the
+# tree was dirty. StampBuildInfo.cmake regenerates the header on every build and
+# appends "-dirty" when tracked files are modified.
+set(EJMAP_BUILD_INFO_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+set(EJMAP_BUILD_INFO_H   ${EJMAP_BUILD_INFO_DIR}/EjmapBuildInfo.h)
+file(MAKE_DIRECTORY ${EJMAP_BUILD_INFO_DIR})
+
+add_custom_target(ejmap-build-stamp ALL
+    COMMAND ${CMAKE_COMMAND}
+            -D SRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -D OUT_FILE=${EJMAP_BUILD_INFO_H}
+            -D VERSION=${EJMAP_VERSION}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/StampBuildInfo.cmake
+    BYPRODUCTS ${EJMAP_BUILD_INFO_H}
+    COMMENT "Stamping ejmap build info (git hash + dirty flag)"
+    VERBATIM)
+
+# Generate it once now so the first configure leaves a compilable tree.
+execute_process(COMMAND ${CMAKE_COMMAND}
+    -D SRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+    -D OUT_FILE=${EJMAP_BUILD_INFO_H}
+    -D VERSION=${EJMAP_VERSION}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/StampBuildInfo.cmake)
 
 juce_add_gui_app(ejmap
     PRODUCT_NAME            "ejmap"
@@ -48,16 +64,19 @@ target_compile_definitions(ejmap PRIVATE
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:ejmap,JUCE_VERSION>"
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_VST3=1
-    JUCE_PLUGINHOST_LV2=0
-    EJMAP_VERSION="${EJMAP_VERSION}"
-    EJMAP_GIT_HASH="${EJMAP_GIT_HASH}")
+    JUCE_PLUGINHOST_LV2=0)
+# EJMAP_VERSION / EJMAP_GIT_HASH now come from the generated EjmapBuildInfo.h,
+# never from a configure-time define.
 
 # SHARED CODE, NOT COPIES.
 #
 # ejmap and EchoJay must compile the same headers. Two implementations of map
 # semantics drift within a week, exactly as the dial predicate did. These are
 # include paths, never file copies, and the round-trip test below enforces it.
+add_dependencies(ejmap ejmap-build-stamp)
+
 target_include_directories(ejmap PRIVATE
+    ${EJMAP_BUILD_INFO_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Source      # EchoJayParamApply.h
     ${CMAKE_CURRENT_SOURCE_DIR}/../ejextract)     # EchoJayParamExtractor.h
