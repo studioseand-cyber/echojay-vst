@@ -551,14 +551,18 @@ inline int usableCoreCount (const juce::var& map)
     return n;
 }
 
-// Marker/dialFlags threshold: >=2 usable CORE semantics (68 of 297 local
-// maps at last count). Apply-time honesty deliberately does NOT use this:
-// there the question is only "were the REQUESTED semantics written".
-// A role-aware version (match the slot's role to the semantics that role
-// needs) is feasible later once roles are normalized; not built now.
+// Dialability is the SERVER's answer: resolveFpV2 stamps map.dialable from
+// mapClearsCategoryBar (usable semantics across flat params AND groups, minus
+// suppressed, judged against the plugin's category bar). Read it, do not
+// reimplement it - the old flat, compressor-shaped usableCoreCount could not
+// see a suppressed key or a grouped band, so bx_digital read NOT dialable.
+// Absent flag = unknown = NOT dialable: this gates a strictness feature, so the
+// safe default is to withhold rather than guess, and TTL revalidation supplies
+// the flag within one window. usableCoreCount is left defined but no longer
+// consulted here - it was wrong in both directions.
 inline bool mapIsDialableForSignals (const juce::var& map)
 {
-    return usableCoreCount (map) >= 2;
+    return (bool) map.getProperty ("dialable", false);
 }
 
 // Dial signals master switch (feed "(dial)" markers + request dialFlags).
