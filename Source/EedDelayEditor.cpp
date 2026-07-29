@@ -14,14 +14,20 @@ using C = echojay::device::Colours;
 
 namespace
 {
-    // Five dial columns across, two rows, plus a control strip. The rack sizes
-    // this down if it has to, and layoutContent survives that.
+    // Five dial columns across, two rows, a control strip, and the taps view
+    // seated above all of it. The rack sizes this down if it has to, and
+    // layoutContent survives that — the view is the first thing to give up room.
     constexpr int kDefaultW = 440;
-    constexpr int kDefaultH = 268;
+    constexpr int kTapsH    = 104;
+    constexpr int kDefaultH = 268 + kTapsH + 6;
 
     constexpr int kGap      = 8;
     constexpr int kBtnW     = 92;
     constexpr int kDivBoxW  = 84;
+
+    // Below this the taps are a row of specks with no readable spacing between
+    // them, so the view is dropped rather than drawn uselessly small.
+    constexpr int kMinTapsH = 44;
 }
 
 EedDelayEditor::EedDelayEditor (EedDelayProcessor& p)
@@ -66,6 +72,7 @@ EedDelayEditor::EedDelayEditor (EedDelayProcessor& p)
             proc_.setParamValue (juce::String (id), b.getToggleState() ? 1.0 : 0.0);
             refreshSyncState();
             refreshHint();
+            refreshTaps();
         };
         addAndMakeVisible (b);
     };
@@ -87,6 +94,7 @@ EedDelayEditor::EedDelayEditor (EedDelayProcessor& p)
         proc_.setParamValue (EedDelayProcessor::kDivision,
                              (double) (divisionBox_.getSelectedId() - 1));
         refreshHint();
+        refreshTaps();
     };
     addAndMakeVisible (divisionBox_);
 
@@ -96,11 +104,16 @@ EedDelayEditor::EedDelayEditor (EedDelayProcessor& p)
     divisionLabel_.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (divisionLabel_);
 
+    taps_.setCaption ("REPEATS");
+    addAndMakeVisible (taps_);
+
     refreshSyncState();
     refreshHint();
+    refreshTaps();
 
     // The AI can move any of these while the editor is open, so poll for changes
-    // the UI did not make. 15 Hz is plenty and costs nothing.
+    // the UI did not make. 15 Hz is plenty: the taps view is analytic, so it only
+    // redraws when a param actually moves — there is no signal to keep up with.
     startTimerHz (15);
 }
 
@@ -113,6 +126,23 @@ EedDelayEditor::~EedDelayEditor()
 void EedDelayEditor::layoutContent (juce::Rectangle<int> content)
 {
     if (content.isEmpty()) return;
+
+    // The taps view is reserved from the TOP out of whatever is left once both
+    // dial rows and the switch strip are whole. It is the readout; the dials are
+    // the device, and a short rack slot loses the readout first (the inline-
+    // hosting contract in DeviceEditorBase.h).
+    {
+        const int needed = kKnobH * 2 + kRowH + kGap * 2 + 6;
+        const int want   = juce::jmin (kTapsH, juce::jmax (0, content.getHeight() - needed));
+        const bool room  = want >= kMinTapsH && content.getWidth() >= 80;
+
+        taps_.setVisible (room);
+        if (room)
+        {
+            taps_.setBounds (content.removeFromTop (want));
+            content.removeFromTop (6);
+        }
+    }
 
     // Row 1: the five dials that define the echo. Row 2: the three that place it
     // in the stereo field and move it. Row 3: the switches.
@@ -173,6 +203,7 @@ void EedDelayEditor::pushKnob (const char* id, const EchoJayDeviceKnob& k)
     // Through the schema path, exactly as an AI move would.
     proc_.setParamValue (juce::String (id), k.getRealValue());
     refreshHint();
+    refreshTaps();
 }
 
 void EedDelayEditor::refreshSyncState()
@@ -186,6 +217,25 @@ void EedDelayEditor::refreshSyncState()
     divisionLabel_.setColour (juce::Label::textColourId,
                               synced ? C::text2 : C::text3);
     divisionLabel_.repaint();
+}
+
+void EedDelayEditor::refreshTaps()
+{
+    // Analytic: everything the picture needs is already in the schema. Read it
+    // the same way the AI writes it, so the drawing cannot disagree with the
+    // device about what it is set to.
+    //
+    // effectiveTimeMs(), not the TIME dial: with sync on the dial is ignored by
+    // the audio path, and drawing it would show one delay above a device playing
+    // another.
+    taps_.setTaps ((float) proc_.engine().effectiveTimeMs(),
+                   (float) proc_.getParamValue (EedDelayProcessor::kFeedback),
+                   (float) proc_.getParamValue (EedDelayProcessor::kMix),
+                   proc_.getParamValue (EedDelayProcessor::kPingPong) >= 0.5);
+
+    // A bypassed device is not producing these repeats, so the picture of them
+    // greys out rather than sitting there asserting otherwise.
+    taps_.setDimmed (proc_.isBypassed());
 }
 
 void EedDelayEditor::refreshHint()
@@ -249,8 +299,11 @@ void EedDelayEditor::timerCallback()
     syncFromProcessor();
 
     // The tempo can change under a synced delay without any parameter moving, so
-    // the hint is refreshed every tick rather than only on a control change.
+    // both the hint and the picture are refreshed every tick rather than only on
+    // a control change. Both are gated internally on "did it actually move?", so
+    // a still editor costs no repaints.
     refreshHint();
+    refreshTaps();
 
     if (bypassButton().getToggleState() != proc_.isBypassed())
         bypassButton().setToggleState (proc_.isBypassed(), juce::dontSendNotification);

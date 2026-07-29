@@ -9,11 +9,17 @@ using namespace echojay::device::metrics;
 
 namespace
 {
-    // Five dial columns across, two rows. The rack sizes this down if it has to,
-    // and layoutContent survives that.
+    // Five dial columns across, two rows, with the decay envelope seated above
+    // them. The rack sizes this down if it has to, and layoutContent survives
+    // that — the view is the first thing to give up its room.
     constexpr int kDefaultW = 440;
-    constexpr int kDefaultH = 236;
+    constexpr int kDecayH   = 112;
+    constexpr int kDefaultH = 236 + kDecayH + 6;
     constexpr int kGap      = 8;
+
+    // Below this the envelope is a sliver with no readable shape to it, so the
+    // view is dropped rather than drawn uselessly small.
+    constexpr int kMinDecayH = 46;
 }
 
 EedReverbEditor::EedReverbEditor (EedReverbProcessor& p)
@@ -48,10 +54,15 @@ EedReverbEditor::EedReverbEditor (EedReverbProcessor& p)
     setupKnob (earlyLateKnob_, EedReverbProcessor::kEarlyLate,    0.0, 0, " %",  "EARLY/LATE");
     setupKnob (modDepthKnob_,  EedReverbProcessor::kModDepth,     0.0, 0, " %",  "MOD");
 
+    decay_.setCaption ("DECAY");
+    addAndMakeVisible (decay_);
+
     refreshHint();
+    refreshDecay();
 
     // The AI can move any of these while the editor is open, so poll for changes
-    // the UI did not make.
+    // the UI did not make. 15 Hz: the envelope is analytic, so it only redraws
+    // when a param actually moves — there is no signal to keep up with.
     startTimerHz (15);
 }
 
@@ -64,6 +75,23 @@ EedReverbEditor::~EedReverbEditor()
 void EedReverbEditor::layoutContent (juce::Rectangle<int> content)
 {
     if (content.isEmpty()) return;
+
+    // The envelope is reserved from the TOP out of whatever is left once both
+    // dial rows are whole. It is the readout; the dials are the device, and a
+    // short rack slot loses the readout first (the inline-hosting contract in
+    // DeviceEditorBase.h).
+    {
+        const int needed = kKnobH * 2 + kGap;
+        const int want   = juce::jmin (kDecayH, juce::jmax (0, content.getHeight() - needed));
+        const bool room  = want >= kMinDecayH && content.getWidth() >= 80;
+
+        decay_.setVisible (room);
+        if (room)
+        {
+            decay_.setBounds (content.removeFromTop (want));
+            content.removeFromTop (6);
+        }
+    }
 
     auto placeRow = [] (juce::Rectangle<int> row,
                         std::initializer_list<EchoJayDeviceKnob*> knobs)
@@ -104,6 +132,26 @@ void EedReverbEditor::pushKnob (const char* id, const EchoJayDeviceKnob& k)
     // Through the schema path, exactly as an AI move would.
     proc_.setParamValue (juce::String (id), k.getRealValue());
     refreshHint();
+    refreshDecay();
+}
+
+void EedReverbEditor::refreshDecay()
+{
+    // Analytic: read through the schema, exactly as the AI writes it, so the
+    // drawing cannot disagree with the device about what it is set to.
+    //
+    // The RAW decay_s, not effectiveDecaySeconds(): the view draws damping as
+    // its own second envelope, so handing it an already-damped RT60 would apply
+    // damping twice and draw a tail shorter than the one you hear.
+    decay_.setDecay ((float) proc_.getParamValue (EedReverbProcessor::kDecayS),
+                     (float) proc_.getParamValue (EedReverbProcessor::kPredelayMs),
+                     (float) proc_.getParamValue (EedReverbProcessor::kDamping),
+                     (float) proc_.getParamValue (EedReverbProcessor::kSize));
+
+    // So a reverb at 10% wet does not draw itself as loud as one at 100%.
+    decay_.setMixPercent ((float) proc_.getParamValue (EedReverbProcessor::kMix));
+
+    decay_.setDimmed (proc_.isBypassed());
 }
 
 void EedReverbEditor::refreshHint()
@@ -151,6 +199,7 @@ void EedReverbEditor::timerCallback()
 {
     syncFromProcessor();
     refreshHint();
+    refreshDecay();
 
     if (bypassButton().getToggleState() != proc_.isBypassed())
         bypassButton().setToggleState (proc_.isBypassed(), juce::dontSendNotification);
