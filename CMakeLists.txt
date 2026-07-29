@@ -153,6 +153,16 @@ target_sources(EchoJay PRIVATE
     Source/DeviceEditorBase.h
     Source/EchoJayDeviceLookAndFeel.cpp
     Source/EchoJayDeviceLookAndFeel.h
+    Source/EedAutoPanEditor.cpp
+    Source/EedAutoPanEditor.h
+    Source/EedAutoPanEngine.h
+    Source/EedAutoPanProcessor.cpp
+    Source/EedAutoPanProcessor.h
+    Source/EedChorusEditor.cpp
+    Source/EedChorusEditor.h
+    Source/EedChorusEngine.h
+    Source/EedChorusProcessor.cpp
+    Source/EedChorusProcessor.h
     Source/EedDeviceProcessor.cpp
     Source/EedDeviceProcessor.h
     Source/EedDeviceRegistry.cpp
@@ -162,11 +172,25 @@ target_sources(EchoJay PRIVATE
     Source/EedGainEngine.h
     Source/EedGainProcessor.cpp
     Source/EedGainProcessor.h
+    Source/EedLfoCore.h
+    Source/EedModEditorBase.cpp
+    Source/EedModEditorBase.h
+    Source/EedModTempo.h
     Source/EedParamSchema.h
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertEditor.h
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaseInvertProcessor.h
+    Source/EedPhaserEditor.cpp
+    Source/EedPhaserEditor.h
+    Source/EedPhaserEngine.h
+    Source/EedPhaserProcessor.cpp
+    Source/EedPhaserProcessor.h
+    Source/EedTremoloEditor.cpp
+    Source/EedTremoloEditor.h
+    Source/EedTremoloEngine.h
+    Source/EedTremoloProcessor.cpp
+    Source/EedTremoloProcessor.h
 )
 
 target_compile_definitions(EchoJay PUBLIC
@@ -328,6 +352,16 @@ target_sources(EchoJayLink PRIVATE
     Source/DeviceEditorBase.h
     Source/EchoJayDeviceLookAndFeel.cpp
     Source/EchoJayDeviceLookAndFeel.h
+    Source/EedAutoPanEditor.cpp
+    Source/EedAutoPanEditor.h
+    Source/EedAutoPanEngine.h
+    Source/EedAutoPanProcessor.cpp
+    Source/EedAutoPanProcessor.h
+    Source/EedChorusEditor.cpp
+    Source/EedChorusEditor.h
+    Source/EedChorusEngine.h
+    Source/EedChorusProcessor.cpp
+    Source/EedChorusProcessor.h
     Source/EedDeviceProcessor.cpp
     Source/EedDeviceProcessor.h
     Source/EedDeviceRegistry.cpp
@@ -337,11 +371,25 @@ target_sources(EchoJayLink PRIVATE
     Source/EedGainEngine.h
     Source/EedGainProcessor.cpp
     Source/EedGainProcessor.h
+    Source/EedLfoCore.h
+    Source/EedModEditorBase.cpp
+    Source/EedModEditorBase.h
+    Source/EedModTempo.h
     Source/EedParamSchema.h
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertEditor.h
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaseInvertProcessor.h
+    Source/EedPhaserEditor.cpp
+    Source/EedPhaserEditor.h
+    Source/EedPhaserEngine.h
+    Source/EedPhaserProcessor.cpp
+    Source/EedPhaserProcessor.h
+    Source/EedTremoloEditor.cpp
+    Source/EedTremoloEditor.h
+    Source/EedTremoloEngine.h
+    Source/EedTremoloProcessor.cpp
+    Source/EedTremoloProcessor.h
 )
 
 echojay_force_load_shared_code(EchoJayLink)
@@ -432,12 +480,21 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     # plugin targets' built-in device block.
     Source/DeviceEditorBase.cpp
     Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EedAutoPanEditor.cpp
+    Source/EedAutoPanProcessor.cpp
+    Source/EedChorusEditor.cpp
+    Source/EedChorusProcessor.cpp
     Source/EedDeviceProcessor.cpp
     Source/EedDeviceRegistry.cpp
     Source/EedGainEditor.cpp
     Source/EedGainProcessor.cpp
+    Source/EedModEditorBase.cpp
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertProcessor.cpp
+    Source/EedPhaserEditor.cpp
+    Source/EedPhaserProcessor.cpp
+    Source/EedTremoloEditor.cpp
+    Source/EedTremoloProcessor.cpp
     Source/EqEngine.cpp
     Source/SurgicalEqEditor.cpp
     Source/SurgicalEqProcessor.cpp
