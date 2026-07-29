@@ -56,11 +56,6 @@ public:
 
         addAndMakeVisible (status);
         status.setJustificationType (juce::Justification::centredLeft);
-        status.setText (crashedId.isEmpty()
-                          ? "Ready. Scan to enumerate installed plugins."
-                          : "Previous session died loading " + crashedId
-                              + ". Marked crash_on_load and quarantined.",
-                        juce::dontSendNotification);
 
         addAndMakeVisible (summaryButton);
         summaryButton.setButtonText ("Summary");
@@ -76,6 +71,27 @@ public:
         progressLabel.setColour (juce::Label::textColourId, juce::Colour (0xff9fd8e0));
 
         addAndMakeVisible (editorHolder);
+
+        // The scan costs 4.5 minutes and the watchdog stops the process by
+        // design, so a relaunch used to mean a full rescan and ~900 more ledger
+        // rows. Restore the last result and make Scan an explicit refresh.
+        const auto restored = restoreScanCache();
+
+        juce::String opening;
+        if (crashedId.isNotEmpty())
+            opening << "Previous session died loading " << crashedId << ". ";
+
+        if (restored)
+            opening << describeRestoredScan();
+        else
+            opening << "No saved scan. Scan to enumerate installed plugins.";
+
+        status.setText (opening, juce::dontSendNotification);
+
+        // Same reasoning as the title bar readback: on a machine where the
+        // shell cannot screenshot, this is the only way to assert what the
+        // window is actually showing.
+        std::cout << "ejmap status: " << opening << std::endl;
 
         setSize (1280, 820);
         startTimerHz (4);
@@ -153,6 +169,62 @@ public:
             std::cout.flush();
             juce::JUCEApplication::getInstance()->quit();
         });
+    }
+
+    /** Proves the cache round-trips, that uninstalled entries are dropped, and
+        that a quarantine applied AFTER the scan shows up on the restored list
+        without a rescan.
+    */
+    void selfTestScanCache()
+    {
+        lastScan = PluginScanner::Result();
+        auto add = [this] (juce::PluginDescription d)
+        {
+            ScannedPlugin sp; sp.desc = d; lastScan.plugins.add (sp);
+        };
+
+        add (echojay::auregistry::describeFromRegistry ("AudioUnit:Effects/aufx,SthB,OekS"));
+
+        juce::PluginDescription ghostAu;
+        ghostAu.pluginFormatName = "AudioUnit";
+        ghostAu.fileOrIdentifier = "AudioUnit:Effects/aufx,ZZZZ,ZZZZ";
+        ghostAu.name = "GhostAU";
+        add (ghostAu);
+
+        juce::PluginDescription realVst;
+        realVst.pluginFormatName = "VST3";
+        realVst.fileOrIdentifier = "/Library/Audio/Plug-Ins/VST3/spiff.vst3";
+        realVst.name = "spiff";
+        add (realVst);
+
+        juce::PluginDescription ghostVst;
+        ghostVst.pluginFormatName = "VST3";
+        ghostVst.fileOrIdentifier = "/Library/Audio/Plug-Ins/VST3/DoesNotExist.vst3";
+        ghostVst.name = "GhostVST3";
+        add (ghostVst);
+
+        lastScan.auEnumerated = 1419;
+        saveScanCache();
+        std::cout << "CACHETEST: saved " << lastScan.plugins.size() << " entries" << std::endl;
+
+        // Quarantine one of them AFTER the scan was written. A relaunch is
+        // exactly what follows a quarantine, so this must show without rescan.
+        ledger.quarantine (realVst.fileOrIdentifier, "test_quarantine");
+
+        rows.clearQuick();
+        const bool ok = restoreScanCache();
+
+        std::cout << "CACHETEST: restored=" << (ok ? "yes" : "no")
+                  << " kept=" << rows.size() << " dropped=" << cacheDropped << std::endl;
+        for (const auto& sp : rows)
+            std::cout << "   kept: " << sp.desc.name << " [" << sp.desc.pluginFormatName
+                      << "] quarantined=" << (ledger.isQuarantined (sp.pluginId()) ? "yes" : "no")
+                      << std::endl;
+        std::cout << "CACHETEST: status = " << describeRestoredScan() << std::endl;
+        std::cout << "CACHETEST: " << ((ok && rows.size() == 2 && cacheDropped == 2)
+                                         ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        juce::JUCEApplication::getInstance()->quit();
     }
 
     void resized() override
@@ -233,6 +305,157 @@ private:
         MainComponent& owner;
         JUCE_DECLARE_NON_COPYABLE (BusyScope)
     };
+
+    /** Bump when anything about what a cached entry MEANS changes, above all
+        ScannedPlugin::pluginId.
+    */
+    static constexpr int kScanCacheVersion = 1;
+
+    //==========================================================================
+    juce::File scanCacheFile() const { return ledger.getRoot().getChildFile ("scan-cache.xml"); }
+
+    /** Written after every completed scan. Carries the run that produced it, so
+        a restored list can always name where it came from.
+    */
+    void saveScanCache() const
+    {
+        if (lastScan.plugins.isEmpty())
+            return;   // never overwrite a good cache with an empty result
+
+        juce::XmlElement root ("EJMAP_SCAN_CACHE");
+        root.setAttribute ("cache_version", kScanCacheVersion);
+        root.setAttribute ("run_id", ledger.currentRunId());
+        root.setAttribute ("at", juce::Time::getCurrentTime().toISO8601 (true));
+        root.setAttribute ("au_enumerated", lastScan.auEnumerated);
+        root.setAttribute ("au_excluded_apple", lastScan.auExcludedApple);
+        root.setAttribute ("au_excluded_echojay", lastScan.auExcludedEcho);
+        root.setAttribute ("instruments_filtered", lastScan.instrumentsFiltered);
+        root.setAttribute ("unused_type_filtered", lastScan.unusedTypeFiltered);
+        root.setAttribute ("vst3_probed", lastScan.vst3Probed);
+        root.setAttribute ("errors", lastScan.errors.size());
+
+        for (const auto& sp : lastScan.plugins)
+            if (auto desc = sp.desc.createXml())
+                root.addChildElement (desc.release());
+
+        root.writeTo (scanCacheFile());
+    }
+
+    /** Loads the last scan and validates every entry against what is installed
+        NOW. Returns false when there is nothing usable to show.
+    */
+    bool restoreScanCache()
+    {
+        auto xml = juce::XmlDocument::parse (scanCacheFile());
+        if (xml == nullptr || ! xml->hasTagName ("EJMAP_SCAN_CACHE"))
+            return false;
+
+        // A cache written by a build with different pluginId semantics would
+        // restore entries keyed wrongly, and the ledger and quarantine key on
+        // exactly that. Refuse rather than guess; the cost of being wrong is a
+        // rescan, which is what would have happened anyway.
+        if (xml->getIntAttribute ("cache_version", 0) != kScanCacheVersion)
+            return false;
+
+        cacheRunId = xml->getStringAttribute ("run_id");
+        cacheAt    = juce::Time::fromISO8601 (xml->getStringAttribute ("at"));
+        cacheDropped = 0;
+
+        rows.clearQuick();
+
+        for (auto* e : xml->getChildWithTagNameIterator ("PLUGIN"))
+        {
+            juce::PluginDescription d;
+            if (! d.loadFromXml (*e))
+                continue;
+
+            if (! stillInstalled (d)) { ++cacheDropped; continue; }
+
+            ScannedPlugin sp;
+            sp.desc = d;
+            rows.add (sp);
+        }
+
+        if (rows.isEmpty())
+            return false;
+
+        // Restore the census for display only. Labelled as belonging to that
+        // run, never presented as a fresh count.
+        lastScan = PluginScanner::Result();
+        lastScan.auEnumerated       = xml->getIntAttribute ("au_enumerated");
+        lastScan.auExcludedApple    = xml->getIntAttribute ("au_excluded_apple");
+        lastScan.auExcludedEcho     = xml->getIntAttribute ("au_excluded_echojay");
+        lastScan.instrumentsFiltered= xml->getIntAttribute ("instruments_filtered");
+        lastScan.unusedTypeFiltered = xml->getIntAttribute ("unused_type_filtered");
+        lastScan.vst3Probed         = xml->getIntAttribute ("vst3_probed");
+        cacheErrors                 = xml->getIntAttribute ("errors");
+
+        applyFilter();
+        return true;
+    }
+
+    /** UNINSTALL DETECTION.
+
+        Per entry, against the thing that actually says whether it is there:
+
+          VST3       the bundle path exists on disk. A VST3 IS its bundle, so
+                     this is exact and costs one stat.
+          AudioUnit  the component is still in the AudioComponent registry, via
+                     describeFromRegistry. No instantiation, no plugin code; the
+                     whole 1419-component registry resolves in ~60 ms measured,
+                     so 1319 lookups is not a launch cost worth optimising.
+
+        Chosen over the alternatives deliberately. A file MODIFICATION time
+        check would miss an uninstall entirely. Re-running the scan is the thing
+        this whole change exists to avoid. Trusting the cache blindly would
+        resurrect uninstalled plugins into the list, and the first the human
+        would know is a load failure.
+
+        Note what this does NOT do: it cannot see plugins installed SINCE the
+        cached scan. That is why the age and run id are on screen and Scan is an
+        explicit refresh.
+    */
+    static bool stillInstalled (const juce::PluginDescription& d)
+    {
+        if (d.pluginFormatName == "AudioUnit")
+            return echojay::auregistry::describeFromRegistry (d.fileOrIdentifier)
+                     .fileOrIdentifier.isNotEmpty();
+
+        return juce::File (d.fileOrIdentifier).exists();
+    }
+
+    static juce::String ageOf (juce::Time t)
+    {
+        if (t == juce::Time())
+            return "unknown age";
+
+        const auto d = juce::Time::getCurrentTime() - t;
+        if (d.inMinutes() < 1.0) return "just now";
+        if (d.inHours()   < 1.0) return juce::String ((int) d.inMinutes()) + " min ago";
+        if (d.inDays()    < 1.0) return juce::String (d.inHours(), 1) + " h ago";
+        return juce::String (d.inDays(), 1) + " days ago";
+    }
+
+    /** Every restored list says where it came from and how old it is, so a
+        stale list can never be mistaken for a fresh one.
+    */
+    juce::String describeRestoredScan() const
+    {
+        int quarantined = 0;
+        for (const auto& sp : rows)
+            if (ledger.isQuarantined (sp.pluginId()))
+                ++quarantined;
+
+        juce::String m;
+        m << "RESTORED " << rows.size() << " plugins from scan " << cacheRunId
+          << " (" << ageOf (cacheAt) << ")";
+        if (quarantined > 0)
+            m << "; " << quarantined << " quarantined";
+        if (cacheDropped > 0)
+            m << "; " << cacheDropped << " no longer installed, dropped";
+        m << ". Scan to refresh.";
+        return m;
+    }
 
     void showProgress (bool shouldShow)
     {
@@ -331,6 +554,12 @@ private:
         report.add ("listed=" + juce::String (rows.size()));
         for (const auto& [typeCode, n] : lastScan.droppedByType)
             report.add ("dropped[" + typeCode + "]=" + juce::String (n));
+
+        // Persist the result so the next launch does not pay 4.5 minutes for it.
+        saveScanCache();
+        cacheRunId = ledger.currentRunId();
+        cacheAt    = juce::Time::getCurrentTime();
+        cacheDropped = 0;
 
         // Per-run filenames. These used to be replaced on every scan while the
         // ledger appended, so the three artifacts describing one scan disagreed
@@ -579,6 +808,10 @@ private:
     juce::TextButton scanButton, loadButton, summaryButton;
     bool busy = false;
     int  loadDepth = 0, maxLoadDepth = 0, loadCalls = 0, loadRejected = 0;
+
+    juce::String cacheRunId;      // run that produced the list on screen
+    juce::Time   cacheAt;
+    int          cacheDropped = 0, cacheErrors = 0;
     juce::Label      status;
     double scanProgress = 0.0;                       // declared before the bar that references it
     juce::ProgressBar progressBar { scanProgress };

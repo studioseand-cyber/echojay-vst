@@ -31,6 +31,7 @@ public:
         auto args = juce::StringArray::fromTokens (commandLine, true);
         juce::File ledgerRoot;
         juce::String selfTestId;
+        bool cacheTest = false;
 
         for (int i = 0; i < args.size(); ++i)
         {
@@ -38,6 +39,8 @@ public:
                 ledgerRoot = juce::File::getCurrentWorkingDirectory().getChildFile (args[++i]);
             else if (args[i] == "--selftest-reentry" && i + 1 < args.size())
                 selfTestId = args[++i];
+            else if (args[i] == "--selftest-cache")
+                cacheTest = true;
         }
 
         mainWindow = std::make_unique<MainWindow> (buildTitle(), ledgerRoot);
@@ -48,7 +51,9 @@ public:
         // only way to assert it against the live object rather than the source.
         std::cout << "ejmap window title: " << mainWindow->getName() << std::endl;
 
-        if (selfTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        if (cacheTest && mainWindow->getMain() != nullptr)
+            mainWindow->getMain()->selfTestScanCache();
+        else if (selfTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
             mainWindow->getMain()->selfTestReentry (selfTestId);
     }
 
