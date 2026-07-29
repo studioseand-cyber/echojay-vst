@@ -29,13 +29,17 @@
 
 #include "EedDeviceRegistry.h"
 #include "EedDeviceProcessor.h"
+#include "EedAutoPanProcessor.h"
+#include "EedChorusProcessor.h"
 #include "EedDelayProcessor.h"
 #include "EedExciterProcessor.h"
 #include "EedGainProcessor.h"
 #include "EedPhaseInvertProcessor.h"
+#include "EedPhaserProcessor.h"
 #include "EedReverbProcessor.h"
 #include "EedSaturationProcessor.h"
 #include "EedTapeProcessor.h"
+#include "EedTremoloProcessor.h"
 #include "SurgicalEqProcessor.h"
 
 #include <cmath>
@@ -89,10 +93,14 @@ int main()
     check (registry.findByName ("EchoJay Exciter")       != nullptr, "EchoJay Exciter registered");
     check (registry.findByName ("EchoJay Delay")         != nullptr, "EchoJay Delay registered");
     check (registry.findByName ("EchoJay Reverb")        != nullptr, "EchoJay Reverb registered");
+    check (registry.findByName ("EchoJay Tremolo")       != nullptr, "EchoJay Tremolo registered");
+    check (registry.findByName ("EchoJay Auto Pan")      != nullptr, "EchoJay Auto Pan registered");
+    check (registry.findByName ("EchoJay Chorus")        != nullptr, "EchoJay Chorus registered");
+    check (registry.findByName ("EchoJay Phaser")        != nullptr, "EchoJay Phaser registered");
     // An EXACT count, not a lower bound: the failure this catches is a device
-    // silently disappearing, and ">= 8" would not notice that. Every Wave 1
+    // silently disappearing, and ">= 12" would not notice that. Every Wave 1
     // session bumps this by the number of devices it lands.
-    check (registry.all().size() == 8, "exactly 8 devices registered (got "
+    check (registry.all().size() == 12, "exactly 12 devices registered (got "
                                        + juce::String ((int) registry.all().size()) + ")");
 
     // -----------------------------------------------------------------------
@@ -103,19 +111,29 @@ int main()
         // Utility comes after EQ; within it, alphabetical.
         check (names.indexOf ("EchoJay Gain") < names.indexOf ("EchoJay Phase Invert"),
                "Gain before Phase Invert (alphabetical within Utility)");
-        // Harmonic ranks after Utility, Time after Harmonic, and each sorts
+        // Harmonic ranks after Modulation, Time after Harmonic, and each sorts
         // alphabetically inside itself.
         check (names.indexOf ("EchoJay Exciter") < names.indexOf ("EchoJay Saturation")
             && names.indexOf ("EchoJay Saturation") < names.indexOf ("EchoJay Tape"),
                "Exciter, Saturation, Tape (alphabetical within Harmonic)");
         check (names.indexOf ("EchoJay Delay") < names.indexOf ("EchoJay Reverb"),
                "Delay before Reverb (alphabetical within Time)");
-        check (names.indexOf ("EchoJay Phase Invert") < names.indexOf ("EchoJay Exciter"),
-               "the whole Utility group precedes the whole Harmonic group");
+        check (names.indexOf ("EchoJay Phase Invert") < names.indexOf ("EchoJay Auto Pan"),
+               "the whole Utility group precedes the whole Modulation group");
+        check (names.indexOf ("EchoJay Tremolo") < names.indexOf ("EchoJay Exciter"),
+               "the whole Modulation group precedes the whole Harmonic group");
         check (names.indexOf ("EchoJay Tape") < names.indexOf ("EchoJay Delay"),
                "the whole Harmonic group precedes the whole Time group");
-        check (registry.categories().joinIntoString (",") == "EQ,Utility,Harmonic,Time",
+        check (registry.categories().joinIntoString (",") == "EQ,Utility,Modulation,Harmonic,Time",
                "categories in canonical order: " + registry.categories().joinIntoString (","));
+
+        // Within Modulation, alphabetical: Auto Pan, Chorus, Phaser, Tremolo.
+        check (names.indexOf ("EchoJay Auto Pan") < names.indexOf ("EchoJay Chorus")
+            && names.indexOf ("EchoJay Chorus")   < names.indexOf ("EchoJay Phaser")
+            && names.indexOf ("EchoJay Phaser")   < names.indexOf ("EchoJay Tremolo"),
+               "Modulation devices sort alphabetically among themselves");
+        check (names.indexOf ("EchoJay Gain") < names.indexOf ("EchoJay Auto Pan"),
+               "Utility ranks before Modulation");
     }
 
     // -----------------------------------------------------------------------
@@ -125,12 +143,15 @@ int main()
     check (registry.findByName ("EchoJay Trim")   != nullptr, "declared alias");
     check (registry.findByName ("EchoJay Polarity") != nullptr, "phase-invert alias");
     check (registry.findByName ("Pro-Q 3")        == nullptr, "a third-party name is NOT ours");
+    check (registry.findByName ("AutoPan")        != nullptr, "auto pan without the space");
+    check (registry.findByName ("Tremolo")        != nullptr, "bare \"Tremolo\" resolves");
+    check (registry.findByName ("echojay phaser") != nullptr, "phaser, case-insensitive");
 
     // -----------------------------------------------------------------------
     std::printf ("== synthetic descriptions (what saved chain XML carries) ==\n");
     {
         const auto descs = registry.descriptions();
-        check (descs.size() == 8, "one description per device");
+        check (descs.size() == registry.all().size(), "one description per device");
         for (const auto& d : descs)
         {
             check (d.pluginFormatName == kEchoJayBuiltinFormat,
@@ -562,6 +583,138 @@ int main()
 
         check (near (db->getParamValue ("level_db"), 0.0), "level_db reset to default");
         check (near (db->getParamValue ("pan"), 0.0),      "pan reset to default");
+    }
+
+    // -----------------------------------------------------------------------
+    std::printf ("== identities are unique (a clash would make restore ambiguous) ==\n");
+    {
+        bool clash = false;
+        const auto& all = registry.all();
+        for (size_t i = 0; i < all.size(); ++i)
+            for (size_t j = i + 1; j < all.size(); ++j)
+                if (all[i].uid == all[j].uid || all[i].identifier == all[j].identifier)
+                    clash = true;
+        check (! clash, "no two devices share a uid or an identifier");
+    }
+
+    // -----------------------------------------------------------------------
+    std::printf ("== MODULATION: each device dials exactly from params ==\n");
+    {
+        auto proc = makeByName ("EchoJay Tremolo");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        check (device != nullptr, "Tremolo constructs as a device");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "rate_hz", 6.5 },
+                                               { "depth", 80.0 },
+                                               { "stereo_phase", 180.0 },
+                                               { "mix", 75.0 } }), &applied, &skipped);
+        check (applied == 4 && skipped == 0, "Tremolo: 4 params applied, 0 skipped");
+        check (near (device->getParamValue ("rate_hz"), 6.5),        "rate_hz landed at 6.5");
+        check (near (device->getParamValue ("depth"), 80.0),         "depth landed at 80");
+        check (near (device->getParamValue ("stereo_phase"), 180.0), "stereo_phase landed at 180");
+        check (near (device->getParamValue ("mix"), 75.0),           "mix landed at 75");
+
+        // A discrete param is ROUNDED, not truncated: shape 1.6 is a square, and
+        // an off-by-one here would silently hand the user the wrong waveform.
+        device->applyStructured (paramsMove ({ { "shape", 1.6 } }));
+        check (near (device->getParamValue ("shape"), 2.0), "shape 1.6 rounds to 2 (square)");
+
+        // The tempo-sync interlock, as the model would send it.
+        device->applyStructured (paramsMove ({ { "sync", true }, { "sync_division", 8.0 } }));
+        check (near (device->getParamValue ("sync"), 1.0),          "sync on");
+        check (near (device->getParamValue ("sync_division"), 8.0), "division landed at 1/8");
+    }
+
+    {
+        auto proc = makeByName ("EchoJay Auto Pan");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        int applied = 0, skipped = 0;
+        const auto summary = device->applyStructured (
+            paramsMove ({ { "depth", 100.0 }, { "mix", 50.0 } }), &applied, &skipped);
+
+        check (near (device->getParamValue ("depth"), 100.0), "Auto Pan: depth landed at 100");
+        // Auto Pan publishes no MIX on purpose (panning is a placement, not a
+        // parallel effect), so the id must be REFUSED rather than absorbed.
+        check (skipped == 1 && summary.contains ("mix"),
+               "Auto Pan: an unpublished \"mix\" is refused, not swallowed");
+    }
+
+    {
+        auto proc = makeByName ("EchoJay Chorus");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        device->applyStructured (paramsMove ({ { "delay_ms", 25.0 },
+                                               { "voices", "3" },        // string from JSON
+                                               { "feedback", -50.0 },
+                                               { "mix", 100.0 } }));
+        check (near (device->getParamValue ("delay_ms"), 25.0),  "Chorus: delay_ms landed at 25");
+        check (near (device->getParamValue ("voices"), 3.0),     "Chorus: the string \"3\" -> 3 voices");
+        check (near (device->getParamValue ("feedback"), -50.0), "Chorus: negative feedback landed");
+
+        // Out of range in both directions, clamped to the advertised limits.
+        device->applyStructured (paramsMove ({ { "voices", 99.0 }, { "delay_ms", 0.0 } }));
+        check (near (device->getParamValue ("voices"), 4.0),    "Chorus: 99 voices clamped to 4");
+        check (near (device->getParamValue ("delay_ms"), 1.0),  "Chorus: 0 ms clamped to the 1 ms floor");
+    }
+
+    {
+        auto proc = makeByName ("EchoJay Phaser");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        device->applyStructured (paramsMove ({ { "center_freq", 2000.0 },
+                                               { "stages", 12.0 },
+                                               { "feedback", 80.0 } }));
+        check (near (device->getParamValue ("center_freq"), 2000.0), "Phaser: center_freq landed at 2 kHz");
+        check (near (device->getParamValue ("stages"), 12.0),        "Phaser: 12 stages landed");
+        check (near (device->getParamValue ("feedback"), 80.0),      "Phaser: feedback landed at 80");
+
+        // "centerFreq" / "center-freq" are the same id: a near-miss spelling has
+        // to land, or the move is a silent no-op with nothing to see.
+        device->applyStructured (paramsMove ({ { "centerFreq", 400.0 } }));
+        check (near (device->getParamValue ("center_freq"), 400.0),
+               "Phaser: \"centerFreq\" resolves to the same param");
+    }
+
+    // -----------------------------------------------------------------------
+    std::printf ("== MODULATION: a device at its defaults is PASS-THROUGH ==\n");
+    {
+        // Belt and braces on the DSP side of the contract: adding one of these
+        // to a chain and touching nothing must not change the audio. The engines'
+        // own g++ test covers the maths; this covers the wiring in between.
+        for (const char* name : { "EchoJay Tremolo", "EchoJay Auto Pan",
+                                  "EchoJay Chorus",  "EchoJay Phaser" })
+        {
+            auto proc = makeByName (name);
+            auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            device->resetParamsToDefaults();
+
+            // Chorus and Phaser are wet by default, so mute the wet path: what is
+            // under test here is that the dry path arrives intact.
+            device->applyStructured (paramsMove ({ { "mix", 0.0 } }));
+            device->applyStructured (paramsMove ({ { "depth", 0.0 } }));
+
+            proc->prepareToPlay (48000.0, 512);
+
+            juce::AudioBuffer<float> buf (2, 512);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i)
+                    buf.setSample (ch, i, std::sin ((float) i * 0.05f));
+
+            juce::AudioBuffer<float> before (buf);
+            juce::MidiBuffer midi;
+            proc->processBlock (buf, midi);
+
+            float worst = 0.0f;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i)
+                    worst = juce::jmax (worst, std::abs (buf.getSample (ch, i)
+                                                       - before.getSample (ch, i)));
+            check (worst < 1.0e-4f,
+                   juce::String (name) + ": dry path is intact (worst delta "
+                   + juce::String (worst, 7) + ")");
+        }
     }
 
     // -----------------------------------------------------------------------

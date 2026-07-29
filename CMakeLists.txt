@@ -153,6 +153,16 @@ target_sources(EchoJay PRIVATE
     Source/DeviceEditorBase.h
     Source/EchoJayDeviceLookAndFeel.cpp
     Source/EchoJayDeviceLookAndFeel.h
+    Source/EedAutoPanEditor.cpp
+    Source/EedAutoPanEditor.h
+    Source/EedAutoPanEngine.h
+    Source/EedAutoPanProcessor.cpp
+    Source/EedAutoPanProcessor.h
+    Source/EedChorusEditor.cpp
+    Source/EedChorusEditor.h
+    Source/EedChorusEngine.h
+    Source/EedChorusProcessor.cpp
+    Source/EedChorusProcessor.h
     Source/EedDelayCore.h
     Source/EedDelayEditor.cpp
     Source/EedDelayEditor.h
@@ -175,11 +185,20 @@ target_sources(EchoJay PRIVATE
     Source/EedGainProcessor.h
     Source/EedHarmonicCore.cpp
     Source/EedHarmonicCore.h
+    Source/EedLfoCore.h
+    Source/EedModEditorBase.cpp
+    Source/EedModEditorBase.h
+    Source/EedModTempo.h
     Source/EedParamSchema.h
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertEditor.h
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaseInvertProcessor.h
+    Source/EedPhaserEditor.cpp
+    Source/EedPhaserEditor.h
+    Source/EedPhaserEngine.h
+    Source/EedPhaserProcessor.cpp
+    Source/EedPhaserProcessor.h
     Source/EedReverbEditor.cpp
     Source/EedReverbEditor.h
     Source/EedReverbEngine.h
@@ -195,6 +214,11 @@ target_sources(EchoJay PRIVATE
     Source/EedTapeProcessor.cpp
     Source/EedTapeProcessor.h
     Source/EedTempoClock.h
+    Source/EedTremoloEditor.cpp
+    Source/EedTremoloEditor.h
+    Source/EedTremoloEngine.h
+    Source/EedTremoloProcessor.cpp
+    Source/EedTremoloProcessor.h
 )
 
 target_compile_definitions(EchoJay PUBLIC
@@ -356,6 +380,16 @@ target_sources(EchoJayLink PRIVATE
     Source/DeviceEditorBase.h
     Source/EchoJayDeviceLookAndFeel.cpp
     Source/EchoJayDeviceLookAndFeel.h
+    Source/EedAutoPanEditor.cpp
+    Source/EedAutoPanEditor.h
+    Source/EedAutoPanEngine.h
+    Source/EedAutoPanProcessor.cpp
+    Source/EedAutoPanProcessor.h
+    Source/EedChorusEditor.cpp
+    Source/EedChorusEditor.h
+    Source/EedChorusEngine.h
+    Source/EedChorusProcessor.cpp
+    Source/EedChorusProcessor.h
     Source/EedDelayCore.h
     Source/EedDelayEditor.cpp
     Source/EedDelayEditor.h
@@ -378,11 +412,20 @@ target_sources(EchoJayLink PRIVATE
     Source/EedGainProcessor.h
     Source/EedHarmonicCore.cpp
     Source/EedHarmonicCore.h
+    Source/EedLfoCore.h
+    Source/EedModEditorBase.cpp
+    Source/EedModEditorBase.h
+    Source/EedModTempo.h
     Source/EedParamSchema.h
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertEditor.h
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaseInvertProcessor.h
+    Source/EedPhaserEditor.cpp
+    Source/EedPhaserEditor.h
+    Source/EedPhaserEngine.h
+    Source/EedPhaserProcessor.cpp
+    Source/EedPhaserProcessor.h
     Source/EedReverbEditor.cpp
     Source/EedReverbEditor.h
     Source/EedReverbEngine.h
@@ -398,6 +441,11 @@ target_sources(EchoJayLink PRIVATE
     Source/EedTapeProcessor.cpp
     Source/EedTapeProcessor.h
     Source/EedTempoClock.h
+    Source/EedTremoloEditor.cpp
+    Source/EedTremoloEditor.h
+    Source/EedTremoloEngine.h
+    Source/EedTremoloProcessor.cpp
+    Source/EedTremoloProcessor.h
 )
 
 echojay_force_load_shared_code(EchoJayLink)
@@ -488,6 +536,10 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     # plugin targets' built-in device block.
     Source/DeviceEditorBase.cpp
     Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EedAutoPanEditor.cpp
+    Source/EedAutoPanProcessor.cpp
+    Source/EedChorusEditor.cpp
+    Source/EedChorusProcessor.cpp
     Source/EedDelayEditor.cpp
     Source/EedDelayProcessor.cpp
     Source/EedDeviceProcessor.cpp
@@ -497,14 +549,19 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EedGainEditor.cpp
     Source/EedGainProcessor.cpp
     Source/EedHarmonicCore.cpp
+    Source/EedModEditorBase.cpp
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertProcessor.cpp
+    Source/EedPhaserEditor.cpp
+    Source/EedPhaserProcessor.cpp
     Source/EedReverbEditor.cpp
     Source/EedReverbProcessor.cpp
     Source/EedSaturationEditor.cpp
     Source/EedSaturationProcessor.cpp
     Source/EedTapeEditor.cpp
     Source/EedTapeProcessor.cpp
+    Source/EedTremoloEditor.cpp
+    Source/EedTremoloProcessor.cpp
     Source/EqEngine.cpp
     Source/SurgicalEqEditor.cpp
     Source/SurgicalEqProcessor.cpp

@@ -132,7 +132,17 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
 
         const double v = spec->clamp (raw);
 
-        if (! setParamValue (id, v))
+        // Set through the CANONICAL id, never the raw spelling. ParamSchema::find
+        // is deliberately tolerant — "centerFreq", "center-freq" and "center_freq"
+        // are one param — but a device's setParamValue compares against its own
+        // literal id constants. Passing the raw spelling through would resolve the
+        // spec and then fail to set it: the move lands in the schema, reports
+        // "not implemented", and the knob never turns. That is exactly the silent
+        // no-op the tolerant matching exists to prevent, so the tolerance has to
+        // survive all the way to the device.
+        const juce::String canonicalId (spec->id);
+
+        if (! setParamValue (canonicalId, v))
         {
             ++skipped;
             unknown.add (id + " (not implemented)");
