@@ -443,6 +443,13 @@ private:
     // don't-re-request guard). Drives DialStatus::pending vs noMap.
     juce::StringArray                    pendingMapFps_;
     bool                                 mapsRevalidated_ = false; // once-per-session cache revalidation
+    // TTL-on-use: epoch-ms of the last server confirm per fp. A cached map
+    // older than the staleness bound is refetched before it can dial, so a
+    // since-corrected map (the AMEK suppression class) is never applied.
+    std::map<juce::String, juce::int64>  fpFetchedAt_;
+    std::shared_ptr<int>                 life_ { std::make_shared<int>(0) }; // weak-guard for deferred callbacks
+    bool mapFresh (const juce::String& fp) const;
+    void refetchStale (const juce::String& fp);
     void applyStructuredIfReady (int slotIndex);
     void loadParamMapsFromDisk();
     void saveParamMapsToDisk();

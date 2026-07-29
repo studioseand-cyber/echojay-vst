@@ -1487,6 +1487,11 @@ void ChainHost::storeParamMaps(const juce::var& mapsObj)
         const auto fp = p.name.toString();
         if (!p.value.isVoid() && p.value.getDynamicObject() != nullptr)
         {
+            // TTL: the server just confirmed this fp, so stamp it fresh BEFORE
+            // the rev-compare below. An unchanged-rev map must still lose its
+            // stale flag, otherwise the rev `continue` would leave the old
+            // timestamp and applyStructuredIfReady would refetch it forever.
+            fpFetchedAt_[fp] = juce::Time::currentTimeMillis();
             // Rev compare: overwrite only when the map is new or its content
             // revision differs (a cached map without a rev predates the
             // invalidation scheme and always counts as stale once). This is
@@ -1609,6 +1614,48 @@ void ChainHost::requestMapPrefetch()
     }
 }
 
+// TTL-on-use tuning. 6h staleness bound: shorter than a working session so a
+// server-side correction lands the same day it ships, longer than repeated use
+// within one task so a plugin dialled again and again refetches at most once
+// per window. The once-per-session revalidation (requestMapPrefetch) refreshes
+// everything at open, so this TTL is the safety bound for long sessions and the
+// pre-revalidation window, not the primary refresh. kStaleRefetchMs is the
+// brief block: exceed it and the slot falls back to hand-dial, never to the
+// stale map.
+static constexpr juce::int64 kMapTtlMs       = 6LL * 60 * 60 * 1000;
+static constexpr int         kStaleRefetchMs = 1500;
+
+bool ChainHost::mapFresh(const juce::String& fp) const
+{
+    auto it = fpFetchedAt_.find(fp);
+    if (it == fpFetchedAt_.end()) return false;   // never confirmed -> stale
+    return (juce::Time::currentTimeMillis() - it->second) <= kMapTtlMs;
+}
+
+// Refetch a stale cached fp and, if the answer does not arrive within the brief
+// window, fall back to HAND-DIAL for any slot still waiting - never to the
+// stale map. A returning fetch (storeParamMaps) re-stamps the fp fresh and the
+// re-eval loop dials it; a fetch that fails or hangs leaves the slot un-dialled.
+void ChainHost::refetchStale(const juce::String& fp)
+{
+    if (fp.isEmpty() || pendingMapFps_.contains(fp) || !onNeedParamMaps) return;
+    pendingMapFps_.addIfNotAlreadyThere(fp);
+    onNeedParamMaps(juce::StringArray(fp));
+    std::weak_ptr<int> alive = life_;
+    juce::Timer::callAfterDelay(kStaleRefetchMs, [this, alive, fp]()
+    {
+        if (alive.expired()) return;                 // ChainHost gone
+        if (!pendingMapFps_.contains(fp)) return;    // fetch already answered
+        pendingMapFps_.removeString(fp);             // stop waiting on it
+        bool changed = false;
+        for (auto& s : slots_)
+            if (s.fp == fp && !s.structuredApplied
+                && s.structuredSettings.getDynamicObject() != nullptr)
+            { s.dialStatus = DialStatus::noMap; changed = true; }
+        if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
+    });
+}
+
 void ChainHost::applyStructuredIfReady(int slotIndex)
 {
     if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return;
@@ -1640,6 +1687,18 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
                                                           : mapFp.substring(0, 12))
                        + ", apply refused").toRawUTF8());
         s.dialStatus = DialStatus::unusableMap;
+        return;
+    }
+
+    // TTL-on-use: a cached map older than the staleness bound may be a since-
+    // corrected map (the AMEK suppression class that wrote Mono Maker). Do NOT
+    // apply it. Refetch and block briefly; refetchStale falls back to hand-dial
+    // on timeout rather than to the stale map. A confirming fetch re-stamps the
+    // fp and the storeParamMaps re-eval dials it.
+    if (!mapFresh(s.fp))
+    {
+        refetchStale(s.fp);
+        s.dialStatus = DialStatus::pending;
         return;
     }
 
@@ -1712,6 +1771,9 @@ void ChainHost::loadParamMapsFromDisk()
     if (auto* att = root.getProperty("fpAttempted", juce::var()).getArray())
         for (auto& v : *att)
             fpAttempted_.addIfNotAlreadyThere(v.toString());
+    if (auto* fa = root.getProperty("fpFetchedAt", juce::var()).getDynamicObject())
+        for (auto& p : fa->getProperties())
+            fpFetchedAt_[p.name.toString()] = (juce::int64)(double) p.value;
     EchoJay_NSLog(("EJParamMaps: cache loaded, " + juce::String((int)identityToFp_.size())
                    + " identities, " + juce::String((int)paramMaps_.size()) + " map(s), "
                    + juce::String(fpAttempted_.size()) + " fp skip marker(s)").toRawUTF8());
@@ -1725,10 +1787,13 @@ void ChainHost::saveParamMapsToDisk()
     for (auto& kv : paramMaps_) maps->setProperty(juce::Identifier(kv.first), kv.second);
     juce::var att;
     for (auto& s : fpAttempted_) att.append(s);
+    juce::DynamicObject::Ptr fetchedAt = new juce::DynamicObject();
+    for (auto& kv : fpFetchedAt_) fetchedAt->setProperty(juce::Identifier(kv.first), (double) kv.second);
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
     root->setProperty("identityToFp", juce::var(idx.get()));
     root->setProperty("maps", juce::var(maps.get()));
     root->setProperty("fpAttempted", att);
+    root->setProperty("fpFetchedAt", juce::var(fetchedAt.get()));
     getParamMapsCacheFile().replaceWithText(juce::JSON::toString(juce::var(root.get())));
 }
 
