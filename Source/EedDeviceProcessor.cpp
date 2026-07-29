@@ -111,7 +111,19 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
         }
 
         double raw = 0.0;
-        if (! numberFromVar (prop.value, raw))
+        bool   have = false;
+
+        // A choice param is dialled BY NAME. "tube" carries no digits, so
+        // numberFromVar would reject it and the move would vanish; resolving the
+        // label first is what makes a selector as settable as a dial. A numeric
+        // index still works, because this falls through when the label misses.
+        if (! spec->choices.empty() && prop.value.isString())
+        {
+            const int idx = spec->indexOfChoice (prop.value.toString().toStdString());
+            if (idx >= 0) { raw = (double) idx; have = true; }
+        }
+
+        if (! have && ! numberFromVar (prop.value, raw))
         {
             ++skipped;
             unknown.add (id + " (not a number)");
@@ -132,7 +144,9 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
         // Report the value that LANDED, not the one that was asked for, so a
         // clamped move reads honestly in the chat log.
         juce::String note = spec->id + " ";
-        if (spec->boolean)
+        if (! spec->choices.empty())
+            note += juce::String (spec->choiceLabel (v));
+        else if (spec->boolean)
             note += (v >= 0.5 ? "on" : "off");
         else
             note += juce::String (v, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".")

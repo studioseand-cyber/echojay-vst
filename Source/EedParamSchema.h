@@ -29,6 +29,27 @@
 namespace echojay
 {
 
+// Canonical form used for matching: lowercased, separators dropped, so
+// "attack_ms", "Attack-MS" and "attackMs" are the same parameter — and so are
+// "Low Shelf" and "lowshelf".
+//
+// Tolerance here is not sloppiness — it is the difference between a move that
+// lands and one that silently does nothing. An id that misses is a knob that
+// never turns, with no error anywhere; the cost of accepting a near-miss is
+// zero, and the cost of rejecting it is a broken feature.
+inline std::string normalizeParamToken (const std::string& raw)
+{
+    std::string out;
+    out.reserve (raw.size());
+    for (char c : raw)
+    {
+        if (c >= 'A' && c <= 'Z')      out += (char) (c - 'A' + 'a');
+        else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) out += c;
+        // every other character (_ - space .) is a separator: dropped
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // One dialable parameter.
 // ---------------------------------------------------------------------------
@@ -42,6 +63,18 @@ struct ParamSpec
     std::string description;    // one line: what turning it actually does
     bool        boolean = false; // 0/1 switch — advertised as on/off, not a range
 
+    // Enumerated values in index order — the param's VALUE is the index into
+    // this list, so `min`/`max` stay 0..choices.size()-1 and every existing
+    // clamp, state and editor path keeps working unchanged.
+    //
+    // Why this exists: a selector is a knob, and the house rule is that a knob a
+    // human can turn is one the model must be able to set exactly. Without it a
+    // curve selector would have to be advertised as a bare 0..3, which the model
+    // gets wrong for the obvious reason that "tube" is not a number. With it,
+    // `"type": "tube"` and `"type": 0` both land, and the advertisement carries
+    // the names rather than an index the model has to memorise.
+    std::vector<std::string> choices;
+
     // Clamp an incoming value into the advertised range.
     //
     // NaN maps to the DEFAULT rather than to a bound. A NaN that survives into a
@@ -54,6 +87,29 @@ struct ParamSpec
         if (v < min) return min;
         if (v > max) return max;
         return v;
+    }
+
+    // Index of a named choice, or -1 when the label is not one of ours. Matching
+    // is as tolerant as id matching: "Low Shelf", "low_shelf" and "lowshelf" are
+    // the same choice.
+    int indexOfChoice (const std::string& label) const
+    {
+        const auto key = normalizeParamToken (label);
+        if (key.empty()) return -1;
+        for (std::size_t i = 0; i < choices.size(); ++i)
+            if (normalizeParamToken (choices[i]) == key) return (int) i;
+        return -1;
+    }
+
+    // The label a value selects. Empty for a param with no choices, so a caller
+    // can use emptiness to mean "this is a number, print it as one".
+    std::string choiceLabel (double v) const
+    {
+        if (choices.empty()) return {};
+        long idx = std::lround (std::isnan (v) ? def : v);
+        if (idx < 0) idx = 0;
+        if (idx >= (long) choices.size()) idx = (long) choices.size() - 1;
+        return choices[(std::size_t) idx];
     }
 };
 
@@ -70,24 +126,11 @@ public:
     bool        empty() const noexcept { return params_.empty(); }
     std::size_t size()  const noexcept { return params_.size(); }
 
-    // Canonical form used for matching: lowercased, separators dropped, so
-    // "attack_ms", "Attack-MS" and "attackMs" are the same parameter.
-    //
-    // Tolerance here is not sloppiness — it is the difference between a move
-    // that lands and one that silently does nothing. An id that misses is a
-    // knob that never turns, with no error anywhere; the cost of accepting a
-    // near-miss is zero, and the cost of rejecting it is a broken feature.
+    // See normalizeParamToken: ids and choice labels fold the same way, so a
+    // device cannot end up strict about one and tolerant about the other.
     static std::string normalizeId (const std::string& raw)
     {
-        std::string out;
-        out.reserve (raw.size());
-        for (char c : raw)
-        {
-            if (c >= 'A' && c <= 'Z')      out += (char) (c - 'A' + 'a');
-            else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) out += c;
-            // every other character (_ - space .) is a separator: dropped
-        }
-        return out;
+        return normalizeParamToken (raw);
     }
 
     // Nullptr when the id is not part of this device's contract.
@@ -114,10 +157,22 @@ public:
     // and what the server validates against, so the two cannot disagree.
     //   "threshold_db (dB, -60..0, default -18) — level where compression starts"
     //   "auto_gain (on/off, default off) — cancel the loudness change"
+    //   "type (tube|tape|diode|soft, default tube) — the saturation curve"
     static std::string describeLine (const ParamSpec& p)
     {
         std::string s = p.id + " (";
-        if (p.boolean)
+        if (! p.choices.empty())
+        {
+            // Names, not the index behind them. The model picks "tube"; that the
+            // wire value is 0 is an implementation detail it never has to know.
+            for (std::size_t i = 0; i < p.choices.size(); ++i)
+            {
+                if (i > 0) s += "|";
+                s += p.choices[i];
+            }
+            s += ", default " + p.choiceLabel (p.def);
+        }
+        else if (p.boolean)
         {
             s += "on/off, default ";
             s += (p.def >= 0.5 ? "on" : "off");
