@@ -94,8 +94,16 @@ void EedStereoWidthEditor::layoutContent (juce::Rectangle<int> content)
         scope_.setVisible (room);
         if (room)
         {
-            scope_.setBounds (content.removeFromTop (want));
+            auto band = content.removeFromTop (want);
             content.removeFromTop (6);
+
+            // Centred and only as wide as it needs to be. The Lissajous itself
+            // is square (a stretched vectorscope reports a width the signal does
+            // not have), so letting the component span a 460-wide panel would
+            // buy nothing but a very long correlation bar with a small picture
+            // stranded in the middle of it.
+            const int w = juce::jmin (band.getWidth(), want + 60);
+            scope_.setBounds (band.withSizeKeepingCentre (w, band.getHeight()));
         }
     }
 
