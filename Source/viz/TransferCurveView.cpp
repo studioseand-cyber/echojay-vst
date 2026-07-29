@@ -219,6 +219,11 @@ void TransferCurveView::paintPlot (juce::Graphics& g, juce::Rectangle<float> plo
     }
 
     // ---- the curve --------------------------------------------------------
+    // resized() is what normally builds these. The guard covers the one case it
+    // does not reach: a view painted before it was ever laid out, which is
+    // exactly what the editor-paint harness does.
+    if (curvePath_.isEmpty()) rebuildPath();
+
     if (! fillPath_.isEmpty())
     {
         g.setColour (Colours::blue.withAlpha (0.12f * a));

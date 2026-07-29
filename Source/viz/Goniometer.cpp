@@ -23,7 +23,13 @@ void Goniometer::setCorrelation (float c)
 {
     const float v = juce::jlimit (-1.0f, 1.0f, c);
     if (! moved (v, corr_, 0.005f)) return;
+
+    // Both, not just corr_: this is the path for a device that measured the
+    // correlation itself, and the displayed value is only ever chased toward
+    // the measurement inside setSamples. Leaving corrShown_ behind here would
+    // give that device a bar that never moves.
     corr_ = v;
+    corrShown_ = v;
     repaint();
 }
 
