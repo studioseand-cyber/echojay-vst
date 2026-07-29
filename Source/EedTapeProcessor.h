@@ -14,6 +14,7 @@
 
 #include "EedDeviceProcessor.h"
 #include "EedTapeEngine.h"
+#include "viz/VizTap.h"
 
 class EedTapeProcessor : public EedDeviceProcessor
 {
@@ -48,8 +49,14 @@ public:
 
     echojay::TapeEngine& engine() noexcept { return engine_; }
 
+    // The editor's HarmonicBars: the device's OUTPUT, left channel. See the
+    // note on EedSaturationProcessor::spectrumTap for why one channel and not
+    // a mono sum.
+    const echojay::viz::SpectrumTap& spectrumTap() const noexcept { return spectrumTap_; }
+
 private:
-    echojay::TapeEngine engine_;
+    echojay::TapeEngine       engine_;
+    echojay::viz::SpectrumTap spectrumTap_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedTapeProcessor)
 };

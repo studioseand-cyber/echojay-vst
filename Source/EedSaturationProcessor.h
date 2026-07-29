@@ -15,6 +15,7 @@
 
 #include "EedDeviceProcessor.h"
 #include "EedHarmonicCore.h"
+#include "viz/VizTap.h"
 
 class EedSaturationProcessor : public EedDeviceProcessor
 {
@@ -46,8 +47,19 @@ public:
 
     echojay::harmonic::HarmonicCore& core() noexcept { return core_; }
 
+    // The editor's HarmonicBars (VISUALS_PLAN.md Phase V1, the ring-tap path).
+    // The device's OUTPUT, which is where the harmonics it generated actually
+    // are — tapping the input would show the source's own distortion and call
+    // it ours.
+    //
+    // Left channel only. Summing to mono first would let out-of-phase material
+    // cancel, and bars that read LOWER because the source is wide would be
+    // actively misleading; one channel is a true reading of one channel.
+    const echojay::viz::SpectrumTap& spectrumTap() const noexcept { return spectrumTap_; }
+
 private:
     echojay::harmonic::HarmonicCore core_;
+    echojay::viz::SpectrumTap       spectrumTap_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedSaturationProcessor)
 };

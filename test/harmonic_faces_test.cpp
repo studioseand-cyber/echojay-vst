@@ -11,6 +11,7 @@
 
 #include "EedTapeEngine.h"
 #include "EedExciterEngine.h"
+#include "EedHarmonicAnalysis.h"
 
 #include <cmath>
 #include <cstdio>
@@ -369,6 +370,212 @@ int main()
         std::printf ("    2nd harmonic: tube %.1f dB, tape %.1f dB\n", tube, tape);
         check (tube > tape + 10.0, "tube mode makes far more 2nd harmonic than tape mode "
                                    "(it is the asymmetric curve)");
+    }
+
+    // =======================================================================
+    // The visualisation taps (VISUALS_PLAN.md Phase V1). These are read-only
+    // and cannot affect the audio, so what has to be pinned is that they report
+    // something TRUE — a level dot or a motion needle that is subtly wrong is
+    // worse than none, because it is believed.
+    // =======================================================================
+    std::printf ("== TAP: the level dot follows the input, and releases ==\n");
+    {
+        TapeEngine t;
+        t.prepare (sr, 256);
+        t.setMixPercent (100.0f);
+        t.reset();
+
+        check (t.inputLevel() == 0.0f, "starts at zero");
+
+        std::vector<float> in, out;
+        runSine (t, 500.0, sr, 0.5, 8192, in, out);
+        const float loud = t.inputLevel();
+        check (std::fabs (loud - 0.5f) < 0.05f,
+               "a 0.5 peak sine reads " + std::to_string (loud));
+
+        // Silence for well under the release: it must FALL but not vanish, or
+        // the dot would flicker off between transients.
+        std::vector<float> quiet (2048, 0.0f);
+        t.process (quiet.data(), nullptr, 2048);
+        const float after = t.inputLevel();
+        check (after < loud && after > loud * 0.5f,
+               "releases smoothly rather than dropping out (" + std::to_string (after) + ")");
+    }
+
+    std::printf ("== TAP: the transport needle IS the wow, not a copy of it ==\n");
+    {
+        auto swing = [&] (float wow, float flutter)
+        {
+            TapeEngine t;
+            t.prepare (sr, 256);
+            t.setWow (wow);
+            t.setFlutter (flutter);
+            t.setMixPercent (100.0f);
+            t.reset();
+
+            std::vector<float> buf (256, 0.2f);
+            float lo = 1.0f, hi = -1.0f;
+            // Two seconds: the wow is 0.6 Hz, so anything shorter can catch it
+            // mid-swing and call a moving needle a still one.
+            for (int b = 0; b < (int) (sr * 2.0 / 256.0); ++b)
+            {
+                t.process (buf.data(), nullptr, 256);
+                lo = std::fmin (lo, t.transportOffset());
+                hi = std::fmax (hi, t.transportOffset());
+            }
+            return std::make_pair (lo, hi);
+        };
+
+        const auto still = swing (0.0f, 0.0f);
+        check (std::fabs (still.first) < 1.0e-6f && std::fabs (still.second) < 1.0e-6f,
+               "no wow, no flutter -> the needle does not move at all");
+
+        const auto moving = swing (100.0f, 100.0f);
+        std::printf ("    full wow+flutter: needle spans %.3f .. %.3f\n",
+                     moving.first, moving.second);
+        check (moving.second - moving.first > 0.3f, "full depth swings the needle widely");
+        check (moving.first >= -1.0f && moving.second <= 1.0f, "and stays inside -1..+1");
+
+        const auto gentle = swing (25.0f, 25.0f);
+        check ((gentle.second - gentle.first) < (moving.second - moving.first) * 0.6f,
+               "a quarter of the depth swings it visibly less");
+    }
+
+    std::printf ("== TAP: the Exciter's tap isolates what it GENERATED ==\n");
+    {
+        auto generatedRms = [&] (float amount)
+        {
+            ExciterEngine x;
+            x.prepare (sr, 256);
+            x.setFreqHz (2000.0f);
+            x.setAmount (amount);
+            x.setMixPercent (100.0f);
+            x.reset();
+
+            std::vector<float> in, out;
+            runSine (x, 5000.0, sr, 0.4, 32768, in, out);
+
+            std::vector<float> dry (4096), gen (4096);
+            const int n = x.spectrumTap().read (dry.data(), gen.data(), 4096);
+
+            double eDry = 0.0, eGen = 0.0;
+            for (int i = 0; i < n; ++i)
+            {
+                eDry += (double) dry[i] * dry[i];
+                eGen += (double) gen[i] * gen[i];
+            }
+            return std::make_pair (std::sqrt (eDry / n), std::sqrt (eGen / n));
+        };
+
+        const auto off = generatedRms (0.0f);
+        const auto on  = generatedRms (100.0f);
+        std::printf ("    dry rms %.4f; generated at amount 0 = %.6f, at 100 = %.4f\n",
+                     on.first, off.second, on.second);
+
+        check (off.first > 0.2, "the dry side of the tap carries the input");
+        check (off.second < 1.0e-4, "at amount 0 the device generates NOTHING, and the tap says so");
+        check (on.second > 0.01, "at amount 100 there is real generated content");
+    }
+
+    std::printf ("== TAP: the Exciter's level dot rides the HIGH band ==\n");
+    {
+        auto highLevel = [&] (double toneHz)
+        {
+            ExciterEngine x;
+            x.prepare (sr, 256);
+            x.setFreqHz (3000.0f);
+            x.setAmount (50.0f);
+            x.setMixPercent (100.0f);
+            x.reset();
+
+            std::vector<float> in, out;
+            runSine (x, toneHz, sr, 0.5, 16384, in, out);
+            return x.highBandLevel();
+        };
+
+        const float above = highLevel (8000.0);
+        const float below = highLevel (200.0);
+        std::printf ("    high-band level: 8 kHz tone %.3f, 200 Hz tone %.3f\n", above, below);
+        check (above > 0.3f, "a tone above the split lands high on the curve");
+        check (below < above * 0.2f,
+               "a tone below the split barely reaches it - which is the point of "
+               "showing the BAND's level and not the input's");
+    }
+
+    // =======================================================================
+    // The end-to-end display claim: what the editor will DRAW, computed from a
+    // device's real output by the real analysis. The unit tests prove the
+    // estimator and the Goertzel separately; this proves the pair of them says
+    // something TRUE about a device that is actually running.
+    // =======================================================================
+    std::printf ("== END TO END: the bars distinguish the curves, as they must ==\n");
+    {
+        using namespace echojay::harmonic;
+
+        auto readBars = [&] (Curve curve, float driveDb, float* db)
+        {
+            HarmonicCore core;
+            core.setOversampling (4);
+            core.prepare (sr, 256);
+            core.setCurve (curve);
+            core.setDriveDb (driveDb);
+            core.setMixPercent (100.0f);
+            core.reset();
+
+            // 220 Hz, the sort of note a bass or a low vocal actually sits on.
+            std::vector<float> in, out;
+            runSine (core, 220.0, sr, 0.4, 16384, in, out);
+
+            const auto seg = tail (out, 4096);          // one SpectrumTap frame
+            const auto est = estimateFundamental (seg.data(), (int) seg.size(), sr);
+            check (est.locked, std::string (curveName (curve))
+                   + ": the analyser locks to the note (" + std::to_string (est.hz) + " Hz)");
+
+            const int usable = wholeCycleLength ((int) seg.size(), sr, est.hz);
+            harmonicMagnitudesDb (seg.data(), seg.data(), usable, sr, est.hz, db, 8, -60.0f);
+        };
+
+        float tube[8] {}, soft[8] {};
+        readBars (Curve::Tube, 24.0f, tube);
+        readBars (Curve::Soft, 24.0f, soft);
+
+        std::printf ("    tube: 2nd %.1f  3rd %.1f  4th %.1f dB\n", tube[1], tube[2], tube[3]);
+        std::printf ("    soft: 2nd %.1f  3rd %.1f  4th %.1f dB\n", soft[1], soft[2], soft[3]);
+
+        // This is the single most useful thing the bars say, and it is exactly
+        // what the two curves differ by: tube is asymmetric so it makes even
+        // harmonics, soft is symmetric so it cannot.
+        check (tube[1] > -30.0f, "tube shows a real 2nd harmonic");
+        check (soft[1] < tube[1] - 20.0f,
+               "soft shows " + std::to_string (tube[1] - soft[1])
+               + " dB less 2nd than tube - the even/odd split is visible");
+        check (soft[2] > -30.0f, "soft still shows a strong 3rd (it is not just quiet)");
+
+        // And the level dot's premise: driven hard but fed quietly, a saturator
+        // is doing almost nothing, however dramatic its curve looks.
+        float quiet[8] {};
+        {
+            HarmonicCore core;
+            core.setOversampling (4);
+            core.prepare (sr, 256);
+            core.setCurve (Curve::Tube);
+            core.setDriveDb (24.0f);
+            core.setMixPercent (100.0f);
+            core.reset();
+
+            std::vector<float> in, out;
+            runSine (core, 220.0, sr, 0.004, 16384, in, out);      // -48 dBFS
+
+            const auto seg = tail (out, 4096);
+            const auto est = estimateFundamental (seg.data(), (int) seg.size(), sr);
+            const int usable = wholeCycleLength ((int) seg.size(), sr, est.hz);
+            harmonicMagnitudesDb (seg.data(), seg.data(), usable, sr, est.hz, quiet, 8, -60.0f);
+        }
+
+        std::printf ("    tube at -48 dBFS in: 2nd %.1f dB\n", quiet[1]);
+        check (quiet[1] < tube[1] - 20.0f,
+               "the same curve on a quiet signal generates far less - which is what "
+               "the level dot exists to explain");
     }
 
     // =======================================================================

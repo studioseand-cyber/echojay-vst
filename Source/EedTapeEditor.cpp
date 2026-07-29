@@ -3,14 +3,24 @@
 */
 
 #include "EedTapeEditor.h"
+#include "EedHarmonicAnalysis.h"
 
 using namespace echojay::device;
 using namespace echojay::device::metrics;
 
 namespace
 {
-    constexpr int kDefaultW = 420;
-    constexpr int kDefaultH = 250;
+    constexpr int kDefaultW = 500;
+
+    constexpr int kVizH    = 92;
+    constexpr int kMinVizH = 44;
+
+    // The transport strip. Slim on purpose: it carries one number, and giving it
+    // more height would make it look like the most important thing on the panel.
+    constexpr int kMotionH = 22;
+
+    constexpr int kDefaultH = kTopH + 6 + kVizH + 4 + kMotionH + 6
+                            + kKnobH + 8 + kKnobH + 2 * kPad;
 
     constexpr int kGap    = 12;
     constexpr int kRowGap = 8;
@@ -52,7 +62,74 @@ EedTapeEditor::EedTapeEditor (EedTapeProcessor& p)
 
     refreshSpeedHint();
 
+    // ---- the signature visualisation --------------------------------------
+    shaper_.setCaption ("TAPE CURVE");
+    addAndMakeVisible (shaper_);
+
+    bars_.setNumHarmonics (echojay::viz::HarmonicBars::kMaxHarmonics);   // 1..8
+    bars_.setFloorDb (-60.0f);
+    addAndMakeVisible (bars_);
+
+    addAndMakeVisible (motion_);
+
+    frame_.assign ((std::size_t) echojay::viz::SpectrumTap::size, 0.0f);
+
+    refreshTransfer();
+
     startTimerHz (15);
+}
+
+void EedTapeEditor::refreshTransfer()
+{
+    const float drive = proc_.engine().getDriveDb();
+    const float bias  = proc_.engine().getBias();
+
+    if (std::abs (drive - lastDriveDb_) < 0.01f && std::abs (bias - lastBias_) < 0.01f)
+        return;
+
+    lastDriveDb_ = drive;
+    lastBias_    = bias;
+
+    // The DSP's own arithmetic: the same shapeBiased() the audio thread calls,
+    // with the same drive gain, the same bias offset and the same compensation.
+    // The BIAS knob is the reason this device's curve is worth drawing at all —
+    // it is the one control here whose whole effect is a change in the curve's
+    // symmetry, and it is invisible in every other readout.
+    const float g = std::pow (10.0f, drive * 0.05f);
+    const float k = echojay::harmonic::driveCompensation (echojay::harmonic::Curve::Tape, g);
+    const float b = echojay::TapeEngine::biasOffset (bias);
+
+    shaper_.setTransfer ([g, k, b] (float x)
+    {
+        return echojay::harmonic::shapeBiased (echojay::harmonic::Curve::Tape, x * g, b) * k;
+    });
+
+    shaper_.setCurveName (std::abs (bias) < 0.5f ? juce::String ("TAPE")
+                                                 : juce::String ("TAPE / BIAS"));
+}
+
+void EedTapeEditor::refreshBars()
+{
+    const double sr = proc_.getSampleRate();
+    if (sr <= 0.0) return;
+
+    const int n = proc_.spectrumTap().read (frame_.data(), (int) frame_.size());
+    if (n <= 0) return;
+
+    const auto est = echojay::harmonic::estimateFundamental (frame_.data(), n, sr);
+
+    if (! est.locked)
+    {
+        float floorBars[echojay::viz::HarmonicBars::kMaxHarmonics];
+        for (auto& v : floorBars) v = -60.0f;
+        bars_.setMagnitudesDb (floorBars, (int) std::size (floorBars));
+        return;
+    }
+
+    const int usable = echojay::harmonic::wholeCycleLength (n, sr, est.hz);
+    if (usable <= 0) return;
+
+    bars_.analyse (frame_.data(), usable, sr, est.hz);
 }
 
 EedTapeEditor::~EedTapeEditor()
@@ -81,6 +158,40 @@ void EedTapeEditor::layoutContent (juce::Rectangle<int> content)
     };
 
     auto r = content;
+
+    // Controls first, pictures second. Within the pictures, the transport strip
+    // goes before the curve and the bars: it is one line tall, and it is the
+    // only readout of WOW and FLUTTER, whose effect is inaudible on a lot of
+    // material. The curve and the bars restate things the dials already say.
+    const int controlsH = kKnobH * 2 + kRowGap;
+    int spare = juce::jmax (0, r.getHeight() - controlsH);
+
+    const int vizH     = juce::jmin (kVizH, juce::jmax (0, spare - (kMotionH + 4)));
+    const bool showViz = vizH >= kMinVizH;
+
+    shaper_.setVisible (showViz);
+    bars_.setVisible (showViz);
+
+    if (showViz)
+    {
+        auto viz = r.removeFromTop (vizH);
+        if (r.getHeight() > 4) r.removeFromTop (4);
+        spare -= vizH + 4;
+
+        const int barsW = juce::jlimit (70, 160, (int) ((float) viz.getWidth() * 0.40f));
+        bars_.setBounds (viz.removeFromRight (barsW));
+        if (viz.getWidth() > 6) viz.removeFromRight (6);
+        shaper_.setBounds (viz);
+    }
+
+    const bool showMotion = spare >= kMotionH;
+    motion_.setVisible (showMotion);
+
+    if (showMotion)
+    {
+        motion_.setBounds (r.removeFromTop (kMotionH));
+        if (r.getHeight() > 6) r.removeFromTop (6);
+    }
 
     // Both rows get the same height, so a rack that squeezes the device shrinks
     // them together rather than starving the second one.
@@ -137,6 +248,17 @@ void EedTapeEditor::timerCallback()
 {
     syncFromProcessor();
 
-    if (bypassButton().getToggleState() != proc_.isBypassed())
-        bypassButton().setToggleState (proc_.isBypassed(), juce::dontSendNotification);
+    const bool bypassed = proc_.isBypassed();
+    if (bypassButton().getToggleState() != bypassed)
+        bypassButton().setToggleState (bypassed, juce::dontSendNotification);
+
+    shaper_.setDimmed (bypassed);
+    bars_.setDimmed (bypassed);
+    motion_.setDimmed (bypassed);
+
+    refreshTransfer();
+    shaper_.setInputLevel (proc_.engine().inputLevel());
+    motion_.setOffset (proc_.engine().transportOffset());
+
+    if (bars_.isVisible()) refreshBars();
 }

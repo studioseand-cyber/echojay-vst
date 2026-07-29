@@ -99,6 +99,7 @@ void EedTapeProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     engine_.prepare (sampleRate, samplesPerBlock);
     engine_.reset();
+    spectrumTap_.clear();
 
     // The transport delay plus the oversampler. Reporting only the oversampler's
     // share would leave the track 2.5 ms early against everything in parallel
@@ -127,6 +128,8 @@ void EedTapeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     float* r = numCh > 1 ? buffer.getWritePointer (1) : nullptr;
 
     engine_.process (l, r, buffer.getNumSamples());
+
+    spectrumTap_.write (l, buffer.getNumSamples());
 }
 
 juce::AudioProcessorEditor* EedTapeProcessor::createEditor()

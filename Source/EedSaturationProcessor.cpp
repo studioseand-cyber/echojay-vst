@@ -85,6 +85,7 @@ void EedSaturationProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
 {
     core_.prepare (sampleRate, samplesPerBlock);
     core_.reset();
+    spectrumTap_.clear();
 
     // The anti-aliasing filters cost 45 samples. Publishing it is what lets the
     // host slide the track back into place; a saturator that quietly runs 1 ms
@@ -110,6 +111,10 @@ void EedSaturationProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     float* r = numCh > 1 ? buffer.getWritePointer (1) : nullptr;
 
     core_.process (l, r, buffer.getNumSamples());
+
+    // After processing: the bars show what came OUT. Deliberately racy and
+    // non-blocking, the contract VizTap.h documents.
+    spectrumTap_.write (l, buffer.getNumSamples());
 }
 
 juce::AudioProcessorEditor* EedSaturationProcessor::createEditor()

@@ -40,6 +40,8 @@
 
 #pragma once
 
+#include "viz/VizTap.h"
+
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -47,6 +49,52 @@
 
 namespace echojay::harmonic
 {
+
+// ---------------------------------------------------------------------------
+// A peak follower with a slow release, for the level dot riding the transfer
+// curve (VISUALS_PLAN.md, Harmonic signature visualisation).
+//
+// Instantaneous block peak would be unreadable: at 15 frames a second the dot
+// would jump the whole width of the curve between frames and average out to a
+// blur. A 300 ms release makes it settle where the signal actually sits while
+// still snapping up the moment a transient arrives — the same asymmetry a peak
+// meter uses, and for the same reason.
+// ---------------------------------------------------------------------------
+class PeakFollower
+{
+public:
+    void prepare (double sampleRate) noexcept
+    {
+        sr_ = sampleRate > 0.0 ? sampleRate : 44100.0;
+        reset();
+    }
+
+    void reset() noexcept { env_ = 0.0f; }
+
+    // Attack is instant, release is exponential over the block just processed.
+    float push (float blockPeak, int numSamples) noexcept
+    {
+        constexpr double kReleaseSeconds = 0.30;
+        const float decay = (float) std::exp (-(double) numSamples / (kReleaseSeconds * sr_));
+        env_ = std::fmax (blockPeak, env_ * decay);
+        return env_;
+    }
+
+    float value() const noexcept { return env_; }
+
+private:
+    double sr_  = 44100.0;
+    float  env_ = 0.0f;
+};
+
+// Peak of a block, or 0 for a null/empty one.
+inline float blockPeak (const float* x, int n) noexcept
+{
+    float p = 0.0f;
+    if (x != nullptr)
+        for (int i = 0; i < n; ++i) p = std::fmax (p, std::fabs (x[i]));
+    return p;
+}
 
 // ---------------------------------------------------------------------------
 // The curves.
@@ -532,6 +580,12 @@ public:
     // In-place. `right` may be null for mono.
     void process (float* left, float* right, int numSamples) noexcept;
 
+    // ---- visualisation (message thread) -----------------------------------
+    // The level ENTERING the shaper, 0..1, before the drive gain. The
+    // WaveshaperView plots its curve in that same domain, so this is the x the
+    // dot sits at and the view needs no conversion.
+    float inputLevel() const noexcept { return inputLevelTap_.get(); }
+
 private:
     struct Channel
     {
@@ -566,6 +620,9 @@ private:
     // The tilt is the one parameter that is not per-sample ramped: it is a
     // filter coefficient, not a gain, so it is recomputed only when it moves.
     float lastToneDb_ = 0.0f;
+
+    echojay::viz::FloatTap inputLevelTap_ { 0.0f };
+    PeakFollower           inputLevel_;
 };
 
 } // namespace echojay::harmonic
