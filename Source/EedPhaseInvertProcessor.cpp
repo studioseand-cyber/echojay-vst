@@ -1,0 +1,115 @@
+/*
+    EedPhaseInvertProcessor.cpp  —  see EedPhaseInvertProcessor.h.
+*/
+
+#include "EedPhaseInvertProcessor.h"
+#include "EedPhaseInvertEditor.h"
+#include "EedDeviceRegistry.h"
+
+#include <cmath>
+
+// ---------------------------------------------------------------------------
+// the dialable contract
+// ---------------------------------------------------------------------------
+const echojay::ParamSchema& EedPhaseInvertProcessor::schema()
+{
+    static const echojay::ParamSchema s ({
+        { kInvertL, "", 0.0, 1.0, 0.0,
+          "invert the polarity of the left channel", true },
+        { kInvertR, "", 0.0, 1.0, 0.0,
+          "invert the polarity of the right channel", true },
+    });
+    return s;
+}
+
+bool EedPhaseInvertProcessor::setParamValue (const juce::String& id, double value)
+{
+    // Values arrive clamped to 0..1 by the schema; >= 0.5 is on.
+    if (id == kInvertL) { invertL_.store (value >= 0.5); return true; }
+    if (id == kInvertR) { invertR_.store (value >= 0.5); return true; }
+    return false;
+}
+
+double EedPhaseInvertProcessor::getParamValue (const juce::String& id) const
+{
+    if (id == kInvertL) return invertL_.load() ? 1.0 : 0.0;
+    if (id == kInvertR) return invertR_.load() ? 1.0 : 0.0;
+    return 0.0;
+}
+
+// ---------------------------------------------------------------------------
+// audio
+// ---------------------------------------------------------------------------
+void EedPhaseInvertProcessor::prepareToPlay (double sampleRate, int /*samplesPerBlock*/)
+{
+    const double sr = sampleRate > 0.0 ? sampleRate : 44100.0;
+    constexpr double tau = 0.005;                       // ~5 ms through zero
+    rampCoeff_ = (float) std::exp (-1.0 / (tau * sr));
+
+    // Start AT the target rather than ramping in from +1 on the first block, so
+    // a restored session that had the left channel flipped does not click on
+    // playback.
+    coeffL_ = invertL_.load() ? -1.0f : 1.0f;
+    coeffR_ = invertR_.load() ? -1.0f : 1.0f;
+}
+
+void EedPhaseInvertProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    juce::ScopedNoDenormals noDenormals;
+
+    for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
+        buffer.clear (ch, 0, buffer.getNumSamples());
+
+    const int numSamples = buffer.getNumSamples();
+    const int numCh      = juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels());
+    if (numCh <= 0 || numSamples <= 0) return;
+
+    // Bypass still has to run the ramp state toward unity, otherwise re-enabling
+    // resumes from a stale coefficient and clicks.
+    const bool  bypassed = isBypassed();
+    const float targetL  = bypassed ? 1.0f : (invertL_.load() ? -1.0f : 1.0f);
+    const float targetR  = bypassed ? 1.0f : (invertR_.load() ? -1.0f : 1.0f);
+
+    float* l = buffer.getWritePointer (0);
+    float* r = numCh > 1 ? buffer.getWritePointer (1) : nullptr;
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        coeffL_ = targetL + (coeffL_ - targetL) * rampCoeff_;
+        coeffR_ = targetR + (coeffR_ - targetR) * rampCoeff_;
+
+        l[i] *= coeffL_;
+        if (r != nullptr) r[i] *= coeffR_;
+    }
+}
+
+juce::AudioProcessorEditor* EedPhaseInvertProcessor::createEditor()
+{
+    return new EedPhaseInvertEditor (*this);
+}
+
+// ---------------------------------------------------------------------------
+// registration — the ENTIRE integration of this device
+// ---------------------------------------------------------------------------
+namespace
+{
+    BuiltinDevice makePhaseInvertDevice()
+    {
+        BuiltinDevice d;
+        d.name            = "EchoJay Phase Invert";
+        d.category        = "Utility";
+        d.descriptiveName = "EchoJay per-channel polarity flip (built in)";
+        d.summary         = "Flips the polarity of either channel independently. Reach for "
+                            "it when two sources cancel each other — a mic pair fighting in "
+                            "the low end, or one side of a stereo pair wired backwards.";
+        d.identifier      = "echojay:builtin:phaseinvert";
+        d.uid             = 0x456A5049;   // 'EjPI' — frozen once shipped
+        d.aliases         = { "EchoJayPhaseInvert", "EchoJay Polarity",
+                              "EchoJay Phase", "EchoJay Invert" };
+        d.schema          = EedPhaseInvertProcessor::schema();
+        d.create          = [] { return std::make_unique<EedPhaseInvertProcessor>(); };
+        return d;
+    }
+
+    const BuiltinDeviceRegistrar phaseInvertRegistrar { makePhaseInvertDevice() };
+}
