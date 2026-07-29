@@ -43,12 +43,43 @@ one at a time (from the main folder). Because each device self-registers in its
 own files, these merge clean. Remove a finished worktree with
 `git worktree remove ../ej-dynamics`.
 
-## One shared resource: the installed AU
-All worktrees build and **install to the same** `~/Library/Audio/Plug-Ins/
-Components/`. Building in parallel is fine, but installing/testing in Logic is
-one-at-a-time — whichever session reinstalls last is the AU Logic loads. So:
-parallelize the *building*; serialize the *"reinstall + open Logic to test"*
-step. (Or give each build a distinct product name while iterating.)
+## One shared resource: the installed AU  (READ THIS — it already cost us a day)
+All seven worktrees build the **same plugin identifier** (`com.echojay.plugin.v2`)
+to the **same install path** (`~/Library/Audio/Plug-Ins/Components/EchoJay V2.component`).
+So "reinstall the AU" means "overwrite Logic's plugin with whichever worktree ran
+last." This produced a full day of ghost-chasing: a correct editor-crash fix on
+`feat/surgical-eq` was silently overwritten by an `ej-time` build made six minutes
+earlier on a branch without the fix — so Logic kept crashing on a fix that was
+never once loaded, while the headless harness (built from fixed source) kept
+passing. Both true at once, and indistinguishable without checking the installed
+binary's UUID.
+
+**The rule, to never repeat this:**
+- **Cluster sessions do NOT install to the system.** They build in their own
+  `build/` tree and self-test there: the g++ tests, the registry/editor harness,
+  and `pluginval` run against the worktree's *own* build artifact path. They must
+  NOT copy anything into `~/Library/Audio/Plug-Ins/`. (Amend the "rebuild +
+  reinstall the AU" line in the cluster prompts to "rebuild + run the harness +
+  pluginval on this worktree's build — do NOT install to the system.")
+- **Only the integration worktree installs for DAW testing.** From `~/echojay-vst`
+  on `feat/surgical-eq`, after merging a cluster in, install with
+  `tools/install_local.sh` — it installs THIS worktree's build, re-reads the UUID
+  off what it wrote, clears `~/Library/Caches/AudioUnitCache`, and flags any
+  root-owned `/Library` shadow copies.
+- **Before trusting any DAW test, confirm what's loaded.** `tools/which_build_is_installed.sh`
+  prints the installed UUID and names the worktree/branch/commit it came from —
+  the same UUID a crash report prints. If a host ever "ignores your fix," run this
+  FIRST; do not re-debug the fix.
+- **A cluster must carry the crash fix before it is ever installed/DAW-tested.**
+  Merge `feat/surgical-eq` (≥ `524c4ff`) into the cluster branch first, or its
+  build reinstalls the pure-virtual editor crash.
+- **`pluginval` is not a full gate for inline-device bugs:** it exercises the
+  plugin's *top-level* editor, not `ChainListPanel::showInline` opening a built-in
+  device editor inside the rack — the path this crash lived on. Trust the editor
+  harness (which now parents + sizes an editor the way the rack does) for that.
+- Watch for **root-owned `/Library` shadows** (both `.component` and `.vst3`) with
+  the same identifier — they override the user build nondeterministically. Remove
+  with `sudo rm -rf`.
 
 ### This has already cost us an afternoon — verify, don't assume
 The paragraph above is not hypothetical. The built-in device editors aborted
