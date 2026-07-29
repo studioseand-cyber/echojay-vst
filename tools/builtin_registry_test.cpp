@@ -900,10 +900,27 @@ int main()
 
         // The editor declares its own default size in its constructor — that is
         // what the rack opens it at, so that is what gets painted.
+        //
+        // Asserted as a RANGE, deliberately, not as a number. Every category is
+        // growing its default height to seat a visualisation over its dials
+        // (VISUALS_PLAN.md), and five parallel sessions each editing one
+        // hard-coded size in a shared test is a merge conflict per device for
+        // no information gained: the exact pixel count is a design decision,
+        // not a contract. What IS a contract is that the size is sane — a
+        // device that opens at 40x20 or at 4000x3000 has a real bug (a
+        // metric read before it was set, an accumulated layout) and the rack
+        // will lay it out unusably either way.
         const int w = juce::jmax (1, ed->getWidth());
         const int h = juce::jmax (1, ed->getHeight());
-        check (w > 1 && h > 1, d.name + " declares a default size ("
-                               + juce::String (w) + "x" + juce::String (h) + ")");
+
+        constexpr int kMinW = 240, kMaxW = 1400;
+        constexpr int kMinH = 100, kMaxH =  900;
+
+        check (w >= kMinW && w <= kMaxW && h >= kMinH && h <= kMaxH,
+               d.name + " declares a sane default size (" + juce::String (w) + "x"
+                      + juce::String (h) + ", allowed "
+                      + juce::String (kMinW) + "-" + juce::String (kMaxW) + " x "
+                      + juce::String (kMinH) + "-" + juce::String (kMaxH) + ")");
 
         auto paintInto = [&ed] (int pw, int ph)
         {
