@@ -343,6 +343,47 @@ EchoJayProcessor::EchoJayProcessor()
     }
 }
 
+
+// ===== Session C: dash poll logging =========================================
+//
+// A FILE, not juce::Logger::writeToLog, and the difference is the whole point
+// of the instrumentation.
+//
+// No custom JUCE logger is installed anywhere in this codebase, so
+// writeToLog falls through to JUCE's default, which on macOS writes to
+// stderr. A plugin running inside Logic has its stderr swallowed by the host:
+// the lines never reach Apple's unified log, so `log show` cannot see them,
+// and there is nothing to tail. The first attempt at this shipped exactly
+// that mistake and produced an empty log for a poll that was working.
+//
+// ejTeardownLog beside this already had the right shape and it is followed
+// here: append to a file under Application Support, which survives process
+// restarts and reads with `tail -f`. That matters more than usual for this
+// particular log, because the question it answers spans editor recreations
+// and therefore spans the moments you are least able to watch a console.
+//
+// Gated on ECHOJAY_DEV_TRANSPORT, which is OFF by default and which
+// build-installer.sh never passes, so no release artefact contains it.
+void ejDashLog(const juce::String& msg)
+{
+   #if ECHOJAY_DEV_TRANSPORT
+    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+   #if JUCE_MAC
+    auto dir = appData.getChildFile("Application Support/EchoJay");
+   #elif JUCE_WINDOWS
+    auto dir = appData.getChildFile("EchoJay");
+   #else
+    auto dir = appData.getChildFile(".echojay");
+   #endif
+    dir.createDirectory();
+    dir.getChildFile("dash-poll.log")
+       .appendText(juce::Time::getCurrentTime().toString(true, true, true, true)
+                   + "  " + msg + juce::newLine);
+   #else
+    juce::ignoreUnused(msg);
+   #endif
+}
+
 // ===== Session C: the community poll =========================================
 //
 // Lives on the processor because Logic destroys and recreates the editor on
@@ -385,7 +426,7 @@ void EchoJayProcessor::dashPollTick()
     if (dashPollInFlight)
     {
        #if ECHOJAY_DEV_TRANSPORT
-        juce::Logger::writeToLog("[dash-poll] tick " + juce::String(dashPollTickCount)
+        ejDashLog("[dash-poll] tick " + juce::String(dashPollTickCount)
                                  + " SKIPPED, previous request still in flight");
        #endif
         return;
@@ -408,7 +449,7 @@ void EchoJayProcessor::dashPollTick()
     // a thirty second check, and it will still answer the same question in
     // six months when somebody changes the editor lifecycle, which is exactly
     // when a one-off manual verification has expired.
-    juce::Logger::writeToLog("[dash-poll] tick " + juce::String(dashPollTickCount)
+    ejDashLog("[dash-poll] tick " + juce::String(dashPollTickCount)
                              + " firing, rev=" + juce::String(dashUnread.rev)
                              + " unread=" + juce::String(dashUnread.total));
    #endif
@@ -427,7 +468,7 @@ void EchoJayProcessor::dashPollTick()
         if (status != 200)
         {
            #if ECHOJAY_DEV_TRANSPORT
-            juce::Logger::writeToLog("[dash-poll] tick " + juce::String(dashPollTickCount)
+            ejDashLog("[dash-poll] tick " + juce::String(dashPollTickCount)
                                      + " http " + juce::String(status) + ", keeping last known counts");
            #endif
             // A failed poll changes NOTHING. The badge keeps showing the last
@@ -448,7 +489,7 @@ void EchoJayProcessor::dashPollTick()
         if (rev == dashUnread.rev)
         {
            #if ECHOJAY_DEV_TRANSPORT
-            juce::Logger::writeToLog("[dash-poll] tick " + juce::String(dashPollTickCount)
+            ejDashLog("[dash-poll] tick " + juce::String(dashPollTickCount)
                                      + " rev unchanged at " + juce::String(rev) + ", no work");
            #endif
             return;
@@ -462,7 +503,7 @@ void EchoJayProcessor::dashPollTick()
         ++dashUnreadGeneration;
 
        #if ECHOJAY_DEV_TRANSPORT
-        juce::Logger::writeToLog("[dash-poll] tick " + juce::String(dashPollTickCount)
+        ejDashLog("[dash-poll] tick " + juce::String(dashPollTickCount)
                                  + " rev MOVED to " + juce::String(rev)
                                  + " unread=" + juce::String(dashUnread.total)
                                  + " gen=" + juce::String(dashUnreadGeneration));
