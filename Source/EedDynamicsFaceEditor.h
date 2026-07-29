@@ -22,7 +22,7 @@
 
 #include "DeviceEditorBase.h"
 #include "EedDynamicsEditorSupport.h"
-#include "EedGrMeter.h"
+#include "viz/EedGrMeter.h"
 
 #include <functional>
 #include <vector>
@@ -51,6 +51,14 @@ protected:
     // reserves. Returns the height to take off the bottom, above the meter.
     virtual int extraContentHeight() const { return 0; }
     virtual void layoutExtraContent (juce::Rectangle<int>) {}
+
+    // A visualisation seated ABOVE the dials (VISUALS_PLAN.md: "Editors grow
+    // their default height to seat the viz above the dials"). Returns the
+    // height it wants; it is the LAST thing given room and the FIRST thing to
+    // shrink, which is the inline-hosting contract — a rack slot laid out short
+    // loses the picture and keeps the controls, never the other way round.
+    virtual int topContentHeight() const { return 0; }
+    virtual void layoutTopContent (juce::Rectangle<int>) {}
 
     // Called from the shared timer after the knobs and meter have been synced,
     // for a subclass that has state of its own to refresh.

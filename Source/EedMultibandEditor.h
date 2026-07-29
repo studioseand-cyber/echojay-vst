@@ -25,7 +25,7 @@
 
 #include "DeviceEditorBase.h"
 #include "EedDynamicsEditorSupport.h"
-#include "EedGrMeter.h"
+#include "viz/EedGrMeter.h"
 #include "EedMultibandProcessor.h"
 
 class EedMultibandEditor : public DeviceEditorBase,

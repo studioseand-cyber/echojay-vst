@@ -75,7 +75,29 @@ void EedDynamicsFaceEditor::layoutContent (juce::Rectangle<int> content)
         }
     }
 
+    // The visualisation is reserved LAST and from the TOP, out of whatever is
+    // left once the dial row is whole. That ordering is the shrink policy: the
+    // meter survives first, the dials second, and the picture is what a short
+    // rack slot loses — it is the only part of the editor that is purely a
+    // readout of things the controls already state.
+    juce::Rectangle<int> topArea;
+    const int wantTop = topContentHeight();
+    if (wantTop > 0)
+    {
+        const int h = juce::jmin (wantTop, juce::jmax (0, content.getHeight() - kKnobH));
+        if (h > 0)
+        {
+            topArea = content.removeFromTop (h);
+            content.removeFromTop (6);
+        }
+    }
+
     layoutKnobRow (content, knobs_.getRawDataPointer(), knobs_.size());
+
+    // Called even when the area came out EMPTY — that is how the subclass
+    // learns to hide its view rather than leave it sitting at last frame's
+    // bounds, on top of the dials it just lost its room to.
+    if (wantTop > 0) layoutTopContent (topArea);
 
     if (! extraArea.isEmpty()) layoutExtraContent (extraArea);
     if (! meterArea.isEmpty()) meter_.setBounds (meterArea);

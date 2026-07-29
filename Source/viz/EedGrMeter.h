@@ -26,7 +26,7 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "EchoJayDeviceLookAndFeel.h"
+#include "../EchoJayDeviceLookAndFeel.h"
 
 namespace echojay::device
 {

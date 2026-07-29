@@ -209,7 +209,6 @@ target_sources(EchoJay PRIVATE
     Source/EedGateEditor.h
     Source/EedGateProcessor.cpp
     Source/EedGateProcessor.h
-    Source/EedGrMeter.h
     Source/EedLimiterEditor.cpp
     Source/EedLimiterEditor.h
     Source/EedLimiterProcessor.cpp
@@ -257,6 +256,33 @@ target_sources(EchoJay PRIVATE
     Source/EedTremoloEngine.h
     Source/EedTremoloProcessor.cpp
     Source/EedTremoloProcessor.h
+
+    # --- Shared visualisation library (VISUALS_PLAN.md Phase V0) -------------
+    # ALPHABETISED, same reason as the device block above: this is a shared file
+    # that every V1 category session will add a view to, and a sorted list is
+    # what makes those additions land in different places and merge clean.
+    Source/viz/DecayView.cpp
+    Source/viz/DecayView.h
+    Source/viz/DelayTapsView.cpp
+    Source/viz/DelayTapsView.h
+    Source/viz/EedGrMeter.h
+    Source/viz/Goniometer.cpp
+    Source/viz/Goniometer.h
+    Source/viz/HarmonicBars.cpp
+    Source/viz/HarmonicBars.h
+    Source/viz/LevelMeter.cpp
+    Source/viz/LevelMeter.h
+    Source/viz/LfoScopeView.cpp
+    Source/viz/LfoScopeView.h
+    Source/viz/SweepView.cpp
+    Source/viz/SweepView.h
+    Source/viz/TransferCurveView.cpp
+    Source/viz/TransferCurveView.h
+    Source/viz/VizTap.h
+    Source/viz/VizView.cpp
+    Source/viz/VizView.h
+    Source/viz/WaveshaperView.cpp
+    Source/viz/WaveshaperView.h
 )
 
 target_compile_definitions(EchoJay PUBLIC
@@ -474,7 +500,6 @@ target_sources(EchoJayLink PRIVATE
     Source/EedGateEditor.h
     Source/EedGateProcessor.cpp
     Source/EedGateProcessor.h
-    Source/EedGrMeter.h
     Source/EedLimiterEditor.cpp
     Source/EedLimiterEditor.h
     Source/EedLimiterProcessor.cpp
@@ -522,6 +547,33 @@ target_sources(EchoJayLink PRIVATE
     Source/EedTremoloEngine.h
     Source/EedTremoloProcessor.cpp
     Source/EedTremoloProcessor.h
+
+    # --- Shared visualisation library (VISUALS_PLAN.md Phase V0) -------------
+    # ALPHABETISED, same reason as the device block above: this is a shared file
+    # that every V1 category session will add a view to, and a sorted list is
+    # what makes those additions land in different places and merge clean.
+    Source/viz/DecayView.cpp
+    Source/viz/DecayView.h
+    Source/viz/DelayTapsView.cpp
+    Source/viz/DelayTapsView.h
+    Source/viz/EedGrMeter.h
+    Source/viz/Goniometer.cpp
+    Source/viz/Goniometer.h
+    Source/viz/HarmonicBars.cpp
+    Source/viz/HarmonicBars.h
+    Source/viz/LevelMeter.cpp
+    Source/viz/LevelMeter.h
+    Source/viz/LfoScopeView.cpp
+    Source/viz/LfoScopeView.h
+    Source/viz/SweepView.cpp
+    Source/viz/SweepView.h
+    Source/viz/TransferCurveView.cpp
+    Source/viz/TransferCurveView.h
+    Source/viz/VizTap.h
+    Source/viz/VizView.cpp
+    Source/viz/VizView.h
+    Source/viz/WaveshaperView.cpp
+    Source/viz/WaveshaperView.h
 )
 
 echojay_force_load_shared_code(EchoJayLink)
@@ -662,6 +714,16 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EqEngine.cpp
     Source/SurgicalEqEditor.cpp
     Source/SurgicalEqProcessor.cpp
+    Source/viz/DecayView.cpp
+    Source/viz/DelayTapsView.cpp
+    Source/viz/Goniometer.cpp
+    Source/viz/HarmonicBars.cpp
+    Source/viz/LevelMeter.cpp
+    Source/viz/LfoScopeView.cpp
+    Source/viz/SweepView.cpp
+    Source/viz/TransferCurveView.cpp
+    Source/viz/VizView.cpp
+    Source/viz/WaveshaperView.cpp
 )
 target_include_directories(EchoJayBuiltinRegistryTest PRIVATE Source)
 
