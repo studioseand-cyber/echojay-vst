@@ -10834,12 +10834,11 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // single-purpose windows; expand to get the tabs back
     if (!visualOnlyMode && !compactMode)
     {
-        static constexpr const char* kTabNames[] = {
-            "VISUALISATION", "METERS", "CHAT", "COMPARE", "LINK", "CHAIN", "SETTINGS"
-        };
-        constexpr int kTabCount = 7;
-        const int W  = bounds.getWidth();
-        const int tabW = W / kTabCount;
+        // CONSUMES tabRects_, MEASURES NOTHING. This block used to declare its
+        // own kTabNames and kTabCount and divide the width itself, which made
+        // it the second geometry authority for the strip; mouseDown was the
+        // other. Both now read what resized() stored.
+        const int W    = bounds.getWidth();
         const int tabY = kTopBarH;
 
         // Tab bar background
@@ -10851,17 +10850,16 @@ void EchoJayEditor::paint(juce::Graphics& g)
 
         for (int i = 0; i < kTabCount; ++i)
         {
-            const int tx = i * tabW;
-            const int tw = (i == kTabCount - 1) ? W - tx : tabW;
+            const auto r = tabRects_[(size_t) i];
             const Tab t  = static_cast<Tab>(i);
             const bool active = (currentTab == t);
 
             if (active)
             {
                 g.setColour(juce::Colour(0xff06b6d4).withAlpha(0.09f));
-                g.fillRect(tx, tabY, tw, kTabBarH - 1);
+                g.fillRect(r.getX(), r.getY(), r.getWidth(), kTabBarH - 1);
                 g.setColour(juce::Colour(0xff22d3ee));
-                g.fillRect(tx + 2, tabY + kTabBarH - 2, tw - 4, 2);
+                g.fillRect(r.getX() + 2, r.getY() + kTabBarH - 2, r.getWidth() - 4, 2);
             }
 
             // Unselected labels: a small step up from the original text3 for
@@ -10870,7 +10868,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
             // modest +1 over the original 9 (the +2 to 11 was too big).
             g.setColour(active ? juce::Colour(0xff22d3ee) : juce::Colour(0xff7e7e93));
             g.setFont(EchoJayChrome::labelFont()); // shared with header controls — cannot drift
-            g.drawText(kTabNames[i], tx, tabY, tw, kTabBarH, juce::Justification::centred);
+            g.drawText(kTabNames[i], r, juce::Justification::centred);
         }
     }
 
@@ -12465,10 +12463,66 @@ void EchoJayEditor::paint(juce::Graphics& g)
 // Resized
 // ============================================================================
 
+/**
+    THE tab strip's only geometry author.
+
+    Runs from resized() BEFORE any early return, so tabRects_ is valid on the
+    loading and login screens too. That costs seven trivial rect assignments
+    and removes a whole class of bug: a consumer reading rects that were never
+    written for the current width.
+
+    The last tab absorbs the integer-division remainder, exactly as the old
+    paint() code did (tw = (i == last) ? W - tx : tabW), so the strip always
+    reaches the right edge and there is no dead column at the end to click
+    into.
+*/
+EchoJayEditor::TabRects EchoJayEditor::computeTabRects (int width)
+{
+    TabRects r {};
+    const int tabW = juce::jmax (1, width / kTabCount);
+    for (int i = 0; i < kTabCount; ++i)
+    {
+        const int tx = i * tabW;
+        const int tw = (i == kTabCount - 1) ? juce::jmax (0, width - tx) : tabW;
+        r[(size_t) i] = { tx, kTopBarH, tw, kTabBarH };
+    }
+    return r;
+}
+
+int EchoJayEditor::tabIndexIn (const TabRects& rects, juce::Point<int> p)
+{
+    for (int i = 0; i < kTabCount; ++i)
+        if (rects[(size_t) i].contains (p))
+            return i;
+    return -1;
+}
+
+void EchoJayEditor::layoutTabStrip (int width)
+{
+    tabRects_ = computeTabRects (width);
+}
+
+/**
+    Which tab is under p, or -1 when p is not on the strip. A pure lookup: it
+    never divides the width, so it cannot drift from what paint() drew.
+
+    Deliberately does NOT test compactMode or visualOnlyMode. This answers a
+    geometry question; whether the strip is interactive is the caller's
+    business and mouseDown already gates on it.
+*/
+int EchoJayEditor::tabIndexAt (juce::Point<int> p) const
+{
+    return tabIndexIn (tabRects_, p);
+}
+
 void EchoJayEditor::resized()
 {
     // No transform — layout scales to actual window size
     auto b = getLocalBounds();
+
+    // Tab strip rects FIRST, ahead of every early return below. Unconditional
+    // by design: see the note on tabRects_ in the header.
+    layoutTabStrip (b.getWidth());
 
     // Onboarding overlay tracks the editor bounds and stays above tab
     // content (the update overlay below outranks it when both are up)
@@ -20062,15 +20116,19 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         { spectrogramMode_ = false; saveSpectrogramMode(); repaint(); return; }
     }
 
-    // Tab bar click — y=32..60 (below the 32px header, height=kTabBarH)
-    if (currentScreen == Screen::Main && !visualOnlyMode && !compactMode
-        && pos.y >= kTopBarH && pos.y < kTopBarH + kTabBarH)
+    // Tab bar click. CONSUMES tabRects_ via tabIndexAt, MEASURES NOTHING.
+    // This used to declare its own kTabCount = 7 and divide getWidth() itself,
+    // eleven thousand lines from the identical division in paint(). The hit
+    // test now literally cannot disagree with what was drawn, because it reads
+    // the same rects.
+    if (currentScreen == Screen::Main && !visualOnlyMode && !compactMode)
     {
-        constexpr int kTabCount = 7;
-        int tabW = getWidth() / kTabCount;
-        int idx = juce::jlimit(0, kTabCount - 1, pos.x / juce::jmax(1, tabW));
-        switchToTab(static_cast<Tab>(idx));
-        return;
+        const int idx = tabIndexAt (pos);
+        if (idx >= 0)
+        {
+            switchToTab(static_cast<Tab>(idx));
+            return;
+        }
     }
 
     // usage-v2 banner dismiss (per session)

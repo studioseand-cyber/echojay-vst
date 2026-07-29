@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <array>
 #include <set>
 #include <map>
 #include "PluginProcessor.h"
@@ -147,6 +148,68 @@ private:
     // whole layout reflows off these two constants.
     static constexpr int kTopBarH = 38;   // header row (was a hardcoded 32)
     static constexpr int kTabBarH = 29;   // tab strip (was 28; +1 for the ~10px label)
+
+    // ---- tab strip geometry: ONE authority ------------------------------
+    //
+    // These used to be two hardcoded `constexpr int kTabCount = 7` eleven
+    // thousand lines apart, one in paint() and one in mouseDown(), each
+    // dividing the width itself. Three things had to agree and nothing made
+    // them: the two counts, and the assumption that this label order matches
+    // the Tab enum order (mouseDown does static_cast<Tab>(index)). Change one
+    // and every click lands on the wrong tab, silently, which is the same
+    // shape as the four overlap bugs this file has produced.
+    //
+    // Now: kTabNames is the only place the count is expressed, tabRects_ is
+    // written by resized() alone, and paint() and mouseDown() both consume it
+    // and measure nothing.
+    static constexpr const char* kTabNames[] = {
+        "VISUALISATION", "METERS", "CHAT", "COMPARE", "LINK", "CHAIN", "SETTINGS"
+    };
+    static constexpr int kTabCount = (int) (sizeof (kTabNames) / sizeof (kTabNames[0]));
+    // Ties the label array to the enum. Adding a tab to one and not the other
+    // stops the build instead of misrouting clicks at runtime.
+    static_assert (kTabCount == (int) Tab::Settings + 1,
+                   "kTabNames and the Tab enum must stay in step");
+
+    /** Tab strip rects, in editor coordinates. WRITTEN ONLY BY resized(), via
+        layoutTabStrip(). paint() and mouseDown() read these and compute
+        nothing of their own. Authored unconditionally, including in the mini
+        modes that do not draw the strip, so there is one authority that always
+        evaluates rather than a branch leaving stale rects behind. */
+    using TabRects = std::array<juce::Rectangle<int>, (size_t) kTabCount>;
+    TabRects tabRects_ {};
+
+    /** The arithmetic, as a pure function of the width. STATIC and free of
+        editor state on purpose: tools/tabstrip_test calls it directly, so the
+        test exercises the code that actually ships rather than a copy of it.
+        A copy in a test is the same duplication bug in a different file. */
+    static TabRects computeTabRects (int width);
+
+    /** Which rect contains p, or -1. Also static and also pure, for the same
+        reason. */
+    static int tabIndexIn (const TabRects& rects, juce::Point<int> p);
+
+    /** Lets tools/tabstrip_test reach the two pure helpers above without
+        making them public, so the shipped API is unchanged by the existence
+        of a test.
+
+        UNCONDITIONAL, with no EJ_SELFTEST guard, deliberately: the ODR note in
+        tools/workspace_roundtrip_test/build_and_run.sh is explicit that the
+        test define must never appear in a header, because a header that
+        compiles differently in two translation units fails as random runtime
+        memory corruption rather than a link error. A friend declaration costs
+        nothing at runtime and changes no layout, size or vtable. */
+    friend struct EchoJayTabStripTestAccess;
+
+    /** The sole geometry author for the strip. Called from resized() before
+        any early return, so the rects are valid on every screen. */
+    void layoutTabStrip (int width);
+
+    /** Index of the tab under p, or -1 when p is not on the strip. A pure
+        lookup against tabRects_: it does not know the width and therefore
+        cannot disagree with what was painted. */
+    int tabIndexAt (juce::Point<int> p) const;
+
     // THE single writer of the visible tab: strip selection (currentTab),
     // content visibility, sidebar/input visibility, and GL start/stop all
     // change here and nowhere else. force=true runs the full pass even when
