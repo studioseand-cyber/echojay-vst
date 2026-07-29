@@ -84,8 +84,27 @@ protected:
     // Start polling. Call last in the subclass constructor.
     void finishSetup();
 
+    // A visualisation seated ABOVE the dials (VISUALS_PLAN.md: "Editors grow
+    // their default height to seat the viz above the dials"). Same three hooks,
+    // same names and same shrink policy as EedDynamicsFaceEditor, so the two
+    // clusters' editors read alike: the picture is the LAST thing given room and
+    // the FIRST thing to lose it. A rack slot laid out short keeps its controls.
+    virtual int  topContentHeight() const { return 0; }
+
+    // Called even when the area comes out EMPTY — that is how a subclass learns
+    // to HIDE its view rather than leave it at last frame's bounds, sitting on
+    // top of the dials it just lost its room to.
+    virtual void layoutTopContent (juce::Rectangle<int>) {}
+
+    // Called from the shared timer, after the knobs and toggles have been
+    // synced, for a subclass with a picture to refresh.
+    virtual void refreshExtras() {}
+
     void layoutContent (juce::Rectangle<int> content) override;
     void layoutHeaderLeading (juce::Rectangle<int>& bar) override;
+
+    // The LFO phase every Modulation visual rides. Reads the device's tap.
+    virtual float lfoPhase() const { return 0.0f; }
 
 private:
     struct Entry

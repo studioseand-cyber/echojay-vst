@@ -43,6 +43,8 @@
 
 #pragma once
 
+#include "viz/VizTap.h"
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -143,6 +145,11 @@ public:
         const float off = stereoOffset01();
         outL_ = shapeAt (sh, phase_);
         outR_ = shapeAt (sh, phase_ + off);
+
+        // Republish, or the scope's playhead sits at wherever the previous take
+        // stopped until the next block arrives — most visibly after a transport
+        // stop, which is exactly when someone is looking at a still picture.
+        phaseTap_.set (phase_);
     }
 
     // ---- parameters (message thread) ---------------------------------------
@@ -227,6 +234,17 @@ public:
         depthSmooth_ = depthTarget + (depthSmooth_ - depthTarget) * paramCoeff_;
 
         phase_ = wrap01 (phase_ + incSmoothed_);
+
+        // The one float the Modulation visuals need (VISUALS_PLAN.md: "LFO
+        // playhead phase" is the cluster's only tap — everything else the scope
+        // draws is a pure function of params the editor already reads).
+        //
+        // Published rather than exposed directly because phase_ is an audio-
+        // thread float: the editor reading it raw would be a data race, and the
+        // symptom would be a playhead that jitters rather than anything that
+        // looks like a bug. A relaxed store is a plain store on every
+        // architecture we ship, so this costs nothing on the per-sample path.
+        phaseTap_.set (phase_);
     }
 
     // The waveform at an arbitrary phase offset (in cycles, 0..1), scaled by the
@@ -267,8 +285,13 @@ public:
         return l;
     }
 
-    // Where the cycle currently is, 0..1. Used by editors to draw a moving dot.
+    // Where the cycle currently is, 0..1, AUDIO THREAD ONLY.
     float currentPhase() const noexcept { return phase_; }
+
+    // The same number, safe to read from the message thread: this is what the
+    // scope's playhead rides. Frozen while the device is not processing, which
+    // is the honest picture — a stopped transport is a stopped LFO.
+    float displayPhase() const noexcept { return phaseTap_.get(); }
 
     // The depth the audio path is ACTUALLY using right now (post-smoothing).
     // Tremolo needs it: its gain law is defined in terms of depth, not just of
@@ -363,6 +386,9 @@ private:
     float  paramCoeff_  = 0.0f;
     float  outCoeff_    = 0.0f;
     double sampleRate_  = 44100.0;
+
+    // ---- display tap (audio thread writes, editor timer reads) -------------
+    viz::FloatTap phaseTap_ { 0.0f };
 };
 
 } // namespace echojay

@@ -105,8 +105,11 @@ void EedModEditorBase::setRateGroup (const char* syncId, const char* rateId,
 void EedModEditorBase::finishSetup()
 {
     // The AI can move any of these while the editor is open, so poll for changes
-    // the UI did not make. 15 Hz is plenty for a handful of numbers.
-    startTimerHz (15);
+    // the UI did not make. 20 Hz rather than the 15 this used before the visuals:
+    // a handful of numbers does not need it, but a playhead sweeping a 6 Hz
+    // tremolo does — at 15 Hz it lands about four times a cycle and reads as a
+    // stutter rather than as motion. Matches EedDynamicsFaceEditor's rate.
+    startTimerHz (20);
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +126,33 @@ void EedModEditorBase::layoutHeaderLeading (juce::Rectangle<int>& bar)
 
 void EedModEditorBase::layoutContent (juce::Rectangle<int> content)
 {
-    if (content.isEmpty() || knobs_.empty()) return;
+    const int wantTop = topContentHeight();
+
+    if (content.isEmpty() || knobs_.empty())
+    {
+        // Tell the subclass anyway. A rack slot collapsing from a size that HAD
+        // room for the picture to one that has no content area at all would
+        // otherwise skip the notification, leaving the view visible at last
+        // frame's bounds — a scope sitting at 480x108 inside a 1x1 editor,
+        // saved from being seen only by the parent's clipping.
+        if (wantTop > 0) layoutTopContent ({});
+        return;
+    }
+
+    // The visualisation is reserved FIRST in code and LAST in priority: it only
+    // gets a strip if a whole dial row survives underneath it. That ordering is
+    // the inline-hosting contract — a collapsed rack slot loses the picture and
+    // keeps the controls, never the other way round.
+    juce::Rectangle<int> topArea;
+    if (wantTop > 0)
+    {
+        const int h = juce::jmin (wantTop, juce::jmax (0, content.getHeight() - kKnobH));
+        if (h > 0)
+        {
+            topArea = content.removeFromTop (h);
+            content.removeFromTop (6);
+        }
+    }
 
     // Flow the dials into as many rows as the width forces. The rack can lay an
     // editor out narrower than its default, and a fixed single row would push
@@ -157,6 +186,10 @@ void EedModEditorBase::layoutContent (juce::Rectangle<int> content)
             row.removeFromLeft (kKnobGap);
         }
     }
+
+    // Unconditional, including when topArea came out empty: that is the signal
+    // the subclass uses to hide its view.
+    if (wantTop > 0) layoutTopContent (topArea);
 }
 
 // ---------------------------------------------------------------------------
@@ -211,4 +244,6 @@ void EedModEditorBase::timerCallback()
 
     if (bypassButton().getToggleState() != proc_.isBypassed())
         bypassButton().setToggleState (proc_.isBypassed(), juce::dontSendNotification);
+
+    refreshExtras();
 }
