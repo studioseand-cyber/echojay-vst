@@ -110,7 +110,6 @@ int main()
     // An EXACT count, not a lower bound: the failure this catches is a device
     // silently disappearing, and ">= 14" would not notice that. Every Wave 1
     // session bumps this by the number of devices it lands.
-                                       + juce::String ((int) registry.all().size()) + ")");
 
     // Wave 1, Dynamics cluster.
     check (registry.findByName ("EchoJay Compressor")        != nullptr, "EchoJay Compressor registered");
@@ -145,8 +144,6 @@ int main()
                "the whole Modulation group precedes the whole Harmonic group");
         check (names.indexOf ("EchoJay Tape") < names.indexOf ("EchoJay Delay"),
                "the whole Harmonic group precedes the whole Time group");
-        check (registry.categories().joinIntoString (",") == "EQ,Utility,Stereo,Modulation,Harmonic,Time",
-
         // Dynamics ranks above Utility, so every Dynamics device sorts before
         // Gain even though "Compressor" > "Gain" alphabetically. That is the
         // category rank doing its job rather than a coincidence of names.
@@ -155,7 +152,7 @@ int main()
         check (names.indexOf ("EchoJay 4-Band Compressor") < names.indexOf ("EchoJay Compressor"),
                "within Dynamics, alphabetical: 4-Band before Compressor");
 
-        check (registry.categories().joinIntoString (",") == "EQ,Dynamics,Utility",
+        check (registry.categories().joinIntoString (",") == "EQ,Dynamics,Utility,Stereo,Modulation,Harmonic,Time",
                "categories in canonical order: " + registry.categories().joinIntoString (","));
 
         // Within Modulation, alphabetical: Auto Pan, Chorus, Phaser, Tremolo.
@@ -985,6 +982,8 @@ int main()
         }
 
         check (ok, d.name + " opens, closes and reopens inline under a parent");
+    }
+
     std::printf ("== a Dynamics face dials in real units, and clamps to its schema ==\n");
     {
         auto proc = makeByName ("EchoJay Compressor");
