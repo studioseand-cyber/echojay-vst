@@ -1733,12 +1733,13 @@ juce::String ChainHost::devApplyEqJson(int slotIndex, const juce::String& json)
         return "JSON parse error: " + res.getErrorMessage();
 
     int applied = 0, skipped = 0;
-    const auto summary = applyEqBandsToSlot(slotIndex, parsed, &applied, &skipped);
+    const auto summary = applyStructuredToEqSlot(slotIndex, parsed, &applied, &skipped);
     if (summary.isEmpty())
-        return "no eq_bands found — expected {\"eq_bands\":[...]} or a bare [...] array";
+        return "nothing the EQ understands — expected a bare [...] eq_bands array, or "
+               "{\"eq_bands\":[...], \"eq_settings\":{...}}";
 
     // Keep the rack card in step with what was just written.
-    if (slotIndex >= 0 && slotIndex < (int)slots_.size() && applied > 0)
+    if (slotIndex >= 0 && slotIndex < (int)slots_.size())
     {
         slots_[(size_t)slotIndex].settings = "Applied automatically\n" + summary;
         slots_[(size_t)slotIndex].dialAppliedCount = applied;
@@ -1749,8 +1750,8 @@ juce::String ChainHost::devApplyEqJson(int slotIndex, const juce::String& json)
     return summary;
 }
 
-juce::String ChainHost::applyEqBandsToSlot(int slotIndex, const juce::var& structured,
-                                           int* appliedOut, int* skippedOut)
+juce::String ChainHost::applyStructuredToEqSlot(int slotIndex, const juce::var& structured,
+                                                int* appliedOut, int* skippedOut)
 {
     if (appliedOut != nullptr) *appliedOut = 0;
     if (skippedOut != nullptr) *skippedOut = 0;
@@ -1759,15 +1760,13 @@ juce::String ChainHost::applyEqBandsToSlot(int slotIndex, const juce::var& struc
     auto* eq = dynamic_cast<SurgicalEqProcessor*>(getSlotProcessor(slotIndex));
     if (eq == nullptr) return {};
 
-    // Two accepted shapes: a bare eq_bands array, or an object carrying one
-    // under "eq_bands". Anything else (a flat semantic bag meant for the
-    // anchor path) is not something this device understands.
-    juce::var bands = structured;
-    if (! bands.isArray())
-        bands = structured.getProperty("eq_bands", juce::var());
-    if (! bands.isArray()) return {};
-
-    return eq->applyEqBands(bands, appliedOut, skippedOut);
+    // One call, whole value. The chain deliberately does NOT reach in for
+    // .eq_bands any more: which keys exist and in what order they resolve is
+    // the DEVICE's schema, and every future one (eq_settings, eq_action,
+    // eq_preset) has to work on the edit path the moment it works at all. A
+    // flat semantic bag meant for the anchor path carries none of those keys
+    // and comes back as an empty summary.
+    return eq->applyStructured(structured, appliedOut, skippedOut);
 }
 
 void ChainHost::applyStructuredIfReady(int slotIndex)
@@ -1786,12 +1785,15 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     if (isBuiltinEqSlot(slotIndex))
     {
         int applied = 0, skipped = 0;
-        const auto summary = applyEqBandsToSlot(slotIndex, s.structuredSettings,
-                                                &applied, &skipped);
+        const auto summary = applyStructuredToEqSlot(slotIndex, s.structuredSettings,
+                                                     &applied, &skipped);
         s.structuredApplied = true;
         s.dialAppliedCount  = applied;
 
-        if (applied > 0)
+        // The summary, not the band count, is the verdict. A move can be
+        // entirely device-global ({"eq_settings":{"auto_gain":true}}) — it
+        // applies zero BANDS and is a complete success.
+        if (summary.isNotEmpty())
         {
             s.settings   = "Applied automatically\n" + summary;
             // Honest verdict, same contract as the mapped path: anything the
@@ -1800,8 +1802,8 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
         }
         else
         {
-            // Structured settings arrived but carried no usable eq_bands. The
-            // EQ understands nothing else, so flat semantics are ignored.
+            // Structured settings arrived but carried nothing this device
+            // understands, so flat semantics are ignored.
             s.dialStatus = DialStatus::unusableMap;
         }
 

@@ -619,11 +619,15 @@ private:
     // Construct + append a built-in node synchronously. Returns an error
     // string, empty on success. Called only from loadPluginAsync.
     juce::String loadBuiltinNow (const juce::PluginDescription& desc);
-    // Exact per-band apply for a built-in EQ slot: parses eq_bands straight
-    // into typed BandSpecs. Returns a summary, or empty when nothing applied.
-    juce::String applyEqBandsToSlot (int slotIndex, const juce::var& structured,
-                                     int* appliedOut = nullptr,
-                                     int* skippedOut = nullptr);
+    // Exact apply for a built-in EQ slot. Hands the WHOLE settings_structured
+    // value to the device's own funnel, which owns the schema (legacy bare
+    // eq_bands array, or the object carrying eq_bands / eq_settings / … ).
+    // Returns a summary, or empty when the value carried nothing the EQ
+    // understands. appliedOut/skippedOut count bands only — a settings-only
+    // move legitimately applies zero bands and still returns a summary.
+    juce::String applyStructuredToEqSlot (int slotIndex, const juce::var& structured,
+                                          int* appliedOut = nullptr,
+                                          int* skippedOut = nullptr);
     void loadParamMapsFromDisk();
     void saveParamMapsToDisk();
     // Read-only merge of the opt-in background mapper's output file
