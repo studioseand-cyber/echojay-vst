@@ -167,6 +167,15 @@ target_sources(EchoJay PRIVATE
     Source/EedPhaseInvertEditor.h
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaseInvertProcessor.h
+    Source/EedStereoEngine.h
+    Source/EedStereoWidthEditor.cpp
+    Source/EedStereoWidthEditor.h
+    Source/EedStereoWidthProcessor.cpp
+    Source/EedStereoWidthProcessor.h
+    Source/EedStereoizerEditor.cpp
+    Source/EedStereoizerEditor.h
+    Source/EedStereoizerProcessor.cpp
+    Source/EedStereoizerProcessor.h
 )
 
 target_compile_definitions(EchoJay PUBLIC
@@ -342,6 +351,15 @@ target_sources(EchoJayLink PRIVATE
     Source/EedPhaseInvertEditor.h
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaseInvertProcessor.h
+    Source/EedStereoEngine.h
+    Source/EedStereoWidthEditor.cpp
+    Source/EedStereoWidthEditor.h
+    Source/EedStereoWidthProcessor.cpp
+    Source/EedStereoWidthProcessor.h
+    Source/EedStereoizerEditor.cpp
+    Source/EedStereoizerEditor.h
+    Source/EedStereoizerProcessor.cpp
+    Source/EedStereoizerProcessor.h
 )
 
 echojay_force_load_shared_code(EchoJayLink)
@@ -438,6 +456,10 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EedGainProcessor.cpp
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertProcessor.cpp
+    Source/EedStereoWidthEditor.cpp
+    Source/EedStereoWidthProcessor.cpp
+    Source/EedStereoizerEditor.cpp
+    Source/EedStereoizerProcessor.cpp
     Source/EqEngine.cpp
     Source/SurgicalEqEditor.cpp
     Source/SurgicalEqProcessor.cpp
