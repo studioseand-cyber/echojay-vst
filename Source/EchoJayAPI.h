@@ -200,6 +200,34 @@ public:
         nextChatIsExplicitCapture_ = true;
     }
 
+    /** Drop anything staged for the next chat turn.
+     *
+     *  ADDED WHEN EchoJayAPI MOVED TO THE PROCESSOR, to preserve the exact
+     *  semantics it had as an editor member rather than change them silently.
+     *
+     *  The four nextChat* fields are a STAGING AREA for the next send: set
+     *  just before sendChat, consumed and cleared inside it. While this class
+     *  was owned by the editor, staging that was never sent died when Logic
+     *  destroyed the editor on a Link window switch. Owned by the processor
+     *  it would SURVIVE that, so a capture staged before the switch could
+     *  ride the first unrelated chat message typed after it, silently
+     *  attaching meter data the user never asked to send.
+     *
+     *  The editor calls this on construction, which reproduces the old
+     *  lifetime exactly: a fresh editor starts with nothing staged.
+     *
+     *  Every other member here is account or session scoped (endpoint, token,
+     *  deviceId, userInfo, userSettings, last model name) and is BETTER shared
+     *  than duplicated, which is the point of the move.
+     */
+    void clearStagedTurn()
+    {
+        nextChatMeters_.clear();
+        nextChatTurnType_.clear();
+        nextChatBusCount_ = 0;
+        nextChatIsExplicitCapture_ = false;
+    }
+
     // usage-v2 accessors. Percent works against BOTH server states.
     float getUsagePercent() const
     {
@@ -466,6 +494,54 @@ public:
                      std::function<void(const juce::var&, int)> cb)
     {
         if (isLoggedIn()) deleteJSON("/api/v2/chains/" + id, std::move(cb));
+        else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
+    }
+
+    // ---- Session C: the Dashboard tab -----------------------------------
+    //
+    // TWO ENDPOINTS, TWO CADENCES, AND THEY MUST NOT BE CONFUSED. This pair is
+    // the whole reason the dashboard is affordable at 11,285 accounts, so the
+    // costs are written here at the call site rather than left in a spec:
+    //
+    //   fetchDashboard  5 Redis reads + 4 Postgres queries on a cold build.
+    //                   Called on TAB OPEN and after its 60s TTL. Nothing else.
+    //   pollCommunity   1 Redis round trip, 0 Postgres.
+    //                   Called every 20s while the editor is open.
+    //
+    // The dashboard payload CONTAINS community.unread, which makes it tempting
+    // to poll it for the badge and delete the second endpoint. That would be
+    // roughly a hundred times the cost per tick. Do not.
+
+    // GET /api/v2/dashboard?surface=plugin -> the full payload.
+    //
+    // surface=plugin is not decoration: the server returns deliberately
+    // shorter lists for this consumer (5 rows against the web's 8), which is
+    // why the plugin must never ask for the web surface.
+    //
+    // 10s like listChains and for the same reason: the tab has a disk-cached
+    // payload to fall back on, so a fast honest failure beats a minute of
+    // "Loading" ending in the same failure.
+    static constexpr int kDashboardTimeoutMs = 10000;
+    void fetchDashboard(std::function<void(const juce::var&, int)> cb)
+    {
+        if (isLoggedIn()) getJSON("/api/v2/dashboard?surface=plugin", std::move(cb), kDashboardTimeoutMs);
+        else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
+    }
+
+    // GET /api/v2/community/poll -> { total, announcements, team, direct, rev }.
+    //
+    // rev is MONOTONIC. If it has not moved since the last tick, there is
+    // nothing new and the caller must do nothing at all: no repaint, no
+    // payload fetch, no state write. That check is the point of the endpoint.
+    //
+    // 5s, tighter than everything else here. A badge that is 20 seconds late
+    // is fine; a poll that hangs for 60s while the editor is open is a leaked
+    // connection every tick. There is no fallback to wait for either, since a
+    // missed tick is simply retried 20 seconds later.
+    static constexpr int kPollTimeoutMs = 5000;
+    void pollCommunity(std::function<void(const juce::var&, int)> cb)
+    {
+        if (isLoggedIn()) getJSON("/api/v2/community/poll", std::move(cb), kPollTimeoutMs);
         else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
     }
 

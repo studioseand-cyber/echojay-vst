@@ -315,8 +315,18 @@ static juce::String displayVersionString()
 }
 
 EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
-    : AudioProcessorEditor(&p), processorRef(p)
+    // api is a REFERENCE to the processor's client now, bound from the
+    // constructor parameter rather than from processorRef, so it does not
+    // depend on member declaration order. See getApi() in
+    // PluginProcessor.h for the lifetime argument.
+    : AudioProcessorEditor(&p), processorRef(p), api(p.getApi())
 {
+    // A fresh editor starts with nothing staged for the next chat turn.
+    // While api was an editor member this happened by construction; now
+    // that it outlives the editor, staging left behind by a Link window
+    // switch would otherwise ride the next unrelated message. See
+    // clearStagedTurn() in EchoJayAPI.h.
+    api.clearStagedTurn();
     setLookAndFeel(&lnf);
     setSize(1170, 696);
     setResizable(true, true);

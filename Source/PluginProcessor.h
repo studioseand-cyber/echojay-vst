@@ -7,6 +7,7 @@
 #include "ReferenceAnalyser.h"
 #include "WaveformRecorder.h"
 #include "ChainHost.h"
+#include "EchoJayAPI.h"
 #include "LinkShm.h"
 
 // Temporary diagnostic: append a timestamped line to the EchoJay teardown log
@@ -150,6 +151,44 @@ public:
     ReferenceAnalyser& getReferenceAnalyser() { return refAnalyser; }
     WaveformRecorder& getWaveformRecorder() { return waveformRecorder; }
     ChainHost& getChainHost() { return chainHost; }
+
+    /** THE ONE API CLIENT, moved here from the editor for Session C.
+     *
+     *  WHY IT LIVES ON THE PROCESSOR. Logic destroys and recreates the plugin
+     *  editor on every Link window switch, which in real Link work happens
+     *  every couple of minutes. Session C's 20 second community poll has to
+     *  survive that, so the poll timer must live on something that outlives
+     *  the editor, and the timer needs an API client. Same rule as
+     *  chatHistory, applied to the network layer.
+     *
+     *  WHY NOT A SECOND CLIENT ON THE PROCESSOR. ~EchoJayAPI() calls
+     *  saveSettings(). Two instances would both write the same settings file
+     *  on teardown and the last one destroyed would win, which is
+     *  last-writer-wins corruption that surfaces weeks later as a mysterious
+     *  logout. The token is also loaded from disk at construction, so a login
+     *  through one instance would leave the other holding a stale token and
+     *  silently 401ing. Sharing one client is not the smaller change, it is
+     *  the correct one.
+     *
+     *  LIFETIME, which is the real risk and is guaranteed rather than hoped:
+     *  JUCE's AudioProcessor OWNS its editor. AudioProcessorEditor's
+     *  constructor takes the processor, and the host deletes the editor
+     *  before the processor via AudioProcessor::editorBeingDeleted, which
+     *  JUCE calls from ~AudioProcessorEditor. A processor is never destroyed
+     *  with a live editor attached, and this member is declared as a plain
+     *  value on the processor, so it is destroyed in ~EchoJayProcessor AFTER
+     *  the editor has already gone. The reference the editor holds therefore
+     *  cannot outlive the referent.
+     *
+     *  Two behaviour changes that come with the move, both improvements and
+     *  both deliberate: the constructor's fetchRemoteConfig and
+     *  refreshUserInfo now fire once per plugin instance rather than once per
+     *  editor recreation, and saveSettings runs once per processor teardown
+     *  rather than once per editor teardown. The one thing that was NOT an
+     *  improvement, per-turn chat staging surviving an editor swap, is
+     *  handled by clearStagedTurn(); see the note on it in EchoJayAPI.h.
+     */
+    EchoJayAPI& getApi() { return api; }
 
     // Save captured audio to WAV in the project/capture folder
     juce::String saveCaptureWAV();
@@ -377,6 +416,9 @@ private:
     ReferenceAnalyser refAnalyser;
     WaveformRecorder waveformRecorder; // Audio recording + waveform thumbnail
     ChainHost chainHost;           // Plugin chain hosting (CHAIN tab)
+    // Declared AFTER chainHost and before nothing that uses it at
+    // construction. See getApi() above for the lifetime argument.
+    EchoJayAPI api;
 
     ChannelType channelType { ChannelType::FullMix };
     juce::String customChannelName;

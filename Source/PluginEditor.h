@@ -2425,7 +2425,11 @@ private:
     void startPlayback();
     void stopPlayback();
     
-    EchoJayAPI api;
+    // NOT OWNED HERE ANY MORE. The one client lives on the processor so it
+    // outlives this editor, which Logic destroys on every Link window
+    // switch. Bound in the constructor's init list from processorRef, and
+    // the name stays `api` so all 73 call sites read unchanged.
+    EchoJayAPI& api;
     EchoJayWorkspace workspace { api };
 
     // =========================================================================
