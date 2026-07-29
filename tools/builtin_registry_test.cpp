@@ -42,10 +42,16 @@
 #include "EedStereoizerProcessor.h"
 #include "EedTapeProcessor.h"
 #include "EedTremoloProcessor.h"
+#include "EedMultibandProcessor.h"
 #include "SurgicalEqProcessor.h"
 
 #include <cmath>
 #include <memory>
+
+// EQ + Gain + Phase Invert (Wave 0) + the six Dynamics faces (Wave 1). A count
+// rather than a >= so that a device silently failing to register is a FAILURE
+// and not a test that quietly still passes.
+static constexpr int kExpectedDevices = 20;
 
 static int g_fail = 0;
 
@@ -104,8 +110,19 @@ int main()
     // An EXACT count, not a lower bound: the failure this catches is a device
     // silently disappearing, and ">= 14" would not notice that. Every Wave 1
     // session bumps this by the number of devices it lands.
-    check (registry.all().size() == 14, "exactly 14 devices registered (got "
                                        + juce::String ((int) registry.all().size()) + ")");
+
+    // Wave 1, Dynamics cluster.
+    check (registry.findByName ("EchoJay Compressor")        != nullptr, "EchoJay Compressor registered");
+    check (registry.findByName ("EchoJay Gate")              != nullptr, "EchoJay Gate registered");
+    check (registry.findByName ("EchoJay Expander")          != nullptr, "EchoJay Expander registered");
+    check (registry.findByName ("EchoJay Limiter")           != nullptr, "EchoJay Limiter registered");
+    check (registry.findByName ("EchoJay De-Esser")          != nullptr, "EchoJay De-Esser registered");
+    check (registry.findByName ("EchoJay 4-Band Compressor") != nullptr, "EchoJay 4-Band Compressor registered");
+
+    check (registry.all().size() == kExpectedDevices,
+           "exactly " + juce::String (kExpectedDevices) + " devices registered (got "
+           + juce::String ((int) registry.all().size()) + ")");
 
     // -----------------------------------------------------------------------
     std::printf ("== ordering is deterministic, not static-init order ==\n");
@@ -129,6 +146,16 @@ int main()
         check (names.indexOf ("EchoJay Tape") < names.indexOf ("EchoJay Delay"),
                "the whole Harmonic group precedes the whole Time group");
         check (registry.categories().joinIntoString (",") == "EQ,Utility,Stereo,Modulation,Harmonic,Time",
+
+        // Dynamics ranks above Utility, so every Dynamics device sorts before
+        // Gain even though "Compressor" > "Gain" alphabetically. That is the
+        // category rank doing its job rather than a coincidence of names.
+        check (names.indexOf ("EchoJay Compressor") < names.indexOf ("EchoJay Gain"),
+               "Dynamics sorts before Utility (category rank, not alphabetical)");
+        check (names.indexOf ("EchoJay 4-Band Compressor") < names.indexOf ("EchoJay Compressor"),
+               "within Dynamics, alphabetical: 4-Band before Compressor");
+
+        check (registry.categories().joinIntoString (",") == "EQ,Dynamics,Utility",
                "categories in canonical order: " + registry.categories().joinIntoString (","));
 
         // Within Modulation, alphabetical: Auto Pan, Chorus, Phaser, Tremolo.
@@ -958,6 +985,191 @@ int main()
         }
 
         check (ok, d.name + " opens, closes and reopens inline under a parent");
+    std::printf ("== a Dynamics face dials in real units, and clamps to its schema ==\n");
+    {
+        auto proc = makeByName ("EchoJay Compressor");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        check (device != nullptr, "compressor IS an EedDeviceProcessor");
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (
+            paramsMove ({ { "threshold_db", -24.0 }, { "ratio", 6.0 },
+                          { "attack_ms", 3.0 }, { "mix", 50.0 } }), &applied, &skipped);
+
+        check (applied == 4 && skipped == 0, "4 params applied, 0 skipped");
+        check (s.isNotEmpty(), "summary: " + s);
+        check (near (device->getParamValue ("threshold_db"), -24.0), "threshold_db exact");
+        check (near (device->getParamValue ("ratio"), 6.0),          "ratio exact");
+        check (near (device->getParamValue ("attack_ms"), 3.0),      "attack_ms exact");
+        check (near (device->getParamValue ("mix"), 50.0),           "mix exact (percent, not 0..1)");
+
+        // Merge: release was never mentioned, so it must still be its default.
+        check (near (device->getParamValue ("release_ms"), 120.0),
+               "release_ms untouched by a move that did not mention it");
+
+        // Clamp: a ratio of 100:1 is not in the contract.
+        device->applyStructured (paramsMove ({ { "ratio", 100.0 } }));
+        check (near (device->getParamValue ("ratio"), 20.0), "ratio clamped to the advertised 20 max");
+    }
+
+    std::printf ("== the limiter REPORTS its lookahead latency ==\n");
+    {
+        auto proc = makeByName ("EchoJay Limiter");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        proc->prepareToPlay (48000.0, 512);
+        device->applyStructured (paramsMove ({ { "lookahead_ms", 5.0 } }));
+
+        // 5 ms at 48 kHz. An unreported delay puts this track out of time with
+        // the whole session, so the number itself is the feature.
+        check (proc->getLatencySamples() == 240,
+               "5 ms lookahead at 48k reports 240 samples (got "
+               + juce::String (proc->getLatencySamples()) + ")");
+
+        device->applyStructured (paramsMove ({ { "lookahead_ms", 0.0 } }));
+        check (proc->getLatencySamples() == 0, "zero lookahead reports zero latency");
+    }
+
+    std::printf ("== the de-esser's switches dial as on/off, in every spelling ==\n");
+    {
+        auto proc = makeByName ("EchoJay De-Esser");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        device->applyStructured (paramsMove ({ { "mode", false } }));
+        check (near (device->getParamValue ("mode"), 0.0), "JSON false -> wide");
+
+        device->applyStructured (paramsMove ({ { "mode", "on" } }));
+        check (near (device->getParamValue ("mode"), 1.0), "the string \"on\" -> split");
+
+        device->applyStructured (paramsMove ({ { "listen", 1 } }));
+        check (near (device->getParamValue ("listen"), 1.0), "1 -> listen on");
+    }
+
+    // -----------------------------------------------------------------------
+    std::printf ("== 4-Band: comp_bands and flat params reach the SAME knobs ==\n");
+    {
+        auto proc = makeByName ("EchoJay 4-Band Compressor");
+        auto* mb     = dynamic_cast<EedMultibandProcessor*> (proc.get());
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        check (mb != nullptr && device != nullptr, "4-Band is both itself and a device");
+
+        // The array form, with an explicit band.
+        juce::DynamicObject::Ptr b4 = new juce::DynamicObject();
+        b4->setProperty ("band", 4);
+        b4->setProperty ("threshold_db", -24.0);
+        b4->setProperty ("ratio", 5.0);
+
+        juce::Array<juce::var> bands;
+        bands.add (juce::var (b4.get()));
+
+        juce::DynamicObject::Ptr root = new juce::DynamicObject();
+        root->setProperty ("comp_bands", juce::var (bands));
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (juce::var (root.get()), &applied, &skipped);
+        check (applied == 2, "comp_bands applied 2 params (got " + juce::String (applied) + ")");
+        check (s.isNotEmpty(), "summary: " + s);
+        check (near (device->getParamValue ("band4_threshold_db"), -24.0),
+               "band 4 threshold landed exactly");
+        check (near (device->getParamValue ("band4_ratio"), 5.0), "band 4 ratio landed exactly");
+
+        // The flat form, on the same knob.
+        device->applyStructured (paramsMove ({ { "band4_threshold_db", -30.0 } }));
+        check (near (device->getParamValue ("band4_threshold_db"), -30.0),
+               "the flat id reaches the identical param");
+    }
+
+    std::printf ("== 4-Band: comp_bands MERGES into a band, unlike eq_bands ==\n");
+    {
+        auto proc = makeByName ("EchoJay 4-Band Compressor");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        device->applyStructured (paramsMove ({ { "band2_threshold_db", -22.0 },
+                                               { "band2_ratio", 6.0 } }));
+
+        // A partial entry: a compressor band is a fixed slot, so this must not
+        // reset the threshold the way a partial eq_bands entry replaces a band.
+        juce::DynamicObject::Ptr e = new juce::DynamicObject();
+        e->setProperty ("band", 2);
+        e->setProperty ("attack_ms", 4.0);
+        juce::Array<juce::var> arr;
+        arr.add (juce::var (e.get()));
+
+        device->applyStructured (juce::var (arr));      // bare array IS comp_bands
+
+        check (near (device->getParamValue ("band2_attack_ms"), 4.0), "attack_ms updated");
+        check (near (device->getParamValue ("band2_threshold_db"), -22.0),
+               "threshold SURVIVED the partial entry");
+        check (near (device->getParamValue ("band2_ratio"), 6.0), "ratio SURVIVED it too");
+    }
+
+    std::printf ("== 4-Band: array position IS the band when none is named ==\n");
+    {
+        auto proc = makeByName ("EchoJay 4-Band Compressor");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        juce::Array<juce::var> arr;
+        for (int i = 0; i < 4; ++i)
+        {
+            juce::DynamicObject::Ptr e = new juce::DynamicObject();
+            e->setProperty ("threshold_db", -10.0 - i);     // -10, -11, -12, -13
+            arr.add (juce::var (e.get()));
+        }
+        device->applyStructured (juce::var (arr));
+
+        bool ok = true;
+        for (int i = 0; i < 4; ++i)
+            ok = ok && near (device->getParamValue ("band" + juce::String (i + 1) + "_threshold_db"),
+                             -10.0 - i);
+        check (ok, "four unnumbered entries landed on bands 1..4 in order");
+    }
+
+    std::printf ("== 4-Band: an out-of-range band is reported, not guessed at ==\n");
+    {
+        auto proc = makeByName ("EchoJay 4-Band Compressor");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        juce::DynamicObject::Ptr e = new juce::DynamicObject();
+        e->setProperty ("band", 9);
+        e->setProperty ("threshold_db", -20.0);
+        juce::Array<juce::var> arr;
+        arr.add (juce::var (e.get()));
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (juce::var (arr), &applied, &skipped);
+        check (applied == 0, "nothing applied");
+        check (skipped == 1, "counted as skipped");
+        check (s.contains ("9"), "and named in the summary: " + s);
+    }
+
+    std::printf ("== 4-Band: crossovers are dialable and come back sorted ==\n");
+    {
+        auto proc = makeByName ("EchoJay 4-Band Compressor");
+        auto* mb     = dynamic_cast<EedMultibandProcessor*> (proc.get());
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        proc->prepareToPlay (48000.0, 512);
+        device->applyStructured (paramsMove ({ { "crossover1_hz", 200.0 },
+                                               { "crossover2_hz", 1200.0 },
+                                               { "crossover3_hz", 7000.0 } }));
+
+        check (near (device->getParamValue ("crossover1_hz"), 200.0),  "crossover1 exact");
+        check (near (device->getParamValue ("crossover3_hz"), 7000.0), "crossover3 exact");
+
+        // The splitter is rebuilt on the AUDIO thread, so a move is a target
+        // until a block runs. Processing one here is not test scaffolding — it
+        // is the same handoff a DAW performs, and asserting before it would be
+        // asserting on a state the plugin never actually plays in.
+        check (! near (mb->crossoverHz (1), 1200.0, 1.0),
+               "before a block runs, the splitter still holds the prepared value");
+
+        juce::AudioBuffer<float> buf (2, 512);
+        buf.clear();
+        juce::MidiBuffer midi;
+        proc->processBlock (buf, midi);
+
+        check (near (mb->crossoverHz (1), 1200.0, 1.0),
+               "after one block, the splitter has realised crossover2");
     }
 
     // -----------------------------------------------------------------------

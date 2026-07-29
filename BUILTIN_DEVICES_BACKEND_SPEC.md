@@ -92,6 +92,39 @@ the bands, `params` for the device-global knobs.
 Resolution order inside a move is the device's own and is deliberate — for the
 EQ: `eq_preset`, then `eq_settings`/`params`, then `eq_bands`, then `eq_action`.
 
+**`comp_bands` — EchoJay 4-Band Compressor.** The second structured device, and
+the only other array form:
+
+```jsonc
+{
+  "name": "EchoJay 4-Band Compressor",
+  "settings_structured": {
+    "params":     { "crossover3_hz": 6000 },
+    "comp_bands": [ { "band": 4, "threshold_db": -24, "ratio": 5 } ]
+  }
+}
+```
+
+- `band` is **1..4**, fixed by the crossovers. Omit it and the entry's **position
+  in the array** is its band, so four entries in order address bands 1-4. A band
+  outside 1..4 is reported, never wrapped or clamped onto a real band.
+- Per-entry keys: `threshold_db`, `ratio`, `attack_ms`, `release_ms`, `knee_db`,
+  `makeup_db`, `bypass` (the short spellings `threshold`/`attack`/`release`/
+  `knee`/`makeup`/`gain_db` are accepted too).
+- **Merge semantics differ from `eq_bands`, deliberately.** An `eq_bands` entry
+  REPLACES the band it targets; a `comp_bands` entry MERGES into it. An EQ band is
+  a free-floating object you place, so a partial set would leave half of a
+  previous shape behind; a compressor band is a fixed slot the crossovers define,
+  so "make band 4 faster" must not reset its threshold.
+- **`params` is resolved before `comp_bands`** in this device, because the
+  crossovers change what each band covers: a move that widens band 4 and then
+  sets its threshold has to set the threshold of the band it just defined.
+- Every per-band knob is **also a flat id** — `band4_threshold_db`,
+  `crossover2_hz` — advertised in the schema like any other param. `comp_bands` is
+  a convenience over the same contract, not a second one; both land on the same
+  knob through the same validation. A backend that only ever emits flat `params`
+  is fully capable of driving this device.
+
 ## Backend changes
 
 1. **Parse the advertisement, don't hard-code it.** Read device names, categories
@@ -107,10 +140,19 @@ EQ: `eq_preset`, then `eq_settings`/`params`, then `eq_bands`, then `eq_action`.
 4. **Prefer built-ins for exact work.** They dial precisely; third-party plugins
    go through the approximate anchor-table path. Reach for `EchoJay Gain` for
    level/pan staging, `EchoJay Phase Invert` for polarity problems, the
-   `EchoJay EQ` for surgical tonal moves, and for movement: `EchoJay Tremolo`
+   `EchoJay EQ` for surgical tonal moves, for movement `EchoJay Tremolo`
    (level), `EchoJay Auto Pan` (position), `EchoJay Chorus` (thickening/width),
-   `EchoJay Phaser` (swirl). Each device's `summary` line says when to pick it
-   over its neighbours; that text is written for the model and needs no gloss.
+   `EchoJay Phaser` (swirl), and the Dynamics cluster — `EchoJay Compressor`,
+   `Gate`, `Expander`, `Limiter`, `De-Esser`, `4-Band Compressor` — for anything
+   about level over time. Each device's `summary` line says when to pick it over
+   its neighbours; that text is written for the model and needs no gloss.
+   Two notes the schema cannot carry on its own:
+   - `EchoJay De-Esser`'s `listen` is a **monitoring** switch: on, the device
+     outputs the detector's band instead of the result. Never leave a move with
+     it on.
+   - `EchoJay Limiter`'s `lookahead_ms` adds **latency**, which the client
+     reports to the DAW. It is the right default on a master, and the wrong one
+     when a chain is being monitored live.
 5. **Booleans** may be sent as JSON `true`/`false` or as `1`/`0`; the client
    accepts both, plus the strings `"on"`/`"off"`. Prefer real JSON booleans.
 
