@@ -17,6 +17,7 @@
 #include "EjmapWatchdog.h"
 #include "EchoJayAuRegistry.h"
 #include "EjmapScanProgress.h"
+#include "EjmapSupervisor.h"
 
 #include <iostream>
 
@@ -28,8 +29,13 @@ class MainComponent  : public juce::Component,
                        private juce::Timer
 {
 public:
-    explicit MainComponent (juce::File ledgerRoot = {})
-        : ledger (ledgerRoot), watchdog (ledger), host (scanner.getFormatManager())
+    explicit MainComponent (juce::File ledgerRoot = {},
+                            bool supervised = false,
+                            int restartCount = 0,
+                            juce::String afterExit = {})
+        : ledger (ledgerRoot), watchdog (ledger), host (scanner.getFormatManager()),
+          isSupervised (supervised), restartsThisSession (restartCount),
+          lastExitCause (std::move (afterExit))
     {
         // Crash recovery runs before anything else touches a plugin.
         crashedId = ledger.recoverFromCrash();
@@ -83,12 +89,33 @@ public:
         // The scan costs 4.5 minutes and the watchdog stops the process by
         // design, so a relaunch used to mean a full rescan and ~900 more ledger
         // rows. Restore the last result and make Scan an explicit refresh.
+        // What died is whatever recovery just named. Never auto-reloadable:
+        // a host-attributed crash is spared from quarantine on purpose, so
+        // nothing else would stop it being loaded straight back into the same
+        // fault.
+        doNotAutoReload = crashedId;
+
+        if (restartsThisSession > 0)
+            recordRestartRow();
+
         const int autoReleased = releaseStaleScanQuarantines();
         const auto restored = restoreScanCache();
 
         juce::String opening;
-        if (crashedId.isNotEmpty())
+
+        // Auto-relaunch must not make a degrading session invisible. This leads
+        // the status line and stays until a load succeeds.
+        if (restartsThisSession > 0)
+        {
+            opening << "RESTARTED after " << (crashedId.isEmpty() ? "an abnormal exit" : crashedId)
+                    << " (" << lastExitCause << "). "
+                    << restartsThisSession << " of "
+                    << SupervisorLimits::kMaxConsecutive << " restarts used. ";
+        }
+        else if (crashedId.isNotEmpty())
+        {
             opening << "Previous session died loading " << crashedId << ". ";
+        }
 
         if (autoReleased > 0)
             opening << autoReleased << " scan quarantine(s) auto-released (plugin changed on disk). ";
@@ -790,6 +817,35 @@ private:
         releaseButton.setEnabled (! busy && quarantined);
     }
 
+    /** A session that restarted eleven times is a fact about this machine's
+        plugin set, and the status line clears. The ledger does not.
+    */
+    void recordRestartRow()
+    {
+        LedgerRecord r;
+        r.pluginId = crashedId;
+        r.name     = crashedId.isEmpty() ? "(unknown)" : crashedId;
+        r.stage    = "session";
+        r.outcome  = LoadOutcome::restarted;
+        r.detail   = "auto-relaunched by supervisor after " + lastExitCause
+                       + "; restart " + juce::String (restartsThisSession)
+                       + " of " + juce::String (SupervisorLimits::kMaxConsecutive)
+                       + (crashedId.isEmpty() ? juce::String()
+                                              : "; previous session died in " + crashedId);
+        ledger.endLoad (r);
+    }
+
+    /** Written the first time a load succeeds, so the supervisor can tell a
+        session that was usable from one that died before it could be used.
+    */
+    void markLoadSucceeded()
+    {
+        if (markedLoadOk)
+            return;
+        markedLoadOk = true;
+        loadOkMarker (ledger.getRoot()).replaceWithText ("ok");
+    }
+
     void writeRunSummary()
     {
         juce::StringArray out;
@@ -894,6 +950,18 @@ private:
             return;
         }
 
+        // The plugin that just killed the session gets one refusal. A
+        // host-attributed crash is spared from quarantine deliberately, so
+        // without this a restart plus muscle memory walks straight back in.
+        if (id == doNotAutoReload)
+        {
+            doNotAutoReload.clear();
+            status.setText (sp.desc.name + " is what the previous session died in. "
+                            "Click Load again to try it anyway.",
+                            juce::dontSendNotification);
+            return;
+        }
+
         detachEditor();
         host.unload();
 
@@ -918,6 +986,7 @@ private:
 
         if (result.outcome == LoadOutcome::ok)
         {
+            markLoadSucceeded();
             attachEditor();
             status.setText (sp.desc.name + ": " + juce::String (result.paramCount)
                               + " params, editor open in " + juce::String (elapsed) + " ms",
@@ -1019,6 +1088,11 @@ private:
     juce::TextButton scanButton, loadButton, releaseButton, summaryButton;
     bool busy = false;
     int  loadDepth = 0, maxLoadDepth = 0, loadCalls = 0, loadRejected = 0;
+
+    bool         isSupervised = false;
+    int          restartsThisSession = 0;
+    juce::String lastExitCause, doNotAutoReload;
+    bool         markedLoadOk = false;
 
     juce::String cacheRunId;      // run that produced the list on screen
     juce::Time   cacheAt;

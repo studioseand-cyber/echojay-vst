@@ -16,6 +16,9 @@
 // modified. Deliberately has no #ifndef fallback: a build with no stamp should
 // fail to compile rather than quietly claim a version it cannot know.
 #include "EjmapBuildInfo.h"
+#include "EjmapSupervisor.h"
+
+#include <csignal>
 
 class EjmapApplication  : public juce::JUCEApplication
 {
@@ -38,7 +41,9 @@ public:
         juce::File ledgerRoot;
         juce::String selfTestId;
         bool cacheTest = false, progressTest = false;
-        juce::String attributeReport;
+        juce::String attributeReport, afterExit;
+        bool supervised = false;
+        int  restartCount = 0;
         juce::String releaseId, quarantineId, quarantineReason, quarantineStage { "load" };
 
         for (int i = 0; i < args.size(); ++i)
@@ -53,6 +58,12 @@ public:
                 progressTest = true;
             else if (args[i] == "--attribute-report" && i + 1 < args.size())
                 attributeReport = args[++i];
+            else if (args[i] == "--child")
+                supervised = true;
+            else if (args[i] == "--restarted" && i + 1 < args.size())
+                restartCount = args[++i].getIntValue();
+            else if (args[i] == "--after-exit" && i + 1 < args.size())
+                afterExit = args[++i];
             else if (args[i] == "--release-quarantine" && i + 1 < args.size())
                 releaseId = args[++i];
             else if (args[i] == "--quarantine" && i + 2 < args.size())
@@ -60,6 +71,35 @@ public:
                 quarantineId = args[i + 1]; quarantineReason = args[i + 2]; i += 2;
                 if (i + 1 < args.size() && ! args[i + 1].startsWith ("--"))
                     quarantineStage = args[++i];
+            }
+        }
+
+        // Supervisor test hooks. Deliberately crude and deliberately here: the
+        // supervisor must be provable against a child that exits 0, exits 87,
+        // or segfaults, without involving a plugin or a window.
+        for (int i = 0; i < args.size(); ++i)
+        {
+            if (args[i] == "--selftest-mark-loaded")
+            {
+                auto root = ledgerRoot != juce::File()
+                              ? ledgerRoot
+                              : juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                                    .getChildFile ("ejmap");
+                root.createDirectory();
+                ejmap::loadOkMarker (root).replaceWithText ("ok");
+            }
+            else if (args[i] == "--selftest-exit" && i + 1 < args.size())
+            {
+                const int code = args[i + 1].getIntValue();
+                std::cout << "child: exiting with code " << code << std::endl;
+                std::cout.flush();
+                std::_Exit (code);
+            }
+            else if (args[i] == "--selftest-segv")
+            {
+                std::cout << "child: raising SIGSEGV" << std::endl;
+                std::cout.flush();
+                std::raise (SIGSEGV);
             }
         }
 
@@ -101,7 +141,9 @@ public:
             return;
         }
 
-        mainWindow = std::make_unique<MainWindow> (buildTitle(), ledgerRoot);
+        supervisedMode = supervised;
+        mainWindow = std::make_unique<MainWindow> (buildTitle(), ledgerRoot,
+                                                   supervised, restartCount, afterExit);
 
         // Read back off the constructed window, not off buildTitle(). The title
         // bar is the only proof of what is running, and on a machine where the
@@ -122,23 +164,31 @@ public:
     void systemRequestedQuit() override { quit(); }
 
 private:
+    /** Supervision mode is on the title bar for the same reason the git hash
+        is: a direct launch and a supervised one behave differently after a
+        crash, and were otherwise indistinguishable.
+    */
+    static bool supervisedMode;
+
     static juce::String buildTitle()
     {
         return juce::String ("ejmap ") + EJMAP_VERSION
              + "  (" + EJMAP_GIT_HASH + ")"
-             + "  schema " + ejmap::kMapSchemaString;
+             + "  schema " + ejmap::kMapSchemaString
+             + (supervisedMode ? "  [supervised]" : "  [direct]");
     }
 
     class MainWindow  : public juce::DocumentWindow
     {
     public:
-        MainWindow (const juce::String& name, juce::File ledgerRoot)
+        MainWindow (const juce::String& name, juce::File ledgerRoot,
+                    bool supervised, int restartCount, const juce::String& afterExit)
             : DocumentWindow (name,
                               juce::Colour (0xff10141c),
                               DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
-            main = new ejmap::MainComponent (ledgerRoot);
+            main = new ejmap::MainComponent (ledgerRoot, supervised, restartCount, afterExit);
             setContentOwned (main, true);
             setResizable (true, true);
             centreWithSize (getWidth(), getHeight());
@@ -160,4 +210,20 @@ private:
     std::unique_ptr<MainWindow> mainWindow;
 };
 
-START_JUCE_APPLICATION (EjmapApplication)
+bool EjmapApplication::supervisedMode = false;
+
+juce::JUCEApplicationBase* juce_CreateApplication();
+juce::JUCEApplicationBase* juce_CreateApplication() { return new EjmapApplication(); }
+
+int main (int argc, char* argv[])
+{
+    // The supervisor must run before any GUI exists, so it is handled here
+    // rather than in initialise(). A direct launch skips it entirely, which is
+    // what every headless flag relies on.
+    for (int i = 1; i < argc; ++i)
+        if (juce::String (argv[i]) == "--supervise")
+            return ejmap::runSupervisor (argc, argv);
+
+    juce::JUCEApplicationBase::createInstance = &juce_CreateApplication;
+    return juce::JUCEApplicationBase::main (argc, (const char**) argv);
+}

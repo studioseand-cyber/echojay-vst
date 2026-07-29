@@ -68,7 +68,7 @@ enum class CaptureSource { poll, listener, both };
     in PluginHost::LoadResult, so extending it does not touch the wire format and
     needs no kMapSchemaVersion bump.
 */
-enum class LoadOutcome { ok, crashOnLoad, timeout, licenseRefused, noEditor, noParams, quarantined, noTypes };
+enum class LoadOutcome { ok, crashOnLoad, timeout, licenseRefused, noEditor, noParams, quarantined, noTypes, restarted };
 
 //==============================================================================
 inline juce::String toString (Mode m)
@@ -126,6 +126,7 @@ inline juce::String toString (LoadOutcome o)
         case LoadOutcome::noParams:       return "no_params";
         case LoadOutcome::quarantined:    return "quarantined";
         case LoadOutcome::noTypes:        return "no_types";
+        case LoadOutcome::restarted:      return "restarted";
     }
     return "timeout";
 }
