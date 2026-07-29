@@ -157,16 +157,32 @@ target_sources(EchoJay PRIVATE
     Source/EedDeviceProcessor.h
     Source/EedDeviceRegistry.cpp
     Source/EedDeviceRegistry.h
+    Source/EedExciterEditor.cpp
+    Source/EedExciterEditor.h
+    Source/EedExciterEngine.h
+    Source/EedExciterProcessor.cpp
+    Source/EedExciterProcessor.h
     Source/EedGainEditor.cpp
     Source/EedGainEditor.h
     Source/EedGainEngine.h
     Source/EedGainProcessor.cpp
     Source/EedGainProcessor.h
+    Source/EedHarmonicCore.cpp
+    Source/EedHarmonicCore.h
     Source/EedParamSchema.h
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertEditor.h
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaseInvertProcessor.h
+    Source/EedSaturationEditor.cpp
+    Source/EedSaturationEditor.h
+    Source/EedSaturationProcessor.cpp
+    Source/EedSaturationProcessor.h
+    Source/EedTapeEditor.cpp
+    Source/EedTapeEditor.h
+    Source/EedTapeEngine.h
+    Source/EedTapeProcessor.cpp
+    Source/EedTapeProcessor.h
 )
 
 target_compile_definitions(EchoJay PUBLIC
@@ -332,16 +348,32 @@ target_sources(EchoJayLink PRIVATE
     Source/EedDeviceProcessor.h
     Source/EedDeviceRegistry.cpp
     Source/EedDeviceRegistry.h
+    Source/EedExciterEditor.cpp
+    Source/EedExciterEditor.h
+    Source/EedExciterEngine.h
+    Source/EedExciterProcessor.cpp
+    Source/EedExciterProcessor.h
     Source/EedGainEditor.cpp
     Source/EedGainEditor.h
     Source/EedGainEngine.h
     Source/EedGainProcessor.cpp
     Source/EedGainProcessor.h
+    Source/EedHarmonicCore.cpp
+    Source/EedHarmonicCore.h
     Source/EedParamSchema.h
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertEditor.h
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaseInvertProcessor.h
+    Source/EedSaturationEditor.cpp
+    Source/EedSaturationEditor.h
+    Source/EedSaturationProcessor.cpp
+    Source/EedSaturationProcessor.h
+    Source/EedTapeEditor.cpp
+    Source/EedTapeEditor.h
+    Source/EedTapeEngine.h
+    Source/EedTapeProcessor.cpp
+    Source/EedTapeProcessor.h
 )
 
 echojay_force_load_shared_code(EchoJayLink)
@@ -434,10 +466,17 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EchoJayDeviceLookAndFeel.cpp
     Source/EedDeviceProcessor.cpp
     Source/EedDeviceRegistry.cpp
+    Source/EedExciterEditor.cpp
+    Source/EedExciterProcessor.cpp
     Source/EedGainEditor.cpp
     Source/EedGainProcessor.cpp
+    Source/EedHarmonicCore.cpp
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertProcessor.cpp
+    Source/EedSaturationEditor.cpp
+    Source/EedSaturationProcessor.cpp
+    Source/EedTapeEditor.cpp
+    Source/EedTapeProcessor.cpp
     Source/EqEngine.cpp
     Source/SurgicalEqEditor.cpp
     Source/SurgicalEqProcessor.cpp
