@@ -66,6 +66,23 @@ to support it, and no version pin on either side.
 - An id outside the device's schema is **reported, not guessed at** — it comes
   back in the summary as `ignored <id>`, and the slot is marked partial.
 
+#### Discrete params look like numbers, because they are
+Some params are enumerations advertised as a plain numeric range with the meaning
+spelled out in the description — `shape (0..3)` on Tremolo/Auto Pan,
+`sync_division (0..12)`, `voices (1..4)`, `stages (2..12)`. Send the **number**,
+not the label: `{"shape": 2}`, never `{"shape": "square"}` (a non-numeric string
+is refused, as it should be — see `numberFromVar`). Non-integers are **rounded**,
+so `1.6` is shape 2; nothing needs to be pre-snapped server-side.
+
+#### Rate and tempo sync are one interlock
+Every Modulation device carries `rate_hz`, `sync` and `sync_division`. While
+`sync` is on, `rate_hz` is **ignored** and the division drives the LFO; while it
+is off, the division is ignored. Both remain settable at all times, so a move may
+set them together in either order. "Make it wobble on eighths" is
+`{"sync": true, "sync_division": 8}` — sending only the division leaves a device
+whose sync is off unchanged, which is the one way to get a silent-looking no-op
+here.
+
 ### 2. Array forms — structured devices only
 The EQ keeps `settings_structured.eq_bands` exactly as
 `SURGICAL_EQ_BACKEND_SPEC.md` documents it (including a bare `[...]` array, which
@@ -89,8 +106,11 @@ EQ: `eq_preset`, then `eq_settings`/`params`, then `eq_bands`, then `eq_action`.
    (and reports what it ignored), but a move should be sane before it leaves.
 4. **Prefer built-ins for exact work.** They dial precisely; third-party plugins
    go through the approximate anchor-table path. Reach for `EchoJay Gain` for
-   level/pan staging, `EchoJay Phase Invert` for polarity problems, and the
-   `EchoJay EQ` for surgical tonal moves.
+   level/pan staging, `EchoJay Phase Invert` for polarity problems, the
+   `EchoJay EQ` for surgical tonal moves, and for movement: `EchoJay Tremolo`
+   (level), `EchoJay Auto Pan` (position), `EchoJay Chorus` (thickening/width),
+   `EchoJay Phaser` (swirl). Each device's `summary` line says when to pick it
+   over its neighbours; that text is written for the model and needs no gloss.
 5. **Booleans** may be sent as JSON `true`/`false` or as `1`/`0`; the client
    accepts both, plus the strings `"on"`/`"off"`. Prefer real JSON booleans.
 
