@@ -259,6 +259,14 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   targeting is deliberately DEFERRED to Phase C of the per-Link
   conversations plan, where the channel IS the chat — build no interim
   per-chat machinery.
+- ANY TEST THAT CONSTRUCTS AUTH BY HAND CANNOT VERIFY AUTH (28 Jul 2026, M1).
+  A Node suite and curl both set the Authorization header themselves, so every
+  layer passed while the only path a real user takes was 401 on every request:
+  the client sent no token at all. Generalises past auth: whatever a harness
+  supplies for convenience is exactly what that harness cannot check. A
+  hardcoded uid, a stubbed session, a preset flag, a hand-built payload. The
+  plugin equivalent is a state blob assembled in a test rather than captured
+  from a real hosted plugin.
 - VISIBILITY IS WRITTEN PER COMPONENT IN resized(), NEVER THROUGH A POINTER
   LOOP, and every component needs an OFF path that runs on every tab.
   Two halves, both learned the hard way (28 Jul 2026, chain header Save /
