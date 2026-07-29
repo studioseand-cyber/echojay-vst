@@ -33,6 +33,7 @@
 
 #include <juce_core/juce_core.h>
 #include "EjmapSchema.h"
+#include "EjmapDiskStamp.h"
 
 namespace ejmap
 {
@@ -108,6 +109,33 @@ struct LedgerRecord
             o->setProperty ("recovered_by_run", recoveredByRunId);
         return juce::var (o);
     }
+};
+
+//==============================================================================
+/** One quarantined plugin, with enough recorded to decide later whether the
+    reason still applies.
+*/
+struct QuarantineEntry
+{
+    juce::String pluginId, reason;
+    juce::String stage;          // "scan" or "load": they release differently
+    juce::String at;
+
+    /** Executable stamp at the moment of quarantine. Non-AU only; an AU id is a
+        component identifier, not a path.
+    */
+    DiskStamp stamp;
+
+    /** AU only. The registry's version string, used as the change signal in
+        place of a stamp. WEAKER ON PURPOSE and recorded as such: a vendor can
+        ship a fix without bumping the version, so this misses some updates. It
+        is the only change signal the AudioComponent registry offers without
+        mapping a component back to its .component bundle, and that mapping
+        already failed for 14 components on this machine.
+    */
+    juce::String auVersion;
+
+    bool isAudioUnit() const { return pluginId.startsWith ("AudioUnit:"); }
 };
 
 //==============================================================================
@@ -231,7 +259,7 @@ public:
             // A plugin that has crashed here before is quarantined regardless of
             // attribution: twice is a pattern, whoever's fault it is.
             if (! ours || priors > 0)
-                quarantineLocked (id, ours ? "crash_on_load_repeat" : "crash_on_load");
+                quarantineLocked (id, ours ? "crash_on_load_repeat" : "crash_on_load", r.stage, r.version);
         }
 
         inflightFile.deleteFile();
@@ -337,7 +365,7 @@ public:
             appendLocked (r);
 
             if (r.pluginId.isNotEmpty() && quarantineNow)
-                quarantineLocked (r.pluginId, quarantineReason);
+                quarantineLocked (r.pluginId, quarantineReason, r.stage, r.version);
             inflightFile.deleteFile();
             lock.exit();
             return;
@@ -371,10 +399,24 @@ public:
         return quarantined.contains (pluginId);
     }
 
-    void quarantine (const juce::String& pluginId, const juce::String& reason)
+    void quarantine (const juce::String& pluginId, const juce::String& reason,
+                     const juce::String& stage = "load",
+                     const juce::String& pluginVersion = {})
     {
         const juce::ScopedLock sl (lock);
-        quarantineLocked (pluginId, reason);
+        quarantineLocked (pluginId, reason, stage, pluginVersion);
+    }
+
+    /** Every quarantine entry with its recorded change signal, so a caller can
+        decide whether the reason still applies.
+    */
+    juce::Array<QuarantineEntry> getQuarantineEntries() const
+    {
+        const juce::ScopedLock sl (lock);
+        juce::Array<QuarantineEntry> out;
+        for (const auto& id : quarantined)
+            out.add (entries[id]);
+        return out;
     }
 
     /** Deliberately manual. A plugin that crashed once usually crashes again,
@@ -384,7 +426,7 @@ public:
     {
         const juce::ScopedLock sl (lock);
         quarantined.removeString (pluginId);
-        quarantineReasons.remove (pluginId);
+        entries.remove (pluginId);
         saveQuarantineLocked();
     }
 
@@ -669,13 +711,26 @@ private:
         }
     }
 
-    void quarantineLocked (const juce::String& pluginId, const juce::String& reason)
+    void quarantineLocked (const juce::String& pluginId, const juce::String& reason,
+                           const juce::String& stage = "load",
+                           const juce::String& pluginVersion = {})
     {
         if (quarantined.contains (pluginId))
             return;
 
+        QuarantineEntry e;
+        e.pluginId  = pluginId;
+        e.reason    = reason;
+        e.stage     = stage;
+        e.at        = nowIso();
+        e.auVersion = pluginVersion;
+
+        // A path gets a real stamp; an AU identifier gets the version string.
+        if (! e.isAudioUnit())
+            e.stamp = diskStampFor (juce::File (pluginId));
+
         quarantined.add (pluginId);
-        quarantineReasons.set (pluginId, reason);
+        entries.set (pluginId, e);
         saveQuarantineLocked();
     }
 
@@ -688,36 +743,62 @@ private:
     {
         const juce::ScopedLock sl (lock);
         quarantined.clear();
-        quarantineReasons.clear();
+        entries.clear();
         if (! quarantineFile.existsAsFile())
             return;
 
         auto v = juce::JSON::parse (quarantineFile.loadFileAsString());
         if (auto* arr = v.getArray())
         {
-            for (const auto& entry : *arr)
+            for (const auto& raw : *arr)
             {
-                auto id = entry.getProperty ("plugin_id", "").toString();
+                auto id = raw.getProperty ("plugin_id", "").toString();
                 if (id.isEmpty())
                     continue;
 
+                QuarantineEntry e;
+                e.pluginId         = id;
+                e.reason           = raw.getProperty ("reason", "").toString();
+                // Entries written before stage existed are load entries: scan
+                // quarantines did not exist then.
+                e.stage            = raw.getProperty ("stage", "load").toString();
+                e.at               = raw.getProperty ("at", "").toString();
+                e.auVersion        = raw.getProperty ("au_version", "").toString();
+                e.stamp.modifiedMs = (juce::int64) (double) raw.getProperty ("stamp_mtime", 0);
+                e.stamp.size       = (juce::int64) (double) raw.getProperty ("stamp_size", 0);
+                e.stamp.valid      = (bool) raw.getProperty ("stamped", false);
+
                 quarantined.add (id);
-                quarantineReasons.set (id, entry.getProperty ("reason", "").toString());
+                entries.set (id, e);
             }
         }
     }
 
     void saveQuarantineLocked()
     {
-        juce::Array<juce::var> entries;
+        juce::Array<juce::var> out;
         for (const auto& id : quarantined)
         {
+            const auto& e = entries[id];
             auto* o = new juce::DynamicObject();
             o->setProperty ("plugin_id", id);
-            o->setProperty ("reason", quarantineReasons[id]);
-            entries.add (juce::var (o));
+            o->setProperty ("reason", e.reason);
+            o->setProperty ("stage", e.stage);
+            o->setProperty ("at", e.at);
+            if (e.stamp.valid)
+            {
+                o->setProperty ("stamped", true);
+                o->setProperty ("stamp_mtime", (double) e.stamp.modifiedMs);
+                o->setProperty ("stamp_size", (double) e.stamp.size);
+            }
+            if (e.auVersion.isNotEmpty())
+            {
+                o->setProperty ("au_version", e.auVersion);
+                o->setProperty ("au_version_is_weak_signal", true);
+            }
+            out.add (juce::var (o));
         }
-        writeThrough (quarantineFile, juce::JSON::toString (juce::var (entries), true));
+        writeThrough (quarantineFile, juce::JSON::toString (juce::var (out), true));
     }
 
     static juce::String nowIso()
@@ -728,7 +809,7 @@ private:
     juce::File root, ledgerFile, inflightFile, quarantineFile, emergencyFile;
     juce::String runId;
     juce::StringArray quarantined;
-    juce::HashMap<juce::String, juce::String> quarantineReasons;
+    mutable juce::HashMap<juce::String, QuarantineEntry> entries;
     juce::HashMap<juce::String, int> counts;
     mutable juce::CriticalSection lock;
 

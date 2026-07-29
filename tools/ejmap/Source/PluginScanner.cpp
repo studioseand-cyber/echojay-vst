@@ -76,7 +76,7 @@ void PluginScanner::scanAudioUnits (Result& result, const ProgressFn& onProgress
 
 //==============================================================================
 void PluginScanner::scanVST3 (Result& result, Ledger& ledger, Watchdog& watchdog,
-                              const ProgressFn& onProgress)
+                              ScanProgress& progress, const ProgressFn& onProgress)
 {
     juce::AudioPluginFormat* vst3 = nullptr;
     for (auto* f : formatManager.getFormats())
@@ -133,6 +133,43 @@ void PluginScanner::scanVST3 (Result& result, Ledger& ledger, Watchdog& watchdog
         const auto probeId = file;
         const auto probeName = juce::File (file).getFileNameWithoutExtension();
 
+        // RESUME. A previous attempt at this scan already probed this bundle and
+        // it has not changed on disk since, so restore its result instead of
+        // opening the module again. No ledger row: the ledger records attempts,
+        // and this is not one. The census counts it under vst3Resumed so the
+        // numbers still reconcile.
+        if (auto* cached = progress.usableEntryFor (probeId))
+        {
+            ++result.vst3Resumed;
+
+            if (cached->outcome == "no_types")
+            {
+                result.errors.add ("no description for VST3 " + file + " (resumed)");
+                continue;
+            }
+
+            for (const auto& pd : cached->descriptions)
+            {
+                if (pd.isInstrument)
+                {
+                    ++result.instrumentsFiltered;
+                    ++result.droppedByType["vst3-instrument"];
+                    continue;
+                }
+
+                ScannedPlugin sp;
+                sp.desc = pd;
+                result.plugins.add (sp);
+            }
+            continue;
+        }
+
+        // Had an entry but the bundle moved underneath it: count it, then probe
+        // it properly. Trusting the old description would restore the previous
+        // build's parameter set.
+        if (progress.hasEntryFor (probeId))
+            ++result.vst3Restamped;
+
         ledger.beginLoad (probeId, probeName, /*vendor*/ {}, "VST3", /*version*/ {},
                           "scan", "findAllTypesForFile");
 
@@ -165,6 +202,7 @@ void PluginScanner::scanVST3 (Result& result, Ledger& ledger, Watchdog& watchdog
         }
 
         ledger.endLoad (rec);
+        progress.record (probeId, toString (rec.outcome), found);
 
         if (found.isEmpty())
         {
@@ -190,14 +228,14 @@ void PluginScanner::scanVST3 (Result& result, Ledger& ledger, Watchdog& watchdog
 
 //==============================================================================
 PluginScanner::Result PluginScanner::scan (Ledger& ledger, Watchdog& watchdog,
-                                           ProgressFn onProgress)
+                                           ScanProgress& progress, ProgressFn onProgress)
 {
     Result result;
 
     // AU needs no inflight record: the census reads registry metadata and never
     // hands control to plugin code. VST3 does, so it takes the Ledger.
     scanAudioUnits (result, onProgress);
-    scanVST3 (result, ledger, watchdog, onProgress);
+    scanVST3 (result, ledger, watchdog, progress, onProgress);
 
     juce::StringArray distinct;
     for (const auto& p : result.plugins)

@@ -16,6 +16,7 @@
 #include "EjmapLedger.h"
 #include "EjmapWatchdog.h"
 #include "EchoJayAuRegistry.h"
+#include "EjmapScanProgress.h"
 
 #include <iostream>
 
@@ -82,11 +83,15 @@ public:
         // The scan costs 4.5 minutes and the watchdog stops the process by
         // design, so a relaunch used to mean a full rescan and ~900 more ledger
         // rows. Restore the last result and make Scan an explicit refresh.
+        const int autoReleased = releaseStaleScanQuarantines();
         const auto restored = restoreScanCache();
 
         juce::String opening;
         if (crashedId.isNotEmpty())
             opening << "Previous session died loading " << crashedId << ". ";
+
+        if (autoReleased > 0)
+            opening << autoReleased << " scan quarantine(s) auto-released (plugin changed on disk). ";
 
         if (restored)
             opening << describeRestoredScan();
@@ -234,6 +239,90 @@ public:
         juce::JUCEApplication::getInstance()->quit();
     }
 
+    /** Proves the resume/stamp mechanism and the scan-quarantine auto-release,
+        against a synthetic bundle so nothing installed is touched.
+    */
+    void selfTestProgressAndRelease()
+    {
+        auto root  = ledger.getRoot();
+        auto fake  = root.getChildFile ("Fake.vst3");
+        auto bin   = fake.getChildFile ("Contents").getChildFile ("MacOS").getChildFile ("Fake");
+        bin.getParentDirectory().createDirectory();
+        bin.replaceWithText ("v1");
+
+        const auto path = fake.getFullPathName();
+        int fails = 0;
+        auto check = [&fails] (bool ok, const char* what)
+        {
+            std::cout << "  " << (ok ? "ok   " : "FAIL ") << what << std::endl;
+            if (! ok) ++fails;
+        };
+
+        juce::PluginDescription d;
+        d.name = "FakePlug"; d.pluginFormatName = "VST3"; d.fileOrIdentifier = path;
+        juce::OwnedArray<juce::PluginDescription> found;
+        found.add (new juce::PluginDescription (d));
+
+        auto pfile = root.getChildFile ("selftest-progress.jsonl");
+        {
+            ScanProgress w (pfile);
+            w.begin ("testrun");
+            w.record (path, "ok", found);
+        }
+
+        {
+            ScanProgress r (pfile);
+            check (r.load(), "progress file loads");
+            check (r.hasEntryFor (path), "entry present");
+            auto* e = r.usableEntryFor (path);
+            check (e != nullptr, "entry usable while the bundle is unchanged");
+            check (e != nullptr && e->descriptions.size() == 1
+                     && e->descriptions[0].name == "FakePlug", "description round-trips");
+        }
+
+        // Same bundle, updated in place: same path, same list, different build.
+        juce::Thread::sleep (1100);          // mtime granularity
+        bin.replaceWithText ("v2-longer-content");
+
+        {
+            ScanProgress r (pfile);
+            r.load();
+            check (r.hasEntryFor (path), "entry still present after update");
+            check (r.usableEntryFor (path) == nullptr,
+                   "entry REJECTED after the bundle changed on disk");
+        }
+
+        // An unreadable or foreign format is refused, never interpreted.
+        {
+            auto lines = juce::StringArray::fromLines (pfile.loadFileAsString());
+            lines.set (0, "{\"format\":\"ejmap-scan-progress\",\"version\":99}");
+            pfile.replaceWithText (lines.joinIntoString ("\n"));
+            ScanProgress r (pfile);
+            check (! r.load(), "foreign format version refused");
+        }
+
+        // Auto-release: a SCAN quarantine on a bundle that has since changed.
+        bin.replaceWithText ("v3");
+        ledger.quarantine (path, "hang_in_findAllTypesForFile", "scan", {});
+        check (ledger.isQuarantined (path), "scan quarantine applied");
+
+        juce::Thread::sleep (1100);
+        bin.replaceWithText ("v4-different-again");
+        check (releaseStaleScanQuarantines() == 1, "scan quarantine auto-released after change");
+        check (! ledger.isQuarantined (path), "no longer quarantined");
+
+        // A LOAD quarantine on the same changed bundle must NOT auto-release.
+        ledger.quarantine (path, "crash_on_load", "load", {});
+        juce::Thread::sleep (1100);
+        bin.replaceWithText ("v5-changed-yet-again");
+        check (releaseStaleScanQuarantines() == 0, "load quarantine NOT auto-released");
+        check (ledger.isQuarantined (path), "load quarantine still held");
+
+        std::cout << "PROGRESSTEST: " << (fails == 0 ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        juce::JUCEApplication::getInstance()->quit();
+    }
+
     void resized() override
     {
         auto r = getLocalBounds().reduced (8);
@@ -320,6 +409,59 @@ private:
         ScannedPlugin::pluginId.
     */
     static constexpr int kScanCacheVersion = 1;
+
+    /** AUTO-RELEASE, SCOPED.
+
+        SCAN quarantines release themselves when the plugin changes on disk. A
+        plugin update is the usual reason a hang stops happening, and a scan
+        quarantine costs everyone: the bundle is never probed again, so its
+        plugins stay missing from every future list.
+
+        LOAD quarantines stay manual, deliberately. A crash on load is about the
+        plugin's interaction with THIS host, and a version bump is not evidence
+        that it is fixed. The human decides, with the Release button.
+
+        VST3 uses the executable's stamp, which is exact. AU uses the registry
+        version string, which is weaker and is flagged as such in the entry: a
+        vendor can ship a fix without bumping it. It is the only change signal
+        the registry offers short of mapping a component back to its bundle, and
+        that mapping already failed for 14 components here.
+    */
+    int releaseStaleScanQuarantines()
+    {
+        int released = 0;
+
+        for (const auto& e : ledger.getQuarantineEntries())
+        {
+            if (e.stage != "scan")
+                continue;               // load quarantines are the human's call
+
+            bool changed = false;
+
+            if (e.isAudioUnit())
+            {
+                const auto now = echojay::auregistry::describeFromRegistry (e.pluginId).version;
+                changed = e.auVersion.isNotEmpty() && now.isNotEmpty() && now != e.auVersion;
+            }
+            else
+            {
+                const auto now = diskStampFor (juce::File (e.pluginId));
+                // Only a stamp we can compare counts. "Cannot tell" holds the
+                // quarantine rather than releasing on a missing reading.
+                changed = e.stamp.valid && now.valid && now != e.stamp;
+            }
+
+            if (changed)
+            {
+                ledger.releaseFromQuarantine (e.pluginId);
+                ++released;
+                std::cout << "auto-released scan quarantine: " << e.pluginId
+                          << " (changed on disk since " << e.at << ")" << std::endl;
+            }
+        }
+
+        return released;
+    }
 
     //==========================================================================
     juce::File scanCacheFile() const { return ledger.getRoot().getChildFile ("scan-cache.xml"); }
@@ -482,8 +624,19 @@ private:
         BusyScope guard (*this);
         status.setText ("Scanning...", juce::dontSendNotification);
 
+        // RESUME. A previous attempt at this scan may have died inside a bundle.
+        // Anything it already probed, whose bundle has not changed since, is
+        // restored rather than re-probed.
+        ScanProgress progress (ledger.getRoot().getChildFile ("scan-progress.jsonl"));
+        const bool resuming = progress.load();
+        if (! resuming)
+            progress.begin (ledger.currentRunId());
+
         scanProgress = 0.0;
-        progressLabel.setText ("starting...", juce::dontSendNotification);
+        progressLabel.setText (resuming ? "resuming from " + juce::String (progress.size())
+                                            + " already-probed bundles..."
+                                        : "starting...",
+                               juce::dontSendNotification);
         showProgress (true);
         lastPumpMs = 0;
 
@@ -498,7 +651,7 @@ private:
         //
         // So the scan stays where it is and the callback pumps the loop, at
         // most every 50 ms, purely to let the window repaint.
-        lastScan = scanner.scan (ledger, watchdog,
+        lastScan = scanner.scan (ledger, watchdog, progress,
             [this] (const juce::String& phase, int done, int total, const juce::String& current)
             {
                 scanProgress = total > 0 ? (double) done / (double) total : 0.0;
@@ -522,6 +675,9 @@ private:
 
         showProgress (false);
 
+        // Completed, so the progress file has done its job.
+        progress.finish();
+
         // Quarantined plugins stay in the list but are not loadable. Hiding them
         // would make a crash look like an uninstall.
         rows.clear();
@@ -541,6 +697,9 @@ private:
             << lastScan.instrumentsFiltered << " instruments, "
             << lastScan.unusedTypeFiltered << " unmapped types dropped; "
             << "VST3 probed " << lastScan.vst3Probed
+            << (lastScan.vst3Resumed > 0
+                  ? ", " + juce::String (lastScan.vst3Resumed) + " resumed"
+                  : juce::String())
             << (lastScan.vst3Quarantined > 0
                   ? ", " + juce::String (lastScan.vst3Quarantined) + " quarantined"
                   : juce::String())
@@ -559,6 +718,8 @@ private:
         report.add ("instruments_filtered=" + juce::String (lastScan.instrumentsFiltered));
         report.add ("unused_types_filtered=" + juce::String (lastScan.unusedTypeFiltered));
         report.add ("vst3_probed=" + juce::String (lastScan.vst3Probed));
+        report.add ("vst3_resumed=" + juce::String (lastScan.vst3Resumed));
+        report.add ("vst3_restamped_reprobed=" + juce::String (lastScan.vst3Restamped));
         report.add ("vst3_quarantined_skipped=" + juce::String (lastScan.vst3Quarantined));
         report.add ("run_id=" + ledger.currentRunId());
         report.add ("listed=" + juce::String (rows.size()));

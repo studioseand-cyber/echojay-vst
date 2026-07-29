@@ -25,6 +25,7 @@
 
 #include "EjmapLedger.h"
 #include "EjmapWatchdog.h"
+#include "EjmapScanProgress.h"
 
 namespace ejmap
 {
@@ -77,7 +78,9 @@ public:
         int auExcludedEcho  = 0;
         int auUnparsed      = 0;
 
-        int vst3Probed      = 0;   // bundles handed to the format
+        int vst3Probed      = 0;   // bundles handed to the format this run
+        int vst3Resumed     = 0;   // restored from progress, not re-probed
+        int vst3Restamped   = 0;   // had an entry, but changed on disk: re-probed
         int vst3Quarantined = 0;   // skipped: a previous Scan died inside them
 
         /** Component type code -> how many were dropped. Every drop lands here.
@@ -107,7 +110,8 @@ public:
         Passing a Ledger is therefore not a caller's choice. There is no
         overload that scans without one.
     */
-    Result scan (Ledger& ledger, Watchdog& watchdog, ProgressFn onProgress = {});
+    Result scan (Ledger& ledger, Watchdog& watchdog, ScanProgress& progress,
+                 ProgressFn onProgress = {});
 
     juce::AudioPluginFormatManager& getFormatManager() noexcept { return formatManager; }
 
@@ -125,7 +129,7 @@ public:
 
 private:
     void scanAudioUnits (Result&, const ProgressFn&);
-    void scanVST3 (Result&, Ledger&, Watchdog&, const ProgressFn&);
+    void scanVST3 (Result&, Ledger&, Watchdog&, ScanProgress&, const ProgressFn&);
 
     juce::AudioPluginFormatManager formatManager;
 

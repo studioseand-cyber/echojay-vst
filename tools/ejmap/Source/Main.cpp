@@ -37,8 +37,8 @@ public:
             a = a.unquoted();
         juce::File ledgerRoot;
         juce::String selfTestId;
-        bool cacheTest = false;
-        juce::String releaseId, quarantineId, quarantineReason;
+        bool cacheTest = false, progressTest = false;
+        juce::String releaseId, quarantineId, quarantineReason, quarantineStage { "load" };
 
         for (int i = 0; i < args.size(); ++i)
         {
@@ -48,10 +48,16 @@ public:
                 selfTestId = args[++i];
             else if (args[i] == "--selftest-cache")
                 cacheTest = true;
+            else if (args[i] == "--selftest-progress")
+                progressTest = true;
             else if (args[i] == "--release-quarantine" && i + 1 < args.size())
                 releaseId = args[++i];
             else if (args[i] == "--quarantine" && i + 2 < args.size())
-                { quarantineId = args[i + 1]; quarantineReason = args[i + 2]; i += 2; }
+            {
+                quarantineId = args[i + 1]; quarantineReason = args[i + 2]; i += 2;
+                if (i + 1 < args.size() && ! args[i + 1].startsWith ("--"))
+                    quarantineStage = args[++i];
+            }
         }
 
         // Headless release, so a quarantine can be undone through the same code
@@ -70,8 +76,9 @@ public:
         if (quarantineId.isNotEmpty())
         {
             ejmap::Ledger l (ledgerRoot);
-            l.quarantine (quarantineId, quarantineReason);
-            std::cout << "quarantine: " << quarantineId << " -> " << quarantineReason << std::endl;
+            l.quarantine (quarantineId, quarantineReason, quarantineStage);
+            std::cout << "quarantine: " << quarantineId << " -> " << quarantineReason
+                      << " (stage " << quarantineStage << ")" << std::endl;
             quit();
             return;
         }
@@ -84,7 +91,9 @@ public:
         // only way to assert it against the live object rather than the source.
         std::cout << "ejmap window title: " << mainWindow->getName() << std::endl;
 
-        if (cacheTest && mainWindow->getMain() != nullptr)
+        if (progressTest && mainWindow->getMain() != nullptr)
+            mainWindow->getMain()->selfTestProgressAndRelease();
+        else if (cacheTest && mainWindow->getMain() != nullptr)
             mainWindow->getMain()->selfTestScanCache();
         else if (selfTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
             mainWindow->getMain()->selfTestReentry (selfTestId);
