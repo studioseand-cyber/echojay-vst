@@ -78,7 +78,11 @@ public:
     static constexpr int kEditorStablePolls = 3;
     static constexpr int kEditorPollMs      = 100;
 
-    void unload();
+    /** Returns false if the audio pump could not be stopped. In that case
+        NOTHING is torn down: the instance stays loaded and alive rather than
+        being freed underneath a thread that is still rendering it.
+    */
+    bool unload();
 
     juce::AudioPluginInstance* getInstance() const noexcept { return instance.get(); }
 
@@ -106,10 +110,27 @@ private:
     std::unique_ptr<juce::AudioProcessorEditor> editor;
     juce::PluginDescription currentDesc;
 
-    juce::AudioBuffer<float> pumpBuffer;
-    juce::MidiBuffer pumpMidi;
     juce::CriticalSection processLock;
     std::atomic<bool> pumpEnabled { false };
+
+    /** Channel count for the pump's buffer, published BEFORE the thread starts
+        and never changed while it runs. The buffer itself is a local inside
+        run(), owned solely by the pump thread.
+
+        It used to be a member that load() resized from the message thread with
+        no lock. A bridged AU renders out of process, so processBlock hands the
+        buffer's channel pointers across an XPC boundary; reallocating it
+        underneath that produced a SIGSEGV at 0x0 in renderGetInput, on the
+        pump thread, in AUOOPRenderingClient::pullOneInput. A null check inside
+        the lock could not have helped: the pointer was read after the check.
+    */
+    std::atomic<int> pumpChannels { 2 };
+
+    /** How long unload() waits for the pump to stop. Generous, because a
+        bridged plugin's processBlock is an XPC round trip; if it still has not
+        stopped we refuse to tear down rather than racing it.
+    */
+    static constexpr int kPumpStopTimeoutMs = 5000;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginHost)
 };

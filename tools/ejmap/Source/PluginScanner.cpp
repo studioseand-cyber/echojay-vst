@@ -13,7 +13,7 @@ PluginScanner::PluginScanner()
 }
 
 //==============================================================================
-void PluginScanner::scanAudioUnits (Result& result)
+void PluginScanner::scanAudioUnits (Result& result, const ProgressFn& onProgress)
 {
     // One walk, shared with ejextract. JUCE's component type filter and its
     // AUv3 exclusion are taken wholesale: deviating from them is exactly how
@@ -25,9 +25,18 @@ void PluginScanner::scanAudioUnits (Result& result)
     result.auExcludedEcho  = census.excludedEcho;
     result.auUnparsed      = census.unparsed;
 
+    const int auTotal = (int) census.targets.size();
+    int auDone = 0;
+
     for (const auto& target : census.targets)
     {
         ++result.totalFound;
+
+        // Throttled: the AU census resolves 1376 components in ~60 ms, so a
+        // notification per component would cost more than the walk.
+        if (onProgress && (auDone % 64 == 0 || auDone == auTotal - 1))
+            onProgress ("AU", auDone, auTotal, target.identifier);
+        ++auDone;
 
         // Registry metadata only. No plugin code runs here.
         auto desc = echojay::auregistry::describeFromRegistry (target.identifier);
@@ -66,7 +75,8 @@ void PluginScanner::scanAudioUnits (Result& result)
 }
 
 //==============================================================================
-void PluginScanner::scanVST3 (Result& result, Ledger& ledger, Watchdog& watchdog)
+void PluginScanner::scanVST3 (Result& result, Ledger& ledger, Watchdog& watchdog,
+                              const ProgressFn& onProgress)
 {
     juce::AudioPluginFormat* vst3 = nullptr;
     for (auto* f : formatManager.getFormats())
@@ -82,9 +92,18 @@ void PluginScanner::scanVST3 (Result& result, Ledger& ledger, Watchdog& watchdog
     auto paths = vst3->getDefaultLocationsToSearch();
     auto files = vst3->searchPathsForPlugins (paths, true, true);
 
+    const int vstTotal = files.size();
+    int vstDone = 0;
+
     for (const auto& file : files)
     {
         ++result.totalFound;
+
+        // Every bundle. This is the slow leg: 861 bundles, ~4.5 minutes, and
+        // most of them open a module.
+        if (onProgress)
+            onProgress ("VST3", vstDone, vstTotal, juce::File (file).getFileName());
+        ++vstDone;
 
         // A bundle that killed a previous Scan is not probed again. Without
         // this, recoverFromCrash quarantines it and the very next Scan walks
@@ -170,14 +189,15 @@ void PluginScanner::scanVST3 (Result& result, Ledger& ledger, Watchdog& watchdog
 }
 
 //==============================================================================
-PluginScanner::Result PluginScanner::scan (Ledger& ledger, Watchdog& watchdog)
+PluginScanner::Result PluginScanner::scan (Ledger& ledger, Watchdog& watchdog,
+                                           ProgressFn onProgress)
 {
     Result result;
 
     // AU needs no inflight record: the census reads registry metadata and never
     // hands control to plugin code. VST3 does, so it takes the Ledger.
-    scanAudioUnits (result);
-    scanVST3 (result, ledger, watchdog);
+    scanAudioUnits (result, onProgress);
+    scanVST3 (result, ledger, watchdog, onProgress);
 
     juce::StringArray distinct;
     for (const auto& p : result.plugins)

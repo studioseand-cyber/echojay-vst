@@ -15,6 +15,9 @@
 #include "PluginHost.h"
 #include "EjmapLedger.h"
 #include "EjmapWatchdog.h"
+#include "EchoJayAuRegistry.h"
+
+#include <iostream>
 
 namespace ejmap
 {
@@ -24,8 +27,8 @@ class MainComponent  : public juce::Component,
                        private juce::Timer
 {
 public:
-    MainComponent()
-        : watchdog (ledger), host (scanner.getFormatManager())
+    explicit MainComponent (juce::File ledgerRoot = {})
+        : ledger (ledgerRoot), watchdog (ledger), host (scanner.getFormatManager())
     {
         // Crash recovery runs before anything else touches a plugin.
         crashedId = ledger.recoverFromCrash();
@@ -63,6 +66,15 @@ public:
         summaryButton.setButtonText ("Summary");
         summaryButton.onClick = [this] { writeRunSummary(); };
 
+        // Progress row, hidden until a scan is running.
+        addChildComponent (progressBar);
+        progressBar.setColour (juce::ProgressBar::backgroundColourId, juce::Colour (0xff161c26));
+        progressBar.setColour (juce::ProgressBar::foregroundColourId, juce::Colour (0xff2f7f8c));
+
+        addChildComponent (progressLabel);
+        progressLabel.setJustificationType (juce::Justification::centredLeft);
+        progressLabel.setColour (juce::Label::textColourId, juce::Colour (0xff9fd8e0));
+
         addAndMakeVisible (editorHolder);
 
         setSize (1280, 820);
@@ -72,6 +84,75 @@ public:
     ~MainComponent() override
     {
         host.unload();
+    }
+
+    /** Scripted double-click proof.
+
+        Queues two clicks and lets the pumped message loop inside load() deliver
+        the second one. Uses triggerClick, which does NOT check isEnabled, so it
+        defeats the BusyScope disable and tests the busy flag ALONE. That makes
+        it a strictly harder test than a real double-click, where the disable
+        would have to fail first.
+
+        Skips the scan: it fabricates the one row it needs from the registry, so
+        the proof takes seconds rather than four and a half minutes.
+    */
+    void selfTestReentry (const juce::String& identifier)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+        {
+            std::cout << "SELFTEST: registry would not describe " << identifier << std::endl;
+            juce::JUCEApplication::getInstance()->systemRequestedQuit();
+            return;
+        }
+
+        ScannedPlugin sp;
+        sp.desc = desc;
+        rows.clearQuick();
+        rows.add (sp);
+        applyFilter();
+        list.selectRow (0);
+
+        std::cout << "SELFTEST: target " << desc.name << " (" << identifier << ")" << std::endl;
+
+        // LAYER A, the realistic double-click. Button::handleCommandMessage
+        // checks isEnabled(), so the second of these is blocked by BusyScope's
+        // disable and never reaches loadSelected at all.
+        std::cout << "SELFTEST: layer A - two button clicks" << std::endl;
+        loadButton.triggerClick();
+        loadButton.triggerClick();
+
+        // LAYER B, the harder test. Straight onto the message queue, past the
+        // button and past the disable, so it lands in loadSelected while the
+        // first load is still inside its pumped editor-ready wait. Only the
+        // busy flag can stop these.
+        std::cout << "SELFTEST: layer B - two direct calls, bypassing the button" << std::endl;
+        juce::MessageManager::callAsync ([this] { loadSelected(); });
+        juce::MessageManager::callAsync ([this] { loadSelected(); });
+
+        // LAYER C. After the first load has finished and its pump is RUNNING,
+        // load again. That is the path where unload() must stop the pump before
+        // freeing the instance it is rendering.
+        juce::Timer::callAfterDelay (9000, [this]
+        {
+            std::cout << "SELFTEST: layer C - second load with the pump running" << std::endl;
+            loadSelected();
+        });
+
+        juce::Timer::callAfterDelay (20000, [this]
+        {
+            std::cout << "SELFTEST: loadSelected entries=" << loadCalls
+                      << " rejectedByFlag=" << loadRejected
+                      << " maxDepth=" << maxLoadDepth << std::endl;
+            std::cout << "SELFTEST: expected 4 entries (click1, direct1, direct2, layerC)"
+                      << " - the 2nd button click never arrived, blocked by the disable"
+                      << std::endl;
+            std::cout << "SELFTEST: " << (maxLoadDepth <= 1 ? "PASS - never re-entered"
+                                                            : "FAIL - RE-ENTERED") << std::endl;
+            std::cout.flush();
+            juce::JUCEApplication::getInstance()->quit();
+        });
     }
 
     void resized() override
@@ -86,6 +167,16 @@ public:
         summaryButton.setBounds (top.removeFromLeft (90));
         top.removeFromLeft (12);
         status.setBounds (top);
+
+        // Only takes space while it is showing, so the idle layout is unchanged.
+        if (progressBar.isVisible())
+        {
+            r.removeFromTop (6);
+            auto prog = r.removeFromTop (20);
+            progressBar.setBounds (prog.removeFromLeft (260));
+            prog.removeFromLeft (10);
+            progressLabel.setBounds (prog);
+        }
 
         r.removeFromTop (8);
         auto left = r.removeFromLeft (420);
@@ -120,6 +211,8 @@ private:
     {
         explicit BusyScope (MainComponent& o) : owner (o)
         {
+            ++owner.loadDepth;
+            owner.maxLoadDepth = juce::jmax (owner.maxLoadDepth, owner.loadDepth);
             owner.busy = true;
             owner.scanButton.setEnabled (false);
             owner.loadButton.setEnabled (false);
@@ -129,6 +222,7 @@ private:
 
         ~BusyScope()
         {
+            --owner.loadDepth;
             owner.busy = false;
             owner.scanButton.setEnabled (true);
             owner.list.setEnabled (true);
@@ -140,6 +234,13 @@ private:
         JUCE_DECLARE_NON_COPYABLE (BusyScope)
     };
 
+    void showProgress (bool shouldShow)
+    {
+        progressBar.setVisible (shouldShow);
+        progressLabel.setVisible (shouldShow);
+        resized();
+    }
+
     void runScan()
     {
         if (busy)
@@ -148,7 +249,45 @@ private:
         BusyScope guard (*this);
         status.setText ("Scanning...", juce::dontSendNotification);
 
-        lastScan = scanner.scan (ledger, watchdog);
+        scanProgress = 0.0;
+        progressLabel.setText ("starting...", juce::dontSendNotification);
+        showProgress (true);
+        lastPumpMs = 0;
+
+        // WHY PUMP RATHER THAN MOVE THE SCAN TO A WORKER.
+        //
+        // scanVST3 runs on the message thread and opens plugin modules for the
+        // 646 of 861 bundles with no moduleinfo.json. Moving that to a worker
+        // would change which thread third-party module entry points run on,
+        // which is a scan-behaviour change, not a UI change, and it is the one
+        // thing this task said not to touch. It is also unverifiable short of a
+        // full scan against every plugin on the machine.
+        //
+        // So the scan stays where it is and the callback pumps the loop, at
+        // most every 50 ms, purely to let the window repaint.
+        lastScan = scanner.scan (ledger, watchdog,
+            [this] (const juce::String& phase, int done, int total, const juce::String& current)
+            {
+                scanProgress = total > 0 ? (double) done / (double) total : 0.0;
+
+                juce::String t;
+                t << phase << "  " << done << "/" << total << "   " << current;
+                progressLabel.setText (t, juce::dontSendNotification);
+
+                // Throttled. 861 unconditional pumps would add real time to a
+                // scan whose whole problem is that it already takes 4.5 minutes.
+                const auto now = juce::Time::getMillisecondCounter();
+                if (now - lastPumpMs < 50)
+                    return;
+
+                lastPumpMs = now;
+
+                if (auto* mm = juce::MessageManager::getInstanceWithoutCreating())
+                    if (mm->isThisTheMessageThread())
+                        mm->runDispatchLoopUntil (1);
+            });
+
+        showProgress (false);
 
         // Quarantined plugins stay in the list but are not loadable. Hiding them
         // would make a crash look like an uninstall.
@@ -285,9 +424,18 @@ private:
 
     void loadSelected()
     {
+        ++loadCalls;
+
         // A nested call during the editor-ready wait is a no-op, not a crash.
+        // Counted, not silent: a rejection here is the guard doing its job and
+        // the only way to tell that from "the second click never arrived".
         if (busy)
+        {
+            ++loadRejected;
+            std::cout << "loadSelected: REJECTED re-entrant call #" << loadCalls
+                      << " (busy, depth=" << loadDepth << ")" << std::endl;
             return;
+        }
 
         BusyScope guard (*this);
 
@@ -430,7 +578,12 @@ private:
 
     juce::TextButton scanButton, loadButton, summaryButton;
     bool busy = false;
+    int  loadDepth = 0, maxLoadDepth = 0, loadCalls = 0, loadRejected = 0;
     juce::Label      status;
+    double scanProgress = 0.0;                       // declared before the bar that references it
+    juce::ProgressBar progressBar { scanProgress };
+    juce::Label       progressLabel;
+    juce::uint32      lastPumpMs = 0;
     juce::TextEditor filterBox;
     juce::ListBox    list;
     juce::Component  editorHolder;

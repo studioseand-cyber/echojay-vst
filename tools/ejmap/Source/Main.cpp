@@ -24,15 +24,32 @@ public:
     const juce::String getApplicationVersion() override { return EJMAP_VERSION; }
     bool moreThanOneInstanceAllowed() override          { return false; }
 
-    void initialise (const juce::String&) override
+    void initialise (const juce::String& commandLine) override
     {
-        mainWindow = std::make_unique<MainWindow> (buildTitle());
+        // --ledger-root DIR         write the ledger somewhere throwaway
+        // --selftest-reentry ID     scripted double-click proof, then quit
+        auto args = juce::StringArray::fromTokens (commandLine, true);
+        juce::File ledgerRoot;
+        juce::String selfTestId;
+
+        for (int i = 0; i < args.size(); ++i)
+        {
+            if (args[i] == "--ledger-root" && i + 1 < args.size())
+                ledgerRoot = juce::File::getCurrentWorkingDirectory().getChildFile (args[++i]);
+            else if (args[i] == "--selftest-reentry" && i + 1 < args.size())
+                selfTestId = args[++i];
+        }
+
+        mainWindow = std::make_unique<MainWindow> (buildTitle(), ledgerRoot);
 
         // Read back off the constructed window, not off buildTitle(). The title
         // bar is the only proof of what is running, and on a machine where the
         // shell cannot screenshot (Screen Recording denied) this line is the
         // only way to assert it against the live object rather than the source.
         std::cout << "ejmap window title: " << mainWindow->getName() << std::endl;
+
+        if (selfTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+            mainWindow->getMain()->selfTestReentry (selfTestId);
     }
 
     void shutdown() override { mainWindow = nullptr; }
@@ -50,13 +67,14 @@ private:
     class MainWindow  : public juce::DocumentWindow
     {
     public:
-        explicit MainWindow (const juce::String& name)
+        MainWindow (const juce::String& name, juce::File ledgerRoot)
             : DocumentWindow (name,
                               juce::Colour (0xff10141c),
                               DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
-            setContentOwned (new ejmap::MainComponent(), true);
+            main = new ejmap::MainComponent (ledgerRoot);
+            setContentOwned (main, true);
             setResizable (true, true);
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
@@ -67,7 +85,10 @@ private:
             JUCEApplication::getInstance()->systemRequestedQuit();
         }
 
+        ejmap::MainComponent* getMain() const noexcept { return main; }
+
     private:
+        ejmap::MainComponent* main = nullptr;   // owned by the window's content
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainWindow)
     };
 

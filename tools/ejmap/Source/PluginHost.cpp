@@ -6,20 +6,30 @@ namespace ejmap
 PluginHost::PluginHost (juce::AudioPluginFormatManager& fm)
     : juce::Thread ("ejmap silent pump"), formatManager (fm)
 {
-    pumpBuffer.setSize (2, kBlockSize);
 }
 
 PluginHost::~PluginHost()
 {
+    // Best effort. If the pump will not stop we leak the instance rather than
+    // free it under a live renderer; a leak at shutdown beats a SIGSEGV.
     unload();
 }
 
 //==============================================================================
 PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Watchdog& watchdog)
 {
-    unload();
-
     LoadResult result;
+
+    // Refuse to start a new load while the previous plugin's pump is still
+    // rendering. Tearing down underneath it is what crashed on soothe2.
+    if (! unload())
+    {
+        result.outcome = LoadOutcome::timeout;
+        result.detail  = "previous plugin's audio pump did not stop within "
+                           + juce::String (kPumpStopTimeoutMs) + "ms; nothing torn down";
+        return result;
+    }
+
     currentDesc = desc;
 
     const auto pid = desc.fileOrIdentifier;
@@ -54,8 +64,6 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Wa
                                     kSampleRate, kBlockSize);
     instance->prepareToPlay (kSampleRate, kBlockSize);
 
-    pumpBuffer.setSize (juce::jmax (2, instance->getTotalNumOutputChannels()), kBlockSize);
-
     result.paramCount = instance->getParameters().size();
     if (result.paramCount == 0)
     {
@@ -64,11 +72,17 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Wa
         return result;   // instance stays loaded: the human may still want to look
     }
 
-    // Start the pump before creating the editor. Some editors paint nothing until
-    // they have seen a callback.
-    pumpEnabled = true;
-    startThread (juce::Thread::Priority::normal);
-
+    // The pump does NOT start here.
+    //
+    // It used to, on the reasoning that some editors paint nothing until they
+    // have seen a callback. For a bridged AU that put an XPC render in flight
+    // at the same time as an XPC view creation, and AUOOPRenderingClient does
+    // not survive it: SIGSEGV at 0x0 in renderGetInput, on the pump thread,
+    // reproducible on soothe2 on the FIRST load with no teardown involved.
+    //
+    // The editor is created and allowed to settle first, then the pump starts.
+    // An editor that needs a callback to paint still gets one, a few hundred
+    // milliseconds later.
     if (! instance->hasEditor())
     {
         result.outcome  = LoadOutcome::noEditor;
@@ -166,6 +180,13 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Wa
         return result;
     }
 
+    // Editor is up and stable. Only now is it safe to render.
+    pumpChannels = juce::jmax (2,
+                               juce::jmax (instance->getTotalNumInputChannels(),
+                                           instance->getTotalNumOutputChannels()));
+    pumpEnabled = true;
+    startThread (juce::Thread::Priority::normal);
+
     result.outcome   = LoadOutcome::ok;
     result.hasEditor = true;
     result.detail    = "editor settled at " + juce::String (result.editorWidth) + "x"
@@ -174,10 +195,19 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Wa
 }
 
 //==============================================================================
-void PluginHost::unload()
+bool PluginHost::unload()
 {
     pumpEnabled = false;
-    stopThread (2000);
+
+    // FULLY stopped before anything is freed. The old code passed a 2 s
+    // timeout and then tore down regardless of the result, so a pump still
+    // inside an XPC processBlock kept rendering a buffer that was about to be
+    // reallocated. If it will not stop, we free nothing and say so.
+    if (isThreadRunning() && ! stopThread (kPumpStopTimeoutMs))
+    {
+        jassertfalse;
+        return false;
+    }
 
     editor.reset();
 
@@ -187,11 +217,19 @@ void PluginHost::unload()
         instance->releaseResources();
         instance.reset();
     }
+
+    return true;
 }
 
 //==============================================================================
 void PluginHost::run()
 {
+    // The buffer is a LOCAL. It is allocated here, on the pump thread, and dies
+    // with the thread. Nothing on the message thread can resize or free it
+    // while processBlock is holding its channel pointers.
+    juce::AudioBuffer<float> buffer (juce::jmax (2, pumpChannels.load()), kBlockSize);
+    juce::MidiBuffer midi;
+
     // 512 frames at 48 kHz is 10.67 ms. Sleeping the same interval keeps the
     // plugin's internal clock roughly real-time, which matters to anything with
     // a metering or modulation display.
@@ -205,9 +243,9 @@ void PluginHost::run()
 
             if (instance != nullptr)
             {
-                pumpBuffer.clear();
-                pumpMidi.clear();
-                instance->processBlock (pumpBuffer, pumpMidi);
+                buffer.clear();
+                midi.clear();
+                instance->processBlock (buffer, midi);
             }
         }
 

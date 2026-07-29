@@ -21,6 +21,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <map>
+#include <functional>
 
 #include "EjmapLedger.h"
 #include "EjmapWatchdog.h"
@@ -87,6 +88,14 @@ public:
         juce::StringArray errors;                // never silent: every skip is logged
     };
 
+    /** Reports walk progress. Purely additive: it observes, it decides nothing.
+        phase is "AU" or "VST3"; current names the component or bundle about to
+        be handled. Called on the scanning thread, which is the message thread.
+    */
+    using ProgressFn = std::function<void (const juce::String& phase,
+                                           int done, int total,
+                                           const juce::String& current)>;
+
     /** Walks the AU component registry and the VST3 search paths.
 
         The Ledger is REQUIRED, not optional. The VST3 leg hands each bundle to
@@ -98,7 +107,7 @@ public:
         Passing a Ledger is therefore not a caller's choice. There is no
         overload that scans without one.
     */
-    Result scan (Ledger& ledger, Watchdog& watchdog);
+    Result scan (Ledger& ledger, Watchdog& watchdog, ProgressFn onProgress = {});
 
     juce::AudioPluginFormatManager& getFormatManager() noexcept { return formatManager; }
 
@@ -115,8 +124,8 @@ public:
     }
 
 private:
-    void scanAudioUnits (Result&);
-    void scanVST3 (Result&, Ledger&, Watchdog&);
+    void scanAudioUnits (Result&, const ProgressFn&);
+    void scanVST3 (Result&, Ledger&, Watchdog&, const ProgressFn&);
 
     juce::AudioPluginFormatManager formatManager;
 

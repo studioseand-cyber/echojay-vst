@@ -71,6 +71,12 @@ struct LedgerRecord
     */
     juce::String stage = "load";
 
+    /** Name of the thread that faulted, read from the crash report, and who it
+        is attributed to: "plugin", "host", or "unknown". Empty when no report
+        was found.
+    */
+    juce::String crashThread, attribution;
+
     /** The run that produced this row. Filled in by the Ledger; a caller does
         not get to choose it, except for a crash row, which is attributed to the
         run that DIED rather than the run that found the wreckage.
@@ -96,6 +102,8 @@ struct LedgerRecord
         o->setProperty ("detail", detail);
         o->setProperty ("at", at);
         o->setProperty ("param_count", paramCount);
+        if (crashThread.isNotEmpty()) o->setProperty ("crash_thread", crashThread);
+        if (attribution.isNotEmpty()) o->setProperty ("attribution", attribution);
         if (recoveredByRunId.isNotEmpty())
             o->setProperty ("recovered_by_run", recoveredByRunId);
         return juce::var (o);
@@ -183,6 +191,20 @@ public:
             r.runId            = v.getProperty ("run_id", kLegacyRunId).toString();
             r.recoveredByRunId = runId;
 
+            // WHO ACTUALLY FAULTED.
+            //
+            // The first real crash on this tool was ours: a SIGSEGV on the
+            // "ejmap silent pump" thread caused by our own render ordering,
+            // while loading soothe2. Quarantining soothe2 for it would have put
+            // a false accusation in the permanent record, and quarantine is
+            // deliberately manual to undo.
+            //
+            // The stack is on disk, so read it instead of guessing.
+            const auto fault = readFaultingThread (v.getProperty ("at", "").toString());
+            r.crashThread   = fault;
+            r.attribution   = attributionFor (fault);
+            const bool ours = r.attribution == "host";
+
             // Same outcome, honest about which site produced it. A VST3 that
             // kills the process while the format is reading its factory did not
             // die "while the editor was opening", and saying so would send the
@@ -193,10 +215,23 @@ public:
                          : (r.stage == "scan"
                               ? "process died while the format was reading this file during Scan"
                               : "process died while the editor was opening");
-            r.at = nowIso();
+            if (fault.isNotEmpty())
+                r.detail << " [faulting thread: " << fault << ", attributed to " << r.attribution << "]";
 
+            // Counted BEFORE this row is appended, or the row counts as its own
+            // predecessor and every first crash looks like a repeat.
+            const int priors = countPriorCrashesLocked (id);
+
+            if (ours && priors == 0)
+                r.detail << " [not quarantined: the fault was on our own thread]";
+
+            r.at = nowIso();
             appendLocked (r);
-            quarantineLocked (id, "crash_on_load");
+
+            // A plugin that has crashed here before is quarantined regardless of
+            // attribution: twice is a pattern, whoever's fault it is.
+            if (! ours || priors > 0)
+                quarantineLocked (id, ours ? "crash_on_load_repeat" : "crash_on_load");
         }
 
         inflightFile.deleteFile();
@@ -454,6 +489,97 @@ private:
         out.flush();
 
         emergencyFile.deleteFile();
+    }
+
+    /** Newest ejmap crash report at or after the inflight timestamp, within a
+        10 minute window. Returns the faulting thread's name, or empty.
+
+        Deliberately tolerant: a missing or unparseable report yields empty,
+        which attributes to "unknown" and quarantines, i.e. the old behaviour.
+        Being unable to read the stack must never be the reason a plugin escapes
+        quarantine.
+    */
+    static juce::String readFaultingThread (const juce::String& inflightAt)
+    {
+        auto dir = juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+                       .getChildFile ("Library/Logs/DiagnosticReports");
+        if (! dir.isDirectory())
+            return {};
+
+        const auto since = juce::Time::fromISO8601 (inflightAt);
+
+        juce::File newest;
+        for (const auto& e : juce::RangedDirectoryIterator (dir, false, "ejmap-*.ips"))
+        {
+            const auto f = e.getFile();
+            const auto t = f.getLastModificationTime();
+
+            if (since != juce::Time() &&
+                 (t < since - juce::RelativeTime::seconds (5)
+                   || t > since + juce::RelativeTime::minutes (10)))
+                continue;
+
+            if (newest == juce::File() || t > newest.getLastModificationTime())
+                newest = f;
+        }
+
+        if (newest == juce::File())
+            return {};
+
+        // .ips is a one-line JSON header followed by the JSON body.
+        auto text = newest.loadFileAsString();
+        const auto nl = text.indexOfChar ('\n');
+        if (nl < 0)
+            return {};
+
+        auto body = juce::JSON::parse (text.substring (nl + 1));
+        auto* obj = body.getDynamicObject();
+        if (obj == nullptr)
+            return {};
+
+        const int faulting = (int) body.getProperty ("faultingThread", -1);
+        auto threads = body.getProperty ("threads", juce::var());
+        auto* arr = threads.getArray();
+        if (arr == nullptr || ! juce::isPositiveAndBelow (faulting, arr->size()))
+            return {};
+
+        return (*arr)[faulting].getProperty ("name", "").toString();
+    }
+
+    /** Threads we own. A fault on one of these is ours until shown otherwise,
+        even though the frames above it are inside the plugin: the pump crash
+        was in the plugin's render call, reached through our buffer and our
+        ordering.
+
+        The message thread is deliberately NOT here. It runs plugin code
+        constantly (createEditorIfNeeded, createPluginInstance), so a fault
+        there is not attributable to us on thread name alone.
+    */
+    static juce::String attributionFor (const juce::String& threadName)
+    {
+        if (threadName.isEmpty())              return "unknown";
+        if (threadName.contains ("silent pump")) return "host";
+        if (threadName.contains ("ejmap watchdog")) return "host";
+        return "plugin";
+    }
+
+    int countPriorCrashesLocked (const juce::String& pluginId) const
+    {
+        int n = 0;
+        if (! ledgerFile.existsAsFile())
+            return 0;
+
+        juce::StringArray lines;
+        lines.addLines (ledgerFile.loadFileAsString());
+        for (const auto& line : lines)
+        {
+            if (line.trim().isEmpty()) continue;
+            auto v = juce::JSON::parse (line);
+            if (v.getProperty ("plugin_id", "").toString() == pluginId
+                 && v.getProperty ("outcome", "").toString() == "crash_on_load")
+                ++n;
+        }
+        return n;
     }
 
     /** A row with no run_id predates run identity. It becomes one synthetic
