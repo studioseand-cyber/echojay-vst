@@ -39,7 +39,8 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Wa
         // Instantiation runs plugin code. bloom hangs ejextract's worker in the
         // equivalent call; there is no reason to assume this one cannot hang.
         Watchdog::Scope guard (watchdog, "createPluginInstance", pid, desc.name,
-                               desc.pluginFormatName, "load");
+                               desc.pluginFormatName, "load",
+                               Watchdog::kInstantiateDeadlineMs);
         instance = formatManager.createPluginInstance (desc, kSampleRate, kBlockSize, error);
     }
 
@@ -93,7 +94,8 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Wa
 
     {
         Watchdog::Scope guard (watchdog, "createEditorIfNeeded", pid, desc.name,
-                               desc.pluginFormatName, "load");
+                               desc.pluginFormatName, "load",
+                               Watchdog::kEditorCreateDeadlineMs);
         editor.reset (instance->createEditorIfNeeded());
     }
 

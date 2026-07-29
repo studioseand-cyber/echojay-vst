@@ -54,8 +54,35 @@ inline constexpr int kWatchdogExitCode = 87;
 class Watchdog : private juce::Thread
 {
 public:
-    /** Default deadline for a site that does not name its own. */
+    /** DEADLINES ARE PER SITE, because the distributions are not alike.
+        Measured on this machine, 21 AU plugins, 9 bridged and 12 native:
+
+          createPluginInstance   median 644 ms, p90 2580 ms, max 3223 ms (OVox)
+          createEditorIfNeeded   median  30 ms, p90  147 ms, max 5498 ms (Drawmer 1973)
+          VST3 scan probe        mean   315 ms across 861 bundles
+
+        The old single 30 s came from the scan mean and was ~9x the slowest
+        observed instantiation, which is not enough headroom for a cold XPC
+        start or a licence check. It fired on Cymatics Lotus, which instantiates
+        in 407 ms: the fast quartile. That was a wrong deadline, not a slow
+        plugin.
+    */
+
+    /** Scan probe, and anything that does not name a site. 95x the 315 ms scan
+        mean. bloom.vst3 was still going at 90 s, so this separates the two.
+    */
     static constexpr int kDefaultDeadlineMs = 30000;
+
+    /** Instantiation. 28x the slowest observed load, with room for a licence
+        dialog to appear and be dismissed by the human.
+    */
+    static constexpr int kInstantiateDeadlineMs = 90000;
+
+    /** Editor creation. 11x the slowest observed, which was a native editor;
+        bridged editors return in single-digit ms because the real work happens
+        asynchronously afterwards, and the editor-ready wait covers that.
+    */
+    static constexpr int kEditorCreateDeadlineMs = 60000;
 
     explicit Watchdog (Ledger& l)
         : juce::Thread ("ejmap watchdog"), ledger (l)

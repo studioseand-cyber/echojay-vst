@@ -57,6 +57,13 @@ public:
         addAndMakeVisible (status);
         status.setJustificationType (juce::Justification::centredLeft);
 
+        // Quarantine release. Manual is right; invisible is not. Without this
+        // the only route was editing quarantine.json by hand.
+        addAndMakeVisible (releaseButton);
+        releaseButton.setButtonText ("Release");
+        releaseButton.setEnabled (false);
+        releaseButton.onClick = [this] { releaseSelected(); };
+
         addAndMakeVisible (summaryButton);
         summaryButton.setButtonText ("Summary");
         summaryButton.onClick = [this] { writeRunSummary(); };
@@ -236,6 +243,8 @@ public:
         top.removeFromLeft (6);
         loadButton.setBounds (top.removeFromLeft (130));
         top.removeFromLeft (6);
+        releaseButton.setBounds (top.removeFromLeft (90));
+        top.removeFromLeft (6);
         summaryButton.setBounds (top.removeFromLeft (90));
         top.removeFromLeft (12);
         status.setBounds (top);
@@ -290,6 +299,7 @@ private:
             owner.loadButton.setEnabled (false);
             owner.list.setEnabled (false);
             owner.filterBox.setEnabled (false);
+            owner.releaseButton.setEnabled (false);
         }
 
         ~BusyScope()
@@ -299,7 +309,7 @@ private:
             owner.scanButton.setEnabled (true);
             owner.list.setEnabled (true);
             owner.filterBox.setEnabled (true);
-            owner.loadButton.setEnabled (owner.list.getSelectedRow() >= 0);
+            owner.updateButtonsForSelection();
         }
 
         MainComponent& owner;
@@ -579,6 +589,46 @@ private:
         in-memory tally: that is the rule this project adopted after the tripwire
         bug survived its own test.
     */
+    /** Releases the selected plugin from quarantine. Still deliberate: it acts
+        on one explicitly selected row and says what it did, including the
+        reason the plugin was quarantined for, so the human sees what they are
+        overriding.
+    */
+    void releaseSelected()
+    {
+        const int row = list.getSelectedRow();
+        if (! juce::isPositiveAndBelow (row, visibleRows.size()))
+            return;
+
+        const auto& sp = rows.getReference (visibleRows[row]);
+        const auto id  = sp.pluginId();
+
+        if (! ledger.isQuarantined (id))
+            return;
+
+        ledger.releaseFromQuarantine (id);
+        list.repaint();
+        updateButtonsForSelection();
+
+        status.setText (sp.desc.name + " released from quarantine. It will be loadable again; "
+                          "if it fails twice more it will be quarantined again.",
+                        juce::dontSendNotification);
+    }
+
+    /** Load is for plugins that are not quarantined, Release is for ones that
+        are. Exactly one of them is ever available for a given row.
+    */
+    void updateButtonsForSelection()
+    {
+        const int row = list.getSelectedRow();
+        const bool haveRow = juce::isPositiveAndBelow (row, visibleRows.size());
+        const bool quarantined = haveRow
+                                   && ledger.isQuarantined (rows.getReference (visibleRows[row]).pluginId());
+
+        loadButton.setEnabled (! busy && haveRow && ! quarantined);
+        releaseButton.setEnabled (! busy && quarantined);
+    }
+
     void writeRunSummary()
     {
         juce::StringArray out;
@@ -647,7 +697,7 @@ private:
         if (restored >= 0) list.selectRow (restored, false, true);
         else               list.deselectAllRows();
 
-        loadButton.setEnabled (! busy && list.getSelectedRow() >= 0);
+        updateButtonsForSelection();
         list.repaint();
     }
 
@@ -774,7 +824,7 @@ private:
 
     void selectedRowsChanged (int) override
     {
-        loadButton.setEnabled (list.getSelectedRow() >= 0);
+        updateButtonsForSelection();
     }
 
     void listBoxItemDoubleClicked (int, const juce::MouseEvent&) override { loadSelected(); }
@@ -805,7 +855,7 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
-    juce::TextButton scanButton, loadButton, summaryButton;
+    juce::TextButton scanButton, loadButton, releaseButton, summaryButton;
     bool busy = false;
     int  loadDepth = 0, maxLoadDepth = 0, loadCalls = 0, loadRejected = 0;
 

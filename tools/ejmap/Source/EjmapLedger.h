@@ -311,8 +311,19 @@ public:
 
         if (got)
         {
+            // Same policy as crash attribution, and for the same reason: a
+            // wrongly quarantined plugin drops out of the queue permanently and
+            // release is manual. The 30 s deadline quarantined Cymatics Lotus,
+            // which instantiates in 407 ms. Retry once; a plugin that times out
+            // twice is a pattern.
+            const int priors = countPriorOutcomeLocked (r.pluginId, "timeout");
+
+            if (priors == 0)
+                r.detail << " [not quarantined: first timeout here, it gets one retry]";
+
             appendLocked (r);
-            if (r.pluginId.isNotEmpty())
+
+            if (r.pluginId.isNotEmpty() && priors > 0)
                 quarantineLocked (r.pluginId, quarantineReason);
             inflightFile.deleteFile();
             lock.exit();
@@ -565,6 +576,12 @@ private:
 
     int countPriorCrashesLocked (const juce::String& pluginId) const
     {
+        return countPriorOutcomeLocked (pluginId, "crash_on_load");
+    }
+
+    int countPriorOutcomeLocked (const juce::String& pluginId,
+                                 const juce::String& outcome) const
+    {
         int n = 0;
         if (! ledgerFile.existsAsFile())
             return 0;
@@ -576,7 +593,7 @@ private:
             if (line.trim().isEmpty()) continue;
             auto v = juce::JSON::parse (line);
             if (v.getProperty ("plugin_id", "").toString() == pluginId
-                 && v.getProperty ("outcome", "").toString() == "crash_on_load")
+                 && v.getProperty ("outcome", "").toString() == outcome)
                 ++n;
         }
         return n;

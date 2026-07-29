@@ -32,6 +32,7 @@ public:
         juce::File ledgerRoot;
         juce::String selfTestId;
         bool cacheTest = false;
+        juce::String releaseId;
 
         for (int i = 0; i < args.size(); ++i)
         {
@@ -41,6 +42,21 @@ public:
                 selfTestId = args[++i];
             else if (args[i] == "--selftest-cache")
                 cacheTest = true;
+            else if (args[i] == "--release-quarantine" && i + 1 < args.size())
+                releaseId = args[++i];
+        }
+
+        // Headless release, so a quarantine can be undone through the same code
+        // path the button uses rather than by hand-editing quarantine.json.
+        if (releaseId.isNotEmpty())
+        {
+            ejmap::Ledger l (ledgerRoot);
+            const bool was = l.isQuarantined (releaseId);
+            l.releaseFromQuarantine (releaseId);
+            std::cout << "release-quarantine: " << releaseId
+                      << (was ? " -> released" : " -> was not quarantined") << std::endl;
+            quit();
+            return;
         }
 
         mainWindow = std::make_unique<MainWindow> (buildTitle(), ledgerRoot);
