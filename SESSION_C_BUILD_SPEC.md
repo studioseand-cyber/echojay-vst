@@ -322,13 +322,80 @@ Ship the thin version first. These build on it once it exists and real use has s
 it:
 
 - **Trending chains.** Needs D3, because trending means publicly shared chains and
-  none exist until sharing does. It is also the most interesting card on this surface
-  once it can exist, since it is the only one showing other people's work.
+  none exist until sharing does. D3 has now landed (`/c/:slug` is public and the
+  share chip is already rendered on any chain row carrying a `shareSlug`), so this
+  is unblocked and waiting on a payload field rather than on a feature. It is also
+  the most interesting card on this surface once it can exist, since it is the only
+  one showing other people's work.
 - **Featured chain of the week.** `payload.community.featured` is already shaped and
   returning null. Curated by you, so no moderation load.
 - Reactions on announcements from inside the plugin.
 - A fuller community surface, if the read-only announcements card proves people want
   more.
+
+## QUEUED, visual pass: the continue card and the chat rows truncate mid-word
+
+Seen 29 Jul 2026 on the real payload: `Test project, build a chain with bx_digital
+V3 mi`, and rows like `bx_digital V3 mix cut 2 dB at 250 H`.
+
+**IT IS NOT A RENDERING BUG AND CANNOT BE FIXED IN THIS TAB.** The string arrives
+already cut. Chat titles are minted at `PluginEditor.cpp` `sendChatMessage` with
+`msg.trim().substring(0, 35)`, a hard character count with no word boundary, and
+the web app applies the same 35-char rule to the same synced `title` field.
+`lib/dash/adapters.js` `getRecentChats` and `getContinue` pass that stored title
+through untouched, so the payload carries the truncation and every renderer shows
+it. A fix in `DashboardTab.cpp` would be dressing a wound in the wrong renderer,
+and the chat sidebar and the web dashboard would keep showing the cut version.
+
+Fix at the mint site, both sides in the same change: cut on the last word boundary
+at or before 35 and append an ellipsis. Note that this only helps NEW chats.
+Existing titles are already stored truncated and would need a backfill or a
+rename, which is why this is worth doing sooner rather than later.
+
+The 80-char message SNIPPET in `chatSnippet` is a separate cut and already ends in
+`...`; it is the TITLE that has no ellipsis and no word boundary.
+
+## QUEUED, backend: `hasState` on the dashboard payload's chain rows
+
+The dashboard chain rows cannot say which chains restore your knobs, so the only
+way to find out is to load one, which is the destructive operation. Session B
+solved exactly this for the Chain sidebar: `GET /api/v2/chains` returns `hasState`
+per row precisely so the UI can answer that without fetching a megabyte to find
+out, and `applyChainRows` reads it.
+
+The dashboard payload does not carry it. `DashboardChain` in `lib/dash/types.js`
+has `id, name, slotCount, qualityScore, projectId, source, shareSlug,
+shareVisibility, updatedAt` and no `hasState`, and the chains query in
+`lib/dash/payload.js` does not select it. So this is a payload gap of the same
+shape as `profileVisibility` above, not a plugin omission: the plugin has nothing
+to draw.
+
+One expression in the existing query (`state is not null as has_state`, no extra
+round trip, and never the blob itself) plus the field in `types.js`. The plugin
+side is then one more line on the chain row, matching the sidebar's wording so the
+two surfaces cannot describe the same chain differently.
+
+## QUEUED, backend: `community.latestAnnouncement` is null on every branch
+
+`lib/dash/payload.js` sets it to `null` with the comment "Populated in M1", and it
+is still null on `main` and on every feature branch including `feat/m1-community`,
+even though the M1 endpoints (`api/v2/community/*`, `api/v2/admin/announcements.js`)
+exist and the unread counters are real.
+
+Two consequences, both already live in the shipped tab and both deliberate:
+
+- The announcement card is written, tested and **never renders**. It is gated on
+  the field being non-null, which is the honest gate: an empty card would teach
+  people the surface is broken.
+- The unread dot cannot be cleared honestly from inside the plugin. It tracks the
+  server's counts and clears when the server says they were read, because there is
+  nothing on this surface for a user to have seen. The moment the field is
+  populated, revisit the decision in section 12: clearing on tab open becomes
+  defensible, and `getDashUnreadGeneration` is already wired for it.
+
+This is the single highest-value item on this list, because it is what the whole
+poll, badge and card machinery was built for. Section 0's product reason (you post
+a release note and nobody sees it) is still true today.
 
 ## QUEUED, backend: `user.profileVisibility` in the dashboard payload
 
