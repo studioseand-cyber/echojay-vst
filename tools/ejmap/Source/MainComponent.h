@@ -39,6 +39,14 @@ public:
         loadButton.setEnabled (false);
         loadButton.onClick = [this] { loadSelected(); };
 
+        addAndMakeVisible (filterBox);
+        filterBox.setTextToShowWhenEmpty ("Filter by name or vendor",
+                                          juce::Colour (0xff5a6b74));
+        filterBox.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff161c26));
+        filterBox.setColour (juce::TextEditor::textColourId,       juce::Colour (0xff9fd8e0));
+        filterBox.setColour (juce::TextEditor::outlineColourId,    juce::Colour (0xff2a3540));
+        filterBox.onTextChange = [this] { applyFilter(); };
+
         addAndMakeVisible (list);
         list.setModel (this);
         list.setRowHeight (22);
@@ -80,7 +88,10 @@ public:
         status.setBounds (top);
 
         r.removeFromTop (8);
-        list.setBounds (r.removeFromLeft (420));
+        auto left = r.removeFromLeft (420);
+        filterBox.setBounds (left.removeFromTop (24));
+        left.removeFromTop (4);
+        list.setBounds (left);
         r.removeFromLeft (8);
         editorHolder.setBounds (r);
         layoutEditor();
@@ -113,6 +124,7 @@ private:
             owner.scanButton.setEnabled (false);
             owner.loadButton.setEnabled (false);
             owner.list.setEnabled (false);
+            owner.filterBox.setEnabled (false);
         }
 
         ~BusyScope()
@@ -120,6 +132,7 @@ private:
             owner.busy = false;
             owner.scanButton.setEnabled (true);
             owner.list.setEnabled (true);
+            owner.filterBox.setEnabled (true);
             owner.loadButton.setEnabled (owner.list.getSelectedRow() >= 0);
         }
 
@@ -143,7 +156,10 @@ private:
         for (const auto& p : lastScan.plugins)
             rows.add (p);
 
-        list.updateContent();
+        // Rebuilds the DISPLAYED set only. lastScan and rows keep the whole
+        // result, so every census number below counts what was scanned, not
+        // what happens to be on screen.
+        applyFilter();
 
         juce::String msg;
         msg << rows.size() << " effects, " << lastScan.distinctProducts << " distinct products; "
@@ -225,6 +241,48 @@ private:
         status.setText ("Run summary written to " + f.getFileName(), juce::dontSendNotification);
     }
 
+    /** Case-insensitive substring over name and vendor. Rebuilds visibleRows,
+        an index list into rows; rows itself is never touched, so a reference
+        taken into it by a load in progress stays valid.
+
+        Selection is preserved by plugin id rather than by row index, because
+        the index means something different after every keystroke and Load
+        selected acts on it.
+    */
+    void applyFilter()
+    {
+        juce::String previouslySelected;
+        const int sel = list.getSelectedRow();
+        if (juce::isPositiveAndBelow (sel, visibleRows.size()))
+            previouslySelected = rows.getReference (visibleRows[sel]).pluginId();
+
+        const auto needle = filterBox.getText().trim();
+
+        visibleRows.clearQuick();
+        for (int i = 0; i < rows.size(); ++i)
+        {
+            const auto& d = rows.getReference (i).desc;
+            if (needle.isEmpty()
+                 || d.name.containsIgnoreCase (needle)
+                 || d.manufacturerName.containsIgnoreCase (needle))
+                visibleRows.add (i);
+        }
+
+        list.updateContent();
+
+        int restored = -1;
+        if (previouslySelected.isNotEmpty())
+            for (int r = 0; r < visibleRows.size(); ++r)
+                if (rows.getReference (visibleRows[r]).pluginId() == previouslySelected)
+                    { restored = r; break; }
+
+        if (restored >= 0) list.selectRow (restored, false, true);
+        else               list.deselectAllRows();
+
+        loadButton.setEnabled (! busy && list.getSelectedRow() >= 0);
+        list.repaint();
+    }
+
     void loadSelected()
     {
         // A nested call during the editor-ready wait is a no-op, not a crash.
@@ -234,10 +292,11 @@ private:
         BusyScope guard (*this);
 
         const int row = list.getSelectedRow();
-        if (! juce::isPositiveAndBelow (row, rows.size()))
+        if (! juce::isPositiveAndBelow (row, visibleRows.size()))
             return;
 
-        const auto& sp = rows.getReference (row);
+        // The selected row indexes the FILTERED view, not the scan result.
+        const auto& sp = rows.getReference (visibleRows[row]);
         const auto id  = sp.pluginId();
 
         if (ledger.isQuarantined (id))
@@ -315,14 +374,14 @@ private:
     }
 
     //==========================================================================
-    int getNumRows() override { return rows.size(); }
+    int getNumRows() override { return visibleRows.size(); }
 
     void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected) override
     {
-        if (! juce::isPositiveAndBelow (row, rows.size()))
+        if (! juce::isPositiveAndBelow (row, visibleRows.size()))
             return;
 
-        const auto& sp = rows.getReference (row);
+        const auto& sp = rows.getReference (visibleRows[row]);
         const bool quarantined = ledger.isQuarantined (sp.pluginId());
 
         if (selected)
@@ -365,12 +424,14 @@ private:
     PluginHost    host;
 
     PluginScanner::Result lastScan;
-    juce::Array<ScannedPlugin> rows;
+    juce::Array<ScannedPlugin> rows;        // the whole scan result, never filtered
+    juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
     juce::TextButton scanButton, loadButton, summaryButton;
     bool busy = false;
     juce::Label      status;
+    juce::TextEditor filterBox;
     juce::ListBox    list;
     juce::Component  editorHolder;
     std::unique_ptr<juce::AudioProcessorEditor> hostedEditor;
