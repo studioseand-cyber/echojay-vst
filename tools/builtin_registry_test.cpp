@@ -30,9 +30,12 @@
 #include "EedDeviceRegistry.h"
 #include "EedDeviceProcessor.h"
 #include "EedDelayProcessor.h"
+#include "EedExciterProcessor.h"
 #include "EedGainProcessor.h"
 #include "EedPhaseInvertProcessor.h"
 #include "EedReverbProcessor.h"
+#include "EedSaturationProcessor.h"
+#include "EedTapeProcessor.h"
 #include "SurgicalEqProcessor.h"
 
 #include <cmath>
@@ -81,12 +84,15 @@ int main()
     check (registry.findByName ("EchoJay EQ")            != nullptr, "EchoJay EQ registered");
     check (registry.findByName ("EchoJay Gain")          != nullptr, "EchoJay Gain registered");
     check (registry.findByName ("EchoJay Phase Invert")  != nullptr, "EchoJay Phase Invert registered");
+    check (registry.findByName ("EchoJay Saturation")    != nullptr, "EchoJay Saturation registered");
+    check (registry.findByName ("EchoJay Tape")          != nullptr, "EchoJay Tape registered");
+    check (registry.findByName ("EchoJay Exciter")       != nullptr, "EchoJay Exciter registered");
     check (registry.findByName ("EchoJay Delay")         != nullptr, "EchoJay Delay registered");
     check (registry.findByName ("EchoJay Reverb")        != nullptr, "EchoJay Reverb registered");
     // An EXACT count, not a lower bound: the failure this catches is a device
-    // silently disappearing, and ">= 5" would not notice that. Every Wave 1
+    // silently disappearing, and ">= 8" would not notice that. Every Wave 1
     // session bumps this by the number of devices it lands.
-    check (registry.all().size() == 5, "exactly 5 devices registered (got "
+    check (registry.all().size() == 8, "exactly 8 devices registered (got "
                                        + juce::String ((int) registry.all().size()) + ")");
 
     // -----------------------------------------------------------------------
@@ -97,11 +103,18 @@ int main()
         // Utility comes after EQ; within it, alphabetical.
         check (names.indexOf ("EchoJay Gain") < names.indexOf ("EchoJay Phase Invert"),
                "Gain before Phase Invert (alphabetical within Utility)");
+        // Harmonic ranks after Utility, Time after Harmonic, and each sorts
+        // alphabetically inside itself.
+        check (names.indexOf ("EchoJay Exciter") < names.indexOf ("EchoJay Saturation")
+            && names.indexOf ("EchoJay Saturation") < names.indexOf ("EchoJay Tape"),
+               "Exciter, Saturation, Tape (alphabetical within Harmonic)");
         check (names.indexOf ("EchoJay Delay") < names.indexOf ("EchoJay Reverb"),
                "Delay before Reverb (alphabetical within Time)");
-        check (names.indexOf ("EchoJay Phase Invert") < names.indexOf ("EchoJay Delay"),
-               "the whole Utility group precedes the whole Time group");
-        check (registry.categories().joinIntoString (",") == "EQ,Utility,Time",
+        check (names.indexOf ("EchoJay Phase Invert") < names.indexOf ("EchoJay Exciter"),
+               "the whole Utility group precedes the whole Harmonic group");
+        check (names.indexOf ("EchoJay Tape") < names.indexOf ("EchoJay Delay"),
+               "the whole Harmonic group precedes the whole Time group");
+        check (registry.categories().joinIntoString (",") == "EQ,Utility,Harmonic,Time",
                "categories in canonical order: " + registry.categories().joinIntoString (","));
     }
 
@@ -117,7 +130,7 @@ int main()
     std::printf ("== synthetic descriptions (what saved chain XML carries) ==\n");
     {
         const auto descs = registry.descriptions();
-        check (descs.size() == 5, "one description per device");
+        check (descs.size() == 8, "one description per device");
         for (const auto& d : descs)
         {
             check (d.pluginFormatName == kEchoJayBuiltinFormat,
@@ -388,6 +401,131 @@ int main()
         const auto s2 = device->applyStructured (paramsMove ({ { "output_db", -2.0 } }));
         check (s2.isNotEmpty(), "params summary: " + s2);
         check (near (eq->getOutputDb(), -2.0, 0.01), "output_db dialled through params");
+    }
+
+    // -----------------------------------------------------------------------
+    // A selector is a knob, and the house rule is that a knob a human can turn is
+    // one the model can set exactly. "tube" carries no digits, so without choice
+    // resolution it would be rejected as "not a number" and the move would
+    // silently do nothing — which is the failure mode this whole framework
+    // exists to make impossible.
+    std::printf ("== choice params dial BY NAME, and by index ==\n");
+    {
+        auto proc = makeByName ("EchoJay Saturation");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        check (device != nullptr, "Saturation IS an EedDeviceProcessor");
+
+        int applied = 0, skipped = 0;
+        const auto summary = device->applyStructured (
+            paramsMove ({ { "type", "diode" } }), &applied, &skipped);
+        check (applied == 1 && skipped == 0, "type = \"diode\" applied");
+        check (near (device->getParamValue ("type"), 2.0), "landed on the diode curve (index 2)");
+        check (summary.contains ("diode"), "and reads back BY NAME: " + summary);
+
+        device->applyStructured (paramsMove ({ { "type", "TUBE" } }));
+        check (near (device->getParamValue ("type"), 0.0), "matching is case-insensitive");
+
+        device->applyStructured (paramsMove ({ { "type", 3 } }));
+        check (near (device->getParamValue ("type"), 3.0), "a numeric index still works");
+
+        device->applyStructured (paramsMove ({ { "type", "diode" } }));
+        int a2 = 0, s2 = 0;
+        device->applyStructured (paramsMove ({ { "type", "germanium" } }), &a2, &s2);
+        check (s2 == 1, "an unknown choice is SKIPPED, not guessed at");
+        check (near (device->getParamValue ("type"), 2.0), "and leaves the curve where it was");
+
+        // The advertisement has to carry the names, or the model has no way to
+        // learn them.
+        const auto* spec = EedSaturationProcessor::schema().find ("type");
+        const auto line = juce::String (echojay::ParamSchema::describeLine (*spec));
+        check (line.contains ("tube|tape|diode|soft"), "advertised as names: " + line);
+        check (line.contains ("default tube"), "and its default is a name too");
+    }
+
+    // -----------------------------------------------------------------------
+    std::printf ("== the Harmonic cluster dials, and reports its latency ==\n");
+    {
+        auto sat = makeByName ("EchoJay Saturation");
+        auto* satDev = dynamic_cast<EedDeviceProcessor*> (sat.get());
+        satDev->applyStructured (paramsMove ({ { "drive_db", 18.0 }, { "tone_db", -4.5 },
+                                               { "mix", 60.0 }, { "output_db", -2.0 } }));
+        check (near (satDev->getParamValue ("drive_db"), 18.0),  "drive_db exact");
+        check (near (satDev->getParamValue ("tone_db"), -4.5),   "tone_db exact");
+        check (near (satDev->getParamValue ("mix"), 60.0),       "mix exact");
+        check (near (satDev->getParamValue ("output_db"), -2.0), "output_db exact");
+
+        sat->prepareToPlay (48000.0, 256);
+        check (sat->getLatencySamples() == 45,
+               "Saturation reports 45 samples of oversampling latency (got "
+               + juce::String (sat->getLatencySamples()) + ")");
+
+        auto tape = makeByName ("EchoJay Tape");
+        auto* tapeDev = dynamic_cast<EedDeviceProcessor*> (tape.get());
+        tapeDev->applyStructured (paramsMove ({ { "speed_ips", 30.0 }, { "wow", 0.0 },
+                                                { "flutter", 55.0 }, { "head_bump_db", 4.0 },
+                                                { "bias", -40.0 } }));
+        check (near (tapeDev->getParamValue ("speed_ips"), 30.0),    "speed_ips exact");
+        check (near (tapeDev->getParamValue ("flutter"), 55.0),      "flutter exact");
+        check (near (tapeDev->getParamValue ("head_bump_db"), 4.0),  "head_bump_db exact");
+        check (near (tapeDev->getParamValue ("bias"), -40.0),        "bias exact");
+
+        tape->prepareToPlay (48000.0, 256);
+        check (tape->getLatencySamples() == 165,
+               "Tape reports 165 samples (transport + oversampling) (got "
+               + juce::String (tape->getLatencySamples()) + ")");
+
+        auto ex = makeByName ("EchoJay Exciter");
+        auto* exDev = dynamic_cast<EedDeviceProcessor*> (ex.get());
+        exDev->applyStructured (paramsMove ({ { "freq_hz", 5500.0 }, { "amount", 35.0 },
+                                              { "mode", "tape" } }));
+        check (near (exDev->getParamValue ("freq_hz"), 5500.0), "freq_hz exact");
+        check (near (exDev->getParamValue ("amount"), 35.0),    "amount exact");
+        check (near (exDev->getParamValue ("mode"), 1.0),       "mode = \"tape\" resolved");
+
+        ex->prepareToPlay (48000.0, 256);
+        check (ex->getLatencySamples() == 45,
+               "Exciter reports 45 samples (got " + juce::String (ex->getLatencySamples()) + ")");
+    }
+
+    // -----------------------------------------------------------------------
+    // A device that produces a NaN or an infinity poisons every plugin after it
+    // in the chain, and the symptom (silence, three slots later) points nowhere
+    // near the cause. Every device gets audio pushed through it here.
+    std::printf ("== every device passes real audio without producing NaN ==\n");
+    for (const auto& d : registry.all())
+    {
+        auto proc = d.create();
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        if (device == nullptr) continue;
+
+        // Everything at its maximum: the most extreme setting the model can ask
+        // for is the one most likely to blow up.
+        for (const auto& p : d.schema.params())
+            device->setParamValue (juce::String (p.id), p.max);
+
+        proc->setPlayConfigDetails (2, 2, 48000.0, 128);
+        proc->prepareToPlay (48000.0, 128);
+
+        juce::AudioBuffer<float> buf (2, 128);
+        juce::MidiBuffer midi;
+        bool clean = true;
+
+        for (int b = 0; b < 32; ++b)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 128; ++i)
+                    buf.setSample (ch, i, 0.9f * std::sin (0.31f * (float) (b * 128 + i)));
+
+            proc->processBlock (buf, midi);
+
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 128; ++i)
+                {
+                    const float v = buf.getSample (ch, i);
+                    if (! std::isfinite (v) || std::fabs (v) > 64.0f) clean = false;
+                }
+        }
+        check (clean, d.name + ": 32 blocks at every param's maximum stay finite");
     }
 
     // -----------------------------------------------------------------------

@@ -18,6 +18,8 @@ static ParamSchema makeSchema()
         { "level_db", "dB", -60.0, 24.0, 0.0, "output level", false },
         { "pan",      "",    -1.0,  1.0, 0.0, "stereo position", false },
         { "auto_gain","",     0.0,  1.0, 0.0, "cancel loudness change", true },
+        { "type",     "",     0.0,  3.0, 0.0, "the saturation curve", false,
+          { "tube", "tape", "diode", "soft" } },
     });
 }
 
@@ -37,7 +39,7 @@ int main()
     check (schema.find ("LEVEL-DB") != nullptr, "shouty kebab id found");
     check (schema.find ("level")    == nullptr, "a DIFFERENT id is not matched");
     check (schema.find ("wobble")   == nullptr, "unknown id rejected");
-    check (schema.size() == 3, "schema reports its size");
+    check (schema.size() == 4, "schema reports its size");
 
     std::printf ("== clamping to the advertised range ==\n");
     const auto* lvl = schema.find ("level_db");
@@ -72,16 +74,37 @@ int main()
         check (line == "auto_gain (on/off, default off) - cancel loudness change",
                "boolean param reads as on/off, not 0..1: " + line);
     }
+    {
+        const auto line = ParamSchema::describeLine (*schema.find ("type"));
+        check (line == "type (tube|tape|diode|soft, default tube) - the saturation curve",
+               "choice param advertises NAMES, not an index: " + line);
+    }
     check (ParamSchema::number (3.0)   == "3",    "3.0 advertises as \"3\"");
     check (ParamSchema::number (-7.5)  == "-7.5", "-7.5 keeps its decimal");
     check (ParamSchema::number (20000) == "20000","20000 is not 2e+04");
+
+    std::printf ("== choices: a selector is as settable as a dial ==\n");
+    {
+        const auto* type = schema.find ("type");
+        check (type != nullptr && type->indexOfChoice ("tube")  == 0, "\"tube\" -> 0");
+        check (type != nullptr && type->indexOfChoice ("DIODE") == 2, "case folded");
+        check (type != nullptr && type->indexOfChoice ("Low-Shelf") == -1,
+               "a label that is not ours -> -1 (skipped, never guessed at)");
+        check (type != nullptr && type->indexOfChoice ("") == -1, "empty -> -1");
+        check (type != nullptr && type->choiceLabel (2.0) == "diode", "2 -> \"diode\"");
+        check (type != nullptr && type->choiceLabel (1.4) == "tape", "1.4 rounds to \"tape\"");
+        check (type != nullptr && type->choiceLabel (99.0) == "soft",
+               "out of range clamps to the last choice, never reads off the end");
+        check (schema.find ("level_db")->choiceLabel (0.0).empty(),
+               "a continuous param has no choice label");
+    }
 
     std::printf ("== describe() is one line per param ==\n");
     {
         const auto all = schema.describe();
         int lines = 1;
         for (char c : all) if (c == '\n') ++lines;
-        check (lines == 3, "3 params -> 3 lines");
+        check (lines == 4, "4 params -> 4 lines");
         check (ParamSchema().describe().empty(), "empty schema describes as empty");
     }
 
