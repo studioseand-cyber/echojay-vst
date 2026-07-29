@@ -25,9 +25,23 @@
 */
 
 #include "DashboardTab.h"
+#include "PluginEditor.h"
 
 #include <cstdio>
 #include <vector>
+
+/*
+    ALSO IN THIS BINARY: the D3.2 chain grouping rule.
+
+    It is not a dashboard concern and it does not belong here on the merits.
+    It is here because each self-test binary costs about 37 seconds to compile
+    and link against the shared lib, and that cost lands on EVERY build and
+    install. A fourth binary would tax the loop forever to prove six lines. So
+    the rule shares a binary that is already paid for, in its own clearly
+    fenced section, rather than getting one of its own.
+
+    If this file grows a third subject, split it.
+*/
 
 /** The friend declared in DashboardTab.h. */
 struct EchoJayDashboardTestAccess
@@ -67,6 +81,27 @@ struct EchoJayDashboardTestAccess
         for (auto& t : v.chainRowRects_)        r.push_back (t);
         for (auto& t : v.chainShareChipRects_)  r.push_back (t);
         for (auto& t : v.onboardingStepRects_)  r.push_back (t);
+        return r;
+    }
+};
+
+/** The friend declared in PluginEditor.h. ChainRow and the rule stay private;
+    a test is not a reason to widen a class's public surface. */
+struct EchoJayChainGroupTestAccess
+{
+    using Row = EchoJayEditor::ChainRow;
+    using Grouping = EchoJayEditor::ChainGrouping;
+    static Grouping group (const std::vector<Row>& rows)
+    {
+        return EchoJayEditor::groupChainRows (rows);
+    }
+    static Row row (const char* id, bool favourite, const char* source)
+    {
+        Row r;
+        r.id = id;
+        r.name = id;
+        r.favourite = favourite;
+        r.source = source;
         return r;
     }
 };
@@ -257,6 +292,95 @@ void exerciseWidth (echojay::DashboardView& v, int width, const char* label)
     std::printf ("  ok    %-22s width %4d: h=%4d, %2d zones, all route\n",
                  label, width, h, n);
 }
+
+// ---------------------------------------------------------------------------
+//  D3.2 chain grouping (see the note at the top of this file)
+// ---------------------------------------------------------------------------
+
+/** Session B built FAVOURITES and SAVED and designed IMPORTED without
+    rendering it, because nothing could produce an import. D3 can, so the
+    third group is live and the rule now has four input combinations rather
+    than two. What must hold: every chain appears EXACTLY ONCE, a favourited
+    import stays in Favourites rather than vanishing into Imported or showing
+    up twice, and a group with no members renders no heading at all so an
+    account that has never been sent a chain never sees an empty IMPORTED. */
+void exerciseChainGrouping()
+{
+    using GA = EchoJayChainGroupTestAccess;
+
+    auto headingsOf = [] (const GA::Grouping& g)
+    {
+        juce::StringArray out;
+        for (size_t i = 0; i < g.isHeading.size(); ++i)
+            if (g.isHeading[i] != 0) out.add (g.headingText[i]);
+        return out;
+    };
+    auto rowsUnder = [] (const GA::Grouping& g, const juce::String& heading)
+    {
+        juce::StringArray out;
+        bool in = false;
+        for (size_t i = 0; i < g.isHeading.size(); ++i)
+        {
+            if (g.isHeading[i] != 0) { in = (g.headingText[i] == heading); continue; }
+            if (in) out.add (g.rows[i].id);
+        }
+        return out;
+    };
+
+    // All four combinations at once.
+    const std::vector<GA::Row> all {
+        GA::row ("fav-plugin",   true,  "plugin"),
+        GA::row ("fav-import",   true,  "import"),
+        GA::row ("plain-plugin", false, "plugin"),
+        GA::row ("plain-web",    false, "web"),
+        GA::row ("plain-import", false, "import"),
+    };
+    const auto g = GA::group (all);
+
+    check (headingsOf (g).joinIntoString (",") == "FAVOURITES,SAVED,IMPORTED",
+           "group order is FAVOURITES, SAVED, IMPORTED");
+
+    check (rowsUnder (g, "FAVOURITES").joinIntoString (",") == "fav-plugin,fav-import",
+           "a favourited import stays in FAVOURITES");
+    check (rowsUnder (g, "SAVED").joinIntoString (",") == "plain-plugin,plain-web",
+           "web-created chains are SAVED, not IMPORTED");
+    check (rowsUnder (g, "IMPORTED").joinIntoString (",") == "plain-import",
+           "only unstarred imports are IMPORTED");
+
+    // EXACTLY ONCE. The failure this catches is a favourited import counted by
+    // two filters, which reads as a duplicate row the user cannot delete once.
+    for (const auto& r : all)
+    {
+        int seen = 0;
+        for (size_t i = 0; i < g.isHeading.size(); ++i)
+            if (g.isHeading[i] == 0 && g.rows[i].id == r.id) ++seen;
+        check (seen == 1, "every chain appears exactly once", seen, 1);
+    }
+
+    // No members, no heading. An account that has never been sent a chain must
+    // not see an empty IMPORTED section: a permanently empty section teaches
+    // the user the pane is broken, which is why Session B did not render it.
+    const auto noImports = GA::group ({ GA::row ("a", false, "plugin"),
+                                        GA::row ("b", true,  "web") });
+    check (headingsOf (noImports).joinIntoString (",") == "FAVOURITES,SAVED",
+           "no IMPORTED heading when nothing was imported");
+
+    const auto onlyImports = GA::group ({ GA::row ("a", false, "import") });
+    check (headingsOf (onlyImports).joinIntoString (",") == "IMPORTED",
+           "an import-only library shows only IMPORTED");
+
+    check (GA::group ({}).rows.empty(), "an empty library groups to nothing");
+
+    // An unknown or missing source is NOT an import. A row from a cache
+    // written before D3.2, or from a server that stopped sending the field,
+    // must land in SAVED rather than in a section it was never put in.
+    const auto legacy = GA::group ({ GA::row ("old", false, "") });
+    check (headingsOf (legacy).joinIntoString (",") == "SAVED",
+           "a row with no source is SAVED, not IMPORTED");
+
+    std::printf ("  ok    chain grouping: 4 combinations, each row once, "
+                 "no empty headings\n");
+}
 } // namespace
 
 int main()
@@ -352,6 +476,8 @@ int main()
             check (! TA::zoneRect (view, i).isEmpty(), "no empty zone at any width", w, i);
     }
     std::printf ("  ok    degenerate widths do not crash\n");
+
+    exerciseChainGrouping();
 
     if (failures)
     {

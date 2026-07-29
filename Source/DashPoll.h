@@ -48,6 +48,17 @@ public:
     struct Unread
     {
         int total = 0, announcements = 0, team = 0, direct = 0;
+        /** D3.2: chains imported from a share and not yet seen in the plugin.
+            A SECOND, INDEPENDENT SIGNAL on the same request, not part of
+            `total`: total drives the Dashboard tab's dot, and the Dashboard
+            shows nothing about imports, so folding this into it would light
+            the wrong badge on the wrong surface.
+
+            Starts at -1 for the same reason rev does, and because it also has
+            to mean "the server has never told us", which is different from
+            "the server said zero". The field is absent until the backend
+            slice lands, and absent must not read as a change on every tick. */
+        int imports = -1;
         /** Monotonic server counter. Starts at -1 rather than 0 because 0 is a
             legitimate server value: starting there would make the very first
             poll look unchanged and skip its own update. */

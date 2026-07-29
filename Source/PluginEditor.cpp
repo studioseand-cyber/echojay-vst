@@ -11986,6 +11986,21 @@ void EchoJayEditor::paint(juce::Graphics& g)
         };
         seg(chainModeAiRect_,     "AI",     !chainsMode);
         seg(chainModeChainsRect_, "CHAINS",  chainsMode);
+
+        // D3.2: a chain somebody sent you has landed in your library. The
+        // count rides the 20s community poll as a second field on the same
+        // request, so this costs no round trip of its own; see DashPoll.cpp.
+        //
+        // CONSUMES the rect resized() stored, measures nothing. It draws only
+        // when the server has actually reported a count: the field is absent
+        // until the backend slice ships, which reads as -1 here rather than
+        // as zero, so an unwired backend shows nothing instead of a dot that
+        // means nothing.
+        if (!chainImportDotRect_.isEmpty() && processorRef.getDashUnread().imports > 0)
+        {
+            g.setColour(juce::Colour(0xff22d3ee));
+            g.fillEllipse(chainImportDotRect_.toFloat());
+        }
     }
 
     // Channel banner: THE channel selector (mouseDown opens the menu).
@@ -13418,12 +13433,19 @@ void EchoJayEditor::resized()
             const int segW = 46, segH = 18, segY = topH + 7;
             chainModeChainsRect_ = { cursorRight - segW, segY, segW, segH };
             chainModeAiRect_     = { cursorRight - segW * 2 - 2, segY, segW, segH };
+            // D3.2: the pending-imports dot, derived from the CHAINS segment
+            // this same block just placed rather than anchored to the margin
+            // on its own. Two controls right-anchored from separate blocks is
+            // precisely what this cursor exists to make impossible.
+            chainImportDotRect_ = { chainModeChainsRect_.getRight() - 3,
+                                    chainModeChainsRect_.getY() - 2, 6, 6 };
             cursorRight = chainModeAiRect_.getX() - 8;
         }
         else
         {
             chainModeAiRect_     = {};
             chainModeChainsRect_ = {};
+            chainImportDotRect_  = {};
         }
         juce::ignoreUnused(cursorRight);   // next control starts from here
 
@@ -18036,6 +18058,7 @@ void EchoJayEditor::applyChainRows(const juce::var& chains, juce::int64 fetchedA
             r.slotCount = (int)o->getProperty("slotCount");
             r.hasState  = (bool)o->getProperty("hasState");
             r.favourite = (bool)o->getProperty("favourite");
+            r.source    = o->getProperty("source").toString();
             r.updatedAt = o->getProperty("updatedAt").toString();
             if (r.id.isNotEmpty()) chainRows_.push_back(std::move(r));
         }
@@ -18048,37 +18071,68 @@ void EchoJayEditor::applyChainRows(const juce::var& chains, juce::int64 fetchedA
     repaint();
 }
 
-void EchoJayEditor::rebuildChainDisplayRows()
+EchoJayEditor::ChainGrouping
+EchoJayEditor::groupChainRows(const std::vector<ChainRow>& rows)
 {
-    chainDisplayRows_.clear();
-    chainRowIsHeading_.clear();
-    chainHeadingText_.clear();
+    ChainGrouping out;
 
-    // One pass per group, in display order. Adding IMPORTED later is one more
-    // block here plus its filter; nothing else changes. It is NOT rendered
-    // now, because sharing does not exist until D3 and a section that is
-    // always empty teaches the user the pane is broken.
-    struct Group { const char* heading; bool wantFavourite; };
-    const Group groups[] = { { "FAVOURITES", true }, { "SAVED", false } };
+    // One pass per group, in display order. Session B wrote IMPORTED into
+    // this comment and deliberately did not render it, because nothing could
+    // produce one until sharing existed. D3 produces them, so it is here now,
+    // and it is exactly what that note promised: one more entry plus its
+    // filter, and nothing else changes.
+    //
+    // THE PRECEDENCE, which is the only real decision in this function.
+    // Favourite and source are independent, so four combinations exist and a
+    // naive pair of filters would either duplicate a favourited import into
+    // two sections or drop it out of Favourites. FAVOURITES therefore wins
+    // over provenance: starring is something the user did on purpose, and a
+    // chain vanishing from Favourites because of where it came from would be
+    // the surface overruling them. Every chain appears exactly ONCE:
+    //
+    //   favourite             -> FAVOURITES, whatever its source
+    //   not favourite, saved  -> SAVED
+    //   not favourite, import -> IMPORTED
+    //
+    // Non-imports therefore group exactly as they did before D3.
+    enum class Want { Favourite, Saved, Imported };
+    struct Group { const char* heading; Want want; };
+    const Group groups[] = { { "FAVOURITES", Want::Favourite },
+                             { "SAVED",      Want::Saved },
+                             { "IMPORTED",   Want::Imported } };
 
     for (auto& g : groups)
     {
         std::vector<ChainRow> members;
-        for (auto& r : chainRows_)
-            if (r.favourite == g.wantFavourite) members.push_back(r);
+        for (auto& r : rows)
+        {
+            const bool wanted = g.want == Want::Favourite ? r.favourite
+                              : g.want == Want::Saved     ? (!r.favourite && !r.isImport())
+                                                          : (!r.favourite &&  r.isImport());
+            if (wanted) members.push_back(r);
+        }
         if (members.empty()) continue;   // no heading for an empty group
 
-        chainRowIsHeading_.push_back(1);
-        chainHeadingText_.push_back(g.heading);
-        chainDisplayRows_.push_back({});          // placeholder, never drawn as a row
+        out.isHeading.push_back(1);
+        out.headingText.push_back(g.heading);
+        out.rows.push_back({});          // placeholder, never drawn as a row
 
         for (auto& m : members)
         {
-            chainRowIsHeading_.push_back(0);
-            chainHeadingText_.push_back({});
-            chainDisplayRows_.push_back(m);
+            out.isHeading.push_back(0);
+            out.headingText.push_back({});
+            out.rows.push_back(m);
         }
     }
+    return out;
+}
+
+void EchoJayEditor::rebuildChainDisplayRows()
+{
+    auto g = groupChainRows(chainRows_);
+    chainDisplayRows_  = std::move(g.rows);
+    chainRowIsHeading_ = std::move(g.isHeading);
+    chainHeadingText_  = std::move(g.headingText);
 }
 
 void EchoJayEditor::showChainRowMenu(int displayIdx)
@@ -18094,6 +18148,13 @@ void EchoJayEditor::showChainRowMenu(int displayIdx)
     // unstarred row, "Unfavourite" on a starred one.
     m.addItem(2, row.favourite ? "Unfavourite" : "Favourite");
     m.addSeparator();
+    // D3.2. UNLISTED LINK, always, which is why the label says "link" and not
+    // "Share": a public chain page is indexable and carries your name, so the
+    // server requires a claimed handle for it, and this surface has no text
+    // entry and no way to sign you into the settings page. Offering public
+    // here could only dead-end or publish under a name you never chose.
+    m.addItem(4, "Copy share link");
+    m.addSeparator();
     m.addItem(3, "Delete" + juce::String::fromUTF8("\xe2\x80\xa6"));
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -18106,6 +18167,7 @@ void EchoJayEditor::showChainRowMenu(int displayIdx)
             if (choice == 1) safeThis->renameChainRow(displayIdx);
             else if (choice == 2) safeThis->toggleChainFavourite(displayIdx);
             else if (choice == 3) safeThis->deleteChainRow(displayIdx);
+            else if (choice == 4) safeThis->shareChainRow(displayIdx);
         });
 }
 
@@ -18167,6 +18229,91 @@ void EchoJayEditor::deleteChainRow(int displayIdx)
             if (safeThis == nullptr || result != 1) return;
             safeThis->sendChainDelete(row.id, row.name);
         }));
+}
+
+/**
+    D3.2: share a chain as an UNLISTED LINK and put the URL on the clipboard.
+
+    ALWAYS visibility "link", never "public". A public chain page is indexable
+    and carries your name, so the server answers 409 handle_required without a
+    claimed handle. This surface has no text entry and there is no plugin to
+    web token path, so a public option here could only fail while pointing at a
+    settings page it cannot sign you into, or succeed at publishing something
+    under a name you never chose. Making a chain public stays a web act.
+
+    IDEMPOTENT SERVER SIDE. A second press returns the same link and does not
+    spend another send against the monthly cap, so this is a copy button after
+    the first use, and `created` says which happened rather than the client
+    guessing from the status code.
+
+    THE URL COMES BACK AS A PATH. The server refuses to build an absolute URL
+    from a caller-controlled Host header, so the site root is prepended here,
+    from the same constant the Dashboard tab uses.
+*/
+void EchoJayEditor::shareChainRow(int displayIdx)
+{
+    if (displayIdx < 0 || displayIdx >= (int)chainDisplayRows_.size()) return;
+    if (chainRowIsHeading_[(size_t)displayIdx] != 0) return;
+    const auto row = chainDisplayRows_[(size_t)displayIdx];
+    if (row.id.isEmpty()) return;
+
+    setChainSaveStatus(juce::String::fromUTF8("Creating a link for \"") + row.name
+                       + juce::String::fromUTF8("\"\xe2\x80\xa6"));
+
+    // surface: "plugin" so a cap hit is logged against the surface it came
+    // from. The server defaults anything else to "plugin" anyway; sending it
+    // explicitly keeps the log honest if that default ever changes.
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+    body->setProperty("visibility", "link");
+    body->setProperty("surface", "plugin");
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.shareChain(row.id, juce::JSON::toString(juce::var(body.get())),
+        [safeThis, row](const juce::var& json, int sc)
+    {
+        if (safeThis == nullptr) return;
+
+        if (sc != 200)
+        {
+            // The server writes user-facing copy for the cases it expects (the
+            // monthly cap message names the count and the plan), so PREFER IT
+            // over anything invented here. A client that paraphrases a cap
+            // message is a second place the wording can drift.
+            juce::String msg;
+            if (auto* o = json.getDynamicObject())
+                msg = o->getProperty("message").toString();
+            if (msg.isEmpty())
+                msg = sc == 401 ? juce::String("Sign in to share a chain.")
+                    : sc == 404 ? juce::String("That chain is no longer there.")
+                    : sc == 0   ? juce::String("No connection, so no link was created.")
+                                : juce::String("Could not create a link (") + juce::String(sc) + ").";
+            safeThis->setChainSaveStatus(msg);
+            return;
+        }
+
+        juce::String path;
+        bool created = true;
+        if (auto* o = json.getDynamicObject())
+        {
+            created = (bool)o->getProperty("created");
+            if (auto* sh = o->getProperty("share").getDynamicObject())
+                path = sh->getProperty("url").toString();
+        }
+        if (path.isEmpty())
+        {
+            safeThis->setChainSaveStatus("The link came back empty, so nothing was copied.");
+            return;
+        }
+
+        const juce::String url = echojay::dashSiteRoot() + path;
+        juce::SystemClipboard::copyTextToClipboard(url);
+
+        // Says WHICH happened, because pressing this twice is a normal thing
+        // to do and "copied again" is not the same fact as "shared".
+        safeThis->setChainSaveStatus(created
+            ? juce::String("Share link copied. Anyone with it can open this chain.")
+            : juce::String("Share link copied again. This chain was already shared."));
+    });
 }
 
 void EchoJayEditor::sendChainDelete(const juce::String& id, const juce::String& name)

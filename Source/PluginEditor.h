@@ -1216,6 +1216,12 @@ private:
         int  slotCount = 0;
         bool hasState  = false;
         bool favourite = false;
+        /** D3.2: "plugin" | "web" | "import". How the row came to exist,
+            never rewritten after the insert. GET /api/v2/chains has always
+            returned it; Session B simply had nothing to do with it, because
+            nothing could produce an import until sharing existed. */
+        juce::String source;
+        bool isImport() const noexcept { return source == "import"; }
     };
     std::vector<ChainRow>              chainRows_;
     // Parallel to chainRows_ AFTER grouping; index i of these is the same
@@ -1244,14 +1250,47 @@ private:
     void sendChainRename(const juce::String& id, const juce::String& name);
     void deleteChainRow(int displayIdx);
     void sendChainDelete(const juce::String& id, const juce::String& name);
+    /** D3.2. Creates an UNLISTED LINK share and puts the URL on the clipboard.
+        Never a public share: that needs a claimed handle the plugin cannot
+        send anyone to claim. Idempotent server side, so a second press copies
+        the same link and costs nothing against the monthly cap. */
+    void shareChainRow(int displayIdx);
     void writeChainRowsToCache();
     void paintChainSidebar(juce::Graphics& g, int chatX, int chatW, int topH, int bottomY);
-    // Group order is FAVOURITES then SAVED. Imported is deliberately absent:
-    // sharing does not exist until D3, and a permanently empty section is the
-    // same mistake as an empty rig. The grouping is a list of (heading, rows)
-    // precisely so Imported drops in as one more entry when it has content.
+    /** The grouped list: a heading occupies a slot in all three vectors, with
+        a placeholder row that is never drawn. Same shape Session B stored
+        directly in the members; extracted so it can be proved. */
+    struct ChainGrouping
+    {
+        std::vector<ChainRow>     rows;
+        std::vector<int>          isHeading;      // 1 = this slot is a heading
+        std::vector<juce::String> headingText;
+    };
+
+    /** THE grouping rule, as a pure function of the rows. STATIC and free of
+        editor state on purpose, exactly like computeTabRects: it is what
+        tools/dashboard_test calls, so the test exercises the code that ships
+        rather than a copy of the rule. Every chain appears EXACTLY ONCE and
+        the precedence is documented at the definition. */
+    static ChainGrouping groupChainRows(const std::vector<ChainRow>& rows);
+
+    /** Reaches groupChainRows without making ChainRow or the rule public. */
+    friend struct EchoJayChainGroupTestAccess;
+
+    // Group order is FAVOURITES, SAVED, IMPORTED. Session B built the grouping
+    // as a list of (heading, rows) precisely so Imported could drop in as one
+    // more entry once D3 could produce one, which is what happened. A group
+    // with no members renders no heading, so IMPORTED is invisible on an
+    // account that has never been sent a chain.
     void rebuildChainDisplayRows();
     bool chainSidebarInChainsMode() const;
+
+    /** D3.2: the pending-imports dot on the CHAINS segment. AUTHORED BY THE
+        SAME right-anchor block in resized() that places the segment itself,
+        so it is not a second control anchored to the same edge. That pairing
+        is what put `Aa` on top of the CHAINS switch, which was the fourth
+        overlap bug in this file. Empty when the switch is not on screen. */
+    juce::Rectangle<int> chainImportDotRect_;
 
     juce::String chainSaveStatus_;
     juce::uint32 chainSaveStatusAt_ = 0;

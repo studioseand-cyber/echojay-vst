@@ -110,18 +110,42 @@ void DashPollShared::tick()
 
         const juce::int64 rev = (juce::int64) (double) obj->getProperty ("rev");
 
-        // THE REV CHECK, which is the point of this endpoint. If the monotonic
-        // counter has not moved there is nothing new, so do nothing at all: no
-        // state write, no generation bump, no notification, and above all no
-        // dashboard payload fetch.
-        if (rev == unread.rev)
+        // D3.2: pending imports, a SECOND signal riding the same response.
+        //
+        // It cannot hide behind the rev check. `rev` is a GLOBAL counter,
+        // bumped once per announcement and never per user (see getPoll in
+        // lib/dash/community.js, and the per-user-write-on-broadcast error
+        // that design exists to avoid). An import is a PER-USER event, so it
+        // must not move a global counter, so rev will not move when one
+        // lands. Comparing this field separately costs nothing: the response
+        // is already here, already parsed, and still one round trip.
+        //
+        // ABSENT IS NOT ZERO. The backend slice that increments this has not
+        // shipped, so the field is missing today and this stays -1, which is
+        // "the server has never told us" rather than "the server said none".
+        // Logged either way, so a client that is silently inert because the
+        // field was never wired, or was wired under a different name, says so
+        // in the log rather than simply never lighting up.
+        const bool hasImports = obj->hasProperty ("imports");
+        const int  imports    = hasImports ? (int) obj->getProperty ("imports") : -1;
+
+        const bool revMoved     = (rev != unread.rev);
+        const bool importsMoved = (imports != unread.imports);
+
+        // Nothing new means NO WORK: no state write, no generation bump, no
+        // notification, and above all no dashboard payload fetch.
+        if (! revMoved && ! importsMoved)
         {
             ejDashLog ("[dash-poll] tick " + juce::String (tickCount)
-                       + " rev unchanged at " + juce::String (rev) + ", no work");
+                       + " rev unchanged at " + juce::String (rev)
+                       + ", imports unchanged at " + juce::String (imports)
+                       + (hasImports ? "" : " (field ABSENT: backend slice not shipped)")
+                       + ", no work");
             return;
         }
 
         unread.rev           = rev;
+        unread.imports       = imports;
         unread.total         = (int) obj->getProperty ("total");
         unread.announcements = (int) obj->getProperty ("announcements");
         unread.team          = (int) obj->getProperty ("team");
@@ -129,7 +153,9 @@ void DashPollShared::tick()
         ++generation;
 
         ejDashLog ("[dash-poll] tick " + juce::String (tickCount)
-                   + " rev MOVED to " + juce::String (rev)
+                   + (revMoved ? " rev MOVED to " : " rev at ") + juce::String (rev)
+                   + (importsMoved ? " imports MOVED to " : " imports at ")
+                   + juce::String (imports)
                    + " unread=" + juce::String (unread.total)
                    + " gen=" + juce::String (generation)
                    + ", notifying " + juce::String ((int) clients.size()) + " instance(s)");

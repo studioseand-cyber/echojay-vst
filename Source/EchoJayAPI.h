@@ -497,6 +497,32 @@ public:
         else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
     }
 
+    // ---- D3.2: sharing a chain ------------------------------------------
+    //
+    // POST /api/v2/chains/:id/share -> 200 { share, created }
+    //
+    // The plugin only ever asks for `visibility: "link"`. A PUBLIC share is
+    // indexable and carries your name, so the server requires a claimed
+    // handle and answers 409 handle_required without one. The plugin has no
+    // text entry and no token path to the settings page, so a public option
+    // here could only fail pointing at a browser it cannot sign you into, or
+    // succeed at publishing something under a name you never chose. Public
+    // sharing is a web act. Say so in the copy; do not offer it.
+    //
+    // IDEMPOTENT. Pressing this twice returns the SAME link and only the
+    // first costs a send against the monthly cap, so a second press is a
+    // copy, not a new share. `created` in the response says which happened.
+    //
+    // `share.url` comes back as a PATH ("/c/<slug>"), never an absolute URL:
+    // the server refuses to build one from a caller-controlled Host header.
+    // The client prepends the site root.
+    void shareChain(const juce::String& id, const juce::String& body,
+                    std::function<void(const juce::var&, int)> cb)
+    {
+        if (isLoggedIn()) postJSON("/api/v2/chains/" + id + "/share", body, std::move(cb));
+        else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
+    }
+
     // ---- Session C: the Dashboard tab -----------------------------------
     //
     // TWO ENDPOINTS, TWO CADENCES, AND THEY MUST NOT BE CONFUSED. This pair is
