@@ -50,6 +50,33 @@ one-at-a-time — whichever session reinstalls last is the AU Logic loads. So:
 parallelize the *building*; serialize the *"reinstall + open Logic to test"*
 step. (Or give each build a distinct product name while iterating.)
 
+### This has already cost us an afternoon — verify, don't assume
+The paragraph above is not hypothetical. The built-in device editors aborted
+Logic on open (`__cxa_pure_virtual` out of `DeviceEditorBase`'s constructor).
+The bug was found, fixed, committed, tested green and reinstalled — and Logic
+kept crashing in exactly the same place, for hours, because what it had loaded
+was a Release build from `../ej-time`, made six minutes BEFORE the fix and on a
+branch that does not contain it. Every worktree ships the same
+`CFBundleIdentifier` to the same path, so "reinstall" silently means "overwrite
+with whichever worktree went last", and a fix that never loaded is
+indistinguishable from a fix that does not work. The headless harness passed
+throughout — correctly, because it was built *here*, from fixed source.
+
+The lesson is not "be careful". It is that **which build is installed is a
+question with a checkable answer**, and it should be asked before re-debugging
+anything that appears not to be fixed:
+
+```bash
+tools/which_build_is_installed.sh   # whose binary will a host actually load?
+tools/install_local.sh              # install THIS worktree's build, then prove it
+```
+
+`which_build_is_installed.sh` prints the installed bundle's Mach-O UUID and then
+names the worktree and branch whose build tree that UUID came from. A crash
+report lists the same UUID for the loaded image, so the two can be compared
+directly — which turns "is the DAW even running my code?" from an afternoon into
+one command.
+
 ## Rule of thumb
 - **1 session = 1 worktree folder = 1 branch.** Never two sessions in one folder.
 - Main folder `~/echojay-vst` stays on `feat/surgical-eq` (integration branch).

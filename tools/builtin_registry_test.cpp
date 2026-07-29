@@ -368,6 +368,63 @@ int main()
     }
 
     // -----------------------------------------------------------------------
+    // The block above opens an editor STANDALONE, which is not how the rack opens
+    // one. ChainListPanel::showInline gives it a PARENT first, then sizes it:
+    //
+    //     inlineHolder.addAndMakeVisible (*inlineEditor);   // -> parentHierarchyChanged()
+    //     layoutInline();                                   // -> setBounds() -> resized()
+    //
+    // and closeInline() detaches it from the holder before destroying it, so a
+    // device gets opened, closed and reopened over a session.
+    //
+    // That distinction is not cosmetic, and missing it is why a crash that this
+    // very test was written to catch still reached a DAW. DeviceEditorBase has to
+    // defer its first layout out of the constructor — it cannot dispatch into a
+    // subclass that is not built yet — and it flushes that deferred layout from
+    // parentHierarchyChanged(). Nothing above ever gives an editor a parent, so
+    // the one hook the fix depends on was the one hook the test could not reach.
+    //
+    // So the rack's sequence is run here verbatim, against a real parent, twice —
+    // the second pass being the reopen that a deferred-layout flag left stale, or
+    // a dangling look-and-feel, would fail on.
+    std::printf ("== every device's editor survives the rack's inline open/close/reopen ==\n");
+    for (const auto& d : registry.all())
+    {
+        auto proc = d.create();
+        if (proc == nullptr) { check (false, d.name + ": no processor"); continue; }
+
+        // Stands in for ChainListPanel::inlineHolder — an ordinary parent, which
+        // is all the built-in path uses (no NativeClip, no foreign NSView).
+        juce::Component holder;
+        holder.setSize (900, 600);
+
+        bool ok = true;
+
+        for (int pass = 1; pass <= 2 && ok; ++pass)
+        {
+            std::unique_ptr<juce::AudioProcessorEditor> ed (proc->createEditor());
+            if (ed == nullptr) { ok = false; break; }
+
+            // showInline(): parent FIRST — this is the parentHierarchyChanged()
+            // that flushes the layout the constructor had to skip — then fill the
+            // display area, as layoutInline() does.
+            holder.addAndMakeVisible (*ed);
+            ed->setBounds (holder.getLocalBounds());
+
+            juce::Image img (juce::Image::ARGB, holder.getWidth(), holder.getHeight(), true);
+            juce::Graphics g (img);
+            ed->paintEntireComponent (g, true);
+
+            // closeInline(): detach, then destroy. Same order as the rack, so a
+            // teardown that reaches back into a parent it no longer has fails here.
+            holder.removeChildComponent (ed.get());
+            ed.reset();
+        }
+
+        check (ok, d.name + " opens, closes and reopens inline under a parent");
+    }
+
+    // -----------------------------------------------------------------------
     // juce::String's const char* constructor reads its input as ASCII, so a UTF-8
     // character in a registry literal (an em-dash is the easy mistake) arrives
     // double-encoded and ships mojibake into the AI prompt. It builds, runs, and
