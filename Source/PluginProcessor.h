@@ -315,6 +315,20 @@ public:
     juce::String pendingChannelUid;
     juce::StringArray chatRoles, chatContents; // for API context window
 
+    /** Which tab the editor was last on, as the raw enum index.
+        (0 = Dashboard; the enum itself lives in PluginEditor.h, which this
+        header must not include.)
+
+        HERE, not on the editor, for the standing reason: Logic destroys and
+        recreates the editor every time the user switches between the Link
+        window and EchoJay, several times a minute in real Link work. An editor
+        member would bounce them back to the default tab on every switch.
+
+        Deliberately NOT persisted into the plugin state blob. It answers "put
+        me back where I was in this session", and a fresh instance starting at
+        0 is what makes Dashboard the default on first launch after update. */
+    int lastTabIndex = 0;
+
     // ===== Session C: the community poll ==================================
     //
     // The poller is PROCESS-WIDE and shared by every EchoJay instance in the

@@ -13,6 +13,7 @@
 #include "PluginChecklist.h"
 #include "EchoJayWorkspace.h"
 #include "CodecRender.h"
+#include "DashboardTab.h"
 
 // TEMP DEBUG (25 Jul 2026, review-overlay z-order diagnosis) — remove with
 // the [zdbg] sites in PluginEditor.cpp.
@@ -139,9 +140,16 @@ private:
     enum class View { Meters, Visual, Compare, Settings };
     View currentView { View::Meters };
 
-    // V2 six-tab shell
-    enum class Tab { Visualisation, Meters, Chat, Compare, Link, Chain, Settings };
-    Tab currentTab { Tab::Visualisation };
+    // V2 tab shell. Dashboard is FIRST, in the enum and in kTabNames below,
+    // and the static_assert ties the two together so changing one without the
+    // other stops the build instead of misrouting every click at runtime.
+    enum class Tab { Dashboard, Visualisation, Meters, Chat, Compare, Link, Chain, Settings };
+    // Seeded from the processor in the constructor so a Logic editor recreate
+    // (every Link window switch) returns to the tab the user was on. A fresh
+    // instance starts on Dashboard, which is what "the default on first launch
+    // after update, then last tab remembered" means in a host that destroys
+    // editors for fun.
+    Tab currentTab { Tab::Dashboard };
     // Top header row height (source/genre/project/Capture/plugin count) and
     // the tab strip height. Bumped for larger, less-cramped typography;
     // topH (= kTopBarH + kTabBarH) is the content-area top everywhere, so the
@@ -162,8 +170,12 @@ private:
     // Now: kTabNames is the only place the count is expressed, tabRects_ is
     // written by resized() alone, and paint() and mouseDown() both consume it
     // and measure nothing.
+    // Eight tabs fit at the 900px full-mode floor with room to spare: 112px
+    // each against the 81px the longest label (VISUALISATION) needs. Measured
+    // 29 Jul 2026. Compact mode draws no strip at all, so there is no narrow
+    // case to design for, and no icon-only or overflow mode is wanted.
     static constexpr const char* kTabNames[] = {
-        "VISUALISATION", "METERS", "CHAT", "COMPARE", "LINK", "CHAIN", "SETTINGS"
+        "DASHBOARD", "VISUALISATION", "METERS", "CHAT", "COMPARE", "LINK", "CHAIN", "SETTINGS"
     };
     static constexpr int kTabCount = (int) (sizeof (kTabNames) / sizeof (kTabNames[0]));
     // Ties the label array to the enum. Adding a tab to one and not the other
@@ -209,6 +221,47 @@ private:
         lookup against tabRects_: it does not know the width and therefore
         cannot disagree with what was painted. */
     int tabIndexAt (juce::Point<int> p) const;
+
+    /** Unread dot on the DASHBOARD tab label. AUTHORED BY layoutTabStrip, the
+        same authority that writes tabRects_, so paint() draws it without
+        measuring a label or dividing a width. Empty when the strip has no
+        room for it. */
+    juce::Rectangle<int> dashUnreadDotRect_;
+
+    // ======================================================================
+    //  Session C: the Dashboard tab
+    // ======================================================================
+    //
+    // ONE child component holds the whole surface (see DashboardTab.h), shown
+    // by a single unconditional expression in resized(). The editor's job is
+    // the three things a view must not do: fetch, cache, and navigate.
+    //
+    // TWO ENDPOINTS, TWO CADENCES, AND THEY MUST NOT BE CONFUSED:
+    //   fetchDashboard   5 Redis reads + 4 Postgres queries. Tab open and the
+    //                    payload's own 60s TTL. NOTHING ELSE. Never the poll.
+    //   pollCommunity    1 Redis round trip, every 20s, on the PROCESSOR.
+    // The payload carries community.unread, which makes polling it for the
+    // badge tempting and would be roughly a hundred times the cost per tick.
+    juce::Viewport             dashViewport_;
+    echojay::DashboardView     dashView_;
+    juce::int64                dashFetchedAtMs_ = 0;   // 0 = never fetched
+    int                        dashTtlSeconds_  = 60;  // from payload.ttl
+    bool                       dashLoading_     = false;
+    juce::String               dashError_;
+    /** A chat the user deep linked to before the workspace finished loading.
+        Consumed once, in workspace.onLoaded. */
+    juce::String               pendingDashChatId_;
+
+    /** Tab open. Renders the disk cache immediately, then refreshes behind it
+        only if the TTL has expired. Idempotent and cheap when warm. */
+    void openDashboardTab();
+    void fetchDashboardPayload();
+    void applyDashboardJson (const juce::var& payload, juce::int64 fetchedAtMs, bool fromCache);
+    /** Interprets an abstract DeepLink: switch tab, select the id. */
+    void followDashLink (const echojay::DashLink& link);
+    /** Uploaded project art. Procedural art is NEVER fetched: the payload
+        sends the seed and ProjectArt draws it locally. */
+    void fetchProjectArt (const juce::String& url);
 
     // THE single writer of the visible tab: strip selection (currentTab),
     // content visibility, sidebar/input visibility, and GL start/stop all

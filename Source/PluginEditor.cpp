@@ -229,6 +229,60 @@ static juce::var readChainListCache(const juce::String& email, juce::int64& fetc
     return chains.isArray() ? chains : juce::var();
 }
 
+// ===========================================================================
+//  Dashboard payload cache (Session C)
+// ===========================================================================
+// THE SAME PATTERN as the chain list above, deliberately, rather than a second
+// one: last successful payload on disk, rendered immediately on opening the
+// tab, refreshed behind it, and a failed refresh leaves it on screen with its
+// timestamp instead of replacing it with an error.
+//
+// Keyed by a hash of the account email for the same reason: switching accounts
+// must not show you someone else's projects, and the file never contains the
+// address itself.
+static juce::File dashboardCacheFile()
+{
+    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+   #if JUCE_MAC
+    return appData.getChildFile("Application Support/EchoJay/dashboard_cache.json");
+   #else
+    return appData.getChildFile("EchoJay/dashboard_cache.json");
+   #endif
+}
+
+static void writeDashboardCache(const juce::String& email, const juce::var& payload)
+{
+    const auto key = chainCacheAccountKey(email);
+    if (key.isEmpty() || payload.getDynamicObject() == nullptr) return;
+    auto root = std::make_unique<juce::DynamicObject>();
+    root->setProperty("account", key);
+    // Epoch millis, not a formatted string: the label renders in the user's
+    // current locale and timezone at paint time, so a laptop that travels does
+    // not show a stale clock.
+    root->setProperty("fetchedAtMs", (juce::int64) juce::Time::currentTimeMillis());
+    root->setProperty("payload", payload);
+    auto f = dashboardCacheFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(juce::JSON::toString(juce::var(root.release()), true));
+}
+
+// Returns the cached payload, or a void var when there is nothing usable for
+// THIS account. fetchedAtMsOut is 0 when nothing was read.
+static juce::var readDashboardCache(const juce::String& email, juce::int64& fetchedAtMsOut)
+{
+    fetchedAtMsOut = 0;
+    const auto key = chainCacheAccountKey(email);
+    if (key.isEmpty()) return {};
+    auto f = dashboardCacheFile();
+    if (!f.existsAsFile()) return {};
+    auto parsed = juce::JSON::parse(f.loadFileAsString());
+    auto* obj = parsed.getDynamicObject();
+    if (obj == nullptr) return {};
+    if (obj->getProperty("account").toString() != key) return {};
+    fetchedAtMsOut = (juce::int64) obj->getProperty("fetchedAtMs");
+    return obj->getProperty("payload");
+}
+
 static juce::File updateDismissFile()
 {
     auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
@@ -336,10 +390,42 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     {
         // Already on the message thread: the shared poller only fires this
         // from inside getJSON's callAsync completion.
+        //
+        // A REPAINT AND NOTHING ELSE. Specifically NOT a fetchDashboard: the
+        // payload carries community.unread, which makes refetching it here
+        // look like the obvious move, and it is roughly a hundred times the
+        // cost of the poll that just fired. The badge is drawn from the counts
+        // the poller already holds.
         dashUnreadSeen_ = processorRef.getDashUnreadGeneration();
         repaint();
     };
     dashUnreadSeen_ = processorRef.getDashUnreadGeneration();
+
+    // Which tab to open on. From the PROCESSOR, so Logic's editor recreate on
+    // every Link window switch returns the user to where they were instead of
+    // to the default. A fresh instance reads 0, which is Dashboard.
+    currentTab = static_cast<Tab>(juce::jlimit(0, kTabCount - 1,
+                                               processorRef.lastTabIndex));
+
+    // ---- Session C: the Dashboard tab -----------------------------------
+    // ONE child component owns the whole surface. It scrolls, so the layout
+    // never has to fight the 580px full-mode floor, and because it is a child
+    // rather than editor paint code, nothing it draws can leak onto another
+    // tab: hiding the viewport hides all of it.
+    dashViewport_.setViewedComponent(&dashView_, false);
+    dashViewport_.setScrollBarsShown(true, false);
+    dashViewport_.setScrollBarThickness(8);
+    addChildComponent(dashViewport_);
+    dashView_.onNavigate = [this](const echojay::DashLink& l) { followDashLink(l); };
+    dashView_.onOpenUrl  = [](const juce::String& url)
+    {
+        // Only ever reached for a url the view built from the allowed set:
+        // /c/:slug (public since D3.1) and /upgrade (which the plugin already
+        // opens signed out). There is no plugin-to-web token path in either
+        // repo, so anything else would land the user on a login screen.
+        juce::URL(url).launchInDefaultBrowser();
+    };
+    dashView_.onNeedArt  = [this](const juce::String& url) { fetchProjectArt(url); };
 
     setLookAndFeel(&lnf);
     setSize(1170, 696);
@@ -434,6 +520,18 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 && (currentChatId.isEmpty() || currentChatId == restoreId))
                 for (const auto& ch : workspace.getChats())
                     if (ch.id == restoreId) { loadChatFromWorkspace(restoreId); break; }
+        }
+
+        // A dashboard chat deep link tapped before the workspace had loaded.
+        // Consumed ONCE and cleared either way: a chat that is not in the
+        // workspace (deleted on another machine since the payload was built)
+        // must not sit here waiting to fire on a later sync.
+        if (pendingDashChatId_.isNotEmpty())
+        {
+            const juce::String want = pendingDashChatId_;
+            pendingDashChatId_.clear();
+            for (const auto& ch : workspace.getChats())
+                if (ch.id == want) { loadChatFromWorkspace(want); break; }
         }
         repaint();
     };
@@ -2186,6 +2284,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             ch.startScan();
     }
 
+    // Session C: the constructor does not go through switchToTab, so an editor
+    // that OPENS on the Dashboard (a fresh instance, or a Logic recreate that
+    // restored the tab from the processor) has to be told to fill it. Cache
+    // first, then the TTL check, exactly as a tab click would.
+    if (currentTab == Tab::Dashboard && currentScreen == Screen::Main)
+        openDashboardTab();
+
     startTimerHz(20);
 }
 
@@ -2446,11 +2551,11 @@ void EchoJayEditor::attemptLogin()
         {
             safeThis->passwordInput.clear();
             safeThis->showMainScreen();
-            // Land on Visualisation (the product home) via the single
-            // writer. Never the tab logout left behind (Settings — that is
-            // the previous account's context), and force=true so component
+            // Land on Dashboard (the product home since Session C) via the
+            // single writer. Never the tab logout left behind (Settings, which
+            // is the previous account's context), and force=true so component
             // state is re-asserted even if currentTab already matches.
-            safeThis->switchToTab(Tab::Visualisation, true);
+            safeThis->switchToTab(Tab::Dashboard, true);
         }
         else safeThis->loginErrorLabel.setText(error, juce::dontSendNotification);
         safeThis->repaint();
@@ -2490,7 +2595,7 @@ void EchoJayEditor::startBrowserPairing()
             if (success)
             {
                 safeThis->showMainScreen();
-                safeThis->switchToTab(Tab::Visualisation, true);
+                safeThis->switchToTab(Tab::Dashboard, true);
             }
             else
             {
@@ -2560,6 +2665,12 @@ void EchoJayEditor::updateOnboardingPrompts()
     // ---- identical chat/topbar treatment for all three ----
     const bool chatOk = currentScreen == Screen::Main && !anyPrompt
                      && currentView != View::Settings
+                     // Dashboard has no chat column and no text entry of any
+                     // kind. This pass runs 20 times a second and re-shows
+                     // these three components on its own authority, so the tab
+                     // test has to be HERE as well as in switchToTab, or the
+                     // input row reappears over the dashboard a frame later.
+                     && currentTab != Tab::Dashboard
                      && !(currentTab == Tab::Chain && chainChatCollapsed_)
                      // Review-modal flag: while the plugin-review overlay is
                      // open it is a FULL-SCREEN modal — this per-tick pass
@@ -2988,9 +3099,13 @@ EchoJayEditor::ColumnLayout EchoJayEditor::computeColumns(int width) const
         c.chatW = chainChatCollapsed_ ? 0 : juce::jlimit(200, 280, width * 22 / 100);
         c.mW = width - c.chatW;
     }
-    else if (currentTab == Tab::Settings)
+    else if (currentTab == Tab::Settings || currentTab == Tab::Dashboard)
     {
-        // No AI assistant sidebar on Settings
+        // No AI assistant sidebar on Settings, and none on Dashboard: that
+        // column is a chat INPUT, and the dashboard is read and navigate only.
+        // Routing it through computeColumns rather than a second predicate
+        // means assistantSidebarVisible() (which asks the same question) turns
+        // off with it, and every assistant-drawn overlay with it.
         c.chatW = 0;
         c.mW = width;
     }
@@ -3275,6 +3390,13 @@ bool EchoJayEditor::assistantInputContext() const
     if (currentScreen != Screen::Main) return false;
     if (compactMode) return true;                           // chat-only window IS the input row
     if (currentTab == Tab::Settings || currentView == View::Settings) return false;
+    // Dashboard has no input row and never will: it is read and navigate only.
+    // Excluded HERE rather than at the call sites for the reason the shared
+    // predicate exists at all. The upgrade button's chat-gate branch places
+    // itself over chatInput's bounds, which on this tab are stale, so a
+    // hand-listed subset would have put an Upgrade button somewhere arbitrary
+    // on the dashboard for every free user out of messages.
+    if (currentTab == Tab::Dashboard) return false;
     if (currentTab == Tab::Chain && chainChatCollapsed_) return false;
     return true;   // Chat, Compare, Meters, Visualisation, Link, Chain (open)
 }
@@ -6812,6 +6934,9 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
 {
     if (!force && currentTab == t) return;
     currentTab = t;
+    // Remembered on the PROCESSOR so an editor recreate comes back here. See
+    // lastTabIndex in PluginProcessor.h.
+    processorRef.lastTabIndex = (int) t;
 
     // Tear down any active overlay views
     if (currentView == View::Compare) { currentView = View::Meters; hideCompareView(); }
@@ -6849,6 +6974,29 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
     // Per-tab setup
     switch (t)
     {
+        case Tab::Dashboard:
+            // Read and navigate only. Every chain-tab control off, every chat
+            // control off, and each setVisible written out per component: a
+            // `for (auto* b : {...}) b->setVisible(x)` loop is invisible to a
+            // grep for "<name>.setVisible", which is how the Chain-over-Compare
+            // bug survived its own author's audit.
+            chainScanBtn.setVisible(false);
+            chainStatusLabel.setVisible(false);
+            chainDebugJsonBox.setVisible(false);
+            chainRecommendLabel.setVisible(false);
+            chainSearchBox.setVisible(false);
+            chainPluginList.setVisible(false);
+            chainLoadBtn.setVisible(false);
+            chainListPanel.setVisible(false);
+            chatSidebar.setVisible(false);
+            chatScroll.setVisible(false);
+            chatInput.setVisible(false);
+            chatSendBtn.setVisible(false);
+            chatTextSizeBtn.setVisible(false);
+            // Cache first, then the TTL check. NOT a fetch on every switch.
+            openDashboardTab();
+            break;
+
         case Tab::Visualisation:
             chainScanBtn.setVisible(false);
             chainStatusLabel.setVisible(false);
@@ -7023,6 +7171,207 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
 
     resized();
     repaint();
+}
+
+// =============================================================================
+//  Session C: the Dashboard tab
+//
+//  The editor owns the three things the view must not: fetching, caching, and
+//  navigation. The view owns geometry and drawing and nothing else.
+// =============================================================================
+
+void EchoJayEditor::openDashboardTab()
+{
+    if (!api.isLoggedIn())
+    {
+        dashView_.setSignedOut(true);
+        return;
+    }
+    dashView_.setSignedOut(false);
+
+    // CACHE FIRST, ALWAYS. An empty pane that fills in later reads as broken
+    // even when the network is fine, and offline it is the difference between
+    // the feature degrading and the feature disappearing.
+    if (!dashView_.hasPayload())
+    {
+        juce::int64 at = 0;
+        auto cached = readDashboardCache(api.getUserInfo().email, at);
+        if (cached.getDynamicObject() != nullptr && at > 0)
+        {
+            ejDashLog("[dashboard] rendering disk cache from "
+                      + juce::Time(at).toString(true, true));
+            applyDashboardJson(cached, at, true);
+        }
+    }
+
+    // THE TTL, and the only other thing that may trigger a fetch. There is no
+    // dashboard timer: the 20s community poll must never pull this payload
+    // (5 Redis reads plus 4 Postgres queries against 1 Redis round trip), and
+    // a timer here would be that mistake wearing a different hat.
+    const juce::int64 ageMs = juce::Time::currentTimeMillis() - dashFetchedAtMs_;
+    if (dashFetchedAtMs_ == 0 || ageMs >= (juce::int64) dashTtlSeconds_ * 1000)
+        fetchDashboardPayload();
+    else
+        ejDashLog("[dashboard] tab open, payload " + juce::String(ageMs / 1000)
+                  + "s old, inside the " + juce::String(dashTtlSeconds_)
+                  + "s TTL, NOT fetching");
+}
+
+void EchoJayEditor::fetchDashboardPayload()
+{
+    if (dashLoading_) return;
+    dashLoading_ = true;
+    dashView_.setStatus(true, dashError_);
+    ejDashLog("[dashboard] GET /api/v2/dashboard?surface=plugin");
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.fetchDashboard([safeThis](const juce::var& json, int sc)
+    {
+        if (safeThis == nullptr) return;
+        safeThis->dashLoading_ = false;
+
+        if (sc != 200)
+        {
+            // KEEP whatever is on screen. A failed refresh must not replace a
+            // usable dashboard with an error: the cached view is still the
+            // user's best available answer and its timestamp already says how
+            // old it is.
+            safeThis->dashError_ =
+                sc == 401 ? juce::String("Sign in to refresh this.")
+              : sc == 404 ? juce::String("Not available on your account yet.")
+              : sc == 0   ? juce::String("No connection.")
+                          : juce::String("Could not refresh (") + juce::String(sc) + ").";
+            ejDashLog("[dashboard] http " + juce::String(sc)
+                      + ", keeping what is on screen");
+            safeThis->dashView_.setStatus(false, safeThis->dashError_);
+            safeThis->repaint();
+            return;
+        }
+
+        safeThis->dashError_.clear();
+        writeDashboardCache(safeThis->api.getUserInfo().email, json);
+        safeThis->applyDashboardJson(json, juce::Time::currentTimeMillis(), false);
+    });
+}
+
+void EchoJayEditor::applyDashboardJson(const juce::var& payload,
+                                       juce::int64 fetchedAtMs, bool fromCache)
+{
+    auto parsed = echojay::DashPayload::parse(payload);
+    if (!parsed.valid)
+    {
+        // Not a dashboard document. Say so rather than rendering an empty one,
+        // which would be indistinguishable from an empty account.
+        if (!fromCache)
+        {
+            dashError_ = "That response was not readable.";
+            dashView_.setStatus(false, dashError_);
+        }
+        return;
+    }
+
+    dashTtlSeconds_ = parsed.ttlSeconds;
+    if (!fromCache) dashFetchedAtMs_ = fetchedAtMs;
+
+    ejDashLog("[dashboard] payload applied "
+              + juce::String(fromCache ? "from cache" : "from network")
+              + ": projects=" + juce::String((int) parsed.projects.size())
+              + " chats=" + juce::String((int) parsed.recentChats.size())
+              + " chains=" + juce::String((int) parsed.chains.size())
+              + " onboardingComplete=" + juce::String(parsed.onboardingComplete ? 1 : 0));
+
+    dashView_.setPayload(std::move(parsed), fetchedAtMs, fromCache);
+    dashView_.setStatus(dashLoading_, dashError_);
+    resized();     // content height changed, and geometry is resized()'s job
+    repaint();
+}
+
+/**
+    Interprets an abstract DeepLink. The payload's target is NOT a URL scheme:
+    each renderer decides what it means, and here it means switch tab and
+    select the id.
+*/
+void EchoJayEditor::followDashLink(const echojay::DashLink& link)
+{
+    const auto& s = link.surface;
+
+    if (s == "chat")
+    {
+        switchToTab(Tab::Chat);           // this also kicks the workspace load
+        if (link.id.isEmpty()) return;
+        // The workspace may not be loaded yet on a cold editor, so the id is
+        // parked and consumed once in workspace.onLoaded rather than silently
+        // doing nothing.
+        bool found = false;
+        for (const auto& ch : workspace.getChats())
+            if (ch.id == link.id) { loadChatFromWorkspace(link.id); found = true; break; }
+        if (!found) pendingDashChatId_ = link.id;
+        return;
+    }
+
+    if (s == "chain")
+    {
+        // DELIBERATELY NOT openSavedChain. Opening a saved chain clears the
+        // rack and rebuilds it, destroying the state of every hosted plugin in
+        // it. That is a reasonable thing to do from the Chain tab, where it is
+        // the explicit purpose of the click. It is not a reasonable thing for
+        // a home screen to do to someone who mis-clicked a list. So this lands
+        // on the Chain tab with the saved-chains list open, one deliberate
+        // click away from loading.
+        switchToTab(Tab::Chain);
+        setChainSidebarMode(true);
+        return;
+    }
+
+    if (s == "meters")      { switchToTab(Tab::Meters);        return; }
+    if (s == "visualiser")  { switchToTab(Tab::Visualisation); return; }
+    if (s == "compare")     { switchToTab(Tab::Compare);       return; }
+    if (s == "settings")    { switchToTab(Tab::Settings);      return; }
+    if (s == "dashboard")   { switchToTab(Tab::Dashboard);     return; }
+
+    // surface == "web" never reaches here: the view renders those as text and
+    // builds no zone for them, because there is no plugin-to-web token path
+    // and the destination would be a login screen. Any other surface is a
+    // newer payload than this build knows about, and doing nothing is the
+    // correct answer to it.
+}
+
+/**
+    Uploaded project art. PROCEDURAL ART IS NEVER FETCHED: the payload sends
+    art.seed and ProjectArt draws it locally, which is the whole point of the
+    shared algorithm. This path exists only for art.kind == 'upload', where
+    there is a real image and no way to derive it.
+
+    Threaded exactly like EchoJayAPI::getJSON: a worker that bails before it
+    touches anything if the editor went away, and a completion marshalled back
+    to the message thread behind a SafePointer.
+*/
+void EchoJayEditor::fetchProjectArt(const juce::String& url)
+{
+    if (url.isEmpty()) return;
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+
+    juce::Thread::launch([safeThis, url]()
+    {
+        juce::Image img;
+        auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                           .withConnectionTimeoutMs(8000);
+        if (auto stream = juce::URL(url).createInputStream(options))
+        {
+            juce::MemoryBlock mb;
+            stream->readIntoMemoryBlock(mb);
+            img = juce::ImageFileFormat::loadFrom(mb.getData(), mb.getSize());
+        }
+
+        juce::MessageManager::callAsync([safeThis, url, img]()
+        {
+            if (safeThis == nullptr) return;
+            // A null image is handed over deliberately: the view records the
+            // failure so it does not ask again, and keeps drawing the seed
+            // art, which is why art.seed is sent for uploads too.
+            safeThis->dashView_.setArtImage(url, img);
+        });
+    });
 }
 
 void EchoJayEditor::saveSettingsToServer()
@@ -10745,6 +11094,11 @@ void EchoJayEditor::paint(juce::Graphics& g)
     bool chatOnlyMode   = (currentTab == Tab::Chat);
     bool comingSoonTab  = (currentTab == Tab::Chain);
     bool linkMonitorTab = (currentTab == Tab::Link);
+    // Session C: the Dashboard owns its content area entirely (one child
+    // component, drawn by DashboardView). Gated alongside the other two
+    // full-area tabs so the meter/visual block below cannot paint underneath
+    // it, which is the shape of the strip-showing-through bugs on Chain.
+    bool dashboardTab   = (currentTab == Tab::Dashboard);
     // Column split — SHARED formula with resized() (computeColumns)
     auto cols = computeColumns(bounds.getWidth());
     int chatW = cols.chatW, mW = cols.mW;
@@ -10900,6 +11254,24 @@ void EchoJayEditor::paint(juce::Graphics& g)
             g.setColour(active ? juce::Colour(0xff22d3ee) : juce::Colour(0xff7e7e93));
             g.setFont(EchoJayChrome::labelFont()); // shared with header controls — cannot drift
             g.drawText(kTabNames[i], r, juce::Justification::centred);
+        }
+
+        // Session C: the unread dot. CONSUMES dashUnreadDotRect_, which
+        // layoutTabStrip authored; measures nothing.
+        //
+        // VISIBILITY IS THE COUNT, NOT THE GENERATION. The generation
+        // (getDashUnreadGeneration, compared against dashUnreadSeen_ in the
+        // constructor's onDashUnreadChanged hook) says WHEN to repaint, and
+        // that is all it can honestly say. It cannot mean "seen": the plugin
+        // has no way to mark anything read, and clearing the dot when the user
+        // merely opened this tab would hide a notification they never saw,
+        // since community.latestAnnouncement is still null server side. The
+        // dot therefore tracks the server's counts and clears when the server
+        // says they were read.
+        if (!dashUnreadDotRect_.isEmpty() && processorRef.getDashUnread().total > 0)
+        {
+            g.setColour(juce::Colour(0xff22d3ee));
+            g.fillEllipse(dashUnreadDotRect_.toFloat());
         }
     }
 
@@ -11146,7 +11518,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         }
     }
 
-    if (!compactMode && !chatOnlyMode && (!visualOnlyMode || (visualOnlyMode && !visualMode)) && !comingSoonTab && !linkMonitorTab)
+    if (!compactMode && !chatOnlyMode && (!visualOnlyMode || (visualOnlyMode && !visualMode)) && !comingSoonTab && !linkMonitorTab && !dashboardTab)
     {
     // Vertical divider (not in visual-only / metersOnly mode)
     if (!visualOnlyMode) {
@@ -12531,6 +12903,17 @@ int EchoJayEditor::tabIndexIn (const TabRects& rects, juce::Point<int> p)
 void EchoJayEditor::layoutTabStrip (int width)
 {
     tabRects_ = computeTabRects (width);
+
+    // The unread dot on the DASHBOARD label, authored HERE rather than in
+    // paint(), which is the whole point of this function existing. A corner
+    // dot also needs no text measurement, so paint() stays free of the
+    // getStringWidth call that would have been the next geometry authority.
+    // Empty when the tab is too narrow to carry it, so paint() draws nothing
+    // rather than something overlapping the label.
+    const auto dashTab = tabRects_[(size_t) (int) Tab::Dashboard];
+    dashUnreadDotRect_ = (dashTab.getWidth() >= 44)
+        ? juce::Rectangle<int> (dashTab.getRight() - 15, dashTab.getY() + 7, 6, 6)
+        : juce::Rectangle<int>();
 }
 
 /**
@@ -12626,11 +13009,36 @@ void EchoJayEditor::resized()
     bool chatOnlyMode  = (currentTab == Tab::Chat);
     bool comingSoonTab  = (currentTab == Tab::Chain);
     bool linkMonitorTab = (currentTab == Tab::Link);
+    bool dashboardTab   = (currentTab == Tab::Dashboard);
     // Column split — SHARED formula with paint() (computeColumns). This
     // block previously used 32% 240-380 while paint used 35% 280-420,
     // leaving the input row short of the painted column edge.
     auto cols = computeColumns(b.getWidth());
     int chatW = cols.chatW, mW = cols.mW;
+
+    // ---- DASHBOARD tab: bounds AND visibility, authored UNCONDITIONALLY ----
+    //
+    // Not inside `if (dashboardTab)`. A component whose bounds and visibility
+    // are both written inside a tab test never runs on any other tab, so it
+    // keeps visible=true at this tab's coordinates everywhere else. That is
+    // exactly the Chain header Save buttons drawing over Compare, and hiding
+    // it in the tab-switch handler instead just moves the bug. The tab test
+    // lives INSIDE the single visibility expression, which therefore always
+    // evaluates, both ways.
+    {
+        const int abOffD = abBarShowing ? kAbBarH : 0;
+        dashViewport_.setBounds(0, topH, mW,
+                                juce::jmax(50, b.getHeight() - topH - abOffD));
+        dashViewport_.setVisible(dashboardTab && currentScreen == Screen::Main
+                                 && !compactMode && !visualOnlyMode);
+
+        // Content width, then content height from the ONE geometry author.
+        // layout() is pure in width, so calling it here and again from the
+        // component's own resized() produces identical rects.
+        const int dashW = juce::jmax(120, dashViewport_.getMaximumVisibleWidth());
+        const int dashH = juce::jmax(dashViewport_.getHeight(), dashView_.layout(dashW));
+        dashView_.setBounds(0, 0, dashW, dashH);
+    }
 
     // Link tab: the scrollable row list is the one child component; the
     // title + pinned Mix Bus card above it are painted directly

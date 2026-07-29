@@ -4,7 +4,7 @@ set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures")
 # Minimum macOS: Big Sur (11.0). Covers anything 4+ years old.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(EchoJay VERSION 2.23.58)
+project(EchoJay VERSION 2.23.60)
 
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/
@@ -148,6 +148,11 @@ target_sources(EchoJay PRIVATE
     # instance, because the unread counts are per account.
     Source/DashPoll.cpp
     Source/DashPoll.h
+    # Session C: the Dashboard tab. The SECOND renderer of the one dashboard
+    # payload (the web app is the first). Parses the payload, draws it, and
+    # owns every rect it draws, so nothing on it can leak onto another tab.
+    Source/DashboardTab.cpp
+    Source/DashboardTab.h
 )
 
 target_compile_definitions(EchoJay PUBLIC
