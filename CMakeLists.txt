@@ -280,3 +280,13 @@ set_target_properties(ejextract PROPERTIES OSX_ARCHITECTURES "arm64;x86_64")
 if(APPLE)
     target_link_libraries(ejextract PRIVATE "-framework CoreAudioKit")
 endif()
+
+# ============================================================================
+# ejmap: the standalone plugin mapping tool (GUI app + round-trip test).
+# Declared via add_subdirectory rather than inline like ejextract above: ejmap
+# owns its own version string and git-hash capture, and those are build knobs
+# that belong next to the sources they stamp, not in the plugin's CMakeLists.
+# Must come after add_subdirectory(JUCE) so juce_add_gui_app is defined.
+# Build it in build-ejmap, never build/.
+# ============================================================================
+add_subdirectory(tools/ejmap)

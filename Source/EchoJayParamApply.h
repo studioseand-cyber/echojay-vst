@@ -35,6 +35,39 @@
 namespace echojay
 {
 
+// ---------------------------------------------------------------------------
+// Map payload schema version. SINGLE SOURCE OF TRUTH for both binaries.
+//
+// It lives here, in the apply header, because apply is what actually consumes a
+// map. ejmap's EjmapSchema.h pulls these in with a using-declaration and pins
+// them with its own static_assert, so a bump on this side breaks the mapper's
+// build rather than producing maps EchoJay reads differently.
+//
+// Bumping the wire format means editing BOTH numbers here AND the pin in
+// EjmapSchema.h. That is the point: a schema change should not be a one-token
+// edit that nothing notices.
+// ---------------------------------------------------------------------------
+namespace schemaDetail
+{
+    /** "2.1" <-> 21. Ties the string form to the int form at compile time, so
+        changing one without the other cannot get past the compiler.
+    */
+    constexpr bool schemaStringMatches (const char* s, int v) noexcept
+    {
+        return s[0] == (char) ('0' + (v / 10))
+            && s[1] == '.'
+            && s[2] == (char) ('0' + (v % 10))
+            && s[3] == '\0';
+    }
+}
+
+inline constexpr int         kMapSchemaVersion = 21;      // 2.1
+inline constexpr const char* kMapSchemaString  = "2.1";
+
+static_assert (schemaDetail::schemaStringMatches (kMapSchemaString, kMapSchemaVersion),
+               "kMapSchemaVersion and kMapSchemaString disagree. Bump both together, "
+               "and update the pin in tools/ejmap/Source/EjmapSchema.h.");
+
 struct ApplyResult
 {
     juce::String semantic;   // "ratio", "threshold_db", ...

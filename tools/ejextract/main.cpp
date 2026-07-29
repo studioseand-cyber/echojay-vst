@@ -39,6 +39,7 @@
 #include <sys/stat.h>   // ::chmod for machine_id (0600)
 
 #include "EchoJayParamExtractor.h"
+#include "EchoJayAuRegistry.h"   // the one AU walk, shared with ejmap
 
 // Same default the plugin compiles in (Source/EchoJayAPI.cpp); the real
 // endpoint is read from auth.json when the user has ever logged in.
@@ -832,60 +833,25 @@ static int runAuRegistry (const juce::File& outDir, bool enumerateOnly)
     std::cerr << "AU host not built in; --au-registry is macOS/AU only\n";
     return 1;
 #else
-    juce::AudioUnitPluginFormat au;
-    // searchPathsForPlugins enumerates the AudioComponent registry: it returns
-    // component IDENTIFIER strings ("AudioUnit:Effects/aufx,STEM,ksWV") and
-    // does NOT run plugin code. We parse vendor + identity FROM the identifier
-    // string and never resolve in this driver - findAllTypesForFile on an AU
-    // identifier actually instantiates the plugin, which would load ~1400
-    // plugins in-process (slow, and one hang kills the whole run). All
-    // instantiation stays in the isolated worker.
-    auto ids = au.searchPathsForPlugins (au.getDefaultLocationsToSearch(),
-                                         /*recursive*/ true,
-                                         /*allowAsync (AUv3)*/ false);
-
-    // Manufacturer 4-char OSType code -> display name (from the AU registry
-    // survey). Unknown codes display as the raw code; only appl and Ecjy are
-    // ever EXCLUDED.
-    auto vendorName = [] (const juce::String& code) -> juce::String
-    {
-        static const std::map<juce::String, juce::String> m {
-            { "ksWV", "Waves" }, { "appl", "Apple" }, { "SSLN", "SSL" },
-            { "McDP", "McDSP" }, { "Ecjy", "EchoJay" }, { "Brwx", "Plugin Alliance" },
-            { "-NI-", "Native Instruments" }, { "SfTb", "Softube" },
-            { "HRSN", "Harrison" }, { "VST ", "Antares" }, { "OekS", "oeksound" },
-        };
-        auto it = m.find (code);
-        return it != m.end() ? it->second : code;
-    };
-    // Parse the manufacturer OSType from an AU identifier: the last
-    // comma-separated field of the segment after the final '/'.
-    auto manuOf = [] (const juce::String& id) -> juce::String
-    {
-        auto tail = id.fromLastOccurrenceOf ("/", false, false);   // "aufx,STEM,ksWV"
-        auto code = tail.fromLastOccurrenceOf (",", false, false);
-        return code.length() == 4 ? code : juce::String();         // empty => unparsed
-    };
+    // The walk, the vendor parse and the Apple/EchoJay exclusions all moved into
+    // EchoJayAuRegistry.h so ejmap enumerates through the same code. The body
+    // that used to be here is unchanged in behaviour, only relocated: it still
+    // never resolves an identifier in-driver, because findAllTypesForFile on an
+    // AU identifier instantiates the plugin and that would load ~1400 plugins
+    // in-process. All instantiation stays in the isolated worker.
+    const auto census = echojay::auregistry::buildCensus();
 
     struct Target { juce::String id, vendor; };
     std::vector<Target> targets;
-    std::map<juce::String, int> byVendor;
-    int excludedApple = 0, excludedEcho = 0, unparsed = 0;
-    for (const auto& id : ids)
-    {
-        const auto code = manuOf (id);
-        if (code == "appl") { ++excludedApple; continue; }   // AUGraphicEQ et al: not chain plugins
-        if (code == "Ecjy") { ++excludedEcho;  continue; }
-        if (code.isEmpty()) ++unparsed;                       // keep it; worker will resolve
-        const auto vendor = vendorName (code.isEmpty() ? juce::String ("(unparsed)") : code);
-        byVendor[vendor]++;
-        targets.push_back ({ id, vendor });
-    }
+    for (const auto& t : census.targets)
+        targets.push_back ({ t.identifier, t.vendorName });
 
-    std::cout << "AU registry: " << ids.size() << " component(s) enumerated, "
+    const auto& byVendor = census.byVendor;
+
+    std::cout << "AU registry: " << census.enumerated << " component(s) enumerated, "
               << targets.size() << " candidate(s) after excluding Apple ("
-              << excludedApple << ") and EchoJay (" << excludedEcho << ")"
-              << (unparsed ? "; " + juce::String (unparsed) + " identifier(s) unparsed (kept)" : "")
+              << census.excludedApple << ") and EchoJay (" << census.excludedEcho << ")"
+              << (census.unparsed ? "; " + juce::String (census.unparsed) + " identifier(s) unparsed (kept)" : "")
               << "\n";
     std::cout << "by vendor:\n";
     std::vector<std::pair<juce::String,int>> rows (byVendor.begin(), byVendor.end());
