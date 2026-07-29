@@ -591,6 +591,7 @@ public:
         ballistics_.reset();
         gate_.reset();
         grDb_ = 0.0f;
+        inDb_ = dyn::kSilenceDb;
         makeupGain_ = dyn::dbToGain (makeupDb_);
         mixSmoothed_ = mix_;
     }
@@ -634,6 +635,18 @@ public:
     // lock here would be on the audio thread.
     float gainReductionDb() const noexcept { return grDb_; }
 
+    // The level the DETECTOR is currently seeing, in dBFS — the same number the
+    // gain computer was just asked about. One more benign racy float on exactly
+    // the contract above, and the whole data path behind the live dot riding
+    // the transfer curve (VISUALS_PLAN.md, "One float tap"): the curve is
+    // analytic, but WHERE ON IT the signal is sitting is not, and without this
+    // a threshold set 10 dB too low still looks identical on the knobs.
+    //
+    // dyn::kSilenceDb for digital silence, never -infinity, for the same reason
+    // the detector reports it that way: an infinite level poisons every
+    // subtraction downstream of it, including the editor's coordinate maths.
+    float detectorLevelDb() const noexcept { return inDb_; }
+
     // ---- audio thread ------------------------------------------------------
     // One sample of sidechain in, one LINEAR gain out (reduction only — makeup
     // and mix are applied by the caller, or by process()).
@@ -641,6 +654,8 @@ public:
     {
         const float level   = detector_.process (scLeft, scRight);
         const float levelDb = dyn::gainToDb (level);
+
+        inDb_ = levelDb;
 
         float targetDb;
 
@@ -722,6 +737,7 @@ private:
     float  makeupSmoothCoeff_ = 1.0f;
 
     float  grDb_ = 0.0f;
+    float  inDb_ = dyn::kSilenceDb;
 };
 
 // ---------------------------------------------------------------------------

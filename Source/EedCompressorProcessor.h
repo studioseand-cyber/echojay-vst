@@ -52,6 +52,16 @@ public:
     // For the editor's GR meter. Negative dB, 0 when not reducing.
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
 
+    // For the live dot on the editor's transfer curve: the level the detector
+    // is seeing, dBFS. Same one-float contract as the line above.
+    float detectorLevelDb() const noexcept { return core_.detectorLevelDb(); }
+
+    // The transfer curve the editor draws is drawn from the core's OWN gain
+    // computer, not from a second copy of "threshold, ratio, knee" in UI code.
+    // Read-only use: the editor dials through setParamValue like everything
+    // else, so there is no second write path into the DSP.
+    const echojay::DynamicsCore& core() const noexcept { return core_; }
+
 private:
     echojay::DynamicsCore core_;
 

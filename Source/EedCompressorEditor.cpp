@@ -8,10 +8,16 @@ using namespace echojay::device;
 
 namespace
 {
-    // Seven dials on one line plus a meter under them. The rack sizes down from
-    // here, and the face editor wraps the row rather than overlapping it.
+    // Seven dials on one line, a meter under them, and a transfer curve seated
+    // above. The rack sizes down from here, and the curve is the first thing to
+    // give up its room (EedDynamicsFaceEditor::layoutContent).
     constexpr int kDefaultW = 540;
-    constexpr int kDefaultH = 190;
+    constexpr int kCurveH   = 132;
+    constexpr int kDefaultH = 190 + kCurveH + 6;
+
+    // Below this the curve is a smear rather than a reading, so it is dropped
+    // entirely instead of drawn uselessly small.
+    constexpr int kMinCurveH = 54;
 
     // The device's whole front panel, in one table. Ranges and defaults are NOT
     // here — they come from the schema, so a knob cannot travel somewhere the AI
@@ -37,6 +43,51 @@ EedCompressorEditor::EedCompressorEditor (EedCompressorProcessor& p)
                              kKnobs, (int) std::size (kKnobs),
                              24.0f,
                              [&p] { return p.gainReductionDb(); },
-                             kDefaultW, kDefaultH)
+                             kDefaultW, kDefaultH),
+      proc_ (p)
 {
+    curve_.setCaption ("TRANSFER");
+    curve_.setFloorDb (-60.0f);
+    addAndMakeVisible (curve_);
+
+    // Seed it before the first timer tick, so the curve is already correct in
+    // the frame the editor opens in rather than one 50 ms later.
+    refreshExtras();
+}
+
+int EedCompressorEditor::topContentHeight() const
+{
+    return kCurveH;
+}
+
+void EedCompressorEditor::layoutTopContent (juce::Rectangle<int> area)
+{
+    // An area shorter than kMinCurveH is a rack slot that does not have room
+    // for a picture; hiding it is what keeps the dials whole.
+    const bool room = area.getHeight() >= kMinCurveH && area.getWidth() >= 80;
+
+    curve_.setVisible (room);
+    if (room) curve_.setBounds (area);
+}
+
+void EedCompressorEditor::refreshExtras()
+{
+    const bool byp = proc_.isBypassed();
+
+    // ---- analytic: the curve is a pure function of the dialled values -------
+    // Read through the same getParamValue path the knobs and an AI move use, so
+    // the picture cannot be looking at a different set of numbers than the DSP.
+    curve_.setCurve ((float) proc_.getParamValue (EedCompressorProcessor::kThresholdDb),
+                     (float) proc_.getParamValue (EedCompressorProcessor::kRatio),
+                     (float) proc_.getParamValue (EedCompressorProcessor::kKneeDb),
+                     0.0f,                                   // a compressor has no range cap
+                     echojay::DynamicsMode::Compress);
+
+    curve_.setMakeupDb ((float) proc_.getParamValue (EedCompressorProcessor::kMakeupDb));
+
+    // ---- one float tap: where on that curve the signal is sitting ----------
+    curve_.setDimmed (byp);
+    curve_.setInputLevelDb (byp ? echojay::viz::TransferCurveView::kNoLevel
+                                : proc_.detectorLevelDb());
+    curve_.setGainReductionDb (byp ? 0.0f : proc_.gainReductionDb());
 }
