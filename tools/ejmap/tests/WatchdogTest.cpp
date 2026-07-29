@@ -37,18 +37,37 @@ int main (int argc, char** argv)
 
     const juce::String pid = "VST3:/fake/path/HangsForever.vst3";
 
-    std::cout << "run_id=" << ledger.currentRunId() << std::endl;
+    // Same order the app uses: recovery first, which is also where emergency
+    // rows from a previous watchdog stop get folded back into the ledger.
+    const auto recovered = ledger.recoverFromCrash();
+    std::cout << "run_id=" << ledger.currentRunId()
+              << " recovered=" << (recovered.isEmpty() ? "(none)" : recovered) << std::endl;
     ledger.beginLoad (pid, "HangsForever", "TestVendor", "VST3", "1.0",
                       "scan", "findAllTypesForFile");
+
+    const bool holdLock = (argc >= 3 && juce::String (argv[2]) == "--hold-lock");
 
     {
         // 800 ms deadline, then block for far longer. This is the shape of
         // bloom.vst3: a call into plugin code that never comes back.
         ejmap::Watchdog::Scope guard (watchdog, "findAllTypesForFile", pid,
                                       "HangsForever", "VST3", "scan", 800);
-        std::cout << "armed; hanging now" << std::endl;
-        std::cout.flush();
-        juce::Thread::sleep (20000);
+
+        if (holdLock)
+        {
+            // The nastier case: the wedged thread is also holding the ledger
+            // lock, so the watchdog's normal write path can never complete.
+            // It must fall back to the lock-free emergency file.
+            std::cout << "armed; hanging WITH the ledger lock held" << std::endl;
+            std::cout.flush();
+            ledger.testOnlyHoldLock (20000);
+        }
+        else
+        {
+            std::cout << "armed; hanging now" << std::endl;
+            std::cout.flush();
+            juce::Thread::sleep (20000);
+        }
     }
 
     // Only reached if the watchdog did NOT fire.

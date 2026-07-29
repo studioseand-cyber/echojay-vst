@@ -51,6 +51,10 @@ public:
                               + ". Marked crash_on_load and quarantined.",
                         juce::dontSendNotification);
 
+        addAndMakeVisible (summaryButton);
+        summaryButton.setButtonText ("Summary");
+        summaryButton.onClick = [this] { writeRunSummary(); };
+
         addAndMakeVisible (editorHolder);
 
         setSize (1280, 820);
@@ -70,6 +74,8 @@ public:
         scanButton.setBounds (top.removeFromLeft (90));
         top.removeFromLeft (6);
         loadButton.setBounds (top.removeFromLeft (130));
+        top.removeFromLeft (6);
+        summaryButton.setBounds (top.removeFromLeft (90));
         top.removeFromLeft (12);
         status.setBounds (top);
 
@@ -87,10 +93,47 @@ public:
 
 private:
     //==========================================================================
+    /** Re-entrancy guard.
+
+        The editor-ready wait pumps the message loop, which is required (a
+        bridged editor connects on the message thread) but leaves every control
+        live while load() is still on the stack. A second click would re-enter
+        loadSelected, call host.unload(), and destroy the editor the OUTER
+        load() is still holding a pointer to.
+
+        Two layers on purpose. Disabling the controls is what the human sees;
+        the flag is what actually holds, because a double-click, a keyboard
+        shortcut or a future call site does not have to go through a button.
+    */
+    struct BusyScope
+    {
+        explicit BusyScope (MainComponent& o) : owner (o)
+        {
+            owner.busy = true;
+            owner.scanButton.setEnabled (false);
+            owner.loadButton.setEnabled (false);
+            owner.list.setEnabled (false);
+        }
+
+        ~BusyScope()
+        {
+            owner.busy = false;
+            owner.scanButton.setEnabled (true);
+            owner.list.setEnabled (true);
+            owner.loadButton.setEnabled (owner.list.getSelectedRow() >= 0);
+        }
+
+        MainComponent& owner;
+        JUCE_DECLARE_NON_COPYABLE (BusyScope)
+    };
+
     void runScan()
     {
+        if (busy)
+            return;
+
+        BusyScope guard (*this);
         status.setText ("Scanning...", juce::dontSendNotification);
-        scanButton.setEnabled (false);
 
         lastScan = scanner.scan (ledger, watchdog);
 
@@ -101,7 +144,6 @@ private:
             rows.add (p);
 
         list.updateContent();
-        scanButton.setEnabled (true);
 
         juce::String msg;
         msg << rows.size() << " effects, " << lastScan.distinctProducts << " distinct products; "
@@ -148,8 +190,49 @@ private:
         }
     }
 
+    /** M1's "counts from disk" row. Reads the ledger back off the file through
+        getOutcomeCounts, scoped to THIS run, and writes what it found. Never an
+        in-memory tally: that is the rule this project adopted after the tripwire
+        bug survived its own test.
+    */
+    void writeRunSummary()
+    {
+        juce::StringArray out;
+        out.add ("run_id=" + ledger.currentRunId());
+
+        for (const auto* stage : { "load", "scan" })
+        {
+            auto& counts = ledger.getOutcomeCounts (stage, ledger.currentRunId());
+            int total = 0;
+            juce::StringArray parts;
+            for (juce::HashMap<juce::String, int>::Iterator it (counts); it.next();)
+            {
+                parts.add (juce::String (it.getKey()) + "=" + juce::String (it.getValue()));
+                total += it.getValue();
+            }
+            parts.sort (true);
+            out.add (juce::String (stage) + "_total=" + juce::String (total));
+            for (const auto& p : parts)
+                out.add ("  " + juce::String (stage) + "." + p);
+        }
+
+        out.add ("--- every run on disk ---");
+        for (const auto& r : ledger.listRuns())
+            out.add (r.runId + "  rows=" + juce::String (r.rowCount) + "  first_at=" + r.startedAt);
+
+        auto f = ledger.runArtifact ("run-summary", "log");
+        f.replaceWithText (out.joinIntoString ("\n") + "\n");
+        status.setText ("Run summary written to " + f.getFileName(), juce::dontSendNotification);
+    }
+
     void loadSelected()
     {
+        // A nested call during the editor-ready wait is a no-op, not a crash.
+        if (busy)
+            return;
+
+        BusyScope guard (*this);
+
         const int row = list.getSelectedRow();
         if (! juce::isPositiveAndBelow (row, rows.size()))
             return;
@@ -285,7 +368,8 @@ private:
     juce::Array<ScannedPlugin> rows;
     juce::String crashedId;
 
-    juce::TextButton scanButton, loadButton;
+    juce::TextButton scanButton, loadButton, summaryButton;
+    bool busy = false;
     juce::Label      status;
     juce::ListBox    list;
     juce::Component  editorHolder;

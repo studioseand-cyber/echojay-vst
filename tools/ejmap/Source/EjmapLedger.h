@@ -132,6 +132,7 @@ public:
         ledgerFile    = root.getChildFile ("ledger.json");
         inflightFile  = root.getChildFile ("inflight.json");
         quarantineFile= root.getChildFile ("quarantine.json");
+        emergencyFile = root.getChildFile ("watchdog-emergency.jsonl");
 
         runId = makeRunId();
 
@@ -157,6 +158,8 @@ public:
     */
     juce::String recoverFromCrash()
     {
+        absorbEmergencyRows();
+
         const juce::ScopedLock sl (lock);
 
         if (! inflightFile.existsAsFile())
@@ -240,20 +243,65 @@ public:
         inflightFile.deleteFile();
     }
 
-    /** The watchdog's exit path. Called from the watchdog thread with the
-        message thread wedged inside plugin code, immediately before _exit, so
-        it must take the lock, write, flush and quarantine without depending on
-        anything the stuck thread owns.
+    /** The watchdog's exit path, called from the watchdog thread with the
+        message thread wedged inside plugin code, immediately before _Exit.
+
+        BY DESIGN the wedged thread does not hold this lock. Every call site
+        releases it before entering plugin code: beginLoad returns before the
+        Watchdog::Scope is constructed, isQuarantined returns before the probe,
+        and PluginHost never touches the Ledger at all. The re-entrancy guard in
+        MainComponent keeps it that way while the editor-ready wait pumps the
+        message loop, since runScan is the one message-thread path that does
+        take the lock.
+
+        That is an argument, not a guarantee, and an argument is the wrong thing
+        to bet the only record of a hang on. So this does not block: it tries
+        for a bounded period, and if the lock never comes it writes the row to a
+        separate lock-free file instead. A deadlock still produces a row.
     */
     void recordWatchdogExpiry (LedgerRecord r, const juce::String& quarantineReason)
     {
-        const juce::ScopedLock sl (lock);
         r.at      = nowIso();
         r.runId   = runId;
         r.outcome = LoadOutcome::timeout;
-        appendLocked (r);
-        if (r.pluginId.isNotEmpty())
-            quarantineLocked (r.pluginId, quarantineReason);
+
+        const auto giveUpAt = juce::Time::getMillisecondCounter()
+                                + (juce::uint32) kWatchdogLockWaitMs;
+        bool got = false;
+        while (juce::Time::getMillisecondCounter() < giveUpAt)
+        {
+            if (lock.tryEnter()) { got = true; break; }
+            juce::Thread::sleep (10);
+        }
+
+        if (got)
+        {
+            appendLocked (r);
+            if (r.pluginId.isNotEmpty())
+                quarantineLocked (r.pluginId, quarantineReason);
+            inflightFile.deleteFile();
+            lock.exit();
+            return;
+        }
+
+        // Lock never came. Something holds it and is not going to let go, which
+        // is exactly when losing the row would be least forgivable. Append to a
+        // file nothing else writes, with no lock and no shared state. Absorbed
+        // into ledger.json on the next launch.
+        r.detail << " [ledger lock unavailable after " << kWatchdogLockWaitMs
+                 << "ms; row written to " << emergencyFile.getFileName() << "]";
+
+        juce::FileOutputStream out (emergencyFile);
+        if (out.openedOk())
+        {
+            out.setPosition (emergencyFile.getSize());
+            out.writeText (juce::JSON::toString (r.toVar(), true) + "\n", false, false, nullptr);
+            out.flush();
+        }
+
+        // Clear inflight here too. Deleting a file needs no lock, and leaving it
+        // makes the next launch record a SECOND row (crash_on_load) for the same
+        // event, which would double-count one hang in the outcome summary.
         inflightFile.deleteFile();
     }
 
@@ -364,7 +412,50 @@ public:
         return out;
     }
 
+    /** How long the watchdog waits for the ledger lock before writing to the
+        emergency file instead. Short: the process is about to stop existing and
+        a row somewhere beats a row nowhere.
+    */
+    static constexpr int kWatchdogLockWaitMs = 2000;
+
+    /** TEST ONLY. Holds the lock for a fixed period so the watchdog's emergency
+        path can be OBSERVED rather than assumed. An untested fallback is how
+        every silent drop in this project started.
+    */
+    void testOnlyHoldLock (int ms)
+    {
+        const juce::ScopedLock sl (lock);
+        juce::Thread::sleep (ms);
+    }
+
 private:
+    /** Rows the watchdog had to write lock-free get folded into the ledger on
+        the next launch, so there is one place to look. Losing them to a second
+        file nobody reads would be the silent-drop class wearing a hat.
+    */
+    void absorbEmergencyRows()
+    {
+        const juce::ScopedLock sl (lock);
+
+        if (! emergencyFile.existsAsFile())
+            return;
+
+        juce::StringArray lines;
+        lines.addLines (emergencyFile.loadFileAsString());
+
+        juce::FileOutputStream out (ledgerFile);
+        if (! out.openedOk())
+            return;
+
+        out.setPosition (ledgerFile.getSize());
+        for (const auto& line : lines)
+            if (line.trim().isNotEmpty())
+                out.writeText (line + "\n", false, false, nullptr);
+        out.flush();
+
+        emergencyFile.deleteFile();
+    }
+
     /** A row with no run_id predates run identity. It becomes one synthetic
         legacy run rather than being folded into the current one, which would
         credit this session with work it did not do.
@@ -478,7 +569,7 @@ private:
         return juce::Time::getCurrentTime().toISO8601 (true);
     }
 
-    juce::File root, ledgerFile, inflightFile, quarantineFile;
+    juce::File root, ledgerFile, inflightFile, quarantineFile, emergencyFile;
     juce::String runId;
     juce::StringArray quarantined;
     juce::HashMap<juce::String, juce::String> quarantineReasons;
