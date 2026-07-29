@@ -335,10 +335,19 @@ it:
 
 Carried forward and binding:
 
-- **Build via `~/reinstall-v2.sh`.** The on-screen version is the proof of a fresh
-  binary. Confirm the binary timestamp is newer than the newest source before
-  installing, and beware that a same-second timestamp makes this build system report
-  "Built target" while doing nothing.
+- **Build via `~/reinstall-v2.sh`.** CORRECTED 29 Jul 2026: this used to say "the
+  on-screen version is the proof of a fresh binary", which directly contradicts the
+  standing rule in `CHAIN_AI_BUILD_SPEC.md` and is WRONG. That rule cost a full
+  afternoon: an installed component read v2.23.99 while containing object code older
+  than three sessions' work, because the version counter and the file timestamp churn
+  independently of the linked object code. **Binary verification is a CONTENT check**,
+  `strings` the installed Mach-O for a marker the feature under test actually emits.
+  Neither the version number nor the mtime is evidence.
+- `~/reinstall-v2.sh` now takes an atomic `mkdir ~/.echojay-build.lock` before it does
+  anything, because the install destination is shared across worktrees and whoever
+  builds last wins. It also runs `tools/tabstrip_test` and `tools/art_parity_test`
+  between a green build and the install, so a geometry or parity regression never
+  reaches a DAW.
 - **Never two Claude Code sessions building the shared repo at once.**
 - **Logic recreates the editor** on Link window switches. Timers and state live on the
   processor.

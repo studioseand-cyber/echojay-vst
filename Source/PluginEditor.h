@@ -2429,6 +2429,12 @@ private:
     // outlives this editor, which Logic destroys on every Link window
     // switch. Bound in the constructor's init list from processorRef, and
     // the name stays `api` so all 73 call sites read unchanged.
+    // Session C: the unread generation this editor has already drawn. The
+    // COUNTS live on the processor; this is the only dashboard state the
+    // editor owns, and losing it on an editor recreation is harmless because
+    // the constructor re-reads it.
+    int dashUnreadSeen_ = 0;
+
     EchoJayAPI& api;
     EchoJayWorkspace workspace { api };
 

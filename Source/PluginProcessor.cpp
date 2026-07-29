@@ -343,9 +343,144 @@ EchoJayProcessor::EchoJayProcessor()
     }
 }
 
+// ===== Session C: the community poll =========================================
+//
+// Lives on the processor because Logic destroys and recreates the editor on
+// every Link window switch. See the note above DashboardUnread in the header.
+
+void EchoJayProcessor::startDashboardPoll()
+{
+    // Idempotent: the editor calls this on construction, and there may have
+    // been twenty editors already. isTimerRunning is the whole guard.
+    if (dashPollTimer.isTimerRunning())
+        return;
+
+    dashPollTimer.tick = [this] { dashPollTick(); };
+
+    // Fire once immediately so a freshly opened editor does not wait 20
+    // seconds for a badge the server could have told us about at once. The
+    // rev check below makes a redundant first tick cost nothing visible.
+    dashPollTick();
+
+    // 20s, per the spec. One Redis round trip and zero Postgres, which is
+    // what makes this affordable at 11,285 accounts. The DASHBOARD PAYLOAD
+    // MUST NEVER BE FETCHED ON THIS INTERVAL: it carries community.unread,
+    // which makes it tempting, and it costs 5 Redis reads plus 4 Postgres
+    // queries, roughly a hundred times this per tick.
+    dashPollTimer.startTimer(20000);
+}
+
+void EchoJayProcessor::stopDashboardPoll()
+{
+    dashPollTimer.stopTimer();
+    dashPollTimer.tick = nullptr;
+}
+
+void EchoJayProcessor::dashPollTick()
+{
+    // A tick landing while the previous request is still out is DROPPED, not
+    // queued. At 20s interval against a 5s timeout this should not happen;
+    // if it does, a queue would hide a stalled network behind a growing
+    // backlog rather than showing it.
+    if (dashPollInFlight)
+    {
+       #if ECHOJAY_DEV_TRANSPORT
+        juce::Logger::writeToLog("[dash-poll] tick " + juce::String(dashPollTickCount)
+                                 + " SKIPPED, previous request still in flight");
+       #endif
+        return;
+    }
+
+    // Counted at FIRE, not at completion, because the question this number
+    // answers is "did the timer keep running", not "did the network work".
+    ++dashPollTickCount;
+    dashPollInFlight = true;
+
+   #if ECHOJAY_DEV_TRANSPORT
+    // THE LINK WINDOW INSTRUMENTATION. Permanent, and compiled out of every
+    // release artefact: ECHOJAY_DEV_TRANSPORT is OFF by default and
+    // build-installer.sh never passes it (RELEASE.md, "Release gate").
+    //
+    // WHAT IT IS FOR. Logic recreates the editor on every Link window switch.
+    // If this timer were ever moved onto the editor, tickCount would restart
+    // at 0 on each switch. Switch windows a few times and read the log: a
+    // count that keeps climbing means the timer is where it belongs. That is
+    // a thirty second check, and it will still answer the same question in
+    // six months when somebody changes the editor lifecycle, which is exactly
+    // when a one-off manual verification has expired.
+    juce::Logger::writeToLog("[dash-poll] tick " + juce::String(dashPollTickCount)
+                             + " firing, rev=" + juce::String(dashUnread.rev)
+                             + " unread=" + juce::String(dashUnread.total));
+   #endif
+
+    // getJSON already launches a background thread and marshals the
+    // completion back with MessageManager::callAsync, guarded by its own
+    // `alive` shared_ptr so a callback cannot fire into a destroyed plugin.
+    // That is why there is no SafePointer here: this lambda touches only the
+    // PROCESSOR, whose lifetime that flag already covers. The editor is
+    // reached solely through onDashUnreadChanged, which the editor clears in
+    // its own destructor.
+    api.pollCommunity([this](const juce::var& json, int status)
+    {
+        dashPollInFlight = false;
+
+        if (status != 200)
+        {
+           #if ECHOJAY_DEV_TRANSPORT
+            juce::Logger::writeToLog("[dash-poll] tick " + juce::String(dashPollTickCount)
+                                     + " http " + juce::String(status) + ", keeping last known counts");
+           #endif
+            // A failed poll changes NOTHING. The badge keeps showing the last
+            // known state rather than dropping to zero, because "we could not
+            // ask" is not the same as "there is nothing new".
+            return;
+        }
+
+        const auto* obj = json.getDynamicObject();
+        if (obj == nullptr) return;
+
+        const juce::int64 rev = (juce::int64) (double) obj->getProperty("rev");
+
+        // THE REV CHECK, which is the point of this endpoint. Monotonic
+        // server counter: if it has not moved there is nothing new, so do
+        // nothing at all. No state write, no generation bump, no repaint, and
+        // above all no payload fetch.
+        if (rev == dashUnread.rev)
+        {
+           #if ECHOJAY_DEV_TRANSPORT
+            juce::Logger::writeToLog("[dash-poll] tick " + juce::String(dashPollTickCount)
+                                     + " rev unchanged at " + juce::String(rev) + ", no work");
+           #endif
+            return;
+        }
+
+        dashUnread.rev           = rev;
+        dashUnread.total         = (int) obj->getProperty("total");
+        dashUnread.announcements = (int) obj->getProperty("announcements");
+        dashUnread.team          = (int) obj->getProperty("team");
+        dashUnread.direct        = (int) obj->getProperty("direct");
+        ++dashUnreadGeneration;
+
+       #if ECHOJAY_DEV_TRANSPORT
+        juce::Logger::writeToLog("[dash-poll] tick " + juce::String(dashPollTickCount)
+                                 + " rev MOVED to " + juce::String(rev)
+                                 + " unread=" + juce::String(dashUnread.total)
+                                 + " gen=" + juce::String(dashUnreadGeneration));
+       #endif
+
+        if (onDashUnreadChanged)
+            onDashUnreadChanged();
+    });
+}
+
 EchoJayProcessor::~EchoJayProcessor()
 {
     ejTeardownLog("~EchoJayProcessor enter");
+
+    // The poll outlives every editor but not the processor. Stopped FIRST, so
+    // no tick can fire into members being torn down below.
+    stopDashboardPoll();
+    onDashUnreadChanged = nullptr;
 
     // Signal background work to stop touching members.
     isShuttingDown.store(true);

@@ -314,6 +314,53 @@ public:
     juce::String pendingChannelUid;
     juce::StringArray chatRoles, chatContents; // for API context window
 
+    // ===== Session C: the community poll, ON THE PROCESSOR ================
+    //
+    // SAME RULE AS chatHistory, and it is the reason EchoJayAPI was moved
+    // here. Logic destroys and recreates the plugin editor on every Link
+    // window switch, every couple of minutes in real Link work. A juce::Timer
+    // owned by the editor would be destroyed and reconstructed on each of
+    // those, so a 20 second poll would restart its interval constantly and
+    // the unread count would reset to zero every time the user glanced at the
+    // Link window. The badge would appear to flicker at random and nobody
+    // could reproduce it on demand.
+    //
+    // So the timer and the counts live here, on the thing that outlives every
+    // editor, and the editor is a passive listener that does no network work.
+
+    struct DashboardUnread
+    {
+        int total = 0, announcements = 0, team = 0, direct = 0;
+        // Monotonic server counter. Starts at -1 rather than 0 because 0 is a
+        // legitimate server value: starting at 0 would make the very first
+        // poll look like "unchanged" and skip its update.
+        juce::int64 rev = -1;
+    };
+
+    /** Current unread counts. MESSAGE THREAD ONLY. Written only by the poll
+        callback after it marshals back; read by the editor to draw the dot. */
+    DashboardUnread dashUnread;
+
+    /** Bumped whenever dashUnread actually changes. A recreated editor
+        compares this against what it last drew, rather than diffing four
+        fields, to decide whether it needs a repaint. */
+    int dashUnreadGeneration = 0;
+
+    /** Fired on the message thread after dashUnread changes. The editor sets
+        this in its constructor and CLEARS IT IN ITS DESTRUCTOR: a stale
+        std::function holding a dangling editor pointer is exactly the crash
+        the editor-recreation cycle would produce twice a minute. */
+    std::function<void()> onDashUnreadChanged;
+
+    /** Start the 20s poll if it is not already running. Idempotent, because
+        the editor calls it on construction and the processor neither knows
+        nor cares how many editors have come and gone. */
+    void startDashboardPoll();
+
+    /** Stop it. Called from the processor destructor, NOT from the editor's:
+        the whole point is that the poll outlives the editor. */
+    void stopDashboardPoll();
+
     // Visual mode state — persisted with DAW session
     int visualPreset = 0;   // 0=Orb, 1=Ring, 2=Helix, 3=Scatter
     int visualTheme = 1;    // 0=Nebula, 1=Aurora, 2=Solar, 3=Crystal
@@ -419,6 +466,32 @@ private:
     // Declared AFTER chainHost and before nothing that uses it at
     // construction. See getApi() above for the lifetime argument.
     EchoJayAPI api;
+
+    // The poll timer. A nested Timer rather than making the processor inherit
+    // juce::Timer, so this cannot be confused with any other periodic work and
+    // so timerCallback has exactly one meaning in this class.
+    struct PollTimer : juce::Timer
+    {
+        std::function<void()> tick;
+        void timerCallback() override { if (tick) tick(); }
+    };
+    PollTimer dashPollTimer;
+
+    /** One poll tick. Runs on the message thread, fires the request off it. */
+    void dashPollTick();
+
+    /** Monotonic count of ticks FIRED since this processor was constructed.
+        Never reset. This is the number that answers the Link window question:
+        if it keeps climbing across an editor recreation, the timer survived;
+        if it restarts at zero, the timer was on the editor after all. */
+    juce::int64 dashPollTickCount = 0;
+
+    /** Guards against overlapping requests. A tick that lands while the
+        previous one is still in flight is SKIPPED rather than queued: at a 20
+        second interval and a 5 second timeout this should never happen, and
+        if it does the right answer is to drop the tick, not to build a queue
+        that hides a stalled network. */
+    bool dashPollInFlight = false;
 
     ChannelType channelType { ChannelType::FullMix };
     juce::String customChannelName;

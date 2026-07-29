@@ -327,6 +327,21 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // switch would otherwise ride the next unrelated message. See
     // clearStagedTurn() in EchoJayAPI.h.
     api.clearStagedTurn();
+
+    // Session C: the poll lives on the processor and may ALREADY be running,
+    // started by an editor Logic destroyed minutes ago. startDashboardPoll is
+    // idempotent for exactly that reason. We register for changes and do no
+    // network work of our own.
+    processorRef.onDashUnreadChanged = [this]
+    {
+        // Already on the message thread: the processor only fires this from
+        // inside getJSON's callAsync completion.
+        dashUnreadSeen_ = processorRef.dashUnreadGeneration;
+        repaint();
+    };
+    dashUnreadSeen_ = processorRef.dashUnreadGeneration;
+    processorRef.startDashboardPoll();
+
     setLookAndFeel(&lnf);
     setSize(1170, 696);
     setResizable(true, true);
@@ -2176,6 +2191,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 }
 
 EchoJayEditor::~EchoJayEditor() {
+    // Session C: drop the processor's callback into this editor BEFORE any
+    // other teardown. The poll keeps running (that is the point), so a tick
+    // landing after this line must not reach a half-destroyed editor. This is
+    // the editor-side half of the contract; the processor never holds a
+    // pointer to us other than through this std::function.
+    processorRef.onDashUnreadChanged = nullptr;
+
     // Codec preview must never outlive its UI (25 Jul 2026): if the editor
     // closes while codec mode is engaged, the processor would keep replacing
     // the plugin output with the lossy render, invisibly, forever. Fade the
