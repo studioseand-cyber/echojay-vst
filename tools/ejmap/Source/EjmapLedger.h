@@ -16,6 +16,17 @@
 
   Everything writes through immediately. Nothing is held until submit. A session
   that dies mid-plugin loses at most the current row.
+
+  RUN IDENTITY. The ledger is append-only across every run the tool has ever
+  made, so "how did this scan go" has no answer without one. Measured on the
+  first two real scans: 1419 rows for 861 bundles, 558 of them duplicated
+  between run 1 and run 2, and getOutcomeCounts summed both into a single
+  meaningless tally. Every row now carries the run that produced it.
+
+  THREAD SAFETY. The watchdog writes the expiry row from its own thread, while
+  the message thread is stuck inside plugin code. Every mutation of the ledger,
+  the quarantine and inflight takes the lock, and every write is flushed before
+  it returns: a buffered row still in memory when _exit fires records nothing.
 */
 
 #pragma once
@@ -25,6 +36,16 @@
 
 namespace ejmap
 {
+
+/** Rows written before run identity existed. They are not attributed to the
+    current run, because they did not happen in it.
+*/
+inline constexpr const char* kLegacyRunId = "legacy";
+
+/** Pass to getOutcomeCounts to count across every run on disk. Deliberately
+    explicit: summing runs is a thing you should have to ask for by name.
+*/
+inline constexpr const char* kAllRuns = "*";
 
 struct LedgerRecord
 {
@@ -50,9 +71,21 @@ struct LedgerRecord
     */
     juce::String stage = "load";
 
+    /** The run that produced this row. Filled in by the Ledger; a caller does
+        not get to choose it, except for a crash row, which is attributed to the
+        run that DIED rather than the run that found the wreckage.
+    */
+    juce::String runId;
+
+    /** Set only on a crash or watchdog row recovered by a later run. Without it
+        the ledger cannot say that run 2 wrote a row about run 1.
+    */
+    juce::String recoveredByRunId;
+
     juce::var toVar() const
     {
         auto* o = new juce::DynamicObject();
+        o->setProperty ("run_id", runId);
         o->setProperty ("plugin_id", pluginId);
         o->setProperty ("stage", stage);
         o->setProperty ("name", name);
@@ -63,18 +96,35 @@ struct LedgerRecord
         o->setProperty ("detail", detail);
         o->setProperty ("at", at);
         o->setProperty ("param_count", paramCount);
+        if (recoveredByRunId.isNotEmpty())
+            o->setProperty ("recovered_by_run", recoveredByRunId);
         return juce::var (o);
     }
+};
+
+//==============================================================================
+/** One run's summary, read back off disk. */
+struct RunSummary
+{
+    juce::String runId;
+    juce::String startedAt;     // "at" of the first row seen for this run
+    int rowCount = 0;
 };
 
 //==============================================================================
 class Ledger
 {
 public:
-    Ledger()
+    /** rootOverride exists so the watchdog test can prove expiry against a
+        throwaway directory instead of the tester's real ledger. Default is the
+        real location; nothing in the app passes anything else.
+    */
+    explicit Ledger (juce::File rootOverride = {})
     {
-        root = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("ejmap");
+        root = rootOverride != juce::File()
+                 ? rootOverride
+                 : juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                       .getChildFile ("ejmap");
         root.createDirectory();
         root.getChildFile ("maps").createDirectory();
         root.getChildFile ("screenshots").createDirectory();
@@ -83,10 +133,23 @@ public:
         inflightFile  = root.getChildFile ("inflight.json");
         quarantineFile= root.getChildFile ("quarantine.json");
 
+        runId = makeRunId();
+
         loadQuarantine();
     }
 
-    juce::File getRoot() const noexcept { return root; }
+    juce::File   getRoot() const noexcept       { return root; }
+    juce::String currentRunId() const noexcept  { return runId; }
+
+    /** Artifact path scoped to this run. scan-errors.log and scan-census.log
+        were replaced on every scan while the ledger appended, so the three
+        artifacts describing the same scan disagreed by construction and the
+        logs silently answered for whichever run went last.
+    */
+    juce::File runArtifact (const juce::String& stem, const juce::String& ext) const
+    {
+        return root.getChildFile (stem + "-" + runId + "." + ext);
+    }
 
     //==========================================================================
     /** Call once at startup, before any scan. Returns the plugin id that killed
@@ -94,10 +157,12 @@ public:
     */
     juce::String recoverFromCrash()
     {
+        const juce::ScopedLock sl (lock);
+
         if (! inflightFile.existsAsFile())
             return {};
 
-        auto v = juce::JSON::parse (inflightFile.loadFileAsString());
+        auto v  = juce::JSON::parse (inflightFile.loadFileAsString());
         auto id = v.getProperty ("plugin_id", "").toString();
 
         if (id.isNotEmpty())
@@ -111,74 +176,98 @@ public:
             r.stage    = v.getProperty ("stage", "load").toString();
             r.outcome  = LoadOutcome::crashOnLoad;
 
-            // Same outcome, honest about which stage produced it. A VST3 that
+            // Attributed to the run that DIED, not the one reading the wreckage.
+            r.runId            = v.getProperty ("run_id", kLegacyRunId).toString();
+            r.recoveredByRunId = runId;
+
+            // Same outcome, honest about which site produced it. A VST3 that
             // kills the process while the format is reading its factory did not
             // die "while the editor was opening", and saying so would send the
             // next person looking in the wrong place.
-            r.detail   = r.stage == "scan"
-                           ? "process died while the format was reading this file during Scan"
-                           : "process died while the editor was opening";
-            r.at       = nowIso();
-            append (r);
-            quarantine (id, "crash_on_load");
+            const auto site = v.getProperty ("site", "").toString();
+            r.detail = site.isNotEmpty()
+                         ? "process died inside " + site
+                         : (r.stage == "scan"
+                              ? "process died while the format was reading this file during Scan"
+                              : "process died while the editor was opening");
+            r.at = nowIso();
+
+            appendLocked (r);
+            quarantineLocked (id, "crash_on_load");
         }
 
         inflightFile.deleteFile();
         return id;
     }
 
-    /** Written before any call that hands control to plugin code:
-        AudioPluginFormatManager::createPluginInstance on the load path, and
-        AudioPluginFormat::findAllTypesForFile on the VST3 scan path.
+    /** Written before any call that hands control to plugin code: instantiation,
+        the VST3 scan probe, editor creation, snapshotting. site names the call,
+        so a recovered crash row can say which one it died in.
 
-        stage is "load" or "scan". Scan needs this too: 646 of the 860 VST3
-        bundles on the development machine ship no moduleinfo.json, so JUCE
-        falls back to opening the module to read its factory. That is plugin
-        code running inside a Scan, and without an inflight record a crash there
-        leaves nothing naming the file that caused it.
+        Flushed before it returns. The whole point is that it is on disk when the
+        process stops existing.
     */
     void beginLoad (const juce::String& pluginId,
                     const juce::String& name,
                     const juce::String& vendor,
                     const juce::String& format,
                     const juce::String& version,
-                    const juce::String& stage = "load")
+                    const juce::String& stage = "load",
+                    const juce::String& site  = {})
     {
+        const juce::ScopedLock sl (lock);
+
         auto* o = new juce::DynamicObject();
+        o->setProperty ("run_id", runId);
         o->setProperty ("plugin_id", pluginId);
         o->setProperty ("name", name);
         o->setProperty ("vendor", vendor);
         o->setProperty ("format", format);
         o->setProperty ("version", version);
         o->setProperty ("stage", stage);
+        o->setProperty ("site", site);
         o->setProperty ("at", nowIso());
 
-        // Must reach the disk before the call it is protecting. A buffered write
-        // that is still in memory when the process dies records nothing.
-        inflightFile.replaceWithText (juce::JSON::toString (juce::var (o), false));
+        writeThrough (inflightFile, juce::JSON::toString (juce::var (o), false));
     }
 
     void endLoad (LedgerRecord r)
     {
-        r.at = nowIso();
-        append (r);
+        const juce::ScopedLock sl (lock);
+        r.at    = nowIso();
+        r.runId = runId;
+        appendLocked (r);
+        inflightFile.deleteFile();
+    }
+
+    /** The watchdog's exit path. Called from the watchdog thread with the
+        message thread wedged inside plugin code, immediately before _exit, so
+        it must take the lock, write, flush and quarantine without depending on
+        anything the stuck thread owns.
+    */
+    void recordWatchdogExpiry (LedgerRecord r, const juce::String& quarantineReason)
+    {
+        const juce::ScopedLock sl (lock);
+        r.at      = nowIso();
+        r.runId   = runId;
+        r.outcome = LoadOutcome::timeout;
+        appendLocked (r);
+        if (r.pluginId.isNotEmpty())
+            quarantineLocked (r.pluginId, quarantineReason);
         inflightFile.deleteFile();
     }
 
     //==========================================================================
     bool isQuarantined (const juce::String& pluginId) const
     {
+        const juce::ScopedLock sl (lock);
         return quarantined.contains (pluginId);
     }
 
     void quarantine (const juce::String& pluginId, const juce::String& reason)
     {
-        if (quarantined.contains (pluginId))
-            return;
-
-        quarantined.add (pluginId);
-        quarantineReasons.set (pluginId, reason);
-        saveQuarantine();
+        const juce::ScopedLock sl (lock);
+        quarantineLocked (pluginId, reason);
     }
 
     /** Deliberately manual. A plugin that crashed once usually crashes again,
@@ -186,20 +275,32 @@ public:
     */
     void releaseFromQuarantine (const juce::String& pluginId)
     {
+        const juce::ScopedLock sl (lock);
         quarantined.removeString (pluginId);
         quarantineReasons.remove (pluginId);
-        saveQuarantine();
+        saveQuarantineLocked();
     }
 
-    juce::StringArray getQuarantined() const { return quarantined; }
+    juce::StringArray getQuarantined() const
+    {
+        const juce::ScopedLock sl (lock);
+        return quarantined;
+    }
 
     //==========================================================================
     /** Counts by outcome, for the gate in M1. Read from the stored file, never
         from an in-memory tally: the rule adopted in this project is that
         reported numbers are asserted against stored data.
+
+        Scoped to ONE run by default, because the ledger spans every run ever
+        made and a sum across runs describes nothing that happened. Pass
+        kAllRuns to sum deliberately.
     */
-    juce::HashMap<juce::String, int>& getOutcomeCounts (const juce::String& stage = "load")
+    juce::HashMap<juce::String, int>& getOutcomeCounts (const juce::String& stage = "load",
+                                                        const juce::String& forRunId = {})
     {
+        const auto want = forRunId.isEmpty() ? runId : forRunId;
+
         counts.clear();
         for (const auto& v : readAll())
         {
@@ -208,14 +309,44 @@ public:
             if (v.getProperty ("stage", "load").toString() != stage)
                 continue;
 
+            if (want != kAllRuns && rowRunId (v) != want)
+                continue;
+
             auto k = v.getProperty ("outcome", "").toString();
             counts.set (k, counts[k] + 1);
         }
         return counts;
     }
 
+    /** Every run on disk, oldest first, read back out of the file. Makes
+        "counts from disk" checkable without trusting any in-memory tally.
+    */
+    juce::Array<RunSummary> listRuns() const
+    {
+        juce::Array<RunSummary> out;
+        for (const auto& v : readAll())
+        {
+            const auto id = rowRunId (v);
+            bool found = false;
+            for (auto& s : out)
+                if (s.runId == id) { ++s.rowCount; found = true; break; }
+
+            if (! found)
+            {
+                RunSummary s;
+                s.runId     = id;
+                s.startedAt = v.getProperty ("at", "").toString();
+                s.rowCount  = 1;
+                out.add (s);
+            }
+        }
+        return out;
+    }
+
     juce::Array<juce::var> readAll() const
     {
+        const juce::ScopedLock sl (lock);
+
         juce::Array<juce::var> out;
         if (! ledgerFile.existsAsFile())
             return out;
@@ -234,9 +365,71 @@ public:
     }
 
 private:
-    void append (const LedgerRecord& r)
+    /** A row with no run_id predates run identity. It becomes one synthetic
+        legacy run rather than being folded into the current one, which would
+        credit this session with work it did not do.
+    */
+    static juce::String rowRunId (const juce::var& v)
     {
-        ledgerFile.appendText (juce::JSON::toString (r.toVar(), true) + "\n");
+        auto id = v.getProperty ("run_id", "").toString();
+        return id.isEmpty() ? juce::String (kLegacyRunId) : id;
+    }
+
+    /** Sorts chronologically, safe in a filename, and unique across two runs
+        started in the same second. No separator that a path or a
+        juce::Identifier would object to.
+    */
+    static juce::String makeRunId()
+    {
+        const auto t = juce::Time::getCurrentTime();
+        juce::String s;
+        s << juce::String (t.getYear())
+          << juce::String (t.getMonth() + 1).paddedLeft ('0', 2)
+          << juce::String (t.getDayOfMonth()).paddedLeft ('0', 2)
+          << "T"
+          << juce::String (t.getHours()).paddedLeft ('0', 2)
+          << juce::String (t.getMinutes()).paddedLeft ('0', 2)
+          << juce::String (t.getSeconds()).paddedLeft ('0', 2)
+          << "-"
+          << juce::String::toHexString (juce::Random::getSystemRandom().nextInt (0xffff))
+                 .paddedLeft ('0', 4);
+        return s;
+    }
+
+    /** Write and flush. juce::File::appendText leaves the bytes in the stream's
+        buffer, which is exactly the wrong place for them when the next thing
+        that happens is _exit.
+    */
+    void appendLocked (const LedgerRecord& r)
+    {
+        juce::FileOutputStream out (ledgerFile);
+        if (out.openedOk())
+        {
+            out.setPosition (ledgerFile.getSize());
+            out.writeText (juce::JSON::toString (r.toVar(), true) + "\n", false, false, nullptr);
+            out.flush();
+        }
+    }
+
+    static void writeThrough (const juce::File& f, const juce::String& text)
+    {
+        f.deleteFile();
+        juce::FileOutputStream out (f);
+        if (out.openedOk())
+        {
+            out.writeText (text, false, false, nullptr);
+            out.flush();
+        }
+    }
+
+    void quarantineLocked (const juce::String& pluginId, const juce::String& reason)
+    {
+        if (quarantined.contains (pluginId))
+            return;
+
+        quarantined.add (pluginId);
+        quarantineReasons.set (pluginId, reason);
+        saveQuarantineLocked();
     }
 
     // quarantine.json is an ARRAY of { plugin_id, reason }, not an object keyed
@@ -246,6 +439,7 @@ private:
     // it as a key would assert in debug and write a malformed file in release.
     void loadQuarantine()
     {
+        const juce::ScopedLock sl (lock);
         quarantined.clear();
         quarantineReasons.clear();
         if (! quarantineFile.existsAsFile())
@@ -266,7 +460,7 @@ private:
         }
     }
 
-    void saveQuarantine()
+    void saveQuarantineLocked()
     {
         juce::Array<juce::var> entries;
         for (const auto& id : quarantined)
@@ -276,7 +470,7 @@ private:
             o->setProperty ("reason", quarantineReasons[id]);
             entries.add (juce::var (o));
         }
-        quarantineFile.replaceWithText (juce::JSON::toString (juce::var (entries), true));
+        writeThrough (quarantineFile, juce::JSON::toString (juce::var (entries), true));
     }
 
     static juce::String nowIso()
@@ -285,9 +479,11 @@ private:
     }
 
     juce::File root, ledgerFile, inflightFile, quarantineFile;
+    juce::String runId;
     juce::StringArray quarantined;
     juce::HashMap<juce::String, juce::String> quarantineReasons;
     juce::HashMap<juce::String, int> counts;
+    mutable juce::CriticalSection lock;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Ledger)
 };

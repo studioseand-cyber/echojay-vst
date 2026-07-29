@@ -15,15 +15,23 @@ PluginHost::~PluginHost()
 }
 
 //==============================================================================
-PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc)
+PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Watchdog& watchdog)
 {
     unload();
 
     LoadResult result;
     currentDesc = desc;
 
+    const auto pid = desc.fileOrIdentifier;
+
     juce::String error;
-    instance = formatManager.createPluginInstance (desc, kSampleRate, kBlockSize, error);
+    {
+        // Instantiation runs plugin code. bloom hangs ejextract's worker in the
+        // equivalent call; there is no reason to assume this one cannot hang.
+        Watchdog::Scope guard (watchdog, "createPluginInstance", pid, desc.name,
+                               desc.pluginFormatName, "load");
+        instance = formatManager.createPluginInstance (desc, kSampleRate, kBlockSize, error);
+    }
 
     if (instance == nullptr)
     {
@@ -69,7 +77,11 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc)
         return result;
     }
 
-    editor.reset (instance->createEditorIfNeeded());
+    {
+        Watchdog::Scope guard (watchdog, "createEditorIfNeeded", pid, desc.name,
+                               desc.pluginFormatName, "load");
+        editor.reset (instance->createEditorIfNeeded());
+    }
 
     if (editor == nullptr)
     {
@@ -79,22 +91,85 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc)
         return result;
     }
 
-    // Zero-size retry. Two attempts, 200 ms apart, then a fallback size with the
-    // reason recorded rather than a silent guess.
-    for (int attempt = 0; attempt < 2 && editor->getWidth() <= 0; ++attempt)
+    // ------------------------------------------------------------------
+    // Editor-ready wait.
+    //
+    // The old test was `getWidth() <= 0`. A bridged AU editor reports 1x1 at
+    // creation, and 1 is not <= 0, so the retry never ran, the 800x600 fallback
+    // never fired, and a 1x1 editor was recorded as a successful load. The
+    // window then sized itself to 1x1 while the human waited for a GUI.
+    //
+    // Wait for a size that is both non-degenerate AND stable across several
+    // polls, so a mid-resize reading is never taken as final.
+    //
+    // The message loop MUST be pumped while waiting. The remote view connects
+    // via XPC on the message thread; blocking it here would guarantee the very
+    // timeout this loop is trying to avoid.
+    const auto deadline = juce::Time::getMillisecondCounter()
+                            + (juce::uint32) kEditorReadyTimeoutMs;
+    int lastW = -1, lastH = -1, stable = 0;
+    bool ready = false;
+
     {
-        juce::Thread::sleep (200);
-        editor->resized();
+        Watchdog::Scope guard (watchdog, "editor-ready wait", pid, desc.name,
+                               desc.pluginFormatName, "load",
+                               kEditorReadyTimeoutMs + 5000);
+
+        auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+
+        while (juce::Time::getMillisecondCounter() < deadline)
+        {
+            if (mm != nullptr && mm->isThisTheMessageThread())
+                mm->runDispatchLoopUntil (kEditorPollMs);
+            else
+                juce::Thread::sleep (kEditorPollMs);
+
+            const int w = editor->getWidth(), h = editor->getHeight();
+
+            if (w >= kMinSensibleEditorPx && h >= kMinSensibleEditorPx)
+            {
+                if (w == lastW && h == lastH)
+                {
+                    if (++stable >= kEditorStablePolls) { ready = true; break; }
+                }
+                else
+                {
+                    stable = 0;
+                    // Resizing is progress, not a hang. Do not let a plugin that
+                    // is visibly working be killed for taking its time.
+                    guard.heartbeat();
+                }
+            }
+            else
+            {
+                stable = 0;
+            }
+
+            lastW = w; lastH = h;
+        }
     }
 
-    if (editor->getWidth() <= 0 || editor->getHeight() <= 0)
+    result.editorWidth  = editor->getWidth();
+    result.editorHeight = editor->getHeight();
+
+    if (! ready)
     {
-        editor->setSize (800, 600);
-        result.detail = "editor reported zero size after two retries, fell back to 800x600";
+        // A remote view that never connects is a recorded outcome, not a hang
+        // and not a silent 1x1 success.
+        result.outcome   = LoadOutcome::timeout;
+        result.hasEditor = false;
+        result.detail    = "editor never reached a stable size >= "
+                             + juce::String (kMinSensibleEditorPx) + "px within "
+                             + juce::String (kEditorReadyTimeoutMs / 1000) + "s (last seen "
+                             + juce::String (result.editorWidth) + "x"
+                             + juce::String (result.editorHeight) + ")";
+        return result;
     }
 
     result.outcome   = LoadOutcome::ok;
     result.hasEditor = true;
+    result.detail    = "editor settled at " + juce::String (result.editorWidth) + "x"
+                         + juce::String (result.editorHeight);
     return result;
 }
 

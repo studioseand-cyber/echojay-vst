@@ -23,6 +23,7 @@
 #include <map>
 
 #include "EjmapLedger.h"
+#include "EjmapWatchdog.h"
 
 namespace ejmap
 {
@@ -97,7 +98,7 @@ public:
         Passing a Ledger is therefore not a caller's choice. There is no
         overload that scans without one.
     */
-    Result scan (Ledger& ledger);
+    Result scan (Ledger& ledger, Watchdog& watchdog);
 
     juce::AudioPluginFormatManager& getFormatManager() noexcept { return formatManager; }
 
@@ -115,7 +116,7 @@ public:
 
 private:
     void scanAudioUnits (Result&);
-    void scanVST3 (Result&, Ledger&);
+    void scanVST3 (Result&, Ledger&, Watchdog&);
 
     juce::AudioPluginFormatManager formatManager;
 

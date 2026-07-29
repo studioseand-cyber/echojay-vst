@@ -66,7 +66,7 @@ void PluginScanner::scanAudioUnits (Result& result)
 }
 
 //==============================================================================
-void PluginScanner::scanVST3 (Result& result, Ledger& ledger)
+void PluginScanner::scanVST3 (Result& result, Ledger& ledger, Watchdog& watchdog)
 {
     juce::AudioPluginFormat* vst3 = nullptr;
     for (auto* f : formatManager.getFormats())
@@ -112,15 +112,20 @@ void PluginScanner::scanVST3 (Result& result, Ledger& ledger)
         // uses. Keyed on the file path, because there is no description yet to
         // take a name or a uid from.
         const auto probeId = file;
-        ledger.beginLoad (probeId,
-                          juce::File (file).getFileNameWithoutExtension(),
-                          /*vendor*/  {},
-                          "VST3",
-                          /*version*/ {},
-                          "scan");
+        const auto probeName = juce::File (file).getFileNameWithoutExtension();
+
+        ledger.beginLoad (probeId, probeName, /*vendor*/ {}, "VST3", /*version*/ {},
+                          "scan", "findAllTypesForFile");
 
         juce::OwnedArray<juce::PluginDescription> found;
-        vst3->findAllTypesForFile (found, file);
+        {
+            // bloom.vst3 hangs here past 90 s, and hangs ejextract's isolated
+            // worker in the same call. Without a deadline this wedges the whole
+            // scan with inflight.json on disk and the app alive.
+            Watchdog::Scope guard (watchdog, "findAllTypesForFile", probeId, probeName,
+                                   "VST3", "scan");
+            vst3->findAllTypesForFile (found, file);
+        }
 
         ++result.vst3Probed;
 
@@ -165,14 +170,14 @@ void PluginScanner::scanVST3 (Result& result, Ledger& ledger)
 }
 
 //==============================================================================
-PluginScanner::Result PluginScanner::scan (Ledger& ledger)
+PluginScanner::Result PluginScanner::scan (Ledger& ledger, Watchdog& watchdog)
 {
     Result result;
 
     // AU needs no inflight record: the census reads registry metadata and never
     // hands control to plugin code. VST3 does, so it takes the Ledger.
     scanAudioUnits (result);
-    scanVST3 (result, ledger);
+    scanVST3 (result, ledger, watchdog);
 
     juce::StringArray distinct;
     for (const auto& p : result.plugins)

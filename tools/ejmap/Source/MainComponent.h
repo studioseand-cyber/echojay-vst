@@ -14,6 +14,7 @@
 #include "PluginScanner.h"
 #include "PluginHost.h"
 #include "EjmapLedger.h"
+#include "EjmapWatchdog.h"
 
 namespace ejmap
 {
@@ -24,7 +25,7 @@ class MainComponent  : public juce::Component,
 {
 public:
     MainComponent()
-        : host (scanner.getFormatManager())
+        : watchdog (ledger), host (scanner.getFormatManager())
     {
         // Crash recovery runs before anything else touches a plugin.
         crashedId = ledger.recoverFromCrash();
@@ -91,7 +92,7 @@ private:
         status.setText ("Scanning...", juce::dontSendNotification);
         scanButton.setEnabled (false);
 
-        lastScan = scanner.scan (ledger);
+        lastScan = scanner.scan (ledger, watchdog);
 
         // Quarantined plugins stay in the list but are not loadable. Hiding them
         // would make a crash look like an uninstall.
@@ -129,17 +130,21 @@ private:
         report.add ("unused_types_filtered=" + juce::String (lastScan.unusedTypeFiltered));
         report.add ("vst3_probed=" + juce::String (lastScan.vst3Probed));
         report.add ("vst3_quarantined_skipped=" + juce::String (lastScan.vst3Quarantined));
+        report.add ("run_id=" + ledger.currentRunId());
         report.add ("listed=" + juce::String (rows.size()));
         for (const auto& [typeCode, n] : lastScan.droppedByType)
             report.add ("dropped[" + typeCode + "]=" + juce::String (n));
 
-        ledger.getRoot().getChildFile ("scan-census.log")
+        // Per-run filenames. These used to be replaced on every scan while the
+        // ledger appended, so the three artifacts describing one scan disagreed
+        // by construction and the logs answered for whichever run went last.
+        ledger.runArtifact ("scan-census", "log")
               .replaceWithText (report.joinIntoString ("\n") + "\n");
 
         if (! lastScan.errors.isEmpty())
         {
-            auto f = ledger.getRoot().getChildFile ("scan-errors.log");
-            f.replaceWithText (lastScan.errors.joinIntoString ("\n"));
+            ledger.runArtifact ("scan-errors", "log")
+                  .replaceWithText (lastScan.errors.joinIntoString ("\n") + "\n");
         }
     }
 
@@ -163,10 +168,11 @@ private:
         host.unload();
 
         ledger.beginLoad (id, sp.desc.name, sp.desc.manufacturerName,
-                          sp.desc.pluginFormatName, sp.desc.version);
+                          sp.desc.pluginFormatName, sp.desc.version,
+                          "load", "createPluginInstance");
 
         const auto t0 = juce::Time::getMillisecondCounter();
-        auto result = host.load (sp.desc);
+        auto result = host.load (sp.desc, watchdog);
         const auto elapsed = juce::Time::getMillisecondCounter() - t0;
 
         LedgerRecord rec;
@@ -271,6 +277,7 @@ private:
 
     //==========================================================================
     Ledger        ledger;
+    Watchdog      watchdog;
     PluginScanner scanner;
     PluginHost    host;
 

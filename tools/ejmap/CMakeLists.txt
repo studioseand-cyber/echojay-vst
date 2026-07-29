@@ -64,7 +64,14 @@ target_compile_definitions(ejmap PRIVATE
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:ejmap,JUCE_VERSION>"
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_VST3=1
-    JUCE_PLUGINHOST_LV2=0)
+    JUCE_PLUGINHOST_LV2=0
+    # The editor-ready wait must pump the message loop while it waits: a bridged
+    # AU editor gets its real size over XPC ON the message thread, so blocking
+    # that thread would guarantee the timeout the wait exists to avoid. JUCE
+    # gates runDispatchLoopUntil behind this flag, which is off by default
+    # because a plugin must never run a modal loop inside its host. ejmap is a
+    # standalone app, not a plugin, so the reason for the default does not apply.
+    JUCE_MODAL_LOOPS_PERMITTED=1)
 # EJMAP_VERSION / EJMAP_GIT_HASH now come from the generated EjmapBuildInfo.h,
 # never from a configure-time define.
 
@@ -174,4 +181,35 @@ target_link_libraries(ejmap-registry-conformance-test PRIVATE
 if(APPLE)
     target_link_libraries(ejmap-registry-conformance-test PRIVATE
         "-framework AudioToolbox" "-framework CoreAudioKit")
+endif()
+
+#==============================================================================
+# Watchdog test: does the deadline actually fire?
+#
+# It ends in _Exit, so it cannot assert on itself. The test IS the hang; the
+# shell around it checks exit code 87 and the rows left on disk. Writes to a
+# throwaway directory, never the real ledger.
+
+juce_add_console_app(ejmap-watchdog-test PRODUCT_NAME "ejmap-watchdog-test")
+
+target_sources(ejmap-watchdog-test PRIVATE tests/WatchdogTest.cpp)
+
+target_compile_definitions(ejmap-watchdog-test PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0)
+
+target_include_directories(ejmap-watchdog-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Source
+    ${CMAKE_CURRENT_SOURCE_DIR}/../ejextract)
+
+target_link_libraries(ejmap-watchdog-test PRIVATE
+    juce::juce_core
+    juce::juce_events
+    juce::juce_audio_processors
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags)
+
+if(APPLE)
+    target_link_libraries(ejmap-watchdog-test PRIVATE "-framework CoreAudioKit")
 endif()

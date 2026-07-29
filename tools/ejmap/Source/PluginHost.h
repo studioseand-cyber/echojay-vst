@@ -25,6 +25,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "EjmapSchema.h"
 #include "PluginScanner.h"
+#include "EjmapWatchdog.h"
 
 namespace ejmap
 {
@@ -41,10 +42,41 @@ public:
         juce::String detail;
         int paramCount = 0;
         bool hasEditor = false;
+
+        /** Editor bounds at the moment the result was recorded, once the size
+            settled. ui_hint normalises against these, so they must be the
+            settled size and not the 1x1 an XPC editor reports at creation.
+        */
+        int editorWidth = 0, editorHeight = 0;
     };
 
-    /** Blocking. Caller must have written inflight.json first. */
-    LoadResult load (const juce::PluginDescription& desc);
+    /** Blocking. Caller must have written inflight.json first.
+
+        Returns only once the editor has reached a stable, non-degenerate size,
+        or the editor-ready deadline expires. A bridged AU editor reports 1x1 at
+        createEditorIfNeeded and reaches its real size about 2.5 s later when the
+        remote view connects; the previous getWidth() <= 0 test passed a 1x1
+        editor straight through as ok.
+    */
+    LoadResult load (const juce::PluginDescription& desc, Watchdog& watchdog);
+
+    /** Anything smaller in either axis is a placeholder, not an editor. 1x1 is
+        what an unconnected NSRemoteView reports; measured on UAD Antares
+        Auto-Tune RT and Cymatics Lotus.
+    */
+    static constexpr int kMinSensibleEditorPx = 32;
+
+    /** How long to wait for the editor to settle. Generous: it covers an XPC
+        connection, and a plugin that is merely slow should not be recorded as
+        broken. Measured connect time on this machine was ~2.5 s.
+    */
+    static constexpr int kEditorReadyTimeoutMs = 20000;
+
+    /** Size must be unchanged across this many consecutive polls before it
+        counts as settled, so a mid-resize reading is never taken as final.
+    */
+    static constexpr int kEditorStablePolls = 3;
+    static constexpr int kEditorPollMs      = 100;
 
     void unload();
 
