@@ -173,6 +173,11 @@ target_sources(EchoJay PRIVATE
     Source/EedPhaseInvertEditor.h
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaseInvertProcessor.h
+    Source/EedReverbEditor.cpp
+    Source/EedReverbEditor.h
+    Source/EedReverbEngine.h
+    Source/EedReverbProcessor.cpp
+    Source/EedReverbProcessor.h
     Source/EedTempoClock.h
 )
 
@@ -355,6 +360,11 @@ target_sources(EchoJayLink PRIVATE
     Source/EedPhaseInvertEditor.h
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaseInvertProcessor.h
+    Source/EedReverbEditor.cpp
+    Source/EedReverbEditor.h
+    Source/EedReverbEngine.h
+    Source/EedReverbProcessor.cpp
+    Source/EedReverbProcessor.h
     Source/EedTempoClock.h
 )
 
@@ -454,6 +464,8 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EedGainProcessor.cpp
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertProcessor.cpp
+    Source/EedReverbEditor.cpp
+    Source/EedReverbProcessor.cpp
     Source/EqEngine.cpp
     Source/SurgicalEqEditor.cpp
     Source/SurgicalEqProcessor.cpp

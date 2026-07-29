@@ -80,10 +80,11 @@ int main()
     check (registry.findByName ("EchoJay Gain")          != nullptr, "EchoJay Gain registered");
     check (registry.findByName ("EchoJay Phase Invert")  != nullptr, "EchoJay Phase Invert registered");
     check (registry.findByName ("EchoJay Delay")         != nullptr, "EchoJay Delay registered");
+    check (registry.findByName ("EchoJay Reverb")        != nullptr, "EchoJay Reverb registered");
     // An EXACT count, not a lower bound: the failure this catches is a device
-    // silently disappearing, and ">= 4" would not notice that. Every Wave 1
+    // silently disappearing, and ">= 5" would not notice that. Every Wave 1
     // session bumps this by the number of devices it lands.
-    check (registry.all().size() == 4, "exactly 4 devices registered (got "
+    check (registry.all().size() == 5, "exactly 5 devices registered (got "
                                        + juce::String ((int) registry.all().size()) + ")");
 
     // -----------------------------------------------------------------------
@@ -94,6 +95,10 @@ int main()
         // Utility comes after EQ; within it, alphabetical.
         check (names.indexOf ("EchoJay Gain") < names.indexOf ("EchoJay Phase Invert"),
                "Gain before Phase Invert (alphabetical within Utility)");
+        check (names.indexOf ("EchoJay Delay") < names.indexOf ("EchoJay Reverb"),
+               "Delay before Reverb (alphabetical within Time)");
+        check (names.indexOf ("EchoJay Phase Invert") < names.indexOf ("EchoJay Delay"),
+               "the whole Utility group precedes the whole Time group");
         check (registry.categories().joinIntoString (",") == "EQ,Utility,Time",
                "categories in canonical order: " + registry.categories().joinIntoString (","));
     }
@@ -110,7 +115,7 @@ int main()
     std::printf ("== synthetic descriptions (what saved chain XML carries) ==\n");
     {
         const auto descs = registry.descriptions();
-        check (descs.size() == 4, "one description per device");
+        check (descs.size() == 5, "one description per device");
         for (const auto& d : descs)
         {
             check (d.pluginFormatName == kEchoJayBuiltinFormat,
