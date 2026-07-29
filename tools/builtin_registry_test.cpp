@@ -31,6 +31,8 @@
 #include "EedDeviceProcessor.h"
 #include "EedGainProcessor.h"
 #include "EedPhaseInvertProcessor.h"
+#include "EedStereoWidthProcessor.h"
+#include "EedStereoizerProcessor.h"
 #include "SurgicalEqProcessor.h"
 
 #include <cmath>
@@ -79,8 +81,27 @@ int main()
     check (registry.findByName ("EchoJay EQ")            != nullptr, "EchoJay EQ registered");
     check (registry.findByName ("EchoJay Gain")          != nullptr, "EchoJay Gain registered");
     check (registry.findByName ("EchoJay Phase Invert")  != nullptr, "EchoJay Phase Invert registered");
-    check (registry.all().size() == 3, "exactly 3 devices registered (got "
-                                       + juce::String ((int) registry.all().size()) + ")");
+    check (registry.findByName ("EchoJay Stereo Width")  != nullptr, "EchoJay Stereo Width registered");
+    check (registry.findByName ("EchoJay Stereoizer")    != nullptr, "EchoJay Stereoizer registered");
+
+    // Deliberately NOT an exact count: every Wave 1 cluster adds devices, and a
+    // hard-coded total would make each of those a false failure here. What
+    // actually has to hold is that no two devices claim the same identity —
+    // registry.add() refuses a duplicate, so a collision silently DROPS a device
+    // rather than erroring, and only a check like this would notice.
+    std::printf ("  (%d devices registered)\n", (int) registry.all().size());
+    {
+        juce::StringArray ids;
+        juce::Array<int> uids;
+        bool unique = true;
+        for (const auto& d : registry.all())
+        {
+            if (ids.contains (d.identifier) || uids.contains (d.uid)) unique = false;
+            ids.add (d.identifier);
+            uids.add (d.uid);
+        }
+        check (unique, "every device has a unique identifier and uid");
+    }
 
     // -----------------------------------------------------------------------
     std::printf ("== ordering is deterministic, not static-init order ==\n");
@@ -90,8 +111,14 @@ int main()
         // Utility comes after EQ; within it, alphabetical.
         check (names.indexOf ("EchoJay Gain") < names.indexOf ("EchoJay Phase Invert"),
                "Gain before Phase Invert (alphabetical within Utility)");
-        check (registry.categories().joinIntoString (",") == "EQ,Utility",
-               "categories in canonical order: " + registry.categories().joinIntoString (","));
+        // Categories come out in the registry's canonical rank order, not
+        // alphabetically and not in static-init order.
+        const auto cats = registry.categories();
+        check (cats.indexOf ("EQ") == 0, "EQ is the first category");
+        check (cats.indexOf ("Utility") < cats.indexOf ("Stereo"),
+               "Utility ranks before Stereo: " + cats.joinIntoString (","));
+        check (names.indexOf ("EchoJay Stereo Width") < names.indexOf ("EchoJay Stereoizer"),
+               "Stereo Width before Stereoizer (alphabetical within Stereo)");
     }
 
     // -----------------------------------------------------------------------
@@ -106,7 +133,7 @@ int main()
     std::printf ("== synthetic descriptions (what saved chain XML carries) ==\n");
     {
         const auto descs = registry.descriptions();
-        check (descs.size() == 3, "one description per device");
+        check (descs.size() == (int) registry.all().size(), "one description per device");
         for (const auto& d : descs)
         {
             check (d.pluginFormatName == kEchoJayBuiltinFormat,
@@ -258,6 +285,108 @@ int main()
         const auto s2 = device->applyStructured (paramsMove ({ { "output_db", -2.0 } }));
         check (s2.isNotEmpty(), "params summary: " + s2);
         check (near (eq->getOutputDb(), -2.0, 0.01), "output_db dialled through params");
+    }
+
+    // -----------------------------------------------------------------------
+    std::printf ("== the Stereo cluster dials, and its defaults land ==\n");
+    {
+        auto proc = makeByName ("EchoJay Stereo Width");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        check (device != nullptr, "Stereo Width is an EedDeviceProcessor");
+
+        // Fresh device: the SCHEMA's defaults, not the engine's idle values.
+        check (near (device->getParamValue ("width"), 100.0),         "width defaults to 100%");
+        check (near (device->getParamValue ("bass_mono_hz"), 0.0),    "bass mono defaults to off");
+        check (near (device->getParamValue ("output_trim_db"), 0.0),  "trim defaults to 0 dB");
+
+        int applied = 0, skipped = 0;
+        const auto summary = device->applyStructured (
+            paramsMove ({ { "width", 140.0 }, { "bass_mono_hz", 120.0 },
+                          { "output_trim_db", -1.5 } }), &applied, &skipped);
+
+        check (applied == 3 && skipped == 0, "3 params applied, 0 skipped");
+        check (summary.isNotEmpty(), "summary: " + summary);
+        check (near (device->getParamValue ("width"), 140.0),        "width landed EXACTLY at 140");
+        check (near (device->getParamValue ("bass_mono_hz"), 120.0), "bass_mono_hz landed EXACTLY at 120");
+        check (near (device->getParamValue ("output_trim_db"), -1.5),"output_trim_db landed EXACTLY at -1.5");
+    }
+    {
+        auto proc = makeByName ("EchoJay Stereoizer");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        // This device's defaults are a WORKING widener, not a bypass, so the
+        // schema has to win over the engine's idle values on construction.
+        check (near (device->getParamValue ("width"), 120.0),         "width defaults to 120%");
+        check (near (device->getParamValue ("haas_ms"), 15.0),        "haas defaults to 15 ms");
+        check (near (device->getParamValue ("mono_maker_hz"), 150.0), "mono maker defaults to 150 Hz");
+        check (near (device->getParamValue ("mix"), 100.0),           "mix defaults to 100%");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "haas_ms", 22.0 }, { "mix", 60.0 } }),
+                                 &applied, &skipped);
+        check (applied == 2 && skipped == 0, "a partial move applies both params");
+        check (near (device->getParamValue ("haas_ms"), 22.0), "haas_ms landed EXACTLY at 22");
+        check (near (device->getParamValue ("width"), 120.0),  "width SURVIVED (merge semantics)");
+    }
+
+    // ParamSchema::find is deliberately tolerant of case and separators, so a
+    // near-miss id lands rather than silently doing nothing. That tolerance has
+    // to hold all the way to the KNOB: applyParams dispatches on the schema's
+    // spelling rather than the one that arrived, or a well-formed move would be
+    // matched, clamped, and then reported "not implemented".
+    std::printf ("== a near-miss param id still reaches the knob ==\n");
+    {
+        auto proc = makeByName ("EchoJay Stereo Width");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "Width", 75.0 },
+                                              { "bassMonoHz", 90.0 } }), &applied, &skipped);
+        check (applied == 2 && skipped == 0, "\"Width\" and \"bassMonoHz\" both applied");
+        check (near (device->getParamValue ("width"), 75.0),        "capitalised id landed");
+        check (near (device->getParamValue ("bass_mono_hz"), 90.0), "camelCase id landed");
+    }
+
+    // The device's headline claim, checked through the REAL processBlock rather
+    // than at the engine level: whatever it is set to, folding the output down
+    // to mono gives back the input's fold-down. A widener that combs when summed
+    // is worse than no widener, and this is the thing a later edit could break
+    // without any other test noticing.
+    std::printf ("== the Stereoizer's mono sum survives a real processBlock ==\n");
+    {
+        auto proc = makeByName ("EchoJay Stereoizer");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        device->applyStructured (paramsMove ({ { "width", 200.0 }, { "haas_ms", 30.0 },
+                                              { "mono_maker_hz", 200.0 }, { "mix", 75.0 } }));
+
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc->prepareToPlay (48000.0, 512);
+
+        juce::AudioBuffer<float> buf (2, 4096);
+        juce::Random rng (1234);
+        std::vector<float> sumIn (4096);
+        for (int i = 0; i < buf.getNumSamples(); ++i)
+        {
+            const float l = rng.nextFloat() * 2.0f - 1.0f;
+            const float r = rng.nextFloat() * 2.0f - 1.0f;
+            buf.setSample (0, i, l);
+            buf.setSample (1, i, r);
+            sumIn[(std::size_t) i] = l + r;
+        }
+
+        juce::MidiBuffer midi;
+        for (int i = 0; i < buf.getNumSamples(); i += 512)
+        {
+            juce::AudioBuffer<float> slice (buf.getArrayOfWritePointers(), 2, i, 512);
+            proc->processBlock (slice, midi);
+        }
+
+        float worst = 0.0f;
+        for (int i = 0; i < buf.getNumSamples(); ++i)
+            worst = juce::jmax (worst, std::abs ((buf.getSample (0, i) + buf.getSample (1, i))
+                                                 - sumIn[(std::size_t) i]));
+        check (worst <= 1.0e-5f, "L+R is unchanged end to end (worst dev "
+                                 + juce::String (worst, 9) + ")");
     }
 
     // -----------------------------------------------------------------------

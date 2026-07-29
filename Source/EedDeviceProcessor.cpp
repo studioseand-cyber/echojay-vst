@@ -120,7 +120,14 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
 
         const double v = spec->clamp (raw);
 
-        if (! setParamValue (id, v))
+        // Dispatch on the SCHEMA's spelling, not the one that arrived. The
+        // schema matched "Width" / "widthPct" / "width-pct" tolerantly a few
+        // lines up, but every device's setParamValue compares against its own
+        // canonical id literal — so forwarding the raw id would find the spec,
+        // clamp the value, and then report "not implemented" for a move that is
+        // perfectly well formed. Normalising here is what makes the tolerance
+        // real all the way to the knob instead of only at the gate.
+        if (! setParamValue (juce::String (spec->id), v))
         {
             ++skipped;
             unknown.add (id + " (not implemented)");
