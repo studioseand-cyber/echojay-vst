@@ -38,6 +38,7 @@ public:
         juce::File ledgerRoot;
         juce::String selfTestId;
         bool cacheTest = false, progressTest = false;
+        juce::String attributeReport;
         juce::String releaseId, quarantineId, quarantineReason, quarantineStage { "load" };
 
         for (int i = 0; i < args.size(); ++i)
@@ -50,6 +51,8 @@ public:
                 cacheTest = true;
             else if (args[i] == "--selftest-progress")
                 progressTest = true;
+            else if (args[i] == "--attribute-report" && i + 1 < args.size())
+                attributeReport = args[++i];
             else if (args[i] == "--release-quarantine" && i + 1 < args.size())
                 releaseId = args[++i];
             else if (args[i] == "--quarantine" && i + 2 < args.size())
@@ -69,6 +72,21 @@ public:
             l.releaseFromQuarantine (releaseId);
             std::cout << "release-quarantine: " << releaseId
                       << (was ? " -> released" : " -> was not quarantined") << std::endl;
+            quit();
+            return;
+        }
+
+        // Run the attribution logic against one crash report on disk, so it can
+        // be checked against real reports rather than synthetic ones.
+        if (attributeReport.isNotEmpty())
+        {
+            const juce::File f = juce::File::getCurrentWorkingDirectory().getChildFile (attributeReport);
+            const auto facts = ejmap::Ledger::factsFromReport (f);
+            std::cout << "attribute-report: " << f.getFileName() << "\n"
+                      << "  parsed      : " << (facts.found ? "yes" : "no") << "\n"
+                      << "  thread      : " << (facts.threadName.isEmpty() ? "(unnamed)" : facts.threadName) << "\n"
+                      << "  top image   : " << (facts.topImage.isEmpty() ? "?" : facts.topImage) << "\n"
+                      << "  attribution : " << facts.attribution << std::endl;
             quit();
             return;
         }
