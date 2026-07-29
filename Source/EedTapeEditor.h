@@ -12,7 +12,12 @@
 #pragma once
 
 #include "DeviceEditorBase.h"
+#include "EedTapeMotionView.h"
 #include "EedTapeProcessor.h"
+#include "viz/HarmonicBars.h"
+#include "viz/WaveshaperView.h"
+
+#include <vector>
 
 class EedTapeEditor : public DeviceEditorBase,
                       private juce::Timer
@@ -29,14 +34,27 @@ private:
     void syncFromProcessor();
     void refreshSpeedHint();
 
+    // Only when the drive or the bias has moved — see the note on the
+    // equivalent in EedSaturationEditor.
+    void refreshTransfer();
+    void refreshBars();
+
     EedTapeProcessor& proc_;
 
     // Row 1: the machine.   Row 2: what it does to the signal.
     echojay::device::EchoJayDeviceKnob speedKnob_, driveKnob_, biasKnob_, bumpKnob_;
     echojay::device::EchoJayDeviceKnob wowKnob_, flutterKnob_, mixKnob_, outKnob_;
 
+    echojay::viz::WaveshaperView shaper_;
+    echojay::viz::HarmonicBars   bars_;
+    EedTapeMotionView            motion_;
+
+    std::vector<float> frame_;
+
     bool  suppressCallbacks_ = false;
     float lastHintSpeed_ = -1.0f;
+    float lastDriveDb_   = -1.0f;
+    float lastBias_      = -1000.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedTapeEditor)
 };

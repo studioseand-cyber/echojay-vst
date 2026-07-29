@@ -3,14 +3,19 @@
 */
 
 #include "EedExciterEditor.h"
+#include "EedHarmonicAnalysis.h"
 
 using namespace echojay::device;
 using namespace echojay::device::metrics;
 
 namespace
 {
-    constexpr int kDefaultW = 380;
-    constexpr int kDefaultH = 196;
+    constexpr int kDefaultW = 460;
+
+    constexpr int kVizH    = 96;
+    constexpr int kMinVizH = 44;
+
+    constexpr int kDefaultH = kTopH + 6 + kVizH + 6 + kRowH + 6 + kKnobH + 2 * kPad;
 
     constexpr int kGap = 14;
 }
@@ -70,7 +75,81 @@ EedExciterEditor::EedExciterEditor (EedExciterProcessor& p)
     };
     addAndMakeVisible (modeBox_);
 
+    // ---- the signature visualisation --------------------------------------
+    // Captioned for the BAND, not the signal: everything drawn here is about the
+    // part above the split, and a user who reads these as whole-signal readouts
+    // would think the device was doing nothing on bass-heavy material.
+    shaper_.setCaption ("HIGH BAND");
+    addAndMakeVisible (shaper_);
+
+    bars_.setCaption ("GENERATED");
+    bars_.setNumHarmonics (echojay::viz::HarmonicBars::kMaxHarmonics);   // 1..8
+    bars_.setFloorDb (-60.0f);
+    addAndMakeVisible (bars_);
+
+    const auto frameSize = (std::size_t) echojay::ExciterEngine::SpectrumTap::size;
+    dryFrame_.assign (frameSize, 0.0f);
+    genFrame_.assign (frameSize, 0.0f);
+
+    refreshTransfer();
+
     startTimerHz (15);
+}
+
+void EedExciterEditor::refreshTransfer()
+{
+    const int   mode   = proc_.engine().getMode();
+    const float amount = proc_.engine().getAmount();
+
+    if (mode == lastMode_ && std::abs (amount - lastAmount_) < 0.01f) return;
+
+    lastMode_   = mode;
+    lastAmount_ = amount;
+
+    // The DSP's own arithmetic, line for line: drive the high band, shape it,
+    // scale by 1/g, and crossfade toward it by amount. At amount 0 that is
+    // exactly x, so the view draws the straight line the device really is.
+    const auto  curve = echojay::ExciterEngine::curveForMode (mode);
+    const float a     = juce::jlimit (0.0f, 1.0f, amount * 0.01f);
+    const float g     = echojay::ExciterEngine::driveForAmount (a);
+
+    shaper_.setTransfer ([curve, a, g] (float x)
+    {
+        const float shaped = echojay::harmonic::shape (curve, x * g) / g;
+        return x + a * (shaped - x);
+    });
+
+    shaper_.setCurveName (juce::String (echojay::harmonic::curveName (curve)).toUpperCase());
+}
+
+void EedExciterEditor::refreshBars()
+{
+    const double sr = proc_.getSampleRate();
+    if (sr <= 0.0) return;
+
+    const int n = proc_.engine().spectrumTap().read (dryFrame_.data(), genFrame_.data(),
+                                                     (int) dryFrame_.size());
+    if (n <= 0) return;
+
+    float db[echojay::viz::HarmonicBars::kMaxHarmonics];
+    for (auto& v : db) v = -60.0f;
+
+    // The fundamental comes from the DRY side. The generated signal by
+    // construction has almost nothing at the fundamental — that is what makes it
+    // "the generated highs" — so asking it to find its own would either fail or
+    // lock onto one of the harmonics and rescale the whole display by it.
+    const auto est = echojay::harmonic::estimateFundamental (dryFrame_.data(), n, sr);
+
+    if (est.locked)
+    {
+        const int usable = echojay::harmonic::wholeCycleLength (n, sr, est.hz);
+        if (usable > 0)
+            echojay::harmonic::harmonicMagnitudesDb (genFrame_.data(), dryFrame_.data(),
+                                                     usable, sr, est.hz,
+                                                     db, (int) std::size (db), -60.0f);
+    }
+
+    bars_.setMagnitudesDb (db, (int) std::size (db));
 }
 
 EedExciterEditor::~EedExciterEditor()
@@ -83,6 +162,26 @@ void EedExciterEditor::layoutContent (juce::Rectangle<int> content)
     if (content.isEmpty()) return;
 
     auto r = content;
+
+    // Controls first, picture second — a short rack slot loses the viz, never
+    // the dials. Same shrink policy as every other device's visualisation.
+    const int controlsH = kRowH + 6 + kKnobH;
+    const int vizH      = juce::jmin (kVizH, juce::jmax (0, r.getHeight() - controlsH));
+    const bool showViz  = vizH >= kMinVizH;
+
+    shaper_.setVisible (showViz);
+    bars_.setVisible (showViz);
+
+    if (showViz)
+    {
+        auto viz = r.removeFromTop (vizH);
+        if (r.getHeight() > 6) r.removeFromTop (6);
+
+        const int barsW = juce::jlimit (70, 150, (int) ((float) viz.getWidth() * 0.42f));
+        bars_.setBounds (viz.removeFromRight (barsW));
+        if (viz.getWidth() > 6) viz.removeFromRight (6);
+        shaper_.setBounds (viz);
+    }
 
     auto modeRow = r.removeFromTop (juce::jmin (kRowH, r.getHeight()));
     modeBox_.setBounds (modeRow.withSizeKeepingCentre (
@@ -130,6 +229,15 @@ void EedExciterEditor::timerCallback()
 {
     syncFromProcessor();
 
-    if (bypassButton().getToggleState() != proc_.isBypassed())
-        bypassButton().setToggleState (proc_.isBypassed(), juce::dontSendNotification);
+    const bool bypassed = proc_.isBypassed();
+    if (bypassButton().getToggleState() != bypassed)
+        bypassButton().setToggleState (bypassed, juce::dontSendNotification);
+
+    shaper_.setDimmed (bypassed);
+    bars_.setDimmed (bypassed);
+
+    refreshTransfer();
+    shaper_.setInputLevel (proc_.engine().highBandLevel());
+
+    if (bars_.isVisible()) refreshBars();
 }

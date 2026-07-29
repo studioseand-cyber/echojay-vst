@@ -199,6 +199,8 @@ target_sources(EchoJay PRIVATE
     Source/EedGainEngine.h
     Source/EedGainProcessor.cpp
     Source/EedGainProcessor.h
+    Source/EedHarmonicAnalysis.cpp
+    Source/EedHarmonicAnalysis.h
     Source/EedHarmonicCore.cpp
     Source/EedHarmonicCore.h
     Source/EedLfoCore.h
@@ -248,6 +250,8 @@ target_sources(EchoJay PRIVATE
     Source/EedTapeEditor.cpp
     Source/EedTapeEditor.h
     Source/EedTapeEngine.h
+    Source/EedTapeMotionView.cpp
+    Source/EedTapeMotionView.h
     Source/EedTapeProcessor.cpp
     Source/EedTapeProcessor.h
     Source/EedTempoClock.h
@@ -490,6 +494,8 @@ target_sources(EchoJayLink PRIVATE
     Source/EedGainEngine.h
     Source/EedGainProcessor.cpp
     Source/EedGainProcessor.h
+    Source/EedHarmonicAnalysis.cpp
+    Source/EedHarmonicAnalysis.h
     Source/EedHarmonicCore.cpp
     Source/EedHarmonicCore.h
     Source/EedLfoCore.h
@@ -539,6 +545,8 @@ target_sources(EchoJayLink PRIVATE
     Source/EedTapeEditor.cpp
     Source/EedTapeEditor.h
     Source/EedTapeEngine.h
+    Source/EedTapeMotionView.cpp
+    Source/EedTapeMotionView.h
     Source/EedTapeProcessor.cpp
     Source/EedTapeProcessor.h
     Source/EedTempoClock.h
@@ -676,6 +684,7 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EedExciterProcessor.cpp
     Source/EedGainEditor.cpp
     Source/EedGainProcessor.cpp
+    Source/EedHarmonicAnalysis.cpp
     Source/EedHarmonicCore.cpp
     Source/EedModEditorBase.cpp
     Source/EedCompressorEditor.cpp
@@ -708,6 +717,7 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EedStereoizerEditor.cpp
     Source/EedStereoizerProcessor.cpp
     Source/EedTapeEditor.cpp
+    Source/EedTapeMotionView.cpp
     Source/EedTapeProcessor.cpp
     Source/EedTremoloEditor.cpp
     Source/EedTremoloProcessor.cpp
