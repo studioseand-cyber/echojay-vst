@@ -409,6 +409,10 @@ public:
 
     float currentGainDb() const noexcept { return gainDb_; }
 
+    double getAttackMs()  const noexcept { return attackMs_; }
+    double getReleaseMs() const noexcept { return releaseMs_; }
+    double getHoldMs()    const noexcept { return holdMs_; }
+
     float process (float targetDb) noexcept
     {
         if (targetDb < gainDb_)
@@ -606,6 +610,11 @@ public:
     float getRangeDb()     const noexcept { return curve_.rangeDb; }
     float getMakeupDb()    const noexcept { return makeupDb_; }
     float getMix()         const noexcept { return mix_; }
+    float getHysteresisDb()const noexcept { return hysteresisDb_; }
+
+    double getAttackMs()  const noexcept { return ballistics_.getAttackMs(); }
+    double getReleaseMs() const noexcept { return ballistics_.getReleaseMs(); }
+    double getHoldMs()    const noexcept { return ballistics_.getHoldMs(); }
 
     // ---- metering ----------------------------------------------------------
     // The reduction currently applied, in dB, NEGATIVE (-6 means 6 dB down).

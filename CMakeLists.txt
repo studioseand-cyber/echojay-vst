@@ -153,15 +153,44 @@ target_sources(EchoJay PRIVATE
     Source/DeviceEditorBase.h
     Source/EchoJayDeviceLookAndFeel.cpp
     Source/EchoJayDeviceLookAndFeel.h
+    Source/EedCompressorEditor.cpp
+    Source/EedCompressorEditor.h
+    Source/EedCompressorProcessor.cpp
+    Source/EedCompressorProcessor.h
+    Source/EedDeEsserEditor.cpp
+    Source/EedDeEsserEditor.h
+    Source/EedDeEsserProcessor.cpp
+    Source/EedDeEsserProcessor.h
     Source/EedDeviceProcessor.cpp
     Source/EedDeviceProcessor.h
     Source/EedDeviceRegistry.cpp
     Source/EedDeviceRegistry.h
+    Source/EedDynamicsCore.h
+    Source/EedDynamicsEditorSupport.h
+    Source/EedDynamicsFaceEditor.cpp
+    Source/EedDynamicsFaceEditor.h
+    Source/EedExpanderEditor.cpp
+    Source/EedExpanderEditor.h
+    Source/EedExpanderProcessor.cpp
+    Source/EedExpanderProcessor.h
     Source/EedGainEditor.cpp
     Source/EedGainEditor.h
     Source/EedGainEngine.h
     Source/EedGainProcessor.cpp
     Source/EedGainProcessor.h
+    Source/EedGateEditor.cpp
+    Source/EedGateEditor.h
+    Source/EedGateProcessor.cpp
+    Source/EedGateProcessor.h
+    Source/EedGrMeter.h
+    Source/EedLimiterEditor.cpp
+    Source/EedLimiterEditor.h
+    Source/EedLimiterProcessor.cpp
+    Source/EedLimiterProcessor.h
+    Source/EedMultibandEditor.cpp
+    Source/EedMultibandEditor.h
+    Source/EedMultibandProcessor.cpp
+    Source/EedMultibandProcessor.h
     Source/EedParamSchema.h
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertEditor.h
@@ -328,15 +357,44 @@ target_sources(EchoJayLink PRIVATE
     Source/DeviceEditorBase.h
     Source/EchoJayDeviceLookAndFeel.cpp
     Source/EchoJayDeviceLookAndFeel.h
+    Source/EedCompressorEditor.cpp
+    Source/EedCompressorEditor.h
+    Source/EedCompressorProcessor.cpp
+    Source/EedCompressorProcessor.h
+    Source/EedDeEsserEditor.cpp
+    Source/EedDeEsserEditor.h
+    Source/EedDeEsserProcessor.cpp
+    Source/EedDeEsserProcessor.h
     Source/EedDeviceProcessor.cpp
     Source/EedDeviceProcessor.h
     Source/EedDeviceRegistry.cpp
     Source/EedDeviceRegistry.h
+    Source/EedDynamicsCore.h
+    Source/EedDynamicsEditorSupport.h
+    Source/EedDynamicsFaceEditor.cpp
+    Source/EedDynamicsFaceEditor.h
+    Source/EedExpanderEditor.cpp
+    Source/EedExpanderEditor.h
+    Source/EedExpanderProcessor.cpp
+    Source/EedExpanderProcessor.h
     Source/EedGainEditor.cpp
     Source/EedGainEditor.h
     Source/EedGainEngine.h
     Source/EedGainProcessor.cpp
     Source/EedGainProcessor.h
+    Source/EedGateEditor.cpp
+    Source/EedGateEditor.h
+    Source/EedGateProcessor.cpp
+    Source/EedGateProcessor.h
+    Source/EedGrMeter.h
+    Source/EedLimiterEditor.cpp
+    Source/EedLimiterEditor.h
+    Source/EedLimiterProcessor.cpp
+    Source/EedLimiterProcessor.h
+    Source/EedMultibandEditor.cpp
+    Source/EedMultibandEditor.h
+    Source/EedMultibandProcessor.cpp
+    Source/EedMultibandProcessor.h
     Source/EedParamSchema.h
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertEditor.h
@@ -432,10 +490,23 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     # plugin targets' built-in device block.
     Source/DeviceEditorBase.cpp
     Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EedCompressorEditor.cpp
+    Source/EedCompressorProcessor.cpp
+    Source/EedDeEsserEditor.cpp
+    Source/EedDeEsserProcessor.cpp
     Source/EedDeviceProcessor.cpp
     Source/EedDeviceRegistry.cpp
+    Source/EedDynamicsFaceEditor.cpp
+    Source/EedExpanderEditor.cpp
+    Source/EedExpanderProcessor.cpp
     Source/EedGainEditor.cpp
     Source/EedGainProcessor.cpp
+    Source/EedGateEditor.cpp
+    Source/EedGateProcessor.cpp
+    Source/EedLimiterEditor.cpp
+    Source/EedLimiterProcessor.cpp
+    Source/EedMultibandEditor.cpp
+    Source/EedMultibandProcessor.cpp
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertProcessor.cpp
     Source/EqEngine.cpp
