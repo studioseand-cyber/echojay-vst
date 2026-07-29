@@ -84,8 +84,12 @@ void EedGateEditor::refreshExtras()
     // a picture.
     curve_.setHysteresisDb ((float) proc_.getParamValue (EedGateProcessor::kHysteresisDb));
 
-    // ---- one float tap: which side of the step the signal is on ------------
+    // ---- the live half: which side of the step the signal LIVES on ---------
+    // A gate is the face this helps most: the glow straddling the two edges of
+    // the hysteresis band is exactly the chatter the device is there to avoid,
+    // and it is a shape rather than something you have to catch happening.
     curve_.setDimmed (byp);
+    curve_.setDwellSource (&proc_.dwellHistogram(), ! byp);
     curve_.setInputLevelDb (byp ? echojay::viz::TransferCurveView::kNoLevel
                                 : proc_.detectorLevelDb());
     curve_.setGainReductionDb (byp ? 0.0f : proc_.gainReductionDb());

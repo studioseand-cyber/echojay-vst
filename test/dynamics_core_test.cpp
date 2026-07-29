@@ -13,6 +13,11 @@
 //   * The 4-BAND SPLITTER's flatness. This is the one that actually catches
 //     bugs: a naive crossover tree looks completely correct in code and is
 //     several dB wrong near the crossovers. Measured, not asserted by reading.
+//   * The DWELL HISTOGRAM the transfer curve glows along. Every failure here is
+//     a picture that LIES — silence lighting the floor of every plot, two levels
+//     collapsing into their average, energy that never fades — and none of them
+//     is visible in the editor, where the only available test is "the glow looks
+//     about right".
 
 #include "EedDynamicsCore.h"
 
@@ -42,6 +47,44 @@ static float settledGrDb (DynamicsCore& c, float levelDb, double seconds = 2.0)
     for (int i = 0; i < n; ++i)
         c.gainForSidechain (amp, amp);
     return c.gainReductionDb();
+}
+
+// ---------------------------------------------------------------------------
+// The dwell histogram, read the way an editor reads it.
+// ---------------------------------------------------------------------------
+static void feedLevel (DynamicsCore& c, float amp, double seconds)
+{
+    const int n = (int) (seconds * kSr);
+    for (int i = 0; i < n; ++i)
+        c.gainForSidechain (amp, amp);
+}
+
+static bool readDwell (const DynamicsCore& c, float* bins)
+{
+    return c.dwellHistogram().read (bins);
+}
+
+static float dwellTotal (const DynamicsCore& c)
+{
+    float bins[dyn::kDwellBins];
+    if (! readDwell (c, bins)) return -1.0f;
+
+    float sum = 0.0f;
+    for (float v : bins) sum += v;
+    return sum;
+}
+
+// The dB the histogram says the signal spent most of its time at.
+static float hottestDwellDb (const DynamicsCore& c)
+{
+    float bins[dyn::kDwellBins];
+    if (! readDwell (c, bins)) return dyn::kSilenceDb;
+
+    int best = 0;
+    for (int i = 1; i < dyn::kDwellBins; ++i)
+        if (bins[i] > bins[best]) best = i;
+
+    return dyn::dwellBinCentreDb (best);
 }
 
 int main()
@@ -501,6 +544,127 @@ int main()
         s.setCrossovers (1000.0, 1000.0, 1000.0);
         check (s.crossover1() < s.crossover2() && s.crossover2() < s.crossover3(),
                "three identical frequencies are spread rather than collapsed");
+    }
+
+    // -----------------------------------------------------------------------
+    // The DWELL HISTOGRAM. This is what the transfer curve's glow is drawn
+    // from, and every failure below is a picture that lies rather than a
+    // picture that is ugly — which is why it is measured here and not left to
+    // the editor, where "the glow looks about right" is the only available test.
+    // -----------------------------------------------------------------------
+    std::printf ("== dwell histogram: the axis ==\n");
+    {
+        check (dyn::dwellBinFor (dyn::kSilenceDb) < 0,
+               "digital silence belongs in NO bin");
+        check (dyn::dwellBinFor (dyn::kDwellFloorDb - 0.01f) < 0,
+               "and so does anything below the floor");
+        check (dyn::dwellBinFor (dyn::kDwellFloorDb) == 0, "the floor is bin 0");
+        check (dyn::dwellBinFor (dyn::kDwellTopDb) == dyn::kDwellBins - 1,
+               "the top is the last bin");
+        check (dyn::dwellBinFor (dyn::kDwellTopDb + 40.0f) == dyn::kDwellBins - 1,
+               "and over the top CLAMPS rather than dropping - a limiter's input "
+               "lives above 0 dBFS and belongs at the top of the picture");
+
+        // Round-tripping matters because the view interpolates its own dB axis
+        // out of these centres; a half-bin offset here is a glow that sits a
+        // fraction of a dB off the level it claims to be showing.
+        for (int b = 0; b < dyn::kDwellBins; ++b)
+            if (dyn::dwellBinFor (dyn::dwellBinCentreDb (b)) != b)
+            {
+                check (false, "bin centre " + std::to_string (b) + " round-trips");
+                break;
+            }
+        check (true, "every bin centre maps back to its own bin");
+    }
+
+    std::printf ("== dwell histogram: it lands where the signal is ==\n");
+    {
+        DynamicsCore c;
+        c.prepare (kSr);
+        c.setMode (DynamicsMode::Compress);
+        c.setThresholdDb (-20.0f);
+
+        check (dwellTotal (c) == 0.0f, "a prepared core has published nothing yet");
+
+        // Two seconds of a steady -20 dBFS, which is 375 whole flush intervals:
+        // no partial publish to reason about.
+        feedLevel (c, dyn::dbToGain (-20.0f), 2.0);
+
+        const float hot = hottestDwellDb (c);
+        check (near (hot, -20.0, 1.5),
+               "a steady -20 dBFS signal is hottest at -20 dB (got "
+               + std::to_string (hot) + ")");
+        check (dwellTotal (c) > 0.0f, "and there is energy in the histogram");
+    }
+
+    std::printf ("== dwell histogram: silence does not light the floor ==\n");
+    {
+        // The bug this catches has a shape: clamping an out-of-range level into
+        // bin 0 instead of dropping it puts a permanent bright spot at the
+        // bottom of every plot in the rack, on a signal that is not there.
+        DynamicsCore c;
+        c.prepare (kSr);
+
+        feedLevel (c, 0.0f, 1.0);
+        check (dwellTotal (c) == 0.0f, "a second of digital silence accumulates nothing");
+    }
+
+    std::printf ("== dwell histogram: old energy fades ==\n");
+    {
+        DynamicsCore c;
+        c.prepare (kSr);
+
+        feedLevel (c, dyn::dbToGain (-12.0f), 2.0);
+        const float loud = dwellTotal (c);
+        check (loud > 0.0f, "energy accumulated while the signal played");
+
+        // Three seconds is six time constants. Without the decay this total
+        // would simply stay where it was and the glow would be a permanent
+        // record of everything the plugin had ever heard.
+        feedLevel (c, 0.0f, 3.0);
+        const float quiet = dwellTotal (c);
+        check (quiet < loud * 0.02f,
+               "and three seconds of silence faded it to under 2% of that");
+
+        c.reset();
+        check (dwellTotal (c) == 0.0f, "reset() publishes an empty histogram");
+    }
+
+    std::printf ("== dwell histogram: two levels, two bright bands ==\n");
+    {
+        // The whole point of a histogram rather than a level: a signal that
+        // spends its time at two levels has to READ as two, not as the average
+        // of them, which is all a single float could ever say.
+        DynamicsCore c;
+        c.prepare (kSr);
+
+        // Alternating 20 ms bursts, long enough for the detector to settle on
+        // each. The decay is deliberately outrun by keeping both alive.
+        for (int rep = 0; rep < 25; ++rep)
+        {
+            feedLevel (c, dyn::dbToGain (-30.0f), 0.02);
+            feedLevel (c, dyn::dbToGain (-6.0f),  0.02);
+        }
+
+        float bins[dyn::kDwellBins];
+        check (readDwell (c, bins), "the histogram reads");
+
+        auto binNear = [&bins] (float db)
+        {
+            const int b = dyn::dwellBinFor (db);
+            float best = 0.0f;
+            for (int i = b - 2; i <= b + 2; ++i)
+                if (i >= 0 && i < dyn::kDwellBins) best = std::max (best, bins[i]);
+            return best;
+        };
+
+        // The midpoint is where a single averaged level would have put
+        // everything, and it is where nothing should be.
+        check (binNear (-6.0f)  > 0.0f, "the loud level is lit");
+        check (binNear (-30.0f) > 0.0f, "the quiet level is lit");
+        check (binNear (-18.0f) < 0.25f * std::min (binNear (-6.0f), binNear (-30.0f)),
+               "and the average of the two is NOT - a histogram says both, a "
+               "single level could only ever say neither");
     }
 
     std::printf ("\n%s (%d failure%s)\n",

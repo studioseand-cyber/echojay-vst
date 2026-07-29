@@ -324,18 +324,20 @@ void EedMultibandEditor::refreshCurves()
 
         c->setMakeupDb (bandParam (EedMultibandProcessor::kMakeupDb));
 
-        // ---- one float tap, per band ---------------------------------------
-        // Each band's OWN detector: a single input level would put the same dot
-        // on all four plots and say nothing about which band is being worked.
+        // ---- the live half, per band ---------------------------------------
+        // Each band's OWN histogram: one shared shape would glow identically on
+        // all four plots and say nothing about which band is being worked, and
+        // the low band and the air band of a mix do not live at the same level.
+        c->setDwellSource (proc_.dwellHistogram (b), ! bandOff);
         c->setInputLevelDb (bandOff ? echojay::viz::TransferCurveView::kNoLevel
                                     : proc_.detectorLevelDb (b));
         c->setGainReductionDb (bandOff ? 0.0f : proc_.gainReductionDb (b));
 
         // Two independent fades, and they are not the same fade. DIMMED means
         // "this band is bypassed and is not doing what the picture shows", and
-        // it takes the dot away because there is nothing to report. SELECTED is
+        // it takes the glow away because there is nothing to report. SELECTED is
         // only about which band you are editing — an unselected band recedes but
-        // keeps its dot, because "one plot in front, four plots live" is the
+        // keeps its glow, because "one plot in front, four plots live" is the
         // entire reason four are drawn instead of one.
         c->setDimmed (bandOff);
         c->setSelected (b == selectedBand_);

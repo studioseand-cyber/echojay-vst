@@ -19,12 +19,12 @@
     numbers that look reasonable one at a time and fight each other together —
     band 2 pulling 9 dB while band 3 does nothing, which reads on the dials as a
     perfectly ordinary pair of settings. Four curves side by side, each with its
-    own live dot, is the view that makes that visible at a glance, and it is why
+    own live glow, is the view that makes that visible at a glance, and it is why
     they are not folded into one plot with a band selector.
 
     A ROW, not a vertical stack. Four plots stacked in the height an inline rack
     slot has would be about 28 px each, which is not a curve — it is a smudge
-    with a dot on it. Across, they sit directly over the four band buttons they
+    with a glow on it. Across, they sit directly over the four band buttons they
     belong to, which is also what makes the mapping obvious without labelling it
     twice.
 

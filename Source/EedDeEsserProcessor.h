@@ -65,6 +65,14 @@ public:
     // device, and it is what the band view plots.
     float detectorLevelDb() const noexcept { return core_.detectorLevelDb(); }
 
+    // Where the signal LIVES on that curve — the dwell histogram behind the
+    // transfer curve's glow. Same never-block contract as the floats above,
+    // published whole so the shape is never half of two different moments.
+    const echojay::dyn::DwellTap& dwellHistogram() const noexcept
+    {
+        return core_.dwellHistogram();
+    }
+
     // The curve this device runs. Fixed rather than published (a de-esser that
     // hands out a ratio is a compressor with a filter), but the editor has to
     // draw the curve the DSP actually runs, so they are named here once instead

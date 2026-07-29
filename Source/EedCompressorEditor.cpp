@@ -85,8 +85,13 @@ void EedCompressorEditor::refreshExtras()
 
     curve_.setMakeupDb ((float) proc_.getParamValue (EedCompressorProcessor::kMakeupDb));
 
-    // ---- one float tap: where on that curve the signal is sitting ----------
+    // ---- the live half: WHERE ON THAT CURVE THE SIGNAL LIVES ---------------
+    // The dwell histogram, accumulated per sample by the core and eased by the
+    // view on its own 60 Hz timer. A threshold set 10 dB above where the music
+    // actually sits looks identical on the knobs and is obvious the moment the
+    // curve glows nowhere near its knee.
     curve_.setDimmed (byp);
+    curve_.setDwellSource (&proc_.dwellHistogram(), ! byp);
     curve_.setInputLevelDb (byp ? echojay::viz::TransferCurveView::kNoLevel
                                 : proc_.detectorLevelDb());
     curve_.setGainReductionDb (byp ? 0.0f : proc_.gainReductionDb());

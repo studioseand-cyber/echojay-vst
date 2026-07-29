@@ -194,13 +194,14 @@ void EedDeEsserEditor::refreshExtras()
     band_.setListening (listen);
 
     // ---- the live floats ----------------------------------------------------
-    // Note this is the SIDECHAIN's level, not the input's: the dot's position on
-    // the transfer curve is "how much sibilance is there", which is the only
+    // Note this is the SIDECHAIN's level, not the input's: what the transfer
+    // curve glows along is "how much sibilance is there", which is the only
     // reading against which this device's threshold means anything.
     const float level = deEsser_.detectorLevelDb();
     const float gr    = deEsser_.gainReductionDb();
 
     curve_.setDimmed (byp);
+    curve_.setDwellSource (&deEsser_.dwellHistogram(), ! byp);
     curve_.setInputLevelDb (byp ? echojay::viz::TransferCurveView::kNoLevel : level);
     curve_.setGainReductionDb (byp ? 0.0f : gr);
 

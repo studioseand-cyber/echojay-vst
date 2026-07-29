@@ -2,12 +2,15 @@
     VizTap.h  —  the audio-thread -> editor data path every live visualisation
     uses (VISUALS_PLAN.md, "Small tap helper").
 
-    Two things, and deliberately only two, because the plan's whole point is that
-    most visuals need NO tap at all:
+    Three things, and deliberately only three, because the plan's whole point is
+    that most visuals need NO tap at all:
 
-      * FloatTap  — one lock-free float. GR, detector level, LFO phase, I/O peak.
-      * SampleTap — a small lock-free ring of recent samples, mono or stereo.
-                    Only the goniometer and the harmonic bars need one.
+      * FloatTap     — one lock-free float. GR, detector level, LFO phase, I/O peak.
+      * SampleTap    — a small lock-free ring of recent samples, mono or stereo.
+                       Only the goniometer and the harmonic bars need one.
+      * HistogramTap — a whole fixed-size ARRAY, published as one consistent
+                       snapshot. For a visual whose unit of meaning is a SHAPE
+                       rather than a number: the dynamics dwell heatmap.
 
     This is not a new contract. It is the one SurgicalEqProcessor::AnalysisRing
     and DynamicsCore::gainReductionDb already use, factored out so a device adds
@@ -191,7 +194,104 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// The two rings anything in Source/viz actually needs.
+// HistogramTap — one fixed-size float array, published whole.
+//
+// WHY THIS IS NOT JUST kBins FloatTaps. A histogram is read as a shape: the
+// eye is comparing bin 40 against bin 41 against the running maximum, so a
+// frame that mixes bins from two different moments does not read as "20 ms
+// stale", it reads as a spike that was never there. The seqlock below is the
+// cheapest way to say "these 128 numbers were all true at the same instant".
+//
+// The counter is even while the array is at rest and ODD while it is being
+// rewritten. A reader takes it before and after its copy: same value, and even,
+// means nothing moved underneath. Anything else and the reader gives up and
+// keeps the frame it already had, which is the right answer for a visual —
+// standing still for one frame is invisible, and a frame of zeros is a flash.
+//
+// The writer NEVER waits, never allocates and never retries, which is the whole
+// contract: the audio thread is not permitted to care whether anyone is
+// looking. That asymmetry is why this is a seqlock and not a mutex.
+//
+// (Strictly, the plain array under a seqlock is a data race by the letter of
+// the memory model — the same one SampleTap and the EQ's AnalysisRing already
+// take, for the same reason and with the same fences.)
+// ---------------------------------------------------------------------------
+template <int kBins>
+class HistogramTap
+{
+public:
+    static_assert (kBins > 0, "a histogram needs bins");
+
+    static constexpr int numBins = kBins;
+
+    // ---- audio thread ------------------------------------------------------
+    void publish (const float* bins) noexcept
+    {
+        if (bins == nullptr) return;
+
+        const std::uint32_t s = seq_.load (std::memory_order_relaxed);
+
+        seq_.store (s + 1, std::memory_order_relaxed);       // odd: rewriting
+        std::atomic_thread_fence (std::memory_order_release);
+
+        for (int i = 0; i < kBins; ++i)
+            data_[(std::size_t) i] = bins[i];
+
+        std::atomic_thread_fence (std::memory_order_release);
+        seq_.store (s + 2, std::memory_order_relaxed);       // even: at rest
+    }
+
+    // ---- message thread ----------------------------------------------------
+    // Fills `dest` with kBins floats and returns true, or leaves it ALONE and
+    // returns false if the writer was mid-publish for every attempt. Leaving it
+    // alone is deliberate: the caller's previous frame is a better picture than
+    // a half-written one.
+    bool read (float* dest) const noexcept
+    {
+        if (dest == nullptr) return false;
+
+        for (int attempt = 0; attempt < kMaxAttempts; ++attempt)
+        {
+            const std::uint32_t before = seq_.load (std::memory_order_relaxed);
+            if ((before & 1u) != 0u) continue;
+
+            std::atomic_thread_fence (std::memory_order_acquire);
+
+            for (int i = 0; i < kBins; ++i)
+                dest[i] = data_[(std::size_t) i];
+
+            std::atomic_thread_fence (std::memory_order_acquire);
+
+            if (seq_.load (std::memory_order_relaxed) == before)
+                return true;
+        }
+
+        return false;
+    }
+
+    // Has anything been published since `previous`? Lets a reader skip the copy
+    // entirely when the audio thread is not running.
+    std::uint32_t generation() const noexcept
+    {
+        return seq_.load (std::memory_order_relaxed) >> 1;
+    }
+
+    // Allocation free — call it from prepareToPlay / reset, like the rings.
+    void clear() noexcept
+    {
+        float zeros[kBins] {};
+        publish (zeros);
+    }
+
+private:
+    static constexpr int kMaxAttempts = 4;
+
+    std::array<float, (std::size_t) kBins> data_ {};
+    std::atomic<std::uint32_t> seq_ { 0 };
+};
+
+// ---------------------------------------------------------------------------
+// The rings anything in Source/viz actually needs.
 // ---------------------------------------------------------------------------
 
 // Stereo, 16-bit, ~46 ms at 44.1 kHz — the goniometer's input. Long enough that

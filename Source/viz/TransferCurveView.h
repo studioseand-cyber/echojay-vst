@@ -13,11 +13,35 @@
     FFT. Threshold / ratio / knee / range are values the editor already reads
     through getParamValue, and the whole plot is a pure function of them.
 
-    The optional live dot is the ONE float tap (VISUALS_PLAN.md, "One float tap"):
-    the detector's current level in dB, polled on the editor's existing timer,
-    the same benign racy single-float read as DynamicsCore::gainReductionDb.
-    Without it the curve is a diagram; with it you watch the signal walk into the
-    knee, which is what makes an AI's threshold move legible.
+    THE DWELL GLOW is the live half, and it replaced a flying dot. The dot was
+    honest and it was wrong: a single float polled at 20 Hz is twenty opinions a
+    second about a signal that had thousands of levels in that time, so it could
+    only ever be drawn as a point that jumps, and a jumping point is read as
+    "the signal is unstable" when what is actually unstable is the sampling.
+
+    What a user wants from this plot is not "where is the signal RIGHT NOW", it
+    is "where does the signal LIVE, and is that anywhere near the knee". So the
+    curve itself glows, brightest where the detector spends the most time — cold
+    teal through amber to white-hot — and the answer is legible at a glance
+    without watching anything move.
+
+    Smoothness is not a finish on that, it is the mechanism, and it is built in
+    three layers, none of which the other two can substitute for:
+
+      1. AUDIO RATE. DynamicsCore accumulates the histogram per sample and
+         publishes it whole (dyn::DwellTap). The density is an INTEGRAL, not a
+         sample, so it is already continuous before the editor sees it — and it
+         is right about transients that live entirely between two UI frames.
+      2. TIME-CONSTANT EASING. This view keeps a displayed histogram it eases
+         toward the published one with (1 - exp(-dt/tau)), not a fixed multiply.
+         A fixed multiply is a different speed at every frame rate; this is the
+         same speed at 60 Hz, at 24 Hz, and across a dropped frame.
+      3. SPATIAL SMOOTHING across bins, so the gradient along the curve is
+         continuous rather than 128 visible steps.
+
+    The instantaneous level is still taken (setInputLevelDb) but it is now only
+    a soft gaussian lift in the glow — a whisper of "and here, this instant" —
+    deliberately not a dot, because a dot is the thing this replaced.
 */
 
 #pragma once
@@ -28,13 +52,15 @@
 namespace echojay::viz
 {
 
-class TransferCurveView : public VizView
+class TransferCurveView : public VizView,
+                          private juce::Timer
 {
 public:
     TransferCurveView();
+    ~TransferCurveView() override;
 
-    // Anything at or below this hides the live dot — the value a device passes
-    // when it is bypassed or has never seen a sample.
+    // Anything at or below this drops the instantaneous whisper — the value a
+    // device passes when it is bypassed or has never seen a sample.
     static constexpr float kNoLevel = -200.0f;
 
     // Nothing to draw for the two optional overlays below.
@@ -79,20 +105,34 @@ public:
     // ceiling is the one the device is actually making. kNoCeiling for none.
     void setCeilingLineDb (float db);
 
-    // ---- the one-float-tap part -------------------------------------------
-    // The detector's current level, dB. kNoLevel hides the dot.
+    // ---- the dwell glow ----------------------------------------------------
+    // The core's published histogram, and whether it should be believed right
+    // now (false for a bypassed or band-bypassed device, which fades the glow
+    // out over the easing time constant rather than snapping it off).
+    //
+    // A POINTER, polled by this view's OWN 60 Hz timer rather than pushed by
+    // the editor's 20 Hz one, and that is the point: the editor's timer is
+    // there to sync knobs, and easing toward a target that only moves 20 times
+    // a second reintroduces exactly the stepping the histogram was built to
+    // remove. The tap outlives the view (it lives in the processor), and the
+    // editor re-passes it every refresh, so a stale pointer is not reachable.
+    //
+    // nullptr detaches entirely and stops the timer.
+    void setDwellSource (const echojay::dyn::DwellTap* tap, bool active);
+
+    // The detector's current level, dB. Now only a soft local lift in the glow;
+    // kNoLevel drops it. NOT a dot — see the header comment.
     void setInputLevelDb (float db);
 
-    // Purely for the readout beside the dot; the dot itself rides the static
-    // curve so it reads as "where on the curve am I", not "where did the
-    // ballistics get to".
+    // The reduction readout in the corner. Not part of the glow: it is the one
+    // number the picture cannot express as a shape.
     void setGainReductionDb (float db);
 
     // ---- one of several, for the 4-band's row of four ---------------------
     // Recedes this curve so a sibling can be the one being edited. DELIBERATELY
     // NOT setDimmed: dimmed means "this device is bypassed and is not doing
-    // what the picture shows", and it correctly hides the live dot. An
-    // unselected band IS still processing, so its dot has to stay — four live
+    // what the picture shows", and it correctly takes the glow away. An
+    // unselected band IS still processing, so its glow has to stay — four live
     // plots with one in front is the entire point of showing four.
     void setSelected (bool s);
 
@@ -101,6 +141,47 @@ protected:
     void resized() override;
 
 private:
+    void timerCallback() override;
+
+    static constexpr int kDwellBins = echojay::dyn::kDwellBins;
+
+    // ---- the glow's tuning, in one place ----------------------------------
+    // How long the displayed histogram takes to cover ~63% of the distance to
+    // the published one. 120 ms is the value that makes a compressor's glow
+    // feel attached to the music: shorter and it inherits the jitter of the
+    // block rate, longer and it lags the phrase you are listening to.
+    static constexpr float kEaseTauSec = 0.120f;
+
+    // The self-scaling reference rises fast (a new peak IS the new maximum) and
+    // falls slowly, so the picture does not re-normalise into a blaze every
+    // time the music thins out for a bar.
+    static constexpr float kMaxRiseTauSec = 0.25f;
+    static constexpr float kMaxFallTauSec = 2.0f;
+
+    // Below this the histogram is nothing, and nothing is not worth a frame.
+    static constexpr float kQuiet = 1.0e-4f;
+
+    // The instantaneous whisper: how wide in dB, and how much it can lift the
+    // local intensity. Small on purpose — it is a hint, not a marker.
+    static constexpr float kWhisperSigmaDb = 2.0f;
+    static constexpr float kWhisperGain    = 0.22f;
+
+    // 0..1 intensity for an input level: the smoothed histogram there, scaled
+    // by the running maximum, gamma-lifted, plus the whisper. Zero everywhere
+    // when nothing has been published, which is what makes an empty histogram
+    // paint as a plain cold curve instead of crashing.
+    float dwellIntensity (float inDb) const noexcept;
+
+    static juce::Colour dwellColour (float intensity);
+
+    // One heat-coloured pass along the curve, in `segments` short strokes each
+    // taking its colour from the dwell at its own midpoint. `baseAlpha` is what
+    // it draws with NO dwell at all: zero for the bloom layers (they only exist
+    // where there is energy) and non-zero for the core line (the curve is a
+    // diagram before it is a meter, and it has to be legible in silence).
+    void strokeHeat (juce::Graphics& g, int segments, float width,
+                     float baseAlpha, float glowAlpha, float a) const;
+
     // Output dB for an input dB, INCLUDING makeup — the curve as heard.
     float outputDb (float inDb) const noexcept;
 
@@ -130,9 +211,32 @@ private:
     bool  selected_     = true;
 
     // Rebuilt on a curve or size change only. Repainting is cheap; recomputing
-    // 200 gain-computer evaluations at 20 Hz for a curve that has not moved is
+    // 200 gain-computer evaluations at 60 Hz for a curve that has not moved is
     // not, and six dynamics editors can be open at once.
-    juce::Path curvePath_, fillPath_;
+    //
+    // The curve is kept as POINTS as well as a path, because the glow strokes
+    // it in short segments with a different colour each — a single path can
+    // only carry one colour, so the points are what the heat pass walks.
+    juce::Path fillPath_;
+    std::vector<juce::Point<float>> curvePts_;
+    std::vector<float>              curveInDb_;
+
+    // ---- the dwell glow's state -------------------------------------------
+    const echojay::dyn::DwellTap* dwellTap_ = nullptr;
+    bool  dwellActive_ = false;
+
+    // target_ is what the audio thread published; displayed_ eases toward it;
+    // smoothed_ is displayed_ blurred across bins, and is the only one paint
+    // reads. Three arrays rather than one because each layer of smoothing has
+    // to be able to run at its own rate: easing is per frame, blurring is per
+    // frame, and publishing is per 256 samples.
+    std::array<float, (std::size_t) kDwellBins> target_   {};
+    std::array<float, (std::size_t) kDwellBins> displayed_{};
+    std::array<float, (std::size_t) kDwellBins> smoothed_ {};
+
+    float  runMax_    = 0.0f;
+    double lastTickMs_ = 0.0;
+    bool   wasAlive_  = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TransferCurveView)
 };

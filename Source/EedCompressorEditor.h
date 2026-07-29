@@ -15,7 +15,7 @@
         editor already reads through getParamValue, using the processor's OWN
         echojay::GainCurve. No processor change, no tap, and no possibility of
         the picture disagreeing with the DSP.
-      * ONE FLOAT TAP — the dot riding that curve is
+      * THE DWELL GLOW — what lights that curve is
         DynamicsCore::detectorLevelDb(), polled on the timer the face editor
         already runs, on the same benign racy contract as the GR meter.
 

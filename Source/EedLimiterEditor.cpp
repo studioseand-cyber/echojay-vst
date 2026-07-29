@@ -100,8 +100,9 @@ void EedLimiterEditor::refreshExtras()
 
     curve_.setCeilingLineDb (ceiling);
 
-    // ---- one float tap: how far into the wall the signal is ----------------
+    // ---- the live half: how much of the signal is INTO the wall ------------
     curve_.setDimmed (byp);
+    curve_.setDwellSource (&limiter_.dwellHistogram(), ! byp);
     curve_.setInputLevelDb (byp ? echojay::viz::TransferCurveView::kNoLevel
                                 : limiter_.detectorLevelDb());
     curve_.setGainReductionDb (byp ? 0.0f : limiter_.gainReductionDb());

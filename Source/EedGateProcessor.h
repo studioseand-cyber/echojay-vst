@@ -55,9 +55,17 @@ public:
 
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
 
-    // The detector's current level, for the dot riding the transfer curve. Same
-    // benign racy single-float contract as the meter above.
+    // The detector's current level, for the instantaneous lift in the transfer
+    // curve's glow. Same benign racy single-float contract as the meter above.
     float detectorLevelDb() const noexcept { return core_.detectorLevelDb(); }
+
+    // Where the signal LIVES on that curve — the dwell histogram behind the
+    // transfer curve's glow. Same never-block contract as the floats above,
+    // published whole so the shape is never half of two different moments.
+    const echojay::dyn::DwellTap& dwellHistogram() const noexcept
+    {
+        return core_.dwellHistogram();
+    }
 
 private:
     echojay::DynamicsCore core_;

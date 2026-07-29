@@ -94,12 +94,23 @@ public:
     // The level THIS BAND's detector is seeing — the band's own content after
     // the crossover, not the full-range input. Four independent taps, because
     // four independent compressors is what the device is: a single input level
-    // would put the same dot on all four curves and say nothing about which band
+    // would read identically on all four curves and say nothing about which band
     // is actually being worked.
     float detectorLevelDb (int band) const noexcept
     {
         return (band >= 0 && band < kNumBands) ? cores_[band].detectorLevelDb()
                                                : echojay::dyn::kSilenceDb;
+    }
+
+    // Where THIS BAND's content lives, for the glow along its curve. Four
+    // separate histograms for the same reason there are four detectors: the low
+    // band of a mix and its air band do not spend their time at the same level,
+    // and one shared shape would say the opposite. nullptr for a bad index, so
+    // a caller with no band simply has nothing to draw.
+    const echojay::dyn::DwellTap* dwellHistogram (int band) const noexcept
+    {
+        return (band >= 0 && band < kNumBands) ? &cores_[band].dwellHistogram()
+                                               : nullptr;
     }
 
     // The knee and mode every band runs, for drawing their curves. knee IS a

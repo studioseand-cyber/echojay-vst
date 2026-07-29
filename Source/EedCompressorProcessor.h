@@ -52,9 +52,18 @@ public:
     // For the editor's GR meter. Negative dB, 0 when not reducing.
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
 
-    // For the live dot on the editor's transfer curve: the level the detector
-    // is seeing, dBFS. Same one-float contract as the line above.
+    // The level the detector is seeing this instant, dBFS. Same one-float
+    // contract as the line above. Only a whisper of extra brightness on the
+    // curve's glow now — the shape itself comes from the histogram below.
     float detectorLevelDb() const noexcept { return core_.detectorLevelDb(); }
+
+    // Where the signal LIVES on that curve — the dwell histogram behind the
+    // transfer curve's glow. Same never-block contract as the floats above,
+    // published whole so the shape is never half of two different moments.
+    const echojay::dyn::DwellTap& dwellHistogram() const noexcept
+    {
+        return core_.dwellHistogram();
+    }
 
     // The transfer curve the editor draws is drawn from the core's OWN gain
     // computer, not from a second copy of "threshold, ratio, knee" in UI code.

@@ -50,6 +50,14 @@ public:
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
     float detectorLevelDb()  const noexcept { return core_.detectorLevelDb(); }
 
+    // Where the signal LIVES on that curve — the dwell histogram behind the
+    // transfer curve's glow. Same never-block contract as the floats above,
+    // published whole so the shape is never half of two different moments.
+    const echojay::dyn::DwellTap& dwellHistogram() const noexcept
+    {
+        return core_.dwellHistogram();
+    }
+
     // The knee this device runs, fixed rather than published (see the note in
     // the constructor on why an expander does not hand out a hard-knee switch).
     // Public because the editor has to draw the curve the DSP actually runs, and

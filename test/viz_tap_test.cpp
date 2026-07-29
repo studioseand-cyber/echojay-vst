@@ -20,16 +20,25 @@
         exactly the moment a user is staring at the scope.
       * mono in gives the same signal on both sides, so a mono source shows as a
         vertical line rather than as an empty scope.
+      * HistogramTap publishes a WHOLE frame or nothing. A histogram is read as
+        a shape, so bins caught from two different publishes do not look stale,
+        they look like a spike that never happened — and that is the one failure
+        a seqlock exists to prevent, so it is measured here against a real
+        concurrent writer rather than asserted.
+      * a FAILED read leaves the reader's array alone, which is what lets the
+        dwell glow hold its previous frame instead of flashing to zero.
 
     Build:
-      g++ -std=c++17 -O2 -I../Source viz_tap_test.cpp -o viztaptest && ./viztaptest
+      g++ -std=c++17 -O2 -pthread -I../Source viz_tap_test.cpp -o viztaptest && ./viztaptest
 */
 
 #include "viz/VizTap.h"
 
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -182,6 +191,99 @@ int main()
         check (t.read (nullptr, nullptr, 4) == 0, "reading into null is a no-op");
         check (t.read (l, r, 0) == 0, "reading zero samples is a no-op");
         check (t.read (l, r, 4) == 4, "an untouched ring still reads (as silence)");
+    }
+
+    std::printf ("== HistogramTap ==\n");
+    {
+        echojay::viz::HistogramTap<8> h;
+
+        float out[8];
+        for (int i = 0; i < 8; ++i) out[i] = -1.0f;
+
+        // An untouched tap reads as silence rather than refusing: an editor that
+        // opens before the transport rolls has to get zeros, not a stale frame
+        // and not a failure it has to special-case.
+        check (h.read (out), "an untouched tap reads");
+
+        bool allZero = true;
+        for (float v : out) allZero = allZero && v == 0.0f;
+        check (allZero, "and it reads as zeros");
+
+        const float bins[8] { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f };
+        h.publish (bins);
+        check (h.read (out), "reads back after a publish");
+
+        bool same = true;
+        for (int i = 0; i < 8; ++i) same = same && out[i] == bins[i];
+        check (same, "every bin round-trips, in order");
+
+        // The generation counter is what lets a reader skip the copy when the
+        // audio thread is not running. It counts PUBLISHES, so it must not move
+        // on a read and must not skip on a publish.
+        const std::uint32_t g0 = h.generation();
+        (void) h.read (out);
+        check (h.generation() == g0, "reading does not advance the generation");
+
+        h.publish (bins);
+        check (h.generation() == g0 + 1, "publishing advances it by exactly one");
+
+        h.clear();
+        check (h.read (out), "clear() publishes");
+
+        allZero = true;
+        for (float v : out) allZero = allZero && v == 0.0f;
+        check (allZero, "and what it publishes is zeros");
+
+        // Degenerate inputs are no-ops, not crashes — same contract as the ring.
+        h.publish (nullptr);
+        check (! h.read (nullptr), "reading into null is a no-op that reports failure");
+        check (echojay::viz::HistogramTap<8>::numBins == 8, "numBins is the template argument");
+
+    }
+
+    std::printf ("== HistogramTap under contention ==\n");
+    {
+        // THE test for a seqlock, and the only one that can fail: a successful
+        // read must be ONE snapshot, never bins from two different publishes.
+        //
+        // Every published frame here is uniform — all 64 bins carry the same
+        // counter — so "internally consistent" is checkable without knowing
+        // which frame the reader caught. A torn read shows up as two different
+        // numbers in one array, which is exactly the spike-that-never-happened
+        // the glow would draw.
+        constexpr int kBins = 64;
+        echojay::viz::HistogramTap<kBins> h;
+
+        std::atomic<bool> stop { false };
+
+        std::thread writer ([&h, &stop]
+        {
+            float frame[kBins];
+            for (float counter = 1.0f; ! stop.load(); counter += 1.0f)
+            {
+                for (int i = 0; i < kBins; ++i) frame[i] = counter;
+                h.publish (frame);
+            }
+        });
+
+        int reads = 0, torn = 0, gaveUp = 0;
+        float dest[kBins];
+
+        for (int i = 0; i < 200000; ++i)
+        {
+            if (! h.read (dest)) { ++gaveUp; continue; }
+
+            ++reads;
+            for (int b = 1; b < kBins; ++b)
+                if (dest[b] != dest[0]) { ++torn; break; }
+        }
+
+        stop.store (true);
+        writer.join();
+
+        check (torn == 0, "no successful read ever mixed two publishes");
+        check (reads > 0, "and the reader got through (" + std::to_string (reads)
+                          + " reads, " + std::to_string (gaveUp) + " retries exhausted)");
     }
 
     std::printf (failures == 0 ? "\nALL VIZ TAP TESTS PASSED\n"

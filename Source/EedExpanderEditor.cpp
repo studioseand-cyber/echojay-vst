@@ -72,8 +72,9 @@ void EedExpanderEditor::refreshExtras()
                      (float) proc_.getParamValue (EedExpanderProcessor::kRangeDb),
                      echojay::DynamicsMode::Expand);
 
-    // ---- one float tap: where on the slope the signal is sitting -----------
+    // ---- the live half: where on the slope the signal LIVES ----------------
     curve_.setDimmed (byp);
+    curve_.setDwellSource (&proc_.dwellHistogram(), ! byp);
     curve_.setInputLevelDb (byp ? echojay::viz::TransferCurveView::kNoLevel
                                 : proc_.detectorLevelDb());
     curve_.setGainReductionDb (byp ? 0.0f : proc_.gainReductionDb());

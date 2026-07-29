@@ -43,7 +43,10 @@
 
 #pragma once
 
+#include "viz/VizTap.h"
+
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -81,6 +84,49 @@ namespace dyn
         if (ms <= 0.0 || sampleRate <= 0.0) return 1.0f;
         const double sec = ms * 0.001;
         return (float) (1.0 - std::exp (-1.0 / (sec * sampleRate)));
+    }
+
+    // ---- the DWELL HISTOGRAM's axis ---------------------------------------
+    // How long the detector spends at each input level, in bins of dB. This is
+    // what the transfer curve glows along: a compressor whose signal lives at
+    // -18 dB has a bright band at -18 dB, and a threshold set 10 dB above where
+    // the music actually sits is a curve that glows nowhere near its knee.
+    //
+    // ONE fixed axis rather than a per-device one, because it is written on the
+    // audio thread and read by a view that may be resized, rescaled or told to
+    // change its floor at any moment. A histogram whose bins mean different dB
+    // on the two sides of the tap is a picture that is wrong in a way nothing
+    // can detect. The view interpolates its own axis out of these bins instead.
+    //
+    // -96 .. +12 dB in 128 bins is 0.84 dB per bin — finer than any plot this
+    // draws into, and wide enough for a limiter, whose input is routinely over
+    // 0 dBFS because that is what a limiter is for.
+    constexpr int   kDwellBins    = 128;
+    constexpr float kDwellFloorDb = -96.0f;
+    constexpr float kDwellTopDb   =  12.0f;
+
+    using DwellTap = echojay::viz::HistogramTap<kDwellBins>;
+
+    // The bin a level belongs in, or -1 for "below the axis".
+    //
+    // -1 rather than clamping to bin 0 matters: digital silence reports
+    // kSilenceDb, and folding that into the bottom bin would leave every plot
+    // in the rack with a permanent bright spot at its floor that has nothing to
+    // do with the music. Over the TOP the clamp is correct — material above
+    // +12 dBFS is real, and it belongs at the top of the picture.
+    inline int dwellBinFor (float db) noexcept
+    {
+        if (db < kDwellFloorDb) return -1;
+
+        const float t = (db - kDwellFloorDb) / (kDwellTopDb - kDwellFloorDb);
+        const int   b = (int) (t * (float) kDwellBins);
+        return b < kDwellBins ? b : kDwellBins - 1;
+    }
+
+    inline float dwellBinCentreDb (int bin) noexcept
+    {
+        return kDwellFloorDb
+             + ((float) bin + 0.5f) * (kDwellTopDb - kDwellFloorDb) / (float) kDwellBins;
     }
 }
 
@@ -611,6 +657,14 @@ public:
         detector_.prepare (sampleRate_);
         ballistics_.prepare (sampleRate_);
         makeupSmoothCoeff_ = dyn::onePoleCoeff (20.0, sampleRate_);
+
+        // The decay is per FLUSH, not per block: a histogram that faded by a
+        // fixed fraction per callback would fade at a rate the user's buffer
+        // size chooses, so the same music would glow differently at 64 and 1024
+        // samples. Tied to the sample rate, it fades in seconds.
+        const double flushSec = (double) kDwellFlushSamples / sampleRate_;
+        dwellDecay_ = (float) std::exp (-flushSec / kDwellTauSec);
+
         reset();
     }
 
@@ -623,6 +677,11 @@ public:
         inDb_ = dyn::kSilenceDb;
         makeupGain_ = dyn::dbToGain (makeupDb_);
         mixSmoothed_ = mix_;
+
+        dwell_.fill (0.0f);
+        dwellCount_ = 0;
+        dwellFlush_ = 0;
+        dwellTap_.clear();
     }
 
     // ---- parameters (message thread) --------------------------------------
@@ -676,6 +735,23 @@ public:
     // subtraction downstream of it, including the editor's coordinate maths.
     float detectorLevelDb() const noexcept { return inDb_; }
 
+    // WHERE THE SIGNAL LIVES, not where it is this instant: a decaying
+    // histogram of how much time the detector has spent at each input level.
+    //
+    // This is the data behind the transfer curve's DWELL GLOW, and the reason
+    // it is accumulated down here instead of sampled by the editor is the whole
+    // point of the visual. A single float polled at 20 Hz is 20 opinions a
+    // second about a signal that had 2400 levels in that time; it can only ever
+    // be drawn as a point that jumps. Every sample (well, every fourth)
+    // contributing to a bin makes the density CONTINUOUS — the picture is an
+    // integral rather than a sample, so it flows instead of stepping, and it is
+    // right about transients that live entirely between two UI frames.
+    //
+    // Published as one snapshot (viz::HistogramTap) rather than as bins the
+    // reader might catch from two different moments, on the same never-block
+    // contract as gainReductionDb.
+    const dyn::DwellTap& dwellHistogram() const noexcept { return dwellTap_; }
+
     // ---- audio thread ------------------------------------------------------
     // One sample of sidechain in, one LINEAR gain out (reduction only — makeup
     // and mix are applied by the caller, or by process()).
@@ -685,6 +761,7 @@ public:
         const float levelDb = dyn::gainToDb (level);
 
         inDb_ = levelDb;
+        accumulateDwell (levelDb);
 
         float targetDb;
 
@@ -750,6 +827,44 @@ public:
     }
 
 private:
+    // One in four samples, not all four. A detector's output is already an
+    // envelope — consecutive samples land in the same bin nearly always — so
+    // three quarters of the work buys no extra shape. At 48 kHz this is still
+    // 12,000 contributions a second, six hundred times what a 20 Hz poll gives.
+    static constexpr int kDwellDecimation = 4;
+
+    // Decay + publish every this many samples. Fixed rather than per-block so
+    // the fade and the publish rate are properties of the DSP, not of whatever
+    // buffer size the host happens to have chosen: 5.3 ms at 48 kHz, so the
+    // editor's 60 Hz timer always has something newer than its last frame.
+    static constexpr int kDwellFlushSamples = 256;
+
+    // How long energy takes to fade out of a bin, seconds. Half a second is
+    // long enough that a bin lit by one transient is still visibly warm on the
+    // next frame, short enough that the glow follows an arrangement rather than
+    // slowly painting the whole axis bright.
+    static constexpr double kDwellTauSec = 0.5;
+
+    void accumulateDwell (float levelDb) noexcept
+    {
+        if (++dwellCount_ >= kDwellDecimation)
+        {
+            dwellCount_ = 0;
+
+            const int bin = dyn::dwellBinFor (levelDb);
+            if (bin >= 0) dwell_[(std::size_t) bin] += 1.0f;
+        }
+
+        if (++dwellFlush_ >= kDwellFlushSamples)
+        {
+            dwellFlush_ = 0;
+
+            for (auto& v : dwell_) v *= dwellDecay_;
+
+            dwellTap_.publish (dwell_.data());
+        }
+    }
+
     Detector    detector_;
     GainCurve   curve_;
     Ballistics  ballistics_;
@@ -766,6 +881,14 @@ private:
 
     float  grDb_ = 0.0f;
     float  inDb_ = dyn::kSilenceDb;
+
+    // The accumulator is audio-thread-private and plain; only the published
+    // copy in the tap is ever seen by anyone else.
+    std::array<float, (std::size_t) dyn::kDwellBins> dwell_ {};
+    dyn::DwellTap dwellTap_;
+    int   dwellCount_ = 0;
+    int   dwellFlush_ = 0;
+    float dwellDecay_ = 0.99f;
 };
 
 // ---------------------------------------------------------------------------
