@@ -20,81 +20,27 @@
 
 #include <JuceHeader.h>
 #include "SurgicalEqProcessor.h"
-#include "EchoJayLookAndFeel.h"
-#include "ChainWetKnob.h"
+#include "DeviceEditorBase.h"
 
 #include <vector>
 
-// ---------------------------------------------------------------------------
-// A labelled rotary in real units: caption above, filmstrip knob, editable
-// numeric readout below. The knob itself IS ChainWetKnob — the same photoreal
-// 128-frame filmstrip and cyan value arc as the MIX knob, so the EQ's dials
-// and the wet knob are literally one control with one drawing path.
-//
-// The 0..1 the filmstrip understands is mapped to the band's real range by a
-// juce::NormalisableRange, which reproduces exactly the ranges and midpoint
-// skews the previous LinearBar sliders carried.
-// ---------------------------------------------------------------------------
-class EqValueKnob : public juce::Component
-{
-public:
-    EqValueKnob();
+// The EQ's labelled rotary is now the SHARED one: caption above, filmstrip knob,
+// editable numeric readout below, in real units. It was extracted from here into
+// EchoJayDeviceLookAndFeel so every built-in device wears the same dial
+// (BUILTIN_SUITE_PLAN.md §2) — this alias keeps the EQ's own code reading as it
+// did rather than renaming several hundred uses.
+using EqValueKnob = echojay::device::EchoJayDeviceKnob;
 
-    // decimals/suffix drive the readout: "429 Hz", "16.5 dB", "1.00".
-    void setSpec (double lo, double hi, double skewMidPoint,
-                  int decimals, const juce::String& suffix,
-                  const juce::String& caption, double defaultValue);
-
-    void   setRealValue (double v);          // no callback
-    double getRealValue() const noexcept { return value_; }
-    void   setDimmed (bool d);
-
-    std::function<void()> onValueChange;     // fired live during a drag / on typed entry
-
-    // Optional custom readout formatter (must include its own units). Set it
-    // BEFORE setSpec. Used by FREQ, which wants the axis's own "87 Hz" /
-    // "1.2k" form rather than a fixed number of decimals.
-    std::function<juce::String(double)> formatValue;
-
-    void resized() override;
-    void paint (juce::Graphics& g) override;
-
-private:
-    // Reuses the filmstrip; overrides only what is wet/dry-specific.
-    struct Rotary : ChainWetKnob
-    {
-        juce::String tip;
-        float        defaultNorm = 0.5f;
-        void mouseDoubleClick (const juce::MouseEvent&) override
-        {
-            setValue (defaultNorm, true);
-            if (onGestureEnd) onGestureEnd();
-        }
-        void updateTooltip() override { if (tip.isNotEmpty()) setTooltip (tip); }
-    };
-
-    void refreshReadout();
-
-    Rotary      knob_;
-    juce::Label readout_;                    // double-click to type an exact value
-    juce::String caption_, suffix_;
-    juce::NormalisableRange<double> range_ { 0.0, 1.0 };
-    double value_    = 0.0;
-    int    decimals_ = 1;
-    bool   dimmed_   = false;
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EqValueKnob)
-};
-
-class SurgicalEqEditor : public juce::AudioProcessorEditor,
+// The EQ is a device editor like any other: the logo, title, BYPASS, palette and
+// the inline-hosting sizing contract all come from DeviceEditorBase. What is left
+// here is only what is genuinely EQ — the curve, the analyzer and the band strip.
+// Refactoring the EQ onto the base is what proves the base is sufficient.
+class SurgicalEqEditor : public DeviceEditorBase,
                          private juce::Timer
 {
 public:
     explicit SurgicalEqEditor (SurgicalEqProcessor& p);
     ~SurgicalEqEditor() override;
-
-    void paint (juce::Graphics& g) override;
-    void resized() override;
 
     // Graph interaction. Child controls in the strip handle their own mouse
     // events, so these only ever fire for the graph / background area.
@@ -106,8 +52,16 @@ public:
                            const juce::MouseWheelDetails& w) override;
     bool keyPressed       (const juce::KeyPress& k) override;
 
+protected:
+    // The base owns the header and the header/content split; these are the EQ's
+    // share of it.
+    void layoutContent        (juce::Rectangle<int> content) override;
+    void layoutHeaderTrailing (juce::Rectangle<int>& bar) override;
+    void layoutHeaderLeading  (juce::Rectangle<int>& bar) override;
+    void paintContent         (juce::Graphics& g) override;
+
 private:
-    using C    = EchoJayLookAndFeel::Colours;
+    using C    = echojay::device::Colours;
     using Spec = echojay::BandSpec;
     using Type = echojay::BandType;
 
@@ -196,9 +150,10 @@ private:
     void updateStripVisibility();
 
     SurgicalEqProcessor& proc_;
-    EchoJayLookAndFeel   lnf_;
 
-    juce::Rectangle<int> topBounds_, graphBounds_, stripBounds_;
+    // The header rect lives in the base (headerBounds()); these two are the EQ's
+    // own subdivision of the content area.
+    juce::Rectangle<int> graphBounds_, stripBounds_;
 
     Spec  model_[kNumBands];          // last-known processor state (change detect)
     int   selected_ = -1;
@@ -231,8 +186,7 @@ private:
     // the band is pulling down).
     float dynGainDb_[kNumBands] = {};
 
-    // global
-    juce::TextButton bypassBtn_   { "BYPASS" };
+    // global — BYPASS belongs to the base (bypassButton()).
     juce::TextButton analyzerBtn_ { "A" };
     juce::TextButton sourceBtn_   { "POST" };   // analyzer source: PRE / POST
     juce::TextButton scaleBtn_    { "18 dB" };

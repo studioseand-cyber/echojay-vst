@@ -9,21 +9,17 @@
 using echojay::BandSpec;
 using echojay::BandType;
 
+// Layout metrics (kBarH / kTopH / kRowH / kCapH / kKnobW / kKnobH / kPad), the
+// uiFont helper and the button styling all moved to the shared device look, so
+// the EQ and every other built-in are laid out on ONE set of numbers and cannot
+// drift apart (BUILTIN_SUITE_PLAN.md §2).
+using namespace echojay::device::metrics;
+using echojay::device::uiFont;
+
 namespace
 {
-    // The header is a dial's height, not a button's: it carries the device's
-    // OUT knob, and a filmstrip dial is the same control the MIX knob is. The
-    // logo, the hint and the global buttons sit on a kBarH-tall line centred
-    // in it, so the row still reads as one bar.
-    constexpr int   kBarH        = 30;   // logo / global button line
-    constexpr int   kTopH        = 58;   // header band (= kKnobH, fits the OUT dial)
-    constexpr int   kRowH        = 24;   // flat control height (combos, buttons)
-    constexpr int   kCapH        = 12;   // caption band inside a dial
-    constexpr int   kKnobW       = 62;   // dial column width
-    constexpr int   kKnobH       = 58;   // caption + filmstrip + readout
     constexpr int   kAutoGainW   = 52;   // auto-gain toggle + its makeup readout
     constexpr int   kStripH      = kRowH + 6 + kKnobH;   // selector row + dial row
-    constexpr int   kPad         = 10;
     constexpr float kNodeR       = 5.0f;
     constexpr float kHitR        = 11.0f;
     constexpr float kCurveStepPx = 2.0f;
@@ -34,12 +30,6 @@ namespace
     const bool  kFreqMajor[]  = { false, false, true, false, false, false, true,
                                   false, false, false, true, false };
 
-    juce::Font uiFont (float pt, bool bold = false)
-    {
-        return juce::Font (juce::FontOptions (pt, bold ? juce::Font::bold
-                                                       : juce::Font::plain));
-    }
-
     juce::String freqText (float hz)
     {
         return hz >= 1000.0f ? juce::String (hz / 1000.0f, hz >= 10000.0f ? 0 : 1) + "k"
@@ -47,116 +37,18 @@ namespace
     }
 }
 
-// ===========================================================================
-// EqValueKnob
-// ===========================================================================
-EqValueKnob::EqValueKnob()
-{
-    addAndMakeVisible (knob_);
-    knob_.onChange = [this] (float v01)
-    {
-        value_ = range_.convertFrom0to1 ((double) v01);
-        refreshReadout();
-        if (onValueChange) onValueChange();
-    };
-
-    readout_.setJustificationType (juce::Justification::centred);
-    readout_.setColour (juce::Label::textColourId, EchoJayLookAndFeel::Colours::text);
-    readout_.setColour (juce::Label::backgroundWhenEditingColourId,
-                        EchoJayLookAndFeel::Colours::bg4);
-    readout_.setColour (juce::Label::textWhenEditingColourId,
-                        EchoJayLookAndFeel::Colours::text);
-    // Exactness is the whole point of this EQ, so the readout stays typeable:
-    // double-click it and enter the value you actually want.
-    readout_.setEditable (false, true, false);
-    readout_.onTextChange = [this]
-    {
-        const auto raw = readout_.getText().trim();
-        // FREQ now DISPLAYS "1.2k", so a user editing that text must be able
-        // to type it back: without this, "1.5k" would parse as 1.5 Hz and get
-        // clamped to 20 — silently destroying the value they meant to nudge.
-        const bool kilo = raw.containsIgnoreCase ("k");
-        auto txt = raw.retainCharacters ("0123456789.-+").trim();
-        double v = txt.getDoubleValue();
-        if (kilo) v *= 1000.0;
-        setRealValue (range_.snapToLegalValue (v));
-        if (onValueChange) onValueChange();
-    };
-    addAndMakeVisible (readout_);
-}
-
-void EqValueKnob::setSpec (double lo, double hi, double skewMidPoint,
-                           int decimals, const juce::String& suffix,
-                           const juce::String& caption, double defaultValue)
-{
-    range_    = juce::NormalisableRange<double> (lo, hi);
-    if (skewMidPoint > lo && skewMidPoint < hi)
-        range_.setSkewForCentre (skewMidPoint);
-    decimals_ = decimals;
-    suffix_   = suffix;
-    caption_  = caption;
-
-    knob_.defaultNorm = (float) range_.convertTo0to1 (
-        juce::jlimit (lo, hi, defaultValue));
-    setRealValue (juce::jlimit (lo, hi, defaultValue));
-}
-
-void EqValueKnob::setRealValue (double v)
-{
-    value_ = juce::jlimit (range_.start, range_.end, v);
-    knob_.setValue ((float) range_.convertTo0to1 (value_), false);
-    refreshReadout();
-}
-
-void EqValueKnob::setDimmed (bool d)
-{
-    if (dimmed_ == d) return;
-    dimmed_ = d;
-    knob_.setEnabledLook (! d);
-    readout_.setColour (juce::Label::textColourId,
-                        d ? EchoJayLookAndFeel::Colours::text3
-                          : EchoJayLookAndFeel::Colours::text);
-    repaint();
-}
-
-void EqValueKnob::refreshReadout()
-{
-    // juce::String(double, 0) does NOT mean "no decimals" — at <= 0 places it
-    // falls back to the shortest round-tripping form, which is what made FREQ
-    // read "87.1907 Hz". Integer readouts have to be rounded explicitly.
-    const juce::String txt =
-        formatValue ? formatValue (value_)
-      : decimals_ > 0 ? juce::String (value_, decimals_) + suffix_
-                      : juce::String (juce::roundToInt (value_)) + suffix_;
-
-    readout_.setText (txt, juce::dontSendNotification);
-    knob_.tip = caption_ + ": " + txt + "  (double-click the number to type a value)";
-    knob_.setTooltip (knob_.tip);   // setValue is not the only path here
-}
-
-void EqValueKnob::resized()
-{
-    auto r = getLocalBounds();
-    r.removeFromTop (kCapH);                       // caption, painted below
-    readout_.setBounds (r.removeFromBottom (13));
-    const int d = juce::jmin (r.getWidth(), r.getHeight());
-    knob_.setBounds (r.withSizeKeepingCentre (d, d));
-}
-
-void EqValueKnob::paint (juce::Graphics& g)
-{
-    g.setColour (dimmed_ ? EchoJayLookAndFeel::Colours::text3.withAlpha (0.5f)
-                         : EchoJayLookAndFeel::Colours::text3);
-    g.setFont (uiFont (9.0f, true));
-    g.drawText (caption_, 0, 0, getWidth(), kCapH, juce::Justification::centred);
-}
-
 // ---------------------------------------------------------------------------
 SurgicalEqEditor::SurgicalEqEditor (SurgicalEqProcessor& p)
-    : juce::AudioProcessorEditor (p), proc_ (p)
+    // The base sets the look-and-feel, the logo, the title, BYPASS and the
+    // default size — everything below is the EQ's own share.
+    //
+    // Height carries the header's growth (30 -> 58 for the OUT dial) so the graph
+    // keeps exactly the area it had. Inline in the chain the editor is stretched
+    // to the display area instead; this is the popout / native size.
+    : DeviceEditorBase (p, "EQ", 640, 448), proc_ (p)
 {
-    setLookAndFeel (&lnf_);
     setWantsKeyboardFocus (true);
+    setHeaderHint ("double-click: add / remove band     drag: freq + gain     wheel: Q");
 
     for (int i = 0; i < kNumBands; ++i)
         model_[i] = proc_.getBand (i);
@@ -185,17 +77,13 @@ SurgicalEqEditor::SurgicalEqEditor (SurgicalEqProcessor& p)
     specPrefix_.assign  ((size_t) kSpecBins + 1, 0.0f);
     specPts_.reserve    ((size_t) kSpecBins + 2048);   // knots + one per pixel
 
-    // Height carries the header's growth (30 -> 58 for the OUT dial) so the
-    // graph keeps exactly the area it had. Inline in the chain the editor is
-    // stretched to the display area instead; this is the popout / native size.
-    setSize (640, 448);
     startTimerHz (30);
 }
 
 SurgicalEqEditor::~SurgicalEqEditor()
 {
     stopTimer();
-    setLookAndFeel (nullptr);
+    // The base restores the look-and-feel.
 }
 
 // ---------------------------------------------------------------------------
@@ -203,13 +91,11 @@ SurgicalEqEditor::~SurgicalEqEditor()
 // ---------------------------------------------------------------------------
 void SurgicalEqEditor::buildControls()
 {
+    // The dark fill + teal-glow-when-on treatment is the shared one; this only
+    // adds the "and make it visible in me" step.
     auto styleButton = [this] (juce::TextButton& b, bool toggles)
     {
-        b.setClickingTogglesState (toggles);
-        b.setColour (juce::TextButton::buttonColourId,   C::bg3);
-        b.setColour (juce::TextButton::buttonOnColourId, C::blue);   // teal glow
-        b.setColour (juce::TextButton::textColourOffId,  C::text2);
-        b.setColour (juce::TextButton::textColourOnId,   C::blue2);
+        echojay::device::styleButton (b, toggles);
         addAndMakeVisible (b);
     };
 
@@ -228,9 +114,7 @@ void SurgicalEqEditor::buildControls()
     };
 
     // ---- global -----------------------------------------------------------
-    styleButton (bypassBtn_, true);
-    bypassBtn_.setToggleState (proc_.isBypassed(), juce::dontSendNotification);
-    bypassBtn_.onClick = [this] { proc_.setBypassed (bypassBtn_.getToggleState()); repaint(); };
+    // BYPASS is built, styled, positioned and wired by DeviceEditorBase.
 
     styleButton (scaleBtn_, false);
     scaleBtn_.onClick = [this]
@@ -744,9 +628,9 @@ void SurgicalEqEditor::timerCallback()
 
     bool needsRepaint = changed;
 
-    if (bypassBtn_.getToggleState() != proc_.isBypassed())
+    if (bypassButton().getToggleState() != proc_.isBypassed())
     {
-        bypassBtn_.setToggleState (proc_.isBypassed(), juce::dontSendNotification);
+        bypassButton().setToggleState (proc_.isBypassed(), juce::dontSendNotification);
         needsRepaint = true;
     }
 
@@ -797,21 +681,11 @@ void SurgicalEqEditor::timerCallback()
 // ---------------------------------------------------------------------------
 // layout
 // ---------------------------------------------------------------------------
-void SurgicalEqEditor::resized()
+// Outboard of BYPASS: the device's output stage — the OUT dial, and the
+// auto-gain toggle stacked over the makeup it is applying. Full header height,
+// which is why the header is dial-tall in the first place.
+void SurgicalEqEditor::layoutHeaderTrailing (juce::Rectangle<int>& top)
 {
-    auto r = getLocalBounds().reduced (kPad);
-
-    topBounds_ = r.removeFromTop (kTopH);
-    r.removeFromTop (6);
-
-    stripBounds_ = r.removeFromBottom (juce::jmin (kStripH, juce::jmax (0, r.getHeight() - 60)));
-    r.removeFromBottom (8);
-    graphBounds_ = r;
-
-    auto top = topBounds_;
-
-    // Hard right: the device's output stage — the OUT dial, and the auto-gain
-    // toggle stacked over the makeup it is applying.
     outS_.setBounds (top.removeFromRight (kKnobW));
     top.removeFromRight (8);
     {
@@ -821,17 +695,26 @@ void SurgicalEqEditor::resized()
         autoGainLbl_.setBounds (ag);
     }
     top.removeFromRight (12);
+}
 
-    // Global buttons, right-aligned on a button-height line centred in the
-    // now-taller header, so they still sit level with the logo and the hint.
-    auto bar = top.withSizeKeepingCentre (top.getWidth(), kBarH);
-    bypassBtn_.setBounds (bar.removeFromRight (74).reduced (0, 3));
-    bar.removeFromRight (6);
+// Inboard of BYPASS: the view toggles. The base has already narrowed `bar` to
+// button height and taken BYPASS off its right, so these continue leftward and
+// sit level with the logo and the hint.
+void SurgicalEqEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
+{
     scaleBtn_.setBounds  (bar.removeFromRight (58).reduced (0, 3));
     bar.removeFromRight (6);
     sourceBtn_.setBounds (bar.removeFromRight (48).reduced (0, 3));
     bar.removeFromRight (4);
     analyzerBtn_.setBounds (bar.removeFromRight (32).reduced (0, 3));
+}
+
+void SurgicalEqEditor::layoutContent (juce::Rectangle<int> content)
+{
+    stripBounds_ = content.removeFromBottom (
+        juce::jmin (kStripH, juce::jmax (0, content.getHeight() - 60)));
+    content.removeFromBottom (8);
+    graphBounds_ = content;
 
     layoutStrip();
     curvesDirty_ = true;
@@ -1316,38 +1199,12 @@ void SurgicalEqEditor::paintNodes (juce::Graphics& g) const
     }
 }
 
-void SurgicalEqEditor::paint (juce::Graphics& g)
+// The background, the logo, the "EQ" title and the hint line are all painted by
+// DeviceEditorBase — including clipping the hint to the space the header controls
+// left, which used to be a hand-counted 232 + 134 pixel reservation here. What
+// remains is the EQ itself.
+void SurgicalEqEditor::paintContent (juce::Graphics& g)
 {
-    g.fillAll (C::bg);
-
-    // ---- top bar ----------------------------------------------------------
-    // The header band is dial-height, but the logo / title / hint belong on the
-    // same line as the global buttons, so they are laid out on a kBarH strip
-    // centred in it rather than filling it.
-    const auto bar = topBounds_.withSizeKeepingCentre (topBounds_.getWidth(), kBarH);
-
-    // The real logo asset, same one the main plugin header draws, scaled into
-    // the header bar rather than a text title.
-    const juce::Rectangle<float> logoBox ((float) bar.getX(), (float) bar.getY(),
-                                          104.0f, (float) bar.getHeight());
-    EchoJayLookAndFeel::drawLogo (g, logoBox, 13.0f);
-
-    const int afterLogo = (int) logoBox.getRight() + 6;
-    g.setColour (C::text2);
-    g.setFont (uiFont (11.0f, true));
-    g.drawText ("EQ", afterLogo, bar.getY(), 24, bar.getHeight(),
-                juce::Justification::centredLeft);
-
-    // Reserved on the right: the global buttons (232) plus the output stage
-    // (OUT dial + gap + auto-gain column + gap = 134). The hint is the first
-    // thing to give up room when the window is narrow.
-    g.setColour (C::text3);
-    g.setFont (uiFont (9.0f));
-    g.drawText ("double-click: add / remove band     drag: freq + gain     wheel: Q",
-                afterLogo + 30, bar.getY(),
-                juce::jmax (0, bar.getRight() - (afterLogo + 30) - 232 - 134),
-                bar.getHeight(), juce::Justification::centredLeft);
-
     // ---- graph panel ------------------------------------------------------
     const auto gb = graphBounds_.toFloat();
     g.setColour (C::bg2);

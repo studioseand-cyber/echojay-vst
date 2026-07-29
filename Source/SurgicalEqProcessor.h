@@ -23,40 +23,51 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "EedDeviceProcessor.h"
 #include "EqEngine.h"
 #include "EqMove.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
 
-class SurgicalEqProcessor : public juce::AudioProcessor
+// A STRUCTURED device (BUILTIN_SUITE_PLAN.md §3): its primary move is the
+// eq_bands array, not the flat params map. It inherits the flat path from
+// EedDeviceProcessor for its device-global knobs and overrides applyStructured to
+// resolve both shapes, so ChainHost dispatches to it exactly like any other
+// built-in and needs no EQ-specific knowledge.
+class SurgicalEqProcessor : public EedDeviceProcessor
 {
 public:
     SurgicalEqProcessor();
     ~SurgicalEqProcessor() override = default;
 
     // ---- audio ------------------------------------------------------------
+    // Buses, MIDI, programs and the editor flag all come from EedDeviceProcessor.
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override {}
-    bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     // ---- editor -----------------------------------------------------------
     juce::AudioProcessorEditor* createEditor() override;
-    bool hasEditor() const override { return true; }
 
     // ---- metadata ---------------------------------------------------------
     const juce::String getName() const override { return "EchoJay EQ"; }
-    bool   acceptsMidi()  const override { return false; }
-    bool   producesMidi() const override { return false; }
-    bool   isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
 
-    int  getNumPrograms()                            override { return 1; }
-    int  getCurrentProgram()                         override { return 0; }
-    void setCurrentProgram (int)                     override {}
-    const juce::String getProgramName (int)          override { return "Default"; }
-    void changeProgramName (int, const juce::String&) override {}
+    // ---- the dialable contract (device-global knobs) ----------------------
+    // The EQ's bands are dialled through eq_bands, which is an array and cannot
+    // be expressed as flat params. What IS here is the device-global stage.
+    //
+    // phase_mode and ms_mode are deliberately ABSENT: they are parsed and stored
+    // by applyEqSettings, but their DSP does not land until P2/P4, and a schema
+    // is a promise that dialling a param does something. They join the schema
+    // when they work.
+    static const echojay::ParamSchema& schema();
+
+    const echojay::ParamSchema& paramSchema() const override { return schema(); }
+    bool   setParamValue (const juce::String& id, double value) override;
+    double getParamValue (const juce::String& id) const override;
+
+    static constexpr const char* kOutputDb = "output_db";
+    static constexpr const char* kAutoGain = "auto_gain";
 
     // ---- state ------------------------------------------------------------
     void getStateInformation (juce::MemoryBlock& dest) override;
@@ -67,8 +78,8 @@ public:
 
     void                 setBand (int index, const echojay::BandSpec& spec); // UI edit
     echojay::BandSpec    getBand (int index) const;
-    void                 setBypassed (bool b);
-    bool                 isBypassed() const { return bypassed_.load(); }
+    // Overridden so the engine's own bypass stays in step with the base's flag.
+    void                 setBypassed (bool b) override;
     void                 setSoloBand (int index);            // -1 == none
     int                  getSoloBand() const;
 
@@ -142,9 +153,11 @@ public:
     // nothing this device understands — that is how a caller tells "applied
     // zero bands on purpose" (an eq_settings-only move) from "this wasn't for
     // me". appliedOut/skippedOut count bands only.
+    //   * an OBJECT carrying "params" → the universal flat path, handled by
+    //                 EedDeviceProcessor for the device-global knobs.
     juce::String applyStructured (const juce::var& structured,
                                   int* appliedOut = nullptr,
-                                  int* skippedOut = nullptr);
+                                  int* skippedOut = nullptr) override;
 
     // Device-global settings merge: absent key = leave as-is. Returns a summary
     // of what actually changed, empty if nothing did.
@@ -179,7 +192,8 @@ private:
     echojay::EqEngine     engine_;
     echojay::BandSpec     bands_[kNumBands];        // authoritative model
     juce::CriticalSection modelLock_;               // guards bands_ (message-thread edits)
-    std::atomic<bool>     bypassed_ { false };
+    // bypassed_ lives in EedDeviceProcessor — one flag, so the base's state
+    // round-trip and the engine cannot disagree about it.
 
     // Device-global settings. output_db / auto_gain live in the engine (it is
     // the thing that applies them); these two are message-thread only until

@@ -7,6 +7,7 @@
 
 #include "SurgicalEqProcessor.h"
 #include "SurgicalEqEditor.h"
+#include "EedDeviceRegistry.h"
 
 #include <type_traits>
 
@@ -25,11 +26,39 @@ using echojay::EqMove;
 
 // ---------------------------------------------------------------------------
 SurgicalEqProcessor::SurgicalEqProcessor()
-    : juce::AudioProcessor (BusesProperties()
-          .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-          .withOutput ("Output", juce::AudioChannelSet::stereo(), true))
 {
+    // Buses come from EedDeviceProcessor (stereo in/out, mono tolerated).
     // bands_ default to BandSpec{} (all disabled) — a clean, transparent EQ.
+}
+
+// ---- the dialable contract (device-global knobs) --------------------------
+const echojay::ParamSchema& SurgicalEqProcessor::schema()
+{
+    // The ±24 dB trim range matches the OUT dial in the editor and the clamp in
+    // applyEqSettings — one number, three readers.
+    static const echojay::ParamSchema s ({
+        { kOutputDb, "dB", -24.0, 24.0, 0.0,
+          "device output trim, applied after the bands", false },
+
+        { kAutoGain, "", 0.0, 1.0, 0.0,
+          "cancel the loudness change the bands cause, so a tonal move can be "
+          "judged without a level change confounding it", true },
+    });
+    return s;
+}
+
+bool SurgicalEqProcessor::setParamValue (const juce::String& id, double value)
+{
+    if (id == kOutputDb) { setOutputDb ((float) value);   return true; }
+    if (id == kAutoGain) { setAutoGain (value >= 0.5);    return true; }
+    return false;
+}
+
+double SurgicalEqProcessor::getParamValue (const juce::String& id) const
+{
+    if (id == kOutputDb) return (double) getOutputDb();
+    if (id == kAutoGain) return getAutoGain() ? 1.0 : 0.0;
+    return 0.0;
 }
 
 // ---- audio ----------------------------------------------------------------
@@ -44,14 +73,6 @@ void SurgicalEqProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     // audio decaying out of the analyzer.
     preRing_.clear();
     postRing_.clear();
-}
-
-bool SurgicalEqProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
-{
-    const auto out = layouts.getMainOutputChannelSet();
-    if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo())
-        return false;
-    return layouts.getMainInputChannelSet() == out;   // in must match out
 }
 
 void SurgicalEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -346,6 +367,19 @@ juce::String SurgicalEqProcessor::applyStructured (const juce::var& structured,
         if (s.isNotEmpty()) parts.add (s);
     }
 
+    // The UNIVERSAL flat path (BUILTIN_SUITE_PLAN.md §3). Resolved alongside
+    // eq_settings because it addresses the same device-global knobs by their
+    // schema ids — a backend that has been generalised to `params` for the other
+    // 18 devices must not have to special-case the EQ to trim its output.
+    //
+    // eq_settings is NOT deprecated by this: it carries keys (phase_mode) that a
+    // numeric schema cannot express, and every already-deployed move uses it.
+    if (structured.hasProperty ("params"))
+    {
+        const auto p = applyParams (structured.getProperty ("params", juce::var()));
+        if (p.isNotEmpty()) parts.add (p);
+    }
+
     if (structured.hasProperty ("eq_bands"))
     {
         const juce::var bands = structured.getProperty ("eq_bands", juce::var());
@@ -451,4 +485,33 @@ void SurgicalEqProcessor::setStateInformation (const void* data, int sizeInBytes
         pushToEngine();     // the cleared model is what auto-gain must integrate
     }
     applyEqBands (parsed.getProperty ("eq_bands", juce::var()));
+}
+
+// ---------------------------------------------------------------------------
+// registration — the EQ is a registry entry, not a special case
+// ---------------------------------------------------------------------------
+// Identifier and uid are the ones the EQ has always used. They are written into
+// saved chain XML, so changing them would orphan every session that already has
+// an EchoJay EQ in its chain.
+namespace
+{
+    BuiltinDevice makeSurgicalEqDevice()
+    {
+        BuiltinDevice d;
+        d.name            = "EchoJay EQ";
+        d.category        = "EQ";
+        d.descriptiveName = "EchoJay surgical EQ (built in)";
+        d.summary         = "EchoJay's own fully-parametric EQ, dialled to EXACT values "
+                            "rather than approximated. Prefer it for surgical moves: "
+                            "specific-frequency cuts and boosts, high-pass/low-pass "
+                            "cleanup, notching resonances, and dynamic de-essing.";
+        d.identifier      = "echojay:builtin:eq";
+        d.uid             = 0x456A4551;   // 'EjEQ' — frozen, matched on restore
+        d.aliases         = { "EchoJayEQ", "EchoJay Surgical EQ" };
+        d.schema          = SurgicalEqProcessor::schema();
+        d.create          = [] { return std::make_unique<SurgicalEqProcessor>(); };
+        return d;
+    }
+
+    const BuiltinDeviceRegistrar surgicalEqRegistrar { makeSurgicalEqDevice() };
 }

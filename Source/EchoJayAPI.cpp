@@ -1777,11 +1777,42 @@ juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
     // unreliable here: an unrelated branch can carry a higher version and no
     // EQ at all). A client that does not send this block simply never gets
     // built-ins offered.
-    const auto builtins = ChainHost::builtinDeviceNames();
-    if (! builtins.isEmpty())
+    //
+    // GENERATED FROM THE REGISTRY, grouped by category (BUILTIN_SUITE_PLAN.md
+    // §1/§3). A device registers itself in its own .cpp and appears here with no
+    // edit to this function — which is the property that lets several Wave 1
+    // sessions add devices in parallel without touching a shared line.
+    //
+    // Each entry carries its ParamSchema, so this one block teaches the model
+    // BOTH that the device exists and exactly how to dial it. The server
+    // validates against the same numbers it reads here, so the two cannot drift.
+    const auto& registry = BuiltinDeviceRegistry::instance();
+    if (! registry.all().empty())
+    {
         block << "\n\n[AVAILABLE BUILTINS — EchoJay's own built-in devices, always "
-                 "available regardless of installed plugins; use in a chain by exact name]:\n"
-              << builtins.joinIntoString("\n");
+                 "available regardless of installed plugins; use in a chain by exact "
+                 "name. Dial one by putting real-world values under "
+                 "settings_structured.params using the ids listed; any param you omit "
+                 "is left as it is. The EchoJay EQ additionally takes its bands as "
+                 "settings_structured.eq_bands]:";
+
+        juce::String currentCategory;
+        for (const auto& d : registry.all())
+        {
+            if (d.category != currentCategory)
+            {
+                currentCategory = d.category;
+                block << "\n\n-- " << currentCategory << " --";
+            }
+
+            block << "\n" << d.name;
+            if (d.summary.isNotEmpty())
+                block << "\n  " << d.summary;
+
+            for (const auto& p : d.schema.params())
+                block << "\n    " << juce::String (echojay::ParamSchema::describeLine (p));
+        }
+    }
 
     return block;
 }

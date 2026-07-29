@@ -144,6 +144,29 @@ target_sources(EchoJay PRIVATE
     Source/SurgicalEqProcessor.h
     Source/SurgicalEqEditor.cpp
     Source/SurgicalEqEditor.h
+
+    # --- Built-in device framework + devices (BUILTIN_SUITE_PLAN.md) ---------
+    # ALPHABETISED. This is the one shared file a new device has to touch, so
+    # keeping it sorted means two Wave 1 sessions adding two devices land in
+    # different places in the list and merge without conflicting.
+    Source/DeviceEditorBase.cpp
+    Source/DeviceEditorBase.h
+    Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EchoJayDeviceLookAndFeel.h
+    Source/EedDeviceProcessor.cpp
+    Source/EedDeviceProcessor.h
+    Source/EedDeviceRegistry.cpp
+    Source/EedDeviceRegistry.h
+    Source/EedGainEditor.cpp
+    Source/EedGainEditor.h
+    Source/EedGainEngine.h
+    Source/EedGainProcessor.cpp
+    Source/EedGainProcessor.h
+    Source/EedParamSchema.h
+    Source/EedPhaseInvertEditor.cpp
+    Source/EedPhaseInvertEditor.h
+    Source/EedPhaseInvertProcessor.cpp
+    Source/EedPhaseInvertProcessor.h
 )
 
 target_compile_definitions(EchoJay PUBLIC
@@ -171,6 +194,48 @@ target_link_libraries(EchoJay
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
+
+# --- Built-in device self-registration vs. the static linker -----------------
+# Built-in devices (Source/Eed*.cpp, SurgicalEq*) add themselves to
+# BuiltinDeviceRegistry from a file-scope static in their OWN .cpp. That is what
+# makes a device self-contained: no central list, so two Wave 1 sessions adding
+# two devices never touch the same line.
+#
+# JUCE compiles these into a STATIC library (libEchoJay V2_SharedCode.a) that the
+# AU/VST3 targets link. A static-library member is only pulled in when a symbol
+# in it is ALREADY needed — and a device's only outside-visible effect is its
+# registrar's constructor, which nothing references by name. Left alone the
+# linker discards the entire device and it silently disappears from the add-menu
+# and the AI advertisement, with no build error to notice.
+#
+# This is not theoretical — it was measured. Relinking with the call below
+# commented out drops BOTH Wave 0 devices: the binary keeps only
+# "echojay:builtin:eq" (which survives because other code still names the EQ),
+# while Gain and Phase Invert vanish from the add-menu and the AI advertisement
+# with a clean, successful build and no diagnostic anywhere.
+#
+# Force-loading the archive keeps every registrar. This is the ONE place that has
+# to know the problem exists; adding a device later only appends to the source
+# list above.
+function(echojay_force_load_shared_code shared_target)
+    foreach(fmt AU VST3 AAX Standalone)
+        if(TARGET ${shared_target}_${fmt})
+            if(APPLE)
+                target_link_options(${shared_target}_${fmt} PRIVATE
+                    "-Wl,-force_load,$<TARGET_FILE:${shared_target}>")
+            elseif(MSVC)
+                target_link_options(${shared_target}_${fmt} PRIVATE
+                    "/WHOLEARCHIVE:$<TARGET_FILE:${shared_target}>")
+            else()
+                target_link_options(${shared_target}_${fmt} PRIVATE
+                    "-Wl,--whole-archive" "$<TARGET_FILE:${shared_target}>"
+                    "-Wl,--no-whole-archive")
+            endif()
+        endif()
+    endforeach()
+endfunction()
+
+echojay_force_load_shared_code(EchoJay)
 
 # --- Force-replace JUCE-generated placeholder Icon.icns with the real EchoJay.icns ---
 # JUCE sometimes embeds an 8-byte placeholder instead of using ICON_BIG.
@@ -254,7 +319,32 @@ target_sources(EchoJayLink PRIVATE
     Source/SurgicalEqProcessor.h
     Source/SurgicalEqEditor.cpp
     Source/SurgicalEqEditor.h
+
+    # --- Built-in device framework + devices (BUILTIN_SUITE_PLAN.md) ---------
+    # Same set as the main plugin, and for the same reason the EQ is here: a
+    # built-in has to be hostable in the Link insert too. ALPHABETISED — see the
+    # note on the main plugin's copy of this block.
+    Source/DeviceEditorBase.cpp
+    Source/DeviceEditorBase.h
+    Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EchoJayDeviceLookAndFeel.h
+    Source/EedDeviceProcessor.cpp
+    Source/EedDeviceProcessor.h
+    Source/EedDeviceRegistry.cpp
+    Source/EedDeviceRegistry.h
+    Source/EedGainEditor.cpp
+    Source/EedGainEditor.h
+    Source/EedGainEngine.h
+    Source/EedGainProcessor.cpp
+    Source/EedGainProcessor.h
+    Source/EedParamSchema.h
+    Source/EedPhaseInvertEditor.cpp
+    Source/EedPhaseInvertEditor.h
+    Source/EedPhaseInvertProcessor.cpp
+    Source/EedPhaseInvertProcessor.h
 )
+
+echojay_force_load_shared_code(EchoJayLink)
 
 target_compile_definitions(EchoJayLink PUBLIC
     JUCE_WEB_BROWSER=0
@@ -321,3 +411,49 @@ set_target_properties(ejextract PROPERTIES OSX_ARCHITECTURES "arm64;x86_64")
 if(APPLE)
     target_link_libraries(ejextract PRIVATE "-framework CoreAudioKit")
 endif()
+
+# ============================================================================
+# Built-in device framework test (BUILTIN_SUITE_PLAN.md Wave 0).
+#
+# ParamSchema and the device engines are JUCE-free and tested under plain g++ in
+# test/. The registry, the device processors and the applyStructured funnel are
+# not — they need JUCE — so they are exercised here instead, through the same
+# static registrars, the same factory and the same apply path the plugin uses.
+#
+# EXCLUDE_FROM_ALL: a normal plugin build should not pay for it. Run it with
+#   cmake --build build --target EchoJayBuiltinRegistryTest
+# ============================================================================
+juce_add_console_app(EchoJayBuiltinRegistryTest PRODUCT_NAME "EchoJayBuiltinRegistryTest")
+juce_generate_juce_header(EchoJayBuiltinRegistryTest)
+
+target_sources(EchoJayBuiltinRegistryTest PRIVATE
+    tools/builtin_registry_test.cpp
+    # The devices under test, plus what they pull in. Alphabetised, same as the
+    # plugin targets' built-in device block.
+    Source/DeviceEditorBase.cpp
+    Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EedDeviceProcessor.cpp
+    Source/EedDeviceRegistry.cpp
+    Source/EedGainEditor.cpp
+    Source/EedGainProcessor.cpp
+    Source/EedPhaseInvertEditor.cpp
+    Source/EedPhaseInvertProcessor.cpp
+    Source/EqEngine.cpp
+    Source/SurgicalEqEditor.cpp
+    Source/SurgicalEqProcessor.cpp
+)
+target_include_directories(EchoJayBuiltinRegistryTest PRIVATE Source)
+
+target_compile_definitions(EchoJayBuiltinRegistryTest PRIVATE
+    JUCE_USE_CURL=0
+    JUCE_WEB_BROWSER=0
+    JUCE_STANDALONE_APPLICATION=1)
+
+target_link_libraries(EchoJayBuiltinRegistryTest PRIVATE
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_gui_extra
+    juce::juce_recommended_config_flags)
+
+set_target_properties(EchoJayBuiltinRegistryTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
