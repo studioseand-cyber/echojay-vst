@@ -153,6 +153,12 @@ target_sources(EchoJay PRIVATE
     Source/DeviceEditorBase.h
     Source/EchoJayDeviceLookAndFeel.cpp
     Source/EchoJayDeviceLookAndFeel.h
+    Source/EedDelayCore.h
+    Source/EedDelayEditor.cpp
+    Source/EedDelayEditor.h
+    Source/EedDelayEngine.h
+    Source/EedDelayProcessor.cpp
+    Source/EedDelayProcessor.h
     Source/EedDeviceProcessor.cpp
     Source/EedDeviceProcessor.h
     Source/EedDeviceRegistry.cpp
@@ -167,6 +173,12 @@ target_sources(EchoJay PRIVATE
     Source/EedPhaseInvertEditor.h
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaseInvertProcessor.h
+    Source/EedReverbEditor.cpp
+    Source/EedReverbEditor.h
+    Source/EedReverbEngine.h
+    Source/EedReverbProcessor.cpp
+    Source/EedReverbProcessor.h
+    Source/EedTempoClock.h
 )
 
 target_compile_definitions(EchoJay PUBLIC
@@ -328,6 +340,12 @@ target_sources(EchoJayLink PRIVATE
     Source/DeviceEditorBase.h
     Source/EchoJayDeviceLookAndFeel.cpp
     Source/EchoJayDeviceLookAndFeel.h
+    Source/EedDelayCore.h
+    Source/EedDelayEditor.cpp
+    Source/EedDelayEditor.h
+    Source/EedDelayEngine.h
+    Source/EedDelayProcessor.cpp
+    Source/EedDelayProcessor.h
     Source/EedDeviceProcessor.cpp
     Source/EedDeviceProcessor.h
     Source/EedDeviceRegistry.cpp
@@ -342,6 +360,12 @@ target_sources(EchoJayLink PRIVATE
     Source/EedPhaseInvertEditor.h
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaseInvertProcessor.h
+    Source/EedReverbEditor.cpp
+    Source/EedReverbEditor.h
+    Source/EedReverbEngine.h
+    Source/EedReverbProcessor.cpp
+    Source/EedReverbProcessor.h
+    Source/EedTempoClock.h
 )
 
 echojay_force_load_shared_code(EchoJayLink)
@@ -432,12 +456,16 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     # plugin targets' built-in device block.
     Source/DeviceEditorBase.cpp
     Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EedDelayEditor.cpp
+    Source/EedDelayProcessor.cpp
     Source/EedDeviceProcessor.cpp
     Source/EedDeviceRegistry.cpp
     Source/EedGainEditor.cpp
     Source/EedGainProcessor.cpp
     Source/EedPhaseInvertEditor.cpp
     Source/EedPhaseInvertProcessor.cpp
+    Source/EedReverbEditor.cpp
+    Source/EedReverbProcessor.cpp
     Source/EqEngine.cpp
     Source/SurgicalEqEditor.cpp
     Source/SurgicalEqProcessor.cpp

@@ -29,8 +29,10 @@
 
 #include "EedDeviceRegistry.h"
 #include "EedDeviceProcessor.h"
+#include "EedDelayProcessor.h"
 #include "EedGainProcessor.h"
 #include "EedPhaseInvertProcessor.h"
+#include "EedReverbProcessor.h"
 #include "SurgicalEqProcessor.h"
 
 #include <cmath>
@@ -79,7 +81,12 @@ int main()
     check (registry.findByName ("EchoJay EQ")            != nullptr, "EchoJay EQ registered");
     check (registry.findByName ("EchoJay Gain")          != nullptr, "EchoJay Gain registered");
     check (registry.findByName ("EchoJay Phase Invert")  != nullptr, "EchoJay Phase Invert registered");
-    check (registry.all().size() == 3, "exactly 3 devices registered (got "
+    check (registry.findByName ("EchoJay Delay")         != nullptr, "EchoJay Delay registered");
+    check (registry.findByName ("EchoJay Reverb")        != nullptr, "EchoJay Reverb registered");
+    // An EXACT count, not a lower bound: the failure this catches is a device
+    // silently disappearing, and ">= 5" would not notice that. Every Wave 1
+    // session bumps this by the number of devices it lands.
+    check (registry.all().size() == 5, "exactly 5 devices registered (got "
                                        + juce::String ((int) registry.all().size()) + ")");
 
     // -----------------------------------------------------------------------
@@ -90,7 +97,11 @@ int main()
         // Utility comes after EQ; within it, alphabetical.
         check (names.indexOf ("EchoJay Gain") < names.indexOf ("EchoJay Phase Invert"),
                "Gain before Phase Invert (alphabetical within Utility)");
-        check (registry.categories().joinIntoString (",") == "EQ,Utility",
+        check (names.indexOf ("EchoJay Delay") < names.indexOf ("EchoJay Reverb"),
+               "Delay before Reverb (alphabetical within Time)");
+        check (names.indexOf ("EchoJay Phase Invert") < names.indexOf ("EchoJay Delay"),
+               "the whole Utility group precedes the whole Time group");
+        check (registry.categories().joinIntoString (",") == "EQ,Utility,Time",
                "categories in canonical order: " + registry.categories().joinIntoString (","));
     }
 
@@ -106,7 +117,7 @@ int main()
     std::printf ("== synthetic descriptions (what saved chain XML carries) ==\n");
     {
         const auto descs = registry.descriptions();
-        check (descs.size() == 3, "one description per device");
+        check (descs.size() == 5, "one description per device");
         for (const auto& d : descs)
         {
             check (d.pluginFormatName == kEchoJayBuiltinFormat,
@@ -163,6 +174,125 @@ int main()
         check (summary.isNotEmpty(), "summary: " + summary);
         check (near (gain->getParamValue ("level_db"), -6.0), "level_db landed EXACTLY at -6");
         check (near (gain->getParamValue ("pan"), 0.5),       "pan landed EXACTLY at 0.5");
+    }
+
+    // -----------------------------------------------------------------------
+    // The Time cluster is where a device first has params of every SHAPE at
+    // once: continuous (time_ms), boolean (sync, ping_pong), an enumerated index
+    // (sync_division) and a signed range (stereo_offset). If the universal
+    // contract holds for this device it holds for anything Wave 1 adds.
+    std::printf ("== EchoJay Delay dials every shape of param exactly ==\n");
+    {
+        auto proc = makeByName ("EchoJay Delay");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        check (device != nullptr, "IS an EedDeviceProcessor (so ChainHost can dispatch)");
+
+        int applied = 0, skipped = 0;
+        const auto summary = device->applyStructured (
+            paramsMove ({ { "time_ms", 375.0 }, { "feedback", 62.0 }, { "mix", 45.0 },
+                          { "ping_pong", true }, { "stereo_offset", -25.0 },
+                          { "filter_lp_hz", 3200.0 } }), &applied, &skipped);
+
+        check (applied == 6 && skipped == 0, "6 params applied, 0 skipped");
+        check (summary.isNotEmpty(), "summary: " + summary);
+        check (near (device->getParamValue ("time_ms"), 375.0),       "time_ms EXACTLY 375");
+        check (near (device->getParamValue ("feedback"), 62.0),       "feedback EXACTLY 62");
+        check (near (device->getParamValue ("mix"), 45.0),            "mix EXACTLY 45");
+        check (near (device->getParamValue ("ping_pong"), 1.0),       "ping_pong is on");
+        check (near (device->getParamValue ("stereo_offset"), -25.0), "a NEGATIVE value lands");
+        check (near (device->getParamValue ("filter_lp_hz"), 3200.0), "filter_lp_hz EXACTLY 3200");
+    }
+
+    std::printf ("== the tempo-sync division is an exact index, not an approximation ==\n");
+    {
+        auto proc = makeByName ("EchoJay Delay");
+        auto* delay  = dynamic_cast<EedDelayProcessor*> (proc.get());
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        check (delay != nullptr, "constructed as an EedDelayProcessor");
+
+        echojay::publishHostTempo (120.0);
+        device->applyStructured (paramsMove ({ { "sync", true }, { "sync_division", 9 } }));
+
+        check (near (device->getParamValue ("sync_division"), 9.0), "landed on index 9");
+        check (juce::String (echojay::DelayEngine::divisionName (9)) == "1/4",
+               "index 9 is a quarter note");
+        check (near (delay->engine().effectiveTimeMs(), 500.0, 1e-6),
+               "which at 120 BPM is exactly 500 ms");
+
+        // Out of range must clamp to a real division, not wrap or land nowhere.
+        device->applyStructured (paramsMove ({ { "sync_division", 99 } }));
+        check (near (device->getParamValue ("sync_division"),
+                     (double) (echojay::DelayEngine::kNumDivisions - 1)),
+               "an out-of-range index clamps to the longest note");
+    }
+
+    std::printf ("== EchoJay Reverb dials, and reports no latency ==\n");
+    {
+        auto proc = makeByName ("EchoJay Reverb");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        check (device != nullptr, "IS an EedDeviceProcessor");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (
+            paramsMove ({ { "size", 85.0 }, { "decay_s", 4.5 }, { "predelay_ms", 60.0 },
+                          { "damping", 30.0 }, { "width", 80.0 }, { "mix", 22.0 } }),
+            &applied, &skipped);
+
+        check (applied == 6 && skipped == 0, "6 params applied, 0 skipped");
+        check (near (device->getParamValue ("size"), 85.0),        "size EXACTLY 85");
+        check (near (device->getParamValue ("decay_s"), 4.5),      "decay_s EXACTLY 4.5");
+        check (near (device->getParamValue ("predelay_ms"), 60.0), "predelay_ms EXACTLY 60");
+        check (near (device->getParamValue ("damping"), 30.0),     "damping EXACTLY 30");
+        check (near (device->getParamValue ("width"), 80.0),       "width EXACTLY 80");
+        check (near (device->getParamValue ("mix"), 22.0),         "mix EXACTLY 22");
+
+        // The claim the summary makes to the model, checked against the device.
+        proc->prepareToPlay (48000.0, 512);
+        check (proc->getLatencySamples() == 0, "reports ZERO latency, as advertised");
+        check (proc->getTailLengthSeconds() > 1.0, "but DOES report a tail ("
+               + juce::String (proc->getTailLengthSeconds(), 2) + " s), so an offline "
+               "render will not truncate it");
+    }
+
+    std::printf ("== both Time devices survive a real prepare + process ==\n");
+    {
+        // Not a DSP test (the engines have g++ suites) — a wiring test: the
+        // buffer layout the chain actually hands a device, at a rate it did not
+        // expect, with a block size that changes underneath it.
+        for (const char* name : { "EchoJay Delay", "EchoJay Reverb" })
+        {
+            auto proc = makeByName (name);
+            proc->setPlayConfigDetails (2, 2, 44100.0, 512);
+            proc->prepareToPlay (44100.0, 512);
+
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            bool finite = true;
+
+            for (int blk = 0; blk < 40; ++blk)
+            {
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        buf.setSample (ch, i, 0.5f * std::sin ((blk * 512 + i) * 0.02f));
+
+                proc->processBlock (buf, midi);
+
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        if (! std::isfinite (buf.getSample (ch, i))) finite = false;
+            }
+            check (finite, juce::String (name) + " renders finite audio through the chain's layout");
+
+            // Mono, which a device has to survive to be auditionable standalone.
+            proc->setPlayConfigDetails (1, 1, 44100.0, 256);
+            proc->prepareToPlay (44100.0, 256);
+            juce::AudioBuffer<float> mono (1, 256);
+            mono.clear();
+            mono.setSample (0, 0, 1.0f);
+            proc->processBlock (mono, midi);
+            check (std::isfinite (mono.getSample (0, 100)),
+                   juce::String (name) + " survives mono");
+        }
     }
 
     // -----------------------------------------------------------------------
