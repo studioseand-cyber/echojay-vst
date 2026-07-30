@@ -35,9 +35,14 @@ namespace
     // Above 1 it pushes the low-dwell tails down and leaves the peak alone, so
     // a signal that spends most of its time in a 6 dB window reads as a core
     // rather than as an even wash over everything it ever touched. 1.0 is the
-    // raw histogram; 2.5 is a clear hot core; past ~4 it gets so tight it stops
-    // showing the spread at all.
-    constexpr float kDwellGamma = 2.5f;
+    // raw histogram; past ~4 it gets so tight it stops showing the spread at all.
+    //
+    // 2.0 rather than 2.5, because contrast also decides how much of the core
+    // is ALLOWED to be hot: at 2.5 only the very top of the histogram survived
+    // into the bright end of the ramp, so the peak was a pinprick. Two is still
+    // a clear core and gives it something to be bright ACROSS. Brightness
+    // itself is kGlowPeakAlpha's job, not this one's.
+    constexpr float kDwellGamma = 2.0f;
 
     // VISIBLE FLOOR, as a fraction of the running maximum: below this the field
     // draws nothing. Rescaled rather than hard-cut, so what it removes fades
@@ -49,8 +54,20 @@ namespace
     // gets here.
     constexpr float kGlowReachPx = 11.0f;
 
-    // How bright the field's centre can get, before the plot's own dim/recede.
-    constexpr float kGlowPeakAlpha = 0.95f;
+    // PEAK BRIGHTNESS — how hard the field's centre is driven, before the
+    // plot's own dim/recede.
+    //
+    // DELIBERATELY OVER 1, which is what makes the core bloom rather than just
+    // reach full opacity at one pixel and stop. The composite clamps at 255, so
+    // an overdrive of 1.8 means every pixel whose falloff is above 1/1.8 lands
+    // fully opaque: the hot core becomes a small SOLID region with the bloom
+    // falling away outside it, instead of a single bright line. It is the same
+    // thing a blown-out highlight does in a photograph, and it is why the
+    // brightest part of a real glow looks like an area and not an edge.
+    //
+    // Raising this does not widen the glow — the falloff still ends where
+    // kGlowReachPx says. It only decides how much of that falloff saturates.
+    constexpr float kGlowPeakAlpha = 1.8f;
 
     // The curve as a DIAGRAM, under the glow. Cold teal, drawn whatever the
     // histogram says, so a silent or bypassed plot still shows its shape.
@@ -413,13 +430,24 @@ float TransferCurveView::dwellIntensity (float inDb) const noexcept
 
 juce::Colour TransferCurveView::dwellColour (float v)
 {
-    // Cold teal -> amber -> white-hot. The cold end is the palette's own blue,
+    // Cold teal -> amber -> TRUE WHITE. The cold end is the palette's own blue,
     // so a silent plot is the same colour the curve has always been and the
     // glow reads as that curve heating up rather than as a second graphic.
-    if (v <= 0.5f)
-        return Colours::blue.interpolatedWith (Colours::amber, v * 2.0f);
+    //
+    // The hot end is pure 255/255/255 and it ARRIVES EARLY, at 0.88 rather than
+    // at 1.0. A ramp that only reaches white in its last sliver puts white on
+    // nothing: intensity is a smooth hill, so the top 12% of it is a couple of
+    // pixels wide and the "white-hot" peak was really just hot amber. Landing
+    // white at 0.88 gives the peak an area to be white across, which is what
+    // reads as a hot core.
+    constexpr float kAmberAt = 0.45f;   // teal has fully become amber by here
+    constexpr float kWhiteAt = 0.88f;   // amber has fully become white by here
 
-    return Colours::amber.interpolatedWith (juce::Colours::white, (v - 0.5f) * 1.7f);
+    if (v <= kAmberAt)
+        return Colours::blue.interpolatedWith (Colours::amber, v / kAmberAt);
+
+    const float t = juce::jmin (1.0f, (v - kAmberAt) / (kWhiteAt - kAmberAt));
+    return Colours::amber.interpolatedWith (juce::Colours::white, t);
 }
 
 // ---------------------------------------------------------------------------
