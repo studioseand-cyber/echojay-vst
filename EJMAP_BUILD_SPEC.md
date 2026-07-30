@@ -115,9 +115,33 @@ touched.
   parameter. Mark `not-automatable`, move on. This is a real and permanent
   result, not an error.
 - **Several move together.** Linked stereo pairs, or a macro. Capture all of
-  them as an `indices[]` set — this is the same channel-twin structure the map
-  format already supports and the same bug it fixed on MC 77 (only Attack L
-  was written).
+  them as an `indices[]` set.
+
+  **CORRECTED 2026-07-30.** This bullet used to end: "this is the same
+  channel-twin structure the map format already supports and the same bug it
+  fixed on MC 77 (only Attack L was written)". Both halves were false, and the
+  claim was an inference from a parameter list rather than an observation.
+
+  Measured: `indices` appears nowhere in `Source/EchoJayParamApply.h` or
+  `EchoJayParamExtractor.h`, no commit ever added it there, and **0 of 4,233
+  extracted maps** carry `indices` or any other multi-index field — every
+  mapped parameter is a single `"index": N`. So the map format did not already
+  support channel twins, and there was no mechanism by which a bug could have
+  been fixed. No bug report, fix, test or map exists for it.
+
+  What MC 77 does have is `Input/Output/Attack/Release/Ratio` in L and R
+  variants plus `Link` and `IO-Link`, which reads exactly like the twins case.
+  It is a dual-mono plugin: two channel strips, two Attack knobs, and moving
+  one moves one parameter. Same shape as Waves API-2500 and Q1, both of which
+  were checked against their GUIs and behaved the same way.
+
+  **No confirmed channel-twin case has been found**, so `Kind::twins` is
+  retired — see the risk register. `indices[]` stays in the schema because the
+  `gesture` outcome populates it anyway and a real case may appear on a
+  tester's machine. The shape that used to trigger the twins verdict (same
+  direction, magnitudes within 1.5x) is still measured and recorded as
+  `same_direction` and `magnitude_ratio`, as a description of what was seen
+  and not as a claim about what caused it.
 - **Continuous drift.** LFO-driven or metering params that change on their own.
   Take several baselines with nothing touched, build a noise mask of
   self-changing indices, exclude them from capture. Without this, any plugin
@@ -205,7 +229,12 @@ Also capture:
 - **Family tag** when a plugin has more than one band family (E2Deesser has
   `sband` and `vband` families doing different jobs; a flat band list
   mis-merges them)
-- **Channel twins** as `indices[]` when L/R or M/S duplicates exist
+- ~~**Channel twins** as `indices[]` when L/R or M/S duplicates exist~~
+  **Retired 2026-07-30, no confirmed case.** L/R duplicate *parameters* are
+  common (18.2% of maps) but say nothing about how many *controls* the GUI has,
+  and every candidate checked turned out to expose one knob per parameter.
+  `indices[]` is still populated by the `gesture` outcome. See the corrected
+  "Several move together" bullet above and the risk register.
 
 ---
 

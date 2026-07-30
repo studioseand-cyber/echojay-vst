@@ -210,7 +210,15 @@ each tick:
 
 *Mouse capture.* At the tick that detects the change, `Desktop::getInstance().getMousePosition()`, converted to editor-local and normalised to editor bounds. Store with a small default bounding box (a 48x48 region around the point, tunable). If the mouse is outside the editor at capture time (host automation, MIDI learn, a keyboard entry), record `ui_hint: null` rather than a lie.
 
-**Gate.** On a known plugin (pick one with a documented parameter order), wiggle 10 controls and confirm 10/10 correct indices. On MC 77, confirm the L/R attack pair is captured as `indices[]` and not as a single index (this is the exact bug the map format already fixed once). On a plugin with a moving gain reduction meter, confirm the noise mask excludes it and capture still works.
+**Gate.** On a known plugin (pick one with a documented parameter order), wiggle 10 controls and confirm 10/10 correct indices. A multi-parameter gesture records every moved index, names them, and does not claim to know which control the human touched. On a plugin with a moving gain reduction meter, confirm the noise mask excludes it and capture still works.
+
+> **Two gate rows retired 2026-07-30. Both were specified from parameter names and dissolved on measurement.**
+>
+> **The MC 77 twins row.** It read: "On MC 77, confirm the L/R attack pair is captured as `indices[]` and not as a single index (this is the exact bug the map format already fixed once)." The parenthetical was false — `indices` appears nowhere in the shipped apply path, no commit ever added it, and 0 of 4,233 extracted maps use it, so there was no format support and no fix. The claim was an inference from MC 77's parameter list (`Attack L`, `Attack R`, `Link`), not an observation. MC 77 is dual-mono: two channel strips, two knobs, one knob writes one parameter. Waves API-2500 and Q1 were checked next and behaved identically. **No confirmed case exists, so this row cannot be satisfied and no longer blocks M2.** `Kind::twins` is retired to a descriptive `same_direction` / `magnitude_ratio` pair on a `gesture` result; `indices[]` stays in the schema against a real case turning up on a tester's machine.
+>
+> A poll could not have satisfied the row anyway. It sees a delta vector, so one control writing two parameters, a link mirroring a value onto its partner, and two merely-correlated parameters are one event to it. Separating them needs a reliable touched-parameter signal, which is the listener layer above — and even that is not guaranteed, since a mirroring plugin may report gestures on both or neither.
+>
+> **The moving-meter row** narrowed the same way: only 73 of 1,074,600 extracted parameters have both a readout name and a flat sweep, so exposed-meter-as-parameter is rare rather than typical. The noise mask still earns its place, but the baseline was demoted to a short probe rather than a 3-second one.
 
 **Failure modes.** Trackpad micro movement causing a spurious `ui_hint` drift. Plugins that update parameters at block rate with tiny dither. Plugins whose GUI writes on mouse-up only (poll catches it, the 8 s timeout must not fire early).
 
@@ -554,6 +562,7 @@ Drawn from the failure patterns in the handoff, each one having bitten at least 
 | **In process crash loses a session** | `inflight.json` before instantiate, quarantine on relaunch, state written on every change not on submit. |
 | **Local API key leaks** | Keychain or env var, never a file in the tree. This repo's sibling deploys its working tree. |
 | **Human fatigue produces bad data** | Deep mode is opt in. Fast mode is the default. Per key trust means a tired session degrades a map's trust labels rather than corrupting it. |
+| **Failure modes derived from parameter names cannot describe GUI structure** | A parameter list says what a plugin exposes to a host. It does not say how many on-screen controls write those parameters, which is a different fact that only a GUI can answer. Two of this plan's specified failure cases were written from name patterns and dissolved when measured: **meters-as-parameters** (predicted typical; 73 of 1,074,600 parameters have both a readout name and a flat sweep) and **channel twins** (predicted common and cited as an already-fixed MC 77 bug; zero confirmed cases, and the cited precedent was itself an inference from a name list). Guard: **anything the corpus says about controls is a hypothesis about names.** State it as a hypothesis, name the plugin and the GUI observation that would confirm it, and do not write a gate row that only a name pattern has ever supported. A row nothing can satisfy blocks the milestone while looking like rigour. |
 
 ---
 

@@ -90,8 +90,29 @@ public:
             next reader. The macro and bad-epsilon explanations still exist, as
             possibilities offered inside a gesture's reason string rather than as
             an asserted verdict.
+
+            NO "twins" ENTRY EITHER, for the same reason and a stronger one.
+            "Channel twins" named a mechanism -- one on-screen control writing two
+            parameters -- that this engine cannot observe. All it sees is a delta
+            vector. One control writing two parameters, a link switch mirroring a
+            value change onto its partner, and two parameters that merely
+            correlate are ONE event to a poll: N indices changed together inside
+            one detection window. Emitting "twins" asserted a mechanism from
+            evidence that cannot carry it, which is the same fault as the old
+            "uncorrelated" verdict.
+
+            The shape that used to trigger it -- same direction, magnitudes within
+            1.5x -- is still measured and still reported, as sameDirection and
+            magnitudeRatio below. It is a description of what was seen, not a
+            claim about what produced it.
+
+            What would earn the distinction back is a reliable touched-parameter
+            signal: parameterGestureChanged names the parameter the human began a
+            gesture on, so the touched control becomes separable from the
+            follower. That arrives with the listener layer. Until it does, a
+            gesture reports its members and does not rank them.
         */
-        enum class Kind { captured, twins, gesture, tooMany, notAutomatable, stalled };
+        enum class Kind { captured, gesture, tooMany, notAutomatable, stalled };
 
         Kind kind = Kind::notAutomatable;
         juce::Array<int> indices;
@@ -102,6 +123,20 @@ public:
         juce::StringArray names;
         juce::Array<float> deltas;
         juce::String reason;
+
+        /** Observed shape of a multi-parameter move. DESCRIPTIVE ONLY.
+
+            sameDirection: every delta had the same sign.
+            magnitudeRatio: largest |delta| over smallest, so 1.0 is exact
+              lockstep and 0.0 means not applicable (fewer than two moved, or a
+              zero delta slipped through the epsilon).
+
+            A reader may well conclude "1.00 in lockstep, that is a mirror". That
+            conclusion is theirs to draw from the numbers, and it is not what the
+            record says happened.
+        */
+        bool  sameDirection  = false;
+        float magnitudeRatio = 0.0f;
 
         /** When the change was DETECTED. The mouse ring is queried against this
             rather than sampled at this moment, so ui_hint fidelity does not
@@ -114,7 +149,6 @@ public:
             switch (kind)
             {
                 case Kind::captured:       return "captured";
-                case Kind::twins:          return "twins";
                 case Kind::gesture:        return "gesture";
                 case Kind::tooMany:        return "too_many";
                 case Kind::notAutomatable: return "not_automatable";
@@ -416,9 +450,19 @@ private:
             return r;
         }
 
-        // Two or more. Same direction AND comparable magnitude is the channel
-        // twin / linked pair signature; anything else is a macro or a bad
-        // epsilon, and the human is asked rather than guessed at.
+        // Two or more. Measure the SHAPE of the move -- same direction, and how
+        // far apart the magnitudes are. This used to fork here: same sign plus
+        // comparable magnitude was emitted as Kind::twins ("channel twins or a
+        // linked pair"), everything else as a gesture.
+        //
+        // That fork is gone, because the branch could not support it. See the
+        // Kind enum for the full reasoning; the short version is that a poll sees
+        // a delta vector, and one control writing two parameters is
+        // indistinguishable from a link mirroring a value onto its partner, or
+        // from two parameters that merely correlate. The shape below is real and
+        // is kept. The mechanism it was taken to prove was never observed: the
+        // MC 77 case the plan cited as precedent turned out to be an inference
+        // from a parameter list, and no confirmed case has been found.
         bool sameSign = true;
         float lo = std::abs (deltas[0]), hi = lo;
         for (int i = 1; i < deltas.size(); ++i)
@@ -428,16 +472,9 @@ private:
             hi = juce::jmax (hi, std::abs (deltas[i]));
         }
 
-        const bool comparable = lo > 0.0f && (hi / lo) <= 1.5f;
+        r.sameDirection  = sameSign;
+        r.magnitudeRatio = lo > 0.0f ? (hi / lo) : 0.0f;
 
-        if (sameSign && comparable)
-        {
-            r.kind = Result::Kind::twins;
-            r.indices = moved;
-            r.reason = juce::String (moved.size()) + " moved together, same direction, magnitudes "
-                       "within 1.5x: channel twins or a linked pair. Confirm before use.";
-        }
-        else
         {
             // MULTI-PARAMETER GESTURE, not a fault.
             //
@@ -479,6 +516,17 @@ private:
                        "drag moving frequency and gain together. Pick the one you meant; the rest "
                        "are recorded as co-moved. If you touched only one control, this may instead "
                        "be a macro, or the epsilon may be too small.";
+
+            // The shape, stated and not interpreted. Lockstep is worth showing
+            // because it is what a mirrored or linked pair would look like, and
+            // it is equally what two parameters driven by one gesture look like.
+            // The record says which was seen; it does not say which it was.
+            r.reason << " Shape: " << (sameSign ? "all same direction" : "mixed directions")
+                     << ", magnitudes "
+                     << (r.magnitudeRatio > 0.0f
+                            ? juce::String (r.magnitudeRatio, 2) + "x apart"
+                            : juce::String ("not comparable"))
+                     << ".";
         }
 
         noteCycle (moved);

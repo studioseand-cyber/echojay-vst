@@ -603,11 +603,6 @@ public:
         const auto& usable = qualified;
         if (usable.size() < 10) { std::cout << "CAPTURETEST: too few qualified params" << std::endl; quitNow(); return; }
 
-        const char* names[] = { "one moved -> captured",
-                                "two correlated -> twins",
-                                "two opposed -> gesture",
-                                "nine moved -> too_many" };
-
         if (stage >= 4)
         {
             // Prove the refusal, rather than trusting that it would fire. A guard
@@ -654,16 +649,28 @@ public:
 
         capture.arm (*inst, cal, mask, [this, st] (const CaptureEngine::Result& r)
         {
+            // Stages 1 and 2 both land on "gesture" now that Kind::twins is
+            // retired, so the kind alone no longer separates them. The test
+            // asserts the SHAPE as well, which is the thing that actually still
+            // differs: same-direction for the correlated pair, mixed for the
+            // opposed one. Without this the two stages would be one assertion
+            // run twice and the shape measurement would be uncovered.
             static const char* names[] = { "one moved -> captured",
-                                           "two correlated -> twins",
-                                           "two opposed -> gesture",
+                                           "two correlated -> gesture, same direction",
+                                           "two opposed -> gesture, mixed directions",
                                            "nine moved -> too_many" };
-            static const char* want[]  = { "captured", "twins", "gesture", "too_many" };
-            const bool ok = (r.kindString() == juce::String (want[st]));
+            static const char* want[]  = { "captured", "gesture", "gesture", "too_many" };
+
+            bool ok = (r.kindString() == juce::String (want[st]));
+            if (st == 1) ok = ok && r.sameDirection;
+            if (st == 2) ok = ok && ! r.sameDirection;
+
             if (! ok) ++failures;
             std::cout << "  " << (ok ? "ok   " : "FAIL ") << names[st]
                       << "  -> got " << r.kindString()
-                      << " indices=" << r.indices.size() << std::endl;
+                      << " indices=" << r.indices.size()
+                      << " sameDirection=" << (r.sameDirection ? "yes" : "no")
+                      << " ratio=" << juce::String (r.magnitudeRatio, 2) << std::endl;
 
             // Exercise the RECORD WRITER, not just the classifier. Without this
             // the test reported PASS while writing nothing, so persistence was
@@ -675,7 +682,7 @@ public:
                            r.names.isEmpty() ? juce::String() : r.names[0],
                            r.indices.size() > 1 ? r.indices : juce::Array<int>(),
                            r.indices.size() > 1 ? r.names : juce::StringArray(),
-                           r.reason);
+                           r.reason, r.sameDirection, r.magnitudeRatio);
             ++stage;
             juce::Timer::callAfterDelay (400, [this] { runCaptureStage(); });
         });
@@ -1322,7 +1329,8 @@ private:
         std::cout << "CAPTURE: " << t << std::endl;
 
         recordCapture ("captured_from_gesture", intended, lastGesture.names[sel],
-                       coMoved, coNames, lastGesture.reason);
+                       coMoved, coNames, lastGesture.reason,
+                       lastGesture.sameDirection, lastGesture.magnitudeRatio);
 
         candidatePicker.setVisible (false);
         resized();
@@ -1361,9 +1369,16 @@ private:
           from more anchored gestures, each scoped to its own row, never from
           summing absences.
     */
+    /** sameDirection / magnitudeRatio describe the SHAPE of a multi-parameter
+        move and are written only when there is a co-moved set, because the shape
+        of one delta is not a shape. They are observations, not a classification:
+        Kind::twins used to turn "same direction, within 1.5x" into an asserted
+        mechanism, and that assertion is retired. The numbers survive it.
+    */
     void recordCapture (const juce::String& kind, int intended, const juce::String& name,
                         const juce::Array<int>& coMoved, const juce::StringArray& coNames,
-                        const juce::String& reason)
+                        const juce::String& reason,
+                        bool sameDirection = false, float magnitudeRatio = 0.0f)
     {
         // REFUSE rather than write an unattributable row. A capture with no
         // plugin id is indistinguishable from evidence but cannot be traced to
@@ -1421,6 +1436,11 @@ private:
             cm.add (juce::var (c));
         }
         o->setProperty ("co_moved", juce::var (cm));
+        if (! coMoved.isEmpty())
+        {
+            o->setProperty ("same_direction", sameDirection);
+            o->setProperty ("magnitude_ratio", magnitudeRatio);
+        }
         o->setProperty ("ui_hint", lastHint.toVar());
         o->setProperty ("reason", reason);
 
@@ -1485,7 +1505,7 @@ private:
                            r.names.isEmpty() ? juce::String() : r.names[0],
                            r.indices.size() > 1 ? r.indices : juce::Array<int>(),
                            r.indices.size() > 1 ? r.names : juce::StringArray(),
-                           r.reason);
+                           r.reason, r.sameDirection, r.magnitudeRatio);
             armButton.setEnabled (true);
         });
     }
