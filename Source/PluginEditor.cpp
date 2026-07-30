@@ -1772,7 +1772,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // popup list would be a second implementation to keep honest.
     chainOpenBtn.onClick   = [this]
     {
-        if (chainChatCollapsed_) { chainChatCollapsed_ = false; }
+        if (processorRef.chatSidebarCollapsed) { processorRef.chatSidebarCollapsed = false; }
         setChainSidebarMode(true);
     };
 
@@ -1883,15 +1883,19 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainListPanel.masterKnob.setValue(processorRef.getChainHost().getMasterWet());
     addChildComponent(chainListPanel);
 
-    // AI assistant sidebar toggle — collapsing gives the plugin display area
-    // the full tab width. Chain tab only.
-    chainChatToggleBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
-    chainChatToggleBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
-    chainChatToggleBtn.onClick = [this] {
-        chainChatCollapsed_ = !chainChatCollapsed_;
-        if (currentTab == Tab::Chain && !compactMode)
+    // Sidebar collapse toggle. Collapsing gives the main column the full tab
+    // width. NOT Chain only any more: one flag for every chat-hosting
+    // surface, on the processor, persisted.
+    chatCollapseBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+    chatCollapseBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+    chatCollapseBtn.onClick = [this] {
+        processorRef.chatSidebarCollapsed = !processorRef.chatSidebarCollapsed;
+        // The state is the processor's, so it must be written to the host as
+        // a change worth saving, exactly like any other persisted choice.
+        processorRef.markStateDirty();
+        if (!compactMode)
         {
-            bool show = !chainChatCollapsed_;
+            bool show = !processorRef.chatSidebarCollapsed;
             chatScroll.setVisible(show);
             chatInput.setVisible(show);
             chatSendBtn.setVisible(show);
@@ -1907,7 +1911,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         resized();
         repaint();
     };
-    addChildComponent(chainChatToggleBtn);
+    addChildComponent(chatCollapseBtn);
 
     // Slot counter lives INSIDE the chain area (header strip above the
     // rack), tiny dim caps with a unit — never the sidebar header spot,
@@ -2671,7 +2675,10 @@ void EchoJayEditor::updateOnboardingPrompts()
                      // test has to be HERE as well as in switchToTab, or the
                      // input row reappears over the dashboard a frame later.
                      && currentTab != Tab::Dashboard
-                     && !(currentTab == Tab::Chain && chainChatCollapsed_)
+                     // No longer Chain-only: the collapse is global, so the
+                     // guard is too. This pass runs 20 times a second and
+                     // re-shows the input row on its own authority.
+                     && !processorRef.chatSidebarCollapsed
                      // Review-modal flag: while the plugin-review overlay is
                      // open it is a FULL-SCREEN modal — this per-tick pass
                      // must not re-show the chat sidebar behind it (this was
@@ -3093,10 +3100,27 @@ EchoJayEditor::ColumnLayout EchoJayEditor::computeColumns(int width) const
         c.chatW = 0;
         c.mW = width;
     }
+    // THE COLLAPSE, for every surface that has a main column beside the
+    // sidebar, ahead of the per-tab widths below. One flag, one branch, and
+    // the reason it can sit here rather than inside each tab's case: the two
+    // surfaces it must NOT apply to are already handled above. Chat IS the
+    // sidebar (chatW = width) so collapsing it would leave an empty window,
+    // and compact mode is a chat-only window for the same reason. Settings
+    // and Dashboard fall through below and are already zero.
+    //
+    // This is also why generalising cost less than special-casing Link: the
+    // Chain branch below loses its `collapsed ? 0 :` term, and four
+    // predicates lose their `currentTab == Tab::Chain &&` guard, rather than
+    // a fifth surface gaining one.
+    else if (processorRef.chatSidebarCollapsed)
+    {
+        c.chatW = 0;
+        c.mW = width;
+    }
     else if (currentTab == Tab::Chain)
     {
         // Slim sidebar so plugin editors get maximum width
-        c.chatW = chainChatCollapsed_ ? 0 : juce::jlimit(200, 280, width * 22 / 100);
+        c.chatW = juce::jlimit(200, 280, width * 22 / 100);
         c.mW = width - c.chatW;
     }
     else if (currentTab == Tab::Settings || currentTab == Tab::Dashboard)
@@ -3397,7 +3421,7 @@ bool EchoJayEditor::assistantInputContext() const
     // hand-listed subset would have put an Upgrade button somewhere arbitrary
     // on the dashboard for every free user out of messages.
     if (currentTab == Tab::Dashboard) return false;
-    if (currentTab == Tab::Chain && chainChatCollapsed_) return false;
+    if (processorRef.chatSidebarCollapsed) return false;   // no sidebar, no input row
     return true;   // Chat, Compare, Meters, Visualisation, Link, Chain (open)
 }
 
@@ -3843,7 +3867,7 @@ void EchoJayEditor::applyReviewModalState()
     chainListPanel.setVisible(onChain && !modal);
     // Chain header chrome.
     const bool chrome = onChain && !modal && !compactMode && !visualOnlyMode;
-    chainChatToggleBtn.setVisible(chrome);
+    chatCollapseBtn.setVisible(chrome);
     chainSlotCountLabel.setVisible(false);   // removed from the header, see resized()
     // Save / Save As / Open ride the same chrome flag, but their bounds also
     // depend on window width, so this CONSUMES the rect resized() stored
@@ -3859,7 +3883,7 @@ void EchoJayEditor::applyReviewModalState()
     // buttons all cascade off these in the layout + paint passes).
     if (onChain && !compactMode)
     {
-        const bool showChat = !modal && !chainChatCollapsed_;
+        const bool showChat = !modal && !processorRef.chatSidebarCollapsed;
         chatScroll.setVisible(showChat);
         chatInput.setVisible(showChat);
         chatSendBtn.setVisible(showChat);
@@ -7110,7 +7134,7 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             if (!compactMode)
             {
                 // Gated on the review-modal flag like every Chain visibility site.
-                bool showChat = !chainChatCollapsed_ && !reviewOverlay.visibleState;
+                bool showChat = !processorRef.chatSidebarCollapsed && !reviewOverlay.visibleState;
                 chatScroll.setVisible(showChat);
                 chatInput.setVisible(showChat);
                 chatSendBtn.setVisible(showChat);
@@ -13055,6 +13079,37 @@ void EchoJayEditor::resized()
         dashView_.setBounds(0, 0, dashW, dashH);
     }
 
+    // ---- sidebar collapse chevron: bounds AND visibility, UNCONDITIONAL ----
+    //
+    // It used to live inside `if (comingSoonTab)`, which was safe only
+    // because it was Chain-only. Now that the collapse is global the button
+    // cannot be authored inside a tab test: a component whose bounds and
+    // visibility are both written under `if (currentTab == X)` keeps
+    // visible=true at tab X's coordinates on every other tab, which is the
+    // Chain-header-over-Compare bug exactly. The surface test lives INSIDE
+    // the single visibility expression, so this always evaluates both ways.
+    //
+    // WHERE IT SHOWS, and why not everywhere. The rule is one position: the
+    // top-right of the MAIN column, which is where Chain has always put it
+    // and which works collapsed (mW is the full width) and expanded (mW
+    // stops at the sidebar). That band is free on Chain, whose header strip
+    // hosts it, and on Link, whose title row is left-aligned text. It is NOT
+    // free on Meters, Visualisation or Compare, where panel chrome is drawn
+    // to the top-right corner of the content area, so a chevron there would
+    // sit on top of a panel border. Those surfaces still OBEY the collapse,
+    // because the flag is global; they just do not carry the control, and
+    // giving them one means changing their layout, which is not this pass.
+    {
+        const bool hostsChevron = (currentTab == Tab::Chain || currentTab == Tab::Link)
+                               && currentScreen == Screen::Main
+                               && !compactMode && !visualOnlyMode
+                               && !reviewOverlay.visibleState;
+        chatCollapseBtn.setButtonText(processorRef.chatSidebarCollapsed ? "<" : ">");
+        chatCollapseBtn.setBounds(mW - kChatToggleW - 8, topH + 5, kChatToggleW, 22);
+        chatCollapseBtn.setVisible(hostsChevron);
+        if (hostsChevron) chatCollapseBtn.toFront(false);
+    }
+
     // Link tab: the scrollable row list is the one child component; the
     // title + pinned Mix Bus card above it are painted directly
     if (linkMonitorTab && !compactMode && !visualOnlyMode)
@@ -13076,13 +13131,9 @@ void EchoJayEditor::resized()
         // Panel fills from below the header strip to the bottom
         chainListPanel.setBounds(0, topH + 32, mW, contentH - 32);
 
-        // AI sidebar toggle — right end of the "PLUGIN CHAIN" header strip
-        // Just the chevron: the AI | CHAINS switch already says AI, so the
-        // label was saying it twice in two places a few pixels apart.
-        chainChatToggleBtn.setButtonText(chainChatCollapsed_ ? "<" : ">");
-        chainChatToggleBtn.setBounds(mW - kChainToggleW - 8, topH + 5, kChainToggleW, 22);
-        chainChatToggleBtn.setVisible(!compactMode && !visualOnlyMode && !reviewOverlay.visibleState);
-        chainChatToggleBtn.toFront(false);
+        // (The collapse chevron is authored UNCONDITIONALLY below, outside
+        // this branch, for the same reason Save / Save As / Open are. See the
+        // note there.)
 
         // Slot counter REMOVED from the chain header (28 Jul 2026). The rack
         // shows what is in it; a count next to Save / Save As / Open was
@@ -13093,7 +13144,7 @@ void EchoJayEditor::resized()
         // (Save / Save As / Open are authored UNCONDITIONALLY below, outside
         // this branch. See the note there for why they cannot live here.)
 
-        if (chainChatCollapsed_ && !compactMode)
+        if (processorRef.chatSidebarCollapsed && !compactMode)
         {
             chatScroll.setVisible(false);
             chatInput.setVisible(false);
@@ -13115,7 +13166,7 @@ void EchoJayEditor::resized()
     }
     else
     {
-        chainChatToggleBtn.setVisible(false);
+        chatCollapseBtn.setVisible(false);
         chainSlotCountLabel.setVisible(false);
     }
 
@@ -13139,7 +13190,7 @@ void EchoJayEditor::resized()
     // a second height.
     {
         const int btnY  = topH + 5, btnH = 22;
-        const int rightEdge = mW - kChainToggleW - 8 - 10;   // left of the AI toggle
+        const int rightEdge = mW - kChatToggleW - 8 - 10;   // left of the AI toggle
         const int wOpen = 54, wSaveAs = 66, wSave = 46, gap = 6;
         const int xOpen   = rightEdge - wOpen;
         const int xSaveAs = xOpen   - gap - wSaveAs;
@@ -13165,10 +13216,14 @@ void EchoJayEditor::resized()
         chainSaveBtnRight_ = showChainHeaderBtns ? xSave : 0;
     }
 
-    // Position particle visual — use paint formula for mW to match divider
+    // Position particle visual. CONSUMES computeColumns, the single width
+    // source, rather than re-deriving the 35% formula: this used to be a
+    // hand-copied duplicate, which was merely redundant while the sidebar had
+    // one width and became WRONG the moment it could collapse to zero (the
+    // visual would sit 280 to 420px short of the right edge with nothing
+    // beside it).
     int abOff = abBarShowing ? kAbBarH : 0;
-    int paintChatW = juce::jlimit(280, 420, b.getWidth() * 35 / 100);
-    int paintMW = b.getWidth() - paintChatW;
+    int paintMW = computeColumns(b.getWidth()).mW;
     // particleVisualHolder may only be shown on Visualisation or Meters tabs.
     const bool isVisualTab = (currentTab == Tab::Visualisation || currentTab == Tab::Meters);
     if (isVisualTab && visualMode && !compactMode && !visualOnlyMode && currentView == View::Meters)
@@ -13427,7 +13482,7 @@ void EchoJayEditor::resized()
         // no click can reach a switch that is not on screen.
         const bool stripHasSwitch = (currentTab == Tab::Chain) && !compactMode
                                  && !visualOnlyMode && !reviewOverlay.visibleState
-                                 && !chainChatCollapsed_;
+                                 && !processorRef.chatSidebarCollapsed;
         if (stripHasSwitch)
         {
             const int segW = 46, segH = 18, segY = topH + 7;
@@ -13503,7 +13558,7 @@ void EchoJayEditor::resized()
     {
         const bool chainSidebar = (currentTab == Tab::Chain) && !compactMode
                                && !visualOnlyMode && !reviewOverlay.visibleState
-                               && !chainChatCollapsed_;
+                               && !processorRef.chatSidebarCollapsed;
         const bool chainsMode   = chainSidebar && processorRef.chainSidebarChainsMode;
 
         // The AI | CHAINS rects are NOT authored here. They are placed by the
@@ -13634,15 +13689,13 @@ void EchoJayEditor::resized()
 
         cy2 += 82 + 4; // reference drop zone
 
-        // rowW: content width matching paint()'s chatW formula (35%, [280,420])
-        // paint() and resized() use different chatW formulas, so we recompute here
-        // to ensure meter buttons and slot/play buttons fit within the painted area.
-        int rowW;
-        {
-            int paintChatW = juce::jlimit(280, 420, b.getWidth() * 35 / 100);
-            rowW = b.getWidth() - paintChatW - 2 * cPad;
-            if (rowW < 1) rowW = 1;
-        }
+        // rowW: content width from computeColumns, the single width source.
+        // The comment that used to live here said "paint() and resized() use
+        // different chatW formulas, so we recompute here", which stopped being
+        // true when computeColumns was introduced and left a third copy behind.
+        // A collapsed sidebar makes the copy visibly wrong, not just
+        // redundant.
+        int rowW = juce::jmax(1, computeColumns(b.getWidth()).mW - 2 * cPad);
 
         // Meter-type selector — 5 even buttons
         {
@@ -14074,7 +14127,7 @@ void EchoJayEditor::resized()
 
     // ---- FINAL overlay re-front (24 Jul 2026 z-order fix) ----
     // The re-fronts at the TOP of resized() run before the per-tab layout
-    // below them, which itself calls toFront on tab chrome (chainChatToggleBtn,
+    // below them, which itself calls toFront on tab chrome (chatCollapseBtn,
     // chatScroll/chatInput/chatSendBtn on the Chain tab, the Compare click
     // catcher, ...). Anything fronted there landed ABOVE the overlays on every
     // layout pass — the "review overlay behind the chain panel" bug. Re-front
@@ -17977,7 +18030,7 @@ void EchoJayEditor::paintChainSidebar(juce::Graphics& g, int chatX, int chatW,
 bool EchoJayEditor::chainSidebarInChainsMode() const
 {
     return currentTab == Tab::Chain && processorRef.chainSidebarChainsMode
-        && !compactMode && !visualOnlyMode && !chainChatCollapsed_;
+        && !compactMode && !visualOnlyMode && !processorRef.chatSidebarCollapsed;
 }
 
 // ---- Chain sidebar: AI | Chains -------------------------------------------
@@ -20926,8 +20979,12 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         && visualMode && !compactMode && !visualOnlyMode
         && !channelPromptVisible && !genrePromptVisible)
     {
-        int paintCW = juce::jlimit(280, 420, getWidth() * 35 / 100);
-        int mW2 = getWidth() - paintCW;
+        // A HIT TEST THAT MEASURED. It re-derived the sidebar width instead
+        // of consuming it, so with the sidebar collapsed the painted strip
+        // reached the full width while the click test still stopped 280 to
+        // 420px short. Same shape as the tab strip's two geometry
+        // authorities, in a smaller place.
+        int mW2 = computeColumns(getWidth()).mW;
         int numStripH = 28;
         int stripH = 30;
         int abOff5 = abBarShowing ? kAbBarH : 0;

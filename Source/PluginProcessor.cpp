@@ -2024,6 +2024,10 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     state->setProperty("passCounter", passCounter);
     state->setProperty("projectName", projectName);
     state->setProperty("captureVersion", captureVersion);
+    // Layout choice, not transient UI state: how you want the window is worth
+    // writing into a project file. Read back guarded, so an older project
+    // loads expanded and the migration is silent (no version bump).
+    state->setProperty("chatSidebarCollapsed", chatSidebarCollapsed);
     
     // Serialise snapshots — copy under lock, serialise outside
     std::vector<CaptureSnapshot> snapsCopy;
@@ -2188,6 +2192,11 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             // spurious re-prompt on every pre-existing project).
             if (obj->hasProperty("genrePromptDismissed"))
                 genrePromptDismissed = (bool)obj->getProperty("genrePromptDismissed");
+            // Absent in every project saved before this shipped, which is
+            // exactly the silent migration: the member keeps its false
+            // default and the sidebar opens expanded, as it always has.
+            if (obj->hasProperty("chatSidebarCollapsed"))
+                chatSidebarCollapsed = (bool)obj->getProperty("chatSidebarCollapsed");
             else
                 genrePromptDismissed = channelTypePromptDismissed;
             // Project prompt: saves that predate the flag derive from having

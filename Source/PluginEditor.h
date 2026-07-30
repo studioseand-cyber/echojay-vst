@@ -2134,14 +2134,18 @@ private:
     int chainSelectedSlot_ = -1;
     bool chainRemovePending_ = false;  // one deferred slot-removal at a time
 
-    // CHAIN tab AI assistant sidebar collapse — when collapsed the plugin
-    // display area takes the full tab width.
-    bool chainChatCollapsed_ = false;
+    // Sidebar collapse. THE FLAG IS NOT HERE ANY MORE: it is
+    // processorRef.chatSidebarCollapsed, one flag for every chat-hosting
+    // surface, on the processor so it survives Logic's editor recreate and
+    // persisted so it survives a session reload. It used to be an editor
+    // member (chainChatCollapsed_) and silently reopened on every Link window
+    // switch, which was a live bug rather than a design smell.
+    //
     // Width of the sidebar collapse chevron. ONE constant, so the rack
     // strip's Save / Save As / Open cursor and the button itself cannot
     // disagree about how much space it takes.
-    static constexpr int kChainToggleW = 28;
-    juce::TextButton chainChatToggleBtn { ">" };
+    static constexpr int kChatToggleW = 28;
+    juce::TextButton chatCollapseBtn { ">" };
     // "n/15" slots-used counter — sits left of the Aa button in the AI
     // ASSISTANT header (replaces the usage counter on this tab).
     juce::Label chainSlotCountLabel;

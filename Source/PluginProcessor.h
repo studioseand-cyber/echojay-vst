@@ -392,6 +392,26 @@ public:
     bool chainSidebarChainsMode = false;
     bool chainWarningDismissed = false;
 
+    /** Chat sidebar collapsed to zero width. ONE FLAG FOR EVERY SURFACE, not
+        one per tab: collapse it on Link and it is collapsed on Compare too.
+        Per-tab state would widen this to a lookup keyed by tab, and that is
+        deliberately NOT pre-built.
+
+        ON THE PROCESSOR, and this fixes a live bug rather than merely
+        avoiding one. It used to be EchoJayEditor::chainChatCollapsed_, an
+        editor member, so collapsing the Chain sidebar and switching to the
+        Link window and back silently reopened it, several times a minute in
+        real Link work. Logic destroys the editor on that switch; anything
+        that must survive it lives here, like chatTargetLinkUid and
+        savedChainId.
+
+        PERSISTED, unlike chainSidebarChainsMode above, because this one is a
+        layout choice about how you want the window rather than which pane you
+        last looked at. Read back with a hasProperty guard, so a project saved
+        before this existed loads expanded exactly as it does today and the
+        migration is silent. */
+    bool chatSidebarCollapsed = false;
+
     // A/B playback — toggle between DAW audio and reference WAV
     void loadABFile(const juce::String& wavPath, double startOffsetSeconds = 0.0);
     void stopAB();
