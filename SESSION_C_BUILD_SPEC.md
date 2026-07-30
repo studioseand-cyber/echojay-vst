@@ -355,7 +355,7 @@ rename, which is why this is worth doing sooner rather than later.
 The 80-char message SNIPPET in `chatSnippet` is a separate cut and already ends in
 `...`; it is the TITLE that has no ellipsis and no word boundary.
 
-## QUEUED, backend: `hasState` on the dashboard payload's chain rows
+## UNBLOCKED 30 Jul 2026, plugin side: `hasState` on dashboard chain rows
 
 The dashboard chain rows cannot say which chains restore your knobs, so the only
 way to find out is to load one, which is the destructive operation. Session B
@@ -370,10 +370,16 @@ shareVisibility, updatedAt` and no `hasState`, and the chains query in
 shape as `profileVisibility` above, not a plugin omission: the plugin has nothing
 to draw.
 
-One expression in the existing query (`state is not null as has_state`, no extra
-round trip, and never the blob itself) plus the field in `types.js`. The plugin
-side is then one more line on the chain row, matching the sidebar's wording so the
-two surfaces cannot describe the same chain differently.
+**THE SERVER SENDS IT NOW.** Landed on echojay-saas `main` in the D3.2 backend
+merge: `(c.state is not null) as has_state` in the chains query, `hasState` on
+`DashboardChain` in `types.js`. No extra round trip and never the blob itself. Not
+deployed at time of writing, so it reaches the plugin on the next production deploy.
+
+What is left is PLUGIN SIDE and small: parse `hasState` in `DashPayload::parse`
+(the field sits beside `slotCount`, which is already read) and put it on the chain
+row, using the SAME wording the Chain sidebar uses so the two surfaces cannot
+describe the same chain differently. Deliberately not done in the session that
+added the field, because it is the other repo.
 
 ## QUEUED, backend: `community.latestAnnouncement` is null on every branch
 
@@ -397,7 +403,7 @@ This is the single highest-value item on this list, because it is what the whole
 poll, badge and card machinery was built for. Section 0's product reason (you post
 a release note and nobody sees it) is still true today.
 
-## QUEUED, backend: `user.profileVisibility` in the dashboard payload
+## UNBLOCKED 30 Jul 2026, plugin side: `@handle` can become a link
 
 Found 29 Jul 2026 while building the tab. A GAP, not a limitation, and small.
 
@@ -410,12 +416,17 @@ enumerate taken handles. `payload.user` carries `handle` and `hasProfile` and no
 visibility field, so the only safe reading of a handle from the plugin is "assume it
 404s", and Session C therefore renders `@handle` as plain identity text.
 
-The fix is one field in `lib/dash/payload.js` in echojay-saas: select
-`visibility` alongside `handle, display_name, avatar_url` and add
-`profileVisibility` to `DashboardUser` in `lib/dash/types.js`. It leaks nothing an
-owner does not already know about their own profile. The plugin side is then a
-one-line condition: link `@handle` when `handle` is set AND visibility is `public`,
-and keep the current text otherwise. Nothing else on this surface changes.
+**THE SERVER SENDS IT NOW.** Landed on echojay-saas `main` in the D3.2 backend
+merge: `visibility` joins `handle, display_name, avatar_url` in the profiles query
+and `profileVisibility` is on `DashboardUser`. It leaks nothing an owner does not
+already know about their own profile. Not deployed at time of writing.
+
+What is left is PLUGIN SIDE and is a one-line condition: parse `profileVisibility`
+in `DashPayload::parse`, then link `@handle` when the handle is set AND visibility
+is `public`, keeping the current inert text otherwise. Note the asymmetry with
+`authorCard` in `shares.js`, which withholds a stranger's handle entirely: here the
+viewer IS the owner, so only linkability is in question, never whether to show it.
+Nothing else on this surface changes.
 
 Worth doing with the plugin-to-web token path (section 4), which is the larger
 queued backend slice and unlocks roughly five more surfaces. This one is worth
