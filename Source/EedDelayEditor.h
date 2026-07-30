@@ -45,14 +45,22 @@ public:
 
 protected:
     void layoutContent (juce::Rectangle<int> content) override;
+    void layoutHeaderLeading (juce::Rectangle<int>& bar) override;
 
 private:
     void timerCallback() override;
     void syncFromProcessor();
     void pushKnob (const char* id, const echojay::device::EchoJayDeviceKnob& k);
     void refreshSyncState();
+    void refreshModeState();
     void refreshHint();
     void refreshTaps();
+
+    // Whether the PING-PONG switch is worth showing. In `pingpong` MODE the bounce
+    // is already on and the switch cannot turn it off, so it comes off the panel
+    // rather than sitting there looking broken — the same rule the Dynamics faces
+    // apply to a dial their mode ignores. It stays a schema param throughout.
+    bool pingPongSwitchVisible() const;
 
     EedDelayProcessor& proc_;
 
@@ -60,11 +68,12 @@ private:
 
     echojay::device::EchoJayDeviceKnob timeKnob_, feedbackKnob_, mixKnob_,
                                        hpKnob_, lpKnob_,
-                                       offsetKnob_, modRateKnob_, modDepthKnob_;
+                                       offsetKnob_, modRateKnob_, modDepthKnob_,
+                                       diffusionKnob_, duckKnob_;
 
     juce::TextButton syncBtn_     { "SYNC" };
     juce::TextButton pingPongBtn_ { "PING-PONG" };
-    juce::ComboBox   divisionBox_;
+    juce::ComboBox   divisionBox_, modeBox_;
     juce::Label      divisionLabel_;
 
     juce::String lastHint_;

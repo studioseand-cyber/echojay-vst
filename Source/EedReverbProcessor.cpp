@@ -6,6 +6,8 @@
 #include "EedReverbEditor.h"
 #include "EedDeviceRegistry.h"
 
+#include <cmath>
+
 // ---------------------------------------------------------------------------
 // the dialable contract
 // ---------------------------------------------------------------------------
@@ -61,6 +63,38 @@ const echojay::ParamSchema& EedReverbProcessor::schema()
         { kMix, "%",
           (double) E::kMinMixPct, (double) E::kMaxMixPct, 30.0,
           "wet/dry balance; 0 is bypass-clean dry, 100 is tail only", false },
+
+        // ---- the depth pass (DEVICE_DEPTH_PLAN.md, Time) -------------------
+        // THE marquee control, and the one a model should set FIRST: it decides
+        // what kind of space this is, and every other knob then shapes that space
+        // rather than defining it. Each description says what the algorithm is
+        // FOR, because "put it in a room" and "put it on a plate" are the same
+        // sentence with different answers.
+        { kAlgorithm, "",
+          0.0, (double) (echojay::kNumReverbAlgorithms - 1),
+          (double) (int) echojay::ReverbAlgorithm::Hall,
+          "the kind of space, which reshapes the reflection pattern, density, "
+          "brightness and early/late balance: room is small and tight with audible "
+          "walls, hall is big and smooth, plate is bright and very diffuse with NO "
+          "distinct early reflections (the classic vocal reverb), spring is short "
+          "and resonant with a boingy dispersed character, ambience is a very short "
+          "subtle space that is mostly early reflections. decay_s still sets the "
+          "length in all five, so switching changes character and not time",
+          false, { "room", "hall", "plate", "spring", "ambience" } },
+
+        { kDiffusion, "%",
+          (double) E::kMinDiffusionPct, (double) E::kMaxDiffusionPct,
+          (double) echojay::kReverbDiffusionUnityPct,
+          "density of the tail: low leaves individual reflections audible (grainier, "
+          "more like a real room), high smears them into a smooth wash. Raise it for "
+          "vocals, lower it for drums where you want the reflections to be heard",
+          false },
+
+        { kDuck, "%",
+          (double) E::kMinDuckPct, (double) E::kMaxDuckPct, 0.0,
+          "how much the tail ducks under the DRY signal, so the reverb ebbs while "
+          "the source plays and swells in the gaps. This is how a big reverb stays "
+          "out of the way of a vocal; 0 is off, 40-70 is the usual range", false },
     });
     return s;
 }
@@ -77,6 +111,15 @@ bool EedReverbProcessor::setParamValue (const juce::String& id, double value)
     if (id == kEarlyLate)  { engine_.setEarlyLatePct ((float) value); return true; }
     if (id == kModDepth)   { engine_.setModDepthPct ((float) value);  return true; }
     if (id == kMix)        { engine_.setMixPct ((float) value);       return true; }
+    if (id == kDiffusion)  { engine_.setDiffusionPct ((float) value); return true; }
+    if (id == kDuck)       { engine_.setDuckPct ((float) value);      return true; }
+
+    if (id == kAlgorithm)
+    {
+        engine_.setAlgorithm (
+            echojay::reverbAlgorithmFromIndex ((int) std::lround (value)));
+        return true;
+    }
     return false;
 }
 
@@ -91,6 +134,9 @@ double EedReverbProcessor::getParamValue (const juce::String& id) const
     if (id == kEarlyLate)  return (double) engine_.getEarlyLatePct();
     if (id == kModDepth)   return (double) engine_.getModDepthPct();
     if (id == kMix)        return (double) engine_.getMixPct();
+    if (id == kAlgorithm)  return (double) (int) engine_.getAlgorithm();
+    if (id == kDiffusion)  return (double) engine_.getDiffusionPct();
+    if (id == kDuck)       return (double) engine_.getDuckPct();
     return 0.0;
 }
 
@@ -153,10 +199,12 @@ namespace
 
         // ASCII ONLY: juce::String's const char* constructor reads its input as
         // ASCII, so a UTF-8 dash here ships mojibake into the AI prompt.
-        d.summary         = "Feedback-delay-network reverb with early reflections, "
-                            "predelay, damping and width. Reach for it to put a source "
-                            "in a space; set size for the character of the room and "
-                            "decay_s for how long it rings. Adds no latency.";
+        d.summary         = "Feedback-delay-network reverb with five algorithms (room, "
+                            "hall, plate, spring, ambience), early reflections, predelay, "
+                            "damping, diffusion, width and ducking from the dry signal. "
+                            "Reach for it to put a source in a space; set algorithm first "
+                            "for the KIND of space, then decay_s for how long it rings "
+                            "and duck to keep it out of the way of a vocal. No latency.";
         d.identifier      = "echojay:builtin:reverb";
         d.uid             = 0x456A5256;   // 'EjRV' - frozen once shipped
         d.aliases         = { "EchoJayReverb", "EchoJay Room", "EchoJay Hall",

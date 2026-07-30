@@ -63,8 +63,9 @@ const echojay::ParamSchema& EedDelayProcessor::schema()
 
         { kPingPong, "",
           0.0, 1.0, 0.0,
-          "bounce the echoes left-right instead of keeping each side "
-          "on its own channel", true },
+          "bounce the echoes left-right instead of keeping each side on its own "
+          "channel. Works with ANY mode, so this is how to get a bouncing tape or "
+          "analog echo; mode=pingpong is the clean digital bounce on its own", true },
 
         { kStereoOffset, "%",
           (double) E::kMinOffsetPct, (double) E::kMaxOffsetPct, 0.0,
@@ -79,6 +80,33 @@ const echojay::ParamSchema& EedDelayProcessor::schema()
           (double) E::kMinModDepthMs, (double) E::kMaxModDepthMs, 0.0,
           "how far the delay time wobbles; a little detunes the repeats "
           "like tape, a lot is a chorus", false },
+
+        // ---- the depth pass (DEVICE_DEPTH_PLAN.md, Time) -------------------
+        // The marquee control. Everything it does happens INSIDE the feedback
+        // loop, which is why the description can promise a progression: the first
+        // repeat is clean and each one after it is further gone.
+        { kMode, "",
+          0.0, (double) (echojay::kNumDelayModes - 1), 0.0,
+          "the character of the repeats, applied inside the feedback loop so it "
+          "builds up over successive echoes: digital is clean and transparent, tape "
+          "saturates and adds wow and flutter so each repeat is darker and drifts "
+          "slightly, analog is a bucket-brigade line - darker still, band-limited "
+          "and a little gritty, pingpong is the clean digital sound bounced hard "
+          "left-right. To bounce a tape or analog echo, set mode and turn ping_pong "
+          "on as well",
+          false, { "digital", "tape", "analog", "pingpong" } },
+
+        { kDiffusion, "%",
+          (double) E::kMinDiffusionPct, (double) E::kMaxDiffusionPct, 0.0,
+          "smear the repeats toward a reverby wash instead of discrete echoes; 0 is "
+          "a clean delay, high turns the tail into something closer to a reverb "
+          "while keeping the rhythm of the delay time", false },
+
+        { kDuck, "%",
+          (double) E::kMinDuckPct, (double) E::kMaxDuckPct, 0.0,
+          "how much the repeats duck under the DRY signal, so the echoes stay out of "
+          "the way while the source plays and come up in the gaps. The standard trick "
+          "for a delay on a lead vocal; 0 is off, 40-70 is the usual range", false },
     });
     return s;
 }
@@ -97,6 +125,14 @@ bool EedDelayProcessor::setParamValue (const juce::String& id, double value)
     if (id == kStereoOffset) { engine_.setStereoOffsetPct ((float) value);  return true; }
     if (id == kModRateHz)    { engine_.setModRateHz ((float) value);        return true; }
     if (id == kModDepthMs)   { engine_.setModDepthMs ((float) value);       return true; }
+    if (id == kDiffusion)    { engine_.setDiffusionPct ((float) value);     return true; }
+    if (id == kDuck)         { engine_.setDuckPct ((float) value);          return true; }
+
+    if (id == kMode)
+    {
+        engine_.setMode (echojay::delayModeFromIndex ((int) std::lround (value)));
+        return true;
+    }
     return false;
 }
 
@@ -113,6 +149,9 @@ double EedDelayProcessor::getParamValue (const juce::String& id) const
     if (id == kStereoOffset) return (double) engine_.getStereoOffsetPct();
     if (id == kModRateHz)    return (double) engine_.getModRateHz();
     if (id == kModDepthMs)   return (double) engine_.getModDepthMs();
+    if (id == kMode)         return (double) (int) engine_.getMode();
+    if (id == kDiffusion)    return (double) engine_.getDiffusionPct();
+    if (id == kDuck)         return (double) engine_.getDuckPct();
     return 0.0;
 }
 
@@ -180,10 +219,12 @@ namespace
 
         // ASCII ONLY: juce::String's const char* constructor reads its input as
         // ASCII, so a UTF-8 dash here ships mojibake into the AI prompt.
-        d.summary         = "Tempo-syncable stereo echo with a filtered feedback loop, "
-                            "ping-pong and modulation. Reach for it to add depth or "
-                            "rhythmic space; set time_ms directly, or turn sync on and "
-                            "pick a note length with sync_division.";
+        d.summary         = "Tempo-syncable stereo echo with four modes (digital, tape, "
+                            "analog, pingpong), a filtered feedback loop, diffusion and "
+                            "ducking from the dry signal. Reach for it to add depth or "
+                            "rhythmic space; set mode for the character of the repeats, "
+                            "time_ms directly (or sync on plus sync_division for a note "
+                            "length), and duck to keep the echoes off a lead vocal.";
         d.identifier      = "echojay:builtin:delay";
         d.uid             = 0x456A444C;   // 'EjDL' - frozen once shipped
         d.aliases         = { "EchoJayDelay", "EchoJay Echo", "EchoJay Ping Pong" };

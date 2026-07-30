@@ -17,13 +17,16 @@ namespace
     // Five dial columns across, two rows, a control strip, and the taps view
     // seated above all of it. The rack sizes this down if it has to, and
     // layoutContent survives that — the view is the first thing to give up room.
-    constexpr int kDefaultW = 440;
+    constexpr int kDefaultW = 460;
     constexpr int kTapsH    = 104;
     constexpr int kDefaultH = 268 + kTapsH + 6;
 
     constexpr int kGap      = 8;
     constexpr int kBtnW     = 92;
     constexpr int kDivBoxW  = 84;
+
+    // Wide enough for "PINGPONG", the longest of the four.
+    constexpr int kModeW    = 100;
 
     // Below this the taps are a row of specks with no readable spacing between
     // them, so the view is dropped rather than drawn uselessly small.
@@ -61,6 +64,8 @@ EedDelayEditor::EedDelayEditor (EedDelayProcessor& p)
     setupKnob (offsetKnob_,   EedDelayProcessor::kStereoOffset,   0.0,  0, " %",  "OFFSET");
     setupKnob (modRateKnob_,  EedDelayProcessor::kModRateHz,      1.0,  2, " Hz", "RATE");
     setupKnob (modDepthKnob_, EedDelayProcessor::kModDepthMs,     3.0,  1, " ms", "DEPTH");
+    setupKnob (diffusionKnob_,EedDelayProcessor::kDiffusion,      0.0,  0, " %",  "DIFFUSE");
+    setupKnob (duckKnob_,     EedDelayProcessor::kDuck,           0.0,  0, " %",  "DUCK");
 
     auto setupToggle = [this] (juce::TextButton& b, const char* id)
     {
@@ -104,10 +109,38 @@ EedDelayEditor::EedDelayEditor (EedDelayProcessor& p)
     divisionLabel_.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (divisionLabel_);
 
+    // The MODE selector. Items ARE the schema's choices, in the schema's order, so
+    // the list a user sees and the list the model is taught cannot drift apart.
+    styleCombo (modeBox_);
+    if (const auto* spec = EedDelayProcessor::schema().find (EedDelayProcessor::kMode))
+    {
+        for (std::size_t i = 0; i < spec->choices.size(); ++i)
+            modeBox_.addItem (juce::String (spec->choices[i]).toUpperCase(), (int) i + 1);
+
+        modeBox_.setSelectedId ((int) proc_.getParamValue (EedDelayProcessor::kMode) + 1,
+                                juce::dontSendNotification);
+    }
+    modeBox_.onChange = [this]
+    {
+        if (suppressCallbacks_) return;
+
+        proc_.setParamValue (EedDelayProcessor::kMode,
+                             (double) (modeBox_.getSelectedId() - 1));
+
+        // The mode decides whether PING-PONG is on the panel at all, so a change
+        // has to relayout now rather than wait for a resize that may never come.
+        refreshModeState();
+        resized();
+        refreshHint();
+        refreshTaps();
+    };
+    addAndMakeVisible (modeBox_);
+
     taps_.setCaption ("REPEATS");
     addAndMakeVisible (taps_);
 
     refreshSyncState();
+    refreshModeState();
     refreshHint();
     refreshTaps();
 
@@ -169,19 +202,25 @@ void EedDelayEditor::layoutContent (juce::Rectangle<int> content)
     const int rowH = juce::jmin (kKnobH, juce::jmax (1, (content.getHeight() - kRowH - kGap) / 2));
 
     placeRow (content.removeFromTop (rowH),
-              { &timeKnob_, &feedbackKnob_, &mixKnob_, &hpKnob_, &lpKnob_ });
+              { &timeKnob_, &feedbackKnob_, &mixKnob_, &duckKnob_, &hpKnob_, &lpKnob_ });
 
     if (content.getHeight() > kGap) content.removeFromTop (kGap);
 
     placeRow (content.removeFromTop (juce::jmin (rowH, content.getHeight())),
-              { &offsetKnob_, &modRateKnob_, &modDepthKnob_ });
+              { &offsetKnob_, &diffusionKnob_, &modRateKnob_, &modDepthKnob_ });
 
     if (content.getHeight() > kGap) content.removeFromTop (kGap);
     if (content.isEmpty()) return;
 
-    // The switch strip, centred as a group.
+    // The switch strip, centred as a group. PING-PONG drops out of it entirely in
+    // `pingpong` mode — and out of the WIDTH calculation too, so the rest of the
+    // strip re-centres rather than leaving a hole where it was.
+    const bool showPingPong = pingPongSwitchVisible();
+    pingPongBtn_.setVisible (showPingPong);
+
     auto strip = content.removeFromTop (juce::jmin (kRowH, content.getHeight()));
-    const int wanted = kBtnW + kGap + 40 + 4 + kDivBoxW + kGap + kBtnW;
+    const int wanted = kBtnW + kGap + 40 + 4 + kDivBoxW
+                     + (showPingPong ? kGap + kBtnW : 0);
     strip = strip.withSizeKeepingCentre (juce::jmin (wanted, strip.getWidth()),
                                          strip.getHeight());
 
@@ -193,8 +232,32 @@ void EedDelayEditor::layoutContent (juce::Rectangle<int> content)
     divisionLabel_.setBounds (take (40));
     take (4);
     divisionBox_.setBounds (take (kDivBoxW));
-    take (kGap);
-    pingPongBtn_.setBounds (take (kBtnW));
+
+    if (showPingPong)
+    {
+        take (kGap);
+        pingPongBtn_.setBounds (take (kBtnW));
+    }
+}
+
+void EedDelayEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
+{
+    modeBox_.setBounds (
+        bar.removeFromRight (juce::jmin (kModeW, juce::jmax (0, bar.getWidth())))
+           .reduced (0, 3));
+    bar.removeFromRight (6);
+}
+
+bool EedDelayEditor::pingPongSwitchVisible() const
+{
+    return proc_.engine().getMode() != echojay::DelayMode::PingPong;
+}
+
+void EedDelayEditor::refreshModeState()
+{
+    const int want = (int) proc_.getParamValue (EedDelayProcessor::kMode) + 1;
+    if (modeBox_.getSelectedId() != want)
+        modeBox_.setSelectedId (want, juce::dontSendNotification);
 }
 
 // ---------------------------------------------------------------------------
@@ -228,10 +291,13 @@ void EedDelayEditor::refreshTaps()
     // effectiveTimeMs(), not the TIME dial: with sync on the dial is ignored by
     // the audio path, and drawing it would show one delay above a device playing
     // another.
+    // effectivePingPong(), not the ping_pong param: the bounce is the OR of the
+    // switch and the mode, so reading only the switch would draw a straight delay
+    // over a device that is bouncing because its MODE says to.
     taps_.setTaps ((float) proc_.engine().effectiveTimeMs(),
                    (float) proc_.getParamValue (EedDelayProcessor::kFeedback),
                    (float) proc_.getParamValue (EedDelayProcessor::kMix),
-                   proc_.getParamValue (EedDelayProcessor::kPingPong) >= 0.5);
+                   proc_.engine().effectivePingPong());
 
     // A bypassed device is not producing these repeats, so the picture of them
     // greys out rather than sitting there asserting otherwise.
@@ -243,12 +309,19 @@ void EedDelayEditor::refreshHint()
     const auto& e = proc_.engine();
 
     juce::String h;
+    h << echojay::delayModeName (e.getMode()) << " - ";
+
     if (e.getSync())
         h << echojay::DelayEngine::divisionName (e.getDivision())
           << " = " << juce::String (e.effectiveTimeMs(), 0) << " ms at "
           << juce::String (echojay::hostTempoBpm(), 1) << " BPM";
     else
         h << juce::String (e.effectiveTimeMs(), 0) << " ms free";
+
+    // Named only when it is doing something, so the line stays short in the common
+    // case and the mention is a signal rather than decoration.
+    if (e.getDuckPct() > 0.0f)  h << ", ducking " << juce::String (e.getDuckPct(), 0) << "%";
+    if (e.effectivePingPong())  h << ", bouncing";
 
     // setHeaderHint repaints, so only touch it when the text actually changed —
     // otherwise the 15 Hz timer repaints the whole editor forever.
@@ -277,6 +350,17 @@ void EedDelayEditor::syncFromProcessor()
     pull (offsetKnob_,   EedDelayProcessor::kStereoOffset, 1.0e-3);
     pull (modRateKnob_,  EedDelayProcessor::kModRateHz,    1.0e-4);
     pull (modDepthKnob_, EedDelayProcessor::kModDepthMs,   1.0e-3);
+    pull (diffusionKnob_,EedDelayProcessor::kDiffusion,    1.0e-3);
+    pull (duckKnob_,     EedDelayProcessor::kDuck,         1.0e-3);
+
+    // The AI can switch the mode while the editor is open, and the mode decides
+    // whether PING-PONG is on the panel — so a move from outside relayouts too.
+    const int wantMode = (int) proc_.getParamValue (EedDelayProcessor::kMode) + 1;
+    if (modeBox_.getSelectedId() != wantMode)
+    {
+        modeBox_.setSelectedId (wantMode, juce::dontSendNotification);
+        resized();
+    }
 
     const bool synced = proc_.getParamValue (EedDelayProcessor::kSync) >= 0.5;
     if (syncBtn_.getToggleState() != synced)

@@ -5,10 +5,17 @@
     suite. The DSP lives in ReverbEngine (JUCE-free, g++-tested); this file is
     the device: its schema, its id->knob map, and its registry entry.
 
-    NINE dialable params — size, decay, predelay, damping, low cut, width,
-    early/late balance, modulation depth and mix. That is the whole control
-    surface: there is nothing on this reverb a user can turn that the model
-    cannot set exactly.
+    TWELVE dialable params — size, decay, predelay, damping, low cut, width,
+    early/late balance, modulation depth, mix, and the depth pass's `algorithm`,
+    `diffusion` and `duck`. That is the whole control surface: there is nothing on
+    this reverb a user can turn that the model cannot set exactly.
+
+    THE ALGORITHM IS THE FIRST THING TO SET, and the schema says so in as many
+    words. It decides what kind of space this is — room, hall, plate, spring,
+    ambience — and every other knob then shapes that space rather than defining
+    it. `hall` is the default because it is the NEUTRAL one: the network exactly
+    as it shipped before the param existed, so a session saved earlier restores
+    the reverb it was mixed with rather than a new one.
 
     LATENCY: NONE, and this is worth being explicit about because a reverb is
     exactly the kind of device that usually has some. There is no lookahead here
@@ -56,6 +63,9 @@ public:
     static constexpr const char* kEarlyLate  = "early_late";
     static constexpr const char* kModDepth   = "mod_depth";
     static constexpr const char* kMix        = "mix";
+    static constexpr const char* kAlgorithm  = "algorithm";
+    static constexpr const char* kDiffusion  = "diffusion";
+    static constexpr const char* kDuck       = "duck";
 
     echojay::ReverbEngine& engine() noexcept { return engine_; }
     const echojay::ReverbEngine& engine() const noexcept { return engine_; }

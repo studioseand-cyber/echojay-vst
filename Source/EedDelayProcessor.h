@@ -62,6 +62,9 @@ public:
     static constexpr const char* kStereoOffset = "stereo_offset";
     static constexpr const char* kModRateHz    = "mod_rate_hz";
     static constexpr const char* kModDepthMs   = "mod_depth_ms";
+    static constexpr const char* kMode         = "mode";
+    static constexpr const char* kDiffusion    = "diffusion";
+    static constexpr const char* kDuck         = "duck";
 
     echojay::DelayEngine& engine() noexcept { return engine_; }
     const echojay::DelayEngine& engine() const noexcept { return engine_; }

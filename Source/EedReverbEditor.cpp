@@ -9,13 +9,20 @@ using namespace echojay::device::metrics;
 
 namespace
 {
-    // Five dial columns across, two rows, with the decay envelope seated above
+    // Six dial columns across, two rows, with the decay envelope seated above
     // them. The rack sizes this down if it has to, and layoutContent survives
     // that — the view is the first thing to give up its room.
-    constexpr int kDefaultW = 440;
+    //
+    // 480 rather than 440: six columns fit at this width, so the depth pass's two
+    // dials join the existing nine as 6 + 5 instead of forcing a third row — and
+    // the header has room for the ALGORITHM selector without crowding the title.
+    constexpr int kDefaultW = 480;
     constexpr int kDecayH   = 112;
     constexpr int kDefaultH = 236 + kDecayH + 6;
     constexpr int kGap      = 8;
+
+    // Wide enough for "AMBIENCE", the longest of the five.
+    constexpr int kAlgoW = 112;
 
     // Below this the envelope is a sliver with no readable shape to it, so the
     // view is dropped rather than drawn uselessly small.
@@ -53,6 +60,34 @@ EedReverbEditor::EedReverbEditor (EedReverbProcessor& p)
     setupKnob (widthKnob_,     EedReverbProcessor::kWidth,        0.0, 0, " %",  "WIDTH");
     setupKnob (earlyLateKnob_, EedReverbProcessor::kEarlyLate,    0.0, 0, " %",  "EARLY/LATE");
     setupKnob (modDepthKnob_,  EedReverbProcessor::kModDepth,     0.0, 0, " %",  "MOD");
+    setupKnob (diffusionKnob_, EedReverbProcessor::kDiffusion,    0.0, 0, " %",  "DIFFUSE");
+    setupKnob (duckKnob_,      EedReverbProcessor::kDuck,         0.0, 0, " %",  "DUCK");
+
+    // The selector's items ARE the schema's choices, in the schema's order, so the
+    // list a user sees and the list the model is taught cannot drift apart. Item
+    // ids are index + 1 because a JUCE ComboBox treats 0 as "nothing selected".
+    styleCombo (algorithmBox_);
+    if (const auto* spec = EedReverbProcessor::schema().find (EedReverbProcessor::kAlgorithm))
+    {
+        for (std::size_t i = 0; i < spec->choices.size(); ++i)
+            algorithmBox_.addItem (juce::String (spec->choices[i]).toUpperCase(), (int) i + 1);
+
+        algorithmBox_.setSelectedId (
+            (int) proc_.getParamValue (EedReverbProcessor::kAlgorithm) + 1,
+            juce::dontSendNotification);
+    }
+    algorithmBox_.onChange = [this]
+    {
+        if (suppressCallbacks_) return;
+
+        // Through setParamValue, exactly as an AI move does, so a click and a
+        // dialled `algorithm` cannot end up meaning different things.
+        proc_.setParamValue (EedReverbProcessor::kAlgorithm,
+                             (double) (algorithmBox_.getSelectedId() - 1));
+        refreshHint();
+        refreshDecay();
+    };
+    addAndMakeVisible (algorithmBox_);
 
     decay_.setCaption ("DECAY");
     addAndMakeVisible (decay_);
@@ -115,15 +150,26 @@ void EedReverbEditor::layoutContent (juce::Rectangle<int> content)
     // the dial's natural height so a tall slot does not stretch the knobs.
     const int rowH = juce::jmin (kKnobH, juce::jmax (1, (content.getHeight() - kGap) / 2));
 
-    // Top row: the four controls that define the space itself.
+    // Top row: the controls that define the space itself — including DUCK, which
+    // is about how the space SITS in a mix rather than about what happens inside
+    // it, and which a user reaches for immediately after the mix knob.
     placeRow (content.removeFromTop (rowH),
-              { &sizeKnob_, &decayKnob_, &predelayKnob_, &mixKnob_ });
+              { &sizeKnob_, &decayKnob_, &predelayKnob_, &mixKnob_, &duckKnob_ });
 
     if (content.getHeight() > kGap) content.removeFromTop (kGap);
 
     // Bottom row: what happens inside it.
     placeRow (content.removeFromTop (juce::jmin (rowH, content.getHeight())),
-              { &dampingKnob_, &lowCutKnob_, &widthKnob_, &earlyLateKnob_, &modDepthKnob_ });
+              { &dampingKnob_, &lowCutKnob_, &diffusionKnob_, &widthKnob_,
+                &earlyLateKnob_, &modDepthKnob_ });
+}
+
+void EedReverbEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
+{
+    algorithmBox_.setBounds (
+        bar.removeFromRight (juce::jmin (kAlgoW, juce::jmax (0, bar.getWidth())))
+           .reduced (0, 3));
+    bar.removeFromRight (6);
 }
 
 // ---------------------------------------------------------------------------
@@ -161,9 +207,17 @@ void EedReverbEditor::refreshHint()
     // effectiveDecaySeconds, not the decay knob: the damping filter is inside
     // the feedback loop, so it shortens the tail it is filtering. Reporting the
     // asked-for number here would be a readout the ear disagrees with.
+    // The algorithm is named first, because the same size percentage is a very
+    // different room in `ambience` and in `hall` — roomSizeMetres() already scales
+    // with the algorithm, and without the name the number looks like it moved on
+    // its own.
     juce::String h;
-    h << juce::String (e.roomSizeMetres(), 0) << " m room, "
+    h << echojay::reverbAlgorithmName (e.getAlgorithm()) << " - "
+      << juce::String (e.roomSizeMetres(), 0) << " m, "
       << juce::String (e.effectiveDecaySeconds(), 1) << " s tail";
+
+    if (e.getDuckPct() > 0.0f)
+        h << ", ducking " << juce::String (e.getDuckPct(), 0) << "%";
 
     // setHeaderHint repaints, so only touch it when the text actually changed —
     // otherwise the 15 Hz timer repaints the whole editor forever.
@@ -193,6 +247,14 @@ void EedReverbEditor::syncFromProcessor()
     pull (widthKnob_,     EedReverbProcessor::kWidth,      1.0e-3);
     pull (earlyLateKnob_, EedReverbProcessor::kEarlyLate,  1.0e-3);
     pull (modDepthKnob_,  EedReverbProcessor::kModDepth,   1.0e-3);
+    pull (diffusionKnob_, EedReverbProcessor::kDiffusion,  1.0e-3);
+    pull (duckKnob_,      EedReverbProcessor::kDuck,       1.0e-3);
+
+    // The AI can switch the algorithm while the editor is open, so the selector
+    // follows the processor rather than assuming it is the only thing writing it.
+    const int algo = (int) proc_.getParamValue (EedReverbProcessor::kAlgorithm) + 1;
+    if (algorithmBox_.getSelectedId() != algo)
+        algorithmBox_.setSelectedId (algo, juce::dontSendNotification);
 }
 
 void EedReverbEditor::timerCallback()
