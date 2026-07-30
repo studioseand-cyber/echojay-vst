@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EchoJay — transfer-curve live readouts</title>
+<style>
+  :root{
+    --bg:#161619; --panel:#1d1d22; --line:#2c2c34; --grid:#26262d;
+    --text:#e7e7ea; --text2:#a6a6ad; --text3:#6f6f78;
+    --teal:#37d0c4; --teal2:#2aa79d; --amber:#ffb54a; --amberhot:#ffd98a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro",Segoe UI,Roboto,sans-serif}
+  header{padding:20px 24px 4px}
+  h1{font-size:15px;font-weight:600;letter-spacing:.3px;margin:0}
+  .sub{color:var(--text3);font-size:12px;margin-top:4px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;padding:18px 24px 28px;max-width:900px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 14px 12px;
+    display:flex;flex-direction:column;align-items:center}
+  .name{align-self:flex-start;font-size:12.5px;font-weight:600;color:var(--text)}
+  .desc{align-self:flex-start;font-size:11px;color:var(--text3);margin:2px 0 10px;line-height:1.35;min-height:30px}
+  canvas{width:300px;height:240px;border-radius:8px;background:#131317}
+  .foot{padding:0 24px 30px;color:var(--text3);font-size:11.5px;max-width:900px}
+  .controls{padding:0 24px 6px}
+  button{background:var(--panel);color:var(--text2);border:1px solid var(--line);border-radius:8px;
+    padding:7px 12px;font-size:12px;cursor:pointer}
+  button:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<header>
+  <h1>EchoJay — live signal on the compressor transfer curve</h1>
+  <div class="sub">Four ways to replace the flying dot. Same simulated signal drives all four so they compare fairly. Thresh −24 · ratio 4 · soft knee.</div>
+</header>
+<div class="controls"><button id="pause">Pause</button></div>
+<div class="grid" id="grid"></div>
+<div class="foot">These are mockups drawn from the same math the real <code>TransferCurveView</code> uses; the chosen one drops straight into that shared component and upgrades all six dynamics devices at once.</div>
+
+<script>
+// ---- compressor gain computer (soft knee), in dB ----
+const T=-24, R=4, W=8;              // threshold, ratio, knee width (dB)
+function curve(x){                   // input dB -> output dB
+  const d = x - T;
+  if (2*d < -W) return x;
+  if (2*Math.abs(d) <= W){
+    const g = (1/R - 1) * Math.pow(d + W/2, 2) / (2*W);
+    return x + g;
+  }
+  return T + d/R;
+}
+// ---- axis mapping ----
+const LO=-60, HI=0;
+function mapX(w,x){ return 8 + (x-LO)/(HI-LO) * (w-16); }
+function mapY(h,y){ return (h-8) - (y-LO)/(HI-LO) * (h-16); }
+
+// ---- shared simulated signal: a musical-ish level envelope in dB ----
+let t=0;
+function signalDb(time){
+  // slow drift + syncopated pushes + occasional transient
+  const drift = -22 + 12*Math.sin(time*0.7) + 5*Math.sin(time*1.9+1);
+  const push  = 6*Math.max(0, Math.sin(time*3.1)) * (0.6+0.4*Math.sin(time*0.5));
+  const trans = (Math.sin(time*7.0)>0.86) ? 9 : 0;
+  let v = drift + push + trans;
+  return Math.max(-58, Math.min(-1, v));
+}
+
+function drawBase(ctx,w,h){
+  ctx.clearRect(0,0,w,h);
+  // grid
+  ctx.strokeStyle=getCss('--grid'); ctx.lineWidth=1;
+  for(let d=-60; d<=0; d+=12){
+    const x=mapX(w,d), y=mapY(h,d);
+    ctx.globalAlpha=.5;
+    ctx.beginPath();ctx.moveTo(x,8);ctx.lineTo(x,h-8);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(8,y);ctx.lineTo(w-8,y);ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+  // unity diagonal (dashed)
+  ctx.strokeStyle=getCss('--text3'); ctx.setLineDash([3,4]); ctx.globalAlpha=.5;
+  ctx.beginPath();ctx.moveTo(mapX(w,LO),mapY(h,LO));ctx.lineTo(mapX(w,HI),mapY(h,HI));ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha=1;
+  // threshold marker
+  ctx.strokeStyle=getCss('--amber'); ctx.globalAlpha=.35;
+  const tx=mapX(w,T); ctx.beginPath();ctx.moveTo(tx,8);ctx.lineTo(tx,h-8);ctx.stroke();
+  ctx.globalAlpha=1;
+}
+function drawCurve(ctx,w,h,color,width,alpha){
+  ctx.strokeStyle=color; ctx.lineWidth=width; ctx.globalAlpha=alpha;
+  ctx.beginPath();
+  for(let x=LO;x<=HI;x+=0.5){
+    const px=mapX(w,x), py=mapY(h,curve(x));
+    x===LO?ctx.moveTo(px,py):ctx.lineTo(px,py);
+  }
+  ctx.stroke(); ctx.globalAlpha=1;
+}
+function getCss(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+
+// ================= the four treatments =================
+const treatments = [
+ { name:"1 · Dwell heatmap glow",
+   desc:"No dot — the curve glows brightest where the signal spends time. You see the whole working range.",
+   state:{ bins:new Float32Array(120) },
+   draw(ctx,w,h,s,gr,st){
+     drawBase(ctx,w,h);
+     // update dwell
+     const idx=Math.max(0,Math.min(119,Math.round((s-LO)/(HI-LO)*119)));
+     for(let i=0;i<120;i++) st.bins[i]*=0.965;
+     st.bins[idx]+=1;
+     let mx=0.0001; for(const b of st.bins) mx=Math.max(mx,b);
+     drawCurve(ctx,w,h,getCss('--line'),3,1);           // dim base
+     // glow segments by dwell
+     ctx.lineCap='round';
+     for(let i=0;i<119;i++){
+       const e=st.bins[i]/mx; if(e<0.02) continue;
+       const x0=LO+(i/119)*(HI-LO), x1=LO+((i+1)/119)*(HI-LO);
+       const col = e>0.6 ? getCss('--amberhot') : (e>0.25? getCss('--amber'):getCss('--teal'));
+       ctx.strokeStyle=col; ctx.globalAlpha=Math.min(1,0.15+e);
+       ctx.lineWidth=2+e*4; ctx.shadowColor=col; ctx.shadowBlur=8+e*22;
+       ctx.beginPath();
+       ctx.moveTo(mapX(w,x0),mapY(h,curve(x0)));
+       ctx.lineTo(mapX(w,x1),mapY(h,curve(x1)));
+       ctx.stroke();
+     }
+     ctx.shadowBlur=0; ctx.globalAlpha=1;
+   }},
+ { name:"2 · Comet trail",
+   desc:"The point stays but streaks a fading tail — transients smear, sustains settle into a bloom.",
+   state:{ trail:[] },
+   draw(ctx,w,h,s,gr,st){
+     drawBase(ctx,w,h); drawCurve(ctx,w,h,getCss('--teal2'),2.5,.9);
+     st.trail.push({x:mapX(w,s),y:mapY(h,curve(s))});
+     if(st.trail.length>14) st.trail.shift();
+     ctx.globalCompositeOperation='lighter';
+     st.trail.forEach((p,i)=>{
+       const a=(i+1)/st.trail.length;
+       ctx.fillStyle=getCss('--amber'); ctx.globalAlpha=a*0.5;
+       ctx.shadowColor=getCss('--amber'); ctx.shadowBlur=16*a;
+       ctx.beginPath();ctx.arc(p.x,p.y,2+5*a,0,7);ctx.fill();
+     });
+     ctx.globalCompositeOperation='source-over'; ctx.shadowBlur=0; ctx.globalAlpha=1;
+   }},
+ { name:"3 · Bloom that breathes",
+   desc:"A soft halo at the point that blooms bigger/brighter the harder it compresses, shrinks in the gaps.",
+   state:{},
+   draw(ctx,w,h,s,gr,st){
+     drawBase(ctx,w,h); drawCurve(ctx,w,h,getCss('--teal2'),2.5,.9);
+     const px=mapX(w,s), py=mapY(h,curve(s));
+     const rad=6+gr*3.2, inten=Math.min(1,0.35+gr*0.13);
+     const g=ctx.createRadialGradient(px,py,0,px,py,rad*2.2);
+     g.addColorStop(0,`rgba(255,201,120,${inten})`);
+     g.addColorStop(0.4,`rgba(255,150,60,${inten*0.5})`);
+     g.addColorStop(1,'rgba(255,150,60,0)');
+     ctx.globalCompositeOperation='lighter';
+     ctx.fillStyle=g; ctx.beginPath();ctx.arc(px,py,rad*2.2,0,7);ctx.fill();
+     ctx.globalCompositeOperation='source-over';
+     ctx.fillStyle=getCss('--amberhot');ctx.beginPath();ctx.arc(px,py,2.2,0,7);ctx.fill();
+   }},
+ { name:"4 · Segment + GR beam",
+   desc:"Lights the curve at the live input and drops a soft beam showing the dB of reduction, right now.",
+   state:{},
+   draw(ctx,w,h,s,gr,st){
+     drawBase(ctx,w,h); drawCurve(ctx,w,h,getCss('--line'),3,1);
+     // GR beam from unity down to curve
+     const px=mapX(w,s), yUnity=mapY(h,s), yCurve=mapY(h,curve(s));
+     const bg=ctx.createLinearGradient(0,yUnity,0,yCurve);
+     bg.addColorStop(0,'rgba(255,181,74,0)'); bg.addColorStop(1,'rgba(255,181,74,.5)');
+     ctx.strokeStyle=bg; ctx.lineWidth=6; ctx.beginPath();ctx.moveTo(px,yUnity);ctx.lineTo(px,yCurve);ctx.stroke();
+     // lit curve segment around s
+     ctx.strokeStyle=getCss('--amberhot'); ctx.lineWidth=3.5; ctx.lineCap='round';
+     ctx.shadowColor=getCss('--amber'); ctx.shadowBlur=18;
+     ctx.beginPath();
+     for(let x=s-4;x<=s+4;x+=0.5){ const cx=mapX(w,x),cy=mapY(h,curve(x)); x<=s-4?ctx.moveTo(cx,cy):ctx.lineTo(cx,cy);}
+     ctx.stroke(); ctx.shadowBlur=0;
+     // GR readout
+     if(gr>0.3){ ctx.fillStyle=getCss('--amber'); ctx.font='11px sans-serif';
+       ctx.fillText('−'+gr.toFixed(1)+' dB', px+6, (yUnity+yCurve)/2); }
+   }},
+];
+
+// ---- build cards ----
+const grid=document.getElementById('grid'); const dpr=window.devicePixelRatio||1;
+const canvases=treatments.map(tr=>{
+  const card=document.createElement('div'); card.className='card';
+  card.innerHTML=`<div class="name">${tr.name}</div><div class="desc">${tr.desc}</div>`;
+  const cv=document.createElement('canvas'); cv.width=300*dpr; cv.height=240*dpr;
+  const ctx=cv.getContext('2d'); ctx.scale(dpr,dpr);
+  card.appendChild(cv); grid.appendChild(card);
+  return {ctx,w:300,h:240,tr};
+});
+
+let running=true;
+document.getElementById('pause').onclick=e=>{running=!running;e.target.textContent=running?'Pause':'Play';if(running)loop();};
+function loop(){
+  t+=0.016;
+  const s=signalDb(t); const gr=Math.max(0, s-curve(s));
+  canvases.forEach(c=>c.tr.draw(c.ctx,c.w,c.h,s,gr,c.tr.state));
+  if(running) requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
