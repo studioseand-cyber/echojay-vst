@@ -19,13 +19,21 @@
 #include "EjmapSupervisor.h"
 
 #include <csignal>
+#include <unistd.h>
+#include <signal.h>
 
 class EjmapApplication  : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override    { return "ejmap"; }
     const juce::String getApplicationVersion() override { return EJMAP_VERSION; }
-    bool moreThanOneInstanceAllowed() override          { return false; }
+    /** JUCE's own single-instance check runs BEFORE initialise() and quits the
+        second process with exit 0. That made every headless flag a silent no-op
+        whenever a session was open: --release-quarantine printed nothing, did
+        nothing, and reported success. Single-instance is now enforced in main(),
+        where it can be loud and where the file-touching flags never reach it.
+    */
+    bool moreThanOneInstanceAllowed() override          { return true; }
 
     void initialise (const juce::String& commandLine) override
     {
@@ -110,45 +118,11 @@ public:
             }
         }
 
-        // Headless release, so a quarantine can be undone through the same code
-        // path the button uses rather than by hand-editing quarantine.json.
-        if (releaseId.isNotEmpty())
-        {
-            ejmap::Ledger l (ledgerRoot);
-            const bool was = l.isQuarantined (releaseId);
-            l.releaseFromQuarantine (releaseId);
-            std::cout << "release-quarantine: " << releaseId
-                      << (was ? " -> released" : " -> was not quarantined") << std::endl;
-            quit();
-            return;
-        }
 
-        // Run the attribution logic against one crash report on disk, so it can
-        // be checked against real reports rather than synthetic ones.
-        if (attributeReport.isNotEmpty())
-        {
-            const juce::File f = juce::File::getCurrentWorkingDirectory().getChildFile (attributeReport);
-            const auto facts = ejmap::Ledger::factsFromReport (f);
-            std::cout << "attribute-report: " << f.getFileName() << "\n"
-                      << "  parsed      : " << (facts.found ? "yes" : "no") << "\n"
-                      << "  thread      : " << (facts.threadName.isEmpty() ? "(unnamed)" : facts.threadName) << "\n"
-                      << "  top image   : " << (facts.topImage.isEmpty() ? "?" : facts.topImage) << "\n"
-                      << "  attribution : " << facts.attribution << std::endl;
-            quit();
-            return;
-        }
 
-        if (quarantineId.isNotEmpty())
-        {
-            ejmap::Ledger l (ledgerRoot);
-            l.quarantine (quarantineId, quarantineReason, quarantineStage);
-            std::cout << "quarantine: " << quarantineId << " -> " << quarantineReason
-                      << " (stage " << quarantineStage << ")" << std::endl;
-            quit();
-            return;
-        }
 
         supervisedMode = supervised;
+        ledgerRootUsed = ledgerRoot;
         mainWindow = std::make_unique<MainWindow> (buildTitle(), ledgerRoot,
                                                    supervised, restartCount, afterExit);
 
@@ -195,7 +169,23 @@ public:
             mainWindow->getMain()->selfTestReentry (selfTestId);
     }
 
-    void shutdown() override { mainWindow = nullptr; }
+    void shutdown() override
+    {
+        mainWindow = nullptr;
+
+        // Release the single-instance lock. A watchdog _Exit or a crash skips
+        // this, which is why the lock is validated with kill(pid, 0) rather than
+        // trusted for existing.
+        auto root = ledgerRootUsed != juce::File()
+                      ? ledgerRootUsed
+                      : juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                          .getChildFile ("ejmap");
+        auto lock = root.getChildFile ("instance.lock");
+        if (lock.existsAsFile() && lock.loadFileAsString().trim().getIntValue() == (int) getpid())
+            lock.deleteFile();
+    }
+
+    static juce::File ledgerRootUsed;
 
     void systemRequestedQuit() override { quit(); }
 
@@ -247,9 +237,128 @@ private:
 };
 
 bool EjmapApplication::supervisedMode = false;
+juce::File EjmapApplication::ledgerRootUsed;
 
 juce::JUCEApplicationBase* juce_CreateApplication();
 juce::JUCEApplicationBase* juce_CreateApplication() { return new EjmapApplication(); }
+
+namespace
+{
+    juce::String argAt (int argc, char* argv[], int i)
+    {
+        return i < argc ? juce::String (juce::CharPointer_UTF8 (argv[i])).unquoted() : juce::String();
+    }
+
+    juce::File ledgerRootFrom (int argc, char* argv[])
+    {
+        for (int i = 1; i < argc; ++i)
+            if (argAt (argc, argv, i) == "--ledger-root" && i + 1 < argc)
+                return juce::File::getCurrentWorkingDirectory()
+                         .getChildFile (argAt (argc, argv, i + 1));
+        return {};
+    }
+
+    /** FILE-TOUCHING FLAGS RUN HERE, outside the GUI app.
+
+        They read and write ejmap's own files and never open a window, so they
+        have no business being subject to a single-instance check. Handling them
+        before JUCEApplicationBase::main means they cannot be bounced, which is
+        what made them silently no-op while a session was open.
+
+        Returns an exit code, or -1 for "not a CLI invocation, carry on".
+    */
+    int runHeadlessCli (int argc, char* argv[])
+    {
+        juce::String release, qId, qReason, qStage { "load" }, report;
+
+        for (int i = 1; i < argc; ++i)
+        {
+            const auto a = argAt (argc, argv, i);
+            if (a == "--release-quarantine" && i + 1 < argc) release = argAt (argc, argv, ++i);
+            else if (a == "--attribute-report" && i + 1 < argc) report = argAt (argc, argv, ++i);
+            else if (a == "--quarantine" && i + 2 < argc)
+            {
+                qId = argAt (argc, argv, i + 1); qReason = argAt (argc, argv, i + 2); i += 2;
+                const auto nxt = argAt (argc, argv, i + 1);
+                if (nxt.isNotEmpty() && ! nxt.startsWith ("--")) qStage = argAt (argc, argv, ++i);
+            }
+        }
+
+        if (release.isEmpty() && qId.isEmpty() && report.isEmpty())
+            return -1;
+
+        juce::ScopedJuceInitialiser_GUI juceInit;
+        const auto root = ledgerRootFrom (argc, argv);
+
+        if (report.isNotEmpty())
+        {
+            const auto f = juce::File::getCurrentWorkingDirectory().getChildFile (report);
+            if (! f.existsAsFile())
+            {
+                std::cerr << "attribute-report: no such file: " << f.getFullPathName() << std::endl;
+                return 2;
+            }
+            const auto facts = ejmap::Ledger::factsFromReport (f);
+            std::cout << "attribute-report: " << f.getFileName() << "\n"
+                      << "  parsed      : " << (facts.found ? "yes" : "no") << "\n"
+                      << "  thread      : " << (facts.threadName.isEmpty() ? "(unnamed)" : facts.threadName) << "\n"
+                      << "  top image   : " << (facts.topImage.isEmpty() ? "?" : facts.topImage) << "\n"
+                      << "  attribution : " << facts.attribution << std::endl;
+            return facts.found ? 0 : 2;
+        }
+
+        ejmap::Ledger l (root);
+
+        if (release.isNotEmpty())
+        {
+            const bool was = l.isQuarantined (release);
+            l.releaseFromQuarantine (release);
+            const bool now = l.isQuarantined (release);
+
+            // Report the OUTCOME, verified by reading back, not the intent.
+            if (! was)
+            {
+                std::cerr << "release-quarantine: " << release
+                          << " was not quarantined; nothing to do" << std::endl;
+                return 3;
+            }
+            if (now)
+            {
+                std::cerr << "release-quarantine: " << release
+                          << " FAILED, still quarantined after the write" << std::endl;
+                return 4;
+            }
+            std::cout << "release-quarantine: " << release << " -> released" << std::endl;
+            return 0;
+        }
+
+        l.quarantine (qId, qReason, qStage);
+        if (! l.isQuarantined (qId))
+        {
+            std::cerr << "quarantine: " << qId << " FAILED, not present after the write" << std::endl;
+            return 4;
+        }
+        std::cout << "quarantine: " << qId << " -> " << qReason
+                  << " (stage " << qStage << ")" << std::endl;
+        return 0;
+    }
+
+    /** Single-instance, enforced loudly. A stale lock from a watchdog _Exit is
+        ignored by checking the pid is actually alive.
+    */
+    bool anotherInstanceIsLive (const juce::File& root, int& otherPid)
+    {
+        auto lock = root.getChildFile ("instance.lock");
+        if (! lock.existsAsFile())
+            return false;
+
+        otherPid = lock.loadFileAsString().trim().getIntValue();
+        if (otherPid <= 0 || otherPid == (int) getpid())
+            return false;
+
+        return ::kill ((pid_t) otherPid, 0) == 0;
+    }
+}
 
 int main (int argc, char* argv[])
 {
@@ -259,6 +368,34 @@ int main (int argc, char* argv[])
     for (int i = 1; i < argc; ++i)
         if (juce::String (argv[i]) == "--supervise")
             return ejmap::runSupervisor (argc, argv);
+
+    // File-touching flags first: they must never be bounced.
+    const int cliResult = runHeadlessCli (argc, argv);
+    if (cliResult >= 0)
+        return cliResult;
+
+    // A GUI launch that would have been bounced now SAYS SO and fails.
+    {
+        juce::ScopedJuceInitialiser_GUI juceInit;
+        auto root = ledgerRootFrom (argc, argv);
+        if (root == juce::File())
+            root = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                     .getChildFile ("ejmap");
+        root.createDirectory();
+
+        int otherPid = 0;
+        if (anotherInstanceIsLive (root, otherPid))
+        {
+            std::cerr << "ejmap: another instance is already running (pid " << otherPid << ").\n"
+                      << "       Refusing to start a second one: they would share one ledger, one\n"
+                      << "       quarantine file and one scan cache.\n"
+                      << "       This used to exit 0 silently, which made every flag a no-op."
+                      << std::endl;
+            return 5;
+        }
+
+        root.getChildFile ("instance.lock").replaceWithText (juce::String ((int) getpid()));
+    }
 
     juce::JUCEApplicationBase::createInstance = &juce_CreateApplication;
     return juce::JUCEApplicationBase::main (argc, (const char**) argv);
