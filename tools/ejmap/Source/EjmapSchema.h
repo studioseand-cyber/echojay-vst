@@ -38,8 +38,8 @@ using echojay::kMapSchemaString;
 // field set. If the shared constant moves, this fails and the writer gets read
 // before it ships maps EchoJay would parse differently. Bumping the wire format
 // means changing this pin deliberately, in the same commit as the writer.
-static_assert (kMapSchemaVersion == 21,
-               "EjmapSchema.h's payload writer targets schema 2.1. The shared "
+static_assert (kMapSchemaVersion == 22,
+               "EjmapSchema.h's payload writer targets schema 2.2. The shared "
                "kMapSchemaVersion in Source/EchoJayParamApply.h has moved: update "
                "the writer, then this pin.");
 
@@ -145,7 +145,25 @@ inline bool countsAsPass  (ProbeVerdict v) { return v == ProbeVerdict::confirms;
 struct UiHint
 {
     bool  valid = false;
-    float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+    float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;   // normalised 0..1
+
+    /** THE DENOMINATOR, carried with the value. Schema 2.2.
+
+        x/y/w/h are fractions of the editor. Without the bounds they were
+        divided by, a hint cannot be checked: a bridged editor reaches its real
+        size about 2.5 s after createEditorIfNeeded, and a resizable GUI can
+        resize mid-session, so a stored fraction may refer to an editor that no
+        longer exists at that size. A reader that finds these disagreeing with
+        the live editor should decline to place the label rather than place it
+        wrongly.
+    */
+    int editorWidth = 0, editorHeight = 0;
+
+    /** Which display the coordinate was measured on, and at what scale. Two
+        displays at different scale factors are normal, and M1's own failure list
+        already includes editors opening on a second display.
+    */
+    juce::String screen;
 
     juce::var toVar() const
     {
@@ -153,6 +171,9 @@ struct UiHint
         auto* o = new juce::DynamicObject();
         o->setProperty ("x", x); o->setProperty ("y", y);
         o->setProperty ("w", w); o->setProperty ("h", h);
+        o->setProperty ("editor_w", editorWidth);
+        o->setProperty ("editor_h", editorHeight);
+        o->setProperty ("screen", screen);
         return juce::var (o);
     }
 };

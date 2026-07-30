@@ -52,10 +52,10 @@ void testSchemaVersionPinned()
     // is in EjmapSchema.h, which this file includes: drift stops this target at
     // the compiler, before these run. These stay as the runtime restatement, so
     // a binary that somehow linked against a different constant still says so.
-    check (ejmap::kMapSchemaVersion == 21, "kMapSchemaVersion is 21");
+    check (ejmap::kMapSchemaVersion == 22, "kMapSchemaVersion is 22");
     check (&ejmap::kMapSchemaVersion == &echojay::kMapSchemaVersion,
            "ejmap and echojay name the same object, not two copies");
-    check (juce::String (ejmap::kMapSchemaString) == "2.1", "kMapSchemaString is 2.1");
+    check (juce::String (ejmap::kMapSchemaString) == "2.2", "kMapSchemaString is 2.2");
 }
 
 void testVerdictSemantics()

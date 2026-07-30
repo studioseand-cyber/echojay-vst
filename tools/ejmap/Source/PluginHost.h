@@ -52,6 +52,14 @@ public:
 
     /** Blocking. Caller must have written inflight.json first.
 
+        MUST NOT BE CALLED FROM A TIMER CALLBACK. The editor-ready wait below runs
+        a nested dispatch loop, and CoreFoundation traps when one is started from
+        timer context: SIGTRAP in CFRunLoopRunSpecific. Button clicks and
+        MessageManager::callAsync are ordinary message context and are fine. It
+        also must not be called before the message loop is running, where the
+        nested loop silently fails to dispatch and every editor needing a layout
+        cycle appears never to settle.
+
         Returns only once the editor has reached a stable, non-degenerate size,
         or the editor-ready deadline expires. A bridged AU editor reports 1x1 at
         createEditorIfNeeded and reaches its real size about 2.5 s later when the
@@ -97,6 +105,30 @@ public:
     static constexpr double kSampleRate = 48000.0;
     static constexpr int    kBlockSize  = 512;
 
+    /** Feeds a test signal instead of silence. OFF BY DEFAULT, and it must stay
+        that way for capture.
+
+        The pump exists so editors that only paint under a live callback will
+        paint, and silence is the right default: a signal changes what the plugin
+        DOES while the human is mapping it, which is its own problem. Compressors
+        would be gain-reducing, meters would be moving, and a parameter the plugin
+        drives from the signal would look like a control the human touched.
+
+        It exists because the noise mask cannot otherwise be demonstrated. A
+        gain-reduction readout has nothing to move it under silence, so the mask
+        came back empty on every plugin measured and the guard protecting capture
+        from meters had never been observed protecting anything. This is also
+        M9's render harness arriving early rather than a detour.
+
+        1 kHz sine at -12 dBFS. Loud enough to move a meter, quiet enough not to
+        clip anything downstream.
+    */
+    void setTestSignalEnabled (bool shouldPlay) noexcept { testSignal = shouldPlay; }
+    bool isTestSignalEnabled() const noexcept            { return testSignal.load(); }
+
+    static constexpr double kTestToneHz    = 1000.0;
+    static constexpr float  kTestToneGain  = 0.251f;   // -12 dBFS
+
     /** Pauses the silent pump. The probe render in M9 takes the processor
         exclusively and must not race the pump.
     */
@@ -112,6 +144,7 @@ private:
 
     juce::CriticalSection processLock;
     std::atomic<bool> pumpEnabled { false };
+    std::atomic<bool> testSignal  { false };
 
     /** Channel count for the pump's buffer, published BEFORE the thread starts
         and never changed while it runs. The buffer itself is a local inside

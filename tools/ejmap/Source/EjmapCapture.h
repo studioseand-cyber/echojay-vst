@@ -97,6 +97,12 @@ public:
         juce::Array<float> deltas;
         juce::String reason;
 
+        /** When the change was DETECTED. The mouse ring is queried against this
+            rather than sampled at this moment, so ui_hint fidelity does not
+            depend on the calibrated poll rate.
+        */
+        juce::uint32 detectedAtMs = 0;
+
         juce::String kindString() const
         {
             switch (kind)
@@ -322,7 +328,11 @@ private:
                 continue;
             }
 
-            deliver (classify (moved, deltas, params));
+            {
+                auto res = classify (moved, deltas, params);
+                res.detectedAtMs = juce::Time::getMillisecondCounter();
+                deliver (res);
+            }
             return;
         }
     }
@@ -400,6 +410,21 @@ private:
             //
             // Macro and epsilon remain possible and are offered as such rather
             // than asserted, because a simpler explanation fits.
+            // NOTE FOR M5, recorded where co_moved is produced because this is
+            // the input it will consume.
+            //
+            // If M5 derives an index stride to verify a name-pattern grouping,
+            // that stride MUST come from observed captures -- two bands actually
+            // touched -- and NEVER from the indices the name pattern itself
+            // assigned. Two methods sharing an input are one method, and their
+            // agreement proves nothing while looking like corroboration.
+            //
+            // Measured across 4,233 extracted maps: of 571 with a semantic band
+            // family, 85.1% have a stride predictive from its first two members,
+            // and 67.2% of multi-family maps share one stride. So it is a real
+            // signal and not a FabFilter artifact, but 15% fail, including
+            // DMGAudio EQuality, Eiosis AirEQ, Waves REQ 4 and Waves C6. It is a
+            // verifier and a disagreement detector, never the generaliser.
             r.kind = Result::Kind::gesture;
             r.indices = moved;
             r.reason = juce::String (moved.size()) + " parameters moved in one gesture ("

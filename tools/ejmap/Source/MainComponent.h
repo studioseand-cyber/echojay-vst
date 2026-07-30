@@ -19,6 +19,7 @@
 #include "EjmapScanProgress.h"
 #include "EjmapSupervisor.h"
 #include "EjmapCapture.h"
+#include "EjmapMouseRing.h"
 
 #include <iostream>
 
@@ -67,6 +68,21 @@ public:
 
         // Quarantine release. Manual is right; invisible is not. Without this
         // the only route was editing quarantine.json by hand.
+        // Test signal. Off by default and disabled while armed: a signal that
+        // changes what the plugin does during capture is its own problem.
+        addAndMakeVisible (signalToggle);
+        signalToggle.setButtonText ("Test signal");
+        signalToggle.setEnabled (false);
+        signalToggle.onClick = [this]
+        {
+            host.setTestSignalEnabled (signalToggle.getToggleState());
+            captureReadout.setText (signalToggle.getToggleState()
+                                      ? "Test signal ON (1 kHz -12 dBFS). Re-run the baseline to "
+                                        "let the noise mask see moving meters."
+                                      : "Test signal OFF. Capture runs against silence.",
+                                    juce::dontSendNotification);
+        };
+
         addAndMakeVisible (armButton);
         armButton.setButtonText ("Arm");
         armButton.setEnabled (false);
@@ -413,6 +429,82 @@ public:
 
     void quitNow() { juce::JUCEApplication::getInstance()->quit(); }
 
+    /** Demonstrates the noise mask actually excluding something.
+
+        Baseline twice on the same plugin: once against silence, once with the
+        test signal running. If the plugin exposes a level or gain-reduction
+        readout as a parameter, the second mask is non-empty and the first is
+        not, which is the mask doing its job rather than being trivially empty.
+        Then arms and confirms capture still works with those indices excluded.
+    */
+    void selfTestNoiseMask (const juce::String& identifier)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "MASKTEST: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId();
+        auto res = host.load (desc, watchdog);
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "MASKTEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        cal = capture.calibrate (*inst, loadedId);
+        std::cout << "MASKTEST: " << desc.name << " | " << cal.describe() << std::endl;
+
+        host.setTestSignalEnabled (false);
+        juce::Thread::sleep (400);
+        auto silent = capture.buildNoiseMask (*inst, cal, loadedId);
+        std::cout << "MASKTEST: silence  -> mask " << silent.indices.size()
+                  << " of " << cal.paramCount
+                  << " (" << silent.samples << " samples)" << std::endl;
+
+        host.setTestSignalEnabled (true);
+        juce::Thread::sleep (800);          // let the plugin's detectors settle
+        auto signal = capture.buildNoiseMask (*inst, cal, loadedId);
+        std::cout << "MASKTEST: 1kHz signal -> mask " << signal.indices.size()
+                  << " of " << cal.paramCount
+                  << " (" << signal.samples << " samples)" << std::endl;
+
+        for (int i = 0; i < juce::jmin (8, signal.indices.size()); ++i)
+        {
+            const int idx = signal.indices[i];
+            std::cout << "    masked index " << idx << "  "
+                      << inst->getParameters()[idx]->getName (40) << std::endl;
+        }
+
+        const bool demonstrated = signal.indices.size() > silent.indices.size();
+        std::cout << "MASKTEST: mask excluded " << (signal.indices.size() - silent.indices.size())
+                  << " self-changing parameter(s) that silence never revealed -> "
+                  << (demonstrated ? "DEMONSTRATED" : "NOT DEMONSTRATED (no signal-driven "
+                                                      "parameter on this plugin)") << std::endl;
+
+        // Capture must still work with those indices excluded.
+        mask = signal;
+        host.setTestSignalEnabled (false);
+        juce::Thread::sleep (300);
+        capture.arm (*inst, cal, mask, [this, demonstrated] (const CaptureEngine::Result& r)
+        {
+            std::cout << "MASKTEST: capture with mask active -> " << r.kindString()
+                      << " indices=" << r.indices.size() << std::endl;
+            std::cout << "MASKTEST: " << (demonstrated ? "PASS" : "INCONCLUSIVE") << std::endl;
+            std::cout.flush();
+            quitNow();
+        });
+
+        juce::Timer::callAfterDelay (500, [this]
+        {
+            auto* in = host.getInstance();
+            if (in == nullptr) return;
+            for (auto* pp : in->getParameters())
+                if (! pp->isDiscrete() && pp->isAutomatable() && ! mask.indices.contains (
+                        in->getParameters().indexOf (pp)))
+                { pp->setValueNotifyingHost (0.2f); juce::Thread::sleep (30);
+                  pp->setValueNotifyingHost (0.6f); break; }
+        });
+    }
+
     /** Each stage arms, then moves parameters, then asserts the classification. */
     void runCaptureStage()
     {
@@ -554,6 +646,8 @@ public:
         top.removeFromLeft (6);
         loadButton.setBounds (top.removeFromLeft (130));
         top.removeFromLeft (6);
+        signalToggle.setBounds (top.removeFromLeft (110));
+        top.removeFromLeft (6);
         armButton.setBounds (top.removeFromLeft (70));
         top.removeFromLeft (6);
         releaseButton.setBounds (top.removeFromLeft (90));
@@ -626,6 +720,7 @@ private:
             owner.filterBox.setEnabled (false);
             owner.releaseButton.setEnabled (false);
             owner.armButton.setEnabled (false);
+            owner.signalToggle.setEnabled (false);
         }
 
         ~BusyScope()
@@ -1098,6 +1193,44 @@ private:
         armButton.setEnabled (true);
     }
 
+    /** Builds the hint from the ring, and records the denominator with it.
+
+        Normalised against the editor's bounds AS MEASURED NOW, and those bounds
+        travel in the hint (schema 2.2). A fraction without its denominator
+        cannot be checked later, and these editors do change size: bridged ones
+        reach real size ~2.5 s after creation, resizable ones move mid-session.
+    */
+    UiHint hintFor (juce::uint32 detectedAtMs)
+    {
+        UiHint h;
+
+        if (hostedEditor == nullptr)
+            return h;
+
+        MouseRing::Sample s;
+        if (! ring.bestFor (detectedAtMs, s))
+            return h;                    // ring had nothing that old: null, not a guess
+
+        const int ew = hostedEditor->getWidth();
+        const int eh = hostedEditor->getHeight();
+        if (ew <= 0 || eh <= 0)
+            return h;
+
+        const auto local = hostedEditor->getLocalPoint (nullptr, s.screenPos);
+        if (! hostedEditor->getLocalBounds().contains (local))
+            return h;                    // outside the editor: null rather than a lie
+
+        h.valid        = true;
+        h.x            = (float) local.x / (float) ew;
+        h.y            = (float) local.y / (float) eh;
+        h.w            = 48.0f / (float) ew;      // default hint box, tunable
+        h.h            = 48.0f / (float) eh;
+        h.editorWidth  = ew;
+        h.editorHeight = eh;
+        h.screen       = s.screen;
+        return h;
+    }
+
     /** Human picks which of a gesture's parameters they meant. The others stay
         as co-moved rather than being thrown away: that Band 1 Freq and Band 1
         Gain move together is a fact about the plugin.
@@ -1230,6 +1363,7 @@ private:
             cm.add (juce::var (c));
         }
         o->setProperty ("co_moved", juce::var (cm));
+        o->setProperty ("ui_hint", lastHint.toVar());
         o->setProperty ("reason", reason);
 
         auto f = ledger.runArtifact ("captures", "jsonl");
@@ -1264,6 +1398,14 @@ private:
             t << "  -  " << r.reason;
             if (! mask.promotions.isEmpty())
                 t << "   |  " << mask.promotions[mask.promotions.size() - 1];
+
+            lastHint = hintFor (r.detectedAtMs);
+            if (lastHint.valid)
+                t << "  ui_hint " << juce::String (lastHint.x, 3) << "," << juce::String (lastHint.y, 3)
+                  << " of " << lastHint.editorWidth << "x" << lastHint.editorHeight
+                  << " on " << lastHint.screen;
+            else
+                t << "  ui_hint null (mouse outside the editor, or no sample)";
 
             captureReadout.setText (t, juce::dontSendNotification);
             std::cout << "CAPTURE: " << t << std::endl;
@@ -1550,6 +1692,9 @@ private:
     juce::ComboBox candidatePicker;
     CaptureEngine::Result lastGesture;
     juce::String loadedName, loadedId;
+    MouseRing    ring;
+    UiHint       lastHint;
+    juce::ToggleButton signalToggle;
     juce::Array<int> qualified;
     bool busy = false;
     int  loadDepth = 0, maxLoadDepth = 0, loadCalls = 0, loadRejected = 0;

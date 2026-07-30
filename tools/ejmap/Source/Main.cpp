@@ -41,7 +41,7 @@ public:
         juce::File ledgerRoot;
         juce::String selfTestId;
         bool cacheTest = false, progressTest = false;
-        juce::String attributeReport, afterExit, captureTestId;
+        juce::String attributeReport, afterExit, captureTestId, maskTestId;
         bool supervised = false;
         int  restartCount = 0;
         juce::String releaseId, quarantineId, quarantineReason, quarantineStage { "load" };
@@ -58,6 +58,8 @@ public:
                 progressTest = true;
             else if (args[i] == "--selftest-capture" && i + 1 < args.size())
                 captureTestId = args[++i];
+            else if (args[i] == "--selftest-noisemask" && i + 1 < args.size())
+                maskTestId = args[++i];
             else if (args[i] == "--attribute-report" && i + 1 < args.size())
                 attributeReport = args[++i];
             else if (args[i] == "--child")
@@ -153,8 +155,30 @@ public:
         // only way to assert it against the live object rather than the source.
         std::cout << "ejmap window title: " << mainWindow->getName() << std::endl;
 
-        if (captureTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
-            mainWindow->getMain()->selfTestCapture (captureTestId);
+        // Self-tests that LOAD a plugin must run after the message loop is
+        // going, AND from normal message context rather than a timer.
+        //
+        // From initialise(): the editor-ready wait's runDispatchLoopUntil does
+        // not dispatch, so any editor needing a layout cycle times out and the
+        // watchdog kills the process. Three plugins were briefly misdiagnosed as
+        // never settling because of this.
+        //
+        // From a Timer callback: CoreFoundation traps outright, SIGTRAP in
+        // CFRunLoopRunSpecific.cold.3, because a nested run loop cannot be
+        // started from timer context.
+        //
+        // callAsync posts an ordinary message, which is the same context a button
+        // click arrives in. That is why the UI path was never affected.
+        if (maskTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = maskTestId; auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id] { m->selfTestNoiseMask (id); });
+        }
+        else if (captureTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = captureTestId; auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id] { m->selfTestCapture (id); });
+        }
         else if (progressTest && mainWindow->getMain() != nullptr)
             mainWindow->getMain()->selfTestProgressAndRelease();
         else if (cacheTest && mainWindow->getMain() != nullptr)

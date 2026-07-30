@@ -46,6 +46,13 @@ namespace echojay
 // Bumping the wire format means editing BOTH numbers here AND the pin in
 // EjmapSchema.h. That is the point: a schema change should not be a one-token
 // edit that nothing notices.
+//
+// 2.1 -> 2.2, done deliberately early. ui_hint now carries the editor bounds it
+// was normalised against, plus screen identity. A normalised coordinate whose
+// denominator has changed is silently wrong rather than missing, and bridged
+// editors resize about 2.5 s after creation while resizable GUIs resize
+// mid-session. No maps exist yet, so this costs nothing today and would cost a
+// migration after the first corpus.
 // ---------------------------------------------------------------------------
 namespace schemaDetail
 {
@@ -61,8 +68,8 @@ namespace schemaDetail
     }
 }
 
-inline constexpr int         kMapSchemaVersion = 21;      // 2.1
-inline constexpr const char* kMapSchemaString  = "2.1";
+inline constexpr int         kMapSchemaVersion = 22;      // 2.2
+inline constexpr const char* kMapSchemaString  = "2.2";
 
 static_assert (schemaDetail::schemaStringMatches (kMapSchemaString, kMapSchemaVersion),
                "kMapSchemaVersion and kMapSchemaString disagree. Bump both together, "

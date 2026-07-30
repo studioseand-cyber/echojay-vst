@@ -232,6 +232,10 @@ void PluginHost::run()
     juce::AudioBuffer<float> buffer (juce::jmax (2, pumpChannels.load()), kBlockSize);
     juce::MidiBuffer midi;
 
+    // Phase lives on this thread with the buffer. Nothing else touches it.
+    double phase = 0.0;
+    const double phaseStep = juce::MathConstants<double>::twoPi * kTestToneHz / kSampleRate;
+
     // 512 frames at 48 kHz is 10.67 ms. Sleeping the same interval keeps the
     // plugin's internal clock roughly real-time, which matters to anything with
     // a metering or modulation display.
@@ -245,8 +249,29 @@ void PluginHost::run()
 
             if (instance != nullptr)
             {
-                buffer.clear();
                 midi.clear();
+
+                if (testSignal.load())
+                {
+                    // Deliberately generated here rather than pre-rendered: the
+                    // buffer is thread-local and the phase must stay continuous
+                    // across blocks or the tone clicks and reads as transient
+                    // content to anything level-detecting.
+                    for (int n = 0; n < buffer.getNumSamples(); ++n)
+                    {
+                        const float v = kTestToneGain * (float) std::sin (phase);
+                        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                            buffer.setSample (ch, n, v);
+                        phase += phaseStep;
+                        if (phase > juce::MathConstants<double>::twoPi)
+                            phase -= juce::MathConstants<double>::twoPi;
+                    }
+                }
+                else
+                {
+                    buffer.clear();
+                }
+
                 instance->processBlock (buffer, midi);
             }
         }
