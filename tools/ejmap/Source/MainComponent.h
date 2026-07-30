@@ -382,6 +382,9 @@ public:
         ScannedPlugin sp; sp.desc = desc;
         rows.clearQuick(); rows.add (sp); applyFilter(); list.selectRow (0);
 
+        loadedName = desc.name;
+        loadedId   = sp.pluginId();
+
         ledger.beginLoad (sp.pluginId(), desc.name, desc.manufacturerName,
                           desc.pluginFormatName, desc.version, "load", "createPluginInstance");
         auto res = host.load (desc, watchdog);
@@ -390,7 +393,10 @@ public:
         rec.paramCount = res.paramCount; ledger.endLoad (rec);
 
         if (res.outcome != LoadOutcome::ok)
-        { std::cout << "CAPTURETEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+        {
+            loadedName.clear(); loadedId.clear();
+            std::cout << "CAPTURETEST: load failed: " << res.detail << std::endl; quitNow(); return;
+        }
 
         auto* inst = host.getInstance();
         cal  = capture.calibrate (*inst, sp.pluginId());
@@ -456,6 +462,23 @@ public:
 
         if (stage >= 4)
         {
+            // Prove the refusal, rather than trusting that it would fire. A guard
+            // never observed refusing is not a guard.
+            auto capturesFile = ledger.runArtifact ("captures", "jsonl");
+            const auto before = capturesFile.existsAsFile()
+                                  ? juce::StringArray::fromLines (capturesFile.loadFileAsString()).size() : 0;
+            const auto keep = loadedId;
+            loadedId.clear();
+            recordCapture ("captured", 1, "Deliberately Unattributed", {}, {}, "refusal probe");
+            loadedId = keep;
+            const auto after = capturesFile.existsAsFile()
+                                 ? juce::StringArray::fromLines (capturesFile.loadFileAsString()).size() : 0;
+            const bool refused = (after == before)
+                                   && ledger.runArtifact ("captures-rejected", "log").existsAsFile();
+            if (! refused) ++failures;
+            std::cout << "  " << (refused ? "ok   " : "FAIL ")
+                      << "row with empty plugin_id REFUSED and logged" << std::endl;
+
             std::cout << "CAPTURETEST: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
             std::cout.flush(); quitNow(); return;
         }
@@ -493,6 +516,18 @@ public:
             std::cout << "  " << (ok ? "ok   " : "FAIL ") << names[st]
                       << "  -> got " << r.kindString()
                       << " indices=" << r.indices.size() << std::endl;
+
+            // Exercise the RECORD WRITER, not just the classifier. Without this
+            // the test reported PASS while writing nothing, so persistence was
+            // never covered by the thing that claimed to cover it. A gesture is
+            // recorded here as the raw gesture row; in the app it is recorded
+            // again once the human picks, which is the same writer either way.
+            recordCapture (r.kindString(),
+                           r.indices.size() == 1 ? r.indices[0] : -1,
+                           r.names.isEmpty() ? juce::String() : r.names[0],
+                           r.indices.size() > 1 ? r.indices : juce::Array<int>(),
+                           r.indices.size() > 1 ? r.names : juce::StringArray(),
+                           r.reason);
             ++stage;
             juce::Timer::callAfterDelay (400, [this] { runCaptureStage(); });
         });
@@ -1037,8 +1072,9 @@ private:
         if (inst == nullptr)
             return;
 
-        loadedName = name;
-        loadedId   = pluginId;
+        // Identity is already set by the load path. Deliberately NOT set here:
+        // it must exist before anything can be captured, not as a side effect of
+        // preparing to capture.
         candidatePicker.setVisible (false);
         cal = capture.calibrate (*inst, pluginId);
         if (! cal.valid)
@@ -1139,6 +1175,30 @@ private:
                         const juce::Array<int>& coMoved, const juce::StringArray& coNames,
                         const juce::String& reason)
     {
+        // REFUSE rather than write an unattributable row. A capture with no
+        // plugin id is indistinguishable from evidence but cannot be traced to
+        // anything, so it is worse than an absence: it would be counted. The
+        // refusal itself is recorded, per the rule that nothing disappears
+        // without a reason on disk.
+        if (loadedId.isEmpty())
+        {
+            juce::String msg;
+            msg << "REFUSED to write a capture row: no plugin identity (kind=" << kind
+                << ", index=" << intended << ", reason=" << reason.substring (0, 80) << ")";
+            std::cout << "CAPTURE: " << msg << std::endl;
+
+            auto rej = ledger.runArtifact ("captures-rejected", "log");
+            juce::FileOutputStream rout (rej);
+            if (rout.openedOk())
+            {
+                rout.setPosition (rej.getSize());
+                rout.writeText (juce::Time::getCurrentTime().toISO8601 (true) + "  " + msg + "\n",
+                                false, false, nullptr);
+                rout.flush();
+            }
+            return;
+        }
+
         auto* o = new juce::DynamicObject();
         o->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
         o->setProperty ("kind", kind);
@@ -1350,6 +1410,12 @@ private:
         detachEditor();
         host.unload();
 
+        // Capture identity is established HERE, in the load path, not later in
+        // prepareCapture. A capture row that cannot be attributed to a plugin is
+        // worse than a missing row, because it still counts as evidence.
+        loadedName = sp.desc.name;
+        loadedId   = id;
+
         ledger.beginLoad (id, sp.desc.name, sp.desc.manufacturerName,
                           sp.desc.pluginFormatName, sp.desc.version,
                           "load", "createPluginInstance");
@@ -1380,6 +1446,10 @@ private:
         }
         else
         {
+            // Nothing is loaded, so nothing may be attributed to it.
+            loadedName.clear();
+            loadedId.clear();
+
             status.setText (sp.desc.name + ": " + toString (result.outcome)
                               + (result.detail.isEmpty() ? "" : " (" + result.detail + ")"),
                             juce::dontSendNotification);
