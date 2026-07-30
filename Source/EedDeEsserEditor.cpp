@@ -206,6 +206,7 @@ void EedDeEsserEditor::refreshExtras()
     curve_.setGainReductionDb (byp ? 0.0f : gr);
 
     band_.setDimmed (byp);
+    band_.setDwellSource (&deEsser_.dwellHistogram(), ! byp);
     band_.setBandLevelDb (byp ? echojay::viz::DeEsserBandView::kNoLevel : level);
 
     // In LISTEN the device is outputting the band, not the processed signal, so

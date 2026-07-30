@@ -284,6 +284,7 @@ target_sources(EchoJay PRIVATE
     Source/viz/PanPositionView.h
     Source/viz/SweepView.cpp
     Source/viz/SweepView.h
+    Source/viz/DwellGlow.cpp
     Source/viz/TransferCurveView.cpp
     Source/viz/TransferCurveView.h
     Source/viz/VizTap.h
@@ -583,6 +584,7 @@ target_sources(EchoJayLink PRIVATE
     Source/viz/PanPositionView.h
     Source/viz/SweepView.cpp
     Source/viz/SweepView.h
+    Source/viz/DwellGlow.cpp
     Source/viz/TransferCurveView.cpp
     Source/viz/TransferCurveView.h
     Source/viz/VizTap.h
@@ -741,6 +743,7 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/viz/LfoScopeView.cpp
     Source/viz/PanPositionView.cpp
     Source/viz/SweepView.cpp
+    Source/viz/DwellGlow.cpp
     Source/viz/TransferCurveView.cpp
     Source/viz/VizView.cpp
     Source/viz/WaveshaperView.cpp

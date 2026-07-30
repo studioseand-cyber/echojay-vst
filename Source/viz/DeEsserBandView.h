@@ -22,24 +22,62 @@
       * HOW MUCH — the reduction as a depth on the same dB axis, so "6 dB of
         de-essing" is a distance you can see rather than a number to trust.
 
-    ANALYTIC + ONE FLOAT TAP, like the transfer curve: the band shape is a pure
+    ANALYTIC + THE DWELL GLOW, like the transfer curve: the band shape is a pure
     function of freq_hz (evaluated through echojay::Biquad, the same struct the
-    DSP filters with, so the drawn band cannot be a different band), and the only
-    live values are the two floats the GR meter already reads.
+    DSP filters with, so the drawn band cannot be a different band), and the live
+    half is the same 128-bin histogram every Dynamics face glows with.
+
+    WHAT THE GLOW MEANS HERE, and why it is not the transfer curve's question.
+    That plot's x axis IS a level, so "how much time does the signal spend at
+    this x" is a direct lookup. This plot's x axis is FREQUENCY, and a level
+    histogram does not know which frequency inside the band its energy came
+    from — so a glow that claimed to would be inventing data.
+
+    What the histogram genuinely does answer, once the filter is taken into
+    account, is the question this device is actually tuned by. Content at
+    frequency f reaches the detector attenuated by the sidechain band's response
+    there, so to push the detector over the threshold it has to be louder by
+    exactly that attenuation. Ask the histogram how often the detector gets that
+    loud, and the answer per frequency is:
+
+        "how often does content HERE actually trigger the de-esser"
+
+    which is what freq_hz is set by ear for. At the band centre nothing is
+    attenuated, so the bar is the threshold itself; out on the skirts the bar
+    climbs and the signal reaches it less and less. The result is a hot core
+    exactly where the device is listening hardest AND the signal is actually
+    getting loud enough to matter.
+
+    WHAT A WRONG FREQUENCY LOOKS LIKE is worth being precise about, because the
+    obvious guess is wrong. A band parked on the vowel does NOT stay cold — the
+    vowel is loud and constant, so it clears the threshold constantly and the
+    band sits PINNED white. That is not the glow failing; it is the glow
+    reporting the actual fault, which is a de-esser triggering on everything.
+    The tell is in the motion: pointed at the sibilance the core pulses with
+    the esses and falls back between them, and pointed at the vowel it never
+    falls back at all. A de-esser that is always on is always wrong, and this
+    is the view that shows it without listening for it.
+
+    Cumulative ("at or above") rather than a point lookup, deliberately: a
+    point lookup is not monotonic, so a skirt that happened to land on the
+    histogram's peak would out-glow the band's own centre and draw a ring.
 */
 
 #pragma once
 
 #include "VizView.h"
+#include "DwellGlow.h"
 #include "../EedDynamicsCore.h"
 
 namespace echojay::viz
 {
 
-class DeEsserBandView : public VizView
+class DeEsserBandView : public VizView,
+                        private juce::Timer
 {
 public:
     DeEsserBandView();
+    ~DeEsserBandView() override;
 
     // Matches TransferCurveView: anything at or below this hides the live parts.
     static constexpr float kNoLevel = -200.0f;
@@ -56,6 +94,16 @@ public:
     // How deep the dB axis runs, as a positive number. The device's range_db
     // ceiling, so the plot never runs out of room before the device does.
     void setDepthDb (float db);
+
+    // ---- the dwell glow ----------------------------------------------------
+    // The de-esser's OWN core publishes this from gainForSidechain, so it is
+    // already the sidechain band's level distribution — the exact thing this
+    // view wants and nothing extra had to be tapped for it.
+    //
+    // Same contract as TransferCurveView::setDwellSource: a pointer that
+    // outlives the view, re-passed by the editor every refresh, polled on this
+    // view's own 60 Hz timer. nullptr detaches and stops the timer.
+    void setDwellSource (const echojay::dyn::DwellTap* tap, bool active);
 
     // ---- one float tap ----------------------------------------------------
     // The reduction currently applied, NEGATIVE dB, as the core reports it.
@@ -77,10 +125,22 @@ protected:
     void resized() override;
 
 private:
+    void timerCallback() override;
+
     // Magnitude response of the sidechain bandpass at a frequency, 0..1.
     float bandMagnitude (float hz) const noexcept;
 
     void rebuildPaths();
+
+    // Fills the glow's columns along the band's own crest and renders it.
+    void renderGlow (juce::Graphics& g, juce::Rectangle<float> plot, float a);
+
+    // How far below the band's peak the glow is still allowed to reach, in dB
+    // of filter attenuation. Past this the trigger bar is so high that the
+    // answer is always "never", and evaluating it is only work — but it also
+    // bounds how wide the glow can appear to be when a signal is slamming the
+    // detector, which is what keeps a hot band from filling the whole plot.
+    static constexpr float kMaxBandAttenDb = 36.0f;
 
     // The plot's frequency span. Fixed rather than following freq_hz, so that
     // dialling the frequency MOVES the band across a stable axis instead of
@@ -98,8 +158,15 @@ private:
     float  levelDb_   = kNoLevel;
     float  threshDb_  = -28.0f;
 
-    // Rebuilt on a band or size change only, never per frame.
+    // Rebuilt on a band or size change only, never per frame. bandCrest_ is the
+    // fill's top edge as POINTS, which is the line the glow rides — the same
+    // relationship TransferCurveView's curvePts_ has to its curve.
     juce::Path bandPath_, bandFill_;
+    std::vector<juce::Point<float>> bandCrest_;
+    std::vector<float>              crestAttenDb_;
+
+    DwellGlow glow_;
+    double    lastTickMs_ = 0.0;
 
     // The sample rate the drawn response is evaluated at. The picture is of a
     // filter shape, not of a session, and 48 kHz keeps the shape stable when a

@@ -39,6 +39,8 @@ DeEsserBandView::DeEsserBandView()
     setCaption ("BAND");
 }
 
+DeEsserBandView::~DeEsserBandView() = default;
+
 void DeEsserBandView::setBand (float freqHz, double q)
 {
     if (! moved (freqHz, freqHz_, 0.5f) && std::abs (q - q_) < 1.0e-6) return;
@@ -64,6 +66,44 @@ void DeEsserBandView::setDepthDb (float db)
     depthDb_ = d;
     rebuildPaths();
     repaint();
+}
+
+void DeEsserBandView::setDwellSource (const echojay::dyn::DwellTap* tap, bool active)
+{
+    const bool wantTimer = glow_.setSource (tap, active);
+
+    if (tap == nullptr)
+    {
+        stopTimer();
+        repaint();
+        return;
+    }
+
+    // Only started when there is something to show, so a de-esser sitting
+    // bypassed in a rack costs nothing once its glow has faded. The editor
+    // re-passes the tap 20 times a second, so un-bypassing picks it back up.
+    if (wantTimer && ! isTimerRunning())
+    {
+        lastTickMs_ = 0.0;
+        startTimerHz (DwellGlow::kGlowHz);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The glow's frame. Identical in shape to TransferCurveView's, because it is
+// the same glow: measure the elapsed time, hand it to DwellGlow, stop when
+// there is nothing left to fade.
+// ---------------------------------------------------------------------------
+void DeEsserBandView::timerCallback()
+{
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    const float  dt  = lastTickMs_ > 0.0 ? (float) ((now - lastTickMs_) * 0.001)
+                                         : 1.0f / (float) DwellGlow::kGlowHz;
+    lastTickMs_ = now;
+
+    if (glow_.tick (dt)) repaint();
+
+    if (! glow_.isAlive() && ! glow_.isActive()) stopTimer();
 }
 
 void DeEsserBandView::setGainReductionDb (float db)
@@ -119,6 +159,8 @@ void DeEsserBandView::rebuildPaths()
 {
     bandPath_.clear();
     bandFill_.clear();
+    bandCrest_.clear();
+    crestAttenDb_.clear();
 
     if (! hasPlot()) return;
 
@@ -194,10 +236,69 @@ void DeEsserBandView::rebuildPaths()
         {
             bandFill_.lineTo (xForHz (hz), by);
         }
+
+        // The crest, and how far DOWN the filter is here. The attenuation is
+        // the whole basis of the glow — it is the extra level content at this
+        // frequency needs before the detector notices it — so it is captured
+        // from the same response evaluation the shape is drawn from rather than
+        // recomputed later against a filter that might have moved.
+        bandCrest_.push_back ({ xForHz (hz), by });
+        crestAttenDb_.push_back (-echojay::dyn::gainToDb (juce::jlimit (0.0f, 1.0f, mag)));
     }
 
     bandFill_.lineTo (plot.getRight(), plot.getBottom());
     bandFill_.closeSubPath();
+}
+
+// ---------------------------------------------------------------------------
+// The glow's columns: where the band's crest is at each pixel, and how often
+// content there actually triggers the device (see the header for why that is
+// the honest question on a frequency axis).
+// ---------------------------------------------------------------------------
+void DeEsserBandView::renderGlow (juce::Graphics& g, juce::Rectangle<float> plot, float a)
+{
+    const int n = (int) bandCrest_.size();
+    if (n < 2 || (int) crestAttenDb_.size() != n) return;
+
+    const int w = glow_.prepareColumns (plot);
+    if (w < 2) return;
+
+    const float originX = std::floor (plot.getX());
+    const float originY = std::floor (plot.getY());
+
+    auto& colY = glow_.columnY();
+    auto& colE = glow_.columnIntensity();
+
+    for (int ix = 0; ix < w; ++ix)
+    {
+        // The crest is sampled on a LOG-frequency sweep and this walk is in
+        // linear pixels, but both are parameterised on the same t across the
+        // plot's width — so interpolating on t lands on the same frequency the
+        // shape was drawn at, without redoing the log.
+        const float t   = (originX + (float) ix + 0.5f - plot.getX()) / plot.getWidth();
+        const float pos = juce::jlimit (0.0f, 1.0f, t) * (float) (n - 1);
+
+        const int   i0   = juce::jlimit (0, n - 2, (int) pos);
+        const float frac = pos - (float) i0;
+
+        const auto& p0 = bandCrest_[(std::size_t) i0];
+        const auto& p1 = bandCrest_[(std::size_t) i0 + 1];
+
+        colY[(std::size_t) ix] = (p0.y + (p1.y - p0.y) * frac) - originY;
+
+        const float atten = crestAttenDb_[(std::size_t) i0]
+                          + (crestAttenDb_[(std::size_t) i0 + 1]
+                           - crestAttenDb_[(std::size_t) i0]) * frac;
+
+        if (atten > kMaxBandAttenDb) { colE[(std::size_t) ix] = 0.0f; continue; }
+
+        // The bar this frequency has to clear: the threshold, plus whatever the
+        // sidechain filter takes off here. Then ask the histogram how much of
+        // the detector's time is spent at or above it.
+        colE[(std::size_t) ix] = glow_.fractionAbove (threshDb_ + atten);
+    }
+
+    glow_.render (g, a);
 }
 
 void DeEsserBandView::paintPlot (juce::Graphics& g, juce::Rectangle<float> plot)
@@ -251,14 +352,20 @@ void DeEsserBandView::paintPlot (juce::Graphics& g, juce::Rectangle<float> plot)
     // ever laid out, which is exactly what the editor-paint harness does.
     if (bandPath_.isEmpty()) rebuildPaths();
 
-    // ---- the detector's band ----------------------------------------------
+    // ---- the detector's band, cold ----------------------------------------
+    // The region and its crest, drawn whatever the histogram says, so a silent
+    // or bypassed de-esser still shows WHERE it is listening. The glow goes
+    // over the top of this, exactly as it does over the transfer curve.
     if (! bandFill_.isEmpty())
     {
         g.setColour (Colours::purple.withAlpha (0.22f * a));
         g.fillPath (bandFill_);
-        g.setColour (Colours::purple.withMultipliedAlpha (0.55f * a));
+        g.setColour (Colours::purple.withMultipliedAlpha (DwellGlow::kColdAlpha * a));
         g.strokePath (bandFill_, juce::PathStrokeType (1.0f));
     }
+
+    // ---- ...and how hard it is actually being triggered, as heat -----------
+    renderGlow (g, plot, a);
 
     // ---- the centre frequency ----------------------------------------------
     // Amber when the band is over the threshold — i.e. when this frequency is

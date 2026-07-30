@@ -38,19 +38,15 @@
          same speed at 60 Hz, at 24 Hz, and across a dropped frame.
       3. SPATIAL SMOOTHING across bins, so the gradient along the curve is
          continuous rather than 128 visible steps.
-      4. A PER-PIXEL RENDER. Those three make the DATA smooth; drawing it as
-         strokes then threw that away, because a stroke can only be one colour
-         and a plot only shows ~35 of the 128 bins, so each stroke was a wide
-         flat slab and every join between two was an edge. The glow is now
-         composited column by column into an image — cubic between bins, a soft
-         perpendicular falloff, blitted once — so no two adjacent pixels can
-         differ by a step.
+      4. A PER-PIXEL RENDER, composited column by column with a soft
+         perpendicular falloff.
 
-    And it is CONCENTRATED, which is the difference between a picture and a
-    decoration. Normalised to a running maximum, floored, then contrast-shaped,
-    so what you see is where the signal is working rather than everywhere it has
-    ever been. All five numbers that decide that live in one block at the top of
-    the .cpp, plus dyn::kDwellTauSec on the DSP side.
+    All four, the contrast that concentrates the glow into a core, and the
+    cold-to-white-hot ramp now live in DwellGlow — shared with the de-esser's
+    band view, because two glows tuned separately are two glows that drift apart
+    on the first nudge, and a compressor and a de-esser have to look like the
+    same instrument. What is left here is the only part that is this view's own:
+    the curve's shape, and WHICH LEVEL each pixel of it stands for.
 
     The instantaneous level is still taken (setInputLevelDb) but it is now only
     a soft gaussian lift in the glow — a whisper of "and here, this instant" —
@@ -60,6 +56,7 @@
 #pragma once
 
 #include "VizView.h"
+#include "DwellGlow.h"
 #include "../EedDynamicsCore.h"
 
 namespace echojay::viz
@@ -156,59 +153,18 @@ protected:
 private:
     void timerCallback() override;
 
-    static constexpr int kDwellBins = echojay::dyn::kDwellBins;
-
-    // ---- the glow's tuning, in one place ----------------------------------
-    // How long the displayed histogram takes to cover ~63% of the distance to
-    // the published one. 120 ms is the value that makes a compressor's glow
-    // feel attached to the music: shorter and it inherits the jitter of the
-    // block rate, longer and it lags the phrase you are listening to.
-    static constexpr float kEaseTauSec = 0.120f;
-
-    // The self-scaling reference rises fast (a new peak IS the new maximum) and
-    // falls slower, so the picture does not re-normalise into a blaze every
-    // time the music thins out for a beat.
-    //
-    // The fall cannot be much slower than this, and that is not a taste call.
-    // Everything is divided by this number and then raised to kDwellGamma, so a
-    // reference still sitting 30% above the current peak does not dim the core
-    // by 30%, it dims it by more than half — the glow goes cold while the
-    // signal is still playing. Two thirds of a second is long enough to ride
-    // out a bar and short enough that the core stays hot through it.
-    static constexpr float kMaxRiseTauSec = 0.25f;
-    static constexpr float kMaxFallTauSec = 0.65f;
-
-    // Below this the histogram is nothing, and nothing is not worth a frame.
-    static constexpr float kQuiet = 1.0e-4f;
-
-    // An intensity under this cannot make a pixel the eye will find, so the
-    // field skips the column rather than compositing a row of 1/255s.
-    static constexpr float kFaintestVisible = 0.004f;
-
+    // ---- what is still THIS view's own about the glow ----------------------
     // The instantaneous whisper: how wide in dB, and how much it can lift the
     // local intensity. Small on purpose — it is a hint, not a marker.
     static constexpr float kWhisperSigmaDb = 2.0f;
     static constexpr float kWhisperGain    = 0.18f;
 
-    // The smoothed histogram at an input level, CUBICALLY interpolated between
-    // bin centres. Cubic and not linear because the visible span of a plot is
-    // ~30 dB, which is only ~35 of the 128 bins, so a pixel-resolution walk
-    // asks for ten samples between every pair of them — and linear
-    // interpolation across ten pixels is a visible crease at each bin centre.
-    float dwellRaw (float inDb) const noexcept;
+    // 0..1 heat for an input level. The histogram's own answer plus the
+    // whisper — everything else about how that looks lives in DwellGlow, so
+    // this view and the de-esser's cannot end up with two different glows.
+    float heatAt (float inDb) const noexcept;
 
-    // 0..1 intensity for an input level: dwellRaw, scaled by the running
-    // maximum, floored, contrast-shaped, plus the whisper. Zero everywhere when
-    // nothing has been published, which is what makes an empty histogram paint
-    // as a plain cold curve instead of crashing.
-    float dwellIntensity (float inDb) const noexcept;
-
-    static juce::Colour dwellColour (float intensity);
-
-    // The heat, as a dense soft field: one pass over the plot's PIXEL COLUMNS,
-    // compositing a soft perpendicular falloff around the curve straight into
-    // an ARGB image, which is then drawn once. See the note above the
-    // definition for why this is a per-pixel field rather than strokes.
+    // Fills the glow's columns along the curve and renders it.
     void renderGlow (juce::Graphics& g, juce::Rectangle<float> plot, float a);
 
     // Output dB for an input dB, INCLUDING makeup — the curve as heard.
@@ -245,35 +201,14 @@ private:
     //
     // The curve is kept as POINTS as well as a path: the path draws the cold
     // diagram in one stroke, and the points are what the glow's per-pixel walk
-    // reads its y and its slope out of.
+    // reads its y out of.
     juce::Path curvePath_, fillPath_;
     std::vector<juce::Point<float>> curvePts_;
     std::vector<float>              curveInDb_;
 
-    // ---- the dwell glow's state -------------------------------------------
-    const echojay::dyn::DwellTap* dwellTap_ = nullptr;
-    bool  dwellActive_ = false;
-
-    // target_ is what the audio thread published; displayed_ eases toward it;
-    // smoothed_ is displayed_ blurred across bins, and is the only one paint
-    // reads. Three arrays rather than one because each layer of smoothing has
-    // to be able to run at its own rate: easing is per frame, blurring is per
-    // frame, and publishing is per 256 samples.
-    std::array<float, (std::size_t) kDwellBins> target_   {};
-    std::array<float, (std::size_t) kDwellBins> displayed_{};
-    std::array<float, (std::size_t) kDwellBins> smoothed_ {};
-
-    float  runMax_    = 0.0f;
-    double lastTickMs_ = 0.0;
-    bool   wasAlive_  = false;
-
-    // The glow is composited per pixel into this and drawn in one blit. Kept
-    // across frames — reallocating a plot-sized image sixty times a second is
-    // the one thing that would make a per-pixel field more expensive than the
-    // strokes it replaced. The two scratch vectors are the per-column intensity
-    // and curve-y, held for the same reason.
-    juce::Image        glowImage_;
-    std::vector<float> colE_, colY_;
+    // ---- the dwell glow ----------------------------------------------------
+    DwellGlow glow_;
+    double    lastTickMs_ = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TransferCurveView)
 };
