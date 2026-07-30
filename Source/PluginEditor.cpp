@@ -1772,7 +1772,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // popup list would be a second implementation to keep honest.
     chainOpenBtn.onClick   = [this]
     {
-        if (processorRef.chatSidebarCollapsed) { processorRef.chatSidebarCollapsed = false; }
+        // FORCE-EXPAND SURVIVES the collapse control moving to the header.
+        // Open puts the chains list in the sidebar, so it has to be showing;
+        // the header control is now the general way back, and this stays the
+        // specific one for the button whose whole purpose needs the panel.
+        // The flag is persisted, so a change made here is marked dirty like
+        // any other, exactly as the header control does.
+        if (processorRef.chatSidebarCollapsed)
+        {
+            processorRef.chatSidebarCollapsed = false;
+            processorRef.markStateDirty();
+        }
         setChainSidebarMode(true);
     };
 
@@ -3089,6 +3099,11 @@ void EchoJayEditor::publishProjectName()
 
 EchoJayEditor::ColumnLayout EchoJayEditor::computeColumns(int width) const
 {
+    return computeColumns(width, processorRef.chatSidebarCollapsed);
+}
+
+EchoJayEditor::ColumnLayout EchoJayEditor::computeColumns(int width, bool collapsed) const
+{
     ColumnLayout c;
     if (compactMode || currentTab == Tab::Chat)
     {
@@ -3112,7 +3127,7 @@ EchoJayEditor::ColumnLayout EchoJayEditor::computeColumns(int width) const
     // Chain branch below loses its `collapsed ? 0 :` term, and four
     // predicates lose their `currentTab == Tab::Chain &&` guard, rather than
     // a fifth surface gaining one.
-    else if (processorRef.chatSidebarCollapsed)
+    else if (collapsed)
     {
         c.chatW = 0;
         c.mW = width;
@@ -3440,6 +3455,37 @@ EchoJayEditor::AccountLayout EchoJayEditor::accountLayout(int tierLevel, bool tw
     if (tierLevel < 2) { y += 12; m.buttonYRel = y; y += 28; }
     m.cardH = y + 12;
     return m;
+}
+
+/**
+    Whether the header's show/hide control for the assistant panel is on
+    screen. ASKED OF computeColumns, with the collapse forced OFF, so it
+    answers the shape question ("does this surface have a sidebar AND a main
+    column beside it") rather than the current-state question.
+
+    It cannot use assistantSidebarVisible(): that reports whether a sidebar is
+    showing RIGHT NOW, which is false precisely when collapsed, so the control
+    would vanish exactly when it is the only way back.
+
+    Two terms, and between them they rule out every surface the control has no
+    business on, without naming a single tab:
+
+      chatW > 0   excludes Settings and Dashboard, which get no sidebar, and
+                  visual-only mode.
+      mW > 0      excludes the Chat tab, where the sidebar IS the content and
+                  the full width, and compact mode for the same reason. There
+                  is nothing to collapse when there is nothing beside it.
+*/
+bool EchoJayEditor::chatCollapseControlVisible() const
+{
+    // The plugin-review overlay is a FULL-SCREEN modal, so header chrome must
+    // not sit on top of it. Tested here rather than in applyReviewModalState,
+    // so this predicate is the single author of whether the control shows.
+    if (currentScreen != Screen::Main || compactMode || visualOnlyMode
+        || reviewOverlay.visibleState)
+        return false;
+    const auto shape = computeColumns(getWidth(), false);
+    return shape.chatW > 0 && shape.mW > 0;
 }
 
 bool EchoJayEditor::assistantSidebarVisible() const
@@ -3867,7 +3913,12 @@ void EchoJayEditor::applyReviewModalState()
     chainListPanel.setVisible(onChain && !modal);
     // Chain header chrome.
     const bool chrome = onChain && !modal && !compactMode && !visualOnlyMode;
-    chatCollapseBtn.setVisible(chrome);
+    // chatCollapseBtn is NOT set here any more. It left the Chain header for
+    // the main header, and its visibility has exactly one author,
+    // chatCollapseControlVisible(), which now carries the modal test itself.
+    // Setting it here as well would be a second authority for one control,
+    // and this method is the documented SECOND authority that has caught the
+    // chain chrome out before.
     chainSlotCountLabel.setVisible(false);   // removed from the header, see resized()
     // Save / Save As / Open ride the same chrome flag, but their bounds also
     // depend on window width, so this CONSUMES the rect resized() stored
@@ -13079,35 +13130,34 @@ void EchoJayEditor::resized()
         dashView_.setBounds(0, 0, dashW, dashH);
     }
 
-    // ---- sidebar collapse chevron: bounds AND visibility, UNCONDITIONAL ----
+    // ---- assistant show/hide: ONE control, in the main header -----------
     //
-    // It used to live inside `if (comingSoonTab)`, which was safe only
-    // because it was Chain-only. Now that the collapse is global the button
-    // cannot be authored inside a tab test: a component whose bounds and
-    // visibility are both written under `if (currentTab == X)` keeps
-    // visible=true at tab X's coordinates on every other tab, which is the
-    // Chain-header-over-Compare bug exactly. The surface test lives INSIDE
-    // the single visibility expression, so this always evaluates both ways.
+    // The flag is global processor state, so there is exactly one control for
+    // it. It used to be a chevron in the Chain tab's header strip, which made
+    // the collapse a ONE-WAY DOOR everywhere else: collapse it on Link and
+    // the only way back was to visit Chain.
     //
-    // WHERE IT SHOWS, and why not everywhere. The rule is one position: the
-    // top-right of the MAIN column, which is where Chain has always put it
-    // and which works collapsed (mW is the full width) and expanded (mW
-    // stops at the sidebar). That band is free on Chain, whose header strip
-    // hosts it, and on Link, whose title row is left-aligned text. It is NOT
-    // free on Meters, Visualisation or Compare, where panel chrome is drawn
-    // to the top-right corner of the content area, so a chevron there would
-    // sit on top of a panel border. Those surfaces still OBEY the collapse,
-    // because the flag is global; they just do not carry the control, and
-    // giving them one means changing their layout, which is not this pass.
+    // It cannot live inside the sidebar on any tab, because a collapsed
+    // sidebar is zero width and has nowhere to put it. It is not a third
+    // ICON beside the two in the header either: both of those are already
+    // window-size controls, and the compact one is literally two arrows
+    // pointing inward, which is the exact visual language a collapse icon
+    // would use. A LABEL says which of the two it is.
+    //
+    // The text says what pressing it WILL DO, not what the state is, which is
+    // the same rule the chain row menu follows for Favourite / Unfavourite.
+    //
+    // Right-anchored to the left of the two painted icons, which occupy
+    // getWidth()-54 to getWidth(). Bounds and visibility are authored here
+    // unconditionally, with the surface test inside the visibility
+    // expression.
     {
-        const bool hostsChevron = (currentTab == Tab::Chain || currentTab == Tab::Link)
-                               && currentScreen == Screen::Main
-                               && !compactMode && !visualOnlyMode
-                               && !reviewOverlay.visibleState;
-        chatCollapseBtn.setButtonText(processorRef.chatSidebarCollapsed ? "<" : ">");
-        chatCollapseBtn.setBounds(mW - kChatToggleW - 8, topH + 5, kChatToggleW, 22);
-        chatCollapseBtn.setVisible(hostsChevron);
-        if (hostsChevron) chatCollapseBtn.toFront(false);
+        const int iconsW = 58;                 // the two icons plus their gap
+        const int btnW = 68, btnH = 20;
+        chatCollapseBtn.setButtonText(processorRef.chatSidebarCollapsed ? "Show AI" : "Hide AI");
+        chatCollapseBtn.setBounds(b.getWidth() - iconsW - btnW, (kTopBarH - btnH) / 2,
+                                  btnW, btnH);
+        chatCollapseBtn.setVisible(chatCollapseControlVisible());
     }
 
     // Link tab: the scrollable row list is the one child component; the
@@ -13166,7 +13216,6 @@ void EchoJayEditor::resized()
     }
     else
     {
-        chatCollapseBtn.setVisible(false);
         chainSlotCountLabel.setVisible(false);
     }
 
@@ -13190,7 +13239,11 @@ void EchoJayEditor::resized()
     // a second height.
     {
         const int btnY  = topH + 5, btnH = 22;
-        const int rightEdge = mW - kChatToggleW - 8 - 10;   // left of the AI toggle
+        // The collapse chevron used to sit at the right end of this strip and
+        // this sum reserved its width. It has moved to the main header, so
+        // the reservation goes with it rather than being left as a gap: the
+        // buttons now run to the strip's own 8px margin.
+        const int rightEdge = mW - 8;
         const int wOpen = 54, wSaveAs = 66, wSave = 46, gap = 6;
         const int xOpen   = rightEdge - wOpen;
         const int xSaveAs = xOpen   - gap - wSaveAs;
@@ -14127,8 +14180,8 @@ void EchoJayEditor::resized()
 
     // ---- FINAL overlay re-front (24 Jul 2026 z-order fix) ----
     // The re-fronts at the TOP of resized() run before the per-tab layout
-    // below them, which itself calls toFront on tab chrome (chatCollapseBtn,
-    // chatScroll/chatInput/chatSendBtn on the Chain tab, the Compare click
+    // below them, which itself calls toFront on tab chrome
+    // (chatScroll/chatInput/chatSendBtn on the Chain tab, the Compare click
     // catcher, ...). Anything fronted there landed ABOVE the overlays on every
     // layout pass — the "review overlay behind the chain panel" bug. Re-front
     // the overlay stack LAST so it beats all of it, same relative order as the

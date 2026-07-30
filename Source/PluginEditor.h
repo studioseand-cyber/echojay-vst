@@ -552,7 +552,21 @@ private:
     // input row short of the painted column edge — the third input-row
     // alignment bug, and the last: there is now exactly one formula.
     struct ColumnLayout { int chatW = 0, mW = 0; };
+    /** THE single width authority. Reads the live collapse flag. */
     ColumnLayout computeColumns(int width) const;
+    /** The same arithmetic with the collapse stated explicitly, so a caller
+        can ask the shape question "would this surface have a sidebar if it
+        were not collapsed" without a second list of tabs to maintain. The
+        one-argument form forwards to this with the live flag, so there is
+        still only ONE implementation of the widths. */
+    ColumnLayout computeColumns(int width, bool collapsed) const;
+
+    /** Whether the header's collapse control is on screen. DERIVED FROM
+        computeColumns, never from a tab list: a hand-maintained list is the
+        duplicate-authority shape that produced the three stale width copies
+        f43a698 had to clean up. See the definition for what the two terms
+        rule out. */
+    bool chatCollapseControlVisible() const;
 
     // CHAT tab empty-state centred layout (Claude/ChatGPT pattern): when the
     // ACTIVE chat has no messages, the input renders centred in the message
@@ -2141,11 +2155,11 @@ private:
     // member (chainChatCollapsed_) and silently reopened on every Link window
     // switch, which was a live bug rather than a design smell.
     //
-    // Width of the sidebar collapse chevron. ONE constant, so the rack
-    // strip's Save / Save As / Open cursor and the button itself cannot
-    // disagree about how much space it takes.
-    static constexpr int kChatToggleW = 28;
-    juce::TextButton chatCollapseBtn { ">" };
+    // The assistant show/hide control. ONE button for a global flag, living
+    // in the main header rather than in any tab's chrome: a collapsed sidebar
+    // is zero width, so no per-tab placement can host the control that
+    // reverses it. kChatToggleW went with the chevron it sized.
+    juce::TextButton chatCollapseBtn { "Hide AI" };
     // "n/15" slots-used counter — sits left of the Aa button in the AI
     // ASSISTANT header (replaces the usage counter on this tab).
     juce::Label chainSlotCountLabel;
