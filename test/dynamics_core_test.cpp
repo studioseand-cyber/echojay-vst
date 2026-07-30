@@ -454,6 +454,612 @@ int main()
                "an over-long request is CLAMPED, never reallocated on the audio thread");
     }
 
+    std::printf ("== lookahead: ZERO delay is a true pass-through ==\n");
+    {
+        // The bug this pins: reading the ring before writing it made a delay of 0
+        // come out as a delay of the whole BUFFER, while the device reported zero
+        // latency to the host. One track a few milliseconds late, only when its
+        // lookahead was dialled to nothing, and nothing anywhere to see.
+        LookaheadDelay d;
+        d.prepare (kSr, 10.0, 2);
+        d.setDelayMs (0.0);
+        check (d.delaySamples() == 0, "0 ms is 0 samples");
+
+        int impulseOutAt = -1;
+        for (int i = 0; i < 2000 && impulseOutAt < 0; ++i)
+        {
+            float frame[2] = { i == 0 ? 1.0f : 0.0f, 0.0f };
+            d.process (frame, 2);
+            if (frame[0] > 0.5f) impulseOutAt = i;
+        }
+        check (impulseOutAt == 0, "and the impulse comes straight back out (sample "
+                                  + std::to_string (impulseOutAt) + ")");
+    }
+
+    std::printf ("== lookahead in the core: the detector runs AHEAD of the audio ==\n");
+    {
+        // What lookahead buys, measured: a transient's front is already reduced by
+        // the time it reaches the output, so the overshoot past the threshold is
+        // smaller than with the same attack and no lookahead.
+        auto overshoot = [] (double lookMs)
+        {
+            DynamicsCore c;
+            c.setMaxLookaheadMs (10.0);
+            c.prepare (kSr);
+            c.setMode (DynamicsMode::Limit);
+            c.setDetectorMode (DetectorMode::Peak);
+            c.setThresholdDb (-12.0f);
+            c.setKneeDb (0.0f);
+            c.setAttackMs (2.0);
+            c.setReleaseMs (50.0);
+            c.setLookaheadMs (lookMs);
+            c.reset();
+
+            std::vector<float> l (2048, 0.0f), r (2048, 0.0f);
+
+            // Silence, then a sudden full-scale burst: the worst case for an
+            // attack, and the reason lookahead exists.
+            for (int i = 1024; i < 2048; ++i) l[(size_t) i] = r[(size_t) i] = 1.0f;
+
+            c.process (l.data(), r.data(), 2048);
+
+            float peak = 0.0f;
+            for (float v : l) peak = std::max (peak, std::fabs (v));
+            return dyn::gainToDb (peak);
+        };
+
+        const float noLook   = overshoot (0.0);
+        const float withLook = overshoot (5.0);
+
+        check (noLook > -8.0f,
+               "with no lookahead the burst overshoots the -12 dB ceiling badly ("
+               + std::to_string (noLook) + " dBFS)");
+        check (withLook < noLook - 3.0f,
+               "5 ms of lookahead cuts that overshoot right down ("
+               + std::to_string (withLook) + " dBFS)");
+
+        // And the latency is reported, in the units the host needs.
+        DynamicsCore c;
+        c.setMaxLookaheadMs (10.0);
+        c.prepare (kSr);
+        c.setLookaheadMs (5.0);
+        check (c.lookaheadSamples() == (int) std::lround (0.005 * kSr),
+               "5 ms at 48k is " + std::to_string (c.lookaheadSamples()) + " samples");
+        c.setLookaheadMs (0.0);
+        check (c.lookaheadSamples() == 0, "and 0 ms is 0 samples of reported latency");
+    }
+
+    // -----------------------------------------------------------------------
+    // THE CHARACTER MODES. Each one is a claim about how the device behaves, and
+    // the claim is in the advertisement the model reads — "punch is a very fast
+    // attack", "glue is slow and gentle". A mode whose timing does not match its
+    // description is worse than no mode at all: the model dials it confidently
+    // and gets something else.
+    // -----------------------------------------------------------------------
+    std::printf ("== character: each mode reshapes the dialled times as advertised ==\n");
+    {
+        auto timesFor = [] (CharacterMode m)
+        {
+            DynamicsCore c;
+            c.prepare (kSr);
+            c.setCharacter (m);
+            c.setAttackMs (10.0);
+            c.setReleaseMs (100.0);
+            return std::pair<double, double> { c.effectiveAttackMs(), c.effectiveReleaseMs() };
+        };
+
+        const auto clean  = timesFor (CharacterMode::Clean);
+        const auto glue   = timesFor (CharacterMode::Glue);
+        const auto punch  = timesFor (CharacterMode::Punch);
+        const auto smooth = timesFor (CharacterMode::Smooth);
+
+        check (near (clean.first, 10.0, 1e-9) && near (clean.second, 100.0, 1e-9),
+               "clean runs the dialled times UNCHANGED - it is the reference");
+
+        // The ordering IS the specification: punch is the fastest attack of the
+        // four, smooth the slowest, and glue sits between clean and smooth.
+        check (punch.first < clean.first,  "punch attacks faster than clean");
+        check (clean.first < glue.first,   "glue attacks slower than clean");
+        check (glue.first  < smooth.first, "smooth is the slowest attack of the four");
+
+        check (punch.second < clean.second, "punch releases faster than clean");
+        check (glue.second  > clean.second, "glue releases slower than clean");
+        check (glue.second  > 2.0 * clean.second,
+               "and much slower - a bus compressor lets go over a phrase");
+
+        check (smooth.second > clean.second, "smooth releases slower than clean too");
+        check (smooth.second < glue.second,
+               "but its slowness is programme-dependent rather than dialled long");
+
+        // The dialled values must survive the mode entirely, or a mode change is
+        // a destructive edit of the user's knobs.
+        DynamicsCore c;
+        c.prepare (kSr);
+        c.setAttackMs (7.5); c.setReleaseMs (250.0); c.setKneeDb (3.0);
+        c.setCharacter (CharacterMode::Punch);
+        check (near (c.getAttackMs(), 7.5, 1e-9)
+            && near (c.getReleaseMs(), 250.0, 1e-9)
+            && near (c.getKneeDb(), 3.0, 1e-6),
+               "the DIALLED values round-trip whatever the mode is");
+        c.setCharacter (CharacterMode::Clean);
+        check (near (c.effectiveAttackMs(), 7.5, 1e-9),
+               "and going back to clean restores the dialled attack exactly");
+    }
+
+    std::printf ("== character: the timing difference is MEASURABLE, not just stored ==\n");
+    {
+        // The scales could be plumbed into a getter and never reach the envelope
+        // follower. So this measures the gain reduction the core actually applies
+        // 2 ms into a step, which is the thing a listener hears.
+        auto grAfter = [] (CharacterMode m, double seconds)
+        {
+            DynamicsCore c;
+            c.prepare (kSr);
+            c.setCharacter (m);
+            c.setMode (DynamicsMode::Compress);
+            c.setDetectorMode (DetectorMode::Peak);
+            c.setThresholdDb (-20.0f);
+            c.setRatio (4.0f);
+            c.setKneeDb (0.0f);
+            c.setAttackMs (10.0);
+            c.setReleaseMs (100.0);
+            c.reset();
+
+            const float amp = dyn::dbToGain (0.0f);
+            const int   n   = (int) (seconds * kSr);
+            for (int i = 0; i < n; ++i) c.gainForSidechain (amp, amp);
+            return c.gainReductionDb();
+        };
+
+        const float punchGr = grAfter (CharacterMode::Punch,  0.002);
+        const float cleanGr = grAfter (CharacterMode::Clean,  0.002);
+        const float smoothGr = grAfter (CharacterMode::Smooth, 0.002);
+
+        check (punchGr < cleanGr - 1.0f,
+               "2 ms in, punch has already pulled further down (" + std::to_string (punchGr)
+               + " vs " + std::to_string (cleanGr) + " dB)");
+        check (smoothGr > cleanGr + 0.5f,
+               "and smooth is still behind clean (" + std::to_string (smoothGr) + " dB)");
+
+        // Given time, every mode arrives at the same static curve: character is
+        // the JOURNEY, not the destination. A mode that changed the settled
+        // reduction would be silently changing the ratio.
+        check (near (grAfter (CharacterMode::Punch, 2.0), -15.0, 0.3)
+            && near (grAfter (CharacterMode::Glue,  2.0), -15.0, 0.3),
+               "all modes settle on the SAME -15 dB the curve asks for");
+    }
+
+    std::printf ("== character: the knee follows the mode ==\n");
+    {
+        DynamicsCore c;
+        c.prepare (kSr);
+        c.setKneeDb (6.0f);
+
+        c.setCharacter (CharacterMode::Clean);
+        check (near (c.effectiveKneeDb(), 6.0, 1e-6), "clean runs the dialled knee");
+
+        c.setCharacter (CharacterMode::Punch);
+        check (c.effectiveKneeDb() < 3.0f, "punch hardens the corner");
+
+        c.setCharacter (CharacterMode::Glue);
+        check (c.effectiveKneeDb() > 6.0f, "glue softens it");
+
+        c.setCharacter (CharacterMode::Smooth);
+        check (c.effectiveKneeDb() > 12.0f, "and smooth softens it most");
+
+        // A hard 0 dB knee in glue must still be gentle, which is why the spec
+        // carries an ADD and not only a scale.
+        c.setKneeDb (0.0f);
+        check (c.effectiveKneeDb() > 0.0f,
+               "a 0 dB knee in glue is still soft (add, not just scale)");
+        c.setCharacter (CharacterMode::Clean);
+        check (near (c.effectiveKneeDb(), 0.0, 1e-6), "clean leaves a hard knee hard");
+    }
+
+    std::printf ("== character: the colour is nonlinear, and only while working ==\n");
+    {
+        // Nonlinearity measured as "does the same shaper have the same gain at two
+        // levels" — which is exactly what generating harmonics means, and needs no
+        // FFT to state.
+        auto gainAt = [] (float x, float blend)
+        { return characterShape (x, blend) / x; };
+
+        check (near (gainAt (0.9f, 0.0f), gainAt (0.2f, 0.0f), 1e-6),
+               "blend 0 is perfectly linear (clean is identity at every level)");
+
+        check (gainAt (0.9f, 0.2f) < gainAt (0.2f, 0.2f) - 0.01f,
+               "with drive in, a loud sample is attenuated more than a quiet one "
+               "- that difference IS the harmonic content");
+
+        check (near (characterShape (0.01f, 0.2f), 0.01, 1e-4),
+               "and small signals pass at unity, so a mode is not a level change");
+
+        // The device-level contract: idle means identity, whatever the mode.
+        DynamicsCore c;
+        c.prepare (kSr);
+        c.setCharacter (CharacterMode::Punch);
+        c.setMode (DynamicsMode::Compress);
+        c.setThresholdDb (0.0f);
+        c.setRatio (4.0f);
+        c.setKneeDb (0.0f);
+        c.reset();
+
+        std::vector<float> l (512, 0.1f), r (512, 0.1f);
+        for (int b = 0; b < 20; ++b)
+        {
+            for (int i = 0; i < 512; ++i) { l[(size_t) i] = 0.1f; r[(size_t) i] = 0.1f; }
+            c.process (l.data(), r.data(), 512);
+        }
+        check (near (l[511], 0.1, 1e-5),
+               "punch under its threshold is bit-transparent - no reduction, no colour");
+
+        // And that it DOES colour once it is reducing.
+        c.setThresholdDb (-30.0f);
+        c.setRatio (10.0f);
+        c.setAttackMs (0.5); c.setReleaseMs (20.0);
+        c.reset();
+        for (int b = 0; b < 60; ++b)
+        {
+            for (int i = 0; i < 512; ++i)
+            {
+                const float v = (float) std::sin (2.0 * dyn::kPi * 100.0 * (b * 512 + i) / kSr);
+                l[(size_t) i] = 0.8f * v; r[(size_t) i] = 0.8f * v;
+            }
+            c.process (l.data(), r.data(), 512);
+        }
+        check (c.characterBlend() > 0.05f,
+               "punch pulling hard has its colour fully in (blend "
+               + std::to_string (c.characterBlend()) + ")");
+
+        DynamicsCore clean;
+        clean.prepare (kSr);
+        clean.setCharacter (CharacterMode::Clean);
+        clean.setMode (DynamicsMode::Compress);
+        clean.setThresholdDb (-30.0f);
+        clean.setRatio (10.0f);
+        clean.reset();
+        for (int i = 0; i < (int) kSr; ++i) clean.gainForSidechain (0.8f, 0.8f);
+        check (clean.characterBlend() == 0.0f,
+               "and clean has none however hard it is pulling");
+    }
+
+    std::printf ("== auto release: recovery slows down as the reduction deepens ==\n");
+    {
+        // Time for the reduction to come back within 1 dB of unity, from a step.
+        auto recoveryMs = [] (bool autoRel, float inDb)
+        {
+            DynamicsCore c;
+            c.prepare (kSr);
+            c.setMode (DynamicsMode::Compress);
+            c.setDetectorMode (DetectorMode::Peak);
+            c.setThresholdDb (-30.0f);
+            c.setRatio (10.0f);
+            c.setKneeDb (0.0f);
+            c.setAttackMs (1.0);
+            c.setReleaseMs (100.0);
+            c.setAutoRelease (autoRel);
+            c.reset();
+
+            const float amp = dyn::dbToGain (inDb);
+            for (int i = 0; i < (int) (0.5 * kSr); ++i) c.gainForSidechain (amp, amp);
+
+            int n = 0;
+            const int limit = (int) (10.0 * kSr);
+            while (c.gainReductionDb() < -1.0f && n < limit)
+            { c.gainForSidechain (0.0f, 0.0f); ++n; }
+
+            return 1000.0 * (double) n / kSr;
+        };
+
+        const double offDeep = recoveryMs (false, 0.0f);
+        const double onDeep  = recoveryMs (true,  0.0f);
+        const double onShallow = recoveryMs (true, -27.0f);
+
+        check (onDeep > offDeep * 1.5,
+               "auto release recovers far slower from a deep reduction ("
+               + std::to_string (onDeep) + " vs " + std::to_string (offDeep) + " ms)");
+        check (onShallow < onDeep,
+               "and faster from a shallow one - that dependence is the whole point ("
+               + std::to_string (onShallow) + " ms)");
+
+        // smooth is programme-dependent BY DEFINITION, so it must not need the
+        // switch — and turning the switch off must not take it away.
+        DynamicsCore s;
+        s.prepare (kSr);
+        s.setCharacter (CharacterMode::Smooth);
+        check (s.isProgramRelease(), "smooth is programme-dependent without auto_release");
+        s.setAutoRelease (false);
+        check (s.isProgramRelease(), "and stays so when auto_release is switched off");
+
+        DynamicsCore v;
+        v.prepare (kSr);
+        v.setCharacter (CharacterMode::Clean);
+        check (! v.isProgramRelease(), "clean is not, unless asked");
+        v.setAutoRelease (true);
+        check (v.isProgramRelease(), "and is when asked");
+    }
+
+    // -----------------------------------------------------------------------
+    // THE SIDECHAIN FILTER. The failure this catches is the one that matters:
+    // a filter wired into the AUDIO instead of the detector. That version
+    // measures correctly, compresses correctly, and quietly high-passes the
+    // track — which sounds like a mix decision rather than like a bug.
+    // -----------------------------------------------------------------------
+    std::printf ("== sidechain HPF: the detector goes deaf to the bass ==\n");
+    {
+        auto grForTone = [] (double hz, double hpfHz)
+        {
+            DynamicsCore c;
+            c.prepare (kSr);
+            c.setMode (DynamicsMode::Compress);
+            c.setDetectorMode (DetectorMode::Peak);
+            c.setThresholdDb (-20.0f);
+            c.setRatio (4.0f);
+            c.setKneeDb (0.0f);
+            c.setAttackMs (1.0);
+            c.setReleaseMs (50.0);
+            c.setSidechainHpfHz (hpfHz);
+            c.reset();
+
+            float worst = 0.0f;
+            const int n = (int) (1.0 * kSr);
+            for (int i = 0; i < n; ++i)
+            {
+                const float x = (float) std::sin (2.0 * dyn::kPi * hz * i / kSr);
+                c.gainForSidechain (x, x);
+                if (i > (int) (0.5 * kSr)) worst = std::min (worst, c.gainReductionDb());
+            }
+            return worst;
+        };
+
+        const float bassOpen = grForTone (50.0, 0.0);
+        const float bassHpf  = grForTone (50.0, 250.0);
+        const float midHpf   = grForTone (2000.0, 250.0);
+
+        check (bassOpen < -10.0f,
+               "with the sidechain open, a 50 Hz tone at 0 dBFS is compressed hard ("
+               + std::to_string (bassOpen) + " dB)");
+        check (bassHpf > bassOpen + 8.0f,
+               "high-passing the sidechain at 250 Hz drops that reduction sharply ("
+               + std::to_string (bassHpf) + " dB)");
+        check (near (midHpf, bassOpen, 1.0),
+               "while a 2 kHz tone is compressed exactly as before ("
+               + std::to_string (midHpf) + " dB)");
+
+        // 0 IS OFF, as advertised - not a 0 Hz filter and not a clamped 10 Hz one.
+        check (near (grForTone (50.0, 0.0), grForTone (50.0, 5.0), 0.01),
+               "0 and any value under 20 Hz both mean OFF");
+    }
+
+    std::printf ("== sidechain LPF: triggering can ignore the top end ==\n");
+    {
+        auto grForTone = [] (double hz, double lpfHz)
+        {
+            DynamicsCore c;
+            c.prepare (kSr);
+            c.setMode (DynamicsMode::Compress);
+            c.setDetectorMode (DetectorMode::Peak);
+            c.setThresholdDb (-20.0f);
+            c.setRatio (4.0f);
+            c.setKneeDb (0.0f);
+            c.setAttackMs (1.0);
+            c.setReleaseMs (50.0);
+            c.setSidechainLpfHz (lpfHz);
+            c.reset();
+
+            float worst = 0.0f;
+            const int n = (int) (1.0 * kSr);
+            for (int i = 0; i < n; ++i)
+            {
+                const float x = (float) std::sin (2.0 * dyn::kPi * hz * i / kSr);
+                c.gainForSidechain (x, x);
+                if (i > (int) (0.5 * kSr)) worst = std::min (worst, c.gainReductionDb());
+            }
+            return worst;
+        };
+
+        const float openTop = grForTone (8000.0, 20000.0);
+        const float lpfTop  = grForTone (8000.0, 200.0);
+        const float lpfLow  = grForTone (100.0,  200.0);
+
+        check (openTop < -10.0f, "wide open, an 8 kHz tone triggers fully");
+        check (lpfTop > openTop + 8.0f,
+               "a 200 Hz sidechain low-pass makes the detector nearly deaf to it ("
+               + std::to_string (lpfTop) + " dB)");
+        check (lpfLow < -8.0f, "while a 100 Hz tone still triggers through it ("
+               + std::to_string (lpfLow) + " dB)");
+    }
+
+    std::printf ("== the sidechain filter NEVER touches the audio ==\n");
+    {
+        // A 50 Hz tone, an aggressive sidechain high-pass, and a threshold the
+        // signal cannot reach once the detector is filtered. The output must come
+        // back untouched: no reduction AND no filtering.
+        DynamicsCore c;
+        c.prepare (kSr);
+        c.setMode (DynamicsMode::Compress);
+        c.setThresholdDb (-6.0f);
+        c.setRatio (10.0f);
+        c.setKneeDb (0.0f);
+        c.setSidechainHpfHz (500.0);
+        c.reset();
+
+        std::vector<float> l (512), r (512), want (512);
+        double worst = 0.0;
+        for (int b = 0; b < 20; ++b)
+        {
+            for (int i = 0; i < 512; ++i)
+            {
+                const float v = 0.5f * (float) std::sin (2.0 * dyn::kPi * 50.0
+                                                         * (b * 512 + i) / kSr);
+                l[(size_t) i] = r[(size_t) i] = want[(size_t) i] = v;
+            }
+            c.process (l.data(), r.data(), 512);
+            for (int i = 0; i < 512; ++i)
+                worst = std::max (worst, std::fabs ((double) l[(size_t) i]
+                                                  - want[(size_t) i]));
+        }
+        check (worst < 1.0e-6,
+               "the 50 Hz output is bit-identical to its input (worst dev "
+               + std::to_string (worst) + ")");
+    }
+
+    // -----------------------------------------------------------------------
+    std::printf ("== detector: peak and RMS disagree on a TRANSIENT ==\n");
+    {
+        // A short spike on a quiet bed. Peak sees the spike's full height; RMS
+        // averages it away, which is the entire difference between the two and
+        // the reason both are published.
+        auto grForSpike = [] (DetectorMode m)
+        {
+            DynamicsCore c;
+            c.prepare (kSr);
+            c.setDetectorMode (m);
+            c.setRmsWindowMs (10.0);
+            c.setMode (DynamicsMode::Compress);
+            c.setThresholdDb (-20.0f);
+            c.setRatio (4.0f);
+            c.setKneeDb (0.0f);
+            c.setAttackMs (0.1);
+            c.setReleaseMs (100.0);
+            c.reset();
+
+            float worst = 0.0f;
+            const int n = (int) (0.2 * kSr);
+            const int spikeStart = (int) (0.1 * kSr);
+            const int spikeLen   = (int) (0.0005 * kSr);      // 0.5 ms
+
+            for (int i = 0; i < n; ++i)
+            {
+                const bool  inSpike = i >= spikeStart && i < spikeStart + spikeLen;
+                const float x = inSpike ? 1.0f : dyn::dbToGain (-40.0f);
+                c.gainForSidechain (x, x);
+                worst = std::min (worst, c.gainReductionDb());
+            }
+            return worst;
+        };
+
+        const float peakGr = grForSpike (DetectorMode::Peak);
+        const float rmsGr  = grForSpike (DetectorMode::Rms);
+
+        check (peakGr < -8.0f, "peak catches the 0.5 ms spike ("
+               + std::to_string (peakGr) + " dB)");
+        check (rmsGr > peakGr + 4.0f,
+               "RMS averages most of it away ("+ std::to_string (rmsGr) + " dB) - a "
+               "compressor rides loudness, a limiter chases transients");
+    }
+
+    std::printf ("== detector: TRUE PEAK sees between the samples ==\n");
+    {
+        // A tone at a quarter of the sample rate, phased so no sample lands on a
+        // crest: the sample peak reads cos(45 deg) = -3 dB, and the real waveform
+        // reaches full scale between them. This is exactly the case that makes a
+        // sample-peak limiter hand a clipped file to an encoder.
+        auto peakOf = [] (bool truePeak)
+        {
+            Detector d;
+            d.prepare (kSr);
+            d.setMode (DetectorMode::Peak);
+            d.setTruePeak (truePeak);
+            d.reset();
+
+            float worst = 0.0f;
+            for (int i = 0; i < 2000; ++i)
+            {
+                const float x = (float) std::sin (2.0 * dyn::kPi * 0.25 * i
+                                                  + dyn::kPi * 0.25);
+                if (i > 8) worst = std::max (worst, d.process (x, x));
+                else d.process (x, x);
+            }
+            return worst;
+        };
+
+        const float sample = peakOf (false);
+        const float truePk = peakOf (true);
+
+        check (near (sample, 0.7071, 0.01),
+               "sample peak reads 0.707, 3 dB low (" + std::to_string (sample) + ")");
+        check (truePk > sample + 0.15f,
+               "true peak recovers most of the missing 3 dB ("
+               + std::to_string (truePk) + ")");
+        check (truePk <= 1.02f, "and does not overshoot full scale");
+    }
+
+    // -----------------------------------------------------------------------
+    std::printf ("== stereo link: 100%% is one gain, 0%% is two ==\n");
+    {
+        // Loud left, quiet right, hard compression. Linked, the L/R ratio comes
+        // out unchanged; unlinked, the loud side is pulled down and the ratio
+        // closes up — which IS the image moving, and is the point of the control.
+        auto ratioOut = [] (float link)
+        {
+            DynamicsCore c;
+            c.prepare (kSr);
+            c.setMode (DynamicsMode::Compress);
+            c.setThresholdDb (-30.0f);
+            c.setRatio (10.0f);
+            c.setKneeDb (0.0f);
+            c.setAttackMs (1.0);
+            c.setReleaseMs (50.0);
+            c.setStereoLink (link);
+            c.reset();
+
+            std::vector<float> l (512), r (512);
+            for (int b = 0; b < 60; ++b)
+            {
+                for (int i = 0; i < 512; ++i) { l[(size_t) i] = 0.9f; r[(size_t) i] = 0.09f; }
+                c.process (l.data(), r.data(), 512);
+            }
+            return (double) r[511] / (double) l[511];
+        };
+
+        check (near (ratioOut (1.0f), 0.1, 1e-3),
+               "fully linked: the 20 dB difference survives (" + std::to_string (ratioOut (1.0f)) + ")");
+        check (ratioOut (0.0f) > 0.3,
+               "fully unlinked: the quiet side is left alone and the pair closes up ("
+               + std::to_string (ratioOut (0.0f)) + ")");
+        const double half = ratioOut (0.5f);
+        check (half > 0.1 + 1e-3 && half < ratioOut (0.0f),
+               "and 50% sits between the two (" + std::to_string (half) + ")");
+    }
+
+    // -----------------------------------------------------------------------
+    std::printf ("== duck: the gate's step, the other way up ==\n");
+    {
+        GainCurve g;
+        g.mode = DynamicsMode::Duck;
+        g.thresholdDb = -30.0f; g.rangeDb = 12.0f;
+
+        check (near (g.reductionDb (-50.0f), 0.0, 1e-5), "below threshold: untouched");
+        check (near (g.reductionDb (-30.0f), -12.0, 1e-4), "AT the threshold: ducked");
+        check (near (g.reductionDb (0.0f), -12.0, 1e-4), "and no deeper however far over");
+
+        // End to end, and against the gate: the same settings must produce
+        // OPPOSITE reductions, or the mode is not doing anything.
+        auto settled = [] (DynamicsMode m, float levelDb)
+        {
+            DynamicsCore c;
+            c.prepare (kSr);
+            c.setMode (m);
+            c.setDetectorMode (DetectorMode::Peak);
+            c.setThresholdDb (-30.0f);
+            c.setRangeDb (12.0f);
+            c.setHysteresisDb (0.0f);
+            c.setAttackMs (0.5); c.setReleaseMs (20.0); c.setHoldMs (0.0);
+            c.reset();
+            return settledGrDb (c, levelDb, 1.0);
+        };
+
+        check (near (settled (DynamicsMode::Duck, -10.0f), -12.0, 0.2),
+               "a loud signal DUCKS by the range");
+        check (near (settled (DynamicsMode::Duck, -50.0f), 0.0, 0.05),
+               "and a quiet one passes");
+        check (near (settled (DynamicsMode::Gate, -10.0f), 0.0, 0.05),
+               "the gate does the opposite with the same numbers: loud passes");
+        check (near (settled (DynamicsMode::Gate, -50.0f), -12.0, 0.2),
+               "and quiet is attenuated");
+    }
+
     // -----------------------------------------------------------------------
     std::printf ("== 4-band splitter: the four bands SUM BACK to the input ==\n");
     {
