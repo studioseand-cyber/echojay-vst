@@ -371,6 +371,290 @@ int main()
         }
     }
 
+    // =======================================================================
+    // THE TIME DEPTH PASS (DEVICE_DEPTH_PLAN.md, Time). The engines' own g++
+    // suites prove the DSP does what each mode claims; what is checked here is
+    // the DIALABILITY — by name and by index, clamped, round-tripping through
+    // state, and advertised so a model can learn the names in the first place.
+    // =======================================================================
+    std::printf ("== REVERB: the algorithm dials by NAME and by index ==\n");
+    {
+        auto proc = makeByName ("EchoJay Reverb");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* rev    = dynamic_cast<EedReverbProcessor*> (proc.get());
+        check (device != nullptr && rev != nullptr, "reverb constructs");
+
+        // Hall is the default because it is the NEUTRAL algorithm — the network as
+        // it shipped — so a session saved before this param existed restores the
+        // reverb it was mixed with rather than a new one.
+        check (near (device->getParamValue ("algorithm"),
+                     (double) (int) echojay::ReverbAlgorithm::Hall),
+               "a fresh reverb is on hall, the neutral algorithm");
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (paramsMove ({ { "algorithm", "plate" } }),
+                                                &applied, &skipped);
+        check (applied == 1 && skipped == 0, "algorithm = \"plate\" applied");
+        check (near (device->getParamValue ("algorithm"), 2.0), "landed on plate (index 2)");
+        check (s.contains ("plate"), "and reads back BY NAME: " + s);
+        check (rev->engine().getAlgorithm() == echojay::ReverbAlgorithm::Plate,
+               "the ENGINE is on plate, not just the param");
+
+        device->applyStructured (paramsMove ({ { "algorithm", "SPRING" } }));
+        check (near (device->getParamValue ("algorithm"), 3.0), "matching is case-insensitive");
+
+        device->applyStructured (paramsMove ({ { "algorithm", 4 } }));
+        check (near (device->getParamValue ("algorithm"), 4.0), "a numeric index works too");
+        check (rev->engine().getAlgorithm() == echojay::ReverbAlgorithm::Ambience,
+               "index 4 is ambience");
+
+        int a2 = 0, s2 = 0;
+        device->applyStructured (paramsMove ({ { "algorithm", "cathedral" } }), &a2, &s2);
+        check (s2 == 1, "an unknown algorithm is SKIPPED, not guessed at");
+        check (near (device->getParamValue ("algorithm"), 4.0),
+               "and leaves the algorithm where it was");
+
+        // Every one of the five, all the way to the engine.
+        bool allReach = true;
+        for (int i = 0; i < echojay::kNumReverbAlgorithms; ++i)
+        {
+            const auto want = echojay::reverbAlgorithmFromIndex (i);
+            device->applyStructured (paramsMove ({
+                { "algorithm", echojay::reverbAlgorithmName (want) } }));
+            allReach = allReach && rev->engine().getAlgorithm() == want
+                                && near (device->getParamValue ("algorithm"), (double) i);
+        }
+        check (allReach, "all five algorithms resolve by name and reach the engine");
+    }
+
+    std::printf ("== REVERB: diffusion and duck land exactly, and clamp ==\n");
+    {
+        auto proc = makeByName ("EchoJay Reverb");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        // The diffusion default is the UNITY point, for the same reason hall is the
+        // default algorithm: it is the density the network was designed with.
+        check (near (device->getParamValue ("diffusion"),
+                     (double) echojay::kReverbDiffusionUnityPct),
+               "diffusion defaults to its unity point");
+        check (near (device->getParamValue ("duck"), 0.0), "and duck defaults to off");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "diffusion", 35.0 }, { "duck", 60.0 } }),
+                                 &applied, &skipped);
+        check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
+        check (near (device->getParamValue ("diffusion"), 35.0), "diffusion EXACTLY 35");
+        check (near (device->getParamValue ("duck"), 60.0),      "duck EXACTLY 60");
+
+        device->applyStructured (paramsMove ({ { "diffusion", 900.0 }, { "duck", -20.0 } }));
+        check (near (device->getParamValue ("diffusion"), 100.0), "900 clamps to 100");
+        check (near (device->getParamValue ("duck"), 0.0),        "a negative duck clamps to 0");
+    }
+
+    std::printf ("== DELAY: the mode dials by NAME and by index ==\n");
+    {
+        auto proc = makeByName ("EchoJay Delay");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* del    = dynamic_cast<EedDelayProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("mode"), 0.0), "a fresh delay is digital");
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "tape" } }),
+                                                &applied, &skipped);
+        check (applied == 1 && skipped == 0, "mode = \"tape\" applied");
+        check (near (device->getParamValue ("mode"), 1.0), "landed on tape (index 1)");
+        check (s.contains ("tape"), "and reads back BY NAME: " + s);
+        check (del->engine().getMode() == echojay::DelayMode::Tape,
+               "the ENGINE is on tape, not just the param");
+
+        device->applyStructured (paramsMove ({ { "mode", "ANALOG" } }));
+        check (near (device->getParamValue ("mode"), 2.0), "matching is case-insensitive");
+
+        int a2 = 0, s2 = 0;
+        device->applyStructured (paramsMove ({ { "mode", "bucket" } }), &a2, &s2);
+        check (s2 == 1, "an unknown mode is SKIPPED, not guessed at");
+        check (near (device->getParamValue ("mode"), 2.0), "and leaves the mode where it was");
+
+        bool allReach = true;
+        for (int i = 0; i < echojay::kNumDelayModes; ++i)
+        {
+            const auto want = echojay::delayModeFromIndex (i);
+            device->applyStructured (paramsMove ({
+                { "mode", echojay::delayModeName (want) } }));
+            allReach = allReach && del->engine().getMode() == want
+                                && near (device->getParamValue ("mode"), (double) i);
+        }
+        check (allReach, "all four modes resolve by name and reach the engine");
+    }
+
+    std::printf ("== DELAY: mode and ping_pong are BOTH honoured, independently ==\n");
+    {
+        // The one interlock in this pass, and it is deliberately non-destructive:
+        // `mode = pingpong` is the clean bounce, `ping_pong` bounces WHATEVER mode
+        // is selected, and the routing is the OR of the two. Neither overwrites the
+        // other, so a bouncing tape echo is expressible and both round-trip.
+        auto proc = makeByName ("EchoJay Delay");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* del    = dynamic_cast<EedDelayProcessor*> (proc.get());
+
+        device->applyStructured (paramsMove ({ { "mode", "pingpong" } }));
+        check (del->engine().effectivePingPong(), "mode = pingpong bounces on its own");
+        check (near (device->getParamValue ("ping_pong"), 0.0),
+               "WITHOUT silently flipping the ping_pong param");
+
+        device->applyStructured (paramsMove ({ { "mode", "tape" } }));
+        check (! del->engine().effectivePingPong(), "back to tape, the bounce is gone");
+
+        device->applyStructured (paramsMove ({ { "ping_pong", true } }));
+        check (del->engine().effectivePingPong() && near (device->getParamValue ("mode"), 1.0),
+               "and the switch bounces a TAPE echo, leaving the mode on tape");
+    }
+
+    std::printf ("== DELAY: diffusion and duck land exactly, and clamp ==\n");
+    {
+        auto proc = makeByName ("EchoJay Delay");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("diffusion"), 0.0), "diffusion defaults to off");
+        check (near (device->getParamValue ("duck"), 0.0),      "and so does duck");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "diffusion", 45.0 }, { "duck", 70.0 } }),
+                                 &applied, &skipped);
+        check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
+        check (near (device->getParamValue ("diffusion"), 45.0), "diffusion EXACTLY 45");
+        check (near (device->getParamValue ("duck"), 70.0),      "duck EXACTLY 70");
+
+        device->applyStructured (paramsMove ({ { "duck", 400.0 } }));
+        check (near (device->getParamValue ("duck"), 100.0), "400 clamps to 100");
+    }
+
+    std::printf ("== the Time depth params round-trip through state ==\n");
+    {
+        // The base's state path is written in terms of the schema, so this is
+        // really a check that each param is fully wired: an id that only half
+        // exists (settable but not gettable) saves as 0 and comes back wrong.
+        auto a = makeByName ("EchoJay Reverb");
+        auto* da = dynamic_cast<EedDeviceProcessor*> (a.get());
+        da->applyStructured (paramsMove ({ { "algorithm", "spring" },
+                                           { "diffusion", 22.0 }, { "duck", 55.0 } }));
+        juce::MemoryBlock rb;
+        da->getStateInformation (rb);
+
+        auto b = makeByName ("EchoJay Reverb");
+        auto* db = dynamic_cast<EedDeviceProcessor*> (b.get());
+        db->setStateInformation (rb.getData(), (int) rb.getSize());
+
+        check (near (db->getParamValue ("algorithm"), 3.0), "algorithm restored (spring)");
+        check (near (db->getParamValue ("diffusion"), 22.0), "diffusion restored");
+        check (near (db->getParamValue ("duck"), 55.0),      "duck restored");
+
+        auto c = makeByName ("EchoJay Delay");
+        auto* dc = dynamic_cast<EedDeviceProcessor*> (c.get());
+        dc->applyStructured (paramsMove ({ { "mode", "analog" }, { "diffusion", 30.0 },
+                                           { "duck", 65.0 }, { "ping_pong", true } }));
+        juce::MemoryBlock dblob;
+        dc->getStateInformation (dblob);
+
+        auto d2 = makeByName ("EchoJay Delay");
+        auto* dd = dynamic_cast<EedDeviceProcessor*> (d2.get());
+        dd->setStateInformation (dblob.getData(), (int) dblob.getSize());
+
+        check (near (dd->getParamValue ("mode"), 2.0),      "mode restored (analog)");
+        check (near (dd->getParamValue ("diffusion"), 30.0),"diffusion restored");
+        check (near (dd->getParamValue ("duck"), 65.0),     "duck restored");
+        check (near (dd->getParamValue ("ping_pong"), 1.0),
+               "and ping_pong restored ALONGSIDE the mode, not instead of it");
+    }
+
+    std::printf ("== the Time depth choices are ADVERTISED by name ==\n");
+    {
+        // A choice the model cannot read is a choice it cannot set, however well
+        // the apply path resolves names.
+        struct Expect { const char* device; const char* id; const char* names; const char* def; };
+
+        const Expect wanted[] = {
+            { "EchoJay Reverb", "algorithm", "room|hall|plate|spring|ambience", "default hall" },
+            { "EchoJay Delay",  "mode",      "digital|tape|analog|pingpong",    "default digital" },
+        };
+
+        for (const auto& w : wanted)
+        {
+            const auto* d = registry.findByName (w.device);
+            const auto* spec = d != nullptr ? d->schema.find (w.id) : nullptr;
+            if (spec == nullptr)
+            {
+                check (false, juce::String (w.device) + " advertises " + w.id);
+                continue;
+            }
+            const auto line = juce::String (echojay::ParamSchema::describeLine (*spec));
+            check (line.contains (w.names) && line.contains (w.def),
+                   juce::String (w.device) + " " + w.id + ": " + line);
+        }
+    }
+
+    std::printf ("== a Time device at its DEFAULTS is unchanged by the depth pass ==\n");
+    {
+        // The strongest guarantee this pass makes: the neutral algorithm and mode
+        // are the devices as they shipped, so an existing session sounds the same.
+        // Checked by rendering the SAME audio through a device at its defaults and
+        // through one with the depth params explicitly set to their neutral values.
+        for (const char* name : { "EchoJay Reverb", "EchoJay Delay" })
+        {
+            auto mk = [name] (bool explicitNeutral)
+            {
+                auto proc = makeByName (name);
+                auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+                if (explicitNeutral)
+                {
+                    if (juce::String (name) == "EchoJay Reverb")
+                        device->applyStructured (paramsMove ({
+                            { "algorithm", "hall" },
+                            { "diffusion", (double) echojay::kReverbDiffusionUnityPct },
+                            { "duck", 0.0 } }));
+                    else
+                        device->applyStructured (paramsMove ({
+                            { "mode", "digital" }, { "diffusion", 0.0 }, { "duck", 0.0 } }));
+                }
+                proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+                proc->prepareToPlay (48000.0, 512);
+                return proc;
+            };
+
+            auto pa = mk (false), pb = mk (true);
+
+            juce::AudioBuffer<float> ba (2, 4096), bb (2, 4096);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 4096; ++i)
+                {
+                    const float v = 0.4f * std::sin (0.037f * (float) i)
+                                  + (i % 977 == 0 ? 0.5f : 0.0f);
+                    ba.setSample (ch, i, v);
+                    bb.setSample (ch, i, v);
+                }
+
+            juce::MidiBuffer midi;
+            for (int i = 0; i < 4096; i += 512)
+            {
+                juce::AudioBuffer<float> sa (ba.getArrayOfWritePointers(), 2, i, 512);
+                juce::AudioBuffer<float> sb (bb.getArrayOfWritePointers(), 2, i, 512);
+                pa->processBlock (sa, midi);
+                pb->processBlock (sb, midi);
+            }
+
+            float worst = 0.0f;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 4096; ++i)
+                    worst = juce::jmax (worst, std::abs (ba.getSample (ch, i)
+                                                       - bb.getSample (ch, i)));
+
+            check (worst == 0.0f,
+                   juce::String (name) + ": its defaults ARE the neutral settings "
+                   "(worst delta " + juce::String (worst, 9) + ")");
+        }
+    }
+
     // -----------------------------------------------------------------------
     std::printf ("== merge semantics: an absent param is left alone ==\n");
     {
