@@ -79,10 +79,22 @@ public:
     */
     struct Result
     {
-        enum class Kind { captured, twins, uncorrelated, tooMany, notAutomatable, stalled };
+        /** No "uncorrelated" entry. It was removed rather than left unreachable:
+            an outcome vocabulary that names something nothing emits misleads the
+            next reader. The macro and bad-epsilon explanations still exist, as
+            possibilities offered inside a gesture's reason string rather than as
+            an asserted verdict.
+        */
+        enum class Kind { captured, twins, gesture, tooMany, notAutomatable, stalled };
 
         Kind kind = Kind::notAutomatable;
         juce::Array<int> indices;
+
+        /** Real parameter names, parallel to indices. A human cannot act on
+            "[0, 2, 3, 7, 8]"; they can act on "Band 1 Freq, Band 1 Gain".
+        */
+        juce::StringArray names;
+        juce::Array<float> deltas;
         juce::String reason;
 
         juce::String kindString() const
@@ -91,7 +103,7 @@ public:
             {
                 case Kind::captured:       return "captured";
                 case Kind::twins:          return "twins";
-                case Kind::uncorrelated:   return "uncorrelated";
+                case Kind::gesture:        return "gesture";
                 case Kind::tooMany:        return "too_many";
                 case Kind::notAutomatable: return "not_automatable";
                 case Kind::stalled:        return "stalled";
@@ -310,21 +322,30 @@ private:
                 continue;
             }
 
-            deliver (classify (moved, deltas));
+            deliver (classify (moved, deltas, params));
             return;
         }
     }
 
-    Result classify (const juce::Array<int>& moved, const juce::Array<float>& deltas)
+    Result classify (const juce::Array<int>& moved,
+                     const juce::Array<float>& deltas,
+                     const juce::Array<juce::AudioProcessorParameter*>& params)
     {
         Result r;
+        r.deltas = deltas;
+        for (int i : moved)
+            r.names.add (juce::isPositiveAndBelow (i, params.size())
+                           ? params[i]->getName (48) : juce::String ("index " + juce::String (i)));
 
         if (moved.size() > kTooManyMoved)
         {
             r.kind = Result::Kind::tooMany;
             r.indices = moved;
-            r.reason = juce::String (moved.size()) + " parameters moved at once, which is a "
-                       "preset change or a modulation source rather than one control; discarded";
+            r.reason = juce::String (moved.size()) + " parameters moved at once ("
+                     + r.names.joinIntoString (", ").substring (0, 160)
+                     + "): most likely a preset change or a modulation source rather than one "
+                       "gesture. Discarded. The 8-parameter boundary is a heuristic, so a very "
+                       "wide deliberate gesture would land here too.";
             noteCycle (moved);
             return r;
         }
@@ -333,7 +354,7 @@ private:
         {
             r.kind = Result::Kind::captured;
             r.indices = moved;
-            r.reason = "exactly one parameter moved";
+            r.reason = "exactly one parameter moved: " + r.names[0];
             noteCycle (moved);
             return r;
         }
@@ -356,17 +377,36 @@ private:
         {
             r.kind = Result::Kind::twins;
             r.indices = moved;
-            r.reason = juce::String (moved.size()) + " parameters moved together, same direction, "
-                       "magnitudes within 1.5x: channel twins or a linked pair. Confirm before use.";
+            r.reason = juce::String (moved.size()) + " moved together, same direction, magnitudes "
+                       "within 1.5x: channel twins or a linked pair. Confirm before use.";
         }
         else
         {
-            r.kind = Result::Kind::uncorrelated;
+            // MULTI-PARAMETER GESTURE, not a fault.
+            //
+            // The previous verdict here was "uncorrelated: a macro, or the
+            // epsilon is wrong. Wiggle again." All three parts were wrong for
+            // the commonest case on a curve-based EQ: dragging a band node
+            // genuinely moves frequency and gain together, so nothing is
+            // uncorrelated, nothing is misconfigured, and wiggling again cannot
+            // succeed because the gesture always moves the same set. Measured on
+            // FabFilter Pro-Q 3 VST3, which returned five moved parameters for
+            // one node drag.
+            //
+            // So: name the candidates and let the human say which they meant.
+            // The rest are co-moved, which is real information about the
+            // plugin (Band 1 Freq and Band 1 Gain move together) and is kept,
+            // not discarded.
+            //
+            // Macro and epsilon remain possible and are offered as such rather
+            // than asserted, because a simpler explanation fits.
+            r.kind = Result::Kind::gesture;
             r.indices = moved;
-            r.reason = juce::String (moved.size()) + " parameters moved but "
-                     + juce::String (sameSign ? "with different magnitudes"
-                                              : "in different directions")
-                     + ": a macro, or the epsilon is wrong. Wiggle again.";
+            r.reason = juce::String (moved.size()) + " parameters moved in one gesture ("
+                     + r.names.joinIntoString (", ") + "). On a curve-based EQ that is one node "
+                       "drag moving frequency and gain together. Pick the one you meant; the rest "
+                       "are recorded as co-moved. If you touched only one control, this may instead "
+                       "be a macro, or the epsilon may be too small.";
         }
 
         noteCycle (moved);

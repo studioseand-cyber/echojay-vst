@@ -72,6 +72,14 @@ public:
         armButton.setEnabled (false);
         armButton.onClick = [this] { armCapture(); };
 
+        // Candidate picker: appears only for a multi-parameter gesture, where
+        // the engine cannot know which of the moved parameters the human meant.
+        addChildComponent (candidatePicker);
+        candidatePicker.setTextWhenNothingSelected ("pick the parameter you meant");
+        candidatePicker.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff161c26));
+        candidatePicker.setColour (juce::ComboBox::textColourId, juce::Colour (0xff9fd8e0));
+        candidatePicker.onChange = [this] { chooseCandidate(); };
+
         addAndMakeVisible (captureReadout);
         captureReadout.setJustificationType (juce::Justification::centredLeft);
         captureReadout.setColour (juce::Label::textColourId, juce::Colour (0xff9fd8e0));
@@ -443,7 +451,7 @@ public:
 
         const char* names[] = { "one moved -> captured",
                                 "two correlated -> twins",
-                                "two opposed -> uncorrelated",
+                                "two opposed -> gesture",
                                 "nine moved -> too_many" };
 
         if (stage >= 4)
@@ -477,9 +485,9 @@ public:
         {
             static const char* names[] = { "one moved -> captured",
                                            "two correlated -> twins",
-                                           "two opposed -> uncorrelated",
+                                           "two opposed -> gesture",
                                            "nine moved -> too_many" };
-            static const char* want[]  = { "captured", "twins", "uncorrelated", "too_many" };
+            static const char* want[]  = { "captured", "twins", "gesture", "too_many" };
             const bool ok = (r.kindString() == juce::String (want[st]));
             if (! ok) ++failures;
             std::cout << "  " << (ok ? "ok   " : "FAIL ") << names[st]
@@ -531,7 +539,15 @@ public:
 
         // Capture readout sits under the top row, full width.
         r.removeFromTop (4);
-        captureReadout.setBounds (r.removeFromTop (20));
+        {
+            auto row = r.removeFromTop (20);
+            if (candidatePicker.isVisible())
+            {
+                candidatePicker.setBounds (row.removeFromLeft (300));
+                row.removeFromLeft (8);
+            }
+            captureReadout.setBounds (row);
+        }
 
         r.removeFromTop (8);
         auto left = r.removeFromLeft (420);
@@ -1021,6 +1037,9 @@ private:
         if (inst == nullptr)
             return;
 
+        loadedName = name;
+        loadedId   = pluginId;
+        candidatePicker.setVisible (false);
         cal = capture.calibrate (*inst, pluginId);
         if (! cal.valid)
         {
@@ -1043,6 +1062,89 @@ private:
         armButton.setEnabled (true);
     }
 
+    /** Human picks which of a gesture's parameters they meant. The others stay
+        as co-moved rather than being thrown away: that Band 1 Freq and Band 1
+        Gain move together is a fact about the plugin.
+    */
+    void chooseCandidate()
+    {
+        const int sel = candidatePicker.getSelectedId() - 1;   // ids are 1-based
+        if (! juce::isPositiveAndBelow (sel, lastGesture.indices.size()))
+            return;
+
+        const int intended = lastGesture.indices[sel];
+
+        juce::Array<int> coMoved;
+        juce::StringArray coNames;
+        for (int i = 0; i < lastGesture.indices.size(); ++i)
+            if (i != sel)
+            {
+                coMoved.add (lastGesture.indices[i]);
+                coNames.add (lastGesture.names[i]);
+            }
+
+        juce::String t;
+        t << "CAPTURED index " << intended << " (" << lastGesture.names[sel] << ")";
+        if (! coMoved.isEmpty())
+        {
+            t << "  co-moved [";
+            for (int i = 0; i < coMoved.size(); ++i)
+                t << (i ? ", " : "") << coMoved[i] << ":" << coNames[i];
+            t << "]";
+        }
+        captureReadout.setText (t, juce::dontSendNotification);
+        std::cout << "CAPTURE: " << t << std::endl;
+
+        recordCapture ("captured_from_gesture", intended, lastGesture.names[sel],
+                       coMoved, coNames, lastGesture.reason);
+
+        candidatePicker.setVisible (false);
+        resized();
+        armButton.setEnabled (true);
+    }
+
+    /** Captures are written per run, so co-moved sets survive the readout. The
+        payload writer is M10; this is the interim record, and it is a record
+        rather than a print.
+    */
+    void recordCapture (const juce::String& kind, int intended, const juce::String& name,
+                        const juce::Array<int>& coMoved, const juce::StringArray& coNames,
+                        const juce::String& reason)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
+        o->setProperty ("kind", kind);
+        o->setProperty ("plugin", loadedName);
+        o->setProperty ("plugin_id", loadedId);
+        o->setProperty ("rate_hz", cal.rateHz);
+        o->setProperty ("sweep_us", cal.sweepMicros);
+        o->setProperty ("noise_mask_samples", mask.samples);
+        if (intended >= 0)
+        {
+            o->setProperty ("index", intended);
+            o->setProperty ("param_name", name);
+        }
+        juce::Array<juce::var> cm;
+        for (int i = 0; i < coMoved.size(); ++i)
+        {
+            auto* c = new juce::DynamicObject();
+            c->setProperty ("index", coMoved[i]);
+            c->setProperty ("param_name", coNames[i]);
+            cm.add (juce::var (c));
+        }
+        o->setProperty ("co_moved", juce::var (cm));
+        o->setProperty ("reason", reason);
+
+        auto f = ledger.runArtifact ("captures", "jsonl");
+        juce::FileOutputStream out (f);
+        if (out.openedOk())
+        {
+            out.setPosition (f.getSize());
+            out.writeText (juce::JSON::toString (juce::var (o), true) + "\n", false, false, nullptr);
+            out.flush();
+        }
+    }
+
     void armCapture()
     {
         auto* inst = host.getInstance();
@@ -1055,21 +1157,38 @@ private:
 
         capture.arm (*inst, cal, mask, [this] (const CaptureEngine::Result& r)
         {
+            // Every result names its parameters. "[0, 2, 3, 7, 8]" is not
+            // something a human can act on.
             juce::String t;
             t << r.kindString().toUpperCase();
-            if (! r.indices.isEmpty())
-            {
-                t << "  indices [";
-                for (int i = 0; i < r.indices.size(); ++i)
-                    t << (i ? ", " : "") << r.indices[i];
-                t << "]";
-            }
+            for (int i = 0; i < r.indices.size(); ++i)
+                t << (i ? ", " : "  ") << r.indices[i] << ":"
+                  << (i < r.names.size() ? r.names[i] : juce::String());
             t << "  -  " << r.reason;
             if (! mask.promotions.isEmpty())
                 t << "   |  " << mask.promotions[mask.promotions.size() - 1];
 
             captureReadout.setText (t, juce::dontSendNotification);
             std::cout << "CAPTURE: " << t << std::endl;
+
+            if (r.kind == CaptureEngine::Result::Kind::gesture)
+            {
+                // Cannot be resolved by the engine: ask.
+                lastGesture = r;
+                candidatePicker.clear (juce::dontSendNotification);
+                for (int i = 0; i < r.indices.size(); ++i)
+                    candidatePicker.addItem (juce::String (r.indices[i]) + ":  " + r.names[i], i + 1);
+                candidatePicker.setVisible (true);
+                resized();
+                return;   // Arm stays disabled until a choice is made
+            }
+
+            recordCapture (r.kindString(),
+                           r.indices.size() == 1 ? r.indices[0] : -1,
+                           r.names.isEmpty() ? juce::String() : r.names[0],
+                           r.indices.size() > 1 ? r.indices : juce::Array<int>(),
+                           r.indices.size() > 1 ? r.names : juce::StringArray(),
+                           r.reason);
             armButton.setEnabled (true);
         });
     }
@@ -1321,6 +1440,9 @@ private:
     CaptureEngine::Calibration cal;
     CaptureEngine::NoiseMask   mask;
     int stage = 0, failures = 0;
+    juce::ComboBox candidatePicker;
+    CaptureEngine::Result lastGesture;
+    juce::String loadedName, loadedId;
     juce::Array<int> qualified;
     bool busy = false;
     int  loadDepth = 0, maxLoadDepth = 0, loadCalls = 0, loadRejected = 0;
