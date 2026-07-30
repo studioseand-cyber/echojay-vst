@@ -402,6 +402,29 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   are measured ONCE per resize into a stored vector; paint indexes it and
   mouseDown indexes the same vector. computeColumns stays the single authority
   on the tab's available width, and no copy of the width formula is added.
+- CROSS-VERSION SHM: A NEW FIELD NEEDS A PRESENCE BIT, BECAUSE 0.0f IS A VALID
+  READING (30 Jul 2026, established while scoping the Link mixer meter view).
+  Users run mismatched Link and main plugin versions, so state both directions
+  before touching LinkMeterFrame or RegistrySlot.
+  OLDER MAIN + NEWER LINK degrades correctly for free: new fields go in _pad,
+  every prior offset is unchanged, sizeof(LinkMeterFrame) stays 128 (there is a
+  static_assert), so kRegSize and the meterFrames() offset never move and the
+  old main simply never reads the new bytes.
+  NEWER MAIN + OLDER LINK IS THE HAZARD. The old Link never writes the field,
+  so the new main reads whatever the shared page holds, which is ZERO and NOT a
+  sentinel. The absent convention for a dB field is -100.0f; 0.0f is a
+  perfectly valid measurement. So an ungated new field renders a FABRICATED
+  READING, which is exactly the action-honesty failure the rest of this spec
+  forbids. truePeakCur survives only because 0 dBTP is implausible enough that
+  the display gates it; lra at 0 LU is plausible-but-wrong and is the existing
+  soft spot.
+  THE RULE: any future shm field ships with a `uint32_t fieldsMask` in _pad
+  where 0 means "old writer, none of the new fields present", and EVERY new
+  field's display is gated on its bit. No bit set, no reading, N/A.
+  RegistryHeader::version cannot be used for this as things stand: it is
+  written once (`version = 1` in openRegistry) and READ NOWHERE. Only `magic`
+  is checked, via the init CAS. Whoever changes shm next has to start reading
+  the version before they can rely on it.
 
 ## Standing engineering rules (from prior work)
 - Build via ~/reinstall-v2.sh (kills AU host, bumps version, rebuilds, installs
@@ -428,3 +451,33 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   unless the branches carry distinct PRODUCT_NAME / BUNDLE_ID / PLUGIN_CODE.
 - Confirm the installed binary by CONTENT (above), not by timestamp.
 - Deploy the live backend via clean git flow; test before moving on.
+
+## QUEUED, Link CPU: the 4096-point visual FFT runs on every Link and nothing reads it
+Found 30 Jul 2026 while establishing the metering headroom for the Link mixer.
+
+WHAT IT COSTS. Per active Link, MeterEngine::processBlock runs the FULL
+main-plugin analysis suite, not a lightweight tap: a 2048-point FFT on EVERY
+block (computeSpectrum, called unconditionally), a SECOND 4096-point "visual"
+FFT every kVisHopSamples = 1024 samples (~43 per second), 4x-oversampled true
+peak on both channels, K-weighting, three band-crest filter banks, correlation,
+a width HPF, and a waveform ring push. At 44.1k/512 that is roughly 86
+2048-point FFTs/s plus ~43 4096-point FFTs/s PER LINK. kRegMaxSlots is 16, so
+a full session pays that 16 times over.
+
+WHY THE VISUAL FFT IS SAFE TO GATE OFF IN THE LINK BUILD: it has NO consumer
+there. LinkEditor.cpp never references meterEngine_ or any spectrum, and
+LinkMeterFrame carries no spectrum bins at all. The work is computed and thrown
+away on all 16 Links.
+
+THE CAUTION, and it is the whole reason this is queued rather than done: the
+frame's bandRel[6] comes from md.macroBandDb, which is integrated from the
+ANALYSIS FFT (2048-point), NOT from the visual one. So the 2048-point FFT must
+STAY. Gating the wrong FFT silently empties the band-relative readouts on every
+Link strip. Verify bandRel is still populated after any such change.
+
+The publish side is not worth optimising by comparison: getMeterData() is one
+mutex lock and a struct copy, and publishMeterFrame is a 128-byte memcpy
+between two release-stores. That is also why RAISING the publish rate above
+10 Hz would be cheap if it is ever wanted; the only real constraint there is
+dataMutex, which processBlock also takes, so a faster publish means more
+contention with each Link's audio thread.
