@@ -31,9 +31,14 @@
 #include "EedDeviceProcessor.h"
 #include "EedAutoPanProcessor.h"
 #include "EedChorusProcessor.h"
+#include "EedCompressorProcessor.h"
+#include "EedDeEsserProcessor.h"
 #include "EedDelayProcessor.h"
 #include "EedExciterProcessor.h"
+#include "EedExpanderProcessor.h"
 #include "EedGainProcessor.h"
+#include "EedGateProcessor.h"
+#include "EedLimiterProcessor.h"
 #include "EedPhaseInvertProcessor.h"
 #include "EedPhaserProcessor.h"
 #include "EedReverbProcessor.h"
@@ -1270,6 +1275,661 @@ int main()
 
         device->applyStructured (paramsMove ({ { "listen", 1 } }));
         check (near (device->getParamValue ("listen"), 1.0), "1 -> listen on");
+    }
+
+    // =======================================================================
+    // THE DEPTH PASS (DEVICE_DEPTH_PLAN.md, Dynamics). Every mode and knob it
+    // added has to be dialable BY NAME, clamp, round-trip through state and — for
+    // the ones that cost latency — report it. A control that is clickable but not
+    // dialable is the one failure this whole framework exists to make impossible,
+    // so each new param is exercised here rather than assumed from its schema
+    // entry.
+    // =======================================================================
+    std::printf ("== COMPRESSOR: the character mode dials by NAME and by index ==\n");
+    {
+        auto proc = makeByName ("EchoJay Compressor");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* comp   = dynamic_cast<EedCompressorProcessor*> (proc.get());
+        check (device != nullptr && comp != nullptr, "compressor constructs");
+
+        // Both of these come from the SCHEMA's defaults now rather than from a
+        // line in the constructor, so a fresh device is described in one place —
+        // and this is the check that the one place is actually consulted.
+        check (near (device->getParamValue ("mode"), 0.0), "a fresh compressor is clean");
+        check (near (device->getParamValue ("detector"), 1.0), "and detects RMS");
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "punch" } }),
+                                                &applied, &skipped);
+        check (applied == 1 && skipped == 0, "mode = \"punch\" applied");
+        check (near (device->getParamValue ("mode"), 2.0), "landed on punch (index 2)");
+        check (s.contains ("punch"), "and reads back BY NAME: " + s);
+
+        device->applyStructured (paramsMove ({ { "mode", "GLUE" } }));
+        check (near (device->getParamValue ("mode"), 1.0), "matching is case-insensitive");
+
+        device->applyStructured (paramsMove ({ { "mode", 3 } }));
+        check (near (device->getParamValue ("mode"), 3.0), "a numeric index still works");
+
+        int a2 = 0, s2 = 0;
+        device->applyStructured (paramsMove ({ { "mode", "vari-mu" } }), &a2, &s2);
+        check (s2 == 1, "an unknown character is SKIPPED, not guessed at");
+        check (near (device->getParamValue ("mode"), 3.0), "and leaves the mode where it was");
+
+        // THE MODE MUST REACH THE DSP, not just the getter. Each one reshapes the
+        // dialled times, so the effective attack is the observable proof.
+        device->applyStructured (paramsMove ({ { "attack_ms", 10.0 },
+                                               { "release_ms", 100.0 } }));
+
+        device->applyStructured (paramsMove ({ { "mode", "clean" } }));
+        const double cleanAtk = comp->effectiveAttackMs();
+
+        device->applyStructured (paramsMove ({ { "mode", "punch" } }));
+        const double punchAtk = comp->effectiveAttackMs();
+
+        device->applyStructured (paramsMove ({ { "mode", "smooth" } }));
+        const double smoothAtk = comp->effectiveAttackMs();
+
+        check (near (cleanAtk, 10.0, 1e-9), "clean runs the dialled 10 ms attack");
+        check (punchAtk < cleanAtk, "punch runs faster (" + juce::String (punchAtk, 2) + " ms)");
+        check (smoothAtk > cleanAtk, "smooth runs slower (" + juce::String (smoothAtk, 2) + " ms)");
+        check (near (device->getParamValue ("attack_ms"), 10.0),
+               "and the DIALLED attack still round-trips as 10, whatever the mode");
+    }
+
+    std::printf ("== COMPRESSOR: every depth param lands exactly, and clamps ==\n");
+    {
+        auto proc = makeByName ("EchoJay Compressor");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        proc->prepareToPlay (48000.0, 512);
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "sc_hpf_hz", 120.0 },
+                                               { "lookahead_ms", 4.0 },
+                                               { "auto_release", true },
+                                               { "detector", "peak" },
+                                               { "stereo_link", 60.0 },
+                                               { "range_db", 8.0 } }), &applied, &skipped);
+
+        check (applied == 6 && skipped == 0, "6 params applied, 0 skipped");
+        check (near (device->getParamValue ("sc_hpf_hz"), 120.0),   "sc_hpf_hz EXACTLY 120");
+        check (near (device->getParamValue ("lookahead_ms"), 4.0),  "lookahead_ms EXACTLY 4");
+        check (near (device->getParamValue ("auto_release"), 1.0),  "auto_release is on");
+        check (near (device->getParamValue ("detector"), 0.0),      "detector = \"peak\" resolved");
+        check (near (device->getParamValue ("stereo_link"), 60.0),  "stereo_link EXACTLY 60 (percent)");
+        check (near (device->getParamValue ("range_db"), 8.0),      "range_db EXACTLY 8");
+
+        // rms by name too, since it is the default and the one a model will send
+        // most often.
+        device->applyStructured (paramsMove ({ { "detector", "rms" } }));
+        check (near (device->getParamValue ("detector"), 1.0), "detector = \"rms\" resolved");
+
+        device->applyStructured (paramsMove ({ { "sc_hpf_hz", 5000.0 },
+                                               { "stereo_link", 250.0 },
+                                               { "range_db", -5.0 } }));
+        check (near (device->getParamValue ("sc_hpf_hz"), 500.0),   "5 kHz clamped to the 500 max");
+        check (near (device->getParamValue ("stereo_link"), 100.0), "250% clamped to 100");
+        check (near (device->getParamValue ("range_db"), 0.0),      "a negative range clamped to 0");
+    }
+
+    std::printf ("== COMPRESSOR / GATE / EXPANDER report their lookahead latency ==\n");
+    {
+        // The number the DAW needs to keep this track in time with every other
+        // one. Every face that publishes lookahead now owes it, not just the
+        // limiter — an unreported delay is a few milliseconds of drift that reads
+        // as a mix problem rather than as a bug.
+        for (const char* name : { "EchoJay Compressor", "EchoJay Gate", "EchoJay Expander" })
+        {
+            auto proc = makeByName (name);
+            auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+            proc->prepareToPlay (48000.0, 512);
+            check (proc->getLatencySamples() == 0,
+                   juce::String (name) + " defaults to ZERO latency");
+
+            device->applyStructured (paramsMove ({ { "lookahead_ms", 5.0 } }));
+            check (proc->getLatencySamples() == 240,
+                   juce::String (name) + ": 5 ms at 48k reports 240 samples (got "
+                   + juce::String (proc->getLatencySamples()) + ")");
+
+            device->applyStructured (paramsMove ({ { "lookahead_ms", 0.0 } }));
+            check (proc->getLatencySamples() == 0,
+                   juce::String (name) + ": back to zero lookahead, zero latency");
+        }
+    }
+
+    std::printf ("== a lookahead device with NO lookahead is a true pass-through ==\n");
+    {
+        // The bug this pins had no visible symptom: the ring was read before it
+        // was written, so a delay of 0 came out as a delay of the whole buffer
+        // while the device honestly reported zero latency. One track 10 ms late,
+        // only when its lookahead happened to be dialled to nothing.
+        auto proc = makeByName ("EchoJay Compressor");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        // Threshold at 0 dB so nothing is compressed: what is under test is the
+        // signal PATH, not the gain.
+        device->applyStructured (paramsMove ({ { "lookahead_ms", 0.0 },
+                                               { "threshold_db", 0.0 },
+                                               { "mode", "clean" } }));
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc->prepareToPlay (48000.0, 512);
+
+        juce::AudioBuffer<float> buf (2, 512);
+        buf.clear();
+        buf.setSample (0, 0, 1.0f);       // an impulse in the first sample
+        buf.setSample (1, 0, 1.0f);
+
+        juce::MidiBuffer midi;
+        proc->processBlock (buf, midi);
+
+        check (buf.getSample (0, 0) > 0.9f,
+               "the impulse comes straight back out (" + juce::String (buf.getSample (0, 0), 4) + ")");
+    }
+
+    std::printf ("== BYPASS still delays, so toggling it cannot shift the track ==\n");
+    {
+        auto proc = makeByName ("EchoJay Compressor");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        device->applyStructured (paramsMove ({ { "lookahead_ms", 2.0 } }));
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc->prepareToPlay (48000.0, 512);
+        device->setBypassed (true);
+
+        juce::AudioBuffer<float> buf (2, 512);
+        buf.clear();
+        buf.setSample (0, 0, 1.0f);
+        buf.setSample (1, 0, 1.0f);
+
+        juce::MidiBuffer midi;
+        proc->processBlock (buf, midi);
+
+        // 2 ms at 48k is 96 samples: the host is compensating for that whether or
+        // not the device is bypassed.
+        check (buf.getSample (0, 0) < 0.01f, "the impulse did NOT come back early");
+        check (buf.getSample (0, 96) > 0.9f,
+               "it emerged at sample 96, exactly the reported latency");
+    }
+
+    std::printf ("== LIMITER: three modes, and clip is a HARD ceiling ==\n");
+    {
+        auto proc = makeByName ("EchoJay Limiter");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("mode"), 0.0), "defaults to transparent");
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "clip" },
+                                                             { "true_peak", true },
+                                                             { "sc_hpf_hz", 40.0 } }),
+                                                &applied, &skipped);
+        check (applied == 3 && skipped == 0, "3 params applied, 0 skipped");
+        check (near (device->getParamValue ("mode"), 2.0), "mode = \"clip\" landed on index 2");
+        check (s.contains ("clip"), "and reads back by name: " + s);
+        check (near (device->getParamValue ("true_peak"), 1.0), "true_peak is on");
+        check (near (device->getParamValue ("sc_hpf_hz"), 40.0), "sc_hpf_hz EXACTLY 40");
+
+        device->applyStructured (paramsMove ({ { "mode", "punchy" } }));
+        check (near (device->getParamValue ("mode"), 1.0), "and punchy by name");
+
+        // CLIP ignores the lookahead, and must therefore report NO latency — a
+        // device that delays without a reason is a device that is wrong.
+        device->applyStructured (paramsMove ({ { "lookahead_ms", 5.0 } }));
+        proc->prepareToPlay (48000.0, 512);
+        check (proc->getLatencySamples() == 240, "punchy honours the 5 ms lookahead");
+
+        device->applyStructured (paramsMove ({ { "mode", "clip" } }));
+        check (proc->getLatencySamples() == 0, "clip reports ZERO latency despite the 5 ms");
+        check (near (device->getParamValue ("lookahead_ms"), 5.0),
+               "while the dialled 5 ms is REMEMBERED, not destroyed");
+
+        device->applyStructured (paramsMove ({ { "mode", "transparent" } }));
+        check (proc->getLatencySamples() == 240, "and comes back when the mode does");
+
+        // The release survives clip too, for the same reason: clip drives the
+        // core's release to zero, so the dialled value has to live elsewhere.
+        device->applyStructured (paramsMove ({ { "release_ms", 300.0 } }));
+        device->applyStructured (paramsMove ({ { "mode", "clip" } }));
+        check (near (device->getParamValue ("release_ms"), 300.0),
+               "the dialled release survives a trip through clip");
+    }
+
+    std::printf ("== LIMITER: clip actually holds the ceiling, sample by sample ==\n");
+    {
+        auto proc = makeByName ("EchoJay Limiter");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        // -6 dB ceiling, a full-scale sine going in: nothing may come out above
+        // the ceiling, including the very first sample. A limiter with an attack
+        // lets the front of the first cycle past; a clip does not, and that is
+        // the whole difference between the two.
+        device->applyStructured (paramsMove ({ { "mode", "clip" },
+                                               { "ceiling_db", -6.0 },
+                                               { "true_peak", false } }));
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc->prepareToPlay (48000.0, 512);
+
+        juce::AudioBuffer<float> buf (2, 512);
+        juce::MidiBuffer midi;
+
+        float worst = 0.0f;
+        for (int b = 0; b < 8; ++b)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i)
+                    buf.setSample (ch, i, std::sin (0.11f * (float) (b * 512 + i)));
+
+            proc->processBlock (buf, midi);
+
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i)
+                    worst = juce::jmax (worst, std::abs (buf.getSample (ch, i)));
+        }
+
+        const float ceiling = std::pow (10.0f, -6.0f / 20.0f);
+        check (worst <= ceiling * 1.001f,
+               "nothing escaped the -6 dB ceiling (worst "
+               + juce::String (juce::Decibels::gainToDecibels (worst), 3) + " dBFS)");
+        check (worst > ceiling * 0.9f, "and it did reach it, so the test is not measuring silence");
+    }
+
+    std::printf ("== GATE: duck is the same device, the other way up ==\n");
+    {
+        auto proc = makeByName ("EchoJay Gate");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* gate   = dynamic_cast<EedGateProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("mode"), 0.0), "defaults to gate");
+        check (gate != nullptr && ! gate->isDucking(), "and the DSP agrees it is gating");
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "duck" } }),
+                                                &applied, &skipped);
+        check (applied == 1 && skipped == 0, "mode = \"duck\" applied");
+        check (near (device->getParamValue ("mode"), 1.0), "landed on index 1");
+        check (s.contains ("duck"), "and reads back by name: " + s);
+        check (gate->isDucking(), "the DSP is now in Duck mode, not merely the param");
+
+        device->applyStructured (paramsMove ({ { "mode", 0 } }));
+        check (! gate->isDucking(), "and index 0 puts it back");
+
+        // The selective-trigger pair.
+        device->applyStructured (paramsMove ({ { "sc_hpf_hz", 80.0 },
+                                               { "sc_lpf_hz", 250.0 } }));
+        check (near (device->getParamValue ("sc_hpf_hz"), 80.0),  "sc_hpf_hz EXACTLY 80");
+        check (near (device->getParamValue ("sc_lpf_hz"), 250.0), "sc_lpf_hz EXACTLY 250");
+
+        device->applyStructured (paramsMove ({ { "sc_lpf_hz", 10.0 } }));
+        check (near (device->getParamValue ("sc_lpf_hz"), 200.0),
+               "and 10 Hz clamps up to the advertised 200 floor");
+    }
+
+    std::printf ("== GATE: ducking a loud signal actually reduces it ==\n");
+    {
+        // End to end through processBlock, because "the param changed" and "the
+        // audio changed" are two different claims and only the second one matters.
+        auto grFor = [] (const char* mode)
+        {
+            auto proc = makeByName ("EchoJay Gate");
+            auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            auto* gate   = dynamic_cast<EedGateProcessor*> (proc.get());
+
+            device->applyStructured (paramsMove ({ { "mode", mode },
+                                                   { "threshold_db", -30.0 },
+                                                   { "range_db", 12.0 },
+                                                   { "hysteresis_db", 0.0 },
+                                                   { "attack_ms", 0.5 },
+                                                   { "hold_ms", 0.0 },
+                                                   { "release_ms", 10.0 } }));
+            proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+            proc->prepareToPlay (48000.0, 512);
+
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            for (int b = 0; b < 20; ++b)
+            {
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        buf.setSample (ch, i, 0.5f);      // -6 dBFS, well over
+                proc->processBlock (buf, midi);
+            }
+            return gate->gainReductionDb();
+        };
+
+        check (near (grFor ("gate"), 0.0, 0.1),
+               "a loud signal passes the gate untouched (" + juce::String (grFor ("gate"), 2) + " dB)");
+        check (near (grFor ("duck"), -12.0, 0.5),
+               "and is ducked by the range (" + juce::String (grFor ("duck"), 2) + " dB)");
+    }
+
+    std::printf ("== EXPANDER: the two depth params land and clamp ==\n");
+    {
+        auto proc = makeByName ("EchoJay Expander");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "sc_hpf_hz", 90.0 },
+                                               { "lookahead_ms", 3.0 } }), &applied, &skipped);
+        check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
+        check (near (device->getParamValue ("sc_hpf_hz"), 90.0),   "sc_hpf_hz EXACTLY 90");
+        check (near (device->getParamValue ("lookahead_ms"), 3.0), "lookahead_ms EXACTLY 3");
+
+        device->applyStructured (paramsMove ({ { "lookahead_ms", 99.0 } }));
+        check (near (device->getParamValue ("lookahead_ms"),
+                     EedExpanderProcessor::kMaxLookaheadMs),
+               "99 ms clamped to the buffer's maximum - never reallocated");
+    }
+
+    std::printf ("== DE-ESSER: auto_threshold tracks, and keeps the dialled one safe ==\n");
+    {
+        auto proc = makeByName ("EchoJay De-Esser");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* de     = dynamic_cast<EedDeEsserProcessor*> (proc.get());
+        check (de != nullptr, "de-esser constructs");
+
+        check (near (device->getParamValue ("auto_threshold"), 0.0), "defaults to off");
+
+        device->applyStructured (paramsMove ({ { "threshold_db", -34.0 } }));
+        check (near (de->effectiveThresholdDb(), -34.0, 0.01),
+               "with auto off, the DSP compares against the dialled threshold");
+
+        device->applyStructured (paramsMove ({ { "auto_threshold", "on" } }));
+        check (near (device->getParamValue ("auto_threshold"), 1.0), "the string \"on\" -> on");
+        check (near (device->getParamValue ("threshold_db"), -34.0),
+               "and the DIALLED threshold is untouched while it is ignored");
+
+        // Push sibilant-ish content through and the tracked threshold has to move
+        // off the dialled value — that is the whole feature.
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc->prepareToPlay (48000.0, 512);
+
+        juce::AudioBuffer<float> buf (2, 512);
+        juce::MidiBuffer midi;
+        for (int b = 0; b < 60; ++b)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i)
+                    buf.setSample (ch, i, 0.5f * std::sin (2.0f * 3.14159265f * 6500.0f
+                                                           * (float) (b * 512 + i) / 48000.0f));
+            proc->processBlock (buf, midi);
+        }
+
+        const float tracked = de->effectiveThresholdDb();
+        check (std::abs (tracked - (-34.0f)) > 1.0f,
+               "the threshold tracked the band instead ("
+               + juce::String (tracked, 2) + " dB)");
+        check (near (device->getParamValue ("threshold_db"), -34.0),
+               "and STILL round-trips as the -34 that was dialled");
+
+        // Switching auto off has to hand the dial back at once.
+        device->applyStructured (paramsMove ({ { "auto_threshold", false } }));
+        check (near (de->effectiveThresholdDb(), -34.0, 0.01),
+               "switching it off restores the dialled threshold immediately");
+    }
+
+    std::printf ("== 4-BAND: per-band character, by name, flat AND via comp_bands ==\n");
+    {
+        auto proc = makeByName ("EchoJay 4-Band Compressor");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* mb     = dynamic_cast<EedMultibandProcessor*> (proc.get());
+
+        // The per-band DEFAULTS are not all the same, on purpose: a low band and
+        // an air band want different characters, and four `clean` bands would be a
+        // marquee control shipped switched off.
+        check (near (device->getParamValue ("band1_mode"), 1.0), "band 1 defaults to glue");
+        check (near (device->getParamValue ("band4_mode"), 2.0), "band 4 defaults to punch");
+        check (near (device->getParamValue ("band2_mode"), 0.0), "and the mids to clean");
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (
+            paramsMove ({ { "band3_mode", "smooth" } }), &applied, &skipped);
+        check (applied == 1 && skipped == 0, "band3_mode = \"smooth\" applied");
+        check (near (device->getParamValue ("band3_mode"), 3.0), "landed on index 3");
+        check (s.contains ("smooth"), "and reads back by name: " + s);
+        check (mb->bandCharacter (2) == echojay::CharacterMode::Smooth,
+               "the band's CORE is in smooth, not just the param");
+
+        // It has to reach the knee too, or the mode is a label on nothing.
+        device->applyStructured (paramsMove ({ { "band3_knee_db", 6.0 } }));
+        check (mb->bandEffectiveKneeDb (2) > 6.0f,
+               "smooth widened band 3's knee to "
+               + juce::String (mb->bandEffectiveKneeDb (2), 1) + " dB");
+
+        // The array form, which is how a model thinking in bands will send it.
+        juce::DynamicObject::Ptr e = new juce::DynamicObject();
+        e->setProperty ("band", 1);
+        e->setProperty ("mode", "punch");
+        juce::Array<juce::var> arr;
+        arr.add (juce::var (e.get()));
+
+        int a2 = 0, s2 = 0;
+        device->applyStructured (juce::var (arr), &a2, &s2);
+        check (a2 == 1 && s2 == 0, "comp_bands can set a band's mode too");
+        check (near (device->getParamValue ("band1_mode"), 2.0), "band 1 is now punch");
+
+        // ...and the "character" spelling, since that is the other word for it.
+        juce::DynamicObject::Ptr e2 = new juce::DynamicObject();
+        e2->setProperty ("band", 2);
+        e2->setProperty ("character", "glue");
+        juce::Array<juce::var> arr2;
+        arr2.add (juce::var (e2.get()));
+        device->applyStructured (juce::var (arr2));
+        check (near (device->getParamValue ("band2_mode"), 1.0),
+               "\"character\" is accepted as a spelling of the same knob");
+    }
+
+    std::printf ("== 4-BAND: the detector is GLOBAL, and reaches every band ==\n");
+    {
+        auto proc = makeByName ("EchoJay 4-Band Compressor");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("detector"), 1.0), "defaults to rms");
+
+        device->applyStructured (paramsMove ({ { "detector", "peak" } }));
+        check (near (device->getParamValue ("detector"), 0.0), "peak by name");
+
+        // A per-band spelling must be REFUSED, not silently absorbed: this is one
+        // setting for the device, and a band1_detector that appeared to work would
+        // be a control that does nothing.
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (paramsMove ({ { "band1_detector", "rms" } }),
+                                                &applied, &skipped);
+        check (applied == 0 && skipped == 1, "band1_detector is refused, not guessed at");
+        check (s.contains ("band1_detector"), "and named in the summary: " + s);
+    }
+
+    std::printf ("== the depth params round-trip through state ==\n");
+    {
+        // Every new knob at a non-default value, saved and restored. The base's
+        // state path is written in terms of the schema, so this is really a check
+        // that each param is fully wired: an id that only half exists (settable
+        // but not gettable) saves as 0 and comes back wrong.
+        auto a = makeByName ("EchoJay Compressor");
+        auto* da = dynamic_cast<EedDeviceProcessor*> (a.get());
+        da->applyStructured (paramsMove ({ { "mode", "smooth" }, { "detector", "peak" },
+                                           { "sc_hpf_hz", 90.0 }, { "lookahead_ms", 3.5 },
+                                           { "auto_release", true }, { "stereo_link", 40.0 },
+                                           { "range_db", 6.0 } }));
+
+        juce::MemoryBlock blob;
+        da->getStateInformation (blob);
+
+        auto b = makeByName ("EchoJay Compressor");
+        auto* db = dynamic_cast<EedDeviceProcessor*> (b.get());
+        db->setStateInformation (blob.getData(), (int) blob.getSize());
+
+        check (near (db->getParamValue ("mode"), 3.0),          "mode restored (smooth)");
+        check (near (db->getParamValue ("detector"), 0.0),      "detector restored (peak)");
+        check (near (db->getParamValue ("sc_hpf_hz"), 90.0),    "sc_hpf_hz restored");
+        check (near (db->getParamValue ("lookahead_ms"), 3.5),  "lookahead_ms restored");
+        check (near (db->getParamValue ("auto_release"), 1.0),  "auto_release restored");
+        check (near (db->getParamValue ("stereo_link"), 40.0),  "stereo_link restored");
+        check (near (db->getParamValue ("range_db"), 6.0),      "range_db restored");
+
+        // And the other faces' new params, on the same path.
+        auto lim = makeByName ("EchoJay Limiter");
+        auto* dl = dynamic_cast<EedDeviceProcessor*> (lim.get());
+        dl->applyStructured (paramsMove ({ { "mode", "clip" }, { "true_peak", true },
+                                           { "sc_hpf_hz", 30.0 } }));
+        juce::MemoryBlock lb;
+        dl->getStateInformation (lb);
+
+        auto lim2 = makeByName ("EchoJay Limiter");
+        auto* dl2 = dynamic_cast<EedDeviceProcessor*> (lim2.get());
+        dl2->setStateInformation (lb.getData(), (int) lb.getSize());
+        check (near (dl2->getParamValue ("mode"), 2.0),      "limiter mode restored (clip)");
+        check (near (dl2->getParamValue ("true_peak"), 1.0), "true_peak restored");
+        check (near (dl2->getParamValue ("sc_hpf_hz"), 30.0),"limiter sc_hpf_hz restored");
+
+        auto gt = makeByName ("EchoJay Gate");
+        auto* dg = dynamic_cast<EedDeviceProcessor*> (gt.get());
+        dg->applyStructured (paramsMove ({ { "mode", "duck" }, { "sc_hpf_hz", 70.0 },
+                                           { "sc_lpf_hz", 400.0 }, { "lookahead_ms", 2.0 } }));
+        juce::MemoryBlock gb;
+        dg->getStateInformation (gb);
+
+        auto gt2 = makeByName ("EchoJay Gate");
+        auto* dg2 = dynamic_cast<EedDeviceProcessor*> (gt2.get());
+        dg2->setStateInformation (gb.getData(), (int) gb.getSize());
+        check (near (dg2->getParamValue ("mode"), 1.0),         "gate mode restored (duck)");
+        check (near (dg2->getParamValue ("sc_lpf_hz"), 400.0),  "sc_lpf_hz restored");
+        check (near (dg2->getParamValue ("lookahead_ms"), 2.0), "gate lookahead restored");
+
+        auto de = makeByName ("EchoJay De-Esser");
+        auto* dd = dynamic_cast<EedDeviceProcessor*> (de.get());
+        dd->applyStructured (paramsMove ({ { "auto_threshold", true },
+                                           { "threshold_db", -22.0 } }));
+        juce::MemoryBlock deb;
+        dd->getStateInformation (deb);
+
+        auto de2 = makeByName ("EchoJay De-Esser");
+        auto* dd2 = dynamic_cast<EedDeviceProcessor*> (de2.get());
+        dd2->setStateInformation (deb.getData(), (int) deb.getSize());
+        check (near (dd2->getParamValue ("auto_threshold"), 1.0), "auto_threshold restored");
+        check (near (dd2->getParamValue ("threshold_db"), -22.0),
+               "and the dialled threshold under it survived the trip");
+
+        auto mb = makeByName ("EchoJay 4-Band Compressor");
+        auto* dm = dynamic_cast<EedDeviceProcessor*> (mb.get());
+        dm->applyStructured (paramsMove ({ { "band2_mode", "punch" }, { "detector", "peak" } }));
+        juce::MemoryBlock mbb;
+        dm->getStateInformation (mbb);
+
+        auto mb2 = makeByName ("EchoJay 4-Band Compressor");
+        auto* dm2 = dynamic_cast<EedDeviceProcessor*> (mb2.get());
+        dm2->setStateInformation (mbb.getData(), (int) mbb.getSize());
+        check (near (dm2->getParamValue ("band2_mode"), 2.0), "band2_mode restored (punch)");
+        check (near (dm2->getParamValue ("detector"), 0.0),   "the global detector restored");
+    }
+
+    std::printf ("== the depth pass's choices are ADVERTISED by name ==\n");
+    {
+        // The advertisement is the whole contract: a choice the model cannot read
+        // is a choice it cannot set, however well the apply path resolves names.
+        struct Expect { const char* device; const char* id; const char* names; const char* def; };
+
+        const Expect wanted[] = {
+            { "EchoJay Compressor",        "mode",       "clean|glue|punch|smooth",  "default clean" },
+            { "EchoJay Compressor",        "detector",   "peak|rms",                 "default rms" },
+            { "EchoJay Limiter",           "mode",       "transparent|punchy|clip",  "default transparent" },
+            { "EchoJay Gate",              "mode",       "gate|duck",                "default gate" },
+            { "EchoJay 4-Band Compressor", "band1_mode", "clean|glue|punch|smooth",  "default glue" },
+            { "EchoJay 4-Band Compressor", "detector",   "peak|rms",                 "default rms" },
+        };
+
+        for (const auto& w : wanted)
+        {
+            const auto* d = registry.findByName (w.device);
+            const auto* spec = d != nullptr ? d->schema.find (w.id) : nullptr;
+            if (spec == nullptr)
+            {
+                check (false, juce::String (w.device) + " advertises " + w.id);
+                continue;
+            }
+
+            const auto line = juce::String (echojay::ParamSchema::describeLine (*spec));
+            check (line.contains (w.names) && line.contains (w.def),
+                   juce::String (w.device) + " " + w.id + ": " + line);
+        }
+
+        // And the booleans read as on/off rather than as a 0..1 range.
+        for (const auto& p : std::initializer_list<std::pair<const char*, const char*>> {
+                 { "EchoJay Compressor", "auto_release" },
+                 { "EchoJay Limiter",    "true_peak" },
+                 { "EchoJay De-Esser",   "auto_threshold" } })
+        {
+            const auto* d = registry.findByName (p.first);
+            const auto* spec = d != nullptr ? d->schema.find (p.second) : nullptr;
+            const auto line = spec != nullptr
+                            ? juce::String (echojay::ParamSchema::describeLine (*spec))
+                            : juce::String();
+            check (line.contains ("on/off"),
+                   juce::String (p.first) + " " + p.second + " is advertised on/off: " + line);
+        }
+    }
+
+    std::printf ("== a Dynamics face at its defaults is still PASS-THROUGH ==\n");
+    {
+        // The depth pass added a harmonic character to the core, and the one thing
+        // it must never do is colour a device that is not reducing. Every face,
+        // at its defaults, with a signal under its threshold: the output has to be
+        // the input.
+        struct Idle { const char* name; std::vector<std::pair<const char*, double>> setup; };
+
+        const Idle idle[] = {
+            // Thresholds pushed out of the way so nothing engages, and the modes
+            // set to the most coloured one each device has — clean cannot fail this
+            // test, so testing clean would prove nothing.
+            { "EchoJay Compressor", { { "threshold_db", 0.0 }, { "makeup_db", 0.0 } } },
+            { "EchoJay Gate",       { { "threshold_db", -80.0 }, { "hysteresis_db", 0.0 } } },
+            { "EchoJay Expander",   { { "threshold_db", -80.0 } } },
+            { "EchoJay Limiter",    { { "ceiling_db", 0.0 }, { "lookahead_ms", 0.0 } } },
+        };
+
+        for (const auto& d : idle)
+        {
+            auto proc = makeByName (d.name);
+            auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+            for (const auto& kv : d.setup) device->setParamValue (kv.first, kv.second);
+
+            // The most coloured mode each device publishes, where it has one.
+            // The gate is the exception: its `mode` is gate-vs-duck rather than a
+            // character, and duck would deliberately reduce a loud signal, so it
+            // stays on `gate` where an untriggered device is meant to be open.
+            const juce::String name (d.name);
+
+            if (name == "EchoJay Limiter")      device->setParamValue ("mode", 1.0);  // punchy
+            else if (name != "EchoJay Gate")    device->setParamValue ("mode", 2.0);  // punch
+
+            proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+            proc->prepareToPlay (48000.0, 512);
+
+            // A sine on an OFFSET, so the probe has real frequency content (a stray
+            // filter would show) but never comes near silence. A plain sine starts
+            // at zero, and a gate reading digital silence in its first sample is
+            // correctly closed — which would make this test fail on a device doing
+            // exactly the right thing.
+            juce::AudioBuffer<float> buf (2, 512);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i)
+                    buf.setSample (ch, i, 0.5f + 0.2f * std::sin ((float) i * 0.05f));
+
+            juce::AudioBuffer<float> before (buf);
+            juce::MidiBuffer midi;
+            proc->processBlock (buf, midi);
+
+            float worst = 0.0f;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i)
+                    worst = juce::jmax (worst, std::abs (buf.getSample (ch, i)
+                                                       - before.getSample (ch, i)));
+
+            check (worst < 1.0e-4f,
+                   juce::String (d.name) + ": untriggered, it is transparent (worst delta "
+                   + juce::String (worst, 7) + ")");
+        }
     }
 
     // -----------------------------------------------------------------------
