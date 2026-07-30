@@ -2028,7 +2028,11 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     // writing into a project file. Read back guarded, so an older project
     // loads expanded and the migration is silent (no version bump).
     state->setProperty("chatSidebarCollapsed", chatSidebarCollapsed);
-    
+    // Link mixer view controls, same reasoning as the line above: how you want
+    // the mixer laid out is a layout choice worth writing into a project file.
+    state->setProperty("linkMixerContent", (int)linkMixerContent);
+    state->setProperty("linkMixerWide", linkMixerWide);
+
     // Serialise snapshots — copy under lock, serialise outside
     std::vector<CaptureSnapshot> snapsCopy;
     {
@@ -2204,6 +2208,21 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             // prompt on every project saved 6-29 Jul 2026.
             if (obj->hasProperty("chatSidebarCollapsed"))
                 chatSidebarCollapsed = (bool)obj->getProperty("chatSidebarCollapsed");
+            // Link mixer view controls. Same guarded, else-less shape: absent
+            // means a save that predates the mixer, which opens in the
+            // defaults (narrow strips, numbers). The content mode is RANGE
+            // CHECKED rather than cast blindly, because a value outside the
+            // enum would select no content branch at all and paint an empty
+            // strip that looks like broken data rather than a bad setting.
+            if (obj->hasProperty("linkMixerContent"))
+            {
+                const int c = (int)obj->getProperty("linkMixerContent");
+                if (c >= (int)LinkMixerContent::Numbers
+                 && c <= (int)LinkMixerContent::Chain)
+                    linkMixerContent = (LinkMixerContent)c;
+            }
+            if (obj->hasProperty("linkMixerWide"))
+                linkMixerWide = (bool)obj->getProperty("linkMixerWide");
             // Project prompt: saves that predate the flag derive from having
             // a name (named project = question already answered)
             if (obj->hasProperty("projectPromptDismissed"))

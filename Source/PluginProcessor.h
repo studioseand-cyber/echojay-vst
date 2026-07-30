@@ -412,6 +412,25 @@ public:
         migration is silent. */
     bool chatSidebarCollapsed = false;
 
+    /** LINK MIXER view controls. Here, not on the editor, for the same reason
+        as chatSidebarCollapsed: Logic destroys the editor every time you
+        switch between the Link window and EchoJay, which in real Link work is
+        every couple of minutes. A view mode that resets on that switch is
+        worse than no view mode, because the reset is invisible until you
+        notice the strips changed under you.
+
+        Persisted with a hasProperty guard, so a project saved before the
+        mixer existed opens in the defaults below and the migration is silent.
+        A persisted value wins on load.
+
+        Selection is deliberately NOT here: the selected channel already
+        derives from effectiveChannelUid() (the active chat's linkUid, else
+        pendingChannelUid), both of which live on this processor. A second
+        selected-strip field would be a second authority on the same fact. */
+    enum class LinkMixerContent { Numbers = 0, Meter = 1, Chain = 2 };
+    LinkMixerContent linkMixerContent = LinkMixerContent::Numbers;
+    bool linkMixerWide = false;        // false = narrow strips (the reference)
+
     // A/B playback — toggle between DAW audio and reference WAV
     void loadABFile(const juce::String& wavPath, double startOffsetSeconds = 0.0);
     void stopAB();
