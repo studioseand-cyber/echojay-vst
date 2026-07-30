@@ -1106,6 +1106,34 @@ private:
     /** Captures are written per run, so co-moved sets survive the readout. The
         payload writer is M10; this is the interim record, and it is a record
         rather than a print.
+
+        THE WATCHED SET IS RECORDED, NOT JUST THE MOVED SET.
+        param_count and noise_mask are written on every row so that the
+        complement -- the parameters that were being watched and did NOT move --
+        is derivable from the record alone. Without it these rows cannot support
+        M5's negative discriminator, and a capture made today would have to be
+        made again.
+
+        The mask is written PER ROW rather than once per plugin because it grows:
+        retroactive promotion adds indices mid-session, so the mask that applied
+        to this capture is not necessarily the mask that applied to the last one.
+
+        SCOPING RULE FOR THE NEGATIVE SIGNAL. Read this before using the
+        complement for anything.
+
+          A parameter not moving is evidence ONLY relative to a gesture that
+          moved something. "Mono Maker did not move" means something when paired
+          with "and this same gesture moved LF Freq and LF Gain"; it means
+          nothing on its own, because the human may simply not have touched
+          anything that would have moved it.
+
+          Therefore the complement is valid ONLY within one row -- one arm, one
+          gesture -- and MUST NEVER be accumulated across arms. Unioning
+          non-movement over a session would conclude that almost every parameter
+          is outside almost every group, which is both false and the exact shape
+          of a confident wrong answer. If a stronger negative is wanted, it comes
+          from more anchored gestures, each scoped to its own row, never from
+          summing absences.
     */
     void recordCapture (const juce::String& kind, int intended, const juce::String& name,
                         const juce::Array<int>& coMoved, const juce::StringArray& coNames,
@@ -1119,6 +1147,15 @@ private:
         o->setProperty ("rate_hz", cal.rateHz);
         o->setProperty ("sweep_us", cal.sweepMicros);
         o->setProperty ("noise_mask_samples", mask.samples);
+
+        // The watched set, recorded so the complement is derivable:
+        // watched = [0, param_count) minus noise_mask.
+        o->setProperty ("param_count", cal.paramCount);
+        juce::Array<juce::var> maskIdx;
+        for (int i = 0; i < mask.indices.size(); ++i)
+            maskIdx.add (mask.indices[i]);
+        o->setProperty ("noise_mask", juce::var (maskIdx));
+        o->setProperty ("negative_signal_scope", "single_row_only");
         if (intended >= 0)
         {
             o->setProperty ("index", intended);
