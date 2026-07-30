@@ -49,6 +49,13 @@ namespace
     };
     static_assert ((int) std::size (kBandLook) == 6, "kBandLook and kBandKnobs must match");
 
+    // The right-hand column in the dial row: the selected band's MODE over its
+    // BAND BYP. Wide enough for "SMOOTH" in the combo.
+    constexpr int kSideW = 86;
+
+    // The global detector selector, in the header inboard of BYPASS.
+    constexpr int kDetectorW = 66;
+
     const KnobSpec kCrossoverLook[3] = {
         { EedMultibandProcessor::kCrossover1Hz, "XOVER 1", " Hz", 0, 200.0 },
         { EedMultibandProcessor::kCrossover2Hz, "XOVER 2", " Hz", 0, 900.0 },
@@ -88,6 +95,15 @@ EedMultibandEditor::EedMultibandEditor (EedMultibandProcessor& p)
         c->setFloorDb (kFloorDb);
         addAndMakeVisible (c);
     }
+
+    // Global, so it goes in the header with the device's other global controls.
+    bindChoiceBox (detectorBox_, EedMultibandProcessor::kDetector,
+                   EedMultibandProcessor::schema(), proc_, &suppressCallbacks_);
+    addAndMakeVisible (detectorBox_);
+
+    // Per band, so it goes in the selected band's strip. Rebound by selectBand.
+    styleCombo (bandModeBox_);
+    addAndMakeVisible (bandModeBox_);
 
     styleButton (bandBypassBtn_, true);
     bandBypassBtn_.setButtonText ("BAND BYP");
@@ -129,6 +145,17 @@ void EedMultibandEditor::rebindBandKnobs()
         const juce::ScopedValueSetter<bool> guard (suppressCallbacks_, true);
         bindKnob (bandKnobs_[i], bandSpecs_[i], EedMultibandProcessor::schema(),
                   proc_, &suppressCallbacks_);
+    }
+
+    // The band's character selector, on the same rebinding pattern: the id
+    // carries the band number, the juce::String member owns the characters, and
+    // the binding points at them.
+    bandModeId_ = EedMultibandProcessor::bandParamId (selectedBand_,
+                                                      EedMultibandProcessor::kMode);
+    {
+        const juce::ScopedValueSetter<bool> guard (suppressCallbacks_, true);
+        bindChoiceBox (bandModeBox_, bandModeId_.toRawUTF8(),
+                       EedMultibandProcessor::schema(), proc_, &suppressCallbacks_);
     }
 }
 
@@ -228,19 +255,38 @@ void EedMultibandEditor::layoutContent (juce::Rectangle<int> content)
         bandRowBounds_ = {};
     }
 
-    // The selected band's bypass sits at the right of the dial row, where it
-    // reads as belonging to the band being edited rather than to the device.
+    // The selected band's MODE and bypass sit at the right of the dial row, where
+    // they read as belonging to the band being edited rather than to the device.
+    // Stacked, because the dial row is two button-heights tall and a second
+    // column would come out of the dials' width.
     if (content.getHeight() > 0 && content.getWidth() > 90)
     {
-        auto side = content.removeFromRight (78);
-        bandBypassBtn_.setBounds (side.withSizeKeepingCentre (
-            juce::jmin (74, side.getWidth()), juce::jmin (kRowH, side.getHeight())));
+        auto side = content.removeFromRight (kSideW);
+        const int w = juce::jmin (kSideW - 4, side.getWidth());
+
+        // Centred as a PAIR: two rows plus the gap, so they sit level with the
+        // dial captions above and below rather than hugging the edges.
+        const int stackH = juce::jmin (side.getHeight(), kRowH * 2 + 4);
+        auto stack = side.withSizeKeepingCentre (w, stackH);
+
+        bandModeBox_.setBounds (stack.removeFromTop (juce::jmin (kRowH, stack.getHeight())));
+        if (stack.getHeight() > 4) stack.removeFromTop (4);
+        bandBypassBtn_.setBounds (stack.removeFromTop (juce::jmin (kRowH, stack.getHeight())));
+
         content.removeFromRight (6);
     }
 
     EchoJayDeviceKnob* ptrs[kBandKnobs];
     for (int i = 0; i < kBandKnobs; ++i) ptrs[i] = &bandKnobs_[i];
     layoutKnobRow (content, ptrs, kBandKnobs);
+}
+
+void EedMultibandEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
+{
+    detectorBox_.setBounds (bar.removeFromRight (juce::jmin (kDetectorW,
+                                                            juce::jmax (0, bar.getWidth())))
+                               .reduced (0, 3));
+    bar.removeFromRight (6);
 }
 
 void EedMultibandEditor::paintContent (juce::Graphics& g)
@@ -292,6 +338,11 @@ void EedMultibandEditor::syncAll()
     EchoJayDeviceKnob* bptrs[kBandKnobs];
     for (int i = 0; i < kBandKnobs; ++i) bptrs[i] = &bandKnobs_[i];
     syncKnobs (bptrs, bandSpecs_, kBandKnobs, proc_);
+
+    // The AI can move either selector while the editor is open.
+    syncChoiceBox (detectorBox_, EedMultibandProcessor::kDetector, proc_);
+    if (bandModeId_.isNotEmpty())
+        syncChoiceBox (bandModeBox_, bandModeId_.toRawUTF8(), proc_);
 }
 
 void EedMultibandEditor::refreshCurves()
@@ -316,9 +367,13 @@ void EedMultibandEditor::refreshCurves()
                 EedMultibandProcessor::bandParamId (b, leaf));
         };
 
+        // The KNEE is read from the core rather than from the dial, because this
+        // band's character mode reshapes it: a `glue` band dialled to 6 dB is
+        // running 12, and a picture drawn from the dial would show the wrong
+        // corner on the one control the mode exists to change.
         c->setCurve (bandParam (EedMultibandProcessor::kThresholdDb),
                      bandParam (EedMultibandProcessor::kRatio),
-                     bandParam (EedMultibandProcessor::kKneeDb),
+                     proc_.bandEffectiveKneeDb (b),
                      0.0f,                                  // no range cap on a band
                      EedMultibandProcessor::kBandMode);
 

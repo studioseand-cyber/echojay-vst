@@ -47,6 +47,7 @@ protected:
     int  topContentHeight() const override;
     void layoutTopContent (juce::Rectangle<int> area) override;
 
+    bool knobVisible (int index) const override;
     void refreshExtras() override;
 
 private:
@@ -54,7 +55,10 @@ private:
 
     EedDeEsserProcessor& deEsser_;
 
-    juce::TextButton modeBtn_, listenBtn_;
+    // AUTO joins the two existing header switches. While it is on the THRESH dial
+    // is hidden, because the DSP is ignoring it — a dial that turns and reads back
+    // and changes nothing is worse than one that is not there.
+    juce::TextButton modeBtn_, listenBtn_, autoBtn_;
 
     echojay::viz::TransferCurveView curve_;
     echojay::viz::DeEsserBandView   band_;

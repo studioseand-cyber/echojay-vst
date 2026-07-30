@@ -8,7 +8,9 @@ using namespace echojay::device;
 
 namespace
 {
-    constexpr int kDefaultW = 420;
+    // Seven dials on one line at this width — the depth pass's two fit alongside
+    // the original five rather than wrapping.
+    constexpr int kDefaultW = 520;
     constexpr int kCurveH   = 132;
     constexpr int kDefaultH = 190 + kCurveH + 6;
 
@@ -24,6 +26,8 @@ namespace
         { EedExpanderProcessor::kAttackMs,    "ATTACK",  " ms", 2, 2.0 },
         { EedExpanderProcessor::kReleaseMs,   "RELEASE", " ms", 0, 250.0 },
         { EedExpanderProcessor::kRangeDb,     "RANGE",   " dB", 1, 0.0 },
+        { EedExpanderProcessor::kScHpfHz,     "SC HPF",  " Hz", 0, 120.0 },
+        { EedExpanderProcessor::kLookaheadMs, "LOOK",    " ms", 2, 0.0 },
     };
 }
 

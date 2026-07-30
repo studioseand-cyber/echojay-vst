@@ -67,6 +67,14 @@ const echojay::ParamSchema& EedDeEsserProcessor::schema()
         { kListen, "", 0.0, 1.0, 0.0,
           "on = monitor the detector's band alone, to tune freq_hz onto the "
           "sibilance. A MONITORING aid - turn it off to hear the result", true },
+
+        // ---- the depth pass ------------------------------------------------
+        { kAutoThresh, "", 0.0, 1.0, 0.0,
+          "the threshold tracks a slow average of the band instead of sitting at "
+          "a fixed level, so it de-esses relative to how loud the voice actually "
+          "is and keeps working across a quiet verse and a loud chorus. While it "
+          "is on, threshold_db is ignored - set range_db to control the amount",
+          true },
     });
     return s;
 }
@@ -76,11 +84,34 @@ bool EedDeEsserProcessor::setParamValue (const juce::String& id, double value)
     // Just the target. The audio thread picks it up and rebuilds the filters.
     if (id == kFreqHz)      { freqHz_.store (value);                return true; }
     if (id == kRangeDb)     { core_.setRangeDb     ((float) value); return true; }
-    if (id == kThresholdDb) { core_.setThresholdDb ((float) value); return true; }
     if (id == kAttackMs)    { core_.setAttackMs    (value);         return true; }
     if (id == kReleaseMs)   { core_.setReleaseMs   (value);         return true; }
     if (id == kMode)        { splitMode_.store (value >= 0.5);      return true; }
     if (id == kListen)      { listen_.store    (value >= 0.5);      return true; }
+
+    if (id == kThresholdDb)
+    {
+        thresholdDb_.store (value);
+
+        // Pushed to the core only while the tracker is NOT driving it; otherwise
+        // the audio thread overwrites it on the next sample anyway, and writing
+        // it here would make the curve flicker between the two while a dial that
+        // is doing nothing is dragged.
+        if (! autoThreshold_.load()) core_.setThresholdDb ((float) value);
+        return true;
+    }
+
+    if (id == kAutoThresh)
+    {
+        const bool on = value >= 0.5;
+        autoThreshold_.store (on);
+
+        // Switching auto OFF has to hand the dialled threshold back immediately,
+        // or the device keeps running whatever the tracker last landed on and the
+        // knob appears to have stopped working.
+        if (! on) core_.setThresholdDb ((float) thresholdDb_.load());
+        return true;
+    }
     return false;
 }
 
@@ -88,11 +119,12 @@ double EedDeEsserProcessor::getParamValue (const juce::String& id) const
 {
     if (id == kFreqHz)      return freqHz_.load();
     if (id == kRangeDb)     return (double) core_.getRangeDb();
-    if (id == kThresholdDb) return (double) core_.getThresholdDb();
+    if (id == kThresholdDb) return thresholdDb_.load();
     if (id == kAttackMs)    return core_.getAttackMs();
     if (id == kReleaseMs)   return core_.getReleaseMs();
     if (id == kMode)        return splitMode_.load() ? 1.0 : 0.0;
     if (id == kListen)      return listen_.load() ? 1.0 : 0.0;
+    if (id == kAutoThresh)  return autoThreshold_.load() ? 1.0 : 0.0;
     return 0.0;
 }
 
@@ -124,6 +156,11 @@ void EedDeEsserProcessor::prepareToPlay (double sampleRate, int)
     for (auto& f : scFilter_)    f.reset();
     for (auto& f : splitFilter_) f.reset();
 
+    // The auto-threshold tracker's averaging coefficient, in samples for this
+    // rate. Started from silence rather than from the last rate's state.
+    autoCoeff_ = echojay::dyn::onePoleCoeff (kAutoThresholdWindowMs, sampleRate_);
+    autoMs_    = 0.0f;
+
     appliedFreqHz_ = -1.0;      // force a rebuild for the new sample rate
     updateFilters();
 }
@@ -149,6 +186,7 @@ void EedDeEsserProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 
     const bool split  = splitMode_.load();
     const bool listen = listen_.load();
+    const bool autoTh = autoThreshold_.load();
 
     for (int i = 0; i < n; ++i)
     {
@@ -159,6 +197,24 @@ void EedDeEsserProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         // the output unless LISTEN is on.
         const float scL = scFilter_[0].process (inL);
         const float scR = r != nullptr ? scFilter_[1].process (inR) : scL;
+
+        if (autoTh)
+        {
+            // The tracked threshold: a slow RMS of the band, plus the offset.
+            // Measured on the band BEFORE the reduction is applied, which is what
+            // keeps it from chasing its own gain — a tracker fed the processed
+            // band would lower the threshold every time it reduced, and reduce
+            // more because it had.
+            const float sq = std::max (scL * scL, scR * scR);
+            autoMs_ += (sq - autoMs_) * autoCoeff_;
+
+            const float avgDb = echojay::dyn::gainToDb (std::sqrt (std::max (autoMs_, 0.0f)));
+
+            // Clamped into the same range the dialled threshold lives in, so the
+            // curve and the band view never have to plot a line off their axis.
+            core_.setThresholdDb (juce::jlimit (-60.0f, 0.0f,
+                                                avgDb + kAutoThresholdOffsetDb));
+        }
 
         // Stereo-linked, like every other face — a de-esser that ducks one side
         // of a doubled vocal pulls the image with it.
@@ -214,9 +270,10 @@ namespace
         d.category        = "Dynamics";
         d.descriptiveName = "EchoJay de-esser (built in)";
         d.summary         = "Band-triggered compressor for sibilance, in wide or "
-                            "split-band mode, with a listen solo for tuning the "
-                            "frequency. Reach for it when a vocal's 's' and 't' "
-                            "sounds are harsh.";
+                            "split-band mode, with an auto threshold that tracks the "
+                            "voice and a listen solo for tuning the frequency. Reach "
+                            "for it when a vocal's 's' and 't' sounds are harsh; "
+                            "auto_threshold + range_db is the two-control setup.";
         d.identifier      = "echojay:builtin:deesser";
         d.uid             = 0x456A4453;   // 'EjDS' - frozen once shipped
         d.aliases         = { "EchoJayDeEsser", "EchoJay Deesser", "EchoJay De Esser",

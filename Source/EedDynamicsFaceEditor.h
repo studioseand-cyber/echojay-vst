@@ -64,6 +64,22 @@ protected:
     // for a subclass that has state of its own to refresh.
     virtual void refreshExtras() {}
 
+    // Whether the dial at `index` in the spec table is currently shown. The
+    // depth pass added modes that make particular knobs MEANINGLESS — a limiter
+    // in `clip` has nothing to look ahead for, a de-esser on auto_threshold
+    // ignores its threshold — and a live knob the DSP is ignoring is worse than
+    // no knob: it turns, it reads back, and nothing happens.
+    //
+    // Hidden, not disabled, and deliberately: the dial is still a schema param,
+    // still dialable by the model, and still saved. What changes is only whether
+    // this face shows it, which is a statement about the mode rather than about
+    // the contract.
+    virtual bool knobVisible (int /*index*/) const { return true; }
+
+    // Re-run the layout after a mode change moved a knob in or out. Cheap, and
+    // called from a mode callback rather than polled.
+    void refreshKnobLayout() { resized(); }
+
     echojay::device::EchoJayDeviceKnob& knob (int i) noexcept { return *knobs_[i]; }
     echojay::device::GrMeter&           meter() noexcept      { return meter_; }
     EedDeviceProcessor&                 device() noexcept     { return proc_; }

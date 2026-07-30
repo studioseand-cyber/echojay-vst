@@ -37,6 +37,13 @@
     the device sounds like, and advertising it would invite the model to "select"
     a band instead of setting it. Every knob it reveals is dialable by id whether
     or not that band is on screen.
+
+    TWO SELECTORS, AND THEY SIT IN DIFFERENT PLACES ON PURPOSE. The depth pass
+    added a per-band character and one global detector, and where each control
+    lives says which it is: DET goes in the HEADER with the device's other global
+    switches, and MODE goes in the selected band's own strip, next to that band's
+    bypass. A per-band control in the header would read as global, which is the
+    one thing about this device that has to be unambiguous.
 */
 
 #pragma once
@@ -56,6 +63,7 @@ public:
 
 protected:
     void layoutContent (juce::Rectangle<int> content) override;
+    void layoutHeaderLeading (juce::Rectangle<int>& bar) override;
     void paintContent (juce::Graphics& g) override;
 
 private:
@@ -75,6 +83,15 @@ private:
 
     juce::TextButton bandButtons_[kNumBands];
     juce::TextButton bandBypassBtn_;
+
+    // The SELECTED band's character, rebound on selection like its dials — and
+    // the device's one global detector, which is not.
+    juce::ComboBox bandModeBox_, detectorBox_;
+
+    // Backs the char* the band-mode binding is given, for the same reason
+    // bandSpecIds_ does: the id carries the band number, so it is built per
+    // selection and has to outlive the binding.
+    juce::String bandModeId_;
 
     // Owned so they can be re-pointed at another band's meters on selection.
     juce::OwnedArray<echojay::device::GrMeter> bandMeters_;

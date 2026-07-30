@@ -16,6 +16,19 @@
 
     Peak detection, fixed: an expander is judged on whether it opens cleanly on
     the front of a note, and an RMS window blurs exactly that.
+
+    THE DEPTH PASS (DEVICE_DEPTH_PLAN.md, Dynamics) added the two controls this
+    category is expected to have, and no character mode: an expander is a slope
+    and a range, and colouring it would be a distortion box wearing the wrong
+    label. What it does get:
+
+      * `sc_hpf_hz` — a detector high-pass, so low-frequency rumble does not hold
+        the expander open through every pause. This is the noise an expander is
+        usually there to remove, and full-band detection is why one sometimes
+        refuses to close.
+      * `lookahead_ms` — the recovery to unity can begin before the transient
+        arrives, so the front of a note is not softened by the attack. Reported
+        to the host as latency.
 */
 
 #pragma once
@@ -46,6 +59,10 @@ public:
     static constexpr const char* kAttackMs    = "attack_ms";
     static constexpr const char* kReleaseMs   = "release_ms";
     static constexpr const char* kRangeDb     = "range_db";
+    static constexpr const char* kScHpfHz     = "sc_hpf_hz";
+    static constexpr const char* kLookaheadMs = "lookahead_ms";
+
+    static constexpr double kMaxLookaheadMs = 10.0;
 
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
     float detectorLevelDb()  const noexcept { return core_.detectorLevelDb(); }
@@ -67,6 +84,10 @@ public:
 
 private:
     echojay::DynamicsCore core_;
+
+    // The REQUESTED lookahead. The ring rounds to whole samples, so asking it
+    // back would make a state round-trip drift away from what was dialled.
+    double lookaheadMs_ = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedExpanderProcessor)
 };

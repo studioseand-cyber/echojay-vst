@@ -21,6 +21,22 @@
 
     Peak detection, fixed: a gate has to react to the transient that opens it,
     and an RMS window would let the front of every note through closed.
+
+    THE DEPTH PASS (DEVICE_DEPTH_PLAN.md, Dynamics) gave this face the controls
+    that turn a gate into a trigger:
+
+      * `mode` — gate | duck. The same threshold, hysteresis, hold and range,
+        applied to the OTHER side of the line: a gate attenuates what is below
+        the threshold, a ducker attenuates what is above it. One switch, and the
+        device becomes "pull this down whenever it gets loud".
+      * `sc_hpf_hz` / `sc_lpf_hz` — FREQUENCY-SELECTIVE TRIGGERING, which is the
+        single biggest thing a gate can gain. A tom mic hears the snare; band the
+        detector to 80-250 Hz and the gate opens on the tom and ignores it. The
+        filters are on the detector only, so a gate triggered from a narrow band
+        still passes the full-range signal when it opens.
+      * `lookahead_ms` — the attack can start BEFORE the transient that opened
+        the gate, so the front of a note survives instead of being clipped off by
+        however fast the attack is. Reported to the host as latency.
 */
 
 #pragma once
@@ -52,6 +68,21 @@ public:
     static constexpr const char* kHoldMs        = "hold_ms";
     static constexpr const char* kReleaseMs     = "release_ms";
     static constexpr const char* kHysteresisDb  = "hysteresis_db";
+    static constexpr const char* kMode          = "mode";
+    static constexpr const char* kScHpfHz       = "sc_hpf_hz";
+    static constexpr const char* kScLpfHz       = "sc_lpf_hz";
+    static constexpr const char* kLookaheadMs   = "lookahead_ms";
+
+    static constexpr double kMaxLookaheadMs = 10.0;
+
+    // Whether this device is currently gating or ducking. The editor's curve is
+    // drawn in whichever mode the DSP is running, read from here rather than from
+    // a second copy of the index.
+    echojay::DynamicsMode dynamicsMode() const noexcept { return core_.getMode(); }
+    bool isDucking() const noexcept
+    {
+        return core_.getMode() == echojay::DynamicsMode::Duck;
+    }
 
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
 
@@ -69,6 +100,10 @@ public:
 
 private:
     echojay::DynamicsCore core_;
+
+    // The REQUESTED lookahead. The ring rounds to whole samples, so asking it
+    // back would make a state round-trip drift away from what was dialled.
+    double lookaheadMs_ = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedGateProcessor)
 };

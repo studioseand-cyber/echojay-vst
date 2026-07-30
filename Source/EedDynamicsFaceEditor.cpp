@@ -92,7 +92,27 @@ void EedDynamicsFaceEditor::layoutContent (juce::Rectangle<int> content)
         }
     }
 
-    layoutKnobRow (content, knobs_.getRawDataPointer(), knobs_.size());
+    // Only the dials this face is currently showing get laid out — and the ones
+    // it is not are hidden rather than left sitting at last frame's bounds under
+    // whatever took their place.
+    //
+    // A knob that failed to bind (an id the schema does not carry, which is a
+    // device bug) was never added as a child, and must not be made visible here
+    // by the mode logic: it has no spec behind it, so it would draw an empty dial.
+    juce::Array<EchoJayDeviceKnob*> shown;
+    shown.ensureStorageAllocated (knobs_.size());
+
+    for (int i = 0; i < knobs_.size(); ++i)
+    {
+        auto* k = knobs_[i];
+        if (k->getParentComponent() == nullptr) continue;      // never bound
+
+        const bool vis = knobVisible (i);
+        k->setVisible (vis);
+        if (vis) shown.add (k);
+    }
+
+    layoutKnobRow (content, shown.getRawDataPointer(), shown.size());
 
     // Called even when the area came out EMPTY — that is how the subclass
     // learns to hide its view rather than leave it sitting at last frame's

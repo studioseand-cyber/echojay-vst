@@ -31,6 +31,19 @@
     Every band's every knob is a schema entry (band1_threshold_db ...), so the
     house rule holds: nothing is clickable-but-not-dialable, and the array form
     is a convenience over the contract rather than a hole in it.
+
+    THE DEPTH PASS (DEVICE_DEPTH_PLAN.md, Dynamics) gave this device a PER-BAND
+    character mode and ONE global detector, and the asymmetry is deliberate:
+
+      * `bandN_mode` is per band because that is the point of a multiband. A low
+        band wants `glue` (slow, soft, invisible) at the same time as an air band
+        wants `punch` (fast, a touch of drive) — that combination is a
+        four-compressor mastering chain, and it is two params.
+      * `detector` is global because peak-vs-RMS is a statement about what the
+        DEVICE is listening for, not about a band, and four independently
+        detected bands is a setting nobody can reason about. It also keeps the
+        four bands comparable: with two on peak and two on RMS, the meters no
+        longer mean the same thing side by side.
 */
 
 #pragma once
@@ -81,10 +94,27 @@ public:
     static constexpr const char* kKneeDb      = "knee_db";
     static constexpr const char* kMakeupDb    = "makeup_db";
     static constexpr const char* kBypass      = "bypass";
+    static constexpr const char* kMode        = "mode";
 
     static constexpr const char* kCrossover1Hz = "crossover1_hz";
     static constexpr const char* kCrossover2Hz = "crossover2_hz";
     static constexpr const char* kCrossover3Hz = "crossover3_hz";
+
+    // Global, not per band — see the header comment on why.
+    static constexpr const char* kDetector = "detector";
+
+    // One band's character, for the editor's selector and for drawing that
+    // band's curve at the knee the mode actually runs.
+    echojay::CharacterMode bandCharacter (int band) const noexcept
+    {
+        return (band >= 0 && band < kNumBands) ? cores_[band].getCharacter()
+                                               : echojay::CharacterMode::Clean;
+    }
+
+    float bandEffectiveKneeDb (int band) const noexcept
+    {
+        return (band >= 0 && band < kNumBands) ? cores_[band].effectiveKneeDb() : 0.0f;
+    }
 
     float gainReductionDb (int band) const noexcept
     {

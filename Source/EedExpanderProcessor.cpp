@@ -20,6 +20,8 @@ EedExpanderProcessor::EedExpanderProcessor()
     // stops matching the sound the first time one of them is changed.
     core_.setKneeDb (kFixedKneeDb);
 
+    core_.setMaxLookaheadMs (kMaxLookaheadMs);
+
     resetParamsToDefaults();
 }
 
@@ -48,6 +50,17 @@ const echojay::ParamSchema& EedExpanderProcessor::schema()
         { kRangeDb, "dB", 0.0, 60.0, 20.0,
           "the deepest reduction it is allowed to apply; this is what keeps an "
           "expander from fading quiet passages to nothing", false },
+
+        // ---- the depth pass ------------------------------------------------
+        { kScHpfHz, "Hz", 0.0, 500.0, 0.0,
+          "high-pass on the DETECTOR only, never on the audio: low-frequency "
+          "rumble stops holding the expander open through the pauses you are "
+          "trying to clean up. 0 is off", false },
+
+        { kLookaheadMs, "ms", 0.0, kMaxLookaheadMs, 0.0,
+          "how far ahead it looks, so it is already back at unity when a note "
+          "arrives instead of softening its front; this is added latency, reported "
+          "to the host", false },
     });
     return s;
 }
@@ -59,6 +72,15 @@ bool EedExpanderProcessor::setParamValue (const juce::String& id, double value)
     if (id == kAttackMs)    { core_.setAttackMs    (value);         return true; }
     if (id == kReleaseMs)   { core_.setReleaseMs   (value);         return true; }
     if (id == kRangeDb)     { core_.setRangeDb     ((float) value); return true; }
+    if (id == kScHpfHz)     { core_.setSidechainHpfHz (value);      return true; }
+
+    if (id == kLookaheadMs)
+    {
+        lookaheadMs_ = value;
+        core_.setLookaheadMs (value);
+        setLatencySamples (core_.lookaheadSamples());
+        return true;
+    }
     return false;
 }
 
@@ -69,6 +91,8 @@ double EedExpanderProcessor::getParamValue (const juce::String& id) const
     if (id == kAttackMs)    return core_.getAttackMs();
     if (id == kReleaseMs)   return core_.getReleaseMs();
     if (id == kRangeDb)     return (double) core_.getRangeDb();
+    if (id == kScHpfHz)     return core_.getSidechainHpfHz();
+    if (id == kLookaheadMs) return lookaheadMs_;
     return 0.0;
 }
 
@@ -79,6 +103,10 @@ void EedExpanderProcessor::prepareToPlay (double sampleRate, int)
 {
     core_.prepare (sampleRate);
     core_.reset();
+
+    // The ring was just resized for this rate, so the sample count the host needs
+    // has changed even though the millisecond value has not.
+    setLatencySamples (core_.lookaheadSamples());
 }
 
 void EedExpanderProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -88,14 +116,22 @@ void EedExpanderProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, buffer.getNumSamples());
 
-    if (isBypassed()) return;
-
     const int numCh = juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels());
     if (numCh <= 0) return;
 
-    core_.process (buffer.getWritePointer (0),
-                   numCh > 1 ? buffer.getWritePointer (1) : nullptr,
-                   buffer.getNumSamples());
+    float* l = buffer.getWritePointer (0);
+    float* r = numCh > 1 ? buffer.getWritePointer (1) : nullptr;
+
+    // BYPASS STILL DELAYS: the host is compensating for the reported latency
+    // whether or not the device is bypassed, so returning the signal early would
+    // shift this track against the session every time bypass was toggled.
+    if (isBypassed())
+    {
+        core_.processDelayOnly (l, r, buffer.getNumSamples());
+        return;
+    }
+
+    core_.process (l, r, buffer.getNumSamples());
 }
 
 juce::AudioProcessorEditor* EedExpanderProcessor::createEditor()
@@ -114,7 +150,8 @@ namespace
         d.name            = "EchoJay Expander";
         d.category        = "Dynamics";
         d.descriptiveName = "EchoJay downward expander (built in)";
-        d.summary         = "Stereo-linked downward expander with a range limit. Reach "
+        d.summary         = "Stereo-linked downward expander with a range limit, a "
+                            "detector high-pass and lookahead. Reach "
                             "for it to push a noise floor or room tone down without the "
                             "on/off character of a gate, or to restore dynamics to "
                             "over-compressed material.";

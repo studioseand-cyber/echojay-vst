@@ -28,6 +28,11 @@ namespace
 
     constexpr int kModeW   = 62;
     constexpr int kListenW = 62;
+    constexpr int kAutoW   = 54;
+
+    // knobVisible() is asked about a POSITION in the table below, so the one
+    // entry auto_threshold disables is named rather than counted.
+    enum KnobIndex { kFreq = 0, kThresh, kRange, kAttack, kRelease, kNumKnobs };
 
     const KnobSpec kKnobs[] = {
         // Frequency is skewed to 4 kHz so mid-travel lands in vocal sibilance
@@ -39,6 +44,8 @@ namespace
         { EedDeEsserProcessor::kAttackMs,    "ATTACK",  " ms", 2, 1.0 },
         { EedDeEsserProcessor::kReleaseMs,   "RELEASE", " ms", 0, 60.0 },
     };
+    static_assert ((int) std::size (kKnobs) == kNumKnobs,
+                   "kKnobs and KnobIndex must stay in step");
 }
 
 EedDeEsserEditor::EedDeEsserEditor (EedDeEsserProcessor& p)
@@ -71,6 +78,21 @@ EedDeEsserEditor::EedDeEsserEditor (EedDeEsserProcessor& p)
         refreshSwitchText();
     };
     addAndMakeVisible (listenBtn_);
+
+    styleButton (autoBtn_, true);
+    autoBtn_.setButtonText ("AUTO");
+    autoBtn_.setToggleState (deEsser_.isAutoThreshold(), juce::dontSendNotification);
+    autoBtn_.onClick = [this]
+    {
+        deEsser_.setParamValue (EedDeEsserProcessor::kAutoThresh,
+                                autoBtn_.getToggleState() ? 1.0 : 0.0);
+
+        // AUTO decides whether THRESH is on the panel at all, so the dial row has
+        // to be relaid out now rather than at the next resize.
+        refreshKnobLayout();
+        refreshSwitchText();
+    };
+    addAndMakeVisible (autoBtn_);
 
     curve_.setCaption ("TRANSFER");
     // The sidechain is a narrow band, so its level sits well below the full
@@ -131,6 +153,18 @@ void EedDeEsserEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
     modeBtn_.setBounds (bar.removeFromRight (juce::jmin (kModeW, juce::jmax (0, bar.getWidth())))
                             .reduced (0, 3));
     bar.removeFromRight (6);
+    autoBtn_.setBounds (bar.removeFromRight (juce::jmin (kAutoW, juce::jmax (0, bar.getWidth())))
+                            .reduced (0, 3));
+    bar.removeFromRight (6);
+}
+
+bool EedDeEsserEditor::knobVisible (int index) const
+{
+    // While the threshold is tracked, the dialled one is doing nothing. It is
+    // still a schema param and still keeps its value — this is only about whether
+    // the panel shows a control the DSP is ignoring.
+    if (index == kThresh) return ! deEsser_.isAutoThreshold();
+    return true;
 }
 
 void EedDeEsserEditor::refreshSwitchText()
@@ -140,9 +174,14 @@ void EedDeEsserEditor::refreshSwitchText()
     modeBtn_.setButtonText (modeBtn_.getToggleState() ? "SPLIT" : "WIDE");
     listenBtn_.setButtonText ("LISTEN");
 
-    setHeaderHint (listenBtn_.getToggleState()
-                       ? "LISTEN on - monitoring the detector band, not the result"
-                       : "band-triggered sibilance control");
+    if (listenBtn_.getToggleState())
+        setHeaderHint ("LISTEN on - monitoring the detector band, not the result");
+    else if (autoBtn_.getToggleState())
+        setHeaderHint ("auto threshold - tracking the band, "
+                       + juce::String (EedDeEsserProcessor::kAutoThresholdOffsetDb, 0)
+                       + " dB above its average");
+    else
+        setHeaderHint ("band-triggered sibilance control");
 }
 
 void EedDeEsserEditor::refreshExtras()
@@ -161,6 +200,15 @@ void EedDeEsserEditor::refreshExtras()
         listenBtn_.setToggleState (deEsser_.isListening(), juce::dontSendNotification);
         changed = true;
     }
+    if (autoBtn_.getToggleState() != deEsser_.isAutoThreshold())
+    {
+        autoBtn_.setToggleState (deEsser_.isAutoThreshold(), juce::dontSendNotification);
+
+        // An AI move can switch AUTO, and AUTO decides whether THRESH is on the
+        // panel — so a change from outside relayouts too.
+        refreshKnobLayout();
+        changed = true;
+    }
 
     if (changed) refreshSwitchText();
 
@@ -169,8 +217,12 @@ void EedDeEsserEditor::refreshExtras()
     const bool split  = deEsser_.isSplitMode();
 
     const float freq   = (float) deEsser_.getParamValue (EedDeEsserProcessor::kFreqHz);
-    const float thresh = (float) deEsser_.getParamValue (EedDeEsserProcessor::kThresholdDb);
     const float range  = (float) deEsser_.getParamValue (EedDeEsserProcessor::kRangeDb);
+
+    // The threshold the DSP is COMPARING AGAINST, which is the tracked one while
+    // auto is on. Drawing the dialled value there would put the line the picture
+    // is built around somewhere the device is not using.
+    const float thresh = deEsser_.effectiveThresholdDb();
 
     // ---- HOW MUCH: the curve the sidechain level is compressed against ------
     // Ratio and knee come from the processor's published constants rather than

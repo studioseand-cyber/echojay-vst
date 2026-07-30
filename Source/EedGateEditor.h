@@ -20,6 +20,13 @@
     GainCurve's Gate branch used to run the EXPANDER slope, on a `ratio` this
     device never sets. It was dead code until something plotted it. See
     EedDynamicsCore.h.
+
+    AND THE SAME PICTURE DRAWS THE DUCKER. `mode` flips which side of the
+    threshold is attenuated, and the curve is drawn in whichever DynamicsMode the
+    core is actually running — so the step turns over and the hysteresis band
+    stays exactly where it was, which is correct: the band is "the signal is over
+    the line, allowing for hysteresis" in both modes, and only the consequence
+    differs.
 */
 
 #pragma once
@@ -34,6 +41,8 @@ public:
     explicit EedGateEditor (EedGateProcessor& p);
 
 protected:
+    void layoutHeaderLeading (juce::Rectangle<int>& bar) override;
+
     int  topContentHeight() const override;
     void layoutTopContent (juce::Rectangle<int> area) override;
     void refreshExtras() override;
@@ -41,6 +50,10 @@ protected:
 private:
     EedGateProcessor&               proc_;
     echojay::viz::TransferCurveView curve_;
+
+    juce::ComboBox modeBox_;
+    bool           suppressCallbacks_ = false;
+    juce::String   lastHint_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedGateEditor)
 };

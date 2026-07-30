@@ -46,6 +46,23 @@ namespace
         { "makeup",       EedMultibandProcessor::kMakeupDb },
         { "gain_db",      EedMultibandProcessor::kMakeupDb },
         { "bypass",       EedMultibandProcessor::kBypass },
+
+        // The depth pass's per-band character, reachable from the array form too:
+        // "make the top band punchy" is a comp_bands move, and it would be odd for
+        // the one param the plan calls the marquee addition to be flat-only.
+        { "mode",         EedMultibandProcessor::kMode },
+        { "character",    EedMultibandProcessor::kMode },
+    };
+
+    // Per-band character defaults. Like the time constants above, NOT the same for
+    // every band: a low band wants the slow, soft, invisible one and an air band
+    // wants the fast one. Shipping four `clean` bands would be a device whose
+    // marquee control starts switched off.
+    const echojay::CharacterMode kBandCharacter[EedMultibandProcessor::kNumBands] = {
+        echojay::CharacterMode::Glue,     // band 1 - lows: slow and cohesive
+        echojay::CharacterMode::Clean,    // band 2 - low mids: stay out of the way
+        echojay::CharacterMode::Clean,    // band 3 - high mids: where words live
+        echojay::CharacterMode::Punch,    // band 4 - highs: fast, a little drive
     };
 }
 
@@ -55,12 +72,11 @@ EedMultibandProcessor::EedMultibandProcessor()
     for (int b = 0; b < kNumBands; ++b)
     {
         cores_[b].setMode (echojay::DynamicsMode::Compress);
-        // RMS per band, same reasoning as the single-band compressor: a
-        // multiband is riding loudness in each band, not chasing its transients.
-        cores_[b].setDetectorMode (echojay::DetectorMode::Rms);
         cores_[b].setRmsWindowMs (10.0);
     }
 
+    // The detector and the four characters come from the schema's defaults, so a
+    // fresh device is described in exactly one place.
     resetParamsToDefaults();
 }
 
@@ -87,7 +103,7 @@ const echojay::ParamSchema& EedMultibandProcessor::schema()
     static const echojay::ParamSchema s = []
     {
         std::vector<echojay::ParamSpec> p;
-        p.reserve (3 + kNumBands * 7);
+        p.reserve (4 + kNumBands * 8);
 
         // Crossovers first: they define what the bands ARE, so they are what a
         // model has to reason about before it can reason about a band.
@@ -97,6 +113,14 @@ const echojay::ParamSchema& EedMultibandProcessor::schema()
                        "split between band 2 and band 3 (mids)", false });
         p.push_back ({ "crossover3_hz", "Hz", 1000.0, 18000.0, 5000.0,
                        "split between band 3 and band 4 (highs)", false });
+
+        // Global, and placed with the crossovers rather than among the bands
+        // because like them it is a statement about the whole device.
+        p.push_back ({ kDetector, "", 0.0, 1.0, 1.0,
+                       "what every band's detector measures: rms follows loudness "
+                       "(right for multiband work, and what keeps the four bands "
+                       "comparable), peak catches transients and is tighter",
+                       false, { "peak", "rms" } });
 
         // Each band's full set. Descriptions name the band so the advertisement
         // reads as four compressors rather than as 28 anonymous numbers.
@@ -139,6 +163,16 @@ const echojay::ParamSchema& EedMultibandProcessor::schema()
             p.push_back ({ bandParamId (b, kBypass).toStdString(), "",
                            0.0, 1.0, 0.0,
                            "on = " + where + " passes through uncompressed", true });
+
+            p.push_back ({ bandParamId (b, kMode).toStdString(), "",
+                           0.0, (double) (echojay::kCharacterCount - 1),
+                           (double) (int) kBandCharacter[b],
+                           "character for " + where + ", which reshapes its attack, "
+                           "release and knee and adds gentle drive as it works: clean "
+                           "is transparent, glue is slow and soft (right for a low "
+                           "band), punch is fast and aggressive (right for an air "
+                           "band), smooth has a programme-dependent release",
+                           false, { "clean", "glue", "punch", "smooth" } });
         }
 
         return echojay::ParamSchema (std::move (p));
@@ -171,6 +205,14 @@ bool EedMultibandProcessor::setParamValue (const juce::String& id, double value)
     if (id == kCrossover2Hz) { crossoverHz_[1].store (value); return true; }
     if (id == kCrossover3Hz) { crossoverHz_[2].store (value); return true; }
 
+    if (id == kDetector)
+    {
+        const auto m = value >= 0.5 ? echojay::DetectorMode::Rms
+                                    : echojay::DetectorMode::Peak;
+        for (auto& c : cores_) c.setDetectorMode (m);
+        return true;
+    }
+
     juce::String leaf;
     const int b = bandIndexFromId (id, leaf);
     if (b < 0) return false;
@@ -183,6 +225,11 @@ bool EedMultibandProcessor::setParamValue (const juce::String& id, double value)
     if (leaf == kKneeDb)      { c.setKneeDb      ((float) value); return true; }
     if (leaf == kMakeupDb)    { c.setMakeupDb    ((float) value); return true; }
     if (leaf == kBypass)      { bandBypass_[b].store (value >= 0.5); return true; }
+    if (leaf == kMode)
+    {
+        c.setCharacter (echojay::characterModeFromIndex ((int) std::lround (value)));
+        return true;
+    }
     return false;
 }
 
@@ -194,6 +241,11 @@ double EedMultibandProcessor::getParamValue (const juce::String& id) const
     if (id == kCrossover1Hz) return crossoverHz_[0].load();
     if (id == kCrossover2Hz) return crossoverHz_[1].load();
     if (id == kCrossover3Hz) return crossoverHz_[2].load();
+
+    // One global setting, so band 0 speaks for all four — they are written
+    // together and cannot disagree.
+    if (id == kDetector)
+        return cores_[0].getDetectorMode() == echojay::DetectorMode::Rms ? 1.0 : 0.0;
 
     juce::String leaf;
     const int b = bandIndexFromId (id, leaf);
@@ -207,6 +259,7 @@ double EedMultibandProcessor::getParamValue (const juce::String& id) const
     if (leaf == kKneeDb)      return (double) c.getKneeDb();
     if (leaf == kMakeupDb)    return (double) c.getMakeupDb();
     if (leaf == kBypass)      return bandBypass_[b].load() ? 1.0 : 0.0;
+    if (leaf == kMode)        return (double) (int) c.getCharacter();
     return 0.0;
 }
 
@@ -409,8 +462,12 @@ void EedMultibandProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             const float g  = cores_[b].gainForSidechain (bl, br);
             const float mk = cores_[b].nextMakeupGain();
 
-            outL += bl * g * mk;
-            outR += br * g * mk;
+            // This band's character, applied where its gain element sits — after
+            // the gain and before the makeup. Identity for a `clean` band and for
+            // any band that is not currently reducing, so an idle multiband still
+            // sums back to its input.
+            outL += cores_[b].shapeCharacter (bl * g) * mk;
+            outR += cores_[b].shapeCharacter (br * g) * mk;
         }
 
         l[i] = outL;
@@ -435,10 +492,12 @@ namespace
         d.category        = "Dynamics";
         d.descriptiveName = "EchoJay 4-band multiband compressor (built in)";
         d.summary         = "Four Linkwitz-Riley bands, each with its own stereo-linked "
-                            "compressor and makeup. Reach for it when one part of the "
-                            "spectrum needs controlling without touching the rest - a "
-                            "boomy low end, a harsh upper mid. Dial it with a "
-                            "comp_bands array or with flat bandN_ params.";
+                            "compressor, makeup and character mode (clean/glue/punch/"
+                            "smooth), plus one global detector. Reach for it when one "
+                            "part of the spectrum needs controlling without touching the "
+                            "rest - a boomy low end, a harsh upper mid - or to give the "
+                            "lows a slow glue and the air a fast punch at once. Dial it "
+                            "with a comp_bands array or with flat bandN_ params.";
         d.identifier      = "echojay:builtin:multiband";
         d.uid             = 0x456A4D42;   // 'EjMB' - frozen once shipped
         d.aliases         = { "EchoJayMultiband", "EchoJay Multiband",
