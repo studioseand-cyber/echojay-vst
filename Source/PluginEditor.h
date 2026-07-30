@@ -2456,6 +2456,131 @@ private:
     // for pre-uid Links (empty uid in their slots)
     juce::String linkAddrForName(const juce::String& linkName) const;
 
+    // =====================================================================
+    //  LINK MIXER: console-style strips, REPLACING the vertical list above.
+    //  One narrow vertical strip per live Link, laid out horizontally in a
+    //  scrolling viewport, with the Mix Bus strip PINNED outside that
+    //  viewport (left edge) so the master cannot scroll away. Up to
+    //  kRegMaxSlots = 16 Link strips.
+    //
+    //  GEOMETRY HAS EXACTLY ONE AUTHOR: measureLinkStrips(). resized() is
+    //  its only caller. Everything it computes is STORED below. paint()
+    //  measures nothing and mouseDown() recomputes nothing; both index the
+    //  stored rects. A horizontally scrolling, variable-count,
+    //  variable-width strip set is the highest-risk shape for the
+    //  two-authorities bug that produced four failures in two days, so this
+    //  is not a style preference. See CHAIN_AI_BUILD_SPEC.md, "ONE AUTHOR
+    //  FOR BOUNDS, VISIBILITY AND HIT REGIONS".
+    // =====================================================================
+    struct StripGeom
+    {
+        juce::String addr;              // Link uid; EMPTY on the Mix Bus strip
+        bool isBus = false;
+        // TWO COORDINATE SPACES, stated because mixing them is a hit-test
+        // bug waiting to happen: for a Link strip every rect below is in
+        // linkMixerView_ LOCAL coords (it scrolls); for the Mix Bus strip
+        // they are in EDITOR coords (it is painted directly, pinned).
+        juce::Rectangle<int> full;      // whole strip body
+        juce::Rectangle<int> name;      // resolveLinkDisplayName()
+        juce::Rectangle<int> badge;     // BUS / CHANNEL / SET? chip
+        juce::Rectangle<int> active;    // merged Active tick + connectivity
+        juce::Rectangle<int> data;      // numbers / meter / chain
+        juce::Rectangle<int> fader;     // filmstrip fader, aspect-locked
+        juce::Rectangle<int> ai;        // opens this channel's conversation
+        // NO EQ RECT AND NO RESERVED SPACE. The surgical EQ is being built in
+        // another tree and its parameter shape is not settled, and 16 empty
+        // recessed wells read as broken rather than reserved. The fader takes
+        // that height instead, which matters because the vertical budget
+        // floors it at kFaderHMin at minimum window height. measureLinkStrips
+        // can grow an eq rect later; nothing else has to change.
+    };
+
+    struct LinkMixerView : juce::Component
+    {
+        EchoJayEditor* owner = nullptr;
+        void paint(juce::Graphics& g) override;
+        void mouseDown(const juce::MouseEvent& e) override;
+    };
+    LinkMixerView  linkMixerView_;
+    juce::Viewport linkMixerViewport_;
+
+    // Strip widths. Narrow is the reference console look: thin strips, many
+    // visible. Wide trades count for legibility.
+    static constexpr int kStripWNarrow = 46;
+    static constexpr int kStripWWide   = 96;
+    static constexpr int kStripGap     = 6;
+    int stripWidth() const
+    { return processorRef.linkMixerWide ? kStripWWide : kStripWNarrow; }
+
+    // Link tab vertical layout. ONE named place for every constant, because
+    // paintLinkView used to hardcode these while resized() re-added them as
+    // `topH + 16 + 26 + 64 + 6` under a comment saying it "mirrors the panel
+    // painter's layout constants". That is the smell this rebuild removes.
+    static constexpr int kLinkPad     = 32;   // left/right margin
+    static constexpr int kLinkTopPad  = 16;
+    static constexpr int kLinkTitleH  = 26;   // "LINK MONITOR"
+    static constexpr int kLinkCtrlH   = 30;   // view controls row
+    // Strip element heights, top to bottom.
+    static constexpr int kStripNameH  = 16;
+    static constexpr int kStripBadgeH = 17;
+    static constexpr int kStripActH   = 20;
+    static constexpr int kStripAiH    = 22;
+    static constexpr int kStripVGap   = 6;
+    static constexpr int kStripDataHMin = 120;
+    // Fader box. The asset frame is 60x480, so the aspect is locked at 1:8 or
+    // the cap distorts; height drives width. 240 is 1x logical (pixel-exact
+    // against the 60x480 source on a 2x display), 144 is the short-window
+    // floor. Both are DOWNSCALES from the source, so the fader never upscales.
+    static constexpr int kFaderHMax = 240;
+    static constexpr int kFaderHMin = 144;
+
+    // Authored by measureLinkStrips(), consumed by paintLinkView() and the
+    // mouse handlers. Nothing else writes them.
+    std::vector<StripGeom> linkStripGeom_;    // live Links, mixer-view coords
+    StripGeom              linkBusGeom_;      // Mix Bus, EDITOR coords
+    juce::Rectangle<int>   linkTitleRect_;    // editor coords
+    juce::Rectangle<int>   linkCtrlRect_;     // editor coords
+    juce::Rectangle<int>   linkStripAreaRect_;// editor coords, the whole band
+    /** THE strip-set geometry, as a PURE function of its inputs: it reads no
+        editor state, so the self-test can call the shipping arithmetic
+        instead of carrying a copy of it (the trap tools/art_parity_test fell
+        into). measureLinkStrips() gathers the inputs and calls this.
+
+        `band` is the whole strip area in EDITOR coords. busOut comes back in
+        those same coords, because the Mix Bus strip is painted directly and
+        pinned. linkOut comes back in linkMixerView_ LOCAL coords, x starting
+        at 0, because those strips scroll. Mixing the two spaces is a
+        hit-test bug, which is why they are documented at every boundary. */
+    static void layOutStrips(juce::Rectangle<int> band, int stripW,
+                             const std::vector<juce::String>& addrs,
+                             StripGeom& busOut,
+                             std::vector<StripGeom>& linkOut);
+
+    /** Total width the scrolling child needs for `count` strips. ONE formula,
+        so resized() and the viewport sizing cannot disagree about it. */
+    static int stripsTotalWidth(int count, int stripW)
+    { return count <= 0 ? 0 : count * (stripW + kStripGap) - kStripGap; }
+
+    enum class StripHit { None = 0, Fader, Ai, Badge, Background };
+    /** HIT-TEST PRECEDENCE, in ONE place and stated in code rather than left
+        to the order handlers happen to test in: fader, then AI button, then
+        placement badge, then the strip background as the fallback that
+        SELECTS the channel. Pure, and it CONSUMES sg's stored rects; nothing
+        here recomputes a bound. `p` is in the same space as sg. */
+    static StripHit stripHitAt(const StripGeom& sg, juce::Point<int> p);
+
+    void measureLinkStrips();
+    /** Paint one strip from its stored geometry. Shared by the pinned Mix Bus
+        strip and every Link strip so the two cannot drift, the same reason
+        paintLinkMeterStrip is shared today. Measures nothing. */
+    void paintLinkStrip(juce::Graphics& g, const StripGeom& sg);
+    /** Routes one press through stripHitAt. `local` is in sg's space. */
+    void linkStripMouseDown(const StripGeom& sg, juce::Point<int> local);
+
+    /** Reaches the two pure geometry functions above for
+        tools/linkmixer_test without making either of them public. */
+    friend struct EchoJayLinkMixerTestAccess;
+
     // LINK tab mini meter strips — last frame + staleness per Link name.
     // fresh = seq advanced within the last second; otherwise the strip
     // freezes on last-known values and dims (no fake motion). The 10Hz data

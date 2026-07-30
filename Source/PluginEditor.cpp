@@ -1933,11 +1933,24 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                                 juce::dontSendNotification);
     addChildComponent(chainSlotCountLabel);
 
-    // LINK MONITOR scrollable row list (Mix Bus card stays pinned above it)
+    // LINK MONITOR scrollable row list (Mix Bus card stays pinned above it).
+    // SUPERSEDED by the mixer below and never shown; the class and this
+    // registration go away with step 11 of the mixer build, kept until then
+    // only so the rebuild lands in reviewable steps.
     linkListView_.owner = this;
     linkListViewport_.setViewedComponent(&linkListView_, false);
     linkListViewport_.setScrollBarsShown(true, false);
     addChildComponent(linkListViewport_);
+
+    // LINK MIXER: horizontal strips. Scrolls left/right ONLY: a strip is
+    // exactly as tall as the band, so a vertical scrollbar could only ever
+    // mean the measure pass got the height wrong. The Mix Bus strip is NOT in
+    // this viewport; it is painted directly by the panel painter so it stays
+    // pinned, the same split the old Mix Bus card used.
+    linkMixerView_.owner = this;
+    linkMixerViewport_.setViewedComponent(&linkMixerView_, false);
+    linkMixerViewport_.setScrollBarsShown(false, true);
+    addChildComponent(linkMixerViewport_);
 
     // Settings ambient visual — glyph extracted once from the embedded logo
     // PNG's alpha; the card drives itself on a 15fps timer only while shown
@@ -2451,6 +2464,7 @@ void EchoJayEditor::showLoginScreen()
     for (auto* c : mainComps) c->setVisible(false);
     logoutBtn.setVisible(false);
     linkListViewport_.setVisible(false);
+    linkMixerViewport_.setVisible(false);
     settingsName.setVisible(false); settingsMonitors.setVisible(false);
     settingsHeadphones.setVisible(false); settingsGenres.setVisible(false);
     settingsPlugins.setVisible(false); settingsExpLevel.setVisible(false);
@@ -6294,114 +6308,255 @@ void EchoJayEditor::LinkListView::mouseUp(const juce::MouseEvent&)
     repaint();
 }
 
+// =============================================================================
+//  LINK MIXER geometry: the single authority.
+//
+//  layOutStrips is PURE: same inputs, same rects, no editor state read. That is
+//  what lets tools/linkmixer_test call the shipping arithmetic rather than a
+//  reimplementation of it. measureLinkStrips() below is the only production
+//  caller and resized() is its only caller in turn.
+// =============================================================================
+
+void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
+                                 const std::vector<juce::String>& addrs,
+                                 StripGeom& busOut,
+                                 std::vector<StripGeom>& linkOut)
+{
+    busOut = StripGeom{};
+    linkOut.clear();
+    if (band.getWidth() <= 0 || band.getHeight() <= 0 || stripW <= 0)
+        return;
+
+    const int inner  = 4;                                  // strip inner padding
+    const int innerH = band.getHeight() - inner * 2;
+    if (innerH <= 0) return;
+
+    // ---- ONE vertical layout, shared by every strip ------------------------
+    // Only x differs between strips, so the internals are solved ONCE here.
+    // Seventeen strips computing their own element heights is the same shape
+    // of bug as a painter and a hit test computing their own.
+    //
+    // Five gaps: name | badge | active | data | fader | ai.
+    const int gaps   = kStripVGap * 5;
+    const int fixedH = kStripNameH + kStripBadgeH + kStripActH + kStripAiH + gaps;
+    const int flexH  = juce::jmax(0, innerH - fixedH);   // data + fader share this
+
+    // The fader gets its FULL range wherever there is room, and is squeezed
+    // only once the data area is already at its minimum. There is no EQ
+    // reservation to pay for: an empty recessed well on 16 strips reads as
+    // broken rather than reserved, so the height goes to the fader instead.
+    int faderH = juce::jlimit(0, juce::jmin(kFaderHMax, flexH),
+                              flexH - kStripDataHMin);
+    if (faderH < kFaderHMin)
+        faderH = juce::jmin(kFaderHMin, flexH);
+
+    // Aspect is LOCKED at 1:8 (the asset frame is 60x480) or the fader cap
+    // distorts. Height drives width; if the strip is too thin to carry that
+    // width, width drives height instead, so the lock holds either way.
+    const int usableW = juce::jmax(1, stripW - inner * 2);
+    int faderW = juce::jmax(1, faderH / 8);
+    if (faderW > usableW)
+    {
+        faderW = usableW;
+        faderH = juce::jmin(faderH, faderW * 8);
+    }
+
+    // ---- ONE element-layout routine, used by the bus strip AND every Link
+    // strip, so the pinned master cannot drift from the channels ------------
+    auto layOutOne = [&](StripGeom& sg, juce::Rectangle<int> full)
+    {
+        sg.full = full;
+        auto b = full.reduced(inner, inner);
+        sg.name = b.removeFromTop(kStripNameH);
+        b.removeFromTop(kStripVGap);
+        sg.badge = b.removeFromTop(kStripBadgeH);
+        b.removeFromTop(kStripVGap);
+        sg.active = b.removeFromTop(kStripActH);
+        b.removeFromTop(kStripVGap);
+        sg.ai = b.removeFromBottom(kStripAiH);
+        b.removeFromBottom(kStripVGap);
+        // Fader sits directly above the AI button, centred across the strip
+        // with its aspect already locked; the data area takes what is left.
+        auto faderBand = b.removeFromBottom(juce::jmin(faderH, b.getHeight()));
+        sg.fader = faderBand.withSizeKeepingCentre(
+                       juce::jmin(faderW, faderBand.getWidth()),
+                       faderBand.getHeight());
+        b.removeFromBottom(kStripVGap);
+        sg.data = b;
+    };
+
+    // ---- The pinned Mix Bus strip: EDITOR coords, left edge of the band ----
+    busOut.isBus = true;               // addr stays empty: the bus has no uid
+    layOutOne(busOut, { band.getX(), band.getY(), stripW, band.getHeight() });
+
+    // ---- The scrolling Link strips: VIEW-LOCAL coords, x from 0 ------------
+    linkOut.reserve(addrs.size());
+    for (size_t i = 0; i < addrs.size(); ++i)
+    {
+        StripGeom sg;
+        sg.addr  = addrs[i];
+        sg.isBus = false;
+        layOutOne(sg, { (int)i * (stripW + kStripGap), 0,
+                        stripW, band.getHeight() });
+        linkOut.push_back(sg);
+    }
+}
+
+EchoJayEditor::StripHit EchoJayEditor::stripHitAt(const StripGeom& sg,
+                                                  juce::Point<int> p)
+{
+    // PRECEDENCE, explicit and in one place. Order here IS the contract:
+    // the fader is the only drag target so it wins outright; the AI button
+    // and the placement badge are deliberate taps; the strip background is
+    // the FALLBACK, and it selects the channel. Every test is against a
+    // STORED rect.
+    if (!sg.full.contains(p))     return StripHit::None;
+    if (sg.fader.contains(p))     return StripHit::Fader;
+    if (sg.ai.contains(p))        return StripHit::Ai;
+    if (sg.badge.contains(p))     return StripHit::Badge;
+    return StripHit::Background;
+}
+
+void EchoJayEditor::measureLinkStrips()
+{
+    // The ONLY production caller of layOutStrips, and resized() is the only
+    // caller of this. Nothing below is recomputed anywhere else.
+    linkStripGeom_.clear();
+    linkBusGeom_       = StripGeom{};
+    linkTitleRect_     = {};
+    linkCtrlRect_      = {};
+    linkStripAreaRect_ = {};
+
+    const int topH = kTopBarH + kTabBarH;
+    // Width comes from computeColumns and NOWHERE else. No second copy of the
+    // content/sidebar split formula is added, per the standing rule.
+    const auto shape = computeColumns(getWidth());
+    const int bandL = kLinkPad;
+    const int bandR = shape.mW - kLinkPad;
+    const int bandW = juce::jmax(0, bandR - bandL);
+    const int abOff = abBarShowing ? kAbBarH : 0;
+
+    int y = topH + kLinkTopPad;
+    linkTitleRect_ = { bandL, y, bandW, 18 };
+    y += kLinkTitleH;
+    linkCtrlRect_  = { bandL, y, bandW, kLinkCtrlH };
+    y += kLinkCtrlH + kStripVGap;
+
+    const int bandH = juce::jmax(0, getHeight() - abOff - 8 - y);
+    linkStripAreaRect_ = { bandL, y, bandW, bandH };
+    if (bandW <= 0 || bandH <= 0) return;
+
+    // Canonical display list: the SAME order and "Untitled N" numbering the
+    // whole product uses, so an instance keeps one label everywhere.
+    std::vector<juce::String> addrs;
+    for (const auto& entry : processorRef.getLinkDisplayList())
+        addrs.push_back(entry.info.uid.isNotEmpty()
+                            ? entry.info.uid
+                            : LinkShm::makeSafeFilePart(entry.info.name));
+
+    layOutStrips(linkStripAreaRect_, stripWidth(), addrs,
+                 linkBusGeom_, linkStripGeom_);
+}
+
+void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg)
+{
+    // STEP 2 SCAFFOLDING. Body plus one faint outline per element rect, so the
+    // measure pass is verifiable on screen before any content exists. Steps 3
+    // to 9 replace each outline with its real content; the rects themselves do
+    // not move, because this function measures NOTHING - every rectangle drawn
+    // here came from linkStripGeom_ / linkBusGeom_.
+    //
+    // No value is drawn, on purpose: a strip must never display a reading it
+    // does not have, and at this step it has none.
+    g.setColour(C::bg3);
+    g.fillRoundedRectangle(sg.full.toFloat(), 6.0f);
+    g.setColour(sg.isBus ? C::blue2.withAlpha(0.4f) : C::border2);
+    g.drawRoundedRectangle(sg.full.toFloat().reduced(0.5f), 6.0f, 1.0f);
+
+    g.setColour(C::text3.withAlpha(0.30f));
+    for (auto r : { sg.name, sg.badge, sg.active, sg.data, sg.fader, sg.ai })
+        if (!r.isEmpty())
+            g.drawRect(r, 1);
+}
+
+void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> local)
+{
+    // Consumes stripHitAt's verdict. The action arms land in later steps; the
+    // precedence and the routing are settled here so no handler grows its own
+    // copy of either.
+    switch (stripHitAt(sg, local))
+    {
+        case StripHit::Fader:      break;   // step 7
+        case StripHit::Ai:         break;   // step 3
+        case StripHit::Badge:      break;   // step 3
+        case StripHit::Background: break;   // step 4, selects the channel
+        case StripHit::None:       break;
+    }
+}
+
+void EchoJayEditor::LinkMixerView::paint(juce::Graphics& g)
+{
+    if (owner == nullptr) return;
+    // Consumes the stored rects. This painter measures nothing, which is the
+    // half of the rule that the Visualisation preset strip broke.
+    for (const auto& sg : owner->linkStripGeom_)
+        owner->paintLinkStrip(g, sg);
+}
+
+void EchoJayEditor::LinkMixerView::mouseDown(const juce::MouseEvent& e)
+{
+    if (owner == nullptr) return;
+    // Indexes the SAME vector paint() indexes. Nothing here recomputes a
+    // strip's bounds, which is exactly how the Visualisation preset strip
+    // ended up painting to full width while click-testing 280px short.
+    const auto p = e.getPosition();
+    for (const auto& sg : owner->linkStripGeom_)
+        if (sg.full.contains(p))
+        {
+            owner->linkStripMouseDown(sg, p);
+            return;
+        }
+}
+
 void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    using C = EchoJayLookAndFeel::Colours;
-    const int pad = 32;
-    int y = area.getY() + 16;
-    const int fw = area.getWidth() - pad * 2;
+    // CONSUMES what measureLinkStrips() stored. This painter MEASURES NOTHING:
+    // `area` is deliberately unused for geometry, because the band, the title
+    // row and the pinned Mix Bus strip each have exactly one author and it is
+    // not here. The old body computed pad / title / card heights itself while
+    // resized() re-added the same numbers as `topH + 16 + 26 + 64 + 6`; that
+    // pair of authorities is what this rebuild deletes.
+    juce::ignoreUnused(area);
 
-    const uint32_t nowMs = juce::Time::getMillisecondCounter();
-
-    // Title
     g.setColour(C::blue2);
     g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-    g.drawText("LINK MONITOR", pad, y, fw, 18, juce::Justification::centredLeft);
-    y += 26;
+    g.drawText("LINK MONITOR", linkTitleRect_, juce::Justification::centredLeft);
 
-    // Host channel (Mix Bus) card — always first, distinct outline as the
-    // "this instance" marker, and the SAME mini meter strip as the Link
-    // rows (data is local: the main plugin's own MeterEngine)
+    // linkCtrlRect_ is measured and empty: the width and content controls land
+    // in step 5. Drawing a placeholder control here would offer a mode the user
+    // cannot actually change, so nothing is drawn.
+
+    // The pinned Mix Bus strip, painted directly rather than in the viewport so
+    // the master cannot scroll away. SAME renderer as every Link strip, so the
+    // two cannot drift, which is why paintLinkMeterStrip is shared today.
+    if (!linkBusGeom_.full.isEmpty())
+        paintLinkStrip(g, linkBusGeom_);
+
+    // Link strips are painted by LinkMixerView inside linkMixerViewport_.
+    if (processorRef.getLinkDisplayList().empty())
     {
-        const int cardH = 64;
-        g.setColour(C::bg3.brighter(0.04f));
-        g.fillRoundedRectangle((float)pad, (float)y, (float)fw, (float)cardH, 6.f);
-        g.setColour(C::blue2.withAlpha(0.4f));
-        g.drawRoundedRectangle((float)pad + 0.5f, (float)y + 0.5f, (float)fw - 1.f, (float)cardH - 1.f, 6.f, 1.f);
-
-        juce::String hostLabel = processorRef.getEffectiveChannelName();
-        if (hostLabel.isEmpty()) hostLabel = "Host Channel";
-
-        g.setColour(C::text);
-        g.setFont(juce::Font(juce::FontOptions(12.5f, juce::Font::bold)));
-        const int nameW = 128;
-        g.drawText(hostLabel, pad + 14, y + 8, nameW, 16, juce::Justification::centredLeft);
-
-        // Local frame, same shape as a published one (band rels derived the
-        // same way: db - mean of valid bands)
-        auto md = processorRef.getMeterEngine().getMeterData();
-        auto& hs = linkHostStrip_;
-        hs.frame.momentary   = md.momentary;
-        hs.frame.shortTerm   = md.shortTerm;
-        hs.frame.integrated  = md.integrated;
-        hs.frame.rmsL        = md.rmsL;   hs.frame.rmsR  = md.rmsR;
-        hs.frame.peakL       = md.peakL;  hs.frame.peakR = md.peakR;
-        hs.frame.truePeakMax = juce::jmax(md.truePeakMaxL, md.truePeakMaxR);
-        hs.frame.crest       = md.crestFactor;
-        hs.frame.correlation = md.correlation;
-        hs.frame.width       = md.width;
-        {
-            float mean = 0.0f; int n = 0;
-            for (auto db : md.macroBandDb) if (db > -119.0f) { mean += db; ++n; }
-            if (n > 0) mean /= (float) n;
-            for (size_t i = 0; i < 6; ++i)
-                hs.frame.bandRel[i] = (n > 0 && md.macroBandDb[i] > -119.0f)
-                                    ? md.macroBandDb[i] - mean : 0.0f;
-        }
-        hs.has = true;
-        hs.frame.truePeakCur = juce::jmax(md.truePeakL, md.truePeakR);
-        hs.frame.lra         = md.loudnessRange;
-        hs.frame.shortTermTP = md.shortTermTruePeak;
-        // Audio liveness for the Mix Bus row: the host idles the main
-        // plugin's channel too. If the engine's values freeze for ~1s (or
-        // genuine silence), blank the momentary group — same rule as Links.
-        if (md.momentary != lastHostMom_ || md.rmsL != lastHostRms_)
-        {
-            lastHostMom_ = md.momentary;
-            lastHostRms_ = md.rmsL;
-            lastHostAdvanceMs_ = nowMs;
-        }
-        const bool hostAudioStale = md.isSilent || (nowMs - lastHostAdvanceMs_) > 1000;
-        hs.frame.audioStale = hostAudioStale ? 1u : 0u;
-        if (hostAudioStale)
-        {
-            hs.frame.momentary   = -100.0f;
-            hs.frame.shortTerm   = -100.0f;
-            hs.frame.shortTermTP = -100.0f;
-        }
-        // Gain column reserved but EMPTY — the main plugin has no gain stage
-        // of its own (it is not a Link). Dim dash where a slider would be.
-        const int gainColW = 84 + 6 + 46;   // track + gap + readout (Link rows)
-        const int mixGainX = pad + fw - 14 - gainColW;
-        g.setColour(C::text3.withAlpha(0.5f));
-        g.setFont(juce::Font(juce::FontOptions(12.0f)));
-        g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")),   // em dash
-                   mixGainX, y, gainColW, cardH, juce::Justification::centred);
-
-        paintLinkMeterStrip(g, pad + 14 + nameW + 10, mixGainX - 10, y, cardH,
-                            hs, /*fresh=*/!md.isSilent, 1.0f);
-
-        y += cardH + 6;
-    }
-
-    const auto& slots = processorRef.getLinkSlotInfos();
-
-    if (slots.empty())
-    {
-        // Empty state
+        // Empty state sits in the scroll band. Its rect is the VIEWPORT bounds
+        // resized() authored, not a second copy of the offset arithmetic.
+        const auto e = linkMixerViewport_.getBounds();
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(12.0f)));
-        const int emptyY = area.getY() + area.getHeight() / 2 - 20;
-        g.drawText("No Links detected.", pad, emptyY, fw, 18,
-                   juce::Justification::centred);
+        g.drawText("No Links detected.", e.getX(), e.getCentreY() - 20,
+                   e.getWidth(), 18, juce::Justification::centred);
         g.setFont(juce::Font(juce::FontOptions(11.0f)));
         g.drawText("Add an EchoJay Link plugin to a channel and turn it on.",
-                   pad, emptyY + 22, fw, 14, juce::Justification::centred);
-        return;
+                   e.getX(), e.getCentreY() + 2, e.getWidth(), 14,
+                   juce::Justification::centred);
     }
-
-    // Link rows live in linkListViewport_ / linkListView_ (scrollable,
-    // Mix Bus card above stays pinned). Painting there, not here.
 }
 
 // =============================================================================
@@ -7043,8 +7198,11 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             particleVisual->stop();
     }
 
-    // LINK MONITOR row list exists only on the Link tab (full mode)
-    linkListViewport_.setVisible(t == Tab::Link && !compactMode && !visualOnlyMode);
+    // The Link tab's scrolling child has its visibility authored ONCE, in
+    // resized(), which this function calls on its way out. Setting it here as
+    // well would be a second authority, and per the standing rule hiding a
+    // component in the tab-switch handler only moves that bug rather than
+    // fixing it.
 
     // Per-tab setup
     switch (t)
@@ -13160,18 +13318,35 @@ void EchoJayEditor::resized()
         chatCollapseBtn.setVisible(chatCollapseControlVisible());
     }
 
-    // Link tab: the scrollable row list is the one child component; the
-    // title + pinned Mix Bus card above it are painted directly
-    if (linkMonitorTab && !compactMode && !visualOnlyMode)
+    // ---- LINK MIXER: resized() IS the geometry author -----------------------
+    // measureLinkStrips() runs UNCONDITIONALLY and the tab test lives inside
+    // the single visibility expression below, so this code always evaluates
+    // BOTH ways. Authoring bounds and visibility inside `if (tab == Link)` is
+    // the exact shape that left the chain header buttons visible at Link-tab
+    // coordinates on top of the Compare tab. The old `listTop` formula that
+    // "mirrors the panel painter's layout constants" is gone with it: the
+    // constants now live in ONE named place and measureLinkStrips reads them.
+    const bool linkMixerShowing = linkMonitorTab && !compactMode && !visualOnlyMode;
+    measureLinkStrips();
     {
-        const int pad = 32;
-        const int abOffL = abBarShowing ? kAbBarH : 0;
-        // Below: 16 top pad + 26 title + 64 host card + 6 gap (mirrors the
-        // panel painter's layout constants)
-        const int listTop = topH + 16 + 26 + 64 + 6;
-        linkListViewport_.setBounds(pad, listTop, mW - pad * 2,
-                                    juce::jmax(50, b.getHeight() - abOffL - 8 - listTop));
+        // The scrolling band starts after the pinned Mix Bus strip. ONE
+        // formula for that offset, consumed here and nowhere else.
+        const auto band = linkStripAreaRect_;
+        const int busW  = linkBusGeom_.full.isEmpty() ? 0 : linkBusGeom_.full.getWidth();
+        const int viewX = band.getX() + busW + (busW > 0 ? kStripGap * 2 : 0);
+        const int viewW = juce::jmax(0, band.getRight() - viewX);
+        linkMixerViewport_.setBounds(viewX, band.getY(), viewW, band.getHeight());
+        // Child width is stripsTotalWidth, the SAME formula layOutStrips lays
+        // the strips out with, so the scroll range cannot disagree with the
+        // rects. Height matches the band exactly: a strip is as tall as the
+        // band, so a vertical scrollbar could only mean a measure-pass bug.
+        const int wantW = stripsTotalWidth((int)linkStripGeom_.size(), stripWidth());
+        linkMixerView_.setSize(juce::jmax(1, wantW),
+                               juce::jmax(1, band.getHeight()));
     }
+    linkMixerViewport_.setVisible(linkMixerShowing);
+    // The list this replaces has ONE authority saying it is never shown.
+    linkListViewport_.setVisible(false);
 
     // CHAIN tab layout — plugin view + strip fill the left area, chat on right
     if (comingSoonTab)
@@ -15238,15 +15413,15 @@ void EchoJayEditor::timerCallback()
         if (e != chatCentredEmpty_)
             resized();   // recomputes chatCentredEmpty_ + input bounds
     }
-    if (currentTab == Tab::Link && linkListViewport_.isVisible())
+    // Link mixer: the strip COUNT changes as Links appear and disappear, and
+    // the strip set is geometry. So this does NOT resize anything itself; it
+    // asks resized() to re-measure, keeping one author. The Viewport preserves
+    // its scroll position (clamped), so a Link appearing never yanks the view.
+    if (currentTab == Tab::Link && linkMixerViewport_.isVisible())
     {
-        // Child height follows the row count; the Viewport keeps its scroll
-        // position (clamped) so 10Hz refreshes never yank the view
-        const int n = (int) processorRef.getLinkSlotInfos().size();
-        const int wantH = juce::jmax(1, n * (kLinkRowH + kLinkRowGap));
-        const int wantW = linkListViewport_.getMaximumVisibleWidth();
-        if (linkListView_.getWidth() != wantW || linkListView_.getHeight() != wantH)
-            linkListView_.setSize(juce::jmax(50, wantW), wantH);
+        const int n = (int) processorRef.getLinkDisplayList().size();
+        if (n != (int) linkStripGeom_.size())
+            resized();
     }
 
     // ---- FINAL overlay re-front (24 Jul 2026) ----
@@ -20832,7 +21007,20 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         return;
     }
 
-    // LINK tab — row toggles live inside linkListView_ (its own mouseDown)
+    // LINK tab: the pinned Mix Bus strip is painted by the editor, so its
+    // presses arrive HERE rather than in LinkMixerView. It consumes the stored
+    // linkBusGeom_ rects and routes through the SAME stripHitAt precedence the
+    // Link strips use; there is one hit-test contract, not one per surface.
+    // Gated on the viewport's visibility so a stale rect cannot be clicked on
+    // another tab, which is the same predicate discipline the assistant zones
+    // below use.
+    if (currentTab == Tab::Link && linkMixerViewport_.isVisible()
+        && !linkBusGeom_.full.isEmpty()
+        && linkBusGeom_.full.contains(e.getPosition()))
+    {
+        linkStripMouseDown(linkBusGeom_, e.getPosition());
+        return;
+    }
 
     // Assistant-drawn hit-zones (gain cards, wave cards) — gated on the SAME
     // predicate as the paint block, so a stale zone can never be clicked on a
