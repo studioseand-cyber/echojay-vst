@@ -2192,13 +2192,18 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             // spurious re-prompt on every pre-existing project).
             if (obj->hasProperty("genrePromptDismissed"))
                 genrePromptDismissed = (bool)obj->getProperty("genrePromptDismissed");
+            else
+                genrePromptDismissed = channelTypePromptDismissed;
             // Absent in every project saved before this shipped, which is
             // exactly the silent migration: the member keeps its false
             // default and the sidebar opens expanded, as it always has.
+            // DELIBERATELY NO else: an absent flag must leave the member at
+            // its default. Do not append one, and do not insert a new
+            // read-back between the if/else pair ABOVE: that is how f43a698
+            // handed the genre flag's else to this if, re-firing the genre
+            // prompt on every project saved 6-29 Jul 2026.
             if (obj->hasProperty("chatSidebarCollapsed"))
                 chatSidebarCollapsed = (bool)obj->getProperty("chatSidebarCollapsed");
-            else
-                genrePromptDismissed = channelTypePromptDismissed;
             // Project prompt: saves that predate the flag derive from having
             // a name (named project = question already answered)
             if (obj->hasProperty("projectPromptDismissed"))
