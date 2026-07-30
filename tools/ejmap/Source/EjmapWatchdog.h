@@ -41,6 +41,8 @@
 
 #include <atomic>
 #include <cstdlib>
+#include <unistd.h>
+#include <sys/wait.h>
 
 namespace ejmap
 {
@@ -204,6 +206,19 @@ private:
         r.detail = "no return from " + site + " after " + howLong
                      + "; process terminated by watchdog";
 
+        // WHERE WAS EVERY THREAD WHEN IT STOPPED RESPONDING.
+        //
+        // Without this a stall leaves only its deadline behind, and the deadline
+        // is a number we chose rather than evidence. /usr/bin/sample captures
+        // every thread's stack, including the message thread, from OUTSIDE the
+        // wedged process: nothing has to be unwound in-process and no signal
+        // handler runs on a thread we do not own.
+        //
+        // Deliberately before the row is written, so the row can name the file.
+        const auto stackFile = sampleAllThreads (site);
+        if (stackFile.isNotEmpty())
+            r.detail << " [stacks: " << stackFile << "]";
+
         // Written and flushed before the process stops existing.
         ledger.recordWatchdogExpiry (r, "hang_in_" + site);
 
@@ -214,6 +229,45 @@ private:
         // a process whose message thread is inside third-party code holding
         // locks, which is how a hang becomes a hang plus a deadlock in teardown.
         std::_Exit (kWatchdogExitCode);
+    }
+
+    /** Runs /usr/bin/sample on ourselves and returns the filename, or empty.
+        Bounded: if sample does not finish quickly we abandon it rather than turn
+        a stall into a longer stall.
+    */
+    juce::String sampleAllThreads (const juce::String& site)
+    {
+        auto out = ledger.getRoot()
+                     .getChildFile ("stall-" + juce::Time::getCurrentTime().formatted ("%Y%m%dT%H%M%S")
+                                      + "-" + site.retainCharacters ("abcdefghijklmnopqrstuvwxyz"
+                                                                     "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+                                      + ".txt");
+
+        const auto pidStr = juce::String ((int) getpid()).toStdString();
+        const auto path   = out.getFullPathName().toStdString();
+
+        const pid_t pid = fork();
+        if (pid < 0)
+            return {};
+
+        if (pid == 0)
+        {
+            const char* argv[] = { "/usr/bin/sample", pidStr.c_str(), "2",
+                                   "-file", path.c_str(), nullptr };
+            execv (argv[0], (char* const*) argv);
+            _exit (127);
+        }
+
+        // sample needs a couple of seconds; give it a bounded window.
+        for (int i = 0; i < 120; ++i)
+        {
+            int st = 0;
+            const pid_t r = waitpid (pid, &st, WNOHANG);
+            if (r == pid) break;
+            juce::Thread::sleep (100);
+        }
+
+        return out.existsAsFile() ? out.getFileName() : juce::String();
     }
 
     Ledger& ledger;

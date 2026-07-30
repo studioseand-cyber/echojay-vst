@@ -41,7 +41,8 @@ public:
         juce::File ledgerRoot;
         juce::String selfTestId;
         bool cacheTest = false, progressTest = false;
-        juce::String attributeReport, afterExit, captureTestId, maskTestId;
+        juce::String attributeReport, afterExit, captureTestId, maskTestId, stallId;
+        int stallN = 0;
         bool supervised = false;
         int  restartCount = 0;
         juce::String releaseId, quarantineId, quarantineReason, quarantineStage { "load" };
@@ -60,6 +61,8 @@ public:
                 captureTestId = args[++i];
             else if (args[i] == "--selftest-noisemask" && i + 1 < args.size())
                 maskTestId = args[++i];
+            else if (args[i] == "--selftest-stall" && i + 2 < args.size())
+                { stallId = args[i + 1]; stallN = args[i + 2].getIntValue(); i += 2; }
             else if (args[i] == "--attribute-report" && i + 1 < args.size())
                 attributeReport = args[++i];
             else if (args[i] == "--child")
@@ -169,7 +172,12 @@ public:
         //
         // callAsync posts an ordinary message, which is the same context a button
         // click arrives in. That is why the UI path was never affected.
-        if (maskTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        if (stallId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = stallId; auto n = stallN; auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id, n] { m->selfTestStall (id, n); });
+        }
+        else if (maskTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {
             auto id = maskTestId; auto* m = mainWindow->getMain();
             juce::MessageManager::callAsync ([m, id] { m->selfTestNoiseMask (id); });

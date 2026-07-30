@@ -429,6 +429,62 @@ public:
 
     void quitNow() { juce::JUCEApplication::getInstance()->quit(); }
 
+    /** Loads one plugin repeatedly from ordinary message context, which is what
+        a button click is, until it stalls or the attempt budget runs out.
+
+        The stall is racy: whether a bridged AU's out-of-process creation
+        completes inline or needs a message-thread turn is a timing matter. So
+        the reproduction is repetition, not cleverness.
+    */
+    void selfTestStall (const juce::String& identifier, int attempts)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "STALLTEST: unknown identifier" << std::endl; quitNow(); return; }
+
+        stallDesc = desc;
+        stallLeft = attempts;
+        stallAttempt = 0;
+        std::cout << "STALLTEST: " << desc.name << ", up to " << attempts << " attempts" << std::endl;
+        nextStallAttempt();
+    }
+
+    void nextStallAttempt()
+    {
+        if (stallLeft-- <= 0)
+        {
+            std::cout << "STALLTEST: no stall in " << stallAttempt << " attempts" << std::endl;
+            std::cout.flush(); quitNow(); return;
+        }
+
+        ++stallAttempt;
+        ScannedPlugin sp; sp.desc = stallDesc;
+        loadedName = stallDesc.name; loadedId = sp.pluginId();
+
+        std::cout << "STALLTEST: attempt " << stallAttempt << "..." << std::endl;
+        std::cout.flush();
+
+        ledger.beginLoad (sp.pluginId(), stallDesc.name, stallDesc.manufacturerName,
+                          stallDesc.pluginFormatName, stallDesc.version,
+                          "load", "createPluginInstance");
+        const auto t0 = juce::Time::getMillisecondCounter();
+        auto res = host.load (stallDesc, watchdog);
+        const auto ms = juce::Time::getMillisecondCounter() - t0;
+
+        LedgerRecord rec; rec.pluginId = sp.pluginId(); rec.name = stallDesc.name;
+        rec.format = stallDesc.pluginFormatName; rec.outcome = res.outcome;
+        rec.detail = res.detail; ledger.endLoad (rec);
+
+        std::cout << "STALLTEST: attempt " << stallAttempt << " -> " << toString (res.outcome)
+                  << " in " << ms << " ms" << std::endl;
+        std::cout.flush();
+
+        capture.stop();
+        host.unload();
+
+        juce::MessageManager::callAsync ([this] { nextStallAttempt(); });
+    }
+
     /** Demonstrates the noise mask actually excluding something.
 
         Baseline twice on the same plugin: once against silence, once with the
@@ -1187,7 +1243,8 @@ private:
         juce::String t;
         t << name << "  -  " << cal.describe()
           << "  -  noise mask " << mask.indices.size() << " of " << cal.paramCount
-          << " (" << mask.samples << " samples over " << juce::String (mask.seconds, 1) << "s)";
+          << " (" << mask.method << ", " << mask.samples << " samples, "
+          << juce::String (mask.seconds, 2) << "s)";
         captureReadout.setText (t, juce::dontSendNotification);
 
         armButton.setEnabled (true);
@@ -1340,6 +1397,7 @@ private:
         o->setProperty ("rate_hz", cal.rateHz);
         o->setProperty ("sweep_us", cal.sweepMicros);
         o->setProperty ("noise_mask_samples", mask.samples);
+        o->setProperty ("noise_mask_method", mask.method);
 
         // The watched set, recorded so the complement is derivable:
         // watched = [0, param_count) minus noise_mask.
@@ -1692,6 +1750,8 @@ private:
     juce::ComboBox candidatePicker;
     CaptureEngine::Result lastGesture;
     juce::String loadedName, loadedId;
+    juce::PluginDescription stallDesc;
+    int stallLeft = 0, stallAttempt = 0;
     MouseRing    ring;
     UiHint       lastHint;
     juce::ToggleButton signalToggle;

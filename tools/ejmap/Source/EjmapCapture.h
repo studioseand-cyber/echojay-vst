@@ -72,6 +72,12 @@ public:
         int    samples = 0;          // recorded next to the mask: a thin baseline is visible
         double seconds = 0.0;
         juce::StringArray promotions;   // retroactive additions, each with its reason
+
+        /** How this mask was arrived at, so a reader never has to guess whether
+            an empty mask means "looked hard and found nothing" or "barely
+            looked". Recorded in the payload beside the mask itself.
+        */
+        juce::String method;         // "short_probe_clean" | "full_baseline" | "promoted_only"
     };
 
     /** Every arm ends in exactly one of these, and every one carries a reason.
@@ -131,9 +137,27 @@ public:
     static constexpr double kMinRateHz      = 4.0;
     static constexpr double kMaxRateHz      = 30.0;
 
-    /** Baseline is sample-count driven, not time driven. 3 s at 145 ms/sweep is
-        20 samples, which cannot separate a slow meter from one spurious read.
+    /** BASELINE IS ADAPTIVE, AND SHORT BY DEFAULT.
+
+        The plan assumed meters, LFOs and gain-reduction readouts routinely appear
+        as automatable parameters, and charged 3 s of every tester's time on every
+        plugin to find them. Measured across 4,157 extracted maps and 1,074,600
+        parameters, that assumption is wrong: of 6,438 parameters whose NAME looks
+        like a readout, 6,365 respond to being written, so they are output trims
+        and level controls rather than readouts. Only 73 in 1,074,600 have both a
+        readout name and a flat sweep. The 21.7% of parameters with a flat sweep
+        are dominated by MIDI CC automation slots (72,800 named "MIDI" alone), not
+        by meters.
+
+        So: probe briefly, and only pay for a full baseline when the short probe
+        actually finds something. Cheap on the ~99.99% where nothing is
+        self-changing, thorough where something is.
+
+        RETROACTIVE PROMOTION IS THE PRIMARY DEFENCE, because it observes rather
+        than predicts. The baseline guesses in advance which indices will misbehave;
+        promotion watches what actually moves when nobody touched anything.
     */
+    static constexpr int    kShortProbeSamples  = 8;
     static constexpr double kBaselineMinSeconds = 3.0;
     static constexpr int    kBaselineMinSamples = 30;
     static constexpr double kBaselineMaxSeconds = 10.0;
@@ -212,6 +236,31 @@ public:
         const auto t0 = juce::Time::getMillisecondCounterHiRes();
         int samples = 0;
 
+        // SHORT PROBE. Eight samples is enough to see anything moving at audio
+        // or UI rate, which is what a meter does.
+        for (int i = 0; i < kShortProbeSamples; ++i)
+        {
+            juce::Thread::sleep (intervalMs);
+            ++samples;
+            for (int p = 0; p < params.size(); ++p)
+                if (std::abs (params[p]->getValue() - ref[(size_t) p]) > epsilonFor (params[p]))
+                    mask.indices.add (p);
+        }
+
+        if (mask.indices.isEmpty())
+        {
+            // Nothing moved. Do not spend the other 2.7 seconds looking again:
+            // promotion will catch anything this missed, and it will catch it by
+            // observation rather than by having waited longer.
+            mask.samples = samples;
+            mask.seconds = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
+            mask.method  = "short_probe_clean";
+            return mask;
+        }
+
+        // Something IS self-changing. Now it is worth characterising properly,
+        // because a thin sample cannot separate a slow meter from one spurious
+        // read.
         for (;;)
         {
             juce::Thread::sleep (intervalMs);
@@ -222,15 +271,13 @@ public:
                     mask.indices.add (i);
 
             const double secs = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
-
-            if (secs >= kBaselineMaxSeconds)
-                break;
-            if (secs >= kBaselineMinSeconds && samples >= kBaselineMinSamples)
-                break;
+            if (secs >= kBaselineMaxSeconds) break;
+            if (secs >= kBaselineMinSeconds && samples >= kBaselineMinSamples) break;
         }
 
         mask.samples = samples;
         mask.seconds = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
+        mask.method  = "full_baseline";
         return mask;
     }
 
@@ -456,7 +503,10 @@ private:
                 mask->indices.add (i);
                 mask->promotions.add ("index " + juce::String (i) + " promoted to the noise mask "
                                       "after moving in " + juce::String (n) + " separate arm cycles "
-                                      "(baseline had " + juce::String (mask->samples) + " samples)");
+                                      "(baseline was " + mask->method + ", "
+                                      + juce::String (mask->samples) + " samples)");
+                if (mask->method == "short_probe_clean")
+                    mask->method = "promoted_only";
             }
         }
     }
