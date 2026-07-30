@@ -83,6 +83,31 @@ inline float softClip (float x) noexcept
 }
 
 // ---------------------------------------------------------------------------
+// Tape / BBD saturation for a feedback loop.
+//
+// softClip() above is a SAFETY device — it exists so 100% feedback cannot
+// diverge, and it is deliberately almost inaudible. This is the opposite: a
+// colour you dial in, applied per pass through the loop so it ACCUMULATES the
+// way a real tape echo does. Repeat one is barely touched, repeat six is
+// visibly squashed, and that progression is most of what "tape" means.
+//
+// tanh(k x) / k, not tanh(k x): dividing by k leaves the small-signal gain at
+// unity, so engaging a mode changes the tone and not the level. Inside a
+// FEEDBACK loop that property matters twice over — a saturator with gain > 1 at
+// low level raises the loop gain, and a loop gain over 1 is a device that howls
+// at a setting that measured fine.
+//
+// `drive` 0 is exactly identity, so a clean mode costs nothing and is bit-exact.
+// ---------------------------------------------------------------------------
+inline float tapeSaturate (float x, float drive) noexcept
+{
+    if (drive <= 0.0f) return x;
+
+    const float k = 1.0f + 6.0f * drive;
+    return std::tanh (k * x) / k;
+}
+
+// ---------------------------------------------------------------------------
 // One-pole low-pass. y += a * (x - y).
 //
 // Used as the damping filter in a feedback loop, where "one pole" is not a
@@ -375,6 +400,115 @@ private:
     double phase_      = 0.0;
     double inc_        = 0.0;
     float  rateHz_     = 1.0f;
+};
+
+// ---------------------------------------------------------------------------
+// Ducker — a sidechain from the DRY signal that pulls the WET down.
+//
+// Both Time devices want the same thing and want it for the same reason: a
+// delay or a reverb is competing with the source that fed it, and the moment
+// the source is loudest is the moment its own tail is least wanted. Ducking
+// makes the effect ebb under the dry and SWELL IN THE GAPS, which is how a wash
+// this big stays out of the way of a vocal. It is the difference between a mix
+// that is drowning and one that sounds huge.
+//
+// THE SIDECHAIN IS THE DRY INPUT, NOT THE WET. Detecting on the wet is a loop:
+// the tail ducks itself, which reduces the tail, which reduces the ducking. The
+// dry signal is the thing being made room for, so the dry signal is what the
+// detector hears.
+//
+// FAST ATTACK, SLOW RELEASE, and neither is dialable. Ducking that takes 100 ms
+// to engage has already let the collision happen; ducking that recovers in 50 ms
+// pumps audibly on every syllable. 15 ms and 250 ms are the values that make it
+// read as space rather than as a compressor, and publishing them would be two
+// more knobs whose only interesting setting is this one.
+//
+// ABSOLUTE LEVELS, not a threshold. A threshold would be a second control that
+// has to be re-dialled for every source. Instead the dry envelope is mapped
+// across a fixed window — silence at the bottom, a normally-tracked signal at
+// the top — so one percentage means the same thing on a quiet acoustic and a
+// loud drum bus.
+// ---------------------------------------------------------------------------
+class Ducker
+{
+public:
+    // The window the dry envelope is measured across. -45 dB is below anything
+    // that should trigger it, and -8 dB is where a well-levelled source spends
+    // its loud moments, so the full amount is reached by real material rather
+    // than only by something clipping.
+    static constexpr float kFloorDb = -45.0f;
+    static constexpr float kRefDb   = -8.0f;
+
+    // How far a duck of 100% can pull the wet down. 24 dB is "gone but not
+    // silent": the tail is still there under the source, which is what stops the
+    // effect switching on and off audibly.
+    static constexpr float kMaxDepthDb = 24.0f;
+
+    void prepare (double sampleRate) noexcept
+    {
+        const double sr = sampleRate > 0.0 ? sampleRate : 44100.0;
+        attack_  = onePoleCoeff (15.0, sr);
+        release_ = onePoleCoeff (250.0, sr);
+        reset();
+    }
+
+    void reset() noexcept { env_ = 0.0f; gain_ = 1.0f; }
+
+    // 0..100 from the schema. 0 is off, and off is exactly unity — a device with
+    // no ducking dialled pays nothing and is bit-transparent.
+    void setAmountPct (float pct) noexcept
+    {
+        amount_ = (pct < 0.0f ? 0.0f : (pct > 100.0f ? 100.0f : pct)) * 0.01f;
+    }
+
+    float amountPct() const noexcept { return amount_ * 100.0f; }
+    bool  isActive()  const noexcept { return amount_ > 0.0f; }
+
+    // The gain currently applied to the wet path, linear. Published for a meter
+    // or a readout on the same benign racy single-float contract the rest of the
+    // suite uses.
+    float wetGain() const noexcept { return gain_; }
+
+    // One frame of DRY in, the wet gain out. Called per sample, before the wet is
+    // mixed, so the two are never a block out of step.
+    float process (float dryL, float dryR) noexcept
+    {
+        const float peak = std::max (std::fabs (dryL), std::fabs (dryR));
+
+        // Peak, not RMS, and asymmetric: the front of a word has to duck before
+        // it collides, so the envelope rises immediately and falls slowly.
+        env_ += (peak - env_) * (peak > env_ ? attack_ : release_);
+        env_  = flushDenorm (env_);
+
+        if (amount_ <= 0.0f) { gain_ = 1.0f; return 1.0f; }
+
+        const float envDb = env_ > 1.0e-6f ? 20.0f * std::log10 (env_) : -120.0f;
+        const float t      = (envDb - kFloorDb) / (kRefDb - kFloorDb);
+        const float amount = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+
+        gain_ = dbToLinear (-kMaxDepthDb * amount_ * amount);
+        return gain_;
+    }
+
+private:
+    static float dbToLinear (float db) noexcept
+    {
+        return db <= -120.0f ? 0.0f : std::pow (10.0f, db * 0.05f);
+    }
+
+    // Shared with the smoother below in spirit but not in code: this one is a
+    // coefficient for a per-sample follower rather than for a parameter ramp.
+    static float onePoleCoeff (double ms, double sampleRate) noexcept
+    {
+        if (ms <= 0.0 || sampleRate <= 0.0) return 1.0f;
+        return (float) (1.0 - std::exp (-1.0 / (ms * 0.001 * sampleRate)));
+    }
+
+    float amount_  = 0.0f;
+    float env_     = 0.0f;
+    float gain_    = 1.0f;
+    float attack_  = 1.0f;
+    float release_ = 1.0f;
 };
 
 // ---------------------------------------------------------------------------

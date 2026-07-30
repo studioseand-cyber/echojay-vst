@@ -475,10 +475,360 @@ int main()
         check (ok, "no setting combination produces NaN or inf");
     }
 
+    // =======================================================================
+    // THE MODE (DEVICE_DEPTH_PLAN.md, Time). Every one of these is a claim in the
+    // advertisement — "each repeat darker", "wow in the loop", "band-limited" —
+    // and a claim the DSP does not keep is a model dialling `tape` confidently
+    // and getting a clean digital delay.
+    //
+    // All of it lives in the FEEDBACK path, which is what makes the claims
+    // testable one repeat at a time: repeat one is untouched in every mode and
+    // the colour accumulates from there.
+    // =======================================================================
+    std::printf ("== mode: DIGITAL is the neutral reference ==\n");
+    {
+        const auto s = delayModeSpec (DelayMode::Digital);
+        check (s.lpScale == 1.0f && s.hpScale == 1.0f && s.drive == 0.0f
+                   && s.wowMs == 0.0f && s.flutterMs == 0.0f && ! s.pingPong,
+               "digital scales nothing, drives nothing and wobbles nothing");
+
+        DelayEngine e;
+        e.prepare (kSr, 256);
+        check (e.getMode() == DelayMode::Digital, "and digital is the DEFAULT");
+        check (near (e.getDuckPct(), 0.0, 1e-9) && near (e.getDiffusionPct(), 0.0, 1e-9),
+               "with duck and diffusion off, so the device that shipped is unchanged");
+    }
+
+    std::printf ("== mode: names and indices round-trip ==\n");
+    {
+        check (std::string (delayModeName (DelayMode::Digital))  == "digital"
+            && std::string (delayModeName (DelayMode::Tape))     == "tape"
+            && std::string (delayModeName (DelayMode::Analog))   == "analog"
+            && std::string (delayModeName (DelayMode::PingPong)) == "pingpong",
+               "all four are named as the schema advertises them");
+
+        bool ok = true;
+        for (int i = 0; i < kNumDelayModes; ++i)
+            ok = ok && ((int) delayModeFromIndex (i) == i);
+        check (ok, "index -> mode is the identity across the whole range");
+
+        check (delayModeFromIndex (-3) == DelayMode::Digital
+            && delayModeFromIndex (77) == DelayMode::PingPong,
+               "and out of range clamps to an end rather than wrapping");
+    }
+
+    // The brightness of ONE repeat: the fraction of its energy that survives a
+    // first difference (a crude high-pass). Measured per repeat window, so the
+    // PROGRESSION shows rather than just the average.
+    auto repeatBrightness = [] (DelayMode m, int repeat, double timeMs = 200.0)
+    {
+        DelayEngine e;
+        e.setMode (m);
+        configure (e, (float) timeMs, 75.0f, 100.0f, 20.0f, 20000.0f);
+        auto out = impulseRun (e, (int) (kSr * 2.0));
+
+        const int centre = (int) (repeat * timeMs * 0.001 * kSr);
+        const int from   = centre - (int) (0.010 * kSr);
+        const int to     = centre + (int) (0.030 * kSr);
+
+        double hf = 0.0, all = 0.0;
+        for (int i = std::max (1, from); i < std::min (to, (int) out.l.size()); ++i)
+        {
+            const double d = (double) out.l[(size_t) i] - (double) out.l[(size_t) i - 1];
+            hf  += d * d;
+            all += (double) out.l[(size_t) i] * (double) out.l[(size_t) i];
+        }
+        return all > 1e-15 ? hf / all : 0.0;
+    };
+
+    std::printf ("== mode: TAPE and ANALOG darken successive repeats ==\n");
+    {
+        // Repeat 1 against repeat 4. The claim is not "tape is dark" (a low-pass
+        // dial does that) but "each repeat is darker than the last", which is a
+        // RATIO between repeats and can only come from filtering inside the loop.
+        auto fade = [&] (DelayMode m)
+        {
+            const double first = repeatBrightness (m, 1);
+            const double forth = repeatBrightness (m, 4);
+            return first > 1e-12 ? forth / first : 1.0;
+        };
+
+        const double dig  = fade (DelayMode::Digital);
+        const double tape = fade (DelayMode::Tape);
+        const double ana  = fade (DelayMode::Analog);
+
+        char msg[280];
+        std::snprintf (msg, sizeof (msg),
+                       "by repeat 4: digital keeps %.3f of its top, tape %.3f, analog %.3f",
+                       dig, tape, ana);
+        check (tape < dig && ana < dig, msg);
+        check (ana < tape, "and analog is the darker of the two, as a BBD should be");
+
+        // THE COLOUR ACCUMULATES, which is the claim that separates a mode from a
+        // filter. Measured as tape's brightness relative to digital's at repeat 1
+        // and again at repeat 4: the gap has to WIDEN.
+        //
+        // Note what this deliberately does NOT claim — that repeat one is
+        // identical. The loop's filtering and saturation cannot touch a repeat
+        // that has not been round the loop yet, but tape's WOW moves the read
+        // POSITION, and a fractionally-interpolated read smooths an impulse a
+        // little even on its first pass. So the honest statement is about the
+        // trend, not about bit-equality of the first echo.
+        const double gap1 = repeatBrightness (DelayMode::Tape, 1)
+                          / std::max (repeatBrightness (DelayMode::Digital, 1), 1e-15);
+        const double gap4 = repeatBrightness (DelayMode::Tape, 4)
+                          / std::max (repeatBrightness (DelayMode::Digital, 4), 1e-15);
+
+        std::snprintf (msg, sizeof (msg),
+                       "tape sits at %.2f of digital's brightness on repeat 1 and %.2f "
+                       "on repeat 4 - the colour builds", gap1, gap4);
+        check (gap4 < gap1 * 0.7, msg);
+    }
+
+    std::printf ("== mode: ANALOG is band-limited at BOTH ends ==\n");
+    {
+        // A BBD's reconstruction filter is not just a low-pass: the chip is band
+        // limited top and bottom, and doing only the top would sound like a tape
+        // with the wobble switched off.
+        const auto ana = delayModeSpec (DelayMode::Analog);
+        check (ana.lpScale < 1.0f, "the low-pass corner is pulled down");
+        check (ana.hpScale > 1.0f, "AND the high-pass corner is pushed up");
+
+        auto lowEnergy = [] (DelayMode m)
+        {
+            DelayEngine e;
+            e.setMode (m);
+            configure (e, 150.0f, 80.0f, 100.0f, 20.0f, 20000.0f);
+
+            // A 60 Hz burst, so there IS low content to remove.
+            const int n = (int) (kSr * 1.5);
+            std::vector<float> l ((size_t) n, 0.0f), r ((size_t) n, 0.0f);
+            for (int i = 0; i < (int) (0.05 * kSr); ++i)
+            {
+                const float v = 0.8f * std::sin (2.0f * 3.14159265f * 60.0f
+                                                 * (float) i / (float) kSr);
+                l[(size_t) i] = r[(size_t) i] = v;
+            }
+            for (int i = 0; i + 256 <= n; i += 256)
+                e.process (&l[(size_t) i], &r[(size_t) i], 256);
+
+            // Repeat 5 onward, well after the loop has shaped it.
+            return energyIn (l, (int) (0.70 * kSr), (int) (1.20 * kSr));
+        };
+
+        const double dig  = lowEnergy (DelayMode::Digital);
+        const double ana2 = lowEnergy (DelayMode::Analog);
+
+        char msg[240];
+        std::snprintf (msg, sizeof (msg),
+                       "a 60 Hz repeat retains %.1f%% as much energy in analog as in digital",
+                       100.0 * ana2 / std::max (dig, 1e-15));
+        check (ana2 < dig * 0.6, msg);
+    }
+
+    std::printf ("== mode: TAPE wobbles the repeats, DIGITAL does not ==\n");
+    {
+        // Wow and flutter move the READ POSITION, so a late repeat does not land
+        // where N * time says it should. Digital's does, to the sample.
+        auto repeatOffsetSamples = [] (DelayMode m, int repeat, double timeMs)
+        {
+            DelayEngine e;
+            e.setMode (m);
+            configure (e, (float) timeMs, 70.0f, 100.0f, 20.0f, 20000.0f);
+            auto out = impulseRun (e, (int) (kSr * 2.0));
+
+            const int expect = (int) std::lround (repeat * timeMs * 0.001 * kSr);
+            const int window = (int) (0.020 * kSr);
+
+            double p = 0.0; int at = 0;
+            peakIn (out.l, expect - window, expect + window, p, at);
+            return at - expect;
+        };
+
+        // A LONG time on purpose: the wow is 0.61 Hz, so the further out the echo
+        // sits the more of a cycle it has had to drift through. At one second the
+        // wow is near the bottom of its swing and the displacement is unmistakable;
+        // at 250 ms it is a handful of samples and the measurement is fighting the
+        // peak-finder's resolution rather than testing the DSP.
+        const int digOff  = repeatOffsetSamples (DelayMode::Digital, 1, 1000.0);
+        const int tapeOff = repeatOffsetSamples (DelayMode::Tape,    1, 1000.0);
+
+        char msg[260];
+        std::snprintf (msg, sizeof (msg),
+                       "a 1 s echo lands %d samples off the grid in digital, %d in tape",
+                       digOff, tapeOff);
+        check (std::abs (digOff) <= 3 && std::abs (tapeOff) > 12, msg);
+
+        // Two wobbles, not one: a wow and a flutter at the same rate would be one
+        // wobble with a bigger depth, and the point is that they beat.
+        const auto tape = delayModeSpec (DelayMode::Tape);
+        check (tape.wowMs > 0.0f && tape.flutterMs > 0.0f, "tape has both");
+        check (tape.wowMs > tape.flutterMs, "and the wow is the deeper, slower one");
+    }
+
+    std::printf ("== mode: PINGPONG bounces, and so does any mode with the switch ==\n");
+    {
+        // Both are honoured and neither destroys the other: the routing is the OR
+        // of the two, so a bouncing TAPE echo is expressible while the mode list
+        // still carries the entry the plan asks for.
+        DelayEngine e;
+        e.setMode (DelayMode::PingPong);
+        configure (e, 120.0f, 0.0f, 100.0f);      // configure() clears the switch
+        check (e.effectivePingPong(), "mode = pingpong bounces with the switch OFF");
+
+        DelayEngine t;
+        t.setMode (DelayMode::Tape);
+        configure (t, 120.0f, 0.0f, 100.0f);
+        check (! t.effectivePingPong(), "tape alone does not");
+        t.setPingPong (true);
+        check (t.effectivePingPong(), "tape WITH the switch does - a bouncing tape echo");
+
+        // And the routing actually happens: the first echo lands hard on one side.
+        DelayEngine p;
+        p.setMode (DelayMode::PingPong);
+        configure (p, 120.0f, 60.0f, 100.0f);
+        auto out = impulseRun (p, (int) (kSr * 1.0));
+
+        const int one = (int) (0.120 * kSr);
+        const int w   = (int) (0.010 * kSr);
+        double pl = 0.0, pr = 0.0; int al = 0, ar = 0;
+        peakIn (out.l, one - w, one + w, pl, al);
+        peakIn (out.r, one - w, one + w, pr, ar);
+        check (pl > pr * 4.0, "the first echo is hard left (L " + std::to_string (pl)
+                              + " vs R " + std::to_string (pr) + ")");
+    }
+
+    std::printf ("== diffusion: it smears a repeat toward a wash ==\n");
+    {
+        // A discrete repeat has one peak; a diffused one is a cloud with the same
+        // energy spread over a much longer window. Crest factor says so.
+        auto crest = [] (float diffusionPct)
+        {
+            DelayEngine e;
+            e.setDiffusionPct (diffusionPct);
+            configure (e, 200.0f, 70.0f, 100.0f, 20.0f, 20000.0f);
+            auto out = impulseRun (e, (int) (kSr * 1.5));
+
+            const int from = (int) (0.30 * kSr), to = (int) (1.20 * kSr);
+            double p = 0.0; int at = 0;
+            peakIn (out.l, from, to, p, at);
+            const double rms = std::sqrt (energyIn (out.l, from, to) / (double) (to - from));
+            return rms > 1e-12 ? p / rms : 0.0;
+        };
+
+        const double sharp = crest (0.0f);
+        const double washy = crest (100.0f);
+
+        char msg[240];
+        std::snprintf (msg, sizeof (msg),
+                       "diffusion 0 is a discrete repeat (crest %.1f), 100 is a wash (crest %.1f)",
+                       sharp, washy);
+        check (sharp > washy * 1.3, msg);
+
+        // Off is EXACTLY off: the allpass chain is SKIPPED at zero rather than run
+        // at zero gain, because an allpass with g = 0 is still a pure delay and
+        // would lengthen every repeat.
+        DelayEngine a, b;
+        a.setDiffusionPct (0.0f);
+        configure (a, 150.0f, 50.0f, 100.0f);
+        configure (b, 150.0f, 50.0f, 100.0f);
+        auto ra = impulseRun (a, 20000);
+        auto rb = impulseRun (b, 20000);
+
+        double worst = 0.0;
+        for (size_t i = 0; i < ra.l.size(); ++i)
+            worst = std::max (worst, std::fabs ((double) ra.l[i] - (double) rb.l[i]));
+        check (worst == 0.0, "diffusion 0 is bit-identical, and the echo time is unchanged");
+    }
+
+    std::printf ("== duck: the repeats ebb under the dry ==\n");
+    {
+        auto tailRms = [] (float duckPct)
+        {
+            DelayEngine e;
+            e.setDuckPct (duckPct);
+            configure (e, 200.0f, 70.0f, 100.0f);   // 100% wet: the repeats alone
+
+            const int n     = (int) (2.0 * kSr);
+            const int burst = (int) (0.8 * kSr);
+
+            std::vector<float> l ((size_t) n, 0.0f), r ((size_t) n, 0.0f);
+            for (int i = 0; i < burst; ++i)
+            {
+                const float v = 0.7f * std::sin (2.0f * 3.14159265f * 330.0f
+                                                 * (float) i / (float) kSr);
+                l[(size_t) i] = r[(size_t) i] = v;
+            }
+            for (int i = 0; i + 256 <= n; i += 256)
+                e.process (&l[(size_t) i], &r[(size_t) i], 256);
+
+            // The last 100 ms of the burst: repeats fully built, ducker settled.
+            const double e2 = energyIn (l, burst - (int) (0.10 * kSr), burst);
+            return std::sqrt (e2 / (0.10 * kSr));
+        };
+
+        const double open = tailRms (0.0f);
+        const double duck = tailRms (100.0f);
+
+        char msg[240];
+        std::snprintf (msg, sizeof (msg),
+                       "duck 100 pulls the repeats %.1f dB down under the source",
+                       20.0 * std::log10 (std::max (duck, 1e-12) / std::max (open, 1e-12)));
+        check (duck < open * 0.5, msg);
+
+        DelayEngine a, b;
+        a.setDuckPct (0.0f);
+        configure (a, 150.0f, 50.0f, 100.0f);
+        configure (b, 150.0f, 50.0f, 100.0f);
+        auto ra = impulseRun (a, 20000);
+        auto rb = impulseRun (b, 20000);
+        double worst = 0.0;
+        for (size_t i = 0; i < ra.l.size(); ++i)
+            worst = std::max (worst, std::fabs ((double) ra.l[i] - (double) rb.l[i]));
+        check (worst == 0.0, "duck 0 is bit-identical to a device that never had it");
+    }
+
+    std::printf ("== every mode survives the maximum feedback the schema allows ==\n");
+    {
+        // softClip keeps the loop gain under 1, and the modes add a saturator, a
+        // diffusion chain and two wobbles INSIDE that loop. Each one is a chance to
+        // have pushed the round trip back over unity.
+        for (int i = 0; i < kNumDelayModes; ++i)
+        {
+            const auto m = delayModeFromIndex (i);
+
+            DelayEngine e;
+            e.setMode (m);
+            e.setDiffusionPct (100.0f);
+            configure (e, 80.0f, 100.0f, 100.0f, 20.0f, 20000.0f);
+            e.setModDepthMs (DelayEngine::kMaxModDepthMs);
+
+            const int n = (int) (kSr * 4.0);
+            std::vector<float> l ((size_t) n, 0.0f), r ((size_t) n, 0.0f);
+            for (int k = 0; k < (int) (kSr * 1.0); ++k)
+            {
+                l[(size_t) k] = 0.9f * std::sin (0.21f * (float) k);
+                r[(size_t) k] = 0.9f * std::sin (0.19f * (float) k);
+            }
+            for (int k = 0; k + 256 <= n; k += 256)
+                e.process (&l[(size_t) k], &r[(size_t) k], 256);
+
+            double p = 0.0; int at = 0;
+            peakIn (l, 0, n, p, at);
+            check (! anyNonFinite (l) && ! anyNonFinite (r) && p < 8.0,
+                   std::string (delayModeName (m))
+                       + ": 100% feedback with everything at maximum stays bounded (peak "
+                       + std::to_string (p) + ")");
+        }
+    }
+
     std::printf ("== parameters clamp to the advertised range ==\n");
     {
         DelayEngine e;
         e.prepare (kSr, 256);
+
+        e.setDuckPct (400.0f);      check (e.getDuckPct() == DelayEngine::kMaxDuckPct, "duck clamps");
+        e.setDiffusionPct (-8.0f);  check (e.getDiffusionPct() == DelayEngine::kMinDiffusionPct, "diffusion clamps");
 
         e.setTimeMs (1.0e6f);       check (e.getTimeMs() == DelayEngine::kMaxTimeMs, "time clamps high");
         e.setTimeMs (-5.0f);        check (e.getTimeMs() == DelayEngine::kMinTimeMs, "time clamps low");

@@ -614,10 +614,354 @@ int main()
         check (! anyNonFinite (out.l), "mono output is finite");
     }
 
+    // =======================================================================
+    // THE ALGORITHM (DEVICE_DEPTH_PLAN.md, Time). Five names in the
+    // advertisement are five promises to the model, and a promise the DSP does
+    // not keep is worse than no choice at all: the model dials `plate`
+    // confidently and gets whatever the network was already doing.
+    //
+    // So each is measured on the property that DEFINES it rather than on "does
+    // it sound different" — early/late balance, density, brightness and
+    // dispersion are all things a number can settle.
+    // =======================================================================
+    std::printf ("== algorithm: HALL is the neutral reference ==\n");
+    {
+        // This is the check that lets the other four exist at all: hall must be
+        // the network as it was BEFORE the param, or every session saved before
+        // this pass would restore a different reverb than it was mixed with.
+        const auto s = reverbAlgorithmSpec (ReverbAlgorithm::Hall);
+        check (s.lineScale == 1.0f && s.tapScale == 1.0f && s.earlyGain == 1.0f
+                   && s.earlyLateBias == 0.0f && s.diffusionBias == 0.0f
+                   && s.dampScale == 1.0f && s.modScale == 1.0f && s.dispersion == 0.0f,
+               "every hall multiplier is 1 and every bias is 0");
+
+        ReverbEngine e;
+        e.prepare (kSr, 256);
+        check (e.getAlgorithm() == ReverbAlgorithm::Hall, "and hall is the DEFAULT");
+        check (near (e.getDiffusionPct(), kReverbDiffusionUnityPct, 1e-6),
+               "with diffusion defaulting to the unity point, so the allpass gains "
+               "are the ones the network was designed with");
+    }
+
+    std::printf ("== algorithm: names and indices round-trip ==\n");
+    {
+        check (std::string (reverbAlgorithmName (ReverbAlgorithm::Room))     == "room"
+            && std::string (reverbAlgorithmName (ReverbAlgorithm::Hall))     == "hall"
+            && std::string (reverbAlgorithmName (ReverbAlgorithm::Plate))    == "plate"
+            && std::string (reverbAlgorithmName (ReverbAlgorithm::Spring))   == "spring"
+            && std::string (reverbAlgorithmName (ReverbAlgorithm::Ambience)) == "ambience",
+               "all five are named as the schema advertises them");
+
+        bool ok = true;
+        for (int i = 0; i < kNumReverbAlgorithms; ++i)
+            ok = ok && ((int) reverbAlgorithmFromIndex (i) == i);
+        check (ok, "index -> algorithm is the identity across the whole range");
+
+        check (reverbAlgorithmFromIndex (-5) == ReverbAlgorithm::Room
+            && reverbAlgorithmFromIndex (99) == ReverbAlgorithm::Ambience,
+               "and out of range clamps to an end rather than wrapping");
+    }
+
+    // ---- the measures each algorithm is judged on --------------------------
+    // Energy in the first 25 ms against 25-400 ms: the one number that separates
+    // "standing near a wall" from "a wash".
+    auto earlyLateRatio = [] (ReverbAlgorithm a)
+    {
+        ReverbEngine e;
+        e.setAlgorithm (a);
+        configure (e, 55.0f, 2.0f, 100.0f);
+        e.setEarlyLatePct (50.0f);        // let BOTH halves through, so the ratio is real
+        auto out = impulseRun (e, 24000);
+
+        const double early = rmsIn (out.l, 0, (int) (0.025 * kSr));
+        const double late  = rmsIn (out.l, (int) (0.025 * kSr), (int) (0.400 * kSr));
+        return late > 1e-9 ? early / late : 0.0;
+    };
+
+    // Peak over RMS across the first 60 ms. A DIFFUSE algorithm has spread one
+    // impulse into a cloud, so its peak sits close to its average; a room still
+    // has distinct reflections sticking out.
+    auto crest60 = [] (ReverbAlgorithm a, float diffusionPct = -1.0f)
+    {
+        ReverbEngine e;
+        e.setAlgorithm (a);
+        if (diffusionPct >= 0.0f) e.setDiffusionPct (diffusionPct);
+        configure (e, 55.0f, 2.0f, 100.0f);
+        auto out = impulseRun (e, 24000);
+
+        const int    to = (int) (0.060 * kSr);
+        const double r  = rmsIn (out.l, 0, to);
+        return r > 1e-9 ? peakIn (out.l, 0, to) / r : 0.0;
+    };
+
+    // How much of the TAIL survives a crude high-pass (a first difference).
+    auto tailBrightness = [] (ReverbAlgorithm a)
+    {
+        ReverbEngine e;
+        e.setAlgorithm (a);
+        configure (e, 55.0f, 3.0f, 100.0f, 0.0f, 40.0f);   // some damping to scale
+        auto out = impulseRun (e, 48000);
+
+        const int from = (int) (0.150 * kSr), to = (int) (0.500 * kSr);
+        double hf = 0.0, all = 0.0;
+        for (int i = from + 1; i < to; ++i)
+        {
+            const double d = (double) out.l[(size_t) i] - (double) out.l[(size_t) i - 1];
+            hf  += d * d;
+            all += (double) out.l[(size_t) i] * (double) out.l[(size_t) i];
+        }
+        return all > 1e-12 ? hf / all : 0.0;
+    };
+
+    std::printf ("== algorithm: the early/late balance IS the character ==\n");
+    {
+        const double amb   = earlyLateRatio (ReverbAlgorithm::Ambience);
+        const double room  = earlyLateRatio (ReverbAlgorithm::Room);
+        const double hall  = earlyLateRatio (ReverbAlgorithm::Hall);
+        const double plate = earlyLateRatio (ReverbAlgorithm::Plate);
+
+        char msg[240];
+        std::snprintf (msg, sizeof (msg),
+                       "ambience %.2f > room %.2f > hall %.2f > plate %.4f",
+                       amb, room, hall, plate);
+        check (amb > room && room > hall && hall > plate, msg);
+
+        // A plate has NO walls: the early cluster is not merely quiet, it is gone.
+        check (reverbAlgorithmSpec (ReverbAlgorithm::Plate).earlyGain == 0.0f,
+               "plate's early gain is exactly zero - no distinct reflections at all");
+
+        check (amb > 1.0, "ambience has MORE early energy than late ("
+                          + std::to_string (amb) + ")");
+    }
+
+    std::printf ("== algorithm: density separates a room from a plate ==\n");
+    {
+        const double room   = crest60 (ReverbAlgorithm::Room);
+        const double plate  = crest60 (ReverbAlgorithm::Plate);
+        const double spring = crest60 (ReverbAlgorithm::Spring);
+
+        char msg[220];
+        std::snprintf (msg, sizeof (msg),
+                       "room is peaky (crest %.1f), plate is a cloud (crest %.1f)",
+                       room, plate);
+        check (room > plate * 1.2, msg);
+        check (spring > 0.0 && std::isfinite (spring), "spring measures finite too");
+    }
+
+    std::printf ("== algorithm: brightness is a property of the space ==\n");
+    {
+        const double plate = tailBrightness (ReverbAlgorithm::Plate);
+        const double hall  = tailBrightness (ReverbAlgorithm::Hall);
+
+        char msg[220];
+        std::snprintf (msg, sizeof (msg),
+                       "a plate's tail keeps more top than a hall's (%.4f vs %.4f)",
+                       plate, hall);
+        check (plate > hall * 1.1, msg);
+    }
+
+    std::printf ("== algorithm: SPRING disperses - highs arrive after lows ==\n");
+    {
+        // The physical signature of a spring tank, and the one thing no amount of
+        // filtering or modulation can fake: the loop's delay is frequency
+        // dependent, so every pass pushes the high band further behind the low
+        // band. Measured as each band's energy CENTROID in time.
+        auto bandCentroids = [] (ReverbAlgorithm a, double& loMs, double& hiMs)
+        {
+            ReverbEngine e;
+            e.setAlgorithm (a);
+            configure (e, 55.0f, 2.0f, 100.0f);
+            auto out = impulseRun (e, 24000);
+
+            double lo = 0.0, num = 0.0, den = 0.0, hnum = 0.0, hden = 0.0;
+            const double coeff = 0.06;                 // ~500 Hz at 48 kHz
+
+            for (int i = 0; i < (int) out.l.size(); ++i)
+            {
+                const double x = (double) out.l[(size_t) i];
+                lo += coeff * (x - lo);
+                const double hi = x - lo;
+
+                const double t = 1000.0 * (double) i / kSr;
+                num  += lo * lo * t;  den  += lo * lo;
+                hnum += hi * hi * t;  hden += hi * hi;
+            }
+
+            loMs = den  > 1e-12 ? num  / den  : 0.0;
+            hiMs = hden > 1e-12 ? hnum / hden : 0.0;
+        };
+
+        double sLo = 0.0, sHi = 0.0, rLo = 0.0, rHi = 0.0;
+        bandCentroids (ReverbAlgorithm::Spring, sLo, sHi);
+        bandCentroids (ReverbAlgorithm::Room,   rLo, rHi);
+
+        // Both differences are NEGATIVE, and that is not a failure: an impulse
+        // puts most of its high-frequency energy at the front in any reverb, so
+        // the high band's centroid is always earlier than the low band's. What
+        // dispersion changes is how much — a spring drags its highs BACKWARD
+        // toward the lows, pass after pass, so the gap closes. The measure is
+        // therefore relative to a non-dispersive algorithm, never absolute.
+        char msg[260];
+        std::snprintf (msg, sizeof (msg),
+                       "spring's high band sits %.1f ms later relative to its lows than "
+                       "a room's does (%.1f vs %.1f ms)",
+                       (sHi - sLo) - (rHi - rLo), sHi - sLo, rHi - rLo);
+        check ((sHi - sLo) > (rHi - rLo), msg);
+
+        check (reverbAlgorithmSpec (ReverbAlgorithm::Spring).dispersion > 0.0f,
+               "and spring is the only algorithm that switches dispersion on");
+
+        // The dispersion allpass sits INSIDE the loop, so it lengthens every line.
+        // Unaccounted for in the decay gain, a spring would die measurably faster
+        // than the RT60 it was handed.
+        ReverbEngine sp;
+        sp.setAlgorithm (ReverbAlgorithm::Spring);
+        configure (sp, 55.0f, 3.0f, 100.0f);
+        auto out = impulseRun (sp, (int) (4.0 * kSr));
+
+        const double at1s = rmsIn (out.l, (int) (0.9 * kSr), (int) (1.1 * kSr));
+        const double at3s = rmsIn (out.l, (int) (2.9 * kSr), (int) (3.1 * kSr));
+        const double dropDb = 20.0 * std::log10 (std::max (at3s, 1e-12)
+                                               / std::max (at1s, 1e-12));
+        char dmsg[220];
+        std::snprintf (dmsg, sizeof (dmsg),
+                       "a 3 s spring is still ringing at 3 s (%.1f dB below its 1 s level)",
+                       dropDb);
+        check (dropDb > -45.0 && at3s > 1e-6, dmsg);
+    }
+
+    std::printf ("== algorithm: all five are stable at every extreme ==\n");
+    {
+        // The FDN's stability argument is "orthogonal matrix, max line gain < 1",
+        // and the algorithms change the line lengths that gain is computed from.
+        for (int i = 0; i < kNumReverbAlgorithms; ++i)
+        {
+            const auto a = reverbAlgorithmFromIndex (i);
+
+            ReverbEngine e;
+            e.setAlgorithm (a);
+            e.setDiffusionPct (100.0f);
+            configure (e, 100.0f, 20.0f, 100.0f, 200.0f, 0.0f);
+            e.setModDepthPct (100.0f);
+            e.setEarlyLatePct (50.0f);
+
+            // Sustained full-scale noise, not an impulse: an unstable network
+            // needs feeding to show it.
+            std::vector<float> l ((size_t) (2 * (int) kSr), 0.0f), r = l;
+            unsigned seed = 12345u;
+            for (size_t k = 0; k < l.size(); ++k)
+            {
+                seed = seed * 1664525u + 1013904223u;
+                l[k] = r[k] = ((float) (seed >> 9) / 4194304.0f) - 1.0f;
+            }
+            for (int k = 0; k + 256 <= (int) l.size(); k += 256)
+                e.process (&l[(size_t) k], &r[(size_t) k], 256);
+
+            const double peak = peakIn (l, 0, (int) l.size());
+            check (! anyNonFinite (l) && ! anyNonFinite (r) && peak < 8.0,
+                   std::string (reverbAlgorithmName (a))
+                       + ": 2 s of full-scale noise at every extreme stays bounded (peak "
+                       + std::to_string (peak) + ")");
+        }
+    }
+
+    std::printf ("== diffusion: more of it is a denser, less peaky tail ==\n");
+    {
+        const double thin  = crest60 (ReverbAlgorithm::Hall, 0.0f);
+        const double dense = crest60 (ReverbAlgorithm::Hall, 100.0f);
+
+        char msg[220];
+        std::snprintf (msg, sizeof (msg),
+                       "diffusion 0 is peaky (crest %.1f), 100 is a cloud (crest %.1f)",
+                       thin, dense);
+        check (thin > dense, msg);
+    }
+
+    // =======================================================================
+    std::printf ("== duck: the tail ebbs under the dry and SWELLS in the gaps ==\n");
+    {
+        // A burst of dry, then silence. With duck on, the wet has to be quieter
+        // while the dry plays AND recover afterwards — that recovery is the whole
+        // reason to reach for it, and a ducker that only attenuates is a
+        // compressor on the wrong bus.
+        auto run = [] (float duckPct, double& during, double& after)
+        {
+            ReverbEngine e;
+            e.setDuckPct (duckPct);
+            // A LONG decay on purpose: the swell has to be measured against a tail
+            // that is still there, or what the test actually measures is the
+            // reverb dying rather than the ducker letting go.
+            configure (e, 55.0f, 6.0f, 100.0f);   // 100% wet: the tail alone
+
+            const int n     = (int) (3.0 * kSr);
+            const int burst = (int) (0.8 * kSr);
+
+            std::vector<float> l ((size_t) n, 0.0f), r ((size_t) n, 0.0f);
+            for (int i = 0; i < burst; ++i)
+            {
+                const float v = 0.7f * std::sin (2.0f * 3.14159265f * 220.0f
+                                                 * (float) i / (float) kSr);
+                l[(size_t) i] = r[(size_t) i] = v;
+            }
+
+            for (int i = 0; i + 256 <= n; i += 256)
+                e.process (&l[(size_t) i], &r[(size_t) i], 256);
+
+            // The last 100 ms of the burst (tail fully built, ducker settled),
+            // then a window starting 250 ms after it stops.
+            //
+            // NOT 50 ms after: a loud source pins the ducker's detector well above
+            // the top of its window, so the envelope has to fall through that
+            // headroom before the gain moves at all. That delay is deliberate — it
+            // is what stops the effect pumping through the gaps between words — so
+            // the test has to look past it rather than measure the hold and call
+            // it a failure to release.
+            during = rmsIn (l, burst - (int) (0.10 * kSr), burst);
+            after  = rmsIn (l, burst + (int) (0.25 * kSr), burst + (int) (0.75 * kSr));
+        };
+
+        double openDuring = 0.0, openAfter = 0.0, duckDuring = 0.0, duckAfter = 0.0;
+        run (0.0f,   openDuring, openAfter);
+        run (100.0f, duckDuring, duckAfter);
+
+        char msg[260];
+        std::snprintf (msg, sizeof (msg),
+                       "duck 100 pulls the tail %.1f dB down while the dry plays",
+                       20.0 * std::log10 (std::max (duckDuring, 1e-12)
+                                        / std::max (openDuring, 1e-12)));
+        check (duckDuring < openDuring * 0.5, msg);
+
+        // THE SWELL, measured relative to each run's own ducked level: the ducked
+        // tail must come back up once the source stops.
+        const double openRise = openAfter / std::max (openDuring, 1e-12);
+        const double duckRise = duckAfter / std::max (duckDuring, 1e-12);
+
+        std::snprintf (msg, sizeof (msg),
+                       "and then swells: ducked rises %.2fx after the burst, "
+                       "un-ducked only %.2fx", duckRise, openRise);
+        check (duckRise > openRise * 1.5, msg);
+
+        // Off is EXACTLY off: a device with no ducking dialled must be untouched.
+        ReverbEngine a, b;
+        a.setDuckPct (0.0f);
+        configure (a, 55.0f, 2.0f, 100.0f);
+        configure (b, 55.0f, 2.0f, 100.0f);
+        auto ra = impulseRun (a, 12000);
+        auto rb = impulseRun (b, 12000);
+
+        double worst = 0.0;
+        for (size_t i = 0; i < ra.l.size(); ++i)
+            worst = std::max (worst, std::fabs ((double) ra.l[i] - (double) rb.l[i]));
+        check (worst == 0.0, "duck 0 is bit-identical to a device that never had it");
+    }
+
     std::printf ("== parameters clamp to the advertised range ==\n");
     {
         ReverbEngine e;
         e.prepare (kSr, 256);
+
+        e.setDuckPct (400.0f);       check (e.getDuckPct() == ReverbEngine::kMaxDuckPct, "duck clamps");
+        e.setDiffusionPct (-9.0f);   check (e.getDiffusionPct() == ReverbEngine::kMinDiffusionPct, "diffusion clamps");
 
         e.setSizePct (900.0f);       check (e.getSizePct() == ReverbEngine::kMaxSizePct, "size clamps");
         e.setDecaySeconds (-1.0f);   check (e.getDecaySeconds() == ReverbEngine::kMinDecaySec, "decay clamps");
