@@ -356,6 +356,52 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   REBUILDS the whole rack (destroying hosted plugin state). The note (plus
   the same block-rule strip chat turns use) must be REPLACED, not just
   removed, when 1c ships real edit operations.
+- CHANNEL SELECTOR DEPENDENCY: STRIP SELECTION IS THE ONLY SELECTOR ON A
+  COLLAPSED LINK TAB (30 Jul 2026). The chip bar was deleted, which left the
+  chat sidebar's channel banner as the only way to switch which channel a
+  conversation targets. The sidebar can now collapse to zero width
+  (processorRef.chatSidebarCollapsed), and it takes the banner with it, so a
+  collapsed Link tab has NO channel selector at all. The Link mixer closes
+  that gap by construction: TAPPING A STRIP SELECTS THAT CHANNEL. Strip
+  selection is therefore load-bearing, not a convenience. Do not remove it,
+  and do not gate it behind a view mode, without first restoring some other
+  selector that survives a collapsed sidebar. ONE selection state, not two:
+  strip and banner both read and write effectiveChannelUid() (the active
+  chat's linkUid, else processorRef.pendingChannelUid). Both live on the
+  PROCESSOR, which is also what makes selection survive the Logic editor
+  recreate; a selected-strip index cached on the editor would not.
+- ONE AUTHOR FOR BOUNDS, VISIBILITY AND HIT REGIONS, THE GENERAL FORM
+  (30 Jul 2026, written after four instances in two days). The visibility note
+  above and the chatBoxH height rule are both cases of one rule: any
+  component's bounds, visibility or hit region has EXACTLY ONE author, and
+  paint AND hit-testing both CONSUME what that author stored rather than
+  recomputing it. A second computation of the same geometry is a bug that has
+  not fired yet, because the two copies agree on the day they are written and
+  diverge on the day one of them is edited. Evidence, all four inside 48
+  hours:
+    1. THE TAB STRIP: tab rects computed in two places, so the strip painted
+       one set of widths and click-tested another.
+    2. THE VISUALISATION PRESET HIT TEST: paint drew the preset strip to full
+       width while mouseDown recomputed its bounds 280px short, so the right
+       end of a visibly-drawn strip was dead to the mouse.
+    3. THE TWO HEADER ICONS: position authored twice, so the pair drifted
+       apart depending on which path ran last.
+    4. A BUTTON WHOSE VISIBILITY WAS SET IN TWO PLACES: one path showed it,
+       the other hid it, and which won depended on call order.
+  Practical form: resized(), or a measure pass resized() calls, is the sole
+  geometry author and STORES the rects; paint() measures nothing; mouseDown
+  and hitTest index the stored rects. Where a painter and resized() must
+  share a constant, the constant lives in ONE named place, never as a comment
+  claiming the other copy "mirrors" it. The Link tab already carries exactly
+  that smell today: paintLinkView hardcodes pad / title / host-card heights
+  while resized() re-adds them as `topH + 16 + 26 + 64 + 6` under the comment
+  "mirrors the panel painter's layout constants". Two authorities,
+  self-documented.
+  COROLLARY FOR THE LINK MIXER: a horizontally scrolling, variable-count,
+  variable-width strip set is the highest-risk shape for this bug. Strip rects
+  are measured ONCE per resize into a stored vector; paint indexes it and
+  mouseDown indexes the same vector. computeColumns stays the single authority
+  on the tab's available width, and no copy of the width formula is added.
 
 ## Standing engineering rules (from prior work)
 - Build via ~/reinstall-v2.sh (kills AU host, bumps version, rebuilds, installs
