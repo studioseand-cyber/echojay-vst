@@ -42,6 +42,7 @@
 #include <map>
 
 #include "EjmapWatchdog.h"
+#include "EjmapParamListeners.h"
 
 namespace ejmap
 {
@@ -159,6 +160,22 @@ public:
         */
         juce::uint32 armedAtMs = 0;
 
+        /** The index the plugin itself named via a parameter gesture, when it
+            named exactly one. -1 otherwise. This is what earns a
+            multi-parameter move the "captured" kind without a human pick: the
+            follower question is answered by the plugin, not guessed at.
+        */
+        int primaryIndex = -1;
+
+        /** Which mechanism produced the attribution, recorded per row because
+            the plan requires evidence.captured_by and because a corpus of
+            these tells us how often the listener layer actually fires.
+              "poll"          the poll alone; the listener was silent or ambiguous
+              "poll+gesture"  the poll found one index and the plugin's gesture agrees
+              "gesture"       the plugin's gesture resolved a multi-parameter move
+        */
+        juce::String capturedBy { "poll" };
+
         juce::String kindString() const
         {
             switch (kind)
@@ -187,6 +204,11 @@ public:
     using HumanEvidenceFn = std::function<bool (int index, const Result&)>;
 
     void setHumanEvidenceProbe (HumanEvidenceFn f) { humanEvidence = std::move (f); }
+
+    /** The listener bank is optional: with none set, every result is
+        attributed by the poll alone, which is exactly the pass-one behaviour.
+    */
+    void setListenerBank (ParamListenerBank* b) noexcept { listeners = b; }
 
     //==========================================================================
     /** Rate policy. 30% of the frame budget so capture never starves the editor,
@@ -491,6 +513,15 @@ private:
             r.names.add (juce::isPositiveAndBelow (i, params.size())
                            ? params[i]->getName (48) : juce::String ("index " + juce::String (i)));
 
+        // What the plugin itself says was touched: gesture begins since arm,
+        // intersected with what actually moved. A gesture on an index that
+        // never moved is not attribution evidence for this result.
+        juce::Array<int> gestured;
+        if (listeners != nullptr)
+            for (int g : listeners->gestureBeginsSince (armedAt))
+                if (moved.contains (g))
+                    gestured.add (g);
+
         if (moved.size() > kTooManyMoved)
         {
             r.kind = Result::Kind::tooMany;
@@ -507,7 +538,17 @@ private:
         {
             r.kind = Result::Kind::captured;
             r.indices = moved;
-            r.reason = "exactly one parameter moved: " + r.names[0];
+            r.primaryIndex = moved[0];
+            if (gestured.contains (moved[0]))
+            {
+                r.capturedBy = "poll+gesture";
+                r.reason = "exactly one parameter moved: " + r.names[0]
+                             + "; the plugin's own gesture report agrees";
+            }
+            else
+            {
+                r.reason = "exactly one parameter moved: " + r.names[0];
+            }
             return r;
         }
 
@@ -535,6 +576,35 @@ private:
 
         r.sameDirection  = sameSign;
         r.magnitudeRatio = lo > 0.0f ? (hi / lo) : 0.0f;
+
+        // THE PLUGIN NAMED THE TOUCHED CONTROL. When exactly one of the moved
+        // indices had a gesture begin behind it, the follower question -- the
+        // one the poll structurally cannot answer and the human used to be
+        // asked -- is answered by the plugin itself. The rest stay co-moved.
+        // Exactly one, deliberately: zero gestures decides nothing (a known
+        // class of plugins never sends them), and two or more is ambiguity
+        // again (a mirroring plugin may report both sides of a link), so both
+        // fall through to the human.
+        if (gestured.size() == 1)
+        {
+            r.kind = Result::Kind::captured;
+            r.indices = moved;
+            r.primaryIndex = gestured[0];
+            r.capturedBy = "gesture";
+
+            const int pos = moved.indexOf (gestured[0]);
+            r.reason = juce::String (moved.size()) + " parameters moved together and the plugin "
+                         "reported a gesture on "
+                     + (pos >= 0 ? r.names[pos] : juce::String ("index " + juce::String (gestured[0])))
+                     + ": that is the touched control, the rest are co-moved.";
+            r.reason << " Shape: " << (sameSign ? "all same direction" : "mixed directions")
+                     << ", magnitudes "
+                     << (r.magnitudeRatio > 0.0f
+                            ? juce::String (r.magnitudeRatio, 2) + "x apart"
+                            : juce::String ("not comparable"))
+                     << ".";
+            return r;
+        }
 
         {
             // MULTI-PARAMETER GESTURE, not a fault.
@@ -577,6 +647,9 @@ private:
                        "drag moving frequency and gain together. Pick the one you meant; the rest "
                        "are recorded as co-moved. If you touched only one control, this may instead "
                        "be a macro, or the epsilon may be too small.";
+            if (gestured.size() > 1)
+                r.reason << " The plugin reported gestures on " << gestured.size()
+                         << " of them, which does not single one out.";
 
             // The shape, stated and not interpreted. Lockstep is worth showing
             // because it is what a mirrored or linked pair would look like, and
@@ -665,6 +738,7 @@ private:
     NoiseMask* mask = nullptr;
     ResultFn callback;
     HumanEvidenceFn humanEvidence;
+    ParamListenerBank* listeners = nullptr;
     std::vector<float> snapshot;
     std::map<int, int> cycleAppearances;
     juce::uint32 armedAt = 0;

@@ -110,11 +110,16 @@ public:
         unmaskButton.onClick = [this] { unmaskSelected(); };
 
         // What counts as human evidence behind a moved index, answered from
-        // things the engine has no business owning. Mouse only for now; the
-        // listener bank's gesture reports join this probe when it lands.
-        capture.setHumanEvidenceProbe ([this] (int, const CaptureEngine::Result& r)
+        // things the engine has no business owning: a mouse grab inside the
+        // hosted editor near the detection, or the plugin's own gesture report
+        // on that index since arm. The second covers what the first cannot
+        // see -- a MIDI controller or a GUI whose touch never involves our
+        // mouse -- exactly the hole the mouse-only probe recorded.
+        capture.setListenerBank (&listeners);
+        capture.setHumanEvidenceProbe ([this] (int idx, const CaptureEngine::Result& r)
         {
-            return mouseGrabInEditorNear (r.detectedAtMs);
+            return mouseGrabInEditorNear (r.detectedAtMs)
+                || listeners.sawGestureOn (idx, r.armedAtMs);
         });
 
         addAndMakeVisible (captureReadout);
@@ -194,6 +199,7 @@ public:
     ~MainComponent() override
     {
         capture.stop();
+        listeners.detach();      // while the instance's parameters still exist
         host.unload();
     }
 
@@ -436,6 +442,7 @@ public:
         }
 
         auto* inst = host.getInstance();
+        listeners.attach (*inst);      // the listener stage needs real callbacks
         cal  = capture.calibrate (*inst, sp.pluginId());
         std::cout << "CAPTURETEST: " << desc.name << " | " << cal.describe() << std::endl;
 
@@ -501,6 +508,7 @@ public:
         std::cout.flush();
 
         capture.stop();
+        listeners.detach();
         host.unload();
 
         juce::MessageManager::callAsync ([this] { nextStallAttempt(); });
@@ -605,6 +613,7 @@ public:
         // editor must actually be attached and on screen, exactly as in the app.
         attachEditor();
         resized();
+        listeners.attach (*host.getInstance());
 
         auto* inst = host.getInstance();
         cal = capture.calibrate (*inst, loadedId);
@@ -778,7 +787,7 @@ public:
         const auto& usable = qualified;
         if (usable.size() < 10) { std::cout << "CAPTURETEST: too few qualified params" << std::endl; quitNow(); return; }
 
-        if (stage >= 7)
+        if (stage >= 8)
         {
             // Stages 4-6 moved usable[9] three times with no mouse anywhere
             // near the editor. Promotion must have fired on the third, through
@@ -826,7 +835,8 @@ public:
         else if (st == 1) targets = { usable[1], usable[2] };
         else if (st == 2) targets = { usable[3], usable[4] };
         else if (st == 3) for (int k = 0; k < 9; ++k) targets.add (usable[k]);
-        else              targets = { usable[9] };   // stages 4-6: the promotion probe
+        else if (st <= 6) targets = { usable[9] };            // stages 4-6: the promotion probe
+        else              targets = { usable[7], usable[8] }; // stage 7: gesture resolution
 
         for (int i = 0; i < targets.size(); ++i)
         {
@@ -850,13 +860,23 @@ public:
                                            "nine moved -> too_many",
                                            "promotion probe cycle 1 -> captured, not yet masked",
                                            "promotion probe cycle 2 -> captured, not yet masked",
-                                           "promotion probe cycle 3 -> captured, then promoted" };
+                                           "promotion probe cycle 3 -> captured, then promoted",
+                                           "two moved, plugin gestured one -> captured via listener" };
             static const char* want[]  = { "captured", "gesture", "gesture", "too_many",
-                                           "captured", "captured", "captured" };
+                                           "captured", "captured", "captured", "captured" };
 
             bool ok = (r.kindString() == juce::String (want[st]));
             if (st == 1) ok = ok && r.sameDirection;
             if (st == 2) ok = ok && ! r.sameDirection;
+
+            // Stage 7 is the listener layer's claim: two parameters moved in
+            // one window, the plugin reported a gesture on exactly one, and
+            // that one is the capture -- no human pick, follower kept as
+            // co-moved. Assert the attribution, not just the kind, or the
+            // stage would pass whenever anything got captured.
+            if (st == 7) ok = ok && r.capturedBy == "gesture"
+                                 && r.primaryIndex == qualified[7]
+                                 && r.indices.size() == 2;
 
             // The probe index must still be capturable on cycles 1 and 2: a
             // promotion that fires early is as wrong as one that never fires.
@@ -874,12 +894,22 @@ public:
             // never covered by the thing that claimed to cover it. A gesture is
             // recorded here as the raw gesture row; in the app it is recorded
             // again once the human picks, which is the same writer either way.
-            recordCapture (r.kindString(),
-                           r.indices.size() == 1 ? r.indices[0] : -1,
-                           r.names.isEmpty() ? juce::String() : r.names[0],
-                           r.indices.size() > 1 ? r.indices : juce::Array<int>(),
-                           r.indices.size() > 1 ? r.names : juce::StringArray(),
-                           r.reason, r.sameDirection, r.magnitudeRatio);
+            // Same primary/co split as the app callback: a gesture-resolved
+            // capture's row must carry the plugin-named index, not -1.
+            const int intended = r.primaryIndex >= 0
+                                   ? r.primaryIndex
+                                   : (r.indices.size() == 1 ? r.indices[0] : -1);
+            juce::Array<int> co;
+            juce::StringArray coN;
+            for (int i = 0; i < r.indices.size(); ++i)
+                if (r.indices[i] != intended)
+                { co.add (r.indices[i]); coN.add (i < r.names.size() ? r.names[i] : juce::String()); }
+
+            const int pos = r.indices.indexOf (intended);
+            recordCapture (r.kindString(), intended,
+                           pos >= 0 && pos < r.names.size() ? r.names[pos] : juce::String(),
+                           co, coN,
+                           r.reason, r.sameDirection, r.magnitudeRatio, r.capturedBy);
             flushPromotionRows();      // a promotion this result caused becomes a row here
             ++stage;
             juce::Timer::callAfterDelay (400, [this] { runCaptureStage(); });
@@ -890,11 +920,21 @@ public:
             auto* in = host.getInstance();
             if (in == nullptr) return;
             auto& ps = in->getParameters();
+
+            // Stage 7 moves two but gestures ONE, which is exactly what a GUI
+            // does when a touched control drags a follower along: the host
+            // sees beginEdit/BeginGesture only for the hand's parameter.
+            if (st == 7)
+                ps[targets[0]]->beginChangeGesture();
+
             for (int i = 0; i < targets.size(); ++i)
             {
                 const float to = (st == 2 && i == 1) ? 0.50f : 0.50f;   // +0.30 / -0.30
                 ps[targets[i]]->setValueNotifyingHost (to);
             }
+
+            if (st == 7)
+                ps[targets[0]]->endChangeGesture();
         });
     }
 
@@ -1682,7 +1722,8 @@ private:
 
         recordCapture ("captured_from_gesture", intended, lastGesture.names[sel],
                        coMoved, coNames, lastGesture.reason,
-                       lastGesture.sameDirection, lastGesture.magnitudeRatio);
+                       lastGesture.sameDirection, lastGesture.magnitudeRatio,
+                       "human_pick");
 
         candidatePicker.setVisible (false);
         resized();
@@ -1731,7 +1772,8 @@ private:
     void recordCapture (const juce::String& kind, int intended, const juce::String& name,
                         const juce::Array<int>& coMoved, const juce::StringArray& coNames,
                         const juce::String& reason,
-                        bool sameDirection = false, float magnitudeRatio = 0.0f)
+                        bool sameDirection = false, float magnitudeRatio = 0.0f,
+                        const juce::String& capturedBy = {})
     {
         // REFUSE rather than write an unattributable row. A capture with no
         // plugin id is indistinguishable from evidence but cannot be traced to
@@ -1794,6 +1836,8 @@ private:
             o->setProperty ("same_direction", sameDirection);
             o->setProperty ("magnitude_ratio", magnitudeRatio);
         }
+        if (capturedBy.isNotEmpty())
+            o->setProperty ("captured_by", capturedBy);
         o->setProperty ("ui_hint", lastHint.toVar());
         o->setProperty ("reason", reason);
 
@@ -1867,12 +1911,25 @@ private:
                 return;   // Arm stays disabled until a choice is made
             }
 
-            recordCapture (r.kindString(),
-                           r.indices.size() == 1 ? r.indices[0] : -1,
-                           r.names.isEmpty() ? juce::String() : r.names[0],
-                           r.indices.size() > 1 ? r.indices : juce::Array<int>(),
-                           r.indices.size() > 1 ? r.names : juce::StringArray(),
-                           r.reason, r.sameDirection, r.magnitudeRatio);
+            // The primary is what was captured; everything else in the moved
+            // set is co-moved. For a poll-only single capture that reduces to
+            // the old behaviour exactly; for a gesture-resolved multi-move the
+            // plugin's named index is the row's index and the followers are
+            // co-moved, with captured_by saying which mechanism decided.
+            const int intended = r.primaryIndex >= 0
+                                   ? r.primaryIndex
+                                   : (r.indices.size() == 1 ? r.indices[0] : -1);
+            juce::Array<int> co;
+            juce::StringArray coN;
+            for (int i = 0; i < r.indices.size(); ++i)
+                if (r.indices[i] != intended)
+                { co.add (r.indices[i]); coN.add (i < r.names.size() ? r.names[i] : juce::String()); }
+
+            const int pos = r.indices.indexOf (intended);
+            recordCapture (r.kindString(), intended,
+                           pos >= 0 && pos < r.names.size() ? r.names[pos] : juce::String(),
+                           co, coN,
+                           r.reason, r.sameDirection, r.magnitudeRatio, r.capturedBy);
             flushPromotionRows();
             refreshMaskUi();
             armButton.setEnabled (true);
@@ -1996,6 +2053,7 @@ private:
         }
 
         capture.stop();          // before unload: teardown is what a read can race
+        listeners.detach();      // same rule: they hang off the instance's parameters
         detachEditor();
         host.unload();
 
@@ -2028,6 +2086,7 @@ private:
         {
             markLoadSucceeded();
             attachEditor();
+            listeners.attach (*host.getInstance());
             prepareCapture (sp.desc.name, id);
             status.setText (sp.desc.name + ": " + juce::String (result.paramCount)
                               + " params, editor open in " + juce::String (elapsed) + " ms",
@@ -2125,6 +2184,7 @@ private:
     CaptureEngine capture;
     PluginScanner scanner;
     PluginHost    host;
+    ParamListenerBank listeners;   // after host: destroyed (and detached) first
 
     PluginScanner::Result lastScan;
     juce::Array<ScannedPlugin> rows;        // the whole scan result, never filtered
