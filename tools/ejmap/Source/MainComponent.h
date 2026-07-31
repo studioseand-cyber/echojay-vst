@@ -20,6 +20,7 @@
 #include "EjmapSupervisor.h"
 #include "EjmapCapture.h"
 #include "EjmapMouseRing.h"
+#include "EjmapSweeper.h"
 
 #include <iostream>
 
@@ -87,6 +88,14 @@ public:
         armButton.setButtonText ("Arm");
         armButton.setEnabled (false);
         armButton.onClick = [this] { armCapture(); };
+
+        // Sweep runs against the LAST CAPTURED INDEX, never the whole plugin:
+        // the settle-and-read cost is per parameter and the mapper only needs
+        // curves for what a human actually captured.
+        addAndMakeVisible (sweepButton);
+        sweepButton.setButtonText ("Sweep");
+        sweepButton.setEnabled (false);
+        sweepButton.onClick = [this] { sweepCaptured(); };
 
         // Candidate picker: appears only for a multi-parameter gesture, where
         // the engine cannot know which of the moved parameters the human meant.
@@ -620,6 +629,8 @@ public:
         mask = capture.buildNoiseMask (*inst, cal, loadedId);
         capture.resetCycleCounts();
         promotionsFlushed = 0;
+        lastCapturedIndex = -1;
+        sweepButton.setEnabled (false);
 
         suppressIdx = -1;
         auto& params = inst->getParameters();
@@ -743,6 +754,87 @@ public:
             if (in != nullptr)
                 in->getParameters()[suppressIdx]->setValueNotifyingHost (0.50f);
         });
+    }
+
+    /** Loads a plugin and sweeps one parameter, chosen by index or by name
+        fragment; with no spec, the first automatable parameter. The M3 gate
+        runs through here: Valhalla for the text-liar class, mpressor for
+        descending anchors.
+    */
+    void selfTestSweep (const juce::String& identifier, const juce::String& paramSpec)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+
+        // VST3s resolve through the scan cache, the same source the app's
+        // Load button uses -- never findAllTypesForFile, which is banned in
+        // ejmap. Seed a throwaway root by copying scan-cache.xml into it.
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "SWEEPTEST: unknown identifier (not in the AU registry, and "
+                       "not in this root's scan cache)" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId();
+        auto res = host.load (desc, watchdog);
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "SWEEPTEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        listeners.attach (*inst);
+        cal = capture.calibrate (*inst, loadedId);
+
+        auto& params = inst->getParameters();
+        int idx = -1;
+        if (paramSpec.isNotEmpty())
+        {
+            if (paramSpec.containsOnly ("0123456789"))
+                idx = paramSpec.getIntValue();
+            else
+                for (int i = 0; i < params.size(); ++i)
+                    if (params[i]->getName (64).containsIgnoreCase (paramSpec))
+                    { idx = i; break; }
+        }
+        else
+        {
+            for (int i = 0; i < params.size(); ++i)
+                if (params[i]->isAutomatable()) { idx = i; break; }
+        }
+
+        if (! juce::isPositiveAndBelow (idx, params.size()))
+        { std::cout << "SWEEPTEST: no parameter matches \"" << paramSpec << "\"" << std::endl;
+          quitNow(); return; }
+
+        const auto name = params[idx]->getName (48);
+        std::cout << "SWEEPTEST: " << desc.name << " | param " << idx
+                  << " (" << name << ")" << std::endl;
+
+        host.pausePumpForMutation();      // same race as sweepCaptured: measured, not assumed
+        auto sw = sweepOneIndex (*inst, idx, watchdog, loadedId);
+        host.resumePumpAfterMutation();
+        recordSweep (idx, name, sw);
+
+        std::cout << "SWEEPTEST: ok=" << (sw.ok ? "yes" : "no")
+                  << " method=" << sw.method
+                  << " flat=" << (sw.flat ? "yes" : "no")
+                  << " reversed=" << (sw.anchorsReversed ? "yes" : "no")
+                  << " identity_display=" << (sw.identityDisplay ? "yes" : "no")
+                  << " anchors=" << sw.anchors.size()
+                  << " rejected=" << sw.rejectedPoints
+                  << " unparsed=" << sw.unparsedPoints
+                  << " duration=" << sw.durationMs << "ms" << std::endl;
+        std::cout << "SWEEPTEST: reason: " << sw.reason << std::endl;
+        for (int i = 0; i < juce::jmin (5, sw.anchors.size()); ++i)
+            std::cout << "    anchor [" << sw.anchors[i][0] << ", " << sw.anchors[i][1] << "]"
+                      << std::endl;
+        if (sw.anchors.size() > 5)
+            std::cout << "    ... " << (sw.anchors.size() - 5) << " more" << std::endl;
+        std::cout << "SWEEPTEST: DONE" << std::endl;
+        std::cout.flush();
+        quitNow();
     }
 
     /** Each stage arms, then moves parameters, then asserts the classification. */
@@ -950,6 +1042,8 @@ public:
         signalToggle.setBounds (top.removeFromLeft (110));
         top.removeFromLeft (6);
         armButton.setBounds (top.removeFromLeft (70));
+        top.removeFromLeft (6);
+        sweepButton.setBounds (top.removeFromLeft (76));
         top.removeFromLeft (6);
         releaseButton.setBounds (top.removeFromLeft (90));
         top.removeFromLeft (6);
@@ -1480,6 +1574,8 @@ private:
         // reload whose fresh baseline was clean.
         capture.resetCycleCounts();
         promotionsFlushed = 0;
+        lastCapturedIndex = -1;
+        sweepButton.setEnabled (false);
 
         auto* inst = host.getInstance();
         if (inst == nullptr)
@@ -1648,6 +1744,105 @@ private:
         return h;
     }
 
+    //==========================================================================
+    /** Sweeps the last captured index through the shared sweep code and
+        records the outcome, success or refusal alike.
+    */
+    void sweepCaptured()
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr || lastCapturedIndex < 0)
+            return;
+
+        sweepButton.setEnabled (false);
+        armButton.setEnabled (false);
+
+        const int idx = lastCapturedIndex;
+        const auto name = juce::isPositiveAndBelow (idx, inst->getParameters().size())
+                            ? inst->getParameters()[idx]->getName (48) : juce::String();
+
+        captureReadout.setText ("Sweeping " + juce::String (idx) + ": " + name + "...",
+                                juce::dontSendNotification);
+
+        // The sweep mutates the instance (set-then-read, state restore) and
+        // the pump renders it: those two raced inside mpressor's own code and
+        // crashed the pump thread. Pause-and-drain around every sweep.
+        host.pausePumpForMutation();
+        auto outcome = sweepOneIndex (*inst, idx, watchdog, loadedId);
+        host.resumePumpAfterMutation();
+        recordSweep (idx, name, outcome);
+
+        juce::String t;
+        t << "SWEEP " << idx << ":" << name << "  -  "
+          << (outcome.ok ? "ok" : (outcome.flat ? "TEXT LIAR" : "refused"))
+          << "  -  " << outcome.reason
+          << "  (" << outcome.durationMs << " ms)";
+        captureReadout.setText (t, juce::dontSendNotification);
+        std::cout << "SWEEP: " << t << std::endl;
+
+        sweepButton.setEnabled (true);
+        armButton.setEnabled (true);
+    }
+
+    /** The sweep row. Points travel with the anchors because anchor values
+        are raw parsed floats with no unit normalisation (assignment owns the
+        unit), so the display texts are the evidence a later parse needs.
+    */
+    void recordSweep (int index, const juce::String& name, const SweepOutcome& sw)
+    {
+        if (loadedId.isEmpty())
+        {
+            std::cout << "SWEEP: REFUSED to write a sweep row: no plugin identity" << std::endl;
+            return;
+        }
+
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
+        o->setProperty ("kind", "sweep");
+        o->setProperty ("plugin", loadedName);
+        o->setProperty ("plugin_id", loadedId);
+        o->setProperty ("param_count", cal.paramCount);
+        o->setProperty ("index", index);
+        o->setProperty ("param_name", name);
+        o->setProperty ("ok", sw.ok);
+        o->setProperty ("method", sw.method);
+        o->setProperty ("flat", sw.flat);
+        o->setProperty ("setread_refused", sw.setreadRefused);
+        o->setProperty ("anchors_reversed", sw.anchorsReversed);
+        o->setProperty ("identity_display", sw.identityDisplay);
+        o->setProperty ("rejected_points", sw.rejectedPoints);
+        o->setProperty ("unparsed_points", sw.unparsedPoints);
+        o->setProperty ("duration_ms", sw.durationMs);
+        o->setProperty ("reason", sw.reason);
+
+        juce::Array<juce::var> anch;
+        for (const auto& a : sw.anchors)
+        {
+            juce::Array<juce::var> pair; pair.add (a[0]); pair.add (a[1]);
+            anch.add (juce::var (pair));
+        }
+        o->setProperty ("anchors", juce::var (anch));
+
+        juce::Array<juce::var> pts;
+        for (const auto& sp : sw.points)
+        {
+            auto* pt = new juce::DynamicObject();
+            pt->setProperty ("n", sp.n);
+            pt->setProperty ("t", sp.t);
+            pts.add (juce::var (pt));
+        }
+        o->setProperty ("points", juce::var (pts));
+
+        auto f = ledger.runArtifact ("captures", "jsonl");
+        juce::FileOutputStream out (f);
+        if (out.openedOk())
+        {
+            out.setPosition (f.getSize());
+            out.writeText (juce::JSON::toString (juce::var (o), true) + "\n", false, false, nullptr);
+            out.flush();
+        }
+    }
+
     /** The noise-promotion evidence probe: was a mouse button held INSIDE THE
         HOSTED EDITOR shortly before the detection tick?
 
@@ -1728,6 +1923,8 @@ private:
         candidatePicker.setVisible (false);
         resized();
         refreshMaskUi();
+        lastCapturedIndex = intended;
+        sweepButton.setEnabled (true);
         armButton.setEnabled (true);
     }
 
@@ -1932,6 +2129,12 @@ private:
                            r.reason, r.sameDirection, r.magnitudeRatio, r.capturedBy);
             flushPromotionRows();
             refreshMaskUi();
+
+            if (r.kind == CaptureEngine::Result::Kind::captured && intended >= 0)
+            {
+                lastCapturedIndex = intended;
+                sweepButton.setEnabled (true);
+            }
             armButton.setEnabled (true);
         });
     }
@@ -2191,7 +2394,8 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
-    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton;
+    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton;
+    int lastCapturedIndex = -1;    // what Sweep targets: the last captured index
     juce::Label      captureReadout;
     CaptureEngine::Calibration cal;
     CaptureEngine::NoiseMask   mask;

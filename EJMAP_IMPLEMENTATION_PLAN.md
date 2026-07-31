@@ -242,6 +242,11 @@ each tick:
 
 **Failure modes.** The bare-k and `NkM` display parser cases are fixed but the fix must be the shared one. Parameters whose display changes format across the range (`900 Hz` then `1.2 kHz` then `12k`). Plugins that need a moment to settle before the display updates (add a settle delay, tunable, default 15 ms, raise to 50 ms for known slow vendors).
 
+> **Added from measurement (2026-07-31):**
+> - **There are two liar signatures, not one.** The flat sweep (getText formats current state — ValhallaVintageVerb VST3) reads as no information and earns the setread retry. The **identity display** (every value equals its own norm — ValhallaVintageVerb AU, where the hosting layer fabricates a normalized display when the AU provides no string-from-value) reads as a *plausible ascending curve* and defeats flat detection entirely. Flagged behaviourally as `identity_display` when ≥5 anchors all satisfy |v−n| < 0.005: a candidate marker, never a verdict, since a genuine unitless 0..1 control looks identical. Identity anchors dial correctly in norm terms; unit-bearing requests need the typed path.
+> - **The gate's mpressor subject is dead on this machine.** elysia mpressor AU crashes in its own render under the silent pump with no mutation in flight (3 of 3 loads, backtraced; quarantined with the evidence), and its VST3 is x86-only. The descending-anchors row was measured on **Waves API-2500 (m) Thresh** instead: 21 anchors, 10 → −20 dB, `anchors_reversed`, bridged AU, none rejected.
+> - **Sweeps mutate what the pump renders.** setread and the state-restore bracket are not specified against a concurrent processBlock, so every sweep runs under `PluginHost::pausePumpForMutation()` (pause + drain). The extractor never met this hazard because it never ran audio.
+
 ---
 
 ### M4: Assignment UI

@@ -134,6 +134,37 @@ public:
     */
     void setPumpEnabled (bool shouldPump) noexcept { pumpEnabled = shouldPump; }
 
+    /** Pauses the pump AND drains the in-flight block before returning.
+
+        Required around anything that MUTATES the instance from another thread
+        (the set-then-read sweep, a state restore): setStateInformation is not
+        specified to be callable against a concurrent processBlock, so running
+        them unserialised is a contract violation whether or not a given
+        plugin happens to survive it.
+
+        CORRECTED ATTRIBUTION. The first version of this comment claimed the
+        elysia mpressor SIGSEGV as this race, "measured". The next two crash
+        reports disproved that: the message thread was still blocked INSIDE
+        this function (second report) or the sweep had not begun (third,
+        masktest, no mutation anywhere), while the pump died in mpressor's own
+        render each time. mpressor crashes under this pump with nothing else
+        touching it -- a plugin compatibility fact recorded in its quarantine
+        entry, not evidence about this race. The pause stands on the API
+        contract, which needs no crash to justify it.
+
+        Clearing the flag alone is not enough: the pump may be mid-block, and
+        that block still races the first mutation. Taking processLock after
+        clearing the flag blocks until the in-flight processBlock returns;
+        subsequent iterations see the flag and skip processing entirely.
+    */
+    void pausePumpForMutation() noexcept
+    {
+        pumpEnabled = false;
+        const juce::ScopedLock sl (processLock);   // drain the in-flight block
+    }
+
+    void resumePumpAfterMutation() noexcept { pumpEnabled = true; }
+
 private:
     void run() override;   // silent pump
 
