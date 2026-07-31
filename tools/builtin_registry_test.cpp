@@ -834,6 +834,330 @@ int main()
                "Exciter reports 45 samples (got " + juce::String (ex->getLatencySamples()) + ")");
     }
 
+    // =======================================================================
+    // THE HARMONIC DEPTH PASS (DEVICE_DEPTH_PLAN.md, Harmonic). The engines'
+    // own g++ suites prove the DSP does what each mode claims; what is checked
+    // here is the DIALABILITY — by name and by index, clamped, round-tripping
+    // through state, advertised — and the neutrality of every default.
+    // =======================================================================
+    std::printf ("== SATURATION: emphasis dials by NAME and by index ==\n");
+    {
+        auto proc = makeByName ("EchoJay Saturation");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* sat    = dynamic_cast<EedSaturationProcessor*> (proc.get());
+
+        // Both is the default because it is the NEUTRAL emphasis — the curve as
+        // it shipped — so an old session restores the saturation it was mixed
+        // with.
+        check (near (device->getParamValue ("emphasis"),
+                     (double) (int) echojay::harmonic::Emphasis::Both),
+               "a fresh saturation is on both, the neutral emphasis");
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (paramsMove ({ { "emphasis", "even" } }),
+                                                &applied, &skipped);
+        check (applied == 1 && skipped == 0, "emphasis = \"even\" applied");
+        check (near (device->getParamValue ("emphasis"), 0.0), "landed on even (index 0)");
+        check (s.contains ("even"), "and reads back BY NAME: " + s);
+        check (sat->core().getEmphasis() == echojay::harmonic::Emphasis::Even,
+               "the CORE is on even, not just the param");
+
+        device->applyStructured (paramsMove ({ { "emphasis", "ODD" } }));
+        check (near (device->getParamValue ("emphasis"), 1.0), "matching is case-insensitive");
+
+        int a2 = 0, s2 = 0;
+        device->applyStructured (paramsMove ({ { "emphasis", "third" } }), &a2, &s2);
+        check (s2 == 1, "an unknown emphasis is SKIPPED, not guessed at");
+        check (near (device->getParamValue ("emphasis"), 1.0),
+               "and leaves the emphasis where it was");
+    }
+
+    std::printf ("== SATURATION: oversample dials, and RETARGETS the latency ==\n");
+    {
+        auto proc = makeByName ("EchoJay Saturation");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("oversample"), 1.0),
+               "a fresh saturation is on 4x, the neutral quality");
+
+        proc->prepareToPlay (48000.0, 256);
+        check (proc->getLatencySamples() == 45, "4x reports 45 samples");
+
+        // A LIVE move — no re-prepare — must land on the engine AND republish
+        // the latency, or the host would compensate for a number that is no
+        // longer true.
+        device->applyStructured (paramsMove ({ { "oversample", "8x" } }));
+        check (near (device->getParamValue ("oversample"), 2.0), "oversample = \"8x\" landed");
+        check (proc->getLatencySamples() == 48,
+               "8x republishes 48 samples WITHOUT a re-prepare (got "
+               + juce::String (proc->getLatencySamples()) + ")");
+
+        device->applyStructured (paramsMove ({ { "oversample", 0 } }));
+        check (proc->getLatencySamples() == 30, "a numeric index works too: 2x is 30 samples");
+
+        // "16x" would coerce to the number 16 and clamp onto 8x — the funnel's
+        // documented digit-salvage behaviour — so the unknown-label case is
+        // tested with a label that carries no digits at all.
+        int a2 = 0, s2 = 0;
+        device->applyStructured (paramsMove ({ { "oversample", "ultra" } }), &a2, &s2);
+        check (s2 == 1, "an unadvertised quality is SKIPPED, not guessed at");
+        check (proc->getLatencySamples() == 30, "and leaves the setting where it was");
+    }
+
+    std::printf ("== SATURATION: bias and hpf_hz land exactly, and clamp ==\n");
+    {
+        auto proc = makeByName ("EchoJay Saturation");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("bias"), 0.0),   "bias defaults to 0 (off)");
+        check (near (device->getParamValue ("hpf_hz"), 0.0), "hpf_hz defaults to 0 (full band)");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "bias", -35.0 }, { "hpf_hz", 120.0 } }),
+                                 &applied, &skipped);
+        check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
+        check (near (device->getParamValue ("bias"), -35.0),   "bias EXACTLY -35");
+        check (near (device->getParamValue ("hpf_hz"), 120.0), "hpf_hz EXACTLY 120");
+
+        device->applyStructured (paramsMove ({ { "bias", 400.0 }, { "hpf_hz", 9999.0 } }));
+        check (near (device->getParamValue ("bias"), 100.0),   "bias 400 clamps to 100");
+        check (near (device->getParamValue ("hpf_hz"), 500.0), "hpf_hz 9999 clamps to 500");
+    }
+
+    std::printf ("== TAPE: the machine dials by NAME and by index ==\n");
+    {
+        auto proc = makeByName ("EchoJay Tape");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* tape   = dynamic_cast<EedTapeProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("mode"), 0.0),
+               "a fresh tape is the studio machine, the neutral mode");
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "cassette" } }),
+                                                &applied, &skipped);
+        check (applied == 1 && skipped == 0, "mode = \"cassette\" applied");
+        check (near (device->getParamValue ("mode"), 2.0), "landed on cassette (index 2)");
+        check (s.contains ("cassette"), "and reads back BY NAME: " + s);
+        check (tape->engine().getMachine() == echojay::TapeMachine::Cassette,
+               "the ENGINE is on cassette, not just the param");
+
+        device->applyStructured (paramsMove ({ { "mode", "VINTAGE" } }));
+        check (near (device->getParamValue ("mode"), 1.0), "matching is case-insensitive");
+
+        int a2 = 0, s2 = 0;
+        device->applyStructured (paramsMove ({ { "mode", "dictaphone" } }), &a2, &s2);
+        check (s2 == 1, "an unknown machine is SKIPPED, not guessed at");
+        check (near (device->getParamValue ("mode"), 1.0), "and leaves the machine where it was");
+
+        bool allReach = true;
+        for (int i = 0; i < echojay::kNumTapeMachines; ++i)
+        {
+            const auto want = echojay::tapeMachineFromIndex (i);
+            device->applyStructured (paramsMove ({
+                { "mode", echojay::tapeMachineName (want) } }));
+            allReach = allReach && tape->engine().getMachine() == want
+                                && near (device->getParamValue ("mode"), (double) i);
+        }
+        check (allReach, "all three machines resolve by name and reach the engine");
+
+        // The machine changes character, never the timing contract.
+        proc->prepareToPlay (48000.0, 256);
+        check (proc->getLatencySamples() == 165,
+               "cassette or not, the latency stays 165 samples");
+    }
+
+    std::printf ("== TAPE: hiss and crosstalk land exactly, and clamp ==\n");
+    {
+        auto proc = makeByName ("EchoJay Tape");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("hiss"), 0.0),      "hiss defaults to 0 (off)");
+        check (near (device->getParamValue ("crosstalk"), 0.0), "and so does crosstalk");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "hiss", 40.0 }, { "crosstalk", 25.0 } }),
+                                 &applied, &skipped);
+        check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
+        check (near (device->getParamValue ("hiss"), 40.0),      "hiss EXACTLY 40");
+        check (near (device->getParamValue ("crosstalk"), 25.0), "crosstalk EXACTLY 25");
+
+        device->applyStructured (paramsMove ({ { "hiss", 900.0 }, { "crosstalk", -5.0 } }));
+        check (near (device->getParamValue ("hiss"), 100.0),    "900 clamps to 100");
+        check (near (device->getParamValue ("crosstalk"), 0.0), "a negative clamps to 0");
+    }
+
+    std::printf ("== EXCITER: all four characters dial, focus lands ==\n");
+    {
+        auto proc = makeByName ("EchoJay Exciter");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* ex     = dynamic_cast<EedExciterProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("mode"), 0.0), "a fresh exciter is tube");
+        check (near (device->getParamValue ("focus"), 0.0), "and focus defaults to 0, the "
+                                                            "split as shipped");
+
+        // The two NEW characters, by name, all the way to the engine.
+        device->applyStructured (paramsMove ({ { "mode", "odd" } }));
+        check (near (device->getParamValue ("mode"), 2.0)
+               && ex->engine().getMode() == 2, "mode = \"odd\" reaches the engine (index 2)");
+
+        device->applyStructured (paramsMove ({ { "mode", "EVEN" } }));
+        check (near (device->getParamValue ("mode"), 3.0)
+               && ex->engine().getMode() == 3, "mode = \"even\" too, case-insensitively");
+
+        // And the frozen pair still resolves exactly as before the pass.
+        device->applyStructured (paramsMove ({ { "mode", "tube" } }));
+        check (near (device->getParamValue ("mode"), 0.0), "tube keeps index 0");
+        device->applyStructured (paramsMove ({ { "mode", "tape" } }));
+        check (near (device->getParamValue ("mode"), 1.0), "tape keeps index 1");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "focus", 65.0 } }), &applied, &skipped);
+        check (applied == 1 && near (device->getParamValue ("focus"), 65.0),
+               "focus EXACTLY 65");
+        device->applyStructured (paramsMove ({ { "focus", 300.0 } }));
+        check (near (device->getParamValue ("focus"), 100.0), "300 clamps to 100");
+    }
+
+    std::printf ("== the Harmonic depth params round-trip through state ==\n");
+    {
+        auto a = makeByName ("EchoJay Saturation");
+        auto* da = dynamic_cast<EedDeviceProcessor*> (a.get());
+        da->applyStructured (paramsMove ({ { "emphasis", "odd" }, { "bias", -30.0 },
+                                           { "hpf_hz", 90.0 }, { "oversample", "8x" } }));
+        juce::MemoryBlock sb;
+        da->getStateInformation (sb);
+
+        auto b = makeByName ("EchoJay Saturation");
+        auto* db = dynamic_cast<EedDeviceProcessor*> (b.get());
+        db->setStateInformation (sb.getData(), (int) sb.getSize());
+
+        check (near (db->getParamValue ("emphasis"), 1.0),  "emphasis restored (odd)");
+        check (near (db->getParamValue ("bias"), -30.0),    "bias restored");
+        check (near (db->getParamValue ("hpf_hz"), 90.0),   "hpf_hz restored");
+        check (near (db->getParamValue ("oversample"), 2.0),"oversample restored (8x)");
+
+        auto c = makeByName ("EchoJay Tape");
+        auto* dc = dynamic_cast<EedDeviceProcessor*> (c.get());
+        dc->applyStructured (paramsMove ({ { "mode", "cassette" }, { "hiss", 45.0 },
+                                           { "crosstalk", 20.0 } }));
+        juce::MemoryBlock tb;
+        dc->getStateInformation (tb);
+
+        auto d2 = makeByName ("EchoJay Tape");
+        auto* dd = dynamic_cast<EedDeviceProcessor*> (d2.get());
+        dd->setStateInformation (tb.getData(), (int) tb.getSize());
+
+        check (near (dd->getParamValue ("mode"), 2.0),      "machine restored (cassette)");
+        check (near (dd->getParamValue ("hiss"), 45.0),     "hiss restored");
+        check (near (dd->getParamValue ("crosstalk"), 20.0),"crosstalk restored");
+
+        auto e = makeByName ("EchoJay Exciter");
+        auto* de = dynamic_cast<EedDeviceProcessor*> (e.get());
+        de->applyStructured (paramsMove ({ { "mode", "even" }, { "focus", 55.0 } }));
+        juce::MemoryBlock eb;
+        de->getStateInformation (eb);
+
+        auto f = makeByName ("EchoJay Exciter");
+        auto* df = dynamic_cast<EedDeviceProcessor*> (f.get());
+        df->setStateInformation (eb.getData(), (int) eb.getSize());
+
+        check (near (df->getParamValue ("mode"), 3.0),   "exciter mode restored (even)");
+        check (near (df->getParamValue ("focus"), 55.0), "focus restored");
+    }
+
+    std::printf ("== the Harmonic depth choices are ADVERTISED by name ==\n");
+    {
+        struct Expect { const char* device; const char* id; const char* names; const char* def; };
+
+        const Expect wanted[] = {
+            { "EchoJay Saturation", "emphasis",   "even|odd|both",           "default both" },
+            { "EchoJay Saturation", "oversample", "2x|4x|8x",                "default 4x" },
+            { "EchoJay Tape",       "mode",       "studio|vintage|cassette", "default studio" },
+            { "EchoJay Exciter",    "mode",       "tube|tape|odd|even",      "default tube" },
+        };
+
+        for (const auto& w : wanted)
+        {
+            const auto* d = registry.findByName (w.device);
+            const auto* spec = d != nullptr ? d->schema.find (w.id) : nullptr;
+            if (spec == nullptr)
+            {
+                check (false, juce::String (w.device) + " advertises " + w.id);
+                continue;
+            }
+            const auto line = juce::String (echojay::ParamSchema::describeLine (*spec));
+            check (line.contains (w.names) && line.contains (w.def),
+                   juce::String (w.device) + " " + w.id + ": " + line);
+        }
+    }
+
+    std::printf ("== a Harmonic device at its DEFAULTS is unchanged by the depth pass ==\n");
+    {
+        // The strongest guarantee this pass makes: every new param's default is
+        // the device as it shipped, so an existing session sounds identical.
+        // Rendered through the REAL processBlock, defaults against explicit
+        // neutral, and the delta must be EXACTLY zero — the neutral paths are
+        // gated, not merely quiet.
+        for (const char* name : { "EchoJay Saturation", "EchoJay Tape", "EchoJay Exciter" })
+        {
+            auto mk = [name] (bool explicitNeutral)
+            {
+                auto proc = makeByName (name);
+                auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+                if (explicitNeutral)
+                {
+                    const juce::String n (name);
+                    if (n == "EchoJay Saturation")
+                        device->applyStructured (paramsMove ({
+                            { "emphasis", "both" }, { "bias", 0.0 },
+                            { "hpf_hz", 0.0 }, { "oversample", "4x" } }));
+                    else if (n == "EchoJay Tape")
+                        device->applyStructured (paramsMove ({
+                            { "mode", "studio" }, { "hiss", 0.0 }, { "crosstalk", 0.0 } }));
+                    else
+                        device->applyStructured (paramsMove ({
+                            { "mode", "tube" }, { "focus", 0.0 } }));
+                }
+                proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+                proc->prepareToPlay (48000.0, 512);
+                return proc;
+            };
+
+            auto pa = mk (false), pb = mk (true);
+
+            juce::AudioBuffer<float> ba (2, 4096), bb (2, 4096);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 4096; ++i)
+                {
+                    const float v = 0.4f * std::sin (0.037f * (float) i)
+                                  + (i % 977 == 0 ? 0.5f : 0.0f);
+                    ba.setSample (ch, i, v);
+                    bb.setSample (ch, i, v);
+                }
+
+            juce::MidiBuffer midi;
+            for (int i = 0; i < 4096; i += 512)
+            {
+                juce::AudioBuffer<float> sa (ba.getArrayOfWritePointers(), 2, i, 512);
+                juce::AudioBuffer<float> sb (bb.getArrayOfWritePointers(), 2, i, 512);
+                pa->processBlock (sa, midi);
+                pb->processBlock (sb, midi);
+            }
+
+            float worst = 0.0f;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 4096; ++i)
+                    worst = juce::jmax (worst, std::abs (ba.getSample (ch, i)
+                                                       - bb.getSample (ch, i)));
+
+            check (worst == 0.0f,
+                   juce::String (name) + ": its defaults ARE the neutral settings "
+                   "(worst delta " + juce::String (worst, 9) + ")");
+        }
+    }
+
     // -----------------------------------------------------------------------
     // A device that produces a NaN or an infinity poisons every plugin after it
     // in the chain, and the symptom (silence, three slots later) points nowhere
