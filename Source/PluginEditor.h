@@ -2548,6 +2548,25 @@ private:
     juce::Rectangle<int>   linkTitleRect_;    // editor coords
     juce::Rectangle<int>   linkCtrlRect_;     // editor coords
     juce::Rectangle<int>   linkStripAreaRect_;// editor coords, the whole band
+
+    // ---- View controls (step 5): two segmented groups in linkCtrlRect_,
+    // width (NARROW | WIDE) and content (NUMBERS | METER | CHAIN). Segmented,
+    // not cycling, because a cycler hides the options you are not on, and
+    // CHAIN is not guessable from a numbers view. The zones are geometry, so
+    // they follow the strip rules exactly: laid out by ONE pure function,
+    // stored, consumed by paint and the mouse handler, recomputed nowhere.
+    // The controls own NO state: selected-segment is read back from the
+    // processor's persisted modes at every paint.
+    struct CtrlZone { int id = 0; juce::Rectangle<int> rect; };
+    static constexpr int kCtrlNarrow  = 0, kCtrlWide  = 1,
+                         kCtrlNumbers = 10, kCtrlMeter = 11, kCtrlChain = 12;
+    /** Pure. Segments get fixed preferred widths, shrink proportionally to a
+        pressable floor if the rect is tight, and any zone that still cannot
+        fit inside the rect is DROPPED rather than clipped into an overlap. */
+    static void layOutLinkCtrls(juce::Rectangle<int> ctrlRect,
+                                std::vector<CtrlZone>& out);
+    std::vector<CtrlZone> linkCtrlZones_;     // authored by measureLinkStrips()
+    void linkCtrlClicked(int id);
     /** THE strip-set geometry, as a PURE function of its inputs: it reads no
         editor state, so the self-test can call the shipping arithmetic
         instead of carrying a copy of it (the trap tools/art_parity_test fell
@@ -2645,6 +2664,7 @@ private:
     /** Routes one press through stripHitAt. `local` is in sg's space. */
     void linkStripMouseDown(const StripGeom& sg, juce::Point<int> local);
 
+
     /** Reaches the two pure geometry functions above for
         tools/linkmixer_test without making either of them public. */
     friend struct EchoJayLinkMixerTestAccess;
@@ -2666,6 +2686,31 @@ private:
         // tick toward the latest frame; frozen when stale)
         float smShort = -100.0f, smLra = 0.0f, smPsr = 0.0f, smPlr = 0.0f;
     };
+
+    // ---- Step 6: the NUMBERS content mode ----------------------------------
+    /** Frame ingest + staleness for one Link strip, the old row list's
+        semantics verbatim (addr-keyed state, seq-advance freshness, 1s
+        staleness window). Sets `fresh` and `dim` for the caller. */
+    void ingestLinkStripFrame(const juce::String& addr, int regIdx,
+                              bool slotActive, uint32_t nowMs,
+                              bool& fresh, float& dim);
+    /** Bus ingest from the local MeterEngine into linkHostStrip_, the old
+        pinned-card mapping verbatim (including host audio-liveness detection
+        via lastHostMom_/lastHostRms_). Returns fresh (= not silent). */
+    bool ingestBusStripFrame(uint32_t nowMs);
+    /** ONE smoothing authority for the loudness-suite readouts, shared by the
+        vertical strip renderer and the legacy horizontal one (dead code until
+        step 11 deletes it) so the ballistics cannot fork. Advances st toward
+        its frame when fresh; reports PSR/PLR validity. */
+    struct LinkStripDerived { bool psrValid = false, plrValid = false; };
+    static LinkStripDerived advanceLinkStripSmoothing(LinkStripState& st, bool fresh);
+    /** The numbers renderer: loudness-suite cells stacked vertically in the
+        strip's data area. Cells that do not fit the height are DROPPED whole
+        (LRA first, then PLR), never crammed or half-drawn. */
+    void paintLinkStripNumbers(juce::Graphics& g, juce::Rectangle<int> area,
+                               LinkStripState& st, bool fresh, float dim,
+                               bool wide);
+
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row
     // Mix Bus audio liveness: the host can idle the MAIN plugin's channel

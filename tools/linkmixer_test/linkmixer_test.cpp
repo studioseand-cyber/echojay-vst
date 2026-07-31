@@ -66,6 +66,13 @@ struct EchoJayLinkMixerTestAccess
     static bool selected (bool isBus, const juce::String& entryUid,
                           const juce::String& effectiveUid)
     { return Ed::stripSelected (isBus, entryUid, effectiveUid); }
+
+    using Ctrl = Ed::CtrlZone;
+    static void ctrls (juce::Rectangle<int> r, std::vector<Ctrl>& out)
+    { Ed::layOutLinkCtrls (r, out); }
+    static std::vector<int> ctrlIds()
+    { return { Ed::kCtrlNarrow, Ed::kCtrlWide,
+               Ed::kCtrlNumbers, Ed::kCtrlMeter, Ed::kCtrlChain }; }
 };
 
 using T    = EchoJayLinkMixerTestAccess;
@@ -326,6 +333,70 @@ static void testSelection()
     check (!T::selected (false, "", "uid1"),    "legacy strip never selected (channel active)");
 }
 
+static void testCtrls()
+{
+    // Step 5: the view-control zones, same contract as the strips: pure,
+    // contained, non-overlapping, and every zone pressable.
+    std::printf ("view controls: layout, containment, degenerate widths\n");
+
+    // 548 is the worst SHIPPING control-row width: minimum window (900) with
+    // the sidebar expanded, less the pads. All five segments must exist and
+    // be pressable there, or one of the two modes is unreachable at the
+    // window size people actually use.
+    for (int w : { 1050, 548 })
+    {
+        const juce::Rectangle<int> r { 32, 112, w, 30 };
+        std::vector<T::Ctrl> zs;
+        T::ctrls (r, zs);
+
+        checkEq ((int) zs.size(), 5, "all five segments exist at shipping width");
+        for (const auto& z : zs)
+        {
+            check (r.contains (z.rect), "control zone stays inside the row");
+            check (z.rect.getWidth()  >= 30, "control zone wide enough to press");
+            check (z.rect.getHeight() >= 14, "control zone tall enough to press");
+        }
+        for (size_t a = 0; a < zs.size(); ++a)
+            for (size_t b = a + 1; b < zs.size(); ++b)
+                check (! zs[a].rect.intersects (zs[b].rect),
+                       "control zones do not overlap");
+        // Every expected id present exactly once
+        for (int id : T::ctrlIds())
+        {
+            int n = 0;
+            for (const auto& z : zs) if (z.id == id) ++n;
+            checkEq (n, 1, "each control id appears exactly once");
+        }
+        // Purity
+        std::vector<T::Ctrl> zs2;
+        T::ctrls (r, zs2);
+        checkEq ((int) zs2.size(), (int) zs.size(), "ctrl layout is pure (count)");
+        for (size_t i = 0; i < zs.size() && i < zs2.size(); ++i)
+            check (zs[i].rect == zs2[i].rect, "ctrl layout is pure (rects)");
+    }
+
+    // Too tight to hold everything: zones DROP rather than overlap or
+    // escape. (Unreachable in shipping geometry; this is the contract that
+    // makes squeezing safe.)
+    {
+        const juce::Rectangle<int> r { 32, 112, 120, 30 };
+        std::vector<T::Ctrl> zs;
+        T::ctrls (r, zs);
+        check ((int) zs.size() < 5, "a too-tight row drops zones");
+        for (const auto& z : zs)
+            check (r.contains (z.rect), "surviving zones stay inside the row");
+    }
+
+    // Degenerate rects leave nothing behind.
+    {
+        std::vector<T::Ctrl> zs;
+        T::ctrls ({ 0, 0, 0, 30 }, zs);
+        checkEq ((int) zs.size(), 0, "zero-width row has no zones");
+        T::ctrls ({ 0, 0, 500, 0 }, zs);
+        checkEq ((int) zs.size(), 0, "zero-height row has no zones");
+    }
+}
+
 static void testDegenerate()
 {
     std::printf ("degenerate inputs leave nothing behind\n");
@@ -389,6 +460,7 @@ int main()
     testClickable (T::wNarrow(), 424);
 
     testSelection();
+    testCtrls();
     testDegenerate();
 
     std::printf (failures == 0 ? "EJLinkMixer selftest: PASS\n"

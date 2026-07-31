@@ -5963,23 +5963,13 @@ void EchoJayEditor::paintLinkMeterStrip(juce::Graphics& g, int stripX, int strip
     if (mf.audioStale != 0)
         dim = juce::jmin(dim, 0.55f);
 
-    // PSR / PLR exactly as the Meters tab derives them
-    const bool psrValid = mf.shortTermTP > -90.0f && mf.shortTerm > -90.0f;
-    const bool plrValid = mf.truePeakMax > -90.0f && mf.integrated > -90.0f;
-    const float psrRaw = psrValid ? mf.shortTermTP - mf.shortTerm : 0.0f;
-    const float plrRaw = plrValid ? mf.truePeakMax - mf.integrated : 0.0f;
-
-    if (fresh)
-    {
-        auto sm = [](float cur, float tgt, float atk, float rel)
-        { return cur + (tgt - cur) * (tgt > cur ? atk : rel); };
-        st.smMom   = sm(st.smMom,   mf.momentary,  0.5f, 0.2f);
-        st.smShort = sm(st.smShort, mf.shortTerm,  0.5f, 0.2f);
-        st.smInt   = sm(st.smInt,   mf.integrated, 0.5f, 0.2f);
-        st.smLra  += (mf.lra  - st.smLra) * 0.3f;
-        if (psrValid) st.smPsr += (psrRaw - st.smPsr) * 0.3f;
-        if (plrValid) st.smPlr += (plrRaw - st.smPlr) * 0.3f;
-    }
+    // PSR / PLR derivation + smoothing now live in advanceLinkStripSmoothing,
+    // ONE authority shared with the mixer's vertical cells. This horizontal
+    // renderer is dead code awaiting step 11; it keeps compiling against the
+    // shared helper so the ballistics cannot fork in the meantime.
+    const auto drv = advanceLinkStripSmoothing(st, fresh);
+    const bool psrValid = drv.psrValid;
+    const bool plrValid = drv.plrValid;
 
     const auto coral = juce::Colour(0xffff6d5a);
     const auto amber = juce::Colour(0xfff59e0b);
@@ -6427,6 +6417,7 @@ void EchoJayEditor::measureLinkStrips()
     linkTitleRect_     = {};
     linkCtrlRect_      = {};
     linkStripAreaRect_ = {};
+    linkCtrlZones_.clear();
 
     const int topH = kTopBarH + kTabBarH;
     // Width comes from computeColumns and NOWHERE else. No second copy of the
@@ -6441,6 +6432,7 @@ void EchoJayEditor::measureLinkStrips()
     linkTitleRect_ = { bandL, y, bandW, 18 };
     y += kLinkTitleH;
     linkCtrlRect_  = { bandL, y, bandW, kLinkCtrlH };
+    layOutLinkCtrls(linkCtrlRect_, linkCtrlZones_);
     y += kLinkCtrlH + kStripVGap;
 
     const int bandH = juce::jmax(0, getHeight() - abOff - 8 - y);
@@ -6456,6 +6448,260 @@ void EchoJayEditor::measureLinkStrips()
 
     layOutStrips(linkStripAreaRect_, stripWidth(), addrs,
                  linkBusGeom_, linkStripGeom_);
+}
+
+void EchoJayEditor::layOutLinkCtrls(juce::Rectangle<int> ctrlRect,
+                                    std::vector<CtrlZone>& out)
+{
+    // Pure, same contract as layOutStrips: no editor state read, so the
+    // self-test calls the shipping arithmetic. Two segmented groups with
+    // fixed preferred widths; a tight rect shrinks them proportionally to a
+    // pressable floor, and a zone that STILL cannot fit is dropped whole
+    // rather than clipped into an overlap with its neighbour.
+    out.clear();
+    if (ctrlRect.getWidth() <= 0 || ctrlRect.getHeight() <= 0) return;
+
+    const auto r = ctrlRect.reduced(0, 4);   // 22px segments in the 30px row
+    if (r.getHeight() <= 0) return;
+
+    int wSeg = 52, cSeg = 62;
+    const int gap = 16;                      // between the two groups
+    const int need = 2 * wSeg + 3 * cSeg + gap;
+    if (need > r.getWidth())
+    {
+        const float k = (float)juce::jmax(1, r.getWidth() - gap)
+                      / (float)(2 * wSeg + 3 * cSeg);
+        wSeg = juce::jmax(30, (int)((float)wSeg * k));
+        cSeg = juce::jmax(34, (int)((float)cSeg * k));
+    }
+
+    const int ids[5]  = { kCtrlNarrow, kCtrlWide,
+                          kCtrlNumbers, kCtrlMeter, kCtrlChain };
+    const int wids[5] = { wSeg, wSeg, cSeg, cSeg, cSeg };
+    int x = r.getX();
+    for (int i = 0; i < 5; ++i)
+    {
+        if (i == 2) x += gap;                // group separator
+        const juce::Rectangle<int> z(x, r.getY(), wids[i], r.getHeight());
+        if (z.getRight() > ctrlRect.getRight()) break;   // drop, never overlap
+        out.push_back({ ids[i], z });
+        x += wids[i];
+    }
+}
+
+void EchoJayEditor::linkCtrlClicked(int id)
+{
+    // The controls' ONLY writes, and they write the PROCESSOR's persisted
+    // modes (step 1). No editor copy exists to update: paint reads the
+    // processor back every frame, so the segment lights itself. Width
+    // changes strip geometry, so it re-measures through the one author;
+    // content only changes what the data area draws.
+    auto& p = processorRef;
+    const auto content = [&](EchoJayProcessor::LinkMixerContent c)
+    {
+        if (p.linkMixerContent == c) return;
+        p.linkMixerContent = c;
+        p.markStateDirty();
+        repaint();
+    };
+    switch (id)
+    {
+        case kCtrlNarrow:
+        case kCtrlWide:
+        {
+            const bool wide = (id == kCtrlWide);
+            if (p.linkMixerWide == wide) return;
+            p.linkMixerWide = wide;
+            p.markStateDirty();
+            resized();
+            repaint();
+            break;
+        }
+        case kCtrlNumbers: content(EchoJayProcessor::LinkMixerContent::Numbers); break;
+        case kCtrlMeter:   content(EchoJayProcessor::LinkMixerContent::Meter);   break;
+        case kCtrlChain:   content(EchoJayProcessor::LinkMixerContent::Chain);   break;
+        default: break;
+    }
+}
+
+void EchoJayEditor::ingestLinkStripFrame(const juce::String& addr, int regIdx,
+                                         bool slotActive, uint32_t nowMs,
+                                         bool& fresh, float& dim)
+{
+    // The old row list's ingest, verbatim: state keyed on the ADDR, a new
+    // frame is a seq advance, freshness is Active plus a seq advance within
+    // the last second, and a stale strip freezes on last-known values and
+    // dims rather than faking motion.
+    auto& st = linkStripStates_[addr];
+    LinkMeterFrame f;
+    if (regIdx >= 0 && processorRef.readLinkMeterFrame(regIdx, f))
+    {
+        if (!st.has || f.seq != st.lastSeq)
+        {
+            st.frame        = f;
+            st.lastSeq      = f.seq;
+            st.lastChangeMs = nowMs;
+            st.has          = true;
+        }
+    }
+    fresh = st.has && slotActive && (nowMs - st.lastChangeMs) < 1000;
+    dim   = fresh ? 1.0f : 0.4f;
+}
+
+bool EchoJayEditor::ingestBusStripFrame(uint32_t nowMs)
+{
+    // The old pinned Mix Bus card's mapping, verbatim: a local frame in the
+    // same shape as a published one, band rels derived identically
+    // (db - mean of valid bands), and the host-idle detection that blanks
+    // the momentary group when the engine freezes or goes silent.
+    auto md = processorRef.getMeterEngine().getMeterData();
+    auto& hs = linkHostStrip_;
+    hs.frame.momentary   = md.momentary;
+    hs.frame.shortTerm   = md.shortTerm;
+    hs.frame.integrated  = md.integrated;
+    hs.frame.rmsL        = md.rmsL;   hs.frame.rmsR  = md.rmsR;
+    hs.frame.peakL       = md.peakL;  hs.frame.peakR = md.peakR;
+    hs.frame.truePeakMax = juce::jmax(md.truePeakMaxL, md.truePeakMaxR);
+    hs.frame.crest       = md.crestFactor;
+    hs.frame.correlation = md.correlation;
+    hs.frame.width       = md.width;
+    {
+        float mean = 0.0f; int n = 0;
+        for (auto db : md.macroBandDb) if (db > -119.0f) { mean += db; ++n; }
+        if (n > 0) mean /= (float) n;
+        for (size_t i = 0; i < 6; ++i)
+            hs.frame.bandRel[i] = (n > 0 && md.macroBandDb[i] > -119.0f)
+                                ? md.macroBandDb[i] - mean : 0.0f;
+    }
+    hs.has = true;
+    hs.frame.truePeakCur = juce::jmax(md.truePeakL, md.truePeakR);
+    hs.frame.lra         = md.loudnessRange;
+    hs.frame.shortTermTP = md.shortTermTruePeak;
+    if (md.momentary != lastHostMom_ || md.rmsL != lastHostRms_)
+    {
+        lastHostMom_ = md.momentary;
+        lastHostRms_ = md.rmsL;
+        lastHostAdvanceMs_ = nowMs;
+    }
+    const bool hostAudioStale = md.isSilent || (nowMs - lastHostAdvanceMs_) > 1000;
+    hs.frame.audioStale = hostAudioStale ? 1u : 0u;
+    if (hostAudioStale)
+    {
+        hs.frame.momentary   = -100.0f;
+        hs.frame.shortTerm   = -100.0f;
+        hs.frame.shortTermTP = -100.0f;
+    }
+    return !md.isSilent;
+}
+
+EchoJayEditor::LinkStripDerived
+EchoJayEditor::advanceLinkStripSmoothing(LinkStripState& st, bool fresh)
+{
+    // THE smoothing pass, factored out of paintLinkMeterStrip so the mixer's
+    // vertical cells and the legacy horizontal ones share one set of
+    // ballistics. Only ever called once per strip per paint: the two
+    // renderers are never both live (the row list is dead code awaiting
+    // step 11), and a double advance would double the attack.
+    const auto& mf = st.frame;
+    LinkStripDerived d;
+    d.psrValid = mf.shortTermTP > -90.0f && mf.shortTerm > -90.0f;
+    d.plrValid = mf.truePeakMax > -90.0f && mf.integrated > -90.0f;
+    const float psrRaw = d.psrValid ? mf.shortTermTP - mf.shortTerm : 0.0f;
+    const float plrRaw = d.plrValid ? mf.truePeakMax - mf.integrated : 0.0f;
+    if (fresh)
+    {
+        auto sm = [](float cur, float tgt, float atk, float rel)
+        { return cur + (tgt - cur) * (tgt > cur ? atk : rel); };
+        st.smMom   = sm(st.smMom,   mf.momentary,  0.5f, 0.2f);
+        st.smShort = sm(st.smShort, mf.shortTerm,  0.5f, 0.2f);
+        st.smInt   = sm(st.smInt,   mf.integrated, 0.5f, 0.2f);
+        st.smLra  += (mf.lra  - st.smLra) * 0.3f;
+        if (d.psrValid) st.smPsr += (psrRaw - st.smPsr) * 0.3f;
+        if (d.plrValid) st.smPlr += (plrRaw - st.smPlr) * 0.3f;
+    }
+    return d;
+}
+
+void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
+                                          juce::Rectangle<int> area,
+                                          LinkStripState& st, bool fresh,
+                                          float dim, bool wide)
+{
+    if (area.getWidth() <= 0 || area.getHeight() <= 0) return;
+    if (!st.has)
+    {
+        // No frame has EVER arrived: that is "no data", never a fabricated
+        // zero. (A once-seen strip that went stale keeps its frozen values,
+        // dimmed, exactly like the old rows.)
+        g.setColour(C::text3.withAlpha(0.6f));
+        g.setFont(juce::Font(juce::FontOptions(9.0f)));
+        g.drawText("no data", area, juce::Justification::centred);
+        return;
+    }
+
+    const auto& mf = st.frame;
+    // Publisher-declared audio staleness: momentary group arrives as -100
+    // (dashes below); persisted values render dimmed. Same rule as the old
+    // strip.
+    if (mf.audioStale != 0)
+        dim = juce::jmin(dim, 0.55f);
+
+    const auto d = advanceLinkStripSmoothing(st, fresh);
+
+    const auto coral = juce::Colour(0xffff6d5a);
+    const auto amber = juce::Colour(0xfff59e0b);
+    const auto cyan  = juce::Colour(0xff22d3ee);
+
+    // Same values, validity gates and zone colours as the horizontal cells;
+    // SHORT labels because 38px is the narrow inner width. Display order
+    // puts LRA last then PLR, so dropping from the end reproduces the old
+    // width-budget priority (LRA goes first, then PLR).
+    struct Cell { const char* label; float v; bool valid; juce::Colour col; };
+    const Cell all[6] = {
+        { "MOM",   st.smMom,   st.smMom   > -99.0f, st.smMom > -6.0f ? C::red : C::green },
+        { "SHORT", st.smShort, st.smShort > -99.0f, C::blue2 },
+        { "INT",   st.smInt,   st.smInt   > -99.0f, C::green },
+        { "PSR",   st.smPsr,   d.psrValid,
+          st.smPsr < 5.0f ? coral : st.smPsr < 8.0f ? amber : cyan },
+        { "PLR",   st.smPlr,   d.plrValid,          C::text },
+        { "LRA",   st.smLra,   true,                C::text },
+    };
+
+    // Whole cells only: what does not fit is dropped, never half-drawn.
+    // Narrow stacks label over value; wide puts them on one line.
+    const int cellH = wide ? 18 : 26;
+    const int fit   = juce::jlimit(0, 6, area.getHeight() / cellH);
+    int cy = area.getY();
+    for (int i = 0; i < fit; ++i)
+    {
+        const auto& c = all[i];
+        const juce::String vs = c.valid ? juce::String(c.v, 1)
+                                        : juce::String("--");
+        if (wide)
+        {
+            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setFont(juce::Font(juce::FontOptions(8.5f)));
+            g.drawText(c.label, area.getX() + 2, cy, 34, cellH,
+                       juce::Justification::centredLeft);
+            g.setColour((c.valid ? c.col : C::text3).withMultipliedAlpha(dim));
+            g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+            g.drawText(vs, area.getX() + 36, cy,
+                       area.getWidth() - 38, cellH,
+                       juce::Justification::centredRight);
+        }
+        else
+        {
+            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setFont(juce::Font(juce::FontOptions(8.0f)));
+            g.drawText(c.label, area.getX(), cy, area.getWidth(), 10,
+                       juce::Justification::centred);
+            g.setColour((c.valid ? c.col : C::text3).withMultipliedAlpha(dim));
+            g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+            g.drawText(vs, area.getX(), cy + 10, area.getWidth(), 14,
+                       juce::Justification::centred);
+        }
+        cy += cellH;
+    }
 }
 
 bool EchoJayEditor::findLinkEntryByAddr(const juce::String& addr,
@@ -6646,13 +6892,45 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         g.drawText("AI", sg.ai, juce::Justification::centred);
     }
 
-    // ---- Still scaffolding: data (step 6) and fader (step 7) keep the faint
-    // outlines. No value is drawn there, on purpose: a strip must never
-    // display a reading it does not have, and at this step it has none.
+    // ---- Data area: what draws is the persisted CONTENT mode, read from the
+    // processor here, every paint, no cached copy. Modes that are not built
+    // yet (Meter = step 8, Chain = step 9) draw an EMPTY area: honest, where
+    // a placeholder that looks like data would not be.
+    {
+        const uint32_t nowMs = juce::Time::getMillisecondCounter();
+        bool  fresh = false;
+        float dim   = 1.0f;
+        LinkStripState* st = nullptr;
+        if (isBus)
+        {
+            fresh = ingestBusStripFrame(nowMs);
+            st = &linkHostStrip_;
+        }
+        else if (entry != nullptr)
+        {
+            ingestLinkStripFrame(sg.addr, entry->info.regIdx,
+                                 entry->info.active, nowMs, fresh, dim);
+            st = &linkStripStates_[sg.addr];
+        }
+
+        switch (processorRef.linkMixerContent)
+        {
+            case EchoJayProcessor::LinkMixerContent::Numbers:
+                if (st != nullptr)
+                    paintLinkStripNumbers(g, sg.data, *st, fresh, dim, wide);
+                break;
+            case EchoJayProcessor::LinkMixerContent::Meter:   // step 8
+            case EchoJayProcessor::LinkMixerContent::Chain:   // step 9
+                break;
+        }
+    }
+
+    // ---- Still scaffolding: the fader (step 7) keeps its faint outline. No
+    // value is drawn there, on purpose: a strip must never display a reading
+    // it does not have, and at this step it has none.
     g.setColour(C::text3.withAlpha(0.30f));
-    for (auto r : { sg.data, sg.fader })
-        if (!r.isEmpty())
-            g.drawRect(r, 1);
+    if (!sg.fader.isEmpty())
+        g.drawRect(sg.fader, 1);
 }
 
 void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> local)
@@ -6873,9 +7151,40 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
     g.drawText("LINK MONITOR", linkTitleRect_, juce::Justification::centredLeft);
 
-    // linkCtrlRect_ is measured and empty: the width and content controls land
-    // in step 5. Drawing a placeholder control here would offer a mode the user
-    // cannot actually change, so nothing is drawn.
+    // View controls: painted from the STORED zones, selected state read back
+    // from the processor's persisted modes right here, every paint. The
+    // controls track nothing of their own.
+    {
+        const auto cyan = juce::Colour(0xff22d3ee);
+        for (const auto& z : linkCtrlZones_)
+        {
+            bool sel = false;
+            const char* label = "";
+            switch (z.id)
+            {
+                case kCtrlNarrow:  sel = !processorRef.linkMixerWide; label = "NARROW";  break;
+                case kCtrlWide:    sel =  processorRef.linkMixerWide; label = "WIDE";    break;
+                case kCtrlNumbers: sel = processorRef.linkMixerContent
+                                       == EchoJayProcessor::LinkMixerContent::Numbers;
+                                   label = "NUMBERS"; break;
+                case kCtrlMeter:   sel = processorRef.linkMixerContent
+                                       == EchoJayProcessor::LinkMixerContent::Meter;
+                                   label = "METER";   break;
+                case kCtrlChain:   sel = processorRef.linkMixerContent
+                                       == EchoJayProcessor::LinkMixerContent::Chain;
+                                   label = "CHAIN";   break;
+                default: continue;
+            }
+            const juce::Colour col = sel ? cyan : C::text3;
+            g.setColour(col.withAlpha(sel ? 0.18f : 0.06f));
+            g.fillRoundedRectangle(z.rect.toFloat(), 4.0f);
+            g.setColour(col.withAlpha(sel ? 0.8f : 0.4f));
+            g.drawRoundedRectangle(z.rect.toFloat().reduced(0.5f), 4.0f, 1.0f);
+            g.setColour(sel ? cyan : C::text3);
+            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+            g.drawFittedText(label, z.rect, juce::Justification::centred, 1, 0.8f);
+        }
+    }
 
     // The pinned Mix Bus strip, painted directly rather than in the viewport so
     // the master cannot scroll away. SAME renderer as every Link strip, so the
@@ -21355,12 +21664,23 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     // Gated on the viewport's visibility so a stale rect cannot be clicked on
     // another tab, which is the same predicate discipline the assistant zones
     // below use.
-    if (currentTab == Tab::Link && linkMixerViewport_.isVisible()
-        && !linkBusGeom_.full.isEmpty()
-        && linkBusGeom_.full.contains(e.getPosition()))
+    if (currentTab == Tab::Link && linkMixerViewport_.isVisible())
     {
-        linkStripMouseDown(linkBusGeom_, e.getPosition());
-        return;
+        // View controls first (they sit above the band, so the rects are
+        // disjoint from the strips; the order is tidiness, not load-bearing).
+        // Same stored zones the panel painter consumes.
+        for (const auto& z : linkCtrlZones_)
+            if (z.rect.contains(e.getPosition()))
+            {
+                linkCtrlClicked(z.id);
+                return;
+            }
+        if (!linkBusGeom_.full.isEmpty()
+            && linkBusGeom_.full.contains(e.getPosition()))
+        {
+            linkStripMouseDown(linkBusGeom_, e.getPosition());
+            return;
+        }
     }
 
     // Assistant-drawn hit-zones (gain cards, wave cards) — gated on the SAME
