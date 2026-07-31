@@ -96,6 +96,27 @@ public:
         candidatePicker.setColour (juce::ComboBox::textColourId, juce::Colour (0xff9fd8e0));
         candidatePicker.onChange = [this] { chooseCandidate(); };
 
+        // Mask strip: what capture is refusing to watch, and the way back.
+        // Promotion blinded two real controls on this machine (Q1 Band 1 Gain,
+        // Pro-Q 3 Band 1 Frequency) with no route back but editing files.
+        // Same reasoning as quarantine release: manual is right, invisible is
+        // not.
+        addChildComponent (maskPicker);
+        maskPicker.setTextWhenNothingSelected ("masked parameters");
+        maskPicker.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff161c26));
+        maskPicker.setColour (juce::ComboBox::textColourId, juce::Colour (0xffd8b06a));
+        addChildComponent (unmaskButton);
+        unmaskButton.setButtonText ("Unmask");
+        unmaskButton.onClick = [this] { unmaskSelected(); };
+
+        // What counts as human evidence behind a moved index, answered from
+        // things the engine has no business owning. Mouse only for now; the
+        // listener bank's gesture reports join this probe when it lands.
+        capture.setHumanEvidenceProbe ([this] (int, const CaptureEngine::Result& r)
+        {
+            return mouseGrabInEditorNear (r.detectedAtMs);
+        });
+
         addAndMakeVisible (captureReadout);
         captureReadout.setJustificationType (juce::Justification::centredLeft);
         captureReadout.setColour (juce::Label::textColourId, juce::Colour (0xff9fd8e0));
@@ -561,6 +582,160 @@ public:
         });
     }
 
+    /** Proves the promotion-suppression probe with a REAL held button, not by
+        inspection: three capture cycles under a grab inside the editor must not
+        promote, three more with the mouse up must, and the unmask path must
+        release what they promoted. The harness posts the grab with CGEventPost;
+        grab_visible is printed per cycle so a machine where event posting is
+        blocked reads as "cannot prove" rather than as a failure of the probe.
+    */
+    void selfTestPromoSuppress (const juce::String& identifier)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "SUPPRESSTEST: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId();
+        auto res = host.load (desc, watchdog);
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "SUPPRESSTEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        // The probe reads grabs against the hosted editor's bounds, so the
+        // editor must actually be attached and on screen, exactly as in the app.
+        attachEditor();
+        resized();
+
+        auto* inst = host.getInstance();
+        cal = capture.calibrate (*inst, loadedId);
+        mask = capture.buildNoiseMask (*inst, cal, loadedId);
+        capture.resetCycleCounts();
+        promotionsFlushed = 0;
+
+        suppressIdx = -1;
+        auto& params = inst->getParameters();
+        for (int i = 0; i < params.size(); ++i)
+        {
+            if (mask.indices.contains (i)) continue;
+            auto* pp = params[i];
+            if (pp->isDiscrete() || ! pp->isAutomatable()) continue;
+            pp->setValueNotifyingHost (0.20f); juce::Thread::sleep (15);
+            const float lo = pp->getValue();
+            pp->setValueNotifyingHost (0.50f); juce::Thread::sleep (15);
+            const float hi = pp->getValue();
+            if (std::abs (lo - 0.20f) < 0.02f && std::abs (hi - 0.50f) < 0.02f)
+            { suppressIdx = i; break; }
+        }
+        if (suppressIdx < 0)
+        { std::cout << "SUPPRESSTEST: no usable parameter" << std::endl; quitNow(); return; }
+
+        const auto eb = hostedEditor != nullptr ? hostedEditor->getScreenBounds()
+                                                : juce::Rectangle<int>();
+        if (eb.isEmpty())
+        { std::cout << "SUPPRESSTEST: no editor" << std::endl; quitNow(); return; }
+
+        std::cout << "SUPPRESSTEST: " << desc.name << " | param " << suppressIdx
+                  << " (" << params[suppressIdx]->getName (32) << ")" << std::endl;
+        std::cout << "SUPPRESSTEST: EDITOR_BOUNDS " << eb.getX() << " " << eb.getY()
+                  << " " << eb.getWidth() << " " << eb.getHeight() << std::endl;
+        std::cout << "SUPPRESSTEST: phase A in 3000 ms; hold the left button inside the editor"
+                  << std::endl;
+        std::cout.flush();
+
+        // The prompts also go to the WINDOW, because the holder of the mouse
+        // is a human watching the editor, not the terminal.
+        captureReadout.setText ("SUPPRESS TEST: press and HOLD the left button on the "
+                                "editor's empty display area NOW, until told to release",
+                                juce::dontSendNotification);
+
+        stage = 0;
+        grabSeenA = false;
+        juce::Timer::callAfterDelay (3000, [this] { suppressCycle(); });
+    }
+
+    void suppressCycle()
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr) return;
+
+        if (stage == 3)     // phase A verdict: grabbed cycles must not promote
+        {
+            // No grab ever visible means the harness (or the human) never
+            // placed one, and every cycle legitimately counted. That is not
+            // evidence about the probe either way, and reporting it as FAIL
+            // would read as the probe being broken. Say what actually happened.
+            if (! grabSeenA)
+            {
+                std::cout << "SUPPRESSTEST: CANNOT PROVE - no grab was visible in any phase-A "
+                             "cycle, so suppression was never exercised. Hold the mouse inside "
+                             "the editor during phase A and run again." << std::endl;
+                std::cout.flush(); quitNow(); return;
+            }
+
+            const bool suppressed = mask.promotions.isEmpty()
+                                      && ! mask.indices.contains (suppressIdx);
+            if (! suppressed) ++failures;
+            std::cout << "  " << (suppressed ? "ok   " : "FAIL ")
+                      << "3 cycles under a grab inside the editor -> not promoted" << std::endl;
+            std::cout << "SUPPRESSTEST: RELEASE the mouse now; phase B in 3500 ms" << std::endl;
+            std::cout.flush();
+            captureReadout.setText ("SUPPRESS TEST: RELEASE the mouse now and keep hands off",
+                                    juce::dontSendNotification);
+            ++stage;
+            juce::Timer::callAfterDelay (3500, [this] { suppressCycle(); });
+            return;
+        }
+
+        if (stage == 7)     // phase B verdict + reversibility through the UI path
+        {
+            const bool promoted = mask.indices.contains (suppressIdx)
+                                    && ! mask.promotions.isEmpty();
+            if (! promoted) ++failures;
+            std::cout << "  " << (promoted ? "ok   " : "FAIL ")
+                      << "3 more cycles with the mouse up -> promoted" << std::endl;
+
+            refreshMaskUi();
+            for (int i = 0; i < maskPicker.getNumItems(); ++i)
+                if (maskPicker.getItemText (i).startsWith (juce::String (suppressIdx) + ":"))
+                    maskPicker.setSelectedId (maskPicker.getItemId (i), juce::dontSendNotification);
+            unmaskSelected();
+
+            const bool released = ! mask.indices.contains (suppressIdx)
+                                    && ledger.runArtifact ("captures", "jsonl").loadFileAsString()
+                                         .contains ("mask_released");
+            if (! released) ++failures;
+            std::cout << "  " << (released ? "ok   " : "FAIL ")
+                      << "unmask through the UI path -> released and recorded" << std::endl;
+
+            std::cout << "SUPPRESSTEST: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
+            std::cout.flush(); quitNow(); return;
+        }
+
+        inst->getParameters()[suppressIdx]->setValueNotifyingHost (0.20f);
+        juce::Thread::sleep (120);      // let the base settle before the snapshot
+
+        capture.arm (*inst, cal, mask, [this] (const CaptureEngine::Result& r)
+        {
+            const bool grab = mouseGrabInEditorNear (r.detectedAtMs);
+            if (stage < 3 && grab)
+                grabSeenA = true;
+
+            std::cout << "  cycle " << stage << ": " << r.kindString()
+                      << " grab_visible=" << (grab ? "yes" : "no") << std::endl;
+            std::cout.flush();
+            flushPromotionRows();
+            ++stage;
+            juce::Timer::callAfterDelay (400, [this] { suppressCycle(); });
+        });
+
+        juce::Timer::callAfterDelay (300, [this]
+        {
+            auto* in = host.getInstance();
+            if (in != nullptr)
+                in->getParameters()[suppressIdx]->setValueNotifyingHost (0.50f);
+        });
+    }
+
     /** Each stage arms, then moves parameters, then asserts the classification. */
     void runCaptureStage()
     {
@@ -603,8 +778,21 @@ public:
         const auto& usable = qualified;
         if (usable.size() < 10) { std::cout << "CAPTURETEST: too few qualified params" << std::endl; quitNow(); return; }
 
-        if (stage >= 4)
+        if (stage >= 7)
         {
+            // Stages 4-6 moved usable[9] three times with no mouse anywhere
+            // near the editor. Promotion must have fired on the third, through
+            // the new message-thread path, and left a mask_promoted row.
+            const bool promoted = mask.indices.contains (usable[9])
+                                    && ! mask.promotions.isEmpty();
+            const bool rowExists = ledger.runArtifact ("captures", "jsonl").loadFileAsString()
+                                     .contains ("mask_promoted");
+            if (! promoted || ! rowExists) ++failures;
+            std::cout << "  " << (promoted && rowExists ? "ok   " : "FAIL ")
+                      << "same index, 3 no-mouse cycles -> promoted to mask and recorded"
+                      << "  (masked=" << (promoted ? "yes" : "no")
+                      << " row=" << (rowExists ? "yes" : "no") << ")" << std::endl;
+
             // Prove the refusal, rather than trusting that it would fire. A guard
             // never observed refusing is not a guard.
             auto capturesFile = ledger.runArtifact ("captures", "jsonl");
@@ -637,7 +825,8 @@ public:
         if      (st == 0) targets = { usable[0] };
         else if (st == 1) targets = { usable[1], usable[2] };
         else if (st == 2) targets = { usable[3], usable[4] };
-        else              for (int k = 0; k < 9; ++k) targets.add (usable[k]);
+        else if (st == 3) for (int k = 0; k < 9; ++k) targets.add (usable[k]);
+        else              targets = { usable[9] };   // stages 4-6: the promotion probe
 
         for (int i = 0; i < targets.size(); ++i)
         {
@@ -658,12 +847,20 @@ public:
             static const char* names[] = { "one moved -> captured",
                                            "two correlated -> gesture, same direction",
                                            "two opposed -> gesture, mixed directions",
-                                           "nine moved -> too_many" };
-            static const char* want[]  = { "captured", "gesture", "gesture", "too_many" };
+                                           "nine moved -> too_many",
+                                           "promotion probe cycle 1 -> captured, not yet masked",
+                                           "promotion probe cycle 2 -> captured, not yet masked",
+                                           "promotion probe cycle 3 -> captured, then promoted" };
+            static const char* want[]  = { "captured", "gesture", "gesture", "too_many",
+                                           "captured", "captured", "captured" };
 
             bool ok = (r.kindString() == juce::String (want[st]));
             if (st == 1) ok = ok && r.sameDirection;
             if (st == 2) ok = ok && ! r.sameDirection;
+
+            // The probe index must still be capturable on cycles 1 and 2: a
+            // promotion that fires early is as wrong as one that never fires.
+            if (st == 4 || st == 5) ok = ok && mask.promotions.isEmpty();
 
             if (! ok) ++failures;
             std::cout << "  " << (ok ? "ok   " : "FAIL ") << names[st]
@@ -683,6 +880,7 @@ public:
                            r.indices.size() > 1 ? r.indices : juce::Array<int>(),
                            r.indices.size() > 1 ? r.names : juce::StringArray(),
                            r.reason, r.sameDirection, r.magnitudeRatio);
+            flushPromotionRows();      // a promotion this result caused becomes a row here
             ++stage;
             juce::Timer::callAfterDelay (400, [this] { runCaptureStage(); });
         });
@@ -739,6 +937,16 @@ public:
                 row.removeFromLeft (8);
             }
             captureReadout.setBounds (row);
+        }
+
+        // Mask strip: only takes space while something is masked.
+        if (maskPicker.isVisible())
+        {
+            r.removeFromTop (4);
+            auto row = r.removeFromTop (20);
+            maskPicker.setBounds (row.removeFromLeft (420));
+            row.removeFromLeft (6);
+            unmaskButton.setBounds (row.removeFromLeft (80));
         }
 
         r.removeFromTop (8);
@@ -1226,6 +1434,13 @@ private:
         mask = CaptureEngine::NoiseMask();
         armButton.setEnabled (false);
 
+        // A new load is a new promotion context. Without this, counts keyed on
+        // bare indices survive into the next plugin: Pro-Q 3 run 114642 shows
+        // idx 2 re-promoted at 11:56:44, on its FIRST appearance after a
+        // reload whose fresh baseline was clean.
+        capture.resetCycleCounts();
+        promotionsFlushed = 0;
+
         auto* inst = host.getInstance();
         if (inst == nullptr)
             return;
@@ -1254,7 +1469,105 @@ private:
           << juce::String (mask.seconds, 2) << "s)";
         captureReadout.setText (t, juce::dontSendNotification);
 
+        refreshMaskUi();
         armButton.setEnabled (true);
+    }
+
+    //==========================================================================
+    /** Provenance for one masked index: the promotion that put it there, or
+        the baseline that did. The human deciding whether to unmask is
+        overriding this exact sentence, so it is shown rather than implied.
+    */
+    juce::String maskProvenance (int index) const
+    {
+        for (const auto& p : mask.promotions)
+            if (p.index == index)
+                return p.reason;
+
+        return "baseline (" + mask.method + ", " + juce::String (mask.samples) + " samples)";
+    }
+
+    /** Every promotion becomes its own row, once. A promotion is the record
+        claiming a parameter is self-changing; a claim that strong does not get
+        to live only in a readout that clears.
+    */
+    void flushPromotionRows()
+    {
+        auto* inst = host.getInstance();
+
+        for (; promotionsFlushed < mask.promotions.size(); ++promotionsFlushed)
+        {
+            const auto& p = mask.promotions.getReference (promotionsFlushed);
+            const auto name = (inst != nullptr
+                                 && juce::isPositiveAndBelow (p.index, inst->getParameters().size()))
+                                ? inst->getParameters()[p.index]->getName (48)
+                                : juce::String();
+            recordCapture ("mask_promoted", p.index, name, {}, {}, p.reason);
+        }
+    }
+
+    void refreshMaskUi()
+    {
+        maskPicker.clear (juce::dontSendNotification);
+
+        auto* inst = host.getInstance();
+        for (int i = 0; i < mask.indices.size(); ++i)
+        {
+            const int idx = mask.indices[i];
+            const auto name = (inst != nullptr
+                                 && juce::isPositiveAndBelow (idx, inst->getParameters().size()))
+                                ? inst->getParameters()[idx]->getName (32)
+                                : juce::String ("?");
+            maskPicker.addItem (juce::String (idx) + ":  " + name + "  -  " + maskProvenance (idx),
+                                i + 1);
+        }
+
+        const bool show = inst != nullptr && ! mask.indices.isEmpty();
+        maskPicker.setVisible (show);
+        unmaskButton.setVisible (show);
+        unmaskButton.setEnabled (show && ! capture.isArmed());
+        resized();
+    }
+
+    /** Releases the selected index from the noise mask. Deliberate and
+        recorded, exactly like quarantine release: it acts on one explicitly
+        selected row, says what it is overriding, and writes a row so the
+        release is evidence rather than an edit.
+    */
+    void unmaskSelected()
+    {
+        const int sel = maskPicker.getSelectedId() - 1;      // ids are 1-based
+        if (! juce::isPositiveAndBelow (sel, mask.indices.size()) || capture.isArmed())
+            return;
+
+        const int idx = mask.indices[sel];
+        const auto provenance = maskProvenance (idx);
+
+        auto* inst = host.getInstance();
+        const auto name = (inst != nullptr
+                             && juce::isPositiveAndBelow (idx, inst->getParameters().size()))
+                            ? inst->getParameters()[idx]->getName (48)
+                            : juce::String();
+
+        mask.indices.removeValue (idx);
+        for (int i = mask.promotions.size(); --i >= 0;)
+            if (mask.promotions.getReference (i).index == idx)
+                mask.promotions.remove (i);
+
+        // The count that promoted it is wrong by the human's ruling. Clear it,
+        // or the next appearance re-promotes instantly and the release was a
+        // no-op with extra steps.
+        capture.clearCycleCount (idx);
+
+        recordCapture ("mask_released", idx, name, {}, {},
+                       "human release; was: " + provenance);
+
+        captureReadout.setText ("Unmasked " + juce::String (idx) + ": " + name
+                                  + ". It is watchable again; if it moves in "
+                                  + juce::String (CaptureEngine::kPromoteAfterCycles)
+                                  + " arm cycles with no hand on the editor it will be re-promoted.",
+                                juce::dontSendNotification);
+        refreshMaskUi();
     }
 
     /** Builds the hint from the ring, and records the denominator with it.
@@ -1293,6 +1606,45 @@ private:
         h.editorHeight = eh;
         h.screen       = s.screen;
         return h;
+    }
+
+    /** The noise-promotion evidence probe: was a mouse button held INSIDE THE
+        HOSTED EDITOR shortly before the detection tick?
+
+        Both halves of the predicate carry weight.
+
+        The window (kGrabWindowMs) rather than the whole ring: a knob drag has
+        the button down at detection or released at most one poll tick before
+        it (the floor is 4 Hz, so 250 ms); a grab from two seconds ago explains
+        nothing about a meter tick now.
+
+        Inside the editor rather than anywhere: the Arm click itself is a
+        mouse-down, and a self-changing parameter is typically detected within
+        one tick of arming -- so "any recent mouse-down" would suppress
+        promotion for exactly the self-changing indices promotion exists to
+        catch. The Arm button is outside the hosted editor; a hand on the
+        plugin is inside it.
+
+        What this cannot see: a MIDI controller or host automation moving a
+        parameter with no mouse involved. Those count toward promotion today
+        and are wrong to count; the listener bank's gesture reports are the
+        evidence that covers them, and they join this probe when that lands.
+    */
+    static constexpr int kGrabWindowMs = 750;
+
+    bool mouseGrabInEditorNear (juce::uint32 detectedAtMs)
+    {
+        if (hostedEditor == nullptr)
+            return false;
+
+        MouseRing::Sample s;
+        if (! ring.downWithin (detectedAtMs > (juce::uint32) kGrabWindowMs
+                                 ? detectedAtMs - (juce::uint32) kGrabWindowMs : 0,
+                               detectedAtMs, s))
+            return false;
+
+        return hostedEditor->getLocalBounds()
+                 .contains (hostedEditor->getLocalPoint (nullptr, s.screenPos));
     }
 
     /** Human picks which of a gesture's parameters they meant. The others stay
@@ -1334,6 +1686,7 @@ private:
 
         candidatePicker.setVisible (false);
         resized();
+        refreshMaskUi();
         armButton.setEnabled (true);
     }
 
@@ -1461,6 +1814,7 @@ private:
             return;
 
         armButton.setEnabled (false);
+        unmaskButton.setEnabled (false);     // the poll reads the mask while armed
         captureReadout.setText ("ARMED at " + juce::String (cal.rateHz, 1)
                                   + " Hz - move one control", juce::dontSendNotification);
 
@@ -1475,7 +1829,8 @@ private:
                   << (i < r.names.size() ? r.names[i] : juce::String());
             t << "  -  " << r.reason;
             if (! mask.promotions.isEmpty())
-                t << "   |  " << mask.promotions[mask.promotions.size() - 1];
+                t << "   |  index " << mask.promotions.getReference (mask.promotions.size() - 1).index
+                  << " " << mask.promotions.getReference (mask.promotions.size() - 1).reason;
 
             lastHint = hintFor (r.detectedAtMs);
             if (lastHint.valid)
@@ -1490,7 +1845,19 @@ private:
 
             if (r.kind == CaptureEngine::Result::Kind::gesture)
             {
-                // Cannot be resolved by the engine: ask.
+                // The RAW gesture is recorded here, before the human is asked.
+                // It used to be recorded only after a pick, so an abandoned
+                // picker left nothing -- a silent drop, and a consequential
+                // one: run 114642's first promotion (11:52:02) needed two
+                // prior idx-2 appearances, and neither left a row. The pick,
+                // when it comes, writes captured_from_gesture as its own row,
+                // which is the same two-row shape the self-test documents.
+                recordCapture (r.kindString(), -1, juce::String(),
+                               r.indices, r.names,
+                               r.reason, r.sameDirection, r.magnitudeRatio);
+                flushPromotionRows();
+                refreshMaskUi();
+
                 lastGesture = r;
                 candidatePicker.clear (juce::dontSendNotification);
                 for (int i = 0; i < r.indices.size(); ++i)
@@ -1506,6 +1873,8 @@ private:
                            r.indices.size() > 1 ? r.indices : juce::Array<int>(),
                            r.indices.size() > 1 ? r.names : juce::StringArray(),
                            r.reason, r.sameDirection, r.magnitudeRatio);
+            flushPromotionRows();
+            refreshMaskUi();
             armButton.setEnabled (true);
         });
     }
@@ -1767,7 +2136,12 @@ private:
     CaptureEngine::Calibration cal;
     CaptureEngine::NoiseMask   mask;
     int stage = 0, failures = 0;
+    int suppressIdx = -1;         // promotion-suppression self-test target
+    bool grabSeenA = false;       // any phase-A cycle saw the grab
     juce::ComboBox candidatePicker;
+    juce::ComboBox maskPicker;
+    juce::TextButton unmaskButton;
+    int promotionsFlushed = 0;    // promotions already written as rows
     CaptureEngine::Result lastGesture;
     juce::String loadedName, loadedId;
     juce::PluginDescription stallDesc;

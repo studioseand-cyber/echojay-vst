@@ -71,7 +71,17 @@ public:
         juce::SortedSet<int> indices;
         int    samples = 0;          // recorded next to the mask: a thin baseline is visible
         double seconds = 0.0;
-        juce::StringArray promotions;   // retroactive additions, each with its reason
+
+        /** Retroactive additions. Structured, not prose, because a promotion is
+            an event the owner writes to the record and can later be RELEASED by
+            a human -- both need the index, not a sentence containing it.
+        */
+        struct Promotion
+        {
+            int index = -1;
+            juce::String reason;
+        };
+        juce::Array<Promotion> promotions;
 
         /** How this mask was arrived at, so a reader never has to guess whether
             an empty mask means "looked hard and found nothing" or "barely
@@ -144,6 +154,11 @@ public:
         */
         juce::uint32 detectedAtMs = 0;
 
+        /** When the capture was ARMED. The evidence probe needs the window
+            [armed, detected]: a gesture or grab before arm is stale evidence.
+        */
+        juce::uint32 armedAtMs = 0;
+
         juce::String kindString() const
         {
             switch (kind)
@@ -159,6 +174,19 @@ public:
     };
 
     using ResultFn = std::function<void (const Result&)>;
+
+    /** Answers "is there human evidence behind this index's movement?" for one
+        delivered result -- a mouse grab inside the hosted editor, a parameter
+        gesture reported by the plugin. Supplied by the owner because the
+        evidence lives in things the engine has no business owning (the mouse
+        ring, the editor's bounds, the listener bank).
+
+        Runs on the message thread, at delivery. Returning true means the
+        appearance does NOT count toward noise promotion.
+    */
+    using HumanEvidenceFn = std::function<bool (int index, const Result&)>;
+
+    void setHumanEvidenceProbe (HumanEvidenceFn f) { humanEvidence = std::move (f); }
 
     //==========================================================================
     /** Rate policy. 30% of the frame budget so capture never starves the editor,
@@ -200,9 +228,26 @@ public:
     static constexpr int    kTooManyMoved       = 8;
     static constexpr int    kNothingMovedMs     = 8000;
 
-    /** An index seen moving in this many separate arm cycles is self-changing,
-        whatever the baseline concluded. Pass two replaces this with "moved with
-        no mouse-down behind it", which is the stronger signal.
+    /** An index seen moving in this many separate arm cycles WITH NO HUMAN
+        EVIDENCE BEHIND ANY OF THEM is self-changing, whatever the baseline
+        concluded.
+
+        The "no human evidence" clause is not decoration; without it this
+        constant masked two real controls on this machine, and the rows prove
+        both:
+
+          - Q1 (s), run 133241: captures went idx 5, 5, 6, 2, 2, 2 -- and on the
+            third deliberate capture of Band 1 Gain (idx 2) it was promoted.
+            Three wiggles of a working control read as self-change.
+          - Pro-Q 3, run 114642: idx 2 (Band 1 Frequency) promoted the same way,
+            while the 89-sample baselines in the same session, and a fresh
+            baseline run for this fix (silent AND signal-driven), all returned
+            an empty mask. The baseline never flagged it once.
+
+        So an appearance only counts toward promotion when the owner's evidence
+        probe (see setHumanEvidenceProbe) finds nothing human behind it. A
+        meter or LFO moves with hands off; a control moves because a hand was on
+        it, and the difference is observable.
     */
     static constexpr int    kPromoteAfterCycles = 3;
 
@@ -351,6 +396,23 @@ public:
 
     bool isArmed() const { return isThreadRunning(); }
 
+    /** Promotion counts are per plugin CONTEXT, not per engine lifetime. The
+        engine outlives loads, and the counts are keyed by bare index, so
+        without this a new load inherits the old plugin's counts. Measured, not
+        hypothetical: Pro-Q 3 run 114642, row at 11:56:44 -- idx 2 re-promoted
+        on its FIRST appearance after a reload whose fresh 89-sample baseline
+        was clean, because the count of 3 survived the reload. Call on every
+        load, before the new mask is built.
+    */
+    void resetCycleCounts()             { cycleAppearances.clear(); }
+
+    /** A human releasing an index from the mask is also saying the count that
+        promoted it was wrong. Without this the very next appearance would
+        re-promote instantly (the count is still at threshold) and the release
+        would be a no-op with extra steps.
+    */
+    void clearCycleCount (int index)    { cycleAppearances.erase (index); }
+
     /** Per-parameter epsilon. A single global value misses fine controls and
         false-fires on coarse ones: half a step for a discrete parameter, 1e-4
         for a continuous one.
@@ -412,6 +474,7 @@ private:
             {
                 auto res = classify (moved, deltas, params);
                 res.detectedAtMs = juce::Time::getMillisecondCounter();
+                res.armedAtMs    = armedAt;
                 deliver (res);
             }
             return;
@@ -437,7 +500,6 @@ private:
                      + "): most likely a preset change or a modulation source rather than one "
                        "gesture. Discarded. The 8-parameter boundary is a heuristic, so a very "
                        "wide deliberate gesture would land here too.";
-            noteCycle (moved);
             return r;
         }
 
@@ -446,7 +508,6 @@ private:
             r.kind = Result::Kind::captured;
             r.indices = moved;
             r.reason = "exactly one parameter moved: " + r.names[0];
-            noteCycle (moved);
             return r;
         }
 
@@ -529,30 +590,50 @@ private:
                      << ".";
         }
 
-        noteCycle (moved);
         return r;
     }
 
     /** Retroactive noise promotion. A thin baseline is provisional, so an index
-        that keeps turning up across separate arm cycles is self-changing even
-        though the baseline missed it. Pass two replaces this with the stronger
-        "moved with no mouse-down behind it".
+        that keeps turning up across separate arm cycles WITH NO HUMAN EVIDENCE
+        BEHIND ANY OF THEM is self-changing even though the baseline missed it.
+
+        Runs on the MESSAGE THREAD, at delivery, not on the capture thread in
+        classify() where it used to live. Two reasons:
+
+          - The evidence probe reads the mouse ring against editor bounds and,
+            later, the listener bank; both belong to the message thread.
+          - This mutates mask->indices, which the poll loop reads. A result
+            ends the capture (run() returns straight after posting delivery),
+            and the next arm() joins the old thread before starting, so the
+            mutation is sequenced strictly between polls -- but only from here.
+            From classify() it interleaved with the row writer, which is how
+            rows came to show "captured idx 2" and "mask [2]" at once.
     */
-    void noteCycle (const juce::Array<int>& moved)
+    void countTowardPromotion (const Result& r)
     {
-        if (mask == nullptr)
+        if (mask == nullptr || r.indices.isEmpty())
             return;
 
-        for (int i : moved)
+        for (int n = 0; n < r.indices.size(); ++n)
         {
-            const int n = ++cycleAppearances[i];
-            if (n >= kPromoteAfterCycles && ! mask->indices.contains (i))
+            const int i = r.indices[n];
+
+            if (humanEvidence != nullptr && humanEvidence (i, r))
+                continue;               // a hand was on it: that is a capture, not noise
+
+            const int seen = ++cycleAppearances[i];
+            if (seen >= kPromoteAfterCycles && ! mask->indices.contains (i))
             {
                 mask->indices.add (i);
-                mask->promotions.add ("index " + juce::String (i) + " promoted to the noise mask "
-                                      "after moving in " + juce::String (n) + " separate arm cycles "
-                                      "(baseline was " + mask->method + ", "
-                                      + juce::String (mask->samples) + " samples)");
+
+                NoiseMask::Promotion p;
+                p.index  = i;
+                p.reason = "promoted after moving in " + juce::String (seen)
+                             + " separate arm cycles with no human evidence behind any of them"
+                             " (baseline was " + mask->method + ", "
+                             + juce::String (mask->samples) + " samples)";
+                mask->promotions.add (p);
+
                 if (mask->method == "short_probe_clean")
                     mask->method = "promoted_only";
             }
@@ -565,7 +646,16 @@ private:
         {
             auto cb = callback;
             auto copy = r;
-            juce::MessageManager::callAsync ([cb, copy] { cb (copy); });
+            juce::WeakReference<CaptureEngine> self (this);
+            juce::MessageManager::callAsync ([self, cb, copy]
+            {
+                // Count BEFORE the callback: the callback writes the row, and
+                // a promotion this result caused belongs in front of it, where
+                // the owner can flush it as its own record.
+                if (self != nullptr)
+                    self->countTowardPromotion (copy);
+                cb (copy);
+            });
         }
     }
 
@@ -574,10 +664,12 @@ private:
     Calibration calibration;
     NoiseMask* mask = nullptr;
     ResultFn callback;
+    HumanEvidenceFn humanEvidence;
     std::vector<float> snapshot;
     std::map<int, int> cycleAppearances;
     juce::uint32 armedAt = 0;
 
+    JUCE_DECLARE_WEAK_REFERENCEABLE (CaptureEngine)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CaptureEngine)
 };
 

@@ -28,6 +28,10 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#if JUCE_MAC
+ #include <CoreGraphics/CoreGraphics.h>
+#endif
+
 #include <vector>
 
 namespace ejmap
@@ -81,6 +85,30 @@ public:
         return true;
     }
 
+    /** The most recent mouse-DOWN sample inside [t0, t1], if any. This is the
+        noise-promotion probe's question -- "was a button held near this moment"
+        -- and it is deliberately narrower than bestFor: bestFor reaches back
+        through the whole ring for the grab that best explains a capture, which
+        is right for ui_hint and wrong here. A grab two seconds before a meter
+        tick explains nothing about the tick.
+    */
+    bool downWithin (juce::uint32 t0, juce::uint32 t1, Sample& out) const
+    {
+        const juce::ScopedLock sl (lock);
+
+        const Sample* pick = nullptr;
+        for (const auto& s : ring)
+            if (s.isDown && s.atMs >= t0 && s.atMs <= t1
+                 && (pick == nullptr || s.atMs > pick->atMs))
+                pick = &s;
+
+        if (pick == nullptr)
+            return false;
+
+        out = *pick;
+        return true;
+    }
+
     int depth() const { const juce::ScopedLock sl (lock); return (int) ring.size(); }
 
     /** Display identity for a screen point: index plus scale, because two
@@ -108,8 +136,27 @@ private:
         Sample s;
         s.atMs      = juce::Time::getMillisecondCounter();
         s.screenPos = juce::Desktop::getInstance().getMousePosition();
+
+        // The button state must come from the SYSTEM, not from JUCE. Every
+        // editor this tool hosts is a native NSView, and a mouse-down on a
+        // native view never reaches JUCE's peer -- currentModifiers only
+        // updates from events JUCE itself receives, and on macOS even
+        // getCurrentModifiersRealtime() refreshes just the keyboard flags
+        // (NSViewComponentPeer_mac.mm:302-308: [NSEvent modifierFlags] only).
+        // So the JUCE-side answer is blind to precisely the grabs this ring
+        // exists to see: a hand on the hosted plugin GUI. Established by
+        // reading JUCE 8.0.12, after the first version of this file shipped
+        // blind. CombinedSessionState rather than HIDSystemState so posted
+        // events count too, which is what makes the behaviour provable from a
+        // script.
+       #if JUCE_MAC
+        s.isDown    = juce::Desktop::getInstance().getMainMouseSource().isDragging()
+                       || CGEventSourceButtonState (kCGEventSourceStateCombinedSessionState,
+                                                    kCGMouseButtonLeft);
+       #else
         s.isDown    = juce::Desktop::getInstance().getMainMouseSource().isDragging()
                        || juce::ModifierKeys::currentModifiers.isLeftButtonDown();
+       #endif
         s.screen    = screenIdFor (s.screenPos);
 
         const juce::ScopedLock sl (lock);

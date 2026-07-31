@@ -49,7 +49,7 @@ public:
         juce::File ledgerRoot;
         juce::String selfTestId;
         bool cacheTest = false, progressTest = false;
-        juce::String attributeReport, afterExit, captureTestId, maskTestId, stallId;
+        juce::String attributeReport, afterExit, captureTestId, maskTestId, stallId, promoSuppressId;
         int stallN = 0;
         bool supervised = false;
         int  restartCount = 0;
@@ -69,6 +69,8 @@ public:
                 captureTestId = args[++i];
             else if (args[i] == "--selftest-noisemask" && i + 1 < args.size())
                 maskTestId = args[++i];
+            else if (args[i] == "--selftest-promosuppress" && i + 1 < args.size())
+                promoSuppressId = args[++i];
             else if (args[i] == "--selftest-stall" && i + 2 < args.size())
                 { stallId = args[i + 1]; stallN = args[i + 2].getIntValue(); i += 2; }
             else if (args[i] == "--attribute-report" && i + 1 < args.size())
@@ -155,6 +157,11 @@ public:
         {
             auto id = maskTestId; auto* m = mainWindow->getMain();
             juce::MessageManager::callAsync ([m, id] { m->selfTestNoiseMask (id); });
+        }
+        else if (promoSuppressId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = promoSuppressId; auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id] { m->selfTestPromoSuppress (id); });
         }
         else if (captureTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {
