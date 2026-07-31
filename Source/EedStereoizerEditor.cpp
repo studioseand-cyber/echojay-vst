@@ -17,6 +17,9 @@ namespace
     constexpr int kDefaultH = 150 + kScopeH + 6;
     constexpr int kGap      = 20;
 
+    // Wide enough for "DIMENSION".
+    constexpr int kModeW    = 104;
+
     // Below this the Lissajous is a blob rather than an image, so it is dropped
     // instead of drawn uselessly small.
     constexpr int kMinScopeH = 60;
@@ -67,7 +70,35 @@ EedStereoizerEditor::EedStereoizerEditor (EedStereoizerProcessor& p)
     setup (monoKnob_,  EedStereoizerProcessor::kMonoMakerHz, 120.0, 0, " Hz", "MONO");
     setup (mixKnob_,   EedStereoizerProcessor::kMix,           0.0, 0, " %",  "MIX");
 
+    // The MODE selector, in the header where every device in the suite puts its
+    // character switch. Items ARE the schema's choices, in the schema's order,
+    // so the list a user sees and the list the model is taught cannot drift.
+    styleCombo (modeBox_);
+    if (const auto* spec = EedStereoizerProcessor::schema().find (EedStereoizerProcessor::kMode))
+    {
+        for (std::size_t i = 0; i < spec->choices.size(); ++i)
+            modeBox_.addItem (juce::String (spec->choices[i]).toUpperCase(), (int) i + 1);
+
+        modeBox_.setSelectedId ((int) proc_.getParamValue (EedStereoizerProcessor::kMode) + 1,
+                                juce::dontSendNotification);
+    }
+    modeBox_.onChange = [this]
+    {
+        if (suppressCallbacks_) return;
+
+        proc_.setParamValue (EedStereoizerProcessor::kMode,
+                             (double) (modeBox_.getSelectedId() - 1));
+
+        // The mode decides whether HAAS is on the panel at all, so a change has
+        // to relayout now rather than wait for a resize that may never come.
+        refreshModeState();
+        resized();
+    };
+    addAndMakeVisible (modeBox_);
+
     addAndMakeVisible (scope_);
+
+    refreshModeState();
 
     // The AI can move these while the editor is open, so poll for changes the UI
     // did not make. 20 Hz rather than the 15 the dials alone needed: the scope
@@ -110,21 +141,58 @@ void EedStereoizerEditor::layoutContent (juce::Rectangle<int> content)
         }
     }
 
-    // Four dial columns centred as a group, so the device stays balanced at
-    // whatever width the rack gives it.
-    const int rowW = kKnobW * 4 + kGap * 3;
+    // Dial columns centred as a group, so the device stays balanced at
+    // whatever width the rack gives it. HAAS drops out of the row entirely
+    // outside haas mode — and out of the WIDTH calculation too, so the rest of
+    // the row re-centres rather than leaving a hole where it was.
+    const bool showHaas = haasKnobVisible();
+    haasKnob_.setVisible (showHaas);
+
+    const int n = showHaas ? 4 : 3;
+    const int rowW = kKnobW * n + kGap * (n - 1);
     auto row = content.withSizeKeepingCentre (juce::jmin (rowW, content.getWidth()),
                                               juce::jmin (kKnobH, content.getHeight()));
 
-    const int colW = juce::jmax (1, (row.getWidth() - kGap * 3) / 4);
+    const int colW = juce::jmax (1, (row.getWidth() - kGap * (n - 1)) / n);
 
     widthKnob_.setBounds (row.removeFromLeft (colW));
     row.removeFromLeft (kGap);
-    haasKnob_.setBounds (row.removeFromLeft (colW));
-    row.removeFromLeft (kGap);
+    if (showHaas)
+    {
+        haasKnob_.setBounds (row.removeFromLeft (colW));
+        row.removeFromLeft (kGap);
+    }
     monoKnob_.setBounds (row.removeFromLeft (colW));
     row.removeFromLeft (kGap);
     mixKnob_.setBounds (row.removeFromLeft (colW));
+}
+
+void EedStereoizerEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
+{
+    modeBox_.setBounds (
+        bar.removeFromRight (juce::jmin (kModeW, juce::jmax (0, bar.getWidth())))
+           .reduced (0, 3));
+    bar.removeFromRight (6);
+}
+
+bool EedStereoizerEditor::haasKnobVisible() const
+{
+    return proc_.engine().getStereoizerMode() == echojay::StereoizerMode::Haas;
+}
+
+void EedStereoizerEditor::refreshModeState()
+{
+    const int want = (int) proc_.getParamValue (EedStereoizerProcessor::kMode) + 1;
+    if (modeBox_.getSelectedId() != want)
+        modeBox_.setSelectedId (want, juce::dontSendNotification);
+
+    switch (proc_.engine().getStereoizerMode())
+    {
+        case echojay::StereoizerMode::Comb:      setHeaderHint ("comb widener, mono-safe");   break;
+        case echojay::StereoizerMode::Dimension: setHeaderHint ("chorus widener, mono-safe"); break;
+        case echojay::StereoizerMode::Haas:
+        default:                                 setHeaderHint ("Haas widener, mono-safe");   break;
+    }
 }
 
 void EedStereoizerEditor::syncFromProcessor()
@@ -144,6 +212,15 @@ void EedStereoizerEditor::syncFromProcessor()
     pull (haasKnob_,  EedStereoizerProcessor::kHaasMs);
     pull (monoKnob_,  EedStereoizerProcessor::kMonoMakerHz);
     pull (mixKnob_,   EedStereoizerProcessor::kMix);
+
+    // The AI can switch the mode while the editor is open, and the mode decides
+    // whether HAAS is on the panel — so a move from outside relayouts too.
+    const int wantMode = (int) proc_.getParamValue (EedStereoizerProcessor::kMode) + 1;
+    if (modeBox_.getSelectedId() != wantMode)
+    {
+        refreshModeState();
+        resized();
+    }
 }
 
 void EedStereoizerEditor::refreshScope()

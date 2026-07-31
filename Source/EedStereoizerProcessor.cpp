@@ -6,6 +6,8 @@
 #include "EedStereoizerEditor.h"
 #include "EedDeviceRegistry.h"
 
+#include <cmath>
+
 // ---------------------------------------------------------------------------
 // the dialable contract
 // ---------------------------------------------------------------------------
@@ -45,6 +47,23 @@ const echojay::ParamSchema& EedStereoizerProcessor::schema()
           (double) echojay::StereoEngine::kMaxMixPct,
           100.0,
           "dry/wet blend: 0 is the untouched input, 100 is fully widened", false },
+
+        // ---- the depth pass (DEVICE_DEPTH_PLAN.md, Stereo) -----------------
+        // The character switch, and the thing to set FIRST: it decides HOW the
+        // widening is made, and the other knobs then scale it. All three keep
+        // the exact mono fold-down — that is the device's contract, not the
+        // mode's.
+        { kMode, "",
+          0.0, (double) (echojay::kNumStereoizerModes - 1),
+          (double) (int) echojay::StereoizerMode::Haas,
+          "the widening character: haas displaces the image in time (haas_ms "
+          "sets how far - broad and natural, the shipped sound), comb pushes an "
+          "allpass-filtered copy of the centre into the sides (denser and more "
+          "present, no pre-delay smear; haas_ms is ignored), dimension adds a "
+          "slow detuned copy in the sides (lush, chorus-like movement, no comb "
+          "colour; haas_ms is ignored). width scales the effect in every mode "
+          "and the mono fold-down stays exact in every mode",
+          false, { "haas", "comb", "dimension" } },
     });
     return s;
 }
@@ -56,6 +75,13 @@ bool EedStereoizerProcessor::setParamValue (const juce::String& id, double value
     if (id == kHaasMs)      { engine_.setHaasMs       ((float) value); return true; }
     if (id == kMonoMakerHz) { engine_.setBassMonoHz   ((float) value); return true; }
     if (id == kMix)         { engine_.setMixPercent   ((float) value); return true; }
+
+    if (id == kMode)
+    {
+        engine_.setStereoizerMode (
+            echojay::stereoizerModeFromIndex ((int) std::lround (value)));
+        return true;
+    }
     return false;
 }
 
@@ -65,6 +91,7 @@ double EedStereoizerProcessor::getParamValue (const juce::String& id) const
     if (id == kHaasMs)      return (double) engine_.getHaasMs();
     if (id == kMonoMakerHz) return (double) engine_.getBassMonoHz();
     if (id == kMix)         return (double) engine_.getMixPercent();
+    if (id == kMode)        return (double) (int) engine_.getStereoizerMode();
     return 0.0;
 }
 
@@ -137,9 +164,11 @@ namespace
 
         // ASCII ONLY — a UTF-8 dash here ships mojibake into the AI prompt.
         d.summary         = "Creative widener. Reach for it to open up a narrow or mono "
-                            "source - a synth, a guitar double, a pad - with Haas "
-                            "displacement rather than plain level. The mono fold-down is "
-                            "preserved exactly, so it does not comb when summed.";
+                            "source - a synth, a guitar double, a pad - with three "
+                            "characters: haas time displacement, comb allpass widening, "
+                            "or a lush dimension chorus in the sides. The mono fold-down "
+                            "is preserved exactly in every mode, so it does not comb "
+                            "when summed.";
 
         // Frozen once shipped: both are written into saved chain XML.
         d.identifier      = "echojay:builtin:stereoizer";

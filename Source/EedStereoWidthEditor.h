@@ -33,11 +33,15 @@ public:
 
 protected:
     void layoutContent (juce::Rectangle<int> content) override;
+    void layoutHeaderLeading (juce::Rectangle<int>& bar) override;
 
 private:
     void timerCallback() override;
     void syncFromProcessor();
     void refreshScope();
+    void refreshModeState();
+
+    bool multibandActive() const;
 
     // One frame handed to the goniometer. Sized ONCE, here, and reused for the
     // life of the editor — the same discipline SurgicalEqEditor's FFT scratch
@@ -47,6 +51,15 @@ private:
     EedStereoWidthProcessor& proc_;
 
     echojay::device::EchoJayDeviceKnob widthKnob_, bassMonoKnob_, trimKnob_;
+
+    // The depth pass. The MODE decides which of these are on the panel at all:
+    // `full` shows the single WIDTH dial, `multiband` swaps it for the three
+    // band widths and their crossovers (rotation/bass-mono/trim stay put).
+    echojay::device::EchoJayDeviceKnob rotationKnob_,
+                                       widthLowKnob_, widthMidKnob_, widthHighKnob_,
+                                       xoverLowKnob_, xoverHighKnob_;
+    juce::ComboBox                     modeBox_;
+
     echojay::viz::Goniometer           scope_;
 
     std::array<float, (size_t) kScopeFrame> scopeL_ {}, scopeR_ {};

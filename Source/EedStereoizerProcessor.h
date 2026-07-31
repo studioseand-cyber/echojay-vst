@@ -45,6 +45,9 @@ public:
     static constexpr const char* kMonoMakerHz = "mono_maker_hz";
     static constexpr const char* kMix         = "mix";
 
+    // The depth pass (DEVICE_DEPTH_PLAN.md, Stereo): the widening character.
+    static constexpr const char* kMode        = "mode";
+
     echojay::StereoEngine& engine() noexcept { return engine_; }
 
     // The editor's goniometer (VISUALS_PLAN.md Phase V0, the ring-tap path) —
