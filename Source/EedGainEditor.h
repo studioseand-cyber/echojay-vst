@@ -37,16 +37,28 @@ public:
 
 protected:
     void layoutContent (juce::Rectangle<int> content) override;
+    void layoutHeaderLeading (juce::Rectangle<int>& bar) override;
 
 private:
     void timerCallback() override;
     void pushToProcessor();
     void syncFromProcessor();
     void refreshMeters();
+    void refreshModeState();
+
+    bool midSideActive() const;
 
     EedGainProcessor& proc_;
 
     echojay::device::EchoJayDeviceKnob levelKnob_, panKnob_;
+
+    // The depth pass: MID/SIDE join the dial row in mid_side mode only; the
+    // switch strip (mono sum + per-channel polarity) is mode-independent.
+    echojay::device::EchoJayDeviceKnob midKnob_, sideKnob_;
+    juce::ComboBox                     modeBox_;
+    juce::TextButton                   monoBtn_ { "MONO" },
+                                       phaseLBtn_ { "INV L" },
+                                       phaseRBtn_ { "INV R" };
 
     echojay::viz::LevelMeter inMeter_, outMeter_;
 

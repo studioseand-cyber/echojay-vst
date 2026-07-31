@@ -55,6 +55,15 @@ public:
     static constexpr const char* kLevelDb = "level_db";
     static constexpr const char* kPan     = "pan";
 
+    // The depth pass (DEVICE_DEPTH_PLAN.md, Utility): mid/side gain, mono sum,
+    // per-channel polarity — the whole utility job in one device.
+    static constexpr const char* kMode       = "mode";
+    static constexpr const char* kMidDb      = "mid_db";
+    static constexpr const char* kSideDb     = "side_db";
+    static constexpr const char* kMono       = "mono";
+    static constexpr const char* kPhaseLeft  = "phase_left";
+    static constexpr const char* kPhaseRight = "phase_right";
+
     echojay::GainEngine& engine() noexcept { return engine_; }
 
     // ---- I/O levels for the editor's meters --------------------------------

@@ -46,11 +46,17 @@ public:
 
 protected:
     void layoutContent (juce::Rectangle<int> content) override;
+    void layoutHeaderLeading (juce::Rectangle<int>& bar) override;
 
 private:
     void timerCallback() override;
     void syncFromProcessor();
     void refreshScope();
+    void refreshModeState();
+
+    // HAAS is only on the panel in haas mode — the other two characters ignore
+    // haas_ms, and a dial that does nothing is worse than no dial.
+    bool haasKnobVisible() const;
 
     // One frame handed to the goniometer. Sized ONCE, here, and reused for the
     // life of the editor — the same discipline SurgicalEqEditor's FFT scratch
@@ -60,6 +66,7 @@ private:
     EedStereoizerProcessor& proc_;
 
     echojay::device::EchoJayDeviceKnob widthKnob_, haasKnob_, monoKnob_, mixKnob_;
+    juce::ComboBox                     modeBox_;
     echojay::viz::Goniometer           scope_;
 
     std::array<float, (size_t) kScopeFrame> scopeL_ {}, scopeR_ {};

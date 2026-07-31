@@ -6,6 +6,8 @@
 #include "EedStereoWidthEditor.h"
 #include "EedDeviceRegistry.h"
 
+#include <cmath>
+
 // ---------------------------------------------------------------------------
 // the dialable contract
 // ---------------------------------------------------------------------------
@@ -37,6 +39,66 @@ const echojay::ParamSchema& EedStereoWidthProcessor::schema()
           (double) echojay::StereoEngine::kMaxTrimDb,
           0.0,
           "output level trim, for matching loudness after a width change", false },
+
+        // ---- the depth pass (DEVICE_DEPTH_PLAN.md, Stereo) -----------------
+        // The mode a model should set FIRST: it decides whether the image is
+        // shaped with one knob or three. `full` is the device as it shipped.
+        { kMode, "",
+          0.0, (double) (echojay::kNumWidthModes - 1),
+          (double) (int) echojay::WidthMode::Full,
+          "how width is applied: full is one width for the whole spectrum "
+          "(the width knob), multiband splits the image at the two crossovers "
+          "and applies width_low/width_mid/width_high independently - the "
+          "classic mastering move is narrow lows, wide highs. In full mode the "
+          "band widths are ignored; in multiband the single width is ignored. "
+          "Mono fold-down stays exact in both",
+          false, { "full", "multiband" } },
+
+        { kWidthLow, "%",
+          (double) echojay::StereoEngine::kMinWidthPct,
+          (double) echojay::StereoEngine::kMaxWidthPct,
+          100.0,
+          "multiband only: width of everything below xover_low_hz. 0 is mono, "
+          "100 unchanged, 200 double-wide; keep lows narrow (0-80) for a tight, "
+          "punchy bottom", false },
+
+        { kWidthMid, "%",
+          (double) echojay::StereoEngine::kMinWidthPct,
+          (double) echojay::StereoEngine::kMaxWidthPct,
+          100.0,
+          "multiband only: width of the band between the two crossovers. 0 is "
+          "mono, 100 unchanged, 200 double-wide", false },
+
+        { kWidthHigh, "%",
+          (double) echojay::StereoEngine::kMinWidthPct,
+          (double) echojay::StereoEngine::kMaxWidthPct,
+          100.0,
+          "multiband only: width of everything above xover_high_hz. 0 is mono, "
+          "100 unchanged, 200 double-wide; 120-160 opens up airy highs without "
+          "touching the low end", false },
+
+        { kXoverLowHz, "Hz",
+          (double) echojay::StereoEngine::kMinXoverLowHz,
+          (double) echojay::StereoEngine::kMaxXoverLowHz,
+          150.0,
+          "multiband only: the low/mid crossover (Linkwitz-Riley, sums flat). "
+          "Everything below it is the low band", false },
+
+        { kXoverHighHz, "Hz",
+          (double) echojay::StereoEngine::kMinXoverHighHz,
+          (double) echojay::StereoEngine::kMaxXoverHighHz,
+          2500.0,
+          "multiband only: the mid/high crossover (Linkwitz-Riley, sums flat). "
+          "Everything above it is the high band", false },
+
+        { kRotation, "deg",
+          (double) echojay::StereoEngine::kMinRotationDeg,
+          (double) echojay::StereoEngine::kMaxRotationDeg,
+          0.0,
+          "rotates the whole stereo image: positive tilts it right, negative "
+          "left, without changing total power. Use small values (5-15) to "
+          "recentre a lopsided recording. NOTE: unlike every other knob here, "
+          "rotation does change the mono fold-down", false },
     });
     return s;
 }
@@ -47,6 +109,18 @@ bool EedStereoWidthProcessor::setParamValue (const juce::String& id, double valu
     if (id == kWidth)        { engine_.setWidthPercent ((float) value); return true; }
     if (id == kBassMonoHz)   { engine_.setBassMonoHz   ((float) value); return true; }
     if (id == kOutputTrimDb) { engine_.setTrimDb       ((float) value); return true; }
+
+    if (id == kMode)
+    {
+        engine_.setWidthMode (echojay::widthModeFromIndex ((int) std::lround (value)));
+        return true;
+    }
+    if (id == kWidthLow)    { engine_.setWidthLowPercent  ((float) value); return true; }
+    if (id == kWidthMid)    { engine_.setWidthMidPercent  ((float) value); return true; }
+    if (id == kWidthHigh)   { engine_.setWidthHighPercent ((float) value); return true; }
+    if (id == kXoverLowHz)  { engine_.setXoverLowHz       ((float) value); return true; }
+    if (id == kXoverHighHz) { engine_.setXoverHighHz      ((float) value); return true; }
+    if (id == kRotation)    { engine_.setRotationDegrees  ((float) value); return true; }
     return false;
 }
 
@@ -55,6 +129,13 @@ double EedStereoWidthProcessor::getParamValue (const juce::String& id) const
     if (id == kWidth)        return (double) engine_.getWidthPercent();
     if (id == kBassMonoHz)   return (double) engine_.getBassMonoHz();
     if (id == kOutputTrimDb) return (double) engine_.getTrimDb();
+    if (id == kMode)         return (double) (int) engine_.getWidthMode();
+    if (id == kWidthLow)     return (double) engine_.getWidthLowPercent();
+    if (id == kWidthMid)     return (double) engine_.getWidthMidPercent();
+    if (id == kWidthHigh)    return (double) engine_.getWidthHighPercent();
+    if (id == kXoverLowHz)   return (double) engine_.getXoverLowHz();
+    if (id == kXoverHighHz)  return (double) engine_.getXoverHighHz();
+    if (id == kRotation)     return (double) engine_.getRotationDegrees();
     return 0.0;
 }
 
@@ -130,9 +211,12 @@ namespace
         // ASCII, so a UTF-8 dash here ships double-encoded mojibake into the AI
         // prompt. Plain hyphens throughout.
         d.summary         = "Corrective stereo control. Reach for it to widen or narrow "
-                            "an image by an exact percentage, or to lock the low end to "
-                            "mono under a set frequency. The mono fold-down is preserved "
-                            "exactly, so it is safe on a master bus.";
+                            "an image by an exact percentage, to lock the low end to "
+                            "mono under a set frequency, or - in multiband mode - to set "
+                            "independent width for lows, mids and highs (narrow lows, "
+                            "wide highs). Can also rotate the whole image. The mono "
+                            "fold-down is preserved exactly at every width, so it is "
+                            "safe on a master bus.";
 
         // Frozen once shipped: both are written into saved chain XML.
         d.identifier      = "echojay:builtin:stereowidth";

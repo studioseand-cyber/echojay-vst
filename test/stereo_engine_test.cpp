@@ -466,6 +466,244 @@ int main()
         check (finite, "every output sample is finite");
     }
 
+    // =======================================================================
+    // THE STEREO DEPTH PASS (DEVICE_DEPTH_PLAN.md, Stereo): multiband width
+    // and the comb/dimension widen modes. The invariant work is all here — the
+    // registry test only has to prove the params dial.
+    // =======================================================================
+    std::printf ("== multiband at unity widths is magnitude-flat (LR sums flat) ==\n");
+    {
+        // The crossover property the whole mode leans on: split the side, scale
+        // nothing, and the recombined side is a pure ALLPASS of the input —
+        // phase-rotated, magnitude-identical. Checked as a settled sine level
+        // at a frequency in each band and one near each crossover.
+        for (float hz : { 60.0f, 150.0f, 500.0f, 2500.0f, 6100.0f })
+        {
+            StereoEngine e;
+            e.prepare (kSR, 512);
+            e.setWidthMode (WidthMode::Multiband);
+            e.reset();
+
+            std::vector<float> l (32768), r (32768);
+            fillTone (l, r, hz, 1.0f, -1.0f);        // pure side, amplitude 1
+            run (e, l, r);
+
+            check (near (tailPeak (l), 1.0f, 0.05f),
+                   "unity multiband leaves " + std::to_string ((int) hz)
+                   + " Hz side content at full level (peak "
+                   + std::to_string (tailPeak (l)) + ")");
+        }
+    }
+
+    std::printf ("== each band width touches ONLY its own band ==\n");
+    {
+        // width_low = 0 at the default 150/2500 crossovers: 50 Hz side content
+        // dies, 500 Hz and 6.1 kHz side content survive.
+        StereoEngine e;
+        e.prepare (kSR, 512);
+        e.setWidthMode (WidthMode::Multiband);
+        e.setWidthLowPercent (0.0f);
+        e.reset();
+
+        std::vector<float> l (32768), r (32768);
+        fillTone (l, r, 50.0f, 1.0f, -1.0f);
+        run (e, l, r);
+        check (tailPeak (l) < 0.06f, "width_low 0 kills 50 Hz side content (peak "
+                                     + std::to_string (tailPeak (l)) + ")");
+
+        fillTone (l, r, 500.0f, 1.0f, -1.0f);
+        run (e, l, r);
+        check (near (tailPeak (l), 1.0f, 0.06f),
+               "width_low 0 leaves 500 Hz alone (peak " + std::to_string (tailPeak (l)) + ")");
+
+        fillTone (l, r, 6100.0f, 1.0f, -1.0f);
+        run (e, l, r);
+        check (near (tailPeak (l), 1.0f, 0.06f),
+               "width_low 0 leaves 6.1 kHz alone (peak " + std::to_string (tailPeak (l)) + ")");
+    }
+    {
+        StereoEngine e;
+        e.prepare (kSR, 512);
+        e.setWidthMode (WidthMode::Multiband);
+        e.setWidthHighPercent (0.0f);
+        e.reset();
+
+        std::vector<float> l (32768), r (32768);
+        fillTone (l, r, 7900.0f, 1.0f, -1.0f);
+        run (e, l, r);
+        check (tailPeak (l) < 0.06f, "width_high 0 kills 7.9 kHz side content (peak "
+                                     + std::to_string (tailPeak (l)) + ")");
+
+        fillTone (l, r, 500.0f, 1.0f, -1.0f);
+        run (e, l, r);
+        check (near (tailPeak (l), 1.0f, 0.06f),
+               "width_high 0 leaves 500 Hz alone (peak " + std::to_string (tailPeak (l)) + ")");
+    }
+    {
+        StereoEngine e;
+        e.prepare (kSR, 512);
+        e.setWidthMode (WidthMode::Multiband);
+        e.setWidthMidPercent (200.0f);
+        e.reset();
+
+        std::vector<float> l (32768), r (32768);
+        fillTone (l, r, 600.0f, 1.0f, -1.0f);
+        run (e, l, r);
+        check (near (tailPeak (l), 2.0f, 0.12f),
+               "width_mid 200 doubles 600 Hz side content (peak "
+               + std::to_string (tailPeak (l)) + ")");
+
+        fillTone (l, r, 50.0f, 1.0f, -1.0f);
+        run (e, l, r);
+        check (near (tailPeak (l), 1.0f, 0.06f),
+               "width_mid 200 leaves 50 Hz alone (peak " + std::to_string (tailPeak (l)) + ")");
+
+        fillTone (l, r, 7900.0f, 1.0f, -1.0f);
+        run (e, l, r);
+        check (near (tailPeak (l), 1.0f, 0.06f),
+               "width_mid 200 leaves 7.9 kHz alone (peak " + std::to_string (tailPeak (l)) + ")");
+    }
+    {
+        // A moved crossover moves the boundary: 400 Hz is MID at the default
+        // 150 Hz split but LOW once the crossover is up at 700.
+        StereoEngine e;
+        e.prepare (kSR, 512);
+        e.setWidthMode (WidthMode::Multiband);
+        e.setWidthLowPercent (0.0f);
+        e.setXoverLowHz (700.0f);
+        e.reset();
+
+        std::vector<float> l (32768), r (32768);
+        fillTone (l, r, 300.0f, 1.0f, -1.0f);
+        run (e, l, r);
+        check (tailPeak (l) < 0.1f, "with the crossover at 700, 300 Hz is in the "
+                                    "LOW band and dies (peak "
+                                    + std::to_string (tailPeak (l)) + ")");
+    }
+
+    std::printf ("== multiband PRESERVES THE MONO SUM at any width set ==\n");
+    {
+        struct BandSet { float lo, mid, hi, xlo, xhi; };
+        const BandSet sets[] = {
+            {   0.0f, 100.0f, 200.0f, 150.0f,  2500.0f },
+            { 200.0f,   0.0f, 100.0f,  80.0f,  6100.0f },
+            {  50.0f, 150.0f,  25.0f, 400.0f,  1200.0f },
+        };
+
+        float worstOverall = 0.0f;
+        for (const auto& b : sets)
+        {
+            StereoEngine e;
+            e.prepare (kSR, 512);
+            e.setWidthMode (WidthMode::Multiband);
+            e.setWidthLowPercent (b.lo);
+            e.setWidthMidPercent (b.mid);
+            e.setWidthHighPercent (b.hi);
+            e.setXoverLowHz (b.xlo);
+            e.setXoverHighHz (b.xhi);
+            e.reset();
+
+            Noise n;
+            std::vector<float> l (8192), r (8192), sum0 (8192);
+            for (std::size_t i = 0; i < l.size(); ++i)
+            {
+                l[i] = n.next(); r[i] = n.next(); sum0[i] = l[i] + r[i];
+            }
+            run (e, l, r);
+
+            for (std::size_t i = 0; i < l.size(); ++i)
+                worstOverall = std::fmax (worstOverall,
+                                          std::fabs ((l[i] + r[i]) - sum0[i]));
+        }
+        check (worstOverall <= 1e-5f,
+               "the mid never meets a filter, so L+R is untouched (worst dev "
+               + std::to_string (worstOverall) + ")");
+    }
+
+    std::printf ("== comb and dimension widen a MONO source, mono-safely ==\n");
+    for (auto mode : { StereoizerMode::Comb, StereoizerMode::Dimension })
+    {
+        const std::string name = stereoizerModeName (mode);
+
+        StereoEngine e;
+        e.prepare (kSR, 512);
+        e.setStereoizerMode (mode);
+        e.setWidthPercent (120.0f);
+        e.setHaasMs (15.0f);              // must be IGNORED outside haas mode
+        e.reset();
+
+        Noise n;
+        std::vector<float> l (16384), r (16384), sum0 (16384);
+        for (std::size_t i = 0; i < l.size(); ++i)
+        {
+            const float v = n.next();     // identical channels: mono in
+            l[i] = v; r[i] = v; sum0[i] = 2.0f * v;
+        }
+        run (e, l, r);
+
+        float maxDiff = 0.0f, worstSum = 0.0f;
+        for (std::size_t i = l.size() / 2; i < l.size(); ++i)
+            maxDiff = std::fmax (maxDiff, std::fabs (l[i] - r[i]));
+        for (std::size_t i = 0; i < l.size(); ++i)
+            worstSum = std::fmax (worstSum, std::fabs ((l[i] + r[i]) - sum0[i]));
+
+        check (maxDiff > 0.1f, name + ": a mono input comes out with real side "
+                               "content (L-R peak " + std::to_string (maxDiff) + ")");
+        check (worstSum <= 1e-5f, name + ": L+R is EXACTLY the input's L+R "
+                                  "(worst dev " + std::to_string (worstSum) + ")");
+
+        bool finite = true;
+        for (std::size_t i = 0; i < l.size(); ++i)
+            if (! std::isfinite (l[i]) || ! std::isfinite (r[i])) finite = false;
+        check (finite, name + ": every output sample is finite");
+    }
+
+    std::printf ("== width 0 means MONO in every widen mode ==\n");
+    for (auto mode : { StereoizerMode::Haas, StereoizerMode::Comb, StereoizerMode::Dimension })
+    {
+        // The injection is scaled by the width smoother, so the width knob
+        // keeps its one meaning — 0 is mono — no matter which character the
+        // widening runs in. (Haas at width 0 still injects delayed mid; what
+        // makes it mono there is that a mono fold of ANY side is unchanged, so
+        // the check is L == R only for the two injection modes.)
+        if (mode == StereoizerMode::Haas) continue;
+
+        StereoEngine e;
+        e.prepare (kSR, 512);
+        e.setStereoizerMode (mode);
+        e.setWidthPercent (0.0f);
+        e.reset();
+
+        Noise n;
+        std::vector<float> l (8192), r (8192);
+        for (std::size_t i = 0; i < l.size(); ++i) { l[i] = n.next(); r[i] = n.next(); }
+        run (e, l, r);
+
+        float maxDiff = 0.0f;
+        for (std::size_t i = l.size() / 2; i < l.size(); ++i)
+            maxDiff = std::fmax (maxDiff, std::fabs (l[i] - r[i]));
+        check (maxDiff <= 1e-4f, std::string (stereoizerModeName (mode))
+                                 + ": width 0 collapses to mono (L-R peak "
+                                 + std::to_string (maxDiff) + ")");
+    }
+
+    std::printf ("== the depth pass's clamps match the advertised ranges ==\n");
+    {
+        StereoEngine e;
+        e.setWidthLowPercent (999.0f);  check (e.getWidthLowPercent()  == StereoEngine::kMaxWidthPct,   "width_low clamps to 200");
+        e.setWidthMidPercent (-5.0f);   check (e.getWidthMidPercent()  == StereoEngine::kMinWidthPct,   "width_mid clamps to 0");
+        e.setWidthHighPercent (999.0f); check (e.getWidthHighPercent() == StereoEngine::kMaxWidthPct,   "width_high clamps to 200");
+        e.setXoverLowHz (5.0f);         check (e.getXoverLowHz()  == StereoEngine::kMinXoverLowHz,      "xover_low clamps to 40");
+        e.setXoverLowHz (5000.0f);      check (e.getXoverLowHz()  == StereoEngine::kMaxXoverLowHz,      "xover_low clamps to 800");
+        e.setXoverHighHz (100.0f);      check (e.getXoverHighHz() == StereoEngine::kMinXoverHighHz,     "xover_high clamps to 1000");
+        e.setXoverHighHz (90000.0f);    check (e.getXoverHighHz() == StereoEngine::kMaxXoverHighHz,     "xover_high clamps to 12000");
+
+        // The ranges themselves guarantee the ordering: no overlap, so a model
+        // cannot dial the low crossover above the high one.
+        check (StereoEngine::kMaxXoverLowHz < StereoEngine::kMinXoverHighHz,
+               "the crossover ranges cannot cross");
+    }
+
     std::printf ("\n%s (%d failures)\n", g_fail ? "FAILURES" : "ALL PASS", g_fail);
     return g_fail ? 1 : 0;
 }

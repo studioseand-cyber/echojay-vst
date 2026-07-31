@@ -47,6 +47,17 @@ public:
     static constexpr const char* kBassMonoHz   = "bass_mono_hz";
     static constexpr const char* kOutputTrimDb = "output_trim_db";
 
+    // The depth pass (DEVICE_DEPTH_PLAN.md, Stereo): the multiband mode and its
+    // knobs, plus rotation — which the engine has carried (and the g++ test has
+    // pinned) since Wave 1, surfaced here for the first time.
+    static constexpr const char* kMode         = "mode";
+    static constexpr const char* kWidthLow     = "width_low";
+    static constexpr const char* kWidthMid     = "width_mid";
+    static constexpr const char* kWidthHigh    = "width_high";
+    static constexpr const char* kXoverLowHz   = "xover_low_hz";
+    static constexpr const char* kXoverHighHz  = "xover_high_hz";
+    static constexpr const char* kRotation     = "rotation";
+
     echojay::StereoEngine& engine() noexcept { return engine_; }
 
     // The editor's goniometer (VISUALS_PLAN.md Phase V0, the ring-tap path).

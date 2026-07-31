@@ -28,11 +28,21 @@
         M,S  <- encode(L,R)
         rotate      (M,S)          tilt the image; NOT mono-safe, by nature
         width       S *= w         0% mono .. 100% unity .. 200% double
-        haas        S  = delay(M+S) - M
+                    (multiband: S is split low/mid/high with Linkwitz-Riley
+                     and each band gets its OWN width — see WidthMode below)
+        widen       haas | comb | dimension — the Stereoizer's character stage,
+                    each of which only ever REWRITES S (see StereoizerMode)
         bass-mono   S -= lp(S)     everything under the corner collapses to mono
         wet L,R <- decode(M,S)
         mix         out = dry + mix * (wet - dry)
         trim        out *= g
+
+    THE DEPTH PASS (DEVICE_DEPTH_PLAN.md, Stereo) adds the two mode switches and
+    keeps the invariant by construction: the multiband splitter runs on the SIDE
+    signal only (the mid never meets a filter), and all three widen modes write
+    S and nothing else. Their neutral settings — WidthMode::Full, all band
+    widths 100, StereoizerMode::Haas — are bit-for-bit the engine that shipped
+    before they existed.
 
     Bass-mono sits AFTER the Haas stage on purpose. The Haas stage injects
     delay_t(M) - M into the side, and at 15 ms that difference is enormous down
@@ -50,6 +60,12 @@
 
 #pragma once
 
+// For Biquad / LinkwitzRiley4 / LR4Allpass: the SAME crossover the 4-Band
+// Compressor splits with, reused rather than re-derived — its "low + high sums
+// to a pure allpass" property is exactly what makes multiband width transparent
+// at unity, and it is already pinned by test/dynamics_core_test.cpp.
+#include "EedDynamicsCore.h"
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -57,6 +73,71 @@
 
 namespace echojay
 {
+
+// ---------------------------------------------------------------------------
+// How width is applied (the Stereo Width face's `mode` param).
+//   Full      — one width for the whole spectrum; the engine as it shipped.
+//   Multiband — the SIDE signal is split low/mid/high with LR4 crossovers and
+//               each band gets its own width. The mid is never filtered, so the
+//               mono sum survives exactly; at unity widths the recombined side
+//               is a pure allpass of the input side (magnitude-flat).
+// ---------------------------------------------------------------------------
+enum class WidthMode
+{
+    Full      = 0,
+    Multiband = 1,
+};
+
+constexpr int kNumWidthModes = 2;
+
+inline const char* widthModeName (WidthMode m) noexcept
+{
+    return m == WidthMode::Multiband ? "multiband" : "full";
+}
+
+inline WidthMode widthModeFromIndex (int i) noexcept
+{
+    return i == 1 ? WidthMode::Multiband : WidthMode::Full;
+}
+
+// ---------------------------------------------------------------------------
+// The Stereoizer's character stage (its `mode` param). Every one of these only
+// ever REWRITES THE SIDE, so the exact mono fold-down holds in all three.
+//   Haas      — time displacement: side = delay(M+S) - M. The engine as it
+//               shipped; haas_ms sets the displacement.
+//   Comb      — allpass widening: a short fixed allpass chain of the mid is
+//               pushed into the side. Complementary comb filtering between L
+//               and R with NO pre-delay smear; haas_ms is not used.
+//   Dimension — chorused widen: a slow modulated (detuned) copy is pushed into
+//               the side. The moving delay keeps any comb notches moving, so it
+//               reads as lushness rather than filtering; haas_ms is not used.
+// ---------------------------------------------------------------------------
+enum class StereoizerMode
+{
+    Haas      = 0,
+    Comb      = 1,
+    Dimension = 2,
+};
+
+constexpr int kNumStereoizerModes = 3;
+
+inline const char* stereoizerModeName (StereoizerMode m) noexcept
+{
+    switch (m)
+    {
+        case StereoizerMode::Comb:      return "comb";
+        case StereoizerMode::Dimension: return "dimension";
+        case StereoizerMode::Haas:
+        default:                        return "haas";
+    }
+}
+
+inline StereoizerMode stereoizerModeFromIndex (int i) noexcept
+{
+    if (i <= 0) return StereoizerMode::Haas;
+    if (i >= kNumStereoizerModes - 1) return StereoizerMode::Dimension;
+    return (StereoizerMode) i;
+}
 
 class StereoEngine
 {
@@ -82,6 +163,14 @@ public:
     static constexpr float kMinTrimDb      = -24.0f;
     static constexpr float kMaxTrimDb      =  24.0f;
 
+    // The two multiband crossovers. The ranges deliberately DO NOT overlap
+    // (800 < 1000), so low < high is guaranteed by clamping alone and a swapped
+    // pair cannot produce a band of zero width.
+    static constexpr float kMinXoverLowHz  =   40.0f;
+    static constexpr float kMaxXoverLowHz  =  800.0f;
+    static constexpr float kMinXoverHighHz = 1000.0f;
+    static constexpr float kMaxXoverHighHz = 12000.0f;
+
     StereoEngine() = default;
 
     // Allocates the delay line. Call from prepareToPlay, never from the audio
@@ -103,6 +192,17 @@ public:
         delay_.assign ((std::size_t) std::max (maxDelaySamples, 8), 0.0f);
         writePos_ = 0;
 
+        // The comb mode's fixed allpass chain. Two Schroeder allpasses with
+        // incommensurate delays, short enough (3-5 ms) that the widening fuses
+        // with the source instead of reading as a pre-delay — that absence of
+        // smear is the mode's whole reason to exist next to Haas.
+        combAp1_.prepare (sampleRate_, 2.9);
+        combAp2_.prepare (sampleRate_, 4.3);
+
+        // Multiband crossovers get real coefficients before the first block.
+        xoverLowCur_ = xoverHighCur_ = -1.0f;
+        updateCrossovers();
+
         reset();
     }
 
@@ -116,10 +216,21 @@ public:
         mixNorm_   = mixTarget_.load (std::memory_order_relaxed) * 0.01f;
         trimGain_  = dbToGain (trimTarget_.load (std::memory_order_relaxed));
 
+        widthLowNorm_  = widthLowTarget_.load  (std::memory_order_relaxed) * 0.01f;
+        widthMidNorm_  = widthMidTarget_.load  (std::memory_order_relaxed) * 0.01f;
+        widthHighNorm_ = widthHighTarget_.load (std::memory_order_relaxed) * 0.01f;
+
         lpState_  = 0.0f;
         lpState2_ = 0.0f;
         std::fill (delay_.begin(), delay_.end(), 0.0f);
         writePos_ = 0;
+
+        splitLow_.reset();
+        splitHigh_.reset();
+        apHighComp_.reset();
+        combAp1_.reset();
+        combAp2_.reset();
+        dimPhase_ = 0.0f;
     }
 
     // ---- parameters (message thread) --------------------------------------
@@ -165,12 +276,64 @@ public:
                            std::memory_order_relaxed);
     }
 
+    // ---- the depth pass's switches and knobs -------------------------------
+    // Modes are plain atomic ints, read once per block: a torn read is a block
+    // of the other mode, which is exactly what a legitimate switch mid-play is.
+    void setWidthMode (WidthMode m) noexcept
+    {
+        widthMode_.store ((int) m, std::memory_order_relaxed);
+    }
+
+    void setStereoizerMode (StereoizerMode m) noexcept
+    {
+        stereoizerMode_.store ((int) m, std::memory_order_relaxed);
+    }
+
+    void setWidthLowPercent (float pct) noexcept
+    {
+        widthLowTarget_.store (std::clamp (pct, kMinWidthPct, kMaxWidthPct),
+                               std::memory_order_relaxed);
+    }
+
+    void setWidthMidPercent (float pct) noexcept
+    {
+        widthMidTarget_.store (std::clamp (pct, kMinWidthPct, kMaxWidthPct),
+                               std::memory_order_relaxed);
+    }
+
+    void setWidthHighPercent (float pct) noexcept
+    {
+        widthHighTarget_.store (std::clamp (pct, kMinWidthPct, kMaxWidthPct),
+                                std::memory_order_relaxed);
+    }
+
+    void setXoverLowHz (float hz) noexcept
+    {
+        xoverLowTarget_.store (std::clamp (hz, kMinXoverLowHz, kMaxXoverLowHz),
+                               std::memory_order_relaxed);
+    }
+
+    void setXoverHighHz (float hz) noexcept
+    {
+        xoverHighTarget_.store (std::clamp (hz, kMinXoverHighHz, kMaxXoverHighHz),
+                                std::memory_order_relaxed);
+    }
+
     float getWidthPercent()   const noexcept { return widthTarget_.load    (std::memory_order_relaxed); }
     float getRotationDegrees()const noexcept { return rotationTarget_.load (std::memory_order_relaxed); }
     float getBassMonoHz()     const noexcept { return bassMonoTarget_.load (std::memory_order_relaxed); }
     float getHaasMs()         const noexcept { return haasTarget_.load     (std::memory_order_relaxed); }
     float getMixPercent()     const noexcept { return mixTarget_.load      (std::memory_order_relaxed); }
     float getTrimDb()         const noexcept { return trimTarget_.load     (std::memory_order_relaxed); }
+
+    WidthMode      getWidthMode()      const noexcept { return widthModeFromIndex      (widthMode_.load      (std::memory_order_relaxed)); }
+    StereoizerMode getStereoizerMode() const noexcept { return stereoizerModeFromIndex (stereoizerMode_.load (std::memory_order_relaxed)); }
+
+    float getWidthLowPercent()  const noexcept { return widthLowTarget_.load  (std::memory_order_relaxed); }
+    float getWidthMidPercent()  const noexcept { return widthMidTarget_.load  (std::memory_order_relaxed); }
+    float getWidthHighPercent() const noexcept { return widthHighTarget_.load (std::memory_order_relaxed); }
+    float getXoverLowHz()       const noexcept { return xoverLowTarget_.load  (std::memory_order_relaxed); }
+    float getXoverHighHz()      const noexcept { return xoverHighTarget_.load (std::memory_order_relaxed); }
 
     // ---- audio thread ------------------------------------------------------
     // In-place. `right` may be null for mono, in which case there is no stereo
@@ -186,9 +349,29 @@ public:
         const float mixT   = mixTarget_.load      (std::memory_order_relaxed) * 0.01f;
         const float trimT  = dbToGain (trimTarget_.load (std::memory_order_relaxed));
 
+        const float wLowT  = widthLowTarget_.load  (std::memory_order_relaxed) * 0.01f;
+        const float wMidT  = widthMidTarget_.load  (std::memory_order_relaxed) * 0.01f;
+        const float wHighT = widthHighTarget_.load (std::memory_order_relaxed) * 0.01f;
+
+        const auto wMode  = widthModeFromIndex (widthMode_.load (std::memory_order_relaxed));
+        const auto szMode = stereoizerModeFromIndex (stereoizerMode_.load (std::memory_order_relaxed));
+        const bool multiband = wMode == WidthMode::Multiband;
+
+        // Crossover moves replace coefficients and keep filter state, so a
+        // dragged crossover is a sweep rather than a click. Checked per block:
+        // a coefficient recompute per sample would buy nothing audible.
+        if (multiband) updateCrossovers();
+
         const float bassHz = bassMonoTarget_.load (std::memory_order_relaxed);
         const bool  bassOn = bassHz > kMinBassMonoHz;
         const float lpCoeff = bassOn ? onePoleCoeff (bassHz, sampleRate_) : 0.0f;
+
+        // The dimension mode's LFO advance, per sample. Rate and depth are fixed
+        // character constants rather than knobs: the mode IS the setting, the
+        // width and mix knobs scale how much of it you hear.
+        const float dimPhaseInc = kDimRateHz * kTwoPi / (float) sampleRate_;
+        const float dimCentre   = msToSamples (kDimCentreMs);
+        const float dimDepth    = msToSamples (kDimDepthMs);
 
         if (right == nullptr)
         {
@@ -200,6 +383,7 @@ public:
             // Keep the smoothers tracking anyway, so switching back to stereo
             // does not then glide from a stale value.
             widthNorm_ = widthT; rotation_ = rotT; haasSamps_ = haasT; mixNorm_ = mixT;
+            widthLowNorm_ = wLowT; widthMidNorm_ = wMidT; widthHighNorm_ = wHighT;
             return;
         }
 
@@ -210,6 +394,10 @@ public:
             haasSamps_ = haasT  + (haasSamps_ - haasT)  * smoothCoeff_;
             mixNorm_   = mixT   + (mixNorm_   - mixT)   * smoothCoeff_;
             trimGain_  = trimT  + (trimGain_  - trimT)  * smoothCoeff_;
+
+            widthLowNorm_  = wLowT  + (widthLowNorm_  - wLowT)  * smoothCoeff_;
+            widthMidNorm_  = wMidT  + (widthMidNorm_  - wMidT)  * smoothCoeff_;
+            widthHighNorm_ = wHighT + (widthHighNorm_ - wHighT) * smoothCoeff_;
 
             const float dryL = left[i];
             const float dryR = right[i];
@@ -232,27 +420,64 @@ public:
             }
 
             // ---- width ------------------------------------------------------
-            s *= widthNorm_;
+            if (multiband)
+            {
+                // The split runs on the SIDE only; M passes by untouched, which
+                // is the whole mono-safety argument in one line. The low band
+                // gets the second split's allpass so all three bands share the
+                // same phase history and sum flat at unity — the identical
+                // compensation FourBandSplitter documents.
+                float lowRaw = 0.0f, rest = 0.0f, mid = 0.0f, high = 0.0f;
+                splitLow_.process (s, lowRaw, rest);
+                const float low = apHighComp_.process (lowRaw);
+                splitHigh_.process (rest, mid, high);
 
-            // ---- haas -------------------------------------------------------
+                s = low * widthLowNorm_ + mid * widthMidNorm_ + high * widthHighNorm_;
+            }
+            else
+            {
+                s *= widthNorm_;
+            }
+
+            // ---- widen (haas | comb | dimension) ---------------------------
             // The delay line is fed with the CURRENT left channel (m + s) every
             // sample whether or not the stage is doing anything, so turning the
             // delay up reads real history instead of a buffer of silence.
             //
-            //   sideOut = delay_t(M + S) - M
-            //           = delay_t(S) + (delay_t(M) - M)
+            //   haas: sideOut = delay_t(M + S) - M
+            //                 = delay_t(S) + (delay_t(M) - M)
             //
             // i.e. it delays the existing side AND injects the difference between
             // delayed and present mid. The second term is what lets it widen a
             // MONO source (where S is zero and delaying it would do nothing),
             // and at t = 0 it is identically zero, so 0 ms is an exact bypass.
             // M is never touched, so the mono sum survives untouched too.
+            //
+            // Comb and dimension follow the same construction — inject a
+            // decorrelated copy of the mid into the side, never touch the mid —
+            // and both scale their injection by the WIDTH smoother, so width 0
+            // still means mono and the knob keeps one meaning across all modes.
             {
                 const float in = m + s;
                 delay_[(std::size_t) writePos_] = in;
 
-                if (haasSamps_ > 0.0f)
+                if (szMode == StereoizerMode::Comb)
+                {
+                    const float ap = combAp2_.process (combAp1_.process (m));
+                    s += kCombDepth * widthNorm_ * (ap - m);
+                }
+                else if (szMode == StereoizerMode::Dimension)
+                {
+                    dimPhase_ += dimPhaseInc;
+                    if (dimPhase_ > kTwoPi) dimPhase_ -= kTwoPi;
+
+                    const float t = dimCentre + dimDepth * std::sin (dimPhase_);
+                    s += kDimDepth * widthNorm_ * (readDelay (t) - m);
+                }
+                else if (haasSamps_ > 0.0f)
+                {
                     s = readDelay (haasSamps_) - m;
+                }
 
                 if (++writePos_ >= (int) delay_.size()) writePos_ = 0;
             }
@@ -334,6 +559,67 @@ public:
 
 private:
     static constexpr float kDegToRad = 0.01745329251994329577f;
+    static constexpr float kTwoPi    = 6.28318530717958647692f;
+
+    // The comb and dimension modes' character constants. Fixed, not dialable:
+    // each mode is one sound, and WIDTH scales how much of it reaches the side.
+    static constexpr float kCombDepth   = 0.5f;   // side injection gain, comb
+    static constexpr float kDimDepth    = 0.5f;   // side injection gain, dimension
+    static constexpr float kDimRateHz   = 0.35f;  // slow enough to read as lush
+    static constexpr float kDimCentreMs = 9.0f;   // fused, not an echo
+    static constexpr float kDimDepthMs  = 2.5f;   // ~10 cents of detune at peak
+
+    // Schroeder allpass: unity magnitude at every frequency, phase smeared
+    // around its delay — which is exactly "filtered widening with no level
+    // change". w[n] = x[n] + g*w[n-D]; y[n] = w[n-D] - g*w[n].
+    class SchroederAllpass
+    {
+    public:
+        void prepare (double sampleRate, double ms)
+        {
+            const int n = std::max (8, (int) std::ceil (ms * 0.001 * sampleRate));
+            buf_.assign ((std::size_t) n, 0.0f);
+            pos_ = 0;
+        }
+
+        void reset() noexcept { std::fill (buf_.begin(), buf_.end(), 0.0f); pos_ = 0; }
+
+        float process (float x) noexcept
+        {
+            if (buf_.empty()) return x;
+            const float d = buf_[(std::size_t) pos_];
+            float w = x + kG * d;
+            if (! (std::fabs (w) > 1.0e-25f)) w = 0.0f;   // denormal guard
+            buf_[(std::size_t) pos_] = w;
+            if (++pos_ >= (int) buf_.size()) pos_ = 0;
+            return d - kG * w;
+        }
+
+    private:
+        static constexpr float kG = 0.55f;
+        std::vector<float> buf_;
+        int pos_ = 0;
+    };
+
+    // Replace the crossover coefficients only when a target actually moved —
+    // setCutoff keeps the filter state, so a dialled crossover sweeps.
+    void updateCrossovers() noexcept
+    {
+        const float lo = xoverLowTarget_.load  (std::memory_order_relaxed);
+        const float hi = xoverHighTarget_.load (std::memory_order_relaxed);
+
+        if (lo != xoverLowCur_)
+        {
+            xoverLowCur_ = lo;
+            splitLow_.setCutoff (sampleRate_, (double) lo);
+        }
+        if (hi != xoverHighCur_)
+        {
+            xoverHighCur_ = hi;
+            splitHigh_.setCutoff (sampleRate_, (double) hi);
+            apHighComp_.setCutoff (sampleRate_, (double) hi);
+        }
+    }
 
     float msToSamples (float ms) const noexcept
     {
@@ -369,6 +655,16 @@ private:
     std::atomic<float> mixTarget_      { 100.0f };
     std::atomic<float> trimTarget_     {   0.0f };
 
+    // The depth pass. Modes stored as ints: std::atomic<enum class> is legal
+    // but int is what the whole suite already does (see ReverbEngine).
+    std::atomic<int>   widthMode_       { (int) WidthMode::Full };
+    std::atomic<int>   stereoizerMode_  { (int) StereoizerMode::Haas };
+    std::atomic<float> widthLowTarget_  { 100.0f };
+    std::atomic<float> widthMidTarget_  { 100.0f };
+    std::atomic<float> widthHighTarget_ { 100.0f };
+    std::atomic<float> xoverLowTarget_  { 150.0f };
+    std::atomic<float> xoverHighTarget_ { 2500.0f };
+
     // Smoothed state — audio thread only, never touched from elsewhere.
     float widthNorm_ = 1.0f;
     float rotation_  = 0.0f;      // radians
@@ -376,9 +672,24 @@ private:
     float mixNorm_   = 1.0f;
     float trimGain_  = 1.0f;
 
+    float widthLowNorm_  = 1.0f;
+    float widthMidNorm_  = 1.0f;
+    float widthHighNorm_ = 1.0f;
+
     float lpState_     = 0.0f;   // the mono-maker's two subtractive stages
     float lpState2_    = 0.0f;
     float smoothCoeff_ = 0.0f;
+
+    // Multiband: two LR4 splits of the SIDE plus the low band's phase
+    // compensation at the upper crossover (see the width stage).
+    LinkwitzRiley4 splitLow_, splitHigh_;
+    LR4Allpass     apHighComp_;
+    float xoverLowCur_  = -1.0f;   // last cutoffs actually installed
+    float xoverHighCur_ = -1.0f;
+
+    // Comb + dimension state.
+    SchroederAllpass combAp1_, combAp2_;
+    float dimPhase_ = 0.0f;
 
     std::vector<float> delay_;
     int    writePos_   = 0;

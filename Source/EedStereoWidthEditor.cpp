@@ -9,13 +9,23 @@ using namespace echojay::device::metrics;
 
 namespace
 {
-    // Three dials, a header, and a goniometer seated above them. The rack sizes
-    // it down from here if it has to, and layoutContent survives that — the
-    // scope is the first thing to give up its room.
+    // A goniometer over up to two dial rows. The second row exists for the
+    // multiband mode; in `full` mode the panel runs one row and the scope keeps
+    // the difference, so switching modes never resizes the device. The rack
+    // sizes it down from here if it has to, and layoutContent survives that —
+    // the scope is the first thing to give up its room.
     constexpr int kDefaultW = 460;
     constexpr int kScopeH   = 168;
-    constexpr int kDefaultH = 150 + kScopeH + 6;
+    constexpr int kRowGap   = 8;
+    constexpr int kDefaultH = 150 + echojay::device::metrics::kKnobH + kRowGap
+                            + kScopeH + 6;
     constexpr int kGap      = 20;
+
+    // Tighter column gap for the five-dial multiband row.
+    constexpr int kGapMB    = 10;
+
+    // Wide enough for "MULTIBAND".
+    constexpr int kModeW    = 104;
 
     // Below this the Lissajous is a blob rather than an image, so it is dropped
     // instead of drawn uselessly small.
@@ -64,7 +74,42 @@ EedStereoWidthEditor::EedStereoWidthEditor (EedStereoWidthProcessor& p)
     setup (bassMonoKnob_, EedStereoWidthProcessor::kBassMonoHz, 120.0,   0, " Hz", "BASS MONO");
     setup (trimKnob_,     EedStereoWidthProcessor::kOutputTrimDb, 0.0,   1, " dB", "TRIM");
 
+    setup (rotationKnob_,  EedStereoWidthProcessor::kRotation,      0.0, 0, " deg", "ROTATE");
+    setup (widthLowKnob_,  EedStereoWidthProcessor::kWidthLow,      0.0, 0, " %",   "LOW");
+    setup (widthMidKnob_,  EedStereoWidthProcessor::kWidthMid,      0.0, 0, " %",   "MID");
+    setup (widthHighKnob_, EedStereoWidthProcessor::kWidthHigh,     0.0, 0, " %",   "HIGH");
+    setup (xoverLowKnob_,  EedStereoWidthProcessor::kXoverLowHz,  180.0, 0, " Hz",  "X.LOW");
+    setup (xoverHighKnob_, EedStereoWidthProcessor::kXoverHighHz, 3500.0, 0, " Hz", "X.HIGH");
+
+    // The MODE selector, in the header where every device in the suite puts its
+    // character switch. Items ARE the schema's choices, in the schema's order,
+    // so the list a user sees and the list the model is taught cannot drift.
+    styleCombo (modeBox_);
+    if (const auto* spec = EedStereoWidthProcessor::schema().find (EedStereoWidthProcessor::kMode))
+    {
+        for (std::size_t i = 0; i < spec->choices.size(); ++i)
+            modeBox_.addItem (juce::String (spec->choices[i]).toUpperCase(), (int) i + 1);
+
+        modeBox_.setSelectedId ((int) proc_.getParamValue (EedStereoWidthProcessor::kMode) + 1,
+                                juce::dontSendNotification);
+    }
+    modeBox_.onChange = [this]
+    {
+        if (suppressCallbacks_) return;
+
+        proc_.setParamValue (EedStereoWidthProcessor::kMode,
+                             (double) (modeBox_.getSelectedId() - 1));
+
+        // The mode decides which dials are on the panel at all, so a change has
+        // to relayout now rather than wait for a resize that may never come.
+        refreshModeState();
+        resized();
+    };
+    addAndMakeVisible (modeBox_);
+
     addAndMakeVisible (scope_);
+
+    refreshModeState();
 
     // The AI can move these while the editor is open, so poll for changes the UI
     // did not make. 20 Hz rather than the 15 the dials alone needed: the scope
@@ -78,17 +123,34 @@ EedStereoWidthEditor::~EedStereoWidthEditor()
     stopTimer();
 }
 
+bool EedStereoWidthEditor::multibandActive() const
+{
+    return proc_.engine().getWidthMode() == echojay::WidthMode::Multiband;
+}
+
 void EedStereoWidthEditor::layoutContent (juce::Rectangle<int> content)
 {
     if (content.isEmpty()) return;
 
+    const bool mb = multibandActive();
+
+    // Which dials are on the panel is the mode's decision, made here so a
+    // resize can never disagree with it: `full` runs one row around the single
+    // WIDTH dial, `multiband` swaps that dial for the band row.
+    widthKnob_.setVisible (! mb);
+    for (auto* k : { &widthLowKnob_, &widthMidKnob_, &widthHighKnob_,
+                     &xoverLowKnob_, &xoverHighKnob_ })
+        k->setVisible (mb);
+
+    const int rowsH = mb ? kKnobH * 2 + kRowGap : kKnobH;
+
     // The scope is reserved from the TOP out of whatever is left once the dial
-    // row is whole — it is the readout, the dials are the device, and a rack
+    // rows are whole — it is the readout, the dials are the device, and a rack
     // slot laid out short loses the readout first (the inline-hosting contract
-    // in DeviceEditorBase.h).
+    // in DeviceEditorBase.h). In `full` mode the second row's space goes to the
+    // scope rather than to a hole, so the mode switch never resizes the device.
     {
-        const int want = juce::jmin (kScopeH,
-                                     juce::jmax (0, content.getHeight() - kKnobH - 6));
+        const int want = juce::jmax (0, content.getHeight() - rowsH - 6);
         const bool room = want >= kMinScopeH && content.getWidth() >= 80;
 
         scope_.setVisible (room);
@@ -102,24 +164,69 @@ void EedStereoWidthEditor::layoutContent (juce::Rectangle<int> content)
             // not have), so letting the component span a 460-wide panel would
             // buy nothing but a very long correlation bar with a small picture
             // stranded in the middle of it.
-            const int w = juce::jmin (band.getWidth(), want + 60);
+            const int w = juce::jmin (band.getWidth(), juce::jmin (kScopeH, want) + 60);
             scope_.setBounds (band.withSizeKeepingCentre (w, band.getHeight()));
         }
     }
 
-    // Three dial columns centred as a group, so the device stays balanced at
+    // Dial columns centred as a group, so the device stays balanced at
     // whatever width the rack gives it.
-    const int rowW = kKnobW * 3 + kGap * 2;
-    auto row = content.withSizeKeepingCentre (juce::jmin (rowW, content.getWidth()),
-                                              juce::jmin (kKnobH, content.getHeight()));
+    auto placeRow = [] (juce::Rectangle<int> row, int gap,
+                        std::initializer_list<EchoJayDeviceKnob*> knobs)
+    {
+        const int n = (int) knobs.size();
+        if (n == 0 || row.isEmpty()) return;
 
-    const int colW = juce::jmax (1, (row.getWidth() - kGap * 2) / 3);
+        const int wanted = kKnobW * n + gap * (n - 1);
+        auto strip = row.withSizeKeepingCentre (juce::jmin (wanted, row.getWidth()),
+                                                row.getHeight());
 
-    widthKnob_.setBounds (row.removeFromLeft (colW));
-    row.removeFromLeft (kGap);
-    bassMonoKnob_.setBounds (row.removeFromLeft (colW));
-    row.removeFromLeft (kGap);
-    trimKnob_.setBounds (row.removeFromLeft (colW));
+        const int colW = juce::jmax (1, (strip.getWidth() - gap * (n - 1)) / n);
+        for (auto* k : knobs)
+        {
+            k->setBounds (strip.removeFromLeft (colW));
+            strip.removeFromLeft (gap);
+        }
+    };
+
+    const int rowH = juce::jmin (kKnobH, content.getHeight());
+
+    if (mb)
+    {
+        // Row 1: the three band widths and their crossovers — the mode's whole
+        // point. Row 2: everything that is mode-independent.
+        placeRow (content.removeFromTop (rowH), kGapMB,
+                  { &widthLowKnob_, &widthMidKnob_, &widthHighKnob_,
+                    &xoverLowKnob_, &xoverHighKnob_ });
+
+        if (content.getHeight() > kRowGap) content.removeFromTop (kRowGap);
+
+        placeRow (content.removeFromTop (juce::jmin (rowH, content.getHeight())), kGap,
+                  { &rotationKnob_, &bassMonoKnob_, &trimKnob_ });
+    }
+    else
+    {
+        placeRow (content.removeFromTop (rowH), kGap,
+                  { &widthKnob_, &rotationKnob_, &bassMonoKnob_, &trimKnob_ });
+    }
+}
+
+void EedStereoWidthEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
+{
+    modeBox_.setBounds (
+        bar.removeFromRight (juce::jmin (kModeW, juce::jmax (0, bar.getWidth())))
+           .reduced (0, 3));
+    bar.removeFromRight (6);
+}
+
+void EedStereoWidthEditor::refreshModeState()
+{
+    const int want = (int) proc_.getParamValue (EedStereoWidthProcessor::kMode) + 1;
+    if (modeBox_.getSelectedId() != want)
+        modeBox_.setSelectedId (want, juce::dontSendNotification);
+
+    setHeaderHint (multibandActive() ? "3-band width + bass mono, mono-safe"
+                                     : "width + bass mono, mono-safe");
 }
 
 void EedStereoWidthEditor::syncFromProcessor()
@@ -135,9 +242,24 @@ void EedStereoWidthEditor::syncFromProcessor()
             k.setRealValue (v);
     };
 
-    pull (widthKnob_,    EedStereoWidthProcessor::kWidth);
-    pull (bassMonoKnob_, EedStereoWidthProcessor::kBassMonoHz);
-    pull (trimKnob_,     EedStereoWidthProcessor::kOutputTrimDb);
+    pull (widthKnob_,     EedStereoWidthProcessor::kWidth);
+    pull (bassMonoKnob_,  EedStereoWidthProcessor::kBassMonoHz);
+    pull (trimKnob_,      EedStereoWidthProcessor::kOutputTrimDb);
+    pull (rotationKnob_,  EedStereoWidthProcessor::kRotation);
+    pull (widthLowKnob_,  EedStereoWidthProcessor::kWidthLow);
+    pull (widthMidKnob_,  EedStereoWidthProcessor::kWidthMid);
+    pull (widthHighKnob_, EedStereoWidthProcessor::kWidthHigh);
+    pull (xoverLowKnob_,  EedStereoWidthProcessor::kXoverLowHz);
+    pull (xoverHighKnob_, EedStereoWidthProcessor::kXoverHighHz);
+
+    // The AI can switch the mode while the editor is open, and the mode decides
+    // which dials are on the panel — so a move from outside relayouts too.
+    const int wantMode = (int) proc_.getParamValue (EedStereoWidthProcessor::kMode) + 1;
+    if (modeBox_.getSelectedId() != wantMode)
+    {
+        refreshModeState();
+        resized();
+    }
 }
 
 void EedStereoWidthEditor::refreshScope()

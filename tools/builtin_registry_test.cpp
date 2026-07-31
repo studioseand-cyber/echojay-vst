@@ -2835,6 +2835,9 @@ int main()
             { "EchoJay Gate",              "mode",       "gate|duck",                "default gate" },
             { "EchoJay 4-Band Compressor", "band1_mode", "clean|glue|punch|smooth",  "default glue" },
             { "EchoJay 4-Band Compressor", "detector",   "peak|rms",                 "default rms" },
+            { "EchoJay Stereo Width",      "mode",       "full|multiband",           "default full" },
+            { "EchoJay Stereoizer",        "mode",       "haas|comb|dimension",      "default haas" },
+            { "EchoJay Gain",              "mode",       "stereo|mid_side",          "default stereo" },
         };
 
         for (const auto& w : wanted)
@@ -2856,7 +2859,10 @@ int main()
         for (const auto& p : std::initializer_list<std::pair<const char*, const char*>> {
                  { "EchoJay Compressor", "auto_release" },
                  { "EchoJay Limiter",    "true_peak" },
-                 { "EchoJay De-Esser",   "auto_threshold" } })
+                 { "EchoJay De-Esser",   "auto_threshold" },
+                 { "EchoJay Gain",       "mono" },
+                 { "EchoJay Gain",       "phase_left" },
+                 { "EchoJay Gain",       "phase_right" } })
         {
             const auto* d = registry.findByName (p.first);
             const auto* spec = d != nullptr ? d->schema.find (p.second) : nullptr;
@@ -2865,6 +2871,438 @@ int main()
                             : juce::String();
             check (line.contains ("on/off"),
                    juce::String (p.first) + " " + p.second + " is advertised on/off: " + line);
+        }
+    }
+
+    // =======================================================================
+    // THE STEREO + UTILITY DEPTH PASS (DEVICE_DEPTH_PLAN.md, Stereo/Utility).
+    // The engines' own g++ tests own the DSP claims (band isolation, flat
+    // crossover sums, mono fold-down per mode, the M/S algebra); what belongs
+    // here is the dialability of it all — modes by name AND index, exact
+    // landings, clamps, state, and the neutrality of the defaults.
+    // =======================================================================
+    std::printf ("== STEREO WIDTH: the mode dials by NAME and by index ==\n");
+    {
+        auto proc = makeByName ("EchoJay Stereo Width");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* sw     = dynamic_cast<EedStereoWidthProcessor*> (proc.get());
+        check (sw != nullptr, "constructed as an EedStereoWidthProcessor");
+
+        check (near (device->getParamValue ("mode"),
+                     (double) (int) echojay::WidthMode::Full),
+               "a fresh device is on full, the neutral mode");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "mode", "multiband" } }),
+                                 &applied, &skipped);
+        check (applied == 1 && skipped == 0, "mode = \"multiband\" applied");
+        check (sw->engine().getWidthMode() == echojay::WidthMode::Multiband,
+               "and the ENGINE is actually split three ways now");
+
+        device->applyStructured (paramsMove ({ { "mode", 0.0 } }));
+        check (sw->engine().getWidthMode() == echojay::WidthMode::Full,
+               "the index form reaches the same switch");
+
+        int a2 = 0, s2 = 0;
+        device->applyStructured (paramsMove ({ { "mode", "sideways" } }), &a2, &s2);
+        check (s2 == 1, "an unknown mode is SKIPPED, not guessed at");
+    }
+
+    std::printf ("== STEREO WIDTH: band widths, crossovers and rotation land exactly ==\n");
+    {
+        auto proc = makeByName ("EchoJay Stereo Width");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        // Fresh device: the depth params default NEUTRAL.
+        check (near (device->getParamValue ("width_low"), 100.0),    "width_low defaults to 100");
+        check (near (device->getParamValue ("width_mid"), 100.0),    "width_mid defaults to 100");
+        check (near (device->getParamValue ("width_high"), 100.0),   "width_high defaults to 100");
+        check (near (device->getParamValue ("xover_low_hz"), 150.0), "xover_low defaults to 150");
+        check (near (device->getParamValue ("xover_high_hz"), 2500.0),"xover_high defaults to 2500");
+        check (near (device->getParamValue ("rotation"), 0.0),       "rotation defaults to 0");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "mode", "multiband" },
+                                               { "width_low", 40.0 },
+                                               { "width_mid", 110.0 },
+                                               { "width_high", 160.0 },
+                                               { "xover_low_hz", 120.0 },
+                                               { "xover_high_hz", 4000.0 },
+                                               { "rotation", -12.0 } }),
+                                 &applied, &skipped);
+        check (applied == 7 && skipped == 0, "7 params applied, 0 skipped");
+        check (near (device->getParamValue ("width_low"), 40.0),      "width_low landed EXACTLY at 40");
+        check (near (device->getParamValue ("width_mid"), 110.0),     "width_mid landed EXACTLY at 110");
+        check (near (device->getParamValue ("width_high"), 160.0),    "width_high landed EXACTLY at 160");
+        check (near (device->getParamValue ("xover_low_hz"), 120.0),  "xover_low landed EXACTLY at 120");
+        check (near (device->getParamValue ("xover_high_hz"), 4000.0),"xover_high landed EXACTLY at 4000");
+        check (near (device->getParamValue ("rotation"), -12.0),      "rotation landed EXACTLY at -12");
+
+        // Clamps: the schema's ranges, which are the engine's ranges. The two
+        // crossover ranges do not overlap, so low < high is guaranteed.
+        device->applyStructured (paramsMove ({ { "width_low", 999.0 },
+                                               { "xover_low_hz", 5000.0 },
+                                               { "xover_high_hz", 5.0 },
+                                               { "rotation", 400.0 } }));
+        check (near (device->getParamValue ("width_low"), 200.0),     "width_low clamped to 200");
+        check (near (device->getParamValue ("xover_low_hz"), 800.0),  "xover_low clamped to 800");
+        check (near (device->getParamValue ("xover_high_hz"), 1000.0),"xover_high clamped to 1000");
+        check (near (device->getParamValue ("rotation"), 45.0),       "rotation clamped to +45");
+        check (device->getParamValue ("xover_low_hz")
+                 < device->getParamValue ("xover_high_hz"),
+               "even dialled against each other, low stays below high");
+    }
+
+    std::printf ("== STEREOIZER: the mode dials by NAME and by index ==\n");
+    {
+        auto proc = makeByName ("EchoJay Stereoizer");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* sz     = dynamic_cast<EedStereoizerProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("mode"),
+                     (double) (int) echojay::StereoizerMode::Haas),
+               "a fresh device is on haas, the shipped character");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "mode", "comb" } }), &applied, &skipped);
+        check (applied == 1 && skipped == 0, "mode = \"comb\" applied");
+        check (sz->engine().getStereoizerMode() == echojay::StereoizerMode::Comb,
+               "and the ENGINE is on the allpass chain now");
+
+        device->applyStructured (paramsMove ({ { "mode", 2.0 } }));
+        check (sz->engine().getStereoizerMode() == echojay::StereoizerMode::Dimension,
+               "the index form reaches dimension");
+
+        int a2 = 0, s2 = 0;
+        device->applyStructured (paramsMove ({ { "mode", "wider" } }), &a2, &s2);
+        check (s2 == 1, "an unknown mode is SKIPPED, not guessed at");
+    }
+
+    // The device's headline claim, re-pinned per MODE through the REAL
+    // processBlock: whatever character makes the width, folding the output to
+    // mono gives back the input's fold-down. This is the check that stops a
+    // future mode edit from quietly trading the guarantee for a sound.
+    std::printf ("== STEREOIZER: every mode's mono sum survives processBlock ==\n");
+    for (const char* mode : { "haas", "comb", "dimension" })
+    {
+        auto proc = makeByName ("EchoJay Stereoizer");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        device->applyStructured (paramsMove ({ { "mode", mode }, { "width", 180.0 },
+                                               { "haas_ms", 25.0 },
+                                               { "mono_maker_hz", 200.0 }, { "mix", 80.0 } }));
+
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc->prepareToPlay (48000.0, 512);
+
+        juce::AudioBuffer<float> buf (2, 4096);
+        juce::Random rng (4321);
+        std::vector<float> sumIn (4096);
+        for (int i = 0; i < buf.getNumSamples(); ++i)
+        {
+            const float l = rng.nextFloat() * 2.0f - 1.0f;
+            const float r = rng.nextFloat() * 2.0f - 1.0f;
+            buf.setSample (0, i, l);
+            buf.setSample (1, i, r);
+            sumIn[(std::size_t) i] = l + r;
+        }
+
+        juce::MidiBuffer midi;
+        for (int i = 0; i < buf.getNumSamples(); i += 512)
+        {
+            juce::AudioBuffer<float> slice (buf.getArrayOfWritePointers(), 2, i, 512);
+            proc->processBlock (slice, midi);
+        }
+
+        float worst = 0.0f;
+        for (int i = 0; i < buf.getNumSamples(); ++i)
+            worst = juce::jmax (worst, std::abs ((buf.getSample (0, i) + buf.getSample (1, i))
+                                                 - sumIn[(std::size_t) i]));
+        check (worst <= 1.0e-5f, juce::String (mode) + ": L+R unchanged end to end "
+                                 "(worst dev " + juce::String (worst, 9) + ")");
+    }
+
+    // The goniometer across the new modes: the tap is written post-engine in
+    // processBlock, so every mode must land in the ring. Checked the same way
+    // the Phase V0 test did — mono in, decorrelated out is widening made
+    // visible — but through the COMB path, which shares none of the Haas DSP.
+    std::printf ("== the scope taps still carry the output in the new modes ==\n");
+    {
+        auto ringCorrelation = [] (const echojay::viz::ScopeTap& tap)
+        {
+            std::vector<float> l (1024), r (1024);
+            const int n = tap.read (l.data(), r.data(), 1024);
+            if (n <= 0) return 2.0f;                    // sentinel: nothing tapped
+            double lr = 0.0, ll = 0.0, rr = 0.0;
+            for (int i = 0; i < n; ++i)
+            {
+                lr += (double) l[i] * r[i];
+                ll += (double) l[i] * l[i];
+                rr += (double) r[i] * r[i];
+            }
+            if (ll + rr < 1.0e-9) return 2.0f;          // sentinel: silence
+            const double d = std::sqrt (ll * rr);
+            return d > 1.0e-12 ? (float) (lr / d) : 1.0f;
+        };
+
+        {
+            auto proc = makeByName ("EchoJay Stereoizer");
+            auto* sz = dynamic_cast<EedStereoizerProcessor*> (proc.get());
+            auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            device->applyStructured (paramsMove ({ { "mode", "comb" }, { "width", 150.0 },
+                                                  { "mono_maker_hz", 0.0 }, { "mix", 100.0 } }));
+            proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+            proc->prepareToPlay (48000.0, 512);
+
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            juce::Random rng (77);
+            for (int b = 0; b < 24; ++b)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = rng.nextFloat() * 1.6f - 0.8f;
+                    buf.setSample (0, i, v);
+                    buf.setSample (1, i, v);
+                }
+                proc->processBlock (buf, midi);
+            }
+
+            const float c = ringCorrelation (sz->scopeTap());
+            check (c < 0.99f && c <= 1.0f,
+                   "comb mode: mono in, DECORRELATED in the ring (correlation "
+                   + juce::String (c, 4) + ")");
+        }
+        {
+            // Stereo Width in multiband: a stereo source with its low band
+            // narrowed still writes the tap — the picture keeps working when
+            // the mode changes what it is a picture of.
+            auto proc = makeByName ("EchoJay Stereo Width");
+            auto* sw = dynamic_cast<EedStereoWidthProcessor*> (proc.get());
+            auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            device->applyStructured (paramsMove ({ { "mode", "multiband" },
+                                                  { "width_low", 0.0 } }));
+            proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+            proc->prepareToPlay (48000.0, 512);
+
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            juce::Random rng (78);
+            for (int b = 0; b < 24; ++b)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    buf.setSample (0, i, rng.nextFloat() * 1.6f - 0.8f);
+                    buf.setSample (1, i, rng.nextFloat() * 1.6f - 0.8f);
+                }
+                proc->processBlock (buf, midi);
+            }
+
+            const float c = ringCorrelation (sw->scopeTap());
+            check (c >= -1.0f && c <= 1.0f,
+                   "multiband mode: the ring carries a real frame (correlation "
+                   + juce::String (c, 4) + ")");
+        }
+    }
+
+    std::printf ("== GAIN: mid/side mode dials, and its switches land in every spelling ==\n");
+    {
+        auto proc = makeByName ("EchoJay Gain");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* gain   = dynamic_cast<EedGainProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("mode"),
+                     (double) (int) echojay::GainMode::Stereo),
+               "a fresh device is on stereo, the shipped mode");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "mode", "mid_side" },
+                                               { "mid_db", -3.0 },
+                                               { "side_db", 4.5 } }), &applied, &skipped);
+        check (applied == 3 && skipped == 0, "3 params applied, 0 skipped");
+        check (gain->engine().getMode() == echojay::GainMode::MidSide,
+               "the ENGINE is in mid/side now");
+        check (near (device->getParamValue ("mid_db"), -3.0),  "mid_db landed EXACTLY at -3");
+        check (near (device->getParamValue ("side_db"), 4.5),  "side_db landed EXACTLY at 4.5");
+
+        // "MS", "m/s" etc. are NOT advertised; the canonical name and the index
+        // both are. And the switches take every spelling a model actually emits.
+        device->applyStructured (paramsMove ({ { "mode", 0.0 } }));
+        check (gain->engine().getMode() == echojay::GainMode::Stereo,
+               "the index form reaches the same switch");
+
+        device->applyStructured (paramsMove ({ { "mono", true } }));
+        check (near (device->getParamValue ("mono"), 1.0), "JSON true -> mono on");
+
+        device->applyStructured (paramsMove ({ { "mono", "off" },
+                                               { "phase_left", "on" },
+                                               { "phase_right", "1" } }));
+        check (near (device->getParamValue ("mono"), 0.0),        "the string \"off\" -> off");
+        check (near (device->getParamValue ("phase_left"), 1.0),  "the string \"on\" -> on");
+        check (near (device->getParamValue ("phase_right"), 1.0), "the string \"1\" -> on");
+
+        // Clamps: cut to the level knob's -60 floor, boost only to +6 — the
+        // trims compose with level_db, and two +24 stages would be a +48 dB
+        // device.
+        device->applyStructured (paramsMove ({ { "mid_db", 999.0 }, { "side_db", -999.0 } }));
+        check (near (device->getParamValue ("mid_db"), 6.0),    "mid_db clamped to +6");
+        check (near (device->getParamValue ("side_db"), -60.0), "side_db clamped to -60");
+    }
+
+    std::printf ("== GAIN: side at the floor collapses a real block to mono ==\n");
+    {
+        // End to end through processBlock, because "the param changed" and "the
+        // audio changed" are different facts. side_db -60 is the floor, the
+        // floor is true silence, and a silent side IS mono: L == R out.
+        auto proc = makeByName ("EchoJay Gain");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        device->applyStructured (paramsMove ({ { "mode", "mid_side" },
+                                               { "side_db", -60.0 } }));
+
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc->prepareToPlay (48000.0, 512);
+
+        juce::AudioBuffer<float> buf (2, 512);
+        juce::MidiBuffer midi;
+        juce::Random rng (55);
+        for (int b = 0; b < 20; ++b)                    // past the 20 ms smoother
+        {
+            for (int i = 0; i < 512; ++i)
+            {
+                buf.setSample (0, i, rng.nextFloat() * 1.6f - 0.8f);
+                buf.setSample (1, i, rng.nextFloat() * 1.6f - 0.8f);
+            }
+            proc->processBlock (buf, midi);
+        }
+
+        float worst = 0.0f;
+        for (int i = 0; i < 512; ++i)
+            worst = juce::jmax (worst, std::abs (buf.getSample (0, i)
+                                               - buf.getSample (1, i)));
+        check (worst <= 1.0e-4f, "L == R after the side is floored (worst diff "
+                                 + juce::String (worst, 7) + ")");
+    }
+
+    std::printf ("== the Stereo/Utility depth params round-trip through state ==\n");
+    {
+        auto a = makeByName ("EchoJay Stereo Width");
+        auto* da = dynamic_cast<EedDeviceProcessor*> (a.get());
+        da->applyStructured (paramsMove ({ { "mode", "multiband" },
+                                           { "width_low", 55.0 }, { "width_mid", 120.0 },
+                                           { "width_high", 170.0 },
+                                           { "xover_low_hz", 200.0 },
+                                           { "xover_high_hz", 3000.0 },
+                                           { "rotation", 8.0 } }));
+        juce::MemoryBlock blob;
+        da->getStateInformation (blob);
+
+        auto b = makeByName ("EchoJay Stereo Width");
+        auto* db = dynamic_cast<EedDeviceProcessor*> (b.get());
+        db->setStateInformation (blob.getData(), (int) blob.getSize());
+        check (near (db->getParamValue ("mode"), 1.0),           "width mode restored (multiband)");
+        check (near (db->getParamValue ("width_low"), 55.0),     "width_low restored");
+        check (near (db->getParamValue ("width_mid"), 120.0),    "width_mid restored");
+        check (near (db->getParamValue ("width_high"), 170.0),   "width_high restored");
+        check (near (db->getParamValue ("xover_low_hz"), 200.0), "xover_low restored");
+        check (near (db->getParamValue ("xover_high_hz"), 3000.0),"xover_high restored");
+        check (near (db->getParamValue ("rotation"), 8.0),       "rotation restored");
+
+        auto sz = makeByName ("EchoJay Stereoizer");
+        auto* dsz = dynamic_cast<EedDeviceProcessor*> (sz.get());
+        dsz->applyStructured (paramsMove ({ { "mode", "dimension" }, { "width", 140.0 } }));
+        juce::MemoryBlock szb;
+        dsz->getStateInformation (szb);
+
+        auto sz2 = makeByName ("EchoJay Stereoizer");
+        auto* dsz2 = dynamic_cast<EedDeviceProcessor*> (sz2.get());
+        dsz2->setStateInformation (szb.getData(), (int) szb.getSize());
+        check (near (dsz2->getParamValue ("mode"), 2.0),  "stereoizer mode restored (dimension)");
+        check (near (dsz2->getParamValue ("width"), 140.0),"and the width under it survived");
+
+        auto g = makeByName ("EchoJay Gain");
+        auto* dg = dynamic_cast<EedDeviceProcessor*> (g.get());
+        dg->applyStructured (paramsMove ({ { "mode", "mid_side" }, { "mid_db", -2.0 },
+                                           { "side_db", 3.0 }, { "mono", true },
+                                           { "phase_left", true } }));
+        juce::MemoryBlock gb;
+        dg->getStateInformation (gb);
+
+        auto g2 = makeByName ("EchoJay Gain");
+        auto* dg2 = dynamic_cast<EedDeviceProcessor*> (g2.get());
+        dg2->setStateInformation (gb.getData(), (int) gb.getSize());
+        check (near (dg2->getParamValue ("mode"), 1.0),       "gain mode restored (mid_side)");
+        check (near (dg2->getParamValue ("mid_db"), -2.0),    "mid_db restored");
+        check (near (dg2->getParamValue ("side_db"), 3.0),    "side_db restored");
+        check (near (dg2->getParamValue ("mono"), 1.0),       "mono restored");
+        check (near (dg2->getParamValue ("phase_left"), 1.0), "phase_left restored");
+        check (near (dg2->getParamValue ("phase_right"), 0.0),"phase_right stayed off");
+    }
+
+    std::printf ("== a Stereo/Utility device at its DEFAULTS is unchanged by the depth pass ==\n");
+    {
+        // The strongest guarantee this pass makes, proved the way the Time pass
+        // proved it: render the SAME audio through a device at its defaults and
+        // through one with every depth param explicitly set to its neutral
+        // value. Bit-identical output or the defaults are not neutral.
+        for (const char* name : { "EchoJay Stereo Width", "EchoJay Stereoizer",
+                                  "EchoJay Gain" })
+        {
+            auto mk = [name] (bool explicitNeutral)
+            {
+                auto proc = makeByName (name);
+                auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+                if (explicitNeutral)
+                {
+                    const juce::String n (name);
+                    if (n == "EchoJay Stereo Width")
+                        device->applyStructured (paramsMove ({
+                            { "mode", "full" },
+                            { "width_low", 100.0 }, { "width_mid", 100.0 },
+                            { "width_high", 100.0 },
+                            { "xover_low_hz", 150.0 }, { "xover_high_hz", 2500.0 },
+                            { "rotation", 0.0 } }));
+                    else if (n == "EchoJay Stereoizer")
+                        device->applyStructured (paramsMove ({ { "mode", "haas" } }));
+                    else
+                        device->applyStructured (paramsMove ({
+                            { "mode", "stereo" }, { "mid_db", 0.0 }, { "side_db", 0.0 },
+                            { "mono", false }, { "phase_left", false },
+                            { "phase_right", false } }));
+                }
+                proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+                proc->prepareToPlay (48000.0, 512);
+                return proc;
+            };
+
+            auto pa = mk (false), pb = mk (true);
+
+            juce::AudioBuffer<float> ba (2, 4096), bb (2, 4096);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 4096; ++i)
+                {
+                    const float v = 0.4f * std::sin (0.037f * (float) i + (float) ch)
+                                  + (i % 977 == 0 ? 0.5f : 0.0f);
+                    ba.setSample (ch, i, v);
+                    bb.setSample (ch, i, v);
+                }
+
+            juce::MidiBuffer midi;
+            for (int i = 0; i < 4096; i += 512)
+            {
+                juce::AudioBuffer<float> sa (ba.getArrayOfWritePointers(), 2, i, 512);
+                juce::AudioBuffer<float> sb (bb.getArrayOfWritePointers(), 2, i, 512);
+                pa->processBlock (sa, midi);
+                pb->processBlock (sb, midi);
+            }
+
+            float worst = 0.0f;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 4096; ++i)
+                    worst = juce::jmax (worst, std::abs (ba.getSample (ch, i)
+                                                       - bb.getSample (ch, i)));
+
+            check (worst == 0.0f,
+                   juce::String (name) + ": its defaults ARE the neutral settings "
+                   "(worst delta " + juce::String (worst, 9) + ")");
         }
     }
 
