@@ -281,6 +281,33 @@ struct FakeInstance final : juce::AudioPluginInstance
     void setStateInformation (const void*, int) override   {}
 };
 
+void testPayloadFeedsApply()
+{
+    // The schema WRITER must produce what the apply READER consumes. Found by
+    // inspection one commit before the first real submit would have shipped
+    // it: anchorsToVar emitted [normalised, value] while anchorsFromVar and
+    // every served map use [value, normalised]. Dormant because no consumer
+    // had ever read a payload this writer produced.
+    ejmap::ParamMapping m;
+    m.semantic  = "threshold_db";
+    m.indices.add (3);
+    m.paramName = "Thresh";
+    m.kind      = "threshold_db";
+    m.anchors.add ({ 0.0, -30.0 });    // AnchorPoint{normalised, value}
+    m.anchors.add ({ 1.0,  16.0 });
+
+    auto parsed  = juce::JSON::parse (juce::JSON::toString (m.toVar()));
+    auto table   = echojay::anchorsFromVar (parsed);
+    check (table.size() == 2
+             && juce::approximatelyEqual (table[0][0], -30.0f)
+             && juce::approximatelyEqual (table[0][1], 0.0f),
+           "payload anchors read back as [value, norm] through the real apply reader");
+
+    const float n = echojay::interpolateAnchors (table, -7.0f);   // half way
+    check (std::abs (n - 0.5f) < 1.0e-4f,
+           "payload anchors interpolate through the real apply path");
+}
+
 void testRoundTripThroughApplySettings()
 {
     FakeInstance plugin;
@@ -397,12 +424,16 @@ void testAgainstRealMaps()
         // over the map's own table. This is the stage that drifted in the
         // usableCoreCount incident, and it needs no instantiation.
         auto params = v.getProperty ("params", juce::var());
-        if (auto* evArr = v.getProperty ("evidence", juce::var())
-                           .getProperty ("readback", juce::var()).getArray())
+        if (auto* rbObj = v.getProperty ("evidence", juce::var())
+                           .getProperty ("readback", juce::var()).getDynamicObject())
         {
-            for (auto& ev : *evArr)
+            // readback serializes as an OBJECT keyed by semantic (the shape
+            // Evidence::toVar actually writes; the first version of this loop
+            // read an array shape nothing produces, so it would have skipped
+            // every real map while looking like coverage).
+            for (auto& kv : rbObj->getProperties())
             {
-                const auto semantic = ev.getProperty ("semantic", "").toString();
+                const auto semantic = kv.name.toString();
                 auto entryVar = params.getProperty (semantic, juce::var());
                 if (! entryVar.isObject()) continue;
 
@@ -411,10 +442,10 @@ void testAgainstRealMaps()
                 if (! eff.ok) continue;
 
                 float asked = 0.0f;
-                if (! echojay::semanticToFloat (ev.getProperty ("asked", juce::var()), asked))
+                if (! echojay::semanticToFloat (kv.value.getProperty ("asked", juce::var()), asked))
                     continue;
 
-                const float wrote = (float) (double) ev.getProperty ("wrote", 0.0);
+                const float wrote = kv.value.getProperty ("wrote", juce::var()).toString().getFloatValue();
                 const float now   = juce::jlimit (0.0f, 1.0f,
                                         echojay::interpolateAnchors (eff.table, asked));
                 check (std::abs (now - wrote) < 1.0e-3f,
@@ -451,6 +482,7 @@ int main (int, char**)
     testPayloadSerialises();
     testContradictionBlocks();
     testSharedParsers();
+    testPayloadFeedsApply();
     testRoundTripThroughApplySettings();
     testAgainstRealMaps();
 

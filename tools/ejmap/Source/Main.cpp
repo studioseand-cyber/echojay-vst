@@ -50,7 +50,7 @@ public:
         juce::String selfTestId;
         bool cacheTest = false, progressTest = false;
         juce::String attributeReport, afterExit, captureTestId, maskTestId, stallId, promoSuppressId;
-        juce::String sweepTestId, sweepTestParam, typedTestId, typedTestParam;
+        juce::String sweepTestId, sweepTestParam, typedTestId, typedTestParam, assignTestId;
         int stallN = 0;
         bool supervised = false;
         int  restartCount = 0;
@@ -84,6 +84,8 @@ public:
                 if (i + 1 < args.size() && ! args[i + 1].startsWith ("--"))
                     typedTestParam = args[++i];
             }
+            else if (args[i] == "--selftest-assign" && i + 1 < args.size())
+                assignTestId = args[++i];
             else if (args[i] == "--selftest-stall" && i + 2 < args.size())
                 { stallId = args[i + 1]; stallN = args[i + 2].getIntValue(); i += 2; }
             else if (args[i] == "--attribute-report" && i + 1 < args.size())
@@ -185,6 +187,11 @@ public:
         {
             auto id = typedTestId; auto ps = typedTestParam; auto* m = mainWindow->getMain();
             juce::MessageManager::callAsync ([m, id, ps] { m->selfTestTyped (id, ps); });
+        }
+        else if (assignTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = assignTestId; auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id] { m->selfTestAssign (id); });
         }
         else if (captureTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {

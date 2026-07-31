@@ -22,6 +22,8 @@
 #include "EjmapMouseRing.h"
 #include "EjmapSweeper.h"
 #include "EjmapCurveView.h"
+#include "EjmapAssignPanel.h"
+#include "EchoJayParamMaps.h"   // fingerprintForDescription
 
 #include <iostream>
 
@@ -109,6 +111,18 @@ public:
 
         addChildComponent (curveView);
         curveView.onReject = [this] { startTypedAnchors(); };
+
+        addAndMakeVisible (assignButton);
+        assignButton.setButtonText ("Assign");
+        assignButton.setEnabled (false);
+        assignButton.onClick = [this] { startAssignment(); };
+
+        addAndMakeVisible (deepToggle);
+        deepToggle.setButtonText ("Deep");
+        deepToggle.onClick = [this] { assignPanel.deepMode = deepToggle.getToggleState(); };
+
+        addChildComponent (assignPanel);
+        wireAssignHooks();
 
         addChildComponent (typedPrompt);
         typedPrompt.setColour (juce::Label::textColourId, juce::Colour (0xffd8b06a));
@@ -880,6 +894,233 @@ public:
         quitNow();
     }
 
+    /** Drives the assignment loop through the SAME action methods the keys
+        call, against a SYNTHETIC proposal file written for this plugin's own
+        fp (and saying so): the corroboration gate, the W mismatch dataset,
+        the bulk-ignore floor, the skip records and the submit are all the
+        production paths; only the proposal content and the finger on the
+        keys are simulated.
+    */
+    void selfTestAssign (const juce::String& identifier)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "ASSIGNTEST: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        ledger.beginLoad (loadedId, desc.name, desc.manufacturerName,
+                          desc.pluginFormatName, desc.version, "load", "createPluginInstance");
+        auto res = host.load (desc, watchdog);
+        { LedgerRecord rec; rec.pluginId = loadedId; rec.name = desc.name;
+          rec.outcome = res.outcome; rec.detail = res.detail; rec.paramCount = res.paramCount;
+          ledger.endLoad (rec); }
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "ASSIGNTEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        listeners.attach (*inst);
+        cal = capture.calibrate (*inst, loadedId);
+        mask = capture.buildNoiseMask (*inst, cal, loadedId);
+        capture.resetCycleCounts();
+        promotionsFlushed = 0;
+
+        // Qualify four continuous write-responsive params, as the capture test does.
+        auto& params = inst->getParameters();
+        qualified.clearQuick();
+        for (int i = 0; i < params.size() && qualified.size() < 4; ++i)
+        {
+            if (mask.indices.contains (i)) continue;
+            auto* pp = params[i];
+            if (pp->isDiscrete() || ! pp->isAutomatable()) continue;
+            pp->setValueNotifyingHost (0.20f); juce::Thread::sleep (15);
+            const float lo = pp->getValue();
+            pp->setValueNotifyingHost (0.50f); juce::Thread::sleep (15);
+            const float hi = pp->getValue();
+            if (std::abs (lo - 0.20f) < 0.02f && std::abs (hi - 0.50f) < 0.02f) qualified.add (i);
+        }
+        if (qualified.size() < 4)
+        { std::cout << "ASSIGNTEST: too few qualified params" << std::endl; quitNow(); return; }
+
+        // Two ignore subjects: one whose name matches no dial-set token
+        // (eligible for bulk) and one whose name does (must be withheld).
+        int ignEligible = -1, ignWithheld = -1;
+        for (int i = 0; i < params.size(); ++i)
+        {
+            const auto nm = params[i]->getName (48);
+            if (qualified.contains (i)) continue;
+            if (ignEligible < 0 && ! DialSets::nameSuggestsDialSet (nm)) ignEligible = i;
+            if (ignWithheld < 0 &&   DialSets::nameSuggestsDialSet (nm)) ignWithheld = i;
+            if (ignEligible >= 0 && ignWithheld >= 0) break;
+        }
+
+        // The synthetic proposal file, for THIS plugin's own fp.
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+        auto pdir = ledger.getRoot().getChildFile ("proposals");
+        pdir.createDirectory();
+        juce::String pj;
+        pj << "{ \"category\": \"compressor\", \"params\": ["
+           << "{\"index\": " << qualified[0] << ", \"kind\": \"threshold_db\", \"confidence\": \"high\", \"reason\": \"synthetic proposal (selftest)\"},"
+           << "{\"index\": " << qualified[1] << ", \"kind\": \"ratio\", \"confidence\": \"med\", \"reason\": \"synthetic WRONG proposal (selftest)\"},"
+           << "{\"index\": " << qualified[3] << ", \"kind\": \"attack_ms\", \"confidence\": \"high\", \"reason\": \"synthetic corroborated proposal (selftest)\"},"
+           << "{\"index\": " << ignEligible << ", \"kind\": \"ignore\", \"confidence\": \"high\", \"reason\": \"synthetic utility (selftest)\"},"
+           << "{\"index\": " << ignWithheld << ", \"kind\": \"ignore\", \"confidence\": \"high\", \"reason\": \"synthetic but dial-set-named (selftest)\"}"
+           << "] }";
+        pdir.getChildFile (currentFp + ".json").replaceWithText (pj);
+        std::cout << "ASSIGNTEST: " << desc.name << " | fp " << currentFp.substring (0, 12)
+                  << "... | SYNTHETIC proposals written for this fp (and said so)" << std::endl;
+
+        // Pre-capture qualified[3] so the attack_ms proposal is corroborated
+        // by a real captures row on disk before assignment begins.
+        params[qualified[3]]->setValueNotifyingHost (0.20f);
+        juce::Thread::sleep (120);
+        capture.arm (*inst, cal, mask, [this] (const CaptureEngine::Result& r)
+        {
+            const int intended = r.indices.size() == 1 ? r.indices[0] : -1;
+            recordCapture (r.kindString(), intended,
+                           r.names.isEmpty() ? juce::String() : r.names[0],
+                           {}, {}, r.reason, r.sameDirection, r.magnitudeRatio, r.capturedBy);
+            stage = 0;
+            juce::Timer::callAfterDelay (300, [this] { assignTestStep(); });
+        });
+        juce::Timer::callAfterDelay (300, [this]
+        {
+            auto* in = host.getInstance();
+            if (in != nullptr) in->getParameters()[qualified[3]]->setValueNotifyingHost (0.55f);
+        });
+    }
+
+    void assignTestStep()
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr) return;
+        auto& params = inst->getParameters();
+
+        auto findRow = [this] (const juce::String& sem) -> int
+        {
+            for (int i = 0; i < assignPanel.rows.size(); ++i)
+                if (assignPanel.rows.getReference (i).semantic == sem) return i;
+            return -1;
+        };
+        auto ok = [this] (bool cond, const juce::String& what)
+        {
+            if (! cond) ++failures;
+            std::cout << "  " << (cond ? "ok   " : "FAIL ") << what << std::endl;
+            std::cout.flush();
+        };
+
+        switch (stage)
+        {
+        case 0:
+        {
+            startAssignment();
+            ok (assigning && assignPanel.rows.size() > 0, "assignment began with rows");
+
+            // Uncorroborated SPACE refused: the ratio proposal has no evidence.
+            const int r = findRow ("ratio");
+            assignPanel.selectRow (r);
+            assignPanel.actionSpace();
+            ok (r >= 0 && assignPanel.rows.getReference (r).state == AssignRow::State::proposed,
+                "uncorroborated SPACE refused (ratio row unchanged)");
+
+            // Corroborated SPACE accepted: attack_ms has a capture on disk.
+            const int a = findRow ("attack_ms");
+            assignPanel.selectRow (a);
+            assignPanel.actionSpace();
+            ok (a >= 0 && assignPanel.rows.getReference (a).state == AssignRow::State::confirmed
+                  && assignPanel.rows.getReference (a).corroboration == "capture"
+                  && assignPanel.rows.getReference (a).trust == "llm-classified",
+                "corroborated SPACE accepted (attack_ms, corroboration=capture)");
+
+            // W on threshold: move the PROPOSED index.
+            assignPanel.selectRow (findRow ("threshold_db"));
+            params[qualified[0]]->setValueNotifyingHost (0.20f);
+            juce::Thread::sleep (120);
+            assignPanel.actionWiggle();
+            juce::Timer::callAfterDelay (300, [this]
+            {
+                auto* in = host.getInstance();
+                if (in != nullptr) in->getParameters()[qualified[0]]->setValueNotifyingHost (0.55f);
+            });
+            ++stage;
+            juce::Timer::callAfterDelay (1200, [this] { assignTestStep(); });
+            return;
+        }
+        case 1:
+        {
+            const int t = findRow ("threshold_db");
+            ok (t >= 0 && assignPanel.rows.getReference (t).state == AssignRow::State::confirmed
+                  && assignPanel.rows.getReference (t).trust == "human-verified"
+                  && ! assignPanel.rows.getReference (t).proposalMismatch,
+                "W on the proposed index -> confirmed human-verified, no mismatch");
+
+            // W on ratio but move a DIFFERENT index: the mismatch dataset row.
+            assignPanel.selectRow (findRow ("ratio"));
+            params[qualified[2]]->setValueNotifyingHost (0.20f);
+            juce::Thread::sleep (120);
+            assignPanel.actionWiggle();
+            juce::Timer::callAfterDelay (300, [this]
+            {
+                auto* in = host.getInstance();
+                if (in != nullptr) in->getParameters()[qualified[2]]->setValueNotifyingHost (0.55f);
+            });
+            ++stage;
+            juce::Timer::callAfterDelay (1200, [this] { assignTestStep(); });
+            return;
+        }
+        case 2:
+        {
+            const int r = findRow ("ratio");
+            const auto& rr = assignPanel.rows.getReference (r);
+            ok (r >= 0 && rr.state == AssignRow::State::confirmed && rr.proposalMismatch
+                  && rr.resolvedIndex == qualified[2],
+                "W mismatch: row re-pointed to the captured index");
+            ok (ledger.runArtifact ("misclassified", "jsonl").existsAsFile(),
+                "mismatch written to misclassified-<run>.jsonl (the labelled dataset)");
+
+            // The three skips: one canned, one custom-shaped.
+            const int m = findRow ("makeup_db");
+            if (m >= 0) { assignPanel.selectRow (m); assignPanel.actionSkip (AssignRow::State::skipNotPresent); }
+            ok (m >= 0 && assignPanel.rows.getReference (m).state == AssignRow::State::skipNotPresent
+                  && assignPanel.rows.getReference (m).skipReason.isNotEmpty(),
+                "N skip recorded with a canned reason");
+
+            // Bulk ignores: first press counts, second fires; the withheld one stays.
+            assignPanel.actionBulkIgnores();
+            assignPanel.actionBulkIgnores();
+            int accepted = 0, unresolvedIgnores = 0;
+            for (const auto& ir : assignPanel.ignoreRows)
+            { accepted += ir.isSkipped(); unresolvedIgnores += ! ir.isResolved(); }
+            ok (accepted == 1 && unresolvedIgnores == 1,
+                "bulk ignores: 1 accepted, 1 withheld by the floor (dial-set name)");
+
+            // Submit.
+            assignPanel.actionSubmit();
+            auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
+            ok (f.existsAsFile(), "map written to maps/<fp>.json");
+            auto v = juce::JSON::parse (f.loadFileAsString());
+            ok (v.getProperty ("schema", "").toString() == ejmap::kMapSchemaString,
+                "map carries schema " + juce::String (ejmap::kMapSchemaString));
+            auto pms = v.getProperty ("params", juce::var());
+            auto th  = pms.getProperty ("threshold_db", juce::var());
+            auto anchors = echojay::anchorsFromVar (th);
+            ok (anchors.size() >= 2, "threshold_db anchors present and [value, norm] ordered");
+            auto rbv = v.getProperty ("evidence", juce::var()).getProperty ("readback", juce::var());
+            ok (rbv.getDynamicObject() != nullptr && rbv.getDynamicObject()->getProperties().size() > 0,
+                "write-back verify recorded in evidence.readback");
+
+            std::cout << "ASSIGNTEST: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
+            std::cout.flush();
+            quitNow();
+            return;
+        }
+        }
+    }
+
     /** Drives the typed-anchor flow with a SIMULATED TYPIST: each prompt is
         answered with the plugin's own getCurrentValueAsText, which is what a
         faithful human transcribes when the GUI shows the same number. Stated
@@ -1198,6 +1439,10 @@ public:
         top.removeFromLeft (6);
         sweepButton.setBounds (top.removeFromLeft (76));
         top.removeFromLeft (6);
+        assignButton.setBounds (top.removeFromLeft (76));
+        top.removeFromLeft (6);
+        deepToggle.setBounds (top.removeFromLeft (64));
+        top.removeFromLeft (6);
         releaseButton.setBounds (top.removeFromLeft (90));
         top.removeFromLeft (6);
         summaryButton.setBounds (top.removeFromLeft (90));
@@ -1259,9 +1504,16 @@ public:
 
         r.removeFromTop (8);
         auto left = r.removeFromLeft (420);
-        filterBox.setBounds (left.removeFromTop (24));
-        left.removeFromTop (4);
-        list.setBounds (left);
+        if (assigning)
+        {
+            assignPanel.setBounds (left);
+        }
+        else
+        {
+            filterBox.setBounds (left.removeFromTop (24));
+            left.removeFromTop (4);
+            list.setBounds (left);
+        }
         r.removeFromLeft (8);
         editorHolder.setBounds (r);
         layoutEditor();
@@ -1938,17 +2190,7 @@ private:
         captureReadout.setText ("Sweeping " + juce::String (idx) + ": " + name + "...",
                                 juce::dontSendNotification);
 
-        // Sweeps mutate what the pump renders (set-then-read, state restore),
-        // which the plugin API does not specify against a concurrent
-        // processBlock: pause-and-drain around every sweep. And a sweep is a
-        // crash window on unknown plugins, so it runs under its own inflight
-        // record, same as a load.
-        beginSweepInflight (idx, name);
-        host.pausePumpForMutation();
-        auto outcome = sweepOneIndex (*inst, idx, watchdog, loadedId);
-        host.resumePumpAfterMutation();
-        endSweepInflight (idx, outcome);
-        recordSweep (idx, name, outcome);
+        auto outcome = runSweep (idx);
 
         lastSweptIndex   = idx;
         lastSweptName    = name;
@@ -2110,6 +2352,8 @@ private:
 
         lastSweepOutcome = sw;
         curveView.show (sw, juce::String (lastSweptIndex) + ": " + lastSweptName + " (typed)");
+        if (assigning)
+            assignPanel.typedCompleted (sw);
 
         captureReadout.setText ("TYPED " + juce::String (lastSweptIndex) + ":" + lastSweptName
                                   + "  -  " + sw.reason, juce::dontSendNotification);
@@ -2158,6 +2402,264 @@ private:
     }
 
     //==========================================================================
+    //==========================================================================
+    // M4 assignment wiring.
+
+    void wireAssignHooks()
+    {
+        assignPanel.hooks.paramName = [this] (int idx) -> juce::String
+        {
+            auto* inst = host.getInstance();
+            return inst != nullptr && juce::isPositiveAndBelow (idx, inst->getParameters().size())
+                     ? inst->getParameters()[idx]->getName (48) : juce::String();
+        };
+        assignPanel.hooks.paramCount = [this]
+        {
+            auto* inst = host.getInstance();
+            return inst != nullptr ? inst->getParameters().size() : 0;
+        };
+        assignPanel.hooks.status = [this] (const juce::String& line)
+        {
+            captureReadout.setText (line, juce::dontSendNotification);
+            std::cout << "ASSIGN: " << line << std::endl;
+        };
+        assignPanel.hooks.sweepIndex = [this] (int idx) { return runSweep (idx); };
+        assignPanel.hooks.startTyped = [this] (int idx)
+        {
+            lastSweptIndex = idx;
+            lastSweptName  = assignPanel.hooks.paramName (idx);
+            startTypedAnchors();
+        };
+        assignPanel.hooks.armForRow = [this]
+        {
+            auto* inst = host.getInstance();
+            if (inst == nullptr || ! cal.valid) return;
+            capture.arm (*inst, cal, mask, [this] (const CaptureEngine::Result& r)
+            {
+                // Same evidence as any capture: the row is written before the
+                // panel acts on it, so an assignment capture and a manual one
+                // are indistinguishable on disk.
+                lastHint = hintFor (r.detectedAtMs);
+                const int intended = r.primaryIndex >= 0 ? r.primaryIndex
+                                       : (r.indices.size() == 1 ? r.indices[0] : -1);
+                juce::Array<int> co; juce::StringArray coN;
+                for (int i = 0; i < r.indices.size(); ++i)
+                    if (r.indices[i] != intended)
+                    { co.add (r.indices[i]); coN.add (i < r.names.size() ? r.names[i] : juce::String()); }
+                const int pos = r.indices.indexOf (intended);
+                recordCapture (r.kindString(), intended,
+                               pos >= 0 && pos < r.names.size() ? r.names[pos] : juce::String(),
+                               co, coN, r.reason, r.sameDirection, r.magnitudeRatio, r.capturedBy);
+                flushPromotionRows();
+                refreshMaskUi();
+                assignPanel.captureArrived (r);
+            });
+        };
+        assignPanel.hooks.writeRow = [this] (const juce::var& v)
+        {
+            if (loadedId.isEmpty()) return;
+            auto f = ledger.runArtifact ("captures", "jsonl");
+            juce::FileOutputStream out (f);
+            if (out.openedOk())
+            {
+                out.setPosition (f.getSize());
+                out.writeText (juce::JSON::toString (v, true) + "\n", false, false, nullptr);
+                out.flush();
+            }
+        };
+        assignPanel.hooks.writeMisclassified = [this] (const juce::var& v)
+        {
+            auto f = ledger.runArtifact ("misclassified", "jsonl");
+            juce::FileOutputStream out (f);
+            if (out.openedOk())
+            {
+                out.setPosition (f.getSize());
+                out.writeText (juce::JSON::toString (v, true) + "\n", false, false, nullptr);
+                out.flush();
+            }
+        };
+        assignPanel.hooks.submit = [this] (juce::Array<AssignRow>& rws,
+                                           const juce::String& cat, const juce::String& lane)
+        { submitMap (rws, cat, lane); };
+        assignPanel.hooks.exitPanel = [this] { endAssignment(); };
+    }
+
+    void startAssignment()
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr || ! cal.valid || assigning)
+            return;
+
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+        auto proposals = ProposalSet::load (ledger.getRoot(), currentFp);
+        auto ev        = EvidenceIndex::build (ledger.getRoot(), loadedId);
+
+        assigning = true;
+        assignPanel.setVisible (true);
+        list.setVisible (false);
+        filterBox.setVisible (false);
+        assignPanel.begin (ledger.getRoot(), currentFp, loadedId, proposals, ev);
+        resized();
+        assignPanel.grabKeyboardFocus();
+    }
+
+    void endAssignment()
+    {
+        assigning = false;
+        assignPanel.setVisible (false);
+        list.setVisible (true);
+        filterBox.setVisible (true);
+        resized();
+    }
+
+    /** Submit: rows become a MapPayload, every confirmed row gets a write-back
+        verify (write the interpolated norm for a mid-table value through the
+        REAL interpolateAnchors, read the display, record the ReadbackResult),
+        and the payload lands in <root>/maps/<fp>.json where the drift gate's
+        corpus round-trip will check it on every future commit.
+    */
+    void submitMap (juce::Array<AssignRow>& rws, const juce::String& cat, const juce::String& lane)
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr || loadedId.isEmpty() || currentFp.isEmpty())
+            return;
+
+        MapPayload p;
+        p.fp = currentFp;
+        p.category = cat;
+        p.mode = lane == "deep" ? Mode::deep : Mode::fast;
+        p.identity.format     = loadedDesc.pluginFormatName;
+        p.identity.uid        = juce::String::toHexString (loadedDesc.uniqueId);
+        p.identity.name       = loadedDesc.name;
+        p.identity.vendor     = loadedDesc.manufacturerName;
+        p.identity.version    = loadedDesc.version;
+        p.identity.paramCount = cal.paramCount;
+        p.provenance.ejmapVersion = juce::JUCEApplication::getInstance() != nullptr
+                                      ? juce::JUCEApplication::getInstance()->getApplicationVersion()
+                                      : juce::String();
+        p.provenance.at = juce::Time::getCurrentTime().toISO8601 (true);
+        for (int i = 0; i < mask.indices.size(); ++i)
+            p.evidence.noiseMask.add (mask.indices[i]);
+
+        // Write-back verify needs the instance restored afterwards.
+        juce::MemoryBlock stateBefore;
+        host.pausePumpForMutation();
+        inst->getStateInformation (stateBefore);
+        host.resumePumpAfterMutation();
+
+        for (auto& r : rws)
+        {
+            if (r.state == AssignRow::State::confirmed && r.sweep.anchors.size() >= 2)
+            {
+                ParamMapping m;
+                m.semantic  = r.semantic;
+                m.indices.add (r.resolvedIndex);
+                m.paramName = assignPanel.hooks.paramName (r.resolvedIndex);
+                m.kind      = r.semantic;
+                for (const auto& a : r.sweep.anchors)
+                    m.anchors.add ({ (double) a[1], (double) a[0] });   // AnchorPoint{norm, value}
+                m.anchorsReversed = r.sweep.anchorsReversed;
+                m.trust  = r.trust == "human-verified" ? Trust::humanVerified : Trust::llmClassified;
+                m.method = r.sweep.method == "setread" ? AnchorMethod::setread
+                          : r.sweep.method == "human-typed" ? AnchorMethod::humanTyped
+                          : AnchorMethod::gettext;
+                p.params.add (m);
+
+                // Write-back verify through the real interpolation.
+                if (r.sweep.anchors.size() >= 3)
+                {
+                    const int mid = r.sweep.anchors.size() / 2;
+                    const float vAsk = 0.5f * (r.sweep.anchors[mid][0] + r.sweep.anchors[mid - 1][0]);
+                    const float n = juce::jlimit (0.0f, 1.0f,
+                                        echojay::interpolateAnchors (r.sweep.anchors, vAsk));
+                    writeNormGesture (r.resolvedIndex, n);
+                    const auto landed = inst->getParameters()[r.resolvedIndex]->getCurrentValueAsText();
+                    double vLanded = 0.0;
+                    const bool parsed = echojay::parseLeadingFloat (landed, vLanded);
+                    float lo = r.sweep.anchors.getFirst()[0], hi = lo;
+                    for (const auto& a : r.sweep.anchors)
+                    { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
+                    const float tol = juce::jmax (0.02f * (hi - lo),
+                                        0.6f * std::abs (r.sweep.anchors[mid][0] - r.sweep.anchors[mid - 1][0]));
+                    ReadbackResult rb;
+                    rb.semantic = r.semantic;
+                    rb.asked = juce::String (vAsk, 4);
+                    rb.wrote = juce::String (n, 6);
+                    rb.read  = landed;
+                    rb.match = parsed && std::abs ((float) vLanded - vAsk) <= tol;
+                    p.evidence.readback.add (rb);
+                }
+            }
+            else if (r.isSkipped() && r.semantic.isNotEmpty())
+            {
+                const auto oc = r.state == AssignRow::State::skipNotPresent ? SkipOutcome::notPresent
+                              : r.state == AssignRow::State::skipNotAutomatable ? SkipOutcome::notAutomatable
+                              : SkipOutcome::deferred;
+                p.skips.add (SkipRecord (r.semantic, oc, r.skipReason));
+            }
+        }
+
+        if (stateBefore.getSize() > 0)
+        {
+            host.pausePumpForMutation();
+            inst->setStateInformation (stateBefore.getData(), (int) stateBefore.getSize());
+            host.resumePumpAfterMutation();
+        }
+
+        if (p.hasUnresolvedContradiction())
+        {
+            captureReadout.setText ("SUBMIT REFUSED: unresolved probe contradiction.",
+                                    juce::dontSendNotification);
+            return;
+        }
+
+        auto dir = ledger.getRoot().getChildFile ("maps");
+        dir.createDirectory();
+        auto f = dir.getChildFile (currentFp + ".json");
+        f.replaceWithText (p.toJson());
+
+        int rb = 0, rbOk = 0;
+        for (const auto& x : p.evidence.readback) { ++rb; rbOk += x.match; }
+
+        LedgerRecord rec;
+        rec.pluginId = loadedId; rec.name = loadedName; rec.stage = "submit";
+        rec.outcome = LoadOutcome::ok;
+        rec.detail = "map " + currentFp.substring (0, 12) + "... "
+                   + juce::String (p.params.size()) + " params, "
+                   + juce::String (p.skips.size()) + " skips, readback "
+                   + juce::String (rbOk) + "/" + juce::String (rb);
+        ledger.endLoad (rec);
+
+        juce::String t;
+        t << "SUBMITTED " << f.getFileName() << ": " << p.params.size() << " params, "
+          << p.skips.size() << " skips, readback " << rbOk << "/" << rb;
+        captureReadout.setText (t, juce::dontSendNotification);
+        std::cout << "ASSIGN: " << t << std::endl;
+
+        endAssignment();
+    }
+
+    /** One sweep, full protocol: inflight record (a sweep is a crash window
+        on unknown plugins), pump paused and drained (mutations are not
+        specified against a concurrent processBlock), row recorded whatever
+        the verdict. The Sweep button and the assignment loop both come
+        through here, so their evidence is identical.
+    */
+    SweepOutcome runSweep (int idx)
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr) return {};
+        const auto name = juce::isPositiveAndBelow (idx, inst->getParameters().size())
+                            ? inst->getParameters()[idx]->getName (48) : juce::String();
+        beginSweepInflight (idx, name);
+        host.pausePumpForMutation();
+        auto outcome = sweepOneIndex (*inst, idx, watchdog, loadedId);
+        host.resumePumpAfterMutation();
+        endSweepInflight (idx, outcome);
+        recordSweep (idx, name, outcome);
+        return outcome;
+    }
+
     /** The sweep is a crash window on plugins nothing has swept before, so it
         runs under the same inflight protocol as a load: begin writes
         inflight.json, a crash leaves it behind as attributable evidence, and
@@ -2688,9 +3190,11 @@ private:
         if (result.outcome == LoadOutcome::ok)
         {
             markLoadSucceeded();
+            loadedDesc = sp.desc;
             attachEditor();
             listeners.attach (*host.getInstance());
             prepareCapture (sp.desc.name, id);
+            assignButton.setEnabled (true);
             status.setText (sp.desc.name + ": " + juce::String (result.paramCount)
                               + " params, editor open in " + juce::String (elapsed) + " ms",
                             juce::dontSendNotification);
@@ -2794,7 +3298,12 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
-    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton;
+    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton;
+    juce::ToggleButton deepToggle;
+    AssignPanel assignPanel;
+    bool assigning = false;
+    juce::String currentFp;
+    juce::PluginDescription loadedDesc;
     int lastCapturedIndex = -1;    // what Sweep targets: the last captured index
     int lastSweptIndex = -1;       // what Type targets: the last swept index
     juce::String lastSweptName;

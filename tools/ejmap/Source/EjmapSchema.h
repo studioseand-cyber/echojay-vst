@@ -259,7 +259,8 @@ struct ProbeResult
 struct ReadbackResult
 {
     juce::String semantic;
-    juce::String wrote, read;
+    juce::String asked;          // the real-world value requested ("-18 dB")
+    juce::String wrote, read;    // normalised written, display read back
     bool match = false;
 
     juce::var toVar() const;
@@ -346,9 +347,17 @@ namespace detail
         juce::Array<juce::var> out;
         for (const auto& p : a)
         {
+            // [value, normalised], NOT [normalised, value]. This is the order
+            // the served maps emit and the order EchoJayParamApply's
+            // anchorsFromVar/interpolateAnchors consume. The first version of
+            // this function had it reversed and no consumer had ever read a
+            // payload this writer produced, so it sat dormant until the M4
+            // submit path was about to ship it; the drift gate now round-trips
+            // this writer through the real apply path so the order cannot
+            // silently flip again.
             juce::Array<juce::var> pair;
-            pair.add (p.normalised);
             pair.add (p.value);
+            pair.add (p.normalised);
             out.add (juce::var (pair));
         }
         return juce::var (out);
@@ -428,6 +437,7 @@ inline juce::var ProbeResult::toVar() const
 inline juce::var ReadbackResult::toVar() const
 {
     auto* o = new juce::DynamicObject();
+    if (asked.isNotEmpty()) o->setProperty ("asked", asked);
     o->setProperty ("wrote", wrote);
     o->setProperty ("read", read);
     o->setProperty ("match", match);

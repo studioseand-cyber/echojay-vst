@@ -89,6 +89,7 @@ target_include_directories(ejmap PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../ejextract)     # EchoJayParamExtractor.h
 
 target_link_libraries(ejmap PRIVATE
+    juce::juce_cryptography    # fingerprintForDescription (SHA256), M4 fp lookup
     juce::juce_audio_processors
     juce::juce_audio_utils
     juce::juce_dsp
