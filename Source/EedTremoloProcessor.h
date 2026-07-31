@@ -44,6 +44,8 @@ public:
     static constexpr const char* kShape       = "shape";
     static constexpr const char* kStereoPhase = "stereo_phase";
     static constexpr const char* kMix         = "mix";
+    static constexpr const char* kMode        = "mode";
+    static constexpr const char* kSmoothing   = "smoothing_ms";
 
     echojay::TremoloEngine& engine() noexcept { return engine_; }
 

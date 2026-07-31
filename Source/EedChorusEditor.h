@@ -27,11 +27,15 @@ protected:
     void  refreshExtras() override;
     float lfoPhase() const override;
 
+    // Dimension has no sweep, so the dials that shape one come off the panel.
+    bool  controlVisible (const char* id) const override;
+
 private:
     EedChorusProcessor& proc_;
 
     echojay::viz::LfoScopeView scope_;
     echojay::viz::SweepView    comb_;
+    juce::String               lastHint_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedChorusEditor)
 };

@@ -8,7 +8,10 @@
 
 namespace
 {
-    constexpr int kDefaultW = 580;
+    // 620 rather than 580: the depth pass's SPREAD dial makes eight columns,
+    // which fit in one row at this width, and the header gains room for the
+    // MODE selector without crowding the title.
+    constexpr int kDefaultW = 620;
     constexpr int kTopH     = 116;
     constexpr int kDefaultH = 150 + kTopH + 6;
 
@@ -17,6 +20,9 @@ namespace
     constexpr int kMinPairW = 300;
     constexpr int kScopeW   = 150;
     constexpr int kViewGap  = 6;
+
+    // Wide enough for "VINTAGE", the longest of the three.
+    constexpr int kModeW = 92;
 }
 
 EedPhaserEditor::EedPhaserEditor (EedPhaserProcessor& p)
@@ -27,6 +33,7 @@ EedPhaserEditor::EedPhaserEditor (EedPhaserProcessor& p)
     using P = EedPhaserProcessor;
 
     addHeaderToggle (P::kSync, "SYNC");
+    addHeaderChoice (P::kMode, kModeW);
 
     addParamKnob (P::kRateHz,     "RATE",   2, " Hz", 2.0);
     addParamKnob (P::kDivision,   "DIV",    0, "",    0.0, echojay::mod::divisionReadout);
@@ -38,6 +45,7 @@ EedPhaserEditor::EedPhaserEditor (EedPhaserProcessor& p)
     // musically dense low half is not crushed into the first inch of the sweep.
     addParamKnob (P::kCentreFreq, "FREQ",   0, " Hz", 800.0);
     addParamKnob (P::kMix,        "MIX",    0, " %");
+    addParamKnob (P::kSpread,     "SPREAD", 0, " deg");
 
     setRateGroup (P::kSync, P::kRateHz, P::kDivision);
 
@@ -90,7 +98,7 @@ void EedPhaserEditor::refreshExtras()
     const float centre = (float) proc_.getParamValue (P::kCentreFreq);
     const float fb     = (float) proc_.getParamValue (P::kFeedback);
     const float mix    = (float) proc_.getParamValue (P::kMix);
-    const int   stages = (int)   proc_.getParamValue (P::kStages);
+    const float spread = (float) proc_.getParamValue (P::kSpread);
     const float phase  = lfoPhase();
 
     // Like the chorus, the phaser pins its LFO to a sine: the corner frequency
@@ -98,7 +106,7 @@ void EedPhaserEditor::refreshExtras()
     // is no shape param to read, so the scope is told what the engine does.
     scope_.setShape (echojay::LfoCore::kSine);
     scope_.setDepthPercent (depth);
-    scope_.setStereoPhaseDeg (echojay::PhaserEngine::kStereoSpread01 * 360.0f);
+    scope_.setStereoPhaseDeg (spread);
     scope_.setDimmed (byp);
     scope_.setPhase (phase);
 
@@ -106,9 +114,13 @@ void EedPhaserEditor::refreshExtras()
     // Through PhaserEngine::sweptHz — the engine's OWN static, not a second copy
     // of the sweep law. If the DSP's two-octave range ever changes, the picture
     // changes with it rather than quietly lying.
+    //
+    // effectiveStages(), not the STAGES dial: vintage caps the cascade at 4,
+    // and drawing the dialled 12 would show notches above a device playing two.
     const float depth01 = juce::jlimit (0.0f, 1.0f, depth * 0.01f);
     const float lfoV    = echojay::LfoCore::shapeAt (echojay::LfoCore::kSine, phase) * depth01;
     const float sweptHz = echojay::PhaserEngine::sweptHz (centre, lfoV);
+    const int   stages  = proc_.engine().effectiveStages();
 
     // Indicative depth, matching SweepView's stated contract: feedback is what
     // sharpens and deepens a phaser's notches, and MIX 0 flattens them, because
@@ -118,4 +130,27 @@ void EedPhaserEditor::refreshExtras()
 
     sweep_.setDimmed (byp);
     sweep_.setSweep (sweptHz, stages, depthDb);
+
+    // The hint names the mode, and in vintage the stage CAP: the STAGES dial
+    // still turns past 4 there, and without the caption the capped cascade
+    // would look like a dial doing nothing.
+    juce::String h;
+    switch (proc_.engine().getMode())
+    {
+        case echojay::PhaserMode::Vintage:
+            h = "vintage - warm, " + juce::String (stages) + " stages, hot feedback";
+            break;
+        case echojay::PhaserMode::Stereo:
+            h = "stereo - notches interleave across the field";
+            break;
+        case echojay::PhaserMode::Modern:
+        default:
+            h = "sweeping allpass notches";
+            break;
+    }
+    if (h != lastHint_)
+    {
+        lastHint_ = h;
+        setHeaderHint (h);
+    }
 }

@@ -93,6 +93,45 @@ void EedModEditorBase::addHeaderToggle (const char* id, const juce::String& text
     toggles_.push_back (std::move (t));
 }
 
+void EedModEditorBase::addHeaderChoice (const char* id, int widthPx)
+{
+    const auto* spec = proc_.paramSchema().find (juce::String (id).toStdString());
+    jassert (spec != nullptr && ! spec->choices.empty());
+    if (spec == nullptr || spec->choices.empty()) return;
+
+    auto c = std::make_unique<Choice>();
+    c->id    = id;
+    c->width = widthPx;
+
+    styleCombo (c->box);
+    // Item IDs are index + 1 because a JUCE ComboBox treats 0 as "nothing
+    // selected" — same convention as the Delay and Reverb selectors.
+    for (std::size_t i = 0; i < spec->choices.size(); ++i)
+        c->box.addItem (juce::String (spec->choices[i]).toUpperCase(), (int) i + 1);
+
+    c->box.setSelectedId ((int) proc_.getParamValue (juce::String (id)) + 1,
+                          juce::dontSendNotification);
+
+    auto* raw = c.get();
+    c->box.onChange = [this, raw]
+    {
+        if (suppressCallbacks_) return;
+
+        // Through setParamValue, exactly as an AI move does, so a click and a
+        // dialled mode cannot end up meaning different things.
+        proc_.setParamValue (raw->id, (double) (raw->box.getSelectedId() - 1));
+
+        // The mode decides which dials are on the panel at all, so a change
+        // relayouts now rather than waiting for a resize that may never come.
+        if (applyControlVisibility()) resized();
+        updateDimming();
+        refreshExtras();
+    };
+
+    addAndMakeVisible (c->box);
+    choices_.push_back (std::move (c));
+}
+
 void EedModEditorBase::setRateGroup (const char* syncId, const char* rateId,
                                      const char* divisionId)
 {
@@ -117,8 +156,23 @@ void EedModEditorBase::finishSetup()
 // ---------------------------------------------------------------------------
 void EedModEditorBase::layoutHeaderLeading (juce::Rectangle<int>& bar)
 {
+    // The header lays out BEFORE the content (DeviceEditorBase::resized), so
+    // visibility has to be settled here or a toggle the mode just hid would
+    // still be measured. Idempotent, so layoutContent asking again is free.
+    applyControlVisibility();
+
+    // Selectors sit outermost (inboard of BYPASS), then the toggles. A toggle
+    // the mode has taken off the panel gives its room back to the title.
+    for (auto& c : choices_)
+    {
+        c->box.setBounds (bar.removeFromRight (juce::jmin (c->width, juce::jmax (0, bar.getWidth())))
+                             .reduced (0, 3));
+        bar.removeFromRight (6);
+    }
+
     for (auto& t : toggles_)
     {
+        if (! t->button.isVisible()) continue;
         t->button.setBounds (bar.removeFromRight (kToggleW).reduced (0, 3));
         bar.removeFromRight (6);
     }
@@ -128,7 +182,16 @@ void EedModEditorBase::layoutContent (juce::Rectangle<int> content)
 {
     const int wantTop = topContentHeight();
 
-    if (content.isEmpty() || knobs_.empty())
+    // The mode decides which dials exist right now; settle that before the
+    // flow below counts them, or a hidden dial would still claim a column.
+    applyControlVisibility();
+
+    std::vector<Entry*> shown;
+    shown.reserve (knobs_.size());
+    for (auto& e : knobs_)
+        if (e->knob.isVisible()) shown.push_back (e.get());
+
+    if (content.isEmpty() || shown.empty())
     {
         // Tell the subclass anyway. A rack slot collapsing from a size that HAD
         // room for the picture to one that has no content area at all would
@@ -159,7 +222,7 @@ void EedModEditorBase::layoutContent (juce::Rectangle<int> content)
     // the last dials off the edge rather than wrapping them.
     const int perRow = juce::jmax (1, (content.getWidth() + kKnobGap)
                                         / (kKnobW + kKnobGap));
-    const int rows   = ((int) knobs_.size() + perRow - 1) / perRow;
+    const int rows   = ((int) shown.size() + perRow - 1) / perRow;
 
     const int rowH   = juce::jmin (kKnobH, juce::jmax (1,
                           (content.getHeight() - (rows - 1) * kRowGap) / juce::jmax (1, rows)));
@@ -169,9 +232,9 @@ void EedModEditorBase::layoutContent (juce::Rectangle<int> content)
                                                juce::jmin (blockH, content.getHeight()));
 
     int index = 0;
-    for (int r = 0; r < rows && index < (int) knobs_.size(); ++r)
+    for (int r = 0; r < rows && index < (int) shown.size(); ++r)
     {
-        const int inThisRow = juce::jmin (perRow, (int) knobs_.size() - index);
+        const int inThisRow = juce::jmin (perRow, (int) shown.size() - index);
         const int rowW      = inThisRow * kKnobW + (inThisRow - 1) * kKnobGap;
 
         auto row = area.removeFromTop (rowH)
@@ -182,7 +245,7 @@ void EedModEditorBase::layoutContent (juce::Rectangle<int> content)
                                           / inThisRow);
         for (int c = 0; c < inThisRow; ++c, ++index)
         {
-            knobs_[(size_t) index]->knob.setBounds (row.removeFromLeft (colW));
+            shown[(size_t) index]->knob.setBounds (row.removeFromLeft (colW));
             row.removeFromLeft (kKnobGap);
         }
     }
@@ -190,6 +253,33 @@ void EedModEditorBase::layoutContent (juce::Rectangle<int> content)
     // Unconditional, including when topArea came out empty: that is the signal
     // the subclass uses to hide its view.
     if (wantTop > 0) layoutTopContent (topArea);
+}
+
+bool EedModEditorBase::applyControlVisibility()
+{
+    bool changed = false;
+
+    for (auto& e : knobs_)
+    {
+        const bool want = controlVisible (e->id.toRawUTF8());
+        if (e->knob.isVisible() != want)
+        {
+            e->knob.setVisible (want);
+            changed = true;
+        }
+    }
+
+    for (auto& t : toggles_)
+    {
+        const bool want = controlVisible (t->id.toRawUTF8());
+        if (t->button.isVisible() != want)
+        {
+            t->button.setVisible (want);
+            changed = true;
+        }
+    }
+
+    return changed;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +325,20 @@ void EedModEditorBase::syncFromProcessor()
         if (t->button.getToggleState() != on)
             t->button.setToggleState (on, juce::dontSendNotification);
     }
+
+    // The AI can switch a mode while the editor is open, and the mode decides
+    // which dials are on the panel — so a move from outside relayouts too.
+    bool modeMoved = false;
+    for (auto& c : choices_)
+    {
+        const int want = (int) proc_.getParamValue (c->id) + 1;
+        if (c->box.getSelectedId() != want)
+        {
+            c->box.setSelectedId (want, juce::dontSendNotification);
+            modeMoved = true;
+        }
+    }
+    if (applyControlVisibility() || modeMoved) resized();
 }
 
 void EedModEditorBase::timerCallback()

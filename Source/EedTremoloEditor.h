@@ -29,6 +29,7 @@ private:
     EedTremoloProcessor& proc_;
 
     echojay::viz::LfoScopeView scope_;
+    juce::String               lastHint_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedTremoloEditor)
 };

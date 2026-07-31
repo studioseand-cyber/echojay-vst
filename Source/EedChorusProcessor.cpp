@@ -55,6 +55,35 @@ const echojay::ParamSchema& EedChorusProcessor::schema()
           (double) C::kMinMix, (double) C::kMaxMix, 50.0,
           "how much of the chorused signal is heard; 0 is bypass, "
           "50 is the classic half-and-half", false },
+
+        // ---- the depth pass (DEVICE_DEPTH_PLAN.md, Modulation) -------------
+        // THE marquee control: it decides what KIND of chorus this is, and the
+        // other knobs then shape that rather than defining it.
+        { kMode, "",
+          0.0, (double) (echojay::kNumChorusModes - 1),
+          (double) (int) echojay::ChorusMode::Classic,
+          "the chorus character: classic is the standard drifting chorus the "
+          "device shipped with, ensemble stacks two extra staggered voices "
+          "with per-voice detune for a lush string-machine thickness, "
+          "dimension freezes the sweep entirely for a very wide stereo "
+          "double with NO pitch wobble (rate, depth and sync do nothing "
+          "there) - the classic subtle widener for sources that must stay "
+          "in tune",
+          false, { "classic", "ensemble", "dimension" } },
+
+        { kSpread, "%",
+          (double) C::kMinSpread, (double) C::kMaxSpread,
+          (double) C::kDefaultSpreadPct,
+          "stereo width of the voices: 0 keeps both channels in step "
+          "(mono-safe and narrow), 50 is the classic quarter-cycle offset, "
+          "100 sweeps the channels fully counter-phase (widest, folds "
+          "worst to mono)", false },
+
+        { kTone, "dB",
+          (double) C::kMinToneDb, (double) C::kMaxToneDb, 0.0,
+          "tilt on the wet voices only: negative darkens them so they sit "
+          "behind the dry signal, positive brightens them in front of it; "
+          "0 leaves them flat", false },
     });
     return s;
 }
@@ -71,6 +100,13 @@ bool EedChorusProcessor::setParamValue (const juce::String& id, double value)
     if (id == kVoices)   { engine_.setVoices        ((int) std::lround (value)); return true; }
     if (id == kFeedback) { engine_.setFeedbackPercent ((float) value); return true; }
     if (id == kMix)      { engine_.setMixPercent    ((float) value); return true; }
+    if (id == kSpread)   { engine_.setSpreadPercent ((float) value); return true; }
+    if (id == kTone)     { engine_.setToneDb        ((float) value); return true; }
+    if (id == kMode)
+    {
+        engine_.setMode (echojay::chorusModeFromIndex ((int) std::lround (value)));
+        return true;
+    }
     return false;
 }
 
@@ -86,6 +122,9 @@ double EedChorusProcessor::getParamValue (const juce::String& id) const
     if (id == kVoices)   return (double) engine_.getVoices();
     if (id == kFeedback) return (double) engine_.getFeedbackPercent();
     if (id == kMix)      return (double) engine_.getMixPercent();
+    if (id == kMode)     return (double) (int) engine_.getMode();
+    if (id == kSpread)   return (double) engine_.getSpreadPercent();
+    if (id == kTone)     return (double) engine_.getToneDb();
     return 0.0;
 }
 
@@ -138,7 +177,9 @@ namespace
         d.summary         = "Several detuned, drifting copies of the signal. Reach for "
                             "it to thicken a thin part and widen it - guitars, synths, "
                             "backing vocals - or, at short delay times with feedback, "
-                            "for a flanger-like sweep.";
+                            "for a flanger-like sweep. Three characters via mode: "
+                            "classic, ensemble (lush stacked voices), dimension (very "
+                            "wide with zero pitch wobble - the safe widener).";
         d.identifier      = "echojay:builtin:chorus";
         d.uid             = 0x456A4348;   // 'EjCH' - frozen once shipped
         d.aliases         = { "EchoJayChorus", "Chorus" };

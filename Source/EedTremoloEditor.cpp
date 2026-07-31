@@ -6,11 +6,15 @@
 
 namespace
 {
-    // Six dials in a row, the scope seated above. The rack sizes down from here
-    // and the scope is the first thing to give up its room.
-    constexpr int kDefaultW = 500;
+    // Seven dials in a row, the scope seated above. 540 rather than 500 so the
+    // depth pass's SMOOTH dial joins the row instead of forcing a second, and
+    // the header has room for the MODE selector without crowding the title.
+    constexpr int kDefaultW = 540;
     constexpr int kScopeH   = 108;
     constexpr int kDefaultH = 150 + kScopeH + 6;
+
+    // Wide enough for "OPTICAL", the longest of the three.
+    constexpr int kModeW = 92;
 
     // Below this the waveform is a smear rather than a reading, so it is dropped
     // entirely instead of drawn uselessly small.
@@ -25,15 +29,19 @@ EedTremoloEditor::EedTremoloEditor (EedTremoloProcessor& p)
     using P = EedTremoloProcessor;
 
     addHeaderToggle (P::kSync, "SYNC");
+    addHeaderChoice (P::kMode, kModeW);
 
     // Rate is skewed so the musically useful 1-6 Hz range occupies the middle of
     // the dial's travel instead of the first few degrees of it.
-    addParamKnob (P::kRateHz,      "RATE",  2, " Hz",  2.0);
-    addParamKnob (P::kDivision,    "DIV",   0, "",     0.0, echojay::mod::divisionReadout);
-    addParamKnob (P::kDepth,       "DEPTH", 0, " %");
-    addParamKnob (P::kShape,       "SHAPE", 0, "",     0.0, echojay::mod::shapeReadout);
-    addParamKnob (P::kStereoPhase, "PHASE", 0, " deg");
-    addParamKnob (P::kMix,         "MIX",   0, " %");
+    addParamKnob (P::kRateHz,      "RATE",   2, " Hz",  2.0);
+    addParamKnob (P::kDivision,    "DIV",    0, "",     0.0, echojay::mod::divisionReadout);
+    addParamKnob (P::kDepth,       "DEPTH",  0, " %");
+    addParamKnob (P::kShape,       "SHAPE",  0, "",     0.0, echojay::mod::shapeReadout);
+    addParamKnob (P::kStereoPhase, "PHASE",  0, " deg");
+    // Skewed low: the audible difference between 0 and 20 ms is the click
+    // fix, and it deserves more travel than the glide range above it.
+    addParamKnob (P::kSmoothing,   "SMOOTH", 1, " ms", 20.0);
+    addParamKnob (P::kMix,         "MIX",    0, " %");
 
     setRateGroup (P::kSync, P::kRateHz, P::kDivision);
 
@@ -86,4 +94,20 @@ void EedTremoloEditor::refreshExtras()
 
     scope_.setDimmed (byp);
     scope_.setPhase (lfoPhase());
+
+    // The hint names the circuit: the same depth is a very different sound in
+    // `bias`, and without the name the dials look like the whole story.
+    juce::String h;
+    switch (proc_.engine().getMode())
+    {
+        case echojay::TremoloMode::Optical: h = "optical - soft program-ish edges"; break;
+        case echojay::TremoloMode::Bias:    h = "bias - lows and highs counter-swing"; break;
+        case echojay::TremoloMode::Sine:
+        default:                            h = "rhythmic level modulation"; break;
+    }
+    if (h != lastHint_)
+    {
+        lastHint_ = h;
+        setHeaderHint (h);
+    }
 }

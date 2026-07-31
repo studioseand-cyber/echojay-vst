@@ -8,9 +8,14 @@
 
 namespace
 {
+    // Nine dials since the depth pass: they flow as a row of seven and a row of
+    // two (the SPREAD/TONE pair reads as "the new pair" under the classics).
     constexpr int kDefaultW = 580;
     constexpr int kTopH     = 116;
     constexpr int kDefaultH = 150 + kTopH + 6;
+
+    // Wide enough for "DIMENSION", the longest of the three.
+    constexpr int kModeW = 108;
 
     constexpr int kMinTopH  = 46;
 
@@ -38,6 +43,7 @@ EedChorusEditor::EedChorusEditor (EedChorusProcessor& p)
     using P = EedChorusProcessor;
 
     addHeaderToggle (P::kSync, "SYNC");
+    addHeaderChoice (P::kMode, kModeW);
 
     addParamKnob (P::kRateHz,   "RATE",   2, " Hz", 2.0);
     addParamKnob (P::kDivision, "DIV",    0, "",    0.0, echojay::mod::divisionReadout);
@@ -49,6 +55,8 @@ EedChorusEditor::EedChorusEditor (EedChorusProcessor& p)
                   [] (double v) { return juce::String ((int) std::lround (v)); });
     addParamKnob (P::kFeedback, "FDBK",   0, " %");
     addParamKnob (P::kMix,      "MIX",    0, " %");
+    addParamKnob (P::kSpread,   "SPREAD", 0, " %");
+    addParamKnob (P::kTone,     "TONE",   1, " dB");
 
     setRateGroup (P::kSync, P::kRateHz, P::kDivision);
 
@@ -92,23 +100,47 @@ float EedChorusEditor::lfoPhase() const
     return proc_.engine().lfo().displayPhase();
 }
 
+bool EedChorusEditor::controlVisible (const char* id) const
+{
+    using P = EedChorusProcessor;
+
+    // Dimension multiplies the sweep by zero: RATE, DEPTH and the sync pair
+    // shape a modulation that no longer exists, so they come off the panel —
+    // the same rule the Delay applies to PING-PONG in pingpong mode. Still
+    // schema params, still dialable, still saved.
+    if (proc_.engine().getMode() == echojay::ChorusMode::Dimension)
+    {
+        const juce::String s (id);
+        if (s == P::kRateHz || s == P::kDivision || s == P::kDepth || s == P::kSync)
+            return false;
+    }
+    return true;
+}
+
 void EedChorusEditor::refreshExtras()
 {
     using P = EedChorusProcessor;
 
+    const auto  mode    = proc_.engine().getMode();
     const bool  byp     = proc_.isBypassed();
     const float depth   = (float) proc_.getParamValue (P::kDepth);
     const float baseMs  = (float) proc_.getParamValue (P::kDelayMs);
     const float fb      = (float) proc_.getParamValue (P::kFeedback);
     const float mix     = (float) proc_.getParamValue (P::kMix);
+    const float spread  = (float) proc_.getParamValue (P::kSpread);
     const float phase   = lfoPhase();
 
     // The chorus pins its LFO to a sine — a stepped waveform in a delay time is
     // a pitch jump, so ChorusEngine::prepare sets it and there is no shape param
-    // to read. The scope has to say the same thing the DSP is doing.
+    // to read. The scope has to say the same thing the DSP is doing — which in
+    // dimension mode is NO sweep at all, so the scope draws a flat line at zero
+    // rather than a wave the delay lines are not riding.
+    const float sweepScale = echojay::chorusModeSpec (mode).sweepScale;
+
     scope_.setShape (echojay::LfoCore::kSine);
-    scope_.setDepthPercent (depth);
-    scope_.setStereoPhaseDeg (echojay::ChorusEngine::kStereoSpread01 * 360.0f);
+    scope_.setDepthPercent (depth * sweepScale);
+    // Spread is stored in % of counter-phase: 100% == 180 degrees.
+    scope_.setStereoPhaseDeg (spread * 1.8f);
     scope_.setDimmed (byp);
     scope_.setPhase (phase);
 
@@ -117,8 +149,9 @@ void EedChorusEditor::refreshExtras()
     // rule rather than a second copy of it: base + sweepMsFor(base) * lfo, for
     // voice 0. The other voices are the same comb at a different point in the
     // cycle, so drawing one of them is drawing the comb; drawing all four would
-    // be four interleaved combs and no legible picture.
-    const float depth01 = juce::jlimit (0.0f, 1.0f, depth * 0.01f);
+    // be four interleaved combs and no legible picture. The mode's sweep scale
+    // rides along, so dimension's comb sits still like its delay lines do.
+    const float depth01 = juce::jlimit (0.0f, 1.0f, depth * 0.01f) * sweepScale;
     const float lfoV    = echojay::LfoCore::shapeAt (echojay::LfoCore::kSine, phase) * depth01;
     const float delayMs = baseMs + echojay::ChorusEngine::sweepMsFor (baseMs) * lfoV;
 
@@ -152,4 +185,27 @@ void EedChorusEditor::refreshExtras()
 
     comb_.setDimmed (byp);
     comb_.setNotches (notches, n, depthDb);
+
+    // The hint names the mode: the same dials are a very different device in
+    // dimension, and the voice count can exceed the dial in ensemble.
+    juce::String h;
+    switch (mode)
+    {
+        case echojay::ChorusMode::Ensemble:
+            h = "ensemble - " + juce::String (proc_.engine().effectiveVoices())
+              + " voices, detuned";
+            break;
+        case echojay::ChorusMode::Dimension:
+            h = "dimension - static wide double, no wobble";
+            break;
+        case echojay::ChorusMode::Classic:
+        default:
+            h = "drifting detuned voices";
+            break;
+    }
+    if (h != lastHint_)
+    {
+        lastHint_ = h;
+        setHeaderHint (h);
+    }
 }
