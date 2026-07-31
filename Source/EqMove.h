@@ -57,6 +57,45 @@ inline bool parseBandType (const char* s, BandType& out) noexcept
     return false;
 }
 
+// Same tolerance contract as parseBandType: case-insensitive, separators
+// dropped, single letters accepted ("m", "s", "l", "r").
+inline bool parseBandChannel (const char* s, BandChannel& out) noexcept
+{
+    if (s == nullptr) return false;
+    char norm[16]; int j = 0;
+    for (int i = 0; s[i] != '\0' && j < 15; ++i)
+    {
+        const char c = s[i];
+        if (c == '_' || c == '-' || c == ' ') continue;
+        norm[j++] = (char) std::tolower ((unsigned char) c);
+    }
+    norm[j] = '\0';
+
+    auto eq = [&] (const char* k) { return std::strcmp (norm, k) == 0; };
+
+    if (eq ("stereo") || eq ("both") || eq ("lr"))       { out = BandChannel::Stereo; return true; }
+    if (eq ("mid")    || eq ("m")    || eq ("mono")
+                      || eq ("center") || eq ("centre")) { out = BandChannel::Mid;    return true; }
+    if (eq ("side")   || eq ("s")    || eq ("sides"))    { out = BandChannel::Side;   return true; }
+    if (eq ("left")   || eq ("l"))                       { out = BandChannel::Left;   return true; }
+    if (eq ("right")  || eq ("r"))                       { out = BandChannel::Right;  return true; }
+    return false;
+}
+
+inline const char* bandChannelToString (BandChannel c) noexcept
+{
+    switch (c)
+    {
+        case BandChannel::Stereo: return "stereo";
+        case BandChannel::Mid:    return "mid";
+        case BandChannel::Side:   return "side";
+        case BandChannel::Left:   return "left";
+        case BandChannel::Right:  return "right";
+        case BandChannel::NumChannelModes:
+        default:                  return "stereo";
+    }
+}
+
 inline const char* bandTypeToString (BandType t) noexcept
 {
     switch (t)

@@ -49,6 +49,20 @@ enum class BandType : int
     NumTypes
 };
 
+// Per-band routing (SURGICAL_EQ_ENHANCEMENTS.md P2). Stereo is the default and
+// is bit-for-bit the pre-P2 path; Mid/Side bands run in an M/S split, Left/
+// Right in the plain channel domain. On MONO input a Side- or Right-routed
+// band has no lane to land on and is a clean no-op, never a crash.
+enum class BandChannel : int
+{
+    Stereo = 0,
+    Mid,
+    Side,
+    Left,
+    Right,
+    NumChannelModes
+};
+
 // A single band's public specification, in real-world units.
 // This is the exact struct the AI apply path and the UI both write.
 struct BandSpec
@@ -68,6 +82,10 @@ struct BandSpec
     float    attackMs    = 10.0f;
     float    releaseMs   = 100.0f;
 
+    // Routing. APPENDED (not inserted) so the aggregate initialisers the tests
+    // and presets use keep meaning what they always meant.
+    BandChannel channel  = BandChannel::Stereo;
+
     // Exact bit-for-bit identity is deliberate here: this is a "did the target
     // change since the last publish" check, not a numeric tolerance test. An
     // epsilon compare would make genuinely distinct params compare equal and
@@ -83,7 +101,7 @@ struct BandSpec
             && slopeDbPerOct == o.slopeDbPerOct
             && dynamic == o.dynamic && thresholdDb == o.thresholdDb
             && rangeDb == o.rangeDb && attackMs == o.attackMs
-            && releaseMs == o.releaseMs;
+            && releaseMs == o.releaseMs && channel == o.channel;
     }
    #if defined (__clang__) || defined (__GNUC__)
     #pragma GCC diagnostic pop
@@ -140,9 +158,31 @@ public:
     float autoGainDbTarget() const noexcept { return autoGainTargetDb_.load (std::memory_order_relaxed); }
 
     // Solo one band for auditioning (‑1 == no solo). When soloed, only that
-    // band processes. Message thread; picked up on next block.
-    void  setSoloBand (int index) noexcept { soloBand_.store (index, std::memory_order_relaxed); }
+    // band processes. Message thread; picked up on next block. Out of line
+    // because in Linear mode the solo set has to be baked into a fresh FIR.
+    void  setSoloBand (int index);
     int   getSoloBand() const noexcept { return soloBand_.load (std::memory_order_relaxed); }
+
+    // ---- phase mode (SURGICAL_EQ_ENHANCEMENTS.md P4) ----------------------
+    // Zero (default) is the minimum-phase SVF path, exactly as it has always
+    // been. Linear swaps the STATIC bands for an FFT overlap-add convolution
+    // against a symmetric (zero-phase) FIR derived from the same analytic
+    // magnitude the UI draws. Dynamic bells stay on the per-sample SVF path in
+    // both modes — their gain is program-dependent, so a fixed FIR cannot
+    // express them; they run after the FIR, minimum-phase, like every dynamic
+    // EQ does it. Message thread; the IR is designed off the audio thread and
+    // picked up at the next partition hop.
+    enum class PhaseMode : int { Zero = 0, Linear };
+    void      setPhaseMode (PhaseMode m);
+    PhaseMode getPhaseMode() const noexcept
+    { return (PhaseMode) phaseMode_.load (std::memory_order_relaxed); }
+
+    // Samples of delay the current mode imposes: 0 for Zero; the partition hop
+    // plus the FIR centre for Linear. The processor reports this to the host.
+    int latencySamples() const noexcept
+    {
+        return getPhaseMode() == PhaseMode::Linear ? kPartSize + kIrCentre : 0;
+    }
 
     static constexpr int kNumBands = kMaxBands;
 
@@ -193,6 +233,9 @@ private:
         BandType curType = BandType::Bell;
         int    curSlope = 12;
 
+        // -- routing (P2): which lanes this band filters, in which domain ----
+        BandChannel curChannel = BandChannel::Stereo;
+
         // -- dynamic (threshold-driven) runtime; only used for dynamic Bells --
         bool       isDynamic = false;
         Coeffs     detCoeffs;                          // detector bandpass
@@ -226,6 +269,77 @@ private:
     void pullTargetsIfChanged() noexcept;   // audio thread: seqlock read + smoothing setup
     void snapshotForAnalysis (BandSpec out[kMaxBands]) const;
     void recomputeAutoGain();               // message thread: publish the makeup target
+
+    // ---- linear phase (P4) ------------------------------------------------
+    // Uniform-partition FFT convolution. The FIR is kIrLen taps, symmetric
+    // about kIrCentre (zero phase); partitions are kPartSize samples convolved
+    // through kPartFft-point FFTs, so the audio thread adds one hop of
+    // buffering. Reported latency = kPartSize + kIrCentre.
+    static constexpr int kIrLen    = 4097;
+    static constexpr int kIrCentre = (kIrLen - 1) / 2;      // 2048
+    static constexpr int kPartSize = 512;
+    static constexpr int kPartFft  = 2 * kPartSize;
+    static constexpr int kPartBins = kPartSize + 1;         // 0..Nyquist of a partition
+    static constexpr int kNumParts = (kIrLen + kPartSize - 1) / kPartSize;   // 9
+    static constexpr int kIrFft    = 8192;                  // design grid
+
+    // The published IR, freq-domain, partitioned. Routing makes the EQ a 2x2
+    // system (an M/S band couples the channels), so there are four lanes:
+    //   yL = ll*xL + lr*xR ; yR = rl*xL + rr*xR
+    // cross == false means lr/rl are identically zero and are skipped.
+    struct LaneSpectra
+    {
+        // kNumParts * kPartBins, partition-major
+        std::vector<float> re, im;
+        void resizeAll() { re.assign ((size_t) (kNumParts * kPartBins), 0.0f);
+                           im.assign ((size_t) (kNumParts * kPartBins), 0.0f); }
+    };
+    struct IrSet
+    {
+        LaneSpectra ll, lr, rl, rr;
+        bool cross = false;
+    };
+
+    // Same seqlock discipline as the band targets: the message thread designs
+    // into irStaging_ under irSeq_, the audio thread COPIES it into its private
+    // irActive_ at a partition hop when irPulse_ moved. The copy (~150 KB) is
+    // a bounded memcpy well inside a hop's budget, and buys clean semantics —
+    // the audio thread never convolves against a half-written curve.
+    void recomputeLinearPhase();            // message thread
+    void designLane (const std::vector<float>& mag, LaneSpectra& out,
+                     std::vector<float>& scratchRe, std::vector<float>& scratchIm);
+    bool pullIrIfChanged() noexcept;        // audio thread, hop boundary
+    void processLinearHop() noexcept;       // one kPartSize hop through the FDL
+    void ensureLinearBuffers();             // allocation, prepare()/first use
+
+    std::atomic<int>      phaseMode_ { 0 };
+    IrSet                 irStaging_;               // guarded by irSeq_
+    std::atomic<uint32_t> irSeq_   { 0 };           // even = stable
+    std::atomic<uint32_t> irPulse_ { 0 };           // bumped per publish
+    std::atomic<bool>     irReady_ { false };       // false until first design
+
+    // audio-thread private convolver state
+    IrSet    irActive_;
+    uint32_t irLastPulse_ = 0xffffffff;
+    struct ConvState
+    {
+        // frequency-delay line of input spectra, one per input lane
+        std::vector<float> xRe[2], xIm[2];          // kNumParts * kPartBins
+        int   fdlPos    = 0;                        // slot holding the NEWEST hop
+        std::vector<float> inFifo[2];               // kPartSize being gathered
+        std::vector<float> outReady[2];             // kPartSize being emitted
+        std::vector<float> tail[2];                 // kPartSize overlap carry
+        std::vector<float> fftRe, fftIm;            // kPartFft scratch
+        std::vector<float> accRe[2], accIm[2];      // kPartBins accumulators
+        int   fill      = 0;
+        // Written once by the message thread before the mode flips to Linear;
+        // the audio thread gates on it, so it is the one flag here that two
+        // threads genuinely share.
+        std::atomic<bool> allocated { false };
+        int   lanesIn   = 0;                        // channels this stream carries
+    };
+    ConvState conv_;
+    bool wasLinear_ = false;                        // audio thread only
 
     // -- seqlock published targets -----------------------------------------
     // Writer: message thread. Reader: audio thread + analysis.
