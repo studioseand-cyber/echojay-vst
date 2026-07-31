@@ -4,6 +4,8 @@
 #include "EchoJayVisualiserTexture.h"  // shared SPECTRUM/SPECTROGRAM texture
 #include "EchoJayEventLog.h"   // events.jsonl + machine_id (dial_miss telemetry)
 #include "EchoJayParamApply.h" // kDialSignalsEnabled + dial predicate (shared)
+#include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
+                                    // include, so only THIS TU pays its 8.4MB
 #include <cmath>
 #include <unistd.h>       // getuid — launchctl gui/<uid> target (consent prompt)
 
@@ -13,6 +15,21 @@
 // pointed at nothing and the AI Compare button hit its empty-selection guard
 // silently. Captures can never reach this base within a session.
 static constexpr int kCompareRefIdBase = 1000;
+
+// The fader filmstrip, decoded ONCE per process and shared by every editor
+// instance. juce::ImageCache, the drawLogo mechanism, and deliberately NOT
+// the other two candidates: a LookAndFeel member is per-editor (lnf is an
+// EchoJayEditor member, so that IS the per-instance 14.75MB copy), and a
+// function-local static Image deadlocks the Windows loader lock at DLL
+// unload if it still owns a GPU texture (hang dump documented at
+// EchoJayLookAndFeel.h drawLogo). ImageCache entries release during normal
+// teardown instead. The cache timeout is raised at editor construction so a
+// tab switch away from the mixer does not schedule a 60x61440 re-decode.
+static const juce::Image getFaderFilmstrip()
+{
+    return juce::ImageCache::getFromMemory(faderFilmstripPNG,
+                                           (int)faderFilmstripPNGSize);
+}
 // ITEM 1: the main EchoJay capture covers its own audio PLUS every live Link,
 // so it is neither the mix bus nor a material type. ONE fixed constant names
 // it everywhere (banner main entry, channel dropdown first row, Compare
@@ -2317,6 +2334,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // first, then the TTL check, exactly as a tab click would.
     if (currentTab == Tab::Dashboard && currentScreen == Screen::Main)
         openDashboardTab();
+
+    // ImageCache keeps images only while referenced or younger than its
+    // timeout, and nothing retains the fader filmstrip between paints: on any
+    // other tab it goes unreferenced, and at the 5s default it would be
+    // released and RE-DECODED (60x61440, ~15MB) on the next Link tab visit.
+    // 30 minutes makes that a rare cost instead of a per-visit one. The
+    // setting is process-global and idempotent; the logo shares the benefit.
+    juce::ImageCache::setCacheTimeout(30 * 60 * 1000);
 
     startTimerHz(20);
 }
@@ -6925,21 +6950,91 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         }
     }
 
-    // ---- Still scaffolding: the fader (step 7) keeps its faint outline. No
-    // value is drawn there, on purpose: a strip must never display a reading
-    // it does not have, and at this step it has none.
-    g.setColour(C::text3.withAlpha(0.30f));
+    // ---- Fader (step 7) ----------------------------------------------------
     if (!sg.fader.isEmpty())
-        g.drawRect(sg.fader, 1);
+    {
+        if (isBus)
+        {
+            // The main plugin has NO gain stage of its own (it is not a
+            // Link), so a fader here would be a control wired to nothing.
+            // Dim dash, the old pinned card's treatment; explicit escape.
+            g.setColour(C::text3.withAlpha(0.5f));
+            g.setFont(juce::Font(juce::FontOptions(12.0f)));
+            g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")),
+                       sg.fader, juce::Justification::centred);
+        }
+        else if (entry != nullptr)
+        {
+            // Displayed gain, ONE precedence: a live drag on THIS strip wins,
+            // else linkRowDisplayGain (optimistic pending until the Link's
+            // ack, then the acked slot value) - the old rows' semantics, so
+            // the cap holds the TARGET while a command is in flight rather
+            // than snapping back and jumping on the ack.
+            const bool dragging = (linkMixerView_.dragAddr == sg.addr);
+            const float gDb = dragging ? linkMixerView_.dragValue
+                                       : linkRowDisplayGain(sg.addr);
+
+            const auto strip = getFaderFilmstrip();
+            if (strip.isValid())
+            {
+                // Frame indexing per ChainWetKnob::paint: clamped index,
+                // source rect 0, frame * frameH, frameW, frameH.
+                const int frame = faderFrameForGain(gDb);
+                g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+                g.drawImage(strip,
+                            sg.fader.getX(), sg.fader.getY(),
+                            sg.fader.getWidth(), sg.fader.getHeight(),
+                            0, frame * kFaderFrameH, kFaderFrameW, kFaderFrameH);
+            }
+            else
+            {
+                // Decode-failure fallback, the wet-knob pattern: a plain
+                // groove + thumb line so the control stays usable. yFromGain
+                // is the same mapping the drag consumes.
+                const int cx = sg.fader.getCentreX();
+                g.setColour(C::bg4);
+                g.fillRoundedRectangle((float)cx - 2.0f, (float)sg.fader.getY(),
+                                       4.0f, (float)sg.fader.getHeight(), 2.0f);
+                const int ty = yFromGain(gDb, sg.fader);
+                g.setColour(juce::Colour(0xff22d3ee));
+                g.fillRoundedRectangle((float)sg.fader.getX(), (float)ty - 2.0f,
+                                       (float)sg.fader.getWidth(), 4.0f, 2.0f);
+            }
+        }
+    }
 }
 
-void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> local)
+void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> local,
+                                       int numClicks)
 {
     // Consumes stripHitAt's verdict; recomputes nothing. Every action below
     // is an EXISTING path reused, not a new implementation.
     switch (stripHitAt(sg, local))
     {
-        case StripHit::Fader:      break;   // step 7
+        case StripHit::Fader:
+        {
+            // The old horizontal slider's contract, rotated: jump-to-press,
+            // drag continues in LinkMixerView::mouseDrag, double-click
+            // resets to 0 dB, every send through the existing
+            // sendLinkGainCommand throttle-and-ack path. The bus has no gain
+            // stage, so its fader rect is a no-op (it paints a dash).
+            if (sg.isBus) break;
+            EchoJayProcessor::LinkDisplayEntry en;
+            if (!findLinkEntryByAddr(sg.addr, en)) break;
+            if (numClicks >= 2)
+            {
+                linkMixerView_.dragAddr = {};
+                sendLinkGainCommand(sg.addr, 0.0f);
+                linkMixerView_.repaint();
+                break;
+            }
+            linkMixerView_.dragAddr       = sg.addr;
+            linkMixerView_.dragValue      = gainFromY(local.y, sg.fader);
+            linkMixerView_.lastGainSendMs = juce::Time::getMillisecondCounter();
+            sendLinkGainCommand(sg.addr, linkMixerView_.dragValue);
+            linkMixerView_.repaint();
+            break;
+        }
 
         case StripHit::Ai:
         {
@@ -7080,6 +7175,19 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
         }
 
         case StripHit::Fader:
+            if (sg.isBus) return "No gain stage on the Mix Bus";
+            if (have)
+            {
+                // The same displayed-gain precedence paint uses, so the
+                // tooltip number always matches the cap position.
+                const bool dragging = (linkMixerView_.dragAddr == sg.addr);
+                const float gDb = dragging ? linkMixerView_.dragValue
+                                           : linkRowDisplayGain(sg.addr);
+                return "Gain " + juce::String(gDb, 1)
+                       + " dB (drag; double-click = 0)";
+            }
+            break;
+
         case StripHit::Background:
         case StripHit::None:
             break;
@@ -7132,9 +7240,42 @@ void EchoJayEditor::LinkMixerView::mouseDown(const juce::MouseEvent& e)
     for (const auto& sg : owner->linkStripGeom_)
         if (sg.full.contains(p))
         {
-            owner->linkStripMouseDown(sg, p);
+            owner->linkStripMouseDown(sg, p, e.getNumberOfClicks());
             return;
         }
+}
+
+void EchoJayEditor::LinkMixerView::mouseDrag(const juce::MouseEvent& e)
+{
+    if (owner == nullptr || dragAddr.isEmpty()) return;
+    // Value from the fader rect THIS addr owns, looked up in the same stored
+    // vector as everything else; y clamps inside gainFromY, so dragging past
+    // either end just pins the range. Sends throttle to ~10Hz; the visual cap
+    // tracks every move (repaint).
+    for (const auto& sg : owner->linkStripGeom_)
+        if (sg.addr == dragAddr)
+        {
+            dragValue = EchoJayEditor::gainFromY(e.getPosition().y, sg.fader);
+            break;
+        }
+    const uint32_t now = juce::Time::getMillisecondCounter();
+    if (now - lastGainSendMs >= 100)
+    {
+        lastGainSendMs = now;
+        owner->sendLinkGainCommand(dragAddr, dragValue);
+    }
+    repaint();
+}
+
+void EchoJayEditor::LinkMixerView::mouseUp(const juce::MouseEvent&)
+{
+    if (owner == nullptr || dragAddr.isEmpty()) return;
+    // Always send the FINAL value on release (the throttle may have skipped
+    // it); the pending entry then holds the fader at the target until the
+    // Link acks.
+    owner->sendLinkGainCommand(dragAddr, dragValue);
+    dragAddr = {};
+    repaint();
 }
 
 void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int> area)
@@ -18651,11 +18792,7 @@ float EchoJayEditor::linkRowDisplayGain(const juce::String& linkAddr) const
     for (const auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && p.isGain && !p.timedOut) return p.gainDb;
     for (const auto& li : processorRef.getLinkSlotInfos())
-    {
-        const juce::String a = li.uid.isNotEmpty()
-                             ? li.uid : LinkShm::makeSafeFilePart(li.name);
-        if (a == linkAddr) return li.gainDb;
-    }
+        if (linkAddrForSlot(li) == linkAddr) return li.gainDb;
     return 0.0f;
 }
 
@@ -21678,7 +21815,8 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         if (!linkBusGeom_.full.isEmpty()
             && linkBusGeom_.full.contains(e.getPosition()))
         {
-            linkStripMouseDown(linkBusGeom_, e.getPosition());
+            linkStripMouseDown(linkBusGeom_, e.getPosition(),
+                               e.getNumberOfClicks());
             return;
         }
     }

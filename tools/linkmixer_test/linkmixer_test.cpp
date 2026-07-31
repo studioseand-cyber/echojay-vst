@@ -67,6 +67,12 @@ struct EchoJayLinkMixerTestAccess
                           const juce::String& effectiveUid)
     { return Ed::stripSelected (isBus, entryUid, effectiveUid); }
 
+    static int   frameFor (float db)                        { return Ed::faderFrameForGain (db); }
+    static float gFromY (int y, juce::Rectangle<int> t)     { return Ed::gainFromY (y, t); }
+    static int   yFromG (float db, juce::Rectangle<int> t)  { return Ed::yFromGain (db, t); }
+    static int   frames()                                   { return Ed::kFaderFrames; }
+    static int   frameH()                                   { return Ed::kFaderFrameH; }
+
     using Ctrl = Ed::CtrlZone;
     static void ctrls (juce::Rectangle<int> r, std::vector<Ctrl>& out)
     { Ed::layOutLinkCtrls (r, out); }
@@ -397,6 +403,50 @@ static void testCtrls()
     }
 }
 
+static void testFaderMapping()
+{
+    // Step 7: the dB<->y pair and the frame selector, against the shipping
+    // statics. The track is the WORST shipping fader (23x191 at minimum
+    // window), because that is where quantisation error peaks.
+    std::printf ("fader mapping: endpoints, round-trip, clamps, frames\n");
+    const juce::Rectangle<int> t { 10, 50, 23, 191 };
+
+    // Endpoints: bottom of the rect is -24, top is +12.
+    check (T::gFromY (t.getBottom(), t) == -24.0f, "rect bottom reads -24 dB");
+    check (T::gFromY (t.getY(), t)      ==  12.0f, "rect top reads +12 dB");
+    checkEq (T::yFromG (-24.0f, t), t.getBottom(), "-24 dB sits at the rect bottom");
+    checkEq (T::yFromG ( 12.0f, t), t.getY(),      "+12 dB sits at the rect top");
+
+    // Clamping: outside the rect pins the range, never escapes it.
+    check (T::gFromY (t.getBottom() + 50, t) == -24.0f, "below the rect clamps to -24");
+    check (T::gFromY (t.getY() - 50, t)      ==  12.0f, "above the rect clamps to +12");
+
+    // Round-trip within one pixel + one snap step: 36 dB over 191 px is
+    // 0.188 dB per px, snap is 0.1, so 0.25 covers both.
+    for (float db = -24.0f; db <= 12.01f; db += 1.7f)
+    {
+        const float back = T::gFromY (T::yFromG (db, t), t);
+        check (std::abs (back - db) <= 0.25f, "dB<->y round-trips within tolerance");
+    }
+
+    // Frames: full range maps 0..127, monotonic, and clamped so no gain can
+    // index past the strip (frame*480 + 480 <= 61440 always).
+    checkEq (T::frameFor (-24.0f), 0,               "-24 dB is frame 0");
+    checkEq (T::frameFor ( 12.0f), T::frames() - 1, "+12 dB is frame 127");
+    checkEq (T::frameFor (-999.0f), 0,              "far below range clamps to frame 0");
+    checkEq (T::frameFor ( 999.0f), T::frames() - 1,"far above range clamps to frame 127");
+    int prev = -1;
+    for (float db = -24.0f; db <= 12.01f; db += 0.1f)
+    {
+        const int f = T::frameFor (db);
+        check (f >= prev, "frame index is monotonic in gain");
+        check (f >= 0 && f < T::frames(), "frame index stays in [0,127]");
+        prev = f;
+    }
+    check ((T::frames() - 1) * T::frameH() + T::frameH() <= 61440,
+           "last frame's source rect stays inside the 60x61440 strip");
+}
+
 static void testDegenerate()
 {
     std::printf ("degenerate inputs leave nothing behind\n");
@@ -461,6 +511,7 @@ int main()
 
     testSelection();
     testCtrls();
+    testFaderMapping();
     testDegenerate();
 
     std::printf (failures == 0 ? "EJLinkMixer selftest: PASS\n"

@@ -2500,6 +2500,8 @@ private:
         EchoJayEditor* owner = nullptr;
         void paint(juce::Graphics& g) override;
         void mouseDown(const juce::MouseEvent& e) override;
+        void mouseDrag(const juce::MouseEvent& e) override;
+        void mouseUp(const juce::MouseEvent& e) override;
         /** Position-dependent: narrow strips ellipsise real track names, so
             the full name (and the merged control's status words, which have
             no room to render at 46px) must be reachable somewhere. Served by
@@ -2507,6 +2509,12 @@ private:
             linkStripTooltip, which consumes the SAME stored rects as paint
             and the mouse handlers. */
         juce::String getTooltip() override;
+        // Fader drag, the old row list's shape verbatim: which addr is being
+        // dragged, the live value (wins over pending/acked in paint), and a
+        // ~10Hz send throttle; the final value always goes on mouseUp.
+        juce::String  dragAddr;
+        float         dragValue = 0.0f;
+        uint32_t      lastGainSendMs = 0;
     };
     LinkMixerView  linkMixerView_;
     juce::Viewport linkMixerViewport_;
@@ -2540,6 +2548,36 @@ private:
     // floor. Both are DOWNSCALES from the source, so the fader never upscales.
     static constexpr int kFaderHMax = 240;
     static constexpr int kFaderHMin = 144;
+    // The filmstrip asset (Assets/iron_fader_60.png -> EchoJayFaderFilmstrip.h,
+    // the wet-knob pattern). Frame indexing follows ChainWetKnob::paint: ONE
+    // filmstrip implementation pattern, not a second.
+    static constexpr int kFaderFrames = 128, kFaderFrameW = 60, kFaderFrameH = 480;
+    /** THE frame selector, pure: -24 dB = frame 0 (cap at the bottom),
+        +12 dB = frame 127 (cap at the top), clamped so an out-of-range gain
+        can never index past the strip. */
+    static int faderFrameForGain(float db)
+    {
+        const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
+        return juce::jlimit(0, kFaderFrames - 1,
+                            (int)std::round(f * (float)(kFaderFrames - 1)));
+    }
+    /** dB<->y for the fader rect, REPLACING the horizontal gainFromX pair
+        (the list they served is deleted at step 11, so this is a move, not a
+        second authority). Same range (-24..+12), same 0.1 dB snap; bottom of
+        the rect is -24, top is +12. Pure, shared by drag and the
+        decode-failure fallback thumb. */
+    static float gainFromY(int y, juce::Rectangle<int> track)
+    {
+        const float f = juce::jlimit(0.0f, 1.0f,
+            (float)(track.getBottom() - y) / (float)juce::jmax(1, track.getHeight()));
+        return juce::jlimit(-24.0f, 12.0f,
+            std::round((-24.0f + f * 36.0f) * 10.0f) / 10.0f);
+    }
+    static int yFromGain(float db, juce::Rectangle<int> track)
+    {
+        const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
+        return track.getBottom() - (int)std::round(f * (float)track.getHeight());
+    }
 
     // Authored by measureLinkStrips(), consumed by paintLinkView() and the
     // mouse handlers. Nothing else writes them.
@@ -2661,8 +2699,10 @@ private:
         frame, not pay one each. */
     void paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                         const EchoJayProcessor::LinkDisplayEntry* entry);
-    /** Routes one press through stripHitAt. `local` is in sg's space. */
-    void linkStripMouseDown(const StripGeom& sg, juce::Point<int> local);
+    /** Routes one press through stripHitAt. `local` is in sg's space.
+        numClicks carries the double-click (fader reset to 0 dB). */
+    void linkStripMouseDown(const StripGeom& sg, juce::Point<int> local,
+                            int numClicks);
 
 
     /** Reaches the two pure geometry functions above for
