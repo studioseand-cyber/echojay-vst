@@ -81,6 +81,12 @@ struct EchoJayLinkMixerTestAccess
     static const float* meterMarks (int& n)
     { n = Ed::kMeterMarkCount; return Ed::kMeterMarks; }
 
+    using ChainState = Ed::ChainDisplayState;
+    static ChainState chainState (bool valid, int n)
+    { return Ed::chainDisplayState (valid, n); }
+    static juce::String chainLabel (int total, int byp)
+    { return Ed::chainCountLabel (total, byp); }
+
     using Ctrl = Ed::CtrlZone;
     static void ctrls (juce::Rectangle<int> r, std::vector<Ctrl>& out)
     { Ed::layOutLinkCtrls (r, out); }
@@ -529,6 +535,23 @@ static void testMeterMapping()
     check (marks[n - 1] == T::meterFloor(), "the last mark IS the floor");
 }
 
+static void testChainStates()
+{
+    // Step 9: the honesty matrix. "Nothing there" and "cannot see" are
+    // different facts and must never collapse into one rendering.
+    std::printf ("chain states: no-data vs empty vs list, and the labels\n");
+    using CS = T::ChainState;
+    check (T::chainState (false, 0) == CS::NoData, "missing sidecar is NO DATA");
+    check (T::chainState (false, 5) == CS::NoData, "unreadable sidecar is NO DATA even with stale rows");
+    check (T::chainState (true,  0) == CS::Empty,  "a parsed, empty rack is EMPTY");
+    check (T::chainState (true,  3) == CS::List,   "a parsed rack with slots LISTS");
+
+    check (T::chainLabel (0, 0) == "empty rack",        "zero slots reads empty rack");
+    check (T::chainLabel (1, 0) == "1 plugin",          "singular");
+    check (T::chainLabel (4, 0) == "4 plugins",         "plural");
+    check (T::chainLabel (4, 2) == "4 plugins (2 byp)", "bypassed count rides along");
+}
+
 static void testMaskGating()
 {
     // 8c: the cross-version gate. An OLD writer's frame reads
@@ -659,6 +682,7 @@ int main()
     testCtrls();
     testFaderMapping();
     testMeterMapping();
+    testChainStates();
     testMaskGating();
     testBandSqueeze();
     testContentMigration();

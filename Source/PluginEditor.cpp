@@ -6572,7 +6572,13 @@ void EchoJayEditor::linkCtrlClicked(int id)
             break;
         }
         case kCtrlNumbers: content(EchoJayProcessor::LinkMixerContent::Numbers); break;
-        case kCtrlChain:   content(EchoJayProcessor::LinkMixerContent::Chain);   break;
+        case kCtrlChain:
+            content(EchoJayProcessor::LinkMixerContent::Chain);
+            // Warm the cache NOW: without this the first second of CHAIN
+            // mode reads "no data" on every strip, which is a lie with a
+            // one-second lifespan but still a lie.
+            refreshLinkRackCache(true);
+            break;
         default: break;
     }
 }
@@ -6922,6 +6928,156 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
     }
 }
 
+void EchoJayEditor::refreshLinkRackCache(bool force)
+{
+    // THE one feeder of processorRef.linkRackCache. Message thread only,
+    // ~1Hz plus a forced pass on entering CHAIN mode. The registry publishes
+    // no per-slot chain revision (RegistrySlot has 3 spare bytes), so the
+    // tick IS the staleness bound: at most one second behind, which is the
+    // same bound a revision trigger polled at this rate would give. The
+    // parser is readLinkRackSidecar, the one sidecar reader.
+    const uint32_t nowMs = juce::Time::getMillisecondCounter();
+    if (!force && nowMs - lastRackCacheMs_ < 1000) return;
+    lastRackCacheMs_ = nowMs;
+    for (const auto& e : processorRef.getLinkDisplayList())
+    {
+        if (e.info.uid.isEmpty()) continue;   // legacy Link: no sidecar address
+        auto& ce  = processorRef.linkRackCache[e.info.uid];
+        auto rack = readLinkRackSidecar(e.info.uid);
+        ce.valid  = rack.valid;
+        ce.rack   = std::move(rack);
+        ce.readMs = nowMs;
+    }
+}
+
+void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
+                                        juce::Rectangle<int> area,
+                                        const StripGeom& sg,
+                                        const EchoJayProcessor::LinkDisplayEntry* entry,
+                                        float dim, bool wide)
+{
+    if (area.getWidth() <= 0 || area.getHeight() <= 0) return;
+
+    // Gather. The bus reads the HOST's own live rack (its ChainHost, no
+    // file involved); Link strips read the processor-side cache the timer
+    // feeds. Paint touches no file either way.
+    struct Row { juce::String name; bool bypassed = false; };
+    std::vector<Row> rows;
+    bool valid   = false;
+    bool offline = false;
+    if (sg.isBus)
+    {
+        valid = true;
+        for (const auto& si : processorRef.getChainHost().getAllSlotInfos())
+            rows.push_back({ si.name, si.bypassed });
+    }
+    else if (entry != nullptr)
+    {
+        offline = !entry->info.connected;
+        auto it = processorRef.linkRackCache.find(entry->info.uid);
+        if (it != processorRef.linkRackCache.end() && it->second.valid)
+        {
+            valid = true;
+            for (const auto& rs : it->second.rack.slots)
+                rows.push_back({ rs.name, rs.bypassed });
+        }
+    }
+
+    // An OFFLINE Link's sidecar is real data from when it ran: shown, but
+    // DIMMED like every other stale reading, and labelled offline rather
+    // than presented as current.
+    if (offline) dim = juce::jmin(dim, 0.4f);
+
+    int bypassed = 0;
+    for (const auto& r : rows) if (r.bypassed) ++bypassed;
+
+    switch (chainDisplayState(valid, (int)rows.size()))
+    {
+        case ChainDisplayState::NoData:
+            // Missing or unreadable sidecar is NO DATA, never an empty
+            // rack: "nothing there" and "cannot see" are different facts.
+            g.setColour(C::text3.withAlpha(0.6f));
+            g.setFont(juce::Font(juce::FontOptions(9.0f)));
+            g.drawText("no data", area, juce::Justification::centred);
+            return;
+        case ChainDisplayState::Empty:
+            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setFont(juce::Font(juce::FontOptions(9.0f)));
+            g.drawText("empty rack", area, juce::Justification::centred);
+            return;
+        case ChainDisplayState::List:
+            break;
+    }
+
+    if (!wide)
+    {
+        // NARROW: a COUNT, not a column of ellipsised fragments; at 46px a
+        // list of "Pro-..." rows says nothing. The full list is one WIDE
+        // press away. "IN RACK" is this pass's content-check marker.
+        auto a2 = area.withTrimmedTop(juce::jmax(0, area.getHeight() / 2 - 26));
+        g.setColour(C::text.withMultipliedAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
+        g.drawText(juce::String((int)rows.size()),
+                   a2.removeFromTop(20), juce::Justification::centred);
+        g.setColour(C::text3.withMultipliedAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
+        g.drawText("IN RACK", a2.removeFromTop(10), juce::Justification::centred);
+        if (bypassed > 0)
+        {
+            g.setColour(juce::Colour(0xfff59e0b).withMultipliedAlpha(dim));
+            g.setFont(juce::Font(juce::FontOptions(7.0f)));
+            g.drawText(juce::String(bypassed) + " byp",
+                       a2.removeFromTop(10), juce::Justification::centred);
+        }
+        if (offline)
+        {
+            g.setColour(juce::Colour(0xffff6d5a).withMultipliedAlpha(0.9f));
+            g.setFont(juce::Font(juce::FontOptions(7.0f)));
+            g.drawText("offline", a2.removeFromTop(10),
+                       juce::Justification::centred);
+        }
+    }
+    else
+    {
+        // WIDE: the names, one per row, in rack order. Bypassed slots dim
+        // with a "b" tag; overflow collapses into "+N more" rather than
+        // half-drawing a row.
+        const int rowH = 12;
+        auto a2 = area.reduced(2, 0);
+        g.setColour(C::text3.withMultipliedAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
+        g.drawText(chainCountLabel((int)rows.size(), bypassed)
+                       + (offline ? " - offline" : ""),
+                   a2.removeFromTop(rowH), juce::Justification::centredLeft);
+        a2.removeFromTop(2);
+
+        int fit = juce::jmax(0, a2.getHeight() / rowH);
+        int shown = (int)rows.size() <= fit ? (int)rows.size()
+                                            : juce::jmax(0, fit - 1);
+        g.setFont(juce::Font(juce::FontOptions(9.0f)));
+        for (int i = 0; i < shown; ++i)
+        {
+            auto rr = a2.removeFromTop(rowH);
+            const auto& r = rows[(size_t)i];
+            if (r.bypassed)
+            {
+                g.setColour(juce::Colour(0xfff59e0b).withMultipliedAlpha(0.8f * dim));
+                g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
+                g.drawText("b", rr.removeFromRight(10), juce::Justification::centred);
+                g.setFont(juce::Font(juce::FontOptions(9.0f)));
+            }
+            g.setColour((r.bypassed ? C::text3 : C::text).withMultipliedAlpha(dim));
+            g.drawFittedText(r.name, rr, juce::Justification::centredLeft, 1, 0.9f);
+        }
+        if ((int)rows.size() > shown)
+        {
+            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.drawText("+" + juce::String((int)rows.size() - shown) + " more",
+                       a2.removeFromTop(rowH), juce::Justification::centredLeft);
+        }
+    }
+}
+
 bool EchoJayEditor::findLinkEntryByAddr(const juce::String& addr,
                                         EchoJayProcessor::LinkDisplayEntry& out) const
 {
@@ -7150,7 +7306,8 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 if (st != nullptr)
                     paintLinkStripNumbers(g, sg.data, *st, drv, dim, wide);
                 break;
-            case EchoJayProcessor::LinkMixerContent::Chain:   // step 9
+            case EchoJayProcessor::LinkMixerContent::Chain:
+                paintLinkStripChain(g, sg.data, sg, entry, dim, wide);
                 break;
         }
 
@@ -16466,6 +16623,10 @@ void EchoJayEditor::timerCallback()
         const int n = (int) processorRef.getLinkDisplayList().size();
         if (n != (int) linkStripGeom_.size())
             resized();
+        // CHAIN mode feeds its cache here, ~1Hz (the function throttles
+        // itself); gated on the mode so the tab does no file IO otherwise.
+        if (processorRef.linkMixerContent == EchoJayProcessor::LinkMixerContent::Chain)
+            refreshLinkRackCache(false);
     }
 
     // ---- FINAL overlay re-front (24 Jul 2026) ----

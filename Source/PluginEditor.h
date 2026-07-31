@@ -2825,6 +2825,37 @@ private:
                              juce::Rectangle<int> clipRect,
                              LinkStripState& st, float dim, bool wide);
 
+    // ---- Step 9: the CHAIN content mode ------------------------------------
+    /** The honesty matrix, pure and testable: a missing or unreadable
+        sidecar is NO DATA, a parsed sidecar with zero slots is an EMPTY
+        rack, and the two must never look the same. */
+    enum class ChainDisplayState { NoData, Empty, List };
+    static ChainDisplayState chainDisplayState(bool valid, int slotCount)
+    {
+        return !valid          ? ChainDisplayState::NoData
+             : slotCount <= 0  ? ChainDisplayState::Empty
+                               : ChainDisplayState::List;
+    }
+    /** The count headline, pure: "3 plugins", "1 plugin", "(2 byp)". */
+    static juce::String chainCountLabel(int total, int bypassed)
+    {
+        if (total <= 0) return "empty rack";
+        juce::String s = juce::String(total)
+                       + (total == 1 ? " plugin" : " plugins");
+        if (bypassed > 0) s << " (" << juce::String(bypassed) << " byp)";
+        return s;
+    }
+    /** THE one feeder of processorRef.linkRackCache: ~1Hz from the timer
+        plus a forced pass on entering CHAIN mode. Paint never reads a file
+        (20Hz x 16 strips would be 320 JSON parses a second). */
+    void refreshLinkRackCache(bool force);
+    uint32_t lastRackCacheMs_ = 0;   // throttle stamp only; the CACHE lives
+                                     // on the processor and survives recreate
+    void paintLinkStripChain(juce::Graphics& g, juce::Rectangle<int> area,
+                             const StripGeom& sg,
+                             const EchoJayProcessor::LinkDisplayEntry* entry,
+                             float dim, bool wide);
+
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row
     // Mix Bus audio liveness: the host can idle the MAIN plugin's channel

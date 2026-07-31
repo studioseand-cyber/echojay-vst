@@ -446,6 +446,22 @@ public:
     LinkMixerContent linkMixerContent = LinkMixerContent::Numbers;
     bool linkMixerWide = false;        // false = narrow strips (the reference)
 
+    /** LINK MIXER rack cache (step 9). ON THE PROCESSOR, not the editor,
+        because Logic recreates the editor on every Link window switch and a
+        cache that died with the editor would re-read every sidecar on every
+        switch. WRITTEN only by the editor's refreshLinkRackCache (message
+        thread, ~1Hz plus a forced pass on entering CHAIN mode); READ only by
+        paint, which never touches a file. The parser stays
+        EchoJayEditor::readLinkRackSidecar, the one sidecar reader. `valid`
+        distinguishes "file existed and parsed" from "missing/unreadable",
+        which is the no-data vs empty-rack honesty line. */
+    struct LinkRackCacheEntry {
+        LinkShm::RackSidecar rack;
+        bool     valid  = false;
+        uint32_t readMs = 0;
+    };
+    std::map<juce::String, LinkRackCacheEntry> linkRackCache;
+
     // A/B playback — toggle between DAW audio and reference WAV
     void loadABFile(const juce::String& wavPath, double startOffsetSeconds = 0.0);
     void stopAB();
