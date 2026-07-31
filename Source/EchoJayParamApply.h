@@ -850,6 +850,33 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
         }
         if (! mapEntry.isObject())
         {
+            // Tier 2 (31 Jul 2026): a settings key with no Tier 1 mapping
+            // resolves by EXACT, case-sensitive name against map.controls.
+            // Anchored entries ride applyOne's anchor path unchanged; mode
+            // entries ride its labels path, which was built for served maps
+            // before ejmap existed and had never been fed until now. A
+            // duplicate name refuses with both indices in the note, per the
+            // settled decision: two controls wearing one name means neither
+            // is addressable by it.
+            auto ctrl = map.getProperty ("controls", juce::var())
+                           .getProperty (kv.name, juce::var());
+            if (ctrl.isObject())
+            {
+                if ((bool) ctrl.getProperty ("duplicate", false))
+                {
+                    ApplyResult r; r.semantic = semantic;
+                    juce::String idxs;
+                    if (auto* a = ctrl.getProperty ("indices", juce::var()).getArray())
+                        for (auto& iv : *a) idxs << (idxs.isEmpty() ? "" : " and ") << iv.toString();
+                    r.note = "duplicate control name (indices " + idxs
+                           + "): not resolvable by name";
+                    results.add (r);
+                    continue;
+                }
+                results.add (applyOne (plugin, semantic, ctrl, kv.value));
+                continue;
+            }
+
             ApplyResult r; r.semantic = semantic;
             r.note = "no mapping for this control on this plugin";
             results.add (r);

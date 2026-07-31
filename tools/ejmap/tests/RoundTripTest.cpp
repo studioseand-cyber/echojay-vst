@@ -234,8 +234,13 @@ struct FakeParam final : juce::AudioPluginInstance::HostedParameter
     float getValueForText (const juce::String&) const override { return 0.0f; }
     juce::String getParameterID() const override       { return name; }
 
+    juce::StringArray labelList;      // non-empty: display shows labels
+
     juce::String textFor (float n) const
     {
+        if (! labelList.isEmpty())
+            return labelList[juce::jlimit (0, labelList.size() - 1,
+                                           (int) std::round (n * (float) (labelList.size() - 1)))];
         return juce::String (lo + n * (hi - lo), 1) + " " + unit;
     }
     juce::String getText (float n, int) const override
@@ -267,6 +272,18 @@ struct FakeInstance final : juce::AudioPluginInstance
         addHostedParameter (std::make_unique<FakeParam> ("MF Freq",    "Hz", 500.0f, 18000.0f));
         addHostedParameter (std::make_unique<FakeParam> ("MF Gain",    "dB", -12.0f,   12.0f));
         addHostedParameter (std::make_unique<FakeParam> ("Mono Maker", "Hz",  20.0f,  400.0f));
+
+        // Indices 9-13: the Tier 2 subjects. A unitless sharpness, a labelled
+        // knee, an exact-case duplicate pair, and its lowercase cousin.
+        addHostedParameter (std::make_unique<FakeParam> ("Sharpness", "", 0.0f, 10.0f));
+        {
+            auto knee = std::make_unique<FakeParam> ("Knee", "", 0.0f, 2.0f);
+            knee->labelList = { "Hard", "Med", "Soft" };
+            addHostedParameter (std::move (knee));
+        }
+        addHostedParameter (std::make_unique<FakeParam> ("Bypass", "", 0.0f, 1.0f));
+        addHostedParameter (std::make_unique<FakeParam> ("Bypass", "", 0.0f, 1.0f));
+        addHostedParameter (std::make_unique<FakeParam> ("bypass", "", 0.0f, 1.0f));
     }
 
     void fillInPluginDescription (juce::PluginDescription& d) const override
@@ -501,6 +518,122 @@ void testGroupsRouteAroundMonoMaker()
 }
 
 //==============================================================================
+// The M6 pin: Tier 2 named controls, writer through consumer, before any real
+// control ships. Neither side existed until today (the consumer's mode-labels
+// path existed but had never been fed), so this test IS the contract.
+void testNamedControlsResolve()
+{
+    using namespace ejmap;
+    FakeInstance plugin;
+
+    MapPayload p;
+    p.fp = "tier2pin"; p.category = "de-esser";
+    p.identity.format = "Fake"; p.identity.name = "RoundTripFake"; p.identity.paramCount = 14;
+
+    NamedControl sharp;
+    sharp.name = "Sharpness"; sharp.indices.add (9);
+    sharp.rangeLo = 0; sharp.rangeHi = 10;
+    sharp.anchors.add ({ 0.0, 0.0 });
+    sharp.anchors.add ({ 1.0, 10.0 });
+    p.controls.add (sharp);
+
+    NamedControl knee;
+    knee.name = "Knee"; knee.indices.add (10);
+    knee.kind = "mode";
+    knee.labels.add ({ "Hard", 0.0 });
+    knee.labels.add ({ "Med",  0.5 });
+    knee.labels.add ({ "Soft", 1.0 });
+    p.controls.add (knee);
+
+    NamedControl dup;
+    dup.name = "Bypass"; dup.indices.add (11); dup.indices.add (12);
+    dup.duplicate = true;
+    p.controls.add (dup);
+
+    NamedControl lower;
+    lower.name = "bypass"; lower.indices.add (13);
+    lower.anchors.add ({ 0.0, 0.0 });
+    lower.anchors.add ({ 1.0, 1.0 });
+    p.controls.add (lower);
+
+    auto map = juce::JSON::parse (p.toJson());
+    check (map.isObject(), "tier2 pin: payload parses");
+
+    auto& params = plugin.getParameters();
+
+    // Anchored by name: {"Sharpness": 6} -> norm 0.6.
+    {
+        auto* st = new juce::DynamicObject();
+        st->setProperty ("Sharpness", 6);
+        auto results = echojay::applySettings (plugin, map, juce::var (st));
+        check (results.size() == 1 && results[0].applied && results[0].index == 9,
+               "named control resolves by exact name through applySettings");
+        check (std::abs (params[9]->getValue() - 0.6f) < 1.0e-4f,
+               "Sharpness 6 wrote norm 0.6 through the real anchor path");
+    }
+
+    // Mode by name: {"Knee": "Soft"} -> the label's norm, display-verified.
+    {
+        auto* st = new juce::DynamicObject();
+        st->setProperty ("Knee", "Soft");
+        auto results = echojay::applySettings (plugin, map, juce::var (st));
+        check (results.size() == 1 && results[0].applied && results[0].displayVerified,
+               "mode control applies via the labels path, display-verified: "
+                 + (results.size() == 1 ? results[0].note : juce::String()));
+        check (std::abs (params[10]->getValue() - 1.0f) < 1.0e-4f,
+               "Knee Soft landed at the label's norm");
+    }
+
+    // Duplicates refuse with both indices; case variants stay distinct.
+    {
+        auto* st = new juce::DynamicObject();
+        st->setProperty ("Bypass", 1);
+        auto results = echojay::applySettings (plugin, map, juce::var (st));
+        check (results.size() == 1 && ! results[0].applied
+                 && results[0].note.contains ("11") && results[0].note.contains ("12"),
+               "duplicate name refused, both indices in the note: "
+                 + (results.size() == 1 ? results[0].note : juce::String()));
+    }
+    {
+        auto* st = new juce::DynamicObject();
+        st->setProperty ("bypass", 1);
+        auto results = echojay::applySettings (plugin, map, juce::var (st));
+        check (results.size() == 1 && results[0].applied && results[0].index == 13,
+               "lowercase bypass is a DISTINCT control and resolves");
+    }
+
+    // The consumer is dead code on the plugin side by design (store now,
+    // expose later), and dead code is how usableCoreCount drifted -- so every
+    // branch is pinned here, or it will not survive the next refactor.
+    {
+        // Fall-through: a key in neither params nor controls.
+        auto* st = new juce::DynamicObject();
+        st->setProperty ("Nonexistent", 1);
+        auto results = echojay::applySettings (plugin, map, juce::var (st));
+        check (results.size() == 1 && ! results[0].applied
+                 && results[0].note.contains ("no mapping"),
+               "unknown key still falls through to the no-mapping note");
+    }
+    {
+        // Mode path, unknown label: refused with the label named.
+        auto* st = new juce::DynamicObject();
+        st->setProperty ("Knee", "Wrong");
+        auto results = echojay::applySettings (plugin, map, juce::var (st));
+        check (results.size() == 1 && ! results[0].applied
+                 && results[0].note.contains ("Wrong"),
+               "unknown mode label refused with the label named");
+    }
+    {
+        // Mode path, case-insensitive label acceptance (caseInsensitiveOk).
+        auto* st = new juce::DynamicObject();
+        st->setProperty ("Knee", "soft");
+        auto results = echojay::applySettings (plugin, map, juce::var (st));
+        check (results.size() == 1 && results[0].applied,
+               "mode label matches case-insensitively when the entry allows it");
+    }
+}
+
+//==============================================================================
 void testAgainstRealMaps()
 {
     auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
@@ -592,6 +725,7 @@ int main (int, char**)
     testSharedParsers();
     testPayloadFeedsApply();
     testGroupsRouteAroundMonoMaker();
+    testNamedControlsResolve();
     testRoundTripThroughApplySettings();
     testAgainstRealMaps();
 

@@ -214,10 +214,32 @@ struct NamedControl
     juce::String name;                      // real name, CASE SENSITIVE
     juce::Array<int> indices;
     double rangeLo = 0.0, rangeHi = 0.0;
-    juce::String unit;                      // empty when the parser found none
+
+    /** DISPLAY-DECLARED unit (the M5 unit_family finding), never inferred
+        from the name: "hz" because the sweep read "1.0 kHz", not because the
+        name said Freq. Empty when the display carries none.
+    */
+    juce::String unit;
     juce::Array<AnchorPoint> anchors;
+
+    /** "anchored" rides applyOne's anchor path; "mode" rides its EXISTING
+        labels path -- built for served maps before M0 and never fed until
+        Tier 2. A three-position knee switch lands here.
+    */
+    juce::String kind { "anchored" };
+
+    struct LabelPoint { juce::String text; double norm = 0.0; };
+    juce::Array<LabelPoint> labels;         // mode kind only
+
+    /** The M3 finding, carried honestly: every display value equalled its own
+        norm, so the display is likely fabricated. The control still dials by
+        raw number in norm terms; the flag says what the numbers are.
+    */
+    bool identityDisplay = false;
+
     Trust trust = Trust::setread;
-    bool duplicate = false;                 // same name appears twice: unresolvable
+    bool duplicate = false;                 // same EXACT name twice: both indices
+                                            // recorded here, neither resolvable
 
     juce::var toVar() const;
 };
@@ -414,12 +436,25 @@ inline juce::var ParamMapping::toVar() const
 inline juce::var NamedControl::toVar() const
 {
     auto* o = new juce::DynamicObject();
+    o->setProperty ("name", name);          // also inside: tooling reads entries alone
     if (indices.size() == 1) o->setProperty ("index", indices[0]);
     else                     o->setProperty ("indices", detail::indicesToVar (indices));
+    o->setProperty ("kind", kind);
     juce::Array<juce::var> range; range.add (rangeLo); range.add (rangeHi);
     o->setProperty ("range", juce::var (range));
     o->setProperty ("unit", unit.isEmpty() ? juce::var() : juce::var (unit));
-    o->setProperty ("anchors", detail::anchorsToVar (anchors));
+    if (kind == "mode")
+    {
+        // The shape applyOne's mode path has consumed since before M0:
+        // labels: { "<display text>": <norm> }.
+        auto* lo = new juce::DynamicObject();
+        for (const auto& l : labels) lo->setProperty (l.text, l.norm);
+        o->setProperty ("labels", juce::var (lo));
+        o->setProperty ("caseInsensitiveOk", true);
+    }
+    else
+        o->setProperty ("anchors", detail::anchorsToVar (anchors));
+    if (identityDisplay) o->setProperty ("identity_display", true);
     o->setProperty ("trust", toString (trust));
     if (duplicate) o->setProperty ("duplicate", true);
     return juce::var (o);
