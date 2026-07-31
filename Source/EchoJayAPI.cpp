@@ -1759,34 +1759,14 @@ bool EchoJayAPI::messageNeedsPlugins(const juce::String& userMessage)
     return false;
 }
 
-juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
+// The [AVAILABLE BUILTINS] advertisement - EchoJay's own devices and their full
+// ParamSchemas. Shared by BOTH feed builders on purpose: the built-ins are always
+// available, so they must be advertised whether or not the user owns recommendable
+// third-party plugins. Attaching it to only one path left the whole built-in suite
+// invisible to every user WITH plugins installed - i.e. exactly the users it is for.
+static juce::String echojayBuiltinsBlock()
 {
-    if (fullList.isEmpty()) return {};
-
-    // Appended to the user's message (NOT the system prompt), so it never
-    // touches the cached prefix. Framed so the model treats it as the
-    // authoritative set to pick from for this answer.
     juce::String block;
-    block << "\n\n[USER'S FULL PLUGIN LIST — for this question, recommend only from these, using their exact names; rotate your picks rather than defaulting to the same few]:\n"
-          << fullList;
-
-    // Built-in devices can never appear in the scanned feed above — they are
-    // compiled into the plugin, not installed on the machine — so the server
-    // would otherwise have no way to know this build has them. Advertising
-    // them explicitly is what lets the backend gate on a CAPABILITY the client
-    // states rather than guessing from a version number (version guessing is
-    // unreliable here: an unrelated branch can carry a higher version and no
-    // EQ at all). A client that does not send this block simply never gets
-    // built-ins offered.
-    //
-    // GENERATED FROM THE REGISTRY, grouped by category (BUILTIN_SUITE_PLAN.md
-    // §1/§3). A device registers itself in its own .cpp and appears here with no
-    // edit to this function — which is the property that lets several Wave 1
-    // sessions add devices in parallel without touching a shared line.
-    //
-    // Each entry carries its ParamSchema, so this one block teaches the model
-    // BOTH that the device exists and exactly how to dial it. The server
-    // validates against the same numbers it reads here, so the two cannot drift.
     const auto& registry = BuiltinDeviceRegistry::instance();
     if (! registry.all().empty())
     {
@@ -1836,6 +1816,38 @@ juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
                 block << "\n    " << juce::String (echojay::ParamSchema::describeLine (p));
         }
     }
+    return block;
+}
+
+juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
+{
+    if (fullList.isEmpty()) return {};
+
+    // Appended to the user's message (NOT the system prompt), so it never
+    // touches the cached prefix. Framed so the model treats it as the
+    // authoritative set to pick from for this answer.
+    juce::String block;
+    block << "\n\n[USER'S FULL PLUGIN LIST — for this question, recommend only from these, using their exact names; rotate your picks rather than defaulting to the same few]:\n"
+          << fullList;
+
+    // Built-in devices can never appear in the scanned feed above — they are
+    // compiled into the plugin, not installed on the machine — so the server
+    // would otherwise have no way to know this build has them. Advertising
+    // them explicitly is what lets the backend gate on a CAPABILITY the client
+    // states rather than guessing from a version number (version guessing is
+    // unreliable here: an unrelated branch can carry a higher version and no
+    // EQ at all). A client that does not send this block simply never gets
+    // built-ins offered.
+    //
+    // GENERATED FROM THE REGISTRY, grouped by category (BUILTIN_SUITE_PLAN.md
+    // §1/§3). A device registers itself in its own .cpp and appears here with no
+    // edit to this function — which is the property that lets several Wave 1
+    // sessions add devices in parallel without touching a shared line.
+    //
+    // Each entry carries its ParamSchema, so this one block teaches the model
+    // BOTH that the device exists and exactly how to dial it. The server
+    // validates against the same numbers it reads here, so the two cannot drift.
+    block << echojayBuiltinsBlock();
 
     return block;
 }
@@ -1887,6 +1899,9 @@ juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availableP
           << "- Keep the ENTIRE block compact — short names, 2-4 word roles, 3-6 value settings. "
           << "  This is machine data written after the prose; it must fit in the remaining response budget.\n"
           << "- Write prose first (full technical detail), then append the compact block as the final output.";
+
+    // Built-ins ride the chain feed too - see echojayBuiltinsBlock().
+    block << echojayBuiltinsBlock();
 
     return block;
 }
