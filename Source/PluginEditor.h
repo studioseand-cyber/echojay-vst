@@ -2419,45 +2419,9 @@ private:
     };
     std::vector<LinkCtrlPending> linkCtrlPending_;
 
-    // LINK MONITOR row list — scrollable. The Mix Bus card stays PINNED in
-    // the panel painter above; only Link rows live in this viewport child.
-    // Rows render in LIST order: alphabetical by name, Untitleds last (by
-    // uid, so the list is stable while scrolling). The viewport preserves
-    // scroll position across 10Hz data refreshes and tab switches; the
-    // shared LookAndFeel supplies the thin EchoJay scrollbar.
-    struct LinkListView : juce::Component
-    {
-        EchoJayEditor* owner = nullptr;
-        // toggle zones in LOCAL coords, carrying the row's ADDRESS (uid)
-        std::vector<std::pair<juce::Rectangle<int>, juce::String>> zones;
-        // gain slider track per row: {trackRect, addr}. The slider is
-        // custom-painted; drag/throttle state lives below.
-        struct GainZone { juce::Rectangle<int> rect; juce::String addr; };
-        std::vector<GainZone> gainZones;
-        // placement chips: {rect, addr} — click opens the bus/insert chooser
-        std::vector<std::pair<juce::Rectangle<int>, juce::String>> placementZones;
-        // Active drag: which row's slider is being dragged, the live value,
-        // and a ~10Hz send throttle (final value always sent on mouseUp).
-        juce::String  dragAddr;
-        float         dragValue = 0.0f;
-        uint32_t      lastGainSendMs = 0;
-        void paint(juce::Graphics& g) override;
-        void mouseDown(const juce::MouseEvent& e) override;
-        void mouseDrag(const juce::MouseEvent& e) override;
-        void mouseUp(const juce::MouseEvent& e) override;
-        // dB<->x for a track rect (shared by paint + drag)
-        static float gainFromX(int x, juce::Rectangle<int> track);
-        static int   xFromGain(float db, juce::Rectangle<int> track);
-    };
-    static constexpr int kLinkRowH = 64, kLinkRowGap = 8;
-    LinkListView   linkListView_;
-    juce::Viewport linkListViewport_;
-    // uid for a named Link from the registry; legacy name-derived fallback
-    // for pre-uid Links (empty uid in their slots)
-    juce::String linkAddrForName(const juce::String& linkName) const;
-
     // =====================================================================
-    //  LINK MIXER: console-style strips, REPLACING the vertical list above.
+    //  LINK MIXER: console-style strips (they REPLACED the old row list,
+    //  deleted at step 11).
     //  One narrow vertical strip per live Link, laid out horizontally in a
     //  scrolling viewport, with the Mix Bus strip PINNED outside that
     //  viewport (left edge) so the master cannot scroll away. Up to
@@ -2582,11 +2546,11 @@ private:
         return juce::jlimit(0, kFaderFrames - 1,
                             (int)std::round(f * (float)(kFaderFrames - 1)));
     }
-    /** dB<->y for the fader rect, REPLACING the horizontal gainFromX pair
-        (the list they served is deleted at step 11, so this is a move, not a
-        second authority). Same range (-24..+12), same 0.1 dB snap; bottom of
-        the rect is -24, top is +12. Pure, shared by drag and the
-        decode-failure fallback thumb. */
+    /** dB<->y for the fader rect. It replaced the old horizontal pair,
+        which went with the row list at step 11: a move, never a second
+        authority. Same range (-24..+12), same 0.1 dB snap; bottom of the
+        rect is -24, top is +12. Pure, shared by drag and the decode-failure
+        fallback thumb. */
     static float gainFromY(int y, juce::Rectangle<int> track)
     {
         const float f = juce::jlimit(0.0f, 1.0f,
@@ -2716,8 +2680,7 @@ private:
 
     void measureLinkStrips();
     /** Paint one strip from its stored geometry. Shared by the pinned Mix Bus
-        strip and every Link strip so the two cannot drift, the same reason
-        paintLinkMeterStrip is shared today. Measures nothing.
+        strip and every Link strip so the two cannot drift. Measures nothing.
 
         `entry` is the strip's resolved display-list entry, nullptr for the
         bus strip. The CALLER resolves it because getLinkDisplayList() builds
@@ -2778,10 +2741,9 @@ private:
         pinned-card mapping verbatim (including host audio-liveness detection
         via lastHostMom_/lastHostRms_). Returns fresh (= not silent). */
     bool ingestBusStripFrame(uint32_t nowMs);
-    /** ONE smoothing authority for the loudness-suite readouts, shared by the
-        vertical strip renderer and the legacy horizontal one (dead code until
-        step 11 deletes it) so the ballistics cannot fork. Advances st toward
-        its frame when fresh; reports PSR/PLR validity. */
+    /** ONE smoothing authority for the loudness-suite readouts. Advances st
+        toward its frame when fresh; reports PSR/PLR validity. Called exactly
+        once per strip per paint, from paintLinkStrip; renderers consume. */
     struct LinkStripDerived { bool psrValid = false, plrValid = false; };
     static LinkStripDerived advanceLinkStripSmoothing(LinkStripState& st, bool fresh);
     /** The numbers renderer: loudness-suite cells stacked vertically in the
@@ -2863,10 +2825,6 @@ private:
     // apply the same audioStale treatment as Link rows
     float    lastHostMom_ = 0.0f, lastHostRms_ = 0.0f;
     uint32_t lastHostAdvanceMs_ = 0;
-    // Shared renderer for host + Link rows (loudness-suite readout cells)
-    void paintLinkMeterStrip(juce::Graphics& g, int stripX, int stripR,
-                             int rowY, int rowH, LinkStripState& st,
-                             bool fresh, float dim);
     void sendLinkActiveCommand(const juce::String& linkAddr, bool active);
     // Remote gain: ctrl-cmd carrying the CURRENT active + a new absolute
     // gainDb field, acked like Active. Authority stays with the Link.

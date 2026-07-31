@@ -1950,15 +1950,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                                 juce::dontSendNotification);
     addChildComponent(chainSlotCountLabel);
 
-    // LINK MONITOR scrollable row list (Mix Bus card stays pinned above it).
-    // SUPERSEDED by the mixer below and never shown; the class and this
-    // registration go away with step 11 of the mixer build, kept until then
-    // only so the rebuild lands in reviewable steps.
-    linkListView_.owner = this;
-    linkListViewport_.setViewedComponent(&linkListView_, false);
-    linkListViewport_.setScrollBarsShown(true, false);
-    addChildComponent(linkListViewport_);
-
     // LINK MIXER: horizontal strips. Scrolls left/right ONLY: a strip is
     // exactly as tall as the band, so a vertical scrollbar could only ever
     // mean the measure pass got the height wrong. The Mix Bus strip is NOT in
@@ -2488,7 +2479,6 @@ void EchoJayEditor::showLoginScreen()
         &compareBtn, &settingsBtn, &playbackBtn, &wavSavedLabel, &upgradeBtn };
     for (auto* c : mainComps) c->setVisible(false);
     logoutBtn.setVisible(false);
-    linkListViewport_.setVisible(false);
     linkMixerViewport_.setVisible(false);
     settingsName.setVisible(false); settingsMonitors.setVisible(false);
     settingsHeadphones.setVisible(false); settingsGenres.setVisible(false);
@@ -5967,362 +5957,6 @@ void EchoJayEditor::presentCompareScopeAsk(const CompareSlotState& slotA,
 //  Link tab painter — auto-discovery list
 // =============================================================================
 
-// Shared row renderer: a compact version of the METERS tab's LOUDNESS
-// suite — same labels, colours, and dash conventions, just smaller. Used by
-// the Mix Bus row AND every Link row so they cannot drift. Values smooth
-// toward the latest frame at the UI rate while fresh; freeze when stale.
-// Width budget: all six cells when they fit, else LRA drops first, then PLR
-// (leaving MOMENTARY / SHORT TERM / INTEGRATED / PSR).
-void EchoJayEditor::paintLinkMeterStrip(juce::Graphics& g, int stripX, int stripR,
-                                        int rowY, int rowH, LinkStripState& st,
-                                        bool fresh, float dim)
-{
-    using C = EchoJayLookAndFeel::Colours;
-    const int stripW = stripR - stripX;
-    if (stripW < 160 || !st.has) return;
-    const auto& mf = st.frame;
-    // Publisher-declared audio staleness: momentary group arrives as -100
-    // (dashes via the valid gates below); persisted values render dimmed.
-    // Independent of heartbeat/frame liveness — the instance is alive, the
-    // METERS are honest about the host idling the channel.
-    if (mf.audioStale != 0)
-        dim = juce::jmin(dim, 0.55f);
-
-    // PSR / PLR derivation + smoothing now live in advanceLinkStripSmoothing,
-    // ONE authority shared with the mixer's vertical cells. This horizontal
-    // renderer is dead code awaiting step 11; it keeps compiling against the
-    // shared helper so the ballistics cannot fork in the meantime.
-    const auto drv = advanceLinkStripSmoothing(st, fresh);
-    const bool psrValid = drv.psrValid;
-    const bool plrValid = drv.plrValid;
-
-    const auto coral = juce::Colour(0xffff6d5a);
-    const auto amber = juce::Colour(0xfff59e0b);
-    const auto cyan  = juce::Colour(0xff22d3ee);
-
-    struct Cell { const char* label; float v; bool valid; const char* unit; juce::Colour col; };
-    const Cell all[6] = {
-        { "MOMENTARY",  st.smMom,   st.smMom   > -99.0f, "LUFS", st.smMom > -6.0f ? C::red : C::green },
-        { "SHORT TERM", st.smShort, st.smShort > -99.0f, "LUFS", C::blue2 },
-        { "INTEGRATED", st.smInt,   st.smInt   > -99.0f, "LUFS", C::green },
-        { "LRA",        st.smLra,   fresh || st.has,     "LU",   C::text },
-        { "PSR",        st.smPsr,   psrValid,            "dB",
-          st.smPsr < 5.0f ? coral : st.smPsr < 8.0f ? amber : cyan },   // zone colours (arc doesn't fit 64px)
-        { "PLR",        st.smPlr,   plrValid,            "dB",   C::text },
-    };
-    // Width budget: drop LRA first, then PLR
-    const int cellW = 58;
-    int count = juce::jlimit(3, 6, stripW / cellW);
-    bool useCell[6] = { true, true, true, count >= 6, true, count >= 5 };
-
-    int cx = stripX;
-    const int actualW = juce::jmin(cellW + 6, stripW / juce::jmax(3, count));
-    for (int i = 0; i < 6; ++i)
-    {
-        if (!useCell[i]) continue;
-        const auto& c = all[i];
-        g.setColour(C::text3.withMultipliedAlpha(dim));
-        g.setFont(juce::Font(juce::FontOptions(8.5f)));
-        g.drawText(c.label, cx, rowY + 8, actualW, 12, juce::Justification::centred);
-        g.setColour((c.valid ? c.col : C::text3).withMultipliedAlpha(dim));
-        g.setFont(juce::Font(juce::FontOptions(16.0f, juce::Font::bold)));
-        g.drawText(c.valid ? juce::String(c.v, 1) : juce::String("--"),
-                   cx, rowY + 21, actualW, 18, juce::Justification::centred);
-        g.setColour(C::text3.withMultipliedAlpha(dim));
-        g.setFont(juce::Font(juce::FontOptions(8.5f)));
-        g.drawText(c.unit, cx, rowY + 42, actualW, 11, juce::Justification::centred);
-        cx += actualW;
-    }
-}
-// =============================================================================
-//  LinkListView — the scrollable Link rows (Mix Bus card stays pinned above)
-// =============================================================================
-void EchoJayEditor::LinkListView::paint(juce::Graphics& g)
-{
-    if (owner == nullptr) return;
-    using C = EchoJayLookAndFeel::Colours;
-    auto& ed = *owner;
-    zones.clear();
-    gainZones.clear();
-    placementZones.clear();
-
-    // Canonical display list — SAME order + "Untitled N" numbering the whole
-    // product uses (send-target menu, AI context), so a given instance keeps
-    // one label everywhere.
-    const auto entries = ed.processorRef.getLinkDisplayList();
-
-    const uint32_t nowMs = juce::Time::getMillisecondCounter();
-    const int cardH = kLinkRowH;
-    const int dotD  = 10;
-    const int cardW = getWidth();
-    int y = 0;
-
-    for (const auto& entry : entries)
-    {
-        const auto& slot = entry.info;
-        const int cardX = 0;
-
-        // Label + ADDRESS (uid; legacy name-derived fallback). The name is
-        // a label, never an address.
-        const juce::String rowName = entry.displayName;
-        const juce::String rowAddr = slot.uid.isNotEmpty()
-                                   ? slot.uid : LinkShm::makeSafeFilePart(slot.name);
-
-        // Card background
-        g.setColour(C::bg3);
-        g.fillRoundedRectangle((float)cardX, (float)y, (float)cardW, (float)cardH, 6.f);
-        g.setColour(C::border2);
-        g.drawRoundedRectangle((float)cardX, (float)y, (float)cardW, (float)cardH, 6.f, 1.f);
-
-        // Connection dot
-        const juce::Colour dotCol = slot.connected
-            ? juce::Colour(0xff22c55e)   // green
-            : juce::Colour(0xffef4444);  // red
-        const float dotX = (float)(cardX + cardW - dotD - 10);
-        const float dotY = (float)(y + (cardH - dotD) / 2);
-        g.setColour(dotCol.withAlpha(0.25f));
-        g.fillEllipse(dotX - 3.f, dotY - 3.f, (float)(dotD + 6), (float)(dotD + 6));
-        g.setColour(dotCol);
-        g.fillEllipse(dotX, dotY, (float)dotD, (float)dotD);
-
-        // Remote Active control — styled identically to the Link's own
-        // toggle; pending/timeout states keyed on the row ADDRESS
-        {
-            bool pending = false, timedOut = false, target = false;
-            for (auto& p : ed.linkCtrlPending_)
-                if (p.addr == rowAddr)
-                { pending = !p.timedOut; timedOut = p.timedOut; target = p.target; }
-
-            const auto cyan  = juce::Colour(0xff22d3ee);
-            const auto amber = juce::Colour(0xfff59e0b);
-            const auto coral = juce::Colour(0xffff6d5a);
-            const auto boxOutline = juce::Colour(0xffa0a0b8);
-            const auto labelCol   = juce::Colour(0xfff0f0f5);
-
-            const float fontSize  = 15.0f;
-            const float tickWidth = fontSize * 1.1f;
-
-            juce::Rectangle<int> zone(cardX + cardW - dotD - 10 - 86,
-                                      y + (cardH - 24) / 2, 76, 24);
-            zones.push_back({ zone, rowAddr });
-
-            juce::Rectangle<float> tickBounds((float)zone.getX(),
-                                              (float)zone.getCentreY() - tickWidth * 0.5f,
-                                              tickWidth, tickWidth);
-            g.setColour(timedOut ? coral : boxOutline);
-            g.drawRoundedRectangle(tickBounds, 4.0f, 1.0f);
-
-            bool showTick = pending ? target : (!timedOut && slot.active);
-            if (showTick)
-            {
-                g.setColour(pending ? amber.withAlpha(0.6f) : cyan);
-                auto tick = getLookAndFeel().getTickShape(0.75f);
-                g.fillPath(tick, tick.getTransformToScaleToFit(
-                                     tickBounds.reduced(4.0f, 5.0f), false));
-            }
-
-            g.setColour(timedOut ? coral : labelCol);
-            g.setFont(juce::Font(juce::FontOptions(fontSize)));
-            g.drawText(timedOut ? "no resp" : pending ? "Active..." : "Active",
-                       zone.getX() + (int)tickWidth + 6, zone.getY(),
-                       zone.getWidth() - (int)tickWidth - 6, zone.getHeight(),
-                       juce::Justification::centredLeft);
-        }
-
-        // ---- Meter frame ingest + staleness (keyed on the row ADDRESS) ----
-        auto& st = ed.linkStripStates_[rowAddr];
-        {
-            LinkMeterFrame f;
-            if (slot.regIdx >= 0 && ed.processorRef.readLinkMeterFrame(slot.regIdx, f))
-            {
-                if (!st.has || f.seq != st.lastSeq)
-                {
-                    st.frame = f;
-                    st.lastSeq = f.seq;
-                    st.lastChangeMs = nowMs;
-                    st.has = true;
-                }
-            }
-        }
-        const bool fresh = st.has && slot.active
-                        && (nowMs - st.lastChangeMs) < 1000;
-        const float dim  = fresh ? 1.0f : 0.4f;
-
-        // Name (top of the left column) + placement chip below it
-        g.setColour(C::text);
-        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-        const int nameW = 128;
-        g.drawText(rowName, cardX + 14, y + 9, nameW, 16,
-                   juce::Justification::centredLeft);
-        {
-            // Placement chip. Same colour logic as Link's own header selector:
-            // BOTH deliberately-set values (Bus / Channel) read in the cyan
-            // accent; only the UNSET state is dim (never amber — an unset Link
-            // is never nagged). Click opens the bus/channel chooser.
-            juce::Rectangle<int> chip(cardX + 14, y + 32, 66, 17);
-            placementZones.push_back({ chip, rowAddr });
-            const juce::String pl = slot.placement == 1 ? "BUS"
-                                  : slot.placement == 2 ? "CHANNEL" : "SET?";
-            // One predicate: set → accent, unset → dim.
-            const juce::Colour pc = slot.placement == 0 ? C::text3
-                                                        : juce::Colour(0xff22d3ee);
-            g.setColour(pc.withAlpha(0.15f));
-            g.fillRoundedRectangle(chip.toFloat(), 4.0f);
-            g.setColour(pc.withAlpha(0.7f));
-            g.drawRoundedRectangle(chip.toFloat(), 4.0f, 1.0f);
-            g.setColour(pc);
-            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-            g.drawText(pl, chip, juce::Justification::centred);
-        }
-
-        // ---- Inline gain slider: track + thumb + " dB" readout, sitting
-        // between the meter strip and the Active toggle. Custom-painted;
-        // drag handled in mouseDown/Drag/Up. Double-click resets to 0. ----
-        const int toggleZoneX = cardX + cardW - dotD - 10 - 86;
-        const int gainReadW = 46, gainTrackW = 84, gainColGap = 12;
-        const int gainColX = toggleZoneX - gainColGap - (gainTrackW + 6 + gainReadW);
-        {
-            // Live drag value on THIS row wins over the published/pending value
-            const bool dragging = (dragAddr == rowAddr);
-            const float gDb = dragging ? dragValue : ed.linkRowDisplayGain(rowAddr);
-
-            juce::Rectangle<int> track(gainColX, y + (cardH - 4) / 2, gainTrackW, 4);
-            juce::Rectangle<int> hitTrack(gainColX, y + (cardH - 22) / 2, gainTrackW, 22);
-            gainZones.push_back({ hitTrack, rowAddr });
-
-            // Track groove
-            g.setColour(C::bg4);
-            g.fillRoundedRectangle(track.toFloat(), 2.0f);
-            // Filled portion from 0 dB mark to the thumb (so cuts fill left,
-            // boosts fill right of centre)
-            const int zeroX  = xFromGain(0.0f, track);
-            const int thumbX = xFromGain(gDb, track);
-            const float fillL = (float)std::min(zeroX, thumbX);
-            const float fillR = (float)std::max(zeroX, thumbX);
-            g.setColour(juce::Colour(0xff22d3ee).withAlpha(std::abs(gDb) >= 0.05f ? 0.85f : 0.4f));
-            g.fillRoundedRectangle(fillL, (float)track.getY(), fillR - fillL, 4.0f, 2.0f);
-            // Thumb
-            g.setColour(dragging ? juce::Colours::white : juce::Colour(0xff22d3ee));
-            g.fillEllipse((float)thumbX - 5.0f, (float)track.getCentreY() - 5.0f, 10.0f, 10.0f);
-
-            // Readout
-            juce::String gTxt = (gDb >= 0.05f ? "+" : "") + juce::String(gDb, 1);
-            g.setColour(std::abs(gDb) >= 0.05f ? juce::Colour(0xff22d3ee) : C::text3);
-            g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-            g.drawText(gTxt + " dB", gainColX + gainTrackW + 6, y + (cardH - 18) / 2,
-                       gainReadW, 18, juce::Justification::centredLeft);
-        }
-
-        // Meter strip between the name column and the gain slider
-        const int stripX = cardX + 14 + nameW + 10;
-        const int stripR = gainColX - 10;
-        if (st.has)
-            ed.paintLinkMeterStrip(g, stripX, stripR, y, cardH, st, fresh, dim);
-        else
-        {
-            g.setColour(C::text3);
-            g.setFont(juce::Font(juce::FontOptions(10.5f)));
-            g.drawText(slot.connected ? "waiting for meters..." : "waiting for audio...",
-                       stripX, y, juce::jmax(60, stripR - stripX), cardH,
-                       juce::Justification::centredLeft);
-        }
-
-        y += cardH + kLinkRowGap;
-    }
-}
-
-float EchoJayEditor::LinkListView::gainFromX(int x, juce::Rectangle<int> track)
-{
-    const float f = juce::jlimit(0.0f, 1.0f,
-        (float)(x - track.getX()) / (float)juce::jmax(1, track.getWidth()));
-    // -24..+12 over the track, snapped to 0.1 dB
-    return juce::jlimit(-24.0f, 12.0f,
-        std::round((-24.0f + f * 36.0f) * 10.0f) / 10.0f);
-}
-
-int EchoJayEditor::LinkListView::xFromGain(float db, juce::Rectangle<int> track)
-{
-    const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
-    return track.getX() + (int)std::round(f * track.getWidth());
-}
-
-void EchoJayEditor::LinkListView::mouseDown(const juce::MouseEvent& e)
-{
-    if (owner == nullptr) return;
-    const auto pos = e.getPosition();
-
-    // Placement chip (name column, below the name)
-    for (auto& pz : placementZones)
-        if (pz.first.contains(pos))
-        {
-            owner->showLinkPlacementMenu(pz.second);
-            return;
-        }
-
-    // Gain slider first (sits left of the Active toggle)
-    for (auto& gz : gainZones)
-        if (gz.rect.contains(pos))
-        {
-            if (e.getNumberOfClicks() >= 2)   // double-click resets to 0
-            {
-                dragAddr = {};
-                owner->sendLinkGainCommand(gz.addr, 0.0f);
-                repaint();
-                return;
-            }
-            // Begin drag: track rect is the hit rect (same x extent)
-            dragAddr  = gz.addr;
-            dragValue = gainFromX(pos.x, gz.rect);
-            lastGainSendMs = juce::Time::getMillisecondCounter();
-            owner->sendLinkGainCommand(dragAddr, dragValue);
-            repaint();
-            return;
-        }
-
-    for (auto& z : zones)
-        if (z.first.contains(pos))
-        {
-            bool cur = true;
-            for (auto& li : owner->processorRef.getLinkSlotInfos())
-            {
-                const juce::String addr = li.uid.isNotEmpty()
-                                        ? li.uid : LinkShm::makeSafeFilePart(li.name);
-                if (addr == z.second) { cur = li.active; break; }
-            }
-            owner->sendLinkActiveCommand(z.second, !cur);
-            return;
-        }
-}
-
-void EchoJayEditor::LinkListView::mouseDrag(const juce::MouseEvent& e)
-{
-    if (owner == nullptr || dragAddr.isEmpty()) return;
-    // Recompute value from the track this addr owns (find its current rect)
-    for (auto& gz : gainZones)
-        if (gz.addr == dragAddr)
-        {
-            dragValue = gainFromX(e.getPosition().x, gz.rect);
-            break;
-        }
-    // Throttle sends to ~10Hz; the visual thumb tracks every move (repaint)
-    const uint32_t now = juce::Time::getMillisecondCounter();
-    if (now - lastGainSendMs >= 100)
-    {
-        lastGainSendMs = now;
-        owner->sendLinkGainCommand(dragAddr, dragValue);
-    }
-    repaint();
-}
-
-void EchoJayEditor::LinkListView::mouseUp(const juce::MouseEvent&)
-{
-    if (owner == nullptr || dragAddr.isEmpty()) return;
-    // Always send the FINAL value on release (the throttle may have skipped it)
-    owner->sendLinkGainCommand(dragAddr, dragValue);
-    dragAddr = {};
-    repaint();
-}
-
 // =============================================================================
 //  LINK MIXER geometry: the single authority.
 //
@@ -6666,11 +6300,10 @@ bool EchoJayEditor::ingestBusStripFrame(uint32_t nowMs)
 EchoJayEditor::LinkStripDerived
 EchoJayEditor::advanceLinkStripSmoothing(LinkStripState& st, bool fresh)
 {
-    // THE smoothing pass, factored out of paintLinkMeterStrip so the mixer's
-    // vertical cells and the legacy horizontal ones share one set of
-    // ballistics. Only ever called once per strip per paint: the two
-    // renderers are never both live (the row list is dead code awaiting
-    // step 11), and a double advance would double the attack.
+    // THE smoothing pass. It began life inside the old horizontal row
+    // renderer (deleted at step 11 with the list it served); the mixer's
+    // renderers now consume it through paintLinkStrip's single advance,
+    // once per strip per paint, because a double advance doubles the attack.
     const auto& mf = st.frame;
     LinkStripDerived d;
     d.psrValid = mf.shortTermTP > -90.0f && mf.shortTerm > -90.0f;
@@ -7738,8 +7371,8 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     }
 
     // The pinned Mix Bus strip, painted directly rather than in the viewport so
-    // the master cannot scroll away. SAME renderer as every Link strip, so the
-    // two cannot drift, which is why paintLinkMeterStrip is shared today.
+    // the master cannot scroll away. SAME renderer as every Link strip
+    // (paintLinkStrip), so the two cannot drift.
     if (!linkBusGeom_.full.isEmpty())
         paintLinkStrip(g, linkBusGeom_, nullptr);   // nullptr = the bus
 
@@ -14546,8 +14179,6 @@ void EchoJayEditor::resized()
                                juce::jmax(1, band.getHeight()));
     }
     linkMixerViewport_.setVisible(linkMixerShowing);
-    // The list this replaces has ONE authority saying it is never shown.
-    linkListViewport_.setVisible(false);
 
     // CHAIN tab layout — plugin view + strip fill the left area, chat on right
     if (comingSoonTab)
@@ -18888,14 +18519,6 @@ void EchoJayEditor::disablePluginByName(const juce::String& name)
 // =============================================================================
 //  LINK tab — remote Active control (ctrl-cmd / ctrl-ack files)
 // =============================================================================
-juce::String EchoJayEditor::linkAddrForName(const juce::String& linkName) const
-{
-    for (const auto& s : processorRef.getLinkSlotInfos())
-        if (s.name == linkName && s.uid.isNotEmpty())
-            return s.uid;
-    return LinkShm::makeSafeFilePart(linkName);   // legacy pre-uid Links
-}
-
 void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkAddr, bool active)
 {
     int err = 0;
