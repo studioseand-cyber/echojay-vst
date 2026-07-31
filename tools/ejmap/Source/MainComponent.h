@@ -21,6 +21,7 @@
 #include "EjmapCapture.h"
 #include "EjmapMouseRing.h"
 #include "EjmapSweeper.h"
+#include "EjmapCurveView.h"
 
 #include <iostream>
 
@@ -96,6 +97,30 @@ public:
         sweepButton.setButtonText ("Sweep");
         sweepButton.setEnabled (false);
         sweepButton.onClick = [this] { sweepCaptured(); };
+
+        // Typed anchors: the fallback for both liar classes (flat, identity
+        // display) and for any curve the human rejects. Enabled after any
+        // sweep, because the human's distrust of a curve is a valid reason
+        // regardless of what the sweep concluded.
+        addAndMakeVisible (typeButton);
+        typeButton.setButtonText ("Type anchors");
+        typeButton.setEnabled (false);
+        typeButton.onClick = [this] { startTypedAnchors(); };
+
+        addChildComponent (curveView);
+        curveView.onReject = [this] { startTypedAnchors(); };
+
+        addChildComponent (typedPrompt);
+        typedPrompt.setColour (juce::Label::textColourId, juce::Colour (0xffd8b06a));
+        addChildComponent (typedEntry);
+        typedEntry.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff161c26));
+        typedEntry.onReturnKey = [this] { typedNext(); };
+        addChildComponent (typedNextButton);
+        typedNextButton.setButtonText ("Next");
+        typedNextButton.onClick = [this] { typedNext(); };
+        addChildComponent (typedCancelButton);
+        typedCancelButton.setButtonText ("Cancel");
+        typedCancelButton.onClick = [this] { typedCancel(); };
 
         // Candidate picker: appears only for a multi-parameter gesture, where
         // the engine cannot know which of the moved parameters the human meant.
@@ -779,7 +804,23 @@ public:
 
         ScannedPlugin sp; sp.desc = desc;
         loadedName = desc.name; loadedId = sp.pluginId();
+
+        // Inflight protocol, exactly as the app path: the mpressor crashes
+        // had to be reconstructed from DiagnosticReports because this test
+        // left no row behind. A crash between beginLoad and endLoad now
+        // leaves inflight.json, which is attributable evidence.
+        ledger.beginLoad (loadedId, desc.name, desc.manufacturerName,
+                          desc.pluginFormatName, desc.version,
+                          "load", "createPluginInstance");
         auto res = host.load (desc, watchdog);
+        {
+            LedgerRecord rec;
+            rec.pluginId = loadedId; rec.name = desc.name;
+            rec.vendor = desc.manufacturerName; rec.format = desc.pluginFormatName;
+            rec.version = desc.version; rec.outcome = res.outcome;
+            rec.detail = res.detail; rec.paramCount = res.paramCount;
+            ledger.endLoad (rec);
+        }
         if (res.outcome != LoadOutcome::ok)
         { std::cout << "SWEEPTEST: load failed: " << res.detail << std::endl; quitNow(); return; }
 
@@ -812,9 +853,11 @@ public:
         std::cout << "SWEEPTEST: " << desc.name << " | param " << idx
                   << " (" << name << ")" << std::endl;
 
-        host.pausePumpForMutation();      // same race as sweepCaptured: measured, not assumed
+        beginSweepInflight (idx, name);
+        host.pausePumpForMutation();
         auto sw = sweepOneIndex (*inst, idx, watchdog, loadedId);
         host.resumePumpAfterMutation();
+        endSweepInflight (idx, sw);
         recordSweep (idx, name, sw);
 
         std::cout << "SWEEPTEST: ok=" << (sw.ok ? "yes" : "no")
@@ -833,6 +876,116 @@ public:
         if (sw.anchors.size() > 5)
             std::cout << "    ... " << (sw.anchors.size() - 5) << " more" << std::endl;
         std::cout << "SWEEPTEST: DONE" << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
+    /** Drives the typed-anchor flow with a SIMULATED TYPIST: each prompt is
+        answered with the plugin's own getCurrentValueAsText, which is what a
+        faithful human transcribes when the GUI shows the same number. Stated
+        on every run because it is the one simulation in the test: everything
+        else -- the parking writes, the parser, the sanitizer, the record, the
+        interpolation -- is the production code path.
+    */
+    void selfTestTyped (const juce::String& identifier, const juce::String& paramSpec)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "TYPEDTEST: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId();
+        ledger.beginLoad (loadedId, desc.name, desc.manufacturerName,
+                          desc.pluginFormatName, desc.version, "load", "createPluginInstance");
+        auto res = host.load (desc, watchdog);
+        {
+            LedgerRecord rec; rec.pluginId = loadedId; rec.name = desc.name;
+            rec.outcome = res.outcome; rec.detail = res.detail; rec.paramCount = res.paramCount;
+            ledger.endLoad (rec);
+        }
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "TYPEDTEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        listeners.attach (*inst);
+        cal = capture.calibrate (*inst, loadedId);
+
+        auto& params = inst->getParameters();
+        int idx = -1;
+        if (paramSpec.containsOnly ("0123456789") && paramSpec.isNotEmpty())
+            idx = paramSpec.getIntValue();
+        else
+            for (int i = 0; i < params.size(); ++i)
+                if (params[i]->getName (64).containsIgnoreCase (paramSpec)) { idx = i; break; }
+        if (! juce::isPositiveAndBelow (idx, params.size()))
+        { std::cout << "TYPEDTEST: no parameter matches" << std::endl; quitNow(); return; }
+
+        lastSweptIndex = idx;
+        lastSweptName  = params[idx]->getName (48);
+        std::cout << "TYPEDTEST: " << desc.name << " | param " << idx
+                  << " (" << lastSweptName << ")" << std::endl;
+        std::cout << "TYPEDTEST: typist SIMULATED from getCurrentValueAsText; the "
+                     "production path is a human transcribing the GUI" << std::endl;
+
+        int fails = 0;
+        startTypedAnchors();
+        if (! typedActive) { std::cout << "TYPEDTEST: flow did not start" << std::endl; quitNow(); return; }
+
+        for (int step = 0; step < 5 && typedActive; ++step)
+        {
+            const auto shown = params[idx]->getCurrentValueAsText();
+            typedEntry.setText (shown, juce::dontSendNotification);
+            std::cout << "  step " << (step + 1) << "/5 n=" << kTypedSteps[step]
+                      << " GUI shows \"" << shown << "\"" << std::endl;
+            typedNext();
+        }
+
+        if (typedActive) { std::cout << "TYPEDTEST: FAIL - flow still active" << std::endl; quitNow(); return; }
+
+        const auto& sw = lastSweepOutcome;
+        const bool rowOk = ledger.runArtifact ("captures", "jsonl").loadFileAsString()
+                             .contains ("human-typed");
+        if (! (sw.ok && sw.method == "human-typed" && rowOk)) ++fails;
+        std::cout << "  " << (sw.ok && rowOk ? "ok   " : "FAIL ")
+                  << "typed table sanitized and recorded: " << sw.reason << std::endl;
+
+        // The gate's last clause: the typed anchors must interpolate correctly
+        // through the REAL EchoJayParamApply.h. Ask for a value BETWEEN two
+        // anchors, write the interpolated norm, and read the display back.
+        if (sw.anchors.size() >= 3)
+        {
+            const int i = sw.anchors.size() / 2;
+            const float vTarget = 0.5f * (sw.anchors[i][0] + sw.anchors[i + 1][0]);
+            const float n = juce::jlimit (0.0f, 1.0f,
+                                echojay::interpolateAnchors (sw.anchors, vTarget));
+            writeNormGesture (idx, n);
+            const auto landed = params[idx]->getCurrentValueAsText();
+            double vLanded = 0.0;
+            const bool parsed = echojay::parseLeadingFloat (landed, vLanded);
+
+            float lo = sw.anchors.getFirst()[0], hi = lo;
+            for (const auto& a : sw.anchors) { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
+            const float gap = std::abs (sw.anchors[i + 1][0] - sw.anchors[i][0]);
+            const float tol = juce::jmax (0.02f * (hi - lo), 0.6f * gap);
+
+            const bool match = parsed && std::abs ((float) vLanded - vTarget) <= tol;
+            if (! match) ++fails;
+            std::cout << "  " << (match ? "ok   " : "FAIL ")
+                      << "interpolateAnchors round trip: asked " << vTarget
+                      << ", wrote n=" << juce::String (n, 3)
+                      << ", display shows \"" << landed << "\" (tol " << tol << ")" << std::endl;
+        }
+        else
+        {
+            ++fails;
+            std::cout << "  FAIL too few anchors for the interpolation check" << std::endl;
+        }
+
+        std::cout << "TYPEDTEST: " << (fails == 0 ? "PASS" : "FAIL") << std::endl;
         std::cout.flush();
         quitNow();
     }
@@ -1081,6 +1234,27 @@ public:
             maskPicker.setBounds (row.removeFromLeft (420));
             row.removeFromLeft (6);
             unmaskButton.setBounds (row.removeFromLeft (80));
+        }
+
+        // Typed-anchor row, while the flow is active.
+        if (typedPrompt.isVisible())
+        {
+            r.removeFromTop (4);
+            auto row = r.removeFromTop (22);
+            typedPrompt.setBounds (row.removeFromLeft (330));
+            row.removeFromLeft (6);
+            typedEntry.setBounds (row.removeFromLeft (150));
+            row.removeFromLeft (6);
+            typedNextButton.setBounds (row.removeFromLeft (60));
+            row.removeFromLeft (6);
+            typedCancelButton.setBounds (row.removeFromLeft (70));
+        }
+
+        // Curve view: costs height only when a curve exists to look at.
+        if (curveView.isVisible())
+        {
+            r.removeFromTop (4);
+            curveView.setBounds (r.removeFromTop (150));
         }
 
         r.removeFromTop (8);
@@ -1764,13 +1938,24 @@ private:
         captureReadout.setText ("Sweeping " + juce::String (idx) + ": " + name + "...",
                                 juce::dontSendNotification);
 
-        // The sweep mutates the instance (set-then-read, state restore) and
-        // the pump renders it: those two raced inside mpressor's own code and
-        // crashed the pump thread. Pause-and-drain around every sweep.
+        // Sweeps mutate what the pump renders (set-then-read, state restore),
+        // which the plugin API does not specify against a concurrent
+        // processBlock: pause-and-drain around every sweep. And a sweep is a
+        // crash window on unknown plugins, so it runs under its own inflight
+        // record, same as a load.
+        beginSweepInflight (idx, name);
         host.pausePumpForMutation();
         auto outcome = sweepOneIndex (*inst, idx, watchdog, loadedId);
         host.resumePumpAfterMutation();
+        endSweepInflight (idx, outcome);
         recordSweep (idx, name, outcome);
+
+        lastSweptIndex   = idx;
+        lastSweptName    = name;
+        lastSweepOutcome = outcome;
+        curveView.show (outcome, juce::String (idx) + ": " + name);
+        typeButton.setEnabled (true);
+        resized();
 
         juce::String t;
         t << "SWEEP " << idx << ":" << name << "  -  "
@@ -1782,6 +1967,221 @@ private:
 
         sweepButton.setEnabled (true);
         armButton.setEnabled (true);
+    }
+
+    //==========================================================================
+    /** The typed-anchor path: the human transcribes the GUI reading at five
+        parked positions. The fallback for both liar classes -- flat (the
+        display carries nothing) and identity (the display is fabricated and
+        plausible) -- and for any curve the human rejects. Corpus-measured
+        scope: whole-plugin fabrication is 9 products, so this is a fallback,
+        not the main path.
+    */
+    static constexpr float kTypedSteps[5] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
+
+    void writeNormGesture (int idx, float n)
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr || ! juce::isPositiveAndBelow (idx, inst->getParameters().size()))
+            return;
+        auto* p = inst->getParameters()[idx];
+        // The same begin/change/end shape applyOne uses: a bare value poke is
+        // not what hosts do, and some plugins only repaint under a gesture.
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (n);
+        p->endChangeGesture();
+    }
+
+    void startTypedAnchors()
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr || lastSweptIndex < 0 || typedActive || capture.isArmed())
+            return;
+
+        // The flow mutates the plugin and ends in a full state restore, so it
+        // runs under the same inflight record as a sweep.
+        beginSweepInflight (lastSweptIndex, lastSweptName + " (typed)");
+
+        host.pausePumpForMutation();
+        inst->getStateInformation (typedStateBefore);
+        host.resumePumpAfterMutation();
+
+        typedActive = true;
+        typedStep = 0;
+        typedPairs.clear();
+        typedTexts.clear();
+
+        typedPrompt.setVisible (true);
+        typedEntry.setVisible (true);
+        typedNextButton.setVisible (true);
+        typedCancelButton.setVisible (true);
+        typeButton.setEnabled (false);
+        armButton.setEnabled (false);
+        sweepButton.setEnabled (false);
+
+        typedParkAndPrompt();
+        resized();
+    }
+
+    void typedParkAndPrompt()
+    {
+        writeNormGesture (lastSweptIndex, kTypedSteps[typedStep]);
+        typedPrompt.setText ("Typed anchors " + juce::String (typedStep + 1) + "/5 (n="
+                               + juce::String (kTypedSteps[typedStep], 2) + "): what does the GUI show for "
+                               + lastSweptName + "?",
+                             juce::dontSendNotification);
+        typedEntry.setText ({}, juce::dontSendNotification);
+        typedEntry.grabKeyboardFocus();
+    }
+
+    void typedNext()
+    {
+        if (! typedActive)
+            return;
+
+        const auto text = typedEntry.getText().trim();
+        double v = 0.0;
+        if (! echojay::parseLeadingFloat (text, v))
+        {
+            typedPrompt.setText ("Could not parse \"" + text + "\" - type the number the GUI shows",
+                                 juce::dontSendNotification);
+            return;
+        }
+
+        juce::Array<float> pair;
+        pair.add ((float) v);
+        pair.add (kTypedSteps[typedStep]);
+        typedPairs.add (pair);
+        typedTexts.add (text);
+
+        if (++typedStep < 5)
+        {
+            typedParkAndPrompt();
+            return;
+        }
+        typedFinish();
+    }
+
+    void typedFinish()
+    {
+        auto* inst = host.getInstance();
+
+        // Restore the instance exactly as it arrived, same bracket as setread.
+        if (inst != nullptr && typedStateBefore.getSize() > 0)
+        {
+            host.pausePumpForMutation();
+            inst->setStateInformation (typedStateBefore.getData(), (int) typedStateBefore.getSize());
+            host.resumePumpAfterMutation();
+        }
+
+        // Same pipeline as a machine sweep: raw pairs, shared sanitizer,
+        // recorded whatever the verdict. Only the method differs.
+        SweepOutcome sw;
+        sw.method = "human-typed";
+        sw.rawAnchors = typedPairs;
+        for (int i = 0; i < typedTexts.size(); ++i)
+            sw.points.add ({ kTypedSteps[i], typedTexts[i] });
+
+        auto eff = echojay::dominantMonotonicTable (typedPairs);
+        if (eff.ok)
+        {
+            sw.anchors = eff.table;
+            sw.rejectedPoints = typedPairs.size() - eff.table.size();
+            sw.anchorsReversed = eff.table.getFirst()[0] > eff.table.getLast()[0];
+            float lo = eff.table.getFirst()[0], hi = lo;
+            for (const auto& a : eff.table) { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
+            sw.ok = (hi - lo) >= 1.0e-6f;
+            sw.reason = juce::String (sw.anchors.size()) + " anchors (human-typed"
+                      + (sw.anchorsReversed ? ", descending" : ", ascending")
+                      + (sw.rejectedPoints > 0
+                           ? ", " + juce::String (sw.rejectedPoints) + " rejected by the sanitizer"
+                           : juce::String())
+                      + (sw.ok ? juce::String() : juce::String(", DEGENERATE SPAN, refused")) + ")";
+        }
+        else
+        {
+            sw.rejectedPoints = typedPairs.size();
+            sw.reason = "sanitizer refused the typed table: no strictly-monotonic run covers "
+                        "60% of 5 typed points. Typos happen; run the typed path again.";
+        }
+
+        endSweepInflight (lastSweptIndex, sw);
+        recordSweep (lastSweptIndex, lastSweptName, sw);
+
+        lastSweepOutcome = sw;
+        curveView.show (sw, juce::String (lastSweptIndex) + ": " + lastSweptName + " (typed)");
+
+        captureReadout.setText ("TYPED " + juce::String (lastSweptIndex) + ":" + lastSweptName
+                                  + "  -  " + sw.reason, juce::dontSendNotification);
+        std::cout << "TYPED: " << lastSweptIndex << ":" << lastSweptName
+                  << "  -  " << sw.reason << std::endl;
+
+        typedTeardownUi();
+    }
+
+    void typedCancel()
+    {
+        if (! typedActive)
+            return;
+
+        auto* inst = host.getInstance();
+        if (inst != nullptr && typedStateBefore.getSize() > 0)
+        {
+            host.pausePumpForMutation();
+            inst->setStateInformation (typedStateBefore.getData(), (int) typedStateBefore.getSize());
+            host.resumePumpAfterMutation();
+        }
+
+        SweepOutcome sw;
+        sw.method = "human-typed";
+        sw.reason = "typed path cancelled by the human at step "
+                  + juce::String (typedStep + 1) + " of 5; state restored, nothing written";
+        endSweepInflight (lastSweptIndex, sw);
+        // Deliberately NO captures row: a cancel is not evidence about the
+        // parameter. The ledger row above records that the flow ran and ended.
+
+        captureReadout.setText ("Typed path cancelled; state restored.", juce::dontSendNotification);
+        typedTeardownUi();
+    }
+
+    void typedTeardownUi()
+    {
+        typedActive = false;
+        typedPrompt.setVisible (false);
+        typedEntry.setVisible (false);
+        typedNextButton.setVisible (false);
+        typedCancelButton.setVisible (false);
+        typeButton.setEnabled (lastSweptIndex >= 0);
+        armButton.setEnabled (true);
+        sweepButton.setEnabled (lastCapturedIndex >= 0);
+        resized();
+    }
+
+    //==========================================================================
+    /** The sweep is a crash window on plugins nothing has swept before, so it
+        runs under the same inflight protocol as a load: begin writes
+        inflight.json, a crash leaves it behind as attributable evidence, and
+        a completed sweep records its outcome as a ledger row.
+    */
+    void beginSweepInflight (int index, const juce::String& name)
+    {
+        ledger.beginLoad (loadedId, loadedName, {}, {}, {},
+                          "sweep", "sweepOneIndex idx=" + juce::String (index)
+                                     + " (" + name + ")");
+    }
+
+    void endSweepInflight (int index, const SweepOutcome& sw)
+    {
+        LedgerRecord rec;
+        rec.pluginId = loadedId;
+        rec.name     = loadedName;
+        rec.stage    = "sweep";
+        rec.outcome  = LoadOutcome::ok;     // the process survived; the sweep's own
+                                            // verdict lives in the captures row
+        rec.detail   = "idx " + juce::String (index) + ": "
+                     + (sw.ok ? "anchors" : (sw.flat ? "text liar" : "refused"))
+                     + " (" + sw.method + ") " + sw.reason.substring (0, 140);
+        ledger.endLoad (rec);
     }
 
     /** The sweep row. Points travel with the anchors because anchor values
@@ -2394,8 +2794,24 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
-    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton;
+    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton;
     int lastCapturedIndex = -1;    // what Sweep targets: the last captured index
+    int lastSweptIndex = -1;       // what Type targets: the last swept index
+    juce::String lastSweptName;
+    SweepOutcome lastSweepOutcome;
+
+    CurveView curveView;
+
+    // Typed-anchor flow state. One step per typedSteps entry; the plugin is
+    // parked at each step while the human transcribes the GUI reading.
+    bool typedActive = false;
+    int  typedStep = 0;
+    juce::Array<juce::Array<float>> typedPairs;
+    juce::StringArray typedTexts;
+    juce::MemoryBlock typedStateBefore;
+    juce::Label      typedPrompt;
+    juce::TextEditor typedEntry;
+    juce::TextButton typedNextButton, typedCancelButton;
     juce::Label      captureReadout;
     CaptureEngine::Calibration cal;
     CaptureEngine::NoiseMask   mask;

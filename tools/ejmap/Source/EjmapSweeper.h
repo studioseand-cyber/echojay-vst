@@ -87,6 +87,9 @@ struct SweepOutcome
 
     juce::Array<echojay::SweepPoint>  points;      // what the plugin displayed
     juce::Array<juce::Array<float>>   anchors;     // [value, norm], sanitized
+    juce::Array<juce::Array<float>>   rawAnchors;  // [value, norm], pre-sanitize:
+                                                   // the curve view marks what
+                                                   // sanitization rejected
     juce::String reason;
     int durationMs = 0;
 };
@@ -181,6 +184,8 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
         out.durationMs = (int) (juce::Time::getMillisecondCounter() - t0);
         return out;
     }
+
+    out.rawAnchors = raw;
 
     // The shared sanitizer. Rejections are counted, never silent.
     auto eff = echojay::dominantMonotonicTable (raw);
