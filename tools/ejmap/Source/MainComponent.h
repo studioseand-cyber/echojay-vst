@@ -968,6 +968,8 @@ public:
            << "{\"index\": " << qualified[1] << ", \"kind\": \"ratio\", \"confidence\": \"med\", \"reason\": \"synthetic WRONG proposal (selftest)\"},"
            << "{\"index\": " << qualified[3] << ", \"kind\": \"attack_ms\", \"confidence\": \"high\", \"reason\": \"synthetic corroborated proposal (selftest)\"},"
            << "{\"index\": " << ignEligible << ", \"kind\": \"ignore\", \"confidence\": \"high\", \"reason\": \"synthetic utility (selftest)\"},"
+           << "{\"index\": 0, \"kind\": \"mode\", \"confidence\": \"med\", \"reason\": \"synthetic switch A (selftest)\"},"
+           << "{\"index\": 1, \"kind\": \"mode\", \"confidence\": \"med\", \"reason\": \"synthetic switch B (selftest)\"},"
            << "{\"index\": " << ignWithheld << ", \"kind\": \"ignore\", \"confidence\": \"high\", \"reason\": \"synthetic but dial-set-named (selftest)\"}"
            << "] }";
         pdir.getChildFile (currentFp + ".json").replaceWithText (pj);
@@ -1019,6 +1021,26 @@ public:
         {
             startAssignment();
             ok (assigning && assignPanel.rows.size() > 0, "assignment began with rows");
+
+            // THE ROW STATES ITS QUESTION. Print what a human now reads for
+            // the three shapes the first stopwatch run tripped over: a
+            // proposal row, an unmapped row, and two mode switches that must
+            // not wear one uniform.
+            juce::StringArray modeLabels;
+            for (int i = 0; i < assignPanel.rows.size(); ++i)
+            {
+                auto& rr = assignPanel.rows.getReference (i);
+                if (rr.semantic == "mode") modeLabels.add (assignPanel.displayLabel (rr));
+            }
+            ok (modeLabels.size() == 2 && modeLabels[0] != modeLabels[1],
+                "two mode rows render distinctly: '" + modeLabels[0] + "' vs '" + modeLabels[1] + "'");
+
+            assignPanel.selectRow (findRow ("threshold_db"));
+            std::cout << "  QUESTION(proposal): "
+                      << assignPanel.currentQuestionText().replace ("\n", " / ") << std::endl;
+            assignPanel.selectRow (findRow ("makeup_db"));
+            std::cout << "  QUESTION(unmapped): "
+                      << assignPanel.currentQuestionText().replace ("\n", " / ") << std::endl;
 
             // Uncorroborated SPACE refused: the ratio proposal has no evidence.
             const int r = findRow ("ratio");

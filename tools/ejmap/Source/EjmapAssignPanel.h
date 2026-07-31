@@ -54,6 +54,17 @@ public:
         progress.setColour (juce::Label::textColourId, juce::Colour (0xff9fd8e0));
         progress.setFont (juce::FontOptions (12.0f));
 
+        // THE QUESTION STRIP. A row must state its question: what is being
+        // confirmed, in mix-engineer words, and what each answer means. The
+        // 90-second gate's first failed run cost 55 seconds on one row
+        // because the row did not say whether to hunt for a control or
+        // record its absence.
+        addAndMakeVisible (question);
+        question.setColour (juce::Label::textColourId, juce::Colour (0xffd8d0a0));
+        question.setFont (juce::FontOptions (13.0f));
+        question.setJustificationType (juce::Justification::topLeft);
+        question.setMinimumHorizontalScale (1.0f);
+
         addAndMakeVisible (list);
         list.setModel (this);
         list.setRowHeight (20);
@@ -148,8 +159,10 @@ public:
         sortRows();
         restoreSession();
         selected = firstUnresolved();
+        list.selectRow (selected);
         list.updateContent();
         updateProgress();
+        updateQuestion();
         say ("Assign: " + juce::String (rows.size()) + " rows, "
                + juce::String (ignoreRows.size()) + " classifier ignores. "
                + (proposals.present ? "Proposals loaded." : "NO proposals for this fp: dial-set rows only."));
@@ -159,8 +172,9 @@ public:
     AssignRow& rowAt (int i) { return i < rows.size() ? rows.getReference (i)
                                                       : ignoreRows.getReference (i - rows.size()); }
     int selectedRow() const { return selected; }
+    juce::String currentQuestionText() const { return question.getText(); }
     void selectRow (int i) { selected = juce::jlimit (0, juce::jmax (0, rowCount() - 1), i);
-                             list.selectRow (selected); list.updateContent(); }
+                             list.selectRow (selected); list.updateContent(); updateQuestion(); }
 
     //==========================================================================
     // Actions. Keys call these; the self-test calls these.
@@ -506,9 +520,86 @@ public:
     {
         auto r = getLocalBounds();
         progress.setBounds (r.removeFromTop (18));
+        question.setBounds (r.removeFromTop (52));
         if (reasonEntry.isVisible())
             reasonEntry.setBounds (r.removeFromTop (22));
         list.setBounds (r);
+    }
+
+    void selectedRowsChanged (int row) override
+    {
+        if (row >= 0) selected = row;
+        updateQuestion();
+    }
+
+    /** Mix-engineer words: the SHARED semanticLabel plus the unit, and mode
+        rows carry their parameter name because four rows reading "mode" are
+        four different switches wearing one uniform.
+    */
+    juce::String displayLabel (const AssignRow& r) const
+    {
+        if (r.kind == "ignore")  return "ignore: " + r.proposedName;
+        if (r.kind == "unsure")  return "unsure: " + r.proposedName;
+        auto label = echojay::semanticLabel (r.semantic);
+        auto unit = echojay::semanticUnit (r.semantic);
+        if (unit == "db")  unit = "dB";
+        else if (unit == "hz")  unit = "Hz";
+        else if (unit == "pct") unit = "%";
+        if (unit.isNotEmpty()) label << " (" << unit << ")";
+        if (r.semantic == "mode" && r.proposedName.isNotEmpty())
+            label << " - " << r.proposedName;
+        return label;
+    }
+
+    /** The question the current row is asking, with the answers and their
+        cost spelled out. This is what a human reads fifty times, so it says
+        exactly what a keypress will do.
+    */
+    void updateQuestion()
+    {
+        if (rowCount() == 0) { question.setText ({}, juce::dontSendNotification); return; }
+        auto& r = rowAt (selected);
+        const auto label = displayLabel (r);
+        juce::String q;
+
+        if (r.isResolved())
+        {
+            q << label << ": " << r.stateString()
+              << (r.skipReason.isNotEmpty() ? " (" + r.skipReason + ")" : juce::String())
+              << ". Arrow on; W re-opens it.";
+        }
+        else if (r.kind == "ignore")
+        {
+            q << "Classifier says IGNORE [" << r.proposedIndex << "] " << r.proposedName
+              << ": " << r.proposalReason << "\n"
+              << "N agree (one key) - W dispute by touching it - I bulk-accepts all eligible ignores";
+        }
+        else if (r.kind == "unsure")
+        {
+            q << "Classifier is UNSURE about [" << r.proposedIndex << "] " << r.proposedName
+              << ": " << r.proposalReason << "\n"
+              << "Nothing to confirm HERE: if it belongs to a semantic, W on that row. "
+              << "D defers this note (one key).";
+        }
+        else if (r.proposedIndex >= 0)
+        {
+            const auto cor = evidence.corroborationFor (r.proposedIndex, r.proposedName);
+            q << "Is [" << r.proposedIndex << "] '" << r.proposedName
+              << "' this plugin's " << label << "?\n";
+            if (deepMode)
+                q << "W touch it to verify (Deep: SPACE disabled)";
+            else if (cor.isNotEmpty())
+                q << "SPACE yes (evidence on disk: " << cor << ") - W touch it to verify";
+            else
+                q << "W touch it to verify (SPACE locked: no evidence for this index yet)";
+            q << " - N no such control - D later";
+        }
+        else
+        {
+            q << "Does this plugin have a " << label << " control? NO index proposed.\n"
+              << "W touch it on the GUI - N it does not exist (ONE KEY, four seconds) - D later";
+        }
+        question.setText (q, juce::dontSendNotification);
     }
 
     int getNumRows() override { return rowCount(); }
@@ -530,11 +621,16 @@ public:
         juce::String t;
         t << (r.state == AssignRow::State::confirmed ? juce::String (juce::CharPointer_UTF8 ("\xe2\x9c\x93 "))
               : r.isSkipped() ? "- " : "  ");
-        t << (r.semantic.isNotEmpty() ? r.semantic : r.kind);
-        if (r.proposedIndex >= 0)
-            t << "  [" << (r.resolvedIndex >= 0 ? r.resolvedIndex : r.proposedIndex) << "] "
-              << r.proposedName;
-        if (r.proposalMismatch) t << "  (re-pointed)";
+        t << displayLabel (r);
+        if (r.kind != "ignore" && r.kind != "unsure")
+        {
+            if (r.proposedIndex >= 0)
+                t << "  <- [" << (r.resolvedIndex >= 0 ? r.resolvedIndex : r.proposedIndex) << "] "
+                  << r.proposedName;
+            else if (! r.isResolved())
+                t << "  (unmapped: N if absent)";
+        }
+        if (r.proposalMismatch) t << "  re-pointed";
         if (r.trust.isNotEmpty()) t << "  " << r.trust;
         g.drawText (t, 4, 0, w - 8, h, juce::Justification::centredLeft);
     }
@@ -789,6 +885,7 @@ private:
     EvidenceIndex evidence;
     juce::ListBox list;
     juce::Label progress;
+    juce::Label question;
     juce::TextEditor reasonEntry;
     juce::Optional<AssignRow::State> pendingSkip;
     juce::String pendingAutoSkipReason;
