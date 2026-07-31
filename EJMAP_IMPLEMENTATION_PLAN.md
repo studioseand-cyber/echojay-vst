@@ -265,6 +265,8 @@ each tick:
 
 **Gate.** Map a compressor end to end in Fast mode in under 30 s, and a 5 band EQ in under 90 s, both measured with a real stopwatch on a real plugin, not estimated. The handoff's own rule applies: every unmeasured estimate in this project collapsed, usually smaller. If the target is missed, report the real number and adjust the target rather than the measurement.
 
+> **Gate record (2026-07-31, real stopwatch).** API-2500 (m), 15 rows, list-era UI: **286 s** — failed on comprehension, and drove four usability passes (question strip, on-screen legend, queue rendering, the wizard). C1 comp (s), 9 rows, wizard, cold, **no proposals**: **89 s, ~10 s/row**, including one real error caught (threshold_db and knee_db both landing on [7] — now queried at capture, not at review). The 30 s target was written for the **proposal-backed lane**, which covers 26% of machine-relevant plugins; the bare lane is the 74% case and measures ~10 s/row. Per the gate's own rule the target adjusts, not the measurement: **bare-lane target = rows × 10 s** until proposals or better corroboration bring it down; the 30 s compressor claim stands only where a verdict exists for the fp.
+
 ---
 
 ### M5: Groups, families, twins

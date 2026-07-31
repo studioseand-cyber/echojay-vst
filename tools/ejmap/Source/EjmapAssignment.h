@@ -263,6 +263,23 @@ struct AssignRow
     juce::String mode;                     // "fast" | "deep", recorded at resolution
     juce::String trust;                    // "human-verified" | "llm-classified"
     juce::String skipReason;
+
+    /** Capture-time index conflict. Set when this row's captured index is
+        already held by another confirmed semantic: the card asks IMMEDIATELY
+        ("[7] Threshold is already assigned to threshold_db. Is this the right
+        control for knee (dB)?") instead of surfacing it minutes later at
+        review, when the human must reconstruct what they did from memory.
+        Transient: not persisted, because an unresolved conflict after a crash
+        should simply re-capture.
+    */
+    juce::String conflictWith;
+
+    /** The human insisted the plugin genuinely shares this parameter between
+        two semantics. Exempts the pair from the duplicate refusal, and is
+        recorded so the map says the doubling was a decision, not an accident.
+    */
+    bool sharedInsisted = false;
+
     juce::Array<int> coMoved;
     SweepOutcome sweep;
     juce::String resolvedAt;               // ISO 8601
@@ -312,6 +329,7 @@ struct AssignRow
         o->setProperty ("state", stateString());
         o->setProperty ("resolved_index", resolvedIndex);
         o->setProperty ("proposal_mismatch", proposalMismatch);
+        o->setProperty ("shared_insisted", sharedInsisted);
         o->setProperty ("corroboration", corroboration);
         o->setProperty ("mode", mode);
         o->setProperty ("trust", trust);

@@ -1261,35 +1261,54 @@ public:
         }
         case 4:
         {
+            // CAPTURE-TIME CONFLICT: the C1 finding. The tool knew at capture
+            // that [q3] already belonged to attack_ms; it must ask NOW, in the
+            // card, not minutes later at review.
             const int rel = findRow ("release_ms");
-            const int a2  = findRow ("attack_ms");
-            ok (assignPanel.rows.getReference (rel).state == AssignRow::State::confirmed
-                  && assignPanel.rows.getReference (rel).resolvedIndex
-                       == assignPanel.rows.getReference (a2).resolvedIndex,
-                "duplicate staged: two semantics confirmed on one index");
+            auto& rr = assignPanel.rows.getReference (rel);
+            ok (rr.state != AssignRow::State::confirmed && rr.conflictWith == "attack_ms",
+                "capture-time: row HELD at the conflict, not confirmed");
+            ok (assignPanel.textRender().contains ("already assigned to attack_ms"),
+                "the card asks immediately, naming the holder");
+            dump ("conflict card at capture time");
 
-            assignPanel.dispatchAction ("submit");
-            ok (assignPanel.isSummaryShowing() && ! assignPanel.isSubmitEnabled(),
-                "review screen shows the conflict and disables submit");
-            ok (assignPanel.textRender().contains ("one index, two semantics"),
-                "the refusal is stated in words on the review screen");
-            dump ("review with a duplicate index");
-            ok (! assignPanel.confirmSubmitFromSummary(),
-                "submit refuses while the conflict stands");
-
-            // Fix it the way the screen says: back, re-open the wrong row, defer it.
-            assignPanel.dispatchAction ("prev");     // back to the rows
+            // Path 1: D clears it.
             assignPanel.selectRow (rel);
-            assignPanel.dispatchAction ("wiggle");   // re-opens (armed)
-            assignPanel.dispatchAction ("defer");    // stands the arm down, defers
-            ok (assignPanel.rows.getReference (rel).state == AssignRow::State::skipDeferred,
-                "W re-open + D cleared the duplicate");
-            dump ("after clearing the duplicate");
+            assignPanel.dispatchAction ("defer");
+            ok (assignPanel.rows.getReference (rel).state == AssignRow::State::skipDeferred
+                  && assignPanel.rows.getReference (rel).conflictWith.isEmpty(),
+                "D resolves the conflict card (deferred, flag cleared)");
+
+            // Path 2: re-stage and INSIST (a plugin genuinely sharing a param).
+            assignPanel.selectRow (rel);
+            assignPanel.dispatchAction ("wiggle");    // re-open
+            auto* i3 = host.getInstance();
+            i3->getParameters()[qualified[3]]->setValueNotifyingHost (0.20f);
+            juce::Timer::callAfterDelay (300, [this]
+            {
+                auto* i4 = host.getInstance();
+                if (i4 != nullptr) i4->getParameters()[qualified[3]]->setValueNotifyingHost (0.55f);
+            });
+            ++stage;
+            juce::Timer::callAfterDelay (1200, [this] { assignTestStep(); });
+            return;
+        }
+        case 5:
+        {
+            const int rel = findRow ("release_ms");
+            ok (assignPanel.rows.getReference (rel).conflictWith == "attack_ms",
+                "re-capture raised the conflict card again");
+            assignPanel.selectRow (rel);
+            assignPanel.dispatchAction ("space");     // the insist
+            ok (assignPanel.rows.getReference (rel).state == AssignRow::State::confirmed
+                  && assignPanel.rows.getReference (rel).sharedInsisted,
+                "SPACE insisted: shared control confirmed and recorded as a decision");
+            dump ("after insisting the shared control");
 
             assignPanel.dispatchAction ("submit");
             ok (assignPanel.isSummaryShowing() && assignPanel.isSubmitEnabled(),
-                "review screen now offers submit");
-            dump ("review, clean");
+                "review allows the insisted pair (defence in depth exempts decisions)");
+            dump ("review with an insisted shared control");
             ok (assignPanel.confirmSubmitFromSummary(), "submit confirmed from the review screen");
             auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
             ok (f.existsAsFile(), "map written to maps/<fp>.json");
@@ -1306,6 +1325,13 @@ public:
             if (kneeTestIdx >= 0)
                 ok (juce::JSON::toString (v.getProperty ("skips", juce::var())).contains ("mode_material"),
                     "map carries knee_db as mode_material, not as absent");
+            {
+                auto pms2 = v.getProperty ("params", juce::var());
+                const int ia = (int) pms2.getProperty ("attack_ms", juce::var()).getProperty ("index", -1);
+                const int ir = (int) pms2.getProperty ("release_ms", juce::var()).getProperty ("index", -2);
+                ok (ia >= 0 && ia == ir,
+                    "map carries the insisted shared control on both semantics");
+            }
 
             std::cout << "ASSIGNTEST: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
             std::cout.flush();
@@ -2733,7 +2759,7 @@ private:
         {
             std::map<int, juce::StringArray> byIndex;
             for (auto& r : rws)
-                if (r.state == AssignRow::State::confirmed)
+                if (r.state == AssignRow::State::confirmed && ! r.sharedInsisted)
                     byIndex[r.resolvedIndex].add (r.semantic);
             for (auto& kv : byIndex)
                 if (kv.second.size() > 1)

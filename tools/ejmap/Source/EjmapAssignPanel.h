@@ -219,7 +219,10 @@ public:
             case AssignRow::State::skipNotAutomatable:return "NO PARAM";
             case AssignRow::State::skipDeferred:      return "LATER";
             case AssignRow::State::armed:             return "ARMED - touch the control";
-            case AssignRow::State::captured:          return "captured...";
+            case AssignRow::State::captured:
+                return r.conflictWith.isNotEmpty()
+                         ? "INDEX CONFLICT with " + r.conflictWith + " - decide in the card"
+                         : "captured...";
             case AssignRow::State::swept:
                 return r.sweep.nonNumeric ? "needs M (labelled switch)"
                      : r.sweep.flat       ? "needs T (text liar)"
@@ -288,6 +291,8 @@ public:
         if (rowCount() == 0) return id == "skipplugin";
         auto& r = rowAt (selected);
 
+        if (id == "space" && r.conflictWith.isNotEmpty() && ! r.isResolved() && r.sweep.ok)
+            return true;                               // the insist on a shared control
         if (id == "space")
             return ! deepMode && ! r.isResolved() && r.semantic.isNotEmpty()
                 && r.semantic != "mode"                    // mode never confirms via anchors
@@ -398,11 +403,31 @@ public:
     //==========================================================================
     // Actions. Keys call these; the self-test calls these.
 
-    /** SPACE. Fast lane only, and only on corroborated proposals. */
+    /** SPACE. Fast lane only, and only on corroborated proposals. On a row
+        held at an index conflict, SPACE is the INSIST: the plugin genuinely
+        shares this parameter between two semantics, recorded as a decision.
+    */
     void actionSpace()
     {
         if (rowCount() == 0) return;
         auto& r = rowAt (selected);
+
+        if (r.conflictWith.isNotEmpty() && ! r.isResolved() && r.sweep.ok)
+        {
+            r.state = AssignRow::State::confirmed;
+            r.sharedInsisted = true;
+            r.trust = "human-verified";
+            r.mode = deepMode ? "deep" : "fast";
+            r.resolvedAt = juce::Time::getCurrentTime().toISO8601 (true);
+            recordResolution (r, "shared_index_insist");
+            supersedeSiblings (r);
+            say ("INSISTED: [" + juce::String (r.resolvedIndex) + "] serves both "
+                   + r.conflictWith + " and " + r.semantic + ", recorded as a shared control.");
+            r.conflictWith = {};
+            advance();
+            persistSession(); list.updateContent(); updateProgress();
+            return;
+        }
 
         if (r.semantic.isEmpty() || r.proposedIndex < 0)
         { say ("SPACE needs a proposal with a semantic. W to capture, or skip."); return; }
@@ -425,6 +450,20 @@ public:
         r.resolvedIndex = r.proposedIndex;
         r.corroboration = cor;
         r.mode = "fast";
+
+        if (sw.ok)
+        {
+            const auto holder = confirmedHolderOf (r.proposedIndex, &r);
+            if (holder.isNotEmpty())
+            {
+                r.state = AssignRow::State::captured;
+                r.conflictWith = holder;
+                say ("[" + juce::String (r.proposedIndex) + "] " + r.proposedName
+                       + " is already assigned to " + holder + ". Decide in the card.");
+                persistSession(); list.updateContent(); updateQuestion();
+                return;
+            }
+        }
 
         // A mode semantic never confirms through the anchor path: the map's
         // mode entries carry labels, and an anchored mode entry is a broken
@@ -466,6 +505,7 @@ public:
         if (rowCount() == 0) return;
         auto& r = rowAt (selected);
         if (r.kind == "ignore") { say ("Ignore rows are skipped, not captured."); return; }
+        r.conflictWith = {};
         r.state = AssignRow::State::armed;
         awaitingCaptureRow = selected;
         say ("ARMED for " + (r.semantic.isNotEmpty() ? r.semantic : juce::String ("unsure row"))
@@ -568,6 +608,7 @@ public:
         else
             canned = "deferred by mapper";
 
+        r.conflictWith = {};
         r.state = outcome;
         r.skipReason = customReason.isNotEmpty() ? customReason : canned;
         r.mode = deepMode ? "deep" : "fast";
@@ -817,6 +858,18 @@ public:
         if (hooks.submit) hooks.submit (rows, category, deepMode ? "deep" : "fast");
     }
 
+    /** The semantic already holding this index, if any. Asked at CAPTURE
+        time; the review's duplicate check stays as defence in depth (it can
+        still fire via a restored session).
+    */
+    juce::String confirmedHolderOf (int idx, const AssignRow* except)
+    {
+        for (auto& r : rows)
+            if (&r != except && r.state == AssignRow::State::confirmed && r.resolvedIndex == idx)
+                return r.semantic;
+        return {};
+    }
+
     /** Two confirmed semantics on one index is a defect the map must not
         carry: makeup (dB) and output (dB) both CONFIRMED [8] on API-2500 is
         how one wrong accept poisons two keys. Computed here, shown on the
@@ -827,7 +880,7 @@ public:
         juce::StringArray out;
         std::map<int, juce::StringArray> byIndex;
         for (auto& r : rows)
-            if (r.state == AssignRow::State::confirmed)
+            if (r.state == AssignRow::State::confirmed && ! r.sharedInsisted)
                 byIndex[r.resolvedIndex].add (r.semantic);
         for (auto& kv : byIndex)
             if (kv.second.size() > 1)
@@ -1046,7 +1099,15 @@ public:
         const auto label = displayLabel (r);
         juce::String q;
 
-        if (r.state == AssignRow::State::modeMaterial)
+        if (r.conflictWith.isNotEmpty() && ! r.isResolved())
+        {
+            const int ci = r.resolvedIndex;
+            q << "[" << ci << "] '" << (hooks.paramName ? hooks.paramName (ci) : juce::String())
+              << "' is already assigned to " << r.conflictWith << ".\n"
+              << "Is it also the right control for " << label << "? "
+              << "SPACE yes, shared control - W re-capture - N no such control - D later";
+        }
+        else if (r.state == AssignRow::State::modeMaterial)
         {
             q << label << ": recorded as mode/position material. " << r.skipReason;
         }
@@ -1118,6 +1179,8 @@ public:
         auto& r = rowAt (selected);
         if (r.isResolved())
             return displayLabel (r) + ": done (" + r.stateString() + ")";
+        if (r.conflictWith.isNotEmpty())
+            return "Index already assigned to " + r.conflictWith;
         if (r.kind == "ignore") return "Agree to ignore " + r.proposedName + "?";
         if (r.kind == "unsure") return "Classifier note: " + r.proposedName;
         if (! r.sweep.points.isEmpty() && r.sweep.nonNumeric)
@@ -1165,6 +1228,15 @@ public:
         {
             add ("next", "> - next row");
             add ("wiggle", "W - re-open (re-capture)");
+            resized(); return;
+        }
+
+        if (r.conflictWith.isNotEmpty())
+        {
+            add ("space",      "SPACE - yes, shared control");
+            add ("wiggle",     "W - re-capture");
+            add ("notpresent", "N - no such control");
+            add ("defer",      "D - later");
             resized(); return;
         }
 
@@ -1326,6 +1398,20 @@ private:
 
         if (sw.ok)
         {
+            // The tool knows NOW whether another semantic holds this index.
+            // Ask now, in the card, not minutes later at review.
+            const auto holder = confirmedHolderOf (idx, &r);
+            if (holder.isNotEmpty())
+            {
+                r.state = AssignRow::State::captured;
+                r.conflictWith = holder;
+                say ("[" + juce::String (idx) + "] "
+                       + (hooks.paramName ? hooks.paramName (idx) : juce::String())
+                       + " is already assigned to " + holder + ". Decide in the card.");
+                persistSession(); list.updateContent(); updateQuestion();
+                return;
+            }
+
             r.state = AssignRow::State::confirmed;
             r.trust = "human-verified";
             r.mode = deepMode ? "deep" : "fast";
