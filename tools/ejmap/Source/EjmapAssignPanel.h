@@ -524,6 +524,7 @@ public:
                 if (auto* e = cursorControl())
                 {
                     e->excluded = true;
+                    controlsExcluded.add (e->index);
                     auto* o = new juce::DynamicObject();
                     o->setProperty ("kind", "control_excluded");
                     o->setProperty ("index", e->index);
@@ -796,6 +797,15 @@ public:
         if (rowCount() == 0) return;
         auto& r = rowAt (selected);
         if (r.kind == "ignore") { say ("Ignore rows are skipped, not captured."); return; }
+
+        // The surface rows are not parameters. W on the controls row armed a
+        // capture five times on the spiff run, timed out twice, and once
+        // captured [10] boost depth as if "controls" were a knob. W means
+        // "redo this row's own flow": re-sweep the surface, restart the
+        // bands.
+        if (r.kind == "controls") { actionControlsBegin(); return; }
+        if (r.kind == "bands")    { actionBandsBegin(); return; }
+
         r.conflictWith = {};
         r.state = AssignRow::State::armed;
         awaitingCaptureRow = selected;
@@ -1646,6 +1656,7 @@ public:
     int  controlsWiggleTarget = -1;
     int  controlsTypedEntry = -1;
     int  controlsSkippedClaimed = 0, controlsSkippedMasked = 0;
+    juce::SortedSet<int> controlsExcluded;   // human decisions, survive re-sweeps
 
     const juce::Array<NamedControl>& controlsForSubmit() const { return pendingControls; }
 
@@ -1708,6 +1719,7 @@ public:
             if ((i & 31) == 0) say ("Sweeping the surface: " + juce::String (i) + "/" + juce::String (n));
 
             ControlEntry e;
+            e.excluded = controlsExcluded.contains (i);   // decisions survive a re-sweep
             e.index = i;
             e.name  = hooks.paramName ? hooks.paramName (i) : juce::String();
             e.sweep = hooks.sweepIndex ? hooks.sweepIndex (i) : SweepOutcome();
@@ -2489,7 +2501,9 @@ public:
         if (r.isResolved())
         {
             add ("next", "> - next row");
-            add ("wiggle", "W - re-open (re-capture)");
+            add ("wiggle", r.kind == "controls" ? "W - re-sweep the surface"
+                         : r.kind == "bands"    ? "W - redo the bands"
+                                                : "W - re-open (re-capture)");
             resized(); return;
         }
 
@@ -2832,6 +2846,9 @@ private:
         juce::Array<juce::var> gv;
         for (const auto& g : acceptedGroups) gv.add (g.toVar());
         o->setProperty ("accepted_groups", juce::var (gv));
+        juce::Array<juce::var> xv;
+        for (int i = 0; i < controlsExcluded.size(); ++i) xv.add (controlsExcluded[i]);
+        o->setProperty ("controls_excluded", juce::var (xv));
 
         sessionFile().replaceWithText (juce::JSON::toString (juce::var (o), false));
     }
@@ -2943,6 +2960,9 @@ private:
         if (auto* ca = v.getProperty ("pending_controls", juce::var()).getArray())
             for (auto& cvr : *ca)
                 pendingControls.add (namedControlFromVar (cvr));
+        controlsExcluded.clear();
+        if (auto* xa = v.getProperty ("controls_excluded", juce::var()).getArray())
+            for (auto& xi : *xa) controlsExcluded.add ((int) xi);
         acceptedGroups.clear();
         if (auto* ga = v.getProperty ("accepted_groups", juce::var()).getArray())
             for (auto& gvr : *ga)

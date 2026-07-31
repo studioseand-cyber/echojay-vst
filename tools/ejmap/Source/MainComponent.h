@@ -1097,6 +1097,20 @@ public:
             "restore keeps the cargo: " + juce::String (assignPanel.controlsForSubmit().size())
               + " of " + juce::String (builtControls) + " controls after re-begin");
 
+        // W on the resolved controls row RE-SWEEPS, never arms a parameter
+        // capture (the spiff run armed five times and once captured boost
+        // depth as if "controls" were a knob).
+        {
+            int cr = -1;
+            for (int i = 0; i < assignPanel.rows.size(); ++i)
+                if (assignPanel.rows.getReference (i).kind == "controls") { cr = i; break; }
+            assignPanel.selectRow (cr);
+            assignPanel.dispatchAction ("wiggle");
+            ok (assignPanel.controlsPhase,
+                "W on the controls row re-sweeps the surface (table reopened, no capture armed)");
+            assignPanel.dispatchAction ("space");   // accept again
+        }
+
         assignPanel.dispatchAction ("submit");
         ok (assignPanel.isSummaryShowing() && assignPanel.isSubmitEnabled(),
             "review offers submit (controls row is confirmed work)");
@@ -1425,7 +1439,32 @@ public:
             ok (assignPanel.groupsForSubmit().size() == builtGroups,
                 "restore keeps the groups: " + juce::String (assignPanel.groupsForSubmit().size())
                   + " of " + juce::String (builtGroups) + " after re-begin");
+
+            // W on the resolved bands row restarts the GUIDED FLOW, not a
+            // bare capture; drive it straight back through the four touches.
+            {
+                int br = -1;
+                for (int i = 0; i < assignPanel.rows.size(); ++i)
+                    if (assignPanel.rows.getReference (i).kind == "bands") { br = i; break; }
+                assignPanel.selectRow (br);
+                assignPanel.dispatchAction ("wiggle");
+                ok (assignPanel.currentBandStep() == AssignPanel::BandStep::capFreq1,
+                    "W on the bands row restarts the guided flow at band 1's freq card");
+                bandMemberCursor = 0;
+                ++stage;
+                juce::Timer::callAfterDelay (400, [this] { bandTestDriveCapture(); });
+                return;
+            }
+        }
+
+        if (stage == 3)
+        {
+            // Back at the table after the W-redo drive: accept and finish.
+            ok (assignPanel.currentBandStep() == AssignPanel::BandStep::table,
+                "W-redo drove back to the band table");
+            assignPanel.dispatchAction ("space");
             const auto& groups = assignPanel.groupsForSubmit();
+            ok (groups.size() >= 2, "re-accept rebuilt " + juce::String (groups.size()) + " groups");
 
             // LIVE APPLY through the real applySettings: the headline
             // assertion on the real plugin.
@@ -1514,7 +1553,7 @@ public:
         }
 
         if (assignPanel.currentBandStep() == AssignPanel::BandStep::table)
-        { stage = 2; bandTestStep(); return; }
+        { if (stage < 2) stage = 2; bandTestStep(); return; }   // W-redo re-arrives at stage 3
 
         if (bandMemberCursor >= bandMemberNames.size())
         { std::cout << "BANDTEST: ran out of member names before the table" << std::endl;

@@ -296,7 +296,9 @@ each tick:
 
 **Deferred decision (not blocking):** whether the chain prompt receives a per plugin control list when a Tier 2 map exists. That is a token cost on every chain turn plus a contract rule ("only name controls in this list"). **Store it now, expose it later.** Building the data is cheap and reversible; changing the chain prompt is neither. Nothing in M6 depends on that decision.
 
-**Gate.** Map `spiff`. Confirm `sensitivity`, `sharpness`, `cut depth` and `boost depth` all appear as named controls with anchors. Confirm a synthetic `{"sharpness": 6}` resolves by name through the shared apply path and writes the correct normalised value.
+**Gate.** Map `spiff`. Confirm `sharpness`, `cut depth` and `boost depth` appear as named controls with anchors, and a synthetic `{"sharpness": 6}` resolves by name through the shared apply path to the correct normalised value.
+
+> **Gate closed 2026-07-31 (human run): 35 controls, sharpness → [14], cut depth → [2], boost depth → [10].** The original wording also demanded `sensitivity` as a named control; on the human run it was ABSENT from controls **because it was already confirmed as a Tier 1 semantic at [13] — which is correct**: the controls sweep skips Tier-1-claimed indices by design (one index, one owner, and Tier 1 outranks Tier 2). A dial-set semantic that got claimed during assignment is a better outcome than a named control, not a miss. The gate wording is corrected so the next reader does not fail a correct result.
 
 ---
 
