@@ -117,7 +117,8 @@ struct SweepOutcome
 inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
                                    int index,
                                    Watchdog& watchdog,
-                                   const juce::String& pluginId)
+                                   const juce::String& pluginId,
+                                   bool forceSetread = false)
 {
     SweepOutcome out;
 
@@ -134,13 +135,26 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
 
     const auto t0 = juce::Time::getMillisecondCounter();
     echojay::ExtractorConfig cfg;
+    // Settle by PUMPING, not sleeping: the bridged read-after-set needs the
+    // message loop to deliver the XPC reply, and a sleep blocks it (measured
+    // on API-2500: 15 ms of sleep changed nothing; one pumped interval fixed
+    // every label).
+    cfg.settleMs = 15;
+    if (juce::MessageManager::getInstanceWithoutCreating() != nullptr
+         && juce::MessageManager::getInstance()->isThisTheMessageThread())
+        cfg.settle = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (50); };
 
-    // Read-only first, exactly like the extractor.
+    // Read-only first, exactly like the extractor -- unless the caller has
+    // already MEASURED that this plugin's getText lies about set positions
+    // (the API-2500 finding: getText(1.0) said Soft, setting 1.0 showed
+    // Hard). forceSetread skips the liar and asks the only honest question:
+    // set it, then read what it says.
     out.method = "gettext";
-    out.points = p->isDiscrete() ? echojay::sweepDiscrete   (*p, cfg)
-                                 : echojay::sweepContinuous (*p, cfg);
+    if (! forceSetread)
+        out.points = p->isDiscrete() ? echojay::sweepDiscrete   (*p, cfg)
+                                     : echojay::sweepContinuous (*p, cfg);
 
-    if (echojay::sweepIsFlat (out.points))
+    if (forceSetread || echojay::sweepIsFlat (out.points))
     {
         // Full-state bracket around the mutating retry, same as the
         // extractor: each parameter restores its own value, but a linked or

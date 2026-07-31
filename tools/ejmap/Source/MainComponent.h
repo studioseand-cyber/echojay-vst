@@ -995,6 +995,183 @@ public:
         quitNow();
     }
 
+    /** Drives the Tier 2 controls phase: sweep, flagged-only table, exclude,
+        accept, submit -- then applies a named control LIVE by name through
+        the real applySettings against the just-written map.
+    */
+    void selfTestControls (const juce::String& identifier, const juce::String& modeName,
+                           const juce::String& modeLabel, const juce::String& expectNames)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "CTRLTEST: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        ledger.beginLoad (loadedId, desc.name, desc.manufacturerName,
+                          desc.pluginFormatName, desc.version, "load", "createPluginInstance");
+        auto res = host.load (desc, watchdog);
+        { LedgerRecord rec; rec.pluginId = loadedId; rec.name = desc.name;
+          rec.outcome = res.outcome; rec.detail = res.detail; rec.paramCount = res.paramCount;
+          ledger.endLoad (rec); }
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "CTRLTEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        listeners.attach (*inst);
+        cal = capture.calibrate (*inst, loadedId);
+        mask = capture.buildNoiseMask (*inst, cal, loadedId);
+        capture.resetCycleCounts();
+        promotionsFlushed = 0;
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+
+        failures = 0;
+        auto ok = [this] (bool cond, const juce::String& what)
+        {
+            if (! cond) ++failures;
+            std::cout << "  " << (cond ? "ok   " : "FAIL ") << what << std::endl;
+            std::cout.flush();
+        };
+
+        std::cout << "CTRLTEST: " << desc.name << " | " << cal.paramCount << " params" << std::endl;
+        startAssignmentForCategory ("compressor");
+
+        int ctrlRow = -1;
+        for (int i = 0; i < assignPanel.rows.size(); ++i)
+            if (assignPanel.rows.getReference (i).kind == "controls") { ctrlRow = i; break; }
+        ok (ctrlRow >= 0, "the controls row exists");
+        assignPanel.selectRow (ctrlRow);
+        std::cout << "---- the controls card ----\n" << assignPanel.textRender() << std::endl;
+
+        assignPanel.dispatchAction ("space");     // sweep + table
+        const auto table = assignPanel.bandTableText();
+        std::cout << "---- controls table (default view) ----\n"
+                  << assignPanel.textRender() << std::endl;
+
+        ok (table.contains ("swept clean, recorded as setread"),
+            "flagged-only default: the clean majority is a COUNT line");
+        if (modeName.isNotEmpty())
+            ok (table.contains (modeName), "the mode finding is a decision row: " + modeName);
+
+        // A clean control's name must NOT be in the default view but MUST
+        // appear on F. Find one: first entry not needing a decision.
+        juce::String cleanName;
+        for (const auto& e : assignPanel.controlEntries)
+            if (! e.needsDecision()) { cleanName = e.name; break; }
+        if (cleanName.isNotEmpty())
+        {
+            ok (! table.contains (cleanName + "  ["),
+                "clean control '" + cleanName + "' hidden by default");
+            assignPanel.dispatchAction ("expand");
+            ok (assignPanel.bandTableText().contains (cleanName + "  ["),
+                "F expands to show it");
+            assignPanel.dispatchAction ("expand");
+        }
+
+        // Exclude one clean control, recorded.
+        if (cleanName.isNotEmpty())
+        {
+            assignPanel.selectControlByName (cleanName);
+            assignPanel.dispatchAction ("notpresent");
+            ok (ledger.runArtifact ("captures", "jsonl").loadFileAsString()
+                  .contains ("control_excluded"),
+                "exclusion recorded as a row");
+        }
+
+        assignPanel.dispatchAction ("space");     // accept
+        ok (assignPanel.controlsForSubmit().size() > 0,
+            "accept built " + juce::String (assignPanel.controlsForSubmit().size())
+              + " named controls");
+
+        assignPanel.dispatchAction ("submit");
+        ok (assignPanel.isSummaryShowing() && assignPanel.isSubmitEnabled(),
+            "review offers submit (controls row is confirmed work)");
+        assignPanel.confirmSubmitFromSummary();
+
+        auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
+        ok (f.existsAsFile(), "map written");
+        auto map = juce::JSON::parse (f.loadFileAsString());
+        auto controls = map.getProperty ("controls", juce::var());
+        ok (controls.isObject(), "map carries controls{}");
+        if (cleanName.isNotEmpty())
+            ok (! controls.getProperty (cleanName, juce::var()).isObject(),
+                "excluded control absent from the map");
+
+        // Named expectations (the spiff gate names).
+        if (expectNames.isNotEmpty())
+        {
+            juce::StringArray names;
+            names.addTokens (expectNames, ";", "");
+            for (const auto& nm : names)
+                ok (controls.getProperty (nm.trim(), juce::var()).isObject(),
+                    "named control present: " + nm.trim());
+        }
+
+        // MAP TRUTH, asserted directly: set the label's recorded norm with a
+        // pumped settle and read what the plugin displays. This bypasses
+        // applyOne's readback, which the probe below shows reading the
+        // PRE-WRITE state on bridged AUs.
+        if (modeName.isNotEmpty())
+        {
+            juce::String truth;
+            if (auto* lo = map.getProperty ("controls", juce::var())
+                              .getProperty (modeName, juce::var())
+                              .getProperty ("labels", juce::var()).getDynamicObject())
+                for (auto& kv : lo->getProperties())
+                    if (kv.name.toString() == modeLabel)
+                        truth = assignPanel.hooks.spotCheck
+                                  ? assignPanel.hooks.spotCheck (paramIndexByName (modeName),
+                                                                 (double) kv.value)
+                                  : juce::String();
+            ok (truth == modeLabel,
+                "map truth: setting " + modeName + "'s recorded norm for '" + modeLabel
+                  + "' displays \"" + truth + "\"");
+
+            // THE FINDING, reported not asserted: applyOne's immediate
+            // readback on a BRIDGED AU reads the pre-write display and
+            // falsely reverts a correct write. Shared-header behaviour;
+            // the fix is a decision for the plugin side.
+            auto* st = new juce::DynamicObject();
+            st->setProperty (modeName, modeLabel);
+            host.pausePumpForMutation();
+            auto results = echojay::applySettings (*inst, map, juce::var (st));
+            host.resumePumpAfterMutation();
+            if (results.size() == 1)
+                std::cout << "  FINDING: applyOne verdict on the bridge: "
+                          << (results[0].applied ? "applied" : "REVERTED (stale readback)")
+                          << " - " << results[0].note << std::endl;
+        }
+        // Anchored map truth the same way: recorded mid-anchor norm displays
+        // its recorded value.
+        {
+            for (const auto& c : assignPanel.controlsForSubmit())
+                if (c.kind == "anchored" && ! c.duplicate && c.anchors.size() >= 3
+                     && ! c.identityDisplay && c.name != cleanName)
+                {
+                    const int mid = c.anchors.size() / 2;
+                    const auto landed = assignPanel.hooks.spotCheck
+                                          ? assignPanel.hooks.spotCheck (c.indices[0],
+                                                                         c.anchors[mid].normalised)
+                                          : juce::String();
+                    double v = 0.0;
+                    const bool parsed = echojay::parseLeadingFloat (landed, v);
+                    ok (parsed && std::abs (v - c.anchors[mid].value)
+                                    <= juce::jmax (0.02 * std::abs (c.rangeHi - c.rangeLo), 0.51),
+                        "map truth: '" + c.name + "' mid anchor norm displays \"" + landed
+                          + "\" vs recorded " + juce::String (c.anchors[mid].value, 2));
+                    break;
+                }
+        }
+
+        std::cout << "CTRLTEST: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
     /** Reproduces the AMEK category defect and proves the fix: no proposal
         -> the panel ASKS before any row exists; work confirmed under a wrong
         category SURVIVES the correction; the checklist rebuilds around it.
@@ -3103,12 +3280,80 @@ private:
             return inst != nullptr ? inst->getParameters().size() : 0;
         };
         assignPanel.hooks.maskCount = [this] { return mask.indices.size(); };
+        assignPanel.hooks.maskIndices = [this]
+        {
+            juce::Array<int> out;
+            for (int i = 0; i < mask.indices.size(); ++i) out.add (mask.indices[i]);
+            return out;
+        };
+        assignPanel.hooks.loadBreadcrumbs = [this]() -> juce::var
+        {
+            // tier2-candidates-*.jsonl, this plugin only, deduped by index
+            // with the LATEST row winning (the doubled Knee crumb class).
+            std::map<int, juce::var> byIndex;
+            for (const auto& entry : juce::RangedDirectoryIterator (ledger.getRoot(), false,
+                                                                    "tier2-candidates-*.jsonl"))
+            {
+                juce::StringArray lines;
+                lines.addLines (entry.getFile().loadFileAsString());
+                for (const auto& line : lines)
+                {
+                    if (line.trim().isEmpty()) continue;
+                    auto v = juce::JSON::parse (line);
+                    if (v.getProperty ("plugin_id", "").toString() != loadedId) continue;
+                    byIndex[(int) v.getProperty ("index", -1)] = v;
+                }
+            }
+            juce::Array<juce::var> out;
+            for (auto& kv : byIndex) out.add (kv.second);
+            return juce::var (out);
+        };
         assignPanel.hooks.status = [this] (const juce::String& line)
         {
             captureReadout.setText (line, juce::dontSendNotification);
             std::cout << "ASSIGN: " << line << std::endl;
         };
         assignPanel.hooks.sweepIndex = [this] (int idx) { return runSweep (idx); };
+        assignPanel.hooks.sweepIndexSetread = [this] (int idx)
+        {
+            auto* inst = host.getInstance();
+            if (inst == nullptr) return SweepOutcome();
+            const auto name = assignPanel.hooks.paramName (idx);
+            beginSweepInflight (idx, name + " (setread verify)");
+            host.pausePumpForMutation();
+            auto outcome = sweepOneIndex (*inst, idx, watchdog, loadedId, true);
+            host.resumePumpAfterMutation();
+            endSweepInflight (idx, outcome);
+            recordSweep (idx, name, outcome);
+            return outcome;
+        };
+        assignPanel.hooks.spotCheck = [this] (int idx, double norm) -> juce::String
+        {
+            auto* inst = host.getInstance();
+            if (inst == nullptr || ! juce::isPositiveAndBelow (idx, inst->getParameters().size()))
+                return {};
+            auto* p = inst->getParameters()[idx];
+            host.pausePumpForMutation();
+            const float before = p->getValue();
+            p->setValue ((float) norm);
+            // READ UNTIL STABLE, not for a fixed wait: the bridge is a lag
+            // pipeline and a fixed pump interval sometimes serves the
+            // PREVIOUS update (measured: two runs disagreed about which end
+            // of a 3-position switch was Hard). Two consecutive identical
+            // reads, bounded at ~300 ms, is the truth condition.
+            juce::String t, prev;
+            for (int tries = 0; tries < 20; ++tries)
+            {
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (15);
+                t = p->getCurrentValueAsText();
+                if (t == prev && tries > 0) break;
+                prev = t;
+            }
+            p->setValue (before);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (15);
+            host.resumePumpAfterMutation();
+            return t;
+        };
         assignPanel.hooks.startTyped = [this] (int idx)
         {
             lastSweptIndex = idx;
@@ -3328,6 +3573,8 @@ private:
         }
 
         p.groups = assignPanel.groupsForSubmit();
+        for (const auto& c : assignPanel.controlsForSubmit())
+            p.controls.add (c);
 
         if (p.hasUnresolvedContradiction())
         {

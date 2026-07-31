@@ -45,6 +45,10 @@ public:
         std::function<juce::String (int)>              paramName;
         std::function<int()>                           paramCount;
         std::function<int()>                           maskCount;      // per-arm watched = params - mask
+        std::function<juce::Array<int>()>              maskIndices;    // masked = not a control
+        std::function<juce::var()>                     loadBreadcrumbs;// tier2-candidates rows, deduped
+        std::function<juce::String (int, double)>      spotCheck;      // set norm, read display, restore
+        std::function<SweepOutcome (int)>              sweepIndexSetread; // the honest retry
         std::function<void (const juce::String&)>      status;         // one-line readout
         std::function<void (const juce::var&)>         writeRow;       // captures jsonl writer
         std::function<void (const juce::var&)>         writeMisclassified;
@@ -242,6 +246,16 @@ public:
             rows.add (r);
         }
 
+        // 3b. The Tier 2 controls row, every category: the full surface,
+        //     named. What the AI can dial BY NAME once mapped.
+        {
+            AssignRow r;
+            r.semantic = "controls";
+            r.kind = "controls";
+            r.proposalSource = "none";
+            rows.add (r);
+        }
+
         // 4. Ignores, bottom of the list, bulk-acceptable under the floor.
         if (proposals.present)
             for (const auto& e : proposals.entries)
@@ -323,9 +337,9 @@ public:
         switch (r.state)
         {
             case AssignRow::State::confirmed:
-                return r.kind == "bands"
-                         ? "BANDS: " + r.skipReason
-                         : "CONFIRMED [" + juce::String (r.resolvedIndex) + "] " + r.trust;
+                return r.kind == "bands"    ? "BANDS: " + r.skipReason
+                     : r.kind == "controls" ? "CONTROLS: " + r.skipReason
+                     : "CONFIRMED [" + juce::String (r.resolvedIndex) + "] " + r.trust;
             case AssignRow::State::modeMaterial:      return "MODE/POS recorded";
             case AssignRow::State::skipNotPresent:    return "ABSENT";
             case AssignRow::State::skipNotAutomatable:return "NO PARAM";
@@ -405,6 +419,8 @@ public:
 
         if (id == "space" && r.kind == "bands" && ! r.isResolved())
             return true;                               // begins the band flow
+        if (id == "space" && r.kind == "controls" && ! r.isResolved())
+            return true;                               // begins the controls sweep
         if (id == "space" && r.conflictWith.isNotEmpty() && ! r.isResolved() && r.sweep.ok)
             return true;                               // the insist on a shared control
         if (id == "space")
@@ -497,6 +513,61 @@ public:
             say ("Band card is waiting for a touch. R re-arms, D leaves bands for later.");
             return;
         }
+        if (controlsPhase)
+        {
+            if (id == "space")      { actionControlsAccept(); return; }
+            if (id == "expand")     { controlsExpanded = ! controlsExpanded; showControlsTable(); return; }
+            if (id == "prev")       { controlsCursor = juce::jmax (0, controlsCursor - 1); showControlsTable(); return; }
+            if (id == "next")       { controlsCursor = controlsCursor + 1; showControlsTable(); return; }
+            if (id == "notpresent")
+            {
+                if (auto* e = cursorControl())
+                {
+                    e->excluded = true;
+                    auto* o = new juce::DynamicObject();
+                    o->setProperty ("kind", "control_excluded");
+                    o->setProperty ("index", e->index);
+                    o->setProperty ("name", e->name);
+                    o->setProperty ("reason", "excluded by mapper");
+                    if (hooks.writeRow) hooks.writeRow (juce::var (o));
+                    say ("Excluded " + e->name + " (recorded).");
+                    showControlsTable();
+                }
+                return;
+            }
+            if (id == "wiggle")
+            {
+                if (auto* e = cursorControl())
+                {
+                    controlsWiggleTarget = e->index;
+                    say ("Touch '" + e->name + "' to verify it - the capture is live.");
+                    awaitingCaptureRow = controlsRowIndex;
+                    if (hooks.armForRow) hooks.armForRow();
+                }
+                return;
+            }
+            if (id == "typed")
+            {
+                if (auto* e = cursorControl())
+                {
+                    controlsTypedEntry = e->index;
+                    if (hooks.startTyped) hooks.startTyped (e->index);
+                }
+                return;
+            }
+            if (id == "defer")
+            {
+                controlsPhase = false;
+                summaryText.setVisible (false);
+                rowAt (controlsRowIndex).state = AssignRow::State::proposed;
+                say ("Controls left for later; nothing accepted.");
+                updateQuestion(); list.updateContent(); resized();
+                return;
+            }
+            say ("Controls table: SPACE accepts, F expands, arrows pick, W/N/T act on the row, D leaves.");
+            return;
+        }
+
         if (bandStep == BandStep::table)
         {
             if (id == "space")      { actionBandTableAccept(); return; }
@@ -626,6 +697,12 @@ public:
             return;
         }
 
+        if (r.kind == "controls" && ! r.isResolved())
+        {
+            actionControlsBegin();
+            return;
+        }
+
         if (r.conflictWith.isNotEmpty() && ! r.isResolved() && r.sweep.ok)
         {
             r.state = AssignRow::State::confirmed;
@@ -734,6 +811,25 @@ public:
         if (bandStep == BandStep::capFreq1 || bandStep == BandStep::capGain1
              || bandStep == BandStep::capQ1 || bandStep == BandStep::capFreqLast)
         { bandCaptureArrived (res); return; }
+
+        if (controlsPhase && controlsWiggleTarget >= 0)
+        {
+            const int idx = res.primaryIndex >= 0 ? res.primaryIndex
+                            : (res.indices.size() == 1 ? res.indices[0] : -1);
+            for (auto& e : controlEntries)
+                if (e.index == controlsWiggleTarget)
+                {
+                    if (idx == e.index)
+                    { e.trust = "human-verified"; say (e.name + " verified by touch."); }
+                    else
+                        say ("You touched [" + juce::String (idx) + "] "
+                               + (hooks.paramName ? hooks.paramName (idx) : juce::String())
+                               + ", not '" + e.name + "' - trust unchanged.");
+                }
+            controlsWiggleTarget = -1;
+            showControlsTable();
+            return;
+        }
 
         if (bandStep == BandStep::table && bandWiggleTarget >= 0)
         {
@@ -1057,6 +1153,22 @@ public:
     /** Routed from the typed flow's completion. */
     void typedCompleted (const SweepOutcome& sw)
     {
+        if (controlsPhase && controlsTypedEntry >= 0)
+        {
+            for (auto& e : controlEntries)
+                if (e.index == controlsTypedEntry)
+                {
+                    e.sweep = sw;
+                    e.unbuildable = ! sw.ok;
+                    e.kind = "anchored";
+                    e.trust = sw.ok ? "human-verified" : e.trust;
+                    e.note = sw.ok ? juce::String (sw.anchors.size()) + " anchors (human-typed)"
+                                   : "typed table refused: " + sw.reason.substring (0, 60);
+                }
+            controlsTypedEntry = -1;
+            showControlsTable();
+            return;
+        }
         if (typedRow < 0 || typedRow >= rowCount()) return;
         auto& r = rowAt (typedRow);
         r.sweep = sw;
@@ -1498,6 +1610,400 @@ public:
         updateQuestion();
     }
 
+    //==========================================================================
+    // The Tier 2 controls phase (M6): full-surface sweep + breadcrumbs ->
+    // named controls. The table shows ONLY rows needing a decision; the clean
+    // majority is a count line, because a SPACE over 217 rows of text is a
+    // rubber stamp that reads as review, and what actually happens to a
+    // machine-swept control is that a machine swept it.
+
+    struct ControlEntry
+    {
+        juce::String name;
+        int index = -1;
+        juce::String kind { "anchored" };      // or "mode"
+        SweepOutcome sweep;
+        juce::StringArray labelTexts;
+        juce::Array<double> labelNorms;
+        juce::String provenance { "sweep" };   // or "breadcrumb"
+        juce::String trust { "setread" };
+        bool duplicate = false, excluded = false, unbuildable = false;
+        juce::String note;
+
+        bool needsDecision() const
+        {
+            return duplicate || excluded || unbuildable
+                || kind == "mode" || sweep.identityDisplay;
+        }
+    };
+
+    juce::Array<ControlEntry> controlEntries;
+    juce::Array<NamedControl> pendingControls;
+    bool controlsPhase = false;
+    bool controlsExpanded = false;
+    int  controlsCursor = 0;
+    int  controlsRowIndex = -1;
+    int  controlsWiggleTarget = -1;
+    int  controlsTypedEntry = -1;
+    int  controlsSkippedClaimed = 0, controlsSkippedMasked = 0;
+
+    const juce::Array<NamedControl>& controlsForSubmit() const { return pendingControls; }
+
+    void actionControlsBegin()
+    {
+        controlsRowIndex = selected;
+        controlEntries.clear();
+        controlsExpanded = false;
+        controlsCursor = 0;
+        controlsSkippedClaimed = controlsSkippedMasked = 0;
+
+        // What is already spoken for: Tier 1 rows, group members, the mask.
+        juce::SortedSet<int> claimed;
+        for (const auto& r : rows)
+            if (r.state == AssignRow::State::confirmed && r.resolvedIndex >= 0)
+                claimed.add (r.resolvedIndex);
+        for (const auto& g : acceptedGroups)
+            for (const auto& m : g.params)
+                claimed.add (m.indices[0]);
+        juce::SortedSet<int> masked;
+        if (hooks.maskIndices)
+            for (int i : hooks.maskIndices()) masked.add (i);
+
+        // Breadcrumbs first: mode findings from THIS machine's earlier
+        // sessions, deduped by index upstream. They own their indices.
+        juce::SortedSet<int> crumbIdx;
+        if (hooks.loadBreadcrumbs)
+            if (auto* arr = hooks.loadBreadcrumbs().getArray())
+                for (auto& c : *arr)
+                {
+                    ControlEntry e;
+                    e.index = (int) c.getProperty ("index", -1);
+                    e.name  = c.getProperty ("param_name", "").toString();
+                    e.kind  = "mode";
+                    e.provenance = "breadcrumb";
+                    if (auto* pts = c.getProperty ("points", juce::var()).getArray())
+                        for (auto& pt : *pts)
+                        {
+                            const auto t = pt.getProperty ("t", "").toString();
+                            if (! e.labelTexts.contains (t))
+                            {
+                                e.labelTexts.add (t);
+                                e.labelNorms.add ((double) pt.getProperty ("n", 0.0));
+                            }
+                        }
+                    e.note = "mode: " + e.labelTexts.joinIntoString (" / ").substring (0, 60)
+                           + "  (breadcrumb)";
+                    if (e.index >= 0 && ! e.labelTexts.isEmpty())
+                    { controlEntries.add (e); crumbIdx.add (e.index); }
+                }
+
+        // The full-surface sweep. Synchronous and cheap by measurement
+        // (0-2 ms per sweep); progress every 32 so a big surface says so.
+        const int n = hooks.paramCount ? hooks.paramCount() : 0;
+        for (int i = 0; i < n; ++i)
+        {
+            if (crumbIdx.contains (i)) continue;
+            if (claimed.contains (i))  { ++controlsSkippedClaimed; continue; }
+            if (masked.contains (i))   { ++controlsSkippedMasked; continue; }
+            if ((i & 31) == 0) say ("Sweeping the surface: " + juce::String (i) + "/" + juce::String (n));
+
+            ControlEntry e;
+            e.index = i;
+            e.name  = hooks.paramName ? hooks.paramName (i) : juce::String();
+            e.sweep = hooks.sweepIndex ? hooks.sweepIndex (i) : SweepOutcome();
+            if (e.sweep.ok)
+                e.note = juce::String (e.sweep.anchors.size()) + " anchors ("
+                       + e.sweep.method
+                       + (e.sweep.unitFamily.isNotEmpty() ? ", " + e.sweep.unitFamily : juce::String())
+                       + ")" + (e.sweep.identityDisplay ? "  IDENTITY DISPLAY - dials by raw number"
+                                                        : juce::String());
+            else if (e.sweep.nonNumeric && ! e.sweep.points.isEmpty())
+            {
+                // A labelled switch discovered by the sweep itself: mode.
+                e.kind = "mode";
+                for (const auto& pt : e.sweep.points)
+                    if (! e.labelTexts.contains (pt.t))
+                    { e.labelTexts.add (pt.t); e.labelNorms.add (pt.n); }
+                e.note = "mode: " + e.labelTexts.joinIntoString (" / ").substring (0, 60);
+            }
+            else
+            {
+                e.unbuildable = true;
+                e.note = e.sweep.flat ? "flat both ways - unbuildable (T types anchors)"
+                                      : "unbuildable: " + e.sweep.reason.substring (0, 60);
+            }
+            controlEntries.add (e);
+        }
+
+        // Exact-case duplicates: every entry wearing a shared name is flagged.
+        for (int i = 0; i < controlEntries.size(); ++i)
+            for (int j = i + 1; j < controlEntries.size(); ++j)
+                if (controlEntries.getReference (i).name == controlEntries.getReference (j).name)
+                {
+                    controlEntries.getReference (i).duplicate = true;
+                    controlEntries.getReference (j).duplicate = true;
+                }
+
+        // VERIFY BEFORE SHOWING. getText anchors and breadcrumb labels are
+        // gettext-derived, and the API-2500 run proved getText can lie about
+        // set positions while passing every flatness check. One set-then-read
+        // spot check per anchored entry; a mismatch earns the honest setread
+        // re-sweep. Mode labels are ALWAYS re-read by setting, because a
+        // label map that dials the wrong position is worse than none.
+        say ("Verifying by set-then-read...");
+        for (auto& e : controlEntries)
+        {
+            if (e.excluded || e.unbuildable) continue;
+
+            if (e.kind == "mode")
+            {
+                juce::StringArray vTexts;
+                juce::Array<double> vNorms;
+                for (int i = 0; i < e.labelNorms.size(); ++i)
+                {
+                    const auto t = hooks.spotCheck ? hooks.spotCheck (e.index, e.labelNorms[i])
+                                                   : juce::String();
+                    if (t.isNotEmpty() && ! vTexts.contains (t))
+                    { vTexts.add (t); vNorms.add (e.labelNorms[i]); }
+                }
+                if (vTexts.size() >= 2)
+                {
+                    if (vTexts.strings != e.labelTexts.strings)
+                        e.note = "mode: " + vTexts.joinIntoString (" / ").substring (0, 50)
+                               + "  (labels re-read by setting: getText lied)";
+                    e.labelTexts = vTexts;
+                    e.labelNorms = vNorms;
+                }
+                else
+                {
+                    e.unbuildable = true;
+                    e.note = "labels collapse under set-then-read: not a dialable switch";
+                }
+                continue;
+            }
+
+            if (e.sweep.ok && e.sweep.method == "gettext" && e.sweep.anchors.size() >= 3
+                 && hooks.spotCheck)
+            {
+                const int mid = e.sweep.anchors.size() / 2;
+                const float vExpect = e.sweep.anchors[mid][0];
+                const auto landed = hooks.spotCheck (e.index, e.sweep.anchors[mid][1]);
+                float vGot = 0.0f; bool negInf = false; bool parsed;
+                if (e.sweep.unitFamily.isNotEmpty())
+                    parsed = echojay::parseDisplayForUnit (landed, e.sweep.unitFamily, vGot, negInf);
+                else
+                { double d = 0.0; parsed = echojay::parseLeadingFloat (landed, d); vGot = (float) d; }
+
+                float lo = e.sweep.anchors.getFirst()[0], hi = lo;
+                for (const auto& a : e.sweep.anchors)
+                { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
+                const float gap = mid + 1 < e.sweep.anchors.size()
+                                    ? std::abs (e.sweep.anchors[mid + 1][0] - vExpect)
+                                    : std::abs (vExpect - e.sweep.anchors[mid - 1][0]);
+                const float tol = juce::jmax (0.02f * (hi - lo), 0.6f * gap);
+
+                if (! parsed || std::abs (vGot - vExpect) > tol)
+                {
+                    auto redo = hooks.sweepIndexSetread ? hooks.sweepIndexSetread (e.index)
+                                                        : SweepOutcome();
+                    if (redo.ok)
+                    {
+                        e.sweep = redo;
+                        e.note = juce::String (redo.anchors.size())
+                               + " anchors (setread: getText lied at spot check)";
+                    }
+                    else
+                    {
+                        e.unbuildable = true;
+                        e.note = "getText lied at spot check and setread refused: "
+                               + redo.reason.substring (0, 50);
+                    }
+                }
+            }
+        }
+
+        controlsPhase = true;
+        rowAt (controlsRowIndex).state = AssignRow::State::captured;
+        showControlsTable();
+    }
+
+    juce::Array<int> visibleControlIndices() const
+    {
+        juce::Array<int> out;
+        for (int i = 0; i < controlEntries.size(); ++i)
+            if (controlsExpanded || controlEntries.getReference (i).needsDecision())
+                out.add (i);
+        return out;
+    }
+
+    void showControlsTable()
+    {
+        const auto vis = visibleControlIndices();
+        controlsCursor = juce::jlimit (0, juce::jmax (0, vis.size() - 1), controlsCursor);
+
+        int clean = 0, mode = 0, dup = 0, unb = 0, excl = 0, ident = 0;
+        for (const auto& e : controlEntries)
+        {
+            if (e.excluded) { ++excl; continue; }
+            if (e.duplicate) ++dup;
+            if (e.unbuildable) ++unb;
+            if (e.kind == "mode") ++mode;
+            if (e.sweep.identityDisplay) ++ident;
+            if (! e.needsDecision()) ++clean;
+        }
+
+        juce::String t;
+        t << "CONTROLS: " << controlEntries.size() << " candidates ("
+          << controlsSkippedClaimed << " claimed by Tier 1/groups, "
+          << controlsSkippedMasked << " masked, not controls)\n\n";
+
+        for (int v = 0; v < vis.size(); ++v)
+        {
+            const auto& e = controlEntries.getReference (vis[v]);
+            t << (v == controlsCursor ? " > " : "   ");
+            t << e.name << "  [" << e.index << "]";
+            if (e.duplicate) t << "  DUPLICATE: unresolvable by name";
+            if (e.excluded)  t << "  excluded by mapper";
+            t << "  " << e.note;
+            if (e.trust != "setread") t << "  " << e.trust;
+            t << "\n";
+        }
+
+        // The clean majority is a COUNT, not a wall. An empty flagged view
+        // says so explicitly, same rule as the exclusion footer.
+        if (! controlsExpanded)
+        {
+            if (vis.isEmpty())
+                t << "   (no rows need a decision)\n";
+            t << "\n" << clean << " others swept clean, recorded as setread. F shows them.\n";
+        }
+        else
+            t << "\n(full list shown; F returns to flagged-only)\n";
+
+        summaryText.setText (t, juce::dontSendNotification);
+        summaryText.setVisible (true);
+        promptTitle.setText (juce::String (controlEntries.size()) + " controls named ("
+                               + juce::String (mode) + " mode, " + juce::String (dup)
+                               + " duplicate, " + juce::String (unb) + " unbuildable, "
+                               + juce::String (ident) + " identity)",
+                             juce::dontSendNotification);
+        question.setText ("SPACE accept - F " + juce::String (controlsExpanded ? "flagged only"
+                                                                               : "show all")
+                            + " - arrows pick - W verify by touch - N exclude - "
+                              "T type anchors - D later",
+                          juce::dontSendNotification);
+        rebuildControlsAnswers();
+        resized();
+    }
+
+    void rebuildControlsAnswers()
+    {
+        answerButtons.clear();
+        auto add = [this] (const juce::String& id, const juce::String& text)
+        {
+            auto* b = answerButtons.add (new juce::TextButton (text));
+            addAndMakeVisible (b);
+            b->onClick = [this, id] { dispatchAction (id); grabKeyboardFocus(); };
+        };
+        add ("space",      "SPACE - accept");
+        add ("expand",     controlsExpanded ? "F - flagged only" : "F - show all clean");
+        add ("wiggle",     "W - verify by touch");
+        add ("notpresent", "N - exclude");
+        add ("typed",      "T - type anchors");
+        add ("defer",      "D - later");
+        resized();
+    }
+
+    ControlEntry* cursorControl()
+    {
+        const auto vis = visibleControlIndices();
+        return juce::isPositiveAndBelow (controlsCursor, vis.size())
+                 ? &controlEntries.getReference (vis[controlsCursor]) : nullptr;
+    }
+
+    /** Test seam, and nothing else uses it: cursor to a control by name. */
+    bool selectControlByName (const juce::String& nm)
+    {
+        controlsExpanded = true;
+        const auto vis = visibleControlIndices();
+        for (int v = 0; v < vis.size(); ++v)
+            if (controlEntries.getReference (vis[v]).name == nm)
+            { controlsCursor = v; showControlsTable(); return true; }
+        return false;
+    }
+
+    void actionControlsAccept()
+    {
+        pendingControls.clear();
+        juce::StringArray dupDone;
+        int shipped = 0, modeN = 0;
+
+        for (const auto& e : controlEntries)
+        {
+            if (e.excluded || e.unbuildable) continue;
+
+            if (e.duplicate)
+            {
+                if (dupDone.contains (e.name)) continue;
+                dupDone.add (e.name);
+                NamedControl c;
+                c.name = e.name;
+                c.duplicate = true;
+                for (const auto& o : controlEntries)
+                    if (o.name == e.name && ! o.excluded) c.indices.add (o.index);
+                pendingControls.add (c);
+                continue;
+            }
+
+            NamedControl c;
+            c.name = e.name;
+            c.indices.add (e.index);
+            c.trust = e.trust == "human-verified" ? Trust::humanVerified : Trust::setread;
+            if (e.kind == "mode")
+            {
+                c.kind = "mode";
+                for (int i = 0; i < e.labelTexts.size(); ++i)
+                    c.labels.add ({ e.labelTexts[i], e.labelNorms[i] });
+                ++modeN;
+            }
+            else
+            {
+                for (const auto& a : e.sweep.anchors)
+                    c.anchors.add ({ (double) a[1], (double) a[0] });
+                if (! e.sweep.anchors.isEmpty())
+                {
+                    float lo = e.sweep.anchors.getFirst()[0], hi = lo;
+                    for (const auto& a : e.sweep.anchors)
+                    { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
+                    c.rangeLo = lo; c.rangeHi = hi;
+                }
+                c.unit = e.sweep.unitFamily;
+                c.identityDisplay = e.sweep.identityDisplay;
+            }
+            pendingControls.add (c);
+            ++shipped;
+        }
+
+        auto& row = rowAt (controlsRowIndex);
+        row.state = AssignRow::State::confirmed;
+        row.trust = "setread";
+        row.mode = deepMode ? "deep" : "fast";
+        row.resolvedAt = juce::Time::getCurrentTime().toISO8601 (true);
+        row.skipReason = juce::String (shipped) + " named control(s) ("
+                       + juce::String (modeN) + " mode, "
+                       + juce::String (dupDone.size()) + " duplicate name(s) recorded unresolvable)";
+        recordResolution (row, "controls_accept");
+
+        controlsPhase = false;
+        summaryText.setVisible (false);
+        say ("CONTROLS: " + row.skipReason);
+        persistSession();
+        advance();
+        list.updateContent();
+        updateProgress();
+        updateQuestion();
+    }
+
     /** The semantic already holding this index, if any. Asked at CAPTURE
         time; the review's duplicate check stays as defence in depth (it can
         still fire via a restored session).
@@ -1559,6 +2065,13 @@ public:
                 t << "  " << displayLabel (r) << "  <- [" << r.resolvedIndex << "] "
                   << (hooks.paramName ? hooks.paramName (r.resolvedIndex) : juce::String())
                   << "  (" << r.trust << ", " << r.sweep.method << ")\n";
+        if (! pendingControls.isEmpty())
+        {
+            int dups = 0; for (const auto& c : pendingControls) dups += c.duplicate;
+            t << "\n" << pendingControls.size() << " named control(s) will be written"
+              << (dups > 0 ? " (" + juce::String (dups) + " duplicate name(s), unresolvable, recorded)"
+                           : juce::String()) << "\n";
+        }
         if (! acceptedGroups.isEmpty())
             t << "\n" << acceptedGroups.size() << " band group(s) will be written "
                  "(a 250 Hz-class request can only land inside them)\n";
@@ -1658,6 +2171,7 @@ public:
         if (c == 'd' || c == 'D')                         { dispatchAction ("defer", shift); return true; }
         if (c == 't' || c == 'T')                         { dispatchAction ("typed"); return true; }
         if (c == 'm' || c == 'M')                         { dispatchAction ("modematerial"); return true; }
+        if (c == 'f' || c == 'F')                         { dispatchAction ("expand"); return true; }
         if (c == 'i' || c == 'I')                         { dispatchAction ("bulk"); return true; }
         if (c == '?')                                     { dispatchAction ("evidence"); return true; }
         if (c == 's' || c == 'S')                         { dispatchAction ("skipplugin"); return true; }
@@ -1792,6 +2306,15 @@ public:
               << (bandStep == BandStep::capQ1 ? " - N this band has no Q" : juce::String())
               << " - D leave bands for later";
         }
+        else if (r.kind == "controls" && ! r.isResolved() && ! controlsPhase)
+        {
+            const int n = hooks.paramCount ? hooks.paramCount() : 0;
+            q << juce::String (n) << " parameters on this surface. SPACE sweeps every one "
+                 "not already claimed and names it as a Tier 2 control the AI can dial "
+                 "BY NAME.\n"
+              << "Mode findings from earlier sessions join automatically. "
+                 "Only rows needing a decision are shown; the clean majority is a count.";
+        }
         else if (r.kind == "bands" && ! r.isResolved())
         {
             q << "The band controls (freq/gain/q) are mapped as GROUPS, so a 250 Hz "
@@ -1881,6 +2404,10 @@ public:
         auto& r = rowAt (selected);
         if (r.isResolved())
             return displayLabel (r) + ": done (" + r.stateString() + ")";
+        if (r.kind == "controls")
+            return controlsPhase ? "The controls table"
+                 : r.isResolved() ? "Named controls: done"
+                                  : "Name the rest of the surface?";
         if (r.kind == "bands")
             return bandStep == BandStep::table ? "The band table"
                  : bandStep != BandStep::none  ? bandCardPrompt()
@@ -1963,6 +2490,12 @@ public:
                 addAndMakeVisible (b);
                 b->onClick = [this, oneBased] { bandPickCandidate (oneBased); grabKeyboardFocus(); };
             }
+            resized(); return;
+        }
+        if (r.kind == "controls" && ! r.isResolved() && ! controlsPhase)
+        {
+            add ("space", "SPACE - sweep and review");
+            add ("defer", "D - later");
             resized(); return;
         }
         if (r.kind == "bands" && ! r.isResolved() && bandStep == BandStep::none)

@@ -51,6 +51,26 @@ struct ExtractorConfig
     int   maxStringLen       = 256;    // for getName / getText / getLabel
     bool  retryFlatWithSetRead = true; // flat params only; never the whole sweep
     int   setReadPoints      = 21;     // uniform points for the set-read sweep
+
+    /** Settle before each set-then-read display read. DEFAULT 0: the corpus
+        was built without it and the extractor's behaviour must stay
+        byte-identical. Demonstrated needed 31 Jul 2026 on a BRIDGED AU
+        (API-2500 via AUHostingServiceXPC): a read immediately after a set
+        serves the stale value across the XPC boundary, collapsing every
+        label to the pre-set text. ejmap sets 15 ms; the extractor leaves 0.
+    */
+    int   settleMs           = 0;
+
+    /** When set, called INSTEAD of sleeping for settleMs. Needed because a
+        bridged AU's read-after-set depends on an XPC reply delivered by the
+        MESSAGE LOOP: Thread::sleep on the message thread blocks the very
+        runloop the reply needs, so the read stays stale no matter how long
+        the sleep (measured: 15 ms sleep changed nothing on API-2500). The
+        caller supplies a pump; the extractor leaves it null and keeps its
+        corpus behaviour exactly.
+    */
+    std::function<void()> settle;
+
     juce::String machineId;            // stamped into samples when set (provenance)
 };
 
@@ -221,6 +241,10 @@ inline juce::Array<SweepPoint> sweepSetRead (juce::AudioProcessorParameter& para
     auto readAt = [&] (float n) -> juce::String
     {
         param.setValue (n);
+        if (cfg.settle != nullptr)
+            cfg.settle();
+        else if (cfg.settleMs > 0)
+            juce::Thread::sleep (cfg.settleMs);
         return param.getCurrentValueAsText().substring (0, cfg.maxStringLen);
     };
 

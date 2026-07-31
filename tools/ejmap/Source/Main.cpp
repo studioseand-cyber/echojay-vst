@@ -53,6 +53,7 @@ public:
         juce::String sweepTestId, sweepTestParam, typedTestId, typedTestParam, assignTestId;
         juce::String bandTestId, bandTestMembers, bandTestImposter, catTestId;
         juce::String applyMapId, applyMapPath, applyMapImposter;
+        juce::String ctrlTestId, ctrlTestMode, ctrlTestLabel, ctrlTestNames;
         int stallN = 0;
         bool supervised = false;
         int  restartCount = 0;
@@ -90,6 +91,12 @@ public:
                 assignTestId = args[++i];
             else if (args[i] == "--selftest-category" && i + 1 < args.size())
                 catTestId = args[++i];
+            else if (args[i] == "--selftest-controls" && i + 1 < args.size())
+            {
+                ctrlTestId = args[++i];
+                for (auto* dst : { &ctrlTestMode, &ctrlTestLabel, &ctrlTestNames })
+                    if (i + 1 < args.size() && ! args[i + 1].startsWith ("--")) *dst = args[++i];
+            }
             else if (args[i] == "--selftest-applymap" && i + 3 < args.size())
             { applyMapId = args[i + 1]; applyMapPath = args[i + 2]; applyMapImposter = args[i + 3]; i += 3; }
             else if (args[i] == "--selftest-bands" && i + 2 < args.size())
@@ -204,6 +211,12 @@ public:
         {
             auto id = assignTestId; auto* m = mainWindow->getMain();
             juce::MessageManager::callAsync ([m, id] { m->selfTestAssign (id); });
+        }
+        else if (ctrlTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = ctrlTestId; auto mn = ctrlTestMode; auto ml = ctrlTestLabel; auto en = ctrlTestNames;
+            auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id, mn, ml, en] { m->selfTestControls (id, mn, ml, en); });
         }
         else if (applyMapId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {
