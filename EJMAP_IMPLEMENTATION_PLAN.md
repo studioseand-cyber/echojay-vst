@@ -25,7 +25,7 @@ Tier 2 named controls are nearly free. The tool sweeps every parameter regardles
 
 So depth is a property of **observation**, not of **coverage**.
 
-**Fast mode** (default, testers, target 90 s multi band EQ / 30 s compressor)
+**Fast mode** (default, testers; targets measured and re-based at the M4 gate record: proposal-backed lane 30 s, bare lane ~10 s/row)
 - Every parameter swept, sanitized, recorded as a Tier 2 named control, `trust: setread`
 - Dial set only is human observed and probed, `trust: human-verified`
 - Groups pattern inferred and bulk confirmed
@@ -44,7 +44,7 @@ So depth is a property of **observation**, not of **coverage**.
 
 Mode is recorded per key in the payload. A map is never "verified" as a whole.
 
-### 0.3 The four additions, and what they actually buy
+### 0.3 The four additions, and what they actually buy (see 0.4 for what measurement later changed)
 
 **Skip button.** Not a skip, three distinct recorded outcomes:
 `not_present` (plugin has no such control), `not_automatable` (control exists on the GUI, no parameter moves), `deferred` (human unsure, comes back). Each persists with a reason string. A skipped key is absent from the map and present in the evidence. This codebase has six confirmed silent drops. A fourth-instance skip that vanishes would be the seventh.
@@ -55,9 +55,29 @@ Mode is recorded per key in the payload. A map is never "verified" as a whole.
 - a `ui_hint: {x, y, w, h}` in the payload, normalised to editor bounds
 It is capturable only at that moment and costs one `Desktop::getMousePosition()` call.
 
-**Screenshot to the API.** The editor is hosted inline, so `createComponentSnapshot` produces a clean image with no OS screen recording permission and no window manager involvement. Two images per query: the full editor, and a tight crop centred on the `ui_hint` for the parameter in question. The vision call receives image, parameter table, sweep data, classifier verdict, and what has been mapped so far. That is the exact context needed to answer "which of AMEK's 15 frequency class parameters is band 1 frequency".
+**Screenshot to the API.** *(Superseded by measurement, see 0.4: `createComponentSnapshot` returns a BLANK image for every editor tried; the working source is window-level capture of our own window, nil when minimised.)* The editor is hosted inline. Two images per query: the full editor, and a tight crop centred on the `ui_hint` for the parameter in question. The vision call receives image, parameter table, sweep data, classifier verdict, and what has been mapped so far. That is the exact context needed to answer "which of AMEK's 15 frequency class parameters is band 1 frequency".
 
 **Test after approval.** Two layers, section 6 and section 7.5.
+
+### 0.4 Superseded by measurement (single reconciliation pass, 31 Jul 2026)
+
+This plan was written before the tool existed. Building it replaced several of
+its claims with measurements; each is corrected AT the section it lives in,
+and this table is the index. A cold reader should trust the notes below over
+any un-annotated sentence that contradicts them.
+
+| Plan said | Measured | Detail at |
+|---|---|---|
+| `createComponentSnapshot` gives clean editor images, no permissions | **Blank for every editor tried.** Window-level capture of our own window works (even occluded / 60% offscreen), returns nil when minimised. Overlays draw BEHIND native editor views, so "pinned" labels cannot draw over plugin GUIs | §0.3, §7.3, M8 |
+| 30 Hz poll, 3-second noise baseline | Detection is snapshot-relative so the rate only affects disambiguation and ui_hint; rate is **calibrated per plugin** from measured sweep cost (reads are 0.03–0.24 µs in-process, 50–80 µs bridged). Baseline demoted to a short probe: only **73 of 1,074,600** params are real exposed meters; retroactive promotion (with human-evidence suppression) is the primary defence | M2 |
+| Channel twins from correlated multi-moves | Zero confirmed twins in 4,233 maps; the MC 77 "precedent" was an inference from a name list. `Kind::twins` retired to descriptive shape fields. The ONE lockstep pair ever observed live (AMEK's Param Link channel mirror) is resolved by a human pick, never asserted | M2 gate, M5 |
+| M1 gate "roughly 1,536 entries / 1,267 distinct" | **1,419 AU components, 1,376 candidates** after the census filter; 622 AU bridged (47.7%), 335 of 861 VST3 x86-only (cannot load), 1 product arm64-only | M1 |
+| Registry walk "reused verbatim" | Lifted into a SHARED header (`EchoJayAuRegistry.h`, seam 3.2) with a census-driven filter and byte-identical baseline proof — the same lift-and-pin method later used for the sweep header | M1 |
+| 90 s EQ / 30 s compressor targets | Measured: the 30 s figure belongs to the proposal-backed lane (26% coverage). The bare lane — 74% of plugins — measures **~10 s/row**; target adjusts, not the measurement | §0.2, M4 gate record |
+| One group, `"n": <band count>` | One group object **per band**, `n` = band number. The plan's own example was the error's source | M10 payload example |
+| Schema 2.1 | **2.2 shipped**: ui_hint carries `editor_w/editor_h/screen`; `evidence.readback` entries carry `asked`; `captured_by` values are `poll / poll+gesture / gesture / human_pick`; skips have a fourth outcome `mode_material`; controls entries carry `kind`, `labels`, `identity_display`, display-declared `unit` | M10 |
+| Display parsing is one problem | Three liar classes measured: flat (getText formats current state), **identity display** (hosting fabricates a 0–1 display; 9 whole-plugin products), and **getText lying about set positions** (bridged AU; caught by set-then-read spot checks). Plus the unit-switch collapse (`942.5 Hz` → `1.0 kHz`) handled by display-declared unit families | M3, M6 |
+| Readback verifies the write | On **bridged AUs** the immediate readback reads the PRE-write display and falsely reverts correct writes — a live defect in shipping EchoJay, filed on v2 as `DEFECT_BRIDGED_READBACK.md` with census (604 of 622 bridged are Waves) | M6, v2 filing |
 
 ---
 
@@ -166,14 +186,14 @@ Each module: purpose, build items, acceptance gate, known failure modes. Build i
 **Purpose.** Enumerate installed plugins, instantiate one, show its editor inline.
 
 **Build**
-- Reuse `--au-registry` walk from `ejextract` verbatim. It found 701 components the file walk missed and it is already the trusted path.
+- ~~Reuse `--au-registry` walk from `ejextract` verbatim~~ **As built (seam 3.2):** the walk was LIFTED into a shared header, `tools/ejextract/EchoJayAuRegistry.h` (`buildCensus`, `describeFromRegistry`), with instruments and unused types counted and dropped via the census, never silently — and ejextract proven byte-identical against a captured baseline after the lift.
 - VST3 file walk alongside it, same code path as `--bootstrap`
 - Instantiate via `AudioPluginFormatManager`, 48 kHz, 512 block, stereo in/out
 - Host the editor in a resizable child window, respect `isResizable`, handle editors that report zero size (some plugins size only after a paint cycle: retry after 200 ms, then fall back to a fixed 800x600 with a warning row)
-- **Crash quarantine.** In process hosting means a plugin crash kills the app. Write `~/Library/ejmap/inflight.json` before instantiation, clear it after successful editor open. On launch, if `inflight.json` exists, mark that plugin `crash_on_load`, add to quarantine, and continue. This is the ejextract worker isolation idea adapted to a tool that must show a GUI.
+- **Crash quarantine.** In process hosting means a plugin crash kills the app. *(As built, this grew beyond the sketch: a per-site watchdog with `_Exit(87)` and stack capture, frame-based crash attribution, an auto-relaunch supervisor with crash-loop guards, and quarantine release — manual for loads, automatic for scans when the bundle changes on disk.)* Write `~/Library/ejmap/inflight.json` before instantiation, clear it after successful editor open. On launch, if `inflight.json` exists, mark that plugin `crash_on_load`, add to quarantine, and continue. This is the ejextract worker isolation idea adapted to a tool that must show a GUI.
 - Ledger with the same outcome vocabulary as ejextract: `ok`, `crash_on_load`, `timeout`, `license_refused`, `no_editor`, `no_params`
 
-**Gate.** Enumerate this machine, expect roughly 1,536 non instrument entries and 1,267 distinct (the one estimate that survived verification). Load and display editors for 20 plugins across formats and vendors, including one Waves shell component, one Plugin Alliance, one Valhalla. Kill the app mid load and confirm the quarantine marks it on relaunch.
+**Gate.** *(Numbers as measured, replacing the estimate:)* Enumerate this machine: **1,419 AU components, 1,376 candidates** after the census filter. 622 AU are bridged via AUHostingServiceXPC and load; 335 of 861 VST3 are x86-only and cannot load. Load and display editors for 20 plugins across formats and vendors, including one Waves shell component, one Plugin Alliance, one Valhalla. Kill the app mid load and confirm the quarantine marks it on relaunch.
 
 **Failure modes.** Editors that open offscreen on a second display. Plugins that demand a license dialog on instantiate (already a known ejextract outcome, carry it through). Plugins whose editor requires a live audio callback to paint (start a silent playback graph on load).
 
@@ -185,9 +205,9 @@ Each module: purpose, build items, acceptance gate, known failure modes. Build i
 
 **Build**
 
-*Baseline and noise mask.* On plugin load, before any human interaction, poll for 3 seconds with nothing touched. Any index whose value changes is self changing (meters, LFOs, gain reduction readouts). Build `noise_mask[]`, exclude from all capture. Record the mask in the evidence: a plugin with 12 self changing params is a fact worth carrying.
+*Baseline and noise mask.* *(Superseded by measurement, see 0.4: real exposed meters are 73 in 1,074,600, so the 3-second baseline was demoted to a short probe with escalation-on-hit, and RETROACTIVE PROMOTION — counting only appearances with no human evidence behind them — is the primary defence. Promotions are recorded rows, visible and releasable.)* On plugin load, before any human interaction, probe briefly with nothing touched; anything self-changing joins `noise_mask[]`, excluded from capture and recorded in the evidence.
 
-*Poll loop.* 30 Hz on the capture thread.
+*Poll loop.* *(Superseded: the fixed 30 Hz is retired. Detection is snapshot-relative, so rate only affects sequential-edit disambiguation and ui_hint; it is calibrated per plugin — `clamp(0.30/sweep_seconds, 4, 30)` — because a parameter read costs 0.03–0.24 µs in-process and 50–80 µs bridged.)*
 ```
 snapshot = [getValue(i) for i in 0..n]  // on arm
 each tick:
@@ -202,8 +222,8 @@ each tick:
 |---|---|
 | empty for 8 s | prompt: "nothing moved, is this control automatable?" → `not_automatable` |
 | exactly one | capture, record `ui_hint` from mouse position |
-| two or more, all moving in the same direction with correlated magnitude | candidate channel twin or linked pair → `indices[]`, ask human to confirm |
-| two or more, uncorrelated | macro or bad epsilon → ask human to wiggle again, use listener callbacks to disambiguate |
+| two or more, all moving in the same direction with correlated magnitude | *(superseded: `twins` retired — see the gate note below; shape recorded as `same_direction`/`magnitude_ratio`, never asserted)* |
+| two or more, uncorrelated | *(superseded: this is a `gesture` — a first-class outcome naming its members; the human picks, the rest stay `co_moved`)* |
 | more than 8 | almost certainly a preset change or a modulation source → discard, warn |
 
 *Listener layer.* Subscribe `AudioProcessorParameter::Listener` and `gestureChanged`. When gesture begin/end fires on exactly one index, that is authoritative and instant. When the listener is silent (a known class of plugins), the poll still works. Record which mechanism fired in `evidence.captured_by`.
@@ -276,7 +296,7 @@ each tick:
 **Build**
 - After band 1 is mapped, pattern infer the remaining bands from parameter names (`LF Gain 1` → `LMF Gain 1` → `MF Gain 1`, `band1 freq` → `band2 freq`). Present as a proposal table, one keypress bulk accepts, any single band correctable by wiggling.
 - **Family tags** when more than one band family exists (E2Deesser's `sband` and `vband`). Prompt when the inference finds two disjoint name patterns.
-- **Channel twins** as `indices[]` from M2's correlated multi-move detection
+- ~~**Channel twins** as `indices[]` from M2's correlated multi-move detection~~ *(retired: zero confirmed twins in the corpus; the one live lockstep pair — AMEK's Param Link channel mirror — is resolved by a human PICK on the band card, recorded as co-moved, never asserted)*
 - `freq_range` per band from that band's freq anchors, free
 - **The critical assertion, tested explicitly:** a parameter not in the group can never be selected by the band matcher regardless of its range. Test with AMEK: `Mono Maker` must be unreachable for a 250 Hz request even though its range covers 250 Hz.
 
@@ -333,11 +353,17 @@ Caching matters: the parameter table for a 60 param plugin is the bulk of the pr
 
 #### 7.3 Screenshots
 
-- `createComponentSnapshot` on the hosted editor, full frame, PNG, base64
-- Tight crop at a given `ui_hint`, 3x the hint box, for "what does this knob read"
-- A **labelled** render: full frame with every confirmed semantic pinned at its `ui_hint`, used for the approval sheet and shipped in the evidence
+*(Superseded by measurement, M2: `createComponentSnapshot` returns a BLANK
+image for every editor tried — native plugin views do not composite into JUCE
+snapshots. The working mechanism is window-level capture of OUR OWN window,
+which works even occluded or 60% offscreen and returns nil when minimised —
+the nil is reported, never papered over. Overlays draw BEHIND native editor
+views, so the "labelled render" cannot pin labels over the plugin GUI; labels
+composite onto the captured IMAGE instead.)*
 
-No OS screen recording permission, no window manager involvement, works when the editor is partially offscreen.
+- Window-level capture of the hosted editor's window, PNG, base64
+- Tight crop at a given `ui_hint`, 3x the hint box, for "what does this knob read"
+- A **labelled** render composited onto the captured image (not the live GUI), used for the approval sheet and shipped in the evidence
 
 #### 7.4 Query modes
 
@@ -377,7 +403,7 @@ This is the closest available answer to "would EchoJay do the right thing with t
 - Row per mapped semantic and per named control: semantic, index or indices, real parameter name, kind, anchor sparkline, method, trust, probe verdict, `ui_hint` thumbnail crop
 - Rows for every skip with its outcome and reason
 - Rows for the noise mask and any `duplicate: true` collisions
-- The labelled full editor screenshot, inline
+- The labelled full editor screenshot, inline *(composited onto the captured image — overlays cannot draw over native editor views, measured in M2)*
 - Per row approve, reject, or re-open
 - **Submit is blocked** while any probe verdict reads `contradicts` and is unresolved
 - Warning banner (not a block) when a category bar is not cleared, showing which semantics are missing
@@ -433,14 +459,14 @@ The probe is decisive on eq, compressor, limiter, gate, de-esser, delay and satu
 
 **Purpose.** Get a verified map out of the tool with provenance that survives.
 
-#### 10.1 Payload v2.1
+#### 10.1 Payload v2.2 *(2.1 as written; 2.2 is what shipped — ui_hint carries `editor_w/editor_h/screen`, readback entries carry `asked`, `captured_by` is `poll|poll+gesture|gesture|human_pick`, skips gained `mode_material`, controls entries carry `kind`/`labels`/`identity_display`/display-declared `unit`)*
 
 The spec's payload, extended:
 
 ```jsonc
 {
   "fp": "…",
-  "schema": "2.1",
+  "schema": "2.2",
   "identity": { "format", "uid", "name", "vendor", "version", "param_count" },
   "category": "eq",
   "mode": "deep" | "fast" | "repair",
@@ -471,7 +497,6 @@ The spec's payload, extended:
        "sband5". The example was the source of the error (GroupSpec's struct
        comment copied it), and no served map has ever carried a group, so
        nothing downstream ever caught it. -->
-                "freq_range": [15, 780] } ],
 
   "skips": [
     { "semantic": "makeup_db", "outcome": "not_present", "reason": "…" },
