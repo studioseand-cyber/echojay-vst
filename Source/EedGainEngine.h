@@ -32,6 +32,31 @@
 namespace echojay
 {
 
+// ---------------------------------------------------------------------------
+// Which gain stage the device runs (the `mode` param of "EchoJay Gain").
+//   Stereo  — level + pan, the device as it shipped.
+//   MidSide — an extra stage BEFORE level/pan: independent gain on the mid
+//             (centre) and side (stereo difference). Level and pan still apply
+//             after it, so the two modes compose rather than replace.
+// ---------------------------------------------------------------------------
+enum class GainMode
+{
+    Stereo  = 0,
+    MidSide = 1,
+};
+
+constexpr int kNumGainModes = 2;
+
+inline const char* gainModeName (GainMode m) noexcept
+{
+    return m == GainMode::MidSide ? "mid_side" : "stereo";
+}
+
+inline GainMode gainModeFromIndex (int i) noexcept
+{
+    return i == 1 ? GainMode::MidSide : GainMode::Stereo;
+}
+
 class GainEngine
 {
 public:
@@ -39,6 +64,14 @@ public:
     // is the contract the model and server see, this is what enforces it in DSP.
     static constexpr float kMinDb = -60.0f;
     static constexpr float kMaxDb =  24.0f;
+
+    // The M/S trims cut to the same -60 floor (that is what buys "remove the
+    // centre" and "collapse to mono") but BOOST only to +6: they compose with
+    // level_db, and 24 + 24 stacked is a +48 dB device, which no utility
+    // should be. +6 on the side is exactly the 200% ceiling Stereo Width
+    // advertises, so the two devices agree about how wide "as wide as it goes"
+    // is.
+    static constexpr float kMaxMsDb = 6.0f;
 
     GainEngine() = default;
 
@@ -72,14 +105,79 @@ public:
     float getLevelDb() const noexcept { return levelDbTarget_.load (std::memory_order_relaxed); }
     float getPan()     const noexcept { return panTarget_.load (std::memory_order_relaxed); }
 
+    // ---- the depth pass ----------------------------------------------------
+    void setMode (GainMode m) noexcept
+    {
+        mode_.store ((int) m, std::memory_order_relaxed);
+    }
+
+    void setMidDb (float db) noexcept
+    {
+        midDbTarget_.store (std::clamp (db, kMinDb, kMaxMsDb),
+                            std::memory_order_relaxed);
+    }
+
+    void setSideDb (float db) noexcept
+    {
+        sideDbTarget_.store (std::clamp (db, kMinDb, kMaxMsDb),
+                             std::memory_order_relaxed);
+    }
+
+    // Sum to mono. Implemented as "fade the side to zero" rather than a hard
+    // L=R=M switch, so toggling it mid-play is a collapse, not a click.
+    void setMono (bool on) noexcept
+    {
+        mono_.store (on, std::memory_order_relaxed);
+    }
+
+    // Polarity, per channel. The target is +/-1 and it goes through the same
+    // smoother as every gain, so a flip is a fast fade through zero rather than
+    // a discontinuity.
+    void setPhaseLeft  (bool inverted) noexcept { phaseLeft_.store  (inverted, std::memory_order_relaxed); }
+    void setPhaseRight (bool inverted) noexcept { phaseRight_.store (inverted, std::memory_order_relaxed); }
+
+    GainMode getMode()   const noexcept { return gainModeFromIndex (mode_.load (std::memory_order_relaxed)); }
+    float getMidDb()     const noexcept { return midDbTarget_.load  (std::memory_order_relaxed); }
+    float getSideDb()    const noexcept { return sideDbTarget_.load (std::memory_order_relaxed); }
+    bool  getMono()      const noexcept { return mono_.load       (std::memory_order_relaxed); }
+    bool  getPhaseLeft() const noexcept { return phaseLeft_.load  (std::memory_order_relaxed); }
+    bool  getPhaseRight()const noexcept { return phaseRight_.load (std::memory_order_relaxed); }
+
     // ---- audio thread ------------------------------------------------------
-    // In-place stereo process. `right` may be null for mono; pan is then IGNORED
-    // rather than applied as an attenuation — there is no second channel to pan
-    // into, so honouring it would just silently quiet the signal at hard pans.
+    // In-place stereo process. `right` may be null for mono; pan, the M/S stage
+    // and the mono sum are then IGNORED rather than approximated — there is no
+    // stereo field to work on — while the polarity flip and the level, which
+    // are properties of one wire, still apply.
+    //
+    // Signal order for stereo: polarity -> M/S gains -> mono sum -> level ->
+    // pan. Polarity runs FIRST so that flip-one-side-and-sum — the classic
+    // phase check — actually cancels; level and pan run last so the two modes
+    // compose instead of replacing each other.
     void process (float* left, float* right, int numSamples) noexcept
     {
         const float targetGain = dbToGain (levelDbTarget_.load (std::memory_order_relaxed));
         const float targetPan  = panTarget_.load (std::memory_order_relaxed);
+
+        // In stereo mode the M/S gains TARGET unity rather than being skipped:
+        // switching modes then fades the stage out through the same smoother
+        // that faded it in, instead of stepping.
+        const bool  midSide     = gainModeFromIndex (mode_.load (std::memory_order_relaxed)) == GainMode::MidSide;
+        const float targetMid   = midSide ? dbToGain (midDbTarget_.load  (std::memory_order_relaxed)) : 1.0f;
+        const float targetSide  = midSide ? dbToGain (sideDbTarget_.load (std::memory_order_relaxed)) : 1.0f;
+        const float targetMono  = mono_.load (std::memory_order_relaxed) ? 1.0f : 0.0f;
+        const float targetPolL  = phaseLeft_.load  (std::memory_order_relaxed) ? -1.0f : 1.0f;
+        const float targetPolR  = phaseRight_.load (std::memory_order_relaxed) ? -1.0f : 1.0f;
+
+        // With every depth stage at rest (targets AND smoothers at unity), run
+        // the exact loop the device shipped with. This is not an optimisation
+        // so much as a promise: an existing session that never touches the new
+        // params gets bit-identical output, not output within an M/S encode-
+        // decode rounding of it.
+        const bool depthIdle = targetMid  == 1.0f && midG_    == 1.0f
+                            && targetSide == 1.0f && sideG_   == 1.0f
+                            && targetMono == 0.0f && monoAmt_ == 0.0f
+                            && targetPolL == 1.0f && polL_    == 1.0f
+                            && targetPolR == 1.0f && polR_    == 1.0f;
 
         for (int i = 0; i < numSamples; ++i)
         {
@@ -88,17 +186,52 @@ public:
             gain_ = targetGain + (gain_ - targetGain) * smoothCoeff_;
             pan_  = targetPan  + (pan_  - targetPan)  * smoothCoeff_;
 
-            if (right != nullptr)
+            if (right == nullptr)
+            {
+                polL_ = targetPolL + (polL_ - targetPolL) * smoothCoeff_;
+                left[i] *= gain_ * polL_;
+                continue;
+            }
+
+            if (depthIdle)
             {
                 float gl, gr;
                 panGains (pan_, gl, gr);
                 left[i]  *= gain_ * gl;
                 right[i] *= gain_ * gr;
+                continue;
             }
-            else
-            {
-                left[i] *= gain_;
-            }
+
+            midG_    = targetMid  + (midG_    - targetMid)  * smoothCoeff_;
+            sideG_   = targetSide + (sideG_   - targetSide) * smoothCoeff_;
+            monoAmt_ = targetMono + (monoAmt_ - targetMono) * smoothCoeff_;
+            polL_    = targetPolL + (polL_    - targetPolL) * smoothCoeff_;
+            polR_    = targetPolR + (polR_    - targetPolR) * smoothCoeff_;
+
+            float l = left[i]  * polL_;
+            float r = right[i] * polR_;
+
+            float m = 0.5f * (l + r);
+            float s = 0.5f * (l - r);
+
+            m *= midG_;
+            s *= sideG_ * (1.0f - monoAmt_);
+
+            l = m + s;
+            r = m - s;
+
+            float gl, gr;
+            panGains (pan_, gl, gr);
+            left[i]  = l * gain_ * gl;
+            right[i] = r * gain_ * gr;
+        }
+
+        if (right == nullptr)
+        {
+            // Keep the stereo-only smoothers tracking, so switching back to a
+            // stereo bus does not then glide from stale values.
+            midG_ = targetMid; sideG_ = targetSide; monoAmt_ = targetMono;
+            polR_ = targetPolR;
         }
     }
 
@@ -133,14 +266,34 @@ private:
     {
         gain_ = dbToGain (levelDbTarget_.load (std::memory_order_relaxed));
         pan_  = panTarget_.load (std::memory_order_relaxed);
+
+        const bool midSide = gainModeFromIndex (mode_.load (std::memory_order_relaxed)) == GainMode::MidSide;
+        midG_    = midSide ? dbToGain (midDbTarget_.load  (std::memory_order_relaxed)) : 1.0f;
+        sideG_   = midSide ? dbToGain (sideDbTarget_.load (std::memory_order_relaxed)) : 1.0f;
+        monoAmt_ = mono_.load (std::memory_order_relaxed) ? 1.0f : 0.0f;
+        polL_    = phaseLeft_.load  (std::memory_order_relaxed) ? -1.0f : 1.0f;
+        polR_    = phaseRight_.load (std::memory_order_relaxed) ? -1.0f : 1.0f;
     }
 
     std::atomic<float> levelDbTarget_ { 0.0f };
     std::atomic<float> panTarget_     { 0.0f };
 
+    // The depth pass. Mode stored as an int, same as the rest of the suite.
+    std::atomic<int>   mode_         { (int) GainMode::Stereo };
+    std::atomic<float> midDbTarget_  { 0.0f };
+    std::atomic<float> sideDbTarget_ { 0.0f };
+    std::atomic<bool>  mono_         { false };
+    std::atomic<bool>  phaseLeft_    { false };
+    std::atomic<bool>  phaseRight_   { false };
+
     // Smoothed state — audio thread only, never touched from elsewhere.
     float  gain_        = 1.0f;
     float  pan_         = 0.0f;
+    float  midG_        = 1.0f;
+    float  sideG_       = 1.0f;
+    float  monoAmt_     = 0.0f;
+    float  polL_        = 1.0f;
+    float  polR_        = 1.0f;
     float  smoothCoeff_ = 0.0f;
     double sampleRate_  = 44100.0;
 };
