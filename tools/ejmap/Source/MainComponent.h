@@ -240,7 +240,7 @@ public:
         // window is actually showing.
         std::cout << "ejmap status: " << opening << std::endl;
 
-        setSize (1280, 820);
+        setSize (1440, 900);
         startTimerHz (4);
     }
 
@@ -1173,6 +1173,15 @@ public:
             }
             const int k = findRow ("knee_db");
             assignPanel.selectRow (k);
+
+            // N against a live proposal warns and waits for the insist:
+            // "absent" against evidence is the falsehood class.
+            assignPanel.dispatchAction ("notpresent");
+            ok (assignPanel.rows.getReference (k).state == AssignRow::State::proposed
+                  && assignPanel.textRender().contains ("Press N again to insist"),
+                "N over a live proposal warns instead of writing ABSENT");
+            dump ("N once on the proposed knee");
+
             auto* in = host.getInstance();
             in->getParameters()[kneeTestIdx]->setValueNotifyingHost (0.0f);
             juce::Thread::sleep (120);
@@ -1232,10 +1241,56 @@ public:
             ok (accepted == 1 && unresolvedIgnores == 1,
                 "bulk ignores: 1 accepted, 1 withheld by the floor (dial-set name)");
 
-            // Submit, via the click path; the legend must show it lit first.
-            ok (assignPanel.keyValid ("submit"), "legend: submit lit once rows are confirmed");
-            dump ("before submit");
+            // THE DUPLICATE GATE. Confirm release_ms onto the SAME index
+            // attack_ms holds (the makeup/output [8] defect): review must
+            // refuse, submit must be disabled, and W+D must clear it.
+            const int rel = findRow ("release_ms");
+            assignPanel.selectRow (rel);
+            auto* in2 = host.getInstance();
+            in2->getParameters()[qualified[3]]->setValueNotifyingHost (0.20f);
+            juce::Thread::sleep (120);
+            assignPanel.actionWiggle();
+            juce::Timer::callAfterDelay (300, [this]
+            {
+                auto* i3 = host.getInstance();
+                if (i3 != nullptr) i3->getParameters()[qualified[3]]->setValueNotifyingHost (0.55f);
+            });
+            ++stage;
+            juce::Timer::callAfterDelay (1200, [this] { assignTestStep(); });
+            return;
+        }
+        case 4:
+        {
+            const int rel = findRow ("release_ms");
+            const int a2  = findRow ("attack_ms");
+            ok (assignPanel.rows.getReference (rel).state == AssignRow::State::confirmed
+                  && assignPanel.rows.getReference (rel).resolvedIndex
+                       == assignPanel.rows.getReference (a2).resolvedIndex,
+                "duplicate staged: two semantics confirmed on one index");
+
             assignPanel.dispatchAction ("submit");
+            ok (assignPanel.isSummaryShowing() && ! assignPanel.isSubmitEnabled(),
+                "review screen shows the conflict and disables submit");
+            ok (assignPanel.textRender().contains ("one index, two semantics"),
+                "the refusal is stated in words on the review screen");
+            dump ("review with a duplicate index");
+            ok (! assignPanel.confirmSubmitFromSummary(),
+                "submit refuses while the conflict stands");
+
+            // Fix it the way the screen says: back, re-open the wrong row, defer it.
+            assignPanel.dispatchAction ("prev");     // back to the rows
+            assignPanel.selectRow (rel);
+            assignPanel.dispatchAction ("wiggle");   // re-opens (armed)
+            assignPanel.dispatchAction ("defer");    // stands the arm down, defers
+            ok (assignPanel.rows.getReference (rel).state == AssignRow::State::skipDeferred,
+                "W re-open + D cleared the duplicate");
+            dump ("after clearing the duplicate");
+
+            assignPanel.dispatchAction ("submit");
+            ok (assignPanel.isSummaryShowing() && assignPanel.isSubmitEnabled(),
+                "review screen now offers submit");
+            dump ("review, clean");
+            ok (assignPanel.confirmSubmitFromSummary(), "submit confirmed from the review screen");
             auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
             ok (f.existsAsFile(), "map written to maps/<fp>.json");
             auto v = juce::JSON::parse (f.loadFileAsString());
@@ -1642,7 +1697,7 @@ public:
         }
 
         r.removeFromTop (8);
-        auto left = r.removeFromLeft (420);
+        auto left = r.removeFromLeft (assigning ? 500 : 420);
         if (assigning)
         {
             assignPanel.setBounds (left);
@@ -2569,6 +2624,7 @@ private:
             lastSweptName  = assignPanel.hooks.paramName (idx);
             startTypedAnchors();
         };
+        assignPanel.hooks.cancelArm = [this] { capture.stop(); };
         assignPanel.hooks.armForRow = [this]
         {
             auto* inst = host.getInstance();
@@ -2673,6 +2729,23 @@ private:
         auto* inst = host.getInstance();
         if (inst == nullptr || loadedId.isEmpty() || currentFp.isEmpty())
             return;
+
+        {
+            std::map<int, juce::StringArray> byIndex;
+            for (auto& r : rws)
+                if (r.state == AssignRow::State::confirmed)
+                    byIndex[r.resolvedIndex].add (r.semantic);
+            for (auto& kv : byIndex)
+                if (kv.second.size() > 1)
+                {
+                    captureReadout.setText ("SUBMIT REFUSED: index " + juce::String (kv.first)
+                        + " claimed by " + kv.second.joinIntoString (" AND ")
+                        + ". One of them is wrong.", juce::dontSendNotification);
+                    std::cout << "ASSIGN: SUBMIT REFUSED: duplicate index " << kv.first
+                              << " (" << kv.second.joinIntoString (" AND ") << ")" << std::endl;
+                    return;
+                }
+        }
 
         MapPayload p;
         p.fp = currentFp;

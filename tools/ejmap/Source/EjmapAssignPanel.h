@@ -1,19 +1,23 @@
 /*
   EjmapAssignPanel.h
 
-  M4 UI: the keyboard-driven loop. Fifty runs of this loop is the product, so
-  every action is a single keypress, every keypress writes its evidence
-  immediately (session file plus captures rows), and nothing advances
-  silently.
+  M4 UI: a prompt-driven WIZARD, not a list with a caption (fourth usability
+  finding). One row at a time, front and centre: the question in mix-engineer
+  words, the proposal, and the answers as large labelled buttons wearing
+  their shortcut keys. The full list survives as a progress sidebar below --
+  where you look, not where you work. Resolution auto-advances. Submit is a
+  REVIEW SCREEN with a summary of what will be written and a Submit button;
+  that screen is also where refusals (duplicate index assignments, nothing
+  confirmed) are shown instead of failing silently.
 
-  Keys (signed map): SPACE accept (corroborated only, see EjmapAssignment.h),
-  W wiggle-verify, N/A/D the three skips (Shift+ for a custom reason),
-  R recapture, T typed anchors, I bulk-accept eligible ignores (two-press,
-  count shown first), 1-9 pick a gesture candidate, arrows navigate,
-  ? evidence for the current row, S skip plugin, cmd+return submit.
+  Keys (signed map, all also on buttons): SPACE accept, W wiggle-verify,
+  N/A/D the three skips (Shift+ custom reason; N over a live proposal is
+  two-press, because "absent" against evidence is the falsehood class),
+  M mode/position, T typed anchors, I bulk ignores (two-press), 1-9 pick a
+  candidate, arrows navigate, ? evidence, S skip plugin, cmd+return review.
 
-  Actions live in action*() methods and keys call them, so the self-test
-  drives the same code path a keypress does.
+  Actions live in action*() methods; keys, buttons and the self-test all
+  drive dispatchAction, so every input surface is one code path.
 */
 
 #pragma once
@@ -26,102 +30,6 @@
 namespace ejmap
 {
 
-class AssignPanel;
-
-/** The keyboard map, on screen and clickable. Every chip is a key cap plus a
-    two-word action; chips light when valid for the current row and grey when
-    not, driven by the SAME keyValid() the key handler uses, so the legend and
-    the strip agree by construction rather than by duplication. A click
-    dispatches exactly what the key would (shift+click where shift+key means
-    a custom reason), so a first-time tester can work the whole loop with a
-    mouse and absorb the keys by reading what they click.
-*/
-class KeyLegend : public juce::Component
-{
-public:
-    struct Chip { const char* id; const char* cap; const char* label; juce::Rectangle<int> area; };
-
-    std::function<bool (const juce::String&)> isValid;
-    std::function<void (const juce::String&, bool)> dispatch;
-
-    KeyLegend()
-    {
-        chips = { { "space",      "SPACE", "accept",      {} },
-                  { "wiggle",     "W",     "verify",      {} },
-                  { "notpresent", "N",     "absent",      {} },
-                  { "noparam",    "A",     "no param",    {} },
-                  { "defer",      "D",     "later",       {} },
-                  { "typed",      "T",     "type anchors",{} },
-                  { "modematerial","M",    "mode/pos",    {} },
-                  { "bulk",       "I",     "bulk ignores",{} },
-                  { "evidence",   "?",     "evidence",    {} },
-                  { "pick",       "1-9",   "pick move",   {} },
-                  { "prev",       "<",     "prev",        {} },
-                  { "next",       ">",     "next",        {} },
-                  { "skipplugin", "S",     "skip plugin", {} },
-                  { "submit",     "cmd-rtn", "submit",    {} } };
-    }
-
-    void resized() override { layoutChips(); }
-
-    void layoutChips()
-    {
-        auto area = getLocalBounds().reduced (2);
-        const int rowH = area.getHeight() / 2;
-        int x = area.getX(), y = area.getY();
-        for (auto& c : chips)
-        {
-            const int w = 8 + juce::GlyphArrangement::getStringWidthInt (
-                              juce::Font (juce::FontOptions (11.0f)),
-                              juce::String (c.cap) + " " + c.label);
-            if (x + w > area.getRight()) { x = area.getX(); y += rowH; }
-            c.area = { x, y, w, rowH - 2 };
-            x += w + 6;
-        }
-    }
-
-    void paint (juce::Graphics& g) override
-    {
-        g.fillAll (juce::Colour (0xff0d1118));
-        for (auto& c : chips)
-        {
-            const bool valid = isValid == nullptr || isValid (c.id);
-            const auto keyCol  = valid ? juce::Colour (0xffd8d0a0) : juce::Colour (0xff3a4250);
-            const auto txtCol  = valid ? juce::Colour (0xff9fd8e0) : juce::Colour (0xff3a4250);
-            g.setColour (valid ? juce::Colour (0xff223040) : juce::Colour (0xff161c26));
-            g.fillRoundedRectangle (c.area.toFloat(), 3.0f);
-            g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-            g.setColour (keyCol);
-            const int capW = juce::GlyphArrangement::getStringWidthInt (
-                                 juce::Font (juce::FontOptions (11.0f, juce::Font::bold)), c.cap);
-            g.drawText (c.cap, c.area.getX() + 4, c.area.getY(), capW, c.area.getHeight(),
-                        juce::Justification::centredLeft);
-            g.setFont (juce::FontOptions (11.0f));
-            g.setColour (txtCol);
-            g.drawText (c.label, c.area.getX() + capW + 8, c.area.getY(),
-                        c.area.getWidth() - capW - 10, c.area.getHeight(),
-                        juce::Justification::centredLeft);
-        }
-    }
-
-    void mouseDown (const juce::MouseEvent& e) override
-    {
-        for (auto& c : chips)
-            if (c.area.contains (e.getPosition()))
-            {
-                if (isValid != nullptr && ! isValid (c.id))
-                    return;                       // greyed chips do nothing, like dead keys
-                if (dispatch != nullptr)
-                    dispatch (c.id, e.mods.isShiftDown());
-                return;
-            }
-    }
-
-private:
-    std::vector<Chip> chips;
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (KeyLegend)
-};
-
 class AssignPanel : public juce::Component,
                     private juce::ListBoxModel,
                     private juce::Timer
@@ -130,6 +38,7 @@ public:
     struct Hooks
     {
         std::function<void()>                          armForRow;      // W: arm; result via captureArrived
+        std::function<void()>                          cancelArm;      // stand a pending arm down
         std::function<SweepOutcome (int)>              sweepIndex;     // synchronous, pump-paused
         std::function<void (int)>                      startTyped;     // T; completion via typedCompleted
         std::function<juce::String (int)>              paramName;
@@ -167,14 +76,35 @@ public:
         list.setRowHeight (20);
         list.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xff10141c));
 
-        addAndMakeVisible (legend);
-        legend.isValid  = [this] (const juce::String& id) { return keyValid (id); };
-        legend.dispatch = [this] (const juce::String& id, bool shift)
-        {
-            if (id == "pick") { say ("Pick with the digit keys 1-9."); return; }
-            dispatchAction (id, shift);
-            grabKeyboardFocus();               // a click must not strand the keys
-        };
+        addAndMakeVisible (notice);
+        notice.setFont (juce::FontOptions (12.0f));
+        notice.setColour (juce::Label::textColourId, juce::Colour (0xffe0a060));
+
+        addAndMakeVisible (promptTitle);
+        promptTitle.setFont (juce::FontOptions (17.0f, juce::Font::bold));
+        promptTitle.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0));
+
+        for (auto* b : { &prevBtn, &nextBtn, &evidBtn, &bulkBtn, &skipPluginBtn, &reviewBtn })
+            addAndMakeVisible (b);
+        prevBtn.setButtonText ("< prev");            prevBtn.onClick = [this] { dispatchAction ("prev"); grabKeyboardFocus(); };
+        nextBtn.setButtonText ("> next");            nextBtn.onClick = [this] { dispatchAction ("next"); grabKeyboardFocus(); };
+        evidBtn.setButtonText ("? evidence");        evidBtn.onClick = [this] { dispatchAction ("evidence"); grabKeyboardFocus(); };
+        bulkBtn.setButtonText ("I bulk ignores");    bulkBtn.onClick = [this] { dispatchAction ("bulk"); grabKeyboardFocus(); };
+        skipPluginBtn.setButtonText ("S skip plugin"); skipPluginBtn.onClick = [this] { dispatchAction ("skipplugin"); grabKeyboardFocus(); };
+        reviewBtn.setButtonText ("Review & submit (cmd-return)");
+        reviewBtn.onClick = [this] { dispatchAction ("submit"); grabKeyboardFocus(); };
+
+        addChildComponent (summaryText);
+        summaryText.setMultiLine (true);
+        summaryText.setReadOnly (true);
+        summaryText.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff161c26));
+        summaryText.setColour (juce::TextEditor::textColourId, juce::Colour (0xff9fd8e0));
+        addChildComponent (submitBtn);
+        submitBtn.setButtonText ("SUBMIT MAP");
+        submitBtn.onClick = [this] { confirmSubmitFromSummary(); };
+        addChildComponent (backBtn);
+        backBtn.setButtonText ("< back to rows");
+        backBtn.onClick = [this] { closeSummary(); grabKeyboardFocus(); };
 
         addChildComponent (reasonEntry);
         reasonEntry.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff161c26));
@@ -308,6 +238,19 @@ public:
     {
         juce::String t;
         t << progress.getText() << "\n";
+        if (summaryShowing)
+        {
+            t << "== REVIEW SCREEN ==\n" << summaryText.getText()
+              << "[buttons: SUBMIT MAP" << (submitBtn.isEnabled() ? "" : " (disabled)")
+              << " | back]\nlast: " << lastStatus << "\n";
+            return t;
+        }
+        t << "PROMPT: " << promptTitle.getText() << "\n";
+        t << "   " << question.getText().replace ("\n", "\n   ") << "\n";
+        t << "ANSWERS: ";
+        for (auto* b : answerButtons)
+            t << "[" << b->getButtonText() << (b->isEnabled() ? "" : " (greyed)") << "] ";
+        t << "\n";
         for (int i = 0; i < rowCount(); ++i)
         {
             auto& r = rowAt (i);
@@ -322,8 +265,7 @@ public:
                 t << "   | unmapped (N if absent)";
             t << "\n";
         }
-        t << "Q: " << question.getText().replace ("\n", " / ") << "\n";
-        t << "last: " << lastStatus << "\n";
+        t << "notice (in card): " << lastStatus << "\n";
         return t;
     }
 
@@ -366,11 +308,8 @@ public:
             return false;
         }
         if (id == "pick")        return awaitingCaptureRow >= 0 && lastGesture.indices.size() > 1;
-        if (id == "submit")
-        {
-            for (const auto& rr : rows) if (rr.state == AssignRow::State::confirmed) return true;
-            return false;
-        }
+        if (id == "submit")      return true;   // always opens the REVIEW screen,
+                                                // which shows any refusal in words
         return true;   // evidence, move, skipplugin
     }
 
@@ -381,10 +320,19 @@ public:
     */
     void dispatchAction (const juce::String& id, bool shift = false)
     {
+        if (summaryShowing)
+        {
+            if (id == "submit") { confirmSubmitFromSummary(); return; }
+            if (id == "prev")   { closeSummary(); return; }
+            // Any other action returns to the rows first, then applies.
+            closeSummary();
+        }
+
+        if (id == "submit") { openSummary(); return; }
+
         if (! keyValid (id))
         {
             say ("KEY REFUSED (" + keyCapFor (id) + "): " + refusalFor (id));
-            legend.repaint();
             return;
         }
         if (id == "space")           actionSpace();
@@ -400,10 +348,8 @@ public:
         else if (id == "bulk")       actionBulkIgnores();
         else if (id == "evidence")   actionEvidence();
         else if (id == "skipplugin") actionSkipPlugin();
-        else if (id == "submit")     actionSubmit();
         else if (id == "prev")       selectRow (selected - 1);
         else if (id == "next")       selectRow (selected + 1);
-        legend.repaint();
     }
 
     juce::String keyCapFor (const juce::String& id) const
@@ -424,6 +370,12 @@ public:
     {
         if (rowCount() == 0) return "no rows";
         auto& r = rowAt (selected);
+
+        // A resolved row's refusals must READ as resolved, not as a failure
+        // of the key: "M needs a labelled switch" on an already-skipped row
+        // pointed the human at the wrong problem.
+        if (r.isResolved() && (id == "space" || id == "modematerial" || id == "typed"))
+            return "row already resolved (" + r.stateString() + "); W re-opens it";
         if (id == "space")
         {
             if (deepMode)               return "Deep mode: W to verify by touching";
@@ -565,12 +517,45 @@ public:
         finishCaptureWith (lastGesture.indices[oneBased - 1], lastGesture);
     }
 
-    /** The three skips. Canned reason unless customReason is non-empty. */
+    /** The three skips. Canned reason unless customReason is non-empty.
+
+        N over a live classifier proposal takes TWO presses. mode - Type
+        landed ABSENT in a submitted map while index 6 sat proposed and the
+        switch sat on the GUI: one keystroke wrote a falsehood the evidence
+        contradicted. The insist is cheap (press N again); the accident is
+        not.
+    */
     void actionSkip (AssignRow::State outcome, const juce::String& customReason = {})
     {
         if (rowCount() == 0) return;
         auto& r = rowAt (selected);
         if (r.state == AssignRow::State::confirmed) { say ("Row already confirmed; navigate elsewhere."); return; }
+
+        if (outcome == AssignRow::State::skipNotPresent
+             && r.proposalSource == "classifier" && r.proposedIndex >= 0
+             && r.kind != "ignore" && customReason.isEmpty())
+        {
+            const auto now = juce::Time::getMillisecondCounter();
+            if (insistRow != selected || (int) (now - insistAt) > 6000)
+            {
+                insistRow = selected; insistAt = now;
+                say ("N claims NO such control exists, but the classifier proposed ["
+                       + juce::String (r.proposedIndex) + "] " + r.proposedName
+                       + (r.semantic == "mode" ? ". If it is a switch, M records it truthfully."
+                                               : ".")
+                       + " Press N again to insist.");
+                return;
+            }
+            insistRow = -1;
+        }
+
+        // Skipping an ARMED row must also stand the capture down, or the
+        // engine later delivers into a row that moved on.
+        if (r.state == AssignRow::State::armed)
+        {
+            if (hooks.cancelArm) hooks.cancelArm();
+            awaitingCaptureRow = -1;
+        }
 
         juce::String canned;
         if (outcome == AssignRow::State::skipNotPresent)
@@ -832,6 +817,116 @@ public:
         if (hooks.submit) hooks.submit (rows, category, deepMode ? "deep" : "fast");
     }
 
+    /** Two confirmed semantics on one index is a defect the map must not
+        carry: makeup (dB) and output (dB) both CONFIRMED [8] on API-2500 is
+        how one wrong accept poisons two keys. Computed here, shown on the
+        review screen, and submit refuses while any exist.
+    */
+    juce::StringArray duplicateConflicts()
+    {
+        juce::StringArray out;
+        std::map<int, juce::StringArray> byIndex;
+        for (auto& r : rows)
+            if (r.state == AssignRow::State::confirmed)
+                byIndex[r.resolvedIndex].add (r.semantic);
+        for (auto& kv : byIndex)
+            if (kv.second.size() > 1)
+                out.add ("[" + juce::String (kv.first) + "] "
+                           + (hooks.paramName ? hooks.paramName (kv.first) : juce::String())
+                           + " claimed by: " + kv.second.joinIntoString (" AND "));
+        return out;
+    }
+
+    bool isSummaryShowing() const { return summaryShowing; }
+    bool isSubmitEnabled() const  { return submitBtn.isEnabled(); }
+
+    void openSummary()
+    {
+        int confirmed = 0, modePos = 0, skips = 0, open = 0;
+        for (auto& r : rows)
+        {
+            if (r.state == AssignRow::State::confirmed) ++confirmed;
+            else if (r.state == AssignRow::State::modeMaterial) ++modePos;
+            else if (r.isSkipped()) ++skips;
+            else ++open;
+        }
+        int ignoresOpen = 0;
+        for (auto& r : ignoreRows) ignoresOpen += ! r.isResolved();
+
+        const auto conflicts = duplicateConflicts();
+
+        juce::String t;
+        t << "REVIEW: what submit will write\n\n";
+        for (auto& r : rows)
+            if (r.state == AssignRow::State::confirmed)
+                t << "  " << displayLabel (r) << "  <- [" << r.resolvedIndex << "] "
+                  << (hooks.paramName ? hooks.paramName (r.resolvedIndex) : juce::String())
+                  << "  (" << r.trust << ", " << r.sweep.method << ")\n";
+        t << "\n" << modePos << " mode/position finding(s), " << skips << " skip(s) with reasons, "
+          << open << " unresolved row(s)" << (open > 0 ? " -> will be recorded as deferred" : "")
+          << (ignoresOpen > 0 ? ", " + juce::String (ignoresOpen) + " unreviewed ignore(s)" : juce::String())
+          << "\n";
+
+        if (! conflicts.isEmpty())
+        {
+            t << "\nSUBMIT REFUSED - one index, two semantics:\n";
+            for (const auto& c : conflicts) t << "  " << c << "\n";
+            t << "One of each pair is wrong. Back, W re-captures the wrong one "
+                 "(or D defers it), then review again.\n";
+        }
+        else if (confirmed == 0)
+            t << "\nSUBMIT REFUSED - nothing confirmed yet.\n";
+        else
+            t << "\nReady: SUBMIT writes maps/" << fp.substring (0, 12) << "....json\n";
+
+        summaryText.setText (t, juce::dontSendNotification);
+        submitBtn.setEnabled (conflicts.isEmpty() && confirmed > 0);
+
+        summaryShowing = true;
+        summaryText.setVisible (true);
+        submitBtn.setVisible (true);
+        backBtn.setVisible (true);
+        setWizardVisible (false);
+        resized();
+        say (conflicts.isEmpty() ? "Review open: SUBMIT writes the map, back returns to the rows."
+                                 : "Review open: submit refused, " + conflicts[0]);
+    }
+
+    bool confirmSubmitFromSummary()
+    {
+        if (! summaryShowing) return false;
+        if (! submitBtn.isEnabled())
+        {
+            say ("SUBMIT still refused: fix the conflicts listed above, or confirm at least one row.");
+            return false;
+        }
+        closeSummary();
+        actionSubmit();
+        return true;
+    }
+
+    void closeSummary()
+    {
+        summaryShowing = false;
+        summaryText.setVisible (false);
+        submitBtn.setVisible (false);
+        backBtn.setVisible (false);
+        setWizardVisible (true);
+        resized();
+        updateQuestion();
+    }
+
+    void setWizardVisible (bool v)
+    {
+        promptTitle.setVisible (v);
+        question.setVisible (v);
+        notice.setVisible (v);
+        list.setVisible (v);
+        for (auto* b : answerButtons) b->setVisible (v);
+        for (auto* b : { &prevBtn, &nextBtn, &evidBtn, &bulkBtn, &skipPluginBtn, &reviewBtn })
+            b->setVisible (v);
+    }
+
     void advance()
     {
         const int next = firstUnresolvedFrom (selected + 1);
@@ -859,7 +954,7 @@ public:
         if (c == 'i' || c == 'I')                         { dispatchAction ("bulk"); return true; }
         if (c == '?')                                     { dispatchAction ("evidence"); return true; }
         if (c == 's' || c == 'S')                         { dispatchAction ("skipplugin"); return true; }
-        if (c >= '1' && c <= '9')                         { actionPickCandidate (c - '0'); legend.repaint(); return true; }
+        if (c >= '1' && c <= '9')                         { actionPickCandidate (c - '0'); return true; }
         if (k == juce::KeyPress::leftKey  || k == juce::KeyPress::upKey)   { dispatchAction ("prev"); return true; }
         if (k == juce::KeyPress::rightKey || k == juce::KeyPress::downKey) { dispatchAction ("next"); return true; }
         if (k == juce::KeyPress::returnKey && k.getModifiers().isCommandDown()) { dispatchAction ("submit"); return true; }
@@ -873,11 +968,46 @@ public:
     {
         auto r = getLocalBounds();
         progress.setBounds (r.removeFromTop (18));
-        question.setBounds (r.removeFromTop (52));
-        legend.setBounds (r.removeFromBottom (48));
+
+        if (summaryShowing)
+        {
+            auto foot = r.removeFromBottom (34);
+            backBtn.setBounds (foot.removeFromLeft (140).reduced (2));
+            submitBtn.setBounds (foot.reduced (2));
+            summaryText.setBounds (r.reduced (2));
+            return;
+        }
+
+        promptTitle.setBounds (r.removeFromTop (30));
+        question.setBounds (r.removeFromTop (58));
+
+        // Answer buttons: up to two rows of large targets, keys on their faces.
+        auto btns = r.removeFromTop (answerButtons.size() > 3 ? 72 : 38);
+        const int perRow = juce::jmax (1, (answerButtons.size() + 1) / 2);
+        int i = 0;
+        for (int rowN = 0; rowN < 2 && i < answerButtons.size(); ++rowN)
+        {
+            auto rowArea = btns.removeFromTop (answerButtons.size() > 3 ? 34 : 36);
+            const int n = juce::jmin (perRow, answerButtons.size() - i);
+            const int wEach = rowArea.getWidth() / juce::jmax (1, n);
+            for (int k = 0; k < n; ++k, ++i)
+                answerButtons[i]->setBounds (rowArea.removeFromLeft (wEach).reduced (2));
+        }
+
+        notice.setBounds (r.removeFromTop (18));
+        auto strip = r.removeFromTop (26);
+        const int gw = strip.getWidth() / 6;
+        prevBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
+        nextBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
+        evidBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
+        bulkBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
+        skipPluginBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
+        reviewBtn.setBounds (strip.reduced (1));
+
         if (reasonEntry.isVisible())
             reasonEntry.setBounds (r.removeFromTop (22));
-        list.setBounds (r);
+        r.removeFromTop (4);
+        list.setBounds (r);      // the progress sidebar: where you look
     }
 
     void selectedRowsChanged (int row) override
@@ -978,7 +1108,104 @@ public:
               << "W touch it on the GUI - N it does not exist (ONE KEY, four seconds) - D later";
         }
         question.setText (q, juce::dontSendNotification);
-        legend.repaint();
+        promptTitle.setText (promptHeadline(), juce::dontSendNotification);
+        rebuildAnswers();
+    }
+
+    juce::String promptHeadline()
+    {
+        if (rowCount() == 0) return "No rows";
+        auto& r = rowAt (selected);
+        if (r.isResolved())
+            return displayLabel (r) + ": done (" + r.stateString() + ")";
+        if (r.kind == "ignore") return "Agree to ignore " + r.proposedName + "?";
+        if (r.kind == "unsure") return "Classifier note: " + r.proposedName;
+        if (! r.sweep.points.isEmpty() && r.sweep.nonNumeric)
+            return displayLabel (r) + ": it is a labelled switch";
+        if (r.semantic == "mode")
+            return "Record mode switch " + r.proposedName + "?";
+        if (r.proposedIndex >= 0)
+            return "Is [" + juce::String (r.proposedIndex) + "] " + r.proposedName
+                 + " the " + displayLabel (r) + "?";
+        return "Does this plugin have " + displayLabel (r) + "?";
+    }
+
+    /** The answers, as buttons wearing their keys. Built per row from the
+        SAME keyValid the keys use; a greyed button is a refusal you can read
+        before pressing anything.
+    */
+    void rebuildAnswers()
+    {
+        answerButtons.clear();
+        if (rowCount() == 0) { resized(); return; }
+        auto& r = rowAt (selected);
+
+        auto add = [this] (const juce::String& id, const juce::String& text)
+        {
+            auto* b = answerButtons.add (new juce::TextButton (text));
+            addAndMakeVisible (b);
+            b->setEnabled (keyValid (id));
+            b->onClick = [this, id] { dispatchAction (id); grabKeyboardFocus(); };
+        };
+
+        if (awaitingCaptureRow >= 0 && lastGesture.indices.size() > 1)
+        {
+            for (int i = 0; i < juce::jmin (9, lastGesture.indices.size()); ++i)
+            {
+                const int oneBased = i + 1;
+                auto* b = answerButtons.add (new juce::TextButton (
+                    juce::String (oneBased) + " - " + lastGesture.names[i]));
+                addAndMakeVisible (b);
+                b->onClick = [this, oneBased] { actionPickCandidate (oneBased); grabKeyboardFocus(); };
+            }
+            resized(); return;
+        }
+
+        if (r.isResolved())
+        {
+            add ("next", "> - next row");
+            add ("wiggle", "W - re-open (re-capture)");
+            resized(); return;
+        }
+
+        if (r.kind == "ignore")
+        {
+            add ("notpresent", "N - agree, ignore it");
+            add ("wiggle",     "W - dispute: touch it");
+            add ("defer",      "D - later");
+        }
+        else if (r.kind == "unsure")
+        {
+            add ("defer",  "D - defer this note");
+            add ("wiggle", "W - capture what it means");
+        }
+        else if (r.semantic == "mode")
+        {
+            add ("modematerial", "M - record with labels");
+            add ("wiggle",       "W - verify by touching");
+            add ("notpresent",   "N - not present");
+            add ("defer",        "D - later");
+        }
+        else if (! r.sweep.points.isEmpty() && (r.sweep.nonNumeric || r.sweep.flat))
+        {
+            if (r.sweep.nonNumeric) add ("modematerial", "M - record as mode/position");
+            if (r.sweep.flat)       add ("typed",        "T - type anchors");
+            add ("defer", "D - later");
+        }
+        else if (r.proposedIndex >= 0)
+        {
+            add ("space",      "SPACE - accept proposal");
+            add ("wiggle",     "W - touch the control");
+            add ("notpresent", "N - no such control");
+            add ("defer",      "D - later");
+        }
+        else
+        {
+            add ("wiggle",     "W - touch it on the GUI");
+            add ("notpresent", "N - it does not exist");
+            add ("defer",      "D - later");
+        }
+        resized();
     }
 
     int getNumRows() override { return rowCount(); }
@@ -1293,7 +1520,12 @@ private:
 
     void timerCallback() override { if (isVisible()) updateProgress(); }
 
-    void say (const juce::String& s) { lastStatus = s; if (hooks.status) hooks.status (s); }
+    void say (const juce::String& s)
+    {
+        lastStatus = s;
+        notice.setText (s, juce::dontSendNotification);   // in the card, not elsewhere
+        if (hooks.status) hooks.status (s);
+    }
     juce::String lastStatus;
 
     juce::File root;
@@ -1302,13 +1534,21 @@ private:
     juce::ListBox list;
     juce::Label progress;
     juce::Label question;
-    KeyLegend legend;
+    juce::Label promptTitle;
+    juce::Label notice;
+    juce::OwnedArray<juce::TextButton> answerButtons;
+    juce::TextButton prevBtn, nextBtn, evidBtn, bulkBtn, skipPluginBtn, reviewBtn;
+    juce::TextEditor summaryText;
+    juce::TextButton submitBtn, backBtn;
+    bool summaryShowing = false;
     juce::TextEditor reasonEntry;
     juce::Optional<AssignRow::State> pendingSkip;
     juce::String pendingAutoSkipReason;
     CaptureEngine::Result lastGesture;
     int selected = 0;
     int awaitingCaptureRow = -1;
+    int insistRow = -1;
+    juce::uint32 insistAt = 0;
     int typedRow = -1;
     juce::uint32 startedAt = 0, bulkArmedAt = 0;
 
