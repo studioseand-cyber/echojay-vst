@@ -126,10 +126,19 @@ private:
     static constexpr float kSpecCeilDb  = 0.0f;
     static constexpr float kSpecFloorDb = -100.0f;
 
-    void  updateSpectrum();          // timer: drain a tap, FFT, smooth
-    void  rebuildSpectrumPath();     // region-aware knots + Catmull-Rom
+    // A spectrum lane: one trace's decay/smoothing state and its path. Lane 0
+    // is the mid (the only lane before P2); lane 1 is the side, active only
+    // while the analyzer's M/S view (ms_mode) is on.
+    struct SpecLane
+    {
+        std::vector<float> db, work, display;
+        juce::Path         path;
+    };
+
+    void  updateSpectrum (SpecLane& lane, bool side);   // timer: drain, FFT, smooth
+    void  rebuildSpectrumPath (SpecLane& lane);         // region-aware knots + spline
     void  paintSpectrum (juce::Graphics& g) const;
-    void  paintAnalyzerAxis (juce::Graphics& g) const;   // right-hand dBFS scale
+    void  paintAnalyzerAxis (juce::Graphics& g) const;  // right-hand dBFS scale
     float specDbToY (float db) const noexcept;   // analyzer's OWN vertical scale
 
     // ---- dynamic metering (Step B) -----------------------------------------
@@ -173,12 +182,9 @@ private:
     std::vector<float> window_;
     std::vector<float> fftScratch_;   // kFftSize  drained samples
     std::vector<float> fftData_;      // 2*kFftSize, as performFrequencyOnly… needs
-    std::vector<float> specDb_;       // kSpecBins, decay-smoothed magnitudes
-    std::vector<float> specWork_;     // median-gated intermediate
-    std::vector<float> specDisplay_;  // fractional-octave smoothed, what is drawn
     std::vector<float> specPrefix_;   // running integral for O(n) octave averaging
     std::vector<juce::Point<float>> specPts_;   // spline knots, reused each frame
-    juce::Path         spectrumPath_;
+    SpecLane           specMid_, specSide_;     // side runs only in the M/S view
     bool               analyzerOn_   = true;
     bool               analyzerPost_ = true;    // default POST: show what the EQ did
 
@@ -190,6 +196,18 @@ private:
     juce::TextButton analyzerBtn_ { "A" };
     juce::TextButton sourceBtn_   { "POST" };   // analyzer source: PRE / POST
     juce::TextButton scaleBtn_    { "18 dB" };
+    juce::TextButton msViewBtn_   { "M/S" };    // analyzer M/S overlay (ms_mode)
+
+    // Resonance hunt (P3): HUNT runs the same eq_action the AI sends, with the
+    // sensitivity / dynamic settings these two carry.
+    juce::TextButton huntBtn_     { "HUNT" };
+    juce::TextButton sensBtn_     { "MED" };    // cycles LOW / MED / HIGH
+    juce::TextButton huntDynBtn_  { "DYN" };    // toggles DYN bells / static notches
+    int              huntSensIdx_ = 1;
+
+    // Phase mode (P4) + presets (P5).
+    juce::TextButton phaseBtn_    { "ZERO" };
+    juce::TextButton presetBtn_   { "PRESET" };
 
     // Device-global output stage, in the header rather than the per-band strip
     // because it belongs to the EQ, not to whichever band happens to be
@@ -199,7 +217,7 @@ private:
     juce::Label      autoGainLbl_;              // the makeup being applied
 
     // selected-band strip
-    juce::ComboBox   typeBox_, slopeBox_;
+    juce::ComboBox   typeBox_, slopeBox_, chanBox_;
     EqValueKnob      freqS_, gainS_, qS_;
     juce::TextButton dynBtn_    { "DYN" };
     juce::TextButton enableBtn_ { "ON" };

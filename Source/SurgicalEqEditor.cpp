@@ -3,6 +3,8 @@
 */
 
 #include "SurgicalEqEditor.h"
+#include "EqNote.h"     // drag readout names the nearest pitch
+#include "EqPresets.h"  // the PRESET menu reads the same table the funnel does
 
 #include <iterator>     // std::size
 
@@ -43,9 +45,11 @@ SurgicalEqEditor::SurgicalEqEditor (SurgicalEqProcessor& p)
     // default size — everything below is the EQ's own share.
     //
     // Height carries the header's growth (30 -> 58 for the OUT dial) so the graph
-    // keeps exactly the area it had. Inline in the chain the editor is stretched
-    // to the display area instead; this is the popout / native size.
-    : DeviceEditorBase (p, "EQ", 640, 448), proc_ (p)
+    // keeps exactly the area it had; width grew (640 -> 820) when the depth pass
+    // put HUNT, PRESET, PHASE and the M/S view in the header. Inline in the
+    // chain the editor is stretched to the display area instead; this is the
+    // popout / native size.
+    : DeviceEditorBase (p, "EQ", 820, 448), proc_ (p)
 {
     setWantsKeyboardFocus (true);
     setHeaderHint ("double-click: add / remove band     drag: freq + gain     wheel: Q");
@@ -71,9 +75,12 @@ SurgicalEqEditor::SurgicalEqEditor (SurgicalEqProcessor& p)
 
     fftScratch_.assign  ((size_t) kFftSize, 0.0f);
     fftData_.assign     ((size_t) kFftSize * 2, 0.0f);
-    specDb_.assign      ((size_t) kSpecBins, kSpecRawFloorDb);
-    specWork_.assign    ((size_t) kSpecBins, kSpecRawFloorDb);
-    specDisplay_.assign ((size_t) kSpecBins, kSpecRawFloorDb);
+    for (SpecLane* lane : { &specMid_, &specSide_ })
+    {
+        lane->db.assign      ((size_t) kSpecBins, kSpecRawFloorDb);
+        lane->work.assign    ((size_t) kSpecBins, kSpecRawFloorDb);
+        lane->display.assign ((size_t) kSpecBins, kSpecRawFloorDb);
+    }
     specPrefix_.assign  ((size_t) kSpecBins + 1, 0.0f);
     specPts_.reserve    ((size_t) kSpecBins + 2048);   // knots + one per pixel
 
@@ -139,8 +146,11 @@ void SurgicalEqEditor::buildControls()
             // Off means OFF: no FFT on the timer, nothing drawn, and the
             // decay state reset so re-enabling starts from silence rather
             // than from a frozen frame minutes old.
-            spectrumPath_.clear();
-            std::fill (specDb_.begin(), specDb_.end(), kSpecRawFloorDb);
+            for (SpecLane* lane : { &specMid_, &specSide_ })
+            {
+                lane->path.clear();
+                std::fill (lane->db.begin(), lane->db.end(), kSpecRawFloorDb);
+            }
         }
         sourceBtn_.setEnabled (analyzerOn_);
         repaint();
@@ -159,8 +169,94 @@ void SurgicalEqEditor::buildControls()
         // Both rings are always captured, so the switch is instant — but the
         // smoothing and peak state belong to the old source and would bleed
         // across, dragging the auto-range with them.
-        std::fill (specDb_.begin(), specDb_.end(), kSpecRawFloorDb);
+        for (SpecLane* lane : { &specMid_, &specSide_ })
+            std::fill (lane->db.begin(), lane->db.end(), kSpecRawFloorDb);
         repaint();
+    };
+
+    // Analyzer M/S view (ms_mode, P2): overlays a separate SIDE trace. Display
+    // only — band routing is the per-band channel selector, not this.
+    styleButton (msViewBtn_, true);
+    msViewBtn_.setToggleState (proc_.getMsMode(), juce::dontSendNotification);
+    msViewBtn_.setTooltip ("Analyzer M/S view: overlay separate mid and side traces. "
+                           "Display only; route a band with its CHAN selector.");
+    msViewBtn_.onClick = [this]
+    {
+        proc_.setMsMode (msViewBtn_.getToggleState());
+        specSide_.path.clear();
+        std::fill (specSide_.db.begin(), specSide_.db.end(), kSpecRawFloorDb);
+        repaint();
+    };
+
+    // ---- resonance hunt (P3) ----------------------------------------------
+    // The button runs the SAME eq_action a model move sends, through the same
+    // funnel, so the two can never behave differently.
+    styleButton (huntBtn_, false);
+    huntBtn_.setTooltip ("Find and tame resonances in the live signal: dynamic bells "
+                         "(or notches) placed on peaks standing above the spectral "
+                         "envelope. Audio must be playing.");
+    huntBtn_.onClick = [this]
+    {
+        static const char* kSens[] = { "low", "medium", "high" };
+        juce::DynamicObject::Ptr action = new juce::DynamicObject();
+        action->setProperty ("type", "tame_resonances");
+        action->setProperty ("sensitivity", kSens[huntSensIdx_]);
+        action->setProperty ("dynamic", huntDynBtn_.getToggleState());
+        juce::DynamicObject::Ptr move = new juce::DynamicObject();
+        move->setProperty ("eq_action", juce::var (action.get()));
+        proc_.applyStructured (juce::var (move.get()));
+        // the timer's model diff picks up whatever bands landed
+    };
+
+    styleButton (sensBtn_, false);
+    sensBtn_.setTooltip ("Hunt sensitivity: how far a peak must stand above the "
+                         "local envelope (LOW 6 dB, MED 4 dB, HIGH 2.5 dB)");
+    sensBtn_.onClick = [this]
+    {
+        huntSensIdx_ = (huntSensIdx_ + 1) % 3;
+        sensBtn_.setButtonText (huntSensIdx_ == 0 ? "LOW" : huntSensIdx_ == 1 ? "MED" : "HIGH");
+    };
+
+    styleButton (huntDynBtn_, true);
+    huntDynBtn_.setToggleState (true, juce::dontSendNotification);
+    huntDynBtn_.setTooltip ("Hunt placement: DYN = dynamic bells that duck only when "
+                            "the resonance rings (musical); off = static notches "
+                            "(surgical, always on)");
+
+    // ---- phase mode (P4) ---------------------------------------------------
+    styleButton (phaseBtn_, true);
+    phaseBtn_.setTooltip ("ZERO = minimum phase, no latency (tracking). LINEAR = "
+                          "linear-phase FIR for mastering/parallel work; adds the "
+                          "shown latency, which the host compensates.");
+    phaseBtn_.onClick = [this]
+    {
+        proc_.setPhaseMode (phaseBtn_.getToggleState()
+                                ? SurgicalEqProcessor::PhaseMode::Linear
+                                : SurgicalEqProcessor::PhaseMode::Zero);
+        // text is synced (with the live latency) on the timer
+    };
+
+    // ---- presets (P5) ------------------------------------------------------
+    styleButton (presetBtn_, false);
+    presetBtn_.setTooltip ("Load a built-in starting point (replaces the current "
+                           "bands; every band stays editable)");
+    presetBtn_.onClick = [this]
+    {
+        juce::PopupMenu menu;
+        for (int i = 0; i < echojay::kNumEqPresets; ++i)
+            menu.addItem (i + 1, juce::String (echojay::kEqPresets[i].name)
+                                 + juce::String::fromUTF8 (" — ")
+                                 + echojay::kEqPresets[i].blurb);
+
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&presetBtn_),
+                            [this] (int result)
+        {
+            if (result <= 0) return;
+            // through the SAME funnel a model move takes
+            juce::DynamicObject::Ptr move = new juce::DynamicObject();
+            move->setProperty ("eq_preset", echojay::kEqPresets[result - 1].name);
+            proc_.applyStructured (juce::var (move.get()));
+        });
     };
 
     // ---- band type / slope ------------------------------------------------
@@ -186,6 +282,19 @@ void SurgicalEqEditor::buildControls()
     slopeBox_.setColour (juce::ComboBox::textColourId,       C::text);
     slopeBox_.onChange = [this] { if (! suppressCallbacks_) pushControlsToBand(); };
     addAndMakeVisible (slopeBox_);
+
+    // Per-band routing (P2). Item ids are BandChannel + 1, same trick as type.
+    chanBox_.addItem ("Stereo", 1);
+    chanBox_.addItem ("Mid",    2);
+    chanBox_.addItem ("Side",   3);
+    chanBox_.addItem ("Left",   4);
+    chanBox_.addItem ("Right",  5);
+    chanBox_.setColour (juce::ComboBox::backgroundColourId, C::bg3);
+    chanBox_.setColour (juce::ComboBox::textColourId,       C::text);
+    chanBox_.setTooltip ("Which lane this band filters: both channels, the mid "
+                         "(centre), the side (width), or one side only");
+    chanBox_.onChange = [this] { if (! suppressCallbacks_) pushControlsToBand(); };
+    addAndMakeVisible (chanBox_);
 
     // ---- numeric dials ----------------------------------------------------
     // FREQ borrows the x-axis's own labelling so the readout and the gridline
@@ -265,6 +374,7 @@ void SurgicalEqEditor::updateStripVisibility()
     // With no band selected the whole strip goes away, leaving room for the
     // "double-click to add a band" hint rather than a row of dead controls.
     typeBox_.setVisible   (have);
+    chanBox_.setVisible   (have);
     freqS_.setVisible     (have);
     qS_.setVisible        (have);
     enableBtn_.setVisible (have);
@@ -307,8 +417,8 @@ void SurgicalEqEditor::layoutStrip()
     struct Item { juce::Component* c; int w; };
 
     const Item row1[] = {
-        { &typeBox_,  96 }, { &slopeBox_, 92 }, { &dynBtn_, 58 },
-        { &enableBtn_, 46 }, { &soloBtn_,  36 },
+        { &typeBox_,  96 }, { &slopeBox_, 92 }, { &chanBox_, 76 },
+        { &dynBtn_, 58 }, { &enableBtn_, 46 }, { &soloBtn_,  36 },
     };
     const Item row2[] = {
         { &freqS_, kKnobW }, { &gainS_,  kKnobW }, { &qS_,   kKnobW },
@@ -354,6 +464,8 @@ void SurgicalEqEditor::syncControlsFromModel()
     typeBox_.setSelectedId ((int) s.type + 1, juce::dontSendNotification);
     slopeBox_.setSelectedId (juce::jlimit (1, 8, s.slopeDbPerOct / 12),
                              juce::dontSendNotification);
+    chanBox_.setSelectedId (juce::jlimit (1, 5, (int) s.channel + 1),
+                            juce::dontSendNotification);
 
     freqS_.setRealValue (s.freqHz);
     gainS_.setRealValue (juce::jlimit ((double) -kMaxGain, (double) kMaxGain,
@@ -378,6 +490,8 @@ void SurgicalEqEditor::pushControlsToBand()
 
     Spec s = model_[selected_];
     s.type          = (BandType) juce::jlimit (0, 5, typeBox_.getSelectedId() - 1);
+    s.channel       = (echojay::BandChannel) juce::jlimit (0, 4,
+                                                chanBox_.getSelectedId() - 1);
     s.freqHz        = (float) freqS_.getRealValue();
     s.q             = (float) qS_.getRealValue();
     s.slopeDbPerOct = juce::jlimit (1, 8, slopeBox_.getSelectedId()) * 12;
@@ -655,13 +769,39 @@ void SurgicalEqEditor::timerCallback()
             autoGainLbl_.setColour (juce::Label::textColourId, ag ? C::blue2 : C::text3);
             autoGainLbl_.setText (txt, juce::dontSendNotification);
         }
+
+        // Phase mode moves behind our back the same way (an eq_settings apply);
+        // the button shows the LIVE latency while linear, so a rate change
+        // updates it too.
+        const bool linear = proc_.getPhaseMode() == SurgicalEqProcessor::PhaseMode::Linear;
+        if (phaseBtn_.getToggleState() != linear)
+            phaseBtn_.setToggleState (linear, juce::dontSendNotification);
+        const double sr = proc_.getEngine().getSampleRate();
+        const juce::String phaseTxt = linear && sr > 0.0
+            ? "LIN " + juce::String (proc_.phaseLatencySamples() * 1000.0 / sr, 0) + "ms"
+            : juce::String ("ZERO");
+        if (phaseBtn_.getButtonText() != phaseTxt)
+            phaseBtn_.setButtonText (phaseTxt);
+
+        const bool ms = proc_.getMsMode();
+        if (msViewBtn_.getToggleState() != ms)
+        {
+            msViewBtn_.setToggleState (ms, juce::dontSendNotification);
+            if (! ms) specSide_.path.clear();
+        }
     }
 
-    // Analyzer: no FFT and no path work at all while it is switched off.
+    // Analyzer: no FFT and no path work at all while it is switched off. The
+    // side lane runs only in the M/S view — one extra FFT, only when asked for.
     if (analyzerOn_)
     {
-        updateSpectrum();
-        rebuildSpectrumPath();
+        updateSpectrum (specMid_, false);
+        rebuildSpectrumPath (specMid_);
+        if (proc_.getMsMode())
+        {
+            updateSpectrum (specSide_, true);
+            rebuildSpectrumPath (specSide_);
+        }
         needsRepaint = true;
     }
 
@@ -702,11 +842,28 @@ void SurgicalEqEditor::layoutHeaderTrailing (juce::Rectangle<int>& top)
 // sit level with the logo and the hint.
 void SurgicalEqEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
 {
+    // Right to left: view toggles first (they were always here), then the
+    // depth-pass groups — phase, hunt, preset — walking inward.
     scaleBtn_.setBounds  (bar.removeFromRight (58).reduced (0, 3));
     bar.removeFromRight (6);
     sourceBtn_.setBounds (bar.removeFromRight (48).reduced (0, 3));
     bar.removeFromRight (4);
+    msViewBtn_.setBounds (bar.removeFromRight (40).reduced (0, 3));
+    bar.removeFromRight (4);
     analyzerBtn_.setBounds (bar.removeFromRight (32).reduced (0, 3));
+    bar.removeFromRight (10);
+
+    phaseBtn_.setBounds  (bar.removeFromRight (64).reduced (0, 3));
+    bar.removeFromRight (10);
+
+    huntDynBtn_.setBounds (bar.removeFromRight (44).reduced (0, 3));
+    bar.removeFromRight (4);
+    sensBtn_.setBounds   (bar.removeFromRight (46).reduced (0, 3));
+    bar.removeFromRight (4);
+    huntBtn_.setBounds   (bar.removeFromRight (50).reduced (0, 3));
+    bar.removeFromRight (10);
+
+    presetBtn_.setBounds (bar.removeFromRight (62).reduced (0, 3));
 }
 
 void SurgicalEqEditor::layoutContent (juce::Rectangle<int> content)
@@ -735,9 +892,9 @@ float SurgicalEqEditor::specDbToY (float db) const noexcept
     return (float) graphBounds_.getBottom() - t * (float) graphBounds_.getHeight();
 }
 
-void SurgicalEqEditor::updateSpectrum()
+void SurgicalEqEditor::updateSpectrum (SpecLane& lane, bool side)
 {
-    proc_.readAnalysis (fftScratch_.data(), kFftSize, analyzerPost_);
+    proc_.readAnalysis (fftScratch_.data(), kFftSize, analyzerPost_, side);
 
     // Window and transform exactly as MeterEngine does, including the
     // non-negative-frequencies flag. The upper half is transform scratch and
@@ -760,7 +917,7 @@ void SurgicalEqEditor::updateSpectrum()
         // Frame-to-frame lerp, matching kSpectrumVisLerp. This replaces a
         // peak-holding decay: holding peaks displays a HIGHER level for the
         // same signal, which is level calibration, not smoothing.
-        specDb_[(size_t) k] += (db - specDb_[(size_t) k]) * kSpecLerp;
+        lane.db[(size_t) k] += (db - lane.db[(size_t) k]) * kSpecLerp;
     }
 
     // ---- median gate (same order as the METERS renderer: median -> mean) --
@@ -773,9 +930,9 @@ void SurgicalEqEditor::updateSpectrum()
         const int hi = juce::jmin (kSpecBins - 1, k + mRad);
         float win[kSpecMedianBins];
         int cnt = 0;
-        for (int j = lo; j <= hi; ++j) win[cnt++] = specDb_[(size_t) j];
+        for (int j = lo; j <= hi; ++j) win[cnt++] = lane.db[(size_t) j];
         std::sort (win, win + cnt);
-        specWork_[(size_t) k] = win[cnt / 2];
+        lane.work[(size_t) k] = win[cnt / 2];
     }
 
     // ---- fractional-octave smoothing --------------------------------------
@@ -788,7 +945,7 @@ void SurgicalEqEditor::updateSpectrum()
     // matters because the top octave's window spans hundreds of bins.
     specPrefix_[0] = 0.0f;
     for (int k = 0; k < kSpecBins; ++k)
-        specPrefix_[(size_t) k + 1] = specPrefix_[(size_t) k] + specWork_[(size_t) k];
+        specPrefix_[(size_t) k + 1] = specPrefix_[(size_t) k] + lane.work[(size_t) k];
 
     const float halfOct = 1.0f / (2.0f * kSpecOctaveFrac);
     const float loMul   = std::pow (2.0f, -halfOct);
@@ -804,7 +961,7 @@ void SurgicalEqEditor::updateSpectrum()
         hi = juce::jlimit (lo, kSpecBins - 1, hi);
 
         const int n = hi - lo + 1;
-        specDisplay_[(size_t) k] =
+        lane.display[(size_t) k] =
             (specPrefix_[(size_t) hi + 1] - specPrefix_[(size_t) lo]) / (float) n;
     }
 
@@ -813,9 +970,9 @@ void SurgicalEqEditor::updateSpectrum()
     // they would do nothing but cost time.
 }
 
-void SurgicalEqEditor::rebuildSpectrumPath()
+void SurgicalEqEditor::rebuildSpectrumPath (SpecLane& lane)
 {
-    spectrumPath_.clear();
+    lane.path.clear();
     if (graphBounds_.getWidth() < 4 || graphBounds_.getHeight() < 4) return;
 
     const double sr = proc_.getEngine().getSampleRate();
@@ -852,15 +1009,15 @@ void SurgicalEqEditor::rebuildSpectrumPath()
         const double binF = (double) kMinFreq / binHz;
         const int    k0   = juce::jlimit (1, kSpecBins - 2, (int) binF);
         const float  frac = juce::jlimit (0.0f, 1.0f, (float) (binF - k0));
-        const float  db   = specDisplay_[(size_t) k0]
-                          + frac * (specDisplay_[(size_t) k0 + 1] - specDisplay_[(size_t) k0]);
+        const float  db   = lane.display[(size_t) k0]
+                          + frac * (lane.display[(size_t) k0 + 1] - lane.display[(size_t) k0]);
         pts.push_back ({ (float) graphBounds_.getX(), dbToY (db, (double) kMinFreq) });
     }
     for (int k = juce::jmax (1, (int) std::ceil ((double) kMinFreq / binHz));
          k < kSpecBins && (double) k * binHz < fCross; ++k)
     {
         const double f = (double) k * binHz;
-        pts.push_back ({ freqToX ((float) f), dbToY (specDisplay_[(size_t) k], f) });
+        pts.push_back ({ freqToX ((float) f), dbToY (lane.display[(size_t) k], f) });
     }
 
     // ---- DENSE region: per-pixel peak-pick --------------------------------
@@ -886,14 +1043,14 @@ void SurgicalEqEditor::rebuildSpectrumPath()
         if (hi > lo)
         {
             db = -200.0f;
-            for (int k = lo; k <= hi; ++k) db = std::max (db, specDisplay_[(size_t) k]);
+            for (int k = lo; k <= hi; ++k) db = std::max (db, lane.display[(size_t) k]);
         }
         else
         {
             const int   k0   = juce::jlimit (1, kSpecBins - 2, (int) binF);
             const float frac = juce::jlimit (0.0f, 1.0f, (float) (binF - k0));
-            db = specDisplay_[(size_t) k0]
-               + frac * (specDisplay_[(size_t) k0 + 1] - specDisplay_[(size_t) k0]);
+            db = lane.display[(size_t) k0]
+               + frac * (lane.display[(size_t) k0 + 1] - lane.display[(size_t) k0]);
         }
 
         pts.push_back ({ (float) (graphBounds_.getX() + px), dbToY (db, freq) });
@@ -904,8 +1061,8 @@ void SurgicalEqEditor::rebuildSpectrumPath()
 
     // ---- clamped Catmull-Rom -> cubic bezier ------------------------------
     const float yBottom = (float) graphBounds_.getBottom();
-    spectrumPath_.startNewSubPath ((float) graphBounds_.getX(), yBottom);
-    spectrumPath_.lineTo (pts[0]);
+    lane.path.startNewSubPath ((float) graphBounds_.getX(), yBottom);
+    lane.path.lineTo (pts[0]);
 
     const int n = (int) pts.size();
     for (int i = 0; i < n - 1; ++i)
@@ -924,23 +1081,33 @@ void SurgicalEqEditor::rebuildSpectrumPath()
                                       juce::jlimit (yLo, yHi, p1.y + (p2.y - p0.y) / 6.0f) };
         const juce::Point<float> c2 { p2.x - (p3.x - p1.x) / 6.0f,
                                       juce::jlimit (yLo, yHi, p2.y - (p3.y - p1.y) / 6.0f) };
-        spectrumPath_.cubicTo (c1, c2, p2);
+        lane.path.cubicTo (c1, c2, p2);
     }
 
-    spectrumPath_.lineTo ((float) (graphBounds_.getRight()), yBottom);
-    spectrumPath_.closeSubPath();
+    lane.path.lineTo ((float) (graphBounds_.getRight()), yBottom);
+    lane.path.closeSubPath();
 }
 
 void SurgicalEqEditor::paintSpectrum (juce::Graphics& g) const
 {
-    if (spectrumPath_.isEmpty()) return;
-
     // Neutral cool grey rather than another cyan: it has to read as a
     // different quantity from the EQ curve drawn over it, and stay subordinate.
-    g.setColour (C::text2.withAlpha (0.16f));
-    g.fillPath (spectrumPath_);
-    g.setColour (C::text2.withAlpha (0.34f));
-    g.strokePath (spectrumPath_, juce::PathStrokeType (1.0f));
+    if (! specMid_.path.isEmpty())
+    {
+        g.setColour (C::text2.withAlpha (0.16f));
+        g.fillPath (specMid_.path);
+        g.setColour (C::text2.withAlpha (0.34f));
+        g.strokePath (specMid_.path, juce::PathStrokeType (1.0f));
+    }
+
+    // The M/S view's side trace: stroke only, amber-tinted, clearly the
+    // second-class citizen — it answers "how wide is this region", not "how
+    // loud is the mix".
+    if (proc_.getMsMode() && ! specSide_.path.isEmpty())
+    {
+        g.setColour (C::amber.withAlpha (0.38f));
+        g.strokePath (specSide_.path, juce::PathStrokeType (1.0f));
+    }
 }
 
 void SurgicalEqEditor::paintAnalyzerAxis (juce::Graphics& g) const
@@ -1203,6 +1370,30 @@ void SurgicalEqEditor::paintNodes (juce::Graphics& g) const
         g.setFont (uiFont (8.0f, true));
         g.drawText (juce::String (i + 1), (int) (p.x - r), (int) (p.y - r),
                     (int) (r * 2.0f), (int) (r * 2.0f), juce::Justification::centred);
+
+        // While dragging: frequency plus the nearest musical pitch ("A4 +12c"),
+        // beside the node where the eye already is. Display only — the
+        // dialable half of this feature is the band's `note` field.
+        if (i == dragBand_)
+        {
+            char note[16];
+            juce::String label = freqText (s.freqHz)
+                               + (s.freqHz < 1000.0f ? " Hz" : "");
+            if (echojay::describeFreqAsNote (s.freqHz, note, sizeof (note)))
+                label += juce::String::fromUTF8 ("  \xc2\xb7  ") + juce::String (note);
+
+            const bool leftSide = p.x > (float) graphBounds_.getCentreX();
+            const int  w  = 110;
+            const int  tx = leftSide ? (int) p.x - w - 12 : (int) p.x + 12;
+            const int  ty = juce::jlimit (graphBounds_.getY() + 2,
+                                          graphBounds_.getBottom() - 16,
+                                          (int) p.y - 7);
+            g.setColour (col.withAlpha (0.95f));
+            g.setFont (uiFont (9.5f, true));
+            g.drawText (label, tx, ty, w, 14,
+                        leftSide ? juce::Justification::centredRight
+                                 : juce::Justification::centredLeft);
+        }
     }
 }
 
