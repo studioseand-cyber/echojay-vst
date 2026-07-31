@@ -6492,11 +6492,44 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     const auto coral = juce::Colour(0xffff6d5a);
     const auto boxOutline = juce::Colour(0xffa0a0b8);
 
+    // ---- Selection: read back from effectiveChannelUid() EVERY paint, no
+    // cached copy, so this strip and the sidebar banner render the same fact.
+    // Selection is what a message will target, and once the sidebar is
+    // collapsed this outline is the ONLY indication of it, so it must be
+    // unmistakable at 46px: a 2px accent border, a solid accent bar across
+    // the strip's top edge, and a lifted fill. Three cues, not one.
+    const bool selected = stripSelected(isBus,
+                                        entry != nullptr ? entry->info.uid
+                                                         : juce::String(),
+                                        effectiveChannelUid());
+    // Legacy-tap refusal flash (see linkStripMouseDown): coral, brief, and
+    // only on the strip that was tapped.
+    const bool refusing = !isBus && sg.addr == linkLegacyFlashAddr_
+        && (juce::Time::getMillisecondCounter() - linkLegacyFlashMs_)
+               < kLegacyFlashDurMs;
+
     // Strip body
-    g.setColour(C::bg3);
+    g.setColour(selected ? C::bg3.brighter(0.06f) : C::bg3);
     g.fillRoundedRectangle(sg.full.toFloat(), 6.0f);
-    g.setColour(isBus ? C::blue2.withAlpha(0.4f) : C::border2);
-    g.drawRoundedRectangle(sg.full.toFloat().reduced(0.5f), 6.0f, 1.0f);
+    if (refusing)
+    {
+        g.setColour(coral);
+        g.drawRoundedRectangle(sg.full.toFloat().reduced(1.0f), 6.0f, 2.0f);
+    }
+    else if (selected)
+    {
+        g.setColour(cyan);
+        g.drawRoundedRectangle(sg.full.toFloat().reduced(1.0f), 6.0f, 2.0f);
+        // Top accent bar, inside the border
+        g.fillRoundedRectangle((float)sg.full.getX() + 3.0f,
+                               (float)sg.full.getY() + 3.0f,
+                               (float)sg.full.getWidth() - 6.0f, 3.0f, 1.5f);
+    }
+    else
+    {
+        g.setColour(isBus ? C::blue2.withAlpha(0.4f) : C::border2);
+        g.drawRoundedRectangle(sg.full.toFloat().reduced(0.5f), 6.0f, 1.0f);
+    }
 
     // ---- Name. The entry's displayName IS resolveLinkDisplayName's answer
     // (that accessor reads the same display list); it is passed in rather
@@ -6683,7 +6716,44 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             }
             break;
 
-        case StripHit::Background: break;   // step 4, selects the channel
+        case StripHit::Background:
+        {
+            // TAPPING A STRIP SELECTS THAT CHANNEL. This is the load-bearing
+            // arm: with the sidebar collapsed, the banner is gone and this is
+            // the ONLY channel selector (see the standing spec note). It
+            // deliberately does NOT expand the sidebar: selecting while
+            // collapsed is the workflow this exists for; the AI button is the
+            // arm that opens the conversation view.
+            if (sg.isBus)
+            {
+                // Selecting the bus = the main context, via the banner
+                // menu's own arm WITH its guard: resetting while already in
+                // main context would wipe a live conversation for nothing.
+                if (effectiveChannelUid().isNotEmpty())
+                    resetToMainContext();
+            }
+            else
+            {
+                EchoJayProcessor::LinkDisplayEntry en;
+                if (!findLinkEntryByAddr(sg.addr, en)) break;
+                if (en.info.uid.isEmpty())
+                {
+                    // A legacy Link CANNOT be selected: selection is a uid
+                    // fact and this strip has none. Refusing silently would
+                    // read as a dead tap, so flash the refusal; the
+                    // tooltip carries the why and the fix.
+                    linkLegacyFlashAddr_ = sg.addr;
+                    linkLegacyFlashMs_   = juce::Time::getMillisecondCounter();
+                    linkMixerView_.repaint();
+                }
+                else if (en.info.uid != effectiveChannelUid())
+                {
+                    // The banner's already-here guard, same as the AI arm.
+                    openChannelByUid(en.info.uid);
+                }
+            }
+            break;
+        }
         case StripHit::None:       break;
     }
 }
@@ -6736,7 +6806,11 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
         case StripHit::None:
             break;
     }
-    return name;   // the full, un-elided name, everywhere else on the strip
+    // Everywhere else on the strip: the full, un-elided name. A legacy strip
+    // says why a tap will refuse (matches the coral flash the tap draws).
+    if (have && en.info.uid.isEmpty())
+        return name + " (cannot select: update this channel's Link plugin)";
+    return name;
 }
 
 void EchoJayEditor::LinkMixerView::paint(juce::Graphics& g)

@@ -62,6 +62,10 @@ struct EchoJayLinkMixerTestAccess
     static int wWide()      { return Ed::kStripWWide; }
     static int faderHMax()  { return Ed::kFaderHMax; }
     static int faderHMin()  { return Ed::kFaderHMin; }
+
+    static bool selected (bool isBus, const juce::String& entryUid,
+                          const juce::String& effectiveUid)
+    { return Ed::stripSelected (isBus, entryUid, effectiveUid); }
 };
 
 using T    = EchoJayLinkMixerTestAccess;
@@ -299,6 +303,29 @@ static void testClickable (int stripW, int bandH)
     }
 }
 
+static void testSelection()
+{
+    // Step 4: the selection predicate's full truth table. ONE selection
+    // state: the effectiveUid argument is always effectiveChannelUid() at the
+    // call sites, so these rows ARE the strip/banner agreement contract.
+    std::printf ("selection: the stripSelected truth table\n");
+
+    // The bus is the main context: selected exactly when NO channel is.
+    check ( T::selected (true,  "", ""),        "bus selected in main context");
+    check (!T::selected (true,  "", "uid1"),    "bus not selected while a channel is");
+
+    // A Link strip selects on a REAL uid match only.
+    check ( T::selected (false, "uid1", "uid1"), "link selected on uid match");
+    check (!T::selected (false, "uid1", "uid2"), "link not selected on other uid");
+    check (!T::selected (false, "uid1", ""),     "link not selected in main context");
+
+    // THE LOAD-BEARING ROW: a legacy strip (empty uid) must NOT read as
+    // selected in main context. Without the isNotEmpty() term, empty == empty
+    // would light every legacy strip whenever the bus is selected.
+    check (!T::selected (false, "", ""),        "legacy strip never selected (main context)");
+    check (!T::selected (false, "", "uid1"),    "legacy strip never selected (channel active)");
+}
+
 static void testDegenerate()
 {
     std::printf ("degenerate inputs leave nothing behind\n");
@@ -361,6 +388,7 @@ int main()
     testClickable (T::wWide(),   540);
     testClickable (T::wNarrow(), 424);
 
+    testSelection();
     testDegenerate();
 
     std::printf (failures == 0 ? "EJLinkMixer selftest: PASS\n"

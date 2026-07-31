@@ -2605,6 +2605,32 @@ private:
     }
     juce::String linkStripTooltip(const StripGeom& sg, juce::Point<int> p) const;
 
+    /** THE selection predicate, pure so the self-test can hold its truth
+        table. ONE selection state: `effectiveUid` is always
+        effectiveChannelUid(), read fresh at every use, never cached, so the
+        strip and the sidebar banner render the same fact and cannot drift.
+        The bus is selected when NO channel is (main context = empty uid).
+        A Link strip is selected only on a REAL uid match: the entryUid
+        isNotEmpty() term is load-bearing, because without it every legacy
+        strip (empty uid) would paint selected whenever the main context is
+        active (empty == empty). Legacy strips are never selected. */
+    static bool stripSelected(bool isBus, const juce::String& entryUid,
+                              const juce::String& effectiveUid)
+    {
+        return isBus ? effectiveUid.isEmpty()
+                     : entryUid.isNotEmpty() && entryUid == effectiveUid;
+    }
+
+    // Legacy-tap refusal flash: a tap on a strip that CANNOT be selected
+    // (pre-0.5.6 Link, no uid) shows a brief coral outline instead of
+    // silently doing nothing. Editor-instance state is allowed HERE, as the
+    // exception that proves the rule: this is sub-second visual feedback,
+    // and a Logic editor recreate erasing a 700ms flash loses nothing. The
+    // SELECTION itself lives on the processor via effectiveChannelUid().
+    juce::String linkLegacyFlashAddr_;
+    uint32_t     linkLegacyFlashMs_ = 0;
+    static constexpr uint32_t kLegacyFlashDurMs = 700;
+
     void measureLinkStrips();
     /** Paint one strip from its stored geometry. Shared by the pinned Mix Bus
         strip and every Link strip so the two cannot drift, the same reason
