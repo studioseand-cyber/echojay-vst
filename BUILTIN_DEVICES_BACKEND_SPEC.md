@@ -156,9 +156,116 @@ the only other array form:
 5. **Booleans** may be sent as JSON `true`/`false` or as `1`/`0`; the client
    accepts both, plus the strings `"on"`/`"off"`. Prefer real JSON booleans.
 
+## Character MODES — the depth pass (read this; it is most of the expressive range)
+
+Nearly every device now carries a **`mode`/`algorithm`/`type` choice param** that
+reshapes its character. These are `choices` params: send the **name** (preferred,
+e.g. `"punch"`) or the index. Unknown labels are skipped, never guessed. The
+advertisement lists each device's exact choices and describes them — that text is
+authoritative and generated from the same table the client resolves, so it can
+never drift. Highlights the model should reach for:
+
+- **Compressor `mode`**: `clean` (VCA, transparent) · `glue` (bus, slow/gentle) ·
+  `punch` (FET, fast/aggressive) · `smooth` (opto, programme-dependent). Plus
+  `sc_hpf_hz` (stop bass pumping the compressor — reach for ~80-120 on a mix bus),
+  `detector` (peak|rms), `auto_release`, `stereo_link`, `lookahead_ms`, `range_db`.
+- **Limiter `mode`**: `transparent` · `punchy` · `clip` (hard ceiling). `true_peak`.
+- **Gate `mode`**: `gate` · `duck` (the same controls, inverted — ducking is a mode,
+  not a separate device). `sc_hpf_hz`/`sc_lpf_hz` for frequency-selective triggering.
+- **Reverb `algorithm`**: `room` · `hall` · `plate` · `spring` · `ambience`.
+  `decay_s` stays the RT60 in all five, so algorithm changes CHARACTER, not length.
+  Plus `duck` (tail ebbs under the dry signal — the move for a vocal reverb that
+  doesn't wash) and `diffusion`.
+- **Delay `mode`**: `digital` (clean) · `tape` (saturating, wow/flutter, each repeat
+  darker) · `analog` (BBD, darker and grittier still) · `pingpong`. Plus `duck`,
+  `diffusion`.
+- **Saturation**: `type` (tube|tape|diode|soft) AND `emphasis` (`even` = warm/tubey
+  2nd · `odd` = aggressive/console 3rd · `both`) — emphasis is the biggest character
+  control after type. Plus `hpf_hz` (drive the mids without mushing the bass),
+  `bias`, `oversample` (2x|4x|8x, affects reported latency).
+- **Tape `mode`**: `studio` · `vintage` · `cassette` (band-limited, noisiest). Plus
+  `hiss` (gated to signal) and `crosstalk`.
+- **Exciter `mode`**: `tube` · `tape` · `odd` · `even`, plus `focus`.
+- **Tremolo `mode`**: `sine` · `optical` · `bias` (harmonic tremolo — lows and highs
+  counter-phase; far richer than level tremolo). **Chorus `mode`**: `classic` ·
+  `ensemble` (lush multi-voice) · `dimension` (wide, no pitch wobble — note it
+  ignores rate/depth). **Phaser `mode`**: `modern` · `vintage` · `stereo`.
+  **Auto Pan `mode`**: `linear` · `constant_power` · `binaural`. Waveform `shape`
+  now includes `harmonic` and `random` (sample-and-hold) alongside sine/tri/square/saw.
+- **Stereo Width `mode`**: `full` · `multiband` (independent `width_low`/`width_mid`/
+  `width_high` around `xover_low_hz`/`xover_high_hz` — narrow lows, wide highs).
+  Plus `rotation`. **Stereoizer `mode`**: `haas` · `comb` · `dimension`.
+- **Gain `mode`**: `stereo` · `mid_side` (`mid_db`/`side_db`). Plus `mono`,
+  `phase_left`, `phase_right` — Gain covers the common utility jobs in one device.
+
+**Every mode's default is the previously-shipped behaviour**, so omitting `mode` is
+always safe and never changes an existing chain.
+
+## The EQ's full object move (P2-P5 shipped)
+
+`settings_structured` for `EchoJay EQ` may be a bare `eq_bands` array (forever
+supported) or an object resolved in this order: **`eq_preset` → `eq_settings` →
+`eq_bands` → `eq_action`**. A preset lays a base, explicit bands refine it, an
+action runs last on the result.
+
+```jsonc
+{
+  "eq_preset": "vocal-clarity",                       // base (see advertised list)
+  "eq_settings": { "phase_mode":"linear", "ms_mode":false,
+                   "output_db":-1, "auto_gain":true },
+  "eq_bands":  [ { "type":"bell","freq_hz":300,"gain_db":-2,"q":1.2,
+                   "channel":"mid" },                 // NEW: stereo|mid|side|left|right
+                 { "type":"notch","note":"G5","q":8 } ],   // NEW: note instead of freq_hz
+  "eq_action": { "type":"tame_resonances","sensitivity":"medium",
+                 "range_hz":[200,8000],"max_bands":4,"dynamic":true }
+}
+```
+
+- **`channel`** routes a band to a lane: boost `side` for air/width, cut `mid` for a
+  boomy centre, de-ess only the centred vocal with a dynamic bell on `mid`. A
+  side-routed band on mono material is a reported no-op.
+- **`note`** ("A4", "C#3") resolves to a frequency when `freq_hz` is absent — use it
+  when the user names a pitch ("notch the ring at G5" → 784 Hz).
+- **`phase_mode: linear`** is for mastering / parallel / phase-critical work; it adds
+  reported latency (~53 ms @ 48k), so keep the default `zero` for tracking and live
+  monitoring. Say so when choosing it.
+- **`eq_action.tame_resonances` is the feature to reach for when the user asks to
+  tame resonances / ringing / harshness WITHOUT naming frequencies.** The plugin
+  analyses the live signal, finds the peaks itself and places dynamic bells (or
+  static notches with `dynamic:false`), without clobbering hand-dialled bands. Narrow
+  it with `range_hz` if the user localises it ("in the low mids"). This is the one
+  move where the model does not need to know the frequency at all.
+- Presets: the advertised list is generated from the client's own table
+  (vocal-clarity, warm-tape, de-harsh, sub-cleanup, air-lift, mud-cut). Use one as a
+  fast start, then refine with explicit `eq_bands` in the same move.
+
 ## Acceptance
 
-"Drop the level 3 dB and push it slightly right" places an **EchoJay Gain** whose
-`settings_structured.params` is `{"level_db": -3, "pan": 0.25}`, and the client
-dials exactly those values — verifiable on the device's readouts, with no anchor
-map involved.
+Baseline: "Drop the level 3 dB and push it slightly right" places an **EchoJay Gain**
+whose `settings_structured.params` is `{"level_db": -3, "pan": 0.25}`, and the client
+dials exactly those values — verifiable on the device's readouts, with no anchor map
+involved.
+
+Then the depth-pass battery — each should place the right device AND dial the mode:
+
+| Prompt | Expected move |
+|---|---|
+| "glue the mix bus and stop the kick pumping it" | Compressor `{"mode":"glue","sc_hpf_hz":100,...}` |
+| "make the drums punchier" | Compressor `{"mode":"punch",...}` |
+| "put it in a plate, quite long" | Reverb `{"algorithm":"plate","decay_s":3.5,...}` |
+| "tape echo, eighth notes" | Delay `{"mode":"tape","sync":true,"sync_division":6,...}` |
+| "duck the reverb under the vocal" | Reverb `{"duck":40,...}` |
+| "warm it up with even harmonics, keep the bass clean" | Saturation `{"emphasis":"even","hpf_hz":120,...}` |
+| "give it that old cassette sound" | Tape `{"mode":"cassette",...}` |
+| "harmonic tremolo, slow" | Tremolo `{"mode":"bias","rate_hz":3,...}` |
+| "narrow the lows, widen the highs" | Stereo Width `{"mode":"multiband","width_low":80,"width_high":140,...}` |
+| "turn the sides down 2 dB" | Gain `{"mode":"mid_side","side_db":-2}` |
+| "take 3 dB out of the boxiness around 400" | EQ `eq_bands` bell −3 @ 400 |
+| "tame the harsh resonances" | EQ `eq_action.tame_resonances` (NO frequencies named) |
+| "add air to the sides only" | EQ `eq_bands` high-shelf `channel:"side"` |
+| "notch the ring at G5" | EQ `eq_bands` notch `note:"G5"` → 784 Hz |
+| "linear phase for the master" | EQ `eq_settings.phase_mode:"linear"` (+ mention latency) |
+
+A full-chain prompt — "make this vocal sit in the mix" — should place several EchoJay
+devices and dial each precisely (e.g. EQ → De-Esser → Compressor → Reverb), with modes
+chosen sensibly rather than left at default.
