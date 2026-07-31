@@ -1083,9 +1083,19 @@ public:
         }
 
         assignPanel.dispatchAction ("space");     // accept
-        ok (assignPanel.controlsForSubmit().size() > 0,
-            "accept built " + juce::String (assignPanel.controlsForSubmit().size())
-              + " named controls");
+        const int builtControls = assignPanel.controlsForSubmit().size();
+        ok (builtControls > 0,
+            "accept built " + juce::String (builtControls) + " named controls");
+
+        // THE KILL-AT-REVIEW PATH, exercised as the app lives it: re-begin
+        // from disk (what a process restart does) and the cargo must ride
+        // the session file, not just the row's claim. The spiff gate failed
+        // exactly here: the row restored CONFIRMED while controls:{} was
+        // written, and the old self-test never restarted so it never saw it.
+        startAssignmentForCategory ("compressor");
+        ok (assignPanel.controlsForSubmit().size() == builtControls,
+            "restore keeps the cargo: " + juce::String (assignPanel.controlsForSubmit().size())
+              + " of " + juce::String (builtControls) + " controls after re-begin");
 
         assignPanel.dispatchAction ("submit");
         ok (assignPanel.isSummaryShowing() && assignPanel.isSubmitEnabled(),
@@ -1404,9 +1414,18 @@ public:
                     "footer says EXPLICITLY that no imposters were found (never vacuous)");
 
             assignPanel.dispatchAction ("space");     // accept
-            const auto& groups = assignPanel.groupsForSubmit();
-            ok (groups.size() >= 2, "accept built " + juce::String (groups.size()) + " band groups");
+            const int builtGroups = assignPanel.groupsForSubmit().size();
+            ok (builtGroups >= 2, "accept built " + juce::String (builtGroups) + " band groups");
             dump ("accepting the band table");
+
+            // The kill-at-review path for GROUPS: same hole as controls, found
+            // by inspection when the controls one failed live. Re-begin from
+            // disk; the groups must ride the session file.
+            startAssignmentForCategory ("eq");
+            ok (assignPanel.groupsForSubmit().size() == builtGroups,
+                "restore keeps the groups: " + juce::String (assignPanel.groupsForSubmit().size())
+                  + " of " + juce::String (builtGroups) + " after re-begin");
+            const auto& groups = assignPanel.groupsForSubmit();
 
             // LIVE APPLY through the real applySettings: the headline
             // assertion on the real plugin.
@@ -3591,17 +3610,24 @@ private:
         int rb = 0, rbOk = 0;
         for (const auto& x : p.evidence.readback) { ++rb; rbOk += x.match; }
 
+        // Every population the map carries is COUNTED on the submit line, so
+        // a zero is visible at the moment of writing rather than found in
+        // the file afterwards -- the spiff gate failed as "4 params, 1
+        // skips" with 35 controls silently absent.
         LedgerRecord rec;
         rec.pluginId = loadedId; rec.name = loadedName; rec.stage = "submit";
         rec.outcome = LoadOutcome::ok;
         rec.detail = "map " + currentFp.substring (0, 12) + "... "
                    + juce::String (p.params.size()) + " params, "
+                   + juce::String (p.groups.size()) + " groups, "
+                   + juce::String (p.controls.size()) + " controls, "
                    + juce::String (p.skips.size()) + " skips, readback "
                    + juce::String (rbOk) + "/" + juce::String (rb);
         ledger.endLoad (rec);
 
         juce::String t;
         t << "SUBMITTED " << f.getFileName() << ": " << p.params.size() << " params, "
+          << p.groups.size() << " groups, " << p.controls.size() << " controls, "
           << p.skips.size() << " skips, readback " << rbOk << "/" << rb;
         captureReadout.setText (t, juce::dontSendNotification);
         std::cout << "ASSIGN: " << t << std::endl;

@@ -2056,7 +2056,22 @@ public:
         int ignoresOpen = 0;
         for (auto& r : ignoreRows) ignoresOpen += ! r.isResolved();
 
-        const auto conflicts = duplicateConflicts();
+        auto conflicts = duplicateConflicts();
+
+        // A confirmed controls/bands row whose payload is missing is a
+        // restore bug wearing a confirmation: refuse with the count, never
+        // submit an empty claim.
+        for (const auto& r : rows)
+        {
+            if (r.state != AssignRow::State::confirmed) continue;
+            if (r.kind == "controls" && pendingControls.isEmpty())
+                conflicts.add ("controls row claims '" + r.skipReason
+                                 + "' but 0 controls are staged (session restore lost them): "
+                                   "W re-opens the row to rebuild");
+            if (r.kind == "bands" && acceptedGroups.isEmpty())
+                conflicts.add ("bands row claims '" + r.skipReason
+                                 + "' but 0 groups are staged: W re-opens the row");
+        }
 
         juce::String t;
         t << "REVIEW: what submit will write\n\n";
@@ -2082,10 +2097,9 @@ public:
 
         if (! conflicts.isEmpty())
         {
-            t << "\nSUBMIT REFUSED - one index, two semantics:\n";
+            t << "\nSUBMIT REFUSED:\n";
             for (const auto& c : conflicts) t << "  " << c << "\n";
-            t << "One of each pair is wrong. Back, W re-captures the wrong one "
-                 "(or D defers it), then review again.\n";
+            t << "Fix the above (W re-captures or re-opens, D defers), then review again.\n";
         }
         else if (confirmed == 0)
             t << "\nSUBMIT REFUSED - nothing confirmed yet.\n";
@@ -2808,7 +2822,68 @@ private:
         for (const auto& r : ignoreRows) iv.add (r.toVar());
         o->setProperty ("rows", juce::var (rv));
         o->setProperty ("ignore_rows", juce::var (iv));
+
+        // THE CARGO, not just the claims. A confirmed controls row that
+        // restores without its controls submits controls:{} while the console
+        // says "35 named" -- the spiff gate failure. Same for band groups.
+        juce::Array<juce::var> cv;
+        for (const auto& c : pendingControls) cv.add (c.toVar());
+        o->setProperty ("pending_controls", juce::var (cv));
+        juce::Array<juce::var> gv;
+        for (const auto& g : acceptedGroups) gv.add (g.toVar());
+        o->setProperty ("accepted_groups", juce::var (gv));
+
         sessionFile().replaceWithText (juce::JSON::toString (juce::var (o), false));
+    }
+
+    static ParamMapping paramMappingFromVar (const juce::String& semantic, const juce::var& v)
+    {
+        ParamMapping m;
+        m.semantic = semantic;
+        m.kind = v.getProperty ("kind", semantic).toString();
+        m.paramName = v.getProperty ("name", "").toString();
+        if (auto* ia = v.getProperty ("indices", juce::var()).getArray())
+            for (auto& i : *ia) m.indices.add ((int) i);
+        else
+            m.indices.add ((int) v.getProperty ("index", -1));
+        if (auto* aa = v.getProperty ("anchors", juce::var()).getArray())
+            for (auto& pv : *aa)
+                if (auto* pr = pv.getArray(); pr != nullptr && pr->size() >= 2)
+                    m.anchors.add ({ (double) (*pr)[1], (double) (*pr)[0] });   // [value, norm] on disk
+        m.anchorsReversed = (bool) v.getProperty ("anchors_reversed", false);
+        const auto tr = v.getProperty ("trust", "").toString();
+        m.trust = tr == "human-verified" ? Trust::humanVerified
+                : tr == "llm-classified" ? Trust::llmClassified : Trust::setread;
+        m.method = v.getProperty ("method", "").toString() == "setread" ? AnchorMethod::setread
+                 : v.getProperty ("method", "").toString() == "human-typed" ? AnchorMethod::humanTyped
+                 : AnchorMethod::gettext;
+        return m;
+    }
+
+    static NamedControl namedControlFromVar (const juce::var& v)
+    {
+        NamedControl c;
+        c.name = v.getProperty ("name", "").toString();
+        if (auto* ia = v.getProperty ("indices", juce::var()).getArray())
+            for (auto& i : *ia) c.indices.add ((int) i);
+        else
+            c.indices.add ((int) v.getProperty ("index", -1));
+        c.kind = v.getProperty ("kind", "anchored").toString();
+        if (auto* ra = v.getProperty ("range", juce::var()).getArray(); ra != nullptr && ra->size() >= 2)
+        { c.rangeLo = (double) (*ra)[0]; c.rangeHi = (double) (*ra)[1]; }
+        c.unit = v.getProperty ("unit", juce::var()).toString();
+        if (auto* lo = v.getProperty ("labels", juce::var()).getDynamicObject())
+            for (auto& kv : lo->getProperties())
+                c.labels.add ({ kv.name.toString(), (double) kv.value });
+        if (auto* aa = v.getProperty ("anchors", juce::var()).getArray())
+            for (auto& pv : *aa)
+                if (auto* pr = pv.getArray(); pr != nullptr && pr->size() >= 2)
+                    c.anchors.add ({ (double) (*pr)[1], (double) (*pr)[0] });
+        c.identityDisplay = (bool) v.getProperty ("identity_display", false);
+        c.trust = v.getProperty ("trust", "").toString() == "human-verified"
+                    ? Trust::humanVerified : Trust::setread;
+        c.duplicate = (bool) v.getProperty ("duplicate", false);
+        return c;
     }
 
     void restoreSession()
@@ -2863,7 +2938,33 @@ private:
         };
         restore (rows, v.getProperty ("rows", juce::var()));
         restore (ignoreRows, v.getProperty ("ignore_rows", juce::var()));
-        say ("Restored assignment session from " + f.getFileName());
+
+        pendingControls.clear();
+        if (auto* ca = v.getProperty ("pending_controls", juce::var()).getArray())
+            for (auto& cvr : *ca)
+                pendingControls.add (namedControlFromVar (cvr));
+        acceptedGroups.clear();
+        if (auto* ga = v.getProperty ("accepted_groups", juce::var()).getArray())
+            for (auto& gvr : *ga)
+            {
+                GroupSpec g;
+                g.family  = gvr.getProperty ("family", "").toString();
+                g.n       = (int) gvr.getProperty ("n", 0);
+                g.primary = (bool) gvr.getProperty ("primary", false);
+                if (auto* fr = gvr.getProperty ("freq_range", juce::var()).getArray();
+                    fr != nullptr && fr->size() >= 2)
+                { g.freqLo = (double) (*fr)[0]; g.freqHi = (double) (*fr)[1]; }
+                if (auto* po = gvr.getProperty ("params", juce::var()).getDynamicObject())
+                    for (auto& kv : po->getProperties())
+                        g.params.add (paramMappingFromVar (kv.name.toString(), kv.value));
+                acceptedGroups.add (g);
+            }
+
+        say ("Restored assignment session from " + f.getFileName()
+               + (pendingControls.isEmpty() ? juce::String()
+                    : " (" + juce::String (pendingControls.size()) + " controls)")
+               + (acceptedGroups.isEmpty() ? juce::String()
+                    : " (" + juce::String (acceptedGroups.size()) + " groups)"));
     }
 
     void updateProgress()
