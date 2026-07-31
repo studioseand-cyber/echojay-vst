@@ -18,7 +18,9 @@ LinkProcessor::LinkProcessor()
     // file part for unnamed Links). Serialised in state; regenerated on
     // registry collision after track duplication.
     instanceUid_ = juce::String::toHexString(juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
-    startTimerHz(10); // command polling + 10Hz meter-frame publish; heartbeat every 10th tick
+    startTimerHz(30); // 30Hz meter-frame publish (fast ballistics step at
+                      // 10Hz was ~1.3 dB per sample); polls every 3rd tick
+                      // (~100ms, the old cadence), heartbeat every 30th (1s)
 
     // Mirror hosted chain latency into the host on EVERY chain change —
     // Link sits on parallel and phase-critical tracks, so this must track
@@ -50,9 +52,9 @@ LinkProcessor::~LinkProcessor()
 // =============================================================================
 void LinkProcessor::timerCallback()
 {
-    // Heartbeat once per second (timer runs at 10Hz: command polling +
-    // meter-frame publish)
-    if (++heartbeatDivider_ >= 10)
+    // Heartbeat once per second (timer runs at 30Hz since v0.8.5; only the
+    // meter publish uses the full rate)
+    if (++heartbeatDivider_ >= 30)
     {
         heartbeatDivider_ = 0;
         // Bump heartbeat so the consumer can detect we're alive vs. crashed.
@@ -95,11 +97,16 @@ void LinkProcessor::timerCallback()
         }
     }
 
-    pollChainCommand();
-    pollControlCommand();
-    pollSessionProjectName();
+    // Polls keep their pre-30Hz cadence (~100ms): every 3rd tick. Only the
+    // meter publish wants the full rate.
+    if (heartbeatDivider_ % 3 == 0)
+    {
+        pollChainCommand();
+        pollControlCommand();
+        pollSessionProjectName();
+        publishRackSidecar();   // Phase R: revision-gated, usually a no-op
+    }
     publishMeterFrame();
-    publishRackSidecar();   // Phase R: revision-gated, usually a no-op
 }
 
 void LinkProcessor::publishRackSidecar()
@@ -170,6 +177,9 @@ void LinkProcessor::publishMeterFrame()
     f.truePeakCur = juce::jmax(md.truePeakL, md.truePeakR);
     f.lra         = md.loudnessRange;
     f.shortTermTP = md.shortTermTruePeak;
+    f.peakFastL   = md.peakFastL;
+    f.peakFastR   = md.peakFastR;
+    f.fieldsMask  = kFrameHasFastPeak;   // this writer populates the fast pair
     f.audioBlocks = blocksNow;
     f.audioStale  = audioStale ? 1u : 0u;
     if (audioStale)
@@ -179,6 +189,11 @@ void LinkProcessor::publishMeterFrame()
         f.momentary   = -100.0f;
         f.shortTerm   = -100.0f;
         f.shortTermTP = -100.0f;   // gates PSR to '--' like the Meters tab
+        // A FAST meter showing a seconds-old peak as current is fake motion:
+        // the fast pair blanks with the momentary group (rms/slow peak
+        // persist dimmed, the standing convention).
+        f.peakFastL   = -100.0f;
+        f.peakFastR   = -100.0f;
     }
     f.crest       = md.crestFactor;
     f.correlation = md.correlation;

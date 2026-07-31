@@ -25,6 +25,10 @@ struct MeterData {
     // Levels
     float rmsL = -100.0f, rmsR = -100.0f;
     float peakL = -100.0f, peakR = -100.0f;
+    // Fast console ballistics (v0.8.5): instant attack, ~13.3 dB/s release
+    // (20 dB in 1.5 s). Drives the Link mixer's Logic-style bar; the 3s
+    // decaying peakL/peakR above stay for the numbers view and hold tick.
+    float peakFastL = -100.0f, peakFastR = -100.0f;
     float truePeakL = -100.0f, truePeakR = -100.0f;
     float truePeakMaxL = -100.0f, truePeakMaxR = -100.0f;
     float truePeakBarL = -100.0f, truePeakBarR = -100.0f; // decaying value for bar display
@@ -304,6 +308,7 @@ private:
     double sumSqL = 0, sumSqR = 0;
     double sumL = 0, sumR = 0;
     float currentPeakL = 0, currentPeakR = 0;
+    float fastPeakL = 0, fastPeakR = 0;   // amplitude-domain, tau 0.65s
     float currentTpL = 0, currentTpR = 0;
     float displayTpL = 0, displayTpR = 0; // decaying for bar display
     int sampleCount = 0;

@@ -163,6 +163,7 @@ void MeterEngine::resetState()
     sumSqL = sumSqR = 0;
     sumL = sumR = 0;
     currentPeakL = currentPeakR = 0;
+    fastPeakL = fastPeakR = 0;
     currentTpL = currentTpR = 0;
     stTpBlocks.clear();
     tp100msAccum = 0.0f;
@@ -605,6 +606,11 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     float peakDecay = (float)std::exp(-bufDur / 3.0);
     currentPeakL = std::max(blockPeakL, currentPeakL * peakDecay);
     currentPeakR = std::max(blockPeakR, currentPeakR * peakDecay);
+    // Fast pair: amplitude tau 0.65s = ~13.3 dB/s, 20 dB in 1.5s. Same
+    // audio-thread pattern as the 3s pair above: two multiplies, no locks.
+    float fastDecay = (float)std::exp(-bufDur / 0.65);
+    fastPeakL = std::max(blockPeakL, fastPeakL * fastDecay);
+    fastPeakR = std::max(blockPeakR, fastPeakR * fastDecay);
     // Per-band crest accumulators — same EMA / decay constants as global crest
     bandSqSub += alpha * ((subEnL + subEnR) / (2.0 * blkN) - bandSqSub);
     bandSqMid += alpha * ((midEnL + midEnR) / (2.0 * blkN) - bandSqMid);
@@ -906,6 +912,8 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         data.rmsR = static_cast<float>(10.0 * std::log10(std::max(1e-20, sumSqR)));
         data.peakL = toDb(currentPeakL);
         data.peakR = toDb(currentPeakR);
+        data.peakFastL = toDb(fastPeakL);
+        data.peakFastR = toDb(fastPeakR);
         data.truePeakL = toDb(currentTpL);
         data.truePeakR = toDb(currentTpR);
         data.truePeakBarL = toDb(displayTpL);
@@ -984,6 +992,7 @@ void MeterEngine::resetHoldState()
     // LUFS, LRA, RMS, width/correlation, spectrum - is untouched.
     currentTpL = currentTpR = 0;
     currentPeakL = currentPeakR = 0;
+    fastPeakL = fastPeakR = 0;
     oversEvents = 0;
     tpOverRun = false;
     tp100msAccum = 0.0f;

@@ -33,6 +33,7 @@
 #include <cstring>
 #include <algorithm>
 #include <atomic>
+#include <cstddef>   // offsetof (LinkMeterFrame layout freeze)
 #include <JuceHeader.h>
 
 // =============================================================================
@@ -149,9 +150,40 @@ struct alignas(64) LinkMeterFrame
     // cannot detect it. The PUBLISHER owns this truth.
     uint32_t audioBlocks = 0;      // processBlock call counter at publish time
     uint32_t audioStale  = 0;      // 1 = no audio blocks for ~1s
-    uint8_t _pad[128 - 4 - 11 * 4 - 6 * 4 - 4 - 8 - 8];   // -> 128 (2 cache lines)
+    // Fast-ballistics sample peak (v0.8.5): ~13.3 dB/s release (20 dB in
+    // 1.5s), instant attack, for the mixer's Logic-style bar. The 3s-hold
+    // peakL/peakR above stay: they feed the numbers view and the hold tick.
+    // Appended in pad space; prior offsets unchanged (static_asserts below).
+    float peakFastL = -100.0f;     // dBFS
+    float peakFastR = -100.0f;
+    // CROSS-VERSION GATE, per the standing spec rule: 0 legitimately means
+    // "old writer, none of the fields above this line's group present".
+    // Old Links memcpy their whole zero pad on every publish, so a recycled
+    // slot can never serve a newer writer's stale mask. Every new field's
+    // DISPLAY gates on its bit: an ungated dB field reading 0.0f would
+    // render as a real measurement. The in-struct defaults (-100 / 0) are
+    // what claimSlot's blank writes, so a claimed-but-never-published slot
+    // reads as ABSENT VALUES through the ordinary value gates before the
+    // mask is ever consulted.
+    uint32_t fieldsMask = 0;
+    uint8_t _pad[128 - 4 - 11 * 4 - 6 * 4 - 4 - 8 - 8 - 8 - 4];   // -> 128 (2 cache lines)
 };
 static_assert(sizeof(LinkMeterFrame) == 128, "LinkMeterFrame must be 128 bytes");
+// Layout freeze: the cross-version story above is only true while these hold.
+static_assert(offsetof(LinkMeterFrame, audioStale) == 88,
+              "pre-0.8.5 field moved: old readers would misread every frame");
+static_assert(offsetof(LinkMeterFrame, peakFastL)  == 92,  "peakFast offset");
+static_assert(offsetof(LinkMeterFrame, fieldsMask) == 100, "fieldsMask offset");
+
+/// fieldsMask bits. A bit promises ONLY that the writer populates the
+/// field group; values still carry their own absent conventions (-100).
+static constexpr uint32_t kFrameHasFastPeak = 1u << 0;
+
+/// THE gate every fast-peak consumer goes through. Pure, testable.
+inline bool frameHasFastPeak(const LinkMeterFrame& f)
+{
+    return (f.fieldsMask & kFrameHasFastPeak) != 0;
+}
 
 static constexpr size_t kRegSize =
     sizeof(RegistryHeader) + (size_t)kRegMaxSlots * sizeof(RegistrySlot)

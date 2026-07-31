@@ -36,6 +36,7 @@
 #include "PluginEditor.h"
 
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -78,7 +79,7 @@ struct EchoJayLinkMixerTestAccess
     static int   meterY (float db, juce::Rectangle<int> a) { return Ed::meterYForDb (db, a); }
     static float meterFloor()                               { return Ed::kMeterDbFloor; }
     static const float* meterMarks (int& n)
-    { n = 6; return Ed::kMeterMarks; }
+    { n = Ed::kMeterMarkCount; return Ed::kMeterMarks; }
 
     using Ctrl = Ed::CtrlZone;
     static void ctrls (juce::Rectangle<int> r, std::vector<Ctrl>& out)
@@ -119,8 +120,8 @@ static std::vector<juce::String> addrs (int n)
 static std::vector<std::pair<const char*, juce::Rectangle<int>>> elements (const Geom& s)
 {
     return { { "name", s.name }, { "badge", s.badge }, { "active", s.active },
-             { "data", s.data }, { "fader", s.fader }, { "meter", s.meter },
-             { "ai", s.ai } };
+             { "data", s.data }, { "fader", s.fader }, { "clip", s.clip },
+             { "meter", s.meter }, { "ai", s.ai } };
 }
 
 // -----------------------------------------------------------------------------
@@ -254,6 +255,13 @@ static void testFaderAspect (int stripW, int bandH)
     // THE METER IS PERMANENT CHROME: present at every shipping size.
     check (! s0.meter.isEmpty(), "the meter band exists");
     check (s0.meter.getWidth() >= T::meterWMin(), "the meter has its minimum width");
+    // The clip lamp sits ABOVE the bars, same width, stored not derived.
+    if (! s0.clip.isEmpty())
+    {
+        check (s0.clip.getBottom() <= s0.meter.getY(), "the lamp sits above the bars");
+        checkEq (s0.clip.getX(), s0.meter.getX(), "lamp and bars share a left edge");
+        checkEq (s0.clip.getWidth(), s0.meter.getWidth(), "lamp and bars share a width");
+    }
 
     if (! f.isEmpty())
     {
@@ -287,6 +295,9 @@ static void testHitPrecedence()
 
     check (T::hitAt (s, s.fader.getCentre()) == Hit::Fader,  "fader centre hits the fader");
     check (T::hitAt (s, s.meter.getCentre()) == Hit::Meter,  "meter centre hits the meter");
+    if (! s.clip.isEmpty())
+        check (T::hitAt (s, s.clip.getCentre()) == Hit::Clip,
+               "the clip lamp claims its own rect");
     // The abutment: the last pixel of the fader column is the FADER's, so a
     // drag starting there is never swallowed by the meter beside it.
     check (T::hitAt (s, { s.fader.getRight() - 1, s.fader.getCentreY() })
@@ -482,6 +493,13 @@ static void testMeterMapping()
 
     checkEq (T::meterY (0.0f, a), a.getY(),        "0 dB is the top of the meter");
     checkEq (T::meterY (T::meterFloor(), a), a.getBottom(), "the floor is the bottom");
+    // The 8c knee: -24 dB sits 30% up from the bottom, the Logic-style
+    // compression boundary, held to one pixel of rounding.
+    {
+        const int knee = T::meterY (-24.0f, a);
+        const int want = a.getBottom() - (int) std::round (0.30f * (float) a.getHeight());
+        check (std::abs (knee - want) <= 1, "-24 dB sits at the 30% knee");
+    }
 
     // Clamps: values past either end pin to the ends, never escape the rect.
     checkEq (T::meterY ( 20.0f, a), a.getY(),      "above 0 dB clamps to the top");
@@ -509,6 +527,34 @@ static void testMeterMapping()
             check (marks[i] < marks[i - 1], "scale marks descend");
     }
     check (marks[n - 1] == T::meterFloor(), "the last mark IS the floor");
+}
+
+static void testMaskGating()
+{
+    // 8c: the cross-version gate. An OLD writer's frame reads
+    // fieldsMask == 0 (its memcpy writes its zero pad on every publish),
+    // and the gate must say "no fast data" so the renderer takes the 8b
+    // fallback instead of rendering the zero bytes as a 0 dBFS bar.
+    std::printf ("mask gating: old-writer frames carry no fast peak\n");
+
+    LinkMeterFrame oldWriter {};
+    std::memset (&oldWriter, 0, sizeof (oldWriter));   // the shared page as an
+    check (! frameHasFastPeak (oldWriter),             // old Link leaves it
+           "an all-zero (old-writer) frame gates OFF the fast peak");
+
+    LinkMeterFrame blank {};                           // claimSlot's blank
+    check (! frameHasFastPeak (blank),
+           "a claimed-but-never-published frame gates OFF the fast peak");
+    check (blank.peakFastL <= -99.0f && blank.peakFastR <= -99.0f,
+           "the blank frame's fast pair is ABSENT (-100), not 0 dBFS");
+
+    LinkMeterFrame newWriter {};
+    newWriter.fieldsMask = kFrameHasFastPeak;
+    check (frameHasFastPeak (newWriter),
+           "a new writer's bit turns the fast peak on");
+
+    // Layout freeze: the whole cross-version story rests on these.
+    check (sizeof (LinkMeterFrame) == 128, "the frame is still 128 bytes");
 }
 
 static void testBandSqueeze()
@@ -613,6 +659,7 @@ int main()
     testCtrls();
     testFaderMapping();
     testMeterMapping();
+    testMaskGating();
     testBandSqueeze();
     testContentMigration();
     testDegenerate();

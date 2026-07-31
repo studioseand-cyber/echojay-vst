@@ -2489,7 +2489,8 @@ private:
         // meter as PERMANENT chrome. Both rects are stored by layOutStrips
         // and neither paint nor hit-testing derives one from the other.
         juce::Rectangle<int> fader;     // fader column: ticks lane + image
-        juce::Rectangle<int> meter;     // stereo RMS + peak, always present
+        juce::Rectangle<int> meter;     // fast-peak bars, always present
+        juce::Rectangle<int> clip;      // latching clip lamp atop the meter
         juce::Rectangle<int> ai;        // opens this channel's conversation
         // NO EQ RECT AND NO RESERVED SPACE. The surgical EQ is being built in
         // another tree and its parameter shape is not settled, and 16 empty
@@ -2525,7 +2526,11 @@ private:
 
     // Strip widths. Narrow is the reference console look: thin strips, many
     // visible. Wide trades count for legibility.
-    static constexpr int kStripWNarrow = 46;
+    // 54, not 46, since 8c: 18px could not READ as a meter (two bars, no
+    // numbers), and all 16 registry slots at 54+6 still fit the default
+    // window's band without scrolling (16*60-6 = 954), so the width costs
+    // nothing that matters. Narrow band: fader 16 + gap 4 + meter 26.
+    static constexpr int kStripWNarrow = 54;
     static constexpr int kStripWWide   = 96;
     static constexpr int kStripGap     = 6;
     int stripWidth() const
@@ -2643,7 +2648,7 @@ private:
     static int stripsTotalWidth(int count, int stripW)
     { return count <= 0 ? 0 : count * (stripW + kStripGap) - kStripGap; }
 
-    enum class StripHit { None = 0, Fader, Meter, Ai, Badge, Active, Background };
+    enum class StripHit { None = 0, Fader, Clip, Meter, Ai, Badge, Active, Background };
     /** HIT-TEST PRECEDENCE, in ONE place and stated in code rather than left
         to the order handlers happen to test in: fader, then meter, then AI
         button, then placement badge, then the merged Active control, then
@@ -2754,6 +2759,12 @@ private:
         // deliberately NOT here: it is a publisher-held value with its own
         // 3s decay, and interpolating a hold marker would misplace it.
         float smRmsL = -100.0f, smRmsR = -100.0f;
+        // Clip latches (8c): set at paint when the published fast peak
+        // reaches 0 dBFS, cleared by clicking the lamp. Editor-instance
+        // state by the same exception as the refusal flash: transient
+        // display state, where a Logic editor recreate clearing it is a
+        // nuisance, not a lie. The measurement itself is the publisher's.
+        bool clipL = false, clipR = false;
     };
 
     // ---- Step 6: the NUMBERS content mode ----------------------------------
@@ -2794,17 +2805,24 @@ private:
     // faster peak fall: the held value renders where the publisher put it.
     /** THE dB-to-y mapping for the meter area, pure and shared by the bars,
         the peak ticks and the scale marks, so the three cannot disagree
-        about where a decibel lives. Linear over kMeterDbFloor..0, clamped. */
+        about where a decibel lives. NON-LINEAR since 8c, Logic style: the
+        top 24 dB take 70% of the height, the floor..-24 the remaining 30%.
+        Clamped both ends. */
     static int meterYForDb(float db, juce::Rectangle<int> area)
     {
-        const float f = juce::jlimit(0.0f, 1.0f, (db - kMeterDbFloor)
-                                                     / (0.0f - kMeterDbFloor));
+        db = juce::jlimit(kMeterDbFloor, 0.0f, db);
+        const float f = db >= -24.0f
+            ? 0.30f + 0.70f * ((db + 24.0f) / 24.0f)
+            : 0.30f * ((db - kMeterDbFloor) / (-24.0f - kMeterDbFloor));
         return area.getBottom() - (int)std::round(f * (float)area.getHeight());
     }
-    static constexpr float kMeterDbFloor = -40.0f;
-    static constexpr float kMeterMarks[6] = { 0.0f, -6.0f, -12.0f,
-                                              -18.0f, -24.0f, -40.0f };
+    static constexpr float kMeterDbFloor = -60.0f;
+    static constexpr int   kMeterMarkCount = 15;
+    static constexpr float kMeterMarks[kMeterMarkCount] = {
+        0.0f, -3.0f, -6.0f, -9.0f, -12.0f, -15.0f, -18.0f, -21.0f, -24.0f,
+        -30.0f, -35.0f, -40.0f, -45.0f, -50.0f, -60.0f };
     void paintLinkStripMeter(juce::Graphics& g, juce::Rectangle<int> area,
+                             juce::Rectangle<int> clipRect,
                              LinkStripState& st, float dim, bool wide);
 
     std::map<juce::String, LinkStripState> linkStripStates_;

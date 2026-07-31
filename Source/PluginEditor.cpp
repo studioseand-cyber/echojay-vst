@@ -6413,6 +6413,14 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
                            faderColW, juce::jmin(faderH, col.getHeight()));
             fmBand.removeFromLeft(kBandGap);
         }
+        // Clip lamp above the bars, stored like everything else: the reset
+        // click consumes THIS rect, no handler re-derives "the top of the
+        // meter". 7px lamp + 2px gap.
+        if (fmBand.getHeight() > 24)
+        {
+            sg.clip = fmBand.removeFromTop(7);
+            fmBand.removeFromTop(2);
+        }
         sg.meter = fmBand;
         b.removeFromBottom(kStripVGap);
         sg.data = b;
@@ -6445,6 +6453,7 @@ EchoJayEditor::StripHit EchoJayEditor::stripHitAt(const StripGeom& sg,
     // STORED rect.
     if (!sg.full.contains(p))     return StripHit::None;
     if (sg.fader.contains(p))     return StripHit::Fader;   // wins at the abutment
+    if (sg.clip.contains(p))      return StripHit::Clip;
     if (sg.meter.contains(p))     return StripHit::Meter;
     if (sg.ai.contains(p))        return StripHit::Ai;
     if (sg.badge.contains(p))     return StripHit::Badge;
@@ -6621,6 +6630,12 @@ bool EchoJayEditor::ingestBusStripFrame(uint32_t nowMs)
     hs.frame.truePeakCur = juce::jmax(md.truePeakL, md.truePeakR);
     hs.frame.lra         = md.loudnessRange;
     hs.frame.shortTermTP = md.shortTermTruePeak;
+    // Fast pair + gate bit (8c): the host engine is the SAME MeterEngine
+    // source the Link compiles, so the bus gets identical ballistics by
+    // construction; the bit is set the same way a new Link sets it.
+    hs.frame.peakFastL   = md.peakFastL;
+    hs.frame.peakFastR   = md.peakFastR;
+    hs.frame.fieldsMask  = kFrameHasFastPeak;
     if (md.momentary != lastHostMom_ || md.rmsL != lastHostRms_)
     {
         lastHostMom_ = md.momentary;
@@ -6634,6 +6649,10 @@ bool EchoJayEditor::ingestBusStripFrame(uint32_t nowMs)
         hs.frame.momentary   = -100.0f;
         hs.frame.shortTerm   = -100.0f;
         hs.frame.shortTermTP = -100.0f;
+        // Same rule the Link publisher applies: a fast meter showing a
+        // seconds-old peak as current is fake motion.
+        hs.frame.peakFastL   = -100.0f;
+        hs.frame.peakFastR   = -100.0f;
     }
     return !md.isSilent;
 }
@@ -6750,6 +6769,7 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
 
 void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
                                         juce::Rectangle<int> area,
+                                        juce::Rectangle<int> clipRect,
                                         LinkStripState& st, float dim,
                                         bool wide)
 {
@@ -6774,15 +6794,17 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
     const auto coral = juce::Colour(0xffff6d5a);
     const auto amber = juce::Colour(0xfff59e0b);
 
+    // The cross-version gate, per the spec rule: an old Link never writes
+    // the fast pair, its zero pad reads fieldsMask == 0, and this branch is
+    // where "no bit, no reading" happens. The fallback is the 8b rendering
+    // (RMS bar + slow hold tick), which the old frame HONESTLY carries:
+    // degrade to lesser data, never to garbage, never to a 0.0f "reading".
+    const bool hasFast = frameHasFastPeak(mf);
+
     // Layout inside the stored rect: label gutter left, then the L and R
     // bars. Presentation only; no hit region derives from any of this.
-    // The gutter adapts to the rect it actually gets: the in-band meter at
-    // narrow is ~18px, where even a 14px gutter would starve the bars, so
-    // the gutter drops to a line-only lane and ALL numbers go (the step 8
-    // rule extended: unreadable numbers are worse than absent ones). 8c
-    // redesigns the scale against these real dimensions.
-    const int gutterW = area.getWidth() >= 50 ? 20
-                      : area.getWidth() >= 34 ? 14 : 6;
+    const int gutterW = area.getWidth() >= 50 ? 16
+                      : area.getWidth() >= 24 ? 11 : 6;
     auto scaleArea = area.withTrimmedTop(2).withTrimmedBottom(2);
     auto barsArea  = scaleArea.withTrimmedLeft(gutterW);
     const int barGap = 2;
@@ -6792,62 +6814,88 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
         { barsArea.getX() + barW + barGap, barsArea.getY(), barW, barsArea.getHeight() },
     };
 
-    // Scale: tick lines at every mark; numeric labels all six at wide, and
-    // at narrow only 0 / -12 / -24 / -40 (a 14px gutter cannot hold "-18"
-    // legibly at any size, so the in-between marks keep their lines and
-    // lose their numbers rather than printing unreadable ones).
-    g.setFont(juce::Font(juce::FontOptions(wide ? 8.0f : 7.0f)));
-    for (size_t mi = 0; mi < 6; ++mi)
+    // The Logic-style scale: close-spaced to -24, compressed below (the
+    // piecewise meterYForDb). Tick lines at every mark; numbers only where
+    // they fit, chosen BY INDEX (no float equality), drawn unsigned as the
+    // reference does. 16px gutter: 0,3,6,9,12,15,18,21,24,30,40,50,60.
+    // 11px gutter: 0,6,12,18,24,40,60. 6px: lines only.
+    g.setFont(juce::Font(juce::FontOptions(gutterW >= 16 ? 7.5f : 6.5f)));
+    for (int mi = 0; mi < kMeterMarkCount; ++mi)
     {
         const float mark = kMeterMarks[mi];
         const int y = meterYForDb(mark, barsArea);
         g.setColour(C::text3.withMultipliedAlpha(0.35f * dim));
         g.drawHorizontalLine(y, (float)barsArea.getX(), (float)barsArea.getRight());
-        // Labels by INDEX into the marks array (0/-12/-24/-40 are indices
-        // 0/2/4/5), sidestepping float equality entirely.
-        const bool labelled = gutterW >= 20 ? true
-                            : gutterW >= 14 ? (mi == 0 || mi == 2 || mi == 4
-                                               || mi == 5)
-                            : false;
+        const bool labelled =
+            gutterW >= 16 ? (mi <= 8 || mi == 9 || mi == 11 || mi == 13 || mi == 14)
+          : gutterW >= 11 ? (mi == 0 || mi == 2 || mi == 4 || mi == 6
+                             || mi == 8 || mi == 11 || mi == 14)
+          : false;
         if (labelled)
         {
             g.setColour(C::text3.withMultipliedAlpha(dim));
-            g.drawText(juce::String((int)mark),
+            g.drawText(juce::String((int)-mark),
                        area.getX(), y - 4, gutterW - 2, 8,
                        juce::Justification::centredRight);
         }
     }
 
-    // RMS bars, classic zones: green to -12, amber to -6, coral above. The
-    // VALUE is the publisher's 500ms EMA; smRms only hides the 10Hz steps.
-    // A floored value (silence, or blanked) simply draws no bar: an empty
-    // bar on a visible scale IS the honest rendering of silence.
-    const float rms[2]  = { st.smRmsL, st.smRmsR };
-    const float peak[2] = { mf.peakL,  mf.peakR };
+    // One zone painter for both drives, so the fast bar and the fallback
+    // cannot colour the same decibel differently. Green to -12, amber to
+    // -6, coral above, continuous through the bar.
+    auto drawBar = [&](const juce::Rectangle<int>& br, float topDb)
+    {
+        const int yTop = meterYForDb(topDb, br);
+        auto seg = [&](float lo, float hi, juce::Colour col)
+        {
+            const int y0 = meterYForDb(lo, br);
+            const int y1 = juce::jmax(yTop, meterYForDb(hi, br));
+            if (y0 > y1)
+            {
+                g.setColour(col.withMultipliedAlpha(0.85f * dim));
+                g.fillRect(br.getX(), y1, br.getWidth(), y0 - y1);
+            }
+        };
+        seg(kMeterDbFloor, juce::jmin(-12.0f, topDb), C::green);
+        if (topDb > -12.0f) seg(-12.0f, juce::jmin(-6.0f, topDb), amber);
+        if (topDb >  -6.0f) seg(-6.0f,  juce::jmin( 0.0f, topDb), coral);
+    };
+
+    const float fast[2] = { mf.peakFastL, mf.peakFastR };
+    const float rms[2]  = { st.smRmsL,   st.smRmsR };
+    const float peak[2] = { mf.peakL,    mf.peakR };
     for (int ch = 0; ch < 2; ++ch)
     {
         const auto& br = barRect[ch];
-        if (rms[ch] > -99.0f)
+        if (hasFast)
         {
-            const int yTop = meterYForDb(rms[ch], br);
-            // Zone segments from the bottom up to the bar top, each clipped
-            // to its own dB span; all three consume meterYForDb.
-            auto seg = [&](float lo, float hi, juce::Colour col)
+            // The bar IS the published fast peak: 30Hz publish against 20Hz
+            // paint means every paint has a fresh value, so no smoothing,
+            // no de-stepping, nothing invented. A floored value (silence,
+            // or blanked on host idle) draws no bar: an empty bar on a
+            // visible scale IS the honest rendering of silence.
+            if (fast[ch] > -99.0f)
+                drawBar(br, fast[ch]);
+            // Clip latch: set at 0 dBFS, cleared only by the lamp click.
+            if (fast[ch] >= 0.0f)
+                (ch == 0 ? st.clipL : st.clipR) = true;
+            // RMS stays visible at WIDE as a thin marker inside the bar;
+            // dropped at narrow, where a 6px bar cannot hold a second
+            // reading without clutter.
+            if (wide && rms[ch] > -99.0f)
             {
-                const int y0 = meterYForDb(lo, br);
-                const int y1 = juce::jmax(yTop, meterYForDb(hi, br));
-                if (y0 > y1)
-                {
-                    g.setColour(col.withMultipliedAlpha(0.85f * dim));
-                    g.fillRect(br.getX(), y1, br.getWidth(), y0 - y1);
-                }
-            };
-            seg(kMeterDbFloor, juce::jmin(-12.0f, rms[ch]), C::green);
-            if (rms[ch] > -12.0f) seg(-12.0f, juce::jmin(-6.0f, rms[ch]), amber);
-            if (rms[ch] >  -6.0f) seg(-6.0f,  juce::jmin( 0.0f, rms[ch]), coral);
+                g.setColour(C::text.withMultipliedAlpha(0.8f * dim));
+                g.fillRect(br.getX() + 1, meterYForDb(rms[ch], br) - 1,
+                           br.getWidth() - 2, 2);
+            }
         }
-        // Peak hold tick: the PUBLISHER'S held value (3s decay on its side),
-        // drawn exactly where published, never re-decayed here.
+        else if (rms[ch] > -99.0f)
+        {
+            // Old writer: the 8b RMS bar, honest lesser data.
+            drawBar(br, rms[ch]);
+        }
+        // The slow hold tick rides both drives: the PUBLISHER'S 3s-held
+        // value, drawn exactly where published, never re-decayed here.
         if (peak[ch] > -99.0f)
         {
             const int py = meterYForDb(peak[ch], br);
@@ -6855,6 +6903,22 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
                             .withMultipliedAlpha(dim));
             g.fillRect(br.getX(), py - 1, br.getWidth(), 2);
         }
+    }
+
+    // The clip lamp: drawn ONLY when the writer publishes fast data, so an
+    // old Link shows no lamp rather than a lamp that cannot light. Split
+    // halves carry L and R separately; the click that resets both consumes
+    // the STORED rect (StripHit::Clip), not a re-derived one.
+    if (hasFast && !clipRect.isEmpty())
+    {
+        auto half = clipRect;
+        const auto lHalf = half.removeFromLeft(clipRect.getWidth() / 2);
+        g.setColour(st.clipL ? coral : C::text3.withAlpha(0.35f));
+        st.clipL ? (void)g.fillRect(lHalf.reduced(1))
+                 : (void)g.drawRect(lHalf.reduced(1), 1);
+        g.setColour(st.clipR ? coral : C::text3.withAlpha(0.35f));
+        st.clipR ? (void)g.fillRect(half.reduced(1))
+                 : (void)g.drawRect(half.reduced(1), 1);
     }
 }
 
@@ -7093,7 +7157,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         // The meter band: PERMANENT chrome, every strip, every mode. A
         // mixer strip always shows its meter.
         if (st != nullptr && !sg.meter.isEmpty())
-            paintLinkStripMeter(g, sg.meter, *st, dim, wide);
+            paintLinkStripMeter(g, sg.meter, sg.clip, *st, dim, wide);
     }
 
     // ---- Fader (step 7) ----------------------------------------------------
@@ -7256,6 +7320,22 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             }
             break;
 
+        case StripHit::Clip:
+        {
+            // Reset THIS strip's latches. The lamp is the only arm that
+            // touches them; ingest never clears (a latch that un-latches
+            // itself is not a latch).
+            auto it = sg.isBus ? linkStripStates_.end()
+                               : linkStripStates_.find(sg.addr);
+            LinkStripState* cst = sg.isBus ? &linkHostStrip_
+                               : it != linkStripStates_.end() ? &it->second
+                                                              : nullptr;
+            if (cst != nullptr) { cst->clipL = cst->clipR = false; }
+            linkMixerView_.repaint();
+            repaint();
+            break;
+        }
+
         case StripHit::Meter:      // the meter is not a control: it selects,
         case StripHit::Background: // exactly like the strip background
         {
@@ -7342,9 +7422,11 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
                                   : "Inactive (click to turn on)";
         }
 
+        case StripHit::Clip:
+            // 8c's content-check marker: unique to this literal.
+            return "Clip latch (click to reset)";
+
         case StripHit::Meter:
-            // "Link engine" is this pass's content-check marker: unique to
-            // this literal, greppable in the installed Mach-O.
             return sg.isBus ? "Mix Bus meter (host engine)"
                             : "Channel meter (Link engine)";
 
