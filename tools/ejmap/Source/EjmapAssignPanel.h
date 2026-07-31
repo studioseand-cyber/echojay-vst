@@ -26,6 +26,7 @@
 
 #include "EjmapAssignment.h"
 #include "EjmapCapture.h"
+#include "EjmapBands.h"
 
 namespace ejmap
 {
@@ -43,6 +44,7 @@ public:
         std::function<void (int)>                      startTyped;     // T; completion via typedCompleted
         std::function<juce::String (int)>              paramName;
         std::function<int()>                           paramCount;
+        std::function<int()>                           maskCount;      // per-arm watched = params - mask
         std::function<void (const juce::String&)>      status;         // one-line readout
         std::function<void (const juce::var&)>         writeRow;       // captures jsonl writer
         std::function<void (const juce::var&)>         writeMisclassified;
@@ -118,11 +120,14 @@ public:
     //==========================================================================
     void begin (const juce::File& rootIn, const juce::String& fpIn,
                 const juce::String& pluginIdIn, const ProposalSet& proposals,
-                const EvidenceIndex& evidenceIn)
+                const EvidenceIndex& evidenceIn,
+                const juce::String& categoryOverride = {})
     {
         root = rootIn; fp = fpIn; pluginId = pluginIdIn;
         evidence = evidenceIn;
-        category = proposals.present ? proposals.category : "compressor";
+        category = categoryOverride.isNotEmpty() ? categoryOverride
+                 : proposals.present             ? proposals.category
+                                                 : "compressor";
         startedAt = juce::Time::getMillisecondCounter();
         rows.clear();
         ignoreRows.clear();
@@ -165,16 +170,29 @@ public:
                     rows.add (r);
                 }
 
-        // 3. Dial-set semantics with no proposal.
+        // 3. Dial-set semantics with no proposal. For eq, the band-class
+        //    semantics (freq_hz/gain_db/q) fold into ONE bands-flow row: a
+        //    flat freq_hz on a banded EQ is the bx_digital failure shape, so
+        //    the wizard never offers to build one.
+        const bool banded = category.trim().toLowerCase() == "eq";
+        if (banded)
+        {
+            AssignRow r;
+            r.semantic = "bands";
+            r.kind = "bands";
+            r.proposalSource = "none";
+            rows.add (r);
+        }
         for (const auto& s : DialSets::forCategory (category))
-            if (! coveredSemantics.contains (s))
-            {
-                AssignRow r;
-                r.semantic = s;
-                r.kind = s;
-                r.proposalSource = "none";
-                rows.add (r);
-            }
+        {
+            if (coveredSemantics.contains (s)) continue;
+            if (banded && (s == "freq_hz" || s == "gain_db" || s == "q")) continue;
+            AssignRow r;
+            r.semantic = s;
+            r.kind = s;
+            r.proposalSource = "none";
+            rows.add (r);
+        }
 
         // 4. Ignores, bottom of the list, bulk-acceptable under the floor.
         if (proposals.present)
@@ -213,7 +231,9 @@ public:
         switch (r.state)
         {
             case AssignRow::State::confirmed:
-                return "CONFIRMED [" + juce::String (r.resolvedIndex) + "] " + r.trust;
+                return r.kind == "bands"
+                         ? "BANDS: " + r.skipReason
+                         : "CONFIRMED [" + juce::String (r.resolvedIndex) + "] " + r.trust;
             case AssignRow::State::modeMaterial:      return "MODE/POS recorded";
             case AssignRow::State::skipNotPresent:    return "ABSENT";
             case AssignRow::State::skipNotAutomatable:return "NO PARAM";
@@ -291,6 +311,8 @@ public:
         if (rowCount() == 0) return id == "skipplugin";
         auto& r = rowAt (selected);
 
+        if (id == "space" && r.kind == "bands" && ! r.isResolved())
+            return true;                               // begins the band flow
         if (id == "space" && r.conflictWith.isNotEmpty() && ! r.isResolved() && r.sweep.ok)
             return true;                               // the insist on a shared control
         if (id == "space")
@@ -334,6 +356,77 @@ public:
         }
 
         if (id == "submit") { openSummary(); return; }
+
+        // The bands flow owns its keys while active.
+        if (bandStep == BandStep::capFreq1 || bandStep == BandStep::capGain1
+             || bandStep == BandStep::capQ1 || bandStep == BandStep::capFreqLast)
+        {
+            if (id == "wiggle")     { actionBandRearm(); return; }          // R and W both re-arm
+            if (id == "notpresent" && bandStep == BandStep::capQ1)
+            {
+                say ("No Q on this band, recorded. " );
+                bandStep = BandStep::capFreqLast;
+                armBandCard();
+                return;
+            }
+            if (id == "defer")
+            {
+                if (hooks.cancelArm) hooks.cancelArm();
+                awaitingCaptureRow = -1;
+                bandStep = BandStep::none;
+                rowAt (bandsRowIndex).state = AssignRow::State::proposed;
+                say ("Bands left for later; nothing recorded.");
+                updateQuestion(); list.updateContent();
+                return;
+            }
+            say ("Band card is waiting for a touch. R re-arms, D leaves bands for later.");
+            return;
+        }
+        if (bandStep == BandStep::table)
+        {
+            if (id == "space")      { actionBandTableAccept(); return; }
+            if (id == "prev")       { bandCursor = juce::jmax (0, bandCursor - 1); showBandTable(); return; }
+            if (id == "next")       { bandCursor = juce::jmin (bandPlan.bands.size() - 1, bandCursor + 1); showBandTable(); return; }
+            if (id == "wiggle")
+            {
+                if (juce::isPositiveAndBelow (bandCursor, bandPlan.bands.size()))
+                {
+                    bandWiggleTarget = bandCursor;
+                    say ("Touch band " + bandPlan.bands.getReference (bandCursor).label
+                           + "'s FREQUENCY control");
+                    awaitingCaptureRow = bandsRowIndex;
+                    if (hooks.armForRow) hooks.armForRow();
+                }
+                return;
+            }
+            if (id == "notpresent")
+            {
+                if (juce::isPositiveAndBelow (bandCursor, bandPlan.bands.size()))
+                {
+                    auto label = bandPlan.bands.getReference (bandCursor).label;
+                    bandPlan.bands.remove (bandCursor);
+                    bandCursor = juce::jmax (0, bandCursor - 1);
+                    say ("Band " + label + " dropped (recorded).");
+                    auto* o = new juce::DynamicObject();
+                    o->setProperty ("kind", "band_dropped");
+                    o->setProperty ("band", label);
+                    if (hooks.writeRow) hooks.writeRow (juce::var (o));
+                    showBandTable();
+                }
+                return;
+            }
+            if (id == "defer")
+            {
+                bandStep = BandStep::none;
+                summaryText.setVisible (false);
+                rowAt (bandsRowIndex).state = AssignRow::State::proposed;
+                say ("Band table left for later; nothing accepted.");
+                updateQuestion(); list.updateContent(); resized();
+                return;
+            }
+            say ("Band table: SPACE accepts, arrows pick, W wiggles, N drops, D leaves.");
+            return;
+        }
 
         if (! keyValid (id))
         {
@@ -404,13 +497,19 @@ public:
     // Actions. Keys call these; the self-test calls these.
 
     /** SPACE. Fast lane only, and only on corroborated proposals. On a row
-        held at an index conflict, SPACE is the INSIST: the plugin genuinely
-        shares this parameter between two semantics, recorded as a decision.
+        held at an index conflict, SPACE is the INSIST. On the bands row it
+        begins the band flow.
     */
     void actionSpace()
     {
         if (rowCount() == 0) return;
         auto& r = rowAt (selected);
+
+        if (r.kind == "bands" && ! r.isResolved())
+        {
+            actionBandsBegin();
+            return;
+        }
 
         if (r.conflictWith.isNotEmpty() && ! r.isResolved() && r.sweep.ok)
         {
@@ -517,6 +616,54 @@ public:
     /** Routed from the capture engine via MainComponent. */
     void captureArrived (const CaptureEngine::Result& res)
     {
+        if (bandStep == BandStep::capFreq1 || bandStep == BandStep::capGain1
+             || bandStep == BandStep::capQ1 || bandStep == BandStep::capFreqLast)
+        { bandCaptureArrived (res); return; }
+
+        if (bandStep == BandStep::table && bandWiggleTarget >= 0)
+        {
+            const int idx = res.primaryIndex >= 0 ? res.primaryIndex
+                            : (res.indices.size() == 1 ? res.indices[0] : -1);
+            if (idx >= 0 && juce::isPositiveAndBelow (bandWiggleTarget, bandPlan.bands.size()))
+            {
+                auto& b = bandPlan.bands.getReference (bandWiggleTarget);
+                for (auto& m : b.members)
+                    if (m.semantic == "freq_hz")
+                    {
+                        if (m.index != idx)
+                        {
+                            say ("Band " + b.label + " freq is [" + juce::String (idx) + "] "
+                                   + (hooks.paramName ? hooks.paramName (idx) : juce::String())
+                                   + ", not [" + juce::String (m.index) + "] as the name pattern said "
+                                     "(recorded).");
+                            auto* o = new juce::DynamicObject();
+                            o->setProperty ("kind", "band_repointed");
+                            o->setProperty ("band", b.label);
+                            o->setProperty ("was", m.index);
+                            o->setProperty ("now", idx);
+                            if (hooks.writeRow) hooks.writeRow (juce::var (o));
+                            m.index = idx;
+                            m.name = hooks.paramName ? hooks.paramName (idx) : juce::String();
+                            m.sweep = hooks.sweepIndex ? hooks.sweepIndex (idx) : SweepOutcome();
+                        }
+                        else
+                            say ("Band " + b.label + " verified by touch.");
+                        m.captured = true;
+                        b.flag = {};
+                        b.strideAgrees = true;
+                        b.strideUnverified = false;
+                    }
+                BandInference::ArmRecord arm;
+                arm.watched = (hooks.paramCount ? hooks.paramCount() : 0)
+                            - (hooks.maskCount ? hooks.maskCount() : 0);
+                arm.moved = res.indices;
+                bandPlan.arms.add (arm);
+            }
+            bandWiggleTarget = -1;
+            showBandTable();
+            return;
+        }
+
         if (awaitingCaptureRow < 0 || awaitingCaptureRow >= rowCount())
             return;
         auto& r = rowAt (awaitingCaptureRow);
@@ -858,6 +1005,347 @@ public:
         if (hooks.submit) hooks.submit (rows, category, deepMode ? "deep" : "fast");
     }
 
+    //==========================================================================
+    // The bands flow (M5): guided captures -> inference -> table -> groups.
+
+    enum class BandStep { none, capFreq1, capGain1, capQ1, capFreqLast, table };
+    BandStep bandStep = BandStep::none;
+    juce::Array<BandInference::Member> bandCaptured;
+    int bandSecondFreqIdx = -1;
+    BandInference bandPlan;
+    CaptureEngine::Result bandGesturePending;
+    juce::Array<GroupSpec> acceptedGroups;
+    int bandCursor = 0;
+    int bandWiggleTarget = -1;         // table-phase wiggle: which band ordinal
+    int bandsRowIndex = -1;
+
+    const juce::Array<GroupSpec>& groupsForSubmit() const { return acceptedGroups; }
+
+    void actionBandsBegin()
+    {
+        bandsRowIndex = selected;
+        bandCaptured.clear();
+        bandSecondFreqIdx = -1;
+        acceptedGroups.clear();
+        bandStep = BandStep::capFreq1;
+        armBandCard();
+    }
+
+    juce::String bandCardPrompt() const
+    {
+        switch (bandStep)
+        {
+            case BandStep::capFreq1:    return "Touch BAND 1's FREQUENCY control";
+            case BandStep::capGain1:    return "Touch BAND 1's GAIN control";
+            case BandStep::capQ1:       return "Touch BAND 1's Q control";
+            case BandStep::capFreqLast: return "Touch the HIGHEST band's FREQUENCY";
+            default: break;
+        }
+        return {};
+    }
+
+    void armBandCard()
+    {
+        rowAt (bandsRowIndex).state = AssignRow::State::armed;
+        say (bandCardPrompt() + " - the card is LIVE (R discards a wrong grab and re-arms)");
+        if (hooks.armForRow) hooks.armForRow();
+        awaitingCaptureRow = bandsRowIndex;
+        list.updateContent();
+        updateQuestion();
+    }
+
+    /** R on a live band card: the grab was a brush or the wrong control.
+        Discard whatever the engine holds and arm again. (Amendment 2: every
+        other card waits for you; a live card needs a way to say "that wasn't
+        me".)
+    */
+    void actionBandRearm()
+    {
+        if (hooks.cancelArm) hooks.cancelArm();
+        say ("Discarded. " + bandCardPrompt());
+        if (hooks.armForRow) hooks.armForRow();
+    }
+
+    /** Band-flow capture: collect the member, record the ARM (watched set and
+        moved set, this arm only), advance the card.
+    */
+    void bandCaptureArrived (const CaptureEngine::Result& res)
+    {
+        const int idx = res.primaryIndex >= 0 ? res.primaryIndex
+                        : (res.indices.size() == 1 ? res.indices[0] : -1);
+        if (idx < 0)
+        {
+            if (res.indices.size() > 1)
+            {
+                // A LOCKSTEP PAIR on a band card: AMEK's Param Link mirrors
+                // LF Freq 1 onto LF Freq 2, the first confirmed linked pair
+                // this project has seen live. The plugin cannot say which is
+                // the touched one, so the human picks, same as the main loop;
+                // the other stays in the arm record as co-moved evidence.
+                bandGesturePending = res;
+                juce::String cands;
+                for (int i = 0; i < juce::jmin (9, res.indices.size()); ++i)
+                    cands << (i ? "  " : "") << juce::String (i + 1) << ":" << res.names[i];
+                say ("Two controls moved in lockstep (a linked pair). Pick the one you touched: "
+                       + cands);
+                rebuildBandAnswers();
+                updateQuestion();
+                return;
+            }
+            say ("Capture unusable (" + res.reason + ") - re-arming. R also re-arms.");
+            if (hooks.armForRow) hooks.armForRow();
+            return;
+        }
+        processBandIndex (idx, res);
+    }
+
+    void bandPickCandidate (int oneBased)
+    {
+        if (bandGesturePending.indices.isEmpty()
+             || ! juce::isPositiveAndBelow (oneBased - 1, bandGesturePending.indices.size()))
+            return;
+        auto res = bandGesturePending;
+        bandGesturePending = {};
+        processBandIndex (res.indices[oneBased - 1], res);
+    }
+
+    /** Test seam: pick a pending lockstep candidate by its parameter index,
+        which is what a human does by reading the names.
+    */
+    bool bandPickByParamIndex (int paramIdx)
+    {
+        for (int i = 0; i < bandGesturePending.indices.size(); ++i)
+            if (bandGesturePending.indices[i] == paramIdx)
+            { bandPickCandidate (i + 1); return true; }
+        return false;
+    }
+
+    bool bandPickPending() const { return ! bandGesturePending.indices.isEmpty(); }
+
+    void processBandIndex (int idx, const CaptureEngine::Result& res)
+    {
+
+        BandInference::ArmRecord arm;
+        arm.watched = (hooks.paramCount ? hooks.paramCount() : 0)
+                    - (hooks.maskCount ? hooks.maskCount() : 0);
+        arm.moved = res.indices;
+        bandPlan.arms.add (arm);
+
+        auto nameOf = [this] (int i) { return hooks.paramName ? hooks.paramName (i) : juce::String(); };
+
+        // RESIDUE GUARD. The card auto-arms the instant the previous capture
+        // lands, and a hand can still be settling on the previous control --
+        // its last jitter would be captured as the NEXT member. An index this
+        // flow already captured is residue, not an answer: say so and re-arm.
+        for (const auto& cm : bandCaptured)
+            if (cm.index == idx)
+            {
+                bandPlan.arms.removeLast();      // that arm was residue too
+                say ("That was [" + juce::String (idx) + "] " + cm.name
+                       + " again (the previous control settling). Re-armed: "
+                       + bandCardPrompt());
+                if (hooks.armForRow) hooks.armForRow();
+                return;
+            }
+
+        if (bandStep == BandStep::capFreq1 || bandStep == BandStep::capGain1
+             || bandStep == BandStep::capQ1)
+        {
+            BandInference::Member m;
+            m.semantic = bandStep == BandStep::capFreq1 ? "freq_hz"
+                       : bandStep == BandStep::capGain1 ? "gain_db" : "q";
+            m.index = idx; m.name = nameOf (idx); m.captured = true;
+            bandCaptured.add (m);
+            say ("Captured " + m.semantic + " -> [" + juce::String (idx) + "] " + m.name);
+            bandStep = bandStep == BandStep::capFreq1 ? BandStep::capGain1
+                     : bandStep == BandStep::capGain1 ? BandStep::capQ1
+                                                      : BandStep::capFreqLast;
+            armBandCard();
+            return;
+        }
+
+        if (bandStep == BandStep::capFreqLast)
+        {
+            bandSecondFreqIdx = idx;
+            if (hooks.cancelArm) hooks.cancelArm();
+            awaitingCaptureRow = -1;
+            buildBandTable();
+        }
+    }
+
+    void buildBandTable()
+    {
+        juce::StringArray names;
+        const int n = hooks.paramCount ? hooks.paramCount() : 0;
+        for (int i = 0; i < n; ++i) names.add (hooks.paramName (i));
+
+        auto arms = bandPlan.arms;                       // keep the arm records
+        bandPlan = BandInference::infer (bandCaptured, bandSecondFreqIdx, names);
+        bandPlan.arms = arms;
+
+        // Every member is swept: real anchors, real ranges, and a refusal
+        // flags its band. Machine verification of a name hypothesis.
+        for (auto& b : bandPlan.bands)
+            for (auto& m : b.members)
+            {
+                m.sweep = hooks.sweepIndex ? hooks.sweepIndex (m.index) : SweepOutcome();
+                if (! m.sweep.ok && b.flag.isEmpty())
+                    b.flag = m.semantic + " sweep refused: " + m.sweep.reason.substring (0, 60);
+            }
+
+        bandStep = BandStep::table;
+        bandCursor = 0;
+        rowAt (bandsRowIndex).state = AssignRow::State::captured;
+        showBandTable();
+    }
+
+    void showBandTable()
+    {
+        juce::String t;
+        t << "BANDS (" << bandPlan.axis << " axis"
+          << (bandPlan.family.isNotEmpty() ? ", family '" + bandPlan.family + "'" : juce::String())
+          << ")  " << bandPlan.strideNote << "\n\n";
+        for (int i = 0; i < bandPlan.bands.size(); ++i)
+        {
+            const auto& b = bandPlan.bands.getReference (i);
+            t << (i == bandCursor ? " > " : "   ") << "band " << b.label << ":  ";
+            for (const auto& m : b.members)
+            {
+                t << m.semantic << " [" << m.index << "]"
+                  << (m.captured ? " CAPTURED" : m.sweep.ok ? "" : " !sweep") << "  ";
+            }
+            if (b.flag.isNotEmpty())            t << "  ! " << b.flag;
+            else if (b.strideUnverified)        t << "  ~ stride unverified here";
+            else if (b.strideAgrees)            t << "  ok";
+            t << "\n";
+        }
+
+        // THE EXCLUSION FOOTER. The most important line in the module and the
+        // easiest to make vacuous: when there are no imposters it SAYS SO with
+        // the watched denominator, because an empty footer reads identically
+        // to "nothing was watched".
+        const auto excl = bandPlan.exclusionList ([this] {
+            juce::StringArray ns;
+            const int n = hooks.paramCount ? hooks.paramCount() : 0;
+            for (int i = 0; i < n; ++i) ns.add (hooks.paramName (i));
+            return ns; }());
+        int watched = 0;
+        for (const auto& a : bandPlan.arms) watched = juce::jmax (watched, a.watched);
+        t << "\nWATCHED & UNMOVED during your " << bandPlan.arms.size()
+          << " gestures, OUTSIDE the group:\n";
+        if (excl.isEmpty())
+            t << "   (none: among the " << watched << " watched parameters, every "
+                 "band-look-alike name is a group member or moved with one)\n";
+        else
+            for (const auto& e : excl) t << "   " << e << "\n";
+        if (! bandPlan.otherFamilies.isEmpty())
+            t << "\nANOTHER band-shaped family exists: "
+              << bandPlan.otherFamilies.joinIntoString (", ")
+              << " - you will be asked after accepting.\n";
+
+        summaryText.setText (t, juce::dontSendNotification);
+        summaryText.setVisible (true);
+        promptTitle.setText (juce::String (bandPlan.bands.size()) + " bands inferred from your "
+                               + juce::String (bandCaptured.size() + 1) + " touches",
+                             juce::dontSendNotification);
+        question.setText ("SPACE accept clean bands - up/down pick a band - W wiggle it - "
+                          "N drop it - D leave bands for later", juce::dontSendNotification);
+        rebuildBandAnswers();
+        resized();
+    }
+
+    void rebuildBandAnswers()
+    {
+        answerButtons.clear();
+        auto add = [this] (const juce::String& id, const juce::String& text)
+        {
+            auto* b = answerButtons.add (new juce::TextButton (text));
+            addAndMakeVisible (b);
+            b->onClick = [this, id] { dispatchAction (id); grabKeyboardFocus(); };
+        };
+
+        if (bandPickPending())
+        {
+            for (int i = 0; i < juce::jmin (9, bandGesturePending.indices.size()); ++i)
+            {
+                const int oneBased = i + 1;
+                auto* b = answerButtons.add (new juce::TextButton (
+                    juce::String (oneBased) + " - " + bandGesturePending.names[i]));
+                addAndMakeVisible (b);
+                b->onClick = [this, oneBased] { bandPickCandidate (oneBased); grabKeyboardFocus(); };
+            }
+            resized(); return;
+        }
+        add ("space",  "SPACE - accept clean bands");
+        add ("wiggle", "W - wiggle band " + (bandCursor < bandPlan.bands.size()
+                          ? bandPlan.bands.getReference (bandCursor).label : juce::String()));
+        add ("notpresent", "N - drop that band");
+        add ("defer",  "D - later");
+        resized();
+    }
+
+    void actionBandTableAccept()
+    {
+        acceptedGroups.addArray (bandPlan.toGroups());
+        int flagged = 0;
+        for (const auto& b : bandPlan.bands) flagged += b.flag.isNotEmpty();
+
+        auto& row = rowAt (bandsRowIndex);
+        row.state = AssignRow::State::confirmed;
+        row.trust = "human-verified";
+        row.mode = deepMode ? "deep" : "fast";
+        row.resolvedAt = juce::Time::getCurrentTime().toISO8601 (true);
+        row.skipReason = juce::String (acceptedGroups.size()) + " band group(s) accepted"
+                       + (flagged > 0 ? ", " + juce::String (flagged) + " flagged band(s) EXCLUDED" : "");
+        recordResolution (row, "bands_accept");
+
+        // The evidence row: axis, stride verdict, per-arm records, exclusions.
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("kind", "bands_accepted");
+        o->setProperty ("axis", bandPlan.axis);
+        o->setProperty ("family", bandPlan.family);
+        o->setProperty ("groups", acceptedGroups.size());
+        o->setProperty ("stride_note", bandPlan.strideNote);
+        juce::Array<juce::var> armsV;
+        for (const auto& a : bandPlan.arms)
+        {
+            auto* av = new juce::DynamicObject();
+            av->setProperty ("watched", a.watched);
+            juce::Array<juce::var> mv; for (int i : a.moved) mv.add (i);
+            av->setProperty ("moved", juce::var (mv));
+            armsV.add (juce::var (av));
+        }
+        o->setProperty ("arms", juce::var (armsV));
+        if (hooks.writeRow) hooks.writeRow (juce::var (o));
+
+        summaryText.setVisible (false);
+        bandStep = BandStep::none;
+        say ("BANDS: " + row.skipReason);
+
+        if (! bandPlan.otherFamilies.isEmpty())
+        {
+            promptTitle.setText ("Another band family: " + bandPlan.otherFamilies[0],
+                                 juce::dontSendNotification);
+            question.setText ("You touched '" + bandPlan.family + "'. The family '"
+                                + bandPlan.otherFamilies[0] + "' also looks band-shaped.\n"
+                                "W map it too (touch ITS band 1 freq) - N not bands - D later",
+                              juce::dontSendNotification);
+            bandStep = BandStep::capFreq1;      // W restarts the flow for it
+            bandCaptured.clear();
+            // The prompt waits: W arms, N/D resolve it via the normal keys on
+            // this row, which is already confirmed for the first family.
+            bandStep = BandStep::none;
+            persistSession(); list.updateContent();
+            return;
+        }
+
+        persistSession();
+        advance();
+        list.updateContent();
+        updateProgress();
+        updateQuestion();
+    }
+
     /** The semantic already holding this index, if any. Asked at CAPTURE
         time; the review's duplicate check stays as defence in depth (it can
         still fire via a restored session).
@@ -891,6 +1379,8 @@ public:
     }
 
     bool isSummaryShowing() const { return summaryShowing; }
+    juce::String bandTableText() const { return summaryText.getText(); }
+    BandStep currentBandStep() const { return bandStep; }
     bool isSubmitEnabled() const  { return submitBtn.isEnabled(); }
 
     void openSummary()
@@ -915,6 +1405,9 @@ public:
                 t << "  " << displayLabel (r) << "  <- [" << r.resolvedIndex << "] "
                   << (hooks.paramName ? hooks.paramName (r.resolvedIndex) : juce::String())
                   << "  (" << r.trust << ", " << r.sweep.method << ")\n";
+        if (! acceptedGroups.isEmpty())
+            t << "\n" << acceptedGroups.size() << " band group(s) will be written "
+                 "(a 250 Hz-class request can only land inside them)\n";
         t << "\n" << modePos << " mode/position finding(s), " << skips << " skip(s) with reasons, "
           << open << " unresolved row(s)" << (open > 0 ? " -> will be recorded as deferred" : "")
           << (ignoresOpen > 0 ? ", " + juce::String (ignoresOpen) + " unreviewed ignore(s)" : juce::String())
@@ -1007,7 +1500,12 @@ public:
         if (c == 'i' || c == 'I')                         { dispatchAction ("bulk"); return true; }
         if (c == '?')                                     { dispatchAction ("evidence"); return true; }
         if (c == 's' || c == 'S')                         { dispatchAction ("skipplugin"); return true; }
-        if (c >= '1' && c <= '9')                         { actionPickCandidate (c - '0'); return true; }
+        if (c >= '1' && c <= '9')
+        {
+            if (bandPickPending()) bandPickCandidate (c - '0');
+            else                   actionPickCandidate (c - '0');
+            return true;
+        }
         if (k == juce::KeyPress::leftKey  || k == juce::KeyPress::upKey)   { dispatchAction ("prev"); return true; }
         if (k == juce::KeyPress::rightKey || k == juce::KeyPress::downKey) { dispatchAction ("next"); return true; }
         if (k == juce::KeyPress::returnKey && k.getModifiers().isCommandDown()) { dispatchAction ("submit"); return true; }
@@ -1099,7 +1597,21 @@ public:
         const auto label = displayLabel (r);
         juce::String q;
 
-        if (r.conflictWith.isNotEmpty() && ! r.isResolved())
+        if (r.kind == "bands" && bandStep != BandStep::none && bandStep != BandStep::table)
+        {
+            q << bandCardPrompt() << " - the card is LIVE.\n"
+              << "R discard a wrong grab and re-arm"
+              << (bandStep == BandStep::capQ1 ? " - N this band has no Q" : juce::String())
+              << " - D leave bands for later";
+        }
+        else if (r.kind == "bands" && ! r.isResolved())
+        {
+            q << "The band controls (freq/gain/q) are mapped as GROUPS, so a 250 Hz "
+                 "request can never land on a look-alike outside them.\n"
+              << "SPACE begin: touch band 1's controls, then the highest band's frequency "
+                 "(2 wiggles buy a verified pattern)";
+        }
+        else if (r.conflictWith.isNotEmpty() && ! r.isResolved())
         {
             const int ci = r.resolvedIndex;
             q << "[" << ci << "] '" << (hooks.paramName ? hooks.paramName (ci) : juce::String())
@@ -1179,6 +1691,10 @@ public:
         auto& r = rowAt (selected);
         if (r.isResolved())
             return displayLabel (r) + ": done (" + r.stateString() + ")";
+        if (r.kind == "bands")
+            return bandStep == BandStep::table ? "The band table"
+                 : bandStep != BandStep::none  ? bandCardPrompt()
+                 : "Map the bands as groups";
         if (r.conflictWith.isNotEmpty())
             return "Index already assigned to " + r.conflictWith;
         if (r.kind == "ignore") return "Agree to ignore " + r.proposedName + "?";
@@ -1231,6 +1747,19 @@ public:
             resized(); return;
         }
 
+        if (r.kind == "bands" && ! r.isResolved() && bandStep == BandStep::none)
+        {
+            add ("space", "SPACE - begin mapping bands");
+            add ("defer", "D - later");
+            resized(); return;
+        }
+        if (r.kind == "bands" && bandStep != BandStep::none && bandStep != BandStep::table)
+        {
+            add ("wiggle", "R - discard and re-arm");
+            if (bandStep == BandStep::capQ1) add ("notpresent", "N - no Q on this band");
+            add ("defer",  "D - leave bands for later");
+            resized(); return;
+        }
         if (r.conflictWith.isNotEmpty())
         {
             add ("space",      "SPACE - yes, shared control");

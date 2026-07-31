@@ -93,6 +93,18 @@ struct SweepOutcome
     */
     bool identityDisplay = false;
 
+    /** The unit family the DISPLAY ITSELF declares ("hz", "db", "ms", "pct"),
+        detected from the sweep's own texts, or empty. When present, anchor
+        values are parsed under it with the shared parseDisplayForUnit, so
+        "942.5 Hz" and "1.0 kHz" land as 942.5 and 1000 rather than 942.5 and
+        1.0. Measured on AMEK EQ 200 HF Freq 1: the raw parse collapsed at the
+        kHz switch and the sanitizer rightly refused 27 monotonic-on-screen
+        points as a mirror shape. This is display-declared, never
+        semantic-assumed: unit normalisation against the SEMANTIC stays
+        assignment's business.
+    */
+    juce::String unitFamily;
+
     juce::Array<echojay::SweepPoint>  points;      // what the plugin displayed
     juce::Array<juce::Array<float>>   anchors;     // [value, norm], sanitized
     juce::Array<juce::Array<float>>   rawAnchors;  // [value, norm], pre-sanitize:
@@ -168,15 +180,47 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
         out.points = retried;
     }
 
-    // Texts -> raw anchors, with the corpus parser.
+    // Detect the display's own unit family from the texts. Half the points
+    // must carry it: one stray "Hz" in a label does not make a family.
+    {
+        int hz = 0, db = 0, ms = 0, pct = 0;
+        for (const auto& sp : out.points)
+        {
+            const auto t = sp.t.toLowerCase();
+            if (t.contains ("hz"))                    ++hz;   // covers kHz
+            else if (t.contains ("db"))               ++db;
+            else if (t.contains ("ms") || t.contains (" s") || t.endsWith ("s")) ++ms;
+            else if (t.contains ("%"))                ++pct;
+        }
+        const int half = juce::jmax (1, out.points.size() / 2);
+        out.unitFamily = hz >= half ? "hz" : db >= half ? "db"
+                       : ms >= half ? "ms" : pct >= half ? "pct" : juce::String();
+    }
+
+    // Texts -> raw anchors. Under a declared unit family, the shared
+    // parseDisplayForUnit does the unit arithmetic (kHz x1000, bare-k, s<->ms);
+    // otherwise the corpus parser's raw leading float.
     juce::Array<juce::Array<float>> raw;
     for (const auto& sp : out.points)
     {
-        double v = 0.0;
-        if (echojay::parseLeadingFloat (sp.t, v))
+        bool parsed = false;
+        float vf = 0.0f;
+        if (out.unitFamily.isNotEmpty())
+        {
+            bool negInf = false;
+            parsed = echojay::parseDisplayForUnit (sp.t, out.unitFamily, vf, negInf) && ! negInf;
+        }
+        else
+        {
+            double v = 0.0;
+            parsed = echojay::parseLeadingFloat (sp.t, v);
+            vf = (float) v;
+        }
+
+        if (parsed)
         {
             juce::Array<float> a;
-            a.add ((float) v);
+            a.add (vf);
             a.add (sp.n);
             raw.add (a);
         }

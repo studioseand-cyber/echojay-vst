@@ -894,6 +894,254 @@ public:
         quitNow();
     }
 
+    /** Drives the band flow end to end: guided captures with synthetic
+        touches, the table, the exclusion footer (which must be explicit even
+        when empty), accept, and a LIVE apply through the real applySettings
+        asserting the imposter's value never moves. memberSpec is
+        "freq1;gain1;q1;lastFreq" by parameter NAME; "-" for a missing Q.
+        imposterName may be empty (footer must then say none-found explicitly).
+    */
+    void selfTestBands (const juce::String& identifier, const juce::String& memberSpec,
+                        const juce::String& imposterName)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "BANDTEST: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        ledger.beginLoad (loadedId, desc.name, desc.manufacturerName,
+                          desc.pluginFormatName, desc.version, "load", "createPluginInstance");
+        auto res = host.load (desc, watchdog);
+        { LedgerRecord rec; rec.pluginId = loadedId; rec.name = desc.name;
+          rec.outcome = res.outcome; rec.detail = res.detail; rec.paramCount = res.paramCount;
+          ledger.endLoad (rec); }
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "BANDTEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        listeners.attach (*inst);
+        cal = capture.calibrate (*inst, loadedId);
+        mask = capture.buildNoiseMask (*inst, cal, loadedId);
+        capture.resetCycleCounts();
+        promotionsFlushed = 0;
+
+        bandMemberNames.clear();
+        bandMemberNames.addTokens (memberSpec, ";", "");
+        bandImposterName = imposterName;
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+
+        std::cout << "BANDTEST: " << desc.name << " | " << cal.paramCount << " params | members: "
+                  << memberSpec << std::endl;
+
+        startAssignmentForCategory ("eq");
+        stage = 0;
+        failures = 0;
+        juce::Timer::callAfterDelay (300, [this] { bandTestStep(); });
+    }
+
+    void startAssignmentForCategory (const juce::String& cat)
+    {
+        auto proposals = ProposalSet::load (ledger.getRoot(), currentFp);
+        auto ev        = EvidenceIndex::build (ledger.getRoot(), loadedId);
+        assigning = true;
+        assignPanel.setVisible (true);
+        list.setVisible (false);
+        filterBox.setVisible (false);
+        assignPanel.begin (ledger.getRoot(), currentFp, loadedId, proposals, ev, cat);
+        resized();
+    }
+
+    int paramIndexByName (const juce::String& nm)
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr) return -1;
+        auto& ps = inst->getParameters();
+        for (int i = 0; i < ps.size(); ++i)
+            if (ps[i]->getName (64).equalsIgnoreCase (nm)) return i;
+        return -1;
+    }
+
+    void bandTestStep()
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr) return;
+        auto ok = [this] (bool cond, const juce::String& what)
+        {
+            if (! cond) ++failures;
+            std::cout << "  " << (cond ? "ok   " : "FAIL ") << what << std::endl;
+            std::cout.flush();
+        };
+        auto dump = [this] (const char* tag)
+        {
+            std::cout << "---- after " << tag << " ----\n"
+                      << assignPanel.textRender() << std::endl;
+        };
+
+        if (stage == 0)
+        {
+            int bandsRow = -1;
+            for (int i = 0; i < assignPanel.rows.size(); ++i)
+                if (assignPanel.rows.getReference (i).kind == "bands") { bandsRow = i; break; }
+            ok (bandsRow >= 0, "eq category folds freq/gain/q into ONE bands row");
+            assignPanel.selectRow (bandsRow);
+            dump ("selecting the bands row");
+            assignPanel.dispatchAction ("space");
+            ok (assignPanel.currentBandStep() == AssignPanel::BandStep::capFreq1,
+                "SPACE begins the flow; the freq card is LIVE");
+            dump ("bands begin (freq card armed)");
+            stage = 1; bandMemberCursor = 0;
+            juce::Timer::callAfterDelay (400, [this] { bandTestDriveCapture(); });
+            return;
+        }
+
+        if (stage == 2)     // table reached
+        {
+            const auto table = assignPanel.bandTableText();
+            std::cout << "---- BAND TABLE ----\n" << table << std::endl;
+            ok (assignPanel.currentBandStep() == AssignPanel::BandStep::table,
+                "all four touches landed: the table is up");
+            ok (table.contains ("WATCHED & UNMOVED"),
+                "the exclusion footer is present");
+            if (bandImposterName.isNotEmpty())
+                ok (table.contains (bandImposterName),
+                    "footer names the imposter: " + bandImposterName);
+            else
+                ok (table.contains ("(none: among the"),
+                    "footer says EXPLICITLY that no imposters were found (never vacuous)");
+
+            assignPanel.dispatchAction ("space");     // accept
+            const auto& groups = assignPanel.groupsForSubmit();
+            ok (groups.size() >= 2, "accept built " + juce::String (groups.size()) + " band groups");
+            dump ("accepting the band table");
+
+            // LIVE APPLY through the real applySettings: the headline
+            // assertion on the real plugin.
+            MapPayload p;
+            p.fp = currentFp; p.category = "eq";
+            for (const auto& g : groups) p.groups.add (g);
+            auto map = juce::JSON::parse (p.toJson());
+
+            auto& ps = inst->getParameters();
+            const int imposterIdx = bandImposterName.isNotEmpty()
+                                      ? paramIndexByName (bandImposterName) : -1;
+            const float impBefore = imposterIdx >= 0 ? ps[imposterIdx]->getValue() : 0.0f;
+
+            juce::SortedSet<int> freqMembers;
+            for (const auto& g : groups)
+                for (const auto& m : g.params)
+                    if (m.semantic == "freq_hz") freqMembers.add (m.indices[0]);
+
+            host.pausePumpForMutation();
+            auto* settings = new juce::DynamicObject();
+            settings->setProperty ("freq_hz", 250);
+            settings->setProperty ("gain_db", 3);
+            auto results = echojay::applySettings (*inst, map, juce::var (settings));
+            host.resumePumpAfterMutation();
+
+            int landed = -1; juce::String note;
+            for (const auto& r : results)
+                if (r.semantic == "freq_hz" && r.applied) { landed = r.index; note = r.note; }
+            ok (landed >= 0 && freqMembers.contains (landed),
+                "250 Hz landed INSIDE the group: [" + juce::String (landed) + "] " + note);
+            if (imposterIdx >= 0)
+                ok (juce::approximatelyEqual (ps[imposterIdx]->getValue(), impBefore),
+                    bandImposterName + "'s VALUE is untouched by the 250 Hz request");
+
+            // 8 kHz must land on a band whose own range covers it, and not
+            // the same band 250 Hz used unless its range genuinely spans both.
+            const float impBefore2 = imposterIdx >= 0 ? ps[imposterIdx]->getValue() : 0.0f;
+            auto* band = new juce::DynamicObject();
+            band->setProperty ("freq_hz", 8000);
+            juce::Array<juce::var> bandsArr; bandsArr.add (juce::var (band));
+            auto* settings2 = new juce::DynamicObject();
+            settings2->setProperty ("bands", juce::var (bandsArr));
+            host.pausePumpForMutation();
+            auto results2 = echojay::applySettings (*inst, map, juce::var (settings2));
+            host.resumePumpAfterMutation();
+            int landed2 = -1;
+            for (const auto& r : results2)
+                if (r.semantic == "freq_hz" && r.applied) landed2 = r.index;
+            bool rangeOk = false;
+            for (const auto& g : groups)
+                for (const auto& m : g.params)
+                    if (m.semantic == "freq_hz" && m.indices[0] == landed2)
+                        rangeOk = g.freqHi >= 8000.0;
+            ok (landed2 >= 0 && freqMembers.contains (landed2) && rangeOk,
+                "8 kHz landed inside the group on a band whose range covers it ["
+                  + juce::String (landed2) + "]");
+            if (imposterIdx >= 0)
+                ok (juce::approximatelyEqual (ps[imposterIdx]->getValue(), impBefore2),
+                    bandImposterName + " untouched at 8 kHz");
+
+            std::cout << "BANDTEST: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
+            std::cout.flush();
+            quitNow();
+            return;
+        }
+    }
+
+    /** Feeds the guided cards: pre-set the named param, then move it, letting
+        the live card capture it exactly as a human touch would.
+    */
+    void bandTestDriveCapture()
+    {
+        auto* inst = host.getInstance();
+        if (inst == nullptr) return;
+
+        if (assignPanel.bandPickPending() && bandMemberCursor >= 1)
+        {
+            const int prev = paramIndexByName (bandMemberNames[bandMemberCursor - 1].trim());
+            assignPanel.bandPickByParamIndex (prev);
+            juce::Timer::callAfterDelay (300, [this] { bandTestDriveCapture(); });
+            return;
+        }
+
+        if (assignPanel.currentBandStep() == AssignPanel::BandStep::table)
+        { stage = 2; bandTestStep(); return; }
+
+        if (bandMemberCursor >= bandMemberNames.size())
+        { std::cout << "BANDTEST: ran out of member names before the table" << std::endl;
+          std::cout.flush(); quitNow(); return; }
+
+        const auto nm = bandMemberNames[bandMemberCursor++].trim();
+        if (nm == "-")
+        {
+            assignPanel.dispatchAction ("notpresent");     // no Q on this band
+            juce::Timer::callAfterDelay (400, [this] { bandTestDriveCapture(); });
+            return;
+        }
+
+        const int idx = paramIndexByName (nm);
+        if (idx < 0)
+        { std::cout << "BANDTEST: no param named '" << nm << "'" << std::endl;
+          std::cout.flush(); quitNow(); return; }
+
+        // A lockstep pair from the PREVIOUS touch may be waiting for a pick:
+        // pick the control the driver actually meant, by index, as a human
+        // does by reading the names.
+        if (assignPanel.bandPickPending())
+        {
+            const int prev = paramIndexByName (bandMemberNames[bandMemberCursor - 2].trim());
+            assignPanel.bandPickByParamIndex (prev);
+        }
+
+        // ONE write per card. The first version pre-set then moved on a
+        // delay, and the delayed move raced the NEXT card's auto-arm: every
+        // card captured the previous control's leftover write. A human
+        // touches once; the driver now does too.
+        {
+            auto* pp = inst->getParameters()[idx];
+            const float v = pp->getValue();
+            pp->setValueNotifyingHost (v < 0.5f ? v + 0.3f : v - 0.3f);
+        }
+        juce::Timer::callAfterDelay (900, [this] { bandTestDriveCapture(); });
+    }
+
     /** Drives the assignment loop through the SAME action methods the keys
         call, against a SYNTHETIC proposal file written for this plugin's own
         fp (and saying so): the corroboration gate, the W mismatch dataset,
@@ -2638,6 +2886,7 @@ private:
             auto* inst = host.getInstance();
             return inst != nullptr ? inst->getParameters().size() : 0;
         };
+        assignPanel.hooks.maskCount = [this] { return mask.indices.size(); };
         assignPanel.hooks.status = [this] (const juce::String& line)
         {
             captureReadout.setText (line, juce::dontSendNotification);
@@ -2862,6 +3111,8 @@ private:
             host.resumePumpAfterMutation();
         }
 
+        p.groups = assignPanel.groupsForSubmit();
+
         if (p.hasUnresolvedContradiction())
         {
             captureReadout.setText ("SUBMIT REFUSED: unresolved probe contradiction.",
@@ -2968,6 +3219,8 @@ private:
         o->setProperty ("setread_refused", sw.setreadRefused);
         o->setProperty ("anchors_reversed", sw.anchorsReversed);
         o->setProperty ("identity_display", sw.identityDisplay);
+        if (sw.unitFamily.isNotEmpty())
+            o->setProperty ("unit_family", sw.unitFamily);
         o->setProperty ("rejected_points", sw.rejectedPoints);
         o->setProperty ("unparsed_points", sw.unparsedPoints);
         o->setProperty ("duration_ms", sw.durationMs);
@@ -3583,6 +3836,9 @@ private:
     int stage = 0, failures = 0;
     int suppressIdx = -1;         // promotion-suppression self-test target
     int kneeTestIdx = -1;         // assign self-test: the labelled discrete switch
+    juce::StringArray bandMemberNames;   // band self-test: member names to touch
+    juce::String bandImposterName;
+    int bandMemberCursor = 0;
     bool grabSeenA = false;       // any phase-A cycle saw the grab
     juce::ComboBox candidatePicker;
     juce::ComboBox maskPicker;
