@@ -946,13 +946,27 @@ public:
         if (qualified.size() < 4)
         { std::cout << "ASSIGNTEST: too few qualified params" << std::endl; quitNow(); return; }
 
+        // A discrete param whose displays are LABELS, not numbers: the knee
+        // class. Found by behaviour (getText both ends, neither parses), never
+        // by name.
+        kneeTestIdx = -1;
+        for (int i = 0; i < params.size(); ++i)
+        {
+            auto* pp = params[i];
+            if (! pp->isDiscrete() || ! pp->isAutomatable()) continue;
+            double v = 0.0;
+            if (! echojay::parseLeadingFloat (pp->getText (0.0f, 64), v)
+                 && ! echojay::parseLeadingFloat (pp->getText (1.0f, 64), v))
+            { kneeTestIdx = i; break; }
+        }
+
         // Two ignore subjects: one whose name matches no dial-set token
         // (eligible for bulk) and one whose name does (must be withheld).
         int ignEligible = -1, ignWithheld = -1;
         for (int i = 0; i < params.size(); ++i)
         {
             const auto nm = params[i]->getName (48);
-            if (qualified.contains (i)) continue;
+            if (qualified.contains (i) || i == kneeTestIdx) continue;   // the knee switch gets captured mid-test
             if (ignEligible < 0 && ! DialSets::nameSuggestsDialSet (nm)) ignEligible = i;
             if (ignWithheld < 0 &&   DialSets::nameSuggestsDialSet (nm)) ignWithheld = i;
             if (ignEligible >= 0 && ignWithheld >= 0) break;
@@ -967,6 +981,10 @@ public:
            << "{\"index\": " << qualified[0] << ", \"kind\": \"threshold_db\", \"confidence\": \"high\", \"reason\": \"synthetic proposal (selftest)\"},"
            << "{\"index\": " << qualified[1] << ", \"kind\": \"ratio\", \"confidence\": \"med\", \"reason\": \"synthetic WRONG proposal (selftest)\"},"
            << "{\"index\": " << qualified[3] << ", \"kind\": \"attack_ms\", \"confidence\": \"high\", \"reason\": \"synthetic corroborated proposal (selftest)\"},"
+           << (kneeTestIdx >= 0
+                 ? juce::String ("{\"index\": ") + juce::String (kneeTestIdx)
+                     + ", \"kind\": \"knee_db\", \"confidence\": \"med\", \"reason\": \"synthetic knee at a discrete switch (selftest)\"},"
+                 : juce::String())
            << "{\"index\": " << ignEligible << ", \"kind\": \"ignore\", \"confidence\": \"high\", \"reason\": \"synthetic utility (selftest)\"},"
            << "{\"index\": 0, \"kind\": \"mode\", \"confidence\": \"med\", \"reason\": \"synthetic switch A (selftest)\"},"
            << "{\"index\": 1, \"kind\": \"mode\", \"confidence\": \"med\", \"reason\": \"synthetic switch B (selftest)\"},"
@@ -1101,6 +1119,50 @@ public:
         }
         case 2:
         {
+            // THE KNEE CLASS: a continuous semantic pointed at a discrete
+            // labelled control. W captures it, the sweep refuses with
+            // nonNumeric, the strip offers M, and M resolves it as its own
+            // outcome -- not absent, not deferred.
+            if (kneeTestIdx < 0)
+            {
+                std::cout << "  (no label-displaying discrete param on this plugin; knee class untested)"
+                          << std::endl;
+                ++stage; assignTestStep(); return;
+            }
+            const int k = findRow ("knee_db");
+            assignPanel.selectRow (k);
+            auto* in = host.getInstance();
+            in->getParameters()[kneeTestIdx]->setValueNotifyingHost (0.0f);
+            juce::Thread::sleep (120);
+            assignPanel.actionWiggle();
+            juce::Timer::callAfterDelay (300, [this]
+            {
+                auto* i2 = host.getInstance();
+                if (i2 != nullptr) i2->getParameters()[kneeTestIdx]->setValueNotifyingHost (1.0f);
+            });
+            ++stage;
+            juce::Timer::callAfterDelay (1200, [this] { assignTestStep(); });
+            return;
+        }
+        case 3:
+        {
+            const int k = findRow ("knee_db");
+            const auto& kr = assignPanel.rows.getReference (k);
+            ok (k >= 0 && kr.state == AssignRow::State::swept && kr.sweep.nonNumeric,
+                "knee: sweep refused with nonNumeric, row held open (not skipped)");
+            ok (assignPanel.keyValid ("modematerial"),
+                "legend: M lit at the moment the refusal appeared");
+            ok (! assignPanel.keyValid ("space"),
+                "legend: SPACE not offered for a labelled switch");
+            std::cout << "  QUESTION(knee): "
+                      << assignPanel.currentQuestionText().replace ("\n", " / ") << std::endl;
+
+            assignPanel.dispatchAction ("modematerial");
+            ok (assignPanel.rows.getReference (k).state == AssignRow::State::modeMaterial,
+                "M resolved the row as mode_material with the finding recorded");
+            ok (ledger.runArtifact ("tier2-candidates", "jsonl").existsAsFile(),
+                "Tier 2 breadcrumb written (labels for M6 named controls)");
+
             const int r = findRow ("ratio");
             const auto& rr = assignPanel.rows.getReference (r);
             ok (r >= 0 && rr.state == AssignRow::State::confirmed && rr.proposalMismatch
@@ -1141,6 +1203,9 @@ public:
             auto rbv = v.getProperty ("evidence", juce::var()).getProperty ("readback", juce::var());
             ok (rbv.getDynamicObject() != nullptr && rbv.getDynamicObject()->getProperties().size() > 0,
                 "write-back verify recorded in evidence.readback");
+            if (kneeTestIdx >= 0)
+                ok (juce::JSON::toString (v.getProperty ("skips", juce::var())).contains ("mode_material"),
+                    "map carries knee_db as mode_material, not as absent");
 
             std::cout << "ASSIGNTEST: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
             std::cout.flush();
@@ -2496,6 +2561,17 @@ private:
                 out.flush();
             }
         };
+        assignPanel.hooks.writeTier2Crumb = [this] (const juce::var& v)
+        {
+            auto f = ledger.runArtifact ("tier2-candidates", "jsonl");
+            juce::FileOutputStream out (f);
+            if (out.openedOk())
+            {
+                out.setPosition (f.getSize());
+                out.writeText (juce::JSON::toString (v, true) + "\n", false, false, nullptr);
+                out.flush();
+            }
+        };
         assignPanel.hooks.writeMisclassified = [this] (const juce::var& v)
         {
             auto f = ledger.runArtifact ("misclassified", "jsonl");
@@ -2618,6 +2694,13 @@ private:
                     rb.match = parsed && std::abs ((float) vLanded - vAsk) <= tol;
                     p.evidence.readback.add (rb);
                 }
+            }
+            else if (r.state == AssignRow::State::modeMaterial && r.semantic.isNotEmpty())
+            {
+                // The outcome the evidence demanded: the control exists, is
+                // discrete, and is recorded as such -- not absent, not
+                // deferred. The Tier 2 breadcrumb carries its labels.
+                p.skips.add (SkipRecord (r.semantic, SkipOutcome::modeMaterial, r.skipReason));
             }
             else if (r.isSkipped() && r.semantic.isNotEmpty())
             {
@@ -3355,6 +3438,7 @@ private:
     CaptureEngine::NoiseMask   mask;
     int stage = 0, failures = 0;
     int suppressIdx = -1;         // promotion-suppression self-test target
+    int kneeTestIdx = -1;         // assign self-test: the labelled discrete switch
     bool grabSeenA = false;       // any phase-A cycle saw the grab
     juce::ComboBox candidatePicker;
     juce::ComboBox maskPicker;

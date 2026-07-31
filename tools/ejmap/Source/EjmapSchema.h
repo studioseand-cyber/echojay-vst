@@ -53,7 +53,12 @@ enum class Trust { ruleBuilt = 0, llmClassified = 1, setread = 2, humanVerified 
 
 enum class AnchorMethod { gettext, setread, humanTyped };
 
-enum class SkipOutcome { notPresent, notAutomatable, deferred };
+/** modeMaterial is a RESOLUTION, not an absence: the sweep proved the control
+    exists and is discrete, so recording notPresent would be a falsehood and
+    deferred would lose the finding. The map carries it as its own outcome and
+    the Tier 2 breadcrumb carries the labels.
+*/
+enum class SkipOutcome { notPresent, notAutomatable, deferred, modeMaterial };
 
 enum class ProbeVerdict { confirms, contradicts, inconclusive };
 
@@ -98,7 +103,7 @@ inline juce::String toString (AnchorMethod m)
 
 inline juce::String toString (SkipOutcome o)
 {
-    switch (o) { case SkipOutcome::notPresent: return "not_present"; case SkipOutcome::notAutomatable: return "not_automatable"; case SkipOutcome::deferred: return "deferred"; }
+    switch (o) { case SkipOutcome::notPresent: return "not_present"; case SkipOutcome::notAutomatable: return "not_automatable"; case SkipOutcome::deferred: return "deferred"; case SkipOutcome::modeMaterial: return "mode_material"; }
     return "deferred";
 }
 

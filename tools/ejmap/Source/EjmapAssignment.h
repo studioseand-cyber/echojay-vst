@@ -246,7 +246,8 @@ struct EvidenceIndex
 struct AssignRow
 {
     enum class State { proposed, armed, captured, swept, confirmed,
-                       skipNotPresent, skipNotAutomatable, skipDeferred };
+                       skipNotPresent, skipNotAutomatable, skipDeferred,
+                       modeMaterial };
 
     juce::String semantic;                 // dial-set key, or "ignore" rows use kind
     juce::String kind;                     // classifier kind ("ignore" included)
@@ -271,7 +272,15 @@ struct AssignRow
         return state == State::skipNotPresent || state == State::skipNotAutomatable
             || state == State::skipDeferred;
     }
-    bool isResolved() const { return state == State::confirmed || isSkipped(); }
+
+    /** modeMaterial RESOLVES the row: the control exists, is discrete, and is
+        recorded with its labels for Tier 2. Not a skip -- notPresent would be
+        a falsehood about a control the sweep just proved exists -- and not
+        confirmed, because a knee semantic cannot dial a three-position
+        switch through an anchor table.
+    */
+    bool isResolved() const
+    { return state == State::confirmed || state == State::modeMaterial || isSkipped(); }
 
     juce::String stateString() const
     {
@@ -285,6 +294,7 @@ struct AssignRow
             case State::skipNotPresent:     return "not_present";
             case State::skipNotAutomatable: return "not_automatable";
             case State::skipDeferred:       return "deferred";
+            case State::modeMaterial:       return "mode_material";
         }
         return "proposed";
     }

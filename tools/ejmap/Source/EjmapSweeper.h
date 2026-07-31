@@ -67,6 +67,14 @@ struct SweepOutcome
     juce::String method;              // "gettext" | "setread"
     bool flat            = false;     // flat through BOTH paths: text liar
     bool setreadRefused  = false;     // readback-verify failed; not mutated further
+
+    /** The sweep ran and PROVED the control exists, but its displays are
+        labels, not numbers: mode/position material. A structured flag, not a
+        substring of reason, because the assignment loop resolves on it -- a
+        knee semantic pointed at a three-position switch is a finding, and a
+        finding must not require the human to know why the refusal happened.
+    */
+    bool nonNumeric      = false;
     bool anchorsReversed = false;     // values run descending across the table
     int  rejectedPoints  = 0;         // parsed points outside the dominant run
     int  unparsedPoints  = 0;         // texts with no leading float
@@ -178,9 +186,10 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
 
     if (raw.size() < 2)
     {
+        out.nonNumeric = true;
         out.reason = "only " + juce::String (raw.size()) + " of "
                    + juce::String (out.points.size()) + " points parse numerically: "
-                     "mode/position material for M4, not an anchor curve.";
+                     "mode/position material, not an anchor curve.";
         out.durationMs = (int) (juce::Time::getMillisecondCounter() - t0);
         return out;
     }

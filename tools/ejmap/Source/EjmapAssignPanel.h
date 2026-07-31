@@ -52,6 +52,7 @@ public:
                   { "noparam",    "A",     "no param",    {} },
                   { "defer",      "D",     "later",       {} },
                   { "typed",      "T",     "type anchors",{} },
+                  { "modematerial","M",    "mode/pos",    {} },
                   { "bulk",       "I",     "bulk ignores",{} },
                   { "evidence",   "?",     "evidence",    {} },
                   { "pick",       "1-9",   "pick move",   {} },
@@ -136,6 +137,7 @@ public:
         std::function<void (const juce::String&)>      status;         // one-line readout
         std::function<void (const juce::var&)>         writeRow;       // captures jsonl writer
         std::function<void (const juce::var&)>         writeMisclassified;
+        std::function<void (const juce::var&)>         writeTier2Crumb;
         std::function<void (juce::Array<AssignRow>&, const juce::String& category,
                             const juce::String& sessionMode)> submit;
         std::function<void()>                          exitPanel;
@@ -292,12 +294,17 @@ public:
 
         if (id == "space")
             return ! deepMode && ! r.isResolved() && r.semantic.isNotEmpty()
+                && r.semantic != "mode"                    // mode never confirms via anchors
+                && ! r.sweep.nonNumeric                    // a labelled switch can never confirm
                 && r.proposedIndex >= 0
                 && evidence.corroborationFor (r.proposedIndex, r.proposedName).isNotEmpty();
         if (id == "wiggle")      return r.kind != "ignore";
         if (id == "notpresent" || id == "noparam" || id == "defer")
             return r.state != AssignRow::State::confirmed;
         if (id == "typed")       return r.resolvedIndex >= 0 || r.proposedIndex >= 0;
+        if (id == "modematerial")
+            return ! r.isResolved() && ! r.sweep.points.isEmpty()
+                && (r.sweep.nonNumeric || r.semantic == "mode");
         if (id == "bulk")
         {
             for (const auto& ir : ignoreRows) if (! ir.isResolved()) return true;
@@ -324,6 +331,7 @@ public:
         else if (id == "defer")      shift ? beginCustomReason (AssignRow::State::skipDeferred)
                                            : actionSkip (AssignRow::State::skipDeferred);
         else if (id == "typed")      actionTyped();
+        else if (id == "modematerial") actionModeMaterial();
         else if (id == "bulk")       actionBulkIgnores();
         else if (id == "evidence")   actionEvidence();
         else if (id == "skipplugin") actionSkipPlugin();
@@ -363,6 +371,18 @@ public:
         r.resolvedIndex = r.proposedIndex;
         r.corroboration = cor;
         r.mode = "fast";
+
+        // A mode semantic never confirms through the anchor path: the map's
+        // mode entries carry labels, and an anchored mode entry is a broken
+        // map. The M outcome is its resolution.
+        if (r.semantic == "mode")
+        {
+            r.state = AssignRow::State::swept;
+            say ("Mode switch swept: M records it as mode/position material (anchors "
+                 "cannot express a mode entry).");
+            persistSession(); list.updateContent(); updateQuestion();
+            return;
+        }
 
         if (sw.ok)
         {
@@ -470,6 +490,65 @@ public:
         persistSession();
         say ((r.semantic.isNotEmpty() ? r.semantic : r.proposedName) + " -> "
                + r.stateString() + " (" + r.skipReason + ")");
+        advance();
+        list.updateContent();
+        updateProgress();
+    }
+
+    /** M: the outcome the evidence demands when a sweep proves the control
+        exists but is discrete. Records the captured index, the sweep result
+        and the labels; resolves the row as its own thing; and drops the
+        Tier 2 breadcrumb where M6's named controls will pick it up -- a
+        three-position knee switch belongs there, not in an anchor table and
+        not in a skip that claims it does not exist.
+    */
+    void actionModeMaterial()
+    {
+        if (rowCount() == 0) return;
+        auto& r = rowAt (selected);
+        if (! keyValid ("modematerial"))
+        { say ("M needs a swept row whose displays are labels (or a mode row with a sweep)."); return; }
+
+        const int idx = r.resolvedIndex >= 0 ? r.resolvedIndex : r.proposedIndex;
+        juce::StringArray labels;
+        for (const auto& pt : r.sweep.points)
+            labels.addIfNotAlreadyThere (pt.t);
+
+        r.state = AssignRow::State::modeMaterial;
+        r.resolvedIndex = idx;
+        r.trust = "human-verified";
+        r.mode = deepMode ? "deep" : "fast";
+        r.resolvedAt = juce::Time::getCurrentTime().toISO8601 (true);
+        r.skipReason = "exists as a " + juce::String (labels.size()) + "-position control ["
+                     + juce::String (idx) + "] "
+                     + (hooks.paramName ? hooks.paramName (idx) : juce::String())
+                     + " (" + labels.joinIntoString (" / ").substring (0, 120)
+                     + "); Tier 2 breadcrumb written";
+        recordResolution (r, "mode_material");
+
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("at", r.resolvedAt);
+        o->setProperty ("fp", fp);
+        o->setProperty ("plugin_id", pluginId);
+        o->setProperty ("semantic_hint", r.semantic);
+        o->setProperty ("index", idx);
+        o->setProperty ("param_name", hooks.paramName ? hooks.paramName (idx) : juce::String());
+        o->setProperty ("positions", labels.size());
+        juce::Array<juce::var> lv;
+        juce::Array<juce::var> pv;
+        for (const auto& pt : r.sweep.points)
+        { auto* pp = new juce::DynamicObject(); pp->setProperty ("n", pt.n);
+          pp->setProperty ("t", pt.t); pv.add (juce::var (pp)); }
+        for (const auto& l : labels) lv.add (l);
+        o->setProperty ("labels", juce::var (lv));
+        o->setProperty ("points", juce::var (pv));
+        o->setProperty ("sweep_method", r.sweep.method);
+        o->setProperty ("reason", r.sweep.reason);
+        if (hooks.writeTier2Crumb) hooks.writeTier2Crumb (juce::var (o));
+
+        supersedeSiblings (r);
+        persistSession();
+        say ("MODE/POSITION: " + displayLabel (r) + " -> " + r.skipReason);
         advance();
         list.updateContent();
         updateProgress();
@@ -656,6 +735,7 @@ public:
         if (c == 'a' || c == 'A')                         { dispatchAction ("noparam", shift); return true; }
         if (c == 'd' || c == 'D')                         { dispatchAction ("defer", shift); return true; }
         if (c == 't' || c == 'T')                         { dispatchAction ("typed"); return true; }
+        if (c == 'm' || c == 'M')                         { dispatchAction ("modematerial"); return true; }
         if (c == 'i' || c == 'I')                         { dispatchAction ("bulk"); return true; }
         if (c == '?')                                     { dispatchAction ("evidence"); return true; }
         if (c == 's' || c == 'S')                         { dispatchAction ("skipplugin"); return true; }
@@ -714,7 +794,11 @@ public:
         const auto label = displayLabel (r);
         juce::String q;
 
-        if (r.isResolved())
+        if (r.state == AssignRow::State::modeMaterial)
+        {
+            q << label << ": recorded as mode/position material. " << r.skipReason;
+        }
+        else if (r.isResolved())
         {
             q << label << ": " << r.stateString()
               << (r.skipReason.isNotEmpty() ? " (" + r.skipReason + ")" : juce::String())
@@ -732,6 +816,22 @@ public:
               << ": " << r.proposalReason << "\n"
               << "Nothing to confirm HERE: if it belongs to a semantic, W on that row. "
               << "D defers this note (one key).";
+        }
+        else if (! r.sweep.points.isEmpty() && r.sweep.nonNumeric)
+        {
+            juce::StringArray labels;
+            for (const auto& pt : r.sweep.points) labels.addIfNotAlreadyThere (pt.t);
+            const int idx = r.resolvedIndex >= 0 ? r.resolvedIndex : r.proposedIndex;
+            q << "The sweep PROVED [" << idx << "] exists with " << labels.size()
+              << " positions (" << labels.joinIntoString (" / ").substring (0, 60)
+              << ") - it is not a " << label << " value.\n"
+              << "M record as mode/position material (Tier 2 breadcrumb) - D later. "
+              << "N would be a falsehood: the control exists.";
+        }
+        else if (r.semantic == "mode" && ! r.sweep.points.isEmpty())
+        {
+            q << "Mode switch captured and swept. Map-level mode entries arrive with Tier 2;\n"
+              << "M records it as mode/position material with its labels - D later";
         }
         else if (r.proposedIndex >= 0)
         {
@@ -837,6 +937,15 @@ private:
             return;
         }
 
+        if (sw.ok && r.semantic == "mode")
+        {
+            // Same guard as SPACE: mode never confirms via anchors.
+            r.state = AssignRow::State::swept;
+            say ("Mode switch captured: M records it as mode/position material.");
+            persistSession(); list.updateContent(); updateQuestion();
+            return;
+        }
+
         if (sw.ok)
         {
             r.state = AssignRow::State::confirmed;
@@ -855,7 +964,9 @@ private:
         {
             r.state = AssignRow::State::swept;
             say (r.semantic + " captured but sweep not confirmable: " + sw.reason
-                   + (sw.flat ? "  T for typed anchors." : ""));
+                   + (sw.flat ? "  T for typed anchors." : "")
+                   + (sw.nonNumeric ? "  M records it as mode/position material." : ""));
+            updateQuestion();     // the strip offers the key AT the refusal
         }
 
         // The capture is now on-disk evidence for later rows in this session.
