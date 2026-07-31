@@ -2,6 +2,7 @@
 #include "ChainHost.h"    // buildCurrentChainInjection reads the live rack
 #include "LinkShm.h"      // RackSidecar — targeted [CURRENT CHAIN] (Phase R)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
+#include "EqPresets.h"    // the EQ teaching block lists presets from the table
 
 // Defined later in this file (used by both /api/me parse sites)
 static void parseUsagePool(juce::DynamicObject* root, UserInfo& info);
@@ -1793,8 +1794,30 @@ juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
                  "available regardless of installed plugins; use in a chain by exact "
                  "name. Dial one by putting real-world values under "
                  "settings_structured.params using the ids listed; any param you omit "
-                 "is left as it is. The EchoJay EQ additionally takes its bands as "
-                 "settings_structured.eq_bands]:";
+                 "is left as it is. The EchoJay EQ additionally takes: "
+                 "eq_bands — an array of band objects {type: bell|lowshelf|highshelf|"
+                 "notch|highpass|lowpass, freq_hz OR note (\"G5\",\"C#3\", A4=440), "
+                 "gain_db, q, slope_db_oct (HP/LP), band (1-24 to target, omit to "
+                 "auto-place), channel: stereo|mid|side|left|right (default stereo), "
+                 "dynamic:{threshold_db,range_db,attack_ms,release_ms}, disable:true "
+                 "to clear a band}; "
+                 "eq_settings — {output_db, auto_gain, phase_mode: zero|linear, "
+                 "ms_mode} (same ids as params); "
+                 "eq_action — {type:\"tame_resonances\", sensitivity: low|medium|high, "
+                 "range_hz:[lo,hi], max_bands:1-8, dynamic:true|false} finds resonant "
+                 "peaks in the LIVE signal and places taming bands itself — use it "
+                 "when the user says tame the ringing/harshness/resonances without "
+                 "naming frequencies (audio must be playing); "
+                 "eq_preset — a named base loaded BEFORE eq_bands merge, one of: ";
+
+        // The preset menu comes from the same table the apply path resolves
+        // against, so this list cannot drift from what actually loads.
+        for (int pi = 0; pi < echojay::kNumEqPresets; ++pi)
+        {
+            const auto& p = echojay::kEqPresets[pi];
+            block << (pi > 0 ? "; " : "") << p.name << " (" << p.blurb << ")";
+        }
+        block << "]:";
 
         juce::String currentCategory;
         for (const auto& d : registry.all())
