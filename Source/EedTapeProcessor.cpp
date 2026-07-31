@@ -55,6 +55,31 @@ const echojay::ParamSchema& EedTapeProcessor::schema()
           "low-frequency lift at the head bump, whose frequency follows tape "
           "speed (about 50 Hz at 15 ips)", false, {} },
 
+        // ---- the depth pass ------------------------------------------------
+        // The machine SCALES what the other knobs already do rather than
+        // replacing them, so its description leads with what each one sounds
+        // like — that text is the whole interface the model dials it through.
+        { kMode, "", 0.0, (double) (echojay::kNumTapeMachines - 1),
+          (double) (int) echojay::TapeMachine::Studio,
+          "the machine: studio is the clean bright 15-30 ips reference (the "
+          "default - exactly the device as shipped), vintage is softer with "
+          "more compression, deeper wow and a darker top, cassette is narrow "
+          "at both ends with the most flutter and the most noise. Each scales "
+          "what speed, drive, wow, flutter and head bump already do",
+          false, { "studio", "vintage", "cassette" } },
+
+        { kHiss, "%",
+          (double) TapeEngine::kMinHiss, (double) TapeEngine::kMaxHiss, 0.0,
+          "tape noise, gated to signal presence so it breathes with the "
+          "material instead of humming through the silences; cassette mode is "
+          "the noisiest. 0 is off", false, {} },
+
+        { kCrosstalk, "%",
+          (double) TapeEngine::kMinCrosstalk, (double) TapeEngine::kMaxCrosstalk, 0.0,
+          "bleed between the channels at the heads - subtle stereo glue that "
+          "narrows the image slightly; the mono sum is untouched. 0 is off",
+          false, {} },
+
         { kMix, "%", 0.0, 100.0, 100.0,
           "dry/wet blend; the dry path is delay matched, so a partial mix does "
           "not comb filter", false, {} },
@@ -76,6 +101,13 @@ bool EedTapeProcessor::setParamValue (const juce::String& id, double value)
     if (id == kHeadBump) { engine_.setHeadBumpDb  ((float) value); return true; }
     if (id == kMix)      { engine_.setMixPercent  ((float) value); return true; }
     if (id == kOutputDb) { engine_.setOutputDb    ((float) value); return true; }
+    if (id == kHiss)     { engine_.setHiss        ((float) value); return true; }
+    if (id == kCrosstalk){ engine_.setCrosstalk   ((float) value); return true; }
+    if (id == kMode)
+    {
+        engine_.setMachine (echojay::tapeMachineFromIndex ((int) std::lround (value)));
+        return true;
+    }
     return false;
 }
 
@@ -89,6 +121,9 @@ double EedTapeProcessor::getParamValue (const juce::String& id) const
     if (id == kHeadBump) return (double) engine_.getHeadBumpDb();
     if (id == kMix)      return (double) engine_.getMixPercent();
     if (id == kOutputDb) return (double) engine_.getOutputDb();
+    if (id == kMode)     return (double) (int) engine_.getMachine();
+    if (id == kHiss)     return (double) engine_.getHiss();
+    if (id == kCrosstalk)return (double) engine_.getCrosstalk();
     return 0.0;
 }
 
@@ -149,11 +184,14 @@ namespace
         d.category        = "Harmonic";
         d.descriptiveName = "EchoJay tape machine (built in)";
         // ASCII ONLY in registry text - see the note in EedPhaseInvertProcessor.
-        d.summary         = "Tape saturation with a real transport: wow, flutter, head bump "
-                            "and speed-dependent HF loss. Reach for it to glue a mix, take "
-                            "the edge off something digital, or add movement to a static "
-                            "part. Reports about 3.4 ms of latency (the transport delay "
-                            "plus oversampling), which the host compensates.";
+        d.summary         = "Tape saturation with a real transport: wow, flutter, head bump, "
+                            "speed-dependent HF loss, three machines (studio, vintage, "
+                            "cassette), gated hiss and channel crosstalk. Reach for it to "
+                            "glue a mix, take the edge off something digital, or add "
+                            "movement to a static part; set `mode` first - it decides how "
+                            "the machine feels - then speed and drive. Reports about 3.4 ms "
+                            "of latency (the transport delay plus oversampling), which the "
+                            "host compensates.";
         d.identifier      = "echojay:builtin:tape";
         d.uid             = 0x456A5450;   // 'EjTP' - frozen once shipped
         d.aliases         = { "EchoJayTape", "EchoJay Tape Machine", "EchoJay Reel" };

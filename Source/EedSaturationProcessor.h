@@ -39,11 +39,15 @@ public:
 
     // Canonical param ids — used by the editor so a typo cannot silently
     // decouple a knob from the schema entry it is supposed to drive.
-    static constexpr const char* kDriveDb  = "drive_db";
-    static constexpr const char* kType     = "type";
-    static constexpr const char* kToneDb   = "tone_db";
-    static constexpr const char* kMix      = "mix";
-    static constexpr const char* kOutputDb = "output_db";
+    static constexpr const char* kDriveDb    = "drive_db";
+    static constexpr const char* kType       = "type";
+    static constexpr const char* kEmphasis   = "emphasis";
+    static constexpr const char* kBias       = "bias";
+    static constexpr const char* kHpfHz      = "hpf_hz";
+    static constexpr const char* kOversample = "oversample";
+    static constexpr const char* kToneDb     = "tone_db";
+    static constexpr const char* kMix        = "mix";
+    static constexpr const char* kOutputDb   = "output_db";
 
     echojay::harmonic::HarmonicCore& core() noexcept { return core_; }
 

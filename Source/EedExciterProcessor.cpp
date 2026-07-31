@@ -29,11 +29,23 @@ const echojay::ParamSchema& EedExciterProcessor::schema()
           "how far the high band is driven into the curve; 0 passes the signal "
           "through untouched", false, {} },
 
-        { kMode, "", 0.0, 1.0, 0.0,
-          "the curve used on the high band: tube is asymmetric and brings in a "
-          "2nd harmonic (air, presence), tape is symmetric and softer (sheen "
-          "without edge)",
-          false, { "tube", "tape" } },
+        // ---- expanded by the depth pass: odd and even characters -----------
+        // tube and tape keep their frozen indices; odd and even are appended,
+        // so a saved state from before this pass restores unchanged.
+        { kMode, "", 0.0, (double) (ExciterEngine::kNumModes - 1), 0.0,
+          "the character of the generated highs: tube is asymmetric air and "
+          "presence (2nd plus odd - the default), tape is a soft symmetric "
+          "sheen without edge, odd is the edgiest and most aggressive (3rd "
+          "only, a symmetric hard knee), even is the warmest (strongly "
+          "asymmetric, 2nd dominant)",
+          false, { "tube", "tape", "odd", "even" } },
+
+        { kFocus, "%",
+          (double) ExciterEngine::kMinFocus, (double) ExciterEngine::kMaxFocus, 0.0,
+          "how tightly the excitement is confined to the band above the split: "
+          "0 is the split as shipped (the default), higher trims the bleed "
+          "below the crossover so the lows stay surgically clean while the "
+          "highs are excited", false, {} },
 
         { kMix, "%", 0.0, 100.0, 100.0,
           "dry/wet blend; the dry path is delay matched, so a partial mix does "
@@ -50,6 +62,7 @@ bool EedExciterProcessor::setParamValue (const juce::String& id, double value)
 {
     if (id == kFreqHz)   { engine_.setFreqHz     ((float) value); return true; }
     if (id == kAmount)   { engine_.setAmount     ((float) value); return true; }
+    if (id == kFocus)    { engine_.setFocus      ((float) value); return true; }
     if (id == kMix)      { engine_.setMixPercent ((float) value); return true; }
     if (id == kOutputDb) { engine_.setOutputDb   ((float) value); return true; }
     if (id == kMode)     { engine_.setMode ((int) std::lround (value)); return true; }
@@ -60,6 +73,7 @@ double EedExciterProcessor::getParamValue (const juce::String& id) const
 {
     if (id == kFreqHz)   return (double) engine_.getFreqHz();
     if (id == kAmount)   return (double) engine_.getAmount();
+    if (id == kFocus)    return (double) engine_.getFocus();
     if (id == kMix)      return (double) engine_.getMixPercent();
     if (id == kOutputDb) return (double) engine_.getOutputDb();
     if (id == kMode)     return (double) engine_.getMode();
@@ -115,7 +129,10 @@ namespace
         d.summary         = "Adds harmonics to the highs only, leaving everything below the "
                             "split untouched. Reach for it when a source needs air, presence "
                             "or bite and an EQ boost would only make it harsh - it generates "
-                            "the top end rather than amplifying what is already there.";
+                            "the top end rather than amplifying what is already there. Four "
+                            "characters via `mode`: tube for presence, tape for sheen, odd "
+                            "for edge, even for warmth; raise `focus` to keep the lows "
+                            "surgically clean.";
         d.identifier      = "echojay:builtin:exciter";
         d.uid             = 0x456A4558;   // 'EjEX' - frozen once shipped
         d.aliases         = { "EchoJayExciter", "EchoJay Enhancer", "EchoJay Air" };

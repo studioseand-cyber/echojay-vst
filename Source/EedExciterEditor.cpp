@@ -10,7 +10,7 @@ using namespace echojay::device::metrics;
 
 namespace
 {
-    constexpr int kDefaultW = 460;
+    constexpr int kDefaultW = 520;
 
     constexpr int kVizH    = 96;
     constexpr int kMinVizH = 44;
@@ -54,6 +54,7 @@ EedExciterEditor::EedExciterEditor (EedExciterProcessor& p)
     // of being crammed into the last quarter of a linear sweep.
     setup (freqKnob_,   EedExciterProcessor::kFreqHz,   2500.0, 0, "",     "FREQ");
     setup (amountKnob_, EedExciterProcessor::kAmount,      0.0, 0, " %",   "AMOUNT");
+    setup (focusKnob_,  EedExciterProcessor::kFocus,       0.0, 0, " %",   "FOCUS");
     setup (mixKnob_,    EedExciterProcessor::kMix,         0.0, 0, " %",   "MIX");
     setup (outKnob_,    EedExciterProcessor::kOutputDb,    0.0, 1, " dB",  "OUT");
 
@@ -106,20 +107,24 @@ void EedExciterEditor::refreshTransfer()
     lastMode_   = mode;
     lastAmount_ = amount;
 
-    // The DSP's own arithmetic, line for line: drive the high band, shape it,
-    // scale by 1/g, and crossfade toward it by amount. At amount 0 that is
-    // exactly x, so the view draws the straight line the device really is.
+    // The DSP's own arithmetic, line for line: drive the high band, shape it
+    // through the mode's curve AND emphasis, scale by 1/g, and crossfade toward
+    // it by amount. At amount 0 that is exactly x, so the view draws the
+    // straight line the device really is.
     const auto  curve = echojay::ExciterEngine::curveForMode (mode);
+    const auto  emph  = echojay::ExciterEngine::emphasisForMode (mode);
     const float a     = juce::jlimit (0.0f, 1.0f, amount * 0.01f);
     const float g     = echojay::ExciterEngine::driveForAmount (a);
 
-    shaper_.setTransfer ([curve, a, g] (float x)
+    shaper_.setTransfer ([curve, emph, a, g] (float x)
     {
-        const float shaped = echojay::harmonic::shape (curve, x * g) / g;
+        const float shaped = echojay::harmonic::shapeEmphasis (curve, emph, x * g) / g;
         return x + a * (shaped - x);
     });
 
-    shaper_.setCurveName (juce::String (echojay::harmonic::curveName (curve)).toUpperCase());
+    // Named for the MODE, not the curve behind it: "ODD" says what it sounds
+    // like, where "DIODE" would say how it is built.
+    shaper_.setCurveName (juce::String (echojay::ExciterEngine::modeName (mode)).toUpperCase());
 }
 
 void EedExciterEditor::refreshBars()
@@ -189,16 +194,16 @@ void EedExciterEditor::layoutContent (juce::Rectangle<int> content)
 
     if (r.getHeight() > 6) r.removeFromTop (6);
 
-    const int wanted = kKnobW * 4 + kGap * 3;
+    const int wanted = kKnobW * 5 + kGap * 4;
     auto row = r.withSizeKeepingCentre (juce::jmin (wanted, r.getWidth()),
                                         juce::jmin (kKnobH, r.getHeight()));
 
-    const int colW = juce::jmax (1, (row.getWidth() - kGap * 3) / 4);
-    EchoJayDeviceKnob* dials[] = { &freqKnob_, &amountKnob_, &mixKnob_, &outKnob_ };
-    for (int i = 0; i < 4; ++i)
+    const int colW = juce::jmax (1, (row.getWidth() - kGap * 4) / 5);
+    EchoJayDeviceKnob* dials[] = { &freqKnob_, &amountKnob_, &focusKnob_, &mixKnob_, &outKnob_ };
+    for (int i = 0; i < 5; ++i)
     {
         dials[i]->setBounds (row.removeFromLeft (colW));
-        if (i < 3 && row.getWidth() > kGap) row.removeFromLeft (kGap);
+        if (i < 4 && row.getWidth() > kGap) row.removeFromLeft (kGap);
     }
 }
 
@@ -209,6 +214,7 @@ void EedExciterEditor::syncFromProcessor()
     struct { EchoJayDeviceKnob* knob; const char* id; double tol; } bound[] = {
         { &freqKnob_,   EedExciterProcessor::kFreqHz,   0.5    },   // Hz: 1e-4 is noise
         { &amountKnob_, EedExciterProcessor::kAmount,   1.0e-4 },
+        { &focusKnob_,  EedExciterProcessor::kFocus,    1.0e-4 },
         { &mixKnob_,    EedExciterProcessor::kMix,      1.0e-4 },
         { &outKnob_,    EedExciterProcessor::kOutputDb, 1.0e-4 },
     };

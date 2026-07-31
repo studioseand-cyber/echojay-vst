@@ -22,9 +22,12 @@ namespace
     // dynamics faces use for their transfer curve.
     constexpr int kMinVizH = 44;
 
-    constexpr int kDefaultH = kTopH + 6 + kVizH + 6 + kRowH + 6 + kKnobH + 2 * kPad;
+    constexpr int kDefaultH = kTopH + 6 + kVizH + 6 + kRowH + 6
+                            + kKnobH + 8 + kKnobH + 2 * kPad;
 
-    constexpr int kGap = 14;
+    constexpr int kGap    = 14;
+    constexpr int kRowGap = 8;
+    constexpr int kCols   = 3;
 }
 
 EedSaturationEditor::EedSaturationEditor (EedSaturationProcessor& p)
@@ -53,28 +56,43 @@ EedSaturationEditor::EedSaturationEditor (EedSaturationProcessor& p)
         addAndMakeVisible (k);
     };
 
-    setup (driveKnob_, EedSaturationProcessor::kDriveDb,  0.0, 1, " dB", "DRIVE");
-    setup (toneKnob_,  EedSaturationProcessor::kToneDb,   0.0, 1, " dB", "TONE");
-    setup (mixKnob_,   EedSaturationProcessor::kMix,      0.0, 0, " %",  "MIX");
-    setup (outKnob_,   EedSaturationProcessor::kOutputDb, 0.0, 1, " dB", "OUT");
-
-    // The selector's items ARE the schema's choices, in the schema's order, so
-    // the list a user sees and the list the model is taught cannot drift apart.
-    styleCombo (typeBox_);
-    if (const auto* spec = EedSaturationProcessor::schema().find (EedSaturationProcessor::kType))
+    // HPF reads in Hz with no decimals, and its zero means "off".
+    hpfKnob_.formatValue = [] (double hz)
     {
-        for (std::size_t i = 0; i < spec->choices.size(); ++i)
-            typeBox_.addItem (juce::String (spec->choices[i]).toUpperCase(), (int) i + 1);
-
-        typeBox_.setSelectedId ((int) proc_.getParamValue (EedSaturationProcessor::kType) + 1,
-                                juce::dontSendNotification);
-    }
-    typeBox_.onChange = [this]
-    {
-        if (suppressCallbacks_) return;
-        proc_.setParamValue (EedSaturationProcessor::kType, typeBox_.getSelectedId() - 1);
+        return hz <= 0.5 ? juce::String ("OFF") : juce::String (hz, 0) + " Hz";
     };
-    addAndMakeVisible (typeBox_);
+
+    setup (driveKnob_, EedSaturationProcessor::kDriveDb,  0.0,   1, " dB", "DRIVE");
+    setup (biasKnob_,  EedSaturationProcessor::kBias,     0.0,   0, " %",  "BIAS");
+    setup (hpfKnob_,   EedSaturationProcessor::kHpfHz,  120.0,   0, "",    "HPF");
+    setup (toneKnob_,  EedSaturationProcessor::kToneDb,   0.0,   1, " dB", "TONE");
+    setup (mixKnob_,   EedSaturationProcessor::kMix,      0.0,   0, " %",  "MIX");
+    setup (outKnob_,   EedSaturationProcessor::kOutputDb, 0.0,   1, " dB", "OUT");
+
+    // Each selector's items ARE the schema's choices, in the schema's order, so
+    // the list a user sees and the list the model is taught cannot drift apart.
+    auto setupCombo = [this] (juce::ComboBox& box, const char* id)
+    {
+        styleCombo (box);
+        if (const auto* spec = EedSaturationProcessor::schema().find (id))
+        {
+            for (std::size_t i = 0; i < spec->choices.size(); ++i)
+                box.addItem (juce::String (spec->choices[i]).toUpperCase(), (int) i + 1);
+
+            box.setSelectedId ((int) proc_.getParamValue (id) + 1,
+                               juce::dontSendNotification);
+        }
+        box.onChange = [this, id, &box]
+        {
+            if (suppressCallbacks_) return;
+            proc_.setParamValue (id, box.getSelectedId() - 1);
+        };
+        addAndMakeVisible (box);
+    };
+
+    setupCombo (typeBox_,     EedSaturationProcessor::kType);
+    setupCombo (emphasisBox_, EedSaturationProcessor::kEmphasis);
+    setupCombo (osBox_,       EedSaturationProcessor::kOversample);
 
     // ---- the signature visualisation --------------------------------------
     shaper_.setCaption ("CURVE");
@@ -98,27 +116,38 @@ EedSaturationEditor::EedSaturationEditor (EedSaturationProcessor& p)
 void EedSaturationEditor::refreshTransfer()
 {
     const auto  curve = proc_.core().getCurve();
+    const auto  emph  = proc_.core().getEmphasis();
     const float drive = proc_.core().getDriveDb();
+    const float bias  = proc_.core().getBias();
 
-    if (haveTransfer_ && curve == lastCurve_ && std::abs (drive - lastDriveDb_) < 0.01f)
+    if (haveTransfer_ && curve == lastCurve_ && emph == lastEmphasis_
+        && std::abs (drive - lastDriveDb_) < 0.01f
+        && std::abs (bias - lastBias_) < 0.01f)
         return;
 
     lastCurve_    = curve;
+    lastEmphasis_ = emph;
     lastDriveDb_  = drive;
+    lastBias_     = bias;
     haveTransfer_ = true;
 
     // The drawn curve is the DSP's own arithmetic, not a lookalike: the same
-    // shape() the audio thread calls, with the same drive gain and the same
-    // compensation. A change to the shapers redraws this with no edit here.
+    // shapeEmphasisBiased() the audio thread calls, with the same drive gain,
+    // the same bias offset and the same compensation. A change to the shapers
+    // redraws this with no edit here.
     const float g = std::pow (10.0f, drive * 0.05f);
-    const float k = echojay::harmonic::driveCompensation (curve, g);
+    const float k = echojay::harmonic::driveCompensation (curve, emph, g);
+    const float b = echojay::harmonic::HarmonicCore::biasOffset (bias);
 
-    shaper_.setTransfer ([curve, g, k] (float x)
+    shaper_.setTransfer ([curve, emph, g, k, b] (float x)
     {
-        return echojay::harmonic::shape (curve, x * g) * k;
+        return echojay::harmonic::shapeEmphasisBiased (curve, emph, x * g, b) * k;
     });
 
-    shaper_.setCurveName (juce::String (echojay::harmonic::curveName (curve)).toUpperCase());
+    juce::String name = juce::String (echojay::harmonic::curveName (curve)).toUpperCase();
+    if (emph != echojay::harmonic::Emphasis::Both)
+        name += " / " + juce::String (echojay::harmonic::emphasisName (emph)).toUpperCase();
+    shaper_.setCurveName (name);
 }
 
 void EedSaturationEditor::refreshBars()
@@ -168,7 +197,7 @@ void EedSaturationEditor::layoutContent (juce::Rectangle<int> content)
     // ordering is the shrink policy: a rack slot laid out short loses the
     // visualisation, never the dials — the viz is purely a readout of things the
     // controls already state, so it is the only part that can go.
-    const int controlsH = kRowH + 6 + kKnobH;
+    const int controlsH = kRowH + 6 + kKnobH * 2 + kRowGap;
     const int vizH      = juce::jmin (kVizH, juce::jmax (0, r.getHeight() - controlsH));
     const bool showViz  = vizH >= kMinVizH;
 
@@ -188,24 +217,50 @@ void EedSaturationEditor::layoutContent (juce::Rectangle<int> content)
         shaper_.setBounds (viz);
     }
 
-    auto typeRow = r.removeFromTop (juce::jmin (kRowH, r.getHeight()));
-    typeBox_.setBounds (typeRow.withSizeKeepingCentre (
-        juce::jmin (170, typeRow.getWidth()), typeRow.getHeight()));
+    // The selector row: type, emphasis, oversampling, side by side. Type gets
+    // the widest box (its labels are longest); OS the narrowest.
+    auto selRow = r.removeFromTop (juce::jmin (kRowH, r.getHeight()));
+    {
+        const int wanted = juce::jmin (selRow.getWidth(), 150 + 6 + 120 + 6 + 76);
+        auto row = selRow.withSizeKeepingCentre (wanted, selRow.getHeight());
+
+        const float unit = (float) (row.getWidth() - 12) / (150.0f + 120.0f + 76.0f);
+        typeBox_.setBounds (row.removeFromLeft ((int) (150.0f * unit)));
+        if (row.getWidth() > 6) row.removeFromLeft (6);
+        emphasisBox_.setBounds (row.removeFromLeft ((int) (120.0f * unit)));
+        if (row.getWidth() > 6) row.removeFromLeft (6);
+        osBox_.setBounds (row);
+    }
 
     if (r.getHeight() > 6) r.removeFromTop (6);
 
-    // Four dial columns, centred as a group, so the device stays balanced at any
-    // width the rack gives it.
-    const int wanted = kKnobW * 4 + kGap * 3;
-    auto row = r.withSizeKeepingCentre (juce::jmin (wanted, r.getWidth()),
-                                        juce::jmin (kKnobH, r.getHeight()));
+    // Two rows of three dials, centred as a group, so the device stays balanced
+    // at any width the rack gives it. Both rows share a height, so a squeezed
+    // slot shrinks them together rather than starving the second one.
+    EchoJayDeviceKnob* rows[2][kCols] = {
+        { &driveKnob_, &biasKnob_, &hpfKnob_ },
+        { &toneKnob_,  &mixKnob_,  &outKnob_ },
+    };
 
-    const int colW = juce::jmax (1, (row.getWidth() - kGap * 3) / 4);
-    EchoJayDeviceKnob* dials[] = { &driveKnob_, &toneKnob_, &mixKnob_, &outKnob_ };
-    for (int i = 0; i < 4; ++i)
+    const int rowH = juce::jmax (1, juce::jmin (kKnobH, (r.getHeight() - kRowGap) / 2));
+
+    for (int rowIndex = 0; rowIndex < 2; ++rowIndex)
     {
-        dials[i]->setBounds (row.removeFromLeft (colW));
-        if (i < 3 && row.getWidth() > kGap) row.removeFromLeft (kGap);
+        if (r.getHeight() <= 0) return;
+
+        auto band = r.removeFromTop (juce::jmin (rowH, r.getHeight()));
+        if (rowIndex == 0 && r.getHeight() > kRowGap) r.removeFromTop (kRowGap);
+
+        const int wanted = kKnobW * kCols + kGap * (kCols - 1);
+        auto row = band.withSizeKeepingCentre (juce::jmin (wanted, band.getWidth()),
+                                               band.getHeight());
+
+        const int colW = juce::jmax (1, (row.getWidth() - kGap * (kCols - 1)) / kCols);
+        for (int c = 0; c < kCols; ++c)
+        {
+            rows[rowIndex][c]->setBounds (row.removeFromLeft (colW));
+            if (c < kCols - 1 && row.getWidth() > kGap) row.removeFromLeft (kGap);
+        }
     }
 }
 
@@ -217,6 +272,8 @@ void EedSaturationEditor::syncFromProcessor()
 
     struct { EchoJayDeviceKnob* knob; const char* id; } bound[] = {
         { &driveKnob_, EedSaturationProcessor::kDriveDb  },
+        { &biasKnob_,  EedSaturationProcessor::kBias     },
+        { &hpfKnob_,   EedSaturationProcessor::kHpfHz    },
         { &toneKnob_,  EedSaturationProcessor::kToneDb   },
         { &mixKnob_,   EedSaturationProcessor::kMix      },
         { &outKnob_,   EedSaturationProcessor::kOutputDb },
@@ -229,9 +286,18 @@ void EedSaturationEditor::syncFromProcessor()
             b.knob->setRealValue (v);
     }
 
-    const int typeId = (int) proc_.getParamValue (EedSaturationProcessor::kType) + 1;
-    if (typeBox_.getSelectedId() != typeId)
-        typeBox_.setSelectedId (typeId, juce::dontSendNotification);
+    struct { juce::ComboBox* box; const char* id; } combos[] = {
+        { &typeBox_,     EedSaturationProcessor::kType       },
+        { &emphasisBox_, EedSaturationProcessor::kEmphasis   },
+        { &osBox_,       EedSaturationProcessor::kOversample },
+    };
+
+    for (auto& c : combos)
+    {
+        const int wanted = (int) proc_.getParamValue (c.id) + 1;
+        if (c.box->getSelectedId() != wanted)
+            c.box->setSelectedId (wanted, juce::dontSendNotification);
+    }
 }
 
 void EedSaturationEditor::timerCallback()

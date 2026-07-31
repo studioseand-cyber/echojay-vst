@@ -1,9 +1,10 @@
 /*
     EedTapeEditor.h  —  the editor for "EchoJay Tape".
 
-    Eight dials on two rows, plus a hint line that reports what SPEED is actually
-    doing to the head bump and the top end — a number in ips means nothing on its
-    own, and the two frequencies it moves are the whole reason the knob exists.
+    A machine selector and ten dials on two rows, plus a hint line that reports
+    what SPEED and the machine are actually doing to the head bump and the top
+    end — a number in ips means nothing on its own, and the two frequencies it
+    moves are the whole reason the knob exists.
 
     Every control is driven THROUGH the schema (setParamValue / getParamValue),
     so a knob turn and an AI move take the identical path.
@@ -41,9 +42,11 @@ private:
 
     EedTapeProcessor& proc_;
 
-    // Row 1: the machine.   Row 2: what it does to the signal.
-    echojay::device::EchoJayDeviceKnob speedKnob_, driveKnob_, biasKnob_, bumpKnob_;
-    echojay::device::EchoJayDeviceKnob wowKnob_, flutterKnob_, mixKnob_, outKnob_;
+    // The machine selector, then two rows of dials:
+    // Row 1: the machine's mechanics.   Row 2: what it does to the signal.
+    juce::ComboBox                     modeBox_;
+    echojay::device::EchoJayDeviceKnob speedKnob_, driveKnob_, biasKnob_, bumpKnob_, hissKnob_;
+    echojay::device::EchoJayDeviceKnob wowKnob_, flutterKnob_, crosstalkKnob_, mixKnob_, outKnob_;
 
     echojay::viz::WaveshaperView shaper_;
     echojay::viz::HarmonicBars   bars_;
@@ -53,8 +56,10 @@ private:
 
     bool  suppressCallbacks_ = false;
     float lastHintSpeed_ = -1.0f;
+    int   lastHintMode_  = -1;
     float lastDriveDb_   = -1.0f;
     float lastBias_      = -1000.0f;
+    int   lastMachine_   = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedTapeEditor)
 };

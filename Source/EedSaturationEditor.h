@@ -1,7 +1,7 @@
 /*
     EedSaturationEditor.h  —  the editor for "EchoJay Saturation".
 
-    Four dials, a selector, and the Harmonic cluster's signature pair
+    Six dials, three selectors, and the Harmonic cluster's signature pair
     (VISUALS_PLAN.md): the transfer curve the DSP is actually using, with the
     signal's level riding it, and the harmonics it is actually producing.
 
@@ -48,8 +48,9 @@ private:
 
     EedSaturationProcessor& proc_;
 
-    echojay::device::EchoJayDeviceKnob driveKnob_, toneKnob_, mixKnob_, outKnob_;
-    juce::ComboBox                     typeBox_;
+    echojay::device::EchoJayDeviceKnob driveKnob_, biasKnob_, hpfKnob_,
+                                       toneKnob_, mixKnob_, outKnob_;
+    juce::ComboBox                     typeBox_, emphasisBox_, osBox_;
 
     echojay::viz::WaveshaperView shaper_;
     echojay::viz::HarmonicBars   bars_;
@@ -58,9 +59,11 @@ private:
     // the editor's timer has no more business allocating than the audio thread.
     std::vector<float> frame_;
 
-    echojay::harmonic::Curve lastCurve_    = echojay::harmonic::Curve::Soft;
-    float                    lastDriveDb_  = -1.0f;
-    bool                     haveTransfer_ = false;
+    echojay::harmonic::Curve    lastCurve_    = echojay::harmonic::Curve::Soft;
+    echojay::harmonic::Emphasis lastEmphasis_ = echojay::harmonic::Emphasis::Both;
+    float                       lastDriveDb_  = -1.0f;
+    float                       lastBias_     = -1000.0f;
+    bool                        haveTransfer_ = false;
 
     bool suppressCallbacks_ = false;
 

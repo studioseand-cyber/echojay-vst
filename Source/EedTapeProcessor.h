@@ -44,6 +44,9 @@ public:
     static constexpr const char* kWow       = "wow";
     static constexpr const char* kFlutter   = "flutter";
     static constexpr const char* kHeadBump  = "head_bump_db";
+    static constexpr const char* kMode      = "mode";
+    static constexpr const char* kHiss      = "hiss";
+    static constexpr const char* kCrosstalk = "crosstalk";
     static constexpr const char* kMix       = "mix";
     static constexpr const char* kOutputDb  = "output_db";
 

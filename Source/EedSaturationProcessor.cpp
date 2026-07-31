@@ -10,9 +10,10 @@ using echojay::harmonic::HarmonicCore;
 
 EedSaturationProcessor::EedSaturationProcessor()
 {
-    // Fixed before any prepare, because the factor decides the reported latency
-    // and a host cannot be told that changed mid-stream.
-    core_.setOversampling (4);
+    // Everything, including the oversampling factor, comes from the schema's
+    // defaults — one source of truth for what a fresh device is. The factor is
+    // live-switchable (the core preallocates for 8x), and every change
+    // republishes its latency.
     resetParamsToDefaults();
 }
 
@@ -37,6 +38,37 @@ const echojay::ParamSchema& EedSaturationProcessor::schema()
           "aggressive, soft is a clean symmetric limit",
           false, { "tube", "tape", "diode", "soft" } },
 
+        // ---- the depth pass ------------------------------------------------
+        // The single biggest character control after `type`, so its description
+        // carries the even/odd vocabulary a request like "warmer" or "more
+        // aggressive" translates against.
+        { kEmphasis, "", 0.0, (double) (echojay::harmonic::kEmphasisCount - 1),
+          (double) (int) echojay::harmonic::Emphasis::Both,
+          "which harmonics dominate, on top of the selected curve: even is "
+          "asymmetric and warm/tubey (strong 2nd), odd is symmetric and "
+          "aggressive (3rd, console/transistor edge), both keeps the curve's "
+          "own natural blend (the default - exactly the device as shipped)",
+          false, { "even", "odd", "both" } },
+
+        { kBias, "%",
+          (double) HarmonicCore::kMinBias, (double) HarmonicCore::kMaxBias, 0.0,
+          "DC offset INTO the curve: either direction pushes the signal onto a "
+          "more asymmetric region and brings in even harmonics, without adding "
+          "DC to the output; 0 is off", false, {} },
+
+        { kHpfHz, "Hz",
+          (double) HarmonicCore::kMinHpfHz, (double) HarmonicCore::kMaxHpfHz, 0.0,
+          "keep the sub clean: what sits below this frequency bypasses the "
+          "shaper and rejoins after it, so bass stays tight while the mids and "
+          "highs get driven. 60-120 on a bass-heavy bus; 0 saturates the full "
+          "band", false, {} },
+
+        { kOversample, "", 0.0, 2.0, 1.0,
+          "anti-aliasing quality against CPU: 8x is the cleanest on bright "
+          "material, 2x the cheapest; 4x (the default) suits almost everything. "
+          "Latency follows the setting (30, 45 or 48 samples) and is reported "
+          "to the host", false, { "2x", "4x", "8x" } },
+
         { kToneDb, "dB",
           (double) HarmonicCore::kMinToneDb, (double) HarmonicCore::kMaxToneDb, 0.0,
           "tone tilt around 700 Hz: positive brightens, negative darkens, "
@@ -53,6 +85,20 @@ const echojay::ParamSchema& EedSaturationProcessor::schema()
     return s;
 }
 
+namespace
+{
+    // oversample choice index <-> the factor the core runs at.
+    int factorForOversampleIndex (int index) noexcept
+    {
+        return index <= 0 ? 2 : (index >= 2 ? 8 : 4);
+    }
+
+    int oversampleIndexForFactor (int factor) noexcept
+    {
+        return factor >= 8 ? 2 : (factor >= 4 ? 1 : 0);
+    }
+}
+
 bool EedSaturationProcessor::setParamValue (const juce::String& id, double value)
 {
     // `value` arrives ALREADY clamped to the schema range — never re-clamp here.
@@ -60,9 +106,26 @@ bool EedSaturationProcessor::setParamValue (const juce::String& id, double value
     if (id == kToneDb)   { core_.setToneDb     ((float) value); return true; }
     if (id == kMix)      { core_.setMixPercent ((float) value); return true; }
     if (id == kOutputDb) { core_.setOutputDb   ((float) value); return true; }
+    if (id == kBias)     { core_.setBias       ((float) value); return true; }
+    if (id == kHpfHz)    { core_.setHpfHz      ((float) value); return true; }
     if (id == kType)
     {
         core_.setCurve (echojay::harmonic::curveFromIndex ((int) std::lround (value)));
+        return true;
+    }
+    if (id == kEmphasis)
+    {
+        core_.setEmphasis (echojay::harmonic::emphasisFromIndex ((int) std::lround (value)));
+        return true;
+    }
+    if (id == kOversample)
+    {
+        core_.setOversampling (factorForOversampleIndex ((int) std::lround (value)));
+
+        // The number the DAW needs to keep this track in time with every other
+        // one. Pushed here as well as from prepareToPlay, because an AI move
+        // can change the quality while the graph is running.
+        setLatencySamples (core_.latencySamples());
         return true;
     }
     return false;
@@ -70,11 +133,15 @@ bool EedSaturationProcessor::setParamValue (const juce::String& id, double value
 
 double EedSaturationProcessor::getParamValue (const juce::String& id) const
 {
-    if (id == kDriveDb)  return (double) core_.getDriveDb();
-    if (id == kToneDb)   return (double) core_.getToneDb();
-    if (id == kMix)      return (double) core_.getMixPercent();
-    if (id == kOutputDb) return (double) core_.getOutputDb();
-    if (id == kType)     return (double) (int) core_.getCurve();
+    if (id == kDriveDb)    return (double) core_.getDriveDb();
+    if (id == kToneDb)     return (double) core_.getToneDb();
+    if (id == kMix)        return (double) core_.getMixPercent();
+    if (id == kOutputDb)   return (double) core_.getOutputDb();
+    if (id == kBias)       return (double) core_.getBias();
+    if (id == kHpfHz)      return (double) core_.getHpfHz();
+    if (id == kType)       return (double) (int) core_.getCurve();
+    if (id == kEmphasis)   return (double) (int) core_.getEmphasis();
+    if (id == kOversample) return (double) oversampleIndexForFactor (core_.getOversampling());
     return 0.0;
 }
 
@@ -87,9 +154,10 @@ void EedSaturationProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     core_.reset();
     spectrumTap_.clear();
 
-    // The anti-aliasing filters cost 45 samples. Publishing it is what lets the
-    // host slide the track back into place; a saturator that quietly runs 1 ms
-    // early is a phase problem nobody thinks to look for.
+    // The anti-aliasing filters cost 30/45/48 samples depending on the
+    // `oversample` setting. Publishing it is what lets the host slide the track
+    // back into place; a saturator that quietly runs 1 ms early is a phase
+    // problem nobody thinks to look for.
     setLatencySamples (core_.latencySamples());
 }
 
@@ -136,10 +204,13 @@ namespace
         // ASCII ONLY in registry text: juce::String's const char* constructor
         // reads its input as ASCII, so a UTF-8 em-dash here ships double-encoded
         // mojibake into the AI prompt. Plain hyphens.
-        d.summary         = "Oversampled waveshaping with four curves. Reach for it to add "
-                            "weight and harmonic density - to thicken a thin source, glue a "
-                            "bus, or push a part forward without raising its level. Tube for "
-                            "warmth, tape for glue, diode for grit, soft for a clean ceiling.";
+        d.summary         = "Oversampled waveshaping with four curves plus pro depth: an "
+                            "even/odd harmonic emphasis, a bias offset, a keep-the-sub-clean "
+                            "high-pass and selectable 2x/4x/8x oversampling. Reach for it to "
+                            "add weight and harmonic density - to thicken a thin source, glue "
+                            "a bus, or push a part forward without raising its level. Tube for "
+                            "warmth, tape for glue, diode for grit, soft for a clean ceiling; "
+                            "then `emphasis` even for warmer, odd for more aggressive.";
         d.identifier      = "echojay:builtin:saturation";
         d.uid             = 0x456A5341;   // 'EjSA' - frozen once shipped
         d.aliases         = { "EchoJaySaturation", "EchoJay Saturator",

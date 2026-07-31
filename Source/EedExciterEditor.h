@@ -1,7 +1,7 @@
 /*
     EedExciterEditor.h  —  the editor for "EchoJay Exciter".
 
-    Four dials, a mode selector, and the Harmonic cluster's signature pair
+    Five dials, a mode selector, and the Harmonic cluster's signature pair
     (VISUALS_PLAN.md) — but both of them read the HIGH BAND rather than the
     whole signal, because that is the only part this device touches.
 
@@ -49,7 +49,7 @@ private:
 
     EedExciterProcessor& proc_;
 
-    echojay::device::EchoJayDeviceKnob freqKnob_, amountKnob_, mixKnob_, outKnob_;
+    echojay::device::EchoJayDeviceKnob freqKnob_, amountKnob_, focusKnob_, mixKnob_, outKnob_;
     juce::ComboBox                     modeBox_;
 
     echojay::viz::WaveshaperView shaper_;

@@ -31,6 +31,7 @@ public:
     static constexpr const char* kFreqHz   = "freq_hz";
     static constexpr const char* kAmount   = "amount";
     static constexpr const char* kMode     = "mode";
+    static constexpr const char* kFocus    = "focus";
     static constexpr const char* kMix      = "mix";
     static constexpr const char* kOutputDb = "output_db";
 

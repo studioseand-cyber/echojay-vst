@@ -10,7 +10,7 @@ using namespace echojay::device::metrics;
 
 namespace
 {
-    constexpr int kDefaultW = 500;
+    constexpr int kDefaultW = 560;
 
     constexpr int kVizH    = 92;
     constexpr int kMinVizH = 44;
@@ -19,12 +19,12 @@ namespace
     // more height would make it look like the most important thing on the panel.
     constexpr int kMotionH = 22;
 
-    constexpr int kDefaultH = kTopH + 6 + kVizH + 4 + kMotionH + 6
+    constexpr int kDefaultH = kTopH + 6 + kVizH + 4 + kMotionH + 6 + kRowH + 6
                             + kKnobH + 8 + kKnobH + 2 * kPad;
 
     constexpr int kGap    = 12;
     constexpr int kRowGap = 8;
-    constexpr int kCols   = 4;
+    constexpr int kCols   = 5;
 }
 
 EedTapeEditor::EedTapeEditor (EedTapeProcessor& p)
@@ -51,14 +51,36 @@ EedTapeEditor::EedTapeEditor (EedTapeProcessor& p)
         addAndMakeVisible (k);
     };
 
-    setup (speedKnob_,   EedTapeProcessor::kSpeedIps, 12.0, 1, " ips", "SPEED");
-    setup (driveKnob_,   EedTapeProcessor::kDriveDb,   0.0, 1, " dB",  "DRIVE");
-    setup (biasKnob_,    EedTapeProcessor::kBias,      0.0, 0, " %",   "BIAS");
-    setup (bumpKnob_,    EedTapeProcessor::kHeadBump,  0.0, 1, " dB",  "BUMP");
-    setup (wowKnob_,     EedTapeProcessor::kWow,       0.0, 0, " %",   "WOW");
-    setup (flutterKnob_, EedTapeProcessor::kFlutter,   0.0, 0, " %",   "FLUTTER");
-    setup (mixKnob_,     EedTapeProcessor::kMix,       0.0, 0, " %",   "MIX");
-    setup (outKnob_,     EedTapeProcessor::kOutputDb,  0.0, 1, " dB",  "OUT");
+    setup (speedKnob_,     EedTapeProcessor::kSpeedIps, 12.0, 1, " ips", "SPEED");
+    setup (driveKnob_,     EedTapeProcessor::kDriveDb,   0.0, 1, " dB",  "DRIVE");
+    setup (biasKnob_,      EedTapeProcessor::kBias,      0.0, 0, " %",   "BIAS");
+    setup (bumpKnob_,      EedTapeProcessor::kHeadBump,  0.0, 1, " dB",  "BUMP");
+    setup (hissKnob_,      EedTapeProcessor::kHiss,      0.0, 0, " %",   "HISS");
+    setup (wowKnob_,       EedTapeProcessor::kWow,       0.0, 0, " %",   "WOW");
+    setup (flutterKnob_,   EedTapeProcessor::kFlutter,   0.0, 0, " %",   "FLUTTER");
+    setup (crosstalkKnob_, EedTapeProcessor::kCrosstalk, 0.0, 0, " %",   "XTALK");
+    setup (mixKnob_,       EedTapeProcessor::kMix,       0.0, 0, " %",   "MIX");
+    setup (outKnob_,       EedTapeProcessor::kOutputDb,  0.0, 1, " dB",  "OUT");
+
+    // The machine selector: its items ARE the schema's choices, in the schema's
+    // order, so the list a user sees and the list the model is taught cannot
+    // drift apart.
+    styleCombo (modeBox_);
+    if (const auto* spec = EedTapeProcessor::schema().find (EedTapeProcessor::kMode))
+    {
+        for (std::size_t i = 0; i < spec->choices.size(); ++i)
+            modeBox_.addItem (juce::String (spec->choices[i]).toUpperCase(), (int) i + 1);
+
+        modeBox_.setSelectedId ((int) proc_.getParamValue (EedTapeProcessor::kMode) + 1,
+                                juce::dontSendNotification);
+    }
+    modeBox_.onChange = [this]
+    {
+        if (suppressCallbacks_) return;
+        proc_.setParamValue (EedTapeProcessor::kMode, modeBox_.getSelectedId() - 1);
+        refreshSpeedHint();
+    };
+    addAndMakeVisible (modeBox_);
 
     refreshSpeedHint();
 
@@ -81,21 +103,26 @@ EedTapeEditor::EedTapeEditor (EedTapeProcessor& p)
 
 void EedTapeEditor::refreshTransfer()
 {
-    const float drive = proc_.engine().getDriveDb();
-    const float bias  = proc_.engine().getBias();
+    const float drive   = proc_.engine().getDriveDb();
+    const float bias    = proc_.engine().getBias();
+    const int   machine = (int) proc_.engine().getMachine();
 
-    if (std::abs (drive - lastDriveDb_) < 0.01f && std::abs (bias - lastBias_) < 0.01f)
+    if (std::abs (drive - lastDriveDb_) < 0.01f && std::abs (bias - lastBias_) < 0.01f
+        && machine == lastMachine_)
         return;
 
     lastDriveDb_ = drive;
     lastBias_    = bias;
+    lastMachine_ = machine;
 
     // The DSP's own arithmetic: the same shapeBiased() the audio thread calls,
-    // with the same drive gain, the same bias offset and the same compensation.
-    // The BIAS knob is the reason this device's curve is worth drawing at all —
-    // it is the one control here whose whole effect is a change in the curve's
-    // symmetry, and it is invisible in every other readout.
-    const float g = std::pow (10.0f, drive * 0.05f);
+    // with the same EFFECTIVE drive gain (the machine's extra dB included), the
+    // same bias offset and the same compensation. The BIAS knob is the reason
+    // this device's curve is worth drawing at all — it is the one control here
+    // whose whole effect is a change in the curve's symmetry, and it is
+    // invisible in every other readout.
+    const auto& spec = echojay::tapeMachineSpec (proc_.engine().getMachine());
+    const float g = std::pow (10.0f, (drive + spec.driveDb) * 0.05f);
     const float k = echojay::harmonic::driveCompensation (echojay::harmonic::Curve::Tape, g);
     const float b = echojay::TapeEngine::biasOffset (bias);
 
@@ -139,11 +166,14 @@ EedTapeEditor::~EedTapeEditor()
 
 void EedTapeEditor::refreshSpeedHint()
 {
-    const float ips = proc_.engine().getSpeedIps();
-    if (std::abs (ips - lastHintSpeed_) < 0.05f) return;
+    const float ips  = proc_.engine().getSpeedIps();
+    const int   mode = (int) proc_.engine().getMachine();
+    if (std::abs (ips - lastHintSpeed_) < 0.05f && mode == lastHintMode_) return;
     lastHintSpeed_ = ips;
+    lastHintMode_  = mode;
 
-    // What the speed dial is really doing, in the units the effect is heard in.
+    // What the speed dial and the machine are really doing, in the units the
+    // effect is heard in (hfLossHz already folds the machine's darkness in).
     setHeaderHint ("bump " + juce::String (proc_.engine().headBumpHz(), 0) + " Hz  /  "
                    "top " + juce::String (proc_.engine().hfLossHz() / 1000.0f, 1) + " kHz");
 }
@@ -153,8 +183,8 @@ void EedTapeEditor::layoutContent (juce::Rectangle<int> content)
     if (content.isEmpty()) return;
 
     EchoJayDeviceKnob* rows[2][kCols] = {
-        { &speedKnob_, &driveKnob_,   &biasKnob_, &bumpKnob_ },
-        { &wowKnob_,   &flutterKnob_, &mixKnob_,  &outKnob_  },
+        { &speedKnob_, &driveKnob_,   &biasKnob_,      &bumpKnob_, &hissKnob_ },
+        { &wowKnob_,   &flutterKnob_, &crosstalkKnob_, &mixKnob_,  &outKnob_  },
     };
 
     auto r = content;
@@ -163,7 +193,7 @@ void EedTapeEditor::layoutContent (juce::Rectangle<int> content)
     // goes before the curve and the bars: it is one line tall, and it is the
     // only readout of WOW and FLUTTER, whose effect is inaudible on a lot of
     // material. The curve and the bars restate things the dials already say.
-    const int controlsH = kKnobH * 2 + kRowGap;
+    const int controlsH = kRowH + 6 + kKnobH * 2 + kRowGap;
     int spare = juce::jmax (0, r.getHeight() - controlsH);
 
     const int vizH     = juce::jmin (kVizH, juce::jmax (0, spare - (kMotionH + 4)));
@@ -192,6 +222,13 @@ void EedTapeEditor::layoutContent (juce::Rectangle<int> content)
         motion_.setBounds (r.removeFromTop (kMotionH));
         if (r.getHeight() > 6) r.removeFromTop (6);
     }
+
+    // The machine selector, centred above the dials.
+    auto modeRow = r.removeFromTop (juce::jmin (kRowH, r.getHeight()));
+    modeBox_.setBounds (modeRow.withSizeKeepingCentre (
+        juce::jmin (170, modeRow.getWidth()), modeRow.getHeight()));
+
+    if (r.getHeight() > 6) r.removeFromTop (6);
 
     // Both rows get the same height, so a rack that squeezes the device shrinks
     // them together rather than starving the second one.
@@ -224,14 +261,16 @@ void EedTapeEditor::syncFromProcessor()
     const juce::ScopedValueSetter<bool> guard (suppressCallbacks_, true);
 
     struct { EchoJayDeviceKnob* knob; const char* id; } bound[] = {
-        { &speedKnob_,   EedTapeProcessor::kSpeedIps },
-        { &driveKnob_,   EedTapeProcessor::kDriveDb  },
-        { &biasKnob_,    EedTapeProcessor::kBias     },
-        { &bumpKnob_,    EedTapeProcessor::kHeadBump },
-        { &wowKnob_,     EedTapeProcessor::kWow      },
-        { &flutterKnob_, EedTapeProcessor::kFlutter  },
-        { &mixKnob_,     EedTapeProcessor::kMix      },
-        { &outKnob_,     EedTapeProcessor::kOutputDb },
+        { &speedKnob_,     EedTapeProcessor::kSpeedIps  },
+        { &driveKnob_,     EedTapeProcessor::kDriveDb   },
+        { &biasKnob_,      EedTapeProcessor::kBias      },
+        { &bumpKnob_,      EedTapeProcessor::kHeadBump  },
+        { &hissKnob_,      EedTapeProcessor::kHiss      },
+        { &wowKnob_,       EedTapeProcessor::kWow       },
+        { &flutterKnob_,   EedTapeProcessor::kFlutter   },
+        { &crosstalkKnob_, EedTapeProcessor::kCrosstalk },
+        { &mixKnob_,       EedTapeProcessor::kMix       },
+        { &outKnob_,       EedTapeProcessor::kOutputDb  },
     };
 
     for (auto& b : bound)
@@ -240,6 +279,10 @@ void EedTapeEditor::syncFromProcessor()
         if (std::abs (v - b.knob->getRealValue()) > 1.0e-4)
             b.knob->setRealValue (v);
     }
+
+    const int modeId = (int) proc_.getParamValue (EedTapeProcessor::kMode) + 1;
+    if (modeBox_.getSelectedId() != modeId)
+        modeBox_.setSelectedId (modeId, juce::dontSendNotification);
 
     refreshSpeedHint();
 }
