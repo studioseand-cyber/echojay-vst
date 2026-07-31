@@ -894,6 +894,107 @@ public:
         quitNow();
     }
 
+    /** Applies a REAL on-disk map through the real applySettings on the live
+        plugin: the headline assertion against human-produced artifacts, not
+        synthetic ones. Reports where each request landed and that the named
+        imposter's value never moved.
+    */
+    void selfTestApplyMap (const juce::String& identifier, const juce::String& mapPath,
+                           const juce::String& imposterName)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "APPLYTEST: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        ledger.beginLoad (loadedId, desc.name, desc.manufacturerName,
+                          desc.pluginFormatName, desc.version, "load", "createPluginInstance");
+        auto res = host.load (desc, watchdog);
+        { LedgerRecord rec; rec.pluginId = loadedId; rec.name = desc.name;
+          rec.outcome = res.outcome; rec.detail = res.detail; rec.paramCount = res.paramCount;
+          ledger.endLoad (rec); }
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "APPLYTEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        auto map = juce::JSON::parse (juce::File::getCurrentWorkingDirectory()
+                                        .getChildFile (mapPath).loadFileAsString());
+        if (! map.isObject())
+        { std::cout << "APPLYTEST: map did not parse: " << mapPath << std::endl; quitNow(); return; }
+
+        std::cout << "APPLYTEST: " << desc.name << " | map " << mapPath << std::endl;
+        auto& ps = inst->getParameters();
+        const int impIdx = paramIndexByName (imposterName);
+        int fails = 0;
+        auto ok = [&fails] (bool cond, const juce::String& what)
+        {
+            if (! cond) ++fails;
+            std::cout << "  " << (cond ? "ok   " : "FAIL ") << what << std::endl;
+        };
+
+        auto nameOf = [&ps] (int i) { return juce::isPositiveAndBelow (i, ps.size())
+                                               ? ps[i]->getName (48) : juce::String(); };
+
+        // 250 Hz + 3 dB as a flat band-class request (the chain's shape).
+        {
+            const float imp = impIdx >= 0 ? ps[impIdx]->getValue() : 0.0f;
+            auto* st = new juce::DynamicObject();
+            st->setProperty ("freq_hz", 250);
+            st->setProperty ("gain_db", 3);
+            host.pausePumpForMutation();
+            auto results = echojay::applySettings (*inst, map, juce::var (st));
+            host.resumePumpAfterMutation();
+            for (const auto& r : results)
+                if (r.semantic == "freq_hz" || r.semantic == "gain_db")
+                    std::cout << "    250Hz req " << r.semantic << " -> ["
+                              << r.index << "] " << nameOf (r.index)
+                              << (r.applied ? "  applied, " : "  NOT APPLIED, ")
+                              << r.note << std::endl;
+            bool landedOk = false;
+            for (const auto& r : results)
+                if (r.semantic == "freq_hz") landedOk = r.applied;
+            ok (landedOk, "250 Hz applied to a band");
+            if (impIdx >= 0)
+                ok (juce::approximatelyEqual (ps[impIdx]->getValue(), imp),
+                    imposterName + " [" + juce::String (impIdx) + "] value unchanged at 250 Hz");
+        }
+
+        // 8 kHz as an explicit bands request.
+        {
+            const float imp = impIdx >= 0 ? ps[impIdx]->getValue() : 0.0f;
+            auto* band = new juce::DynamicObject();
+            band->setProperty ("freq_hz", 8000);
+            band->setProperty ("gain_db", -2);
+            juce::Array<juce::var> bands; bands.add (juce::var (band));
+            auto* st = new juce::DynamicObject();
+            st->setProperty ("bands", juce::var (bands));
+            host.pausePumpForMutation();
+            auto results = echojay::applySettings (*inst, map, juce::var (st));
+            host.resumePumpAfterMutation();
+            for (const auto& r : results)
+                std::cout << "    8kHz req " << r.semantic << " -> ["
+                          << r.index << "] " << nameOf (r.index)
+                          << (r.applied ? "  applied, " : "  NOT APPLIED, ")
+                          << r.note << std::endl;
+            bool landedOk = false;
+            for (const auto& r : results)
+                if (r.semantic == "freq_hz") landedOk = r.applied;
+            ok (landedOk, "8 kHz applied to a band");
+            if (impIdx >= 0)
+                ok (juce::approximatelyEqual (ps[impIdx]->getValue(), imp),
+                    imposterName + " value unchanged at 8 kHz");
+        }
+
+        std::cout << "APPLYTEST: " << (fails == 0 ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
     /** Reproduces the AMEK category defect and proves the fix: no proposal
         -> the panel ASKS before any row exists; work confirmed under a wrong
         category SURVIVES the correction; the checklist rebuilds around it.
