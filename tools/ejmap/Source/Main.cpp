@@ -54,6 +54,7 @@ public:
         juce::String bandTestId, bandTestMembers, bandTestImposter, catTestId;
         juce::String applyMapId, applyMapPath, applyMapImposter;
         juce::String ctrlTestId, ctrlTestMode, ctrlTestLabel, ctrlTestNames;
+        juce::String uploadTestId, uploadTestMap, uploadTestTester;
         int stallN = 0;
         bool supervised = false;
         int  restartCount = 0;
@@ -91,6 +92,8 @@ public:
                 assignTestId = args[++i];
             else if (args[i] == "--selftest-category" && i + 1 < args.size())
                 catTestId = args[++i];
+            else if (args[i] == "--selftest-upload" && i + 3 < args.size())
+            { uploadTestId = args[i+1]; uploadTestMap = args[i+2]; uploadTestTester = args[i+3]; i += 3; }
             else if (args[i] == "--selftest-controls" && i + 1 < args.size())
             {
                 ctrlTestId = args[++i];
@@ -211,6 +214,12 @@ public:
         {
             auto id = assignTestId; auto* m = mainWindow->getMain();
             juce::MessageManager::callAsync ([m, id] { m->selfTestAssign (id); });
+        }
+        else if (uploadTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = uploadTestId; auto mp = uploadTestMap; auto tn = uploadTestTester;
+            auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id, mp, tn] { m->selfTestUpload (id, mp, tn); });
         }
         else if (ctrlTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {
@@ -352,6 +361,28 @@ namespace
 
         for (int i = 1; i < argc; ++i)
         {
+        if (juce::String (argv[i]) == "--tester" && i + 1 < argc)
+        {
+            // EXPLICIT local tester name for provenance (M10). Never derived
+            // from the hostname. File-touching, so it lives here where the
+            // single-instance check can never bounce it.
+            auto root = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                            .getChildFile ("ejmap");
+            for (int j = 1; j < argc; ++j)
+                if (juce::String (argv[j]) == "--ledger-root" && j + 1 < argc)
+                    root = juce::File::getCurrentWorkingDirectory().getChildFile (argv[j + 1]);
+            root.createDirectory();
+            const juce::String name = juce::String (argv[i + 1]).unquoted();
+            auto f = root.getChildFile ("tester.json");
+            f.replaceWithText ("{\"name\": \"" + name + "\"}");
+            const auto back = juce::JSON::parse (f.loadFileAsString())
+                                  .getProperty ("name", "").toString();
+            if (back != name)
+            { std::cerr << "tester: write failed" << std::endl; return 4; }
+            std::cout << "tester: provenance name set to \"" << back << "\"" << std::endl;
+            return 0;
+        }
+
             const auto a = argAt (argc, argv, i);
             if (a == "--release-quarantine" && i + 1 < argc) release = argAt (argc, argv, ++i);
             else if (a == "--attribute-report" && i + 1 < argc) report = argAt (argc, argv, ++i);

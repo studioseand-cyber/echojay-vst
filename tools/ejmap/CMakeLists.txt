@@ -32,6 +32,7 @@ add_custom_target(ejmap-build-stamp ALL
             -D SRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}
             -D OUT_FILE=${EJMAP_BUILD_INFO_H}
             -D VERSION=${EJMAP_VERSION}
+            -D APPLY_HEADER=${CMAKE_CURRENT_SOURCE_DIR}/../../Source/EchoJayParamApply.h
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/StampBuildInfo.cmake
     BYPRODUCTS ${EJMAP_BUILD_INFO_H}
     COMMENT "Stamping ejmap build info (git hash + dirty flag)"
@@ -42,6 +43,7 @@ execute_process(COMMAND ${CMAKE_COMMAND}
     -D SRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}
     -D OUT_FILE=${EJMAP_BUILD_INFO_H}
     -D VERSION=${EJMAP_VERSION}
+        -D APPLY_HEADER=${CMAKE_CURRENT_SOURCE_DIR}/../../Source/EchoJayParamApply.h
     -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/StampBuildInfo.cmake)
 
 juce_add_gui_app(ejmap

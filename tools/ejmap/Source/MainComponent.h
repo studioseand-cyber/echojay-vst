@@ -24,6 +24,9 @@
 #include "EjmapCurveView.h"
 #include "EjmapAssignPanel.h"
 #include "EchoJayParamMaps.h"   // fingerprintForDescription
+#include "EjmapMouth.h"
+#include "EjmapBuildInfo.h"     // EJMAP_APPLY_HEADER_SHA, stamped as compiled
+#include <sys/stat.h>            // machine_id 0600, ejextract convention
 
 #include <iostream>
 
@@ -116,6 +119,11 @@ public:
         assignButton.setButtonText ("Assign");
         assignButton.setEnabled (false);
         assignButton.onClick = [this] { startAssignment(); };
+
+        addAndMakeVisible (uploadButton);
+        uploadButton.setButtonText ("Upload...");
+        uploadButton.setEnabled (false);
+        uploadButton.onClick = [this] { openUploadCard(); };
 
         addAndMakeVisible (deepToggle);
         deepToggle.setButtonText ("Deep");
@@ -991,6 +999,148 @@ public:
         }
 
         std::cout << "APPLYTEST: " << (fails == 0 ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
+    /** M10: the mouth, dry run, stub and store read-back, against a REAL map
+        file. Corrupt variants prove each rejection names its reason.
+    */
+    void selfTestUpload (const juce::String& identifier, const juce::String& mapPath,
+                         const juce::String& tester)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "UPLOADTEST: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        auto res = host.load (desc, watchdog);
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "UPLOADTEST: load failed" << std::endl; quitNow(); return; }
+        cal = capture.calibrate (*host.getInstance(), loadedId);
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+
+        failures = 0;
+        auto ok = [this] (bool cond, const juce::String& what)
+        {
+            if (! cond) ++failures;
+            std::cout << "  " << (cond ? "ok   " : "FAIL ") << what << std::endl;
+            std::cout.flush();
+        };
+
+        auto src = juce::File::getCurrentWorkingDirectory().getChildFile (mapPath);
+        if (! src.existsAsFile())
+        { std::cout << "UPLOADTEST: map file does not exist: " << src.getFullPathName()
+                    << "\nUPLOADTEST: FAIL" << std::endl; quitNow(); return; }
+        auto mapsDir = ledger.getRoot().getChildFile ("maps");
+        mapsDir.createDirectory();
+        auto local = mapsDir.getChildFile (currentFp + ".json");
+        auto mapVar = juce::JSON::parse (src.loadFileAsString());
+        // Re-key the map to THIS load's fp so identity checks are live.
+        if (auto* o = mapVar.getDynamicObject()) o->setProperty ("fp", currentFp);
+        local.replaceWithText (juce::JSON::toString (mapVar, false));
+
+        std::cout << "UPLOADTEST: " << desc.name << " | map " << src.getFileName() << std::endl;
+
+        // 1. No tester name -> the gate refuses and says how to fix it.
+        ledger.getRoot().getChildFile ("tester.json").deleteFile();
+        auto v1 = Mouth::structuralGate (juce::JSON::parse (local.loadFileAsString()), testerName());
+        ok (! v1.pass() && v1.rejections.joinIntoString ("|").contains ("--tester"),
+            "no tester name -> refused, with the fix named");
+
+        // 2. Set the explicit local name. The map AS SUBMITTED by the pre-M10
+        //    binary has empty machine_id/apply_header_sha -- the gate must
+        //    refuse it naming provenance. (Real finding: pre-M10 maps need
+        //    re-submission through the stamping binary before upload.)
+        ledger.getRoot().getChildFile ("tester.json")
+              .replaceWithText ("{\"name\": \"" + tester + "\"}");
+        auto vPre = Mouth::structuralGate (juce::JSON::parse (local.loadFileAsString()), testerName());
+        ok (! vPre.pass() && vPre.rejections.joinIntoString ("|").contains ("provenance."),
+            "pre-M10 map (empty machine_id) refused naming provenance");
+
+        // 2b. Stamp provenance from the SAME sources submitMap uses now, then
+        //     the gate passes. This simulates a map submitted by this binary.
+        {
+            auto mv = juce::JSON::parse (local.loadFileAsString());
+            auto prov = mv.getProperty ("provenance", juce::var());
+            if (auto* pd = prov.getDynamicObject())
+            {
+                pd->setProperty ("tester_id", testerName());
+                pd->setProperty ("machine_id", machineIdString());
+                pd->setProperty ("ejmap_version", juce::String (EJMAP_VERSION) + " (" + EJMAP_GIT_HASH + ")");
+                pd->setProperty ("apply_header_sha", juce::String (EJMAP_APPLY_HEADER_SHA));
+            }
+            local.replaceWithText (juce::JSON::toString (mv, false));
+        }
+        auto v2 = Mouth::structuralGate (juce::JSON::parse (local.loadFileAsString()), testerName());
+        for (const auto& r : v2.rejections) std::cout << "    gate: " << r << std::endl;
+        ok (v2.pass(), "gate passes once provenance is stamped by this binary's sources");
+
+        // 3. Corrupt variants: each rejection NAMES its defect.
+        {
+            auto bad = juce::JSON::parse (local.loadFileAsString());
+            bad.getDynamicObject()->setProperty ("schema", "9.9");
+            auto vb = Mouth::structuralGate (bad, testerName());
+            ok (! vb.pass() && vb.rejections.joinIntoString ("|").contains ("schema"),
+                "wrong schema refused by name");
+        }
+        {
+            auto bad = juce::JSON::parse (local.loadFileAsString());
+            auto params = bad.getProperty ("params", juce::var());
+            if (auto* po = params.getDynamicObject(); po != nullptr && po->getProperties().size() > 0)
+            {
+                auto first = po->getProperties().getName (0);
+                po->getProperty (first).getDynamicObject()->setProperty ("index", 99999);
+                auto vb = Mouth::structuralGate (bad, testerName());
+                ok (! vb.pass() && vb.rejections.joinIntoString ("|").contains ("out of range"),
+                    "out-of-range index refused by name");
+            }
+        }
+
+        // 4. The upload card end to end: gate, dry run, stub.
+        openUploadCard();
+        auto dry = ledger.getRoot().getChildFile ("upload").getChildFile (currentFp + ".http");
+        ok (dry.existsAsFile(), "dry-run request written");
+        {
+            juce::MemoryBlock all; dry.loadFileAsData (all);
+            const auto text = dry.loadFileAsString();
+            const auto headEnd = text.indexOf ("\r\n\r\n");
+            ok (headEnd > 0 && text.startsWith ("POST /"),
+                "dry run is an exact HTTP request with an absolute path");
+            const int bodyBytes = (int) all.getSize() - (headEnd + 4);
+            const auto clLine = text.upToFirstOccurrenceOf ("\r\n\r\n", false, false);
+            ok (clLine.contains ("Content-Length: " + juce::String (bodyBytes)),
+                "Content-Length matches the exact body bytes (" + juce::String (bodyBytes) + ")");
+            juce::MemoryBlock mapBytes; local.loadFileAsData (mapBytes);
+            ok ((int) mapBytes.getSize() == bodyBytes,
+                "body is the map file verbatim");
+            ok (text.contains (".invalid") || juce::SystemStats::getEnvironmentVariable ("EJMAP_UPLOAD_URL", "").isNotEmpty(),
+                "URL is the clearly-unset placeholder until a real endpoint exists");
+        }
+
+        // 5. Store read-back, field by field, against the STUB'S OWN STORE --
+        //    the stored data, never the emitted event.
+        auto stored = ledger.getRoot().getChildFile ("stub-store").getChildFile (currentFp + ".json");
+        ok (stored.existsAsFile(), "stub store holds the accepted map");
+        {
+            auto a = juce::JSON::parse (local.loadFileAsString());
+            auto b = juce::JSON::parse (stored.loadFileAsString());
+            ok (juce::JSON::toString (a, false) == juce::JSON::toString (b, false),
+                "store read-back matches the local JSON field by field");
+        }
+        ok (Mouth::queueState (ledger.getRoot(), currentFp) == "stub_accepted",
+            "queue state is stub_accepted -- 'uploaded' does not exist yet");
+        ok (uploadCardText.contains ("NOTHING HAS BEEN UPLOADED"),
+            "the card says NOTHING HAS BEEN UPLOADED, in those words");
+        ok (uploadCardText.contains ("STUB MOUTH (not the real endpoint)"),
+            "every stub line carries the label");
+
+        std::cout << "UPLOADTEST: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
         std::cout.flush();
         quitNow();
     }
@@ -1896,6 +2046,12 @@ public:
         }
         case 3:
         {
+            // Measured on the Pro-Q 3 AU: every discrete param's getText is a
+            // bare number, so kneeTestIdx can be -1 and these assertions have
+            // no subject. Guard, never index row -1. The knee class stays
+            // covered by the VST3 run, where the labels exist.
+            if (kneeTestIdx >= 0)
+            {
             const int k = findRow ("knee_db");
             const auto& kr = assignPanel.rows.getReference (k);
             dump ("W capture on the knee switch");
@@ -1914,6 +2070,7 @@ public:
             dump ("M on the refused knee");
             ok (ledger.runArtifact ("tier2-candidates", "jsonl").existsAsFile(),
                 "Tier 2 breadcrumb written (labels for M6 named controls)");
+            }
 
             const int r = findRow ("ratio");
             const auto& rr = assignPanel.rows.getReference (r);
@@ -2359,6 +2516,8 @@ public:
         sweepButton.setBounds (top.removeFromLeft (76));
         top.removeFromLeft (6);
         assignButton.setBounds (top.removeFromLeft (76));
+        top.removeFromLeft (6);
+        uploadButton.setBounds (top.removeFromLeft (80));
         top.removeFromLeft (6);
         deepToggle.setBounds (top.removeFromLeft (64));
         top.removeFromLeft (6);
@@ -3551,10 +3710,37 @@ private:
         p.identity.vendor     = loadedDesc.manufacturerName;
         p.identity.version    = loadedDesc.version;
         p.identity.paramCount = cal.paramCount;
-        p.provenance.ejmapVersion = juce::JUCEApplication::getInstance() != nullptr
-                                      ? juce::JUCEApplication::getInstance()->getApplicationVersion()
-                                      : juce::String();
+        p.provenance.ejmapVersion = juce::String (EJMAP_VERSION) + " (" + EJMAP_GIT_HASH + ")";
+        p.provenance.applyHeaderSha = EJMAP_APPLY_HEADER_SHA;   // hashed AS COMPILED, at build time
+        p.provenance.machineId = machineIdString();
+        p.provenance.testerId  = testerName();
+        p.provenance.pluginVersion = loadedDesc.version;
+        p.provenance.hostOs = juce::SystemStats::getOperatingSystemName();
         p.provenance.at = juce::Time::getCurrentTime().toISO8601 (true);
+        p.evidence.durationSeconds = assignPanel.sessionSeconds();
+
+        // Per-index capture evidence from the rows on disk: the latest
+        // captured row's ui_hint and mechanism travel with the param entry.
+        std::map<int, juce::var> hintByIdx;
+        std::map<int, juce::String> byByIdx;
+        for (const auto& entry : juce::RangedDirectoryIterator (ledger.getRoot(), false,
+                                                                "captures-*.jsonl"))
+        {
+            juce::StringArray lines; lines.addLines (entry.getFile().loadFileAsString());
+            for (const auto& line : lines)
+            {
+                if (line.trim().isEmpty()) continue;
+                auto v = juce::JSON::parse (line);
+                if (v.getProperty ("plugin_id", "").toString() != loadedId) continue;
+                const auto kind = v.getProperty ("kind", "").toString();
+                if (kind != "captured" && kind != "captured_from_gesture") continue;
+                const int idx = (int) v.getProperty ("index", -1);
+                if (idx < 0) continue;
+                if (! v.getProperty ("ui_hint", juce::var()).isVoid())
+                    hintByIdx[idx] = v.getProperty ("ui_hint", juce::var());
+                byByIdx[idx] = v.getProperty ("captured_by", "poll").toString();
+            }
+        }
         for (int i = 0; i < mask.indices.size(); ++i)
             p.evidence.noiseMask.add (mask.indices[i]);
 
@@ -3580,6 +3766,25 @@ private:
                 m.method = r.sweep.method == "setread" ? AnchorMethod::setread
                           : r.sweep.method == "human-typed" ? AnchorMethod::humanTyped
                           : AnchorMethod::gettext;
+                {
+                    auto hb = byByIdx.find (r.resolvedIndex);
+                    m.capturedBy = hb == byByIdx.end() ? CaptureSource::poll
+                                 : hb->second == "gesture"      ? CaptureSource::listener
+                                 : hb->second == "poll+gesture" ? CaptureSource::both
+                                                                : CaptureSource::poll;
+                    auto hh = hintByIdx.find (r.resolvedIndex);
+                    if (hh != hintByIdx.end() && hh->second.isObject())
+                    {
+                        m.uiHint.valid = true;
+                        m.uiHint.x = (float) (double) hh->second.getProperty ("x", 0.0);
+                        m.uiHint.y = (float) (double) hh->second.getProperty ("y", 0.0);
+                        m.uiHint.w = (float) (double) hh->second.getProperty ("w", 0.0);
+                        m.uiHint.h = (float) (double) hh->second.getProperty ("h", 0.0);
+                        m.uiHint.editorWidth  = (int) hh->second.getProperty ("editor_w", 0);
+                        m.uiHint.editorHeight = (int) hh->second.getProperty ("editor_h", 0);
+                        m.uiHint.screen = hh->second.getProperty ("screen", "").toString();
+                    }
+                }
                 p.params.add (m);
 
                 // Write-back verify through the real interpolation.
@@ -3673,6 +3878,97 @@ private:
 
         endAssignment();
     }
+
+    //==========================================================================
+    // M10: provenance identity + the upload card.
+
+    /** Same file, same convention as ejextract: a UUID at
+        ~/Library/EchoJay/machine_id, mode 0600.
+    */
+    static juce::String machineIdString()
+    {
+        auto f = juce::File ("~/Library/EchoJay").getChildFile ("machine_id");
+        auto id = f.existsAsFile() ? f.loadFileAsString().trim() : juce::String();
+        if (id.length() != 36)
+        {
+            id = juce::Uuid().toDashedString();
+            f.getParentDirectory().createDirectory();
+            f.replaceWithText (id + "\n");
+            ::chmod (f.getFullPathName().toRawUTF8(), 0600);
+        }
+        return id;
+    }
+
+    /** EXPLICIT local name, set with --tester <name>, persisted in the root.
+        Deliberately never derived from the hostname: "admins-MacBook-Pro" in
+        the provenance of every map is not a tester identity.
+    */
+    juce::String testerName()
+    {
+        auto v = juce::JSON::parse (ledger.getRoot().getChildFile ("tester.json")
+                                        .loadFileAsString());
+        return v.getProperty ("name", "").toString();
+    }
+
+    /** The upload card. EXPLICIT ACTION ONLY: upload is the one irreversible
+        step in the tool and is reachable by button, never by auto-advance.
+    */
+    void openUploadCard()
+    {
+        auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
+        if (currentFp.isEmpty() || ! f.existsAsFile())
+        {
+            captureReadout.setText ("No submitted map for this plugin yet: Assign and submit first.",
+                                    juce::dontSendNotification);
+            return;
+        }
+
+        juce::MemoryBlock body;
+        f.loadFileAsData (body);
+        auto map = juce::JSON::parse (f.loadFileAsString());
+        auto verdict = Mouth::structuralGate (map, testerName());
+
+        juce::String t;
+        t << "UPLOAD - " << loadedName << "\n"
+          << "map: " << f.getFileName() << "  (" << (int) body.getSize() << " bytes)\n"
+          << "queue state: " << Mouth::queueState (ledger.getRoot(), currentFp) << "\n\n";
+        if (verdict.pass())
+        {
+            Mouth::setQueueState (ledger.getRoot(), currentFp, "gated", {});
+            t << "STRUCTURAL GATE: PASS\n\n";
+
+            auto dry = Mouth::writeDryRun (ledger.getRoot(), currentFp, body,
+                                           testerName(), machineIdString(),
+                                           juce::String (EJMAP_VERSION) + " (" + EJMAP_GIT_HASH + ")");
+            Mouth::setQueueState (ledger.getRoot(), currentFp, "dry_run_written", {});
+            t << "DRY RUN written: " << dry.getFullPathName() << "\n"
+              << "  (the exact bytes, headers and URL shape; diff THIS against the real\n"
+              << "   endpoint's contract before anything is sent)\n\n";
+
+            auto stub = Mouth::stubMouthSubmit (ledger.getRoot(), currentFp,
+                                                f.loadFileAsString(), testerName());
+            Mouth::setQueueState (ledger.getRoot(), currentFp,
+                                  stub.accepted ? "stub_accepted" : "stub_rejected",
+                                  stub.reasons.joinIntoString ("; "));
+            for (const auto& r : stub.reasons) t << r << "\n";
+            t << "\nNOTHING HAS BEEN UPLOADED. There is no real endpoint yet; the stub\n"
+                 "is a hypothesis about the server, not a test of it.\n";
+        }
+        else
+        {
+            Mouth::setQueueState (ledger.getRoot(), currentFp, "rejected",
+                                  verdict.rejections.joinIntoString ("; "));
+            t << "STRUCTURAL GATE: REFUSED\n";
+            for (const auto& r : verdict.rejections) t << "  - " << r << "\n";
+        }
+
+        std::cout << "UPLOAD:\n" << t << std::endl;
+        captureReadout.setText (t.upToFirstOccurrenceOf ("\n\n", false, false)
+                                  + "  (full report on stdout)", juce::dontSendNotification);
+        uploadCardText = t;
+    }
+
+    juce::String uploadCardText;
 
     /** One sweep, full protocol: inflight record (a sweep is a crash window
         on unknown plugins), pump paused and drained (mutations are not
@@ -4232,6 +4528,7 @@ private:
             listeners.attach (*host.getInstance());
             prepareCapture (sp.desc.name, id);
             assignButton.setEnabled (true);
+            uploadButton.setEnabled (true);
             status.setText (sp.desc.name + ": " + juce::String (result.paramCount)
                               + " params, editor open in " + juce::String (elapsed) + " ms",
                             juce::dontSendNotification);
@@ -4335,7 +4632,7 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
-    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton;
+    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton, uploadButton;
     juce::ToggleButton deepToggle;
     AssignPanel assignPanel;
     bool assigning = false;

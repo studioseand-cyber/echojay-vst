@@ -2051,6 +2051,7 @@ public:
     bool isSummaryShowing() const { return summaryShowing; }
     bool isAwaitingCategory() const { return awaitingCategory; }
     juce::String progressText() const { return progress.getText(); }
+    int sessionSeconds() const { return (int) ((juce::Time::getMillisecondCounter() - startedAt) / 1000); }
     juce::String bandTableText() const { return summaryText.getText(); }
     BandStep currentBandStep() const { return bandStep; }
     bool isSubmitEnabled() const  { return submitBtn.isEnabled(); }

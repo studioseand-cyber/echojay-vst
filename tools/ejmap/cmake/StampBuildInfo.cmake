@@ -24,10 +24,20 @@ if(GIT_DIRTY)
     set(GIT_HASH "${GIT_HASH}-dirty")
 endif()
 
+# apply_header_sha: the hash of the shared apply header AS THE COMPILER IS
+# ABOUT TO SEE IT. This stamp target runs before compilation on every build,
+# so the hash in the binary is the hash of what that binary compiled -- if the
+# header changes later without a rebuild, the RUNNING binary keeps the hash of
+# what it was built from, which is the correct claim. Hashing at map-write
+# time from disk would break exactly there: this project has already been
+# bitten by a stamp that lagged its binary.
+file(SHA256 ${APPLY_HEADER} APPLY_SHA)
+
 set(CONTENT "// Generated at build time by StampBuildInfo.cmake. Do not edit.\n")
 string(APPEND CONTENT "#pragma once\n")
 string(APPEND CONTENT "#define EJMAP_VERSION \"${VERSION}\"\n")
 string(APPEND CONTENT "#define EJMAP_GIT_HASH \"${GIT_HASH}\"\n")
+string(APPEND CONTENT "#define EJMAP_APPLY_HEADER_SHA \"${APPLY_SHA}\"\n")
 
 # Only rewrite when it actually changes, so an unchanged hash does not force a
 # relink on every build.
