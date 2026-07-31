@@ -44,14 +44,62 @@ public:
     static constexpr float kMinFreqHz =  500.0f, kMaxFreqHz = 12000.0f;
     static constexpr float kMinAmount =    0.0f, kMaxAmount =   100.0f;
     static constexpr float kMinOutDb  =  -24.0f, kMaxOutDb  =    24.0f;
+    static constexpr float kMinFocus  =    0.0f, kMaxFocus  =   100.0f;
 
     static constexpr int kOversampling = 4;
 
-    // Only the two modes the device advertises. Index order is frozen: it is the
-    // value the `mode` param carries and what saved state stores.
+    // The four characters the device advertises. Index order is FROZEN: it is
+    // the value the `mode` param carries and what saved state stores — tube and
+    // tape keep the indices they shipped with, odd and even are appended.
+    //
+    // Each mode is a (curve, emphasis) pair on the shared harmonic machinery:
+    //   tube — the tube curve as-is: asymmetric air and presence (2nd + odd)
+    //   tape — the tape curve as-is: soft symmetric sheen, no edge
+    //   odd  — the diode curve SYMMETRISED: only odd harmonics, the edgy,
+    //          aggressive top (the diode knee is the sharpest we have)
+    //   even — the tube curve made MORE asymmetric: 2nd-dominant, the warmest
+    static constexpr int kNumModes = 4;
+
+    static const char* modeName (int modeIndex) noexcept
+    {
+        switch (clampMode (modeIndex))
+        {
+            case 1:  return "tape";
+            case 2:  return "odd";
+            case 3:  return "even";
+            case 0:
+            default: return "tube";
+        }
+    }
+
+    static int clampMode (int modeIndex) noexcept
+    {
+        return modeIndex <= 0 ? 0 : (modeIndex >= kNumModes - 1 ? kNumModes - 1
+                                                                : modeIndex);
+    }
+
     static harmonic::Curve curveForMode (int modeIndex) noexcept
     {
-        return modeIndex >= 1 ? harmonic::Curve::Tape : harmonic::Curve::Tube;
+        switch (clampMode (modeIndex))
+        {
+            case 1:  return harmonic::Curve::Tape;
+            case 2:  return harmonic::Curve::Diode;
+            case 3:  return harmonic::Curve::Tube;
+            case 0:
+            default: return harmonic::Curve::Tube;
+        }
+    }
+
+    static harmonic::Emphasis emphasisForMode (int modeIndex) noexcept
+    {
+        switch (clampMode (modeIndex))
+        {
+            case 2:  return harmonic::Emphasis::Odd;
+            case 3:  return harmonic::Emphasis::Even;
+            case 0:
+            case 1:
+            default: return harmonic::Emphasis::Both;   // the shipped behaviour
+        }
     }
 
     ExciterEngine() = default;
@@ -116,13 +164,15 @@ public:
         applyCrossover();
     }
     void setAmount    (float a)  noexcept { amount_.store (a); }
-    void setMode      (int m)    noexcept { mode_.store (m <= 0 ? 0 : 1); }
+    void setMode      (int m)    noexcept { mode_.store (clampMode (m)); }
+    void setFocus     (float f)  noexcept { focus_.store (std::clamp (f, kMinFocus, kMaxFocus)); }
     void setMixPercent(float pc) noexcept { mix_.store (pc); }
     void setOutputDb  (float db) noexcept { outDb_.store (db); }
 
     float getFreqHz()     const noexcept { return freqHz_.load(); }
     float getAmount()     const noexcept { return amount_.load(); }
     int   getMode()       const noexcept { return mode_.load(); }
+    float getFocus()      const noexcept { return focus_.load(); }
     float getMixPercent() const noexcept { return mix_.load(); }
     float getOutputDb()   const noexcept { return outDb_.load(); }
 
@@ -208,7 +258,21 @@ private:
 
         for (int i = 0; i < n; ++i) ch.scratch[(std::size_t) i] = data[i];
 
-        const harmonic::Curve curve = curveForMode (mode_.load());
+        const harmonic::Curve    curve = curveForMode (mode_.load());
+        const harmonic::Emphasis emph  = emphasisForMode (mode_.load());
+
+        // Focus: how tightly the shaper's feed is confined to the band above
+        // the split. At 0 the low band is the full cascade as shipped (blend is
+        // exactly 0, so the maths below reduces bit-for-bit to
+        // split2(split1(x))); higher blends toward the SINGLE pole, whose
+        // smaller phase error leaks far less below-crossover material into the
+        // shaper — the lows stay surgically clean while the highs are excited.
+        // (Counter-intuitive but measured: the cascade's high band is x minus a
+        // two-pole low-pass, and its phase mismatch dominates the leak.) The
+        // high band stays `x - low` whatever the blend, so amount 0 still
+        // reconstructs the input exactly.
+        const float blend = std::clamp (focus_.load(), kMinFocus, kMaxFocus) * 0.01f;
+
         const int factor = ch.ovs.factor();
         float* os = ch.ovs.upsample (data, n);
 
@@ -226,7 +290,9 @@ private:
                 const std::size_t idx = (std::size_t) (i * factor + s);
                 const float x = os[idx];
 
-                const float low  = ch.split2.process (ch.split1.process (x));
+                const float low1 = ch.split1.process (x);
+                const float low2 = ch.split2.process (low1);
+                const float low  = low2 + blend * (low1 - low2);
                 const float high = x - low;
 
                 // Sampled once per BASE sample rather than on every oversampled
@@ -234,7 +300,7 @@ private:
                 // difference, and this sits in the innermost loop in the device.
                 if (tap && s == 0) highPeak_ = std::fmax (highPeak_, std::fabs (high));
 
-                const float shaped = harmonic::shape (curve, high * g) * k;
+                const float shaped = harmonic::shapeEmphasis (curve, emph, high * g) * k;
 
                 // Only what the shaper ADDS is DC-blocked, not the signal. Tube
                 // mode is asymmetric and does emit DC, but running the blocker
@@ -279,6 +345,7 @@ private:
     std::atomic<float> freqHz_ { 3000.0f };
     std::atomic<float> amount_ {   50.0f };
     std::atomic<int>   mode_   {      0  };
+    std::atomic<float> focus_  {    0.0f };
     std::atomic<float> mix_    {  100.0f };
     std::atomic<float> outDb_  {    0.0f };
 

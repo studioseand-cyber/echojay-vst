@@ -92,37 +92,113 @@ void HalfBandDown2x::reset() noexcept
     w_ = 0;
 }
 
+const float* halfband8::coeffs() noexcept
+{
+    // Same construction as halfband::coeffs(), shorter window (see the header
+    // for why the 8x stage can afford one). Beta 7: ~-70 dB stopband, which the
+    // 61-tap stages below it deepen on the way back down.
+    static const std::array<float, (std::size_t) halfband8::kBranch> table = []
+    {
+        std::array<double, (std::size_t) halfband8::kBranch> raw {};
+        double sum = 0.0;
+
+        for (int i = 0; i < halfband8::kBranch; ++i)
+        {
+            const int n = 2 * i + 1;                // odd tap index, 1 .. 23
+            const int m = n - halfband8::kM;        // odd offset from the centre
+
+            const double arg  = kPi * 0.5 * (double) m;
+            const double sinc = std::sin (arg) / arg;
+            const double v    = 0.5 * sinc * kaiser (n, halfband8::kTaps, 7.0);
+
+            raw[(std::size_t) i] = v;
+            sum += v;
+        }
+
+        // Both polyphase phases at exactly unity DC, or a mirror image sits at
+        // the 8x Nyquist — same discipline as the long filter.
+        const double norm = 0.5 / sum;
+
+        std::array<float, (std::size_t) halfband8::kBranch> out {};
+        for (std::size_t i = 0; i < out.size(); ++i)
+            out[i] = (float) (raw[i] * norm);
+        return out;
+    }();
+
+    return table.data();
+}
+
+void ShortHalfBandUp2x::reset() noexcept
+{
+    std::fill (std::begin (hist_), std::end (hist_), 0.0f);
+    w_ = 0;
+}
+
+void ShortHalfBandDown2x::reset() noexcept
+{
+    std::fill (std::begin (e_), std::end (e_), 0.0f);
+    std::fill (std::begin (o_), std::end (o_), 0.0f);
+    w_ = 0;
+}
+
 // ---------------------------------------------------------------------------
 // Oversampler
 // ---------------------------------------------------------------------------
 int Oversampler::latencyForFactor (int factor) noexcept
 {
-    // Each half-band filter delays by kM samples AT THE RATE IT RUNS, and a
+    // Each half-band filter delays by its kM samples AT THE RATE IT RUNS, and a
     // round trip uses two of them.
     //   2x: up and down both run at 2x -> 2 * kM at 2x = kM base samples.
     //   4x: the 2x stage adds kM base, the 4x stage adds kM at 2x = kM/2 base.
+    //   8x: those two, plus the short stage: 2 * kM8 at 8x = kM8/4 base.
+    if (factor >= 8) return halfband::kM + halfband::kM / 2
+                          + halfband8::kM / 4;                 // 48
     if (factor >= 4) return halfband::kM + halfband::kM / 2;   // 45
     if (factor >= 2) return halfband::kM;                      // 30
     return 0;
 }
 
+namespace
+{
+    int clampFactor (int factor) noexcept
+    {
+        return factor >= 8 ? 8 : (factor >= 4 ? 4 : (factor >= 2 ? 2 : 1));
+    }
+}
+
 void Oversampler::prepare (int factor, int maxBlockSize)
 {
-    factor_   = factor >= 4 ? 4 : (factor >= 2 ? 2 : 1);
+    factor_   = clampFactor (factor);
     maxBlock_ = std::max (1, maxBlockSize);
 
-    mid_.assign ((std::size_t) (maxBlock_ * 2), 0.0f);
-    top_.assign ((std::size_t) (maxBlock_ * factor_), 0.0f);
+    // Sized for the FULL 8x whatever the prepared factor, so setFactor() can
+    // retarget a running instance without an allocation.
+    mid_ .assign ((std::size_t) (maxBlock_ * 2), 0.0f);
+    mid2_.assign ((std::size_t) (maxBlock_ * 4), 0.0f);
+    top_ .assign ((std::size_t) (maxBlock_ * 8), 0.0f);
 
     reset();
 }
 
+void Oversampler::setFactor (int factor) noexcept
+{
+    const int f = clampFactor (factor);
+    if (f == factor_) return;
+
+    factor_ = f;
+    // The filter histories belong to the old rate; carried across they would
+    // replay as a short burst of wrong-rate garbage.
+    up1_.reset(); up2_.reset(); up3_.reset();
+    dn1_.reset(); dn2_.reset(); dn3_.reset();
+}
+
 void Oversampler::reset() noexcept
 {
-    up1_.reset(); up2_.reset();
-    dn1_.reset(); dn2_.reset();
-    std::fill (mid_.begin(), mid_.end(), 0.0f);
-    std::fill (top_.begin(), top_.end(), 0.0f);
+    up1_.reset(); up2_.reset(); up3_.reset();
+    dn1_.reset(); dn2_.reset(); dn3_.reset();
+    std::fill (mid_.begin(),  mid_.end(),  0.0f);
+    std::fill (mid2_.begin(), mid2_.end(), 0.0f);
+    std::fill (top_.begin(),  top_.end(),  0.0f);
 }
 
 int Oversampler::latencySamples() const noexcept
@@ -146,13 +222,29 @@ float* Oversampler::upsample (const float* in, int n) noexcept
         return top_.data();
     }
 
+    if (factor_ == 4)
+    {
+        for (int i = 0; i < n; ++i)
+            up1_.process (in[i], mid_[(std::size_t) (2 * i)],
+                                 mid_[(std::size_t) (2 * i + 1)]);
+
+        for (int i = 0; i < 2 * n; ++i)
+            up2_.process (mid_[(std::size_t) i], top_[(std::size_t) (2 * i)],
+                                                 top_[(std::size_t) (2 * i + 1)]);
+        return top_.data();
+    }
+
     for (int i = 0; i < n; ++i)
         up1_.process (in[i], mid_[(std::size_t) (2 * i)],
                              mid_[(std::size_t) (2 * i + 1)]);
 
     for (int i = 0; i < 2 * n; ++i)
-        up2_.process (mid_[(std::size_t) i], top_[(std::size_t) (2 * i)],
-                                             top_[(std::size_t) (2 * i + 1)]);
+        up2_.process (mid_[(std::size_t) i], mid2_[(std::size_t) (2 * i)],
+                                             mid2_[(std::size_t) (2 * i + 1)]);
+
+    for (int i = 0; i < 4 * n; ++i)
+        up3_.process (mid2_[(std::size_t) i], top_[(std::size_t) (2 * i)],
+                                              top_[(std::size_t) (2 * i + 1)]);
     return top_.data();
 }
 
@@ -172,9 +264,25 @@ void Oversampler::downsample (float* out, int n) noexcept
         return;
     }
 
+    if (factor_ == 4)
+    {
+        for (int i = 0; i < 2 * n; ++i)
+            mid_[(std::size_t) i] = dn2_.process (top_[(std::size_t) (2 * i)],
+                                                  top_[(std::size_t) (2 * i + 1)]);
+
+        for (int i = 0; i < n; ++i)
+            out[i] = dn1_.process (mid_[(std::size_t) (2 * i)],
+                                   mid_[(std::size_t) (2 * i + 1)]);
+        return;
+    }
+
+    for (int i = 0; i < 4 * n; ++i)
+        mid2_[(std::size_t) i] = dn3_.process (top_[(std::size_t) (2 * i)],
+                                               top_[(std::size_t) (2 * i + 1)]);
+
     for (int i = 0; i < 2 * n; ++i)
-        mid_[(std::size_t) i] = dn2_.process (top_[(std::size_t) (2 * i)],
-                                              top_[(std::size_t) (2 * i + 1)]);
+        mid_[(std::size_t) i] = dn2_.process (mid2_[(std::size_t) (2 * i)],
+                                              mid2_[(std::size_t) (2 * i + 1)]);
 
     for (int i = 0; i < n; ++i)
         out[i] = dn1_.process (mid_[(std::size_t) (2 * i)],
@@ -225,36 +333,64 @@ Curve curveFromIndex (int index) noexcept
     return (Curve) index;
 }
 
+const char* emphasisName (Emphasis e) noexcept
+{
+    switch (e)
+    {
+        case Emphasis::Even: return "even";
+        case Emphasis::Odd:  return "odd";
+        case Emphasis::Both:
+        default:             return "both";
+    }
+}
+
+Emphasis emphasisFromIndex (int index) noexcept
+{
+    if (index <= 0) return Emphasis::Even;
+    if (index >= kEmphasisCount - 1) return Emphasis::Both;
+    return (Emphasis) index;
+}
+
 // ---------------------------------------------------------------------------
 // HarmonicCore
 // ---------------------------------------------------------------------------
 void HarmonicCore::setOversampling (int factor) noexcept
 {
-    osFactor_ = factor >= 4 ? 4 : (factor >= 2 ? 2 : 1);
+    osFactor_.store (factor >= 8 ? 8 : (factor >= 4 ? 4 : (factor >= 2 ? 2 : 1)));
 }
 
 void HarmonicCore::prepare (double sampleRate, int maxBlockSize)
 {
     sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
     maxBlock_   = std::max (1, maxBlockSize);
-    latency_    = Oversampler::latencyForFactor (osFactor_);
 
     lastToneDb_ = toneDb_.load();
+    lastHpfHz_  = hpfHz_.load();
     inputLevel_.prepare (sampleRate_);
+
+    // Delay lines sized for the DEEPEST latency any factor can report, so a
+    // live oversampling change never needs them regrown.
+    const int maxLatency = Oversampler::latencyForFactor (8);
 
     for (auto& ch : channels_)
     {
-        ch.ovs.prepare (osFactor_, maxBlock_);
+        ch.ovs.prepare (osFactor_.load(), maxBlock_);
         ch.dc.prepare (sampleRate_);
         ch.tilt.prepare (sampleRate_, kTonePivotHz);
         // AFTER prepare: the filter rebuilds from its own stored tilt, so a tone
         // restored from state before prepare would otherwise sit unapplied until
         // the user happened to touch the knob.
         ch.tilt.setTiltDb (lastToneDb_);
+        ch.hpf1.prepare (sampleRate_);
+        ch.hpf2.prepare (sampleRate_);
+        ch.hpf1.setCutoff (lastHpfHz_);
+        ch.hpf2.setCutoff (lastHpfHz_);
         // The dry path is delayed by exactly the oversampler's latency, so a
         // partial mix sums two time-aligned signals instead of comb-filtering.
-        ch.dry.prepare (latency_ + 4);
+        ch.dry.prepare (maxLatency + 4);
+        ch.lows.prepare (maxLatency + 4);
         ch.scratch.assign ((std::size_t) maxBlock_, 0.0f);
+        ch.lowScratch.assign ((std::size_t) maxBlock_, 0.0f);
     }
 
     reset();
@@ -262,8 +398,9 @@ void HarmonicCore::prepare (double sampleRate, int maxBlockSize)
 
 void HarmonicCore::reset() noexcept
 {
-    const Curve c = getCurve();
-    const float g = std::pow (10.0f, driveDb_.load() * 0.05f);
+    const Curve    c = getCurve();
+    const Emphasis e = getEmphasis();
+    const float    g = std::pow (10.0f, driveDb_.load() * 0.05f);
 
     inputLevel_.reset();
     inputLevelTap_.set (0.0f);
@@ -274,11 +411,15 @@ void HarmonicCore::reset() noexcept
         ch.dc.reset();
         ch.tilt.reset();
         ch.dry.reset();
+        ch.hpf1.reset();
+        ch.hpf2.reset();
+        ch.lows.reset();
 
         // Snap, not ramp: a restored session must start AT its values rather
         // than sliding into them over the first blocks of playback.
         ch.drive.snap (g);
-        ch.comp .snap (driveCompensation (c, g));
+        ch.comp .snap (driveCompensation (c, e, g));
+        ch.bias .snap (biasOffset (bias_.load()));
         ch.wet  .snap (mix_.load() * 0.01f);
         ch.dryG .snap (1.0f - mix_.load() * 0.01f);
         ch.out  .snap (std::pow (10.0f, outDb_.load() * 0.05f));
@@ -294,6 +435,17 @@ void HarmonicCore::process (float* left, float* right, int numSamples) noexcept
     {
         lastToneDb_ = toneDb;
         for (auto& ch : channels_) ch.tilt.setTiltDb (toneDb);
+    }
+
+    const float hpfHz = hpfHz_.load();
+    if (hpfHz != lastHpfHz_)
+    {
+        lastHpfHz_ = hpfHz;
+        for (auto& ch : channels_)
+        {
+            ch.hpf1.setCutoff (hpfHz);
+            ch.hpf2.setCutoff (hpfHz);
+        }
     }
 
     // The level dot: measured on the INPUT, across both channels, before
@@ -320,13 +472,23 @@ void HarmonicCore::process (float* left, float* right, int numSamples) noexcept
 
 void HarmonicCore::processChunk (Channel& ch, float* data, int n, float blockCoeff) noexcept
 {
-    const Curve c       = getCurve();
+    const Curve    c    = getCurve();
+    const Emphasis e    = getEmphasis();
     const float driveG  = std::pow (10.0f, driveDb_.load() * 0.05f);
     const float wet     = std::min (1.0f, std::max (0.0f, mix_.load() * 0.01f));
     const float outG    = std::pow (10.0f, outDb_.load() * 0.05f);
+    const float biasB   = biasOffset (bias_.load());
+    const bool  split   = hpfHz_.load() > 0.0f;
+
+    // Reconcile a live oversampling change here, at a chunk boundary, so the
+    // factor and the dry-read latency below always agree within a chunk.
+    const int wanted = osFactor_.load();
+    if (ch.ovs.factor() != wanted) ch.ovs.setFactor (wanted);
+    const int latency = ch.ovs.latencySamples();
 
     ch.drive.startBlock (driveG, n, blockCoeff);
-    ch.comp .startBlock (driveCompensation (c, driveG), n, blockCoeff);
+    ch.comp .startBlock (driveCompensation (c, e, driveG), n, blockCoeff);
+    ch.bias .startBlock (biasB, n, blockCoeff);
     ch.wet  .startBlock (wet, n, blockCoeff);
     ch.dryG .startBlock (1.0f - wet, n, blockCoeff);
     ch.out  .startBlock (outG, n, blockCoeff);
@@ -334,6 +496,20 @@ void HarmonicCore::processChunk (Channel& ch, float* data, int n, float blockCoe
     // The dry path is captured BEFORE anything touches the signal; the shaping
     // below writes its result back over `data`.
     for (int i = 0; i < n; ++i) ch.scratch[(std::size_t) i] = data[i];
+
+    // The sub-keep split, at base rate. The filters run and the low band is
+    // recorded whether or not the split is engaged, so their state is already
+    // truthful the instant HPF comes up from zero; only the subtraction (and
+    // the rejoin below) is gated, which keeps HPF 0 bit-exact.
+    for (int i = 0; i < n; ++i)
+    {
+        const float x    = data[i];
+        const float hp1  = x - ch.hpf1.process (x);
+        const float high = hp1 - ch.hpf2.process (hp1);   // 12 dB/oct below the corner
+
+        ch.lowScratch[(std::size_t) i] = x - high;
+        if (split) data[i] = high;
+    }
 
     const int factor = ch.ovs.factor();
     float* os = ch.ovs.upsample (data, n);
@@ -345,11 +521,12 @@ void HarmonicCore::processChunk (Channel& ch, float* data, int n, float blockCoe
     {
         const float g = ch.drive.next();
         const float k = ch.comp.next();
+        const float b = ch.bias.next();
 
         for (int s = 0; s < factor; ++s)
         {
             const std::size_t idx = (std::size_t) (i * factor + s);
-            os[idx] = shape (c, os[idx] * g) * k;
+            os[idx] = shapeEmphasisBiased (c, e, os[idx] * g, b) * k;
         }
     }
 
@@ -357,13 +534,21 @@ void HarmonicCore::processChunk (Channel& ch, float* data, int n, float blockCoe
 
     for (int i = 0; i < n; ++i)
     {
-        float y = ch.dc.process (data[i]);
+        float y = data[i];
+
+        // The clean lows rejoin here, written then read `latency` back exactly
+        // like the dry line — the low band that entered the split at the same
+        // instant as the shaped band now leaving the oversampler.
+        ch.lows.write (ch.lowScratch[(std::size_t) i]);
+        if (split) y += ch.lows.readInt (latency);
+
+        y = ch.dc.process (y);
         y = ch.tilt.process (y);
 
-        // Written then read `latency_` back: the dry sample that entered the
+        // Written then read `latency` back: the dry sample that entered the
         // device at the same instant as the wet one now leaving it.
         ch.dry.write (ch.scratch[(std::size_t) i]);
-        const float dry = ch.dry.readInt (latency_);
+        const float dry = ch.dry.readInt (latency);
         data[i] = (y * ch.wet.next() + dry * ch.dryG.next()) * ch.out.next();
     }
 }

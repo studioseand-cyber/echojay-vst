@@ -258,6 +258,260 @@ int main()
     }
 
     // =======================================================================
+    // THE MACHINES (DEVICE_DEPTH_PLAN.md, Harmonic depth). Studio is the
+    // engine as shipped; what is pinned here is that the three machines DIFFER
+    // measurably in the three ways the plan claims: bandwidth, wobble depth,
+    // and compression — and that studio is bit-exactly neutral.
+    // =======================================================================
+    std::printf ("== MACHINES: studio IS the engine as shipped, bit for bit ==\n");
+    {
+        auto render = [&] (bool explicitStudio)
+        {
+            TapeEngine t;
+            t.prepare (sr, 256);
+            t.setDriveDb (12.0f);
+            t.setBias (30.0f);
+            t.setWow (40.0f);
+            t.setFlutter (40.0f);
+            if (explicitStudio)
+            {
+                t.setMachine (TapeMachine::Studio);
+                t.setHiss (0.0f);
+                t.setCrosstalk (0.0f);
+            }
+            t.reset();
+            std::vector<float> in, out;
+            runSine (t, 500.0, sr, 0.4, 8192, in, out);
+            return out;
+        };
+
+        const auto a = render (false);
+        const auto b = render (true);
+        double worst = 0.0;
+        for (std::size_t i = 0; i < a.size(); ++i)
+            worst = std::fmax (worst, std::fabs ((double) a[i] - (double) b[i]));
+        check (worst == 0.0, "defaults vs explicit studio/0/0: delta EXACTLY 0 (got "
+                             + std::to_string (worst) + ")");
+    }
+
+    std::printf ("== MACHINES: bandwidth narrows studio -> vintage -> cassette ==\n");
+    {
+        // Measured as a TILT against 500 Hz rather than an absolute level: the
+        // machines' extra drive moves broadband loudness a little (the drive
+        // compensation trades peak against average), and an absolute reading
+        // would let that mask the bandwidth change being pinned.
+        auto tiltDb = [&] (TapeMachine m, double freq)
+        {
+            auto levelAt = [&] (double f)
+            {
+                TapeEngine t;
+                t.prepare (sr, 256);
+                t.setDriveDb (0.0f); t.setBias (0.0f);
+                t.setWow (0.0f); t.setFlutter (0.0f); t.setHeadBumpDb (0.0f);
+                t.setSpeedIps (15.0f);
+                t.setMachine (m);
+                t.setMixPercent (100.0f);
+                t.reset();
+                std::vector<float> in, out;
+                runSine (t, f, sr, 0.05, 65536, in, out);
+                return toDb (magnitudeAt (tail (out, 32768), f, sr));
+            };
+            return levelAt (freq) - levelAt (500.0);
+        };
+
+        const double topStudio   = tiltDb (TapeMachine::Studio,   12000.0);
+        const double topVintage  = tiltDb (TapeMachine::Vintage,  12000.0);
+        const double topCassette = tiltDb (TapeMachine::Cassette, 12000.0);
+        std::printf ("    12 kHz vs 500 Hz: studio %.1f, vintage %.1f, cassette %.1f dB\n",
+                     topStudio, topVintage, topCassette);
+        check (topVintage < topStudio - 2.0, "vintage is darker than studio by "
+                                             + std::to_string (topStudio - topVintage) + " dB");
+        check (topCassette < topVintage - 2.0, "cassette is darker still, by another "
+                                               + std::to_string (topVintage - topCassette) + " dB");
+
+        const double lowStudio   = tiltDb (TapeMachine::Studio,   40.0);
+        const double lowCassette = tiltDb (TapeMachine::Cassette, 40.0);
+        std::printf ("    40 Hz vs 500 Hz: studio %.1f, cassette %.1f dB\n",
+                     lowStudio, lowCassette);
+        check (lowCassette < lowStudio - 3.0,
+               "cassette is narrow at the BOTTOM too ("
+               + std::to_string (lowStudio - lowCassette) + " dB down at 40 Hz)");
+    }
+
+    std::printf ("== MACHINES: the wobble deepens studio -> cassette ==\n");
+    {
+        auto sideband = [&] (TapeMachine m)
+        {
+            TapeEngine t;
+            t.prepare (sr, 256);
+            t.setDriveDb (0.0f); t.setBias (0.0f); t.setHeadBumpDb (0.0f);
+            t.setSpeedIps (15.0f);
+            t.setWow (0.0f);
+            t.setFlutter (50.0f);           // the SAME knob setting on each machine
+            t.setMachine (m);
+            t.setMixPercent (100.0f);
+            t.reset();
+            std::vector<float> in, out;
+            runSine (t, 1000.0, sr, 0.1, 131072, in, out);
+            const auto seg = tail (out, 65536);
+            return toDb (magnitudeAt (seg, 1007.4, sr)) - toDb (magnitudeAt (seg, 1000.0, sr));
+        };
+
+        const double sStudio   = sideband (TapeMachine::Studio);
+        const double sCassette = sideband (TapeMachine::Cassette);
+        std::printf ("    flutter sideband at the same knob: studio %.1f, cassette %.1f dB\n",
+                     sStudio, sCassette);
+        check (sCassette > sStudio + 4.0,
+               "cassette's flutter is " + std::to_string (sCassette - sStudio)
+               + " dB deeper at the same knob setting");
+    }
+
+    std::printf ("== MACHINES: vintage compresses harder at the same drive ==\n");
+    {
+        auto thirdHarmonic = [&] (TapeMachine m)
+        {
+            TapeEngine t;
+            t.prepare (sr, 256);
+            t.setDriveDb (6.0f);
+            t.setBias (0.0f); t.setWow (0.0f); t.setFlutter (0.0f);
+            t.setHeadBumpDb (0.0f);
+            t.setSpeedIps (30.0f);
+            t.setMachine (m);
+            t.setMixPercent (100.0f);
+            t.reset();
+            std::vector<float> in, out;
+            runSine (t, 500.0, sr, 0.5, 32768, in, out);
+            const auto seg = tail (out, 16384);
+            return toDb (magnitudeAt (seg, 1500.0, sr)) - toDb (magnitudeAt (seg, 500.0, sr));
+        };
+
+        const double h3Studio  = thirdHarmonic (TapeMachine::Studio);
+        const double h3Vintage = thirdHarmonic (TapeMachine::Vintage);
+        std::printf ("    3rd harmonic at the same drive: studio %.1f, vintage %.1f dB\n",
+                     h3Studio, h3Vintage);
+        check (h3Vintage > h3Studio + 3.0,
+               "vintage saturates " + std::to_string (h3Vintage - h3Studio)
+               + " dB harder - the machine's compression, not the knob's");
+    }
+
+    std::printf ("== HISS: real when dialled, gated to signal presence ==\n");
+    {
+        auto rmsOf = [] (const std::vector<float>& v, int lastN)
+        {
+            double acc = 0.0;
+            for (int i = (int) v.size() - lastN; i < (int) v.size(); ++i)
+                acc += (double) v[(std::size_t) i] * (double) v[(std::size_t) i];
+            return std::sqrt (acc / (double) lastN);
+        };
+
+        auto run = [&] (float hiss, double amp, std::vector<float>& out)
+        {
+            TapeEngine t;
+            t.prepare (sr, 256);
+            t.setDriveDb (0.0f); t.setBias (0.0f); t.setWow (0.0f);
+            t.setFlutter (0.0f); t.setHeadBumpDb (0.0f);
+            t.setSpeedIps (30.0f);
+            t.setHiss (hiss);
+            t.setMixPercent (100.0f);
+            t.reset();
+            std::vector<float> in;
+            runSine (t, 500.0, sr, amp, 32768, in, out);
+        };
+
+        // Noise measured well away from the tone: the residual at 6.3 kHz.
+        std::vector<float> clean, noisy, silent;
+        run (0.0f,   0.4, clean);
+        run (100.0f, 0.4, noisy);
+        run (100.0f, 0.0, silent);
+
+        const double floorClean = toDb (magnitudeAt (tail (clean, 16384), 6300.0, sr));
+        const double floorNoisy = toDb (magnitudeAt (tail (noisy, 16384), 6300.0, sr));
+        std::printf ("    noise floor at 6.3 kHz: hiss 0 %.1f, hiss 100 %.1f dB\n",
+                     floorClean, floorNoisy);
+        check (floorNoisy > floorClean + 20.0,
+               "hiss 100 raises the noise floor by "
+               + std::to_string (floorNoisy - floorClean) + " dB under signal");
+
+        const double silentRms = rmsOf (silent, 16384);
+        check (silentRms < 1.0e-4,
+               "with NO signal the gate holds the hiss down (rms "
+               + std::to_string (silentRms) + ") - it is not a constant hum");
+
+        // And after the material stops, the noise breathes out with it.
+        {
+            TapeEngine t;
+            t.prepare (sr, 256);
+            t.setDriveDb (0.0f); t.setWow (0.0f); t.setFlutter (0.0f);
+            t.setHeadBumpDb (0.0f); t.setSpeedIps (30.0f);
+            t.setHiss (100.0f);
+            t.setMixPercent (100.0f);
+            t.reset();
+
+            std::vector<float> in, out;
+            runSine (t, 500.0, sr, 0.4, 16384, in, out);   // loud passage
+
+            std::vector<float> quiet ((std::size_t) 48000, 0.0f);
+            for (int off = 0; off < 48000 - 256; off += 256)
+                t.process (quiet.data() + off, nullptr, 256);
+
+            const double tailRms = rmsOf (quiet, 8192);
+            check (tailRms < 1.0e-4, "a second after the material stops the hiss is gone "
+                                     "(rms " + std::to_string (tailRms) + ")");
+        }
+    }
+
+    std::printf ("== CROSSTALK: bleed appears, mono sum survives ==\n");
+    {
+        auto run = [&] (float ct, std::vector<float>& l, std::vector<float>& r)
+        {
+            TapeEngine t;
+            t.prepare (sr, 256);
+            t.setDriveDb (0.0f); t.setBias (0.0f); t.setWow (0.0f);
+            t.setFlutter (0.0f); t.setHeadBumpDb (0.0f);
+            t.setSpeedIps (30.0f);
+            t.setCrosstalk (ct);
+            t.setMixPercent (100.0f);
+            t.reset();
+
+            const int n = 16384;
+            l.assign ((std::size_t) n, 0.0f);
+            r.assign ((std::size_t) n, 0.0f);
+            for (int i = 0; i < n; ++i)
+                l[(std::size_t) i] = (float) (0.1 * std::sin (2.0 * kPi * 500.0 * i / sr));
+
+            for (int off = 0; off < n; off += 256)
+                t.process (l.data() + off, r.data() + off, 256);
+        };
+
+        std::vector<float> l0, r0, l1, r1;
+        run (0.0f,   l0, r0);
+        run (100.0f, l1, r1);
+
+        const double bleedOff = toDb (magnitudeAt (tail (r0, 8192), 500.0, sr));
+        const double bleedOn  = toDb (magnitudeAt (tail (r1, 8192), 500.0, sr));
+        const double left     = toDb (magnitudeAt (tail (l1, 8192), 500.0, sr));
+        std::printf ("    right channel: ct 0 %.1f, ct 100 %.1f dB (left %.1f)\n",
+                     bleedOff, bleedOn, left);
+        check (bleedOff < -80.0, "with crosstalk off, a left-only tone stays out of the right");
+        check (bleedOn > left - 12.0 && bleedOn < left - 3.0,
+               "at 100% the right carries real but SUBTLE bleed ("
+               + std::to_string (bleedOn - left) + " dB below the left)");
+
+        // The blend is sum-preserving by construction; through the (gently
+        // nonlinear) tape path the mono sum must still come out the same to
+        // within a fraction of a dB.
+        const double sum0 = toDb (magnitudeAt ([&] { std::vector<float> s (l0.size());
+            for (std::size_t i = 0; i < s.size(); ++i) s[i] = l0[i] + r0[i]; return tail (s, 8192); }(),
+            500.0, sr));
+        const double sum1 = toDb (magnitudeAt ([&] { std::vector<float> s (l1.size());
+            for (std::size_t i = 0; i < s.size(); ++i) s[i] = l1[i] + r1[i]; return tail (s, 8192); }(),
+            500.0, sr));
+        std::printf ("    mono sum: ct 0 %.2f, ct 100 %.2f dB\n", sum0, sum1);
+        check (std::fabs (sum1 - sum0) < 0.5, "the mono sum moves by only "
+                                              + std::to_string (std::fabs (sum1 - sum0)) + " dB");
+    }
+
+    // =======================================================================
     std::printf ("== EXCITER: latency is the oversampler's, and nothing else ==\n");
     {
         ExciterEngine x;
@@ -347,9 +601,9 @@ int main()
                                    + " dB less than the tone above the split");
     }
 
-    std::printf ("== EXCITER: both modes work and differ ==\n");
+    std::printf ("== EXCITER: all four modes work, and differ the way they claim ==\n");
     {
-        auto secondHarmonic = [&] (int mode)
+        auto harmonics = [&] (int mode, double& h2, double& h3)
         {
             ExciterEngine x;
             x.prepare (sr, 256);
@@ -362,14 +616,123 @@ int main()
             std::vector<float> in, out;
             runSine (x, 4000.0, sr, 0.4, 32768, in, out);
             const auto seg = tail (out, 16384);
-            return toDb (magnitudeAt (seg, 8000.0, sr)) - toDb (magnitudeAt (seg, 4000.0, sr));
+            const double f = toDb (magnitudeAt (seg, 4000.0, sr));
+            h2 = toDb (magnitudeAt (seg, 8000.0, sr)) - f;
+            h3 = toDb (magnitudeAt (seg, 12000.0, sr)) - f;
         };
 
-        const double tube = secondHarmonic (0);
-        const double tape = secondHarmonic (1);
-        std::printf ("    2nd harmonic: tube %.1f dB, tape %.1f dB\n", tube, tape);
-        check (tube > tape + 10.0, "tube mode makes far more 2nd harmonic than tape mode "
-                                   "(it is the asymmetric curve)");
+        double h2tube = 0, h3tube = 0, h2tape = 0, h3tape = 0;
+        double h2odd = 0, h3odd = 0, h2even = 0, h3even = 0;
+        harmonics (0, h2tube, h3tube);
+        harmonics (1, h2tape, h3tape);
+        harmonics (2, h2odd,  h3odd);
+        harmonics (3, h2even, h3even);
+
+        std::printf ("    2nd/3rd: tube %.1f/%.1f, tape %.1f/%.1f, odd %.1f/%.1f, "
+                     "even %.1f/%.1f dB\n", h2tube, h3tube, h2tape, h3tape,
+                     h2odd, h3odd, h2even, h3even);
+
+        check (h2tube > h2tape + 10.0, "tube makes far more 2nd than tape (unchanged from "
+                                       "before the depth pass)");
+        check (h2odd < h2even - 25.0, "odd mode has " + std::to_string (h2even - h2odd)
+                                      + " dB less 2nd than even - the characters are real");
+        check (h3odd > -40.0, "odd mode makes a strong 3rd (edge, not silence)");
+        check (h2even > -35.0, "even mode makes a real 2nd (warmth)");
+        check (h2even > h2tube - 2.0, "even is at least as 2nd-rich as tube");
+        check (h3even < h3tube - 1.0, "and softer in the 3rd than tube - warmer, not edgier");
+    }
+
+    std::printf ("== EXCITER: new modes still reconstruct exactly at amount 0 ==\n");
+    {
+        for (int mode : { 2, 3 })
+        {
+            ExciterEngine x;
+            x.prepare (sr, 256);
+            x.setFreqHz (3000.0f);
+            x.setAmount (0.0f);
+            x.setMode (mode);
+            x.setMixPercent (100.0f);
+            x.reset();
+
+            std::vector<float> in, out;
+            runSine (x, 3000.0, sr, 0.4, 16384, in, out);
+
+            const int lat = x.latencySamples();
+            double worst = 0.0;
+            for (int i = 4096; i < 16384; ++i)
+                worst = std::fmax (worst, std::fabs ((double) out[(std::size_t) i]
+                                                   - (double) in[(std::size_t) (i - lat)]));
+            check (worst < 2.0e-4, std::string (ExciterEngine::modeName (mode))
+                                   + " mode at amount 0 reconstructs (worst error "
+                                   + std::to_string (worst) + ")");
+        }
+    }
+
+    std::printf ("== EXCITER: focus 0 is the shipped split, higher trims the bleed ==\n");
+    {
+        auto render = [&] (float focus, bool touchFocus, std::vector<float>& out)
+        {
+            ExciterEngine x;
+            x.prepare (sr, 256);
+            x.setFreqHz (4000.0f);
+            x.setAmount (100.0f);
+            x.setMode (0);
+            if (touchFocus) x.setFocus (focus);
+            x.setMixPercent (100.0f);
+            x.reset();
+            std::vector<float> in;
+            runSine (x, 1000.0, sr, 0.4, 32768, in, out);
+        };
+
+        // Bit-exact neutrality of the default.
+        std::vector<float> a, b;
+        render (0.0f, false, a);
+        render (0.0f, true, b);
+        double worst = 0.0;
+        for (std::size_t i = 0; i < a.size(); ++i)
+            worst = std::fmax (worst, std::fabs ((double) a[i] - (double) b[i]));
+        check (worst == 0.0, "default vs explicit focus 0: delta EXACTLY 0 (got "
+                             + std::to_string (worst) + ")");
+
+        // A tone two octaves BELOW the split: raising focus swaps the split's
+        // phase-heavy cascade for the single pole, so far less of the tone
+        // leaks into the shaper and it picks up far fewer harmonics.
+        auto h3For = [&] (float focus)
+        {
+            std::vector<float> out;
+            render (focus, true, out);
+            const auto seg = tail (out, 16384);
+            return toDb (magnitudeAt (seg, 3000.0, sr)) - toDb (magnitudeAt (seg, 1000.0, sr));
+        };
+
+        const double shipped = h3For (0.0f);
+        const double tight   = h3For (100.0f);
+        std::printf ("    1 kHz tone under a 4 kHz split: 3rd harmonic %.1f (focus 0) "
+                     "vs %.1f dB (focus 100)\n", shipped, tight);
+        check (tight < shipped - 6.0, "focus 100 keeps the below-split tone "
+                                      + std::to_string (shipped - tight) + " dB cleaner");
+
+        // And reconstruction at amount 0 holds at ANY focus (the split stays
+        // subtractive whatever the blend).
+        {
+            ExciterEngine x;
+            x.prepare (sr, 256);
+            x.setFreqHz (3000.0f);
+            x.setAmount (0.0f);
+            x.setFocus (30.0f);
+            x.setMixPercent (100.0f);
+            x.reset();
+
+            std::vector<float> in, out;
+            runSine (x, 3000.0, sr, 0.4, 16384, in, out);
+            const int lat = x.latencySamples();
+            double w2 = 0.0;
+            for (int i = 4096; i < 16384; ++i)
+                w2 = std::fmax (w2, std::fabs ((double) out[(std::size_t) i]
+                                             - (double) in[(std::size_t) (i - lat)]));
+            check (w2 < 2.0e-4, "amount 0 reconstructs at focus 30 too (worst error "
+                                + std::to_string (w2) + ")");
+        }
     }
 
     // =======================================================================

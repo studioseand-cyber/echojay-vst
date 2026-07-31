@@ -166,6 +166,71 @@ inline float shapeBiased (Curve c, float x, float bias) noexcept
     return shape (c, x + bias) - shape (c, bias);
 }
 
+// ---------------------------------------------------------------------------
+// Emphasis: which harmonics a curve favours (DEVICE_DEPTH_PLAN.md, Harmonic).
+//
+// Even harmonics come from asymmetry and odd ones from symmetry, so emphasis is
+// a transformation of the curve's symmetry rather than a filter on its output —
+// a filter could only remove harmonics after the fact, where this changes which
+// ones are generated in the first place.
+//
+//   Both — the curve exactly as shipped. THE NEUTRAL SETTING: shapeEmphasis
+//          with Both is bit-for-bit shape(), so an existing preset that never
+//          heard of emphasis sounds identical.
+//   Odd  — the odd (symmetric) part of the curve, (f(x) - f(-x)) / 2. Removes
+//          whatever asymmetry the curve had, so ONLY odd harmonics remain: the
+//          aggressive, console/transistor character.
+//   Even — the SYMMETRISED curve skewed by giving its negative half extra
+//          headroom the way a triode stage does. Starting from the odd part
+//          rather than the raw curve matters: it imposes one definite direction
+//          of asymmetry, so it lands the same on every curve — including diode,
+//          whose own asymmetry happens to point the other way and would
+//          otherwise cancel the skew instead of gaining from it.
+//
+// Index order is FROZEN: it is the value the `emphasis` param carries and what
+// saved state stores.
+// ---------------------------------------------------------------------------
+enum class Emphasis { Even = 0, Odd = 1, Both = 2 };
+
+inline constexpr int kEmphasisCount = 3;
+
+const char* emphasisName (Emphasis e) noexcept;        // "even" | "odd" | "both"
+Emphasis    emphasisFromIndex (int index) noexcept;    // clamped, never out of range
+
+inline float shapeEmphasis (Curve c, Emphasis e, float x) noexcept
+{
+    switch (e)
+    {
+        case Emphasis::Odd:
+            return 0.5f * (shape (c, x) - shape (c, -x));
+
+        case Emphasis::Even:
+        {
+            // The odd part, skewed. Slope 1 on both sides of zero (each half is
+            // a rescaled copy of the same curve), so the asymmetry arrives as
+            // harmonic content, not a kink.
+            constexpr float kNeg = 0.55f;
+            auto odd = [c] (float v) noexcept
+            {
+                return 0.5f * (shape (c, v) - shape (c, -v));
+            };
+            return x >= 0.0f ? odd (x) : odd (x * kNeg) / kNeg;
+        }
+
+        case Emphasis::Both:
+        default:
+            return shape (c, x);
+    }
+}
+
+// Emphasis and bias compose: the bias offset is applied to the EMPHASISED curve
+// and its DC removed the same way shapeBiased does. With Both and bias 0 this
+// is exactly shape(c, x) — the neutral path stays bit-exact.
+inline float shapeEmphasisBiased (Curve c, Emphasis e, float x, float bias) noexcept
+{
+    return shapeEmphasis (c, e, x + bias) - shapeEmphasis (c, e, bias);
+}
+
 // Output compensation for a given drive gain.
 //
 // The two obvious choices are both wrong. Dividing by the drive gain keeps quiet
@@ -186,6 +251,17 @@ inline float driveCompensation (Curve c, float driveGain) noexcept
     const float g   = driveGain > 1.0e-6f ? driveGain : 1.0e-6f;
     const float f   = std::fmax (1.0e-6f, shape (c, g));
     const float ref = std::fmax (1.0e-6f, shape (c, 1.0f));
+    return std::sqrt (ref / (g * f));
+}
+
+// The same compensation against the EMPHASISED curve, so switching emphasis
+// changes character at roughly constant loudness the way drive does. With Both
+// this evaluates the same expressions as the overload above, bit for bit.
+inline float driveCompensation (Curve c, Emphasis e, float driveGain) noexcept
+{
+    const float g   = driveGain > 1.0e-6f ? driveGain : 1.0e-6f;
+    const float f   = std::fmax (1.0e-6f, shapeEmphasis (c, e, g));
+    const float ref = std::fmax (1.0e-6f, shapeEmphasis (c, e, 1.0f));
     return std::sqrt (ref / (g * f));
 }
 
@@ -426,7 +502,79 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// 1x / 2x / 4x oversampling around a block of per-sample nonlinear work.
+// A SHORTER half-band for the 8x stage only, 25 taps, Kaiser beta 7.
+//
+// Two reasons it is not the 61-tap filter again. Quality: at 8x the audio band
+// occupies only a sixteenth of the spectrum, so a wide transition band around
+// 0.5 fs is entirely above anything audible — and what little leaks through is
+// filtered AGAIN by the full 61-tap stages on the way back down. Latency: the
+// stage runs at 8x, so its delay reaches the base rate divided by 8; kM must be
+// divisible by 4 for that to stay a WHOLE base sample, and 30 is not. M = 12
+// gives 2 * 12 / 8 = 3 exact base samples, for a total of 30 + 15 + 3 = 48.
+// ---------------------------------------------------------------------------
+namespace halfband8
+{
+    inline constexpr int kTaps   = 25;
+    inline constexpr int kM      = 12;   // (kTaps - 1) / 2; even, AND divisible by 4
+    inline constexpr int kBranch = 12;
+    inline constexpr int kRing   = 16;   // power of two >= kBranch + 2
+    inline constexpr int kMask   = kRing - 1;
+
+    // Sums to EXACTLY 0.5, same discipline as halfband::coeffs().
+    const float* coeffs() noexcept;
+}
+
+class ShortHalfBandUp2x
+{
+public:
+    void reset() noexcept;
+
+    inline void process (float x, float& even, float& odd) noexcept
+    {
+        w_ = (w_ + 1) & halfband8::kMask;
+        hist_[w_] = x;
+
+        even = hist_[(w_ - halfband8::kM / 2) & halfband8::kMask];
+
+        const float* c = halfband8::coeffs();
+        float acc = 0.0f;
+        for (int t = 0; t < halfband8::kBranch; ++t)
+            acc += c[t] * hist_[(w_ - t) & halfband8::kMask];
+        odd = 2.0f * acc;
+    }
+
+private:
+    float hist_[halfband8::kRing] {};
+    int   w_ = 0;
+};
+
+class ShortHalfBandDown2x
+{
+public:
+    void reset() noexcept;
+
+    inline float process (float even, float odd) noexcept
+    {
+        w_ = (w_ + 1) & halfband8::kMask;
+        e_[w_] = even;
+        o_[w_] = odd;
+
+        float acc = 0.5f * e_[(w_ - halfband8::kM / 2) & halfband8::kMask];
+
+        const float* c = halfband8::coeffs();
+        for (int t = 0; t < halfband8::kBranch; ++t)
+            acc += c[t] * o_[(w_ - 1 - t) & halfband8::kMask];
+        return acc;
+    }
+
+private:
+    float e_[halfband8::kRing] {};
+    float o_[halfband8::kRing] {};
+    int   w_ = 0;
+};
+
+// ---------------------------------------------------------------------------
+// 1x / 2x / 4x / 8x oversampling around a block of per-sample nonlinear work.
 //
 //     float* os = ovs.upsample (in, n);
 //     for (int i = 0; i < n * ovs.factor(); ++i) os[i] = shape (curve, os[i]);
@@ -434,6 +582,11 @@ private:
 //
 // factor 1 is a genuine bypass (no filters, no latency), which is what makes the
 // alias-suppression test a fair A/B rather than a comparison of two filters.
+//
+// prepare() allocates for the FULL 8x regardless of the prepared factor, so
+// setFactor() can retarget a running instance without touching memory — the
+// factor is a dialable param on the Saturation device, and a dial move must
+// never allocate on the audio thread's behalf.
 // ---------------------------------------------------------------------------
 class Oversampler
 {
@@ -441,9 +594,14 @@ public:
     void prepare (int factor, int maxBlockSize);
     void reset() noexcept;
 
+    // Audio-thread safe: switches the factor and clears the filter histories
+    // (their contents belong to the old rate and would smear as garbage).
+    // Never allocates — prepare() already sized every buffer for 8x.
+    void setFactor (int factor) noexcept;
+
     int factor() const noexcept { return factor_; }
 
-    // In BASE samples: 0 at 1x, 30 at 2x, 45 at 4x.
+    // In BASE samples: 0 at 1x, 30 at 2x, 45 at 4x, 48 at 8x.
     int latencySamples() const noexcept;
     static int latencyForFactor (int factor) noexcept;
 
@@ -454,10 +612,13 @@ public:
     void   downsample (float* out, int n) noexcept;
 
 private:
-    HalfBandUp2x   up1_, up2_;
-    HalfBandDown2x dn1_, dn2_;
+    HalfBandUp2x        up1_, up2_;
+    HalfBandDown2x      dn1_, dn2_;
+    ShortHalfBandUp2x   up3_;
+    ShortHalfBandDown2x dn3_;
 
     std::vector<float> mid_;    // 2x domain
+    std::vector<float> mid2_;   // 4x domain (8x path only)
     std::vector<float> top_;    // the domain the caller shapes in
 
     int factor_   = 1;
@@ -535,8 +696,9 @@ private:
 float blockCoefficient (double sampleRate, int numSamples, double tauSeconds) noexcept;
 
 // ---------------------------------------------------------------------------
-// HarmonicCore — the full saturation voice: drive -> curve -> DC block -> tilt
-// -> latency-matched dry/wet -> output.
+// HarmonicCore — the full saturation voice: (sub kept clean) -> drive -> curve
+// with emphasis and bias -> DC block -> tilt -> latency-matched dry/wet ->
+// output.
 //
 // "EchoJay Saturation" IS this class with knobs on. Tape and Exciter reuse its
 // parts (the oversampler, the curves, the compensation) around their own
@@ -550,31 +712,56 @@ public:
     static constexpr float kMinDriveDb =   0.0f, kMaxDriveDb = 36.0f;
     static constexpr float kMinToneDb  = -12.0f, kMaxToneDb  = 12.0f;
     static constexpr float kMinOutDb   = -24.0f, kMaxOutDb   = 24.0f;
+    static constexpr float kMinBias    =-100.0f, kMaxBias    = 100.0f;
+    static constexpr float kMinHpfHz   =   0.0f, kMaxHpfHz   = 500.0f;
     static constexpr float kTonePivotHz = 700.0f;
+
+    // Bias in percent -> the offset fed to the curve. The same scaling the tape
+    // face uses, for the same reason: past about 0.6 the curves are so far off
+    // their linear region that bias stops being a colour and starts being a
+    // fault.
+    static float biasOffset (float biasPercent) noexcept
+    {
+        const float b = biasPercent < kMinBias ? kMinBias
+                      : biasPercent > kMaxBias ? kMaxBias : biasPercent;
+        return b * 0.006f;
+    }
 
     HarmonicCore() = default;
 
-    // The oversampling factor is fixed BEFORE prepare, because changing it
-    // changes the reported latency and a host cannot be told mid-stream.
+    // The oversampling factor. Callable BEFORE prepare (the usual path) and
+    // live afterwards: prepare() sizes every buffer for the full 8x, so a later
+    // change swaps filters and latency without an allocation. The caller owns
+    // republishing the new latency to its host.
     void setOversampling (int factor) noexcept;
 
     void prepare (double sampleRate, int maxBlockSize);
     void reset() noexcept;
 
-    int latencySamples() const noexcept { return latency_; }
+    int latencySamples() const noexcept
+    {
+        return Oversampler::latencyForFactor (osFactor_.load());
+    }
 
     // ---- parameters (message thread) --------------------------------------
     void setDriveDb   (float db) noexcept { driveDb_.store (db); }
     void setCurve     (Curve c)  noexcept { curve_.store ((int) c); }
+    void setEmphasis  (Emphasis e) noexcept { emphasis_.store ((int) e); }
+    void setBias      (float b)  noexcept { bias_.store (b); }
+    void setHpfHz     (float hz) noexcept { hpfHz_.store (hz); }
     void setToneDb    (float db) noexcept { toneDb_.store (db); }
     void setMixPercent(float pc) noexcept { mix_.store (pc); }
     void setOutputDb  (float db) noexcept { outDb_.store (db); }
 
-    float getDriveDb()    const noexcept { return driveDb_.load(); }
-    Curve getCurve()      const noexcept { return curveFromIndex (curve_.load()); }
-    float getToneDb()     const noexcept { return toneDb_.load(); }
-    float getMixPercent() const noexcept { return mix_.load(); }
-    float getOutputDb()   const noexcept { return outDb_.load(); }
+    float    getDriveDb()    const noexcept { return driveDb_.load(); }
+    Curve    getCurve()      const noexcept { return curveFromIndex (curve_.load()); }
+    Emphasis getEmphasis()   const noexcept { return emphasisFromIndex (emphasis_.load()); }
+    float    getBias()       const noexcept { return bias_.load(); }
+    float    getHpfHz()      const noexcept { return hpfHz_.load(); }
+    float    getToneDb()     const noexcept { return toneDb_.load(); }
+    float    getMixPercent() const noexcept { return mix_.load(); }
+    float    getOutputDb()   const noexcept { return outDb_.load(); }
+    int      getOversampling() const noexcept { return osFactor_.load(); }
 
     // ---- audio thread ------------------------------------------------------
     // In-place. `right` may be null for mono.
@@ -594,32 +781,53 @@ private:
         TiltFilter  tilt;
         DelayLine   dry;
 
+        // The sub-keep split: what is below HPF bypasses the shaper and rejoins
+        // after it, delayed by the same latency the wet path costs. Built as
+        // two cascaded SUBTRACTIVE high-passes (hp = x - lp(x), twice), so the
+        // shaper's feed rolls off at a genuine 12 dB/oct below the corner —
+        // subtracting a cascaded low-pass from the input would leave only
+        // 6 dB/oct of protection, which is not "the sub stays clean". The low
+        // band is then x minus that feed, so reconstruction is exact by
+        // construction. The filters run even while the split is off so their
+        // state is always current when the knob comes up from zero.
+        OnePoleLP hpf1, hpf2;
+        DelayLine lows;
+
         // The block's input, kept because the oversampler writes its result back
         // over `data` — without a copy there is nothing left to feed the dry
         // path, and the mix control would have only one signal to mix.
-        std::vector<float> scratch;
+        // lowScratch holds the split's low band the same way, until the output
+        // loop can push it through `lows` in step with the dry line.
+        std::vector<float> scratch, lowScratch;
 
-        SmoothedValue drive, comp, wet, dryG, out;
+        SmoothedValue drive, comp, bias, wet, dryG, out;
     };
 
     void processChunk (Channel& ch, float* data, int n, float blockCoeff) noexcept;
 
     Channel channels_[2];
 
-    std::atomic<float> driveDb_ { 0.0f };
-    std::atomic<int>   curve_   { (int) Curve::Tube };
-    std::atomic<float> toneDb_  { 0.0f };
-    std::atomic<float> mix_     { 100.0f };
-    std::atomic<float> outDb_   { 0.0f };
+    std::atomic<float> driveDb_  { 0.0f };
+    std::atomic<int>   curve_    { (int) Curve::Tube };
+    std::atomic<int>   emphasis_ { (int) Emphasis::Both };
+    std::atomic<float> bias_     { 0.0f };
+    std::atomic<float> hpfHz_    { 0.0f };
+    std::atomic<float> toneDb_   { 0.0f };
+    std::atomic<float> mix_      { 100.0f };
+    std::atomic<float> outDb_    { 0.0f };
 
     double sampleRate_ = 44100.0;
-    int    osFactor_   = 4;
-    int    latency_    = 0;
     int    maxBlock_   = 0;
 
-    // The tilt is the one parameter that is not per-sample ramped: it is a
-    // filter coefficient, not a gain, so it is recomputed only when it moves.
+    // Atomic because a dial move can retarget it while process() runs; the
+    // audio thread reconciles at the top of each chunk.
+    std::atomic<int> osFactor_ { 4 };
+
+    // The tilt and the split corner are the parameters that are not per-sample
+    // ramped: they are filter coefficients, not gains, so they are recomputed
+    // only when they move.
     float lastToneDb_ = 0.0f;
+    float lastHpfHz_  = 0.0f;
 
     echojay::viz::FloatTap inputLevelTap_ { 0.0f };
     PeakFollower           inputLevel_;

@@ -135,6 +135,168 @@ int main()
     }
 
     // -----------------------------------------------------------------------
+    std::printf ("== emphasis: Both IS the shipped curve, and the maths behaves ==\n");
+    {
+        // The neutrality claim, at the function level and bit-exact: this is
+        // what lets an existing preset restore unchanged.
+        bool exact = true;
+        for (int i = 0; i < kCurveCount; ++i)
+            for (int k = -400; k <= 400; ++k)
+            {
+                const Curve c = curveFromIndex (i);
+                const float x = (float) k * 0.01f;
+                if (shapeEmphasis (c, Emphasis::Both, x) != shape (c, x)) exact = false;
+                if (shapeEmphasisBiased (c, Emphasis::Both, x, 0.0f) != shape (c, x)) exact = false;
+            }
+        check (exact, "Both emphasis (and zero bias) is BIT-EXACTLY the plain curve");
+
+        const float h = 1.0e-4f;
+        for (int e = 0; e < kEmphasisCount; ++e)
+            for (int i = 0; i < kCurveCount; ++i)
+            {
+                const Curve    c  = curveFromIndex (i);
+                const Emphasis em = emphasisFromIndex (e);
+                const double slope = (shapeEmphasis (c, em, h) - shapeEmphasis (c, em, -h))
+                                     / (2.0 * h);
+                check (near (slope, 1.0, 1.0e-3)
+                       && near (shapeEmphasis (c, em, 0.0f), 0.0, 1.0e-9),
+                       std::string (curveName (c)) + "/" + emphasisName (em)
+                       + ": slope 1 at 0 and f(0) == 0");
+            }
+
+        // Odd symmetrises everything; Even makes even the symmetric curves
+        // asymmetric. That is the entire contract.
+        for (int i = 0; i < kCurveCount; ++i)
+        {
+            const Curve c = curveFromIndex (i);
+            check (near (shapeEmphasis (c, Emphasis::Odd, 3.0f)
+                         + shapeEmphasis (c, Emphasis::Odd, -3.0f), 0.0, 1.0e-6),
+                   std::string (curveName (c)) + "/odd: symmetric, odd harmonics only");
+            check (std::fabs (shapeEmphasis (c, Emphasis::Even, 3.0f)
+                              + shapeEmphasis (c, Emphasis::Even, -3.0f)) > 0.2f,
+                   std::string (curveName (c)) + "/even: asymmetric, even harmonics live");
+        }
+    }
+
+    std::printf ("== EMPHASIS: even vs odd measurably flips the 2nd/3rd ratio ==\n");
+    {
+        constexpr double sr = 48000.0;
+
+        auto ratio = [&] (Emphasis em, double& h2, double& h3)
+        {
+            HarmonicCore core;
+            core.setOversampling (4);
+            core.prepare (sr, 256);
+            core.setCurve (Curve::Soft);   // symmetric base: emphasis does ALL the work
+            core.setEmphasis (em);
+            core.setDriveDb (24.0f);
+            core.setMixPercent (100.0f);
+            core.reset();
+
+            const auto out = runTone (core, 220.0, sr, 0.4, 16384);
+            const double f = toDb (magnitudeAt (out, 220.0, sr));
+            h2 = toDb (magnitudeAt (out, 440.0, sr)) - f;
+            h3 = toDb (magnitudeAt (out, 660.0, sr)) - f;
+        };
+
+        double h2e = 0, h3e = 0, h2o = 0, h3o = 0, h2b = 0, h3b = 0;
+        ratio (Emphasis::Even, h2e, h3e);
+        ratio (Emphasis::Odd,  h2o, h3o);
+        ratio (Emphasis::Both, h2b, h3b);
+
+        std::printf ("    soft curve: even 2nd %.1f / 3rd %.1f, odd 2nd %.1f / 3rd %.1f, "
+                     "both 2nd %.1f / 3rd %.1f dB\n", h2e, h3e, h2o, h3o, h2b, h3b);
+
+        check (h2e > -30.0, "even emphasis makes a real 2nd harmonic on a symmetric curve");
+        check (h2o < h2e - 25.0, "odd emphasis has " + std::to_string (h2e - h2o)
+                                 + " dB less 2nd than even - the ratio flips");
+        check (h3o > -30.0, "odd emphasis still makes a strong 3rd (it is not just quiet)");
+        check ((h2e - h3e) > (h2o - h3o) + 25.0,
+               "the 2nd/3rd RATIO moves by >25 dB between even and odd");
+
+        // And on an asymmetric curve, odd takes the 2nd AWAY.
+        auto tube2nd = [&] (Emphasis em)
+        {
+            HarmonicCore core;
+            core.setOversampling (4);
+            core.prepare (sr, 256);
+            core.setCurve (Curve::Tube);
+            core.setEmphasis (em);
+            core.setDriveDb (24.0f);
+            core.setMixPercent (100.0f);
+            core.reset();
+            const auto out = runTone (core, 220.0, sr, 0.4, 16384);
+            return toDb (magnitudeAt (out, 440.0, sr)) - toDb (magnitudeAt (out, 220.0, sr));
+        };
+
+        const double tubeBoth = tube2nd (Emphasis::Both);
+        const double tubeOdd  = tube2nd (Emphasis::Odd);
+        std::printf ("    tube curve: 2nd with both %.1f dB, with odd %.1f dB\n",
+                     tubeBoth, tubeOdd);
+        check (tubeOdd < tubeBoth - 20.0,
+               "odd emphasis strips the tube curve's own 2nd harmonic");
+    }
+
+    // -----------------------------------------------------------------------
+    std::printf ("== HPF: the lows are left unshaped, the highs still driven ==\n");
+    {
+        constexpr double sr = 48000.0;
+
+        auto thirdHarmonic = [&] (double toneHz, float hpfHz)
+        {
+            HarmonicCore core;
+            core.setOversampling (4);
+            core.prepare (sr, 256);
+            core.setCurve (Curve::Soft);
+            core.setDriveDb (30.0f);
+            core.setHpfHz (hpfHz);
+            core.setMixPercent (100.0f);
+            core.reset();
+            const auto out = runTone (core, toneHz, sr, 0.4, 32768);
+            return toDb (magnitudeAt (out, toneHz * 3.0, sr))
+                 - toDb (magnitudeAt (out, toneHz, sr));
+        };
+
+        // A 60 Hz tone under a 300 Hz split: the sub stays clean.
+        const double subOff = thirdHarmonic (60.0, 0.0f);
+        const double subOn  = thirdHarmonic (60.0, 300.0f);
+        std::printf ("    60 Hz tone: 3rd harmonic %.1f dB (hpf 0) -> %.1f dB (hpf 300)\n",
+                     subOff, subOn);
+        check (subOff > -20.0, "with the split off, the sub really is saturated (the "
+                               "test would be vacuous otherwise)");
+        check (subOn < subOff - 20.0, "hpf 300 leaves the 60 Hz tone >20 dB cleaner");
+
+        // A tone well above the split keeps its distortion.
+        const double hiOff = thirdHarmonic (2000.0, 0.0f);
+        const double hiOn  = thirdHarmonic (2000.0, 120.0f);
+        std::printf ("    2 kHz tone: 3rd harmonic %.1f dB (hpf 0) vs %.1f dB (hpf 120)\n",
+                     hiOff, hiOn);
+        check (std::fabs (hiOn - hiOff) < 3.0, "and a 2 kHz tone is still driven the same");
+    }
+
+    std::printf ("== HPF: the split recombines transparently at min drive ==\n");
+    {
+        // The low band takes the subtractive-split path and the high band the
+        // oversampled one; if their delays disagreed this would comb. A quiet
+        // tone NEAR the split is the worst case.
+        constexpr double sr = 48000.0;
+        HarmonicCore core;
+        core.setOversampling (4);
+        core.prepare (sr, 256);
+        core.setCurve (Curve::Soft);
+        core.setDriveDb (0.0f);
+        core.setHpfHz (300.0f);
+        core.setMixPercent (100.0f);
+        core.reset();
+
+        const auto out = runTone (core, 300.0, sr, 0.05, 16384);
+        const double lvl = toDb (magnitudeAt (out, 300.0, sr));
+        check (near (lvl, toDb (0.05), 1.0),
+               "a tone AT the split comes out at its own level ("
+               + std::to_string (lvl - toDb (0.05)) + " dB error)");
+    }
+
+    // -----------------------------------------------------------------------
     std::printf ("== half-band: the two polyphase phases have EQUAL DC gain ==\n");
     {
         // Unequal phases would put a mirror image at Nyquist. Feed DC and check
@@ -152,10 +314,12 @@ int main()
         check (Oversampler::latencyForFactor (1) == 0,  "1x adds no latency");
         check (Oversampler::latencyForFactor (2) == 30, "2x reports 30 samples");
         check (Oversampler::latencyForFactor (4) == 45, "4x reports 45 samples");
+        check (Oversampler::latencyForFactor (8) == 48, "8x reports 48 samples (the short "
+                                                        "stage adds a WHOLE 3)");
 
         // Up then straight back down, no shaping: the signal must come out
         // intact, delayed by exactly the reported amount.
-        for (int factor : { 2, 4 })
+        for (int factor : { 2, 4, 8 })
         {
             Oversampler ovs;
             ovs.prepare (factor, 512);
@@ -230,6 +394,134 @@ int main()
                                  + std::to_string (a1b - a4b) + " dB)");
         check (near (f4, f1, 3.0), "the fundamental is unchanged by oversampling ("
                                    + std::to_string (f1) + " vs " + std::to_string (f4) + " dB)");
+    }
+
+    // -----------------------------------------------------------------------
+    // The LADDER: each advertised setting suppresses more than the one below
+    // it. Moderate drive on purpose — a smoothly saturated tanh has a fast-
+    // decaying harmonic series, which is exactly the regime where each
+    // doubling of the rate pushes the first folding harmonic far up that
+    // series. (Hard-driven the series approaches a square's 1/n and the steps
+    // compress; the block above already covers that regime at 1x vs 4x.)
+    // -----------------------------------------------------------------------
+    std::printf ("== ALIAS LADDER: 2x < 4x < 8x, measured at the folds ==\n");
+    {
+        constexpr double sr   = 48000.0;
+        constexpr double tone = 11000.0;
+        // Every place an odd harmonic of 11 kHz can land in-band at SOME rate:
+        // 1x: 7k (5th), 15k (3rd), 3k (9th); 2x: 19k (7th), 3k (9th);
+        // 4x: 5k (17th), 17k (19th); 8x: 21k (33rd), 1k (35th).
+        const double folds[] = { 1000.0, 3000.0, 5000.0, 7000.0,
+                                 15000.0, 17000.0, 19000.0, 21000.0 };
+
+        auto worstAlias = [&] (int factor)
+        {
+            HarmonicCore core;
+            core.setOversampling (factor);
+            core.prepare (sr, 256);
+            core.setCurve (Curve::Soft);
+            core.setDriveDb (12.0f);
+            core.setMixPercent (100.0f);
+            core.reset();
+
+            const auto out  = runTone (core, tone, sr, 0.5, 32768);
+            const double f  = toDb (magnitudeAt (out, tone, sr));
+            double worst = -200.0;
+            for (double a : folds)
+                worst = std::max (worst, toDb (magnitudeAt (out, a, sr)) - f);
+            return worst;
+        };
+
+        const double w1 = worstAlias (1);
+        const double w2 = worstAlias (2);
+        const double w4 = worstAlias (4);
+        const double w8 = worstAlias (8);
+        std::printf ("    worst in-band alias: 1x %.1f, 2x %.1f, 4x %.1f, 8x %.1f dB\n",
+                     w1, w2, w4, w8);
+
+        check (w1 > -40.0, "1x aliases audibly at 12 dB drive (the ladder has a bottom rung)");
+        check (w2 < w1 - 8.0,  "2x beats 1x by " + std::to_string (w1 - w2) + " dB");
+        check (w4 < w2 - 8.0,  "4x beats 2x by " + std::to_string (w2 - w4) + " dB");
+        check (w8 < w4 - 3.0 || w8 < -90.0,
+               "8x beats 4x by " + std::to_string (w4 - w8) + " dB (or both sit at the floor)");
+    }
+
+    // -----------------------------------------------------------------------
+    std::printf ("== a LIVE factor change lands: latency retargets, audio stays sane ==\n");
+    {
+        constexpr double sr = 48000.0;
+        HarmonicCore core;
+        core.setOversampling (4);
+        core.prepare (sr, 256);
+        core.setCurve (Curve::Soft);
+        core.setDriveDb (12.0f);
+        core.setMixPercent (100.0f);
+        core.reset();
+
+        check (core.latencySamples() == 45, "prepared at 4x: 45 samples");
+
+        std::vector<float> buf (256, 0.0f);
+        long phase = 0;
+        auto push = [&] { for (int i = 0; i < 256; ++i, ++phase)
+                              buf[(std::size_t) i] = 0.3f * (float) std::sin (0.05 * (double) phase);
+                          core.process (buf.data(), nullptr, 256); };
+
+        for (int b = 0; b < 20; ++b) push();
+
+        core.setOversampling (8);
+        check (core.latencySamples() == 48, "switched to 8x WITHOUT re-prepare: 48 samples");
+        bool finite = true;
+        for (int b = 0; b < 20; ++b)
+        {
+            push();
+            for (float v : buf) if (! std::isfinite (v)) finite = false;
+        }
+
+        core.setOversampling (2);
+        check (core.latencySamples() == 30, "and down to 2x: 30 samples");
+        for (int b = 0; b < 20; ++b)
+        {
+            push();
+            for (float v : buf) if (! std::isfinite (v)) finite = false;
+        }
+        check (finite, "audio through both switches stays finite");
+    }
+
+    // -----------------------------------------------------------------------
+    // The depth pass's core-level neutrality claim: a core left at the new
+    // params' defaults is BIT-EXACTLY the core as it shipped. The registry test
+    // proves the same thing again at device level, through processBlock.
+    std::printf ("== the new params' defaults are bit-exact neutral ==\n");
+    {
+        constexpr double sr = 48000.0;
+
+        auto render = [&] (bool touchDefaults)
+        {
+            HarmonicCore core;
+            core.setOversampling (4);
+            core.prepare (sr, 256);
+            core.setCurve (Curve::Tube);
+            core.setDriveDb (18.0f);
+            core.setToneDb (3.0f);
+            core.setMixPercent (70.0f);
+            if (touchDefaults)
+            {
+                // Explicitly set every depth param to its neutral value.
+                core.setEmphasis (Emphasis::Both);
+                core.setBias (0.0f);
+                core.setHpfHz (0.0f);
+            }
+            core.reset();
+            return runTone (core, 220.0, sr, 0.4, 8192);
+        };
+
+        const auto a = render (false);
+        const auto b = render (true);
+        float worst = 0.0f;
+        for (std::size_t i = 0; i < a.size(); ++i)
+            worst = std::fmax (worst, std::fabs (a[i] - b[i]));
+        check (worst == 0.0f, "defaults vs explicit-neutral: worst delta is EXACTLY 0 (got "
+                              + std::to_string (worst) + ")");
     }
 
     // -----------------------------------------------------------------------
