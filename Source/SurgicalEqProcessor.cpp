@@ -8,8 +8,12 @@
 #include "SurgicalEqProcessor.h"
 #include "SurgicalEqEditor.h"
 #include "EedDeviceRegistry.h"
+#include "EqResonanceHunt.h"
+#include "EqNote.h"
+#include "EqPresets.h"
 
 #include <type_traits>
+#include <vector>
 
 // Nothing constructs a SurgicalEqProcessor yet (ChainHost integration is the
 // last step of the plan), so merely compiling this file would NOT catch an
@@ -43,21 +47,36 @@ const echojay::ParamSchema& SurgicalEqProcessor::schema()
         { kAutoGain, "", 0.0, 1.0, 0.0,
           "cancel the loudness change the bands cause, so a tonal move can be "
           "judged without a level change confounding it", true },
+
+        { kPhaseMode, "", 0.0, 1.0, 0.0,
+          "zero = minimum-phase, no latency (default, right for tracking); "
+          "linear = linear-phase FIR for mastering/parallel/phase-critical "
+          "work, adds ~53 ms latency the host compensates", false,
+          { "zero", "linear" } },
+
+        { kMsMode, "", 0.0, 1.0, 0.0,
+          "analyzer view only: overlay separate mid and side spectrum traces; "
+          "per-band ROUTING is the band's own channel field, not this", true },
     });
     return s;
 }
 
 bool SurgicalEqProcessor::setParamValue (const juce::String& id, double value)
 {
-    if (id == kOutputDb) { setOutputDb ((float) value);   return true; }
-    if (id == kAutoGain) { setAutoGain (value >= 0.5);    return true; }
+    if (id == kOutputDb)  { setOutputDb ((float) value);   return true; }
+    if (id == kAutoGain)  { setAutoGain (value >= 0.5);    return true; }
+    if (id == kPhaseMode) { setPhaseMode (value >= 0.5 ? PhaseMode::Linear
+                                                       : PhaseMode::Zero); return true; }
+    if (id == kMsMode)    { setMsMode (value >= 0.5);      return true; }
     return false;
 }
 
 double SurgicalEqProcessor::getParamValue (const juce::String& id) const
 {
-    if (id == kOutputDb) return (double) getOutputDb();
-    if (id == kAutoGain) return getAutoGain() ? 1.0 : 0.0;
+    if (id == kOutputDb)  return (double) getOutputDb();
+    if (id == kAutoGain)  return getAutoGain() ? 1.0 : 0.0;
+    if (id == kPhaseMode) return getPhaseMode() == PhaseMode::Linear ? 1.0 : 0.0;
+    if (id == kMsMode)    return getMsMode() ? 1.0 : 0.0;
     return 0.0;
 }
 
@@ -69,81 +88,62 @@ void SurgicalEqProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     engine_.prepare (sampleRate, samplesPerBlock, 2);
     pushToEngine();
 
+    // Linear mode delays; tell the host again on every prepare (the engine's
+    // latency is mode-dependent, not rate-dependent, but re-reporting is free
+    // and hosts re-query here anyway).
+    setLatencySamples (engine_.latencySamples());
+
     // Not RT: clear the taps so a restart never shows the previous session's
     // audio decaying out of the analyzer.
     preRing_.clear();
     postRing_.clear();
+    preSideRing_.clear();
+    postSideRing_.clear();
 }
 
 void SurgicalEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
 
-    // Pre tap: the signal arriving, which is what you are EQing against.
-    preRing_.push (buffer);
+    // Pre taps: the signal arriving, which is what you are EQing against —
+    // the mid lane feeds both the analyzer and the resonance hunt.
+    preRing_.push (buffer, false);
+    preSideRing_.push (buffer, true);
 
     // engine handles bypass/solo internally; passthrough is a no-op copy-free path
     engine_.process (buffer.getArrayOfWritePointers(),
                      buffer.getNumChannels(), buffer.getNumSamples());
 
-    // Post tap: the same block after the curve, so the analyzer can show what
+    // Post taps: the same block after the curve, so the analyzer can show what
     // the EQ actually did rather than only what went in.
-    postRing_.push (buffer);
+    postRing_.push (buffer, false);
+    postSideRing_.push (buffer, true);
 }
 
 // ---- analysis rings -------------------------------------------------------
-void SurgicalEqProcessor::AnalysisRing::push (const juce::AudioBuffer<float>& buffer) noexcept
+int SurgicalEqProcessor::readAnalysis (float* dest, int maxSamples,
+                                       bool postEq, bool side) const noexcept
 {
-    const int numCh = juce::jmin (buffer.getNumChannels(), 2);
-    const int n     = buffer.getNumSamples();
-    if (numCh <= 0 || n <= 0) return;
-
-    const uint32_t w = write.load (std::memory_order_relaxed);
-
-    if (numCh == 1)
-    {
-        const float* src = buffer.getReadPointer (0);
-        for (int i = 0; i < n; ++i)
-            data[(size_t) ((w + (uint32_t) i) & kAnalysisRingMask)] = src[i];
-    }
-    else
-    {
-        const float* l = buffer.getReadPointer (0);
-        const float* r = buffer.getReadPointer (1);
-        for (int i = 0; i < n; ++i)
-            data[(size_t) ((w + (uint32_t) i) & kAnalysisRingMask)] = 0.5f * (l[i] + r[i]);
-    }
-
-    // Release: the samples above must be visible before the index that claims
-    // they exist. Unsigned wraparound of the index is well-defined and the
-    // mask makes it the correct ring position regardless.
-    write.store (w + (uint32_t) n, std::memory_order_release);
-}
-
-int SurgicalEqProcessor::AnalysisRing::read (float* dest, int maxSamples) const noexcept
-{
-    if (dest == nullptr || maxSamples <= 0) return 0;
-
-    const int      n     = juce::jmin (maxSamples, kAnalysisRingSize);
-    const uint32_t w     = write.load (std::memory_order_acquire);
-    const uint32_t start = w - (uint32_t) n;      // newest n samples
-
-    for (int i = 0; i < n; ++i)
-        dest[i] = data[(size_t) ((start + (uint32_t) i) & kAnalysisRingMask)];
-
-    return n;
-}
-
-void SurgicalEqProcessor::AnalysisRing::clear() noexcept
-{
-    data.fill (0.0f);
-    write.store (0, std::memory_order_release);
-}
-
-int SurgicalEqProcessor::readAnalysis (float* dest, int maxSamples, bool postEq) const noexcept
-{
+    if (side)
+        return postEq ? postSideRing_.read (dest, maxSamples)
+                      : preSideRing_.read  (dest, maxSamples);
     return postEq ? postRing_.read (dest, maxSamples)
                   : preRing_.read  (dest, maxSamples);
+}
+
+// ---- phase mode -----------------------------------------------------------
+void SurgicalEqProcessor::setPhaseMode (PhaseMode m)
+{
+    if (engine_.getPhaseMode() == m) return;
+    engine_.setPhaseMode (m);
+    // A LIVE re-report, not just at prepare: the host has to re-compensate the
+    // moment the mode flips, exactly like the Harmonic cluster's oversampling.
+    setLatencySamples (engine_.latencySamples());
+}
+
+double SurgicalEqProcessor::getTailLengthSeconds() const
+{
+    return sampleRate_ > 0.0 ? (double) engine_.latencySamples() / sampleRate_ : 0.0;
 }
 
 // ---- editor ---------------------------------------------------------------
@@ -204,10 +204,31 @@ BandSpec SurgicalEqProcessor::specFromVar (const juce::var& e, bool& disableOut,
     s.type = t;
 
     s.freqHz = (float) (double) e.getProperty ("freq_hz", (double) s.freqHz);
+
+    // A musical `note` ("G5", "C#3") resolves to freq_hz when freq_hz is
+    // absent — explicit Hz always wins, so a move carrying both is not
+    // second-guessed. An unparseable note leaves the default rather than
+    // guessing a pitch.
+    if (! e.hasProperty ("freq_hz") && e.hasProperty ("note"))
+    {
+        const juce::String note = e.getProperty ("note", "").toString().trim();
+        float hz = 0.0f;
+        if (echojay::parseNoteToFreq (note.toRawUTF8(), hz))
+            s.freqHz = hz;
+    }
+
     s.gainDb = (float) (double) e.getProperty ("gain_db", (double) s.gainDb);
     s.q      = (float) (double) e.getProperty ("q",       (double) s.q);
     s.slopeDbPerOct = (int) e.getProperty ("slope_db_oct", s.slopeDbPerOct);
     s.enabled = (bool) e.getProperty ("enabled", true);  // a set enables by default
+
+    // Per-band routing (P2), tolerant like every other name here. Unknown
+    // labels leave the default (stereo) rather than guessing a lane.
+    if (e.hasProperty ("channel"))
+    {
+        const juce::String ch = e.getProperty ("channel", "stereo").toString();
+        echojay::parseBandChannel (ch.toRawUTF8(), s.channel);
+    }
 
     if (e.hasProperty ("dynamic"))
     {
@@ -261,6 +282,16 @@ juce::String SurgicalEqProcessor::applyEqBands (const juce::var& eqBandsArray,
             d += " Q" + juce::String (s.q, 2);
             if (s.dynamic) d += " dyn(" + juce::String (s.rangeDb, 1) + "dB@"
                                         + juce::String (s.thresholdDb, 0) + ")";
+            if (s.channel != echojay::BandChannel::Stereo)
+            {
+                d += juce::String (" [") + echojay::bandChannelToString (s.channel) + "]";
+                // The reported no-op, not a crash: on a mono stream a side- or
+                // right-routed band has no lane to act on.
+                if (getTotalNumInputChannels() < 2
+                    && (s.channel == echojay::BandChannel::Side
+                     || s.channel == echojay::BandChannel::Right))
+                    d += " (mono input: no effect)";
+            }
             descs.add (d);
         }
     }
@@ -308,29 +339,178 @@ juce::String SurgicalEqProcessor::applyEqSettings (const juce::var& settings)
                       : juce::String ("auto-gain off"));
     }
 
-    // phase_mode / ms_mode are parsed and stored here but not acted on until
-    // P4 / P2. Storing them from P1 keeps the schema stable: the backend can
-    // emit them as soon as they are documented without the client dropping the
-    // key on the floor, and state files do not change shape when the DSP lands.
     if (settings.hasProperty ("phase_mode"))
     {
         const juce::String pm = settings.getProperty ("phase_mode", "zero")
                                         .toString().trim().toLowerCase();
-        const bool linear = pm.startsWith ("lin");
+        const bool linear = pm.startsWith ("lin") || pm == "1";
         setPhaseMode (linear ? PhaseMode::Linear : PhaseMode::Zero);
         notes.add (juce::String ("phase ") + (linear ? "linear" : "zero")
-                   + (linear ? " (stored; DSP lands in P4)" : ""));
+                   + (linear ? " (" + juce::String (
+                        sampleRate_ > 0.0 ? engine_.latencySamples() * 1000.0 / sampleRate_
+                                          : 0.0, 1) + " ms latency)"
+                             : juce::String()));
     }
 
     if (settings.hasProperty ("ms_mode"))
     {
         const bool ms = (bool) settings.getProperty ("ms_mode", false);
         setMsMode (ms);
-        notes.add (juce::String ("M/S view ") + (ms ? "on (stored; DSP lands in P2)" : "off"));
+        notes.add (juce::String ("analyzer M/S view ") + (ms ? "on" : "off"));
     }
 
     if (notes.isEmpty()) return {};
     return "settings: " + notes.joinIntoString (", ");
+}
+
+// ---- eq_preset (P5) --------------------------------------------------------
+juce::String SurgicalEqProcessor::applyEqPreset (const juce::String& name)
+{
+    const auto* p = echojay::findEqPreset (name.toRawUTF8());
+    if (p == nullptr)
+    {
+        // An honest miss, WITH the menu — the model can immediately self-correct.
+        juce::StringArray names;
+        for (const auto& d : echojay::kEqPresets) names.add (d.name);
+        return "preset \"" + name + "\" unknown (built-ins: "
+             + names.joinIntoString (", ") + ")";
+    }
+
+    // A preset is a BASE: full replace of the band model, laid down by
+    // explicit index. Explicit eq_bands in the same move merge on top of this
+    // (funnel order), which is what makes "preset, then tweak" one move.
+    {
+        const juce::ScopedLock sl (modelLock_);
+        for (int i = 0; i < kNumBands; ++i) bands_[i] = BandSpec {};
+        for (int i = 0; i < p->numBands && i < kNumBands; ++i) bands_[i] = p->bands[i];
+        pushToEngine();
+    }
+    setOutputDb (p->outputDb);
+    setAutoGain (p->autoGain);
+
+    return "preset \"" + juce::String (p->name) + "\" ("
+         + juce::String (p->numBands) + " bands): " + p->blurb;
+}
+
+// ---- eq_action (P3) --------------------------------------------------------
+juce::String SurgicalEqProcessor::applyEqAction (const juce::var& action,
+                                                 int* appliedOut, int* skippedOut)
+{
+    if (appliedOut != nullptr) *appliedOut = 0;
+    if (skippedOut != nullptr) *skippedOut = 0;
+
+    const juce::String type = action.isObject()
+                                ? action.getProperty ("type", "").toString().trim()
+                                : action.toString().trim();
+    if (type.isEmpty()) return {};
+
+    const juce::String norm = type.toLowerCase()
+                                  .retainCharacters ("abcdefghijklmnopqrstuvwxyz");
+    if (norm != "tameresonances" && norm != "huntresonances" && norm != "findresonances")
+        return "action \"" + type + "\" is not one this EQ knows (have: tame_resonances)";
+
+    // ---- parameters, all optional -----------------------------------------
+    echojay::ResonanceHuntParams hp;
+    int  sensIdx = 1;                                       // medium
+    bool dynamic = true;
+    if (action.isObject())
+    {
+        const juce::String sens = action.getProperty ("sensitivity", "medium")
+                                        .toString().trim().toLowerCase();
+        if      (sens.startsWith ("l")) sensIdx = 0;
+        else if (sens.startsWith ("h")) sensIdx = 2;
+        hp.marginDb = echojay::resonanceMarginForSensitivity (sensIdx);
+
+        const juce::var range = action.getProperty ("range_hz", juce::var());
+        if (range.isArray() && range.getArray()->size() >= 2)
+        {
+            hp.loHz = juce::jlimit (20.0f, 20000.0f,
+                                    (float) (double) (*range.getArray())[0]);
+            hp.hiHz = juce::jlimit (hp.loHz, 20000.0f,
+                                    (float) (double) (*range.getArray())[1]);
+        }
+        hp.maxPeaks = juce::jlimit (1, 8, (int) action.getProperty ("max_bands", 4));
+        dynamic     = (bool) action.getProperty ("dynamic", true);
+    }
+    static const char* kSensNames[] = { "low", "medium", "high" };
+
+    // ---- capture: the newest ~2 s of PRE signal ---------------------------
+    const int want = (int) juce::jmin ((double) kHuntRingSize,
+                                       juce::jmax (sampleRate_, 1.0) * 2.0);
+    std::vector<float> capture ((size_t) juce::jmax (want, 2048), 0.0f);
+    const int got = readAnalysis (capture.data(), (int) capture.size(), false);
+
+    double sumSq = 0.0;
+    for (int i = 0; i < got; ++i) sumSq += (double) capture[(size_t) i] * capture[(size_t) i];
+    const bool silent = got <= 0 || std::sqrt (sumSq / juce::jmax (got, 1)) < 1.0e-5;
+    if (silent)
+        return "hunt: no signal to analyse - play audio through the EQ, then run it again";
+
+    echojay::ResonancePeak peaks[8];
+    const int found = echojay::findResonances (capture.data(), got, sampleRate_,
+                                               hp, peaks, 8);
+    if (found == 0)
+        return juce::String ("hunt: nothing stood out at ") + kSensNames[sensIdx]
+             + " sensitivity in " + juce::String ((int) hp.loHz) + "-"
+             + juce::String ((int) hp.hiHz) + " Hz";
+
+    // ---- place the bands through the SAME merge as any move ---------------
+    // Auto-allocate every one: a hunt proposes, it never overwrites a band
+    // someone (human or model) already dialled.
+    std::vector<EqMove> moves;
+    juce::StringArray descs;
+    for (int i = 0; i < found; ++i)
+    {
+        const auto& pk = peaks[i];
+        EqMove mv;                                          // band = -1: auto
+        BandSpec s;
+        s.freqHz  = pk.freqHz;
+        s.channel = echojay::BandChannel::Stereo;
+        if (dynamic)
+        {
+            s.type        = BandType::Bell;
+            s.gainDb      = 0.0f;                           // rests flat…
+            s.q           = pk.q;
+            s.dynamic     = true;                           // …ducks when it rings
+            s.thresholdDb = juce::jlimit (-60.0f, 0.0f, pk.envelopeDb);
+            s.rangeDb     = -juce::jlimit (1.0f, 12.0f, pk.prominenceDb);
+            s.attackMs    = 3.0f;
+            s.releaseMs   = 150.0f;
+        }
+        else
+        {
+            s.type = BandType::Notch;
+            s.q    = pk.q;
+        }
+        mv.spec = s;
+        moves.push_back (mv);
+
+        char note[16];
+        descs.add (juce::String ((int) pk.freqHz) + " Hz"
+                 + (echojay::describeFreqAsNote (pk.freqHz, note, sizeof (note))
+                        ? " (" + juce::String (note) + ")" : juce::String())
+                 + " Q" + juce::String (pk.q, 1)
+                 + (dynamic ? " dyn " + juce::String (-juce::jlimit (1.0f, 12.0f,
+                                                       pk.prominenceDb), 1) + " dB"
+                            : juce::String (" notch")));
+    }
+
+    int applied = 0, skipped = 0;
+    {
+        const juce::ScopedLock sl (modelLock_);
+        applied = echojay::applyEqMoves (bands_, kNumBands,
+                                         moves.data(), (int) moves.size(), &skipped);
+        pushToEngine();
+    }
+    if (appliedOut != nullptr) *appliedOut = applied;
+    if (skippedOut != nullptr) *skippedOut = skipped;
+
+    juce::String summary = "hunt (" + juce::String (kSensNames[sensIdx])
+                         + (dynamic ? ", dynamic" : ", static") + "): tamed "
+                         + juce::String (applied) + " resonance(s) - "
+                         + descs.joinIntoString ("; ");
+    if (skipped > 0) summary += " (" + juce::String (skipped) + " skipped: EQ full)";
+    return summary;
 }
 
 // ---- the one funnel --------------------------------------------------------
@@ -353,12 +533,12 @@ juce::String SurgicalEqProcessor::applyStructured (const juce::var& structured,
     // last so it operates on the finished state rather than a half-built one.
     if (structured.hasProperty ("eq_preset"))
     {
-        // P5. Named so a move carrying one is reported honestly instead of
-        // being silently ignored — a preset that quietly does nothing is worse
-        // than one that says it isn't here yet.
         const juce::String name = structured.getProperty ("eq_preset", "").toString().trim();
         if (name.isNotEmpty())
-            parts.add ("preset \"" + name + "\" not available yet (phase 5)");
+        {
+            const auto p = applyEqPreset (name);
+            if (p.isNotEmpty()) parts.add (p);
+        }
     }
 
     if (structured.hasProperty ("eq_settings"))
@@ -392,12 +572,14 @@ juce::String SurgicalEqProcessor::applyStructured (const juce::var& structured,
 
     if (structured.hasProperty ("eq_action"))
     {
-        // P3. Same honesty rule as eq_preset.
-        const juce::var a = structured.getProperty ("eq_action", juce::var());
-        const juce::String type = a.isObject() ? a.getProperty ("type", "").toString().trim()
-                                               : a.toString().trim();
-        if (type.isNotEmpty())
-            parts.add ("action \"" + type + "\" not available yet (phase 3)");
+        // Runs LAST by design: an action operates on the finished state, so a
+        // hunt in the same move as a preset tames what the preset left.
+        int aApplied = 0, aSkipped = 0;
+        const auto a = applyEqAction (structured.getProperty ("eq_action", juce::var()),
+                                      &aApplied, &aSkipped);
+        if (a.isNotEmpty()) parts.add (a);
+        if (appliedOut != nullptr) *appliedOut += aApplied;
+        if (skippedOut != nullptr) *skippedOut += aSkipped;
     }
 
     if (parts.isEmpty()) return {};
@@ -409,7 +591,7 @@ juce::var SurgicalEqProcessor::currentEqSettingsVar() const
     juce::DynamicObject::Ptr o = new juce::DynamicObject();
     o->setProperty ("output_db", (double) getOutputDb());
     o->setProperty ("auto_gain", getAutoGain());
-    o->setProperty ("phase_mode", phaseMode_ == PhaseMode::Linear ? "linear" : "zero");
+    o->setProperty ("phase_mode", getPhaseMode() == PhaseMode::Linear ? "linear" : "zero");
     o->setProperty ("ms_mode", msMode_);
     return juce::var (o.get());
 }
@@ -430,6 +612,10 @@ juce::var SurgicalEqProcessor::currentEqBandsVar() const
         o->setProperty ("gain_db", (double) s.gainDb);
         o->setProperty ("q", (double) s.q);
         o->setProperty ("slope_db_oct", s.slopeDbPerOct);
+        // Absent means stereo — a v2-or-older state (and any move that never
+        // routed) reads back byte-identical to what it always was.
+        if (s.channel != echojay::BandChannel::Stereo)
+            o->setProperty ("channel", echojay::bandChannelToString (s.channel));
         if (s.dynamic)
         {
             juce::DynamicObject::Ptr d = new juce::DynamicObject();
@@ -448,10 +634,11 @@ juce::var SurgicalEqProcessor::currentEqBandsVar() const
 void SurgicalEqProcessor::getStateInformation (juce::MemoryBlock& dest)
 {
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
-    // v2 adds the eq_settings sibling. v1 (bands only) still reads — see
-    // setStateInformation; the version is here to make that explicit rather
-    // than inferred from a missing key.
-    root->setProperty ("v", 2);
+    // v3 adds the per-band `channel` field (P2) and live phase_mode DSP (P4).
+    // v2 (settings, no channel) and v1 (bands only) still read — absent keys
+    // land on defaults; the version is here to make the history explicit
+    // rather than inferred from missing keys.
+    root->setProperty ("v", 3);
     root->setProperty ("bypassed", bypassed_.load());
     root->setProperty ("eq_bands", currentEqBandsVar());
     root->setProperty ("eq_settings", currentEqSettingsVar());
@@ -504,7 +691,12 @@ namespace
         d.summary         = "EchoJay's own fully-parametric EQ, dialled to EXACT values "
                             "rather than approximated. Prefer it for surgical moves: "
                             "specific-frequency cuts and boosts, high-pass/low-pass "
-                            "cleanup, notching resonances, and dynamic de-essing.";
+                            "cleanup, notching resonances, and dynamic de-essing. "
+                            "Bands take an optional channel (stereo|mid|side|left|right) "
+                            "for M/S or per-side moves, and a musical note (\"G5\") in "
+                            "place of freq_hz. eq_action tame_resonances hunts and tames "
+                            "resonant peaks from the live signal; eq_preset loads a named "
+                            "starting point.";
         d.identifier      = "echojay:builtin:eq";
         d.uid             = 0x456A4551;   // 'EjEQ' — frozen, matched on restore
         d.aliases         = { "EchoJayEQ", "EchoJay Surgical EQ" };

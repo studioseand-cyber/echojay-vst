@@ -56,18 +56,19 @@ public:
     // The EQ's bands are dialled through eq_bands, which is an array and cannot
     // be expressed as flat params. What IS here is the device-global stage.
     //
-    // phase_mode and ms_mode are deliberately ABSENT: they are parsed and stored
-    // by applyEqSettings, but their DSP does not land until P2/P4, and a schema
-    // is a promise that dialling a param does something. They join the schema
-    // when they work.
+    // phase_mode and ms_mode joined the schema the moment their DSP landed
+    // (P4 / P2) — a schema is a promise that dialling a param does something,
+    // and P1 deliberately kept them out until it did.
     static const echojay::ParamSchema& schema();
 
     const echojay::ParamSchema& paramSchema() const override { return schema(); }
     bool   setParamValue (const juce::String& id, double value) override;
     double getParamValue (const juce::String& id) const override;
 
-    static constexpr const char* kOutputDb = "output_db";
-    static constexpr const char* kAutoGain = "auto_gain";
+    static constexpr const char* kOutputDb  = "output_db";
+    static constexpr const char* kAutoGain  = "auto_gain";
+    static constexpr const char* kPhaseMode = "phase_mode";
+    static constexpr const char* kMsMode    = "ms_mode";
 
     // ---- state ------------------------------------------------------------
     void getStateInformation (juce::MemoryBlock& dest) override;
@@ -94,35 +95,43 @@ public:
     float autoGainDbApplied() const { return engine_.autoGainDbApplied(); }
     float autoGainDbTarget()  const { return engine_.autoGainDbTarget(); }
 
-    // Parsed and stored now, acted on in later phases (P2 = ms_mode routing,
-    // P4 = linear phase). Stored from P1 so the move schema is stable and a
-    // backend can start emitting them without the client silently dropping the
-    // key or a state file changing shape when the DSP lands.
-    enum class PhaseMode { Zero = 0, Linear };
-    void      setPhaseMode (PhaseMode m) { phaseMode_ = m; }
-    PhaseMode getPhaseMode() const       { return phaseMode_; }
+    // Phase mode is the ENGINE's now (P4): setting it swaps the DSP path and
+    // re-reports latency to the host. ms_mode stays here — it is a display
+    // preference (the analyzer's M/S view), not routing; routing is per band.
+    using PhaseMode = echojay::EqEngine::PhaseMode;
+    void      setPhaseMode (PhaseMode m);
+    PhaseMode getPhaseMode() const       { return engine_.getPhaseMode(); }
+    int       phaseLatencySamples() const { return engine_.latencySamples(); }
     void      setMsMode (bool on)        { msMode_ = on; }
     bool      getMsMode() const          { return msMode_; }
+
+    // The host hook EedDeviceProcessor stubs to 0.0 — wired here so a host
+    // that flushes tails knows the linear-phase FIR is still draining.
+    double getTailLengthSeconds() const override;
 
     // engine handle for the editor's analyzer / dynamic metering (read-only use)
     echojay::EqEngine&   getEngine() noexcept { return engine_; }
 
     // ---- analysis taps (audio thread writes, message thread reads) --------
-    // Two mono rings the editor FFTs for its spectrum overlay: one written
+    // Mono (mid) rings the editor FFTs for its spectrum overlay: one written
     // BEFORE the engine (the signal arriving) and one AFTER (what the EQ did).
     // The editor picks which to show; both are always captured, so toggling is
-    // instant rather than waiting for a ring to refill.
+    // instant rather than waiting for a ring to refill. P2 adds SIDE
+    // companions for the analyzer's M/S view; P3 grew the PRE ring to hold the
+    // ~1.4 s capture the resonance hunt analyses.
     //
     // Deliberately lock-free and deliberately racy: the writer never blocks,
     // never allocates, and never waits on the reader. A visualiser that tears
     // one frame under contention is invisible; an audio thread that blocks is
     // a dropout. The reader takes the most recent samples and accepts that.
     static constexpr int kAnalysisRingSize = 8192;   // power of two
-    static constexpr int kAnalysisRingMask = kAnalysisRingSize - 1;
+    static constexpr int kHuntRingSize     = 65536;  // ~1.4 s at 48 k
 
     // Copies the most recent `maxSamples` samples in chronological order from
-    // the post-EQ ring (postEq) or the pre-EQ ring. Returns how many.
-    int readAnalysis (float* dest, int maxSamples, bool postEq) const noexcept;
+    // the chosen ring: post/pre EQ, mid (default) or side lane. Returns how
+    // many.
+    int readAnalysis (float* dest, int maxSamples, bool postEq,
+                      bool side = false) const noexcept;
 
     // ---- AI apply (exact) -------------------------------------------------
     // Parse an eq_bands move (the value of the "eq_bands" key) and apply it as a
@@ -163,6 +172,18 @@ public:
     // of what actually changed, empty if nothing did.
     juce::String applyEqSettings (const juce::var& settings);
 
+    // eq_action (P3). tame_resonances: analyse the PRE capture, place dynamic
+    // bells (or static notches) on the peaks through the ordinary
+    // auto-allocating merge — hand-dialled bands are never clobbered. Returns
+    // what it found, or an honest "found nothing".
+    juce::String applyEqAction (const juce::var& action,
+                                int* appliedOut = nullptr, int* skippedOut = nullptr);
+
+    // eq_preset (P5). Resolves a built-in preset name to bands + settings and
+    // applies it as the BASE (full replace of the band model), per the funnel
+    // order — explicit eq_bands in the same move then refine it.
+    juce::String applyEqPreset (const juce::String& name);
+
     // Serialise the current band model back to an eq_bands var (for the AI to
     // see current state, and for chain-state round-tripping).
     juce::var    currentEqBandsVar() const;
@@ -171,18 +192,74 @@ public:
     juce::var    currentEqSettingsVar() const;
 
 private:
-    // One lock-free mono ring. Both taps share this type so the pre and post
-    // paths cannot drift apart in their real-time safety.
+    // One lock-free mono ring. Every tap shares this type so the lanes cannot
+    // drift apart in their real-time safety; the size is a parameter only
+    // because the hunt needs a seconds-long PRE capture and the display taps
+    // do not.
+    template <int SizeV>
     struct AnalysisRing
     {
-        std::array<float, (size_t) kAnalysisRingSize> data {};
-        std::atomic<uint32_t>                        write { 0 };
+        static_assert ((SizeV & (SizeV - 1)) == 0, "ring size must be a power of two");
+        static constexpr int kSize = SizeV;
+        static constexpr int kMask = SizeV - 1;
+
+        std::array<float, (size_t) SizeV> data {};
+        std::atomic<uint32_t>             write { 0 };
 
         // Audio thread. Bounded fixed-array writes + one release store: no
-        // locks, no allocation, nothing that can block.
-        void push (const juce::AudioBuffer<float>& buffer) noexcept;
-        int  read (float* dest, int maxSamples) const noexcept;   // message thread
-        void clear() noexcept;                                    // not RT
+        // locks, no allocation, nothing that can block. `side` pushes the
+        // 0.5*(L-R) lane (silence for mono), otherwise the 0.5*(L+R) mid.
+        void push (const juce::AudioBuffer<float>& buffer, bool side) noexcept
+        {
+            const int numCh = juce::jmin (buffer.getNumChannels(), 2);
+            const int n     = buffer.getNumSamples();
+            if (numCh <= 0 || n <= 0) return;
+
+            const uint32_t w = write.load (std::memory_order_relaxed);
+
+            if (numCh == 1)
+            {
+                const float* src = buffer.getReadPointer (0);
+                for (int i = 0; i < n; ++i)
+                    data[(size_t) ((w + (uint32_t) i) & kMask)] = side ? 0.0f : src[i];
+            }
+            else
+            {
+                const float* l = buffer.getReadPointer (0);
+                const float* r = buffer.getReadPointer (1);
+                if (side)
+                    for (int i = 0; i < n; ++i)
+                        data[(size_t) ((w + (uint32_t) i) & kMask)] = 0.5f * (l[i] - r[i]);
+                else
+                    for (int i = 0; i < n; ++i)
+                        data[(size_t) ((w + (uint32_t) i) & kMask)] = 0.5f * (l[i] + r[i]);
+            }
+
+            // Release: the samples above must be visible before the index that
+            // claims they exist. Unsigned wraparound of the index is
+            // well-defined and the mask makes it the correct ring position.
+            write.store (w + (uint32_t) n, std::memory_order_release);
+        }
+
+        int read (float* dest, int maxSamples) const noexcept     // message thread
+        {
+            if (dest == nullptr || maxSamples <= 0) return 0;
+
+            const int      n     = juce::jmin (maxSamples, kSize);
+            const uint32_t w     = write.load (std::memory_order_acquire);
+            const uint32_t start = w - (uint32_t) n;              // newest n samples
+
+            for (int i = 0; i < n; ++i)
+                dest[i] = data[(size_t) ((start + (uint32_t) i) & kMask)];
+
+            return n;
+        }
+
+        void clear() noexcept                                     // not RT
+        {
+            data.fill (0.0f);
+            write.store (0, std::memory_order_release);
+        }
     };
 
     void pushToEngine();                    // publish whole model -> engine (msg thread)
@@ -195,15 +272,16 @@ private:
     // bypassed_ lives in EedDeviceProcessor — one flag, so the base's state
     // round-trip and the engine cannot disagree about it.
 
-    // Device-global settings. output_db / auto_gain live in the engine (it is
-    // the thing that applies them); these two are message-thread only until
-    // their DSP lands in P2/P4.
-    PhaseMode phaseMode_ = PhaseMode::Zero;
+    // Device-global settings. output_db / auto_gain / phase_mode live in the
+    // engine (it is the thing that applies them); ms_mode is a pure display
+    // preference so it stays message-thread-side.
     bool      msMode_    = false;
 
     // Analysis taps. The arrays are untouched by any lock; only each write
     // index is atomic, which is all the reader needs to find the newest span.
-    AnalysisRing preRing_, postRing_;
+    // The PRE mid ring is hunt-sized (P3); the display-only lanes stay small.
+    AnalysisRing<kHuntRingSize>     preRing_;
+    AnalysisRing<kAnalysisRingSize> postRing_, preSideRing_, postSideRing_;
 
     double sampleRate_ = 44100.0;
     int    blockSize_  = 512;

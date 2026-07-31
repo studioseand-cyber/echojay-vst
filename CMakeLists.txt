@@ -139,7 +139,11 @@ target_sources(EchoJay PRIVATE
     # --- built-in surgical EQ (feat/surgical-eq) ---
     Source/EqEngine.cpp
     Source/EqEngine.h
+    Source/EqFft.h
     Source/EqMove.h
+    Source/EqNote.h
+    Source/EqPresets.h
+    Source/EqResonanceHunt.h
     Source/SurgicalEqProcessor.cpp
     Source/SurgicalEqProcessor.h
     Source/SurgicalEqEditor.cpp
@@ -439,7 +443,11 @@ target_sources(EchoJayLink PRIVATE
     # the DSP core, the AudioProcessor wrapper and its editor all build here.
     Source/EqEngine.cpp
     Source/EqEngine.h
+    Source/EqFft.h
     Source/EqMove.h
+    Source/EqNote.h
+    Source/EqPresets.h
+    Source/EqResonanceHunt.h
     Source/SurgicalEqProcessor.cpp
     Source/SurgicalEqProcessor.h
     Source/SurgicalEqEditor.cpp
