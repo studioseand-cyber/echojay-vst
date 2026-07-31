@@ -65,10 +65,25 @@ void LfoScopeView::setUnipolar (bool u)
     repaint();
 }
 
+float LfoScopeView::displayShapeAt (int shapeIndex, float phase01) noexcept
+{
+    if (shapeIndex == echojay::LfoCore::kRandom)
+    {
+        // See the header note: the plot compresses the shape's first few
+        // cycles into a staircase, sampled through the SAME shapeAt the DSP
+        // reads, so the steps drawn are values the device really plays.
+        float p = phase01 - std::floor (phase01);
+        if (! (p >= 0.0f && p < 1.0f)) p = 0.0f;
+        return echojay::LfoCore::shapeAt (shapeIndex, p * (float) kRandomScopeSteps);
+    }
+
+    return echojay::LfoCore::shapeAt (shapeIndex, phase01);
+}
+
 float LfoScopeView::valueAt (float phase01) const noexcept
 {
     // The DSP's own shape table, so the drawn waveform IS the modulator.
-    const float bipolar = echojay::LfoCore::shapeAt (shape_, phase01);
+    const float bipolar = displayShapeAt (shape_, phase01);
 
     if (! unipolar_)
         return bipolar * depth_;

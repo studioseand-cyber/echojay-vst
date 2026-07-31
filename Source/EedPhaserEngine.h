@@ -42,6 +42,73 @@
 namespace echojay
 {
 
+// ---------------------------------------------------------------------------
+// The phaser's CHARACTER (DEVICE_DEPTH_PLAN.md, Modulation depth pass). A
+// spec applied on top of what the user dialled, not a separate signal path:
+//
+//   modern   nothing scaled — the full clean cascade, the device exactly as it
+//            shipped, and the neutral default.
+//   vintage  the cascade capped at 4 stages (two broad notches, like the
+//            classic pedals), the feedback pushed ~30% hotter than the dial,
+//            and a one-pole low-pass on the wet path so the swirl sits warm
+//            and dark instead of glassy.
+//   stereo   the right channel's sweep CENTRE lifted half an octave, so its
+//            notches land between the left's and the sweep crosses the field
+//            instead of riding it — over and above the stereo_spread phase
+//            offset, which works in every mode.
+// ---------------------------------------------------------------------------
+enum class PhaserMode
+{
+    Modern  = 0,
+    Vintage = 1,
+    Stereo  = 2
+};
+
+constexpr int kNumPhaserModes = 3;
+
+struct PhaserModeSpec
+{
+    int   maxStages;     // cap on the dialled cascade length
+    float fbScale;       // multiplies the dialled feedback (result re-clamped)
+    float wetLpHz;       // one-pole low-pass on the wet path; 0 = none
+    float rCentreScale;  // multiplies the RIGHT channel's centre frequency
+};
+
+inline PhaserModeSpec phaserModeSpec (PhaserMode m) noexcept
+{
+    switch (m)
+    {
+        //                     stages  fb     wetLp    rCentre
+        case PhaserMode::Vintage:
+            return             { 4,    1.3f,  4500.0f, 1.0f };
+
+        case PhaserMode::Stereo:
+            return             { 12,   1.0f,  0.0f,    1.41421356f };   // +1/2 octave
+
+        case PhaserMode::Modern:
+        default:
+            return             { 12,   1.0f,  0.0f,    1.0f };
+    }
+}
+
+inline const char* phaserModeName (PhaserMode m) noexcept
+{
+    switch (m)
+    {
+        case PhaserMode::Vintage: return "vintage";
+        case PhaserMode::Stereo:  return "stereo";
+        case PhaserMode::Modern:
+        default:                  return "modern";
+    }
+}
+
+inline PhaserMode phaserModeFromIndex (int i) noexcept
+{
+    if (i <= 0) return PhaserMode::Modern;
+    if (i >= kNumPhaserModes - 1) return PhaserMode::Stereo;
+    return (PhaserMode) i;
+}
+
 class PhaserEngine
 {
 public:
@@ -57,8 +124,14 @@ public:
 
     // Constants of the algorithm, deliberately not knobs.
     static constexpr float kSweepOctaves   = 2.0f;
-    static constexpr float kStereoSpread01 = 0.25f;   // 90 degrees
     static constexpr int   kCoeffInterval  = 16;      // samples between tan() calls
+
+    // The depth pass turned the fixed 90-degree channel offset into the
+    // stereo_spread param; this is its neutral default, kept as a named
+    // constant so the schema and the engine agree by construction.
+    static constexpr float kDefaultSpreadDeg = 90.0f;
+    static constexpr float kMinSpreadDeg     = 0.0f;
+    static constexpr float kMaxSpreadDeg     = 360.0f;
 
     PhaserEngine() = default;
 
@@ -82,6 +155,7 @@ public:
         {
             for (int s = 0; s < kMaxStages; ++s) z_[ch][s] = 0.0f;
             fbState_[ch] = 0.0f;
+            wetLp_[ch]   = 0.0f;
 
             coeff_[ch]     = coeffFor (centreHzTarget_.load (std::memory_order_relaxed), sampleRate_);
             coeffStep_[ch] = 0.0f;
@@ -115,19 +189,54 @@ public:
     {
         mixTarget_.store (std::clamp (pct, kMinMix, kMaxMix), std::memory_order_relaxed);
     }
+    void setMode (PhaserMode m) noexcept
+    {
+        mode_.store ((int) m, std::memory_order_relaxed);
+    }
+    void setStereoSpreadDeg (float deg) noexcept
+    {
+        spreadDeg_.store (std::clamp (deg, kMinSpreadDeg, kMaxSpreadDeg),
+                          std::memory_order_relaxed);
+    }
 
     int   getStages()          const noexcept { return stages_.load          (std::memory_order_relaxed); }
     float getCentreHz()        const noexcept { return centreHzTarget_.load  (std::memory_order_relaxed); }
     float getFeedbackPercent() const noexcept { return feedbackTarget_.load  (std::memory_order_relaxed); }
     float getMixPercent()      const noexcept { return mixTarget_.load       (std::memory_order_relaxed); }
+    float getStereoSpreadDeg() const noexcept { return spreadDeg_.load       (std::memory_order_relaxed); }
+    PhaserMode getMode() const noexcept
+    {
+        return phaserModeFromIndex (mode_.load (std::memory_order_relaxed));
+    }
+
+    // The cascade length actually running: the mode may cap the dial. Public
+    // because it is what the editor's hint and notch picture must report.
+    int effectiveStages() const noexcept
+    {
+        return std::min (getStages(), phaserModeSpec (getMode()).maxStages);
+    }
 
     // ---- audio thread ------------------------------------------------------
     void process (float* left, float* right, int numSamples) noexcept
     {
-        const int   stages = stages_.load (std::memory_order_relaxed);
+        const auto spec    = phaserModeSpec (getMode());
+        const int  stages  = std::min (stages_.load (std::memory_order_relaxed),
+                                       spec.maxStages);
         const float cTgt   = centreHzTarget_.load  (std::memory_order_relaxed);
         const float fTgt   = feedbackTarget_.load  (std::memory_order_relaxed) * 0.01f;
         const float mTgt   = mixTarget_.load       (std::memory_order_relaxed) * 0.01f;
+
+        // The mode's feedback push is applied to the SMOOTHED value and then
+        // re-clamped, so vintage can run hotter than the dial without ever
+        // crossing the same 95% ceiling the dial itself enforces.
+        const float fbScale = spec.fbScale;
+
+        // The wet low-pass coefficient depends only on the mode, so one exp()
+        // per block covers it; 0 Hz means the filter is SKIPPED, not run at a
+        // neutral setting — modern must stay bit-identical to what shipped.
+        wetLpCoeff_ = spec.wetLpHz <= 0.0f ? 0.0f
+                    : (float) (1.0 - std::exp (-6.28318530717958647692 * spec.wetLpHz
+                                               / sampleRate_));
 
         for (int i = 0; i < numSamples; ++i)
         {
@@ -139,18 +248,20 @@ public:
 
             if (countdown_ <= 0)
             {
-                retargetCoeffs (right != nullptr);
+                retargetCoeffs (right != nullptr, spec.rCentreScale);
                 countdown_ = kCoeffInterval;
             }
             --countdown_;
 
+            const float fb = std::clamp (feedback_ * fbScale, -0.95f, 0.95f);
+
             coeff_[0] += coeffStep_[0];
-            left[i] = processChannel (0, left[i], stages);
+            left[i] = processChannel (0, left[i], stages, fb);
 
             if (right != nullptr)
             {
                 coeff_[1] += coeffStep_[1];
-                right[i] = processChannel (1, right[i], stages);
+                right[i] = processChannel (1, right[i], stages, fb);
             }
         }
     }
@@ -178,27 +289,29 @@ public:
     }
 
 private:
-    void retargetCoeffs (bool stereo) noexcept
+    void retargetCoeffs (bool stereo, float rCentreScale) noexcept
     {
         const float targetL = coeffFor (sweptHz (centreHz_, lfo_.valueAt (0.0f)), sampleRate_);
         coeffStep_[0] = (targetL - coeff_[0]) * (1.0f / (float) kCoeffInterval);
 
         if (stereo)
         {
-            const float targetR = coeffFor (sweptHz (centreHz_, lfo_.valueAt (kStereoSpread01)),
+            const float off = spreadDeg_.load (std::memory_order_relaxed) * (1.0f / 360.0f);
+            const float targetR = coeffFor (sweptHz (centreHz_ * rCentreScale,
+                                                     lfo_.valueAt (off)),
                                             sampleRate_);
             coeffStep_[1] = (targetR - coeff_[1]) * (1.0f / (float) kCoeffInterval);
         }
     }
 
-    float processChannel (int ch, float in, int stages) noexcept
+    float processChannel (int ch, float in, int stages, float fb) noexcept
     {
         const float a = coeff_[ch];
 
         // Bound what re-enters the cascade: at 95% feedback the loop is close to
         // self-oscillating by design, and clamping the state is what makes the
         // top of the range safe to actually reach for.
-        float y = std::clamp (in + feedback_ * fbState_[ch], -4.0f, 4.0f);
+        float y = std::clamp (in + fb * fbState_[ch], -4.0f, 4.0f);
 
         for (int s = 0; s < stages; ++s)
         {
@@ -209,6 +322,16 @@ private:
         }
 
         fbState_[ch] = y;
+
+        // Vintage's warmth: the cascade's output rolled off before it meets
+        // the dry path. Skipped entirely at 0 rather than run flat — an extra
+        // one-pole in the path would not be bit-transparent, and modern has to
+        // be the device exactly as it shipped.
+        if (wetLpCoeff_ > 0.0f)
+        {
+            wetLp_[ch] += wetLpCoeff_ * (y - wetLp_[ch]);
+            y = wetLp_[ch];
+        }
 
         // Halved: two unity paths summing would be +6 dB where they agree, and a
         // MIX knob that changes level is a MIX knob nobody trusts.
@@ -222,12 +345,16 @@ private:
     std::atomic<float> centreHzTarget_ { 800.0f };
     std::atomic<float> feedbackTarget_ { 30.0f };
     std::atomic<float> mixTarget_      { 100.0f };
+    std::atomic<int>   mode_           { (int) PhaserMode::Modern };
+    std::atomic<float> spreadDeg_      { kDefaultSpreadDeg };
 
     // Audio-thread state only.
     float  z_[2][kMaxStages] {};
     float  coeff_[2]     { 0.0f, 0.0f };
     float  coeffStep_[2] { 0.0f, 0.0f };
     float  fbState_[2]   { 0.0f, 0.0f };
+    float  wetLp_[2]     { 0.0f, 0.0f };
+    float  wetLpCoeff_   = 0.0f;
     int    countdown_    = 0;
 
     float  centreHz_    = 800.0f;

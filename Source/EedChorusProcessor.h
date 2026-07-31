@@ -41,6 +41,9 @@ public:
     static constexpr const char* kVoices   = "voices";
     static constexpr const char* kFeedback = "feedback";
     static constexpr const char* kMix      = "mix";
+    static constexpr const char* kMode     = "mode";
+    static constexpr const char* kSpread   = "spread";
+    static constexpr const char* kTone     = "tone";
 
     echojay::ChorusEngine& engine() noexcept { return engine_; }
 

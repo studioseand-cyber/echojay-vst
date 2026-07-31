@@ -58,6 +58,25 @@ const echojay::ParamSchema& EedPhaserProcessor::schema()
           "how much of the phased signal is heard; the notches come from it "
           "meeting the dry signal, so 100 is the full effect and 0 is bypass",
           false },
+
+        // ---- the depth pass (DEVICE_DEPTH_PLAN.md, Modulation) -------------
+        { kMode, "",
+          0.0, (double) (echojay::kNumPhaserModes - 1),
+          (double) (int) echojay::PhaserMode::Modern,
+          "the phaser's character: modern is the clean full cascade the "
+          "device shipped with, vintage is warmer and thicker - the cascade "
+          "capped at 4 stages like the classic pedals, a darker wet path and "
+          "feedback pushed hotter than the dial, stereo lifts the right "
+          "channel's sweep centre half an octave so the notches interleave "
+          "across the field and the swirl crosses the image",
+          false, { "modern", "vintage", "stereo" } },
+
+        { kSpread, "deg",
+          (double) P::kMinSpreadDeg, (double) P::kMaxSpreadDeg,
+          (double) P::kDefaultSpreadDeg,
+          "how far the right channel's sweep lags the left, in degrees: 0 "
+          "locks both channels together (mono), 90 is the classic wide "
+          "sweep, 180 is fully counter-phase; works in every mode", false },
     });
     return s;
 }
@@ -74,6 +93,12 @@ bool EedPhaserProcessor::setParamValue (const juce::String& id, double value)
     if (id == kFeedback)   { engine_.setFeedbackPercent ((float) value); return true; }
     if (id == kCentreFreq) { engine_.setCentreHz        ((float) value); return true; }
     if (id == kMix)        { engine_.setMixPercent      ((float) value); return true; }
+    if (id == kSpread)     { engine_.setStereoSpreadDeg ((float) value); return true; }
+    if (id == kMode)
+    {
+        engine_.setMode (echojay::phaserModeFromIndex ((int) std::lround (value)));
+        return true;
+    }
     return false;
 }
 
@@ -89,6 +114,8 @@ double EedPhaserProcessor::getParamValue (const juce::String& id) const
     if (id == kFeedback)   return (double) engine_.getFeedbackPercent();
     if (id == kCentreFreq) return (double) engine_.getCentreHz();
     if (id == kMix)        return (double) engine_.getMixPercent();
+    if (id == kMode)       return (double) (int) engine_.getMode();
+    if (id == kSpread)     return (double) engine_.getStereoSpreadDeg();
     return 0.0;
 }
 
@@ -141,7 +168,9 @@ namespace
         d.summary         = "Sweeping notches from a chain of allpass filters. Reach "
                             "for it to give a sustained part motion and a hollow, "
                             "swirling character - keys, guitars, pads - where a chorus "
-                            "would thicken instead of animate.";
+                            "would thicken instead of animate. Three characters via "
+                            "mode: modern (clean), vintage (warm, 4-stage, hotter "
+                            "feedback), stereo (the swirl crosses the field).";
         d.identifier      = "echojay:builtin:phaser";
         d.uid             = 0x456A5048;   // 'EjPH' - frozen once shipped
         d.aliases         = { "EchoJayPhaser", "Phaser" };

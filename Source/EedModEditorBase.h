@@ -77,6 +77,20 @@ protected:
     // A header toggle for a boolean schema param.
     void addHeaderToggle (const char* id, const juce::String& text);
 
+    // A header selector for a `choices` schema param, seated inboard of BYPASS
+    // like the Delay's mode box: the selector decides what kind of device the
+    // dials are shaping, so it does not belong among them. Items ARE the
+    // schema's choices in the schema's order — the list a user sees and the
+    // list the model is taught cannot drift apart.
+    void addHeaderChoice (const char* id, int widthPx);
+
+    // Whether the control bound to `id` is currently on the panel. The depth
+    // pass added modes that make particular dials MEANINGLESS — a dimension
+    // chorus has no sweep for RATE or DEPTH to shape — and a live dial the DSP
+    // ignores is worse than no dial. Hidden, not disabled, and still a schema
+    // param: dialable by the model and saved; only the panel changes.
+    virtual bool controlVisible (const char* /*id*/) const { return true; }
+
     // Wire the RATE/SYNC/DIVISION interlock: whichever of the two rate dials is
     // not in charge is dimmed. Call after all three have been added.
     void setRateGroup (const char* syncId, const char* rateId, const char* divisionId);
@@ -130,6 +144,18 @@ private:
         juce::TextButton button;
     };
     std::vector<std::unique_ptr<Toggle>> toggles_;
+
+    struct Choice
+    {
+        juce::String   id;
+        juce::ComboBox box;
+        int            width = 96;
+    };
+    std::vector<std::unique_ptr<Choice>> choices_;
+
+    // Applies controlVisible() to every knob and toggle; true when anything
+    // moved on or off the panel (the caller then relayouts).
+    bool applyControlVisibility();
 
     juce::String syncId_, rateId_, divisionId_;
 

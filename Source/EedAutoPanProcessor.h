@@ -39,6 +39,9 @@ public:
     static constexpr const char* kDepth       = "depth";
     static constexpr const char* kShape       = "shape";
     static constexpr const char* kStereoPhase = "stereo_phase";
+    static constexpr const char* kMode        = "mode";
+    static constexpr const char* kWidth       = "width";
+    static constexpr const char* kSmoothing   = "smoothing_ms";
 
     echojay::AutoPanEngine& engine() noexcept { return engine_; }
 

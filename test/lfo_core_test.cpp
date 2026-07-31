@@ -69,16 +69,139 @@ int main()
 
     std::printf ("== every shape is ZERO-MEAN (switching waveform must not shift the centre) ==\n");
     {
+        // RANDOM is held within a cycle, so its zero-mean claim lives over its
+        // CYCLE LOOP rather than over one period; the deterministic shapes are
+        // averaged across a single cycle like before.
         for (int s = 0; s < LfoCore::kNumShapes; ++s)
         {
             double sum = 0.0;
-            constexpr int kSteps = 100000;
-            for (int i = 0; i < kSteps; ++i)
-                sum += LfoCore::shapeAt (s, (float) i / (float) kSteps);
-            const double mean = sum / kSteps;
-            check (near (mean, 0.0, 1e-3),
+            double tol = 1e-3;
+
+            if (s == LfoCore::kRandom)
+            {
+                constexpr int kCycles = LfoCore::kRandomCycleMask + 1;
+                for (int c = 0; c < kCycles; ++c)
+                    sum += LfoCore::shapeAt (s, (float) c + 0.5f);
+                sum /= kCycles;
+                // 1024 uniform draws: the statistical mean is ~0.02-ish, not 1e-3.
+                tol = 0.05;
+            }
+            else
+            {
+                constexpr int kSteps = 100000;
+                for (int i = 0; i < kSteps; ++i)
+                    sum += LfoCore::shapeAt (s, (float) i / (float) kSteps);
+                sum /= kSteps;
+            }
+
+            check (near (sum, 0.0, tol),
                    std::string ("mean of ") + LfoCore::shapeName (s) + " is 0");
         }
+    }
+
+    std::printf ("== HARMONIC: bounded, hits +/-1, and flatter at the crest than sine ==\n");
+    {
+        bool bounded = true;
+        float peak = 0.0f;
+        int   nearTopH = 0, nearTopS = 0;
+        constexpr int kSteps = 20000;
+        for (int i = 0; i < kSteps; ++i)
+        {
+            const float p = (float) i / (float) kSteps;
+            const float h = LfoCore::shapeAt (LfoCore::kHarmonic, p);
+            if (std::fabs (h) > 1.0001f) bounded = false;
+            peak = std::max (peak, std::fabs (h));
+            if (h > 0.95f) ++nearTopH;
+            if (LfoCore::shapeAt (LfoCore::kSine, p) > 0.95f) ++nearTopS;
+        }
+        check (bounded, "never leaves +/-1");
+        check (peak > 0.999f, "still reaches full scale");
+        check (near (LfoCore::shapeAt (LfoCore::kHarmonic, 0.0f), 0.0, 1e-5),
+               "rises through 0 at phase 0, like every other shape");
+        // "Smoother at the peaks" made measurable: the curve LINGERS near its
+        // crest, so it spends more of the cycle above 95% than sine does.
+        check (nearTopH > nearTopS,
+               "spends longer above 0.95 than sine (" + std::to_string (nearTopH)
+               + " vs " + std::to_string (nearTopS) + " of 20000 steps)");
+    }
+
+    std::printf ("== RANDOM: held for exactly one period, changes between periods ==\n");
+    {
+        LfoCore lfo;
+        lfo.prepare (kSr);
+        lfo.setRateHz (4.0f);                // 12000 samples per period at 48k
+        lfo.setDepthPercent (100.0f);
+        lfo.setShape (LfoCore::kRandom);
+        lfo.setSmoothingMs (0.0f);           // the raw staircase
+        lfo.reset();
+
+        const int period = (int) (kSr / 4.0);
+        const auto v = run (lfo, period * 4);
+
+        // Within each period, one value; across periods, different values.
+        bool heldFlat = true, changes = true;
+        for (int c = 0; c < 4; ++c)
+        {
+            // Skip a few samples either side of the boundary: the rate smoother
+            // makes the period a hair off the nominal count, which is the phase
+            // glide contract, not a hold failure.
+            const float mid = v[(size_t) (c * period + period / 2)];
+            for (int i = c * period + 8; i < (c + 1) * period - 8; ++i)
+                if (v[(size_t) i] != mid) heldFlat = false;
+            if (c > 0 && v[(size_t) (c * period + period / 2)]
+                      == v[(size_t) ((c - 1) * period + period / 2)]) changes = false;
+        }
+        check (heldFlat, "each period is a single held value");
+        check (changes,  "and consecutive periods hold different values");
+
+        bool bounded = true;
+        for (float x : v) if (std::fabs (x) > 1.0f) bounded = false;
+        check (bounded, "the staircase stays inside +/-1");
+    }
+
+    std::printf ("== RANDOM: smoothing turns the step into a glide ==\n");
+    {
+        auto worstStepAt = [&] (float smoothMs)
+        {
+            LfoCore lfo;
+            lfo.prepare (kSr);
+            lfo.setRateHz (8.0f);
+            lfo.setDepthPercent (100.0f);
+            lfo.setShape (LfoCore::kRandom);
+            lfo.setSmoothingMs (smoothMs);
+            lfo.reset();
+            const auto v = run (lfo, (int) kSr);
+            float worst = 0.0f;
+            for (size_t i = 1; i < v.size(); ++i)
+                worst = std::max (worst, std::fabs (v[i] - v[i - 1]));
+            return worst;
+        };
+
+        const float hard = worstStepAt (0.0f);
+        const float soft = worstStepAt (40.0f);
+        check (hard > 0.5f,  "unsmoothed, the value JUMPS at the period boundary");
+        check (soft < 0.02f, "40 ms of smoothing makes the same boundary a glide (worst step "
+                             + std::to_string (soft) + ")");
+    }
+
+    std::printf ("== RANDOM: stereo offset 0 keeps both channels on the same staircase ==\n");
+    {
+        LfoCore lfo;
+        lfo.prepare (kSr);
+        lfo.setRateHz (6.0f);
+        lfo.setDepthPercent (100.0f);
+        lfo.setShape (LfoCore::kRandom);
+        lfo.setStereoPhaseDeg (0.0f);
+        lfo.reset();
+
+        bool identical = true;
+        for (int i = 0; i < (int) kSr; ++i)
+        {
+            float l = 0.0f, r = 0.0f;
+            lfo.nextStereo (l, r);
+            if (l != r) identical = false;
+        }
+        check (identical, "0 degrees: L and R hold identical values");
     }
 
     std::printf ("== phase wraps into [0,1) for any input ==\n");

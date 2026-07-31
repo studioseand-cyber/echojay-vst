@@ -68,10 +68,12 @@ public:
     static constexpr float kMaxPhaseDeg  = 360.0f;
 
     // ---- waveform -----------------------------------------------------------
+    // The first four are frozen — sessions store the index. New shapes append.
     enum Shape
     {
         kSine = 0, kTriangle = 1, kSquare = 2, kSaw = 3,
-        kNumShapes = 4
+        kHarmonic = 4, kRandom = 5,
+        kNumShapes = 6
     };
 
     static const char* shapeName (int s) noexcept
@@ -81,6 +83,8 @@ public:
             case kTriangle: return "TRI";
             case kSquare:   return "SQR";
             case kSaw:      return "SAW";
+            case kHarmonic: return "HARM";
+            case kRandom:   return "RAND";
             case kSine:
             default:        return "SINE";
         }
@@ -138,13 +142,14 @@ public:
     void reset() noexcept
     {
         phase_       = 0.0f;
+        cycles_      = 0;
         incSmoothed_ = phaseIncrement();
         depthSmooth_ = depth01();
 
         const int   sh  = shape();
         const float off = stereoOffset01();
-        outL_ = shapeAt (sh, phase_);
-        outR_ = shapeAt (sh, phase_ + off);
+        outL_ = shapeAt (sh, shapeAtPhase (sh));
+        outR_ = shapeAt (sh, shapeAtPhase (sh) + off);
 
         // Republish, or the scope's playhead sits at wherever the previous take
         // stopped until the next block arrives — most visibly after a transport
@@ -188,11 +193,18 @@ public:
                           std::memory_order_relaxed);
     }
 
-    // Output smoothing time. Only SQUARE and SAW really need it; it is exposed so
-    // a device that wants a harder edge (or none) can say so.
+    // Output smoothing time. SQUARE and SAW need a few ms of it to not click;
+    // RANDOM is the shape that earns the long end of the range — enough one-pole
+    // and its steps become a glide, which is the "smooth random" modulation. The
+    // ceiling is a quarter second: past that the smoother swallows whole cycles
+    // at audio-ish rates and the dial stops meaning anything.
+    static constexpr float kMinSmoothingMs = 0.0f;
+    static constexpr float kMaxSmoothingMs = 250.0f;
+
     void setSmoothingMs (float ms) noexcept
     {
-        smoothMs_.store (std::clamp (ms, 0.0f, 50.0f), std::memory_order_relaxed);
+        smoothMs_.store (std::clamp (ms, kMinSmoothingMs, kMaxSmoothingMs),
+                         std::memory_order_relaxed);
         updateOutputCoeff();
     }
 
@@ -233,7 +245,13 @@ public:
         const float depthTarget = depth01();
         depthSmooth_ = depthTarget + (depthSmooth_ - depthTarget) * paramCoeff_;
 
-        phase_ = wrap01 (phase_ + incSmoothed_);
+        // The cycle counter only exists for RANDOM (which value this cycle
+        // gets), and it is counted here rather than derived from an unwrapped
+        // phase because an unwrapped float phase loses sub-cycle precision
+        // within hours. Masked so the float it rides in stays exact.
+        const float stepped = phase_ + incSmoothed_;
+        if (stepped >= 1.0f) cycles_ = (cycles_ + 1) & kRandomCycleMask;
+        phase_ = wrap01 (stepped);
 
         // The one float the Modulation visuals need (VISUALS_PLAN.md: "LFO
         // playhead phase" is the cluster's only tap — everything else the scope
@@ -255,7 +273,8 @@ public:
     // let the user pick SQUARE or SAW use nextStereo() instead, which is.
     float valueAt (float phaseOffset01) const noexcept
     {
-        return shapeAt (shape(), phase_ + phaseOffset01) * depthSmooth_;
+        const int sh = shape();
+        return shapeAt (sh, shapeAtPhase (sh) + phaseOffset01) * depthSmooth_;
     }
 
     // Advance and produce the two channel values in one call: the common case,
@@ -264,11 +283,12 @@ public:
     {
         advance();
 
-        const int   sh  = shape();
-        const float off = stereoOffset01();
+        const int   sh   = shape();
+        const float off  = stereoOffset01();
+        const float base = shapeAtPhase (sh);
 
-        const float rawL = shapeAt (sh, phase_);
-        const float rawR = shapeAt (sh, phase_ + off);
+        const float rawL = shapeAt (sh, base);
+        const float rawR = shapeAt (sh, base + off);
 
         outL_ = rawL + (outL_ - rawL) * outCoeff_;
         outR_ = rawR + (outR_ - rawR) * outCoeff_;
@@ -309,13 +329,49 @@ public:
         return (p < 0.0f || p >= 1.0f) ? 0.0f : p;   // guards -0.0 and rounding
     }
 
+    // RANDOM repeats after this many cycles. The mask exists so the cycle count
+    // can ride in the integer part of a float phase and stay exactly
+    // representable; a loop of 1024 random values is far past anything an ear
+    // can track as a pattern.
+    static constexpr int kRandomCycleMask = 1023;
+
+    // The held value for one RANDOM cycle: an integer hash mapped onto [-1, +1],
+    // uniform (so the shape is zero-mean over its loop, like every other shape)
+    // and deterministic (so the g++ test and the scope see the same staircase
+    // the DSP plays).
+    static float randomForCycle (unsigned int cycle) noexcept
+    {
+        // +1013 so cycle 0 does not hash to a rail (0 * anything is 0, which
+        // maps to exactly -1: every fresh RANDOM LFO would open hard-left /
+        // full-trough). The constant was picked for the loop's mean: +0.015
+        // over the 1024-cycle loop, the closest to zero of the salts tried.
+        unsigned int h = ((cycle & (unsigned int) kRandomCycleMask) + 1013u) * 0x9E3779B9u;
+        h ^= h >> 16; h *= 0x85EBCA6Bu;
+        h ^= h >> 13; h *= 0xC2B2AE35u;
+        h ^= h >> 16;
+        return (float) h * (2.0f / 4294967295.0f) - 1.0f;
+    }
+
     // Every shape bipolar (-1..+1), zero-mean, and rising through 0 at phase 0
     // so switching waveform does not shift the modulation's centre.
+    //
+    // RANDOM alone reads the phase UNWRAPPED: which cycle the phase is in IS
+    // the value (sample-and-hold — one held value per cycle, a new one each
+    // cycle), so the integer part is the data and wrap01 would fold every
+    // cycle onto the first. The core's own callers pass a phase that carries
+    // the cycle count; a caller handing it a bare 0..1 phase gets cycle 0's
+    // value held across the whole cycle, which is exactly what sample-and-hold
+    // looks like over any single period.
     static float shapeAt (int shapeIndex, float phase) noexcept
     {
+        const int sh = clampShape (shapeIndex);
+
+        if (sh == kRandom)
+            return randomForCycle ((unsigned int) (int) std::floor (std::max (0.0f, phase)));
+
         const float p = wrap01 (phase);
 
-        switch (clampShape (shapeIndex))
+        switch (sh)
         {
             case kTriangle:
                 // 0 -> +1 -> 0 -> -1 -> 0, matching sine's zero-crossings.
@@ -331,6 +387,19 @@ public:
                 // before phase 0.5. The naive 2p-1 would start at -1 and carry a
                 // half-cycle of offset relative to every other shape.
                 return 2.0f * wrap01 (p + 0.5f) - 1.0f;
+
+            case kHarmonic:
+            {
+                // A sine leaned gently into tanh: the fundamental plus odd
+                // partials at musically decaying weights, normalised back to
+                // +/-1. The audible difference from sine is the crest — it is
+                // flatter, so a tremolo or pan riding it LINGERS at the
+                // extremes instead of just touching them. Zero-mean by the
+                // same odd symmetry sine has.
+                constexpr float k    = 1.5f;
+                constexpr float norm = 1.1047935f;   // 1 / tanh(k), so the peak is 1
+                return std::tanh (k * std::sin (p * 6.28318530717958647692f)) * norm;
+            }
 
             case kSine:
             default:
@@ -357,6 +426,14 @@ private:
         return (float) ((double) effectiveRateHz() / sampleRate_);
     }
 
+    // The phase handed to shapeAt: RANDOM carries the cycle count in the
+    // integer part (see shapeAt); every other shape wraps, so the integer part
+    // would be noise and is left off.
+    float shapeAtPhase (int sh) const noexcept
+    {
+        return sh == kRandom ? (float) cycles_ + phase_ : phase_;
+    }
+
     void updateOutputCoeff() noexcept
     {
         const double ms = (double) smoothMs_.load (std::memory_order_relaxed);
@@ -378,6 +455,7 @@ private:
 
     // ---- audio-thread state (never touched from elsewhere) -----------------
     float  phase_       = 0.0f;
+    int    cycles_      = 0;      // completed cycles, masked; RANDOM's clock
     float  incSmoothed_ = 0.0f;
     float  depthSmooth_ = 0.5f;
     float  outL_        = 0.0f;

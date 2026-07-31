@@ -552,12 +552,535 @@ static void testPhaser()
     }
 }
 
+// ---------------------------------------------------------------------------
+// The depth pass (DEVICE_DEPTH_PLAN.md, Modulation): each mode's audible claim,
+// measured. The neutral modes need no test of their own — every suite above
+// runs at the defaults and passes unchanged, which IS the neutrality proof at
+// this layer; the registry test re-proves it end to end through processBlock.
+// ---------------------------------------------------------------------------
+static void testTremoloModes()
+{
+    std::printf ("== TREMOLO/optical: the photocell rounds a square's edges ==\n");
+    {
+        // Same square, same zero LFO smoothing; the only difference is the
+        // circuit. sine mode steps hard, optical glides.
+        auto worstStep = [] (TremoloMode mode)
+        {
+            TremoloEngine e;
+            e.setMode (mode);
+            e.lfo().setDepthPercent (100.0f);
+            e.lfo().setRateHz (4.0f);
+            e.lfo().setShape (LfoCore::kSquare);
+            e.lfo().setSmoothingMs (0.0f);
+            e.setMixPercent (100.0f);
+            e.prepare (kSr, kBlock);
+
+            std::vector<float> l ((size_t) kBlock), r ((size_t) kBlock);
+            float worst = 0.0f, prev = 1.0f;
+            for (int b = 0; b < (int) (kSr / kBlock); ++b)
+            {
+                fillDc (l, r);
+                e.process (l.data(), r.data(), kBlock);
+                for (float x : l)
+                {
+                    worst = std::max (worst, std::fabs (x - prev));
+                    prev = x;
+                }
+            }
+            return worst;
+        };
+
+        const float hard = worstStep (TremoloMode::Sine);
+        const float soft = worstStep (TremoloMode::Optical);
+        check (hard > 0.5f,  "sine circuit: an unsmoothed square steps hard");
+        check (soft < 0.05f, "optical circuit: the same square glides (worst step "
+                             + std::to_string (soft) + ")");
+    }
+
+    std::printf ("== TREMOLO/bias: lows and highs wobble in OPPOSITE phase ==\n");
+    {
+        // Feed a low tone and a high tone through the harmonic circuit
+        // separately and track their envelopes over one LFO cycle: when the
+        // lows are at their loudest the highs must be at their quietest.
+        auto envelope = [] (double toneHz, std::vector<float>& env)
+        {
+            TremoloEngine e;
+            e.setMode (TremoloMode::Bias);
+            e.lfo().setDepthPercent (100.0f);
+            e.lfo().setRateHz (2.0f);
+            e.lfo().setShape (LfoCore::kSine);
+            e.setMixPercent (100.0f);
+            e.prepare (kSr, kBlock);
+
+            std::vector<float> l ((size_t) kBlock), r ((size_t) kBlock);
+            double phase = 0.0;
+            const int blocks = (int) (kSr / kBlock);        // one second, 2 cycles
+            for (int b = 0; b < blocks; ++b)
+            {
+                for (int i = 0; i < kBlock; ++i)
+                {
+                    l[(size_t) i] = (float) std::sin (phase);
+                    r[(size_t) i] = l[(size_t) i];
+                    phase += 2.0 * 3.14159265358979 * toneHz / kSr;
+                }
+                e.process (l.data(), r.data(), kBlock);
+                env.push_back (peakOf (l));                  // block peak = envelope
+            }
+        };
+
+        std::vector<float> lowEnv, highEnv;
+        envelope (100.0, lowEnv);
+        envelope (6000.0, highEnv);
+
+        // Skip the first quarter second while the crossover settles, then
+        // correlate the two envelopes: anti-phase means strongly negative.
+        double sumL = 0, sumH = 0;
+        const size_t from = lowEnv.size() / 4;
+        for (size_t i = from; i < lowEnv.size(); ++i) { sumL += lowEnv[i]; sumH += highEnv[i]; }
+        const double meanL = sumL / (double) (lowEnv.size() - from);
+        const double meanH = sumH / (double) (lowEnv.size() - from);
+
+        double corr = 0, nL = 0, nH = 0;
+        for (size_t i = from; i < lowEnv.size(); ++i)
+        {
+            const double a = lowEnv[i] - meanL, b = highEnv[i] - meanH;
+            corr += a * b; nL += a * a; nH += b * b;
+        }
+        corr /= std::sqrt (nL * nH) + 1e-12;
+
+        check (corr < -0.8, "low and high envelopes are anti-correlated (r = "
+                            + std::to_string (corr) + ")");
+
+        // And both bands genuinely wobble — anti-phase stillness would pass
+        // the correlation test with noise.
+        float lo = 2.0f, hi = -2.0f;
+        for (size_t i = from; i < lowEnv.size(); ++i)
+        { lo = std::min (lo, lowEnv[i]); hi = std::max (hi, lowEnv[i]); }
+        check (hi - lo > 0.5f, "the low band's envelope really swings");
+    }
+
+    std::printf ("== TREMOLO/bias: depth 0 stays transparent through the crossover ==\n");
+    {
+        TremoloEngine e;
+        e.setMode (TremoloMode::Bias);
+        e.lfo().setDepthPercent (0.0f);
+        e.lfo().setRateHz (5.0f);
+        e.setMixPercent (100.0f);
+        e.prepare (kSr, kBlock);
+
+        std::vector<float> l ((size_t) kBlock), r ((size_t) kBlock);
+        float worst = 0.0f;
+        double phase = 0.0;
+        for (int b = 0; b < 16; ++b)
+        {
+            for (int i = 0; i < kBlock; ++i)
+            {
+                l[(size_t) i] = (float) std::sin (phase);
+                r[(size_t) i] = l[(size_t) i];
+                phase += 2.0 * 3.14159265358979 * 440.0 / kSr;
+            }
+            std::vector<float> ref (l);
+            e.process (l.data(), r.data(), kBlock);
+            for (int i = 0; i < kBlock; ++i)
+                worst = std::max (worst, std::fabs (l[(size_t) i] - ref[(size_t) i]));
+        }
+        check (worst < 1e-5f, "split-then-sum reconstructs the input (worst "
+                              + std::to_string (worst) + ")");
+    }
+}
+
+static void testAutoPanModes()
+{
+    std::printf ("== AUTO PAN/linear: the law is a straight crossfade, centre at unity ==\n");
+    {
+        float gl = 0, gr = 0;
+        AutoPanEngine::panGainsLinear (0.0f, gl, gr);
+        check (near (gl, 1.0, 1e-6) && near (gr, 1.0, 1e-6), "centre leaves both at unity");
+        AutoPanEngine::panGainsLinear (1.0f, gl, gr);
+        check (near (gl, 0.0, 1e-6) && near (gr, 1.0, 1e-6), "hard right silences the left");
+        AutoPanEngine::panGainsLinear (-1.0f, gl, gr);
+        check (near (gl, 1.0, 1e-6) && near (gr, 0.0, 1e-6), "hard left silences the right");
+        AutoPanEngine::panGainsLinear (0.5f, gl, gr);
+        check (near (gl, 0.5, 1e-6), "and the fade between them is linear");
+    }
+
+    std::printf ("== AUTO PAN/width: scales how far the field extends ==\n");
+    {
+        // Full depth, width 50: the left channel's peak gain should reach the
+        // constant-power value for pan -0.5, not for pan -1.
+        AutoPanEngine e;
+        e.setWidthPercent (50.0f);
+        e.lfo().setDepthPercent (100.0f);
+        e.lfo().setRateHz (4.0f);
+        e.prepare (kSr, kBlock);
+
+        float glHalf = 0, grHalf = 0;
+        GainEngine::panGains (-0.5f, glHalf, grHalf);
+
+        std::vector<float> l ((size_t) kBlock), r ((size_t) kBlock);
+        float hiL = -2.0f;
+        for (int b = 0; b < (int) (kSr / kBlock); ++b)
+        {
+            fillDc (l, r);
+            e.process (l.data(), r.data(), kBlock);
+            for (float x : l) hiL = std::max (hiL, x);
+        }
+        check (near (hiL, glHalf, 0.02), "width 50 at full depth peaks like a half-field pan ("
+                                         + std::to_string (hiL) + " vs " + std::to_string (glHalf) + ")");
+    }
+
+    std::printf ("== AUTO PAN/binaural: the far ear hears it LATER, not just quieter ==\n");
+    {
+        // Park the pan hard right with a square LFO (first half-cycle is +1),
+        // send one impulse to both channels, and find each channel's peak:
+        // the left ear's copy must land later than the right ear's by roughly
+        // the full inter-aural delay.
+        AutoPanEngine e;
+        e.setMode (AutoPanMode::Binaural);
+        e.lfo().setDepthPercent (100.0f);
+        e.lfo().setRateHz (0.01f);                  // one cycle per 100 s: parked
+        e.lfo().setShape (LfoCore::kSquare);
+        e.lfo().setSmoothingMs (0.0f);
+        e.lfo().setStereoPhaseDeg (0.0f);
+        e.prepare (kSr, kBlock);
+
+        // Let the depth smoother settle at +1 before the impulse goes in.
+        std::vector<float> l ((size_t) kBlock, 0.0f), r ((size_t) kBlock, 0.0f);
+        for (int b = 0; b < 20; ++b)
+        {
+            std::fill (l.begin(), l.end(), 0.0f);
+            std::fill (r.begin(), r.end(), 0.0f);
+            e.process (l.data(), r.data(), kBlock);
+        }
+
+        std::vector<float> il (4096, 0.0f), ir (4096, 0.0f);
+        il[0] = 1.0f; ir[0] = 1.0f;
+        e.process (il.data(), ir.data(), (int) il.size());
+
+        auto peakAt = [] (const std::vector<float>& v)
+        {
+            int at = 0; float p = 0.0f;
+            for (size_t i = 0; i < v.size(); ++i)
+                if (std::fabs (v[i]) > p) { p = std::fabs (v[i]); at = (int) i; }
+            return at;
+        };
+
+        const int lagSamples = peakAt (il) - peakAt (ir);
+        const int expected   = (int) std::lround (AutoPanEngine::kMaxItdMs * 0.001 * kSr);
+        check (std::abs (lagSamples - expected) <= 2,
+               "panned hard right, the left channel lags by ~" + std::to_string (expected)
+               + " samples (got " + std::to_string (lagSamples) + ")");
+    }
+}
+
+static void testChorusModes()
+{
+    std::printf ("== CHORUS/spread 0: both channels come out identical ==\n");
+    {
+        ChorusEngine e;
+        e.setSpreadPercent (0.0f);
+        e.setMixPercent (100.0f);
+        e.lfo().setDepthPercent (60.0f);
+        e.lfo().setRateHz (1.0f);
+        e.prepare (kSr, kBlock);
+
+        std::vector<float> l ((size_t) kBlock), r ((size_t) kBlock);
+        bool identical = true;
+        double phase = 0.0;
+        for (int b = 0; b < 16; ++b)
+        {
+            for (int i = 0; i < kBlock; ++i)
+            {
+                l[(size_t) i] = (float) std::sin (phase);
+                r[(size_t) i] = l[(size_t) i];
+                phase += 2.0 * 3.14159265358979 * 330.0 / kSr;
+            }
+            e.process (l.data(), r.data(), kBlock);
+            for (int i = 0; i < kBlock; ++i)
+                if (l[(size_t) i] != r[(size_t) i]) identical = false;
+        }
+        check (identical, "a spread of 0 is a mono modulator");
+    }
+
+    std::printf ("== CHORUS/dimension: nothing sweeps — the comb is FROZEN ==\n");
+    {
+        // Two impulses far apart must come back at the SAME delay. In classic
+        // mode the LFO would have moved the read position between them.
+        auto tapSpread = [] (ChorusMode mode)
+        {
+            ChorusEngine e;
+            e.setMode (mode);
+            e.setDelayMs (15.0f);
+            e.setVoices (1);
+            e.setFeedbackPercent (0.0f);
+            e.setMixPercent (100.0f);
+            e.lfo().setDepthPercent (100.0f);
+            e.lfo().setRateHz (2.0f);
+            e.prepare (kSr, kBlock);
+
+            auto findEcho = [&e] ()
+            {
+                std::vector<float> l (8192, 0.0f), r (8192, 0.0f);
+                l[0] = 1.0f; r[0] = 1.0f;
+                e.process (l.data(), r.data(), (int) l.size());
+                int at = 0; float p = 0.0f;
+                for (size_t i = 32; i < l.size(); ++i)      // skip the dry spike
+                    if (std::fabs (l[i]) > p) { p = std::fabs (l[i]); at = (int) i; }
+                return at;
+            };
+
+            const int first = findEcho();
+            const int second = findEcho();                  // ~0.17 s later
+            return std::abs (second - first);
+        };
+
+        check (tapSpread (ChorusMode::Dimension) <= 1,
+               "dimension: the echo never moves");
+        check (tapSpread (ChorusMode::Classic) > 4,
+               "classic (same settings): the sweep moves it - the control works");
+    }
+
+    std::printf ("== CHORUS/dimension: left and right are DIFFERENT combs ==\n");
+    {
+        ChorusEngine e;
+        e.setMode (ChorusMode::Dimension);
+        e.setDelayMs (10.0f);
+        e.setVoices (3);
+        e.setFeedbackPercent (0.0f);
+        e.setMixPercent (100.0f);
+        e.prepare (kSr, kBlock);
+
+        std::vector<float> l (4096, 0.0f), r (4096, 0.0f);
+        l[0] = 1.0f; r[0] = 1.0f;
+        e.process (l.data(), r.data(), (int) l.size());
+
+        float diff = 0.0f;
+        for (size_t i = 64; i < l.size(); ++i)
+            diff = std::max (diff, std::fabs (l[i] - r[i]));
+        check (diff > 0.1f, "the mirrored stagger decorrelates the channels (max diff "
+                            + std::to_string (diff) + ")");
+    }
+
+    std::printf ("== CHORUS/ensemble: more voices than the dial, still bounded ==\n");
+    {
+        ChorusEngine e;
+        e.setMode (ChorusMode::Ensemble);
+        e.setVoices (4);                                    // + 2 from the mode
+        e.setDelayMs (12.0f);
+        e.setFeedbackPercent (60.0f);
+        e.setMixPercent (100.0f);
+        e.lfo().setDepthPercent (100.0f);
+        e.lfo().setRateHz (3.0f);
+        e.prepare (kSr, kBlock);
+
+        check (e.effectiveVoices() == 6, "4 dialled + 2 from the mode = 6 running");
+
+        std::vector<float> l ((size_t) kBlock), r ((size_t) kBlock);
+        bool ok = true;
+        double phase = 0.0;
+        for (int b = 0; b < (int) (2.0 * kSr / kBlock); ++b)
+        {
+            for (int i = 0; i < kBlock; ++i)
+            {
+                l[(size_t) i] = (float) std::sin (phase);
+                r[(size_t) i] = l[(size_t) i];
+                phase += 2.0 * 3.14159265358979 * 220.0 / kSr;
+            }
+            e.process (l.data(), r.data(), kBlock);
+            if (! allFinite (l) || peakOf (l) > 8.0f) ok = false;
+        }
+        check (ok, "two seconds at full tilt: finite and bounded");
+    }
+
+    std::printf ("== CHORUS/tone: the tilt darkens or brightens the WET only ==\n");
+    {
+        // A bright test signal (impulse train) through full-wet chorus at
+        // tone -6 vs +6: the dark setting must carry less high-frequency
+        // energy. Measured as first-difference energy, a cheap HF proxy.
+        auto hfEnergy = [] (float toneDb)
+        {
+            ChorusEngine e;
+            e.setToneDb (toneDb);
+            e.setMixPercent (100.0f);
+            e.setDelayMs (10.0f);
+            e.lfo().setDepthPercent (20.0f);
+            e.lfo().setRateHz (1.0f);
+            e.prepare (kSr, kBlock);
+
+            std::vector<float> l ((size_t) kBlock), r ((size_t) kBlock);
+            double hf = 0.0;
+            for (int b = 0; b < 32; ++b)
+            {
+                for (int i = 0; i < kBlock; ++i)
+                {
+                    l[(size_t) i] = (i % 64 == 0) ? 1.0f : 0.0f;
+                    r[(size_t) i] = l[(size_t) i];
+                }
+                e.process (l.data(), r.data(), kBlock);
+                for (int i = 1; i < kBlock; ++i)
+                {
+                    const double d = (double) l[(size_t) i] - l[(size_t) i - 1];
+                    hf += d * d;
+                }
+            }
+            return hf;
+        };
+
+        const double dark = hfEnergy (-6.0f);
+        const double bright = hfEnergy (6.0f);
+        check (dark < bright * 0.7,
+               "tone -6 carries measurably less HF than +6 ("
+               + std::to_string (dark) + " vs " + std::to_string (bright) + ")");
+    }
+}
+
+static void testPhaserModes()
+{
+    std::printf ("== PHASER/vintage: capped stages, darker wet, still stable ==\n");
+    {
+        PhaserEngine e;
+        e.setMode (PhaserMode::Vintage);
+        e.setStages (12);
+        check (e.effectiveStages() == 4, "12 dialled stages run as 4 in vintage");
+
+        // Same bright signal through modern and vintage at identical dials:
+        // vintage's wet low-pass must lose HF energy.
+        auto hfEnergy = [] (PhaserMode mode)
+        {
+            PhaserEngine p;
+            p.setMode (mode);
+            p.setStages (6);
+            p.setMixPercent (100.0f);
+            p.setFeedbackPercent (40.0f);
+            p.lfo().setDepthPercent (70.0f);
+            p.lfo().setRateHz (1.0f);
+            p.prepare (kSr, kBlock);
+
+            std::vector<float> l ((size_t) kBlock), r ((size_t) kBlock);
+            double hf = 0.0;
+            for (int b = 0; b < 32; ++b)
+            {
+                for (int i = 0; i < kBlock; ++i)
+                {
+                    l[(size_t) i] = (i % 48 == 0) ? 1.0f : 0.0f;
+                    r[(size_t) i] = l[(size_t) i];
+                }
+                p.process (l.data(), r.data(), kBlock);
+                for (int i = 1; i < kBlock; ++i)
+                {
+                    const double d = (double) l[(size_t) i] - l[(size_t) i - 1];
+                    hf += d * d;
+                }
+            }
+            return hf;
+        };
+
+        check (hfEnergy (PhaserMode::Vintage) < hfEnergy (PhaserMode::Modern) * 0.85,
+               "vintage is measurably darker than modern at the same dials");
+
+        // The hotter feedback stays bounded even from the dial's ceiling.
+        PhaserEngine hot;
+        hot.setMode (PhaserMode::Vintage);
+        hot.setFeedbackPercent (95.0f);
+        hot.setMixPercent (100.0f);
+        hot.lfo().setDepthPercent (100.0f);
+        hot.lfo().setRateHz (5.0f);
+        hot.prepare (kSr, kBlock);
+
+        std::vector<float> l ((size_t) kBlock), r ((size_t) kBlock);
+        bool ok = true;
+        for (int b = 0; b < (int) (2.0 * kSr / kBlock); ++b)
+        {
+            for (int i = 0; i < kBlock; ++i)
+            {
+                l[(size_t) i] = (b == 0 && i == 0) ? 1.0f : 0.0f;
+                r[(size_t) i] = l[(size_t) i];
+            }
+            hot.process (l.data(), r.data(), kBlock);
+            if (! allFinite (l) || peakOf (l) > 8.0f) ok = false;
+        }
+        check (ok, "95% dialled feedback times the vintage push stays bounded");
+    }
+
+    std::printf ("== PHASER/stereo_spread 0: both channels sweep as one ==\n");
+    {
+        PhaserEngine e;
+        e.setStereoSpreadDeg (0.0f);
+        e.setMixPercent (100.0f);
+        e.setFeedbackPercent (40.0f);
+        e.lfo().setDepthPercent (100.0f);
+        e.lfo().setRateHz (2.0f);
+        e.prepare (kSr, kBlock);
+
+        std::vector<float> l ((size_t) kBlock), r ((size_t) kBlock);
+        bool identical = true;
+        double phase = 0.0;
+        for (int b = 0; b < 32; ++b)
+        {
+            for (int i = 0; i < kBlock; ++i)
+            {
+                l[(size_t) i] = (float) std::sin (phase);
+                r[(size_t) i] = l[(size_t) i];
+                phase += 2.0 * 3.14159265358979 * 440.0 / kSr;
+            }
+            e.process (l.data(), r.data(), kBlock);
+            for (int i = 0; i < kBlock; ++i)
+                if (l[(size_t) i] != r[(size_t) i]) identical = false;
+        }
+        check (identical, "spread 0 collapses the channel offset");
+    }
+
+    std::printf ("== PHASER/stereo: the right channel's notches sit elsewhere ==\n");
+    {
+        // Same input to both channels; in stereo mode the right channel's
+        // lifted centre must make L and R differ MORE than modern does at the
+        // same spread.
+        auto channelDiff = [] (PhaserMode mode)
+        {
+            PhaserEngine p;
+            p.setMode (mode);
+            p.setStereoSpreadDeg (0.0f);       // isolate the centre lift
+            p.setMixPercent (100.0f);
+            p.setFeedbackPercent (30.0f);
+            p.lfo().setDepthPercent (50.0f);
+            p.lfo().setRateHz (1.0f);
+            p.prepare (kSr, kBlock);
+
+            std::vector<float> l ((size_t) kBlock), r ((size_t) kBlock);
+            double diff = 0.0;
+            double phase = 0.0;
+            for (int b = 0; b < 32; ++b)
+            {
+                for (int i = 0; i < kBlock; ++i)
+                {
+                    l[(size_t) i] = (float) std::sin (phase);
+                    r[(size_t) i] = l[(size_t) i];
+                    phase += 2.0 * 3.14159265358979 * 880.0 / kSr;
+                }
+                p.process (l.data(), r.data(), kBlock);
+                for (int i = 0; i < kBlock; ++i)
+                    diff += std::fabs ((double) l[(size_t) i] - r[(size_t) i]);
+            }
+            return diff;
+        };
+
+        const double modern = channelDiff (PhaserMode::Modern);
+        const double stereo = channelDiff (PhaserMode::Stereo);
+        check (modern < 1e-6, "modern at spread 0 keeps the channels identical");
+        check (stereo > 1.0,  "stereo mode separates them even at spread 0");
+    }
+}
+
 int main()
 {
     testTremolo();
     testAutoPan();
     testChorus();
     testPhaser();
+    testTremoloModes();
+    testAutoPanModes();
+    testChorusModes();
+    testPhaserModes();
 
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",
                  g_fail, g_fail == 1 ? "" : "s");

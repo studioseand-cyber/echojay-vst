@@ -41,6 +41,8 @@ public:
     static constexpr const char* kFeedback   = "feedback";
     static constexpr const char* kCentreFreq = "center_freq";
     static constexpr const char* kMix        = "mix";
+    static constexpr const char* kMode       = "mode";
+    static constexpr const char* kSpread     = "stereo_spread";
 
     echojay::PhaserEngine& engine() noexcept { return engine_; }
 

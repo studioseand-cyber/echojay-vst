@@ -38,9 +38,16 @@ const echojay::ParamSchema& EedTremoloProcessor::schema()
           "how far the level drops at the trough; 100 reaches silence, "
           "the peak stays at unity", false },
 
+        // A named choice since the depth pass (it was a bare 0..3): the value
+        // is still the index, so old sessions and old numeric moves land
+        // unchanged, and the two new shapes simply append.
         { kShape, "",
           0.0, (double) (L::kNumShapes - 1), 0.0,
-          "waveform: 0 sine, 1 triangle, 2 square (choppy), 3 saw", false },
+          "waveform of the wobble: sine is smooth, triangle linear, square "
+          "chops, saw ramps, harmonic is a rounder sine that lingers at the "
+          "extremes, random holds a new random level each cycle "
+          "(sample-and-hold; see smoothing_ms to make it glide)",
+          false, { "sine", "triangle", "square", "saw", "harmonic", "random" } },
 
         { kStereoPhase, "deg",
           (double) L::kMinPhaseDeg, (double) L::kMaxPhaseDeg, 0.0,
@@ -51,6 +58,24 @@ const echojay::ParamSchema& EedTremoloProcessor::schema()
           (double) echojay::TremoloEngine::kMinMix,
           (double) echojay::TremoloEngine::kMaxMix, 100.0,
           "how much of the modulated signal is heard; 0 is bypass", false },
+
+        // ---- the depth pass (DEVICE_DEPTH_PLAN.md, Modulation) -------------
+        { kMode, "",
+          0.0, (double) (echojay::kNumTremoloModes - 1),
+          (double) (int) echojay::TremoloMode::Sine,
+          "the tremolo circuit: sine is the clean level wobble the device "
+          "shipped with, optical smooths the gain like an amp's photocell so "
+          "even a square breathes with soft edges, bias is harmonic tremolo - "
+          "lows and highs wobble in OPPOSITE phase so the tone swirls while "
+          "the level barely moves, the classic Fender-style sound and much "
+          "richer than plain level tremolo",
+          false, { "sine", "optical", "bias" } },
+
+        { kSmoothing, "ms",
+          (double) L::kMinSmoothingMs, (double) L::kMaxSmoothingMs, 1.5,
+          "rounds the waveform's corners: a few ms is what keeps square from "
+          "clicking, and 50-200 makes the random shape glide between its "
+          "steps instead of jumping; 0 is hard edges", false },
     });
     return s;
 }
@@ -68,6 +93,12 @@ bool EedTremoloProcessor::setParamValue (const juce::String& id, double value)
     if (id == kShape)       { lfo.setShape          ((int) std::lround (value)); return true; }
     if (id == kStereoPhase) { lfo.setStereoPhaseDeg ((float) value); return true; }
     if (id == kMix)         { engine_.setMixPercent ((float) value); return true; }
+    if (id == kSmoothing)   { lfo.setSmoothingMs    ((float) value); return true; }
+    if (id == kMode)
+    {
+        engine_.setMode (echojay::tremoloModeFromIndex ((int) std::lround (value)));
+        return true;
+    }
     return false;
 }
 
@@ -82,6 +113,8 @@ double EedTremoloProcessor::getParamValue (const juce::String& id) const
     if (id == kShape)       return (double) lfo.getShape();
     if (id == kStereoPhase) return (double) lfo.getStereoPhaseDeg();
     if (id == kMix)         return (double) engine_.getMixPercent();
+    if (id == kMode)        return (double) (int) engine_.getMode();
+    if (id == kSmoothing)   return (double) lfo.getSmoothingMs();
     return 0.0;
 }
 
@@ -139,7 +172,10 @@ namespace
         d.summary         = "Rhythmic level modulation, in Hz or locked to the host "
                             "tempo. Reach for it to make a static part move - a held "
                             "chord, a pad, a guitar - or, with a square shape at a "
-                            "note division, to chop a sustained sound into a pattern.";
+                            "note division, to chop a sustained sound into a pattern. "
+                            "Three circuits via mode: sine (clean), optical "
+                            "(soft-edged, amp-like), bias (harmonic tremolo - the "
+                            "tone swirls instead of the level chopping).";
         d.identifier      = "echojay:builtin:tremolo";
         d.uid             = 0x456A5452;   // 'EjTR' - frozen once shipped
         d.aliases         = { "EchoJayTremolo", "EchoJay Trem", "Tremolo" };

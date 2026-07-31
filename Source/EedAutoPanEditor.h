@@ -32,6 +32,7 @@ private:
 
     echojay::viz::LfoScopeView    scope_;
     echojay::viz::PanPositionView position_;
+    juce::String                  lastHint_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedAutoPanEditor)
 };
