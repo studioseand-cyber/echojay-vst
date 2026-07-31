@@ -459,6 +459,23 @@ public:
         if (bandStep == BandStep::capFreq1 || bandStep == BandStep::capGain1
              || bandStep == BandStep::capQ1 || bandStep == BandStep::capFreqLast)
         {
+            if (bandPickPending())
+            {
+                if (id == "wiggle")     // none of these: discard the pick, re-arm
+                {
+                    bandGesturePending = {};
+                    say ("Pick discarded. " + bandCardPrompt());
+                    if (hooks.armForRow) hooks.armForRow();
+                    updateQuestion();
+                    return;
+                }
+                if (id != "defer")
+                {
+                    say ("A lockstep pick is open: answer it with the numbered buttons "
+                         "(or R if none of these was your touch).");
+                    return;
+                }
+            }
             if (id == "wiggle")     { actionBandRearm(); return; }          // R and W both re-arm
             if (id == "notpresent" && bandStep == BandStep::capQ1)
             {
@@ -1175,18 +1192,54 @@ public:
         {
             if (res.indices.size() > 1)
             {
-                // A LOCKSTEP PAIR on a band card: AMEK's Param Link mirrors
-                // LF Freq 1 onto LF Freq 2, the first confirmed linked pair
-                // this project has seen live. The plugin cannot say which is
-                // the touched one, so the human picks, same as the main loop;
-                // the other stays in the arm record as co-moved evidence.
+                // Filter the candidates BEFORE raising a pick. A previous
+                // touch settles across the card boundary (caught live on
+                // AMEK: the freq pair's tail arrived on the GAIN card as a
+                // multi), so: already-captured members are residue, and so is
+                // anything that also moved in the PREVIOUS arm. What survives
+                // is what the hand could actually have touched now.
+                juce::Array<int> fresh;
+                juce::StringArray freshNames;
+                for (int i = 0; i < res.indices.size(); ++i)
+                {
+                    const int ci = res.indices[i];
+                    bool residue = false;
+                    for (const auto& cm : bandCaptured)
+                        if (cm.index == ci) residue = true;
+                    if (! residue && ! bandPlan.arms.isEmpty())
+                        residue = bandPlan.arms.getReference (bandPlan.arms.size() - 1)
+                                    .moved.contains (ci);
+                    if (! residue)
+                    {
+                        fresh.add (ci);
+                        freshNames.add (i < res.names.size() ? res.names[i] : juce::String());
+                    }
+                }
+
+                if (fresh.isEmpty())
+                {
+                    say ("That was the previous control still settling - re-armed: "
+                           + bandCardPrompt());
+                    if (hooks.armForRow) hooks.armForRow();
+                    return;
+                }
+                if (fresh.size() == 1)
+                {
+                    // One genuinely new mover among the residue: the touch.
+                    processBandIndex (fresh[0], res);
+                    return;
+                }
+
+                // A REAL lockstep pair (AMEK's Param Link mirroring LF Freq 1
+                // onto LF Freq 2: the first confirmed linked pair this
+                // project has seen live). The plugin cannot say which was
+                // touched; the human picks. THE PICK OWNS THE CARD: its own
+                // headline, the candidates as the only buttons, no next-step
+                // text until answered.
                 bandGesturePending = res;
-                juce::String cands;
-                for (int i = 0; i < juce::jmin (9, res.indices.size()); ++i)
-                    cands << (i ? "  " : "") << juce::String (i + 1) << ":" << res.names[i];
-                say ("Two controls moved in lockstep (a linked pair). Pick the one you touched: "
-                       + cands);
-                rebuildBandAnswers();
+                bandGesturePending.indices = fresh;
+                bandGesturePending.names = freshNames;
+                say ("Lockstep pair: pick the control you touched.");
                 updateQuestion();
                 return;
             }
@@ -1205,6 +1258,7 @@ public:
         auto res = bandGesturePending;
         bandGesturePending = {};
         processBandIndex (res.indices[oneBased - 1], res);
+        updateQuestion();
     }
 
     /** Test seam: pick a pending lockstep candidate by its parameter index,
@@ -1725,7 +1779,13 @@ public:
         const auto label = displayLabel (r);
         juce::String q;
 
-        if (r.kind == "bands" && bandStep != BandStep::none && bandStep != BandStep::table)
+        if (r.kind == "bands" && bandPickPending())
+        {
+            q << "Two controls moved together in lockstep (a linked pair). The plugin "
+                 "cannot say which one your hand was on.\n"
+              << "Pick it by number - the other is kept as co-moved evidence.";
+        }
+        else if (r.kind == "bands" && bandStep != BandStep::none && bandStep != BandStep::table)
         {
             q << bandCardPrompt() << " - the card is LIVE.\n"
               << "R discard a wrong grab and re-arm"
@@ -1817,6 +1877,7 @@ public:
     {
         if (awaitingCategory) return "What is this plugin?";
         if (rowCount() == 0) return "No rows";
+        if (bandPickPending()) return "Which control did you touch?";
         auto& r = rowAt (selected);
         if (r.isResolved())
             return displayLabel (r) + ": done (" + r.stateString() + ")";
@@ -1891,6 +1952,19 @@ public:
             resized(); return;
         }
 
+        if (bandPickPending())
+        {
+            for (int i = 0; i < juce::jmin (9, bandGesturePending.indices.size()); ++i)
+            {
+                const int oneBased = i + 1;
+                auto* b = answerButtons.add (new juce::TextButton (
+                    juce::String (oneBased) + " - " + bandGesturePending.names[i]
+                      + "  [" + juce::String (bandGesturePending.indices[i]) + "]"));
+                addAndMakeVisible (b);
+                b->onClick = [this, oneBased] { bandPickCandidate (oneBased); grabKeyboardFocus(); };
+            }
+            resized(); return;
+        }
         if (r.kind == "bands" && ! r.isResolved() && bandStep == BandStep::none)
         {
             add ("space", "SPACE - begin mapping bands");

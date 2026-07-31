@@ -1206,6 +1206,10 @@ public:
 
         if (assignPanel.bandPickPending() && bandMemberCursor >= 1)
         {
+            // Print the pick AS RENDERED: it must be the card (headline +
+            // numbered buttons), not a status line under someone else's card.
+            std::cout << "---- lockstep pick card ----\n"
+                      << assignPanel.textRender() << std::endl;
             const int prev = paramIndexByName (bandMemberNames[bandMemberCursor - 1].trim());
             assignPanel.bandPickByParamIndex (prev);
             juce::Timer::callAfterDelay (300, [this] { bandTestDriveCapture(); });
