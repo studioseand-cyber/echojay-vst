@@ -60,7 +60,11 @@ struct ExtractorConfig
 
 // Parse the first signed float found in a display string.
 // Handles "1.4:1" -> 1.4, "-18.0 dB" -> -18.0, "3.00 : 1" -> 3.0.
-// Returns false for non-numeric readings like "Inf:1" or "Bypass".
+// Returns false for fully non-numeric readings like "Bypass". NOTE: a digit
+// anywhere counts, so "Inf:1" parses as 1.0 -- this comment used to claim it
+// was rejected, which the drift gate disproved (M3 lift). The behaviour is
+// what the 4,233-map corpus was built with, so the behaviour is what is
+// pinned; only the comment was wrong.
 inline bool parseLeadingFloat (const juce::String& text, double& out)
 {
     auto p = text.getCharPointer();

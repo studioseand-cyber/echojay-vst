@@ -25,9 +25,13 @@
 #include <juce_events/juce_events.h>   // ScopedJuceInitialiser_GUI
 #include "EjmapSchema.h"
 
-// TODO(fable): include the real shared headers once the include path resolves.
-// #include "EchoJayParamApply.h"
-// #include "EchoJayParamExtractor.h"
+// The shared sweep and parsers, compiled here so the drift gate proves both
+// binaries build the SAME code: ejextract compiles these headers to produce
+// the corpus, ejmap compiles them to produce anchors, and this test pins the
+// behaviours M3 leans on. EjmapSchema.h already pulls in EchoJayParamApply.h
+// (parseDisplayForUnit, dominantMonotonicTable); the extractor header is the
+// M3 lift.
+#include "EchoJayParamExtractor.h"
 
 namespace
 {
@@ -146,6 +150,41 @@ void testContradictionBlocks()
 }
 
 //==============================================================================
+void testSharedParsers()
+{
+    // parseLeadingFloat: the extractor-side parser that guides adaptive
+    // refinement, so its behaviour shapes corpus output byte-for-byte.
+    double v = 0.0;
+    check (echojay::parseLeadingFloat ("1.4:1", v)    && juce::approximatelyEqual (v, 1.4),  "parseLeadingFloat 1.4:1");
+    check (echojay::parseLeadingFloat ("-18.0 dB", v) && juce::approximatelyEqual (v, -18.0),"parseLeadingFloat -18.0 dB");
+    check (! echojay::parseLeadingFloat ("Bypass", v),                                       "parseLeadingFloat rejects Bypass");
+
+    // Pinned as MEASURED, against the header comment's claim: "Inf:1" parses
+    // as 1.0 because a digit anywhere counts. The 4,233-map corpus was built
+    // with this behaviour, so this is the behaviour the gate protects; the
+    // header comment said otherwise and has been corrected.
+    check (echojay::parseLeadingFloat ("Inf:1", v) && juce::approximatelyEqual (v, 1.0),     "parseLeadingFloat Inf:1 -> 1.0 (measured)");
+
+    // parseDisplayForUnit: the dial-time parser whose bare-k and NkM fixes the
+    // plan requires to be THE shared ones. Pinned here so a drift in either
+    // fix stops the gate, exactly like the schema constant.
+    float f = 0.0f; bool negInf = false;
+    check (echojay::parseDisplayForUnit ("1k1", "hz", f, negInf)   && juce::approximatelyEqual (f, 1100.0f),  "NkM: 1k1 hz -> 1100");
+    check (echojay::parseDisplayForUnit ("12k", "hz", f, negInf)   && juce::approximatelyEqual (f, 12000.0f), "bare-k: 12k hz -> 12000");
+    check (echojay::parseDisplayForUnit ("12k", "db", f, negInf)   && juce::approximatelyEqual (f, 12.0f),    "k never multiplies under db");
+    check (echojay::parseDisplayForUnit ("-oo dB", "db", f, negInf) && negInf,                                 "-oo dB -> negInf");
+    check (echojay::parseDisplayForUnit ("3.00 : 1", "ratio", f, negInf) && juce::approximatelyEqual (f, 3.0f),"ratio 3.00:1 -> 3");
+
+    // sweepIsFlat: flat detection is behavioural, never name-based (register
+    // rule), so the predicate itself is pinned.
+    juce::Array<echojay::SweepPoint> flat, rising;
+    flat.add ({ 0.0f, "50%" });  flat.add ({ 0.5f, "50%" });  flat.add ({ 1.0f, "50%" });
+    rising.add ({ 0.0f, "0%" }); rising.add ({ 1.0f, "100%" });
+    check (  echojay::sweepIsFlat (flat),   "flat sweep detected");
+    check (! echojay::sweepIsFlat (rising), "distinct texts are not flat");
+}
+
+//==============================================================================
 void testAgainstRealMaps()
 {
     auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
@@ -208,6 +247,7 @@ int main (int, char**)
     testSkipRequiresReason();
     testPayloadSerialises();
     testContradictionBlocks();
+    testSharedParsers();
     testAgainstRealMaps();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
