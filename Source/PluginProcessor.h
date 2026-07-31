@@ -427,7 +427,22 @@ public:
         derives from effectiveChannelUid() (the active chat's linkUid, else
         pendingChannelUid), both of which live on this processor. A second
         selected-strip field would be a second authority on the same fact. */
-    enum class LinkMixerContent { Numbers = 0, Meter = 1, Chain = 2 };
+    /** Meter left this enum in the 8b layout pass: the meter became permanent
+        strip chrome (a mixer strip always shows its meter), so the toggle
+        now switches only the upper data area. The VALUES ARE LOAD-BEARING:
+        Chain stays 2 because projects saved before 8b persisted 0/1/2 for
+        numbers/meter/chain, and renumbering would silently turn a saved
+        CHAIN into something else. Value 1 (meter) no longer exists; the
+        mapper below owns what saved integers become. */
+    enum class LinkMixerContent { Numbers = 0, Chain = 2 };
+    /** THE migration for persisted linkMixerContent, one authority, pure and
+        testable: 0 -> Numbers, 1 (the removed meter mode) -> Numbers
+        (the meter is now always visible, so Numbers is the view closest to
+        what that project saved), 2 -> Chain, anything else -> Numbers. */
+    static LinkMixerContent linkMixerContentFromSaved(int saved)
+    {
+        return saved == 2 ? LinkMixerContent::Chain : LinkMixerContent::Numbers;
+    }
     LinkMixerContent linkMixerContent = LinkMixerContent::Numbers;
     bool linkMixerWide = false;        // false = narrow strips (the reference)
 

@@ -2484,8 +2484,12 @@ private:
         juce::Rectangle<int> name;      // resolveLinkDisplayName()
         juce::Rectangle<int> badge;     // BUS / CHANNEL / SET? chip
         juce::Rectangle<int> active;    // merged Active tick + connectivity
-        juce::Rectangle<int> data;      // numbers / meter / chain
-        juce::Rectangle<int> fader;     // filmstrip fader, aspect-locked
+        juce::Rectangle<int> data;      // numbers / chain (the content toggle)
+        // The fader+meter BAND (8b): one horizontal band, console style, the
+        // meter as PERMANENT chrome. Both rects are stored by layOutStrips
+        // and neither paint nor hit-testing derives one from the other.
+        juce::Rectangle<int> fader;     // fader column: ticks lane + image
+        juce::Rectangle<int> meter;     // stereo RMS + peak, always present
         juce::Rectangle<int> ai;        // opens this channel's conversation
         // NO EQ RECT AND NO RESERVED SPACE. The surgical EQ is being built in
         // another tree and its parameter shape is not settled, and 16 empty
@@ -2542,12 +2546,24 @@ private:
     static constexpr int kStripAiH    = 22;
     static constexpr int kStripVGap   = 6;
     static constexpr int kStripDataHMin = 120;
-    // Fader box. The asset frame is 60x480, so the aspect is locked at 1:8 or
-    // the cap distorts; height drives width. 240 is 1x logical (pixel-exact
-    // against the 60x480 source on a 2x display), 144 is the short-window
-    // floor. Both are DOWNSCALES from the source, so the fader never upscales.
+    // The fader+meter BAND (8b). kFaderHMax/Min now bound the BAND height
+    // (they used to bound the lone fader box; the formula is unchanged).
+    // Inside the band: a fixed-width fader column on the left (ticks lane +
+    // aspect-locked image), the meter taking the remainder on the right.
+    // THE SPLIT IS DRIVEN BY THE FADER COLUMN CONSTANT, then the 1:8 aspect
+    // lock sets the image height FROM the column width; the meter never
+    // negotiates. When the band cannot hold the column plus a minimum meter,
+    // THE METER WINS (a mixer cannot do without its meter): the fader column
+    // shrinks, and below usefulness it drops entirely (empty rect).
+    // Unreachable at shipping widths; defined and tested anyway.
     static constexpr int kFaderHMax = 240;
     static constexpr int kFaderHMin = 144;
+    static constexpr int kFaderColNarrow  = 16;  // 4 ticks lane + 12 image
+    static constexpr int kFaderColWide    = 26;  // 6 ticks lane + 20 image
+    static constexpr int kFaderTickLaneN  = 4;
+    static constexpr int kFaderTickLaneW  = 6;
+    static constexpr int kBandGap         = 4;   // fader column <-> meter
+    static constexpr int kMeterWMin       = 12;  // meter survival floor
     // The filmstrip asset (Assets/iron_fader_60.png -> EchoJayFaderFilmstrip.h,
     // the wet-knob pattern). Frame indexing follows ChainWetKnob::paint: ONE
     // filmstrip implementation pattern, not a second.
@@ -2596,8 +2612,10 @@ private:
     // The controls own NO state: selected-segment is read back from the
     // processor's persisted modes at every paint.
     struct CtrlZone { int id = 0; juce::Rectangle<int> rect; };
+    // kCtrlMeter (11) retired in 8b with the meter mode; the id is not
+    // reused so an old log line can never be misread against a new control.
     static constexpr int kCtrlNarrow  = 0, kCtrlWide  = 1,
-                         kCtrlNumbers = 10, kCtrlMeter = 11, kCtrlChain = 12;
+                         kCtrlNumbers = 10, kCtrlChain = 12;
     /** Pure. Segments get fixed preferred widths, shrink proportionally to a
         pressable floor if the rect is tight, and any zone that still cannot
         fit inside the rect is DROPPED rather than clipped into an overlap. */
@@ -2625,13 +2643,16 @@ private:
     static int stripsTotalWidth(int count, int stripW)
     { return count <= 0 ? 0 : count * (stripW + kStripGap) - kStripGap; }
 
-    enum class StripHit { None = 0, Fader, Ai, Badge, Active, Background };
+    enum class StripHit { None = 0, Fader, Meter, Ai, Badge, Active, Background };
     /** HIT-TEST PRECEDENCE, in ONE place and stated in code rather than left
-        to the order handlers happen to test in: fader, then AI button, then
-        placement badge, then the merged Active control, then the strip
-        background as the fallback that SELECTS the channel. Pure, and it
-        CONSUMES sg's stored rects; nothing here recomputes a bound. `p` is in
-        the same space as sg. */
+        to the order handlers happen to test in: fader, then meter, then AI
+        button, then placement badge, then the merged Active control, then
+        the strip background as the fallback that SELECTS the channel. The
+        FADER IS TESTED BEFORE THE METER so it wins where the two abut: a
+        drag that starts a pixel into the boundary must not be swallowed by
+        the meter (which itself just selects, like the background). Pure,
+        and it CONSUMES sg's stored rects; nothing here recomputes a bound.
+        `p` is in the same space as sg. */
     static StripHit stripHitAt(const StripGeom& sg, juce::Point<int> p);
 
     /** THE addr derivation: uid when the Link publishes one, legacy
@@ -2754,10 +2775,15 @@ private:
     static LinkStripDerived advanceLinkStripSmoothing(LinkStripState& st, bool fresh);
     /** The numbers renderer: loudness-suite cells stacked vertically in the
         strip's data area. Cells that do not fit the height are DROPPED whole
-        (LRA first, then PLR), never crammed or half-drawn. */
+        (LRA first, then PLR), never crammed or half-drawn.
+
+        `d` comes from the caller's single advanceLinkStripSmoothing call:
+        since 8b the numbers area and the meter band are LIVE AT ONCE, so the
+        advance moved up into paintLinkStrip, exactly the double-advance the
+        helper's comment warned about. Renderers consume, never advance. */
     void paintLinkStripNumbers(juce::Graphics& g, juce::Rectangle<int> area,
-                               LinkStripState& st, bool fresh, float dim,
-                               bool wide);
+                               LinkStripState& st, const LinkStripDerived& d,
+                               float dim, bool wide);
 
     // ---- Step 8: the METER content mode ------------------------------------
     // Console-style: stereo RMS bars plus a publisher-held peak tick. The
@@ -2779,8 +2805,7 @@ private:
     static constexpr float kMeterMarks[6] = { 0.0f, -6.0f, -12.0f,
                                               -18.0f, -24.0f, -40.0f };
     void paintLinkStripMeter(juce::Graphics& g, juce::Rectangle<int> area,
-                             LinkStripState& st, bool fresh, float dim,
-                             bool wide);
+                             LinkStripState& st, float dim, bool wide);
 
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row

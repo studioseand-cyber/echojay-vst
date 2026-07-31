@@ -73,6 +73,8 @@ struct EchoJayLinkMixerTestAccess
     static int   frames()                                   { return Ed::kFaderFrames; }
     static int   frameH()                                   { return Ed::kFaderFrameH; }
 
+    static int   bandGap()    { return Ed::kBandGap; }
+    static int   meterWMin()  { return Ed::kMeterWMin; }
     static int   meterY (float db, juce::Rectangle<int> a) { return Ed::meterYForDb (db, a); }
     static float meterFloor()                               { return Ed::kMeterDbFloor; }
     static const float* meterMarks (int& n)
@@ -83,7 +85,7 @@ struct EchoJayLinkMixerTestAccess
     { Ed::layOutLinkCtrls (r, out); }
     static std::vector<int> ctrlIds()
     { return { Ed::kCtrlNarrow, Ed::kCtrlWide,
-               Ed::kCtrlNumbers, Ed::kCtrlMeter, Ed::kCtrlChain }; }
+               Ed::kCtrlNumbers, Ed::kCtrlChain }; }
 };
 
 using T    = EchoJayLinkMixerTestAccess;
@@ -117,7 +119,8 @@ static std::vector<juce::String> addrs (int n)
 static std::vector<std::pair<const char*, juce::Rectangle<int>>> elements (const Geom& s)
 {
     return { { "name", s.name }, { "badge", s.badge }, { "active", s.active },
-             { "data", s.data }, { "fader", s.fader }, { "ai", s.ai } };
+             { "data", s.data }, { "fader", s.fader }, { "meter", s.meter },
+             { "ai", s.ai } };
 }
 
 // -----------------------------------------------------------------------------
@@ -231,7 +234,9 @@ static void testBusMatchesChannel()
 
 static void testFaderAspect (int stripW, int bandH)
 {
-    std::printf ("fader aspect lock: stripW=%d bandH=%d\n", stripW, bandH);
+    // Since 8b the fader rect is a COLUMN (ticks lane + image); the 1:8 lock
+    // applies to the IMPLIED IMAGE, whose width is height/8 by construction.
+    std::printf ("fader/meter band: stripW=%d bandH=%d\n", stripW, bandH);
     const juce::Rectangle<int> band { 32, 142, 1050, bandH };
 
     Geom bus;
@@ -239,22 +244,32 @@ static void testFaderAspect (int stripW, int bandH)
     T::layOut (band, stripW, addrs (2), bus, links);
     if (links.empty()) return;
 
-    const auto f = links[0].fader;
-    std::printf ("  fader %dx%d, data %dx%d\n", f.getWidth(), f.getHeight(),
-                 links[0].data.getWidth(), links[0].data.getHeight());
-    if (f.isEmpty()) return;
+    const auto& s0 = links[0];
+    const auto f = s0.fader;
+    std::printf ("  fader col %dx%d (img %d wide), meter %dx%d, data %dx%d\n",
+                 f.getWidth(), f.getHeight(), f.getHeight() / 8,
+                 s0.meter.getWidth(), s0.meter.getHeight(),
+                 s0.data.getWidth(), s0.data.getHeight());
 
-    // The asset frame is 60x480, so the drawn box must stay at 1:8 or the cap
-    // distorts. Integer division of the height by 8 costs up to 7px, so the
-    // tolerance is 8 rather than 0; anything looser would let a real stretch
-    // through.
-    check (f.getHeight() <= f.getWidth() * 8 + 8, "fader is not stretched tall");
-    check (f.getWidth() * 8 <= f.getHeight() + 8, "fader is not stretched wide");
+    // THE METER IS PERMANENT CHROME: present at every shipping size.
+    check (! s0.meter.isEmpty(), "the meter band exists");
+    check (s0.meter.getWidth() >= T::meterWMin(), "the meter has its minimum width");
 
-    // It must fit the strip, which is the constraint that makes narrow mode
-    // safe: width drives height once the strip is too thin for the height.
-    check (f.getWidth() <= stripW, "fader fits inside the strip width");
-    check (f.getHeight() <= band.getHeight(), "fader fits inside the band height");
+    if (! f.isEmpty())
+    {
+        // The implied image (height/8 wide) must FIT the column, and must
+        // never upscale from the 60px source.
+        check (f.getHeight() / 8 <= f.getWidth(), "the 1:8 image fits its column");
+        check (f.getHeight() / 8 <= 60, "the fader never upscales from the source");
+        check (f.getHeight() % 8 == 0, "column height is exactly image width * 8");
+
+        // The split: fader column left of the meter, exactly one band gap
+        // apart, never overlapping (the overlap is also held by the
+        // elements() sweep in testContainment).
+        checkEq (s0.meter.getX() - f.getRight(), T::bandGap(),
+                 "fader column and meter sit one band gap apart");
+        check (f.getBottom() <= s0.ai.getY(), "the band sits above the AI button");
+    }
 }
 
 static void testHitPrecedence()
@@ -271,6 +286,11 @@ static void testHitPrecedence()
     const auto& s = links[1];
 
     check (T::hitAt (s, s.fader.getCentre()) == Hit::Fader,  "fader centre hits the fader");
+    check (T::hitAt (s, s.meter.getCentre()) == Hit::Meter,  "meter centre hits the meter");
+    // The abutment: the last pixel of the fader column is the FADER's, so a
+    // drag starting there is never swallowed by the meter beside it.
+    check (T::hitAt (s, { s.fader.getRight() - 1, s.fader.getCentreY() })
+               == Hit::Fader, "the fader wins its own right edge");
     check (T::hitAt (s, s.ai.getCentre())    == Hit::Ai,     "AI centre hits the AI button");
     check (T::hitAt (s, s.badge.getCentre()) == Hit::Badge,  "badge centre hits the badge");
     check (T::hitAt (s, s.active.getCentre()) == Hit::Active,
@@ -360,7 +380,7 @@ static void testCtrls()
         std::vector<T::Ctrl> zs;
         T::ctrls (r, zs);
 
-        checkEq ((int) zs.size(), 5, "all five segments exist at shipping width");
+        checkEq ((int) zs.size(), 4, "all four segments exist at shipping width");
         for (const auto& z : zs)
         {
             check (r.contains (z.rect), "control zone stays inside the row");
@@ -393,7 +413,7 @@ static void testCtrls()
         const juce::Rectangle<int> r { 32, 112, 120, 30 };
         std::vector<T::Ctrl> zs;
         T::ctrls (r, zs);
-        check ((int) zs.size() < 5, "a too-tight row drops zones");
+        check ((int) zs.size() < 4, "a too-tight row drops zones");
         for (const auto& z : zs)
             check (r.contains (z.rect), "surviving zones stay inside the row");
     }
@@ -491,6 +511,42 @@ static void testMeterMapping()
     check (marks[n - 1] == T::meterFloor(), "the last mark IS the floor");
 }
 
+static void testBandSqueeze()
+{
+    // Below shipping widths the METER WINS: the fader column shrinks and
+    // then drops entirely; the meter never disappears while a band exists.
+    std::printf ("band squeeze: the meter wins\n");
+    const juce::Rectangle<int> band { 32, 142, 1050, 500 };
+
+    Geom bus;
+    std::vector<Geom> links;
+    T::layOut (band, 24, addrs (2), bus, links);   // 16px inner: no room
+    if (! links.empty())
+    {
+        check (links[0].fader.isEmpty(), "an impossible band drops the fader");
+        check (! links[0].meter.isEmpty(), "the meter survives the squeeze");
+    }
+}
+
+static void testContentMigration()
+{
+    // 8b removed the meter content mode. Saved projects persisted 0/1/2 for
+    // numbers/meter/chain; the mapper is the ONE authority on what each
+    // becomes, and a saved CHAIN must stay CHAIN.
+    std::printf ("content-mode migration: saved 0/1/2\n");
+    using C = EchoJayProcessor::LinkMixerContent;
+    check (EchoJayProcessor::linkMixerContentFromSaved (0) == C::Numbers,
+           "saved 0 (numbers) stays Numbers");
+    check (EchoJayProcessor::linkMixerContentFromSaved (1) == C::Numbers,
+           "saved 1 (the removed meter mode) becomes Numbers");
+    check (EchoJayProcessor::linkMixerContentFromSaved (2) == C::Chain,
+           "saved 2 (chain) STAYS Chain");
+    check (EchoJayProcessor::linkMixerContentFromSaved (-1) == C::Numbers,
+           "garbage below range becomes Numbers");
+    check (EchoJayProcessor::linkMixerContentFromSaved (99) == C::Numbers,
+           "garbage above range becomes Numbers");
+}
+
 static void testDegenerate()
 {
     std::printf ("degenerate inputs leave nothing behind\n");
@@ -557,6 +613,8 @@ int main()
     testCtrls();
     testFaderMapping();
     testMeterMapping();
+    testBandSqueeze();
+    testContentMigration();
     testDegenerate();
 
     std::printf (failures == 0 ? "EJLinkMixer selftest: PASS\n"

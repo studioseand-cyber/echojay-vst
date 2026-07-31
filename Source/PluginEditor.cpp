@@ -6356,25 +6356,35 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
     const int fixedH = kStripNameH + kStripBadgeH + kStripActH + kStripAiH + gaps;
     const int flexH  = juce::jmax(0, innerH - fixedH);   // data + fader share this
 
-    // The fader gets its FULL range wherever there is room, and is squeezed
-    // only once the data area is already at its minimum. There is no EQ
-    // reservation to pay for: an empty recessed well on 16 strips reads as
-    // broken rather than reserved, so the height goes to the fader instead.
-    int faderH = juce::jlimit(0, juce::jmin(kFaderHMax, flexH),
-                              flexH - kStripDataHMin);
-    if (faderH < kFaderHMin)
-        faderH = juce::jmin(kFaderHMin, flexH);
+    // The fader+meter BAND (8b) gets its full height wherever there is room,
+    // squeezed only once the data area is already at its minimum. Same
+    // formula the lone fader box used; the band now holds fader AND meter
+    // side by side, the meter as permanent chrome.
+    int bandH = juce::jlimit(0, juce::jmin(kFaderHMax, flexH),
+                             flexH - kStripDataHMin);
+    if (bandH < kFaderHMin)
+        bandH = juce::jmin(kFaderHMin, flexH);
 
-    // Aspect is LOCKED at 1:8 (the asset frame is 60x480) or the fader cap
-    // distorts. Height drives width; if the strip is too thin to carry that
-    // width, width drives height instead, so the lock holds either way.
-    const int usableW = juce::jmax(1, stripW - inner * 2);
-    int faderW = juce::jmax(1, faderH / 8);
-    if (faderW > usableW)
-    {
-        faderW = usableW;
-        faderH = juce::jmin(faderH, faderW * 8);
-    }
+    // THE SPLIT: the fader column width is a CONSTANT of the width mode; the
+    // meter takes the remainder. The 1:8 aspect lock then sets the fader
+    // image height FROM the column's image width (width drives height, so
+    // the lock and the meter width can never fight: the split is settled
+    // before the lock runs). If the band cannot hold the column plus a
+    // minimum meter, THE METER WINS: the column shrinks, and below a usable
+    // sliver the fader drops entirely. Unreachable at shipping widths.
+    const int bandInnerW = juce::jmax(0, stripW - inner * 2);
+    int faderColW = bandInnerW >= 60 ? kFaderColWide : kFaderColNarrow;
+    if (faderColW + kBandGap + kMeterWMin > bandInnerW)
+        faderColW = juce::jmax(0, bandInnerW - kBandGap - kMeterWMin);
+    if (faderColW < 8) faderColW = 0;            // fader dropped, meter stays
+    const int tickLane = faderColW >= kFaderColWide ? kFaderTickLaneW
+                                                    : kFaderTickLaneN;
+    const int faderImgW = juce::jmax(0, faderColW - tickLane);
+    // 1:8 lock, snapped DOWN to an exact multiple of 8 after the band-height
+    // clamp: a 87px clamp would otherwise draw a 10-wide image at 8.7:1,
+    // which is precisely the distortion the lock exists to prevent.
+    int faderH = juce::jmin(bandH, faderImgW * 8);
+    faderH -= faderH % 8;
 
     // ---- ONE element-layout routine, used by the bus strip AND every Link
     // strip, so the pinned master cannot drift from the channels ------------
@@ -6390,12 +6400,20 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         b.removeFromTop(kStripVGap);
         sg.ai = b.removeFromBottom(kStripAiH);
         b.removeFromBottom(kStripVGap);
-        // Fader sits directly above the AI button, centred across the strip
-        // with its aspect already locked; the data area takes what is left.
-        auto faderBand = b.removeFromBottom(juce::jmin(faderH, b.getHeight()));
-        sg.fader = faderBand.withSizeKeepingCentre(
-                       juce::jmin(faderW, faderBand.getWidth()),
-                       faderBand.getHeight());
+        // The band sits directly above the AI button; the data area takes
+        // what is left above it. Fader column LEFT, meter RIGHT, console
+        // style. Both rects stored; neither is ever derived from the other.
+        auto fmBand = b.removeFromBottom(juce::jmin(bandH, b.getHeight()));
+        if (faderColW > 0)
+        {
+            auto col = fmBand.removeFromLeft(faderColW);
+            // Column height = image height (the 1:8 lock), centred in the
+            // band, so the drag mapping and the drawn travel are ONE rect.
+            sg.fader = col.withSizeKeepingCentre(
+                           faderColW, juce::jmin(faderH, col.getHeight()));
+            fmBand.removeFromLeft(kBandGap);
+        }
+        sg.meter = fmBand;
         b.removeFromBottom(kStripVGap);
         sg.data = b;
     };
@@ -6426,7 +6444,8 @@ EchoJayEditor::StripHit EchoJayEditor::stripHitAt(const StripGeom& sg,
     // the FALLBACK, and it selects the channel. Every test is against a
     // STORED rect.
     if (!sg.full.contains(p))     return StripHit::None;
-    if (sg.fader.contains(p))     return StripHit::Fader;
+    if (sg.fader.contains(p))     return StripHit::Fader;   // wins at the abutment
+    if (sg.meter.contains(p))     return StripHit::Meter;
     if (sg.ai.contains(p))        return StripHit::Ai;
     if (sg.badge.contains(p))     return StripHit::Badge;
     if (sg.active.contains(p))    return StripHit::Active;
@@ -6491,20 +6510,21 @@ void EchoJayEditor::layOutLinkCtrls(juce::Rectangle<int> ctrlRect,
 
     int wSeg = 52, cSeg = 62;
     const int gap = 16;                      // between the two groups
-    const int need = 2 * wSeg + 3 * cSeg + gap;
+    const int need = 2 * wSeg + 2 * cSeg + gap;
     if (need > r.getWidth())
     {
         const float k = (float)juce::jmax(1, r.getWidth() - gap)
-                      / (float)(2 * wSeg + 3 * cSeg);
+                      / (float)(2 * wSeg + 2 * cSeg);
         wSeg = juce::jmax(30, (int)((float)wSeg * k));
         cSeg = juce::jmax(34, (int)((float)cSeg * k));
     }
 
-    const int ids[5]  = { kCtrlNarrow, kCtrlWide,
-                          kCtrlNumbers, kCtrlMeter, kCtrlChain };
-    const int wids[5] = { wSeg, wSeg, cSeg, cSeg, cSeg };
+    // Two content segments since 8b: the meter left the toggle when it
+    // became permanent strip chrome.
+    const int ids[4]  = { kCtrlNarrow, kCtrlWide, kCtrlNumbers, kCtrlChain };
+    const int wids[4] = { wSeg, wSeg, cSeg, cSeg };
     int x = r.getX();
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < 4; ++i)
     {
         if (i == 2) x += gap;                // group separator
         const juce::Rectangle<int> z(x, r.getY(), wids[i], r.getHeight());
@@ -6543,7 +6563,6 @@ void EchoJayEditor::linkCtrlClicked(int id)
             break;
         }
         case kCtrlNumbers: content(EchoJayProcessor::LinkMixerContent::Numbers); break;
-        case kCtrlMeter:   content(EchoJayProcessor::LinkMixerContent::Meter);   break;
         case kCtrlChain:   content(EchoJayProcessor::LinkMixerContent::Chain);   break;
         default: break;
     }
@@ -6654,7 +6673,8 @@ EchoJayEditor::advanceLinkStripSmoothing(LinkStripState& st, bool fresh)
 
 void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
                                           juce::Rectangle<int> area,
-                                          LinkStripState& st, bool fresh,
+                                          LinkStripState& st,
+                                          const LinkStripDerived& d,
                                           float dim, bool wide)
 {
     if (area.getWidth() <= 0 || area.getHeight() <= 0) return;
@@ -6669,14 +6689,8 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
         return;
     }
 
-    const auto& mf = st.frame;
-    // Publisher-declared audio staleness: momentary group arrives as -100
-    // (dashes below); persisted values render dimmed. Same rule as the old
-    // strip.
-    if (mf.audioStale != 0)
-        dim = juce::jmin(dim, 0.55f);
-
-    const auto d = advanceLinkStripSmoothing(st, fresh);
+    // dim already carries the audioStale treatment (decided ONCE in
+    // paintLinkStrip); d carries the caller's single smoothing advance.
 
     const auto coral = juce::Colour(0xffff6d5a);
     const auto amber = juce::Colour(0xfff59e0b);
@@ -6736,35 +6750,39 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
 
 void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
                                         juce::Rectangle<int> area,
-                                        LinkStripState& st, bool fresh,
-                                        float dim, bool wide)
+                                        LinkStripState& st, float dim,
+                                        bool wide)
 {
     if (area.getWidth() <= 0 || area.getHeight() <= 0) return;
     if (!st.has)
     {
         // NO METER, not an empty scale: an empty scale reads as silence, and
         // "never heard from" and "silent" are different facts. This is the
-        // distinction this codebase has got wrong before.
+        // distinction this codebase has got wrong before. In the narrow
+        // band the text rotates nowhere: "--" carries absence instead.
         g.setColour(C::text3.withAlpha(0.6f));
-        g.setFont(juce::Font(juce::FontOptions(9.0f)));
-        g.drawText("no data", area, juce::Justification::centred);
+        g.setFont(juce::Font(juce::FontOptions(8.0f)));
+        g.drawText(area.getWidth() >= 34 ? "no data" : "--",
+                   area, juce::Justification::centred);
         return;
     }
 
     const auto& mf = st.frame;
-    // Publisher-declared host idle: rms/peak persist as last-programme
-    // values and the receiver DIMS them, the standing convention.
-    if (mf.audioStale != 0)
-        dim = juce::jmin(dim, 0.55f);
-
-    advanceLinkStripSmoothing(st, fresh);
+    // dim already carries the audioStale treatment and the caller has run
+    // the single smoothing advance for this strip this paint.
 
     const auto coral = juce::Colour(0xffff6d5a);
     const auto amber = juce::Colour(0xfff59e0b);
 
     // Layout inside the stored rect: label gutter left, then the L and R
     // bars. Presentation only; no hit region derives from any of this.
-    const int gutterW = wide ? 20 : 14;
+    // The gutter adapts to the rect it actually gets: the in-band meter at
+    // narrow is ~18px, where even a 14px gutter would starve the bars, so
+    // the gutter drops to a line-only lane and ALL numbers go (the step 8
+    // rule extended: unreadable numbers are worse than absent ones). 8c
+    // redesigns the scale against these real dimensions.
+    const int gutterW = area.getWidth() >= 50 ? 20
+                      : area.getWidth() >= 34 ? 14 : 6;
     auto scaleArea = area.withTrimmedTop(2).withTrimmedBottom(2);
     auto barsArea  = scaleArea.withTrimmedLeft(gutterW);
     const int barGap = 2;
@@ -6779,13 +6797,18 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
     // legibly at any size, so the in-between marks keep their lines and
     // lose their numbers rather than printing unreadable ones).
     g.setFont(juce::Font(juce::FontOptions(wide ? 8.0f : 7.0f)));
-    for (float mark : kMeterMarks)
+    for (size_t mi = 0; mi < 6; ++mi)
     {
+        const float mark = kMeterMarks[mi];
         const int y = meterYForDb(mark, barsArea);
         g.setColour(C::text3.withMultipliedAlpha(0.35f * dim));
         g.drawHorizontalLine(y, (float)barsArea.getX(), (float)barsArea.getRight());
-        const bool labelled = wide || mark == 0.0f || mark == -12.0f
-                                   || mark == -24.0f || mark == kMeterDbFloor;
+        // Labels by INDEX into the marks array (0/-12/-24/-40 are indices
+        // 0/2/4/5), sidestepping float equality entirely.
+        const bool labelled = gutterW >= 20 ? true
+                            : gutterW >= 14 ? (mi == 0 || mi == 2 || mi == 4
+                                               || mi == 5)
+                            : false;
         if (labelled)
         {
             g.setColour(C::text3.withMultipliedAlpha(dim));
@@ -7044,19 +7067,33 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             st = &linkStripStates_[sg.addr];
         }
 
+        // ONE smoothing advance per strip per paint. Since 8b the data area
+        // and the meter band render TOGETHER, so the advance lives here and
+        // the renderers only consume; a call in each renderer would be the
+        // double-advance the helper's comment warns doubles the attack.
+        LinkStripDerived drv;
+        if (st != nullptr)
+        {
+            // audioStale dims BOTH consumers identically, decided once here.
+            if (st->has && st->frame.audioStale != 0)
+                dim = juce::jmin(dim, 0.55f);
+            drv = advanceLinkStripSmoothing(*st, fresh);
+        }
+
         switch (processorRef.linkMixerContent)
         {
             case EchoJayProcessor::LinkMixerContent::Numbers:
                 if (st != nullptr)
-                    paintLinkStripNumbers(g, sg.data, *st, fresh, dim, wide);
-                break;
-            case EchoJayProcessor::LinkMixerContent::Meter:
-                if (st != nullptr)
-                    paintLinkStripMeter(g, sg.data, *st, fresh, dim, wide);
+                    paintLinkStripNumbers(g, sg.data, *st, drv, dim, wide);
                 break;
             case EchoJayProcessor::LinkMixerContent::Chain:   // step 9
                 break;
         }
+
+        // The meter band: PERMANENT chrome, every strip, every mode. A
+        // mixer strip always shows its meter.
+        if (st != nullptr && !sg.meter.isEmpty())
+            paintLinkStripMeter(g, sg.meter, *st, dim, wide);
     }
 
     // ---- Fader (step 7) ----------------------------------------------------
@@ -7083,6 +7120,27 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             const float gDb = dragging ? linkMixerView_.dragValue
                                        : linkRowDisplayGain(sg.addr);
 
+            // The column splits into ticks lane (left) + image (right). The
+            // image width IS height/8: the rect was built as
+            // (lane + imgW) x (imgW * 8) by layOutStrips, so this recovers
+            // the same number the author used, it does not invent one.
+            const int imgW = sg.fader.getHeight() / 8;
+            const juce::Rectangle<int> img(sg.fader.getRight() - imgW,
+                                           sg.fader.getY(), imgW,
+                                           sg.fader.getHeight());
+
+            // Travel ticks down the lane, console style: every 6 dB from
+            // +12 to -24, the 0 dB line emphasised. yFromGain is the same
+            // mapping the drag consumes, so ticks and travel cannot drift.
+            for (float mark = 12.0f; mark >= -24.1f; mark -= 6.0f)
+            {
+                const int ty = yFromGain(mark, sg.fader);
+                const bool zero = mark == 0.0f;
+                g.setColour(C::text3.withAlpha(zero ? 0.8f : 0.35f));
+                g.fillRect(sg.fader.getX(), ty, img.getX() - sg.fader.getX() - 1,
+                           zero ? 2 : 1);
+            }
+
             const auto strip = getFaderFilmstrip();
             if (strip.isValid())
             {
@@ -7091,8 +7149,8 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 const int frame = faderFrameForGain(gDb);
                 g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
                 g.drawImage(strip,
-                            sg.fader.getX(), sg.fader.getY(),
-                            sg.fader.getWidth(), sg.fader.getHeight(),
+                            img.getX(), img.getY(),
+                            img.getWidth(), img.getHeight(),
                             0, frame * kFaderFrameH, kFaderFrameW, kFaderFrameH);
             }
             else
@@ -7198,7 +7256,8 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             }
             break;
 
-        case StripHit::Background:
+        case StripHit::Meter:      // the meter is not a control: it selects,
+        case StripHit::Background: // exactly like the strip background
         {
             // TAPPING A STRIP SELECTS THAT CHANNEL. This is the load-bearing
             // arm: with the sidebar collapsed, the banner is gone and this is
@@ -7282,6 +7341,12 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
             return en.info.active ? "Active (click to turn off)"
                                   : "Inactive (click to turn on)";
         }
+
+        case StripHit::Meter:
+            // "Link engine" is this pass's content-check marker: unique to
+            // this literal, greppable in the installed Mach-O.
+            return sg.isBus ? "Mix Bus meter (host engine)"
+                            : "Channel meter (Link engine)";
 
         case StripHit::Fader:
             if (sg.isBus) return "No gain stage on the Mix Bus";
@@ -7417,9 +7482,6 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
                 case kCtrlNumbers: sel = processorRef.linkMixerContent
                                        == EchoJayProcessor::LinkMixerContent::Numbers;
                                    label = "NUMBERS"; break;
-                case kCtrlMeter:   sel = processorRef.linkMixerContent
-                                       == EchoJayProcessor::LinkMixerContent::Meter;
-                                   label = "METER";   break;
                 case kCtrlChain:   sel = processorRef.linkMixerContent
                                        == EchoJayProcessor::LinkMixerContent::Chain;
                                    label = "CHAIN";   break;
