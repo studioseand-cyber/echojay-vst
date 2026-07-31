@@ -6643,6 +6643,11 @@ EchoJayEditor::advanceLinkStripSmoothing(LinkStripState& st, bool fresh)
         st.smLra  += (mf.lra  - st.smLra) * 0.3f;
         if (d.psrValid) st.smPsr += (psrRaw - st.smPsr) * 0.3f;
         if (d.plrValid) st.smPlr += (plrRaw - st.smPlr) * 0.3f;
+        // Meter RMS: de-stepping only (see the field's comment). Alpha 0.5
+        // both ways at the 20Hz paint rate catches a 10Hz publish step in
+        // ~2 ticks; the actual ballistics stay the publisher's 500ms EMA.
+        st.smRmsL += (mf.rmsL - st.smRmsL) * 0.5f;
+        st.smRmsR += (mf.rmsR - st.smRmsR) * 0.5f;
     }
     return d;
 }
@@ -6726,6 +6731,107 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
                        juce::Justification::centred);
         }
         cy += cellH;
+    }
+}
+
+void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
+                                        juce::Rectangle<int> area,
+                                        LinkStripState& st, bool fresh,
+                                        float dim, bool wide)
+{
+    if (area.getWidth() <= 0 || area.getHeight() <= 0) return;
+    if (!st.has)
+    {
+        // NO METER, not an empty scale: an empty scale reads as silence, and
+        // "never heard from" and "silent" are different facts. This is the
+        // distinction this codebase has got wrong before.
+        g.setColour(C::text3.withAlpha(0.6f));
+        g.setFont(juce::Font(juce::FontOptions(9.0f)));
+        g.drawText("no data", area, juce::Justification::centred);
+        return;
+    }
+
+    const auto& mf = st.frame;
+    // Publisher-declared host idle: rms/peak persist as last-programme
+    // values and the receiver DIMS them, the standing convention.
+    if (mf.audioStale != 0)
+        dim = juce::jmin(dim, 0.55f);
+
+    advanceLinkStripSmoothing(st, fresh);
+
+    const auto coral = juce::Colour(0xffff6d5a);
+    const auto amber = juce::Colour(0xfff59e0b);
+
+    // Layout inside the stored rect: label gutter left, then the L and R
+    // bars. Presentation only; no hit region derives from any of this.
+    const int gutterW = wide ? 20 : 14;
+    auto scaleArea = area.withTrimmedTop(2).withTrimmedBottom(2);
+    auto barsArea  = scaleArea.withTrimmedLeft(gutterW);
+    const int barGap = 2;
+    const int barW   = juce::jmax(2, (barsArea.getWidth() - barGap) / 2);
+    const juce::Rectangle<int> barRect[2] = {
+        { barsArea.getX(),                 barsArea.getY(), barW, barsArea.getHeight() },
+        { barsArea.getX() + barW + barGap, barsArea.getY(), barW, barsArea.getHeight() },
+    };
+
+    // Scale: tick lines at every mark; numeric labels all six at wide, and
+    // at narrow only 0 / -12 / -24 / -40 (a 14px gutter cannot hold "-18"
+    // legibly at any size, so the in-between marks keep their lines and
+    // lose their numbers rather than printing unreadable ones).
+    g.setFont(juce::Font(juce::FontOptions(wide ? 8.0f : 7.0f)));
+    for (float mark : kMeterMarks)
+    {
+        const int y = meterYForDb(mark, barsArea);
+        g.setColour(C::text3.withMultipliedAlpha(0.35f * dim));
+        g.drawHorizontalLine(y, (float)barsArea.getX(), (float)barsArea.getRight());
+        const bool labelled = wide || mark == 0.0f || mark == -12.0f
+                                   || mark == -24.0f || mark == kMeterDbFloor;
+        if (labelled)
+        {
+            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.drawText(juce::String((int)mark),
+                       area.getX(), y - 4, gutterW - 2, 8,
+                       juce::Justification::centredRight);
+        }
+    }
+
+    // RMS bars, classic zones: green to -12, amber to -6, coral above. The
+    // VALUE is the publisher's 500ms EMA; smRms only hides the 10Hz steps.
+    // A floored value (silence, or blanked) simply draws no bar: an empty
+    // bar on a visible scale IS the honest rendering of silence.
+    const float rms[2]  = { st.smRmsL, st.smRmsR };
+    const float peak[2] = { mf.peakL,  mf.peakR };
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const auto& br = barRect[ch];
+        if (rms[ch] > -99.0f)
+        {
+            const int yTop = meterYForDb(rms[ch], br);
+            // Zone segments from the bottom up to the bar top, each clipped
+            // to its own dB span; all three consume meterYForDb.
+            auto seg = [&](float lo, float hi, juce::Colour col)
+            {
+                const int y0 = meterYForDb(lo, br);
+                const int y1 = juce::jmax(yTop, meterYForDb(hi, br));
+                if (y0 > y1)
+                {
+                    g.setColour(col.withMultipliedAlpha(0.85f * dim));
+                    g.fillRect(br.getX(), y1, br.getWidth(), y0 - y1);
+                }
+            };
+            seg(kMeterDbFloor, juce::jmin(-12.0f, rms[ch]), C::green);
+            if (rms[ch] > -12.0f) seg(-12.0f, juce::jmin(-6.0f, rms[ch]), amber);
+            if (rms[ch] >  -6.0f) seg(-6.0f,  juce::jmin( 0.0f, rms[ch]), coral);
+        }
+        // Peak hold tick: the PUBLISHER'S held value (3s decay on its side),
+        // drawn exactly where published, never re-decayed here.
+        if (peak[ch] > -99.0f)
+        {
+            const int py = meterYForDb(peak[ch], br);
+            g.setColour((peak[ch] > -6.0f ? coral : C::text)
+                            .withMultipliedAlpha(dim));
+            g.fillRect(br.getX(), py - 1, br.getWidth(), 2);
+        }
     }
 }
 
@@ -6944,7 +7050,10 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 if (st != nullptr)
                     paintLinkStripNumbers(g, sg.data, *st, fresh, dim, wide);
                 break;
-            case EchoJayProcessor::LinkMixerContent::Meter:   // step 8
+            case EchoJayProcessor::LinkMixerContent::Meter:
+                if (st != nullptr)
+                    paintLinkStripMeter(g, sg.data, *st, fresh, dim, wide);
+                break;
             case EchoJayProcessor::LinkMixerContent::Chain:   // step 9
                 break;
         }

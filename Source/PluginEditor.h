@@ -2725,6 +2725,14 @@ private:
         // Smoothed loudness-suite readouts (display-side, updated per paint
         // tick toward the latest frame; frozen when stale)
         float smShort = -100.0f, smLra = 0.0f, smPsr = 0.0f, smPlr = 0.0f;
+        // Meter-mode RMS (step 8): DE-STEPPING only, not metering. The
+        // publisher already applies the 500ms EMA that IS the ballistics;
+        // this display pass exists solely to hide the 10Hz publish
+        // quantisation at the 20Hz paint rate (worst catch-up ~100ms, tiny
+        // beside 500ms, so it cannot double-smooth into mush). PEAK is
+        // deliberately NOT here: it is a publisher-held value with its own
+        // 3s decay, and interpolating a hold marker would misplace it.
+        float smRmsL = -100.0f, smRmsR = -100.0f;
     };
 
     // ---- Step 6: the NUMBERS content mode ----------------------------------
@@ -2750,6 +2758,29 @@ private:
     void paintLinkStripNumbers(juce::Graphics& g, juce::Rectangle<int> area,
                                LinkStripState& st, bool fresh, float dim,
                                bool wide);
+
+    // ---- Step 8: the METER content mode ------------------------------------
+    // Console-style: stereo RMS bars plus a publisher-held peak tick. The
+    // BALLISTICS ARE THE PUBLISHER'S: RMS is its 500ms EMA, peak its
+    // 3s-decay max-hold, both computed per audio block on the Link's side,
+    // which is why the 10Hz publish loses no transients. The receiver adds
+    // nothing but de-stepping (see LinkStripState::smRmsL) and never fakes a
+    // faster peak fall: the held value renders where the publisher put it.
+    /** THE dB-to-y mapping for the meter area, pure and shared by the bars,
+        the peak ticks and the scale marks, so the three cannot disagree
+        about where a decibel lives. Linear over kMeterDbFloor..0, clamped. */
+    static int meterYForDb(float db, juce::Rectangle<int> area)
+    {
+        const float f = juce::jlimit(0.0f, 1.0f, (db - kMeterDbFloor)
+                                                     / (0.0f - kMeterDbFloor));
+        return area.getBottom() - (int)std::round(f * (float)area.getHeight());
+    }
+    static constexpr float kMeterDbFloor = -40.0f;
+    static constexpr float kMeterMarks[6] = { 0.0f, -6.0f, -12.0f,
+                                              -18.0f, -24.0f, -40.0f };
+    void paintLinkStripMeter(juce::Graphics& g, juce::Rectangle<int> area,
+                             LinkStripState& st, bool fresh, float dim,
+                             bool wide);
 
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row

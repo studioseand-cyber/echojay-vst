@@ -73,6 +73,11 @@ struct EchoJayLinkMixerTestAccess
     static int   frames()                                   { return Ed::kFaderFrames; }
     static int   frameH()                                   { return Ed::kFaderFrameH; }
 
+    static int   meterY (float db, juce::Rectangle<int> a) { return Ed::meterYForDb (db, a); }
+    static float meterFloor()                               { return Ed::kMeterDbFloor; }
+    static const float* meterMarks (int& n)
+    { n = 6; return Ed::kMeterMarks; }
+
     using Ctrl = Ed::CtrlZone;
     static void ctrls (juce::Rectangle<int> r, std::vector<Ctrl>& out)
     { Ed::layOutLinkCtrls (r, out); }
@@ -447,6 +452,45 @@ static void testFaderMapping()
            "last frame's source rect stays inside the 60x61440 strip");
 }
 
+static void testMeterMapping()
+{
+    // Step 8: the dB-to-y mapping shared by bars, peak ticks and scale
+    // marks. One function, so agreement between the three is proven by
+    // proving the function.
+    std::printf ("meter mapping: endpoints, clamps, monotonic, marks\n");
+    const juce::Rectangle<int> a { 5, 40, 22, 150 };
+
+    checkEq (T::meterY (0.0f, a), a.getY(),        "0 dB is the top of the meter");
+    checkEq (T::meterY (T::meterFloor(), a), a.getBottom(), "the floor is the bottom");
+
+    // Clamps: values past either end pin to the ends, never escape the rect.
+    checkEq (T::meterY ( 20.0f, a), a.getY(),      "above 0 dB clamps to the top");
+    checkEq (T::meterY (-200.0f, a), a.getBottom(),"below the floor clamps to the bottom");
+
+    // Monotonic: quieter is always lower.
+    int prev = a.getY() - 1;
+    for (float db = 0.0f; db >= T::meterFloor() - 0.01f; db -= 0.5f)
+    {
+        const int y = T::meterY (db, a);
+        check (y >= prev, "meter y is monotonic in dB");
+        check (y >= a.getY() && y <= a.getBottom(), "meter y stays inside the area");
+        prev = y;
+    }
+
+    // The scale marks are inside the range they are drawn on, ordered, and
+    // bounded by the floor.
+    int n = 0;
+    const float* marks = T::meterMarks (n);
+    for (int i = 0; i < n; ++i)
+    {
+        check (marks[i] <= 0.0f && marks[i] >= T::meterFloor(),
+               "every scale mark is inside the meter range");
+        if (i > 0)
+            check (marks[i] < marks[i - 1], "scale marks descend");
+    }
+    check (marks[n - 1] == T::meterFloor(), "the last mark IS the floor");
+}
+
 static void testDegenerate()
 {
     std::printf ("degenerate inputs leave nothing behind\n");
@@ -512,6 +556,7 @@ int main()
     testSelection();
     testCtrls();
     testFaderMapping();
+    testMeterMapping();
     testDegenerate();
 
     std::printf (failures == 0 ? "EJLinkMixer selftest: PASS\n"
