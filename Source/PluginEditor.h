@@ -2495,11 +2495,18 @@ private:
         // can grow an eq rect later; nothing else has to change.
     };
 
-    struct LinkMixerView : juce::Component
+    struct LinkMixerView : juce::Component, juce::TooltipClient
     {
         EchoJayEditor* owner = nullptr;
         void paint(juce::Graphics& g) override;
         void mouseDown(const juce::MouseEvent& e) override;
+        /** Position-dependent: narrow strips ellipsise real track names, so
+            the full name (and the merged control's status words, which have
+            no room to render at 46px) must be reachable somewhere. Served by
+            the editor's existing TooltipWindow; the text comes from
+            linkStripTooltip, which consumes the SAME stored rects as paint
+            and the mouse handlers. */
+        juce::String getTooltip() override;
     };
     LinkMixerView  linkMixerView_;
     juce::Viewport linkMixerViewport_;
@@ -2561,19 +2568,54 @@ private:
     static int stripsTotalWidth(int count, int stripW)
     { return count <= 0 ? 0 : count * (stripW + kStripGap) - kStripGap; }
 
-    enum class StripHit { None = 0, Fader, Ai, Badge, Background };
+    enum class StripHit { None = 0, Fader, Ai, Badge, Active, Background };
     /** HIT-TEST PRECEDENCE, in ONE place and stated in code rather than left
         to the order handlers happen to test in: fader, then AI button, then
-        placement badge, then the strip background as the fallback that
-        SELECTS the channel. Pure, and it CONSUMES sg's stored rects; nothing
-        here recomputes a bound. `p` is in the same space as sg. */
+        placement badge, then the merged Active control, then the strip
+        background as the fallback that SELECTS the channel. Pure, and it
+        CONSUMES sg's stored rects; nothing here recomputes a bound. `p` is in
+        the same space as sg. */
     static StripHit stripHitAt(const StripGeom& sg, juce::Point<int> p);
+
+    /** THE addr derivation: uid when the Link publishes one, legacy
+        name-derived fallback otherwise. One place. The old row list carried
+        this expression inline in two spots; the mixer must not grow copies. */
+    static juce::String linkAddrForSlot(const EchoJayProcessor::LinkSlotInfo& s)
+    {
+        return s.uid.isNotEmpty() ? s.uid : LinkShm::makeSafeFilePart(s.name);
+    }
+    /** Entry lookup by addr, by value because getLinkDisplayList() builds its
+        vector per call. Returns false for the bus and for vanished Links. */
+    bool findLinkEntryByAddr(const juce::String& addr,
+                             EchoJayProcessor::LinkDisplayEntry& out) const;
+    /** The merged Active/connectivity pending lookup, addr-keyed, VERBATIM
+        the old row list's semantics (any pending entry for the addr wins,
+        including gain pendings). ONE copy, consumed by paint AND tooltip. */
+    void linkPendingFor(const juce::String& addr, bool& pending,
+                        bool& timedOut, bool& target) const;
+    /** The merged control's label. ONE composition, so the wide-mode strip
+        text and the tooltip cannot disagree on the words. "no resp" and
+        "Active..." are the old rows' strings kept verbatim; "offline" is new,
+        carrying the state the deleted connectivity dot used to show. */
+    static juce::String linkActiveLabel(bool connected, bool pending, bool timedOut)
+    {
+        return !connected ? "offline"
+             : timedOut   ? "no resp"
+             : pending    ? "Active..." : "Active";
+    }
+    juce::String linkStripTooltip(const StripGeom& sg, juce::Point<int> p) const;
 
     void measureLinkStrips();
     /** Paint one strip from its stored geometry. Shared by the pinned Mix Bus
         strip and every Link strip so the two cannot drift, the same reason
-        paintLinkMeterStrip is shared today. Measures nothing. */
-    void paintLinkStrip(juce::Graphics& g, const StripGeom& sg);
+        paintLinkMeterStrip is shared today. Measures nothing.
+
+        `entry` is the strip's resolved display-list entry, nullptr for the
+        bus strip. The CALLER resolves it because getLinkDisplayList() builds
+        its vector per call: sixteen strips at 20Hz must share one fetch per
+        frame, not pay one each. */
+    void paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
+                        const EchoJayProcessor::LinkDisplayEntry* entry);
     /** Routes one press through stripHitAt. `local` is in sg's space. */
     void linkStripMouseDown(const StripGeom& sg, juce::Point<int> local);
 

@@ -6414,6 +6414,7 @@ EchoJayEditor::StripHit EchoJayEditor::stripHitAt(const StripGeom& sg,
     if (sg.fader.contains(p))     return StripHit::Fader;
     if (sg.ai.contains(p))        return StripHit::Ai;
     if (sg.badge.contains(p))     return StripHit::Badge;
+    if (sg.active.contains(p))    return StripHit::Active;
     return StripHit::Background;
 }
 
@@ -6447,60 +6448,326 @@ void EchoJayEditor::measureLinkStrips()
     if (bandW <= 0 || bandH <= 0) return;
 
     // Canonical display list: the SAME order and "Untitled N" numbering the
-    // whole product uses, so an instance keeps one label everywhere.
+    // whole product uses, so an instance keeps one label everywhere. The addr
+    // derivation is linkAddrForSlot, the one place it lives.
     std::vector<juce::String> addrs;
     for (const auto& entry : processorRef.getLinkDisplayList())
-        addrs.push_back(entry.info.uid.isNotEmpty()
-                            ? entry.info.uid
-                            : LinkShm::makeSafeFilePart(entry.info.name));
+        addrs.push_back(linkAddrForSlot(entry.info));
 
     layOutStrips(linkStripAreaRect_, stripWidth(), addrs,
                  linkBusGeom_, linkStripGeom_);
 }
 
-void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg)
+bool EchoJayEditor::findLinkEntryByAddr(const juce::String& addr,
+                                        EchoJayProcessor::LinkDisplayEntry& out) const
 {
-    // STEP 2 SCAFFOLDING. Body plus one faint outline per element rect, so the
-    // measure pass is verifiable on screen before any content exists. Steps 3
-    // to 9 replace each outline with its real content; the rects themselves do
-    // not move, because this function measures NOTHING - every rectangle drawn
-    // here came from linkStripGeom_ / linkBusGeom_.
-    //
-    // No value is drawn, on purpose: a strip must never display a reading it
-    // does not have, and at this step it has none.
+    if (addr.isEmpty()) return false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (linkAddrForSlot(e.info) == addr) { out = e; return true; }
+    return false;
+}
+
+void EchoJayEditor::linkPendingFor(const juce::String& addr, bool& pending,
+                                   bool& timedOut, bool& target) const
+{
+    // VERBATIM the old row list's lookup: any pending entry for this addr
+    // wins, last writer takes it. Kept exactly, per review, including that it
+    // does not filter isGain.
+    pending = timedOut = target = false;
+    for (const auto& p : linkCtrlPending_)
+        if (p.addr == addr)
+        { pending = !p.timedOut; timedOut = p.timedOut; target = p.target; }
+}
+
+void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
+                                   const EchoJayProcessor::LinkDisplayEntry* entry)
+{
+    // Consumes stored rects only. Data lookups are the caller's (entry) or
+    // addr-keyed (pending state); geometry is measureLinkStrips' alone.
+    const bool isBus = sg.isBus;
+    const bool wide  = processorRef.linkMixerWide;
+
+    const auto cyan  = juce::Colour(0xff22d3ee);
+    const auto amber = juce::Colour(0xfff59e0b);
+    const auto coral = juce::Colour(0xffff6d5a);
+    const auto boxOutline = juce::Colour(0xffa0a0b8);
+
+    // Strip body
     g.setColour(C::bg3);
     g.fillRoundedRectangle(sg.full.toFloat(), 6.0f);
-    g.setColour(sg.isBus ? C::blue2.withAlpha(0.4f) : C::border2);
+    g.setColour(isBus ? C::blue2.withAlpha(0.4f) : C::border2);
     g.drawRoundedRectangle(sg.full.toFloat().reduced(0.5f), 6.0f, 1.0f);
 
+    // ---- Name. The entry's displayName IS resolveLinkDisplayName's answer
+    // (that accessor reads the same display list); it is passed in rather
+    // than re-resolved so sixteen strips share one list fetch per frame.
+    // Narrow strips shrink to 70% then ellipsise; the FULL name is served by
+    // the tooltip (linkStripTooltip), so it stays reachable.
+    {
+        juce::String name = isBus ? processorRef.getEffectiveChannelName()
+                                  : entry != nullptr ? entry->displayName
+                                                     : juce::String();
+        if (isBus && name.isEmpty()) name = "Host Channel";
+        g.setColour(C::text);
+        g.setFont(juce::Font(juce::FontOptions(wide ? 12.0f : 10.5f,
+                                               juce::Font::bold)));
+        g.drawFittedText(name, sg.name, juce::Justification::centred, 1, 0.7f);
+    }
+
+    // ---- Placement badge: ONE element, three labels (BUS / CHANNEL / SET?),
+    // colour logic from the old chip: both deliberately-set values read in
+    // the accent, only UNSET is dim, never amber (an unset Link is not
+    // nagged). The bus strip's badge is an inert MIX BUS marker in the bus
+    // accent; linkStripMouseDown no-ops it.
+    {
+        const juce::String bl = isBus ? "MIX BUS"
+                              : entry == nullptr        ? juce::String()
+                              : entry->info.placement == 1 ? "BUS"
+                              : entry->info.placement == 2 ? "CHANNEL" : "SET?";
+        if (bl.isNotEmpty())
+        {
+            const juce::Colour pc = isBus ? C::blue2
+                                  : entry->info.placement == 0 ? C::text3 : cyan;
+            g.setColour(pc.withAlpha(0.15f));
+            g.fillRoundedRectangle(sg.badge.toFloat(), 4.0f);
+            g.setColour(pc.withAlpha(0.7f));
+            g.drawRoundedRectangle(sg.badge.toFloat(), 4.0f, 1.0f);
+            g.setColour(pc);
+            g.setFont(juce::Font(juce::FontOptions(wide ? 9.0f : 8.0f,
+                                                   juce::Font::bold)));
+            g.drawFittedText(bl, sg.badge, juce::Justification::centred, 1, 0.8f);
+        }
+    }
+
+    // ---- Merged Active/connectivity control (Link strips only; the bus has
+    // neither state, so its rect stays empty rather than showing a control
+    // that does nothing). One glyph, three shapes so the states survive
+    // colour-blindness AND the 46px narrow width:
+    //     tick        = connected and Active        (cyan; amber while pending)
+    //     empty box   = connected and inactive      (dim outline)
+    //     cross       = no heartbeat                (coral)
+    // plus the old rows' pending treatments kept verbatim: amber tick showing
+    // the TARGET state while an ack is awaited, coral outline on timeout. The
+    // words ("Active", "Active...", "no resp", "offline") render in wide mode
+    // only; at 46px there is no room, so the tooltip carries them.
+    if (!isBus)
+    {
+        bool pending = false, timedOut = false, target = false;
+        linkPendingFor(sg.addr, pending, timedOut, target);
+        const bool connected = entry != nullptr && entry->info.connected;
+        const bool active    = entry != nullptr && entry->info.active;
+
+        const int side = juce::jmin(16, sg.active.getHeight() - 2);
+        juce::Rectangle<float> box(0, 0, (float)side, (float)side);
+        box = wide ? box.withPosition((float)sg.active.getX(),
+                                      (float)sg.active.getCentreY() - side * 0.5f)
+                   : box.withCentre(sg.active.toFloat().getCentre());
+
+        g.setColour(!connected || timedOut ? coral : boxOutline);
+        g.drawRoundedRectangle(box, 4.0f, 1.0f);
+
+        if (!connected)
+        {
+            // Cross: offline is a SHAPE, not just a colour
+            auto c = box.reduced(4.5f);
+            g.setColour(coral);
+            g.drawLine(c.getX(), c.getY(), c.getRight(), c.getBottom(), 1.6f);
+            g.drawLine(c.getX(), c.getBottom(), c.getRight(), c.getY(), 1.6f);
+        }
+        else
+        {
+            const bool showTick = pending ? target : (!timedOut && active);
+            if (showTick)
+            {
+                g.setColour(pending ? amber.withAlpha(0.6f) : cyan);
+                auto tick = getLookAndFeel().getTickShape(0.75f);
+                g.fillPath(tick, tick.getTransformToScaleToFit(
+                                     box.reduced(3.0f, 3.5f), false));
+            }
+        }
+
+        if (wide)
+        {
+            g.setColour(!connected || timedOut ? coral : C::text);
+            g.setFont(juce::Font(juce::FontOptions(11.0f)));
+            g.drawText(linkActiveLabel(connected, pending, timedOut),
+                       sg.active.withTrimmedLeft(side + 6),
+                       juce::Justification::centredLeft);
+        }
+    }
+
+    // ---- AI button: opens this channel's conversation. Dimmed and inert for
+    // legacy Links (empty uid): openChannelByUid needs a real uid, and a
+    // button that silently targets a synthesized addr would open a chat no
+    // other surface can find. The tooltip says why.
+    {
+        const bool aiEnabled = isBus
+            || (entry != nullptr && entry->info.uid.isNotEmpty());
+        const juce::Colour ac = aiEnabled ? cyan : C::text3;
+        g.setColour(ac.withAlpha(aiEnabled ? 0.14f : 0.08f));
+        g.fillRoundedRectangle(sg.ai.toFloat(), 5.0f);
+        g.setColour(ac.withAlpha(aiEnabled ? 0.7f : 0.35f));
+        g.drawRoundedRectangle(sg.ai.toFloat(), 5.0f, 1.0f);
+        g.setColour(ac.withAlpha(aiEnabled ? 1.0f : 0.5f));
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        g.drawText("AI", sg.ai, juce::Justification::centred);
+    }
+
+    // ---- Still scaffolding: data (step 6) and fader (step 7) keep the faint
+    // outlines. No value is drawn there, on purpose: a strip must never
+    // display a reading it does not have, and at this step it has none.
     g.setColour(C::text3.withAlpha(0.30f));
-    for (auto r : { sg.name, sg.badge, sg.active, sg.data, sg.fader, sg.ai })
+    for (auto r : { sg.data, sg.fader })
         if (!r.isEmpty())
             g.drawRect(r, 1);
 }
 
 void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> local)
 {
-    // Consumes stripHitAt's verdict. The action arms land in later steps; the
-    // precedence and the routing are settled here so no handler grows its own
-    // copy of either.
+    // Consumes stripHitAt's verdict; recomputes nothing. Every action below
+    // is an EXISTING path reused, not a new implementation.
     switch (stripHitAt(sg, local))
     {
         case StripHit::Fader:      break;   // step 7
-        case StripHit::Ai:         break;   // step 3
-        case StripHit::Badge:      break;   // step 3
+
+        case StripHit::Ai:
+        {
+            // FORCE-EXPAND, the chainOpenBtn pattern: this button's whole
+            // purpose is the conversation, which lives in the sidebar, so a
+            // collapsed sidebar opens. The flag is persisted, so the change
+            // is marked dirty like any other author of it.
+            if (processorRef.chatSidebarCollapsed)
+            {
+                processorRef.chatSidebarCollapsed = false;
+                processorRef.markStateDirty();
+            }
+            if (sg.isBus)
+            {
+                // The banner menu's Mix Bus arm, guard included: resetting
+                // while already in the main context would wipe a live main
+                // conversation for nothing.
+                if (effectiveChannelUid().isNotEmpty())
+                    resetToMainContext();
+            }
+            else
+            {
+                // Only a REAL uid may open a channel (the button paints
+                // dimmed and lands here inert for legacy Links); same
+                // already-here guard as the banner menu.
+                EchoJayProcessor::LinkDisplayEntry en;
+                if (findLinkEntryByAddr(sg.addr, en) && en.info.uid.isNotEmpty()
+                    && en.info.uid != effectiveChannelUid())
+                    openChannelByUid(en.info.uid);
+            }
+            resized();   // the collapse flag may have changed the columns
+            repaint();
+            break;
+        }
+
+        case StripHit::Badge:
+            // The existing chooser; second menu implementations are how the
+            // product grows two authorities on one setting.
+            if (!sg.isBus)
+                showLinkPlacementMenu(sg.addr);
+            break;
+
+        case StripHit::Active:
+            // The old rows' toggle, verbatim: current state from the slot,
+            // send the inverse, authority stays with the Link (pending style
+            // until its ack). Nothing to toggle on the bus.
+            if (!sg.isBus)
+            {
+                EchoJayProcessor::LinkDisplayEntry en;
+                if (findLinkEntryByAddr(sg.addr, en))
+                    sendLinkActiveCommand(sg.addr, !en.info.active);
+            }
+            break;
+
         case StripHit::Background: break;   // step 4, selects the channel
         case StripHit::None:       break;
     }
+}
+
+juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
+                                             juce::Point<int> p) const
+{
+    // Consumes the SAME stored rects as paint and mouseDown, via the same
+    // stripHitAt. The tooltip is where the narrow strip's elided information
+    // lives: the full name, and the merged control's status words.
+    EchoJayProcessor::LinkDisplayEntry en;
+    const bool have = !sg.isBus && findLinkEntryByAddr(sg.addr, en);
+    const juce::String name = sg.isBus
+        ? (processorRef.getEffectiveChannelName().isNotEmpty()
+               ? processorRef.getEffectiveChannelName()
+               : juce::String("Host Channel"))
+        : have ? en.displayName : juce::String();
+
+    switch (stripHitAt(sg, p))
+    {
+        case StripHit::Ai:
+            if (sg.isBus) return "Open the main AI conversation";
+            if (have && en.info.uid.isEmpty())
+                return "AI chat needs this channel's Link updated";
+            return "Open this channel's AI conversation";
+
+        case StripHit::Badge:
+            if (sg.isBus) return name + " (this instance)";
+            return !have ? name
+                 : en.info.placement == 1 ? "Placement: Bus (click to change)"
+                 : en.info.placement == 2 ? "Placement: Channel (click to change)"
+                                          : "Placement not set (click to set)";
+
+        case StripHit::Active:
+        {
+            if (sg.isBus || !have) return name;
+            bool pending = false, timedOut = false, target = false;
+            linkPendingFor(sg.addr, pending, timedOut, target);
+            if (!en.info.connected || timedOut)
+                return linkActiveLabel(en.info.connected, pending, timedOut);
+            if (pending)
+                return juce::String("Active...")
+                       + (target ? " (turning on)" : " (turning off)");
+            return en.info.active ? "Active (click to turn off)"
+                                  : "Inactive (click to turn on)";
+        }
+
+        case StripHit::Fader:
+        case StripHit::Background:
+        case StripHit::None:
+            break;
+    }
+    return name;   // the full, un-elided name, everywhere else on the strip
 }
 
 void EchoJayEditor::LinkMixerView::paint(juce::Graphics& g)
 {
     if (owner == nullptr) return;
     // Consumes the stored rects. This painter measures nothing, which is the
-    // half of the rule that the Visualisation preset strip broke.
+    // half of the rule that the Visualisation preset strip broke. ONE display
+    // list fetch serves every strip this frame (it builds its vector per
+    // call); strips are matched by ADDR, not index, because the list can
+    // change between the measure pass and this paint.
+    const auto entries = owner->processorRef.getLinkDisplayList();
     for (const auto& sg : owner->linkStripGeom_)
-        owner->paintLinkStrip(g, sg);
+    {
+        const EchoJayProcessor::LinkDisplayEntry* e = nullptr;
+        for (const auto& en : entries)
+            if (EchoJayEditor::linkAddrForSlot(en.info) == sg.addr)
+            { e = &en; break; }
+        // A vanished Link paints as an empty shell for at most one tick (the
+        // count watcher re-measures); no fabricated values.
+        owner->paintLinkStrip(g, sg, e);
+    }
+}
+
+juce::String EchoJayEditor::LinkMixerView::getTooltip()
+{
+    if (owner == nullptr) return {};
+    const auto p = getMouseXYRelative();
+    for (const auto& sg : owner->linkStripGeom_)
+        if (sg.full.contains(p))
+            return owner->linkStripTooltip(sg, p);
+    return {};
 }
 
 void EchoJayEditor::LinkMixerView::mouseDown(const juce::MouseEvent& e)
@@ -6540,7 +6807,7 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     // the master cannot scroll away. SAME renderer as every Link strip, so the
     // two cannot drift, which is why paintLinkMeterStrip is shared today.
     if (!linkBusGeom_.full.isEmpty())
-        paintLinkStrip(g, linkBusGeom_);
+        paintLinkStrip(g, linkBusGeom_, nullptr);   // nullptr = the bus
 
     // Link strips are painted by LinkMixerView inside linkMixerViewport_.
     if (processorRef.getLinkDisplayList().empty())

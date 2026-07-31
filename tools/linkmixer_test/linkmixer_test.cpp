@@ -251,12 +251,12 @@ static void testHitPrecedence()
     check (T::hitAt (s, s.fader.getCentre()) == Hit::Fader,  "fader centre hits the fader");
     check (T::hitAt (s, s.ai.getCentre())    == Hit::Ai,     "AI centre hits the AI button");
     check (T::hitAt (s, s.badge.getCentre()) == Hit::Badge,  "badge centre hits the badge");
+    check (T::hitAt (s, s.active.getCentre()) == Hit::Active,
+           "the merged Active control claims its rect (step 3)");
     check (T::hitAt (s, s.name.getCentre())  == Hit::Background,
            "the name area falls through to background, which selects");
     check (T::hitAt (s, s.data.getCentre())  == Hit::Background,
            "the data area falls through to background, which selects");
-    check (T::hitAt (s, s.active.getCentre()) == Hit::Background,
-           "the Active area falls through to background until step 3 claims it");
 
     // Outside the strip is nothing at all, including the gap between strips.
     check (T::hitAt (s, { s.full.getRight() + 1, s.full.getCentreY() }) == Hit::None,
@@ -273,6 +273,30 @@ static void testHitPrecedence()
                 check (T::hitAt (b, a.fader.getCentre()) == Hit::None
                     || a.full == b.full,
                        "one strip's fader never resolves inside another strip");
+}
+
+static void testClickable (int stripW, int bandH)
+{
+    // Step 3 chrome check: at the band heights that SHIP, every interactive
+    // element must be big enough to actually hit. A rect that paints but
+    // cannot be pressed is the chrome half of action honesty.
+    std::printf ("clickability: stripW=%d bandH=%d\n", stripW, bandH);
+    const juce::Rectangle<int> band { 32, 142, 1050, bandH };
+
+    Geom bus;
+    std::vector<Geom> links;
+    T::layOut (band, stripW, addrs (3), bus, links);
+    if (links.empty()) return;
+
+    for (const Geom* s : { (const Geom*) &bus, (const Geom*) &links[0] })
+    {
+        check (s->badge.getHeight()  >= 14, "badge is tall enough to press");
+        check (s->active.getHeight() >= 14, "Active control is tall enough to press");
+        check (s->ai.getHeight()     >= 16, "AI button is tall enough to press");
+        check (s->fader.getHeight()  >= 40, "fader is tall enough to drag");
+        check (s->badge.getWidth()   >= 24, "badge is wide enough to press");
+        check (s->ai.getWidth()      >= 24, "AI button is wide enough to press");
+    }
 }
 
 static void testDegenerate()
@@ -332,6 +356,11 @@ int main()
     testFaderAspect (T::wNarrow(), 200);
 
     testHitPrecedence();
+
+    testClickable (T::wNarrow(), 540);
+    testClickable (T::wWide(),   540);
+    testClickable (T::wNarrow(), 424);
+
     testDegenerate();
 
     std::printf (failures == 0 ? "EJLinkMixer selftest: PASS\n"
