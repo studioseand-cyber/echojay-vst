@@ -51,7 +51,7 @@ public:
         bool cacheTest = false, progressTest = false;
         juce::String attributeReport, afterExit, captureTestId, maskTestId, stallId, promoSuppressId;
         juce::String sweepTestId, sweepTestParam, typedTestId, typedTestParam, assignTestId;
-        juce::String bandTestId, bandTestMembers, bandTestImposter;
+        juce::String bandTestId, bandTestMembers, bandTestImposter, catTestId;
         int stallN = 0;
         bool supervised = false;
         int  restartCount = 0;
@@ -87,6 +87,8 @@ public:
             }
             else if (args[i] == "--selftest-assign" && i + 1 < args.size())
                 assignTestId = args[++i];
+            else if (args[i] == "--selftest-category" && i + 1 < args.size())
+                catTestId = args[++i];
             else if (args[i] == "--selftest-bands" && i + 2 < args.size())
             {
                 bandTestId = args[i + 1]; bandTestMembers = args[i + 2]; i += 2;
@@ -199,6 +201,11 @@ public:
         {
             auto id = assignTestId; auto* m = mainWindow->getMain();
             juce::MessageManager::callAsync ([m, id] { m->selfTestAssign (id); });
+        }
+        else if (catTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = catTestId; auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id] { m->selfTestCategory (id); });
         }
         else if (bandTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {

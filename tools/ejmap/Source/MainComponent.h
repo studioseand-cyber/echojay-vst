@@ -894,6 +894,117 @@ public:
         quitNow();
     }
 
+    /** Reproduces the AMEK category defect and proves the fix: no proposal
+        -> the panel ASKS before any row exists; work confirmed under a wrong
+        category SURVIVES the correction; the checklist rebuilds around it.
+    */
+    void selfTestCategory (const juce::String& identifier)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "CATTEST: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        ledger.beginLoad (loadedId, desc.name, desc.manufacturerName,
+                          desc.pluginFormatName, desc.version, "load", "createPluginInstance");
+        auto res = host.load (desc, watchdog);
+        { LedgerRecord rec; rec.pluginId = loadedId; rec.name = desc.name;
+          rec.outcome = res.outcome; rec.detail = res.detail; rec.paramCount = res.paramCount;
+          ledger.endLoad (rec); }
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "CATTEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        listeners.attach (*inst);
+        cal = capture.calibrate (*inst, loadedId);
+        mask = capture.buildNoiseMask (*inst, cal, loadedId);
+        capture.resetCycleCounts();
+        promotionsFlushed = 0;
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+
+        auto ok = [this] (bool cond, const juce::String& what)
+        {
+            if (! cond) ++failures;
+            std::cout << "  " << (cond ? "ok   " : "FAIL ") << what << std::endl;
+            std::cout.flush();
+        };
+
+        std::cout << "CATTEST: " << desc.name << std::endl;
+        failures = 0;
+
+        startAssignment();       // the normal human path, no override
+        ok (assignPanel.isAwaitingCategory() && assignPanel.rows.isEmpty(),
+            "no proposal -> the panel ASKS before any row exists");
+        std::cout << "---- the ask card ----\n" << assignPanel.textRender() << std::endl;
+
+        assignPanel.dispatchAction ("space");
+        ok (assignPanel.isAwaitingCategory(),
+            "every action refused until the category is chosen");
+
+        assignPanel.pickCategory ("compressor");   // the WRONG one, as lived
+        ok (! assignPanel.isAwaitingCategory() && assignPanel.rows.size() > 0
+              && assignPanel.progressText().startsWith ("compressor"),
+            "wrong pick builds the compressor checklist, category visible in the header");
+
+        // Confirm input_db -> Input Gain under the wrong category.
+        int inputRow = -1;
+        for (int i = 0; i < assignPanel.rows.size(); ++i)
+            if (assignPanel.rows.getReference (i).semantic == "input_db") { inputRow = i; break; }
+        assignPanel.selectRow (inputRow);
+        const int inputIdx = paramIndexByName ("Input Gain");
+        inst->getParameters()[inputIdx]->setValueNotifyingHost (0.20f);
+        juce::Thread::sleep (120);
+        assignPanel.actionWiggle();
+        juce::Timer::callAfterDelay (300, [this, inputIdx]
+        {
+            auto* i2 = host.getInstance();
+            if (i2 != nullptr) i2->getParameters()[inputIdx]->setValueNotifyingHost (0.55f);
+        });
+        stage = 0;
+        juce::Timer::callAfterDelay (1400, [this, ok] { categoryTestPart2 (ok); });
+    }
+
+    void categoryTestPart2 (std::function<void (bool, const juce::String&)> ok)
+    {
+        int inputRow = -1;
+        for (int i = 0; i < assignPanel.rows.size(); ++i)
+            if (assignPanel.rows.getReference (i).semantic == "input_db") { inputRow = i; break; }
+        ok (inputRow >= 0
+              && assignPanel.rows.getReference (inputRow).state == AssignRow::State::confirmed,
+            "input_db confirmed under the wrong category");
+
+        assignPanel.pickCategory ("eq");           // the correction
+
+        int inputAfter = -1, bandsRow = -1, kneeRow = -1;
+        for (int i = 0; i < assignPanel.rows.size(); ++i)
+        {
+            const auto& r = assignPanel.rows.getReference (i);
+            if (r.semantic == "input_db") inputAfter = i;
+            if (r.kind == "bands")        bandsRow = i;
+            if (r.semantic == "knee_db")  kneeRow = i;
+        }
+        ok (inputAfter >= 0
+              && assignPanel.rows.getReference (inputAfter).state == AssignRow::State::confirmed,
+            "input_db SURVIVES the category change as a confirmed extra (no re-doing)");
+        ok (bandsRow >= 0, "the bands flow row exists after the correction");
+        ok (kneeRow < 0, "unresolved compressor-only rows are gone (knee_db)");
+        ok (assignPanel.progressText().startsWith ("eq"),
+            "the header shows the corrected category");
+        ok (ledger.runArtifact ("captures", "jsonl").loadFileAsString()
+              .contains ("category_changed"),
+            "the correction is recorded as evidence");
+        std::cout << "---- after the correction ----\n" << assignPanel.textRender() << std::endl;
+
+        std::cout << "CATTEST: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
     /** Drives the band flow end to end: guided captures with synthetic
         touches, the table, the exclusion footer (which must be explicit even
         when empty), accept, and a LIVE apply through the real applySettings

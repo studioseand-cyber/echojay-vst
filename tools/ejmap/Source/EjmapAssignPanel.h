@@ -82,6 +82,18 @@ public:
         notice.setFont (juce::FontOptions (12.0f));
         notice.setColour (juce::Label::textColourId, juce::Colour (0xffe0a060));
 
+        addAndMakeVisible (categoryBox);
+        for (int i = 0; i < DialSets::categories().size(); ++i)
+            categoryBox.addItem (DialSets::categories()[i], i + 1);
+        categoryBox.setTextWhenNothingSelected ("category?");
+        categoryBox.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff161c26));
+        categoryBox.onChange = [this]
+        {
+            const auto cat = categoryBox.getText();
+            if (cat.isNotEmpty()) pickCategory (cat);
+            grabKeyboardFocus();
+        };
+
         addAndMakeVisible (promptTitle);
         promptTitle.setFont (juce::FontOptions (17.0f, juce::Font::bold));
         promptTitle.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0));
@@ -125,13 +137,49 @@ public:
     {
         root = rootIn; fp = fpIn; pluginId = pluginIdIn;
         evidence = evidenceIn;
-        category = categoryOverride.isNotEmpty() ? categoryOverride
-                 : proposals.present             ? proposals.category
-                                                 : "compressor";
+        beginProposals = proposals;
         startedAt = juce::Time::getMillisecondCounter();
         rows.clear();
         ignoreRows.clear();
         bulkArmedAt = 0;
+
+        // THE CATEGORY IS CHOSEN, NEVER DEFAULTED. A silent default built a
+        // compressor checklist on AMEK EQ 200 -- nine wrong rows and no bands
+        // flow on the plugin the M5 gate is built around. With a classifier
+        // verdict the verdict chooses (visible, changeable); with an explicit
+        // override the caller chooses; with NEITHER, the human is ASKED
+        // before any row exists.
+        if (categoryOverride.isNotEmpty())      category = categoryOverride;
+        else if (proposals.present)             category = proposals.category;
+        else
+        {
+            awaitingCategory = true;
+            category = {};
+            syncCategoryBox();
+            selected = 0;
+            list.updateContent();
+            updateProgress();
+            updateQuestion();
+            say ("No classifier verdict for this fp: choose the category first. "
+                 "It decides the dial set, and on an EQ it is what routes you into the bands flow.");
+            return;
+        }
+        buildRows (proposals);
+    }
+
+    void buildRows (const ProposalSet& proposals)
+    {
+        awaitingCategory = false;
+
+        // Category changes never discard work: a confirmed row is evidence
+        // about the PLUGIN (captured index, sweep anchors), none of it
+        // category-dependent. Resolved rows survive; only the unresolved
+        // checklist rebuilds.
+        juce::Array<AssignRow> preserved;
+        for (const auto& r : rows)
+            if (r.isResolved()) preserved.add (r);
+        rows.clear();
+        ignoreRows.clear();
 
         // 1. Classifier proposals with semantic kinds.
         juce::StringArray coveredSemantics;
@@ -210,16 +258,60 @@ public:
                     ignoreRows.add (r);
                 }
 
+        // Merge the survivors: same-semantic fresh rows are REPLACED by the
+        // resolved original; resolved rows outside the new checklist (input_db
+        // confirmed under compressor, category corrected to eq) are appended
+        // -- confirmed extras, shipped in the map, never re-done.
+        for (auto& pr : preserved)
+        {
+            bool merged = false;
+            for (auto& r : rows)
+                if (r.semantic == pr.semantic && pr.semantic.isNotEmpty())
+                { r = pr; merged = true; break; }
+            if (! merged)
+                rows.add (pr);
+        }
+
         sortRows();
         restoreSession();
+        syncCategoryBox();
         selected = firstUnresolved();
         list.selectRow (selected);
         list.updateContent();
         updateProgress();
         updateQuestion();
-        say ("Assign: " + juce::String (rows.size()) + " rows, "
+        say ("Assign (" + category + "): " + juce::String (rows.size()) + " rows, "
                + juce::String (ignoreRows.size()) + " classifier ignores. "
-               + (proposals.present ? "Proposals loaded." : "NO proposals for this fp: dial-set rows only."));
+               + (proposals.present ? "Proposals loaded." : "No proposals: dial-set rows."));
+    }
+
+    void pickCategory (const juce::String& cat)
+    {
+        if (awaitingCategory)
+        {
+            category = cat;
+            buildRows (beginProposals);
+            return;
+        }
+        if (cat == category)
+            return;
+
+        // Mid-flow change: rebuild the checklist around the surviving work,
+        // and record the correction as evidence.
+        int kept = 0;
+        for (const auto& r : rows) kept += r.isResolved();
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("kind", "category_changed");
+        o->setProperty ("from", category);
+        o->setProperty ("to", cat);
+        o->setProperty ("resolved_rows_kept", kept);
+        if (hooks.writeRow) hooks.writeRow (juce::var (o));
+
+        const auto from = category;
+        category = cat;
+        buildRows (beginProposals);
+        say ("Category " + from + " -> " + cat + ": " + juce::String (kept)
+               + " resolved row(s) kept, checklist rebuilt.");
     }
 
     /** The state, in words. Paint, the text mirror and the self-test all use
@@ -347,6 +439,12 @@ public:
     */
     void dispatchAction (const juce::String& id, bool shift = false)
     {
+        if (awaitingCategory)
+        {
+            say ("Choose the category first: buttons, digits, or the box above.");
+            return;
+        }
+
         if (summaryShowing)
         {
             if (id == "submit") { confirmSubmitFromSummary(); return; }
@@ -1379,6 +1477,8 @@ public:
     }
 
     bool isSummaryShowing() const { return summaryShowing; }
+    bool isAwaitingCategory() const { return awaitingCategory; }
+    juce::String progressText() const { return progress.getText(); }
     juce::String bandTableText() const { return summaryText.getText(); }
     BandStep currentBandStep() const { return bandStep; }
     bool isSubmitEnabled() const  { return submitBtn.isEnabled(); }
@@ -1462,9 +1562,16 @@ public:
         updateQuestion();
     }
 
+    void syncCategoryBox()
+    {
+        const int id = DialSets::categories().indexOf (category) + 1;
+        categoryBox.setSelectedId (id, juce::dontSendNotification);
+    }
+
     void setWizardVisible (bool v)
     {
         promptTitle.setVisible (v);
+        categoryBox.setVisible (v);
         question.setVisible (v);
         notice.setVisible (v);
         list.setVisible (v);
@@ -1502,8 +1609,13 @@ public:
         if (c == 's' || c == 'S')                         { dispatchAction ("skipplugin"); return true; }
         if (c >= '1' && c <= '9')
         {
-            if (bandPickPending()) bandPickCandidate (c - '0');
-            else                   actionPickCandidate (c - '0');
+            if (awaitingCategory)
+            {
+                const auto cats = DialSets::categories();
+                if (c - '1' < cats.size()) pickCategory (cats[c - '1']);
+            }
+            else if (bandPickPending()) bandPickCandidate (c - '0');
+            else                        actionPickCandidate (c - '0');
             return true;
         }
         if (k == juce::KeyPress::leftKey  || k == juce::KeyPress::upKey)   { dispatchAction ("prev"); return true; }
@@ -1518,7 +1630,12 @@ public:
     void resized() override
     {
         auto r = getLocalBounds();
-        progress.setBounds (r.removeFromTop (18));
+        {
+            auto head = r.removeFromTop (20);
+            categoryBox.setBounds (head.removeFromLeft (130));
+            head.removeFromLeft (6);
+            progress.setBounds (head);
+        }
 
         if (summaryShowing)
         {
@@ -1533,12 +1650,13 @@ public:
         question.setBounds (r.removeFromTop (58));
 
         // Answer buttons: up to two rows of large targets, keys on their faces.
-        auto btns = r.removeFromTop (answerButtons.size() > 3 ? 72 : 38);
-        const int perRow = juce::jmax (1, (answerButtons.size() + 1) / 2);
+        const int btnRows = answerButtons.size() > 8 ? 3 : answerButtons.size() > 3 ? 2 : 1;
+        auto btns = r.removeFromTop (btnRows * 34 + 4);
+        const int perRow = juce::jmax (1, (answerButtons.size() + btnRows - 1) / btnRows);
         int i = 0;
-        for (int rowN = 0; rowN < 2 && i < answerButtons.size(); ++rowN)
+        for (int rowN = 0; rowN < btnRows && i < answerButtons.size(); ++rowN)
         {
-            auto rowArea = btns.removeFromTop (answerButtons.size() > 3 ? 34 : 36);
+            auto rowArea = btns.removeFromTop (34);
             const int n = juce::jmin (perRow, answerButtons.size() - i);
             const int wEach = rowArea.getWidth() / juce::jmax (1, n);
             for (int k = 0; k < n; ++k, ++i)
@@ -1592,6 +1710,16 @@ public:
     */
     void updateQuestion()
     {
+        if (awaitingCategory)
+        {
+            question.setText ("No classifier verdict exists for this fp, so nothing may guess. "
+                              "The category decides the dial set; on an EQ it routes into the "
+                              "bands flow.\nPick with the buttons, the digits, or the box above.",
+                              juce::dontSendNotification);
+            promptTitle.setText (promptHeadline(), juce::dontSendNotification);
+            rebuildAnswers();
+            return;
+        }
         if (rowCount() == 0) { question.setText ({}, juce::dontSendNotification); return; }
         auto& r = rowAt (selected);
         const auto label = displayLabel (r);
@@ -1687,6 +1815,7 @@ public:
 
     juce::String promptHeadline()
     {
+        if (awaitingCategory) return "What is this plugin?";
         if (rowCount() == 0) return "No rows";
         auto& r = rowAt (selected);
         if (r.isResolved())
@@ -1716,6 +1845,21 @@ public:
     void rebuildAnswers()
     {
         answerButtons.clear();
+
+        if (awaitingCategory)
+        {
+            const auto cats = DialSets::categories();
+            for (int i = 0; i < cats.size(); ++i)
+            {
+                auto* b = answerButtons.add (new juce::TextButton (
+                    (i < 9 ? juce::String (i + 1) + " - " : juce::String()) + cats[i]));
+                addAndMakeVisible (b);
+                const auto cat = cats[i];
+                b->onClick = [this, cat] { pickCategory (cat); grabKeyboardFocus(); };
+            }
+            resized(); return;
+        }
+
         if (rowCount() == 0) { resized(); return; }
         auto& r = rowAt (selected);
 
@@ -2122,6 +2266,7 @@ private:
         const int total = rows.size();
         const auto secs = (int) ((juce::Time::getMillisecondCounter() - startedAt) / 1000);
         juce::String t;
+        if (category.isNotEmpty()) t << category << "  ";
         t << done << "/" << total << " rows";
         if (done > 0 && done < total)
         {
@@ -2150,6 +2295,9 @@ private:
     juce::Label progress;
     juce::Label question;
     juce::Label promptTitle;
+    juce::ComboBox categoryBox;
+    bool awaitingCategory = false;
+    ProposalSet beginProposals;
     juce::Label notice;
     juce::OwnedArray<juce::TextButton> answerButtons;
     juce::TextButton prevBtn, nextBtn, evidBtn, bulkBtn, skipPluginBtn, reviewBtn;
