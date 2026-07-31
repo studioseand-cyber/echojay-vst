@@ -655,6 +655,397 @@ int main()
         }
     }
 
+    // =======================================================================
+    // THE MODULATION DEPTH PASS (DEVICE_DEPTH_PLAN.md, Modulation). Same
+    // programme as the Time section above: the engines' g++ suites prove each
+    // mode's DSP claim; what is checked here is the DIALABILITY — by name and
+    // by index, clamped, round-tripping through state, advertised — and the
+    // neutrality guarantee, end to end through processBlock.
+    // =======================================================================
+    std::printf ("== CHORUS: the mode dials by NAME and by index ==\n");
+    {
+        auto proc = makeByName ("EchoJay Chorus");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* cho    = dynamic_cast<EedChorusProcessor*> (proc.get());
+        check (device != nullptr && cho != nullptr, "chorus constructs");
+
+        check (near (device->getParamValue ("mode"), 0.0), "a fresh chorus is classic");
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "ensemble" } }),
+                                                &applied, &skipped);
+        check (applied == 1 && skipped == 0, "mode = \"ensemble\" applied");
+        check (s.contains ("ensemble"), "and reads back BY NAME: " + s);
+        check (cho->engine().getMode() == echojay::ChorusMode::Ensemble,
+               "the ENGINE is on ensemble, not just the param");
+
+        device->applyStructured (paramsMove ({ { "mode", "DIMENSION" } }));
+        check (near (device->getParamValue ("mode"), 2.0), "matching is case-insensitive");
+
+        int a2 = 0, s2 = 0;
+        device->applyStructured (paramsMove ({ { "mode", "flanger" } }), &a2, &s2);
+        check (s2 == 1, "an unknown mode is SKIPPED, not guessed at");
+        check (near (device->getParamValue ("mode"), 2.0), "and leaves the mode where it was");
+
+        bool allReach = true;
+        for (int i = 0; i < echojay::kNumChorusModes; ++i)
+        {
+            const auto want = echojay::chorusModeFromIndex (i);
+            device->applyStructured (paramsMove ({ { "mode", echojay::chorusModeName (want) } }));
+            allReach = allReach && cho->engine().getMode() == want
+                                && near (device->getParamValue ("mode"), (double) i);
+        }
+        check (allReach, "all three modes resolve by name and reach the engine");
+
+        device->applyStructured (paramsMove ({ { "mode", 1 } }));
+        check (cho->engine().getMode() == echojay::ChorusMode::Ensemble,
+               "a numeric index works too");
+    }
+
+    std::printf ("== CHORUS: spread and tone land exactly, and clamp ==\n");
+    {
+        auto proc = makeByName ("EchoJay Chorus");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        // Spread's default is the OLD fixed 90-degree offset, for the same
+        // reason hall is the reverb's default: it is the device as it shipped.
+        check (near (device->getParamValue ("spread"),
+                     (double) echojay::ChorusEngine::kDefaultSpreadPct),
+               "spread defaults to 50, the shipped quarter-cycle offset");
+        check (near (device->getParamValue ("tone"), 0.0), "tone defaults to flat");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "spread", 80.0 }, { "tone", -3.5 } }),
+                                 &applied, &skipped);
+        check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
+        check (near (device->getParamValue ("spread"), 80.0), "spread EXACTLY 80");
+        check (near (device->getParamValue ("tone"), -3.5),   "tone EXACTLY -3.5");
+
+        device->applyStructured (paramsMove ({ { "spread", 400.0 }, { "tone", -20.0 } }));
+        check (near (device->getParamValue ("spread"), 100.0), "400 clamps to 100");
+        check (near (device->getParamValue ("tone"), -6.0),    "-20 clamps to -6");
+    }
+
+    std::printf ("== PHASER: the mode dials by NAME, and stereo_spread lands ==\n");
+    {
+        auto proc = makeByName ("EchoJay Phaser");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* pha    = dynamic_cast<EedPhaserProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("mode"), 0.0), "a fresh phaser is modern");
+        check (near (device->getParamValue ("stereo_spread"),
+                     (double) echojay::PhaserEngine::kDefaultSpreadDeg),
+               "stereo_spread defaults to 90, the shipped offset");
+
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "vintage" } }));
+        check (s.contains ("vintage"), "mode = \"vintage\" reads back BY NAME: " + s);
+        check (pha->engine().getMode() == echojay::PhaserMode::Vintage,
+               "the ENGINE is on vintage, not just the param");
+        check (pha->engine().effectiveStages() == 4,
+               "and the default 6 dialled stages run as vintage's 4");
+
+        int a2 = 0, s2 = 0;
+        device->applyStructured (paramsMove ({ { "mode", "univibe" } }), &a2, &s2);
+        check (s2 == 1, "an unknown mode is SKIPPED, not guessed at");
+
+        bool allReach = true;
+        for (int i = 0; i < echojay::kNumPhaserModes; ++i)
+        {
+            const auto want = echojay::phaserModeFromIndex (i);
+            device->applyStructured (paramsMove ({ { "mode", echojay::phaserModeName (want) } }));
+            allReach = allReach && pha->engine().getMode() == want;
+        }
+        check (allReach, "all three modes resolve by name and reach the engine");
+
+        device->applyStructured (paramsMove ({ { "stereo_spread", 135.0 } }));
+        check (near (device->getParamValue ("stereo_spread"), 135.0), "stereo_spread EXACTLY 135");
+        device->applyStructured (paramsMove ({ { "stereo_spread", 720.0 } }));
+        check (near (device->getParamValue ("stereo_spread"), 360.0), "720 clamps to 360");
+    }
+
+    std::printf ("== TREMOLO: mode and the new shapes dial by NAME ==\n");
+    {
+        auto proc = makeByName ("EchoJay Tremolo");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* trm    = dynamic_cast<EedTremoloProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("mode"), 0.0), "a fresh tremolo is the sine circuit");
+
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "bias" } }));
+        check (s.contains ("bias"), "mode = \"bias\" reads back BY NAME: " + s);
+        check (trm->engine().getMode() == echojay::TremoloMode::Bias,
+               "the ENGINE is on bias, not just the param");
+
+        bool allReach = true;
+        for (int i = 0; i < echojay::kNumTremoloModes; ++i)
+        {
+            const auto want = echojay::tremoloModeFromIndex (i);
+            device->applyStructured (paramsMove ({ { "mode", echojay::tremoloModeName (want) } }));
+            allReach = allReach && trm->engine().getMode() == want;
+        }
+        check (allReach, "all three circuits resolve by name and reach the engine");
+
+        // The shape choice grew names with the depth pass: the new shapes
+        // resolve by name, the old NUMERIC form keeps working (the backend
+        // spec promises "shape": 2 forever), and the engine gets the index.
+        device->applyStructured (paramsMove ({ { "shape", "random" } }));
+        check (near (device->getParamValue ("shape"), (double) echojay::LfoCore::kRandom),
+               "shape = \"random\" lands on the sample-and-hold shape");
+        check (trm->engine().lfo().getShape() == echojay::LfoCore::kRandom,
+               "and the LFO is running it");
+
+        device->applyStructured (paramsMove ({ { "shape", "harmonic" } }));
+        check (near (device->getParamValue ("shape"), (double) echojay::LfoCore::kHarmonic),
+               "shape = \"harmonic\" lands too");
+
+        device->applyStructured (paramsMove ({ { "shape", 2 } }));
+        check (trm->engine().lfo().getShape() == echojay::LfoCore::kSquare,
+               "the numeric form still works: shape 2 is square");
+
+        device->applyStructured (paramsMove ({ { "smoothing_ms", 120.0 } }));
+        check (near (device->getParamValue ("smoothing_ms"), 120.0),
+               "smoothing_ms EXACTLY 120 - the random glide is dialable");
+        device->applyStructured (paramsMove ({ { "smoothing_ms", 9999.0 } }));
+        check (near (device->getParamValue ("smoothing_ms"),
+                     (double) echojay::LfoCore::kMaxSmoothingMs),
+               "and clamps to the core's ceiling");
+    }
+
+    std::printf ("== AUTO PAN: mode, width and the new shapes dial by NAME ==\n");
+    {
+        auto proc = makeByName ("EchoJay Auto Pan");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* pan    = dynamic_cast<EedAutoPanProcessor*> (proc.get());
+
+        // constant_power is the neutral default and NOT index 0 — the shipped
+        // law keeps its behaviour, the list order stays natural.
+        check (near (device->getParamValue ("mode"),
+                     (double) (int) echojay::AutoPanMode::ConstantPower),
+               "a fresh auto pan is constant_power, the shipped law");
+
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "binaural" } }));
+        check (s.contains ("binaural"), "mode = \"binaural\" reads back BY NAME: " + s);
+        check (pan->engine().getMode() == echojay::AutoPanMode::Binaural,
+               "the ENGINE is on binaural, not just the param");
+
+        device->applyStructured (paramsMove ({ { "mode", "Constant Power" } }));
+        check (pan->engine().getMode() == echojay::AutoPanMode::ConstantPower,
+               "\"Constant Power\" matches constant_power (tolerant folding)");
+
+        bool allReach = true;
+        for (int i = 0; i < echojay::kNumAutoPanModes; ++i)
+        {
+            const auto want = echojay::autoPanModeFromIndex (i);
+            device->applyStructured (paramsMove ({ { "mode", echojay::autoPanModeName (want) } }));
+            allReach = allReach && pan->engine().getMode() == want;
+        }
+        check (allReach, "all three laws resolve by name and reach the engine");
+
+        device->applyStructured (paramsMove ({ { "width", 35.0 } }));
+        check (near (device->getParamValue ("width"), 35.0), "width EXACTLY 35");
+        device->applyStructured (paramsMove ({ { "width", 250.0 } }));
+        check (near (device->getParamValue ("width"), 100.0), "250 clamps to 100");
+
+        device->applyStructured (paramsMove ({ { "shape", "random" } }));
+        check (pan->engine().lfo().getShape() == echojay::LfoCore::kRandom,
+               "shape = \"random\" reaches the LFO here too");
+    }
+
+    std::printf ("== the Modulation depth params round-trip through state ==\n");
+    {
+        auto a = makeByName ("EchoJay Chorus");
+        auto* da = dynamic_cast<EedDeviceProcessor*> (a.get());
+        da->applyStructured (paramsMove ({ { "mode", "dimension" },
+                                           { "spread", 75.0 }, { "tone", 2.5 } }));
+        juce::MemoryBlock cb;
+        da->getStateInformation (cb);
+
+        auto b = makeByName ("EchoJay Chorus");
+        auto* db = dynamic_cast<EedDeviceProcessor*> (b.get());
+        db->setStateInformation (cb.getData(), (int) cb.getSize());
+        check (near (db->getParamValue ("mode"), 2.0),   "chorus mode restored (dimension)");
+        check (near (db->getParamValue ("spread"), 75.0),"spread restored");
+        check (near (db->getParamValue ("tone"), 2.5),   "tone restored");
+
+        auto c = makeByName ("EchoJay Phaser");
+        auto* dc = dynamic_cast<EedDeviceProcessor*> (c.get());
+        dc->applyStructured (paramsMove ({ { "mode", "vintage" }, { "stereo_spread", 150.0 } }));
+        juce::MemoryBlock pb;
+        dc->getStateInformation (pb);
+
+        auto d2 = makeByName ("EchoJay Phaser");
+        auto* dd = dynamic_cast<EedDeviceProcessor*> (d2.get());
+        dd->setStateInformation (pb.getData(), (int) pb.getSize());
+        check (near (dd->getParamValue ("mode"), 1.0),           "phaser mode restored (vintage)");
+        check (near (dd->getParamValue ("stereo_spread"), 150.0),"stereo_spread restored");
+
+        auto e = makeByName ("EchoJay Tremolo");
+        auto* de = dynamic_cast<EedDeviceProcessor*> (e.get());
+        de->applyStructured (paramsMove ({ { "mode", "optical" }, { "shape", "harmonic" },
+                                           { "smoothing_ms", 80.0 } }));
+        juce::MemoryBlock tb;
+        de->getStateInformation (tb);
+
+        auto e2 = makeByName ("EchoJay Tremolo");
+        auto* de2 = dynamic_cast<EedDeviceProcessor*> (e2.get());
+        de2->setStateInformation (tb.getData(), (int) tb.getSize());
+        check (near (de2->getParamValue ("mode"), 1.0), "tremolo circuit restored (optical)");
+        check (near (de2->getParamValue ("shape"), 4.0),"the harmonic shape restored");
+        check (near (de2->getParamValue ("smoothing_ms"), 80.0), "smoothing restored");
+
+        auto f = makeByName ("EchoJay Auto Pan");
+        auto* df = dynamic_cast<EedDeviceProcessor*> (f.get());
+        df->applyStructured (paramsMove ({ { "mode", "linear" }, { "width", 60.0 },
+                                           { "shape", "random" } }));
+        juce::MemoryBlock ab;
+        df->getStateInformation (ab);
+
+        auto f2 = makeByName ("EchoJay Auto Pan");
+        auto* df2 = dynamic_cast<EedDeviceProcessor*> (f2.get());
+        df2->setStateInformation (ab.getData(), (int) ab.getSize());
+        check (near (df2->getParamValue ("mode"), 0.0),  "pan law restored (linear)");
+        check (near (df2->getParamValue ("width"), 60.0),"width restored");
+        check (near (df2->getParamValue ("shape"), 5.0), "the random shape restored");
+    }
+
+    std::printf ("== the Modulation depth choices are ADVERTISED by name ==\n");
+    {
+        struct Expect { const char* device; const char* id; const char* names; const char* def; };
+
+        const Expect wanted[] = {
+            { "EchoJay Chorus",   "mode",  "classic|ensemble|dimension", "default classic" },
+            { "EchoJay Phaser",   "mode",  "modern|vintage|stereo",      "default modern" },
+            { "EchoJay Tremolo",  "mode",  "sine|optical|bias",          "default sine" },
+            { "EchoJay Auto Pan", "mode",  "linear|constant_power|binaural", "default constant_power" },
+            // The shape list itself is now taught by name, with the two new
+            // shapes on the end where the frozen indices demand they be.
+            { "EchoJay Tremolo",  "shape", "sine|triangle|square|saw|harmonic|random", "default sine" },
+            { "EchoJay Auto Pan", "shape", "sine|triangle|square|saw|harmonic|random", "default sine" },
+        };
+
+        for (const auto& w : wanted)
+        {
+            const auto* d = registry.findByName (w.device);
+            const auto* spec = d != nullptr ? d->schema.find (w.id) : nullptr;
+            if (spec == nullptr)
+            {
+                check (false, juce::String (w.device) + " advertises " + w.id);
+                continue;
+            }
+            const auto line = juce::String (echojay::ParamSchema::describeLine (*spec));
+            check (line.contains (w.names) && line.contains (w.def),
+                   juce::String (w.device) + " " + w.id + ": " + line);
+        }
+    }
+
+    std::printf ("== a Modulation device at its DEFAULTS is unchanged by the depth pass ==\n");
+    {
+        // The guarantee the whole pass rests on, checked the way the Time pass
+        // checked it: the SAME audio through a device at its defaults and
+        // through one with every depth param explicitly set to its neutral
+        // value, bit-identical. LFO phase matters here, so both instances are
+        // prepared (which resets the LFO) after their params are set.
+        struct Neutral
+        {
+            const char* name;
+            std::vector<std::pair<const char*, juce::var>> params;
+        };
+
+        const Neutral devices[] = {
+            { "EchoJay Chorus",   { { "mode", "classic" }, { "spread", 50.0 }, { "tone", 0.0 } } },
+            { "EchoJay Phaser",   { { "mode", "modern" }, { "stereo_spread", 90.0 } } },
+            { "EchoJay Tremolo",  { { "mode", "sine" }, { "shape", "sine" },
+                                    { "smoothing_ms", 1.5 } } },
+            { "EchoJay Auto Pan", { { "mode", "constant_power" }, { "width", 100.0 },
+                                    { "shape", "sine" }, { "smoothing_ms", 1.5 } } },
+        };
+
+        for (const auto& n : devices)
+        {
+            auto mk = [&n] (bool explicitNeutral)
+            {
+                auto proc = makeByName (n.name);
+                auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+                if (explicitNeutral)
+                {
+                    juce::DynamicObject::Ptr params = new juce::DynamicObject();
+                    for (const auto& p : n.params)
+                        params->setProperty (juce::Identifier (p.first), p.second);
+                    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+                    root->setProperty ("params", juce::var (params.get()));
+                    device->applyStructured (juce::var (root.get()));
+                }
+                proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+                proc->prepareToPlay (48000.0, 512);
+                return proc;
+            };
+
+            auto pa = mk (false), pb = mk (true);
+
+            juce::AudioBuffer<float> ba (2, 4096), bb (2, 4096);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 4096; ++i)
+                {
+                    const float v = 0.4f * std::sin (0.037f * (float) i)
+                                  + (i % 977 == 0 ? 0.5f : 0.0f);
+                    ba.setSample (ch, i, v);
+                    bb.setSample (ch, i, v);
+                }
+
+            juce::MidiBuffer midi;
+            for (int i = 0; i < 4096; i += 512)
+            {
+                juce::AudioBuffer<float> sa (ba.getArrayOfWritePointers(), 2, i, 512);
+                juce::AudioBuffer<float> sb (bb.getArrayOfWritePointers(), 2, i, 512);
+                pa->processBlock (sa, midi);
+                pb->processBlock (sb, midi);
+            }
+
+            float worst = 0.0f;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 4096; ++i)
+                    worst = juce::jmax (worst, std::abs (ba.getSample (ch, i)
+                                                       - bb.getSample (ch, i)));
+
+            check (worst == 0.0f,
+                   juce::String (n.name) + ": its defaults ARE the neutral settings "
+                   "(worst delta " + juce::String (worst, 9) + ")");
+        }
+    }
+
+    std::printf ("== the new shapes render finite audio through processBlock ==\n");
+    {
+        // Not a DSP test (the g++ suites pin the shapes) — a wiring test: the
+        // whole chain from a named move to rendered audio, on the shape most
+        // likely to misbehave (random, with a long glide).
+        for (const char* name : { "EchoJay Tremolo", "EchoJay Auto Pan" })
+        {
+            auto proc = makeByName (name);
+            auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            device->applyStructured (paramsMove ({ { "shape", "random" },
+                                                   { "smoothing_ms", 150.0 },
+                                                   { "rate_hz", 8.0 },
+                                                   { "depth", 100.0 } }));
+            proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+            proc->prepareToPlay (48000.0, 512);
+
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            bool finite = true;
+            for (int blk = 0; blk < 40; ++blk)
+            {
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        buf.setSample (ch, i, 0.5f * std::sin ((blk * 512 + i) * 0.02f));
+                proc->processBlock (buf, midi);
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        if (! std::isfinite (buf.getSample (ch, i))) finite = false;
+            }
+            check (finite, juce::String (name) + " on random + glide renders finite audio");
+        }
+    }
+
     // -----------------------------------------------------------------------
     std::printf ("== merge semantics: an absent param is left alone ==\n");
     {
