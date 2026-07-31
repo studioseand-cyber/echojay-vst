@@ -460,7 +460,15 @@ The spec's payload, extended:
                    "anchors": […], "trust": "setread" }
   },
 
-  "groups": [ { "family": "sband", "n": 5, "params": {…},
+  "groups": [ { "family": "sband", "n": 1, "primary": true, "freq_range": [lo, hi], "params": {…} },
+              { "family": "sband", "n": 2, "freq_range": [lo, hi], "params": {…} }, … ],
+  <!-- CORRECTED 2026-07-31: one group object PER BAND, n = the band NUMBER
+       applyBands sorts and labels by. The previous example wrote one group
+       with "n": 5 meaning five bands; applyBands reads n as a band number,
+       so building against that example produces a single band called
+       "sband5". The example was the source of the error (GroupSpec's struct
+       comment copied it), and no served map has ever carried a group, so
+       nothing downstream ever caught it. -->
                 "freq_range": [15, 780] } ],
 
   "skips": [

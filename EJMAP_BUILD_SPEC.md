@@ -349,7 +349,9 @@ be human-verified on its dial set and llm-classified on the rest.
   "params": { "<semantic>": { "index" | "indices", "kind", "anchors",
                               "trust": "human-verified",
                               "method": "gettext" | "setread" | "human-typed" } },
-  "groups": [ { "family", "n", "params": {…}, "freq_range": [lo, hi] } ],
+  "groups": [ { "family", "n": <band NUMBER, one group object per band>,
+                "primary": <true on the family the human touched>,
+                "params": {…}, "freq_range": [lo, hi] } ],
   "controls": { "<name>": {…} },
   "evidence": {
     "captured_by": "poll" | "listener" | "both",

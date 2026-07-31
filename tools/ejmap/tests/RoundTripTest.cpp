@@ -258,6 +258,15 @@ struct FakeInstance final : juce::AudioPluginInstance
         addHostedParameter (std::make_unique<FakeParam> ("Thresh Down", "dB",  16.0f, -18.0f));
         addHostedParameter (std::make_unique<FakeParam> ("Liar Mix",    "%",    0.0f, 100.0f, true));
         addHostedParameter (std::make_unique<FakeParam> ("Stuck",       "dB",   0.0f,  10.0f));
+
+        // Indices 4-8: the AMEK shape for the M5 group pin. Two bands and a
+        // Mono Maker imposter -- a USABLE, freq-named flat entry, exactly the
+        // control the original bug wrote 250 Hz into.
+        addHostedParameter (std::make_unique<FakeParam> ("LF Freq",    "Hz",  20.0f,  400.0f));
+        addHostedParameter (std::make_unique<FakeParam> ("LF Gain",    "dB", -12.0f,   12.0f));
+        addHostedParameter (std::make_unique<FakeParam> ("MF Freq",    "Hz", 500.0f, 18000.0f));
+        addHostedParameter (std::make_unique<FakeParam> ("MF Gain",    "dB", -12.0f,   12.0f));
+        addHostedParameter (std::make_unique<FakeParam> ("Mono Maker", "Hz",  20.0f,  400.0f));
     }
 
     void fillInPluginDescription (juce::PluginDescription& d) const override
@@ -393,6 +402,105 @@ void testRoundTripThroughApplySettings()
 }
 
 //==============================================================================
+// The M5 pin: the project's headline assertion as a unit test, run on every
+// commit before AMEK is ever loaded. The map below reproduces the ORIGINAL
+// AMEK bug shape -- a flat freq_hz entry pointing at Mono Maker -- and adds
+// the groups M5 builds. The assertion is behavioural, from parameter VALUES:
+// a 250 Hz request lands on the LF band and Mono Maker's value never moves,
+// even though the flat map points straight at it.
+//
+// This is also the writer->consumer contract test for groups: the map is
+// built through the real GroupSpec/MapPayload writers (n = band NUMBER, one
+// group per band; entries carry "name" for the imposter guard) and consumed
+// by the real applySettings/applyBands. No served map has ever carried a
+// group (0 of the corpus, measured), so this pin IS the contract.
+void testGroupsRouteAroundMonoMaker()
+{
+    using namespace ejmap;
+    FakeInstance plugin;
+
+    auto entry = [] (const char* sem, int idx, const char* name,
+                     float v0, float v1) -> ParamMapping
+    {
+        ParamMapping m;
+        m.semantic = sem; m.kind = sem; m.paramName = name;
+        m.indices.add (idx);
+        m.anchors.add ({ 0.0, (double) v0 });
+        m.anchors.add ({ 1.0, (double) v1 });
+        m.trust = Trust::humanVerified;
+        m.method = AnchorMethod::setread;
+        return m;
+    };
+
+    MapPayload p;
+    p.fp = "grouppin"; p.category = "eq";
+    p.identity.format = "Fake"; p.identity.name = "RoundTripFake"; p.identity.paramCount = 9;
+
+    // The bug shape: flat freq_hz points at Mono Maker, and it is USABLE.
+    p.params.add (entry ("freq_hz", 8, "Mono Maker", 20.0f, 400.0f));
+
+    GroupSpec lf;
+    lf.family = "band"; lf.n = 1; lf.primary = true;
+    lf.freqLo = 20.0; lf.freqHi = 400.0;
+    lf.params.add (entry ("freq_hz", 4, "LF Freq", 20.0f, 400.0f));
+    lf.params.add (entry ("gain_db", 5, "LF Gain", -12.0f, 12.0f));
+    p.groups.add (lf);
+
+    GroupSpec mf;
+    mf.family = "band"; mf.n = 2;
+    mf.freqLo = 500.0; mf.freqHi = 18000.0;
+    mf.params.add (entry ("freq_hz", 6, "MF Freq", 500.0f, 18000.0f));
+    mf.params.add (entry ("gain_db", 7, "MF Gain", -12.0f, 12.0f));
+    p.groups.add (mf);
+
+    auto map = juce::JSON::parse (p.toJson());
+    check (map.isObject(), "group pin: payload parses");
+
+    auto& params = plugin.getParameters();
+    auto valueOf = [&params] (int i) { return params[i]->getValue(); };
+
+    // 250 Hz: must land on LF (idx 4), not MF, and NEVER Mono Maker.
+    {
+        const float mmBefore = valueOf (8), mfBefore = valueOf (6);
+        auto* settings = new juce::DynamicObject();
+        settings->setProperty ("freq_hz", 250);
+        settings->setProperty ("gain_db", 3);
+        auto results = echojay::applySettings (plugin, map, juce::var (settings));
+
+        bool freqApplied = false;
+        for (const auto& r : results)
+            if (r.semantic == "freq_hz") freqApplied = r.applied && r.index == 4;
+        check (freqApplied, "250 Hz resolves to the LF band's index, not index 8");
+        check (juce::approximatelyEqual (valueOf (8), mmBefore),
+               "Mono Maker's VALUE is untouched by the 250 Hz request");
+        check (juce::approximatelyEqual (valueOf (6), mfBefore),
+               "the out-of-range MF band is untouched at 250 Hz");
+        check (std::abs (valueOf (4) - (250.0f - 20.0f) / 380.0f) < 1.0e-3f,
+               "LF Freq landed at the interpolated norm for 250 Hz");
+    }
+
+    // 8 kHz, via an explicit bands request: must land on MF (idx 6).
+    {
+        const float mmBefore = valueOf (8), lfBefore = valueOf (4);
+        auto* band = new juce::DynamicObject();
+        band->setProperty ("freq_hz", 8000);
+        juce::Array<juce::var> bands; bands.add (juce::var (band));
+        auto* settings = new juce::DynamicObject();
+        settings->setProperty ("bands", juce::var (bands));
+        auto results = echojay::applySettings (plugin, map, juce::var (settings));
+
+        bool mfApplied = false;
+        for (const auto& r : results)
+            if (r.semantic == "freq_hz") mfApplied = r.applied && r.index == 6;
+        check (mfApplied, "8 kHz resolves to the MF band's index");
+        check (juce::approximatelyEqual (valueOf (8), mmBefore),
+               "Mono Maker untouched at 8 kHz");
+        check (juce::approximatelyEqual (valueOf (4), lfBefore),
+               "LF untouched at 8 kHz");
+    }
+}
+
+//==============================================================================
 void testAgainstRealMaps()
 {
     auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
@@ -483,6 +591,7 @@ int main (int, char**)
     testContradictionBlocks();
     testSharedParsers();
     testPayloadFeedsApply();
+    testGroupsRouteAroundMonoMaker();
     testRoundTripThroughApplySettings();
     testAgainstRealMaps();
 

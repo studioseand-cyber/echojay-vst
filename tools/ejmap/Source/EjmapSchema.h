@@ -225,7 +225,22 @@ struct NamedControl
 struct GroupSpec
 {
     juce::String family;                    // "sband", "vband", or empty
-    int n = 0;                              // band count
+
+    /** The band NUMBER within the family -- applyBands sorts on it and labels
+        results "band <family><n>". One GroupSpec per band, an array of them
+        per family. The first version of this comment said "band count",
+        copied from the plan's own example, which wrote one group with n=5
+        meaning five bands; applyBands would have read that as a single band
+        numbered 5. The plan is corrected in the same commit. No served map
+        has ever carried a group (measured: 0 of the corpus), so the consumer
+        code IS the contract and the drift gate pins this writer to it.
+    */
+    int n = 0;
+
+    /** The family the human actually touched. applyBands prefers it when a
+        request names no family.
+    */
+    bool primary = false;
     juce::Array<ParamMapping> params;
     double freqLo = 0.0, freqHi = 0.0;
 
@@ -381,7 +396,11 @@ inline juce::var ParamMapping::toVar() const
     auto* o = new juce::DynamicObject();
     if (indices.size() == 1) o->setProperty ("index", indices[0]);
     else                     o->setProperty ("indices", detail::indicesToVar (indices));
-    o->setProperty ("param_name", paramName);
+    // "name", not "param_name": groupIsEqBand's imposter guard reads
+    // entry.name, and with no served grouped map in existence the consumer
+    // code is the contract. A writer emitting a key nobody reads would leave
+    // that guard running blind on every ejmap-built map.
+    o->setProperty ("name", paramName);
     o->setProperty ("kind", kind);
     o->setProperty ("anchors", detail::anchorsToVar (anchors));
     if (anchorsReversed) o->setProperty ("anchors_reversed", true);
@@ -411,6 +430,7 @@ inline juce::var GroupSpec::toVar() const
     auto* o = new juce::DynamicObject();
     if (family.isNotEmpty()) o->setProperty ("family", family);
     o->setProperty ("n", n);
+    if (primary) o->setProperty ("primary", true);
     auto* p = new juce::DynamicObject();
     for (const auto& m : params) p->setProperty (m.semantic, m.toVar());
     o->setProperty ("params", juce::var (p));
