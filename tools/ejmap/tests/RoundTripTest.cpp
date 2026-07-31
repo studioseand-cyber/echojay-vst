@@ -11,14 +11,23 @@
   another, which is the exact failure shape that let usableCoreCount go stale and
   read bx_digital V3 as not dialable.
 
-  It runs against real maps in ~/Library/ejmap/maps/, not fixtures. A test that
-  passes and a feature that works are different claims, and on this project the
-  gap has bitten three times: the tripwire had green tests and had never fired,
-  the client gate had 35/35 in a harness and wrote +16 dB in Logic.
+  The round trip was closed 2026-07-31, deferred since M0 because the corpus
+  was empty. Two layers, deliberately:
 
-  SEAM. Two things below need the real shared headers and are marked TODO(fable).
-  Do not invent signatures for them. Read Source/EchoJayParamApply.h and wire the
-  real calls.
+    - Write level: a SYNTHETIC map, constructed by hand before M3 produced any
+      real anchors (a test written against real anchors risks shaping itself
+      to the data it should judge), run through the real applySettings against
+      a minimal in-process AudioPluginInstance. Expected norms are
+      hand-computed constants, never calls into the code under test.
+    - Interpolation level: when real maps exist in ~/Library/ejmap/maps/,
+      every evidence.readback pair must reproduce through the real
+      interpolateAnchors over the map's own table. No instantiation needed,
+      so the gate stays runnable on a machine with no plugins.
+
+  A test that passes and a feature that works are different claims, and on
+  this project the gap has bitten three times: the tripwire had green tests
+  and had never fired, the client gate had 35/35 in a harness and wrote
+  +16 dB in Logic.
 */
 
 #include <juce_core/juce_core.h>
@@ -185,6 +194,178 @@ void testSharedParsers()
 }
 
 //==============================================================================
+// The round trip itself, closed 2026-07-31 after deferral since M0.
+//
+// The corpus was empty for the whole deferral, and closing it NOW, before M3
+// writes any anchors, is deliberate: a test written against real anchors risks
+// shaping itself to the data it should be judging. So the map here is
+// SYNTHETIC, CONSTRUCTED BY HAND, and says so. The plugin is synthetic too --
+// a minimal in-process AudioPluginInstance whose parameters display exactly
+// what their anchor tables claim -- because the pre-commit gate must run on a
+// machine with no plugins installed.
+//
+// What is real: applySettings, applyOne, interpolateAnchors,
+// dominantMonotonicTable, typedReadbackMatch -- the exact shipping functions
+// from Source/EchoJayParamApply.h. Reimplementing any of them here is
+// precisely the drift this test exists to catch, so the expected normalised
+// writes are HAND-COMPUTED constants, not calls into the code under test.
+//==============================================================================
+
+/** A parameter whose display is an exact linear map from norm to value.
+    Derives from HostedParameter because AudioPluginInstance only accepts
+    hosted parameters, which is the right constraint: applyOne runs against
+    hosted instances and this test must walk in through the same door.
+*/
+struct FakeParam final : juce::AudioPluginInstance::HostedParameter
+{
+    FakeParam (juce::String nm, juce::String unitIn, float v0, float v1, bool liarIn = false)
+        : name (std::move (nm)), unit (std::move (unitIn)), lo (v0), hi (v1), liar (liarIn) {}
+
+    float value = 0.0f;
+    juce::String name, unit;
+    float lo, hi;
+    bool liar;      // display ignores the queried value: the Valhalla class
+
+    float getValue() const override                    { return value; }
+    void  setValue (float v) override                  { value = v; }
+    float getDefaultValue() const override             { return 0.0f; }
+    juce::String getName (int len) const override      { return name.substring (0, len); }
+    juce::String getLabel() const override             { return unit; }
+    float getValueForText (const juce::String&) const override { return 0.0f; }
+    juce::String getParameterID() const override       { return name; }
+
+    juce::String textFor (float n) const
+    {
+        return juce::String (lo + n * (hi - lo), 1) + " " + unit;
+    }
+    juce::String getText (float n, int) const override
+    {
+        return liar ? textFor (value)   // lies: formats CURRENT state
+                    : textFor (n);
+    }
+    juce::String getCurrentValueAsText() const override { return textFor (value); }
+};
+
+/** The least plugin that satisfies AudioPluginInstance. */
+struct FakeInstance final : juce::AudioPluginInstance
+{
+    FakeInstance()
+    {
+        // Index 0: threshold with ASCENDING anchors. Index 1: mpressor-shaped
+        // DESCENDING threshold (16 dB at n=0, -18 dB at n=1). Index 2: a text
+        // liar. Index 3: a degenerate-map victim that must be refused.
+        addHostedParameter (std::make_unique<FakeParam> ("Thresh Up",   "dB", -30.0f, 16.0f));
+        addHostedParameter (std::make_unique<FakeParam> ("Thresh Down", "dB",  16.0f, -18.0f));
+        addHostedParameter (std::make_unique<FakeParam> ("Liar Mix",    "%",    0.0f, 100.0f, true));
+        addHostedParameter (std::make_unique<FakeParam> ("Stuck",       "dB",   0.0f,  10.0f));
+    }
+
+    void fillInPluginDescription (juce::PluginDescription& d) const override
+    { d.name = "RoundTripFake"; d.pluginFormatName = "Fake"; }
+
+    const juce::String getName() const override            { return "RoundTripFake"; }
+    void prepareToPlay (double, int) override              {}
+    void releaseResources() override                       {}
+    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+    double getTailLengthSeconds() const override           { return 0.0; }
+    bool acceptsMidi() const override                      { return false; }
+    bool producesMidi() const override                     { return false; }
+    juce::AudioProcessorEditor* createEditor() override    { return nullptr; }
+    bool hasEditor() const override                        { return false; }
+    int getNumPrograms() override                          { return 1; }
+    int getCurrentProgram() override                       { return 0; }
+    void setCurrentProgram (int) override                  {}
+    const juce::String getProgramName (int) override       { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override   {}
+};
+
+void testRoundTripThroughApplySettings()
+{
+    FakeInstance plugin;
+
+    // The synthetic map. anchors are [value, norm] pairs, as the server emits.
+    const auto mapJson = juce::String (R"({
+      "schema": ")" + juce::String (ejmap::kMapSchemaString) + R"(",
+      "params": {
+        "threshold_db": { "index": 0, "kind": "anchored", "method": "gettext",
+                          "anchors": [[-30, 0], [0, 0.6], [16, 1]] },
+        "makeup_db":    { "index": 1, "kind": "anchored", "method": "gettext",
+                          "anchors": [[16, 0], [-18, 1]] },
+        "mix_pct":      { "index": 2, "kind": "anchored", "method": "setread",
+                          "anchors": [[0, 0], [100, 1]] },
+        "drive":        { "index": 3, "kind": "anchored", "method": "gettext",
+                          "anchors": [[5, 0], [5, 1]] }
+      }
+    })");
+    auto map = juce::JSON::parse (mapJson);
+    check (map.isObject(), "synthetic map parses");
+
+    // The evidence block the mapper would have verified: semantic -> asked
+    // value -> normalised write. The norms are hand-computed from the anchor
+    // tables above, NOT computed by calling interpolateAnchors here.
+    //   threshold_db -18: segment [-30,0], frac (=(-18+30)/30) = 0.4 -> 0.24
+    //   threshold_db   8: segment [0,16],  0.6 + 0.5*0.4          -> 0.80
+    //   makeup_db    -18: descending table bottom                 -> 1.00
+    //   mix_pct       25: linear                                  -> 0.25
+    struct Verified { const char* semantic; const char* asked; float wrote; };
+    const Verified evidence[] = {
+        { "threshold_db", "-18 dB", 0.24f },
+        { "makeup_db",    "-18 dB", 1.00f },
+        { "mix_pct",      "25",     0.25f },
+    };
+
+    for (const auto& ev : evidence)
+    {
+        auto* settings = new juce::DynamicObject();
+        settings->setProperty (ev.semantic, juce::String (ev.asked));
+        auto results = echojay::applySettings (plugin, map, juce::var (settings));
+
+        check (results.size() == 1, juce::String (ev.semantic) + ": one result");
+        if (results.size() != 1) continue;
+        const auto& r = results.getReference (0);
+
+        check (r.applied, juce::String (ev.semantic) + " " + ev.asked + " applied ("
+                            + r.note + ")");
+        check (std::abs (r.normalized - ev.wrote) < 1.0e-4f,
+               juce::String (ev.semantic) + " wrote " + juce::String (r.normalized, 4)
+                 + ", evidence says " + juce::String (ev.wrote, 4));
+    }
+
+    // The mpressor gate row, stated exactly: -18 dB on the descending table
+    // writes n=1 and NOT n=0. n=0 would leave the knob at +16 dB, which is
+    // the +16-in-Logic bug class this whole file exists to prevent.
+    {
+        auto& params = plugin.getParameters();
+        check (std::abs (params[1]->getValue() - 1.0f) < 1.0e-4f,
+               "descending anchors: -18 dB landed at n=1, display "
+                 + params[1]->getCurrentValueAsText());
+    }
+
+    // The liar wrote without display verification and said so.
+    {
+        auto* settings = new juce::DynamicObject();
+        settings->setProperty ("mix_pct", "80");
+        auto results = echojay::applySettings (plugin, map, juce::var (settings));
+        check (results.size() == 1 && results[0].applied
+                 && ! results[0].displayVerified,
+               "setread entry applies with the unverifiable caveat, never as verified");
+    }
+
+    // The degenerate table is refused, not written: a map whose anchors span
+    // nothing can only pin the knob at one end whatever is asked.
+    {
+        auto* settings = new juce::DynamicObject();
+        settings->setProperty ("drive", "5");
+        auto results = echojay::applySettings (plugin, map, juce::var (settings));
+        check (results.size() == 1 && ! results[0].applied,
+               "degenerate anchor span refused: " + (results.size() == 1
+                   ? results[0].note : juce::String ("no result")));
+    }
+}
+
+//==============================================================================
 void testAgainstRealMaps()
 {
     auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
@@ -208,17 +389,39 @@ void testAgainstRealMaps()
         check (v.getProperty ("schema", "").toString() == ejmap::kMapSchemaString,
                "map schema matches binary: " + entry.getFile().getFileName());
 
-        // TODO(fable): the actual round trip.
-        //
-        //   1. Build the settings block the mapper verified, from
-        //      evidence.readback (semantic -> wrote).
-        //   2. Run it through EchoJay's applySettings using this map.
-        //   3. Assert the resulting writes (index, normalised value) are
-        //      identical to what evidence recorded.
-        //
-        // This needs the real signature from Source/EchoJayParamApply.h. Read it
-        // and wire it. Do not reimplement interpolation here: reimplementing it
-        // is precisely the drift this test exists to catch.
+        // The write-level round trip runs against the synthetic instance in
+        // testRoundTripThroughApplySettings, because this gate must not load
+        // real plugins. What CAN be checked per real map without one is the
+        // interpolation stage: every evidence.readback pair (semantic ->
+        // asked -> wrote) must reproduce through the real interpolateAnchors
+        // over the map's own table. This is the stage that drifted in the
+        // usableCoreCount incident, and it needs no instantiation.
+        auto params = v.getProperty ("params", juce::var());
+        if (auto* evArr = v.getProperty ("evidence", juce::var())
+                           .getProperty ("readback", juce::var()).getArray())
+        {
+            for (auto& ev : *evArr)
+            {
+                const auto semantic = ev.getProperty ("semantic", "").toString();
+                auto entryVar = params.getProperty (semantic, juce::var());
+                if (! entryVar.isObject()) continue;
+
+                auto anchors = echojay::anchorsFromVar (entryVar);
+                auto eff = echojay::dominantMonotonicTable (anchors);
+                if (! eff.ok) continue;
+
+                float asked = 0.0f;
+                if (! echojay::semanticToFloat (ev.getProperty ("asked", juce::var()), asked))
+                    continue;
+
+                const float wrote = (float) (double) ev.getProperty ("wrote", 0.0);
+                const float now   = juce::jlimit (0.0f, 1.0f,
+                                        echojay::interpolateAnchors (eff.table, asked));
+                check (std::abs (now - wrote) < 1.0e-3f,
+                       entry.getFile().getFileName() + " " + semantic
+                         + ": interpolation reproduces the verified write");
+            }
+        }
 
         ++mapsChecked;
     }
@@ -248,6 +451,7 @@ int main (int, char**)
     testPayloadSerialises();
     testContradictionBlocks();
     testSharedParsers();
+    testRoundTripThroughApplySettings();
     testAgainstRealMaps();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
