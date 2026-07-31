@@ -1141,6 +1141,409 @@ int main()
         check (near (eq->getOutputDb(), -2.0, 0.01), "output_db dialled through params");
     }
 
+    // =======================================================================
+    // THE EQ DEPTH PASS (SURGICAL_EQ_ENHANCEMENTS.md P2-P5). The g++ suites
+    // (eq_ms_test, eq_linear_test, eq_hunt_test, eq_note_test) prove the DSP
+    // claims; what is checked here is DIALABILITY through the one funnel —
+    // channel and note on bands, phase/ms in settings AND params, the hunt
+    // action against real audio, presets as a base, state round-trip, and the
+    // neutrality of every default.
+    // =======================================================================
+    auto eqBandsMove = [] (std::initializer_list<
+                               std::initializer_list<std::pair<const char*, juce::var>>> bandDefs)
+    {
+        juce::Array<juce::var> bands;
+        for (const auto& def : bandDefs)
+        {
+            juce::DynamicObject::Ptr b = new juce::DynamicObject();
+            for (const auto& kv : def) b->setProperty (juce::Identifier (kv.first), kv.second);
+            bands.add (juce::var (b.get()));
+        }
+        juce::DynamicObject::Ptr root = new juce::DynamicObject();
+        root->setProperty ("eq_bands", juce::var (bands));
+        return juce::var (root.get());
+    };
+
+    std::printf ("== EQ P2: per-band channel dials tolerantly, and echoes ==\n");
+    {
+        auto proc = makeByName ("EchoJay EQ");
+        auto* eq = dynamic_cast<SurgicalEqProcessor*> (proc.get());
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        const auto s = device->applyStructured (eqBandsMove ({
+            { { "type", "highshelf" }, { "freq_hz", 10000.0 }, { "gain_db", 3.0 },
+              { "q", 0.707 }, { "channel", "side" } } }));
+        check (eq->getBand (0).channel == echojay::BandChannel::Side,
+               "channel:\"side\" landed on the band");
+        check (s.contains ("[side]"), "and the summary says so: " + s);
+
+        device->applyStructured (eqBandsMove ({
+            { { "band", 2 }, { "type", "bell" }, { "freq_hz", 300.0 },
+              { "gain_db", -2.0 }, { "q", 2.0 }, { "channel", "m" } } }));
+        check (eq->getBand (1).channel == echojay::BandChannel::Mid,
+               "single-letter \"m\" resolves to mid");
+
+        device->applyStructured (eqBandsMove ({
+            { { "band", 3 }, { "type", "bell" }, { "freq_hz", 500.0 },
+              { "gain_db", 1.0 }, { "q", 1.0 }, { "channel", "surround" } } }));
+        check (eq->getBand (2).channel == echojay::BandChannel::Stereo,
+               "an unknown channel keeps the stereo default, never guesses");
+
+        // currentEqBandsVar echoes routing — and only routing that departs
+        // from the default, so untouched states stay byte-identical.
+        const auto bands = eq->currentEqBandsVar();
+        check (bands[0].getProperty ("channel", "").toString() == "side",
+               "side band echoes channel:\"side\"");
+        check (! bands[2].hasProperty ("channel"),
+               "a stereo band omits the key entirely");
+    }
+
+    std::printf ("== EQ P5: a musical note lands a band on its pitch ==\n");
+    {
+        auto proc = makeByName ("EchoJay EQ");
+        auto* eq = dynamic_cast<SurgicalEqProcessor*> (proc.get());
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        device->applyStructured (eqBandsMove ({
+            { { "type", "notch" }, { "note", "G5" }, { "q", 8.0 } } }));
+        check (near (eq->getBand (0).freqHz, 783.99, 1.0),
+               "{note:\"G5\"} lands on 784 Hz (got "
+               + juce::String (eq->getBand (0).freqHz, 2) + ")");
+
+        device->applyStructured (eqBandsMove ({
+            { { "band", 2 }, { "type", "bell" }, { "note", "A4" },
+              { "freq_hz", 1234.0 }, { "gain_db", -1.0 }, { "q", 1.0 } } }));
+        check (near (eq->getBand (1).freqHz, 1234.0, 0.5),
+               "explicit freq_hz WINS over note when both are sent");
+
+        int a = 0, sk = 0;
+        device->applyStructured (eqBandsMove ({
+            { { "band", 3 }, { "type", "bell" }, { "note", "H9" },
+              { "gain_db", 2.0 }, { "q", 1.0 } } }), &a, &sk);
+        check (near (eq->getBand (2).freqHz, 1000.0, 0.5),
+               "an unparseable note falls back to the default freq, never guesses");
+    }
+
+    std::printf ("== EQ P4: phase_mode dials via eq_settings AND params, latency follows ==\n");
+    {
+        auto proc = makeByName ("EchoJay EQ");
+        auto* eq = dynamic_cast<SurgicalEqProcessor*> (proc.get());
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        check (eq->getPhaseMode() == SurgicalEqProcessor::PhaseMode::Zero,
+               "a fresh EQ is zero-latency minimum phase, the neutral mode");
+        proc->prepareToPlay (48000.0, 512);
+        check (proc->getLatencySamples() == 0, "…and reports 0 samples");
+
+        // Via eq_settings, the structured shape.
+        juce::DynamicObject::Ptr settings = new juce::DynamicObject();
+        settings->setProperty ("phase_mode", "linear");
+        juce::DynamicObject::Ptr move = new juce::DynamicObject();
+        move->setProperty ("eq_settings", juce::var (settings.get()));
+        const auto s = device->applyStructured (juce::var (move.get()));
+
+        check (eq->getPhaseMode() == SurgicalEqProcessor::PhaseMode::Linear,
+               "eq_settings.phase_mode:\"linear\" landed");
+        check (proc->getLatencySamples() == 2560,
+               "and the latency was re-reported LIVE, no re-prepare (got "
+               + juce::String (proc->getLatencySamples()) + ")");
+        check (s.contains ("linear") && s.contains ("ms"),
+               "summary names the mode and the cost: " + s);
+        check (proc->getTailLengthSeconds() > 0.05,
+               "getTailLengthSeconds is wired, not the 0.0 stub");
+
+        // Via the universal flat path: by NAME and by index.
+        device->applyStructured (paramsMove ({ { "phase_mode", "zero" } }));
+        check (eq->getPhaseMode() == SurgicalEqProcessor::PhaseMode::Zero
+            && proc->getLatencySamples() == 0,
+               "params phase_mode:\"zero\" flips back and re-reports 0");
+        device->applyStructured (paramsMove ({ { "phase_mode", 1 } }));
+        check (eq->getPhaseMode() == SurgicalEqProcessor::PhaseMode::Linear,
+               "a numeric index works too");
+
+        device->applyStructured (paramsMove ({ { "ms_mode", true } }));
+        check (eq->getMsMode(), "ms_mode dials through params");
+
+        // The advertisement carries the choice names.
+        const auto* spec = SurgicalEqProcessor::schema().find ("phase_mode");
+        const auto line = juce::String (echojay::ParamSchema::describeLine (*spec));
+        check (line.contains ("zero|linear") && line.contains ("default zero"),
+               "advertised as names: " + line);
+    }
+
+    std::printf ("== EQ P5: a preset is a BASE that explicit bands refine ==\n");
+    {
+        auto proc = makeByName ("EchoJay EQ");
+        auto* eq = dynamic_cast<SurgicalEqProcessor*> (proc.get());
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        juce::DynamicObject::Ptr move = new juce::DynamicObject();
+        move->setProperty ("eq_preset", "Vocal Clarity");        // tolerant spelling
+        const auto s = device->applyStructured (juce::var (move.get()));
+        check (s.contains ("vocal-clarity"), "preset loads by tolerant name: " + s);
+        check (eq->getBand (0).enabled
+            && eq->getBand (0).type == echojay::BandType::HighPass
+            && near (eq->getBand (0).freqHz, 80.0, 0.5),
+               "band 1 is the preset's 80 Hz HPF");
+        check (eq->getBand (3).enabled, "all four preset bands landed");
+
+        // Preset + explicit band in ONE move: the §0 order means the explicit
+        // band edits the freshly laid base.
+        juce::DynamicObject::Ptr b = new juce::DynamicObject();
+        b->setProperty ("band", 2);
+        b->setProperty ("type", "bell");
+        b->setProperty ("freq_hz", 300.0);
+        b->setProperty ("gain_db", -4.0);
+        b->setProperty ("q", 1.2);
+        juce::Array<juce::var> bandArr; bandArr.add (juce::var (b.get()));
+        juce::DynamicObject::Ptr move2 = new juce::DynamicObject();
+        move2->setProperty ("eq_preset", "vocal-clarity");
+        move2->setProperty ("eq_bands", juce::var (bandArr));
+        device->applyStructured (juce::var (move2.get()));
+        check (near (eq->getBand (1).gainDb, -4.0, 0.01),
+               "\"preset, then cut 300 harder\" is one move: band 2 reads -4 dB");
+
+        // An unknown preset is an honest miss that changes nothing.
+        juce::DynamicObject::Ptr move3 = new juce::DynamicObject();
+        move3->setProperty ("eq_preset", "smiley-face");
+        const auto s3 = device->applyStructured (juce::var (move3.get()));
+        check (s3.contains ("unknown") && s3.contains ("vocal-clarity"),
+               "the miss lists what DOES exist: " + s3);
+        check (near (eq->getBand (1).gainDb, -4.0, 0.01), "and nothing moved");
+    }
+
+    std::printf ("== EQ P3: the hunt finds a real resonance in real audio ==\n");
+    {
+        auto proc = makeByName ("EchoJay EQ");
+        auto* eq = dynamic_cast<SurgicalEqProcessor*> (proc.get());
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc->prepareToPlay (48000.0, 512);
+
+        auto huntMove = [] (const char* sensitivity, bool dynamic)
+        {
+            juce::DynamicObject::Ptr action = new juce::DynamicObject();
+            action->setProperty ("type", "tame_resonances");
+            action->setProperty ("sensitivity", sensitivity);
+            action->setProperty ("dynamic", dynamic);
+            juce::DynamicObject::Ptr root = new juce::DynamicObject();
+            root->setProperty ("eq_action", juce::var (action.get()));
+            return juce::var (root.get());
+        };
+
+        // BEFORE audio: the honest "nothing to analyse" answer.
+        const auto sQuiet = device->applyStructured (huntMove ("medium", true));
+        check (sQuiet.contains ("no signal"), "silence answers honestly: " + sQuiet);
+
+        // ~2 s of noise + a screaming 3.7 kHz resonance through processBlock —
+        // the REAL capture path, not a detector shortcut.
+        {
+            juce::Random rng (1234);
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            double phase = 0.0;
+            const double dp = 2.0 * juce::MathConstants<double>::pi * 3700.0 / 48000.0;
+            for (int blk = 0; blk < 200; ++blk)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = 0.25f * (float) std::sin (phase)
+                                  + 0.05f * (rng.nextFloat() * 2.0f - 1.0f);
+                    phase += dp;
+                    buf.setSample (0, i, v);
+                    buf.setSample (1, i, v);
+                }
+                proc->processBlock (buf, midi);
+            }
+        }
+
+        // A hand-dialled band first, so the hunt has something it must NOT eat.
+        device->applyStructured (eqBandsMove ({
+            { { "band", 1 }, { "type", "bell" }, { "freq_hz", 150.0 },
+              { "gain_db", 2.0 }, { "q", 1.0 } } }));
+
+        int applied = 0, skipped = 0;
+        const auto s = device->applyStructured (huntMove ("medium", true),
+                                                &applied, &skipped);
+        check (applied >= 1, "the hunt placed band(s): " + s);
+        check (s.contains ("hunt"), "and reported as a hunt");
+
+        check (near (eq->getBand (0).freqHz, 150.0, 0.5)
+            && near (eq->getBand (0).gainDb, 2.0, 0.01),
+               "the hand-dialled band 1 survived untouched");
+
+        bool foundIt = false;
+        for (int i = 1; i < SurgicalEqProcessor::kNumBands; ++i)
+        {
+            const auto b = eq->getBand (i);
+            if (b.enabled && b.dynamic
+                && std::fabs (b.freqHz - 3700.0f) < 3700.0f * 0.06f
+                && b.rangeDb < 0.0f)
+                foundIt = true;
+        }
+        check (foundIt, "a dynamic bell sits on the 3.7 kHz resonance, range negative");
+
+        // Static flavour: notches instead of bells.
+        auto proc2 = makeByName ("EchoJay EQ");
+        auto* eq2 = dynamic_cast<SurgicalEqProcessor*> (proc2.get());
+        auto* dev2 = dynamic_cast<EedDeviceProcessor*> (proc2.get());
+        proc2->setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc2->prepareToPlay (48000.0, 512);
+        {
+            juce::Random rng (99);
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            double phase = 0.0;
+            const double dp = 2.0 * juce::MathConstants<double>::pi * 3700.0 / 48000.0;
+            for (int blk = 0; blk < 200; ++blk)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = 0.25f * (float) std::sin (phase)
+                                  + 0.05f * (rng.nextFloat() * 2.0f - 1.0f);
+                    phase += dp;
+                    buf.setSample (0, i, v);
+                    buf.setSample (1, i, v);
+                }
+                proc2->processBlock (buf, midi);
+            }
+        }
+        dev2->applyStructured (huntMove ("medium", false));
+        bool notched = false;
+        for (int i = 0; i < SurgicalEqProcessor::kNumBands; ++i)
+        {
+            const auto b = eq2->getBand (i);
+            if (b.enabled && b.type == echojay::BandType::Notch
+                && std::fabs (b.freqHz - 3700.0f) < 3700.0f * 0.06f)
+                notched = true;
+        }
+        check (notched, "dynamic:false places a static notch instead");
+
+        // An action this EQ does not know is an honest refusal.
+        juce::DynamicObject::Ptr weird = new juce::DynamicObject();
+        weird->setProperty ("type", "make_it_pop");
+        juce::DynamicObject::Ptr root = new juce::DynamicObject();
+        root->setProperty ("eq_action", juce::var (weird.get()));
+        const auto sW = device->applyStructured (juce::var (root.get()));
+        check (sW.contains ("tame_resonances"),
+               "unknown action names what IS available: " + sW);
+    }
+
+    std::printf ("== EQ: state v3 round-trips routing and phase ==\n");
+    {
+        auto proc = makeByName ("EchoJay EQ");
+        auto* eq = dynamic_cast<SurgicalEqProcessor*> (proc.get());
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        device->applyStructured (eqBandsMove ({
+            { { "type", "highshelf" }, { "freq_hz", 10000.0 }, { "gain_db", 3.0 },
+              { "q", 0.707 }, { "channel", "side" } } }));
+        juce::DynamicObject::Ptr settings = new juce::DynamicObject();
+        settings->setProperty ("phase_mode", "linear");
+        settings->setProperty ("ms_mode", true);
+        juce::DynamicObject::Ptr move = new juce::DynamicObject();
+        move->setProperty ("eq_settings", juce::var (settings.get()));
+        device->applyStructured (juce::var (move.get()));
+
+        juce::MemoryBlock blob;
+        proc->getStateInformation (blob);
+
+        auto proc2 = makeByName ("EchoJay EQ");
+        auto* eq2 = dynamic_cast<SurgicalEqProcessor*> (proc2.get());
+        proc2->setStateInformation (blob.getData(), (int) blob.getSize());
+
+        check (eq2->getBand (0).channel == echojay::BandChannel::Side,
+               "the side routing restored");
+        check (eq2->getPhaseMode() == SurgicalEqProcessor::PhaseMode::Linear,
+               "linear phase restored");
+        check (eq2->getMsMode(), "M/S view restored");
+
+        // A pre-P2 state (no channel, no version fuss) loads as stereo — the
+        // exact compatibility promise the version bump documents.
+        const char* v2json = "{\"v\":2,\"bypassed\":false,"
+                             "\"eq_bands\":[{\"band\":1,\"type\":\"bell\","
+                             "\"freq_hz\":400.0,\"gain_db\":-3.0,\"q\":2.0,"
+                             "\"slope_db_oct\":12}],\"eq_settings\":{}}";
+        auto proc3 = makeByName ("EchoJay EQ");
+        auto* eq3 = dynamic_cast<SurgicalEqProcessor*> (proc3.get());
+        proc3->setStateInformation (v2json, (int) std::strlen (v2json));
+        check (eq3->getBand (0).enabled
+            && eq3->getBand (0).channel == echojay::BandChannel::Stereo
+            && eq3->getPhaseMode() == SurgicalEqProcessor::PhaseMode::Zero,
+               "a v2 state loads: band stereo, phase zero, nothing invented");
+    }
+
+    std::printf ("== EQ: its defaults are UNCHANGED by the whole depth pass ==\n");
+    {
+        // The same worst-delta-is-zero proof the Time/Modulation passes used,
+        // end to end through processBlock: a fresh EQ and one with every depth
+        // param explicitly at neutral must be the same device, bit for bit.
+        auto mk = [&] (bool explicitNeutral)
+        {
+            auto proc = makeByName ("EchoJay EQ");
+            auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            if (explicitNeutral)
+            {
+                device->applyStructured (paramsMove ({
+                    { "output_db", 0.0 }, { "auto_gain", false },
+                    { "phase_mode", "zero" }, { "ms_mode", false } }));
+                // …and a band set that exercises the P2 default channel too
+                juce::DynamicObject::Ptr b = new juce::DynamicObject();
+                b->setProperty ("type", "bell");
+                b->setProperty ("freq_hz", 1200.0);
+                b->setProperty ("gain_db", -3.0);
+                b->setProperty ("q", 2.0);
+                b->setProperty ("channel", "stereo");
+                juce::Array<juce::var> arr; arr.add (juce::var (b.get()));
+                device->applyStructured (juce::var (arr));
+            }
+            else
+            {
+                juce::DynamicObject::Ptr b = new juce::DynamicObject();
+                b->setProperty ("type", "bell");
+                b->setProperty ("freq_hz", 1200.0);
+                b->setProperty ("gain_db", -3.0);
+                b->setProperty ("q", 2.0);
+                juce::Array<juce::var> arr; arr.add (juce::var (b.get()));
+                device->applyStructured (juce::var (arr));
+            }
+            proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+            proc->prepareToPlay (48000.0, 512);
+            return proc;
+        };
+
+        auto pa = mk (false), pb = mk (true);
+
+        juce::AudioBuffer<float> ba (2, 4096), bb (2, 4096);
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 4096; ++i)
+            {
+                const float v = 0.4f * std::sin (0.037f * (float) i)
+                              + (i % 977 == 0 ? 0.5f : 0.0f);
+                ba.setSample (ch, i, v);
+                bb.setSample (ch, i, v);
+            }
+
+        juce::MidiBuffer midi;
+        for (int i = 0; i < 4096; i += 512)
+        {
+            juce::AudioBuffer<float> sa (ba.getArrayOfWritePointers(), 2, i, 512);
+            juce::AudioBuffer<float> sb (bb.getArrayOfWritePointers(), 2, i, 512);
+            pa->processBlock (sa, midi);
+            pb->processBlock (sb, midi);
+        }
+
+        float worst = 0.0f;
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 4096; ++i)
+                worst = juce::jmax (worst, std::abs (ba.getSample (ch, i)
+                                                   - bb.getSample (ch, i)));
+        check (worst == 0.0f,
+               "EchoJay EQ: its defaults ARE the neutral settings "
+               "(worst delta " + juce::String (worst, 9) + ")");
+    }
+
     // -----------------------------------------------------------------------
     // A selector is a knob, and the house rule is that a knob a human can turn is
     // one the model can set exactly. "tube" carries no digits, so without choice
