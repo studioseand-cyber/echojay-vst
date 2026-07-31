@@ -274,13 +274,67 @@ public:
                + (proposals.present ? "Proposals loaded." : "NO proposals for this fp: dial-set rows only."));
     }
 
+    /** The state, in words. Paint, the text mirror and the self-test all use
+        this: what a human sees on screen and what the transcript prints are
+        the same string by construction.
+    */
+    juce::String stateWord (AssignRow& r)
+    {
+        switch (r.state)
+        {
+            case AssignRow::State::confirmed:
+                return "CONFIRMED [" + juce::String (r.resolvedIndex) + "] " + r.trust;
+            case AssignRow::State::modeMaterial:      return "MODE/POS recorded";
+            case AssignRow::State::skipNotPresent:    return "ABSENT";
+            case AssignRow::State::skipNotAutomatable:return "NO PARAM";
+            case AssignRow::State::skipDeferred:      return "LATER";
+            case AssignRow::State::armed:             return "ARMED - touch the control";
+            case AssignRow::State::captured:          return "captured...";
+            case AssignRow::State::swept:
+                return r.sweep.nonNumeric ? "needs M (labelled switch)"
+                     : r.sweep.flat       ? "needs T (text liar)"
+                                          : "swept, not confirmable";
+            case AssignRow::State::proposed:          break;
+        }
+        return {};
+    }
+
+    /** The whole panel as text: current-row marker, every row's label and
+        state word, the question strip, the last status line. The self-test
+        prints this after every action so the loop can be judged from the
+        transcript alone.
+    */
+    juce::String textRender()
+    {
+        juce::String t;
+        t << progress.getText() << "\n";
+        for (int i = 0; i < rowCount(); ++i)
+        {
+            auto& r = rowAt (i);
+            t << (i == selected ? " > " : "   ");
+            t << displayLabel (r);
+            if (r.kind != "ignore" && r.kind != "unsure" && r.proposedIndex >= 0
+                 && r.state == AssignRow::State::proposed)
+                t << " <- [" << r.proposedIndex << "] " << r.proposedName;
+            const auto w = stateWord (r);
+            if (w.isNotEmpty()) t << "   | " << w;
+            else if (r.proposedIndex < 0 && ! r.isResolved() && r.kind != "ignore" && r.kind != "unsure")
+                t << "   | unmapped (N if absent)";
+            t << "\n";
+        }
+        t << "Q: " << question.getText().replace ("\n", " / ") << "\n";
+        t << "last: " << lastStatus << "\n";
+        return t;
+    }
+
     int rowCount() const { return rows.size() + ignoreRows.size(); }
     AssignRow& rowAt (int i) { return i < rows.size() ? rows.getReference (i)
                                                       : ignoreRows.getReference (i - rows.size()); }
     int selectedRow() const { return selected; }
     juce::String currentQuestionText() const { return question.getText(); }
     void selectRow (int i) { selected = juce::jlimit (0, juce::jmax (0, rowCount() - 1), i);
-                             list.selectRow (selected); list.updateContent(); updateQuestion(); }
+                             list.selectRow (selected); list.scrollToEnsureRowIsOnscreen (selected);
+                             list.updateContent(); updateQuestion(); }
 
     //==========================================================================
     /** ONE validity function for every surface. The question strip, the key
@@ -303,8 +357,9 @@ public:
             return r.state != AssignRow::State::confirmed;
         if (id == "typed")       return r.resolvedIndex >= 0 || r.proposedIndex >= 0;
         if (id == "modematerial")
-            return ! r.isResolved() && ! r.sweep.points.isEmpty()
-                && (r.sweep.nonNumeric || r.semantic == "mode");
+            return ! r.isResolved()
+                && ( (! r.sweep.points.isEmpty() && r.sweep.nonNumeric)
+                   || (r.semantic == "mode" && (r.proposedIndex >= 0 || r.resolvedIndex >= 0)) );
         if (id == "bulk")
         {
             for (const auto& ir : ignoreRows) if (! ir.isResolved()) return true;
@@ -319,9 +374,19 @@ public:
         return true;   // evidence, move, skipplugin
     }
 
-    /** Every input surface lands here: keys, legend clicks, self-test. */
+    /** Every input surface lands here: keys, legend clicks, self-test. An
+        INVALID action refuses OUT LOUD with the reason -- half the confusion
+        in the third stopwatch run was not knowing whether a key was ignored
+        or had worked invisibly.
+    */
     void dispatchAction (const juce::String& id, bool shift = false)
     {
+        if (! keyValid (id))
+        {
+            say ("KEY REFUSED (" + keyCapFor (id) + "): " + refusalFor (id));
+            legend.repaint();
+            return;
+        }
         if (id == "space")           actionSpace();
         else if (id == "wiggle")     actionWiggle();
         else if (id == "notpresent") shift ? beginCustomReason (AssignRow::State::skipNotPresent)
@@ -339,6 +404,43 @@ public:
         else if (id == "prev")       selectRow (selected - 1);
         else if (id == "next")       selectRow (selected + 1);
         legend.repaint();
+    }
+
+    juce::String keyCapFor (const juce::String& id) const
+    {
+        if (id == "space") return "SPACE";
+        if (id == "wiggle") return "W";
+        if (id == "notpresent") return "N";
+        if (id == "noparam") return "A";
+        if (id == "defer") return "D";
+        if (id == "typed") return "T";
+        if (id == "modematerial") return "M";
+        if (id == "bulk") return "I";
+        if (id == "submit") return "cmd-return";
+        return id;
+    }
+
+    juce::String refusalFor (const juce::String& id)
+    {
+        if (rowCount() == 0) return "no rows";
+        auto& r = rowAt (selected);
+        if (id == "space")
+        {
+            if (deepMode)               return "Deep mode: W to verify by touching";
+            if (r.isResolved())         return "row already " + r.stateString();
+            if (r.semantic == "mode")   return "mode never confirms via anchors: M records it";
+            if (r.sweep.nonNumeric)     return "labelled switch, cannot confirm as a value: M records it";
+            if (r.proposedIndex < 0)    return "no index proposed: W to point at the control";
+            return "no evidence on disk for this index: W to verify";
+        }
+        if (id == "wiggle")             return "ignore rows are skipped, not captured";
+        if (id == "notpresent" || id == "noparam" || id == "defer")
+                                        return "row already confirmed: arrow away";
+        if (id == "typed")              return "no index to type against: W first";
+        if (id == "modematerial")       return "M needs a labelled switch (swept nonNumeric) or a mode row with an index";
+        if (id == "bulk")               return "no unresolved ignore rows";
+        if (id == "submit")             return "nothing confirmed yet";
+        return "not available here";
     }
 
     //==========================================================================
@@ -507,16 +609,27 @@ public:
         if (rowCount() == 0) return;
         auto& r = rowAt (selected);
         if (! keyValid ("modematerial"))
-        { say ("M needs a swept row whose displays are labels (or a mode row with a sweep)."); return; }
+        { say ("M needs a labelled switch or a mode row with an index."); return; }
 
         const int idx = r.resolvedIndex >= 0 ? r.resolvedIndex : r.proposedIndex;
+
+        // A mode row is M without a wiggle: six of fifteen rows on the third
+        // stopwatch run were this case. The sweep runs here, automatically,
+        // because the labels are the record and the plugin supplies them.
+        const bool wiggled = r.resolvedIndex >= 0;
+        if (r.sweep.points.isEmpty() && hooks.sweepIndex)
+        {
+            r.sweep = hooks.sweepIndex (idx);
+            say ("Auto-swept [" + juce::String (idx) + "] for its labels: " + r.sweep.reason);
+        }
+
         juce::StringArray labels;
         for (const auto& pt : r.sweep.points)
             labels.addIfNotAlreadyThere (pt.t);
 
         r.state = AssignRow::State::modeMaterial;
         r.resolvedIndex = idx;
-        r.trust = "human-verified";
+        r.trust = wiggled ? "human-verified" : "llm-classified";   // trust reflects the hand
         r.mode = deepMode ? "deep" : "fast";
         r.resolvedAt = juce::Time::getCurrentTime().toISO8601 (true);
         r.skipReason = "exists as a " + juce::String (labels.size()) + "-position control ["
@@ -546,7 +659,12 @@ public:
         o->setProperty ("reason", r.sweep.reason);
         if (hooks.writeTier2Crumb) hooks.writeTier2Crumb (juce::var (o));
 
-        supersedeSiblings (r);
+        // Mode rows do NOT supersede each other: they are not competing for
+        // one map slot (mode_material lands in skips and breadcrumbs, plural
+        // welcome). Six switches on one plugin are six findings, and the
+        // first transcript review caught this auto-deferring five of them.
+        if (r.semantic != "mode")
+            supersedeSiblings (r);
         persistSession();
         say ("MODE/POSITION: " + displayLabel (r) + " -> " + r.skipReason);
         advance();
@@ -664,6 +782,8 @@ public:
             recordResolution (r, "typed");
             supersedeSiblings (r);
             say ("TYPED " + r.semantic + " confirmed: " + sw.reason);
+            selectRow (typedRow);
+            advance();
         }
         else
             say ("Typed flow finished without a usable table: " + sw.reason);
@@ -743,6 +863,8 @@ public:
         if (k == juce::KeyPress::leftKey  || k == juce::KeyPress::upKey)   { dispatchAction ("prev"); return true; }
         if (k == juce::KeyPress::rightKey || k == juce::KeyPress::downKey) { dispatchAction ("next"); return true; }
         if (k == juce::KeyPress::returnKey && k.getModifiers().isCommandDown()) { dispatchAction ("submit"); return true; }
+        if (c >= 'a' && c <= 'z')
+        { say ("KEY '" + juce::String::charToString (c) + "' is not mapped; the legend below is the map."); return true; }
         return false;
     }
 
@@ -777,7 +899,7 @@ public:
         if (unit == "db")  unit = "dB";
         else if (unit == "hz")  unit = "Hz";
         else if (unit == "pct") unit = "%";
-        if (unit.isNotEmpty()) label << " (" << unit << ")";
+        if (unit.isNotEmpty() && unit != label) label << " (" << unit << ")";
         if (r.semantic == "mode" && r.proposedName.isNotEmpty())
             label << " - " << r.proposedName;
         return label;
@@ -828,10 +950,14 @@ public:
               << "M record as mode/position material (Tier 2 breadcrumb) - D later. "
               << "N would be a falsehood: the control exists.";
         }
-        else if (r.semantic == "mode" && ! r.sweep.points.isEmpty())
+        else if (r.semantic == "mode" && (r.proposedIndex >= 0 || r.resolvedIndex >= 0))
         {
-            q << "Mode switch captured and swept. Map-level mode entries arrive with Tier 2;\n"
-              << "M records it as mode/position material with its labels - D later";
+            const int mi = r.resolvedIndex >= 0 ? r.resolvedIndex : r.proposedIndex;
+            q << "Mode switch [" << mi << "] '"
+              << (hooks.paramName ? hooks.paramName (mi) : juce::String())
+              << "'. Map-level mode entries arrive with Tier 2.\n"
+              << "M record it with its labels (auto-sweeps, NO wiggle needed) - "
+              << "W verify by touching - D later";
         }
         else if (r.proposedIndex >= 0)
         {
@@ -862,30 +988,55 @@ public:
         if (i >= rowCount()) return;
         auto& r = const_cast<AssignPanel*> (this)->rowAt (i);
 
-        if (sel) g.fillAll (juce::Colour (0xff223040));
+        // THE CURRENT ROW IS UNMISTAKABLE: a bright fill and an edge bar, not
+        // a faint highlight. And a resolved row changes on the spot: tinted
+        // background, tick or dash, the outcome IN WORDS. A glance answers
+        // both "where am I" and "did that keypress do anything".
+        if (sel)
+        {
+            g.fillAll (juce::Colour (0xff2c4a5c));
+            g.setColour (juce::Colour (0xff6ad8e0));
+            g.fillRect (0, 0, 4, h);
+        }
+        else if (r.state == AssignRow::State::confirmed)
+            g.fillAll (juce::Colour (0xff15281a));
+        else if (r.state == AssignRow::State::modeMaterial)
+            g.fillAll (juce::Colour (0xff2a2416));
+        else if (r.isSkipped())
+            g.fillAll (juce::Colour (0xff14181f));
+
         juce::Colour col = juce::Colour (0xff9fd8e0);
-        if (r.state == AssignRow::State::confirmed) col = juce::Colour (0xff6ad86a);
-        else if (r.isSkipped())                     col = juce::Colour (0xff8090a0);
-        else if (r.kind == "unsure")                col = juce::Colour (0xffd8b06a);
-        else if (r.kind == "ignore")                col = juce::Colour (0xff607080);
+        if (r.state == AssignRow::State::confirmed)         col = juce::Colour (0xff6ad86a);
+        else if (r.state == AssignRow::State::modeMaterial) col = juce::Colour (0xffd8b06a);
+        else if (r.state == AssignRow::State::swept
+              || r.state == AssignRow::State::armed)        col = juce::Colour (0xffe0c060);
+        else if (r.isSkipped())                             col = juce::Colour (0xff70798a);
+        else if (r.kind == "unsure")                        col = juce::Colour (0xffd8b06a);
+        else if (r.kind == "ignore")                        col = juce::Colour (0xff607080);
+        if (sel) col = col.brighter (0.3f);
         g.setColour (col);
-        g.setFont (13.0f);
+        g.setFont (juce::FontOptions (13.0f, sel ? juce::Font::bold : juce::Font::plain));
 
         juce::String t;
-        t << (r.state == AssignRow::State::confirmed ? juce::String (juce::CharPointer_UTF8 ("\xe2\x9c\x93 "))
+        t << (sel ? juce::String (juce::CharPointer_UTF8 ("\xe2\x96\xb6 "))
+              : r.state == AssignRow::State::confirmed
+                  ? juce::String (juce::CharPointer_UTF8 ("\xe2\x9c\x93 "))
+              : r.state == AssignRow::State::modeMaterial
+                  ? juce::String (juce::CharPointer_UTF8 ("\xe2\x97\x86 "))
               : r.isSkipped() ? "- " : "  ");
         t << displayLabel (r);
-        if (r.kind != "ignore" && r.kind != "unsure")
+        const auto word = stateWord (r);
+        if (word.isNotEmpty())
+            t << "   " << word;
+        else if (r.kind != "ignore" && r.kind != "unsure")
         {
             if (r.proposedIndex >= 0)
-                t << "  <- [" << (r.resolvedIndex >= 0 ? r.resolvedIndex : r.proposedIndex) << "] "
-                  << r.proposedName;
-            else if (! r.isResolved())
+                t << "  <- [" << r.proposedIndex << "] " << r.proposedName;
+            else
                 t << "  (unmapped: N if absent)";
         }
         if (r.proposalMismatch) t << "  re-pointed";
-        if (r.trust.isNotEmpty()) t << "  " << r.trust;
-        g.drawText (t, 4, 0, w - 8, h, juce::Justification::centredLeft);
+        g.drawText (t, 8, 0, w - 12, h, juce::Justification::centredLeft);
     }
 
     void listBoxItemClicked (int i, const juce::MouseEvent&) override { selectRow (i); grabKeyboardFocus(); }
@@ -1142,7 +1293,8 @@ private:
 
     void timerCallback() override { if (isVisible()) updateProgress(); }
 
-    void say (const juce::String& s) { if (hooks.status) hooks.status (s); }
+    void say (const juce::String& s) { lastStatus = s; if (hooks.status) hooks.status (s); }
+    juce::String lastStatus;
 
     juce::File root;
     juce::String fp, pluginId, category;

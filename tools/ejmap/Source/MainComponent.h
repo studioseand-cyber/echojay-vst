@@ -1032,6 +1032,14 @@ public:
             std::cout << "  " << (cond ? "ok   " : "FAIL ") << what << std::endl;
             std::cout.flush();
         };
+        // The rendering, printed after every action: the loop must be
+        // judgeable from the transcript alone -- where am I, what happened,
+        // what next.
+        auto dump = [this] (const char* tag)
+        {
+            std::cout << "---- after " << tag << " ----\n"
+                      << assignPanel.textRender() << std::endl;
+        };
 
         switch (stage)
         {
@@ -1039,6 +1047,8 @@ public:
         {
             startAssignment();
             ok (assigning && assignPanel.rows.size() > 0, "assignment began with rows");
+            ok (assignPanel.selectedRow() == 0, "queue: entering Assign lands on row one");
+            dump ("enter");
 
             // THE ROW STATES ITS QUESTION. Print what a human now reads for
             // the three shapes the first stopwatch run tripped over: a
@@ -1066,9 +1076,38 @@ public:
             assignPanel.selectRow (r);
             ok (! assignPanel.keyValid ("space"),
                 "legend: SPACE greyed on the uncorroborated row");
-            assignPanel.actionSpace();
+            assignPanel.dispatchAction ("space");
             ok (r >= 0 && assignPanel.rows.getReference (r).state == AssignRow::State::proposed,
                 "uncorroborated SPACE refused (ratio row unchanged)");
+            ok (assignPanel.textRender().contains ("KEY REFUSED (SPACE)"),
+                "the refusal is audible: KEY REFUSED in the status line");
+            dump ("SPACE on uncorroborated ratio");
+
+            // A mode row is M immediately, no wiggle: the third run had six
+            // of fifteen rows in this shape.
+            int modeRow = -1;
+            for (int i = 0; i < assignPanel.rows.size(); ++i)
+                if (assignPanel.rows.getReference (i).semantic == "mode") { modeRow = i; break; }
+            assignPanel.selectRow (modeRow);
+            ok (modeRow >= 0 && assignPanel.keyValid ("modematerial"),
+                "mode row: M lit with no wiggle required");
+            assignPanel.dispatchAction ("modematerial");
+            ok (assignPanel.rows.getReference (modeRow).state == AssignRow::State::modeMaterial
+                  && assignPanel.rows.getReference (modeRow).trust == "llm-classified",
+                "mode row resolved by M alone, trust llm-classified (no hand touched it)");
+
+            // The second mode switch is its own finding, not a competitor:
+            // resolving the first must NOT supersede it.
+            int modeRow2 = -1;
+            for (int i = modeRow + 1; i < assignPanel.rows.size(); ++i)
+                if (assignPanel.rows.getReference (i).semantic == "mode") { modeRow2 = i; break; }
+            ok (modeRow2 >= 0 && ! assignPanel.rows.getReference (modeRow2).isResolved(),
+                "second mode row NOT superseded by the first (six switches = six findings)");
+            assignPanel.selectRow (modeRow2);
+            assignPanel.dispatchAction ("modematerial");
+            ok (assignPanel.rows.getReference (modeRow2).state == AssignRow::State::modeMaterial,
+                "second mode row resolves independently");
+            dump ("M on both mode rows");
 
             // Corroborated SPACE accepted: attack_ms has a capture on disk.
             const int a = findRow ("attack_ms");
@@ -1080,6 +1119,9 @@ public:
                   && assignPanel.rows.getReference (a).corroboration == "capture"
                   && assignPanel.rows.getReference (a).trust == "llm-classified",
                 "corroborated SPACE accepted (attack_ms, corroboration=capture)");
+            ok (assignPanel.selectedRow() != a,
+                "queue: accepting auto-advanced off the resolved row");
+            dump ("SPACE on corroborated attack_ms");
 
             // W on threshold: move the PROPOSED index.
             assignPanel.selectRow (findRow ("threshold_db"));
@@ -1148,6 +1190,7 @@ public:
         {
             const int k = findRow ("knee_db");
             const auto& kr = assignPanel.rows.getReference (k);
+            dump ("W capture on the knee switch");
             ok (k >= 0 && kr.state == AssignRow::State::swept && kr.sweep.nonNumeric,
                 "knee: sweep refused with nonNumeric, row held open (not skipped)");
             ok (assignPanel.keyValid ("modematerial"),
@@ -1160,6 +1203,7 @@ public:
             assignPanel.dispatchAction ("modematerial");
             ok (assignPanel.rows.getReference (k).state == AssignRow::State::modeMaterial,
                 "M resolved the row as mode_material with the finding recorded");
+            dump ("M on the refused knee");
             ok (ledger.runArtifact ("tier2-candidates", "jsonl").existsAsFile(),
                 "Tier 2 breadcrumb written (labels for M6 named controls)");
 
@@ -1190,6 +1234,7 @@ public:
 
             // Submit, via the click path; the legend must show it lit first.
             ok (assignPanel.keyValid ("submit"), "legend: submit lit once rows are confirmed");
+            dump ("before submit");
             assignPanel.dispatchAction ("submit");
             auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
             ok (f.existsAsFile(), "map written to maps/<fp>.json");
