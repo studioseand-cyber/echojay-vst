@@ -26,6 +26,101 @@
 namespace ejmap
 {
 
+class AssignPanel;
+
+/** The keyboard map, on screen and clickable. Every chip is a key cap plus a
+    two-word action; chips light when valid for the current row and grey when
+    not, driven by the SAME keyValid() the key handler uses, so the legend and
+    the strip agree by construction rather than by duplication. A click
+    dispatches exactly what the key would (shift+click where shift+key means
+    a custom reason), so a first-time tester can work the whole loop with a
+    mouse and absorb the keys by reading what they click.
+*/
+class KeyLegend : public juce::Component
+{
+public:
+    struct Chip { const char* id; const char* cap; const char* label; juce::Rectangle<int> area; };
+
+    std::function<bool (const juce::String&)> isValid;
+    std::function<void (const juce::String&, bool)> dispatch;
+
+    KeyLegend()
+    {
+        chips = { { "space",      "SPACE", "accept",      {} },
+                  { "wiggle",     "W",     "verify",      {} },
+                  { "notpresent", "N",     "absent",      {} },
+                  { "noparam",    "A",     "no param",    {} },
+                  { "defer",      "D",     "later",       {} },
+                  { "typed",      "T",     "type anchors",{} },
+                  { "bulk",       "I",     "bulk ignores",{} },
+                  { "evidence",   "?",     "evidence",    {} },
+                  { "pick",       "1-9",   "pick move",   {} },
+                  { "prev",       "<",     "prev",        {} },
+                  { "next",       ">",     "next",        {} },
+                  { "skipplugin", "S",     "skip plugin", {} },
+                  { "submit",     "cmd-rtn", "submit",    {} } };
+    }
+
+    void resized() override { layoutChips(); }
+
+    void layoutChips()
+    {
+        auto area = getLocalBounds().reduced (2);
+        const int rowH = area.getHeight() / 2;
+        int x = area.getX(), y = area.getY();
+        for (auto& c : chips)
+        {
+            const int w = 8 + juce::GlyphArrangement::getStringWidthInt (
+                              juce::Font (juce::FontOptions (11.0f)),
+                              juce::String (c.cap) + " " + c.label);
+            if (x + w > area.getRight()) { x = area.getX(); y += rowH; }
+            c.area = { x, y, w, rowH - 2 };
+            x += w + 6;
+        }
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xff0d1118));
+        for (auto& c : chips)
+        {
+            const bool valid = isValid == nullptr || isValid (c.id);
+            const auto keyCol  = valid ? juce::Colour (0xffd8d0a0) : juce::Colour (0xff3a4250);
+            const auto txtCol  = valid ? juce::Colour (0xff9fd8e0) : juce::Colour (0xff3a4250);
+            g.setColour (valid ? juce::Colour (0xff223040) : juce::Colour (0xff161c26));
+            g.fillRoundedRectangle (c.area.toFloat(), 3.0f);
+            g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+            g.setColour (keyCol);
+            const int capW = juce::GlyphArrangement::getStringWidthInt (
+                                 juce::Font (juce::FontOptions (11.0f, juce::Font::bold)), c.cap);
+            g.drawText (c.cap, c.area.getX() + 4, c.area.getY(), capW, c.area.getHeight(),
+                        juce::Justification::centredLeft);
+            g.setFont (juce::FontOptions (11.0f));
+            g.setColour (txtCol);
+            g.drawText (c.label, c.area.getX() + capW + 8, c.area.getY(),
+                        c.area.getWidth() - capW - 10, c.area.getHeight(),
+                        juce::Justification::centredLeft);
+        }
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        for (auto& c : chips)
+            if (c.area.contains (e.getPosition()))
+            {
+                if (isValid != nullptr && ! isValid (c.id))
+                    return;                       // greyed chips do nothing, like dead keys
+                if (dispatch != nullptr)
+                    dispatch (c.id, e.mods.isShiftDown());
+                return;
+            }
+    }
+
+private:
+    std::vector<Chip> chips;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (KeyLegend)
+};
+
 class AssignPanel : public juce::Component,
                     private juce::ListBoxModel,
                     private juce::Timer
@@ -69,6 +164,15 @@ public:
         list.setModel (this);
         list.setRowHeight (20);
         list.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xff10141c));
+
+        addAndMakeVisible (legend);
+        legend.isValid  = [this] (const juce::String& id) { return keyValid (id); };
+        legend.dispatch = [this] (const juce::String& id, bool shift)
+        {
+            if (id == "pick") { say ("Pick with the digit keys 1-9."); return; }
+            dispatchAction (id, shift);
+            grabKeyboardFocus();               // a click must not strand the keys
+        };
 
         addChildComponent (reasonEntry);
         reasonEntry.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff161c26));
@@ -175,6 +279,59 @@ public:
     juce::String currentQuestionText() const { return question.getText(); }
     void selectRow (int i) { selected = juce::jlimit (0, juce::jmax (0, rowCount() - 1), i);
                              list.selectRow (selected); list.updateContent(); updateQuestion(); }
+
+    //==========================================================================
+    /** ONE validity function for every surface. The question strip, the key
+        handler, the legend's highlighting and the legend's clicks all ask
+        this, so they cannot disagree about what a key does on this row.
+    */
+    bool keyValid (const juce::String& id)
+    {
+        if (rowCount() == 0) return id == "skipplugin";
+        auto& r = rowAt (selected);
+
+        if (id == "space")
+            return ! deepMode && ! r.isResolved() && r.semantic.isNotEmpty()
+                && r.proposedIndex >= 0
+                && evidence.corroborationFor (r.proposedIndex, r.proposedName).isNotEmpty();
+        if (id == "wiggle")      return r.kind != "ignore";
+        if (id == "notpresent" || id == "noparam" || id == "defer")
+            return r.state != AssignRow::State::confirmed;
+        if (id == "typed")       return r.resolvedIndex >= 0 || r.proposedIndex >= 0;
+        if (id == "bulk")
+        {
+            for (const auto& ir : ignoreRows) if (! ir.isResolved()) return true;
+            return false;
+        }
+        if (id == "pick")        return awaitingCaptureRow >= 0 && lastGesture.indices.size() > 1;
+        if (id == "submit")
+        {
+            for (const auto& rr : rows) if (rr.state == AssignRow::State::confirmed) return true;
+            return false;
+        }
+        return true;   // evidence, move, skipplugin
+    }
+
+    /** Every input surface lands here: keys, legend clicks, self-test. */
+    void dispatchAction (const juce::String& id, bool shift = false)
+    {
+        if (id == "space")           actionSpace();
+        else if (id == "wiggle")     actionWiggle();
+        else if (id == "notpresent") shift ? beginCustomReason (AssignRow::State::skipNotPresent)
+                                           : actionSkip (AssignRow::State::skipNotPresent);
+        else if (id == "noparam")    shift ? beginCustomReason (AssignRow::State::skipNotAutomatable)
+                                           : actionSkip (AssignRow::State::skipNotAutomatable);
+        else if (id == "defer")      shift ? beginCustomReason (AssignRow::State::skipDeferred)
+                                           : actionSkip (AssignRow::State::skipDeferred);
+        else if (id == "typed")      actionTyped();
+        else if (id == "bulk")       actionBulkIgnores();
+        else if (id == "evidence")   actionEvidence();
+        else if (id == "skipplugin") actionSkipPlugin();
+        else if (id == "submit")     actionSubmit();
+        else if (id == "prev")       selectRow (selected - 1);
+        else if (id == "next")       selectRow (selected + 1);
+        legend.repaint();
+    }
 
     //==========================================================================
     // Actions. Keys call these; the self-test calls these.
@@ -493,25 +650,19 @@ public:
         const auto c = k.getTextCharacter();
         const bool shift = k.getModifiers().isShiftDown();
 
-        if (k == juce::KeyPress::spaceKey)                        { actionSpace(); return true; }
-        if (c == 'w' || c == 'W' || c == 'r' || c == 'R')         { actionWiggle(); return true; }
-        if (c == 'n' || c == 'N')
-        { shift ? beginCustomReason (AssignRow::State::skipNotPresent)
-                : actionSkip (AssignRow::State::skipNotPresent); return true; }
-        if (c == 'a' || c == 'A')
-        { shift ? beginCustomReason (AssignRow::State::skipNotAutomatable)
-                : actionSkip (AssignRow::State::skipNotAutomatable); return true; }
-        if (c == 'd' || c == 'D')
-        { shift ? beginCustomReason (AssignRow::State::skipDeferred)
-                : actionSkip (AssignRow::State::skipDeferred); return true; }
-        if (c == 't' || c == 'T')                                 { actionTyped(); return true; }
-        if (c == 'i' || c == 'I')                                 { actionBulkIgnores(); return true; }
-        if (c == '?')                                             { actionEvidence(); return true; }
-        if (c == 's' || c == 'S')                                 { actionSkipPlugin(); return true; }
-        if (c >= '1' && c <= '9')                                 { actionPickCandidate (c - '0'); return true; }
-        if (k == juce::KeyPress::leftKey  || k == juce::KeyPress::upKey)   { selectRow (selected - 1); return true; }
-        if (k == juce::KeyPress::rightKey || k == juce::KeyPress::downKey) { selectRow (selected + 1); return true; }
-        if (k == juce::KeyPress::returnKey && k.getModifiers().isCommandDown()) { actionSubmit(); return true; }
+        if (k == juce::KeyPress::spaceKey)                { dispatchAction ("space"); return true; }
+        if (c == 'w' || c == 'W' || c == 'r' || c == 'R') { dispatchAction ("wiggle"); return true; }
+        if (c == 'n' || c == 'N')                         { dispatchAction ("notpresent", shift); return true; }
+        if (c == 'a' || c == 'A')                         { dispatchAction ("noparam", shift); return true; }
+        if (c == 'd' || c == 'D')                         { dispatchAction ("defer", shift); return true; }
+        if (c == 't' || c == 'T')                         { dispatchAction ("typed"); return true; }
+        if (c == 'i' || c == 'I')                         { dispatchAction ("bulk"); return true; }
+        if (c == '?')                                     { dispatchAction ("evidence"); return true; }
+        if (c == 's' || c == 'S')                         { dispatchAction ("skipplugin"); return true; }
+        if (c >= '1' && c <= '9')                         { actionPickCandidate (c - '0'); legend.repaint(); return true; }
+        if (k == juce::KeyPress::leftKey  || k == juce::KeyPress::upKey)   { dispatchAction ("prev"); return true; }
+        if (k == juce::KeyPress::rightKey || k == juce::KeyPress::downKey) { dispatchAction ("next"); return true; }
+        if (k == juce::KeyPress::returnKey && k.getModifiers().isCommandDown()) { dispatchAction ("submit"); return true; }
         return false;
     }
 
@@ -521,6 +672,7 @@ public:
         auto r = getLocalBounds();
         progress.setBounds (r.removeFromTop (18));
         question.setBounds (r.removeFromTop (52));
+        legend.setBounds (r.removeFromBottom (48));
         if (reasonEntry.isVisible())
             reasonEntry.setBounds (r.removeFromTop (22));
         list.setBounds (r);
@@ -600,6 +752,7 @@ public:
               << "W touch it on the GUI - N it does not exist (ONE KEY, four seconds) - D later";
         }
         question.setText (q, juce::dontSendNotification);
+        legend.repaint();
     }
 
     int getNumRows() override { return rowCount(); }
@@ -886,6 +1039,7 @@ private:
     juce::ListBox list;
     juce::Label progress;
     juce::Label question;
+    KeyLegend legend;
     juce::TextEditor reasonEntry;
     juce::Optional<AssignRow::State> pendingSkip;
     juce::String pendingAutoSkipReason;

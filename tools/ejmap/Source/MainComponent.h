@@ -1043,8 +1043,11 @@ public:
                       << assignPanel.currentQuestionText().replace ("\n", " / ") << std::endl;
 
             // Uncorroborated SPACE refused: the ratio proposal has no evidence.
+            // The legend must agree with the strip BEFORE the action runs.
             const int r = findRow ("ratio");
             assignPanel.selectRow (r);
+            ok (! assignPanel.keyValid ("space"),
+                "legend: SPACE greyed on the uncorroborated row");
             assignPanel.actionSpace();
             ok (r >= 0 && assignPanel.rows.getReference (r).state == AssignRow::State::proposed,
                 "uncorroborated SPACE refused (ratio row unchanged)");
@@ -1052,6 +1055,8 @@ public:
             // Corroborated SPACE accepted: attack_ms has a capture on disk.
             const int a = findRow ("attack_ms");
             assignPanel.selectRow (a);
+            ok (assignPanel.keyValid ("space"),
+                "legend: SPACE lit on the corroborated row");
             assignPanel.actionSpace();
             ok (a >= 0 && assignPanel.rows.getReference (a).state == AssignRow::State::confirmed
                   && assignPanel.rows.getReference (a).corroboration == "capture"
@@ -1104,9 +1109,10 @@ public:
             ok (ledger.runArtifact ("misclassified", "jsonl").existsAsFile(),
                 "mismatch written to misclassified-<run>.jsonl (the labelled dataset)");
 
-            // The three skips: one canned, one custom-shaped.
+            // The three skips, driven through the CLICK path (dispatchAction is
+            // what a legend chip fires), proving mouse and key are one code path.
             const int m = findRow ("makeup_db");
-            if (m >= 0) { assignPanel.selectRow (m); assignPanel.actionSkip (AssignRow::State::skipNotPresent); }
+            if (m >= 0) { assignPanel.selectRow (m); assignPanel.dispatchAction ("notpresent"); }
             ok (m >= 0 && assignPanel.rows.getReference (m).state == AssignRow::State::skipNotPresent
                   && assignPanel.rows.getReference (m).skipReason.isNotEmpty(),
                 "N skip recorded with a canned reason");
@@ -1120,8 +1126,9 @@ public:
             ok (accepted == 1 && unresolvedIgnores == 1,
                 "bulk ignores: 1 accepted, 1 withheld by the floor (dial-set name)");
 
-            // Submit.
-            assignPanel.actionSubmit();
+            // Submit, via the click path; the legend must show it lit first.
+            ok (assignPanel.keyValid ("submit"), "legend: submit lit once rows are confirmed");
+            assignPanel.dispatchAction ("submit");
             auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
             ok (f.existsAsFile(), "map written to maps/<fp>.json");
             auto v = juce::JSON::parse (f.loadFileAsString());
