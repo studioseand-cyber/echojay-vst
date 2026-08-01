@@ -37,7 +37,13 @@ namespace echojay
 
 struct ApplyResult
 {
-    juce::String semantic;   // "ratio", "threshold_db", ...
+    juce::String semantic;   // "ratio", "threshold_db", a band key, or a control name
+    // The value the request ASKED for, verbatim. The card is the user's only
+    // record of what happened, and it cannot re-derive this from the flat
+    // settings object: band values live in bands[i], control values in
+    // controls["Name"] - a flat lookup by semantic returns void and the card
+    // printed bare repeated labels ("freq Hz, gain dB, freq Hz, gain dB").
+    juce::var    requestedValue;
     int          index = -1; // plugin parameter index
     bool         applied = false;
     float        normalized = 0.0f;
@@ -367,6 +373,7 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
                              const juce::var& value)
 {
     ApplyResult r; r.semantic = semantic;
+    r.requestedValue = value;
     const int index = (int) mapEntry.getProperty ("index", -1);
     r.index = index;
 

@@ -1416,7 +1416,8 @@ ChainHost::applyStructuredSettings (int slotIndex,
     auto results = echojay::applySettings (*instance, map, structuredSettings);
     for (auto& r : results)
         out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
-                         r.landedText, r.displayVerified, r.readbackMismatch });
+                         r.landedText, r.displayVerified, r.readbackMismatch,
+                         r.requestedValue });
 
     return out;
 }
@@ -1848,8 +1849,12 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
                                                     : juce::String())).toRawUTF8());
         if (r.applied)
         {
-            auto line = echojay::formatSemanticSetting(
-                r.semantic, s.structuredSettings.getProperty(r.semantic, juce::var()));
+            // The value comes off the RESULT, not a flat lookup on the
+            // settings object: band values live in bands[i] and control
+            // values in controls["Name"], so the flat lookup returned void
+            // and the card printed bare repeated labels ("freq Hz, gain dB,
+            // freq Hz, gain dB") - no values, no record of what happened.
+            auto line = echojay::formatSemanticSetting(r.semantic, r.requestedValue);
             // Read-back caveat travels to the card: a setread/unparseable
             // write proves addressability, not correctness, and must never
             // present the same as a display-verified write.

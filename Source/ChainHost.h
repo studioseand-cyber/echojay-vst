@@ -211,7 +211,8 @@ public:
     // EchoJay auto-parameter-mapping: dial a slot's hosted plugin from
     // structured settings plus the plugin's map.
     struct ApplyReport { juce::String semantic; bool applied; float normalized; juce::String note;
-                         juce::String landedText; bool displayVerified = false; bool readbackMismatch = false; };
+                         juce::String landedText; bool displayVerified = false; bool readbackMismatch = false;
+                         juce::var requestedValue; };
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);
