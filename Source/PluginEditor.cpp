@@ -5980,6 +5980,31 @@ namespace LinkConsole
     const juce::Colour stripSel (0xff0D1524);   // selected: a step lighter
     const juce::Colour well     (0xff05070C);   // recess behind fader+meter
     const juce::Colour edge     (juce::Colour::fromFloatRGBA(1, 1, 1, 0.06f));
+
+    // TEXT ON A STRIP: the app ramp (C::text2/text3) was calibrated against
+    // the app's lighter surfaces and did not move when the strips went dark,
+    // so everything on a strip sank into the fill. These four levels are the
+    // strip-local ramp, DERIVED from the app ramp against THIS fill (strip
+    // 0x090B12 / well 0x05070C) and held in ONE place so a future fill
+    // change is one adjustment. C:: itself is shared with every other
+    // surface and never moves. Hierarchy, brightest first:
+    //   value     = names and readings          (= C::text, unchanged)
+    //   label     = control labels and headers  (C::text2 lifted ~20%)
+    //   caption   = small captions, units,
+    //               scale NUMBERS, absent text  (C::text3 lifted ~55%)
+    //   structure = tick LINES, resting
+    //               outlines: visible skeleton,
+    //               clearly below the numbers   (C::text3 lifted, no more
+    //                                            0.35 alpha stacking)
+    // The numbers/lines split is deliberate: numbers are information,
+    // lines are structure, and at one level they read as one dim mass.
+    // Dimmed states keep their multiplicative factors (0.4 frozen, 0.55
+    // host-idle), so dimmed-vs-live keeps the same RATIO it always had,
+    // now on lifted bases: dimmer, present, never gone.
+    const juce::Colour value     (0xfff0f0f5);
+    const juce::Colour label     (0xffc2c4d2);
+    const juce::Colour caption   (0xff9698ac);
+    const juce::Colour structure (0xff5a5c72);
 }
 
 // =============================================================================
@@ -6369,7 +6394,7 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
         // No frame has EVER arrived: that is "no data", never a fabricated
         // zero. (A once-seen strip that went stale keeps its frozen values,
         // dimmed, exactly like the old rows.)
-        g.setColour(C::text3.withAlpha(0.6f));
+        g.setColour(LinkConsole::caption);
         g.setFont(juce::Font(juce::FontOptions(9.0f)));
         g.drawText("no data", area, juce::Justification::centred);
         return;
@@ -6391,13 +6416,13 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
     struct Cell { const char* label; float v; bool valid; juce::Colour col; };
     const Cell all[6] = {
         { "MOM",   st.smMom,   st.smMom   > -99.0f,
-          st.smMom > -6.0f ? coral : C::text },
-        { "SHORT", st.smShort, st.smShort > -99.0f, C::text },
-        { "INT",   st.smInt,   st.smInt   > -99.0f, C::text },
+          st.smMom > -6.0f ? coral : LinkConsole::value },
+        { "SHORT", st.smShort, st.smShort > -99.0f, LinkConsole::value },
+        { "INT",   st.smInt,   st.smInt   > -99.0f, LinkConsole::value },
         { "PSR",   st.smPsr,   d.psrValid,
           st.smPsr < 5.0f ? coral : st.smPsr < 8.0f ? amber : C::green },
-        { "PLR",   st.smPlr,   d.plrValid,          C::text },
-        { "LRA",   st.smLra,   true,                C::text },
+        { "PLR",   st.smPlr,   d.plrValid,          LinkConsole::value },
+        { "LRA",   st.smLra,   true,                LinkConsole::value },
     };
 
     // Whole cells only: what does not fit is dropped, never half-drawn.
@@ -6412,11 +6437,12 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
                                         : juce::String("--");
         if (wide)
         {
-            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(8.5f)));
             g.drawText(c.label, area.getX() + 2, cy, 34, cellH,
                        juce::Justification::centredLeft);
-            g.setColour((c.valid ? c.col : C::text3).withMultipliedAlpha(dim));
+            g.setColour((c.valid ? c.col : LinkConsole::caption)
+                            .withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
             g.drawText(vs, area.getX() + 36, cy,
                        area.getWidth() - 38, cellH,
@@ -6424,11 +6450,12 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
         }
         else
         {
-            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(8.0f)));
             g.drawText(c.label, area.getX(), cy, area.getWidth(), 10,
                        juce::Justification::centred);
-            g.setColour((c.valid ? c.col : C::text3).withMultipliedAlpha(dim));
+            g.setColour((c.valid ? c.col : LinkConsole::caption)
+                            .withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
             g.drawText(vs, area.getX(), cy + 10, area.getWidth(), 14,
                        juce::Justification::centred);
@@ -6450,7 +6477,7 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
         // "never heard from" and "silent" are different facts. This is the
         // distinction this codebase has got wrong before. In the narrow
         // band the text rotates nowhere: "--" carries absence instead.
-        g.setColour(C::text3.withAlpha(0.6f));
+        g.setColour(LinkConsole::caption);
         g.setFont(juce::Font(juce::FontOptions(8.0f)));
         g.drawText(area.getWidth() >= 34 ? "no data" : "--",
                    area, juce::Justification::centred);
@@ -6494,7 +6521,7 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
     {
         const float mark = kMeterMarks[mi];
         const int y = meterYForDb(mark, barsArea);
-        g.setColour(C::text3.withMultipliedAlpha(0.35f * dim));
+        g.setColour(LinkConsole::structure.withMultipliedAlpha(dim));
         g.drawHorizontalLine(y, (float)barsArea.getX(), (float)barsArea.getRight());
         const bool labelled =
             gutterW >= 16 ? (mi <= 8 || mi == 9 || mi == 11 || mi == 13 || mi == 14)
@@ -6503,7 +6530,7 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
           : false;
         if (labelled)
         {
-            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
             g.drawText(juce::String((int)-mark),
                        area.getX(), y - 4, gutterW - 2, 8,
                        juce::Justification::centredRight);
@@ -6531,6 +6558,20 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
         if (topDb >  -6.0f) seg(-6.0f,  juce::jmin( 0.0f, topDb), coral);
     };
 
+    // FROZEN says so in words now, not only in brightness: the dark
+    // palette narrowed the dim contrast, and a state that matters must not
+    // hang off a 0.4 multiplier alone. Full-strength caption ON PURPOSE:
+    // it is a label about the dim, not a dimmed reading. ("HELD" is also
+    // this pass's content-check marker.)
+    if (dim <= 0.45f)
+    {
+        g.setColour(LinkConsole::caption);
+        g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
+        g.drawText("HELD", barsArea.getX(),
+                   barsArea.getCentreY() - 5, barsArea.getWidth(), 10,
+                   juce::Justification::centred);
+    }
+
     const float fast[2] = { mf.peakFastL, mf.peakFastR };
     const float rms[2]  = { st.smRmsL,   st.smRmsR };
     const float peak[2] = { mf.peakL,    mf.peakR };
@@ -6554,7 +6595,7 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
             // reading without clutter.
             if (wide && rms[ch] > -99.0f)
             {
-                g.setColour(C::text.withMultipliedAlpha(0.8f * dim));
+                g.setColour(LinkConsole::value.withMultipliedAlpha(0.8f * dim));
                 g.fillRect(br.getX() + 1, meterYForDb(rms[ch], br) - 1,
                            br.getWidth() - 2, 2);
             }
@@ -6569,7 +6610,7 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
         if (peak[ch] > -99.0f)
         {
             const int py = meterYForDb(peak[ch], br);
-            g.setColour((peak[ch] > -6.0f ? coral : C::text)
+            g.setColour((peak[ch] > -6.0f ? coral : LinkConsole::value)
                             .withMultipliedAlpha(dim));
             g.fillRect(br.getX(), py - 1, br.getWidth(), 2);
         }
@@ -6583,10 +6624,10 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
     {
         auto half = clipRect;
         const auto lHalf = half.removeFromLeft(clipRect.getWidth() / 2);
-        g.setColour(st.clipL ? coral : C::text3.withAlpha(0.35f));
+        g.setColour(st.clipL ? coral : LinkConsole::structure);
         st.clipL ? (void)g.fillRect(lHalf.reduced(1))
                  : (void)g.drawRect(lHalf.reduced(1), 1);
-        g.setColour(st.clipR ? coral : C::text3.withAlpha(0.35f));
+        g.setColour(st.clipR ? coral : LinkConsole::structure);
         st.clipR ? (void)g.fillRect(half.reduced(1))
                  : (void)g.drawRect(half.reduced(1), 1);
     }
@@ -6660,12 +6701,12 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
         case ChainDisplayState::NoData:
             // Missing or unreadable sidecar is NO DATA, never an empty
             // rack: "nothing there" and "cannot see" are different facts.
-            g.setColour(C::text3.withAlpha(0.6f));
+            g.setColour(LinkConsole::caption);
             g.setFont(juce::Font(juce::FontOptions(9.0f)));
             g.drawText("no data", area, juce::Justification::centred);
             return;
         case ChainDisplayState::Empty:
-            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(9.0f)));
             g.drawText("empty rack", area, juce::Justification::centred);
             return;
@@ -6679,11 +6720,11 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
         // width a list of "Pro-..." rows says nothing. The full list is one
         // WIDE press away. Compact caption, not a sentence.
         auto a2 = area.withTrimmedTop(juce::jmax(0, area.getHeight() / 2 - 26));
-        g.setColour(C::text.withMultipliedAlpha(dim));
+        g.setColour(LinkConsole::value.withMultipliedAlpha(dim));
         g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
         g.drawText(juce::String((int)rows.size()),
                    a2.removeFromTop(20), juce::Justification::centred);
-        g.setColour(C::text3.withMultipliedAlpha(dim));
+        g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
         g.setFont(juce::Font(juce::FontOptions(6.5f, juce::Font::bold)));
         g.drawText("RACK", a2.removeFromTop(9), juce::Justification::centred);
         if (bypassed > 0)
@@ -6711,7 +6752,7 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
         // Overflow collapses into "+N more" rather than half-drawing.
         const int blockH = 15, blockGap = 2, headH = 12;
         auto a2 = area.reduced(2, 0);
-        g.setColour(C::text2.withMultipliedAlpha(dim));
+        g.setColour(LinkConsole::label.withMultipliedAlpha(dim));
         g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
         g.drawText(chainCountLabel((int)rows.size(), bypassed)
                        + (offline ? " - offline" : ""),
@@ -6759,7 +6800,7 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
         }
         if ((int)rows.size() > shown)
         {
-            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(8.0f)));
             g.drawText("+" + juce::String((int)rows.size() - shown) + " more",
                        a2.removeFromTop(blockH), juce::Justification::centredLeft);
@@ -6855,7 +6896,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                                   : entry != nullptr ? entry->displayName
                                                      : juce::String();
         if (isBus && name.isEmpty()) name = "Host Channel";
-        g.setColour(C::text);
+        g.setColour(LinkConsole::value);
         g.setFont(juce::Font(juce::FontOptions(wide ? 12.0f : 10.5f,
                                                juce::Font::bold)));
         g.drawFittedText(name, sg.name, juce::Justification::centred, 1, 0.7f);
@@ -6877,9 +6918,9 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             // read in the secondary grey, UNSET stays dim so it still asks
             // quietly; the hit rect is unchanged, so it still opens the
             // chooser.
-            g.setColour(isBus ? C::text2
-                      : entry->info.placement == 0 ? C::text3
-                                                   : C::text2);
+            g.setColour(isBus ? LinkConsole::label
+                      : entry->info.placement == 0 ? LinkConsole::caption
+                                                   : LinkConsole::label);
             g.setFont(juce::Font(juce::FontOptions(wide ? 9.0f : 8.0f,
                                                    juce::Font::bold)));
             g.drawFittedText(bl, sg.badge, juce::Justification::centred, 1, 0.8f);
@@ -6910,7 +6951,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                                       (float)sg.active.getCentreY() - side * 0.5f)
                    : box.withCentre(sg.active.toFloat().getCentre());
 
-        g.setColour(!connected || timedOut ? coral : C::text3);
+        g.setColour(!connected || timedOut ? coral : LinkConsole::caption);
         g.drawRoundedRectangle(box, 4.0f, 1.0f);
 
         if (!connected)
@@ -6938,7 +6979,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
 
         if (wide)
         {
-            g.setColour(!connected || timedOut ? coral : C::text2);
+            g.setColour(!connected || timedOut ? coral : LinkConsole::label);
             g.setFont(juce::Font(juce::FontOptions(11.0f)));
             g.drawText(linkActiveLabel(connected, pending, timedOut),
                        sg.active.withTrimmedLeft(side + 6),
@@ -6958,7 +6999,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         g.setColour(EchoJayLookAndFeel::ChainCard::fill
                         .withAlpha(aiEnabled ? 1.0f : 0.5f));
         g.fillRoundedRectangle(sg.ai.toFloat(), 5.0f);
-        g.setColour(aiEnabled ? C::text : C::text3);
+        g.setColour(aiEnabled ? LinkConsole::value : LinkConsole::caption);
         g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
         g.drawText("AI", sg.ai, juce::Justification::centred);
     }
@@ -7040,7 +7081,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             const juce::Rectangle<int> dashArea(sg.fader.getX(), sg.meter.getY(),
                                                 sg.fader.getWidth(),
                                                 sg.meter.getHeight());
-            g.setColour(C::text3.withAlpha(0.5f));
+            g.setColour(LinkConsole::caption);
             g.setFont(juce::Font(juce::FontOptions(12.0f)));
             g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")),
                        dashArea, juce::Justification::centred);
@@ -7072,7 +7113,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             {
                 const int ty = yFromGain(mark, sg.fader);
                 const bool zero = mark == 0.0f;
-                g.setColour(zero ? C::text2 : C::text3);
+                g.setColour(zero ? LinkConsole::label : LinkConsole::structure);
                 g.fillRect(sg.fader.getX(), ty, img.getX() - sg.fader.getX() - 1,
                            zero ? 2 : 1);
             }
@@ -7099,7 +7140,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 g.fillRoundedRectangle((float)cx - 2.0f, (float)sg.fader.getY(),
                                        4.0f, (float)sg.fader.getHeight(), 2.0f);
                 const int ty = yFromGain(gDb, sg.fader);
-                g.setColour(C::text);
+                g.setColour(LinkConsole::value);
                 g.fillRoundedRectangle((float)sg.fader.getX(), (float)ty - 2.0f,
                                        (float)sg.fader.getWidth(), 4.0f, 2.0f);
             }
@@ -7441,7 +7482,7 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
 
     // "LINK MIXER" is the console pass's content-check marker (raw byte
     // search; the first 8 bytes survive LTO literal splitting).
-    g.setColour(C::text2);
+    g.setColour(LinkConsole::label);
     g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
     g.drawText("LINK MIXER", linkTitleRect_, juce::Justification::centredLeft);
 
@@ -7471,7 +7512,7 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
             g.setColour(sel ? EchoJayLookAndFeel::ChainCard::fill
                             : LinkConsole::well);
             g.fillRoundedRectangle(z.rect.toFloat(), 4.0f);
-            g.setColour(sel ? C::text : C::text3);
+            g.setColour(sel ? LinkConsole::value : LinkConsole::caption);
             g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
             g.drawFittedText(label, z.rect, juce::Justification::centred, 1, 0.8f);
         }
