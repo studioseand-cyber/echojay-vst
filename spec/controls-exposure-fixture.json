@@ -11,8 +11,8 @@
     "fixture that regenerates alongside the code it verifies always agrees with",
     "itself and proves nothing."
   ],
-  "generatedAt": "2026-08-01T13:49:19.307Z",
-  "serverCommit": "55af972",
+  "generatedAt": "2026-08-01T14:34:54.291Z",
+  "serverCommit": "4edc91a",
   "orderingRule": "tier(primary first) > trust(human-verified > setread > llm-classified) > kind(anchored > mode) > vendor index asc",
   "K": 12,
   "classes": {
@@ -25,7 +25,7 @@
     {
       "plugin": "AMEK EQ 200",
       "fp": "468224aee54644cb1fbd33aa875ee97ecde86aadc57b6bea197a3cef79900d64",
-      "rev": "b3f287f9537d",
+      "rev": "c7aa57a40ba3",
       "category": "eq",
       "orderedCandidates": [
         {
@@ -121,205 +121,6 @@
             200
           ],
           "unit": "pct"
-        },
-        {
-          "name": "LP Freq 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 50,
-          "range": [
-            20,
-            30000
-          ],
-          "unit": "hz"
-        },
-        {
-          "name": "HP Freq 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 52,
-          "range": [
-            20,
-            20000
-          ],
-          "unit": "hz"
-        },
-        {
-          "name": "LF Gain 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 54,
-          "range": [
-            -15,
-            15
-          ],
-          "unit": "db"
-        },
-        {
-          "name": "LMF Gain 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 55,
-          "range": [
-            -15,
-            15
-          ],
-          "unit": "db"
-        },
-        {
-          "name": "MF Gain 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 56,
-          "range": [
-            -15,
-            15
-          ],
-          "unit": "db"
-        },
-        {
-          "name": "HMF Gain 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 57,
-          "range": [
-            -15,
-            15
-          ],
-          "unit": "db"
-        },
-        {
-          "name": "HF Gain 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 58,
-          "range": [
-            -15,
-            15
-          ],
-          "unit": "db"
-        },
-        {
-          "name": "LF Freq 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 59,
-          "range": [
-            15,
-            780
-          ],
-          "unit": "hz"
-        },
-        {
-          "name": "LMF Freq 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 60,
-          "range": [
-            15,
-            780
-          ],
-          "unit": "hz"
-        },
-        {
-          "name": "MF Freq 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 61,
-          "range": [
-            120,
-            7800
-          ],
-          "unit": "hz"
-        },
-        {
-          "name": "HMF Freq 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 62,
-          "range": [
-            370,
-            26000
-          ],
-          "unit": "hz"
-        },
-        {
-          "name": "HF Freq 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 63,
-          "range": [
-            370,
-            26000
-          ],
-          "unit": "hz"
-        },
-        {
-          "name": "LF Q 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 64,
-          "range": [
-            0.400000005960464,
-            4
-          ]
-        },
-        {
-          "name": "LMF Q 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 65,
-          "range": [
-            0.400000005960464,
-            4
-          ]
-        },
-        {
-          "name": "MF Q 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 66,
-          "range": [
-            0.400000005960464,
-            4
-          ]
-        },
-        {
-          "name": "HMF Q 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 67,
-          "range": [
-            0.400000005960464,
-            4
-          ]
-        },
-        {
-          "name": "HF Q 2",
-          "kind": "anchored",
-          "cls": "musical",
-          "trust": "setread",
-          "index": 68,
-          "range": [
-            0.400000005960464,
-            4
-          ]
         },
         {
           "name": "Power",
@@ -739,19 +540,105 @@
         "Mono Maker",
         "Stereo Width",
         "Gain Scale",
-        "LP Freq 2",
-        "HP Freq 2",
-        "LF Gain 2",
-        "LMF Gain 2",
-        "MF Gain 2",
-        "HMF Gain 2"
+        "Mid Side",
+        "Gain Scale Invert",
+        "LF Range 1",
+        "LMF Range 1",
+        "MF Range 1",
+        "HMF Range 1"
       ],
-      "noteSection": "\"AMEK EQ 200\": Input Gain(-15..15 db), V-Gain(-110..-70 db), THD(-120..-30 db), Mono Maker(20..2000 hz), Stereo Width(0..400 pct), Gain Scale(0..200 pct), LP Freq 2(20..30000 hz), HP Freq 2(20..20000 hz), LF Gain 2(-15..15 db), LMF Gain 2(-15..15 db), MF Gain 2(-15..15 db), HMF Gain 2(-15..15 db)",
-      "excluded": [],
+      "noteSection": "\"AMEK EQ 200\": Input Gain(-15..15 db), V-Gain(-110..-70 db), THD(-120..-30 db), Mono Maker(20..2000 hz), Stereo Width(0..400 pct), Gain Scale(0..200 pct), Mid Side{Off|On}, Gain Scale Invert{Off|On}, LF Range 1{Full|Half}, LMF Range 1{Full|Half}, MF Range 1{Full|Half}, HMF Range 1{Full|Half}",
+      "excluded": [
+        {
+          "name": "LP Freq 2",
+          "index": 50,
+          "reason": "lockstep twin of index 20 (M5 channel duplicate)"
+        },
+        {
+          "name": "HP Freq 2",
+          "index": 52,
+          "reason": "lockstep twin of index 22 (M5 channel duplicate)"
+        },
+        {
+          "name": "LF Gain 2",
+          "index": 54,
+          "reason": "lockstep twin of index 24 (M5 channel duplicate)"
+        },
+        {
+          "name": "LMF Gain 2",
+          "index": 55,
+          "reason": "lockstep twin of index 25 (M5 channel duplicate)"
+        },
+        {
+          "name": "MF Gain 2",
+          "index": 56,
+          "reason": "lockstep twin of index 26 (M5 channel duplicate)"
+        },
+        {
+          "name": "HMF Gain 2",
+          "index": 57,
+          "reason": "lockstep twin of index 27 (M5 channel duplicate)"
+        },
+        {
+          "name": "HF Gain 2",
+          "index": 58,
+          "reason": "lockstep twin of index 28 (M5 channel duplicate)"
+        },
+        {
+          "name": "LF Freq 2",
+          "index": 59,
+          "reason": "lockstep twin of index 29 (M5 channel duplicate)"
+        },
+        {
+          "name": "LMF Freq 2",
+          "index": 60,
+          "reason": "lockstep twin of index 30 (M5 channel duplicate)"
+        },
+        {
+          "name": "MF Freq 2",
+          "index": 61,
+          "reason": "lockstep twin of index 31 (M5 channel duplicate)"
+        },
+        {
+          "name": "HMF Freq 2",
+          "index": 62,
+          "reason": "lockstep twin of index 32 (M5 channel duplicate)"
+        },
+        {
+          "name": "HF Freq 2",
+          "index": 63,
+          "reason": "lockstep twin of index 33 (M5 channel duplicate)"
+        },
+        {
+          "name": "LF Q 2",
+          "index": 64,
+          "reason": "lockstep twin of index 34 (M5 channel duplicate)"
+        },
+        {
+          "name": "LMF Q 2",
+          "index": 65,
+          "reason": "lockstep twin of index 35 (M5 channel duplicate)"
+        },
+        {
+          "name": "MF Q 2",
+          "index": 66,
+          "reason": "lockstep twin of index 36 (M5 channel duplicate)"
+        },
+        {
+          "name": "HMF Q 2",
+          "index": 67,
+          "reason": "lockstep twin of index 37 (M5 channel duplicate)"
+        },
+        {
+          "name": "HF Q 2",
+          "index": 68,
+          "reason": "lockstep twin of index 38 (M5 channel duplicate)"
+        }
+      ],
       "counts": {
-        "inventory": 62,
-        "excluded": 0,
-        "lockstepTwins": 0,
+        "inventory": 45,
+        "excluded": 17,
+        "lockstepTwins": 17,
         "bandDuplicates": 0,
         "caseCollisions": 0
       }
