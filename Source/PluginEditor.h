@@ -2333,6 +2333,11 @@ private:
     int  activeAskChips = 0;
     juce::Rectangle<int> askShelfRect_, askShelfHintRect_;
     bool askShelfVisible_ = false;
+    // Scan-window hold (sendChatMessage): when the first send of a session
+    // arrives before the recommendable list resolves, the send waits,
+    // bounded, rather than riding feed-less and staging chat. 0 = no hold
+    // in progress.
+    juce::int64 scanHoldStartMs_ = 0;
     // Newest assistant message with an unanswered ask, -1 if none
     int findNewestUnansweredAsk() const;
     // Mark every pending ask answered (any user send supersedes the question)

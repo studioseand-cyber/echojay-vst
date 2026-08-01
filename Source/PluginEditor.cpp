@@ -18427,6 +18427,42 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                                     const juce::String& displayLabel,
                                     const juce::String& turnTypeOverride)
 {
+    // ===== SCAN-WINDOW HOLD (1 Aug 2026) =====
+    // The chain feed attaches only once the recommendable list has resolved,
+    // and turn staging follows the feed - so a first message typed promptly
+    // (the COMMON case, not an edge) landed inside the scan window, staged
+    // chat, and the server rightly forbade the chain block: the offer-and-
+    // yes round every fresh session hit. Hold the send until the scan
+    // resolves instead of explaining a race the user cannot see. BOUNDED:
+    // a genuinely stalled scan releases the send after kScanHoldMaxMs and
+    // it proceeds exactly as before this hold existed (full-list fallback
+    // injection, prose-only guidance) - a late feed-less answer beats a
+    // hung send. Gate = the race's own shape: the scanner knows plugins
+    // but the recommendable list has not resolved from them yet
+    // (hasResolvedRecommendable distinguishes resolved-with-zero-matches
+    // from not-yet-resolved). A user with no plugins at all never holds.
+    if (!processorRef.getChainHost().hasResolvedRecommendable()
+        && processorRef.getPluginScanner().getFullPluginList().isNotEmpty())
+    {
+        constexpr juce::int64 kScanHoldMaxMs = 20000;
+        constexpr int kScanHoldPollMs = 400;
+        if (scanHoldStartMs_ == 0)
+            scanHoldStartMs_ = juce::Time::currentTimeMillis();
+        if (juce::Time::currentTimeMillis() - scanHoldStartMs_ < kScanHoldMaxMs)
+        {
+            setStageStatus(juce::String::fromUTF8("Waiting for the plugin scan\xe2\x80\xa6"));
+            juce::Component::SafePointer<EchoJayEditor> safe(this);
+            const juce::String heldMsg = msg, heldLabel = displayLabel, heldTto = turnTypeOverride;
+            juce::Timer::callAfterDelay(kScanHoldPollMs, [safe, heldMsg, heldLabel, heldTto]
+            {
+                if (safe != nullptr) safe->sendChatMessage(heldMsg, heldLabel, heldTto);
+            });
+            return;
+        }
+        EchoJay_NSLog("EJChat: scan hold expired -- sending without the resolved feed");
+    }
+    scanHoldStartMs_ = 0;
+
     // Single choke point for TYPED sends from every surface: the timer's
     // upgrade-button gate normally replaces the input row first, but a
     // message sent in the gap (or from a surface mid-transition) must get

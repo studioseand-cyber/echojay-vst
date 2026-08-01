@@ -452,6 +452,27 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   veteran cache reads not-dialable until a content rev bump. Decision
   needed from whoever owns the rev contract: overlay serve-time fields
   onto the cached object on unchanged rev, or fold them into rev.
+- THE SILENTLY-DROPPED-FIELD CLASS: FOUR INSTANCES, THE FOURTH ON A SERVER
+  ALREADY CARRYING THREE GUARDS AGAINST IT (risk entry, 1 Aug 2026). The
+  class: a producer passes a field, a consumer rebuilds the object from an
+  explicit field list, the field vanishes with no error, and the failure
+  surfaces SOMEWHERE ELSE wearing a different bug's clothes. Instances:
+  (1) the auto-dial tripwire and (2) the honesty tripwire both shipped
+  dark through logClassification's whitelist (26 Jul, documented in the
+  whitelist's own warning comment); (3) settingsEmitted shipped dark
+  through the SAME whitelist on 1 Aug - the measurement built that day
+  never persisted one event, despite the warning comment sitting directly
+  above the omission; (4) ingestGroups rebuilt each map group as
+  {n, primary, params}, dropping the family and freq_range the ejmap
+  payload carried - and THIS one presented as a CLIENT band-selection bug
+  (8 kHz "verified" onto a 15-780 Hz band) two layers and one codebase
+  away from the drop. THE LESSON THE COUNT TEACHES: warning comments do
+  not guard rebuild sites; only a test asserting the PERSISTED/STORED
+  object does. Any new field on a whitelisted or rebuilt object lands
+  WITH a test that reads it back from the store, in the same commit, or
+  it should be assumed dark. When a value is inexplicably absent
+  downstream, grep for the rebuild site FIRST - it out-predicts the
+  transport, the cache, and the client.
 - TYPEDREADBACKMATCH HAS REVERTED A CORRECT WRITE TWICE IN ONE DAY (risk
   entry, filed 1 Aug 2026; not two unrelated fixes). First the q half-gap:
   a target at the exact bracket midpoint lost to float representation by
