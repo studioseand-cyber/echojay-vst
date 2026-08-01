@@ -587,6 +587,79 @@ public:
         quitNow();
     }
 
+    /** Headless re-submission through the REAL machinery: load, restore the
+        completed session, actionSubmit (live write-back verify included),
+        then the upload card (gate, dry-run, stub, queue). Exists because a
+        writer-side fix means the maps on disk are wrong until the writer
+        re-emits them -- and hand-editing an emitted map is manufacturing
+        evidence. Refuses sessions with unresolved rows: this is a re-emit of
+        finished work, never a way to skip the wizard.
+    */
+    void resubmitAndUpload (const juce::String& identifier)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "RESUBMIT: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        auto res = host.load (desc, watchdog);
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "RESUBMIT: load failed: " << res.detail << std::endl; quitNow(); return; }
+        cal = capture.calibrate (*host.getInstance(), loadedId);
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+        prepareCapture (sp.desc.name, loadedId);
+
+        auto session = juce::JSON::parse (ledger.getRoot()
+                           .getChildFile ("assign-" + currentFp + ".json").loadFileAsString());
+        const auto cat = session.getProperty ("category", "").toString();
+        if (cat.isEmpty())
+        { std::cout << "RESUBMIT: no completed session for fp " << currentFp << std::endl;
+          quitNow(); return; }
+
+        startAssignmentForCategory (cat);
+
+        int unresolved = 0;
+        for (const auto& r : assignPanel.rows) unresolved += ! r.isResolved();
+        std::cout << "RESUBMIT: " << desc.name << " | category " << cat
+                  << " | " << assignPanel.rows.size() << " rows restored, "
+                  << unresolved << " unresolved | "
+                  << assignPanel.controlsForSubmit().size() << " controls, "
+                  << assignPanel.groupsForSubmit().size() << " groups staged" << std::endl;
+        if (unresolved > 0)
+        { std::cout << "RESUBMIT: refusing -- unresolved rows need the wizard, not a re-emit"
+                    << std::endl; quitNow(); return; }
+
+        assignPanel.actionSubmit();
+
+        auto mapFile = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
+        auto map = juce::JSON::parse (mapFile.loadFileAsString());
+        auto ps = map.getProperty ("params", juce::var());
+        juce::StringArray pkeys;
+        if (auto* po = ps.getDynamicObject())
+            for (auto& kv : po->getProperties()) pkeys.add (kv.name.toString());
+        std::cout << "RESUBMIT: map re-emitted: params [" << pkeys.joinIntoString (", ")
+                  << "], controls "
+                  << (map.getProperty ("controls", juce::var()).getDynamicObject() != nullptr
+                        ? map.getProperty ("controls", juce::var()).getDynamicObject()->getProperties().size() : 0)
+                  << ", groups "
+                  << (map.getProperty ("groups", juce::var()).getArray() != nullptr
+                        ? map.getProperty ("groups", juce::var()).getArray()->size() : 0)
+                  << ", extractor_version '"
+                  << map.getProperty ("provenance", juce::var())
+                        .getProperty ("extractor_version", "").toString() << "'" << std::endl;
+
+        openUploadCard();
+        std::cout << "RESUBMIT: queue state now "
+                  << Mouth::queueState (ledger.getRoot(), currentFp) << std::endl;
+        std::cout << "RESUBMIT: DONE" << std::endl;
+        quitNow();
+    }
+
     void selfTestStall (const juce::String& identifier, int attempts)
     {
         auto desc = echojay::auregistry::describeFromRegistry (identifier);
@@ -1110,6 +1183,17 @@ public:
         auto mapVar = juce::JSON::parse (src.loadFileAsString());
         // Re-key the map to THIS load's fp so identity checks are live.
         if (auto* o = mapVar.getDynamicObject()) o->setProperty ("fp", currentFp);
+        // Manufacture the pre-M10 shape: blank the stamped provenance. The
+        // corpus no longer contains a pre-M10 map (both were re-emitted by
+        // the stamping binary), so the shape under test is simulated -- and
+        // said so. Without this, steps 1-2 silently test whatever provenance
+        // the fixture happens to carry.
+        {
+            auto prov = mapVar.getProperty ("provenance", juce::var());
+            if (auto* pd = prov.getDynamicObject())
+                for (auto* k : { "tester_id", "machine_id", "apply_header_sha" })
+                    pd->setProperty (k, "");
+        }
         local.replaceWithText (juce::JSON::toString (mapVar, false));
 
         std::cout << "UPLOADTEST: " << desc.name << " | map " << src.getFileName() << std::endl;
@@ -3834,6 +3918,9 @@ private:
         p.identity.paramCount = cal.paramCount;
         p.provenance.ejmapVersion = juce::String (EJMAP_VERSION) + " (" + EJMAP_GIT_HASH + ")";
         p.provenance.applyHeaderSha = EJMAP_APPLY_HEADER_SHA;   // hashed AS COMPILED, at build time
+        // The extractor version THIS binary compiles, read from the header's
+        // own default -- never a hand-kept copy that can lag a bump.
+        p.provenance.extractorVersion = juce::String (echojay::ExtractorConfig().extractorVersion);
         p.provenance.machineId = machineIdString();
         p.provenance.testerId  = testerName();
         p.provenance.pluginVersion = loadedDesc.version;
@@ -3874,6 +3961,15 @@ private:
 
         for (auto& r : rws)
         {
+            // Surface rows drive a flow; their outcome is the top-level
+            // groups/controls objects, NEVER a params entry. The spiff
+            // session's controls row still carried a stale capture (the old
+            // W-routing defect: boost depth grabbed as if controls were a
+            // knob), so it passed the confirmed+anchors test and the server
+            // read params.controls, kind "controls" -- a surface row wearing
+            // a semantic. Same class as the -1 duplicate refusal.
+            if (r.isSurfaceRow())
+                continue;
             if (r.state == AssignRow::State::confirmed && r.sweep.anchors.size() >= 2)
             {
                 ParamMapping m;

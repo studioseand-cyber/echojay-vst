@@ -749,8 +749,8 @@ void testDryRunBytes()
         auto f = ejmap::Mouth::writeDryRun (root, "fp-default", body, "tester", "machine", "0.0.0");
         auto mb = readAll (f);
         auto head = headOf (mb);
-        check (head.startsWith ("POST /api/ejmap/maps HTTP/1.1\r\n"),
-               "dry run: absolute request path from the placeholder URL");
+        check (head.startsWith ("POST /api/params/ejmap HTTP/1.1\r\n"),
+               "dry run: the settled route path (/api/params/ejmap) from the placeholder URL");
         check (head.contains ("\r\nHost: UPLOAD-ENDPOINT-UNSET.echojay.invalid\r\n"),
                "dry run: placeholder host is visibly unset");
         check (head.contains ("\r\nContent-Length: " + juce::String ((juce::int64) body.getSize()) + "\r\n"),
@@ -766,9 +766,9 @@ void testDryRunBytes()
     // A typed port must reach the Host header (getDomain() would cut it).
     {
         auto f = ejmap::Mouth::writeDryRun (root, "fp-port", body, "t", "m", "v",
-                                            "http://localhost:8080/api/ejmap/maps");
+                                            "http://localhost:8080/api/params/ejmap");
         auto head = headOf (readAll (f));
-        check (head.startsWith ("POST /api/ejmap/maps HTTP/1.1\r\n"),
+        check (head.startsWith ("POST /api/params/ejmap HTTP/1.1\r\n"),
                "dry run: path independent of the port");
         check (head.contains ("\r\nHost: localhost:8080\r\n"),
                "dry run: typed port reaches the Host header");

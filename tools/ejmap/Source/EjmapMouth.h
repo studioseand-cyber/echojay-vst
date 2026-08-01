@@ -229,7 +229,7 @@ struct Mouth
                            ? urlOverride
                            : juce::SystemStats::getEnvironmentVariable (
                                  "EJMAP_UPLOAD_URL",
-                                 "https://UPLOAD-ENDPOINT-UNSET.echojay.invalid/api/ejmap/maps");
+                                 "https://UPLOAD-ENDPOINT-UNSET.echojay.invalid/api/params/ejmap");
 
         auto rest = url.contains ("://") ? url.fromFirstOccurrenceOf ("://", false, false)
                                          : url;
