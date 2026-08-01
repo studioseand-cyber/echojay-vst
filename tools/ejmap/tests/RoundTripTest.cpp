@@ -757,6 +757,12 @@ void testDryRunBytes()
                "dry run: Content-Length counts the body's exact bytes");
         check (mb.getSize() == head.getNumBytesAsUTF8() + body.getSize(),
                "dry run: file is head + body and NOTHING else (no trailing newline)");
+        // The server route fails closed without the token header. Value is
+        // env-dependent (real token or the visibly-unset placeholder), so the
+        // pin is on the header LINE existing with a non-empty value.
+        check (head.contains ("\r\nX-EJMap-Token: ")
+                 && ! head.contains ("\r\nX-EJMap-Token: \r\n"),
+               "dry run: X-EJMap-Token header present with a non-empty value");
         check (mb.getSize() >= body.getSize()
                  && memcmp ((const char*) mb.getData() + (mb.getSize() - body.getSize()),
                             body.getData(), body.getSize()) == 0,

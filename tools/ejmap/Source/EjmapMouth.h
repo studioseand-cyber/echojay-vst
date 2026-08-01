@@ -240,6 +240,16 @@ struct Mouth
         // it is not a request line ("POST api/..." is one a server refuses).
         const auto pathQuery = slash < 0 ? juce::String ("/") : rest.substring (slash);
 
+        // Auth: the server route requires X-EJMap-Token and fails closed.
+        // Sourced from the ENVIRONMENT (EJMAP_INGEST_TOKEN) -- or the
+        // keychain when M11 issues per-tester tokens -- never a file in the
+        // tree. The placeholders are visibly unset/unsafe, same convention
+        // as the endpoint host: a 401 you can read coming, never a mystery.
+        auto token = juce::SystemStats::getEnvironmentVariable (
+                         "EJMAP_INGEST_TOKEN", "INGEST-TOKEN-UNSET");
+        if (! headerValueSafe (token))
+            token = "INGEST-TOKEN-UNSAFE (not printable ASCII; fix EJMAP_INGEST_TOKEN)";
+
         juce::String head;
         head << "POST " << pathQuery << " HTTP/1.1\r\n"
              << "Host: " << hostPort << "\r\n"
@@ -248,6 +258,7 @@ struct Mouth
              << "X-EJMap-Version: " << ejmapVersion << "\r\n"
              << "X-EJMap-Machine: " << machineId << "\r\n"
              << "X-EJMap-Tester: " << testerName << "\r\n"
+             << "X-EJMap-Token: " << token << "\r\n"
              << "\r\n";
 
         auto dir = root.getChildFile ("upload");

@@ -1272,6 +1272,8 @@ public:
                 "body is the map file verbatim");
             ok (text.contains (".invalid") || juce::SystemStats::getEnvironmentVariable ("EJMAP_UPLOAD_URL", "").isNotEmpty(),
                 "URL is the clearly-unset placeholder until a real endpoint exists");
+            ok (text.contains ("\r\nX-EJMap-Token: ") && ! text.contains ("\r\nX-EJMap-Token: \r\n"),
+                "X-EJMap-Token header present (server fails closed without it)");
         }
 
         // 5. Store read-back, field by field, against the STUB'S OWN STORE --
@@ -4161,7 +4163,12 @@ private:
             Mouth::setQueueState (ledger.getRoot(), currentFp, "dry_run_written", {});
             t << "DRY RUN written: " << dry.getFullPathName() << "\n"
               << "  (the exact bytes, headers and URL shape; diff THIS against the real\n"
-              << "   endpoint's contract before anything is sent)\n\n";
+              << "   endpoint's contract before anything is sent)\n"
+              << "  X-EJMap-Token: "
+              << (juce::SystemStats::getEnvironmentVariable ("EJMAP_INGEST_TOKEN", "").isNotEmpty()
+                    ? "set from EJMAP_INGEST_TOKEN (value not shown)"
+                    : "UNSET -- the server fails closed; this request would 401")
+              << "\n\n";
 
             auto stub = Mouth::stubMouthSubmit (ledger.getRoot(), currentFp,
                                                 f.loadFileAsString(), testerName());

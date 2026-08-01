@@ -572,6 +572,7 @@ Recommendation carried into the signing: **A**, because verification-before-send
 - Impact display: "You have mapped 12 plugins, 340 users have these installed."
 - Signed and notarized standalone app, same identity as EchoJay: `Developer ID Application: Sean Donoghue (8BT5F9B887)`, notarize profile `EchoJayNotarize`
 - Sign in with the EchoJay account, reuse `auth.json` if present, otherwise browser OAuth. Server returns a tester flag. Without it: map locally, cannot submit.
+- **Token issuance replaces `EJMAP_INGEST_TOKEN` (interim, 2026-08-02).** The ingest route authenticates via `X-EJMap-Token`, currently a single shared value from the environment because the only tester is Sean. M11 must issue per-tester tokens at sign-in: a shared secret across twenty testers cannot be revoked individually, and gives the server no way to attribute or retract one tester's submissions. Storage stays env or keychain, never a file in the tree.
 - Anti-abuse: allowlist, structural gate, admin review queue for a new tester's first N submissions, disagreement flag holds both maps for review, bulk retraction by tester ID
 - Swap `AssistProvider` to the backend implementation here (the key cannot ship in the binary)
 
