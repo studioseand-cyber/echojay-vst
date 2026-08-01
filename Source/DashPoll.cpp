@@ -129,33 +129,54 @@ void DashPollShared::tick()
         const bool hasImports = obj->hasProperty ("imports");
         const int  imports    = hasImports ? (int) obj->getProperty ("imports") : -1;
 
+        // M2.5: direct messages, the THIRD independent signal on this response.
+        //
+        // It cannot hide behind the rev check, for exactly the reason the
+        // imports note above gives, and which this field silently inherited.
+        // `rev` is GLOBAL, bumped once per announcement; `imports` moves only
+        // when a chain import lands. A DM moves NEITHER. So before this
+        // comparison existed, the early return below fired on every DM, the
+        // assignments never ran, and `direct` stayed at its old value while
+        // the server reported a real count. The field was already parsed and
+        // already in Unread: it was simply unreachable.
+        //
+        // NO -1 SENTINEL, unlike imports. `direct` has been present in every
+        // poll response since M1, which returned a hardcoded 0. "Absent" is
+        // not a state it has. M2.1 changed the VALUE it carries, not whether
+        // it is there.
+        const int  direct       = (int) obj->getProperty ("direct");
+
         const bool revMoved     = (rev != unread.rev);
         const bool importsMoved = (imports != unread.imports);
+        const bool directMoved  = (direct != unread.direct);
 
         // Nothing new means NO WORK: no state write, no generation bump, no
         // notification, and above all no dashboard payload fetch.
-        if (! revMoved && ! importsMoved)
+        if (! revMoved && ! importsMoved && ! directMoved)
         {
             ejDashLog ("[dash-poll] tick " + juce::String (tickCount)
                        + " rev unchanged at " + juce::String (rev)
                        + ", imports unchanged at " + juce::String (imports)
                        + (hasImports ? "" : " (field ABSENT: backend slice not shipped)")
+                       + ", direct unchanged at " + juce::String (direct)
                        + ", no work");
             return;
         }
 
         unread.rev           = rev;
         unread.imports       = imports;
+        unread.direct        = direct;
         unread.total         = (int) obj->getProperty ("total");
         unread.announcements = (int) obj->getProperty ("announcements");
         unread.team          = (int) obj->getProperty ("team");
-        unread.direct        = (int) obj->getProperty ("direct");
         ++generation;
 
         ejDashLog ("[dash-poll] tick " + juce::String (tickCount)
                    + (revMoved ? " rev MOVED to " : " rev at ") + juce::String (rev)
                    + (importsMoved ? " imports MOVED to " : " imports at ")
                    + juce::String (imports)
+                   + (directMoved ? " direct MOVED to " : " direct at ")
+                   + juce::String (direct)
                    + " unread=" + juce::String (unread.total)
                    + " gen=" + juce::String (generation)
                    + ", notifying " + juce::String ((int) clients.size()) + " instance(s)");

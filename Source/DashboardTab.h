@@ -154,6 +154,13 @@ public:
     void setStatus (bool loading, const juce::String& error);
     void setSignedOut (bool signedOut);
 
+    /** M2.5: unread DIRECT messages, from the community poll and NOT from the
+        payload. The payload is cached for 60s server side and rebuilt on a
+        cold dashboard fetch; the poll is live every 20s. Taking this from the
+        poll is what makes the line appear promptly rather than up to a minute
+        late. -1 or 0 renders nothing. */
+    void setDirectUnread (int n);
+
     bool hasPayload() const noexcept { return payload_.valid; }
 
     /** THE geometry author. Stores every rect and returns the total content
@@ -173,6 +180,12 @@ public:
     std::function<void (const DashLink&)> onNavigate;
     /** An absolute URL that works with NO auth. The owner opens the browser. */
     std::function<void (const juce::String&)> onOpenUrl;
+    /** M2.5: open a web path through the Session C handoff, landing the user
+        SIGNED IN. Separate from onOpenUrl, which launches a URL directly and
+        is only ever given public pages (/c/:slug, /upgrade). This one needs a
+        round trip to mint a token first, so it hands the caller a PATH and the
+        caller does the minting. */
+    std::function<void (const juce::String& path)> onOpenWithHandoff;
     /** An uploaded project image this view needs and does not have. Fired once
         per url; the owner answers with setArtImage. */
     std::function<void (const juce::String&)> onNeedArt;
@@ -189,6 +202,7 @@ private:
         juce::Rectangle<int> rect;
         DashLink link;         // empty when the zone opens a url instead
         juce::String url;      // empty when the zone follows a link
+        juce::String handoffPath;
     };
 
     // ---- rects, ALL authored by layout(), ALL cleared at its top ------------
@@ -205,6 +219,8 @@ private:
     juce::Rectangle<int> onboardingRect_, onboardingHeadingRect_;
     std::vector<juce::Rectangle<int>> onboardingStepRects_;
     juce::Rectangle<int> announceRect_;
+    juce::Rectangle<int> directRect_;
+    int directUnread_ = 0;
     juce::Rectangle<int> signedOutRect_;
 
     /** Lets tools/dashboard_test reach the rects and the hit test without
@@ -236,6 +252,7 @@ private:
     void requestMissingArt();
     void addZone (juce::Rectangle<int> r, const DashLink& link);
     void addUrlZone (juce::Rectangle<int> r, const juce::String& url);
+    void addHandoffZone (juce::Rectangle<int> r, const juce::String& path);
     void drawTile (juce::Graphics& g, const DashProject& p, juce::Rectangle<int> square);
     juce::String statusLine() const;
 

@@ -571,6 +571,44 @@ public:
         else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
     }
 
+    /**
+        Session C handoff: mint a one-time token and hand back a URL that lands
+        the user SIGNED IN in a browser.
+
+        THIS IS A REAL PATH, verified end to end in a browser on 31 Jul 2026.
+        It is NOT the dead-text case the dashboard's onboarding steps assume:
+        see the note in DashboardTab.cpp about that stale comment.
+
+        `to` must be one of the server's allowlist (/app, /app?overlay=community,
+        /dashboard, /settings/profile). Anything else returns 400 bad_target
+        with the allowed set in the body, so a typo is loud rather than silent.
+
+        The token rides the returned URL's FRAGMENT, is single use, and expires
+        in 120 seconds, so the URL must be opened promptly and is worthless
+        afterwards.
+    */
+    void mintHandoff(const juce::String& to,
+                     std::function<void(const juce::String& url, int status)> cb)
+    {
+        if (! isLoggedIn())
+        {
+            if (cb) juce::MessageManager::callAsync([cb]{ cb({}, 401); });
+            return;
+        }
+        juce::DynamicObject::Ptr body = new juce::DynamicObject();
+        body->setProperty("to", to);
+        postJSON("/api/v2/handoff", juce::JSON::toString(juce::var(body.get())),
+                 [cb](const juce::var& json, int status)
+        {
+            juce::String url;
+            if (status == 200)
+                if (auto* o = json.getDynamicObject())
+                    url = o->getProperty("url").toString();
+            // A relative path from the server; the caller prefixes the origin.
+            if (cb) cb(url, status);
+        });
+    }
+
     // One place that turns a chain-endpoint failure into a sentence for the
     // user. Keeps the wording consistent and keeps "not enabled yet" from
     // being reported as "not found". Empty return = success.

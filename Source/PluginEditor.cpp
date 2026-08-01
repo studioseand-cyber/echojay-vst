@@ -414,6 +414,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // cost of the poll that just fired. The badge is drawn from the counts
         // the poller already holds.
         dashUnreadSeen_ = processorRef.getDashUnreadGeneration();
+        dashView_.setDirectUnread (processorRef.getDashUnread().direct);
         repaint();
     };
     dashUnreadSeen_ = processorRef.getDashUnreadGeneration();
@@ -443,6 +444,34 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         juce::URL(url).launchInDefaultBrowser();
     };
     dashView_.onNeedArt  = [this](const juce::String& url) { fetchProjectArt(url); };
+
+    // M2.5: the handoff. Mints a one-time token, then opens the browser at a
+    // URL that lands SIGNED IN.
+    //
+    // NOTE FOR WHOEVER READS THIS NEXT: the comment on onOpenUrl above, and
+    // the one in DashboardTab.cpp's onboarding block, both say there is no
+    // plugin-to-web token path. THAT IS NOW FALSE. Session C shipped
+    // POST /api/v2/handoff plus /go, and it is verified end to end in a
+    // browser. Those onboarding steps whose target is `web` can stop being
+    // dead text and become tappable through exactly this callback.
+    // DELIBERATELY NOT DONE HERE: it is a separate change with its own
+    // testing, and it should not ride the messages line. Both facts are true
+    // at once, which is why they are written down together.
+    dashView_.onOpenWithHandoff = [this](const juce::String& path)
+    {
+        processorRef.getApi().mintHandoff(path, [](const juce::String& url, int status)
+        {
+            if (status == 200 && url.isNotEmpty())
+                juce::URL(echojay::dashSiteRoot() + url).launchInDefaultBrowser();
+            // A failed mint opens NOTHING. Launching the bare path would land
+            // the user on a login screen, which is the exact outcome the
+            // handoff exists to prevent, and silently doing it would teach
+            // them the button is broken.
+            else
+                ejDashLog ("[handoff] mint failed, status " + juce::String (status)
+                           + ", opening nothing");
+        });
+    };
 
     setLookAndFeel(&lnf);
     setSize(1170, 696);

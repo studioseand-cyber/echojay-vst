@@ -240,6 +240,14 @@ void DashboardView::setSignedOut (bool signedOut)
     repaint();
 }
 
+void DashboardView::setDirectUnread (int n)
+{
+    if (n == directUnread_) return;      // no relayout for an unchanged count
+    directUnread_ = n;
+    layout (getWidth());
+    repaint();
+}
+
 void DashboardView::setArtImage (const juce::String& url, const juce::Image& img)
 {
     artImages_[url] = img;   // a null image is a recorded failure, not a retry
@@ -249,13 +257,19 @@ void DashboardView::setArtImage (const juce::String& url, const juce::Image& img
 void DashboardView::addZone (juce::Rectangle<int> r, const DashLink& link)
 {
     if (r.isEmpty() || link.isEmpty()) return;
-    zones_.push_back ({ r, link, {} });
+    zones_.push_back ({ r, link, {}, {} });
 }
 
 void DashboardView::addUrlZone (juce::Rectangle<int> r, const juce::String& url)
 {
     if (r.isEmpty() || url.isEmpty()) return;
-    zones_.push_back ({ r, {}, url });
+    zones_.push_back ({ r, {}, url, {} });
+}
+
+void DashboardView::addHandoffZone (juce::Rectangle<int> r, const juce::String& path)
+{
+    if (r.isEmpty() || path.isEmpty()) return;
+    zones_.push_back ({ r, {}, {}, path });
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +289,7 @@ constexpr int kRowGap      = 6;
 constexpr int kTileCaption = 34;
 constexpr int kStepH       = 24;
 constexpr int kAnnounceH   = 66;
+constexpr int kDirectH     = 44;
 constexpr int kTwoColMin   = 720;   // content width at which the lists split
 constexpr int kMaxRows     = 5;     // surface=plugin already caps at 5; belt to that brace
 }
@@ -292,7 +307,7 @@ int DashboardView::layout (int width)
     chatsHeadingRect_ = chatsEmptyRect_ = {};
     chainsHeadingRect_ = chainsEmptyRect_ = {};
     onboardingRect_ = onboardingHeadingRect_ = {};
-    announceRect_ = signedOutRect_ = {};
+    announceRect_ = directRect_ = signedOutRect_ = {};
     projectTileRects_.clear();
     chatRowRects_.clear();
     chainRowRects_.clear();
@@ -477,6 +492,28 @@ int DashboardView::layout (int width)
                 addZone (r, s.target);
         }
         y += h + kGap;
+    }
+
+    // ---- direct messages ---------------------------------------------------
+    //
+    // M2.5. The plugin cannot SHOW a DM: there is no thread surface here and
+    // the thin-home rule says there should not be. What it can do is tell you
+    // one arrived and take you somewhere that can show it.
+    //
+    // WITHOUT THIS the dot on the Dashboard tab label lights (total includes
+    // direct, decided server side in M1) and leads to a tab with nothing about
+    // messages on it. That is the "wrong badge on the wrong surface" error the
+    // imports note in DashPoll.h exists to avoid, arriving from the other
+    // direction. A badge that goes nowhere and a hidden message are both worse
+    // than one line of text with a destination.
+    if (directUnread_ > 0)
+    {
+        directRect_ = { x, y, w, kDirectH };
+        // NOT addUrlZone: that launches a URL directly and is only ever given
+        // PUBLIC pages. This needs a minted token first, so it goes through
+        // the handoff zone instead. See the zones note below.
+        addHandoffZone (directRect_, "/app?overlay=community");
+        y += kDirectH + kGap;
     }
 
     // ---- latest announcement ----------------------------------------------
@@ -823,6 +860,30 @@ void DashboardView::paint (juce::Graphics& g)
         }
     }
 
+    // ---- direct messages ---------------------------------------------------
+    if (! directRect_.isEmpty())
+    {
+        card (g, directRect_, directRect_ == hotRect);
+        heading (g, { directRect_.getX() + 14, directRect_.getY() + 8,
+                      directRect_.getWidth() - 28, kHeadingH }, "MESSAGES");
+
+        // SINGULAR AND PLURAL, because "1 new messages" survives to production
+        // and reads as unfinished. The count is capped in the wording at 9+
+        // for the same reason the badge is: an exact 47 is not more useful
+        // than "lots" and it makes the line wrap.
+        juce::String line;
+        if (directUnread_ == 1) line = "1 new message";
+        else if (directUnread_ > 9) line = "9+ new messages";
+        else line << directUnread_ << " new messages";
+        line << ".  Open in your browser";
+
+        g.setColour (C::text2);
+        g.setFont (juce::Font (juce::FontOptions (12.0f)));
+        g.drawText (line, directRect_.getX() + 14, directRect_.getY() + 24,
+                    directRect_.getWidth() - 28, 16,
+                    juce::Justification::centredLeft, true);
+    }
+
     // ---- announcement -----------------------------------------------------
     if (! announceRect_.isEmpty())
     {
@@ -871,6 +932,10 @@ void DashboardView::mouseDown (const juce::MouseEvent& e)
     if (z.url.isNotEmpty())
     {
         if (onOpenUrl) onOpenUrl (z.url);
+    }
+    else if (z.handoffPath.isNotEmpty())
+    {
+        if (onOpenWithHandoff) onOpenWithHandoff (z.handoffPath);
     }
     else if (onNavigate)
     {
