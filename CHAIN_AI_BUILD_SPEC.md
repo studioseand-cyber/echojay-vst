@@ -452,6 +452,38 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   veteran cache reads not-dialable until a content rev bump. Decision
   needed from whoever owns the rev contract: overlay serve-time fields
   onto the cached object on unchanged rev, or fold them into rev.
+- MODEL CLASSIFIER PLAN-OF-RECORD (agreed 1 Aug 2026; build AFTER the
+  2.25.0 release - the counter's first week is the shadow baseline).
+  SHAPE: model classification on every turn classifyChainIntent handles
+  today; regexes retired from routing, retained only as the stated
+  fallback. The disagreement-only variant collapses because the client
+  stages chain_generate on effectively every feed-carrying send, so its
+  trigger is unselective. SEES: typed portion + client staged label (a
+  PRIOR, not truth) + rack/feed presence + prior assistant tail. RETURNS:
+  one constrained enum ONLY - chat | chain_generate | chain_edit |
+  ambiguous - no prose; the acknowledgement bubble is CLIENT-TEMPLATED
+  from intent + client-resolved names (zero output tokens at risk, no
+  completion tense possible, nothing to strip from history). AMBIGUOUS is
+  a real label: routes to the chat prompt shape PLUS one sentence telling
+  the model the request may be actionable - act (edit with a rack, offer
+  without) or ask via chips; plain advice alone is not a complete answer.
+  Bills as chat; the produced-type UPGRADE/refund passes already align
+  cost either way. Persisted as its own value: a high ambiguous rate is a
+  dodging classifier, which is a prompt bug. FAILURE (stated, not
+  inherited): timeout/unparseable falls back to CLIENT STAGING, then
+  regex (web has no staging), NEVER bare chat - over-chaining is a
+  declinable proposal, under-chaining is the forbidden-block honesty
+  hazard. Model-vs-client disagreement: model wins, counted both
+  directions. CUTOVER THRESHOLD (written before the shadow runs, decided
+  against data): fixture gates - 100% on the miss set; regression
+  disagreements read INDIVIDUALLY (model-right updates the label,
+  model-wrong blocks until fixed + re-evaled). Shadow gates - >=300
+  classified turns or 14 days; every live disagreement reviewed
+  individually; a model-wrong that would have produced a wrong BLOCK
+  blocks cutover unconditionally; ambiguous >10% of chain-eligible turns
+  = prompt tuning first. Model choice by fixture eval: if Haiku ties
+  Sonnet, take Haiku for LATENCY, not cost; a misroute costs 20-100x the
+  call either way.
 - THE INTENT CLASSIFIER IS FIVE REGEXES WHOSE FAILURE MODE IS A SILENT
   DEFAULT TO CHAT (risk entry, 1 Aug 2026; recorded, not fixed). Four arms
   existed and NONE matched "Add the AMEK EQ 200 and cut 300 Hz by 2 dB" -
