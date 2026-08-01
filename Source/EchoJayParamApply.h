@@ -171,9 +171,15 @@ inline bool parseDisplayForUnit (const juce::String& text, const juce::String& u
 // Returns +1 match, 0 unparseable (cannot verify), -1 mismatch.
 inline int typedReadbackMatch (const juce::String& semantic, float target,
                                const juce::String& landedText,
-                               const juce::Array<juce::Array<float>>& anchors)
+                               const juce::Array<juce::Array<float>>& anchors,
+                               const juce::String& unitOverride = {})
 {
-    const auto unit = semanticUnit (semantic);
+    // Params encode their unit in the semantic key ("threshold_db"); named
+    // controls carry it as an entry field ("Mono Maker", unit "hz"). The
+    // override wins when present: a control name derives no unit, and an
+    // hz display like "1.2 kHz" parsed unitless reads 1.2 against a target
+    // of 1200, reverting a correct write.
+    const auto unit = unitOverride.isNotEmpty() ? unitOverride : semanticUnit (semantic);
     float landed = 0.0f;
     bool negInf = false;
     if (! parseDisplayForUnit (landedText, unit, landed, negInf)) return 0;
@@ -475,7 +481,16 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     r.normalized = norm;
     r.landedText = param->getCurrentValueAsText();
 
-    const auto method = mapEntry.getProperty ("method", "gettext").toString();
+    // The ONE verification switch. Params entries carry method; controls
+    // entries carry trust ("setread" = anchors captured set-then-read
+    // because the display lies) and NO method field. Absent method with
+    // setread trust IS setread: without this translation a setread control
+    // would fall into the typed display comparison below and readback
+    // would lie about controls the way it lied about q.
+    auto method = mapEntry.getProperty ("method", juce::var()).toString();
+    if (method.isEmpty())
+        method = mapEntry.getProperty ("trust", "").toString() == "setread" ? "setread"
+                                                                            : "gettext";
     if (method == "setread")
     {
         // Set-then-read maps exist BECAUSE these plugins' display text lies
@@ -501,7 +516,9 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     // the table's ends aims at the end, and landing there is the honest
     // best effort, not a mismatch.
     const float expected = juce::jlimit (loV, hiV, target);
-    const int verdict = typedReadbackMatch (semantic, expected, r.landedText, eff.table);
+    const auto unitOverride = mapEntry.getProperty ("unit", "").toString();
+    const int verdict = typedReadbackMatch (semantic, expected, r.landedText, eff.table,
+                                            unitOverride);
     if (verdict > 0)
     {
         r.applied = true;
@@ -520,7 +537,8 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         revert();
         r.applied = false;
         r.readbackMismatch = true;
-        r.note = "asked " + juce::String (expected, 2) + " " + semanticUnit (semantic)
+        r.note = "asked " + juce::String (expected, 2) + " "
+               + (unitOverride.isNotEmpty() ? unitOverride : semanticUnit (semantic))
                + ", plugin shows \"" + r.landedText.trim() + "\", value restored";
     }
     return r;
@@ -823,7 +841,8 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
     for (auto& kv : settingsObj->getProperties())
     {
         const juce::String semantic = kv.name.toString();
-        if (semantic == "bands") continue; // handled after the flat pass
+        if (semantic == "bands")    continue; // handled after the flat pass
+        if (semantic == "controls") continue; // handled after the flat pass
 
         auto mapEntry = mapParams.getProperty (semantic, juce::var());
         const bool flatUsable = mapEntry.isObject() && usableParamEntry (mapEntry);
@@ -849,11 +868,68 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
 
     auto bandsVar = settings.getProperty ("bands", juce::var());
     if (bandsVar.isArray())
-        applyBands (plugin, map, bandsVar, results);
+    {
+        // Flat band-class keys riding the same turn as an explicit bands[]
+        // used to be dropped here silently (the else-if below never ran).
+        // The synth band is one more band request, appended AFTER the
+        // explicit bands so it can never consume a band the model addressed
+        // deliberately; applyBands reports every band, so if no band is
+        // left free the keys decline with a note instead of vanishing.
+        juce::Array<juce::var> all;
+        if (auto* bs = bandsVar.getArray())
+            for (auto& b : *bs) all.add (b);
+        if (synthBand != nullptr) all.add (juce::var (synthBand.get()));
+        applyBands (plugin, map, juce::var (all), results);
+    }
     else if (synthBand != nullptr)
     {
         juce::Array<juce::var> one; one.add (juce::var (synthBand.get()));
         applyBands (plugin, map, juce::var (one), results);
+    }
+
+    // Named Tier 2 controls (1 Aug 2026, first reader): settings.controls is
+    // { "<exact name>": value } looked up in map.controls, the exact-name
+    // registry section stored and served since map-format v2. The server
+    // enforces exact case before the block reaches the plugin, so the
+    // case-insensitive rescue below only forgives drift, it is not the
+    // contract. Every miss is an honesty entry, never a silent skip. The
+    // entries are already in applyOne's shape (index/kind/anchors/labels);
+    // trust->method and the unit field are translated inside applyOne.
+    auto controlsReq = settings.getProperty ("controls", juce::var());
+    if (auto* co = controlsReq.getDynamicObject())
+    {
+        auto mapControls = map.getProperty ("controls", juce::var());
+        for (auto& kv : co->getProperties())
+        {
+            const juce::String name = kv.name.toString();
+            auto entry = mapControls.getProperty (kv.name, juce::var());
+            if (! entry.isObject())
+                if (auto* mo = mapControls.getDynamicObject())
+                    for (auto& mk : mo->getProperties())
+                        if (mk.name.toString().equalsIgnoreCase (name))
+                        { entry = mk.value; break; }
+            if (! entry.isObject())
+            {
+                ApplyResult r; r.semantic = name;
+                r.note = "no mapped control of this name on this plugin";
+                results.add (r);
+                continue;
+            }
+            if (! usableParamEntry (entry))
+            {
+                ApplyResult r; r.semantic = name;
+                r.note = "control entry unusable (bad index or anchors), left manual";
+                results.add (r);
+                continue;
+            }
+            results.add (applyOne (plugin, name, entry, kv.value));
+        }
+    }
+    else if (! controlsReq.isVoid())
+    {
+        ApplyResult r; r.semantic = "controls";
+        r.note = "controls must be an object of name -> value";
+        results.add (r);
     }
     return results;
 }

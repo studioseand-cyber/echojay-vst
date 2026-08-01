@@ -93,6 +93,24 @@ int main()
     check (echojay::typedReadbackMatch ("gain_db", -17.0f, "-15.0", gain) == +1,
            "gain -17 landing \"-15\" (far bracket step) is accepted");
 
+    // Named controls (map.controls reader): a control name derives NO unit
+    // from semanticUnit, so the entry's own unit field must drive the parse.
+    // "Mono Maker" showing "1.2 kHz" against a 1200 Hz target: unitless the
+    // display reads 1.2 and a correct write reverts; with the override the
+    // k multiplies and the landing verifies.
+    {
+        juce::Array<juce::Array<float>> hz;
+        for (auto p : { std::pair<float,float>{ 20.0f, 0.0f }, { 200.0f, 0.25f },
+                        { 600.0f, 0.5f }, { 1400.0f, 0.75f }, { 2000.0f, 1.0f } })
+        { juce::Array<float> a; a.add (p.first); a.add (p.second); hz.add (a); }
+        check (echojay::typedReadbackMatch ("Mono Maker", 1200.0f, "1.2 kHz", hz, "hz") == +1,
+               "control unit override: \"1.2 kHz\" verifies a 1200 Hz target");
+        check (echojay::typedReadbackMatch ("Mono Maker", 1200.0f, "1.2 kHz", hz) == -1,
+               "without the override the same landing is refused (the lie the override removes)");
+        check (echojay::typedReadbackMatch ("Mono Maker", 1200.0f, "3.5 kHz", hz, "hz") == -1,
+               "the override does not loosen the tolerance: a wrong landing still refuses");
+    }
+
     // The map entry itself is healthy - documents that the fleet failure was
     // never about the data. Mirrors the usableParamEntry rules.
     {
