@@ -976,6 +976,10 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
     if (op.op == "bypass")
         return juce::String(op.on ? "\xe2\x8f\xbb bypass " : "\xe2\x8f\xbb un-bypass ")
              + slotName(op.slot) + " (slot " + juce::String(op.slot + 1) + ")";
+    if (op.op == "set")
+        return juce::String::fromUTF8("\xe2\x9a\x99 dial ") + slotName(op.slot)
+             + " (slot " + juce::String(op.slot + 1) + ")"
+             + (op.settings.isNotEmpty() ? ": " + op.settings : juce::String());
     return "? unknown op: " + op.op;
 }
 
@@ -1071,6 +1075,16 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             {
                 if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
             }
+            else if (op.op == "set")
+            {
+                // Settings-only op (1 Aug 2026): touches parameters on an
+                // EXISTING slot, never the instance. Born from the replace
+                // footgun: a settings request on a racked plugin had no op
+                // that was not destructive.
+                if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
+                if (op.settings.isEmpty() && op.settingsStructured.getDynamicObject() == nullptr)
+                    return bad("set without any settings");
+            }
             else return bad("unknown operation \"" + op.op + "\"");
         }
     }
@@ -1130,6 +1144,15 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             label = "Reordering the chain...";
         else if (op.op == "bypass")
             label = op.on ? "Bypassing a slot..." : "Un-bypassing a slot...";
+        else if (op.op == "set")
+        {
+            const int cur = (op.slot >= 0 && op.slot < (int)st->map.size())
+                              ? st->map[(size_t)op.slot] : -1;
+            label = "Dialling "
+                  + (cur >= 0 && cur < (int)slots_.size()
+                       ? slots_[(size_t)cur].desc.name : juce::String("a slot"))
+                  + "...";
+        }
         if (label.isNotEmpty()) st->onProgress(label);
     }
 
@@ -1205,6 +1228,22 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         finishOpAndContinue("moved " + nm + " to position " + juce::String(target + 1));
         return;
     }
+    if (op.op == "set")
+    {
+        // Settings-only: parameters change through the ONE map-gated apply
+        // pipeline; the instance, its position and all its other state are
+        // untouched. This is what a "change the settings" request routes to
+        // instead of the destructive replace.
+        const int cur = curOf(op.slot);
+        if (cur < 0) return failAndStop("set failed: slot no longer present");
+        const juce::String nm = slots_[(size_t)cur].desc.name;
+        if (op.settings.isNotEmpty())
+            setSlotSettings(cur, op.settings);
+        if (op.settingsStructured.getDynamicObject() != nullptr)
+            setSlotStructuredSettings(cur, op.settingsStructured);
+        finishOpAndContinue("dialled " + nm);
+        return;
+    }
     if (op.op == "add" || op.op == "replace")
     {
         // Fallible work FIRST: load (appends at the end). Only on success do
@@ -1216,7 +1255,7 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         desc = preferInlineHostableDesc(desc);
         auto self = st;
         const auto theOp = op;
-        loadPluginAsync(desc, [this, self, theOp](const juce::String& err)
+        loadPluginAsync(desc, [this, self, theOp, desc](const juce::String& err)
         {
             // Re-enter the sequencer context manually (we are mid-op)
             auto finish = [this, self](const juce::String& line)
@@ -1246,8 +1285,7 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
                                     + " would not load (" + err + ")");
 
             int newCur = getNumSlots() - 1;   // appended by completeLoad
-            if (theOp.settings.isNotEmpty())
-                setSlotSettings(newCur, theOp.settings);
+
             // Dial the placed slot through the ONE map-gated apply pipeline, the
             // same one loadChainFromJson uses on the build path. Until now the
             // edit path only wrote the prose display string (setSlotSettings)
@@ -1255,11 +1293,20 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             // carried settings_structured silently dropped it. Pending settings
             // live on the slot object and survive the walkSlotTo renumber below
             // (storeParamMaps re-scans all slots when the map arrives).
-            if (theOp.settingsStructured.getDynamicObject() != nullptr)
-                setSlotStructuredSettings(newCur, theOp.settingsStructured);
+            // On replace this runs AFTER the same-plugin state restore below,
+            // never before: settings dialled into an instance whose state is
+            // about to be overwritten would be dialled into the void.
+            auto applyOpSettings = [this, &theOp](int slotIdx)
+            {
+                if (theOp.settings.isNotEmpty())
+                    setSlotSettings(slotIdx, theOp.settings);
+                if (theOp.settingsStructured.getDynamicObject() != nullptr)
+                    setSlotStructuredSettings(slotIdx, theOp.settingsStructured);
+            };
 
             if (theOp.op == "add")
             {
+                applyOpSettings(newCur);
                 int target = theOp.after <= -1 ? 0
                     : (theOp.after < (int)self->map.size() && self->map[(size_t)theOp.after] >= 0
                         ? self->map[(size_t)theOp.after] + 1
@@ -1279,13 +1326,42 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
                 if (oldCur < 0)
                     return failStop("replace failed: slot no longer present");
                 const juce::String oldName = slots_[(size_t)oldCur].desc.name;
+
+                // Same-plugin replace preserves state (1 Aug 2026, live
+                // defect): a model asked to change settings on a racked
+                // plugin sometimes reaches for replace-with-itself, and a
+                // fresh default instance silently discarded everything the
+                // user had dialled. When the replacement resolves to the
+                // SAME plugin (same format too - state blobs do not cross
+                // formats), the outgoing instance's full state is carried
+                // into the new one, and the op's settings then apply on top
+                // as deltas. A DIFFERENT plugin still starts from defaults.
+                juce::MemoryBlock oldState;
+                const bool samePlugin = desc.isDuplicateOf(slots_[(size_t)oldCur].desc);
+                if (samePlugin)
+                    if (auto* oldNode = slots_[(size_t)oldCur].node.get())
+                        if (auto* oldProc = oldNode->getProcessor())
+                            try { oldProc->getStateInformation(oldState); }
+                            catch (...) { oldState.reset(); }
+
                 removeSlot(oldCur);
                 for (auto& m : self->map) { if (m == oldCur) m = -1; else if (m > oldCur) --m; }
                 int fromCur = getNumSlots() - 1;   // new slot after the removal shift
                 walkSlotTo(self->map, fromCur, oldCur);
                 // The replacement now answers to the original slot number
                 self->map[(size_t)theOp.slot] = oldCur;
-                finish("replaced " + oldName + " with " + theOp.name);
+
+                if (samePlugin && oldState.getSize() > 0)
+                    if (auto* newNode = slots_[(size_t)oldCur].node.get())
+                        if (auto* newProc = newNode->getProcessor())
+                            try { newProc->setStateInformation(oldState.getData(),
+                                                               (int)oldState.getSize()); }
+                            catch (...) {}
+
+                applyOpSettings(oldCur);
+                finish(samePlugin
+                       ? "updated " + theOp.name + " (settings preserved)"
+                       : "replaced " + oldName + " with " + theOp.name);
             }
         });
         return;
