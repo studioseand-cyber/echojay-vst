@@ -472,6 +472,29 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   any new "asked X, plugin shows Y, value restored" telemetry cluster
   should be presumed a VERIFIER bug first and a wrong write second.
 
+- AN HONESTY GATE DERIVES FROM FACTS THE CLIENT HOLDS, NEVER FROM A FIELD
+  THE MODEL FILLS IN (2 Aug 2026, learned twice in one arc). A structural
+  guard reading a model-supplied flag is not structural: it is the model's
+  phrasing wearing a guard's clothes. Evidence:
+    1. The gain card's refused verdict keyed on faderDependent, a flag the
+       model set itself. The same source Link, same placement, same target
+       class produced Apply in one turn and "Can't match" in the next,
+       because the model called one an absolute target and the other a
+       cross-channel comparison. Phrasing decided what facts should have
+       decided. Fixed by deriving insertPoint from placement alone and
+       ignoring the flag (which also left the proposal format).
+    2. The compare attribution statement INSTRUCTED the model to reason a
+       certain way ("compare them as versions of the full capture") rather
+       than requiring it to STATE anything, so the model obeyed silently
+       and the user saw no evidence the guard existed. Fixed by requiring
+       the statement.
+  THE GENERAL FORM: if the client can determine something from its own
+  state, it MUST, and the model's opinion about it is not an input. If the
+  client genuinely cannot determine it, the honest answer is to SAY SO
+  rather than to trust a self-report. A model-filled field may carry
+  content (names, numbers, reasons); it may never carry the verdict on
+  whether that content is trustworthy.
+
 ## Standing engineering rules (from prior work)
 - Build via ~/reinstall-v2.sh (kills AU host, bumps version, rebuilds, installs
   atomically). It now derives REPO from `git rev-parse --show-toplevel` and
@@ -492,6 +515,24 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   Pick a marker that is a real string literal the feature emits; a pure code
   reorder has no marker, so verify those behaviourally instead. Neither the
   version number nor the mtime is evidence.
+  THE AUTHORITATIVE CHECK IS A RAW-BYTE SEARCH, NOT strings (1 Aug 2026,
+  learned twice: IN RACK, then HELD). strings coalesces a literal onto one
+  output line when it sits adjacent to another string in the cstring pool,
+  so `strings | grep -cF` reads 1 where the truth is 2; and LTO splits
+  literals longer than 8 bytes ("empty rack" pooled as "empty ra" plus an
+  immediate tail), which strings misses entirely. The exact command:
+    python3 -c "print(open('$HOME/Library/Audio/Plug-Ins/Components/EchoJay V2.component/Contents/MacOS/EchoJay V2','rb').read().count(b'<marker>'))"
+  EXPECTED COUNT IS 2, once per architecture slice of the universal binary.
+  A strings count of 1 against a raw count of 2 is the known false negative,
+  NOT evidence of a bad install; do not rebuild over it and do not mistrust
+  the install over it.
+  MARKER CHOICE: prefer a literal 8 BYTES OR SHORTER (LTO cannot split it)
+  whose INSTALLED BASELINE IS 0, checked before the commit lands: a 0 -> 2
+  flip is strong evidence, a delta against an existing count is weak. A pure
+  recolour or pure geometry pass may have NO honest marker at all, because
+  bare constants fold to compiler immediates (verified: zero rodata hits for
+  colour values); verification is then BEHAVIOURAL and the report must say
+  so plainly rather than inventing a marker that proves nothing.
 - Two Claude Code sessions must NOT build the shared repo simultaneously. Prefer
   separate worktrees; note the install DEST is still shared (last install wins)
   unless the branches carry distinct PRODUCT_NAME / BUNDLE_ID / PLUGIN_CODE.

@@ -2107,6 +2107,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatScroll.setViewedComponent(&chatContent, false);
     chatScroll.setScrollBarsShown(true, false);
     chatContent.setInterceptsMouseClicks(true, true);
+    // chatContent is a TRANSPARENT child covering the editor-painted chat:
+    // without a listener, a click on it is swallowed by a component with no
+    // handlers, and the painted zones (gain cards, wave cards) never hear
+    // it: the editor's mouseDown only fires for clicks NOT on children.
+    // Forward them; mouseDown's pos is getEventRelativeTo(this), so
+    // forwarded coordinates are already correct.
+    chatContent.addMouseListener(this, false);
     
     // Repaint the editor on every scroll so the avatars (which we paint
     // ourselves into the editor, not into chatContent) stay in sync with the
@@ -2118,9 +2125,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatScroll.onClickCheck = [this](const juce::MouseEvent& e) -> bool {
         auto pos = e.getEventRelativeTo(this).getPosition();
         // AI gain-proposal Apply/Undo cards (painted in editor coords)
+        if (!gainCardZones_.empty())
+            EchoJay_NSLog(("EJGainCard: viewport route pos=" + juce::String(pos.x)
+                           + "," + juce::String(pos.y)
+                           + " zones=" + juce::String((int)gainCardZones_.size())).toRawUTF8());
         for (auto& gz : gainCardZones_)
             if (gz.rect.contains(pos))
             {
+                EchoJay_NSLog("EJGainCard: viewport route hit");
                 applyGainProposal(gz);
                 return true;   // consumed
             }
@@ -5996,6 +6008,56 @@ void EchoJayEditor::presentCompareScopeAsk(const CompareSlotState& slotA,
 // =============================================================================
 
 // =============================================================================
+//  LINK MIXER console palette: ONE authority for the tab's grey.
+//
+//  The tab deliberately looks unlike the rest of the plugin: dark console
+//  grey, chrome removed, and CYAN MEANS SELECTION and nothing else here.
+//  The only other colours are STATUS: coral = fault (offline, timeout,
+//  clip, refusal), amber = pending or bypassed, and the meter's own
+//  green/amber/coral level zones. Every mixer painter reads these; none
+//  defines its own greys.
+// =============================================================================
+namespace LinkConsole
+{
+    // Second attempt, contrast DIRECTION inverted: the first pass lifted
+    // strips above the near-black window and they read as patches. Now the
+    // strip sits AT or BELOW the app background (C::bg2 = 0xff0A0C18),
+    // blue-grey so it lives in EchoJay's world, and separation comes from
+    // the inter-strip gaps and a subtle edge, not a lighter fill. Text uses
+    // the app's own ramp (C::text / text2 / text3): fewer authorities, and
+    // the blue-grey cast comes with it.
+    const juce::Colour strip    (0xff090B12);   // at/below the window bg
+    const juce::Colour stripSel (0xff0D1524);   // selected: a step lighter
+    const juce::Colour well     (0xff05070C);   // recess behind fader+meter
+    const juce::Colour edge     (juce::Colour::fromFloatRGBA(1, 1, 1, 0.06f));
+
+    // TEXT ON A STRIP: the app ramp (C::text2/text3) was calibrated against
+    // the app's lighter surfaces and did not move when the strips went dark,
+    // so everything on a strip sank into the fill. These four levels are the
+    // strip-local ramp, DERIVED from the app ramp against THIS fill (strip
+    // 0x090B12 / well 0x05070C) and held in ONE place so a future fill
+    // change is one adjustment. C:: itself is shared with every other
+    // surface and never moves. Hierarchy, brightest first:
+    //   value     = names and readings          (= C::text, unchanged)
+    //   label     = control labels and headers  (C::text2 lifted ~20%)
+    //   caption   = small captions, units,
+    //               scale NUMBERS, absent text  (C::text3 lifted ~55%)
+    //   structure = tick LINES, resting
+    //               outlines: visible skeleton,
+    //               clearly below the numbers   (C::text3 lifted, no more
+    //                                            0.35 alpha stacking)
+    // The numbers/lines split is deliberate: numbers are information,
+    // lines are structure, and at one level they read as one dim mass.
+    // Dimmed states keep their multiplicative factors (0.4 frozen, 0.55
+    // host-idle), so dimmed-vs-live keeps the same RATIO it always had,
+    // now on lifted bases: dimmer, present, never gone.
+    const juce::Colour value     (0xfff0f0f5);
+    const juce::Colour label     (0xffc2c4d2);
+    const juce::Colour caption   (0xff9698ac);
+    const juce::Colour structure (0xff5a5c72);
+}
+
+// =============================================================================
 //  LINK MIXER geometry: the single authority.
 //
 //  layOutStrips is PURE: same inputs, same rects, no editor state read. That is
@@ -6079,8 +6141,11 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         if (faderColW > 0)
         {
             auto col = fmBand.removeFromLeft(faderColW);
-            // Column height = image height (the 1:8 lock), centred in the
-            // band, so the drag mapping and the drawn travel are ONE rect.
+            // Column height = image height (the 1:8 lock), CENTRED in the
+            // band. Bottom-aligning it (the console pass) was a bug: a 96px
+            // image anchored to the floor of a ~230px well put every cap in
+            // the well's bottom half regardless of gain. The shared WELL
+            // carries the one-unit reading; the baseline claim is retired.
             sg.fader = col.withSizeKeepingCentre(
                            faderColW, juce::jmin(faderH, col.getHeight()));
             fmBand.removeFromLeft(kBandGap);
@@ -6379,7 +6444,7 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
         // No frame has EVER arrived: that is "no data", never a fabricated
         // zero. (A once-seen strip that went stale keeps its frozen values,
         // dimmed, exactly like the old rows.)
-        g.setColour(C::text3.withAlpha(0.6f));
+        g.setColour(LinkConsole::caption);
         g.setFont(juce::Font(juce::FontOptions(9.0f)));
         g.drawText("no data", area, juce::Justification::centred);
         return;
@@ -6390,21 +6455,24 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
 
     const auto coral = juce::Colour(0xffff6d5a);
     const auto amber = juce::Colour(0xfff59e0b);
-    const auto cyan  = juce::Colour(0xff22d3ee);
 
     // Same values, validity gates and zone colours as the horizontal cells;
     // SHORT labels because 38px is the narrow inner width. Display order
     // puts LRA last then PLR, so dropping from the end reproduces the old
     // width-budget priority (LRA goes first, then PLR).
+    // Console pass: readings are grey; colour appears only where it MEANS
+    // level (MOM hot in coral, PSR zones with green for healthy, since cyan
+    // is reserved for selection in this tab).
     struct Cell { const char* label; float v; bool valid; juce::Colour col; };
     const Cell all[6] = {
-        { "MOM",   st.smMom,   st.smMom   > -99.0f, st.smMom > -6.0f ? C::red : C::green },
-        { "SHORT", st.smShort, st.smShort > -99.0f, C::blue2 },
-        { "INT",   st.smInt,   st.smInt   > -99.0f, C::green },
+        { "MOM",   st.smMom,   st.smMom   > -99.0f,
+          st.smMom > -6.0f ? coral : LinkConsole::value },
+        { "SHORT", st.smShort, st.smShort > -99.0f, LinkConsole::value },
+        { "INT",   st.smInt,   st.smInt   > -99.0f, LinkConsole::value },
         { "PSR",   st.smPsr,   d.psrValid,
-          st.smPsr < 5.0f ? coral : st.smPsr < 8.0f ? amber : cyan },
-        { "PLR",   st.smPlr,   d.plrValid,          C::text },
-        { "LRA",   st.smLra,   true,                C::text },
+          st.smPsr < 5.0f ? coral : st.smPsr < 8.0f ? amber : C::green },
+        { "PLR",   st.smPlr,   d.plrValid,          LinkConsole::value },
+        { "LRA",   st.smLra,   true,                LinkConsole::value },
     };
 
     // Whole cells only: what does not fit is dropped, never half-drawn.
@@ -6419,11 +6487,12 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
                                         : juce::String("--");
         if (wide)
         {
-            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(8.5f)));
             g.drawText(c.label, area.getX() + 2, cy, 34, cellH,
                        juce::Justification::centredLeft);
-            g.setColour((c.valid ? c.col : C::text3).withMultipliedAlpha(dim));
+            g.setColour((c.valid ? c.col : LinkConsole::caption)
+                            .withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
             g.drawText(vs, area.getX() + 36, cy,
                        area.getWidth() - 38, cellH,
@@ -6431,11 +6500,12 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
         }
         else
         {
-            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(8.0f)));
             g.drawText(c.label, area.getX(), cy, area.getWidth(), 10,
                        juce::Justification::centred);
-            g.setColour((c.valid ? c.col : C::text3).withMultipliedAlpha(dim));
+            g.setColour((c.valid ? c.col : LinkConsole::caption)
+                            .withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
             g.drawText(vs, area.getX(), cy + 10, area.getWidth(), 14,
                        juce::Justification::centred);
@@ -6457,7 +6527,7 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
         // "never heard from" and "silent" are different facts. This is the
         // distinction this codebase has got wrong before. In the narrow
         // band the text rotates nowhere: "--" carries absence instead.
-        g.setColour(C::text3.withAlpha(0.6f));
+        g.setColour(LinkConsole::caption);
         g.setFont(juce::Font(juce::FontOptions(8.0f)));
         g.drawText(area.getWidth() >= 34 ? "no data" : "--",
                    area, juce::Justification::centred);
@@ -6501,7 +6571,7 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
     {
         const float mark = kMeterMarks[mi];
         const int y = meterYForDb(mark, barsArea);
-        g.setColour(C::text3.withMultipliedAlpha(0.35f * dim));
+        g.setColour(LinkConsole::structure.withMultipliedAlpha(dim));
         g.drawHorizontalLine(y, (float)barsArea.getX(), (float)barsArea.getRight());
         const bool labelled =
             gutterW >= 16 ? (mi <= 8 || mi == 9 || mi == 11 || mi == 13 || mi == 14)
@@ -6510,7 +6580,7 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
           : false;
         if (labelled)
         {
-            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
             g.drawText(juce::String((int)-mark),
                        area.getX(), y - 4, gutterW - 2, 8,
                        juce::Justification::centredRight);
@@ -6538,6 +6608,20 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
         if (topDb >  -6.0f) seg(-6.0f,  juce::jmin( 0.0f, topDb), coral);
     };
 
+    // FROZEN says so in words now, not only in brightness: the dark
+    // palette narrowed the dim contrast, and a state that matters must not
+    // hang off a 0.4 multiplier alone. Full-strength caption ON PURPOSE:
+    // it is a label about the dim, not a dimmed reading. ("HELD" is also
+    // this pass's content-check marker.)
+    if (dim <= 0.45f)
+    {
+        g.setColour(LinkConsole::caption);
+        g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
+        g.drawText("HELD", barsArea.getX(),
+                   barsArea.getCentreY() - 5, barsArea.getWidth(), 10,
+                   juce::Justification::centred);
+    }
+
     const float fast[2] = { mf.peakFastL, mf.peakFastR };
     const float rms[2]  = { st.smRmsL,   st.smRmsR };
     const float peak[2] = { mf.peakL,    mf.peakR };
@@ -6561,7 +6645,7 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
             // reading without clutter.
             if (wide && rms[ch] > -99.0f)
             {
-                g.setColour(C::text.withMultipliedAlpha(0.8f * dim));
+                g.setColour(LinkConsole::value.withMultipliedAlpha(0.8f * dim));
                 g.fillRect(br.getX() + 1, meterYForDb(rms[ch], br) - 1,
                            br.getWidth() - 2, 2);
             }
@@ -6576,7 +6660,7 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
         if (peak[ch] > -99.0f)
         {
             const int py = meterYForDb(peak[ch], br);
-            g.setColour((peak[ch] > -6.0f ? coral : C::text)
+            g.setColour((peak[ch] > -6.0f ? coral : LinkConsole::value)
                             .withMultipliedAlpha(dim));
             g.fillRect(br.getX(), py - 1, br.getWidth(), 2);
         }
@@ -6590,10 +6674,10 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
     {
         auto half = clipRect;
         const auto lHalf = half.removeFromLeft(clipRect.getWidth() / 2);
-        g.setColour(st.clipL ? coral : C::text3.withAlpha(0.35f));
+        g.setColour(st.clipL ? coral : LinkConsole::structure);
         st.clipL ? (void)g.fillRect(lHalf.reduced(1))
                  : (void)g.drawRect(lHalf.reduced(1), 1);
-        g.setColour(st.clipR ? coral : C::text3.withAlpha(0.35f));
+        g.setColour(st.clipR ? coral : LinkConsole::structure);
         st.clipR ? (void)g.fillRect(half.reduced(1))
                  : (void)g.drawRect(half.reduced(1), 1);
     }
@@ -6619,6 +6703,171 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
         ce.rack   = std::move(rack);
         ce.readMs = nowMs;
     }
+}
+
+void EchoJayEditor::layOutChainBlocks(juce::Rectangle<int> dataRect, int count,
+                                      std::vector<juce::Rectangle<int>>& out)
+{
+    // Pure: same inputs, same rects. The SHOWN-count rule lives here so the
+    // painter and the hit test cannot disagree about how many blocks exist
+    // (overflow reserves a "+N more" row instead of half-drawing).
+    out.clear();
+    if (count <= 0 || dataRect.getWidth() <= 0) return;
+    auto a2 = dataRect.reduced(2, 0);
+    a2.removeFromTop(kChainHeadH + 2);              // the count header
+    const int per = kChainBlockH + kChainBlockGap;
+    const int fit = juce::jmax(0, (a2.getHeight() + kChainBlockGap) / per);
+    const int shown = count <= fit ? count : juce::jmax(0, fit - 1);
+    for (int i = 0; i < shown; ++i)
+    {
+        out.push_back(a2.removeFromTop(kChainBlockH));
+        a2.removeFromTop(kChainBlockGap);
+    }
+}
+
+void EchoJayEditor::blockCtrlRects(juce::Rectangle<int> block,
+                                   juce::Rectangle<int>& bOut,
+                                   juce::Rectangle<int>& xOut)
+{
+    // Right end of the block, X outermost (matching the Chain card, where
+    // remove sits past bypass). Full block height minus a 1px inset.
+    auto r = block.reduced(1);
+    xOut = r.removeFromRight(kBlockCtrlW);
+    bOut = r.removeFromRight(kBlockCtrlW);
+}
+
+void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove)
+{
+    // IDENTITY, NOT INDEX: the op carries the slot number PLUS baseSlots,
+    // the full name list of the rack THE USER IS LOOKING AT (the cache).
+    // The Link verifies that list against its live rack before touching
+    // anything (ChainHost pre-flight guard 2) and aborts the whole batch
+    // with ack "stale" on any mismatch. A press against a stale cache can
+    // therefore never mutate the wrong plugin; it comes back refused with
+    // a stated reason.
+    if (sg.isBus) return;                       // the bus routes locally
+    EchoJayProcessor::LinkDisplayEntry en;
+    if (!findLinkEntryByAddr(sg.addr, en) || en.info.uid.isEmpty()) return;
+
+    // ONE edit in flight per Link: seq is epoch-seconds (the existing
+    // sender's scheme), so two sends inside a second would collide on ack
+    // correlation. A press while one is pending is ignored, not queued.
+    for (const auto& pnd : linkBlockPending_)
+        if (pnd.uid == en.info.uid && !pnd.failed) return;
+
+    auto fail = [&](const juce::String& why)
+    {
+        LinkBlockPending p2;
+        p2.uid = en.info.uid; p2.slotIdx = slotIdx; p2.isRemove = isRemove;
+        p2.failed = true; p2.reason = why;
+        p2.sentMs = juce::Time::getMillisecondCounter();
+        linkBlockPending_.push_back(p2);
+        linkMixerView_.repaint();
+    };
+
+    if (!en.info.connected)
+    {
+        // Same refusal applyChainEditToLink states: never send into a void.
+        fail("Not applied: this Link is not connected right now - nothing was changed.");
+        return;
+    }
+
+    auto it = processorRef.linkRackCache.find(en.info.uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid
+        || slotIdx < 0 || slotIdx >= (int)it->second.rack.slots.size())
+        return;                                  // no honest base to send
+
+    juce::Array<juce::var> baseSlots;
+    for (const auto& rs : it->second.rack.slots)
+        baseSlots.add(rs.name);
+
+    auto* op = new juce::DynamicObject();
+    op->setProperty("op",   isRemove ? "remove" : "bypass");
+    op->setProperty("slot", slotIdx + 1);        // the edit JSON is 1-based
+    const bool targetOn = !it->second.rack.slots[(size_t)slotIdx].bypassed;
+    if (!isRemove) op->setProperty("on", targetOn);
+
+    auto* payload = new juce::DynamicObject();
+    juce::Array<juce::var> ops; ops.add(juce::var(op));
+    payload->setProperty("edit", ops);
+    payload->setProperty("baseSlots", baseSlots);
+
+    const int seq = sendChainEditToLink(en.info.uid,
+                        juce::JSON::toString(juce::var(payload), true));
+    if (seq < 0)
+    {
+        fail("Not applied: shared Link directory unavailable - nothing was changed.");
+        return;
+    }
+    LinkBlockPending p;
+    p.uid = en.info.uid; p.seq = seq; p.slotIdx = slotIdx;
+    p.isRemove = isRemove; p.targetOn = targetOn;
+    p.sentMs = juce::Time::getMillisecondCounter();
+    linkBlockPending_.push_back(p);
+    linkMixerView_.repaint();
+    pollLinkBlockAck(en.info.uid, seq, 20);
+}
+
+void EchoJayEditor::pollLinkBlockAck(const juce::String& uid, int seq, int attemptsLeft)
+{
+    // 250ms x 20 = the same 5s window pollLinkEditAck gives the AI cards.
+    // No ack by then (Link died mid-edit, or a pre-v:2 Link that ignores
+    // the command file) -> the pending entry turns failed with a stated
+    // reason and NOTHING renders as changed: the block keeps showing the
+    // cache, which still holds the old truth.
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay(250, [safeThis, uid, seq, attemptsLeft]
+    {
+        if (safeThis == nullptr) return;
+        auto& pend = safeThis->linkBlockPending_;
+        auto entry = std::find_if(pend.begin(), pend.end(),
+            [&](const LinkBlockPending& p)
+            { return p.uid == uid && p.seq == seq && !p.failed; });
+        if (entry == pend.end()) return;         // already resolved
+
+        int err = 0;
+        juce::String dir = LinkShm::resolveDir(err);
+        juce::File ack(dir + "chain-ack-" + uid + ".json");
+        if (dir.isNotEmpty() && ack.existsAsFile())
+        {
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+                if ((int)o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();            // consumed
+                    const juce::String status = o->getProperty("status").toString();
+                    if (status == "ok")
+                    {
+                        // TRUTH BEFORE DISPLAY: the Link republished its
+                        // sidecar inside the apply completion, so a forced
+                        // cache pass shows the REAL new rack, and only then
+                        // does the pending style clear.
+                        pend.erase(entry);
+                        safeThis->refreshLinkRackCache(true);
+                    }
+                    else
+                    {
+                        entry->failed = true;
+                        juce::StringArray lines;
+                        if (auto* arr = o->getProperty("perPluginResults").getArray())
+                            for (auto& rv : *arr) lines.add(rv.toString());
+                        entry->reason = status == "stale"
+                            ? "Not applied: the chain changed before this could apply."
+                            : "Not applied: " + (lines.isEmpty()
+                                  ? juce::String("the Link refused this edit.")
+                                  : lines.joinIntoString("; "));
+                        safeThis->refreshLinkRackCache(true);
+                    }
+                    safeThis->linkMixerView_.repaint();
+                    return;
+                }
+        }
+        if (attemptsLeft > 1)
+        { safeThis->pollLinkBlockAck(uid, seq, attemptsLeft - 1); return; }
+        entry->failed = true;
+        entry->reason = "No response from this Link - nothing was changed.";
+        safeThis->linkMixerView_.repaint();
+    });
 }
 
 void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
@@ -6667,12 +6916,12 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
         case ChainDisplayState::NoData:
             // Missing or unreadable sidecar is NO DATA, never an empty
             // rack: "nothing there" and "cannot see" are different facts.
-            g.setColour(C::text3.withAlpha(0.6f));
+            g.setColour(LinkConsole::caption);
             g.setFont(juce::Font(juce::FontOptions(9.0f)));
             g.drawText("no data", area, juce::Justification::centred);
             return;
         case ChainDisplayState::Empty:
-            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(9.0f)));
             g.drawText("empty rack", area, juce::Justification::centred);
             return;
@@ -6682,17 +6931,17 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
 
     if (!wide)
     {
-        // NARROW: a COUNT, not a column of ellipsised fragments; at 46px a
-        // list of "Pro-..." rows says nothing. The full list is one WIDE
-        // press away. "IN RACK" is this pass's content-check marker.
+        // NARROW: a COUNT, not a column of ellipsised fragments; at this
+        // width a list of "Pro-..." rows says nothing. The full list is one
+        // WIDE press away. Compact caption, not a sentence.
         auto a2 = area.withTrimmedTop(juce::jmax(0, area.getHeight() / 2 - 26));
-        g.setColour(C::text.withMultipliedAlpha(dim));
+        g.setColour(LinkConsole::value.withMultipliedAlpha(dim));
         g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
         g.drawText(juce::String((int)rows.size()),
                    a2.removeFromTop(20), juce::Justification::centred);
-        g.setColour(C::text3.withMultipliedAlpha(dim));
-        g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
-        g.drawText("IN RACK", a2.removeFromTop(10), juce::Justification::centred);
+        g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(6.5f, juce::Font::bold)));
+        g.drawText("RACK", a2.removeFromTop(9), juce::Justification::centred);
         if (bypassed > 0)
         {
             g.setColour(juce::Colour(0xfff59e0b).withMultipliedAlpha(dim));
@@ -6710,41 +6959,100 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
     }
     else
     {
-        // WIDE: the names, one per row, in rack order. Bypassed slots dim
-        // with a "b" tag; overflow collapses into "+N more" rather than
-        // half-drawing a row.
-        const int rowH = 12;
-        auto a2 = area.reduced(2, 0);
-        g.setColour(C::text3.withMultipliedAlpha(dim));
+        // WIDE: plugin BLOCKS, the way an insert slot reads in Logic: a
+        // filled row per plugin, name inside it, stacked. Bypassed blocks
+        // sink to the dimmer fill with an amber left edge (state, not
+        // chrome). Bypass/remove CONTROLS are a functionality pass; the
+        // block leaves its right end clear so they have somewhere to land.
+        // Overflow collapses into "+N more" rather than half-drawing.
+        auto head = area.reduced(2, 0);
+        g.setColour(LinkConsole::label.withMultipliedAlpha(dim));
         g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
         g.drawText(chainCountLabel((int)rows.size(), bypassed)
                        + (offline ? " - offline" : ""),
-                   a2.removeFromTop(rowH), juce::Justification::centredLeft);
-        a2.removeFromTop(2);
+                   head.removeFromTop(kChainHeadH), juce::Justification::centredLeft);
 
-        int fit = juce::jmax(0, a2.getHeight() / rowH);
-        int shown = (int)rows.size() <= fit ? (int)rows.size()
-                                            : juce::jmax(0, fit - 1);
-        g.setFont(juce::Font(juce::FontOptions(9.0f)));
+        // THE block rects: the same pure function the hit test consumes.
+        std::vector<juce::Rectangle<int>> blocks;
+        layOutChainBlocks(area, (int)rows.size(), blocks);
+        const int shown = (int)blocks.size();
         for (int i = 0; i < shown; ++i)
         {
-            auto rr = a2.removeFromTop(rowH);
+            auto rr = blocks[(size_t)i];
             const auto& r = rows[(size_t)i];
+
+            // Pending / failed edit on THIS slot: amber = in flight (the
+            // tab's pending colour), coral = refused or unanswered, with
+            // the reason in the tooltip. The block body keeps showing the
+            // CACHE state until the ack and the republished sidecar prove
+            // the change: a block that reads bypassed before the Link has
+            // bypassed it is a fabricated reading.
+            const LinkBlockPending* pnd = nullptr;
+            if (!sg.isBus && entry != nullptr)
+                for (const auto& pb : linkBlockPending_)
+                    if (pb.uid == entry->info.uid && pb.slotIdx == i)
+                    { pnd = &pb; break; }
+            // THE plugin-card idiom (EchoJayLookAndFeel::ChainCard), shared
+            // with the Chain tab's Block so the two surfaces agree about
+            // what a plugin looks like. Radius derives from the card's by
+            // height; the bypass caption truncates from the SAME word. The
+            // Chain block's B/X controls are the coming functionality pass;
+            // drawing them inert here would read as broken, so the block's
+            // right end stays clear until they work.
+            using Card = EchoJayLookAndFeel::ChainCard;
+            const float rad = Card::corner * (float)kChainBlockH / 64.0f * 2.0f;
+            g.setColour(Card::fill.withMultipliedAlpha(dim));
+            g.fillRoundedRectangle(rr.toFloat(), rad);
+            g.setColour(Card::edge.withMultipliedAlpha(dim));
+            g.drawRoundedRectangle(rr.toFloat().reduced(0.5f), rad, 1.0f);
+            if (pnd != nullptr)
+            {
+                g.setColour((pnd->failed ? juce::Colour(0xffff6d5a)
+                                         : Card::bypAccent).withAlpha(0.9f));
+                g.drawRoundedRectangle(rr.toFloat().reduced(0.5f), rad, 1.2f);
+            }
+            g.setColour((r.bypassed ? Card::nameBypassed : Card::nameOn)
+                            .withMultipliedAlpha(dim));
+            g.setFont(juce::Font(juce::FontOptions(9.0f)));
+            auto nameArea = rr.reduced(4, 0);
+            // B and X in the space the visual pass left clear, the Chain
+            // card's controls at mixer scale. Wide only BY CONSTRUCTION:
+            // narrow has no blocks (a count is not a block), so there is
+            // nothing to put a control on there.
+            {
+                juce::Rectangle<int> bR, xR;
+                blockCtrlRects(rr, bR, xR);
+                using CardC = EchoJayLookAndFeel::ChainCard;
+                g.setColour(CardC::ctrlFill);
+                g.fillRoundedRectangle(bR.toFloat(), 2.0f);
+                g.fillRoundedRectangle(xR.toFloat(), 2.0f);
+                g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
+                g.setColour(CardC::ctrlText.withMultipliedAlpha(dim));
+                g.drawText("B", bR, juce::Justification::centred);
+                g.setColour(CardC::ctrlDanger.withMultipliedAlpha(dim));
+                g.drawText("X", xR, juce::Justification::centred);
+                nameArea.setRight(bR.getX() - 2);
+            }
             if (r.bypassed)
             {
-                g.setColour(juce::Colour(0xfff59e0b).withMultipliedAlpha(0.8f * dim));
-                g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
-                g.drawText("b", rr.removeFromRight(10), juce::Justification::centred);
+                g.setColour(Card::bypAccent.withMultipliedAlpha(0.9f * dim));
+                g.setFont(juce::Font(juce::FontOptions(6.5f, juce::Font::bold)));
+                g.drawText(juce::String(Card::bypCaption).substring(0, 3),
+                           nameArea.removeFromRight(22),
+                           juce::Justification::centredRight);
+                g.setColour(Card::nameBypassed.withMultipliedAlpha(dim));
                 g.setFont(juce::Font(juce::FontOptions(9.0f)));
             }
-            g.setColour((r.bypassed ? C::text3 : C::text).withMultipliedAlpha(dim));
-            g.drawFittedText(r.name, rr, juce::Justification::centredLeft, 1, 0.9f);
+            g.drawFittedText(r.name, nameArea,
+                             juce::Justification::centredLeft, 1, 0.9f);
         }
-        if ((int)rows.size() > shown)
+        if ((int)rows.size() > shown && !blocks.empty())
         {
-            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
+            g.setFont(juce::Font(juce::FontOptions(8.0f)));
             g.drawText("+" + juce::String((int)rows.size() - shown) + " more",
-                       a2.removeFromTop(rowH), juce::Justification::centredLeft);
+                       blocks.back().translated(0, kChainBlockH + kChainBlockGap),
+                       juce::Justification::centredLeft);
         }
     }
 }
@@ -6781,7 +7089,6 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     const auto cyan  = juce::Colour(0xff22d3ee);
     const auto amber = juce::Colour(0xfff59e0b);
     const auto coral = juce::Colour(0xffff6d5a);
-    const auto boxOutline = juce::Colour(0xffa0a0b8);
 
     // ---- Selection: read back from effectiveChannelUid() EVERY paint, no
     // cached copy, so this strip and the sidebar banner render the same fact.
@@ -6799,9 +7106,20 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         && (juce::Time::getMillisecondCounter() - linkLegacyFlashMs_)
                < kLegacyFlashDurMs;
 
-    // Strip body
-    g.setColour(selected ? C::bg3.brighter(0.06f) : C::bg3);
+    // Strip body: one console-grey object, NO outline in the resting state.
+    // A strip groups its elements with space and alignment, not borders; the
+    // only borders left are the two that MEAN something: cyan = selection,
+    // coral = the legacy-tap refusal flash. The bus reads as the bus by a
+    // slightly lifted fill and its MIX BUS caption, not by a coloured edge.
+    g.setColour(selected ? LinkConsole::stripSel
+              : isBus    ? LinkConsole::strip.brighter(0.02f)
+                         : LinkConsole::strip);
     g.fillRoundedRectangle(sg.full.toFloat(), 6.0f);
+    if (!selected && !refusing)
+    {
+        g.setColour(LinkConsole::edge);
+        g.drawRoundedRectangle(sg.full.toFloat().reduced(0.5f), 6.0f, 1.0f);
+    }
     if (refusing)
     {
         g.setColour(coral);
@@ -6816,11 +7134,6 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                                (float)sg.full.getY() + 3.0f,
                                (float)sg.full.getWidth() - 6.0f, 3.0f, 1.5f);
     }
-    else
-    {
-        g.setColour(isBus ? C::blue2.withAlpha(0.4f) : C::border2);
-        g.drawRoundedRectangle(sg.full.toFloat().reduced(0.5f), 6.0f, 1.0f);
-    }
 
     // ---- Name. The entry's displayName IS resolveLinkDisplayName's answer
     // (that accessor reads the same display list); it is passed in rather
@@ -6832,7 +7145,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                                   : entry != nullptr ? entry->displayName
                                                      : juce::String();
         if (isBus && name.isEmpty()) name = "Host Channel";
-        g.setColour(C::text);
+        g.setColour(LinkConsole::value);
         g.setFont(juce::Font(juce::FontOptions(wide ? 12.0f : 10.5f,
                                                juce::Font::bold)));
         g.drawFittedText(name, sg.name, juce::Justification::centred, 1, 0.7f);
@@ -6850,13 +7163,13 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                               : entry->info.placement == 2 ? "CHANNEL" : "SET?";
         if (bl.isNotEmpty())
         {
-            const juce::Colour pc = isBus ? C::blue2
-                                  : entry->info.placement == 0 ? C::text3 : cyan;
-            g.setColour(pc.withAlpha(0.15f));
-            g.fillRoundedRectangle(sg.badge.toFloat(), 4.0f);
-            g.setColour(pc.withAlpha(0.7f));
-            g.drawRoundedRectangle(sg.badge.toFloat(), 4.0f, 1.0f);
-            g.setColour(pc);
+            // Console pass: TEXT ONLY, the boxed chip is gone. Set values
+            // read in the secondary grey, UNSET stays dim so it still asks
+            // quietly; the hit rect is unchanged, so it still opens the
+            // chooser.
+            g.setColour(isBus ? LinkConsole::label
+                      : entry->info.placement == 0 ? LinkConsole::caption
+                                                   : LinkConsole::label);
             g.setFont(juce::Font(juce::FontOptions(wide ? 9.0f : 8.0f,
                                                    juce::Font::bold)));
             g.drawFittedText(bl, sg.badge, juce::Justification::centred, 1, 0.8f);
@@ -6867,7 +7180,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     // neither state, so its rect stays empty rather than showing a control
     // that does nothing). One glyph, three shapes so the states survive
     // colour-blindness AND the 46px narrow width:
-    //     tick        = connected and Active        (cyan; amber while pending)
+    //     tick        = connected and Active        (light grey; amber pending)
     //     empty box   = connected and inactive      (dim outline)
     //     cross       = no heartbeat                (coral)
     // plus the old rows' pending treatments kept verbatim: amber tick showing
@@ -6887,7 +7200,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                                       (float)sg.active.getCentreY() - side * 0.5f)
                    : box.withCentre(sg.active.toFloat().getCentre());
 
-        g.setColour(!connected || timedOut ? coral : boxOutline);
+        g.setColour(!connected || timedOut ? coral : LinkConsole::caption);
         g.drawRoundedRectangle(box, 4.0f, 1.0f);
 
         if (!connected)
@@ -6903,7 +7216,10 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             const bool showTick = pending ? target : (!timedOut && active);
             if (showTick)
             {
-                g.setColour(pending ? amber.withAlpha(0.6f) : cyan);
+                // GREEN is Active's accent: the running state must scan
+                // across sixteen strips, and grey read as chrome. Selection
+                // keeps cyan; the two never share a colour, as in Logic.
+                g.setColour(pending ? amber.withAlpha(0.6f) : C::green);
                 auto tick = getLookAndFeel().getTickShape(0.75f);
                 g.fillPath(tick, tick.getTransformToScaleToFit(
                                      box.reduced(3.0f, 3.5f), false));
@@ -6912,7 +7228,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
 
         if (wide)
         {
-            g.setColour(!connected || timedOut ? coral : C::text);
+            g.setColour(!connected || timedOut ? coral : LinkConsole::label);
             g.setFont(juce::Font(juce::FontOptions(11.0f)));
             g.drawText(linkActiveLabel(connected, pending, timedOut),
                        sg.active.withTrimmedLeft(side + 6),
@@ -6927,12 +7243,12 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     {
         const bool aiEnabled = isBus
             || (entry != nullptr && entry->info.uid.isNotEmpty());
-        const juce::Colour ac = aiEnabled ? cyan : C::text3;
-        g.setColour(ac.withAlpha(aiEnabled ? 0.14f : 0.08f));
+        // Console pass: a quiet grey pill, no outline, no accent. Cyan means
+        // selection in this tab and a button is not a selection.
+        g.setColour(EchoJayLookAndFeel::ChainCard::fill
+                        .withAlpha(aiEnabled ? 1.0f : 0.5f));
         g.fillRoundedRectangle(sg.ai.toFloat(), 5.0f);
-        g.setColour(ac.withAlpha(aiEnabled ? 0.7f : 0.35f));
-        g.drawRoundedRectangle(sg.ai.toFloat(), 5.0f, 1.0f);
-        g.setColour(ac.withAlpha(aiEnabled ? 1.0f : 0.5f));
+        g.setColour(aiEnabled ? LinkConsole::value : LinkConsole::caption);
         g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
         g.drawText("AI", sg.ai, juce::Justification::centred);
     }
@@ -6983,7 +7299,19 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         }
 
         // The meter band: PERMANENT chrome, every strip, every mode. A
-        // mixer strip always shows its meter.
+        // mixer strip always shows its meter. ONE recessed well spans the
+        // fader column, the gap and the meter (a union of STORED rects,
+        // measured by nobody here), so the pair reads as one unit on a
+        // shared baseline rather than two neighbours.
+        {
+            auto wellRect = sg.meter.getUnion(sg.clip);
+            if (!sg.fader.isEmpty()) wellRect = wellRect.getUnion(sg.fader);
+            if (!wellRect.isEmpty())
+            {
+                g.setColour(LinkConsole::well);
+                g.fillRoundedRectangle(wellRect.expanded(2).toFloat(), 4.0f);
+            }
+        }
         if (st != nullptr && !sg.meter.isEmpty())
             paintLinkStripMeter(g, sg.meter, sg.clip, *st, dim, wide);
     }
@@ -6993,13 +7321,44 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     {
         if (isBus)
         {
-            // The main plugin has NO gain stage of its own (it is not a
-            // Link), so a fader here would be a control wired to nothing.
-            // Dim dash, the old pinned card's treatment; explicit escape.
-            g.setColour(C::text3.withAlpha(0.5f));
-            g.setFont(juce::Font(juce::FontOptions(12.0f)));
-            g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")),
-                       sg.fader, juce::Justification::centred);
+            // The bus trim (a real gain stage since this pass): the SAME
+            // filmstrip, travel band and tick lane as the channels, driven
+            // by the processor's persisted value. No pending display: the
+            // value applies immediately and paint reads it straight back.
+            const float gDb = processorRef.getBusGainDb();
+            const int imgW = sg.fader.getHeight() / 8;
+            const juce::Rectangle<int> img(sg.fader.getRight() - imgW,
+                                           sg.fader.getY(), imgW,
+                                           sg.fader.getHeight());
+            for (float mark = 12.0f; mark >= -24.1f; mark -= 6.0f)
+            {
+                const int ty = yFromGain(mark, sg.fader);
+                const bool zero = mark == 0.0f;
+                g.setColour(zero ? LinkConsole::label : LinkConsole::structure);
+                g.fillRect(sg.fader.getX(), ty, img.getX() - sg.fader.getX() - 1,
+                           zero ? 2 : 1);
+            }
+            const auto strip = getFaderFilmstrip();
+            if (strip.isValid())
+            {
+                const int frame = faderFrameForGain(gDb);
+                g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+                g.drawImage(strip, img.getX(), img.getY(),
+                            img.getWidth(), img.getHeight(),
+                            0, frame * kFaderFrameH, kFaderFrameW, kFaderFrameH);
+            }
+            // A restored non-zero trim must be VISIBLE on load, not a
+            // surprise found by squinting at a cap: the value prints above
+            // the fader whenever it is not unity.
+            if (std::abs(gDb) >= 0.05f)
+            {
+                g.setColour(LinkConsole::caption);
+                g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
+                g.drawText(juce::String(gDb, 1),
+                           sg.fader.getX(), sg.fader.getY() - 11,
+                           sg.fader.getWidth(), 10,
+                           juce::Justification::centred);
+            }
         }
         else if (entry != nullptr)
         {
@@ -7028,7 +7387,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             {
                 const int ty = yFromGain(mark, sg.fader);
                 const bool zero = mark == 0.0f;
-                g.setColour(C::text3.withAlpha(zero ? 0.8f : 0.35f));
+                g.setColour(zero ? LinkConsole::label : LinkConsole::structure);
                 g.fillRect(sg.fader.getX(), ty, img.getX() - sg.fader.getX() - 1,
                            zero ? 2 : 1);
             }
@@ -7055,7 +7414,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 g.fillRoundedRectangle((float)cx - 2.0f, (float)sg.fader.getY(),
                                        4.0f, (float)sg.fader.getHeight(), 2.0f);
                 const int ty = yFromGain(gDb, sg.fader);
-                g.setColour(juce::Colour(0xff22d3ee));
+                g.setColour(LinkConsole::value);
                 g.fillRoundedRectangle((float)sg.fader.getX(), (float)ty - 2.0f,
                                        (float)sg.fader.getWidth(), 4.0f, 2.0f);
             }
@@ -7066,6 +7425,56 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
 void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> local,
                                        int numClicks)
 {
+    // CHAIN-mode block controls first. PRECEDENCE: B and X win over the
+    // block, and the block itself is NOT a control here (it falls through
+    // to the strip background, which selects). The rects come from the SAME
+    // pure layOutChainBlocks the painter consumes, fed by the same cache
+    // count, so the two cannot disagree; nothing is recomputed differently.
+    if (processorRef.linkMixerContent == EchoJayProcessor::LinkMixerContent::Chain
+        && processorRef.linkMixerWide && sg.data.contains(local))
+    {
+        int count = 0;
+        if (sg.isBus)
+            count = (int)processorRef.getChainHost().getAllSlotInfos().size();
+        else
+        {
+            EchoJayProcessor::LinkDisplayEntry en;
+            if (findLinkEntryByAddr(sg.addr, en) && en.info.uid.isNotEmpty())
+            {
+                auto it = processorRef.linkRackCache.find(en.info.uid);
+                if (it != processorRef.linkRackCache.end() && it->second.valid)
+                    count = (int)it->second.rack.slots.size();
+            }
+        }
+        std::vector<juce::Rectangle<int>> blocks;
+        layOutChainBlocks(sg.data, count, blocks);
+        for (int i = 0; i < (int)blocks.size(); ++i)
+        {
+            juce::Rectangle<int> bR, xR;
+            blockCtrlRects(blocks[(size_t)i], bR, xR);
+            if (bR.contains(local) || xR.contains(local))
+            {
+                const bool isRemove = xR.contains(local);
+                if (sg.isBus)
+                {
+                    // The bus routes through the CHAIN TAB'S OWN handlers
+                    // (same lambdas, same AMEK editor-close discipline on
+                    // remove), so B and X mean the same thing on every
+                    // strip; only the transport differs: local calls here,
+                    // the Link protocol on the channels.
+                    if (isRemove) { if (chainListPanel.onRemoveSlot) chainListPanel.onRemoveSlot(i); }
+                    else          { if (chainListPanel.onBypassSlot) chainListPanel.onBypassSlot(i); }
+                    linkMixerView_.repaint();
+                    repaint();
+                }
+                else
+                    sendBlockEdit(sg, i, isRemove);
+                return;
+            }
+        }
+        // not on a control: fall through to the normal strip routing
+    }
+
     // Consumes stripHitAt's verdict; recomputes nothing. Every action below
     // is an EXISTING path reused, not a new implementation.
     switch (stripHitAt(sg, local))
@@ -7075,9 +7484,26 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             // The old horizontal slider's contract, rotated: jump-to-press,
             // drag continues in LinkMixerView::mouseDrag, double-click
             // resets to 0 dB, every send through the existing
-            // sendLinkGainCommand throttle-and-ack path. The bus has no gain
-            // stage, so its fader rect is a no-op (it paints a dash).
-            if (sg.isBus) break;
+            // sendLinkGainCommand throttle-and-ack path. THE BUS drives the
+            // processor's own trim instead: same mapping, same fine drag,
+            // but LOCAL, so it applies immediately per event; the fader
+            // reads the processor back every paint and there is nothing to
+            // wait for and no pending display, because there is no ack to
+            // hold a target against.
+            if (sg.isBus)
+            {
+                if (numClicks >= 2)
+                {
+                    processorRef.setBusGainDb(0.0f);
+                    repaint();
+                    break;
+                }
+                processorRef.setBusGainDb(gainFromY(local.y, sg.fader));
+                busFaderDragging_ = true;
+                busFaderLastY_    = local.y;
+                repaint();
+                break;
+            }
             EchoJayProcessor::LinkDisplayEntry en;
             if (!findLinkEntryByAddr(sg.addr, en)) break;
             if (numClicks >= 2)
@@ -7089,6 +7515,7 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             }
             linkMixerView_.dragAddr       = sg.addr;
             linkMixerView_.dragValue      = gainFromY(local.y, sg.fader);
+            linkMixerView_.lastDragY      = local.y;   // incremental anchor
             linkMixerView_.lastGainSendMs = juce::Time::getMillisecondCounter();
             sendLinkGainCommand(sg.addr, linkMixerView_.dragValue);
             linkMixerView_.repaint();
@@ -7259,7 +7686,9 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
                             : "Channel meter (Link engine)";
 
         case StripHit::Fader:
-            if (sg.isBus) return "No gain stage on the Mix Bus";
+            if (sg.isBus)
+                return "Bus trim " + juce::String(processorRef.getBusGainDb(), 1)
+                       + " dB (drag; shift = fine; double-click = 0)";
             if (have)
             {
                 // The same displayed-gain precedence paint uses, so the
@@ -7280,6 +7709,59 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
     // says why a tap will refuse (matches the coral flash the tap draws).
     if (have && en.info.uid.isEmpty())
         return name + " (cannot select: update this channel's Link plugin)";
+    // CHAIN mode: the data area's tooltip lists the FULL rack, because
+    // narrow shows only a count and wide ellipsises long names. Reads the
+    // same processor-side cache paint reads; no file IO. "Rack: " is this
+    // pass's content-check marker.
+    if (processorRef.linkMixerContent == EchoJayProcessor::LinkMixerContent::Chain
+        && sg.data.contains(p))
+    {
+        // Over a block control, or a pending/failed edit: those speak first.
+        {
+            int count = 0;
+            juce::String uid;
+            if (sg.isBus)
+                count = (int)processorRef.getChainHost().getAllSlotInfos().size();
+            else if (have && en.info.uid.isNotEmpty())
+            {
+                uid = en.info.uid;
+                auto it = processorRef.linkRackCache.find(uid);
+                if (it != processorRef.linkRackCache.end() && it->second.valid)
+                    count = (int)it->second.rack.slots.size();
+            }
+            std::vector<juce::Rectangle<int>> blocks;
+            layOutChainBlocks(sg.data, count, blocks);
+            for (int i = 0; i < (int)blocks.size(); ++i)
+            {
+                if (!blocks[(size_t)i].contains(p)) continue;
+                if (uid.isNotEmpty())
+                    for (const auto& pb : linkBlockPending_)
+                        if (pb.uid == uid && pb.slotIdx == i)
+                            return pb.failed ? pb.reason
+                                 : juce::String("Applying") + juce::String::fromUTF8("\xe2\x80\xa6");
+                juce::Rectangle<int> bR, xR;
+                blockCtrlRects(blocks[(size_t)i], bR, xR);
+                // The Chain card's exact words: same control, same meaning.
+                if (xR.contains(p)) return "Remove from chain";
+                if (bR.contains(p)) return "Bypass this plugin";
+            }
+        }
+        juce::StringArray names;
+        if (sg.isBus)
+        {
+            for (const auto& si : processorRef.getChainHost().getAllSlotInfos())
+                names.add(si.bypassed ? si.name + " (byp)" : si.name);
+        }
+        else if (have)
+        {
+            auto it = processorRef.linkRackCache.find(en.info.uid);
+            if (it != processorRef.linkRackCache.end() && it->second.valid)
+                for (const auto& rs : it->second.rack.slots)
+                    names.add(rs.bypassed ? rs.name + " (byp)" : rs.name);
+        }
+        if (!names.isEmpty())
+            return "Rack: " + names.joinIntoString(", ");
+    }
     return name;
 }
 
@@ -7332,16 +7814,26 @@ void EchoJayEditor::LinkMixerView::mouseDown(const juce::MouseEvent& e)
 void EchoJayEditor::LinkMixerView::mouseDrag(const juce::MouseEvent& e)
 {
     if (owner == nullptr || dragAddr.isEmpty()) return;
-    // Value from the fader rect THIS addr owns, looked up in the same stored
-    // vector as everything else; y clamps inside gainFromY, so dragging past
-    // either end just pins the range. Sends throttle to ~10Hz; the visual cap
-    // tracks every move (repaint).
+    // INCREMENTAL, re-anchored on every event: delta = pixels moved since
+    // the last event times the travel rate, scaled by the shift fine ratio.
+    // Re-anchoring from the current position (never the drag origin) is
+    // what lets shift change mid-drag without the cap jumping. The rate
+    // comes from gainPerPixel, which the self-test holds to the gainFromY
+    // mapping, so fine and coarse agree where a dB lives. Sends throttle to
+    // ~10Hz; the visual cap tracks every move (repaint).
+    const int y = e.getPosition().y;
     for (const auto& sg : owner->linkStripGeom_)
         if (sg.addr == dragAddr)
         {
-            dragValue = EchoJayEditor::gainFromY(e.getPosition().y, sg.fader);
+            const float rate = EchoJayEditor::gainPerPixel(sg.fader)
+                             * (e.mods.isShiftDown()
+                                    ? EchoJayEditor::kFaderFineRatio : 1.0f);
+            dragValue = juce::jlimit(-24.0f, 12.0f,
+                std::round((dragValue + (float)(lastDragY - y) * rate) * 10.0f)
+                    / 10.0f);
             break;
         }
+    lastDragY = y;
     const uint32_t now = juce::Time::getMillisecondCounter();
     if (now - lastGainSendMs >= 100)
     {
@@ -7372,15 +7864,16 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     // pair of authorities is what this rebuild deletes.
     juce::ignoreUnused(area);
 
-    g.setColour(C::blue2);
+    // "LINK MIXER" is the console pass's content-check marker (raw byte
+    // search; the first 8 bytes survive LTO literal splitting).
+    g.setColour(LinkConsole::label);
     g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-    g.drawText("LINK MONITOR", linkTitleRect_, juce::Justification::centredLeft);
+    g.drawText("LINK MIXER", linkTitleRect_, juce::Justification::centredLeft);
 
     // View controls: painted from the STORED zones, selected state read back
     // from the processor's persisted modes right here, every paint. The
     // controls track nothing of their own.
     {
-        const auto cyan = juce::Colour(0xff22d3ee);
         for (const auto& z : linkCtrlZones_)
         {
             bool sel = false;
@@ -7397,12 +7890,13 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
                                    label = "CHAIN";   break;
                 default: continue;
             }
-            const juce::Colour col = sel ? cyan : C::text3;
-            g.setColour(col.withAlpha(sel ? 0.18f : 0.06f));
+            // Console grey: the pressed segment is a lifted fill with
+            // bright text. No cyan (a view mode is not a channel selection)
+            // and no outlines on the resting segments.
+            g.setColour(sel ? EchoJayLookAndFeel::ChainCard::fill
+                            : LinkConsole::well);
             g.fillRoundedRectangle(z.rect.toFloat(), 4.0f);
-            g.setColour(col.withAlpha(sel ? 0.8f : 0.4f));
-            g.drawRoundedRectangle(z.rect.toFloat().reduced(0.5f), 4.0f, 1.0f);
-            g.setColour(sel ? cyan : C::text3);
+            g.setColour(sel ? LinkConsole::value : LinkConsole::caption);
             g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
             g.drawFittedText(label, z.rect, juce::Justification::centred, 1, 0.8f);
         }
@@ -13695,47 +14189,86 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         auto* po = parr->getReference(pi).getDynamicObject();
                         if (po == nullptr) { cardY += kGainCardH + 6; continue; }
                         const juce::String linkId = po->getProperty("linkId").toString();
-                        const float propG = juce::jlimit(-24.0f, 12.0f,
-                                              (float)(double)po->getProperty("proposedGain"));
+                        // ONE PREDICATE: gainCardVerdict decides everything
+                        // that can make this card actionable, and
+                        // applyGainProposal consults the SAME function
+                        // before acting, so creation and validation cannot
+                        // disagree: the exact two-authorities shape that
+                        // produced the dead button.
+                        const auto v = gainCardVerdict(po);
+                        const float rawG  = v.rawG;
+                        const float propG = v.propG;
+                        const float shortfall = rawG - propG;    // 0 when in range
                         const juce::String reason = po->getProperty("reason").toString();
                         const bool applied = (bool)po->getProperty("applied");   // persisted
-                        // faderDependent defaults TRUE when absent (safe: an
-                        // unmarked proposal on an insert Link is refused)
-                        const bool faderDep = po->hasProperty("faderDependent")
-                                            ? (bool)po->getProperty("faderDependent") : true;
-                        const juce::String uid = resolveLinkProposalAddr(linkId);
-                        const bool present = uid.isNotEmpty();
-                        // Placement gate: a fader-dependent match on a
-                        // channel/unset Link is REFUSED (we can't see the fader)
-                        int place = 0;
-                        for (const auto& li : processorRef.getLinkSlotInfos())
-                        {
-                            const juce::String a = li.uid.isNotEmpty()
-                                ? li.uid : LinkShm::makeSafeFilePart(li.name);
-                            if (a == uid) { place = li.placement; break; }
-                        }
-                        const bool refused = present && faderDep && place != 1;   // not "bus"
+                        const juce::String uid = v.uid;
+                        const bool present = v.present;
+                        const bool insertPt = v.insertPoint;
+                        const bool noMove  = v.noMove;
 
                         juce::Rectangle<int> card(bubbleX, cardY, bubbleW, kGainCardH);
                         g.setColour(C::bg2);
                         g.fillRoundedRectangle(card.toFloat(), 8.0f);
-                        g.setColour(juce::Colour(refused ? 0xfff59e0b : 0xff22d3ee)
-                                        .withAlpha(applied ? 0.5f : 0.3f));
+                        // QUIET CONFIRMATION: an applied card's border
+                        // turns green. The Undo button appearing is the
+                        // primary success signal; the border carries the
+                        // confirmation for the case where the fader is off
+                        // screen, without a badge and without moving a
+                        // pixel: colour is the only difference between the
+                        // two states.
+                        g.setColour(applied ? C::green.withAlpha(0.45f)
+                                  : juce::Colour(insertPt ? 0xfff59e0b : 0xff22d3ee)
+                                        .withAlpha(0.3f));
                         g.drawRoundedRectangle(card.toFloat(), 8.0f, 1.0f);
 
-                        // Title: "Vocal bus: -3.0 dB"
+                        // Title: "Vocal bus: -3.0 dB", and when clamped the
+                        // TRUE target rides alongside so the card and the
+                        // prose cannot disagree: "Music.cm: +12.0 dB (wants +14.5)"
                         g.setColour(present ? C::text : C::text3);
                         g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-                        juce::String title = linkId + ": "
-                            + (propG >= 0 ? "+" : "") + juce::String(propG, 1) + " dB";
+                        // A card with NO button must not lead with a figure
+                        // that looks like an offer (the clamp fault in a
+                        // different guise): non-actionable, non-applied
+                        // cards title the name alone and let the line carry
+                        // the facts.
+                        juce::String title = linkId;
+                        if (v.actionable() || applied)
+                        {
+                            title << ": " << (propG >= 0 ? "+" : "")
+                                  << juce::String(propG, 1) << " dB";
+                            if (std::abs(shortfall) >= 0.05f)
+                                title << " (wants " << (rawG >= 0 ? "+" : "")
+                                      << juce::String(rawG, 1) << ")";
+                        }
                         g.drawText(title, card.getX() + 12, card.getY() + 7,
                                    card.getWidth() - 96, 16, juce::Justification::centredLeft);
-                        // Reason line — or the refusal caveat
-                        g.setColour(refused ? juce::Colour(0xfff59e0b) : C::text3);
+                        // Reason line, in precedence: absent Link, refusal,
+                        // nothing-to-apply, clamp shortfall, then the
+                        // model's own reason.
+                        const bool amberLine = insertPt || noMove
+                                            || std::abs(shortfall) >= 0.05f;
+                        g.setColour(amberLine ? juce::Colour(0xfff59e0b) : C::text3);
                         g.setFont(juce::Font(juce::FontOptions(10.5f)));
-                        g.drawText(!present ? "Link no longer present"
-                                   : refused ? "Can't match: EchoJay can't see this channel's fader"
-                                             : reason,
+                        juce::String line;
+                        if (!present)      line = "Link no longer present";
+                        else if (noMove)
+                            line = "Already at " + juce::String(propG, 1) + " dB - the "
+                                 + (shortfall > 0 ? "remaining +" : "remaining ")
+                                 + juce::String(shortfall, 1) + " dB is beyond the "
+                                 + (shortfall > 0 ? "+12" : "-24") + " dB limit";
+                        else if (std::abs(shortfall) >= 0.05f)
+                            line = "Partial: " + juce::String(shortfall > 0 ? "+" : "")
+                                 + juce::String(shortfall, 1) + " dB beyond the "
+                                 + (shortfall > 0 ? "+12" : "-24")
+                                 + " dB limit stays unapplied";
+                        else if (insertPt)
+                            // Fork 2 from the placement investigation: the
+                            // caveat rides THE CARD, because the card is
+                            // what the user acts on and it can be read
+                            // without the paragraph above it.
+                            line = "Insert-point match - your DAW fader still scales this";
+                        else line = reason;
+                        g.drawText(line,
                                    card.getX() + 12, card.getY() + 26,
                                    card.getWidth() - 96, 16, juce::Justification::centredLeft, true);
 
@@ -13743,7 +14276,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         // when refused (level-match refused for insert Links)
                         const bool inView = card.getY() >= chatScroll.getBounds().getY() - kGainCardH
                                          && card.getY() <= chatScroll.getBounds().getBottom();
-                        if (present && !refused && inView)
+                        if (v.actionable() && inView)
                         {
                             if (!applied)
                             {
@@ -13758,12 +14291,13 @@ void EchoJayEditor::paint(juce::Graphics& g)
                             }
                             else
                             {
-                                g.setColour(juce::Colour(0xff22c55e));
-                                g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
-                                g.drawText(juce::String(juce::CharPointer_UTF8("Applied \xe2\x9c\x93")),
-                                           card.getRight() - 130, card.getY() + 12, 60, 28,
-                                           juce::Justification::centredRight);
-                                juce::Rectangle<int> un(card.getRight() - 62, card.getY() + 12, 50, 28);
+                                // Undo sits in APPLY'S EXACT RECT: the press
+                                // swaps the label, never moves the button,
+                                // so the card cannot read as a glitch. The
+                                // "Applied" badge is gone: Undo existing IS
+                                // the success signal, and the green border
+                                // above confirms quietly.
+                                juce::Rectangle<int> un(card.getRight() - 76, card.getY() + 12, 64, 28);
                                 g.setColour(juce::Colour(0xff0E1020));
                                 g.fillRoundedRectangle(un.toFloat(), 6.0f);
                                 g.setColour(C::text3);
@@ -16296,6 +16830,19 @@ void EchoJayEditor::timerCallback()
         // itself); gated on the mode so the tab does no file IO otherwise.
         if (processorRef.linkMixerContent == EchoJayProcessor::LinkMixerContent::Chain)
             refreshLinkRackCache(false);
+        // Failed block edits show their coral edge + reason for ~4s, then
+        // sweep (in-flight entries are cleared by the ack poll, never here).
+        {
+            const uint32_t nowMs = juce::Time::getMillisecondCounter();
+            const size_t before = linkBlockPending_.size();
+            linkBlockPending_.erase(
+                std::remove_if(linkBlockPending_.begin(), linkBlockPending_.end(),
+                    [nowMs](const LinkBlockPending& p2)
+                    { return p2.failed && nowMs - p2.sentMs > 9000; }),
+                linkBlockPending_.end());
+            if (linkBlockPending_.size() != before)
+                linkMixerView_.repaint();
+        }
     }
 
     // ---- FINAL overlay re-front (24 Jul 2026) ----
@@ -18688,12 +19235,17 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
     c << "\n\n[LINK LEVELS — internal context, do not show raw numbers unless "
          "citing them in a gain proposal reason. All Link measurements below are "
          "taken at the Link's INSERT POINT, before the channel fader.]\n";
+    const float busTrim = processorRef.getBusGainDb();
     if (busMd.integrated > -70.0f)
-        c << "Mix bus (this instance): integrated " << f1(busMd.integrated)
+        c << "Mix bus (this instance): trim " << (busTrim >= 0 ? "+" : "")
+          << f1(busTrim) << " dB, integrated " << f1(busMd.integrated)
           << " LUFS, momentary " << f1(busMd.momentary)
-          << " LUFS, TP " << f1(juce::jmax(busMd.truePeakMaxL, busMd.truePeakMaxR)) << " dBTP\n";
+          << " LUFS, TP " << f1(juce::jmax(busMd.truePeakMaxL, busMd.truePeakMaxR)) << " dBTP"
+          << " (measured POST-trim; adjustable via linkId \"MIX BUS\")\n";
     else
-        c << "Mix bus (this instance): no signal captured yet\n";
+        c << "Mix bus (this instance): trim " << (busTrim >= 0 ? "+" : "")
+          << f1(busTrim) << " dB, no signal captured yet"
+          << " (adjustable via linkId \"MIX BUS\")\n";
     for (const auto& r : rows)
     {
         c << "Link \"" << r.name << "\" (instanceId " << r.uid << ", placement="
@@ -18714,12 +19266,12 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
          "compare their levels to each other and to the mix bus, and MAY propose gain "
          "changes, when the MEASURED values justify it.\n"
          "- For \"channel\" or \"unset\" Links, the measurements are PRE-FADER. You "
-         "CANNOT see the channel fader, so you MUST NOT propose a gain change based on "
-         "comparing them to other channels or to the mix bus, and MUST NOT claim one "
-         "channel is louder/quieter than another in the actual mix. You MAY still "
-         "comment in prose, and MAY propose a gain change for a reason that does NOT "
-         "depend on the fader (a true-peak over at the insert point, or matching an "
-         "absolute target the user asked for).\n";
+         "CANNOT see the channel fader, so you MUST NOT claim one channel is "
+         "louder/quieter than another in the actual mix. You MAY propose a gain "
+         "change as an INSERT-POINT MATCH (gain-staging: aligning the level at the "
+         "insert point), for any target including the bus or another channel, but "
+         "your prose MUST say it matches the insert point and that the DAW fader "
+         "still scales the result afterwards. The card carries the same caveat.\n";
     if (anyInsertOrUnknown)
         c << "- Because at least one Link is channel/unset, ANY sentence comparing a "
              "channel/unset Link's level to anything else MUST carry this caveat once: "
@@ -18731,24 +19283,36 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
              "more than once): \"I can compare levels properly if you tell me whether "
              "that Link is on a bus or a channel — set it in the Link's header.\" Do "
              "not nag beyond this one sentence, and never block the answer.\n";
-    c << "- Never claim you changed a gain yourself — the user applies it.\n"
+    c << "- DIRECTION: match the thing the user asked to MOVE. \"match X to Y\" "
+         "moves X toward Y's level; Y is the reference and stays put. If the user "
+         "asks to move the MIX BUS (\"match the bus to...\", \"bring the master "
+         "down to...\"), propose a MIX BUS trim change (linkId \"MIX BUS\", its "
+         "meters are this instance's own, never fader-dependent), NOT a channel "
+         "gain. If the request is ambiguous about which side should move, ASK "
+         "instead of proposing.\n"
+         "- Never claim you changed a gain yourself - the user applies it.\n"
          "\nProposal format — only when the rules above permit. Emit ONE block as the "
          "very last thing in your reply, nothing after <<<END_GAIN>>>:\n"
          "<<<ECHOJAY_GAIN>>>\n"
          "{\"proposals\":[{\"linkId\":\"<exact Link name>\",\"currentGain\":<dB now>,"
-         "\"proposedGain\":<dB target>,\"faderDependent\":<true if based on comparing "
-         "levels across channels/the bus; false if based only on an insert-point reason "
-         "like a TP over or an absolute target>,\"reason\":\"<one line citing the "
+         "\"proposedGain\":<dB target>,\"reason\":\"<one line citing the "
          "numbers>\"}]}\n"
          "<<<END_GAIN>>>\n"
-         "proposedGain is ABSOLUTE (the new gain, -24..+12), not a delta. One entry "
-         "per Link; multiple Links = multiple entries. Do NOT include a proposal for an "
-         "insert/unknown Link whose reason is fader-dependent.\n";
+         "proposedGain is ABSOLUTE (the new gain; the usable range is -24..+12), "
+         "not a delta. If the computed target lies OUTSIDE that range, emit the TRUE "
+         "target anyway and say in prose that it exceeds the range: the card clamps "
+         "it and names the shortfall, and a silently capped number is worse than an "
+         "honest one. One entry per Link; multiple Links = multiple entries.\n";
     return c;
 }
 
 juce::String EchoJayEditor::resolveLinkProposalAddr(const juce::String& linkId) const
 {
+    // THE BUS SENTINEL: "MIX BUS" addresses this instance's own trim. It can
+    // never collide with a uid (uids are hex, no space) and passes through
+    // verbatim; applyGainProposal branches on it.
+    if (linkId.equalsIgnoreCase("MIX BUS") || linkId.equalsIgnoreCase("Mix Bus"))
+        return "MIX BUS";
     // linkId may be a uid, a real name, or a display label ("Untitled 2") — the
     // model is fed display labels. Resolve any of them to the instance uid, the
     // only valid address. Match uid first, then the Monitor display label.
@@ -18762,8 +19326,40 @@ juce::String EchoJayEditor::resolveLinkProposalAddr(const juce::String& linkId) 
     return {};   // Link no longer present — card will no-op
 }
 
+EchoJayEditor::GainCardVerdict EchoJayEditor::gainCardVerdict(juce::DynamicObject* po) const
+{
+    GainCardVerdict v;
+    if (po == nullptr) return v;
+    const juce::String linkId = po->getProperty("linkId").toString();
+    v.rawG  = (float)(double)po->getProperty("proposedGain");
+    v.propG = juce::jlimit(-24.0f, 12.0f, v.rawG);
+    v.uid   = resolveLinkProposalAddr(linkId);
+    v.present = v.uid.isNotEmpty();
+    v.isBus   = (v.uid == "MIX BUS");
+    // PLACEMENT ONLY, deliberately ignoring the model's faderDependent
+    // flag: two identical Music.cm matches got opposite cards because the
+    // model phrased one as an "absolute target". Facts gate; phrasing does
+    // not.
+    int place = 0;
+    for (const auto& li : processorRef.getLinkSlotInfos())
+        if (linkAddrForSlot(li) == v.uid) { place = li.placement; break; }
+    v.insertPoint = v.present && !v.isBus && place != 1;
+    v.curG = v.isBus ? processorRef.getBusGainDb()
+           : v.present ? linkRowDisplayGain(v.uid) : 0.0f;
+    const bool applied = (bool)po->getProperty("applied");
+    v.noMove = v.present && !applied && std::abs(v.propG - v.curG) < 0.05f;
+    return v;
+}
+
 void EchoJayEditor::applyGainProposal(const GainCardZone& z)
 {
+    // INSTRUMENTED: every exit states its guard, so a dead press is a log
+    // line, never a shrug. Watch with:
+    //   log stream --predicate 'eventMessage CONTAINS "EJGainCard"'
+    EchoJay_NSLog(("EJGainCard: press " + juce::String(z.isUndo ? "UNDO" : "APPLY")
+                   + " uid=" + z.uid + " prop=" + juce::String(z.proposed, 1)
+                   + " msg=" + juce::String(z.msgIndex)
+                   + " pi=" + juce::String(z.propIndex)).toRawUTF8());
     if (z.uid.isEmpty() || z.msgIndex < 0 || z.msgIndex >= (int)chatMessages.size())
         return;
     auto& cm = chatMessages[(size_t)z.msgIndex];
@@ -18777,19 +19373,45 @@ void EchoJayEditor::applyGainProposal(const GainCardZone& z)
     auto* po = pr.getArray()->getReference(z.propIndex).getDynamicObject();
     if (po == nullptr) return;
 
+    // VALIDATION THROUGH THE SAME PREDICATE THAT DREW THE BUTTON. Undo is
+    // exempt from noMove/refused (undo restores a previous state and must
+    // always work), but a mis-created Apply now refuses HERE too, loudly.
+    if (!z.isUndo)
+    {
+        const auto v = gainCardVerdict(po);
+        if (!v.actionable())
+        {
+            // Terse since the diagnosis pass: the card paints its own
+            // explanation, this line just marks that the shared predicate
+            // refused a press (which should be impossible while paint and
+            // apply share it, so any appearance is worth investigating).
+            EchoJay_NSLog("EJGainCard: verdict refused a press");
+            repaint();
+            return;
+        }
+    }
+
+    // The MIX BUS sentinel routes to the local trim; Links go over the
+    // protocol as always. Same card semantics (applied flag, prevGain undo);
+    // the bus arm just has no ack to wait for.
+    const bool isBus = (z.uid == "MIX BUS");
     if (z.isUndo)
     {
         const float prev = (float)(double)po->getProperty("prevGain");
-        sendLinkGainCommand(z.uid, prev);
+        if (isBus) processorRef.setBusGainDb(prev);
+        else       sendLinkGainCommand(z.uid, prev);
         po->setProperty("applied", false);
         EchoJay_NSLog(("EJChat: gain proposal UNDO -> " + juce::String(prev, 1)
                        + " dB (" + z.uid + ")").toRawUTF8());
     }
     else
     {
-        po->setProperty("prevGain", (double)linkRowDisplayGain(z.uid));  // capture for undo
+        po->setProperty("prevGain",
+            (double)(isBus ? processorRef.getBusGainDb()
+                           : linkRowDisplayGain(z.uid)));   // capture for undo
         po->setProperty("applied", true);
-        sendLinkGainCommand(z.uid, z.proposed);
+        if (isBus) processorRef.setBusGainDb(z.proposed);
+        else       sendLinkGainCommand(z.uid, z.proposed);
         EchoJay_NSLog(("EJChat: gain proposal APPLY -> " + juce::String(z.proposed, 1)
                        + " dB (" + z.uid + ")").toRawUTF8());
     }
@@ -21791,6 +22413,29 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
     return false;
 }
 
+void EchoJayEditor::mouseDrag(const juce::MouseEvent& e)
+{
+    // Only the bus fader drags at editor level; everything else keeps its
+    // component-local streams. Incremental, re-anchored per event, the
+    // channel faders' exact model including the shift fine ratio; applied
+    // to the processor immediately (atomic store + smoother, no throttle
+    // needed for a local value).
+    if (!busFaderDragging_) return;
+    const int y = e.getPosition().y;
+    const float rate = gainPerPixel(linkBusGeom_.fader)
+                     * (e.mods.isShiftDown() ? kFaderFineRatio : 1.0f);
+    processorRef.setBusGainDb(juce::jlimit(-24.0f, 12.0f,
+        std::round((processorRef.getBusGainDb()
+                    + (float)(busFaderLastY_ - y) * rate) * 10.0f) / 10.0f));
+    busFaderLastY_ = y;
+    repaint();
+}
+
+void EchoJayEditor::mouseUp(const juce::MouseEvent&)
+{
+    busFaderDragging_ = false;
+}
+
 void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 {
     auto pos = e.getEventRelativeTo(this).getPosition();
@@ -21907,11 +22552,21 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     // OWN mouseDown (the path that actually fires; the viewport's onClickCheck
     // does not reliably run for these, same class as the centred-input bug —
     // the cards are editor-painted, so they need the editor-level hit test).
+    if (!gainCardZones_.empty())
+    {
+        // Route log: with zones live, every click says where it landed and
+        // whether the gate passed, so a dead press points at its branch.
+        EchoJay_NSLog(("EJGainCard: editor click pos=" + juce::String(pos.x)
+                       + "," + juce::String(pos.y)
+                       + " zones=" + juce::String((int)gainCardZones_.size())
+                       + " gate=" + juce::String((int)assistantHit)).toRawUTF8());
+    }
     if (assistantHit && !gainCardZones_.empty())
     {
         for (auto& gz : gainCardZones_)
             if (gz.rect.contains(pos))
             {
+                EchoJay_NSLog("EJGainCard: editor route hit");
                 applyGainProposal(gz);
                 return;
             }

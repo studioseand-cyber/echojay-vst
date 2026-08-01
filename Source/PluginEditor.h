@@ -1394,14 +1394,15 @@ private:
 
             Block()
             {
+                using Card = EchoJayLookAndFeel::ChainCard;
                 auto style = [](juce::TextButton& b, juce::Colour fg) {
-                    b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
+                    b.setColour(juce::TextButton::buttonColourId, Card::ctrlFill);
                     b.setColour(juce::TextButton::textColourOffId, fg);
                 };
-                style(bypassBtn, juce::Colour(0xffa0a0b8));
-                style(removeBtn, juce::Colour(0xffef4444));
-                style(prevBtn,   juce::Colour(0xffa0a0b8));
-                style(nextBtn,   juce::Colour(0xffa0a0b8));
+                style(bypassBtn, Card::ctrlText);
+                style(removeBtn, Card::ctrlDanger);
+                style(prevBtn,   Card::ctrlText);
+                style(nextBtn,   Card::ctrlText);
                 bypassBtn.setTooltip("Bypass this plugin");
                 removeBtn.setTooltip("Remove from chain");
                 prevBtn.setTooltip("Move earlier in the chain");
@@ -1421,22 +1422,25 @@ private:
 
             void paint(juce::Graphics& g) override
             {
+                // Consumes EchoJayLookAndFeel::ChainCard, THE plugin-card
+                // idiom shared with the Link mixer's rack blocks. Same
+                // values as always, now named so the two cannot drift.
+                using Card = EchoJayLookAndFeel::ChainCard;
                 auto r = getLocalBounds().toFloat().reduced(0.5f);
-                g.setColour(selected ? juce::Colour(0xff11293a) : juce::Colour(0xff0E1020));
-                g.fillRoundedRectangle(r, 8.0f);
-                g.setColour(selected ? juce::Colour(0xff22d3ee)
-                                     : juce::Colour::fromFloatRGBA(1, 1, 1, 0.08f));
-                g.drawRoundedRectangle(r, 8.0f, selected ? 1.5f : 1.0f);
+                g.setColour(selected ? Card::fillSelected : Card::fill);
+                g.fillRoundedRectangle(r, Card::corner);
+                g.setColour(selected ? Card::edgeSelected : Card::edge);
+                g.drawRoundedRectangle(r, Card::corner, selected ? 1.5f : 1.0f);
 
-                g.setColour(bypassed ? juce::Colour(0xff606078) : juce::Colour(0xfff0f0f5));
+                g.setColour(bypassed ? Card::nameBypassed : Card::nameOn);
                 g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
                 g.drawText(name, 6, 3, getWidth() - 12, 18,
                            juce::Justification::centred, true);
                 if (bypassed)
                 {
-                    g.setColour(juce::Colour(0xfff59e0b));
+                    g.setColour(Card::bypAccent);
                     g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
-                    g.drawText("BYPASSED", 6, 19, getWidth() - 12, 9,
+                    g.drawText(Card::bypCaption, 6, 19, getWidth() - 12, 9,
                                juce::Justification::centred);
                 }
                 if (popoutOnly)
@@ -2363,6 +2367,30 @@ private:
     };
     std::vector<GainCardZone> gainCardZones_;
     static constexpr int kGainCardH = 52;
+    /** THE ONE PREDICATE for a gain card's actionability, consumed by the
+        PAINT (deciding whether an Apply button exists at all) and by
+        applyGainProposal (validating the press) so creation and validation
+        cannot disagree: the exact two-authorities shape that produced the
+        dead button. A button exists only when pressing it changes
+        something, and both sides now ask the same question. */
+    struct GainCardVerdict {
+        bool  present = false;      // target resolves to a live address
+        bool  insertPoint = false;  // channel/unset placement: the reading is
+                                    // pre-fader, so the card CARRIES A CAVEAT
+                                    // (it no longer refuses: an insert-point
+                                    // match is legitimate gain-staging when
+                                    // it says what it is). DERIVED FROM
+                                    // PLACEMENT ONLY: the old gate keyed on
+                                    // the model's own faderDependent flag, a
+                                    // model-controlled input that made two
+                                    // identical situations disagree.
+        bool  noMove  = false;      // clamped target == current gain
+        bool  isBus   = false;      // the MIX BUS sentinel
+        float rawG = 0.0f, propG = 0.0f, curG = 0.0f;
+        juce::String uid;
+        bool actionable() const { return present && !noMove; }
+    };
+    GainCardVerdict gainCardVerdict(juce::DynamicObject* po) const;
     // Build the LINK LEVELS context + proposal format/grounding instructions
     // for a chat turn; empty when there are no live Links to reason about.
     juce::String buildLinkLevelsContext();
@@ -2481,8 +2509,14 @@ private:
         // Fader drag, the old row list's shape verbatim: which addr is being
         // dragged, the live value (wins over pending/acked in paint), and a
         // ~10Hz send throttle; the final value always goes on mouseUp.
+        // lastDragY makes the drag INCREMENTAL, re-anchored on every event:
+        // each move applies (lastDragY - y) * rate from the CURRENT value,
+        // never recomputing from the drag origin, so pressing or releasing
+        // shift mid-drag changes only how fast the NEXT pixel moves and can
+        // never jump the cap.
         juce::String  dragAddr;
         float         dragValue = 0.0f;
+        int           lastDragY = 0;
         uint32_t      lastGainSendMs = 0;
     };
     LinkMixerView  linkMixerView_;
@@ -2546,23 +2580,53 @@ private:
         return juce::jlimit(0, kFaderFrames - 1,
                             (int)std::round(f * (float)(kFaderFrames - 1)));
     }
-    /** dB<->y for the fader rect. It replaced the old horizontal pair,
-        which went with the row list at step 11: a move, never a second
-        authority. Same range (-24..+12), same 0.1 dB snap; bottom of the
-        rect is -24, top is +12. Pure, shared by drag and the decode-failure
-        fallback thumb. */
+    // The artwork's cap TRAVEL is inset from the frame edges: measured from
+    // the filmstrip itself (background-subtracted brightness centroid per
+    // frame), the cap centre runs row 419 (frame 0, -24 dB) to row 60
+    // (frame 127, +12 dB) of the 480-row frame, LINEAR at 2.83 rows/frame.
+    // dB therefore maps onto that band, not the full rect, so the ticks,
+    // the drag and the drawn cap land on the same pixel. Change these only
+    // by re-measuring the artwork.
+    static constexpr float kFaderTravelTopFrac = 60.0f  / 480.0f;
+    static constexpr float kFaderTravelBotFrac = 419.0f / 480.0f;
+    /** dB<->y for the fader rect, mapped across the artwork's cap travel
+        band (see above). Same range (-24..+12), same 0.1 dB snap. Pure,
+        shared by the drag, the travel ticks and the fallback thumb. */
     static float gainFromY(int y, juce::Rectangle<int> track)
     {
+        const float top = (float)track.getY()
+                        + kFaderTravelTopFrac * (float)track.getHeight();
+        const float bot = (float)track.getY()
+                        + kFaderTravelBotFrac * (float)track.getHeight();
         const float f = juce::jlimit(0.0f, 1.0f,
-            (float)(track.getBottom() - y) / (float)juce::jmax(1, track.getHeight()));
+            (bot - (float)y) / juce::jmax(1.0f, bot - top));
         return juce::jlimit(-24.0f, 12.0f,
             std::round((-24.0f + f * 36.0f) * 10.0f) / 10.0f);
     }
     static int yFromGain(float db, juce::Rectangle<int> track)
     {
+        const float top = (float)track.getY()
+                        + kFaderTravelTopFrac * (float)track.getHeight();
+        const float bot = (float)track.getY()
+                        + kFaderTravelBotFrac * (float)track.getHeight();
         const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
-        return track.getBottom() - (int)std::round(f * (float)track.getHeight());
+        return (int)std::round(bot - f * (bot - top));
     }
+    /** dB per pixel of travel, derived from the SAME travel constants as
+        gainFromY/yFromGain and held to them by the self-test, so fine and
+        coarse drags agree about where a dB lives; the fine modifier only
+        scales how far a pixel moves. Used by the incremental drag, which
+        cannot consume gainFromY deltas directly: those clamp at the travel
+        rails, and a FINE drag whose cursor has passed a rail while its
+        value has not would stall. */
+    static float gainPerPixel(juce::Rectangle<int> track)
+    {
+        const float span = (kFaderTravelBotFrac - kFaderTravelTopFrac)
+                         * (float)juce::jmax(1, track.getHeight());
+        return 36.0f / juce::jmax(1.0f, span);
+    }
+    /** Shift = fine drag at one eighth speed. */
+    static constexpr float kFaderFineRatio = 1.0f / 8.0f;
 
     // Authored by measureLinkStrips(), consumed by paintLinkView() and the
     // mouse handlers. Nothing else writes them.
@@ -2677,6 +2741,16 @@ private:
     juce::String linkLegacyFlashAddr_;
     uint32_t     linkLegacyFlashMs_ = 0;
     static constexpr uint32_t kLegacyFlashDurMs = 700;
+
+    // Bus fader drag (the bus strip is editor-painted, so its mouse stream
+    // lands here, not on LinkMixerView). Transient drag state only: the
+    // VALUE lives on the processor and applies immediately per event; there
+    // is no protocol, no ack, no pending display. Same incremental
+    // re-anchored model as the channel faders, same shift fine ratio.
+    bool busFaderDragging_ = false;
+    int  busFaderLastY_    = 0;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
 
     void measureLinkStrips();
     /** Paint one strip from its stored geometry. Shared by the pinned Mix Bus
@@ -2817,6 +2891,40 @@ private:
                              const StripGeom& sg,
                              const EchoJayProcessor::LinkDisplayEntry* entry,
                              float dim, bool wide);
+
+    // ---- Block B/X (bypass / remove over the Link edit protocol) ----------
+    // Block rects depend on the CACHED row count, which changes outside
+    // resized(), so they use the computeColumns pattern rather than stored
+    // rects: ONE pure formula consumed by paint AND the hit test, never two.
+    static constexpr int kChainBlockH = 15, kChainBlockGap = 2, kChainHeadH = 12;
+    static constexpr int kBlockCtrlW = 14;         // B and X, each
+    /** SHOWN blocks only (overflow collapses into "+N more"; the fit logic
+        lives HERE so paint and hit test agree on how many blocks exist). */
+    static void layOutChainBlocks(juce::Rectangle<int> dataRect, int count,
+                                  std::vector<juce::Rectangle<int>>& out);
+    /** B and X inside a block's right end (the space the visual pass left
+        clear). 14x13 targets at the block's 15px height: small, but the
+        same scale as the segmented controls' pressable floor. */
+    static void blockCtrlRects(juce::Rectangle<int> block,
+                               juce::Rectangle<int>& bOut,
+                               juce::Rectangle<int>& xOut);
+    /** Pending block edits: editor-side like linkCtrlPending_ (cosmetic
+        across a Logic recreate; the ack plus the sidecar republish carry
+        the truth). ONE in flight per Link: seq is epoch-seconds, so two
+        sends inside a second would collide. */
+    struct LinkBlockPending {
+        juce::String uid;          // the Link; "" never occurs (bus is local)
+        int  seq      = 0;
+        int  slotIdx  = -1;        // 0-based rack slot
+        bool isRemove = false;
+        bool targetOn = false;     // bypass target state
+        bool failed   = false;     // failed / stale / timed out
+        juce::String reason;       // tooltip text for the failed state
+        uint32_t sentMs = 0;
+    };
+    std::vector<LinkBlockPending> linkBlockPending_;
+    void sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove);
+    void pollLinkBlockAck(const juce::String& uid, int seq, int attemptsLeft);
 
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row

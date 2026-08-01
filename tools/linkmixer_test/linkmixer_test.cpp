@@ -69,6 +69,10 @@ struct EchoJayLinkMixerTestAccess
     { return Ed::stripSelected (isBus, entryUid, effectiveUid); }
 
     static int   frameFor (float db)                        { return Ed::faderFrameForGain (db); }
+    static float travelTop()                                { return Ed::kFaderTravelTopFrac; }
+    static float travelBot()                                { return Ed::kFaderTravelBotFrac; }
+    static float perPixel (juce::Rectangle<int> t)          { return Ed::gainPerPixel (t); }
+    static float fineRatio()                                { return Ed::kFaderFineRatio; }
     static float gFromY (int y, juce::Rectangle<int> t)     { return Ed::gainFromY (y, t); }
     static int   yFromG (float db, juce::Rectangle<int> t)  { return Ed::yFromGain (db, t); }
     static int   frames()                                   { return Ed::kFaderFrames; }
@@ -80,6 +84,13 @@ struct EchoJayLinkMixerTestAccess
     static float meterFloor()                               { return Ed::kMeterDbFloor; }
     static const float* meterMarks (int& n)
     { n = Ed::kMeterMarkCount; return Ed::kMeterMarks; }
+
+    static void chainBlocks (juce::Rectangle<int> data, int count,
+                             std::vector<juce::Rectangle<int>>& out)
+    { Ed::layOutChainBlocks (data, count, out); }
+    static void ctrls2 (juce::Rectangle<int> block,
+                        juce::Rectangle<int>& b, juce::Rectangle<int>& x)
+    { Ed::blockCtrlRects (block, b, x); }
 
     using ChainState = Ed::ChainDisplayState;
     static ChainState chainState (bool valid, int n)
@@ -283,6 +294,21 @@ static void testFaderAspect (int stripW, int bandH)
         checkEq (s0.meter.getX() - f.getRight(), T::bandGap(),
                  "fader column and meter sit one band gap apart");
         check (f.getBottom() <= s0.ai.getY(), "the band sits above the AI button");
+        // Item-1 regression guard: the fader is CENTRED in the band (the
+        // bottom-alignment bug anchored every cap in the well's floor), and
+        // a given gain lands at the SAME y on every strip.
+        {
+            // The band's vertical extent is lamp top to meter bottom (the
+            // well the eye sees); the author centres in exactly that.
+            const int bandTop = s0.clip.isEmpty() ? s0.meter.getY()
+                                                  : s0.clip.getY();
+            const int above = f.getY() - bandTop;
+            const int below = s0.meter.getBottom() - f.getBottom();
+            check (std::abs (above - below) <= 1, "the fader is centred in the band");
+            if (links.size() > 1)
+                checkEq (T::yFromG (0.0f, f), T::yFromG (0.0f, links[1].fader),
+                         "0 dB sits at the same y on every strip");
+        }
     }
 }
 
@@ -453,23 +479,54 @@ static void testFaderMapping()
     std::printf ("fader mapping: endpoints, round-trip, clamps, frames\n");
     const juce::Rectangle<int> t { 10, 50, 23, 191 };
 
-    // Endpoints: bottom of the rect is -24, top is +12.
-    check (T::gFromY (t.getBottom(), t) == -24.0f, "rect bottom reads -24 dB");
-    check (T::gFromY (t.getY(), t)      ==  12.0f, "rect top reads +12 dB");
-    checkEq (T::yFromG (-24.0f, t), t.getBottom(), "-24 dB sits at the rect bottom");
-    checkEq (T::yFromG ( 12.0f, t), t.getY(),      "+12 dB sits at the rect top");
+    // The mapping runs across the artwork's measured CAP TRAVEL band, not
+    // the full rect: the caps physically cannot reach the frame edges, so a
+    // full-rect mapping put ticks where no cap can go (the item-1 bug's
+    // second half). Endpoints land at the travel fractions.
+    const int top = t.getY() + (int) std::round (T::travelTop() * (float) t.getHeight());
+    const int bot = t.getY() + (int) std::round (T::travelBot() * (float) t.getHeight());
+    check (std::abs (T::yFromG (-24.0f, t) - bot) <= 1, "-24 dB sits at the travel bottom");
+    check (std::abs (T::yFromG ( 12.0f, t) - top) <= 1, "+12 dB sits at the travel top");
+    check (T::gFromY (bot, t) == -24.0f, "the travel bottom reads -24 dB");
+    check (T::gFromY (top, t) ==  12.0f, "the travel top reads +12 dB");
 
-    // Clamping: outside the rect pins the range, never escapes it.
+    // A known gain maps to a known y: 0 dB is two thirds up the travel.
+    {
+        const int want = (int) std::round ((float) bot - (2.0f / 3.0f) * (float)(bot - top));
+        check (std::abs (T::yFromG (0.0f, t) - want) <= 1, "0 dB sits two thirds up the travel");
+    }
+
+    // Clamping: outside the rect (and outside the travel band) pins.
     check (T::gFromY (t.getBottom() + 50, t) == -24.0f, "below the rect clamps to -24");
     check (T::gFromY (t.getY() - 50, t)      ==  12.0f, "above the rect clamps to +12");
 
-    // Round-trip within one pixel + one snap step: 36 dB over 191 px is
-    // 0.188 dB per px, snap is 0.1, so 0.25 covers both.
+    // Round-trip within one pixel + one snap step across the travel band:
+    // 36 dB over ~0.75 * 191 px is ~0.25 dB per px, snap is 0.1.
     for (float db = -24.0f; db <= 12.01f; db += 1.7f)
     {
         const float back = T::gFromY (T::yFromG (db, t), t);
-        check (std::abs (back - db) <= 0.25f, "dB<->y round-trips within tolerance");
+        check (std::abs (back - db) <= 0.35f, "dB<->y round-trips within tolerance");
     }
+
+    // gainPerPixel is DERIVED from the same travel constants the mapping
+    // uses; hold it to the mapping so the incremental (fine) drag and the
+    // absolute mapping can never disagree about where a dB lives. Over a
+    // 40px span the snap quantisation contributes at most 0.1.
+    {
+        const int y0 = t.getY() + 40;
+        const float mapped = T::gFromY (y0, t) - T::gFromY (y0 + 40, t);
+        check (std::abs (std::abs (mapped) - T::perPixel (t) * 40.0f) <= 0.15f,
+               "gainPerPixel matches the gainFromY mapping over a span");
+    }
+    check (T::fineRatio() > 0.0f && T::fineRatio() < 1.0f,
+           "the fine ratio slows the drag, never reverses or stops it");
+
+    // The bus trim shares this mapping wholesale, so its clamp range must
+    // BE the fader's range; a divergence here would let the processor hold
+    // a value the fader cannot express.
+    check (EchoJayProcessor::kBusGainMinDb == -24.0f
+        && EchoJayProcessor::kBusGainMaxDb == 12.0f,
+           "the bus trim clamps to the fader's own range");
 
     // Frames: full range maps 0..127, monotonic, and clamped so no gain can
     // index past the strip (frame*480 + 480 <= 61440 always).
@@ -550,6 +607,54 @@ static void testChainStates()
     check (T::chainLabel (1, 0) == "1 plugin",          "singular");
     check (T::chainLabel (4, 0) == "4 plugins",         "plural");
     check (T::chainLabel (4, 2) == "4 plugins (2 byp)", "bypassed count rides along");
+}
+
+static void testChainBlocks()
+{
+    // The block rects and their B/X controls: ONE pure formula consumed by
+    // paint and the hit test, so agreement is proven by proving the formula.
+    std::printf ("chain blocks: layout, controls, overflow, purity\n");
+    const juce::Rectangle<int> data { 10, 40, 84, 187 };   // wide data area
+
+    std::vector<juce::Rectangle<int>> blocks;
+    T::chainBlocks (data, 4, blocks);
+    checkEq ((int) blocks.size(), 4, "four plugins fit as four blocks");
+    for (size_t i = 0; i < blocks.size(); ++i)
+    {
+        check (data.contains (blocks[i]), "block stays inside the data area");
+        if (i > 0)
+            check (blocks[i].getY() > blocks[i-1].getBottom(),
+                   "blocks stack without overlap");
+        juce::Rectangle<int> b, x;
+        T::ctrls2 (blocks[i], b, x);
+        check (blocks[i].contains (b) && blocks[i].contains (x),
+               "controls sit inside their block");
+        check (! b.intersects (x), "B and X do not overlap");
+        check (x.getX() > b.getX(), "X is outermost, matching the Chain card");
+        check (b.getWidth() >= 12 && b.getHeight() >= 12,
+               "B is big enough to press");
+        check (x.getWidth() >= 12 && x.getHeight() >= 12,
+               "X is big enough to press");
+    }
+
+    // Overflow: more plugins than height reserves a +N more row, so shown
+    // count drops rather than half-drawing.
+    std::vector<juce::Rectangle<int>> many;
+    T::chainBlocks (data, 40, many);
+    check ((int) many.size() < 40, "overflow shows fewer blocks than plugins");
+    check (! many.empty() && data.contains (many.back()),
+           "the last shown block is still contained");
+
+    // Purity + degenerate.
+    std::vector<juce::Rectangle<int>> again;
+    T::chainBlocks (data, 4, again);
+    checkEq ((int) again.size(), (int) blocks.size(), "block layout is pure");
+    for (size_t i = 0; i < blocks.size(); ++i)
+        check (blocks[i] == again[i], "block rects are stable");
+    T::chainBlocks ({ 0, 0, 0, 0 }, 4, again);
+    checkEq ((int) again.size(), 0, "a degenerate area has no blocks");
+    T::chainBlocks (data, 0, again);
+    checkEq ((int) again.size(), 0, "an empty rack has no blocks");
 }
 
 static void testMaskGating()
@@ -683,6 +788,7 @@ int main()
     testFaderMapping();
     testMeterMapping();
     testChainStates();
+    testChainBlocks();
     testMaskGating();
     testBandSqueeze();
     testContentMigration();
