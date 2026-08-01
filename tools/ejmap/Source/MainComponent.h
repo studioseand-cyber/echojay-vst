@@ -1163,7 +1163,9 @@ public:
             std::cout << "  " << (pass ? "PASS " : "FAIL ") << id << ": " << numbers << std::endl;
         };
 
-        auto desc = echojay::auregistry::describeFromRegistry ("AudioUnit:Effects/aumf,ameq,Brwx");
+        auto desc = echojay::auregistry::describeFromRegistry (
+                        mode == "comp" ? "AudioUnit:Effects/aufx,APCM,ksWV"
+                                       : "AudioUnit:Effects/aumf,ameq,Brwx");
         ScannedPlugin sp; sp.desc = desc;
         loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
         auto res = host.load (desc, watchdog);
@@ -1175,6 +1177,261 @@ public:
 
         auto stakeFile = ledger.getRoot().getChildFile ("probe-inflight.json");
         auto stateFile = ledger.getRoot().getChildFile ("probe-state-" + currentFp + ".bin");
+
+        // ---- taufloor: what the envelope extractor can actually resolve --
+        if (mode == "taufloor")
+        {
+            say ("TAU FLOOR: known-truth exponentials, no plugin (env resolution "
+                 + juce::String (P::envMsPerSample(), 3) + " ms/sample)");
+            say ("     true tau ms | measured ms | error % ");
+            const double taus[] = { 0.03, 0.1, 0.3, 0.5, 1.0, 3.0, 10.0, 30.0, 100.0, 300.0 };
+            double worstRel = 0; double firstGood = -1;
+            for (double t : taus)
+            {
+                auto e = P::syntheticEnvelope (0.0, -12.0, t, (int) juce::jmax (20.0, t * 8));
+                const double m = P::timeConstantMs (e, 0.0, juce::jmax (20.0, t * 8) - 1, 1.0);
+                const double rel = m > 0 ? 100.0 * (m - t) / t : -1;
+                if (m > 0 && std::abs (rel) <= 25.0 && firstGood < 0) firstGood = t;
+                if (m > 0 && t >= 1.0) worstRel = juce::jmax (worstRel, std::abs (rel));
+                say ("     " + juce::String (t, 2).paddedLeft (' ', 11) + " | "
+                     + (m > 0 ? juce::String (m, 3).paddedLeft (' ', 11) : juce::String ("  UNDEFINED"))
+                     + " | " + (m > 0 ? juce::String (rel, 1) : juce::String ("-")));
+            }
+            say ("  shortest tau resolved within 25%: " + juce::String (firstGood, 2)
+                 + " ms | worst error at tau >= 1 ms: " + juce::String (worstRel, 1) + "%");
+            std::cout << "TAUFLOOR: DONE" << std::endl; quitNow(); return;
+        }
+
+        // ---- comp mode: the compressor suite against a LIVE subject -------
+        if (mode == "comp")
+        {
+            auto cdesc = echojay::auregistry::describeFromRegistry ("AudioUnit:Effects/aufx,APCM,ksWV");
+            ScannedPlugin csp; csp.desc = cdesc;
+            host.unload();
+            loadedName = cdesc.name; loadedId = csp.pluginId(); loadedDesc = cdesc;
+            auto cres = host.load (cdesc, watchdog);
+            if (cres.outcome != LoadOutcome::ok) { say ("COMP: load failed"); quitNow(); return; }
+            auto* ci = host.getInstance();
+            auto cp = ci->getParameters();
+            say ("COMP SUITE | " + cdesc.name + " (BRIDGED Waves) | " + juce::String (cp.size()) + " params");
+
+            auto idxOf = [&] (const juce::String& nm) {
+                for (int i = 0; i < cp.size(); ++i)
+                    if (cp[i]->getName (64).equalsIgnoreCase (nm)) return i;
+                return -1; };
+            const int iTh = idxOf ("Thresh"), iRa = idxOf ("Ratio"),
+                      iAt = idxOf ("Attack"), iRe = idxOf ("Release"), iOut = idxOf ("Output");
+            say ("  indices: Thresh [" + juce::String (iTh) + "] Ratio [" + juce::String (iRa)
+                 + "] Attack [" + juce::String (iAt) + "] Release [" + juce::String (iRe)
+                 + "] Output [" + juce::String (iOut) + "]");
+
+            // Anchors from the REAL M3 sweeper -- no compressor map exists
+            // yet, so the suite builds its ladder the way the tool would.
+            struct Sw { juce::Array<juce::Array<float>> a; juce::String method, unit; int n = 0; };
+            auto sweep = [&] (int idx) {
+                Sw r;
+                auto o = sweepOneIndex (*ci, idx, watchdog, loadedId);
+                r.a = o.anchors; r.method = o.method; r.unit = o.unitFamily; r.n = o.anchors.size();
+                say ("  swept [" + juce::String (idx) + "] " + cp[idx]->getName (32)
+                     + ": " + juce::String (r.n) + " anchors (" + r.method
+                     + ", display unit family: '" + o.unitFamily + "', sample display: '"
+                     + cp[idx]->getCurrentValueAsText() + "'), range "
+                     + (r.n > 0 ? juce::String (o.anchors.getFirst()[0], 2) + " .. "
+                                  + juce::String (o.anchors.getLast()[0], 2) : juce::String ("none")));
+                return r; };
+            auto swTh = sweep (iTh); auto swRa = sweep (iRa);
+            auto swAt = sweep (iAt); auto swRe = sweep (iRe);
+            const juce::String swAtUnit = swAt.unit, swReUnit = swRe.unit;
+
+            auto normFor2 = [] (const juce::Array<juce::Array<float>>& a, double v) {
+                auto eff = echojay::dominantMonotonicTable (a);
+                return echojay::interpolateAnchors (eff.table, (float) v); };
+            double wMax = 0; int wN = 0; bool unl = false;
+            auto w2 = [&] (int idx, float v) {
+                const double ms = P::writeConfirm (*cp[idx], v);
+                if (ms < 0) { unl = true; say ("  WRITE UNLANDED [" + juce::String (idx) + "]"); }
+                else { wMax = juce::jmax (wMax, ms); ++wN; } };
+            auto curve = [&] { host.pausePumpForMutation();
+                               auto c = P::steppedCurve (*ci);
+                               host.resumePumpAfterMutation(); return c; };
+            auto bursts = [&] { host.pausePumpForMutation();
+                                auto e = P::burstEnvelope (*ci);
+                                host.resumePumpAfterMutation(); return e; };
+
+            const auto tc0 = juce::Time::getMillisecondCounterHiRes();
+
+            // pre-excitation reference: ratio at minimum
+            w2 (iRa, normFor2 (swRa.a, swRa.a.getFirst()[0]));
+            w2 (iTh, normFor2 (swTh.a, 0.0));
+            auto preC = curve();
+            auto preF = P::curveFeatures (preC);
+            // EXCITATION: ratio high + threshold low, verified by signal
+            const double ratHi = swRa.a.getLast()[0];
+            w2 (iRa, normFor2 (swRa.a, ratHi));
+            w2 (iTh, normFor2 (swTh.a, -30.0));
+            auto excC = curve();
+            auto excF2 = P::curveFeatures (excC);
+            double curveDelta = 0;
+            for (int i = 0; i < excC.size() && i < preC.size(); ++i)
+                curveDelta = juce::jmax (curveDelta, std::abs (excC[i] - preC[i]));
+            say ("");
+            say ("P4 excitation verified by signal: ratio -> " + juce::String (ratHi, 1)
+                 + ", threshold -> -30 dB changed the I/O curve by "
+                 + juce::String (curveDelta, 2) + " dB max -> "
+                 + (curveDelta > 1.0 ? "VERIFIED, branch armed" : "UNVERIFIED"));
+
+            // sigma_f: 3 A/A pairs on the curve features and the envelope
+            double sgKnee = 0, sgSlope = 0, sgTau = 0;
+            {
+                auto c1 = curve(); auto c2 = curve();
+                auto f1 = P::curveFeatures (c1), f2 = P::curveFeatures (c2);
+                sgKnee = std::abs (f1.kneeInDb - f2.kneeInDb);
+                sgSlope = std::abs (f1.slopeAbove - f2.slopeAbove);
+                auto e1 = bursts(); auto e2 = bursts();
+                const double t1 = P::timeConstantMs (e1, 1000.0, 1200.0, 1.0);
+                const double t2 = P::timeConstantMs (e2, 1000.0, 1200.0, 1.0);
+                sgTau = (t1 > 0 && t2 > 0) ? std::abs (t1 - t2) : -1;
+            }
+            say ("P2 sigma_f (plugin repeat, 1 A/A pair each): knee " + juce::String (sgKnee, 3)
+                 + " dB | slope " + juce::String (sgSlope, 4) + " dB/dB | tau "
+                 + juce::String (sgTau, 1) + " ms");
+            sgKnee = juce::jmax (sgKnee, 2.0);      // step spacing: the curve cannot
+                                                    // resolve a knee finer than one step
+            say ("   instrument floor: knee 2.0 dB (the stepped stimulus's own 2 dB step "
+                 "spacing -- a knee cannot be located finer than the grid it sits on)");
+
+            // ---- threshold A/B (excitation: ratio high) --------------------
+            say ("");
+            say ("THRESHOLD (excitation: ratio at max, verified)");
+            w2 (iTh, normFor2 (swTh.a, -30.0));
+            auto cLo = P::curveFeatures (curve());
+            w2 (iTh, normFor2 (swTh.a, -10.0));
+            auto cHi = P::curveFeatures (curve());
+            const double predTh = P::predictedLanding (swTh.a, -10.0) - P::predictedLanding (swTh.a, -30.0);
+            const double measTh = cHi.kneeInDb - cLo.kneeInDb;
+            const double tolTh = juce::jmax (0.25 * std::abs (predTh), 4 * sgKnee);
+            crit ("threshold_db", cLo.kneeFound && cHi.kneeFound
+                                  && std::abs (measTh - predTh) <= tolTh,
+                  "ladder " + juce::String (P::predictedLanding (swTh.a, -30.0), 1) + " -> "
+                  + juce::String (P::predictedLanding (swTh.a, -10.0), 1) + " dB (predicted move +"
+                  + juce::String (predTh, 1) + " dB); knee measured "
+                  + (cLo.kneeFound ? juce::String (cLo.kneeInDb, 1) : juce::String ("UNDEFINED"))
+                  + " -> " + (cHi.kneeFound ? juce::String (cHi.kneeInDb, 1) : juce::String ("UNDEFINED"))
+                  + " dB (moved +" + juce::String (measTh, 1) + "), error "
+                  + juce::String (std::abs (measTh - predTh), 2) + " vs tol " + juce::String (tolTh, 2));
+
+            // ---- ratio A/B (excitation: threshold low) ---------------------
+            say ("");
+            say ("RATIO (excitation: threshold at -30 dB, verified)");
+            w2 (iTh, normFor2 (swTh.a, -30.0));
+            const double rLo = 2.0, rHi = 10.0;
+            w2 (iRa, normFor2 (swRa.a, rLo));
+            auto sLo = P::curveFeatures (curve());
+            w2 (iRa, normFor2 (swRa.a, rHi));
+            auto sHi = P::curveFeatures (curve());
+            const double predRLo = P::predictedLanding (swRa.a, rLo), predRHi = P::predictedLanding (swRa.a, rHi);
+            const double predSlopeLo = 1.0 / predRLo, predSlopeHi = 1.0 / predRHi;
+            const double predDS = predSlopeHi - predSlopeLo, measDS = sHi.slopeAbove - sLo.slopeAbove;
+            const double tolS = juce::jmax (0.25 * std::abs (predDS), 4 * sgSlope);
+            crit ("ratio", std::abs (measDS - predDS) <= tolS,
+                  "ladder " + juce::String (predRLo, 2) + ":1 -> " + juce::String (predRHi, 2)
+                  + ":1 => predicted slope " + juce::String (predSlopeLo, 3) + " -> "
+                  + juce::String (predSlopeHi, 3) + " (delta " + juce::String (predDS, 3)
+                  + "); measured slope " + juce::String (sLo.slopeAbove, 3) + " -> "
+                  + juce::String (sHi.slopeAbove, 3) + " (delta " + juce::String (measDS, 3)
+                  + " => " + juce::String (sLo.slopeAbove > 0.01 ? 1.0 / sLo.slopeAbove : 0.0, 2)
+                  + ":1 -> " + juce::String (sHi.slopeAbove > 0.01 ? 1.0 / sHi.slopeAbove : 0.0, 2)
+                  + ":1), error " + juce::String (std::abs (measDS - predDS), 3)
+                  + " vs tol " + juce::String (tolS, 3));
+
+            // ---- attack / release A/B --------------------------------------
+            say ("");
+            say ("ENVELOPE (excitation: threshold -30, ratio max, verified)");
+            w2 (iRa, normFor2 (swRa.a, ratHi));
+            for (int which = 0; which < 2; ++which)
+            {
+                const bool atk = which == 0;
+                const int idx = atk ? iAt : iRe;
+                auto& sw = atk ? swAt : swRe;
+                // Probe only the portion of the ladder the instrument can
+                // resolve; the unresolvable end is reported, not fitted.
+                const double ladderLo = sw.a.getFirst()[0], ladderHi = sw.a.getLast()[0];
+                const double lo = juce::jmax (ladderLo, P::InstrumentFloor::tauMs * 2.0);
+                const double hi = ladderHi;
+                if (lo > ladderLo)
+                    say ("   note: ladder starts at " + juce::String (ladderLo, 3)
+                         + " ms, below the measured instrument tau floor ("
+                         + juce::String (P::InstrumentFloor::tauMs, 2)
+                         + " ms); probing from " + juce::String (lo, 2)
+                         + " ms instead and reporting the unresolvable end rather than fitting it.");
+                w2 (idx, normFor2 (sw.a, lo));
+                auto eA = bursts();
+                w2 (idx, normFor2 (sw.a, hi));
+                auto eB = bursts();
+                // attack: first burst onset at ~1000 ms; release: after it ends at ~1400 ms
+                // second burst onsets at 1000 ms and ends at 1400 ms; the bed
+                // makes the post-burst recovery observable.
+                const double s0 = atk ? 1000.0 : 1402.0, s1 = atk ? 1200.0 : 1900.0;
+                const double tA = P::timeConstantMs (eA, s0, s1, 1.0);
+                const double tB = P::timeConstantMs (eB, s0, s1, 1.0);
+                // CARVE-OUT 1 + the unit rule, consulted BEFORE any verdict.
+                // The first run of this suite issued fail verdicts without
+                // either check: API-2500's Release displays "Var" (program-
+                // dependent mode, not a time), and no time parameter here
+                // declares a unit family, so a nameplate log-ratio has no
+                // established relationship to milliseconds.
+                const auto disp = cp[idx]->getCurrentValueAsText();
+                double dummy = 0;
+                const bool dispNumeric = echojay::parseLeadingFloat (disp, dummy);
+                const juce::String unitFam = atk ? swAtUnit : swReUnit;
+                if (! dispNumeric)
+                {
+                    crit (atk ? "attack_ms" : "release_ms", true,
+                          juce::String ("INCONCLUSIVE: possibly mode-suppressed -- the parameter "
+                          "displays '") + disp + "' (a label, not a time), so it is in a "
+                          "program-dependent mode. Carve-out 1 exclusion (a) FAILS: a suppressing "
+                          "state is present. No contradicts may be issued. Measured anyway for the "
+                          "record: tau " + juce::String (tA, 1) + " -> " + juce::String (tB, 1) + " ms.");
+                    continue;
+                }
+                if (unitFam.isEmpty())
+                {
+                    crit (atk ? "attack_ms" : "release_ms", true,
+                          juce::String ("INCONCLUSIVE: ladder units undeclared -- the display ('")
+                          + disp + "') carries no unit family, so the ladder's numbers cannot be "
+                          "checked against milliseconds. Measured tau "
+                          + juce::String (tA, 1) + " -> " + juce::String (tB, 1)
+                          + " ms across ladder " + juce::String (P::predictedLanding (sw.a, lo), 2)
+                          + " -> " + juce::String (P::predictedLanding (sw.a, hi), 2)
+                          + " -- direction "
+                          + (tB > tA ? "SAME as the ladder" : "OPPOSITE to the ladder, which is "
+                             "itself a finding worth a human's eye")
+                          + ". Recorded as evidence; no verdict.");
+                    continue;
+                }
+                const double predRatio = std::log2 (P::predictedLanding (sw.a, hi)
+                                                  / juce::jmax (0.001, P::predictedLanding (sw.a, lo)));
+                const double measRatio = (tA > 0 && tB > 0) ? std::log2 (tB / juce::jmax (1.0, tA)) : 0.0;
+                const bool defined = tA > 0 && tB > 0;
+                crit (atk ? "attack_ms" : "release_ms",
+                      defined && std::abs (measRatio - predRatio) <= juce::jmax (0.25 * std::abs (predRatio), 0.25),
+                      "ladder " + juce::String (P::predictedLanding (sw.a, lo), 2) + " -> "
+                      + juce::String (P::predictedLanding (sw.a, hi), 2) + " (predicted log2 ratio "
+                      + juce::String (predRatio, 2) + "); measured tau "
+                      + (defined ? juce::String (tA, 0) + " -> " + juce::String (tB, 0) + " ms (log2 "
+                                   + juce::String (measRatio, 2) + ")"
+                                 : juce::String ("UNDEFINED (excursion below 1 dB -- no tau fitted)")));
+            }
+
+            say ("");
+            say ("write landing on the BRIDGE: " + juce::String (wN) + " writes, max "
+                 + juce::String (wMax, 1) + " ms, unlanded: " + (unl ? "YES" : "none"));
+            say ("comp suite wall clock: "
+                 + juce::String ((juce::Time::getMillisecondCounterHiRes() - tc0) / 1000.0, 2) + " s");
+            std::cout << "COMP SUITE: " << (fails == 0 ? "PASS" : juce::String (fails) + " FAILED")
+                      << std::endl;
+            quitNow(); return;
+        }
 
         // ---- instrument mode: the extractor's OWN floors and resolution,
         //      measured with no plugin in the path (amendments 3 and 4) -----

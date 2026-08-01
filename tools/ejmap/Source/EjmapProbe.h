@@ -283,6 +283,214 @@ struct Probe
     }
 
     //==========================================================================
+    // COMPRESSOR / LIMITER / GATE stimuli and features. The stepped tone is
+    // the static I/O curve; the burst train is the envelope. Both are
+    // deterministic and seed-free (a tone, not noise), so A/B pairs null
+    // exactly on a deterministic plugin.
+    //==========================================================================
+
+    static constexpr int    kSteps       = 21;      // -40 .. 0 dBFS, 2 dB apart
+    static constexpr double kStepSeconds = 0.30;
+
+    /** Envelope RMS window in SAMPLES. 8 samples = 0.167 ms at 48 kHz.
+        Measured instrument floor for tau extraction (known-truth exponentials,
+        --gate-m9 taufloor): see InstrumentFloor::tauMs. A tau below that floor
+        is UNDEFINED and must be reported as such, never fitted -- the first
+        run of this suite reported 4 ms for a true 0.03 ms attack, which was
+        the window's own smoothing, not the plugin.
+    */
+    static constexpr int kEnvWindow = 8;
+
+    /** A known-truth exponential envelope: starts at fromDb, approaches toDb
+        with time constant tauMs, sampled at kEnvWindow resolution. Used to
+        measure what the extractor can actually resolve, with no plugin.
+    */
+    static juce::Array<double> syntheticEnvelope (double fromDb, double toDb,
+                                                  double tauMs, int lengthMs)
+    {
+        juce::Array<double> env;
+        const double msPerSample = 1000.0 * kEnvWindow / kSampleRate;
+        const int n = (int) (lengthMs / msPerSample);
+        for (int i = 0; i < n; ++i)
+        {
+            const double t = i * msPerSample;
+            env.add (toDb + (fromDb - toDb) * std::exp (-t / juce::jmax (1e-6, tauMs)));
+        }
+        return env;
+    }
+
+    /** Renders the stepped 997 Hz tone and returns the measured OUTPUT level
+        of each step in dBFS, read over the LAST 40% of the step so the
+        attack transient has passed. Index i is input level -40 + 2i dBFS.
+    */
+    static juce::Array<double> steppedCurve (juce::AudioPluginInstance& p)
+    {
+        const int chans = juce::jmax (2, p.getTotalNumInputChannels(),
+                                         p.getTotalNumOutputChannels());
+        juce::AudioBuffer<float> io (chans, kBlock);
+        juce::MidiBuffer midi;
+        double phase = 0.0;
+        const double step = juce::MathConstants<double>::twoPi * 997.0 / kSampleRate;
+
+        for (int k = 0; k < (int) (0.5 * kSampleRate) / kBlock; ++k)
+        { io.clear(); midi.clear(); p.processBlock (io, midi); }
+
+        const int blocksPerStep = (int) (kStepSeconds * kSampleRate) / kBlock;
+        const int readFrom = (int) (blocksPerStep * 0.6);
+        juce::Array<double> out;
+        for (int sIdx = 0; sIdx < kSteps; ++sIdx)
+        {
+            const double amp = std::pow (10.0, (-40.0 + 2.0 * sIdx) / 20.0);
+            double acc = 0; int accN = 0;
+            for (int k = 0; k < blocksPerStep; ++k)
+            {
+                for (int n = 0; n < kBlock; ++n)
+                {
+                    const float v = (float) (amp * std::sin (phase));
+                    for (int ch = 0; ch < chans; ++ch) io.setSample (ch, n, v);
+                    phase += step;
+                    if (phase > juce::MathConstants<double>::twoPi)
+                        phase -= juce::MathConstants<double>::twoPi;
+                }
+                midi.clear();
+                p.processBlock (io, midi);
+                if (k >= readFrom)
+                {
+                    for (int n = 0; n < kBlock; ++n)
+                    { const double v = io.getSample (0, n); acc += v * v; }
+                    accN += kBlock;
+                }
+            }
+            out.add (accN > 0 ? 20.0 * std::log10 (std::sqrt (acc / accN) + 1e-12) : -200.0);
+        }
+        return out;
+    }
+
+    struct CurveFeatures
+    {
+        double kneeInDb = 0;        // input level where the curve leaves 1:1
+        double slopeAbove = 1.0;    // dOut/dIn above the knee (1/ratio)
+        double offsetDb = 0;        // output at the loudest step
+        bool   kneeFound = false;
+    };
+
+    /** Knee = the highest input level at which the local slope is still ~1,
+        walking DOWN from the top; slope above = least-squares fit over the
+        steps above it. A curve that never departs 1:1 reports kneeFound
+        false, and the caller must not invent a threshold from it -- the
+        same discipline as an undefined lobe centre.
+    */
+    static CurveFeatures curveFeatures (const juce::Array<double>& outDb,
+                                        double slopeFloor = 0.9)
+    {
+        CurveFeatures f;
+        if (outDb.size() < 6) return f;
+        juce::Array<double> slope;                       // local dOut/dIn
+        for (int i = 1; i < outDb.size(); ++i) slope.add ((outDb[i] - outDb[i - 1]) / 2.0);
+        f.offsetDb = outDb.getLast();
+
+        int kneeIdx = -1;
+        for (int i = slope.size() - 1; i >= 1; --i)
+            if (slope[i] >= slopeFloor && slope[i - 1] >= slopeFloor) { kneeIdx = i; break; }
+        if (kneeIdx < 0 || kneeIdx >= slope.size() - 1) return f;      // never compresses, or always
+        f.kneeFound = true;
+        f.kneeInDb = -40.0 + 2.0 * (kneeIdx + 1);
+
+        double sx = 0, sy = 0, sxx = 0, sxy = 0; int n = 0;
+        for (int i = kneeIdx + 1; i < outDb.size(); ++i)
+        {
+            const double x = -40.0 + 2.0 * i, y = outDb[i];
+            sx += x; sy += y; sxx += x * x; sxy += x * y; ++n;
+        }
+        if (n >= 2)
+        {
+            const double den = n * sxx - sx * sx;
+            if (std::abs (den) > 1e-9) f.slopeAbove = (n * sxy - sx * sy) / den;
+        }
+        return f;
+    }
+
+    /** Burst train over a QUIET BED: 400 ms at -6 dBFS alternating with
+        600 ms at -30 dBFS (NOT silence), 997 Hz, 4 cycles. Returns the output
+        envelope in dB at kEnvWindow resolution.
+
+        The bed is the correction for a defect this stimulus had when first
+        run: with silence between bursts, gain RECOVERY is invisible -- the
+        output is silent whatever the gain is doing, so release measured
+        UNDEFINED by construction on API-2500. A quiet bed makes the release
+        trajectory observable without re-triggering compression.
+    */
+    static juce::Array<double> burstEnvelope (juce::AudioPluginInstance& p)
+    {
+        const int chans = juce::jmax (2, p.getTotalNumInputChannels(),
+                                         p.getTotalNumOutputChannels());
+        juce::AudioBuffer<float> io (chans, kBlock);
+        juce::MidiBuffer midi;
+        double phase = 0.0;
+        const double step = juce::MathConstants<double>::twoPi * 997.0 / kSampleRate;
+        const double amp = std::pow (10.0, -6.0 / 20.0);
+
+        for (int k = 0; k < (int) (0.5 * kSampleRate) / kBlock; ++k)
+        { io.clear(); midi.clear(); p.processBlock (io, midi); }
+
+        const int totalBlocks = (int) (4.0 * kSampleRate) / kBlock;
+        const int onSamples = (int) (0.4 * kSampleRate), periodSamples = (int) (1.0 * kSampleRate);
+        const double bedAmp = std::pow (10.0, -30.0 / 20.0);
+        juce::Array<double> env;
+        long nAbs = 0;
+        const int win = kEnvWindow;
+        double acc = 0; int accN = 0;
+        for (int k = 0; k < totalBlocks; ++k)
+        {
+            for (int n = 0; n < kBlock; ++n)
+            {
+                const bool on = (nAbs % periodSamples) < onSamples;
+                const float v = (float) ((on ? amp : bedAmp) * std::sin (phase));
+                for (int ch = 0; ch < chans; ++ch) io.setSample (ch, n, v);
+                phase += step;
+                if (phase > juce::MathConstants<double>::twoPi)
+                    phase -= juce::MathConstants<double>::twoPi;
+                ++nAbs;
+            }
+            midi.clear();
+            p.processBlock (io, midi);
+            for (int n = 0; n < kBlock; ++n)
+            {
+                const double v = io.getSample (0, n);
+                acc += v * v; ++accN;
+                if (accN >= win)
+                { env.add (20.0 * std::log10 (std::sqrt (acc / accN) + 1e-12)); acc = 0; accN = 0; }
+            }
+        }
+        return env;
+    }
+
+    /** Time constant from an envelope segment: ms to cover 63.2% of the
+        total excursion between startMs and endMs. Returns -1 when the
+        excursion never clears minExcursionDb -- an undefined tau, stated,
+        never a fitted number over noise.
+    */
+    static double envMsPerSample() { return 1000.0 * kEnvWindow / kSampleRate; }
+
+    /** startMs/endMs are MILLISECONDS into the envelope; the conversion to
+        envelope samples happens here so callers never carry the resolution.
+    */
+    static double timeConstantMs (const juce::Array<double>& env,
+                                  double startMs, double endMs, double minExcursionDb)
+    {
+        const double mps = envMsPerSample();
+        const int s = (int) (startMs / mps), e = (int) (endMs / mps);
+        if (e >= env.size() || s >= e) return -1.0;
+        const double a = env[s], b = env[e];
+        if (std::abs (b - a) < minExcursionDb) return -1.0;
+        const double target = a + 0.632 * (b - a);
+        for (int i = s; i <= e; ++i)
+            if ((b > a && env[i] >= target) || (b < a && env[i] <= target))
+                return (i - s) * mps;
+        return -1.0;
+    }
+
+    //==========================================================================
     /** MEASURED INSTRUMENT FLOORS (gate amendment 3, measured 2026-08-02 by
         --gate-m9 instrument, no plugin in the path). sigma_f from a plugin
         A/A pair captures REPEAT noise only, and a deterministic plugin has
@@ -312,6 +520,10 @@ struct Probe
         static constexpr double depthDb   = 0.088;
         static constexpr double widthOct  = 0.0265;
         static constexpr double sideDb    = 0.4857;
+        /** tau floor: the shortest time constant the envelope extractor can
+            resolve, measured against known-truth exponentials. Below it a tau
+            is UNDEFINED, never fitted. Measured by --gate-m9 taufloor. */
+        static constexpr double tauMs     = 0.5;
         static constexpr double realizationDepthDb = 6.2038;   // decorrelated case only
         static double centreOct (double hz) { return hz <= 250.0 ? 0.0322 : 0.0138; }
     };
