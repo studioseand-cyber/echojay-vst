@@ -56,6 +56,7 @@ public:
         juce::String applyMapId, applyMapPath, applyMapImposter;
         juce::String ctrlTestId, ctrlTestMode, ctrlTestLabel, ctrlTestNames;
         juce::String uploadTestId, uploadTestMap, uploadTestTester;
+        juce::String settleId; int settleIdx = -1;
         int stallN = 0;
         bool supervised = false;
         int  restartCount = 0;
@@ -111,6 +112,8 @@ public:
             }
             else if (args[i] == "--selftest-stall" && i + 2 < args.size())
                 { stallId = args[i + 1]; stallN = args[i + 2].getIntValue(); i += 2; }
+            else if (args[i] == "--measure-settle" && i + 2 < args.size())
+                { settleId = args[i + 1]; settleIdx = args[i + 2].getIntValue(); i += 2; }
             else if (args[i] == "--attribute-report" && i + 1 < args.size())
                 attributeReport = args[++i];
             else if (args[i] == "--child")
@@ -186,7 +189,12 @@ public:
         //
         // callAsync posts an ordinary message, which is the same context a button
         // click arrives in. That is why the UI path was never affected.
-        if (stallId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        if (settleId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = settleId; auto ix = settleIdx; auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id, ix] { m->measureSettle (id, ix); });
+        }
+        else if (stallId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {
             auto id = stallId; auto n = stallN; auto* m = mainWindow->getMain();
             juce::MessageManager::callAsync ([m, id, n] { m->selfTestStall (id, n); });

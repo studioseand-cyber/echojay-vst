@@ -520,6 +520,73 @@ public:
         completes inline or needs a message-thread turn is a timing matter. So
         the reproduction is repetition, not cleverness.
     */
+    /** Measures the settle tail the residue filter fights: write one
+        parameter, then poll the whole set and report how long ANY value keeps
+        changing after the write. The AMEK re-run needed eight re-arms on the
+        Q card and four on the last-freq card, every one "previous control
+        still settling" -- this number says whether that is the plugin's tail
+        or the filter's window.
+    */
+    void measureSettle (const juce::String& identifier, int index)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "SETTLE: unknown identifier" << std::endl; quitNow(); return; }
+        auto res = host.load (desc, watchdog);
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "SETTLE: load failed" << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        auto params = inst->getParameters();
+        if (! juce::isPositiveAndBelow (index, params.size()))
+        { std::cout << "SETTLE: index out of range (param count "
+                    << params.size() << ")" << std::endl; quitNow(); return; }
+
+        // Let load-time churn die down first, same reason the noise probe exists.
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (500);
+
+        juce::Array<float> before;
+        for (auto* pp : params) before.add (pp->getValue());
+
+        std::cout << "SETTLE: " << desc.name << " [" << index << "] "
+                  << params[index]->getName (48) << ": writing 0.30 then 0.70" << std::endl;
+        params[index]->setValueNotifyingHost (0.30f);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        params[index]->setValueNotifyingHost (0.70f);
+
+        // Per-param last-change times, because one number hides the story: a
+        // perpetually-moving meter keeps a global clock alive forever and
+        // makes a 2-second glide look like a 15-second one.
+        const auto t0 = juce::Time::getMillisecondCounter();
+        std::map<int, juce::uint32> lastChangeOf;
+        juce::uint32 lastChange = t0;
+        while (juce::Time::getMillisecondCounter() - lastChange < 2000
+                && juce::Time::getMillisecondCounter() - t0 < 15000)
+        {
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (5);
+            for (int i = 0; i < params.size(); ++i)
+            {
+                const float v = params[i]->getValue();
+                if (std::abs (v - before[i]) > 1.0e-4f)
+                {
+                    before.set (i, v);
+                    lastChange = juce::Time::getMillisecondCounter();
+                    lastChangeOf[i] = lastChange;
+                }
+            }
+        }
+        std::cout << "SETTLE: per-param tail (ms after the write; capped at 15000):" << std::endl;
+        for (auto& kv : lastChangeOf)
+            std::cout << "SETTLE:   [" << kv.first << "] " << params[kv.first]->getName (32)
+                      << "  " << (int) (kv.second - t0) << " ms" << std::endl;
+        std::cout << "SETTLE: DONE" << std::endl;
+        quitNow();
+    }
+
     void selfTestStall (const juce::String& identifier, int attempts)
     {
         auto desc = echojay::auregistry::describeFromRegistry (identifier);
@@ -3738,21 +3805,21 @@ private:
         if (inst == nullptr || loadedId.isEmpty() || currentFp.isEmpty())
             return;
 
+        // THE duplicate-index rule from EjmapAssignment.h -- the same call the
+        // review screen makes, never a private copy. This block used to hold
+        // one, and it refused "[-1] bands AND controls" AFTER the review's
+        // copy was fixed to exclude surface rows: the AMEK re-submission died
+        // twice on a rule that existed twice.
         {
-            std::map<int, juce::StringArray> byIndex;
-            for (auto& r : rws)
-                if (r.state == AssignRow::State::confirmed && ! r.sharedInsisted)
-                    byIndex[r.resolvedIndex].add (r.semantic);
-            for (auto& kv : byIndex)
-                if (kv.second.size() > 1)
-                {
-                    captureReadout.setText ("SUBMIT REFUSED: index " + juce::String (kv.first)
-                        + " claimed by " + kv.second.joinIntoString (" AND ")
-                        + ". One of them is wrong.", juce::dontSendNotification);
-                    std::cout << "ASSIGN: SUBMIT REFUSED: duplicate index " << kv.first
-                              << " (" << kv.second.joinIntoString (" AND ") << ")" << std::endl;
-                    return;
-                }
+            const auto conflicts = duplicateIndexConflicts (rws);
+            if (! conflicts.isEmpty())
+            {
+                captureReadout.setText ("SUBMIT REFUSED: " + conflicts.joinIntoString ("; ")
+                    + ". One of them is wrong.", juce::dontSendNotification);
+                std::cout << "ASSIGN: SUBMIT REFUSED: duplicate index "
+                          << conflicts.joinIntoString ("; ") << std::endl;
+                return;
+            }
         }
 
         MapPayload p;

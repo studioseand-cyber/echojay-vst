@@ -1345,8 +1345,27 @@ public:
 
                 if (fresh.isEmpty())
                 {
-                    say ("That was the previous control still settling - re-armed: "
-                           + bandCardPrompt());
+                    // NAME the filtered movers. The AMEK re-run burned eight
+                    // re-arms on the Q card under this message while the
+                    // measured control tail is 6-7 ms -- "still settling" was
+                    // a guess wearing a diagnosis. The row written here makes
+                    // the next storm attributable from disk.
+                    juce::StringArray culprits;
+                    for (int i = 0; i < res.indices.size(); ++i)
+                        culprits.add ("[" + juce::String (res.indices[i]) + "] "
+                                        + (i < res.names.size() ? res.names[i] : juce::String()));
+                    say ("Only residue moved (" + culprits.joinIntoString (", ")
+                           + ") - re-armed: " + bandCardPrompt());
+                    if (hooks.writeRow)
+                    {
+                        auto* o = new juce::DynamicObject();
+                        o->setProperty ("kind", "band_rearm_residue");
+                        juce::Array<juce::var> iv;
+                        for (int i : res.indices) iv.add (i);
+                        o->setProperty ("indices", juce::var (iv));
+                        o->setProperty ("names", culprits.joinIntoString (", "));
+                        hooks.writeRow (juce::var (o));
+                    }
                     // Re-arm rebuilds the surface, never inherits it: this is
                     // where the band table sat over the waiting card with its
                     // buttons still live (AMEK re-run, capFreqLast).
@@ -2047,29 +2066,11 @@ public:
     */
     juce::StringArray duplicateConflicts()
     {
-        juce::StringArray out;
-        std::map<int, juce::StringArray> byIndex;
-        for (auto& r : rows)
-        {
-            // Surface rows (bands, controls) are not parameters: their -1 is
-            // a placeholder, not a claim on an index. The first run with BOTH
-            // confirmed (AMEK re-run: 5 groups AND 62 controls) refused
-            // submit with "[-1] claimed by: bands AND controls", and nothing
-            // in the UI could clear it -- W rebuilds the row and produces -1
-            // again. Two PARAMETER rows on one index still refuse, including
-            // both at -1: that row is broken and the mouth would refuse its
-            // index as out of range anyway.
-            if (r.kind == "bands" || r.kind == "controls")
-                continue;
-            if (r.state == AssignRow::State::confirmed && ! r.sharedInsisted)
-                byIndex[r.resolvedIndex].add (r.semantic);
-        }
-        for (auto& kv : byIndex)
-            if (kv.second.size() > 1)
-                out.add ("[" + juce::String (kv.first) + "] "
-                           + (hooks.paramName ? hooks.paramName (kv.first) : juce::String())
-                           + " claimed by: " + kv.second.joinIntoString (" AND "));
-        return out;
+        // Delegates to THE rule in EjmapAssignment.h. This method and the
+        // submit path each had a private copy; the copies drifted (the
+        // review's learned the surface-row exclusion, the submit's did not)
+        // and the AMEK re-run refused twice. Never reimplement it here.
+        return duplicateIndexConflicts (rows);
     }
 
     bool isSummaryShowing() const { return summaryShowing; }

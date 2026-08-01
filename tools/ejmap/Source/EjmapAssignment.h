@@ -38,6 +38,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <map>
 
 #include "EjmapSchema.h"
 #include "EjmapSweeper.h"
@@ -299,6 +300,12 @@ struct AssignRow
     bool isResolved() const
     { return state == State::confirmed || state == State::modeMaterial || isSkipped(); }
 
+    /** Surface rows (bands, controls) drive a flow, not a parameter: their
+        resolvedIndex stays -1 by design and is a placeholder, not a claim.
+    */
+    bool isSurfaceRow() const
+    { return kind == "bands" || kind == "controls"; }
+
     juce::String stateString() const
     {
         switch (state)
@@ -345,5 +352,30 @@ struct AssignRow
         return juce::var (o);
     }
 };
+
+/** THE duplicate-index rule, in one place. Two confirmed semantics on one
+    parameter index is a defect the map must not carry (makeup and output both
+    CONFIRMED [8] on API-2500). Surface rows are excluded: their -1 is a
+    placeholder, not a claim. sharedInsisted pairs are exempt by decision.
+
+    One implementation ONLY. The review screen and the submit path each had a
+    copy of this rule; the review's learned the surface-row exclusion and the
+    submit's did not, so the review showed clean and submit refused "[-1]
+    bands AND controls" on the same rows (AMEK re-run, twice). A rule that
+    exists twice is two rules.
+*/
+inline juce::StringArray duplicateIndexConflicts (const juce::Array<AssignRow>& rows)
+{
+    juce::StringArray out;
+    std::map<int, juce::StringArray> byIndex;
+    for (const auto& r : rows)
+        if (r.state == AssignRow::State::confirmed && ! r.sharedInsisted && ! r.isSurfaceRow())
+            byIndex[r.resolvedIndex].add (r.semantic);
+    for (auto& kv : byIndex)
+        if (kv.second.size() > 1)
+            out.add ("[" + juce::String (kv.first) + "] claimed by: "
+                       + kv.second.joinIntoString (" AND "));
+    return out;
+}
 
 } // namespace ejmap
