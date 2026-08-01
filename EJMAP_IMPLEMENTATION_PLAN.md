@@ -539,6 +539,14 @@ Two notes. `apply_header_sha` pins which version of the shared apply logic verif
 - **Structural gate at the mouth:** schema validation, anchors sanitize clean, no flat sweeps, indices in range, no unresolved `contradicts`, claimed category bar actually clears (or the payload declares it does not). **Reject at the mouth, log the reason, never silently drop.**
 - **Merge per key over llm-classified** (spec open question 3). Human where present, model elsewhere. Replacing outright throws away model coverage on parameters the human skipped.
 
+**Transport constraint (LOCKED 2026-08-01, before any transport exists).** The artifact and the wire come from **one builder**. The dry-run file (`upload/<fp>.http`) is the only pre-server verification this tool has; any transport that composes its own request retires it. Therefore:
+
+- The transport either **replays the artifact's bytes over the socket**, or it **records what was actually sent and diffs it against the artifact on every send** — and a mismatch is a refused send, recorded in the queue with the diff, even on a 2xx.
+- `juce::URL::withPOSTData()` and every convenience call that composes headers out of sight is **out**. This is not a style preference: the byte audit found the convenience layer dropping the leading slash from the request path, dropping typed ports from the Host header, and re-escaping query strings — all invisible until the emitted bytes were read.
+- The request stays **HTTP/1.1, pinned**. A client that negotiates h2 reframes the request and the byte diff stops meaning anything.
+
+This is a constraint on M11, not an M11 design question. The TLS decision below chooses *how* to satisfy it, never *whether*.
+
 **Gate.** Submit a map, then read it back out of the store and assert field by field against the local JSON. Assert against **stored** data, never against the emitted event. Stubbing the store is exactly how the tripwire bug survived its own test.
 
 ---
@@ -547,7 +555,17 @@ Two notes. `apply_header_sha` pins which version of the shared apply logic verif
 
 **Purpose.** Twenty testers, ten plugins each, a weekend.
 
+**TLS: the options and what each costs (stated 2026-08-01, decided at M11 signing).** Byte-truth over a raw socket versus HTTPS through a library that composes its own framing is a real tension; it gets decided deliberately here, not settled by whichever is easier to write. All options below operate under the locked transport constraint in 10.3.
+
+- **Option A — OS TLS stream, artifact bytes verbatim.** Network.framework (`NWConnection` with TLS) carries the connection; the tool writes the artifact's exact bytes into the stream and reads the raw response. Byte-truth holds **by construction, before the bytes leave**: the TLS plaintext *is* the artifact, no diff needed. Costs: a bounded piece of ObjC++ platform code (one POST, no redirect following — a redirect is a refused send, no retry logic beyond re-queue); we own response parsing and timeouts; certificate trust stays the OS default, never custom. macOS-only, which this tool already is.
+- **Option B — curl subprocess, record-and-diff.** curl speaks TLS and HTTP/1.1 (`--http1.1` pinned); `--trace` records the pre-encryption request bytes and the tool diffs them against the artifact **after every send**. curl's own header composition (`User-Agent`, `Accept`, `Expect: 100-continue`) must be suppressed per-header, and any drift across OS curl versions is caught loudly by the diff. Costs: subprocess plus trace parsing; and the diff runs after the bytes left, so one nonconforming request reaches the server before it is caught — tolerable for maps, and the send is still recorded as failed verification even on a 2xx.
+- **Option C — juce::WebInputStream / withPOSTData or any client with no record of sent bytes.** Cannot satisfy the constraint: nothing to diff, headers composed out of sight. **Out by 10.3.** Listed so it is ruled out in words, not by omission.
+- **Option D — plaintext HTTP to a local TLS forwarder.** Keeps raw-socket byte-truth but plants a proxy on every tester's machine. The M11 gate is a non-Sean tester on a clean Mac with no terminal; a proxy config fails that gate outright. **Out.**
+
+Recommendation carried into the signing: **A**, because verification-before-send beats verification-after-send and the code is bounded; **B** is the fallback if A's platform cost proves out of proportion during the build. The decision is a signature, not a default.
+
 **Build**
+- Transport per the locked constraint in 10.3: one builder for artifact and wire, byte replay or record-and-diff on every send, HTTP/1.1 pinned. TLS per the option signed above.
 - Queue: priority list by real suggestion frequency descending, intersected with plugins installed on this machine, minus already human verified. Second order: prefer `dialable: false` (biggest delta), prefer thin categories (de-esser at 8, delay at 14, gate at 5).
 - Impact display: "You have mapped 12 plugins, 340 users have these installed."
 - Signed and notarized standalone app, same identity as EchoJay: `Developer ID Application: Sean Donoghue (8BT5F9B887)`, notarize profile `EchoJayNotarize`
