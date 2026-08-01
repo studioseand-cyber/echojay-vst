@@ -6103,13 +6103,16 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         if (faderColW > 0)
         {
             auto col = fmBand.removeFromLeft(faderColW);
-            // Column height = image height (the 1:8 lock), CENTRED in the
-            // band. Bottom-aligning it (the console pass) was a bug: a 96px
-            // image anchored to the floor of a ~230px well put every cap in
-            // the well's bottom half regardless of gain. The shared WELL
-            // carries the one-unit reading; the baseline claim is retired.
-            sg.fader = col.withSizeKeepingCentre(
-                           faderColW, juce::jmin(faderH, col.getHeight()));
+            // The LANE is the full column, so fader and meter share height
+            // and baseline (and the drag target grows with it). The IMAGE
+            // stays aspect-locked and CENTRES in the lane: the artwork's
+            // throw is physically 8x its width and must not stretch or
+            // slide, so the lane extends visually while the cap travel
+            // remains the image's. Both rects are stored; the dB mapping
+            // lives on faderImg.
+            sg.fader    = col;
+            sg.faderImg = col.withSizeKeepingCentre(
+                              faderColW, juce::jmin(faderH, col.getHeight()));
             fmBand.removeFromLeft(kBandGap);
         }
         // Clip lamp above the bars, stored like everything else: the reset
@@ -6390,6 +6393,15 @@ EchoJayEditor::advanceLinkStripSmoothing(LinkStripState& st, bool fresh)
         // ~2 ticks; the actual ballistics stay the publisher's 500ms EMA.
         st.smRmsL += (mf.rmsL - st.smRmsL) * 0.5f;
         st.smRmsR += (mf.rmsR - st.smRmsR) * 0.5f;
+        // Fast-peak de-stepping (the stutter fix; see the field's comment).
+        // Absence snaps, never smooths: a blanked pair drops to -100 at
+        // once, so host-idle never fades out through fabricated values.
+        st.smFastL = mf.peakFastL <= -99.0f ? -100.0f
+                   : st.smFastL <= -99.0f   ? mf.peakFastL
+                   : st.smFastL + (mf.peakFastL - st.smFastL) * 0.75f;
+        st.smFastR = mf.peakFastR <= -99.0f ? -100.0f
+                   : st.smFastR <= -99.0f   ? mf.peakFastR
+                   : st.smFastR + (mf.peakFastR - st.smFastR) * 0.75f;
     }
     return d;
 }
@@ -6510,24 +6522,32 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
     // degrade to lesser data, never to garbage, never to a 0.0f "reading".
     const bool hasFast = frameHasFastPeak(mf);
 
-    // Layout inside the stored rect: label gutter left, then the L and R
-    // bars. Presentation only; no hit region derives from any of this.
-    const int gutterW = area.getWidth() >= 50 ? 16
-                      : area.getWidth() >= 24 ? 11 : 6;
-    auto scaleArea = area.withTrimmedTop(2).withTrimmedBottom(2);
-    auto barsArea  = scaleArea.withTrimmedLeft(gutterW);
-    const int barGap = 2;
-    const int barW   = juce::jmax(2, (barsArea.getWidth() - barGap) / 2);
-    const juce::Rectangle<int> barRect[2] = {
-        { barsArea.getX(),                 barsArea.getY(), barW, barsArea.getHeight() },
-        { barsArea.getX() + barW + barGap, barsArea.getY(), barW, barsArea.getHeight() },
-    };
+    // Layout from THE shared source (meterBarRects): the same rects feed
+    // the bars here and the clip lamp below, so lamp and bars share x and
+    // width per channel by construction. Presentation only; no hit region
+    // derives from any of this.
+    int gutterW = 0;
+    juce::Rectangle<int> barRect[2];
+    meterBarRects(area, gutterW, barRect);
+    const juce::Rectangle<int> barsArea = barRect[0].getUnion(barRect[1]);
 
     // The Logic-style scale: close-spaced to -24, compressed below (the
     // piecewise meterYForDb). Tick lines at every mark; numbers only where
     // they fit, chosen BY INDEX (no float equality), drawn unsigned as the
     // reference does. 16px gutter: 0,3,6,9,12,15,18,21,24,30,40,50,60.
     // 11px gutter: 0,6,12,18,24,40,60. 6px: lines only.
+    // MINOR tick lines, reference density: every 1 dB through the close
+    // region (0..-24), short marks off the gutter edge, dimmer than the
+    // majors, skipping rows the majors own. Lines carry the structure;
+    // numbers stay only where legible.
+    g.setColour(LinkConsole::structure.withMultipliedAlpha(0.55f * dim));
+    for (int m = -1; m > -24; --m)
+    {
+        if (m % 3 == 0) continue;   // majors live every 3 dB up here
+        const int y = meterYForDb((float)m, barsArea);
+        g.drawHorizontalLine(y, (float)barsArea.getX(),
+                             (float)barsArea.getX() + 3.0f);
+    }
     g.setFont(juce::Font(juce::FontOptions(gutterW >= 16 ? 7.5f : 6.5f)));
     for (int mi = 0; mi < kMeterMarkCount; ++mi)
     {
@@ -6584,7 +6604,7 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
                    juce::Justification::centred);
     }
 
-    const float fast[2] = { mf.peakFastL, mf.peakFastR };
+    const float fast[2] = { st.smFastL, st.smFastR };
     const float rms[2]  = { st.smRmsL,   st.smRmsR };
     const float peak[2] = { mf.peakL,    mf.peakR };
     for (int ch = 0; ch < 2; ++ch)
@@ -6599,8 +6619,10 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
             // visible scale IS the honest rendering of silence.
             if (fast[ch] > -99.0f)
                 drawBar(br, fast[ch]);
-            // Clip latch: set at 0 dBFS, cleared only by the lamp click.
-            if (fast[ch] >= 0.0f)
+            // Clip latch: set at 0 dBFS from the RAW published value
+            // (smoothing shapes motion, never truth), cleared only by the
+            // lamp click.
+            if ((ch == 0 ? mf.peakFastL : mf.peakFastR) >= 0.0f)
                 (ch == 0 ? st.clipL : st.clipR) = true;
             // RMS stays visible at WIDE as a thin marker inside the bar;
             // dropped at narrow, where a 6px bar cannot hold a second
@@ -6634,14 +6656,19 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
     // the STORED rect (StripHit::Clip), not a re-derived one.
     if (hasFast && !clipRect.isEmpty())
     {
-        auto half = clipRect;
-        const auto lHalf = half.removeFromLeft(clipRect.getWidth() / 2);
-        g.setColour(st.clipL ? coral : LinkConsole::structure);
-        st.clipL ? (void)g.fillRect(lHalf.reduced(1))
-                 : (void)g.drawRect(lHalf.reduced(1), 1);
-        g.setColour(st.clipR ? coral : LinkConsole::structure);
-        st.clipR ? (void)g.fillRect(half.reduced(1))
-                 : (void)g.drawRect(half.reduced(1), 1);
+        // The lamp boxes take each bar's EXACT x and width (the shared
+        // meterBarRects source), so lamp and bar column-align per channel
+        // and cannot drift apart again.
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            const juce::Rectangle<int> box(barRect[ch].getX(), clipRect.getY(),
+                                           barRect[ch].getWidth(),
+                                           clipRect.getHeight());
+            const bool lit = (ch == 0 ? st.clipL : st.clipR);
+            g.setColour(lit ? coral : LinkConsole::structure);
+            lit ? (void)g.fillRect(box.reduced(0, 1))
+                : (void)g.drawRect(box.reduced(0, 1), 1);
+        }
     }
 }
 
@@ -6676,7 +6703,6 @@ void EchoJayEditor::layOutChainBlocks(juce::Rectangle<int> dataRect, int count,
     out.clear();
     if (count <= 0 || dataRect.getWidth() <= 0) return;
     auto a2 = dataRect.reduced(2, 0);
-    a2.removeFromTop(kChainHeadH + 2);              // the count header
     const int per = kChainBlockH + kChainBlockGap;
     const int fit = juce::jmax(0, (a2.getHeight() + kChainBlockGap) / per);
     const int shown = count <= fit ? count : juce::jmax(0, fit - 1);
@@ -6921,18 +6947,10 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
     }
     else
     {
-        // WIDE: plugin BLOCKS, the way an insert slot reads in Logic: a
-        // filled row per plugin, name inside it, stacked. Bypassed blocks
-        // sink to the dimmer fill with an amber left edge (state, not
-        // chrome). Bypass/remove CONTROLS are a functionality pass; the
-        // block leaves its right end clear so they have somewhere to land.
-        // Overflow collapses into "+N more" rather than half-drawing.
-        auto head = area.reduced(2, 0);
-        g.setColour(LinkConsole::label.withMultipliedAlpha(dim));
-        g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
-        g.drawText(chainCountLabel((int)rows.size(), bypassed)
-                       + (offline ? " - offline" : ""),
-                   head.removeFromTop(kChainHeadH), juce::Justification::centredLeft);
+        // WIDE: plugin BLOCKS, the way an insert slot reads in Logic. The
+        // count header is gone (redundant once the blocks are legible);
+        // offline still declares itself on a line of its own below the
+        // blocks when it applies. Overflow collapses into "+N more".
 
         // THE block rects: the same pure function the hit test consumes.
         std::vector<juce::Rectangle<int>> blocks;
@@ -6975,7 +6993,7 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
             }
             g.setColour((r.bypassed ? Card::nameBypassed : Card::nameOn)
                             .withMultipliedAlpha(dim));
-            g.setFont(juce::Font(juce::FontOptions(9.0f)));
+            g.setFont(juce::Font(juce::FontOptions(9.5f)));
             auto nameArea = rr.reduced(4, 0);
             // B and X in the space the visual pass left clear, the Chain
             // card's controls at mixer scale. Wide only BY CONSTRUCTION:
@@ -7005,17 +7023,26 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
                 g.setColour(Card::nameBypassed.withMultipliedAlpha(dim));
                 g.setFont(juce::Font(juce::FontOptions(9.0f)));
             }
-            g.drawFittedText(r.name, nameArea,
-                             juce::Justification::centredLeft, 1, 0.9f);
+            g.drawText(r.name, nameArea,
+                       juce::Justification::centredLeft, true);   // ellipsise
         }
+        auto below = blocks.empty() ? area.reduced(2, 0)
+                   : blocks.back().translated(0, kChainBlockH + kChainBlockGap);
         if ((int)rows.size() > shown && !blocks.empty())
         {
             g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(8.0f)));
             g.drawText("+" + juce::String((int)rows.size() - shown) + " more",
-                       blocks.back().translated(0, kChainBlockH + kChainBlockGap),
-                       juce::Justification::centredLeft);
+                       below, juce::Justification::centredLeft);
+            below.translate(0, kChainBlockH + kChainBlockGap);
         }
+        if (offline)
+        {
+            g.setColour(juce::Colour(0xffff6d5a).withMultipliedAlpha(0.9f));
+            g.setFont(juce::Font(juce::FontOptions(7.5f)));
+            g.drawText("offline", below, juce::Justification::centredLeft);
+        }
+        juce::ignoreUnused(bypassed);
     }
 }
 
@@ -7089,12 +7116,21 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     }
     else if (selected)
     {
+        // Selection: the lit top bar plus a soft glow bleeding down from
+        // it. The heavy border is gone; the glow keeps it unmissable
+        // (after the sidebar collapses this is the only indication of what
+        // a message targets) without boxing the strip.
         g.setColour(cyan);
-        g.drawRoundedRectangle(sg.full.toFloat().reduced(1.0f), 6.0f, 2.0f);
-        // Top accent bar, inside the border
         g.fillRoundedRectangle((float)sg.full.getX() + 3.0f,
-                               (float)sg.full.getY() + 3.0f,
+                               (float)sg.full.getY() + 2.0f,
                                (float)sg.full.getWidth() - 6.0f, 3.0f, 1.5f);
+        juce::ColourGradient glow(
+            cyan.withAlpha(0.16f), (float)sg.full.getCentreX(), (float)sg.full.getY() + 5.0f,
+            cyan.withAlpha(0.0f),  (float)sg.full.getCentreX(), (float)sg.full.getY() + 34.0f,
+            false);
+        g.setGradientFill(glow);
+        g.fillRect((float)sg.full.getX() + 1.0f, (float)sg.full.getY() + 5.0f,
+                   (float)sg.full.getWidth() - 2.0f, 29.0f);
     }
 
     // ---- Name. The entry's displayName IS resolveLinkDisplayName's answer
@@ -7110,7 +7146,9 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         g.setColour(LinkConsole::value);
         g.setFont(juce::Font(juce::FontOptions(wide ? 12.0f : 10.5f,
                                                juce::Font::bold)));
-        g.drawFittedText(name, sg.name, juce::Justification::centred, 1, 0.7f);
+        // Ellipsise, never squash: glyphs keep their shape and the tail
+        // elides (the full name lives in the tooltip), Logic's behaviour.
+        g.drawText(name, sg.name, juce::Justification::centred, true);
     }
 
     // ---- Placement badge: ONE element, three labels (BUS / CHANNEL / SET?),
@@ -7157,10 +7195,14 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         const bool active    = entry != nullptr && entry->info.active;
 
         const int side = juce::jmin(16, sg.active.getHeight() - 2);
+        // Centred EXACTLY in the row (float centre, then snapped), both
+        // modes; wide keeps the box at the left for its word.
         juce::Rectangle<float> box(0, 0, (float)side, (float)side);
         box = wide ? box.withPosition((float)sg.active.getX(),
-                                      (float)sg.active.getCentreY() - side * 0.5f)
-                   : box.withCentre(sg.active.toFloat().getCentre());
+                                      std::round((float)sg.active.getCentreY()
+                                                 - (float)side * 0.5f))
+                   : box.withCentre({ std::round((float)sg.active.getCentreX()),
+                                      std::round((float)sg.active.getCentreY()) });
 
         g.setColour(!connected || timedOut ? coral : LinkConsole::caption);
         g.drawRoundedRectangle(box, 4.0f, 1.0f);
@@ -7184,7 +7226,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 g.setColour(pending ? amber.withAlpha(0.6f) : C::green);
                 auto tick = getLookAndFeel().getTickShape(0.75f);
                 g.fillPath(tick, tick.getTransformToScaleToFit(
-                                     box.reduced(3.0f, 3.5f), false));
+                                     box.reduced(3.0f, 3.0f), false));
             }
         }
 
@@ -7270,8 +7312,27 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             if (!sg.fader.isEmpty()) wellRect = wellRect.getUnion(sg.fader);
             if (!wellRect.isEmpty())
             {
+                const auto wr = wellRect.expanded(2).toFloat();
                 g.setColour(LinkConsole::well);
-                g.fillRoundedRectangle(wellRect.expanded(2).toFloat(), 4.0f);
+                g.fillRoundedRectangle(wr, 4.0f);
+                // Inner shadow, ONE element only: a dark bloom off the top
+                // and left edges and a hairline light lip on the bottom, so
+                // the well reads as recessed rather than drawn on. Two
+                // gradients and a line; if this turns skeuomorphic it goes.
+                {
+                    juce::ColourGradient topSh(
+                        juce::Colours::black.withAlpha(0.35f), wr.getX(), wr.getY(),
+                        juce::Colours::transparentBlack, wr.getX(), wr.getY() + 6.0f, false);
+                    g.setGradientFill(topSh);
+                    g.fillRect(wr.getX(), wr.getY(), wr.getWidth(), 6.0f);
+                    juce::ColourGradient leftSh(
+                        juce::Colours::black.withAlpha(0.25f), wr.getX(), wr.getY(),
+                        juce::Colours::transparentBlack, wr.getX() + 4.0f, wr.getY(), false);
+                    g.setGradientFill(leftSh);
+                    g.fillRect(wr.getX(), wr.getY(), 4.0f, wr.getHeight());
+                    g.setColour(juce::Colours::white.withAlpha(0.05f));
+                    g.fillRect(wr.getX(), wr.getBottom() - 1.0f, wr.getWidth(), 1.0f);
+                }
             }
         }
         if (st != nullptr && !sg.meter.isEmpty())
@@ -7288,17 +7349,26 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             // by the processor's persisted value. No pending display: the
             // value applies immediately and paint reads it straight back.
             const float gDb = processorRef.getBusGainDb();
-            const int imgW = sg.fader.getHeight() / 8;
-            const juce::Rectangle<int> img(sg.fader.getRight() - imgW,
-                                           sg.fader.getY(), imgW,
-                                           sg.fader.getHeight());
-            for (float mark = 12.0f; mark >= -24.1f; mark -= 6.0f)
+            const juce::Rectangle<int> img = sg.faderImg;
+            const int imgW = img.getHeight() / 8;
+            const int slotX = img.getRight() - imgW / 2 - 1;
+            g.setColour(LinkConsole::well.brighter(0.06f));
+            if (img.getY() > sg.fader.getY())
+                g.fillRect(slotX, sg.fader.getY(), 2, img.getY() - sg.fader.getY());
+            if (sg.fader.getBottom() > img.getBottom())
+                g.fillRect(slotX, img.getBottom(), 2,
+                           sg.fader.getBottom() - img.getBottom());
+            const int laneR = img.getX() - 1;
+            for (int m = 12; m >= -24; m -= 2)
             {
-                const int ty = yFromGain(mark, sg.fader);
-                const bool zero = mark == 0.0f;
-                g.setColour(zero ? LinkConsole::label : LinkConsole::structure);
-                g.fillRect(sg.fader.getX(), ty, img.getX() - sg.fader.getX() - 1,
-                           zero ? 2 : 1);
+                const int ty = yFromGain((float)m, img);
+                const bool major = (m % 6 == 0);
+                const bool zero  = (m == 0);
+                g.setColour(zero ? LinkConsole::label
+                          : major ? LinkConsole::structure
+                                  : LinkConsole::structure.withAlpha(0.5f));
+                const int tx = major ? sg.fader.getX() : sg.fader.getX() + 1;
+                g.fillRect(tx, ty, juce::jmax(1, laneR - tx), zero ? 2 : 1);
             }
             const auto strip = getFaderFilmstrip();
             if (strip.isValid())
@@ -7317,8 +7387,8 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 g.setColour(LinkConsole::caption);
                 g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
                 g.drawText(juce::String(gDb, 1),
-                           sg.fader.getX(), sg.fader.getY() - 11,
-                           sg.fader.getWidth(), 10,
+                           img.getX() - 4, img.getY() - 11,
+                           img.getWidth() + 8, 10,
                            juce::Justification::centred);
             }
         }
@@ -7333,25 +7403,36 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             const float gDb = dragging ? linkMixerView_.dragValue
                                        : linkRowDisplayGain(sg.addr);
 
-            // The column splits into ticks lane (left) + image (right). The
-            // image width IS height/8: the rect was built as
-            // (lane + imgW) x (imgW * 8) by layOutStrips, so this recovers
-            // the same number the author used, it does not invent one.
-            const int imgW = sg.fader.getHeight() / 8;
-            const juce::Rectangle<int> img(sg.fader.getRight() - imgW,
-                                           sg.fader.getY(), imgW,
-                                           sg.fader.getHeight());
+            // The image rect is STORED (faderImg); its width is height/8 by
+            // construction. The lane (sg.fader) runs the full band height:
+            // a groove line continues the slot above and below the image so
+            // the lane reads as one object sharing the meter's extent.
+            const juce::Rectangle<int> img = sg.faderImg;
+            const int imgW = img.getHeight() / 8;
+            const int slotX = img.getRight() - imgW / 2 - 1;
+            g.setColour(LinkConsole::well.brighter(0.06f));
+            if (img.getY() > sg.fader.getY())
+                g.fillRect(slotX, sg.fader.getY(), 2, img.getY() - sg.fader.getY());
+            if (sg.fader.getBottom() > img.getBottom())
+                g.fillRect(slotX, img.getBottom(), 2,
+                           sg.fader.getBottom() - img.getBottom());
 
-            // Travel ticks down the lane, console style: every 6 dB from
-            // +12 to -24, the 0 dB line emphasised. yFromGain is the same
-            // mapping the drag consumes, so ticks and travel cannot drift.
-            for (float mark = 12.0f; mark >= -24.1f; mark -= 6.0f)
+            // Travel ticks, reference density: MINOR every 2 dB (short,
+            // dim), MAJOR every 6 dB (longer), 0 dB emphasised. All mapped
+            // by the same yFromGain the drag consumes, over the IMAGE rect,
+            // where the travel physically lives.
+            const int laneR = img.getX() - 1;
+            for (int m = 12; m >= -24; m -= 2)
             {
-                const int ty = yFromGain(mark, sg.fader);
-                const bool zero = mark == 0.0f;
-                g.setColour(zero ? LinkConsole::label : LinkConsole::structure);
-                g.fillRect(sg.fader.getX(), ty, img.getX() - sg.fader.getX() - 1,
-                           zero ? 2 : 1);
+                const float mark = (float)m;
+                const int ty = yFromGain(mark, img);
+                const bool major = (m % 6 == 0);
+                const bool zero  = (m == 0);
+                g.setColour(zero ? LinkConsole::label
+                          : major ? LinkConsole::structure
+                                  : LinkConsole::structure.withAlpha(0.5f));
+                const int tx = major ? sg.fader.getX() : sg.fader.getX() + 1;
+                g.fillRect(tx, ty, juce::jmax(1, laneR - tx), zero ? 2 : 1);
             }
 
             const auto strip = getFaderFilmstrip();
@@ -7375,7 +7456,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 g.setColour(C::bg4);
                 g.fillRoundedRectangle((float)cx - 2.0f, (float)sg.fader.getY(),
                                        4.0f, (float)sg.fader.getHeight(), 2.0f);
-                const int ty = yFromGain(gDb, sg.fader);
+                const int ty = yFromGain(gDb, img);
                 g.setColour(LinkConsole::value);
                 g.fillRoundedRectangle((float)sg.fader.getX(), (float)ty - 2.0f,
                                        (float)sg.fader.getWidth(), 4.0f, 2.0f);
@@ -7460,7 +7541,7 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
                     repaint();
                     break;
                 }
-                processorRef.setBusGainDb(gainFromY(local.y, sg.fader));
+                processorRef.setBusGainDb(gainFromY(local.y, sg.faderImg));
                 busFaderDragging_ = true;
                 busFaderLastY_    = local.y;
                 repaint();
@@ -7476,7 +7557,7 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
                 break;
             }
             linkMixerView_.dragAddr       = sg.addr;
-            linkMixerView_.dragValue      = gainFromY(local.y, sg.fader);
+            linkMixerView_.dragValue      = gainFromY(local.y, sg.faderImg);
             linkMixerView_.lastDragY      = local.y;   // incremental anchor
             linkMixerView_.lastGainSendMs = juce::Time::getMillisecondCounter();
             sendLinkGainCommand(sg.addr, linkMixerView_.dragValue);
@@ -7787,7 +7868,7 @@ void EchoJayEditor::LinkMixerView::mouseDrag(const juce::MouseEvent& e)
     for (const auto& sg : owner->linkStripGeom_)
         if (sg.addr == dragAddr)
         {
-            const float rate = EchoJayEditor::gainPerPixel(sg.fader)
+            const float rate = EchoJayEditor::gainPerPixel(sg.faderImg)
                              * (e.mods.isShiftDown()
                                     ? EchoJayEditor::kFaderFineRatio : 1.0f);
             dragValue = juce::jlimit(-24.0f, 12.0f,
@@ -22382,7 +22463,7 @@ void EchoJayEditor::mouseDrag(const juce::MouseEvent& e)
     // needed for a local value).
     if (!busFaderDragging_) return;
     const int y = e.getPosition().y;
-    const float rate = gainPerPixel(linkBusGeom_.fader)
+    const float rate = gainPerPixel(linkBusGeom_.faderImg)
                      * (e.mods.isShiftDown() ? kFaderFineRatio : 1.0f);
     processorRef.setBusGainDb(juce::jlimit(-24.0f, 12.0f,
         std::round((processorRef.getBusGainDb()
