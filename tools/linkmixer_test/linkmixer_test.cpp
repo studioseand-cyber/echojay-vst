@@ -69,6 +69,8 @@ struct EchoJayLinkMixerTestAccess
     { return Ed::stripSelected (isBus, entryUid, effectiveUid); }
 
     static int   frameFor (float db)                        { return Ed::faderFrameForGain (db); }
+    static float travelTop()                                { return Ed::kFaderTravelTopFrac; }
+    static float travelBot()                                { return Ed::kFaderTravelBotFrac; }
     static float gFromY (int y, juce::Rectangle<int> t)     { return Ed::gainFromY (y, t); }
     static int   yFromG (float db, juce::Rectangle<int> t)  { return Ed::yFromGain (db, t); }
     static int   frames()                                   { return Ed::kFaderFrames; }
@@ -283,10 +285,21 @@ static void testFaderAspect (int stripW, int bandH)
         checkEq (s0.meter.getX() - f.getRight(), T::bandGap(),
                  "fader column and meter sit one band gap apart");
         check (f.getBottom() <= s0.ai.getY(), "the band sits above the AI button");
-        // Console pass (d): fader and meter share a BASELINE so the pair
-        // reads as one unit, the reference's arrangement.
-        checkEq (f.getBottom(), s0.meter.getBottom(),
-                 "fader and meter share a baseline");
+        // Item-1 regression guard: the fader is CENTRED in the band (the
+        // bottom-alignment bug anchored every cap in the well's floor), and
+        // a given gain lands at the SAME y on every strip.
+        {
+            // The band's vertical extent is lamp top to meter bottom (the
+            // well the eye sees); the author centres in exactly that.
+            const int bandTop = s0.clip.isEmpty() ? s0.meter.getY()
+                                                  : s0.clip.getY();
+            const int above = f.getY() - bandTop;
+            const int below = s0.meter.getBottom() - f.getBottom();
+            check (std::abs (above - below) <= 1, "the fader is centred in the band");
+            if (links.size() > 1)
+                checkEq (T::yFromG (0.0f, f), T::yFromG (0.0f, links[1].fader),
+                         "0 dB sits at the same y on every strip");
+        }
     }
 }
 
@@ -457,22 +470,33 @@ static void testFaderMapping()
     std::printf ("fader mapping: endpoints, round-trip, clamps, frames\n");
     const juce::Rectangle<int> t { 10, 50, 23, 191 };
 
-    // Endpoints: bottom of the rect is -24, top is +12.
-    check (T::gFromY (t.getBottom(), t) == -24.0f, "rect bottom reads -24 dB");
-    check (T::gFromY (t.getY(), t)      ==  12.0f, "rect top reads +12 dB");
-    checkEq (T::yFromG (-24.0f, t), t.getBottom(), "-24 dB sits at the rect bottom");
-    checkEq (T::yFromG ( 12.0f, t), t.getY(),      "+12 dB sits at the rect top");
+    // The mapping runs across the artwork's measured CAP TRAVEL band, not
+    // the full rect: the caps physically cannot reach the frame edges, so a
+    // full-rect mapping put ticks where no cap can go (the item-1 bug's
+    // second half). Endpoints land at the travel fractions.
+    const int top = t.getY() + (int) std::round (T::travelTop() * (float) t.getHeight());
+    const int bot = t.getY() + (int) std::round (T::travelBot() * (float) t.getHeight());
+    check (std::abs (T::yFromG (-24.0f, t) - bot) <= 1, "-24 dB sits at the travel bottom");
+    check (std::abs (T::yFromG ( 12.0f, t) - top) <= 1, "+12 dB sits at the travel top");
+    check (T::gFromY (bot, t) == -24.0f, "the travel bottom reads -24 dB");
+    check (T::gFromY (top, t) ==  12.0f, "the travel top reads +12 dB");
 
-    // Clamping: outside the rect pins the range, never escapes it.
+    // A known gain maps to a known y: 0 dB is two thirds up the travel.
+    {
+        const int want = (int) std::round ((float) bot - (2.0f / 3.0f) * (float)(bot - top));
+        check (std::abs (T::yFromG (0.0f, t) - want) <= 1, "0 dB sits two thirds up the travel");
+    }
+
+    // Clamping: outside the rect (and outside the travel band) pins.
     check (T::gFromY (t.getBottom() + 50, t) == -24.0f, "below the rect clamps to -24");
     check (T::gFromY (t.getY() - 50, t)      ==  12.0f, "above the rect clamps to +12");
 
-    // Round-trip within one pixel + one snap step: 36 dB over 191 px is
-    // 0.188 dB per px, snap is 0.1, so 0.25 covers both.
+    // Round-trip within one pixel + one snap step across the travel band:
+    // 36 dB over ~0.75 * 191 px is ~0.25 dB per px, snap is 0.1.
     for (float db = -24.0f; db <= 12.01f; db += 1.7f)
     {
         const float back = T::gFromY (T::yFromG (db, t), t);
-        check (std::abs (back - db) <= 0.25f, "dB<->y round-trips within tolerance");
+        check (std::abs (back - db) <= 0.35f, "dB<->y round-trips within tolerance");
     }
 
     // Frames: full range maps 0..127, monotonic, and clamped so no gain can

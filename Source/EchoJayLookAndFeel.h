@@ -45,6 +45,23 @@ public:
         static inline const juce::Colour border    { juce::Colour::fromFloatRGBA(1, 1, 1, 0.05f) };
         static inline const juce::Colour border2   { juce::Colour::fromFloatRGBA(1, 1, 1, 0.1f) };
     };
+
+    /** THE plugin-card idiom, factored from the Chain tab's Block so the
+        Link mixer's rack blocks speak the same language and the two
+        surfaces cannot drift. The Chain Block consumes these verbatim; the
+        mixer derives its smaller blocks from the same values (radius scaled
+        to height, the bypass caption truncated from the same word). */
+    struct ChainCard {
+        static inline const juce::Colour fill         { 0xff0E1020 };
+        static inline const juce::Colour fillSelected { 0xff11293a };
+        static inline const juce::Colour edge         { juce::Colour::fromFloatRGBA(1, 1, 1, 0.08f) };
+        static inline const juce::Colour edgeSelected { 0xff22d3ee };
+        static inline const juce::Colour nameOn       { 0xfff0f0f5 };
+        static inline const juce::Colour nameBypassed { 0xff606078 };
+        static inline const juce::Colour bypAccent    { 0xfff59e0b };
+        static constexpr float       corner = 8.0f;   // at the Chain block's 64px height
+        static constexpr const char* bypCaption = "BYPASSED";
+    };
     
     // Lift the ComboBox font cap from JUCE's default 15 to 16 so the header
     // source/genre dropdowns read ~1px larger (they were already at the 15

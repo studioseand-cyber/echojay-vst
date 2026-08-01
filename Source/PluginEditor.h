@@ -1421,22 +1421,25 @@ private:
 
             void paint(juce::Graphics& g) override
             {
+                // Consumes EchoJayLookAndFeel::ChainCard, THE plugin-card
+                // idiom shared with the Link mixer's rack blocks. Same
+                // values as always, now named so the two cannot drift.
+                using Card = EchoJayLookAndFeel::ChainCard;
                 auto r = getLocalBounds().toFloat().reduced(0.5f);
-                g.setColour(selected ? juce::Colour(0xff11293a) : juce::Colour(0xff0E1020));
-                g.fillRoundedRectangle(r, 8.0f);
-                g.setColour(selected ? juce::Colour(0xff22d3ee)
-                                     : juce::Colour::fromFloatRGBA(1, 1, 1, 0.08f));
-                g.drawRoundedRectangle(r, 8.0f, selected ? 1.5f : 1.0f);
+                g.setColour(selected ? Card::fillSelected : Card::fill);
+                g.fillRoundedRectangle(r, Card::corner);
+                g.setColour(selected ? Card::edgeSelected : Card::edge);
+                g.drawRoundedRectangle(r, Card::corner, selected ? 1.5f : 1.0f);
 
-                g.setColour(bypassed ? juce::Colour(0xff606078) : juce::Colour(0xfff0f0f5));
+                g.setColour(bypassed ? Card::nameBypassed : Card::nameOn);
                 g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
                 g.drawText(name, 6, 3, getWidth() - 12, 18,
                            juce::Justification::centred, true);
                 if (bypassed)
                 {
-                    g.setColour(juce::Colour(0xfff59e0b));
+                    g.setColour(Card::bypAccent);
                     g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
-                    g.drawText("BYPASSED", 6, 19, getWidth() - 12, 9,
+                    g.drawText(Card::bypCaption, 6, 19, getWidth() - 12, 9,
                                juce::Justification::centred);
                 }
                 if (popoutOnly)
@@ -2546,22 +2549,37 @@ private:
         return juce::jlimit(0, kFaderFrames - 1,
                             (int)std::round(f * (float)(kFaderFrames - 1)));
     }
-    /** dB<->y for the fader rect. It replaced the old horizontal pair,
-        which went with the row list at step 11: a move, never a second
-        authority. Same range (-24..+12), same 0.1 dB snap; bottom of the
-        rect is -24, top is +12. Pure, shared by drag and the decode-failure
-        fallback thumb. */
+    // The artwork's cap TRAVEL is inset from the frame edges: measured from
+    // the filmstrip itself (background-subtracted brightness centroid per
+    // frame), the cap centre runs row 419 (frame 0, -24 dB) to row 60
+    // (frame 127, +12 dB) of the 480-row frame, LINEAR at 2.83 rows/frame.
+    // dB therefore maps onto that band, not the full rect, so the ticks,
+    // the drag and the drawn cap land on the same pixel. Change these only
+    // by re-measuring the artwork.
+    static constexpr float kFaderTravelTopFrac = 60.0f  / 480.0f;
+    static constexpr float kFaderTravelBotFrac = 419.0f / 480.0f;
+    /** dB<->y for the fader rect, mapped across the artwork's cap travel
+        band (see above). Same range (-24..+12), same 0.1 dB snap. Pure,
+        shared by the drag, the travel ticks and the fallback thumb. */
     static float gainFromY(int y, juce::Rectangle<int> track)
     {
+        const float top = (float)track.getY()
+                        + kFaderTravelTopFrac * (float)track.getHeight();
+        const float bot = (float)track.getY()
+                        + kFaderTravelBotFrac * (float)track.getHeight();
         const float f = juce::jlimit(0.0f, 1.0f,
-            (float)(track.getBottom() - y) / (float)juce::jmax(1, track.getHeight()));
+            (bot - (float)y) / juce::jmax(1.0f, bot - top));
         return juce::jlimit(-24.0f, 12.0f,
             std::round((-24.0f + f * 36.0f) * 10.0f) / 10.0f);
     }
     static int yFromGain(float db, juce::Rectangle<int> track)
     {
+        const float top = (float)track.getY()
+                        + kFaderTravelTopFrac * (float)track.getHeight();
+        const float bot = (float)track.getY()
+                        + kFaderTravelBotFrac * (float)track.getHeight();
         const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
-        return track.getBottom() - (int)std::round(f * (float)track.getHeight());
+        return (int)std::round(bot - f * (bot - top));
     }
 
     // Authored by measureLinkStrips(), consumed by paintLinkView() and the
