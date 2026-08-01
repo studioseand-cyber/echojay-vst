@@ -452,6 +452,25 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   veteran cache reads not-dialable until a content rev bump. Decision
   needed from whoever owns the rev contract: overlay serve-time fields
   onto the cached object on unchanged rev, or fold them into rev.
+- TYPEDREADBACKMATCH HAS REVERTED A CORRECT WRITE TWICE IN ONE DAY (risk
+  entry, filed 1 Aug 2026; not two unrelated fixes). First the q half-gap:
+  a target at the exact bracket midpoint lost to float representation by
+  ~3e-8 and a correct snap was reverted on every dial. Then the controls
+  unit override: a control name derives no unit from semanticUnit, so an
+  hz display like "1.2 kHz" parsed unitless as 1.2 against 1200 and a
+  correct write reverted. The SHAPE both share: the verifier held a
+  belief about the display (its tolerance, its unit) that was stricter or
+  blinder than the plugin's own display contract, and the failure mode is
+  VERIFICATION UNDOING REAL SUCCESS, which telemetry then reports as the
+  write failing - the diagnosis points away from the verifier every time.
+  A third bug will get a third point fix under time pressure; this entry
+  exists so the function gets the systematic pass a point fix never
+  forces: enumerate every assumption typedReadbackMatch + parseDisplayForUnit
+  make about a display (unit source, locale/comma, token order, snap
+  direction, negative-infinity forms, k-multiplier scope) and check each
+  against the corpus BEFORE the next class fires. Until that pass exists,
+  any new "asked X, plugin shows Y, value restored" telemetry cluster
+  should be presumed a VERIFIER bug first and a wrong write second.
 
 ## Standing engineering rules (from prior work)
 - Build via ~/reinstall-v2.sh (kills AU host, bumps version, rebuilds, installs
