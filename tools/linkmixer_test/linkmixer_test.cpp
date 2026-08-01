@@ -273,10 +273,11 @@ static void testFaderAspect (int stripW, int bandH)
 
     const auto& s0 = links[0];
     const auto f = s0.fader;
-    std::printf ("  fader col %dx%d (img %d wide), meter %dx%d, data %dx%d\n",
-                 f.getWidth(), f.getHeight(), f.getHeight() / 8,
-                 s0.meter.getWidth(), s0.meter.getHeight(),
-                 s0.data.getWidth(), s0.data.getHeight());
+    std::printf ("  lane %dx%d, image %dx%d (%d%% of lane), meter %dx%d\n",
+                 f.getWidth(), f.getHeight(),
+                 s0.faderImg.getWidth(), s0.faderImg.getHeight(),
+                 f.getHeight() > 0 ? s0.faderImg.getHeight() * 100 / f.getHeight() : 0,
+                 s0.meter.getWidth(), s0.meter.getHeight());
 
     // THE METER IS PERMANENT CHROME: present at every shipping size.
     check (! s0.meter.isEmpty(), "the meter band exists");
@@ -304,9 +305,26 @@ static void testFaderAspect (int stripW, int bandH)
         check (std::abs ((fi.getY() - f.getY())
                          - (f.getBottom() - fi.getBottom())) <= 1,
                "the image is centred in the lane");
-        check (fi.getHeight() / 8 <= fi.getWidth(), "the 1:8 image fits its column");
-        check (fi.getHeight() / 8 <= 60, "the fader never upscales from the source");
-        check (fi.getHeight() % 8 == 0, "image height is exactly image width * 8");
+        // THE ASPECT LOCK, held as EQUALITY: the visual pass sized the
+        // image to the whole column and drew a 96-tall frame 16 wide (1:6),
+        // and the old <= assertion let it through. Width derives from
+        // height now, so this is exact.
+        checkEq (fi.getWidth() * 8, fi.getHeight(), "the image is EXACTLY 1:8");
+        check (fi.getWidth() <= 60, "the fader never upscales from the source");
+        check (fi.getWidth() <= f.getWidth(), "the image fits its lane");
+        checkEq (fi.getRight(), f.getRight(), "the image is right-aligned, ticks to its left");
+
+        // THE BUDGET (visual pass 3): fader column + gap + meter fills the
+        // band exactly, and the FADER takes the larger share, because
+        // column width is fader height is throw.
+        const int inner = f.getWidth() + T::bandGap() + s0.meter.getWidth();
+        checkEq (inner, stripW - 8, "fader, gap and meter fill the band exactly");
+        check (f.getWidth() > s0.meter.getWidth(),
+               "the fader column is wider than the meter");
+        // The image fills a real proportion of its lane rather than
+        // floating in a long groove (the fault this pass fixes).
+        check (fi.getHeight() * 100 >= f.getHeight() * 65,
+               "the image fills at least 65 percent of the lane");
 
         checkEq (s0.meter.getX() - f.getRight(), T::bandGap(),
                  "fader column and meter sit one band gap apart");

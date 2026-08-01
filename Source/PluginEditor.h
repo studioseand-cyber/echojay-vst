@@ -2566,10 +2566,16 @@ private:
     // Unreachable at shipping widths; defined and tested anyway.
     static constexpr int kFaderHMax = 240;
     static constexpr int kFaderHMin = 144;
-    static constexpr int kFaderColNarrow  = 16;  // 4 ticks lane + 12 image
-    static constexpr int kFaderColWide    = 26;  // 6 ticks lane + 20 image
+    // Rebalanced (visual pass 3): the fader column takes the larger share
+    // of the band because column width IS fader height (1:8) and therefore
+    // throw and resolution; the meter takes the remainder and keeps its
+    // legibility through the gutter, not through fat bars.
+    //   narrow 46 inner = 26 fader + 4 gap + 16 meter
+    //   wide   88 inner = 44 fader + 4 gap + 40 meter
+    static constexpr int kFaderColNarrow  = 26;  // 4 ticks lane + 22 image
+    static constexpr int kFaderColWide    = 44;  // 14 ticks lane + 30 image
     static constexpr int kFaderTickLaneN  = 4;
-    static constexpr int kFaderTickLaneW  = 6;
+    static constexpr int kFaderTickLaneW  = 14;
     static constexpr int kBandGap         = 4;   // fader column <-> meter
     static constexpr int kMeterWMin       = 12;  // meter survival floor
     // The filmstrip asset (Assets/iron_fader_60.png -> EchoJayFaderFilmstrip.h,
@@ -2877,7 +2883,10 @@ private:
     static void meterBarRects(juce::Rectangle<int> area,
                               int& gutterOut, juce::Rectangle<int> barsOut[2])
     {
-        gutterOut = area.getWidth() >= 50 ? 16
+        // 38, not 50: the wide meter is narrower now, and the gutter is
+        // what scale legibility actually needs. Full numbering survives on
+        // slim bars, which is the point of taking width off the meter.
+        gutterOut = area.getWidth() >= 38 ? 16
                   : area.getWidth() >= 24 ? 11 : 6;
         auto bars = area.withTrimmedTop(2).withTrimmedBottom(2)
                         .withTrimmedLeft(gutterOut);

@@ -6068,6 +6068,13 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
     // before the lock runs). If the band cannot hold the column plus a
     // minimum meter, THE METER WINS: the column shrinks, and below a usable
     // sliver the fader drops entirely. Unreachable at shipping widths.
+    // THE HORIZONTAL BUDGET, rebalanced: the fader column takes the larger
+    // share and the meter takes the remainder, because a wider column is a
+    // TALLER fader (1:8) and therefore a longer throw and finer resolution,
+    // while a wider meter is only a fatter bar carrying no more information.
+    // The meter keeps its scale legibility instead through the gutter, whose
+    // label threshold dropped with it, so wide still numbers every mark on
+    // slimmer bars.
     const int bandInnerW = juce::jmax(0, stripW - inner * 2);
     int faderColW = bandInnerW >= 60 ? kFaderColWide : kFaderColNarrow;
     if (faderColW + kBandGap + kMeterWMin > bandInnerW)
@@ -6077,8 +6084,7 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
                                                     : kFaderTickLaneN;
     const int faderImgW = juce::jmax(0, faderColW - tickLane);
     // 1:8 lock, snapped DOWN to an exact multiple of 8 after the band-height
-    // clamp: a 87px clamp would otherwise draw a 10-wide image at 8.7:1,
-    // which is precisely the distortion the lock exists to prevent.
+    // clamp, so the drawn width (faderH / 8) is exact rather than nearly so.
     int faderH = juce::jmin(bandH, faderImgW * 8);
     faderH -= faderH % 8;
 
@@ -6105,14 +6111,17 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
             auto col = fmBand.removeFromLeft(faderColW);
             // The LANE is the full column, so fader and meter share height
             // and baseline (and the drag target grows with it). The IMAGE
-            // stays aspect-locked and CENTRES in the lane: the artwork's
-            // throw is physically 8x its width and must not stretch or
-            // slide, so the lane extends visually while the cap travel
-            // remains the image's. Both rects are stored; the dB mapping
-            // lives on faderImg.
-            sg.fader    = col;
-            sg.faderImg = col.withSizeKeepingCentre(
-                              faderColW, juce::jmin(faderH, col.getHeight()));
+            // is EXACTLY 1:8 and right-aligned in the lane, tick lane to its
+            // left, vertically centred. The visual pass sized this rect to
+            // the whole column width, which stretched the artwork (a 96-tall
+            // image drawn 16 wide is 1:6, not 1:8); the width now derives
+            // from the height, so the lock cannot be lost again.
+            sg.fader = col;
+            int ih = juce::jmin(faderH, col.getHeight());
+            ih -= ih % 8;
+            const int iw = ih / 8;
+            sg.faderImg = { col.getRight() - iw,
+                            col.getCentreY() - ih / 2, iw, ih };
             fmBand.removeFromLeft(kBandGap);
         }
         // Clip lamp above the bars, stored like everything else: the reset
@@ -7058,12 +7067,19 @@ bool EchoJayEditor::findLinkEntryByAddr(const juce::String& addr,
 void EchoJayEditor::linkPendingFor(const juce::String& addr, bool& pending,
                                    bool& timedOut, bool& target) const
 {
-    // VERBATIM the old row list's lookup: any pending entry for this addr
-    // wins, last writer takes it. Kept exactly, per review, including that it
-    // does not filter isGain.
+    // ACTIVE-STATE PENDINGS ONLY. The old row list's lookup did not filter
+    // isGain, and step 3 carried that quirk over verbatim; it was a bug the
+    // moment the fader became draggable. A gain command in flight is also a
+    // pending on this addr, so the Active tick rendered the GAIN pending's
+    // target field (default false) and unticked mid-drag, returning on
+    // release. The channel never deactivated: the display was reading the
+    // wrong pending. Every OTHER active reader already filters !isGain
+    // (sendLinkActiveCommand, sendLinkPlacementCommand); the gain display
+    // filters isGain; the seq-advance loop deliberately scans all kinds for
+    // uniqueness. Nothing relied on the quirk.
     pending = timedOut = target = false;
     for (const auto& p : linkCtrlPending_)
-        if (p.addr == addr)
+        if (p.addr == addr && !p.isGain)
         { pending = !p.timedOut; timedOut = p.timedOut; target = p.target; }
 }
 
