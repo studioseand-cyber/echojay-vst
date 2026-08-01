@@ -14139,8 +14139,13 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         auto* po = parr->getReference(pi).getDynamicObject();
                         if (po == nullptr) { cardY += kGainCardH + 6; continue; }
                         const juce::String linkId = po->getProperty("linkId").toString();
-                        const float propG = juce::jlimit(-24.0f, 12.0f,
-                                              (float)(double)po->getProperty("proposedGain"));
+                        // CLAMP HONESTY: keep the RAW proposal and the clamped
+                        // value both. A card may never show a number the prose
+                        // did not propose without SAYING it clamped, and a
+                        // shortfall is named, never swallowed.
+                        const float rawG  = (float)(double)po->getProperty("proposedGain");
+                        const float propG = juce::jlimit(-24.0f, 12.0f, rawG);
+                        const float shortfall = rawG - propG;    // 0 when in range
                         const juce::String reason = po->getProperty("reason").toString();
                         const bool applied = (bool)po->getProperty("applied");   // persisted
                         // faderDependent defaults TRUE when absent (safe: an
@@ -14149,8 +14154,11 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                             ? (bool)po->getProperty("faderDependent") : true;
                         const juce::String uid = resolveLinkProposalAddr(linkId);
                         const bool present = uid.isNotEmpty();
+                        const bool isBusProp = (uid == "MIX BUS");
                         // Placement gate: a fader-dependent match on a
-                        // channel/unset Link is REFUSED (we can't see the fader)
+                        // channel/unset Link is REFUSED (we can't see the
+                        // fader). The BUS is never refused: its meters are
+                        // this instance's own.
                         int place = 0;
                         for (const auto& li : processorRef.getLinkSlotInfos())
                         {
@@ -14158,7 +14166,17 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                 ? li.uid : LinkShm::makeSafeFilePart(li.name);
                             if (a == uid) { place = li.placement; break; }
                         }
-                        const bool refused = present && faderDep && place != 1;   // not "bus"
+                        const bool refused = present && !isBusProp
+                                          && faderDep && place != 1;   // not "bus"
+                        // A DEAD BUTTON IS IMPOSSIBLE BY CONSTRUCTION: when
+                        // the clamped value equals the current gain there is
+                        // no move to offer, so the card DECLINES (no button)
+                        // and explains, instead of offering an Apply that
+                        // changes nothing.
+                        const float curG = isBusProp ? processorRef.getBusGainDb()
+                                                     : linkRowDisplayGain(uid);
+                        const bool noMove = present && !applied
+                                          && std::abs(propG - curG) < 0.05f;
 
                         juce::Rectangle<int> card(bubbleX, cardY, bubbleW, kGainCardH);
                         g.setColour(C::bg2);
@@ -14167,19 +14185,40 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                         .withAlpha(applied ? 0.5f : 0.3f));
                         g.drawRoundedRectangle(card.toFloat(), 8.0f, 1.0f);
 
-                        // Title: "Vocal bus: -3.0 dB"
+                        // Title: "Vocal bus: -3.0 dB", and when clamped the
+                        // TRUE target rides alongside so the card and the
+                        // prose cannot disagree: "Music.cm: +12.0 dB (wants +14.5)"
                         g.setColour(present ? C::text : C::text3);
                         g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
                         juce::String title = linkId + ": "
                             + (propG >= 0 ? "+" : "") + juce::String(propG, 1) + " dB";
+                        if (std::abs(shortfall) >= 0.05f)
+                            title << " (wants " << (rawG >= 0 ? "+" : "")
+                                  << juce::String(rawG, 1) << ")";
                         g.drawText(title, card.getX() + 12, card.getY() + 7,
                                    card.getWidth() - 96, 16, juce::Justification::centredLeft);
-                        // Reason line — or the refusal caveat
-                        g.setColour(refused ? juce::Colour(0xfff59e0b) : C::text3);
+                        // Reason line, in precedence: absent Link, refusal,
+                        // nothing-to-apply, clamp shortfall, then the
+                        // model's own reason.
+                        const bool amberLine = refused || noMove
+                                            || std::abs(shortfall) >= 0.05f;
+                        g.setColour(amberLine ? juce::Colour(0xfff59e0b) : C::text3);
                         g.setFont(juce::Font(juce::FontOptions(10.5f)));
-                        g.drawText(!present ? "Link no longer present"
-                                   : refused ? "Can't match: EchoJay can't see this channel's fader"
-                                             : reason,
+                        juce::String line;
+                        if (!present)      line = "Link no longer present";
+                        else if (refused)  line = "Can't match: EchoJay can't see this channel's fader";
+                        else if (noMove)
+                            line = "Already at " + juce::String(propG, 1) + " dB - the "
+                                 + (shortfall > 0 ? "remaining +" : "remaining ")
+                                 + juce::String(shortfall, 1) + " dB is beyond the "
+                                 + (shortfall > 0 ? "+12" : "-24") + " dB limit";
+                        else if (std::abs(shortfall) >= 0.05f)
+                            line = "Partial: " + juce::String(shortfall > 0 ? "+" : "")
+                                 + juce::String(shortfall, 1) + " dB beyond the "
+                                 + (shortfall > 0 ? "+12" : "-24")
+                                 + " dB limit stays unapplied";
+                        else line = reason;
+                        g.drawText(line,
                                    card.getX() + 12, card.getY() + 26,
                                    card.getWidth() - 96, 16, juce::Justification::centredLeft, true);
 
@@ -14187,7 +14226,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         // when refused (level-match refused for insert Links)
                         const bool inView = card.getY() >= chatScroll.getBounds().getY() - kGainCardH
                                          && card.getY() <= chatScroll.getBounds().getBottom();
-                        if (present && !refused && inView)
+                        if (present && !refused && !noMove && inView)
                         {
                             if (!applied)
                             {
@@ -19145,12 +19184,17 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
     c << "\n\n[LINK LEVELS — internal context, do not show raw numbers unless "
          "citing them in a gain proposal reason. All Link measurements below are "
          "taken at the Link's INSERT POINT, before the channel fader.]\n";
+    const float busTrim = processorRef.getBusGainDb();
     if (busMd.integrated > -70.0f)
-        c << "Mix bus (this instance): integrated " << f1(busMd.integrated)
+        c << "Mix bus (this instance): trim " << (busTrim >= 0 ? "+" : "")
+          << f1(busTrim) << " dB, integrated " << f1(busMd.integrated)
           << " LUFS, momentary " << f1(busMd.momentary)
-          << " LUFS, TP " << f1(juce::jmax(busMd.truePeakMaxL, busMd.truePeakMaxR)) << " dBTP\n";
+          << " LUFS, TP " << f1(juce::jmax(busMd.truePeakMaxL, busMd.truePeakMaxR)) << " dBTP"
+          << " (measured POST-trim; adjustable via linkId \"MIX BUS\")\n";
     else
-        c << "Mix bus (this instance): no signal captured yet\n";
+        c << "Mix bus (this instance): trim " << (busTrim >= 0 ? "+" : "")
+          << f1(busTrim) << " dB, no signal captured yet"
+          << " (adjustable via linkId \"MIX BUS\")\n";
     for (const auto& r : rows)
     {
         c << "Link \"" << r.name << "\" (instanceId " << r.uid << ", placement="
@@ -19188,7 +19232,14 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
              "more than once): \"I can compare levels properly if you tell me whether "
              "that Link is on a bus or a channel — set it in the Link's header.\" Do "
              "not nag beyond this one sentence, and never block the answer.\n";
-    c << "- Never claim you changed a gain yourself — the user applies it.\n"
+    c << "- DIRECTION: match the thing the user asked to MOVE. \"match X to Y\" "
+         "moves X toward Y's level; Y is the reference and stays put. If the user "
+         "asks to move the MIX BUS (\"match the bus to...\", \"bring the master "
+         "down to...\"), propose a MIX BUS trim change (linkId \"MIX BUS\", its "
+         "meters are this instance's own, never fader-dependent), NOT a channel "
+         "gain. If the request is ambiguous about which side should move, ASK "
+         "instead of proposing.\n"
+         "- Never claim you changed a gain yourself - the user applies it.\n"
          "\nProposal format — only when the rules above permit. Emit ONE block as the "
          "very last thing in your reply, nothing after <<<END_GAIN>>>:\n"
          "<<<ECHOJAY_GAIN>>>\n"
@@ -19198,14 +19249,23 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
          "like a TP over or an absolute target>,\"reason\":\"<one line citing the "
          "numbers>\"}]}\n"
          "<<<END_GAIN>>>\n"
-         "proposedGain is ABSOLUTE (the new gain, -24..+12), not a delta. One entry "
-         "per Link; multiple Links = multiple entries. Do NOT include a proposal for an "
-         "insert/unknown Link whose reason is fader-dependent.\n";
+         "proposedGain is ABSOLUTE (the new gain; the usable range is -24..+12), "
+         "not a delta. If the computed target lies OUTSIDE that range, emit the TRUE "
+         "target anyway and say in prose that it exceeds the range: the card clamps "
+         "it and names the shortfall, and a silently capped number is worse than an "
+         "honest one. One entry per Link; multiple Links = multiple entries. Do NOT "
+         "include a proposal for an insert/unknown Link whose reason is "
+         "fader-dependent.\n";
     return c;
 }
 
 juce::String EchoJayEditor::resolveLinkProposalAddr(const juce::String& linkId) const
 {
+    // THE BUS SENTINEL: "MIX BUS" addresses this instance's own trim. It can
+    // never collide with a uid (uids are hex, no space) and passes through
+    // verbatim; applyGainProposal branches on it.
+    if (linkId.equalsIgnoreCase("MIX BUS") || linkId.equalsIgnoreCase("Mix Bus"))
+        return "MIX BUS";
     // linkId may be a uid, a real name, or a display label ("Untitled 2") — the
     // model is fed display labels. Resolve any of them to the instance uid, the
     // only valid address. Match uid first, then the Monitor display label.
@@ -19234,19 +19294,27 @@ void EchoJayEditor::applyGainProposal(const GainCardZone& z)
     auto* po = pr.getArray()->getReference(z.propIndex).getDynamicObject();
     if (po == nullptr) return;
 
+    // The MIX BUS sentinel routes to the local trim; Links go over the
+    // protocol as always. Same card semantics (applied flag, prevGain undo);
+    // the bus arm just has no ack to wait for.
+    const bool isBus = (z.uid == "MIX BUS");
     if (z.isUndo)
     {
         const float prev = (float)(double)po->getProperty("prevGain");
-        sendLinkGainCommand(z.uid, prev);
+        if (isBus) processorRef.setBusGainDb(prev);
+        else       sendLinkGainCommand(z.uid, prev);
         po->setProperty("applied", false);
         EchoJay_NSLog(("EJChat: gain proposal UNDO -> " + juce::String(prev, 1)
                        + " dB (" + z.uid + ")").toRawUTF8());
     }
     else
     {
-        po->setProperty("prevGain", (double)linkRowDisplayGain(z.uid));  // capture for undo
+        po->setProperty("prevGain",
+            (double)(isBus ? processorRef.getBusGainDb()
+                           : linkRowDisplayGain(z.uid)));   // capture for undo
         po->setProperty("applied", true);
-        sendLinkGainCommand(z.uid, z.proposed);
+        if (isBus) processorRef.setBusGainDb(z.proposed);
+        else       sendLinkGainCommand(z.uid, z.proposed);
         EchoJay_NSLog(("EJChat: gain proposal APPLY -> " + juce::String(z.proposed, 1)
                        + " dB (" + z.uid + ")").toRawUTF8());
     }
