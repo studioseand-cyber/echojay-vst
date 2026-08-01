@@ -328,6 +328,33 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   REBUILDS the whole rack (destroying hosted plugin state). The note (plus
   the same block-rule strip chat turns use) must be REPLACED, not just
   removed, when 1c ships real edit operations.
+- BANDS[] CANNOT ARRIVE: MULTI-BAND MOVES ARE INEXPRESSIBLE FLEET-WIDE
+  (filed 1 Aug 2026, found chasing the AMEK manual-q telemetry). The
+  server's validate-settings.js VOCAB is flat; a model-emitted bands[]
+  array drops as "not in vocabulary" before it ever reaches the plugin.
+  Consequences: the matcher's explicit settings.bands path in applyBands
+  is dead code everywhere; every EQ request collapses to ONE synthBand,
+  so a turn can address exactly one band of a five-band map (AMEK). The
+  fix is server-side vocabulary (bands with per-band sub-validation
+  against the same semantic ranges). LATENT CLIENT BUG TO FIX IN THE
+  SAME SLICE: applySettings routes flat band-class keys into synthBand
+  and then applies it only in an ELSE IF behind settings.bands - the day
+  bands[] starts arriving, flat freq/gain/q riding the same turn are
+  silently dropped with NO honesty entry, the exact silent-skip class
+  apply-time honesty exists to prevent.
+- SERVE-TIME METADATA NEVER REACHES A CACHED MAP (filed 1 Aug 2026).
+  storeParamMaps stamps fpFetchedAt BEFORE the rev compare (deliberate:
+  an unchanged-rev answer must clear the stale flag) and then `continue`s
+  on unchanged rev, keeping the cached object wholesale - so a field the
+  server stamps at SERVE time rather than build time (dialable) never
+  lands on any map cached before the field existed, and the TTL path
+  keeps re-confirming the old object forever. Verified live: the local
+  AMEK map at rev b3f287f9537d reads dialable ABSENT while the server
+  stamps it on every response. mapIsDialableForSignals is strict
+  (absent = not dialable), so when kDialSignalsEnabled flips on, every
+  veteran cache reads not-dialable until a content rev bump. Decision
+  needed from whoever owns the rev contract: overlay serve-time fields
+  onto the cached object on unchanged rev, or fold them into rev.
 
 ## Standing engineering rules (from prior work)
 - Build via ~/reinstall-v2.sh (kills AU host, bumps version, rebuilds, installs
