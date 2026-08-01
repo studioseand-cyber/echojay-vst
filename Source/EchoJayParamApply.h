@@ -156,6 +156,18 @@ inline bool parseDisplayForUnit (const juce::String& text, const juce::String& u
 // display rounding and smoothing lag. Deliberately NO percent-of-target
 // term: on -18 dB that would permit +/-1.8 dB, wide enough to pass exactly
 // the wrong-write class this comparison exists to catch.
+//
+// NEAREST-STEP ACCEPTANCE (1 Aug 2026). A snapped display lands ON a step,
+// and a target at the exact midpoint of its bracket sits exactly at the
+// half-gap tolerance, where float representation decides the verdict: AMEK's
+// stepped Q ladder, asked 0.7, snapped up to "0.8", |diff| beat tol by ~3e-8
+// and a correct best-effort write was reverted, deterministically, on every
+// dial (the fleet's partial/manual["q"]). So the two anchors bracketing the
+// target are accepted by IDENTITY, ulp-scale epsilon only: landing on either
+// step around the target IS the map's own resolution, which is what the
+// distance tolerance above was already claiming to measure. The epsilon
+// covers text->float round-trip, nothing more; it must stay far below any
+// real anchor gap so nearest-step never becomes any-step.
 // Returns +1 match, 0 unparseable (cannot verify), -1 mismatch.
 inline int typedReadbackMatch (const juce::String& semantic, float target,
                                const juce::String& landedText,
@@ -171,13 +183,30 @@ inline int typedReadbackMatch (const juce::String& semantic, float target,
     vals.sort();
     const float lo = vals.getFirst(), hi = vals.getLast();
     float gap = 0.0f;
+    float bracketLo = 0.0f, bracketHi = 0.0f;
+    bool haveBracket = false;
     for (int i = 0; i < vals.size() - 1; ++i)
-        if (target >= vals[i] && target <= vals[i + 1]) { gap = vals[i + 1] - vals[i]; break; }
+        if (target >= vals[i] && target <= vals[i + 1])
+        {
+            gap = vals[i + 1] - vals[i];
+            bracketLo = vals[i];
+            bracketHi = vals[i + 1];
+            haveBracket = true;
+            break;
+        }
     if (gap <= 0.0f && vals.size() >= 2)
         gap = target < lo ? vals[1] - vals[0] : vals[vals.size() - 1] - vals[vals.size() - 2];
     const float tol = juce::jmax (0.02f * (hi - lo), 0.5f * gap);
 
     if (negInf) return target <= lo + tol ? +1 : -1;
+
+    if (haveBracket)
+    {
+        auto onStep = [landed] (float a)
+        { return std::abs (landed - a) <= juce::jmax (1.0e-5f * std::abs (a), 1.0e-6f); };
+        if (onStep (bracketLo) || onStep (bracketHi)) return +1;
+    }
+
     return std::abs (landed - target) <= tol ? +1 : -1;
 }
 
