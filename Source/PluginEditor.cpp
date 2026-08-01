@@ -418,6 +418,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         repaint();
     };
     dashUnreadSeen_ = processorRef.getDashUnreadGeneration();
+    // State that lives on the processor must be READ into a fresh editor at
+    // construction, not only on change. The poller reports "no work" while
+    // counts are unchanged, so the callback above never fires for a count
+    // that was already nonzero when Logic recreated this editor on a Link
+    // window switch — the dot (drawn from processor counts) would light while
+    // the MESSAGES line stayed absent, the exact badge-with-no-destination
+    // failure the line exists to prevent. This is the standing Logic
+    // editor-recreation rule applied to a value rather than a timer.
+    dashView_.setDirectUnread (processorRef.getDashUnread().direct);
 
     // Which tab to open on. From the PROCESSOR, so Logic's editor recreate on
     // every Link window switch returns the user to where they were instead of
