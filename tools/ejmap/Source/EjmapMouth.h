@@ -163,44 +163,88 @@ struct Mouth
 
         // Provenance: attributable or it does not leave.
         auto prov = map.getProperty ("provenance", juce::var());
-        if (testerName.isEmpty()
-             && prov.getProperty ("tester_id", "").toString().isEmpty())
+        const auto effectiveTester = testerName.isNotEmpty()
+                                       ? testerName
+                                       : prov.getProperty ("tester_id", "").toString();
+        if (effectiveTester.isEmpty())
             rej ("no tester name: set one with --tester <name> (an explicit local "
                  "name; the hostname is not provenance)");
         for (auto* k : { "machine_id", "ejmap_version", "apply_header_sha", "at" })
             if (prov.getProperty (k, "").toString().isEmpty())
                 rej (juce::String ("provenance.") + k + " missing");
 
+        // Every value that rides an HTTP header is checked here, where the
+        // refusal can be worded, not at write time where the only options
+        // are silent mutation or a forged header.
+        if (effectiveTester.isNotEmpty() && ! headerValueSafe (effectiveTester))
+            rej ("tester name cannot ride an HTTP header (printable ASCII only, "
+                 "no control characters): '" + effectiveTester + "'");
+        for (auto* k : { "machine_id", "ejmap_version" })
+        {
+            const auto hv = prov.getProperty (k, "").toString();
+            if (hv.isNotEmpty() && ! headerValueSafe (hv))
+                rej (juce::String ("provenance.") + k
+                       + " cannot ride an HTTP header (printable ASCII only)");
+        }
+
         return v;
     }
 
     //==========================================================================
+    /** Header values ride a CRLF-framed stream: a CR or LF in a value forges
+        headers, and anything outside printable ASCII is outside what HTTP
+        field values may carry. The tester name is typed by a human, so it is
+        checked at the gate rather than trusted.
+    */
+    static bool headerValueSafe (const juce::String& s)
+    {
+        for (auto t = s.getCharPointer(); ! t.isEmpty();)
+        {
+            const auto c = t.getAndAdvance();
+            if (c < 0x20 || c > 0x7e)
+                return false;
+        }
+        return true;
+    }
+
     /** The exact request, as bytes on disk. Headers CRLF-terminated, body
         verbatim from the map file, Content-Length exact. Diffable against
         whatever the real endpoint expects, before anything is ever sent.
+
+        The URL is sliced by hand, never through juce::URL: URL::init() parses
+        the query string away and getSubPath(true) re-escapes it on the way
+        back out, so the emitted bytes could differ from the string as typed;
+        getDomain() cuts at the first colon, so a port would never reach the
+        Host header. This artifact is checked byte for byte, so the user's
+        string is used byte for byte.
     */
     static juce::File writeDryRun (const juce::File& root, const juce::String& fp,
                                    const juce::MemoryBlock& body,
                                    const juce::String& testerName,
                                    const juce::String& machineId,
-                                   const juce::String& ejmapVersion)
+                                   const juce::String& ejmapVersion,
+                                   const juce::String& urlOverride = {})
     {
-        const auto url = juce::SystemStats::getEnvironmentVariable (
-                             "EJMAP_UPLOAD_URL",
-                             "https://UPLOAD-ENDPOINT-UNSET.echojay.invalid/api/ejmap/maps");
-        juce::URL u (url);
+        const auto url = urlOverride.isNotEmpty()
+                           ? urlOverride
+                           : juce::SystemStats::getEnvironmentVariable (
+                                 "EJMAP_UPLOAD_URL",
+                                 "https://UPLOAD-ENDPOINT-UNSET.echojay.invalid/api/ejmap/maps");
 
-        // getSubPath() drops the leading slash; a request line of
-        // "POST api/..." is malformed and a real server would refuse it.
-        auto path = u.getSubPath();
-        if (! path.startsWith ("/"))
-            path = "/" + path;
+        auto rest = url.contains ("://") ? url.fromFirstOccurrenceOf ("://", false, false)
+                                         : url;
+        const int slash = rest.indexOfChar ('/');
+        // host[:port] verbatim -- a typed port must reach the Host header.
+        const auto hostPort  = slash < 0 ? rest : rest.substring (0, slash);
+        // path + query verbatim, down to the escapes as typed; absolute or
+        // it is not a request line ("POST api/..." is one a server refuses).
+        const auto pathQuery = slash < 0 ? juce::String ("/") : rest.substring (slash);
 
         juce::String head;
-        head << "POST " << path << " HTTP/1.1\r\n"
-             << "Host: " << u.getDomain() << "\r\n"
+        head << "POST " << pathQuery << " HTTP/1.1\r\n"
+             << "Host: " << hostPort << "\r\n"
              << "Content-Type: application/json\r\n"
-             << "Content-Length: " << (int) body.getSize() << "\r\n"
+             << "Content-Length: " << juce::String ((juce::int64) body.getSize()) << "\r\n"
              << "X-EJMap-Version: " << ejmapVersion << "\r\n"
              << "X-EJMap-Machine: " << machineId << "\r\n"
              << "X-EJMap-Tester: " << testerName << "\r\n"
@@ -214,7 +258,9 @@ struct Mouth
         {
             out.setPosition (0);
             out.truncate();
-            out.writeText (head, false, false, nullptr);
+            // Raw bytes, not writeText: no line-ending translation layer
+            // between the string above and the file.
+            out.write (head.toRawUTF8(), head.getNumBytesAsUTF8());
             out.write (body.getData(), body.getSize());
             out.flush();
         }

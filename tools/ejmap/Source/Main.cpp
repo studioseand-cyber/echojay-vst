@@ -10,6 +10,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "MainComponent.h"
 #include "EjmapSchema.h"
+#include "EjmapMouth.h"
 
 // Generated on every build by cmake/StampBuildInfo.cmake. Carries the git short
 // hash of the commit actually compiled, plus "-dirty" when tracked files were
@@ -373,8 +374,18 @@ namespace
                     root = juce::File::getCurrentWorkingDirectory().getChildFile (argv[j + 1]);
             root.createDirectory();
             const juce::String name = juce::String (argv[i + 1]).unquoted();
+            // The name ends up on an HTTP header line. Refuse here, where the
+            // refusal can say so, not at upload time three sessions later.
+            if (name.isEmpty() || ! ejmap::Mouth::headerValueSafe (name))
+            {
+                std::cerr << "tester: '" << name << "' cannot ride an HTTP header "
+                          << "(printable ASCII only, no control characters)" << std::endl;
+                return 5;
+            }
             auto f = root.getChildFile ("tester.json");
-            f.replaceWithText ("{\"name\": \"" + name + "\"}");
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("name", name);
+            f.replaceWithText (juce::JSON::toString (juce::var (o), false));
             const auto back = juce::JSON::parse (f.loadFileAsString())
                                   .getProperty ("name", "").toString();
             if (back != name)

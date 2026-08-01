@@ -41,6 +41,7 @@
 // (parseDisplayForUnit, dominantMonotonicTable); the extractor header is the
 // M3 lift.
 #include "EchoJayParamExtractor.h"
+#include "EjmapMouth.h"
 
 namespace
 {
@@ -712,6 +713,107 @@ void testAgainstRealMaps()
 } // namespace
 
 //==============================================================================
+// The dry-run file is the only artifact checkable before a server exists, so
+// it is pinned BYTE BY BYTE: the getSubPath() leading-slash bug was caught by
+// reading emitted bytes, not by an assertion about intent, and these checks
+// keep that reading permanent. Each case is a same-shape risk found in the
+// audit: dropped port, dropped/re-escaped query, missing path, framing.
+void testDryRunBytes()
+{
+    auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                    .getChildFile ("ejmap-dryrun-test");
+    root.deleteRecursively();
+    root.createDirectory();
+
+    // A body with CRLF and non-ASCII bytes inside: Content-Length must count
+    // bytes, and the body must survive verbatim with nothing appended.
+    juce::MemoryBlock body;
+    const char raw[] = "{\"a\": 1,\r\n \"name\": \"caf\xc3\xa9\"}";
+    body.append (raw, sizeof (raw) - 1);
+
+    auto readAll = [] (const juce::File& f)
+    {
+        juce::MemoryBlock mb;
+        f.loadFileAsData (mb);
+        return mb;
+    };
+    auto headOf = [] (const juce::MemoryBlock& mb)
+    {
+        const juce::String all (juce::CharPointer_UTF8 ((const char*) mb.getData()),
+                                juce::CharPointer_UTF8 ((const char*) mb.getData() + mb.getSize()));
+        return all.upToFirstOccurrenceOf ("\r\n\r\n", true, false);
+    };
+
+    // Default: the placeholder that cannot be mistaken for a live endpoint.
+    {
+        auto f = ejmap::Mouth::writeDryRun (root, "fp-default", body, "tester", "machine", "0.0.0");
+        auto mb = readAll (f);
+        auto head = headOf (mb);
+        check (head.startsWith ("POST /api/ejmap/maps HTTP/1.1\r\n"),
+               "dry run: absolute request path from the placeholder URL");
+        check (head.contains ("\r\nHost: UPLOAD-ENDPOINT-UNSET.echojay.invalid\r\n"),
+               "dry run: placeholder host is visibly unset");
+        check (head.contains ("\r\nContent-Length: " + juce::String ((juce::int64) body.getSize()) + "\r\n"),
+               "dry run: Content-Length counts the body's exact bytes");
+        check (mb.getSize() == head.getNumBytesAsUTF8() + body.getSize(),
+               "dry run: file is head + body and NOTHING else (no trailing newline)");
+        check (mb.getSize() >= body.getSize()
+                 && memcmp ((const char*) mb.getData() + (mb.getSize() - body.getSize()),
+                            body.getData(), body.getSize()) == 0,
+               "dry run: body bytes verbatim, non-ASCII and CRLF intact");
+    }
+
+    // A typed port must reach the Host header (getDomain() would cut it).
+    {
+        auto f = ejmap::Mouth::writeDryRun (root, "fp-port", body, "t", "m", "v",
+                                            "http://localhost:8080/api/ejmap/maps");
+        auto head = headOf (readAll (f));
+        check (head.startsWith ("POST /api/ejmap/maps HTTP/1.1\r\n"),
+               "dry run: path independent of the port");
+        check (head.contains ("\r\nHost: localhost:8080\r\n"),
+               "dry run: typed port reaches the Host header");
+    }
+
+    // A query string must survive byte for byte, escapes as typed
+    // (juce::URL would strip it, or re-escape it on the way back out).
+    {
+        auto f = ejmap::Mouth::writeDryRun (root, "fp-query", body, "t", "m", "v",
+                                            "https://api.example.com/v2/maps?key=abc%20d&x=1");
+        auto head = headOf (readAll (f));
+        check (head.startsWith ("POST /v2/maps?key=abc%20d&x=1 HTTP/1.1\r\n"),
+               "dry run: query string verbatim, escapes as typed");
+        check (head.contains ("\r\nHost: api.example.com\r\n"),
+               "dry run: host clean of the query");
+    }
+
+    // A URL with no path is still a legal request line, never "POST  ".
+    {
+        auto f = ejmap::Mouth::writeDryRun (root, "fp-bare", body, "t", "m", "v",
+                                            "https://host.example");
+        auto head = headOf (readAll (f));
+        check (head.startsWith ("POST / HTTP/1.1\r\n"),
+               "dry run: bare host gets the root path, not an empty one");
+    }
+
+    // Header-value safety lives at the gate, in words. A CRLF in a tester
+    // name is a forged header; non-ASCII is outside what a field may carry.
+    check (ejmap::Mouth::headerValueSafe ("sean-studio"),
+           "header safety: a plain local name passes");
+    check (! ejmap::Mouth::headerValueSafe ("evil\r\nX-Injected: yes"),
+           "header safety: CRLF cannot ride a header value");
+    check (! ejmap::Mouth::headerValueSafe (juce::String (juce::CharPointer_UTF8 ("se\xc3\xa1n"))),
+           "header safety: non-ASCII cannot ride a header value");
+    {
+        auto* o = new juce::DynamicObject();
+        auto verdict = ejmap::Mouth::structuralGate (juce::var (o), "evil\r\nX-Injected: yes");
+        check (verdict.rejections.joinIntoString ("|").contains ("cannot ride an HTTP header"),
+               "gate: unsafe tester name refused in words");
+    }
+
+    root.deleteRecursively();
+}
+
+//==============================================================================
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -727,6 +829,7 @@ int main (int, char**)
     testGroupsRouteAroundMonoMaker();
     testNamedControlsResolve();
     testRoundTripThroughApplySettings();
+    testDryRunBytes();
     testAgainstRealMaps();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
