@@ -426,6 +426,29 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   is checked, via the init CAS. Whoever changes shm next has to start reading
   the version before they can rely on it.
 
+- AN HONESTY GATE DERIVES FROM FACTS THE CLIENT HOLDS, NEVER FROM A FIELD
+  THE MODEL FILLS IN (2 Aug 2026, learned twice in one arc). A structural
+  guard reading a model-supplied flag is not structural: it is the model's
+  phrasing wearing a guard's clothes. Evidence:
+    1. The gain card's refused verdict keyed on faderDependent, a flag the
+       model set itself. The same source Link, same placement, same target
+       class produced Apply in one turn and "Can't match" in the next,
+       because the model called one an absolute target and the other a
+       cross-channel comparison. Phrasing decided what facts should have
+       decided. Fixed by deriving insertPoint from placement alone and
+       ignoring the flag (which also left the proposal format).
+    2. The compare attribution statement INSTRUCTED the model to reason a
+       certain way ("compare them as versions of the full capture") rather
+       than requiring it to STATE anything, so the model obeyed silently
+       and the user saw no evidence the guard existed. Fixed by requiring
+       the statement.
+  THE GENERAL FORM: if the client can determine something from its own
+  state, it MUST, and the model's opinion about it is not an input. If the
+  client genuinely cannot determine it, the honest answer is to SAY SO
+  rather than to trust a self-report. A model-filled field may carry
+  content (names, numbers, reasons); it may never carry the verdict on
+  whether that content is trustworthy.
+
 ## Standing engineering rules (from prior work)
 - Build via ~/reinstall-v2.sh (kills AU host, bumps version, rebuilds, installs
   atomically). It now derives REPO from `git rev-parse --show-toplevel` and
