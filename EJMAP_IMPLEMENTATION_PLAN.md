@@ -241,6 +241,8 @@ each tick:
 > A poll could not have satisfied the row anyway. It sees a delta vector, so one control writing two parameters, a link mirroring a value onto its partner, and two merely-correlated parameters are one event to it. Separating them needs a reliable touched-parameter signal, which is the listener layer above — and even that is not guaranteed, since a mirroring plugin may report gestures on both or neither.
 >
 > **The moving-meter row** narrowed the same way: only 73 of 1,074,600 extracted parameters have both a readout name and a flat sweep, so exposed-meter-as-parameter is rare rather than typical. The noise mask still earns its place, but the baseline was demoted to a short probe rather than a 3-second one.
+>
+> *Live confirmation (2026-08-01, AMEK re-submission run):* four VU Meter parameters became **the first real readout-shaped parameters found on this machine** — getText lied at spot check, setread refused (`flat via gettext`), and set-then-read readback-verify failed. The rarity measurement holds (4 in one plugin against 73 in the corpus), and the refusal machinery caught all four without a human having to notice anything: rare, not imaginary, and handled by behaviour rather than by name.
 
 **Failure modes.** Trackpad micro movement causing a spurious `ui_hint` drift. Plugins that update parameters at block rate with tiny dither. Plugins whose GUI writes on mouse-up only (poll catches it, the 8 s timeout must not fire early).
 

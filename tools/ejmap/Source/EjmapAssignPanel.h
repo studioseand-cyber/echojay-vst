@@ -1283,6 +1283,10 @@ public:
 
     void armBandCard()
     {
+        // A live card owns the surface (the lockstep-pick rule). On the AMEK
+        // re-run the band table stayed rendered over a waiting card, buttons
+        // and all -- so arming hides the table, always.
+        summaryText.setVisible (false);
         rowAt (bandsRowIndex).state = AssignRow::State::armed;
         say (bandCardPrompt() + " - the card is LIVE (R discards a wrong grab and re-arms)");
         if (hooks.armForRow) hooks.armForRow();
@@ -1300,6 +1304,7 @@ public:
     {
         if (hooks.cancelArm) hooks.cancelArm();
         say ("Discarded. " + bandCardPrompt());
+        summaryText.setVisible (false);
         if (hooks.armForRow) hooks.armForRow();
     }
 
@@ -1342,7 +1347,12 @@ public:
                 {
                     say ("That was the previous control still settling - re-armed: "
                            + bandCardPrompt());
+                    // Re-arm rebuilds the surface, never inherits it: this is
+                    // where the band table sat over the waiting card with its
+                    // buttons still live (AMEK re-run, capFreqLast).
+                    summaryText.setVisible (false);
                     if (hooks.armForRow) hooks.armForRow();
+                    updateQuestion();
                     return;
                 }
                 if (fresh.size() == 1)
@@ -1366,7 +1376,9 @@ public:
                 return;
             }
             say ("Capture unusable (" + res.reason + ") - re-arming. R also re-arms.");
+            summaryText.setVisible (false);
             if (hooks.armForRow) hooks.armForRow();
+            updateQuestion();
             return;
         }
         processBandIndex (idx, res);
@@ -2038,8 +2050,20 @@ public:
         juce::StringArray out;
         std::map<int, juce::StringArray> byIndex;
         for (auto& r : rows)
+        {
+            // Surface rows (bands, controls) are not parameters: their -1 is
+            // a placeholder, not a claim on an index. The first run with BOTH
+            // confirmed (AMEK re-run: 5 groups AND 62 controls) refused
+            // submit with "[-1] claimed by: bands AND controls", and nothing
+            // in the UI could clear it -- W rebuilds the row and produces -1
+            // again. Two PARAMETER rows on one index still refuse, including
+            // both at -1: that row is broken and the mouth would refuse its
+            // index as out of range anyway.
+            if (r.kind == "bands" || r.kind == "controls")
+                continue;
             if (r.state == AssignRow::State::confirmed && ! r.sharedInsisted)
                 byIndex[r.resolvedIndex].add (r.semantic);
+        }
         for (auto& kv : byIndex)
             if (kv.second.size() > 1)
                 out.add ("[" + juce::String (kv.first) + "] "

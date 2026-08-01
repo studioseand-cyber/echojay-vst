@@ -1616,6 +1616,61 @@ public:
             const auto& groups = assignPanel.groupsForSubmit();
             ok (groups.size() >= 2, "re-accept rebuilt " + juce::String (groups.size()) + " groups");
 
+            // The [-1] pair (AMEK re-run): bands AND controls both confirmed,
+            // both carrying the placeholder, and the duplicate check refused
+            // submit with nothing in the UI able to clear it. The bands row
+            // here is real (just accepted); the controls row is set confirmed
+            // directly -- the -1 pair is the shape under test, not the
+            // controls flow -- with one control staged so the cargo refusal
+            // stays quiet.
+            {
+                int cr = -1;
+                for (int i = 0; i < assignPanel.rows.size(); ++i)
+                    if (assignPanel.rows.getReference (i).kind == "controls") { cr = i; break; }
+                ok (cr >= 0, "a controls surface row exists to pair with bands");
+                const auto savedState = assignPanel.rows.getReference (cr).state;
+                assignPanel.rows.getReference (cr).state = AssignRow::State::confirmed;
+                assignPanel.rows.getReference (cr).skipReason = "1 control (synthetic, selftest)";
+                NamedControl syn;
+                syn.name = "synthetic control (selftest)";
+                syn.indices.add (0);
+                assignPanel.pendingControls.add (syn);
+
+                ok (! assignPanel.duplicateConflicts().joinIntoString ("|").contains ("[-1]"),
+                    "two surface placeholders are NOT a duplicate-index conflict");
+
+                // Positive control: the check must still catch two PARAMETER
+                // rows on one index (the API-2500 class), or the exclusion
+                // quietly neutered it. The bands flow confirms no Tier 1 rows,
+                // so both sides are manufactured on real rows and reverted --
+                // the shape is the subject, and the shape is state + index.
+                int pa = -1, pb = -1;
+                for (int i = 0; i < assignPanel.rows.size(); ++i)
+                {
+                    const auto& r = assignPanel.rows.getReference (i);
+                    if (r.kind == "bands" || r.kind == "controls") continue;
+                    if (pa < 0) pa = i; else if (pb < 0) { pb = i; break; }
+                }
+                ok (pa >= 0 && pb >= 0, "two parameter rows exist for the positive control");
+                if (pa >= 0 && pb >= 0)
+                {
+                    auto& ra = assignPanel.rows.getReference (pa);
+                    auto& rb = assignPanel.rows.getReference (pb);
+                    const auto sa = ra.state;  const int ia = ra.resolvedIndex;
+                    const auto sb = rb.state;  const int ib = rb.resolvedIndex;
+                    ra.state = AssignRow::State::confirmed; ra.resolvedIndex = 5;
+                    rb.state = AssignRow::State::confirmed; rb.resolvedIndex = 5;
+                    ok (! assignPanel.duplicateConflicts().isEmpty(),
+                        "two parameter rows on one index still refuse (check not neutered)");
+                    ra.state = sa; ra.resolvedIndex = ia;
+                    rb.state = sb; rb.resolvedIndex = ib;
+                }
+
+                assignPanel.rows.getReference (cr).state = savedState;
+                assignPanel.rows.getReference (cr).skipReason = {};
+                assignPanel.pendingControls.removeLast();
+            }
+
             // LIVE APPLY through the real applySettings: the headline
             // assertion on the real plugin.
             MapPayload p;
