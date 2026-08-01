@@ -81,6 +81,8 @@ struct EchoJayLinkMixerTestAccess
     static int   bandGap()    { return Ed::kBandGap; }
     static int   meterWMin()  { return Ed::kMeterWMin; }
     static int   meterY (float db, juce::Rectangle<int> a) { return Ed::meterYForDb (db, a); }
+    static void  barRects (juce::Rectangle<int> a, int& gut, juce::Rectangle<int> b[2])
+    { Ed::meterBarRects (a, gut, b); }
     static float meterFloor()                               { return Ed::kMeterDbFloor; }
     static const float* meterMarks (int& n)
     { n = Ed::kMeterMarkCount; return Ed::kMeterMarks; }
@@ -95,9 +97,6 @@ struct EchoJayLinkMixerTestAccess
     using ChainState = Ed::ChainDisplayState;
     static ChainState chainState (bool valid, int n)
     { return Ed::chainDisplayState (valid, n); }
-    static juce::String chainLabel (int total, int byp)
-    { return Ed::chainCountLabel (total, byp); }
-
     using Ctrl = Ed::CtrlZone;
     static void ctrls (juce::Rectangle<int> r, std::vector<Ctrl>& out)
     { Ed::layOutLinkCtrls (r, out); }
@@ -137,8 +136,8 @@ static std::vector<juce::String> addrs (int n)
 static std::vector<std::pair<const char*, juce::Rectangle<int>>> elements (const Geom& s)
 {
     return { { "name", s.name }, { "badge", s.badge }, { "active", s.active },
-             { "data", s.data }, { "fader", s.fader }, { "clip", s.clip },
-             { "meter", s.meter }, { "ai", s.ai } };
+             { "data", s.data }, { "fader", s.fader }, { "faderImg", s.faderImg },
+             { "clip", s.clip }, { "meter", s.meter }, { "ai", s.ai } };
 }
 
 // -----------------------------------------------------------------------------
@@ -201,13 +200,23 @@ static void testContainment (int stripW, int bandH, int n)
                 check (s.full.contains (r), what.c_str());
             }
 
-        // Elements never overlap each other.
+        // Elements never overlap each other. ONE sanctioned exception:
+        // faderImg lives INSIDE the fader lane by design (containment is
+        // asserted in the band test); every other pair stays disjoint.
         auto els = elements (s);
         for (size_t x = 0; x < els.size(); ++x)
             for (size_t y = x + 1; y < els.size(); ++y)
+            {
+                const bool lanePair =
+                    (std::string (els[x].first) == "fader"
+                     && std::string (els[y].first) == "faderImg")
+                 || (std::string (els[x].first) == "faderImg"
+                     && std::string (els[y].first) == "fader");
+                if (lanePair) continue;
                 if (! els[x].second.isEmpty() && ! els[y].second.isEmpty())
                     check (! els[x].second.intersects (els[y].second),
                            "two elements of one strip overlap");
+            }
 
         // Adjacent strips are separated by exactly one gap, never overlapping.
         if (i + 1 < links.size())
@@ -282,33 +291,43 @@ static void testFaderAspect (int stripW, int bandH)
 
     if (! f.isEmpty())
     {
-        // The implied image (height/8 wide) must FIT the column, and must
-        // never upscale from the 60px source.
-        check (f.getHeight() / 8 <= f.getWidth(), "the 1:8 image fits its column");
-        check (f.getHeight() / 8 <= 60, "the fader never upscales from the source");
-        check (f.getHeight() % 8 == 0, "column height is exactly image width * 8");
+        const auto fi = s0.faderImg;
+        // VISUAL-PASS CONTRACT (1b): the LANE shares the band's height and
+        // baseline exactly, so fader and meter read as one height.
+        const int bandTop = s0.clip.isEmpty() ? s0.meter.getY() : s0.clip.getY();
+        checkEq (f.getY(), bandTop,             "the lane starts at the band top");
+        checkEq (f.getBottom(), s0.meter.getBottom(),
+                 "the lane and the meter share a baseline");
+        // The IMAGE stays aspect-locked, centred in the lane, contained.
+        check (! fi.isEmpty(), "the fader image exists");
+        check (f.contains (fi), "the image sits inside the lane");
+        check (std::abs ((fi.getY() - f.getY())
+                         - (f.getBottom() - fi.getBottom())) <= 1,
+               "the image is centred in the lane");
+        check (fi.getHeight() / 8 <= fi.getWidth(), "the 1:8 image fits its column");
+        check (fi.getHeight() / 8 <= 60, "the fader never upscales from the source");
+        check (fi.getHeight() % 8 == 0, "image height is exactly image width * 8");
 
-        // The split: fader column left of the meter, exactly one band gap
-        // apart, never overlapping (the overlap is also held by the
-        // elements() sweep in testContainment).
         checkEq (s0.meter.getX() - f.getRight(), T::bandGap(),
                  "fader column and meter sit one band gap apart");
         check (f.getBottom() <= s0.ai.getY(), "the band sits above the AI button");
-        // Item-1 regression guard: the fader is CENTRED in the band (the
-        // bottom-alignment bug anchored every cap in the well's floor), and
-        // a given gain lands at the SAME y on every strip.
+        if (links.size() > 1)
+            checkEq (T::yFromG (0.0f, fi), T::yFromG (0.0f, links[1].faderImg),
+                     "0 dB sits at the same y on every strip");
+
+        // (1a) Clip lamp columns == meter bar columns, from the SHARED
+        // source the painters consume: same x, same width, per channel.
+        int gut = 0; juce::Rectangle<int> bars[2];
+        T::barRects (s0.meter, gut, bars);
+        for (int ch = 0; ch < 2; ++ch)
         {
-            // The band's vertical extent is lamp top to meter bottom (the
-            // well the eye sees); the author centres in exactly that.
-            const int bandTop = s0.clip.isEmpty() ? s0.meter.getY()
-                                                  : s0.clip.getY();
-            const int above = f.getY() - bandTop;
-            const int below = s0.meter.getBottom() - f.getBottom();
-            check (std::abs (above - below) <= 1, "the fader is centred in the band");
-            if (links.size() > 1)
-                checkEq (T::yFromG (0.0f, f), T::yFromG (0.0f, links[1].fader),
-                         "0 dB sits at the same y on every strip");
+            check (s0.meter.contains (bars[ch]), "bar stays inside the meter");
+            // the lamp painter derives its boxes from bars[ch].getX()/W
+            // verbatim; hold the source sane so that derivation holds.
+            check (bars[ch].getWidth() >= 2, "bar has drawable width");
         }
+        check (bars[0].getRight() + 2 == bars[1].getX(),
+               "the two bars sit two apart, lamp halves likewise");
     }
 }
 
@@ -603,10 +622,6 @@ static void testChainStates()
     check (T::chainState (true,  0) == CS::Empty,  "a parsed, empty rack is EMPTY");
     check (T::chainState (true,  3) == CS::List,   "a parsed rack with slots LISTS");
 
-    check (T::chainLabel (0, 0) == "empty rack",        "zero slots reads empty rack");
-    check (T::chainLabel (1, 0) == "1 plugin",          "singular");
-    check (T::chainLabel (4, 0) == "4 plugins",         "plural");
-    check (T::chainLabel (4, 2) == "4 plugins (2 byp)", "bypassed count rides along");
 }
 
 static void testChainBlocks()

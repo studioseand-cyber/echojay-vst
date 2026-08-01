@@ -2485,7 +2485,12 @@ private:
         // The fader+meter BAND (8b): one horizontal band, console style, the
         // meter as PERMANENT chrome. Both rects are stored by layOutStrips
         // and neither paint nor hit-testing derives one from the other.
-        juce::Rectangle<int> fader;     // fader column: ticks lane + image
+        juce::Rectangle<int> fader;     // fader LANE: full band height, so
+                                        // lane and meter share height and
+                                        // baseline (the drag target too)
+        juce::Rectangle<int> faderImg;  // the aspect-locked image, centred
+                                        // in the lane; CAP TRAVEL and the
+                                        // dB mapping live on THIS rect
         juce::Rectangle<int> meter;     // fast-peak bars, always present
         juce::Rectangle<int> clip;      // latching clip lamp atop the meter
         juce::Rectangle<int> ai;        // opens this channel's conversation
@@ -2801,6 +2806,14 @@ private:
         // deliberately NOT here: it is a publisher-held value with its own
         // 3s decay, and interpolating a hold marker would misplace it.
         float smRmsL = -100.0f, smRmsR = -100.0f;
+        // Fast-peak DE-STEPPING (the stutter fix): 30Hz publish sampled at
+        // 20Hz paint alternates one- and two-step deltas, a 10Hz beat that
+        // reads as stutter. Alpha 0.75 catches a step in ~1.5 frames
+        // (75ms, worst lag ~1 dB against a 13.3 dB/s release): it hides
+        // the sampling quantisation and adds no ballistics, the same
+        // argument smRms carries. The CLIP LATCH keeps reading the RAW
+        // published value: smoothing may shape motion, never truth.
+        float smFastL = -100.0f, smFastR = -100.0f;
         // Clip latches (8c): set at paint when the published fast peak
         // reaches 0 dBFS, cleared by clicking the lamp. Editor-instance
         // state by the same exception as the refusal flash: transient
@@ -2862,6 +2875,21 @@ private:
     static constexpr float kMeterMarks[kMeterMarkCount] = {
         0.0f, -3.0f, -6.0f, -9.0f, -12.0f, -15.0f, -18.0f, -21.0f, -24.0f,
         -30.0f, -35.0f, -40.0f, -45.0f, -50.0f, -60.0f };
+    /** THE bar-column layout: gutter width and the two bar rects for a
+        meter area. ONE pure source consumed by the bar painter AND the
+        clip-lamp painter, so the lamp boxes and the bars share x and width
+        per channel BY CONSTRUCTION and cannot drift again. */
+    static void meterBarRects(juce::Rectangle<int> area,
+                              int& gutterOut, juce::Rectangle<int> barsOut[2])
+    {
+        gutterOut = area.getWidth() >= 50 ? 16
+                  : area.getWidth() >= 24 ? 11 : 6;
+        auto bars = area.withTrimmedTop(2).withTrimmedBottom(2)
+                        .withTrimmedLeft(gutterOut);
+        const int barW = juce::jmax(2, (bars.getWidth() - 2) / 2);
+        barsOut[0] = { bars.getX(),            bars.getY(), barW, bars.getHeight() };
+        barsOut[1] = { bars.getX() + barW + 2, bars.getY(), barW, bars.getHeight() };
+    }
     void paintLinkStripMeter(juce::Graphics& g, juce::Rectangle<int> area,
                              juce::Rectangle<int> clipRect,
                              LinkStripState& st, float dim, bool wide);
@@ -2876,15 +2904,6 @@ private:
         return !valid          ? ChainDisplayState::NoData
              : slotCount <= 0  ? ChainDisplayState::Empty
                                : ChainDisplayState::List;
-    }
-    /** The count headline, pure: "3 plugins", "1 plugin", "(2 byp)". */
-    static juce::String chainCountLabel(int total, int bypassed)
-    {
-        if (total <= 0) return "empty rack";
-        juce::String s = juce::String(total)
-                       + (total == 1 ? " plugin" : " plugins");
-        if (bypassed > 0) s << " (" << juce::String(bypassed) << " byp)";
-        return s;
     }
     /** THE one feeder of processorRef.linkRackCache: ~1Hz from the timer
         plus a forced pass on entering CHAIN mode. Paint never reads a file
@@ -2901,7 +2920,10 @@ private:
     // Block rects depend on the CACHED row count, which changes outside
     // resized(), so they use the computeColumns pattern rather than stored
     // rects: ONE pure formula consumed by paint AND the hit test, never two.
-    static constexpr int kChainBlockH = 15, kChainBlockGap = 2, kChainHeadH = 12;
+    // 20px blocks since the visual pass (15 was too small to read as a
+    // card); the count header above them is gone, redundant once the
+    // blocks themselves are legible.
+    static constexpr int kChainBlockH = 20, kChainBlockGap = 3;
     static constexpr int kBlockCtrlW = 14;         // B and X, each
     /** SHOWN blocks only (overflow collapses into "+N more"; the fit logic
         lives HERE so paint and hit test agree on how many blocks exist). */
