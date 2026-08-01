@@ -534,6 +534,77 @@ struct Probe
     /** startMs/endMs are MILLISECONDS into the envelope; the conversion to
         envelope samples happens here so callers never carry the resolution.
     */
+    /** ITEM 2: a tau alone cannot be read. The excursion the estimator had
+        available and the residual of the exponential fit travel WITH it, so
+        a constant-looking number can be told apart from a real plateau: a
+        sub-dB excursion means the estimator had nothing to fit, and the
+        reason recorded on disk must be "unresolvable on this material",
+        never "program dependence".
+    */
+    struct TauResult
+    {
+        double tauMs = -1, excursionDb = 0, residualDb = -1, windowMs = 0;
+        bool   resolvable() const
+        { return tauMs > 0 && excursionDb >= 1.0 && tauMs < 0.95 * windowMs; }
+
+        /** The recorded reason must be the TRUE one. Three distinct failures
+            hide behind a constant-looking tau, and the API-2500 dense-material
+            case walked through two of them before landing on the third:
+              - excursion below 1 dB   -> nothing to fit
+              - tau at the window edge -> the window is shorter than the
+                                          recovery; the number is the window,
+                                          not the plugin (measured: 179.0 ms
+                                          five times, which IS the 179 ms
+                                          window, with 35-45 dB of excursion
+                                          available and a 6-10 dB fit residual)
+              - high residual          -> the envelope is not exponential here
+        */
+        juce::String why() const
+        {
+            if (excursionDb < 1.0)
+                return "unresolvable on this material: gain-reduction excursion "
+                     + juce::String (excursionDb, 2) + " dB, below the 1 dB the fit needs";
+            if (tauMs >= 0.95 * windowMs)
+                return "WINDOW-LIMITED, not resolved: tau " + juce::String (tauMs, 1)
+                     + " ms is the measurement window itself (" + juce::String (windowMs, 1)
+                     + " ms), so recovery never completed inside it -- the material's "
+                       "off-period is shorter than this plugin's release";
+            if (residualDb > 5.0)
+                return "poor exponential fit (residual " + juce::String (residualDb, 2)
+                     + " dB): the envelope is not a single exponential on this material";
+            return "resolvable";
+        }
+    };
+
+    static TauResult timeConstantFull (const juce::Array<double>& env,
+                                       double startMs, double endMs)
+    {
+        TauResult r;
+        r.windowMs = endMs - startMs;
+        const double mps = envMsPerSample();
+        const int s = (int) (startMs / mps), e = (int) (endMs / mps);
+        if (e >= env.size() || s >= e) return r;
+        const double a = env[s], b = env[e];
+        r.excursionDb = std::abs (b - a);
+        if (r.excursionDb < 1.0) return r;
+        const double target = a + 0.632 * (b - a);
+        for (int i = s; i <= e; ++i)
+            if ((b > a && env[i] >= target) || (b < a && env[i] <= target))
+            { r.tauMs = (i - s) * mps; break; }
+        if (r.tauMs > 0)
+        {
+            double sq = 0; int n = 0;
+            for (int i = s; i <= e; ++i)
+            {
+                const double t = (i - s) * mps;
+                const double pred = b + (a - b) * std::exp (-t / r.tauMs);
+                sq += (env[i] - pred) * (env[i] - pred); ++n;
+            }
+            r.residualDb = n > 0 ? std::sqrt (sq / n) : -1;
+        }
+        return r;
+    }
+
     static double timeConstantMs (const juce::Array<double>& env,
                                   double startMs, double endMs, double minExcursionDb)
     {

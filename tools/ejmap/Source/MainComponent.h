@@ -1178,6 +1178,109 @@ public:
         auto stakeFile = ledger.getRoot().getChildFile ("probe-inflight.json");
         auto stateFile = ledger.getRoot().getChildFile ("probe-state-" + currentFp + ".bin");
 
+        // ---- guardtest (ITEM 3): attempt what the guard refuses ----------
+        if (mode == "guardtest")
+        {
+            say ("MODE GUARD TEST: feeding the guard displays it must refuse");
+            say ("  (Var firing once on API-2500 was an observation; this is the test)");
+            struct C { const char* d; bool expectGuard; };
+            const C cases[] = {
+                { "Var",        true  }, { "Auto",     true  }, { "Sync",   true },
+                { "Ext",        true  }, { "Link",     true  }, { "Off",    true },
+                { "Prog",       true  },   // never-seen token: must STILL be guarded
+                { "\xe2\x88\x9e",  true  },   // a glyph
+                { "Adaptif",    true  },   // localised
+                { "",           true  },   // empty display
+                { "30",         false }, { "-20.0",    false }, { "1.5 ms", false },
+                { "0.05",       false }, { "4:1",      false } };
+            int bad = 0;
+            for (const auto& c : cases)
+            {
+                const juce::String d (juce::CharPointer_UTF8 (c.d));
+                const bool guarded = P::displayIsModeToken (d);
+                const bool ok = guarded == c.expectGuard;
+                if (! ok) ++bad;
+                say (juce::String (ok ? "  ok   " : "  FAIL ") + "display '" + d + "' -> "
+                     + (guarded ? "GUARDED: " + P::modeTokenReason (d)
+                                : juce::String ("numeric, verdict permitted")));
+            }
+            // the token must be quoted VERBATIM in the reason, not normalised
+            const juce::String odd ("Prog");
+            const bool quoted = P::modeTokenReason (odd).contains ("'" + odd + "'");
+            say (juce::String (quoted ? "  ok   " : "  FAIL ")
+                 + "unrecognised token is quoted verbatim in the reason");
+            if (! quoted) ++bad;
+            std::cout << "GUARDTEST: " << (bad == 0 ? "PASS" : juce::String (bad) + " FAILED")
+                      << std::endl;
+            quitNow(); return;
+        }
+
+        // ---- knee2 (ITEM 1): the knee estimator on a SHARP-curve design ---
+        if (mode == "knee2")
+        {
+            auto d2 = echojay::auregistry::describeFromRegistry ("");
+            auto census2 = echojay::auregistry::buildCensus();
+            juce::PluginDescription mc;
+            for (const auto& t : census2.targets)
+            { auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+              if (d.name.containsIgnoreCase ("MCompressor")) { mc = d; break; } }
+            if (mc.fileOrIdentifier.isEmpty())
+            { say ("KNEE2: no digital-style compressor on this machine"); quitNow(); return; }
+            host.unload();
+            loadedName = mc.name; loadedId = mc.fileOrIdentifier; loadedDesc = mc;
+            if (host.load (mc, watchdog).outcome != LoadOutcome::ok)
+            { say ("KNEE2: load failed"); quitNow(); return; }
+            auto* ci = host.getInstance();
+            auto cp = ci->getParameters();
+            say ("KNEE ESTIMATOR vs A SHARP-CURVE DESIGN | " + mc.name
+                 + " | " + juce::String (cp.size()) + " params");
+            auto idxOf = [&] (const juce::String& sub) {
+                for (int i = 0; i < cp.size(); ++i)
+                    if (cp[i]->getName (64).containsIgnoreCase (sub)) return i;
+                return -1; };
+            const int iTh = idxOf ("Threshold"), iRa = idxOf ("Ratio"), iKn = idxOf ("Knee");
+            say ("  Threshold [" + juce::String (iTh) + "] Ratio [" + juce::String (iRa)
+                 + "] Knee [" + juce::String (iKn) + "]");
+            if (iTh < 0 || iRa < 0) { say ("KNEE2: no threshold/ratio"); quitNow(); return; }
+            auto swT = sweepOneIndex (*ci, iTh, watchdog, loadedId);
+            auto swR = sweepOneIndex (*ci, iRa, watchdog, loadedId);
+            say ("  threshold ladder " + juce::String (swT.anchors.getFirst()[0], 1) + ".."
+                 + juce::String (swT.anchors.getLast()[0], 1) + " (unit '" + swT.unitFamily
+                 + "'), ratio ladder " + juce::String (swR.anchors.getFirst()[0], 1) + ".."
+                 + juce::String (swR.anchors.getLast()[0], 1));
+            auto nf = [] (const juce::Array<juce::Array<float>>& a, double v) {
+                auto e = echojay::dominantMonotonicTable (a);
+                return echojay::interpolateAnchors (e.table, (float) v); };
+            if (iKn >= 0) { P::writeConfirm (*cp[iKn], 0.0f);
+                            say ("  Knee -> hard end (display '"
+                                 + cp[iKn]->getCurrentValueAsText() + "')"); }
+            P::writeConfirm (*cp[iRa], nf (swR.anchors, 8.0));
+            say ("     requested thr | landed (ladder) | measured knee | error dB");
+            double worst = 0; int n = 0;
+            for (double want : { -30.0, -24.0, -18.0, -12.0 })
+            {
+                P::writeConfirm (*cp[iTh], nf (swT.anchors, want));
+                const double landed = P::predictedLanding (swT.anchors, want);
+                host.pausePumpForMutation();
+                auto c = P::steppedCurve (*ci);
+                host.resumePumpAfterMutation();
+                auto f = P::curveFeaturesTwoSegment (c);
+                const double err = f.kneeFound ? std::abs (f.kneeInDb - landed) : -1;
+                if (err >= 0) { worst = juce::jmax (worst, err); ++n; }
+                say ("     " + juce::String (want, 1).paddedLeft (' ', 13) + " | "
+                     + juce::String (landed, 1).paddedLeft (' ', 15) + " | "
+                     + (f.kneeFound ? juce::String (f.kneeInDb, 1) : juce::String ("UNDEF")).paddedLeft (' ', 13)
+                     + " | " + (err >= 0 ? juce::String (err, 2) : juce::String ("-")));
+            }
+            say ("  WORST knee error on this sharp-curve design: " + juce::String (worst, 2)
+                 + " dB across " + juce::String (n) + " thresholds");
+            say (worst <= 2.5
+                 ? "  => THRESHOLD IS PROVABLE on resolvable-breakpoint designs. API-2500's "
+                   "measured 44% is a SOFT-CURVE property, per plugin, not an estimator limit."
+                 : "  => the ESTIMATOR is the limit; threshold is not provable as built.");
+            std::cout << "KNEE2: DONE" << std::endl; quitNow(); return;
+        }
+
         // ---- kneefloor: knee and slope estimator resolution, known truth --
         if (mode == "kneefloor")
         {
@@ -1249,7 +1352,7 @@ public:
                  + " (" + juce::String (swRe.anchors.size()) + " anchors, unit family '"
                  + swRe.unitFamily + "')");
             say ("  threshold -30 dB, ratio max, everything else fixed; 5 ladder points x 2 materials");
-            say ("     ladder value | display | tau sparse (ms) | tau dense (ms)");
+            say ("     ladder value | display | tau sparse + excursion/residual dB | tau dense + excursion/residual dB");
             juce::Array<double> sparse, dense;
             for (int k = 0; k < 5; ++k)
             {
@@ -1261,13 +1364,18 @@ public:
                 auto eS = P::burstEnvelope (*ci, false);
                 auto eD = P::burstEnvelope (*ci, true);
                 host.resumePumpAfterMutation();
-                const double tS = P::timeConstantMs (eS, 1402.0, 1900.0, 1.0);
-                const double tD = P::timeConstantMs (eD, 421.0, 600.0, 1.0);
-                sparse.add (tS); dense.add (tD);
+                auto rS = P::timeConstantFull (eS, 1402.0, 1900.0);
+                auto rD = P::timeConstantFull (eD, 421.0, 600.0);
+                sparse.add (rS.tauMs); dense.add (rD.tauMs);
                 say ("     " + juce::String (v, 3).paddedLeft (' ', 12) + " | "
                      + disp.paddedLeft (' ', 7) + " | "
-                     + (tS > 0 ? juce::String (tS, 1) : juce::String ("UNDEF")).paddedLeft (' ', 15)
-                     + " | " + (tD > 0 ? juce::String (tD, 1) : juce::String ("UNDEF")));
+                     + (rS.tauMs > 0 ? juce::String (rS.tauMs, 1) : juce::String ("UNDEF")).paddedLeft (' ', 8)
+                     + " exc " + juce::String (rS.excursionDb, 2) + " res "
+                     + juce::String (rS.residualDb, 2)
+                     + " | " + (rD.tauMs > 0 ? juce::String (rD.tauMs, 1) : juce::String ("UNDEF")).paddedLeft (' ', 8)
+                     + " exc " + juce::String (rD.excursionDb, 2) + " res "
+                     + juce::String (rD.residualDb, 2)
+                     + "  [" + rD.why() + "]");
             }
             auto verdictOf = [] (const juce::Array<double>& v) {
                 int up = 0, down = 0;
