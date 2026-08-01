@@ -83,6 +83,13 @@ struct EchoJayLinkMixerTestAccess
     static const float* meterMarks (int& n)
     { n = Ed::kMeterMarkCount; return Ed::kMeterMarks; }
 
+    static void chainBlocks (juce::Rectangle<int> data, int count,
+                             std::vector<juce::Rectangle<int>>& out)
+    { Ed::layOutChainBlocks (data, count, out); }
+    static void ctrls2 (juce::Rectangle<int> block,
+                        juce::Rectangle<int>& b, juce::Rectangle<int>& x)
+    { Ed::blockCtrlRects (block, b, x); }
+
     using ChainState = Ed::ChainDisplayState;
     static ChainState chainState (bool valid, int n)
     { return Ed::chainDisplayState (valid, n); }
@@ -580,6 +587,54 @@ static void testChainStates()
     check (T::chainLabel (4, 2) == "4 plugins (2 byp)", "bypassed count rides along");
 }
 
+static void testChainBlocks()
+{
+    // The block rects and their B/X controls: ONE pure formula consumed by
+    // paint and the hit test, so agreement is proven by proving the formula.
+    std::printf ("chain blocks: layout, controls, overflow, purity\n");
+    const juce::Rectangle<int> data { 10, 40, 84, 187 };   // wide data area
+
+    std::vector<juce::Rectangle<int>> blocks;
+    T::chainBlocks (data, 4, blocks);
+    checkEq ((int) blocks.size(), 4, "four plugins fit as four blocks");
+    for (size_t i = 0; i < blocks.size(); ++i)
+    {
+        check (data.contains (blocks[i]), "block stays inside the data area");
+        if (i > 0)
+            check (blocks[i].getY() > blocks[i-1].getBottom(),
+                   "blocks stack without overlap");
+        juce::Rectangle<int> b, x;
+        T::ctrls2 (blocks[i], b, x);
+        check (blocks[i].contains (b) && blocks[i].contains (x),
+               "controls sit inside their block");
+        check (! b.intersects (x), "B and X do not overlap");
+        check (x.getX() > b.getX(), "X is outermost, matching the Chain card");
+        check (b.getWidth() >= 12 && b.getHeight() >= 12,
+               "B is big enough to press");
+        check (x.getWidth() >= 12 && x.getHeight() >= 12,
+               "X is big enough to press");
+    }
+
+    // Overflow: more plugins than height reserves a +N more row, so shown
+    // count drops rather than half-drawing.
+    std::vector<juce::Rectangle<int>> many;
+    T::chainBlocks (data, 40, many);
+    check ((int) many.size() < 40, "overflow shows fewer blocks than plugins");
+    check (! many.empty() && data.contains (many.back()),
+           "the last shown block is still contained");
+
+    // Purity + degenerate.
+    std::vector<juce::Rectangle<int>> again;
+    T::chainBlocks (data, 4, again);
+    checkEq ((int) again.size(), (int) blocks.size(), "block layout is pure");
+    for (size_t i = 0; i < blocks.size(); ++i)
+        check (blocks[i] == again[i], "block rects are stable");
+    T::chainBlocks ({ 0, 0, 0, 0 }, 4, again);
+    checkEq ((int) again.size(), 0, "a degenerate area has no blocks");
+    T::chainBlocks (data, 0, again);
+    checkEq ((int) again.size(), 0, "an empty rack has no blocks");
+}
+
 static void testMaskGating()
 {
     // 8c: the cross-version gate. An OLD writer's frame reads
@@ -711,6 +766,7 @@ int main()
     testFaderMapping();
     testMeterMapping();
     testChainStates();
+    testChainBlocks();
     testMaskGating();
     testBandSqueeze();
     testContentMigration();

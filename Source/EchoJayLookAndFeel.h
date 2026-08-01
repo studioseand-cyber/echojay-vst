@@ -61,6 +61,11 @@ public:
         static inline const juce::Colour bypAccent    { 0xfff59e0b };
         static constexpr float       corner = 8.0f;   // at the Chain block's 64px height
         static constexpr const char* bypCaption = "BYPASSED";
+        // The B / X control idiom (factored from Block's style() lambda so
+        // the mixer's block controls are the same controls, smaller).
+        static inline const juce::Colour ctrlFill   { 0xcc0E1020 };
+        static inline const juce::Colour ctrlText   { 0xffa0a0b8 };
+        static inline const juce::Colour ctrlDanger { 0xffef4444 };
     };
     
     // Lift the ComboBox font cap from JUCE's default 15 to 16 so the header

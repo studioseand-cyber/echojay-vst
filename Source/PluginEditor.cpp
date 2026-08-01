@@ -6655,6 +6655,171 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
     }
 }
 
+void EchoJayEditor::layOutChainBlocks(juce::Rectangle<int> dataRect, int count,
+                                      std::vector<juce::Rectangle<int>>& out)
+{
+    // Pure: same inputs, same rects. The SHOWN-count rule lives here so the
+    // painter and the hit test cannot disagree about how many blocks exist
+    // (overflow reserves a "+N more" row instead of half-drawing).
+    out.clear();
+    if (count <= 0 || dataRect.getWidth() <= 0) return;
+    auto a2 = dataRect.reduced(2, 0);
+    a2.removeFromTop(kChainHeadH + 2);              // the count header
+    const int per = kChainBlockH + kChainBlockGap;
+    const int fit = juce::jmax(0, (a2.getHeight() + kChainBlockGap) / per);
+    const int shown = count <= fit ? count : juce::jmax(0, fit - 1);
+    for (int i = 0; i < shown; ++i)
+    {
+        out.push_back(a2.removeFromTop(kChainBlockH));
+        a2.removeFromTop(kChainBlockGap);
+    }
+}
+
+void EchoJayEditor::blockCtrlRects(juce::Rectangle<int> block,
+                                   juce::Rectangle<int>& bOut,
+                                   juce::Rectangle<int>& xOut)
+{
+    // Right end of the block, X outermost (matching the Chain card, where
+    // remove sits past bypass). Full block height minus a 1px inset.
+    auto r = block.reduced(1);
+    xOut = r.removeFromRight(kBlockCtrlW);
+    bOut = r.removeFromRight(kBlockCtrlW);
+}
+
+void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove)
+{
+    // IDENTITY, NOT INDEX: the op carries the slot number PLUS baseSlots,
+    // the full name list of the rack THE USER IS LOOKING AT (the cache).
+    // The Link verifies that list against its live rack before touching
+    // anything (ChainHost pre-flight guard 2) and aborts the whole batch
+    // with ack "stale" on any mismatch. A press against a stale cache can
+    // therefore never mutate the wrong plugin; it comes back refused with
+    // a stated reason.
+    if (sg.isBus) return;                       // the bus routes locally
+    EchoJayProcessor::LinkDisplayEntry en;
+    if (!findLinkEntryByAddr(sg.addr, en) || en.info.uid.isEmpty()) return;
+
+    // ONE edit in flight per Link: seq is epoch-seconds (the existing
+    // sender's scheme), so two sends inside a second would collide on ack
+    // correlation. A press while one is pending is ignored, not queued.
+    for (const auto& pnd : linkBlockPending_)
+        if (pnd.uid == en.info.uid && !pnd.failed) return;
+
+    auto fail = [&](const juce::String& why)
+    {
+        LinkBlockPending p2;
+        p2.uid = en.info.uid; p2.slotIdx = slotIdx; p2.isRemove = isRemove;
+        p2.failed = true; p2.reason = why;
+        p2.sentMs = juce::Time::getMillisecondCounter();
+        linkBlockPending_.push_back(p2);
+        linkMixerView_.repaint();
+    };
+
+    if (!en.info.connected)
+    {
+        // Same refusal applyChainEditToLink states: never send into a void.
+        fail("Not applied: this Link is not connected right now - nothing was changed.");
+        return;
+    }
+
+    auto it = processorRef.linkRackCache.find(en.info.uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid
+        || slotIdx < 0 || slotIdx >= (int)it->second.rack.slots.size())
+        return;                                  // no honest base to send
+
+    juce::Array<juce::var> baseSlots;
+    for (const auto& rs : it->second.rack.slots)
+        baseSlots.add(rs.name);
+
+    auto* op = new juce::DynamicObject();
+    op->setProperty("op",   isRemove ? "remove" : "bypass");
+    op->setProperty("slot", slotIdx + 1);        // the edit JSON is 1-based
+    const bool targetOn = !it->second.rack.slots[(size_t)slotIdx].bypassed;
+    if (!isRemove) op->setProperty("on", targetOn);
+
+    auto* payload = new juce::DynamicObject();
+    juce::Array<juce::var> ops; ops.add(juce::var(op));
+    payload->setProperty("edit", ops);
+    payload->setProperty("baseSlots", baseSlots);
+
+    const int seq = sendChainEditToLink(en.info.uid,
+                        juce::JSON::toString(juce::var(payload), true));
+    if (seq < 0)
+    {
+        fail("Not applied: shared Link directory unavailable - nothing was changed.");
+        return;
+    }
+    LinkBlockPending p;
+    p.uid = en.info.uid; p.seq = seq; p.slotIdx = slotIdx;
+    p.isRemove = isRemove; p.targetOn = targetOn;
+    p.sentMs = juce::Time::getMillisecondCounter();
+    linkBlockPending_.push_back(p);
+    linkMixerView_.repaint();
+    pollLinkBlockAck(en.info.uid, seq, 20);
+}
+
+void EchoJayEditor::pollLinkBlockAck(const juce::String& uid, int seq, int attemptsLeft)
+{
+    // 250ms x 20 = the same 5s window pollLinkEditAck gives the AI cards.
+    // No ack by then (Link died mid-edit, or a pre-v:2 Link that ignores
+    // the command file) -> the pending entry turns failed with a stated
+    // reason and NOTHING renders as changed: the block keeps showing the
+    // cache, which still holds the old truth.
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay(250, [safeThis, uid, seq, attemptsLeft]
+    {
+        if (safeThis == nullptr) return;
+        auto& pend = safeThis->linkBlockPending_;
+        auto entry = std::find_if(pend.begin(), pend.end(),
+            [&](const LinkBlockPending& p)
+            { return p.uid == uid && p.seq == seq && !p.failed; });
+        if (entry == pend.end()) return;         // already resolved
+
+        int err = 0;
+        juce::String dir = LinkShm::resolveDir(err);
+        juce::File ack(dir + "chain-ack-" + uid + ".json");
+        if (dir.isNotEmpty() && ack.existsAsFile())
+        {
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+                if ((int)o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();            // consumed
+                    const juce::String status = o->getProperty("status").toString();
+                    if (status == "ok")
+                    {
+                        // TRUTH BEFORE DISPLAY: the Link republished its
+                        // sidecar inside the apply completion, so a forced
+                        // cache pass shows the REAL new rack, and only then
+                        // does the pending style clear.
+                        pend.erase(entry);
+                        safeThis->refreshLinkRackCache(true);
+                    }
+                    else
+                    {
+                        entry->failed = true;
+                        juce::StringArray lines;
+                        if (auto* arr = o->getProperty("perPluginResults").getArray())
+                            for (auto& rv : *arr) lines.add(rv.toString());
+                        entry->reason = status == "stale"
+                            ? "Not applied: the chain changed before this could apply."
+                            : "Not applied: " + (lines.isEmpty()
+                                  ? juce::String("the Link refused this edit.")
+                                  : lines.joinIntoString("; "));
+                        safeThis->refreshLinkRackCache(true);
+                    }
+                    safeThis->linkMixerView_.repaint();
+                    return;
+                }
+        }
+        if (attemptsLeft > 1)
+        { safeThis->pollLinkBlockAck(uid, seq, attemptsLeft - 1); return; }
+        entry->failed = true;
+        entry->reason = "No response from this Link - nothing was changed.";
+        safeThis->linkMixerView_.repaint();
+    });
+}
+
 void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
                                         juce::Rectangle<int> area,
                                         const StripGeom& sg,
@@ -6750,24 +6915,33 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
         // chrome). Bypass/remove CONTROLS are a functionality pass; the
         // block leaves its right end clear so they have somewhere to land.
         // Overflow collapses into "+N more" rather than half-drawing.
-        const int blockH = 15, blockGap = 2, headH = 12;
-        auto a2 = area.reduced(2, 0);
+        auto head = area.reduced(2, 0);
         g.setColour(LinkConsole::label.withMultipliedAlpha(dim));
         g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
         g.drawText(chainCountLabel((int)rows.size(), bypassed)
                        + (offline ? " - offline" : ""),
-                   a2.removeFromTop(headH), juce::Justification::centredLeft);
-        a2.removeFromTop(2);
+                   head.removeFromTop(kChainHeadH), juce::Justification::centredLeft);
 
-        const int per  = blockH + blockGap;
-        int fit   = juce::jmax(0, (a2.getHeight() + blockGap) / per);
-        int shown = (int)rows.size() <= fit ? (int)rows.size()
-                                            : juce::jmax(0, fit - 1);
+        // THE block rects: the same pure function the hit test consumes.
+        std::vector<juce::Rectangle<int>> blocks;
+        layOutChainBlocks(area, (int)rows.size(), blocks);
+        const int shown = (int)blocks.size();
         for (int i = 0; i < shown; ++i)
         {
-            auto rr = a2.removeFromTop(blockH);
-            a2.removeFromTop(blockGap);
+            auto rr = blocks[(size_t)i];
             const auto& r = rows[(size_t)i];
+
+            // Pending / failed edit on THIS slot: amber = in flight (the
+            // tab's pending colour), coral = refused or unanswered, with
+            // the reason in the tooltip. The block body keeps showing the
+            // CACHE state until the ack and the republished sidecar prove
+            // the change: a block that reads bypassed before the Link has
+            // bypassed it is a fabricated reading.
+            const LinkBlockPending* pnd = nullptr;
+            if (!sg.isBus && entry != nullptr)
+                for (const auto& pb : linkBlockPending_)
+                    if (pb.uid == entry->info.uid && pb.slotIdx == i)
+                    { pnd = &pb; break; }
             // THE plugin-card idiom (EchoJayLookAndFeel::ChainCard), shared
             // with the Chain tab's Block so the two surfaces agree about
             // what a plugin looks like. Radius derives from the card's by
@@ -6776,15 +6950,39 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
             // drawing them inert here would read as broken, so the block's
             // right end stays clear until they work.
             using Card = EchoJayLookAndFeel::ChainCard;
-            const float rad = Card::corner * (float)blockH / 64.0f * 2.0f;
+            const float rad = Card::corner * (float)kChainBlockH / 64.0f * 2.0f;
             g.setColour(Card::fill.withMultipliedAlpha(dim));
             g.fillRoundedRectangle(rr.toFloat(), rad);
             g.setColour(Card::edge.withMultipliedAlpha(dim));
             g.drawRoundedRectangle(rr.toFloat().reduced(0.5f), rad, 1.0f);
+            if (pnd != nullptr)
+            {
+                g.setColour((pnd->failed ? juce::Colour(0xffff6d5a)
+                                         : Card::bypAccent).withAlpha(0.9f));
+                g.drawRoundedRectangle(rr.toFloat().reduced(0.5f), rad, 1.2f);
+            }
             g.setColour((r.bypassed ? Card::nameBypassed : Card::nameOn)
                             .withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(9.0f)));
             auto nameArea = rr.reduced(4, 0);
+            // B and X in the space the visual pass left clear, the Chain
+            // card's controls at mixer scale. Wide only BY CONSTRUCTION:
+            // narrow has no blocks (a count is not a block), so there is
+            // nothing to put a control on there.
+            {
+                juce::Rectangle<int> bR, xR;
+                blockCtrlRects(rr, bR, xR);
+                using CardC = EchoJayLookAndFeel::ChainCard;
+                g.setColour(CardC::ctrlFill);
+                g.fillRoundedRectangle(bR.toFloat(), 2.0f);
+                g.fillRoundedRectangle(xR.toFloat(), 2.0f);
+                g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
+                g.setColour(CardC::ctrlText.withMultipliedAlpha(dim));
+                g.drawText("B", bR, juce::Justification::centred);
+                g.setColour(CardC::ctrlDanger.withMultipliedAlpha(dim));
+                g.drawText("X", xR, juce::Justification::centred);
+                nameArea.setRight(bR.getX() - 2);
+            }
             if (r.bypassed)
             {
                 g.setColour(Card::bypAccent.withMultipliedAlpha(0.9f * dim));
@@ -6798,12 +6996,13 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
             g.drawFittedText(r.name, nameArea,
                              juce::Justification::centredLeft, 1, 0.9f);
         }
-        if ((int)rows.size() > shown)
+        if ((int)rows.size() > shown && !blocks.empty())
         {
             g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
             g.setFont(juce::Font(juce::FontOptions(8.0f)));
             g.drawText("+" + juce::String((int)rows.size() - shown) + " more",
-                       a2.removeFromTop(blockH), juce::Justification::centredLeft);
+                       blocks.back().translated(0, kChainBlockH + kChainBlockGap),
+                       juce::Justification::centredLeft);
         }
     }
 }
@@ -7151,6 +7350,56 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
 void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> local,
                                        int numClicks)
 {
+    // CHAIN-mode block controls first. PRECEDENCE: B and X win over the
+    // block, and the block itself is NOT a control here (it falls through
+    // to the strip background, which selects). The rects come from the SAME
+    // pure layOutChainBlocks the painter consumes, fed by the same cache
+    // count, so the two cannot disagree; nothing is recomputed differently.
+    if (processorRef.linkMixerContent == EchoJayProcessor::LinkMixerContent::Chain
+        && processorRef.linkMixerWide && sg.data.contains(local))
+    {
+        int count = 0;
+        if (sg.isBus)
+            count = (int)processorRef.getChainHost().getAllSlotInfos().size();
+        else
+        {
+            EchoJayProcessor::LinkDisplayEntry en;
+            if (findLinkEntryByAddr(sg.addr, en) && en.info.uid.isNotEmpty())
+            {
+                auto it = processorRef.linkRackCache.find(en.info.uid);
+                if (it != processorRef.linkRackCache.end() && it->second.valid)
+                    count = (int)it->second.rack.slots.size();
+            }
+        }
+        std::vector<juce::Rectangle<int>> blocks;
+        layOutChainBlocks(sg.data, count, blocks);
+        for (int i = 0; i < (int)blocks.size(); ++i)
+        {
+            juce::Rectangle<int> bR, xR;
+            blockCtrlRects(blocks[(size_t)i], bR, xR);
+            if (bR.contains(local) || xR.contains(local))
+            {
+                const bool isRemove = xR.contains(local);
+                if (sg.isBus)
+                {
+                    // The bus routes through the CHAIN TAB'S OWN handlers
+                    // (same lambdas, same AMEK editor-close discipline on
+                    // remove), so B and X mean the same thing on every
+                    // strip; only the transport differs: local calls here,
+                    // the Link protocol on the channels.
+                    if (isRemove) { if (chainListPanel.onRemoveSlot) chainListPanel.onRemoveSlot(i); }
+                    else          { if (chainListPanel.onBypassSlot) chainListPanel.onBypassSlot(i); }
+                    linkMixerView_.repaint();
+                    repaint();
+                }
+                else
+                    sendBlockEdit(sg, i, isRemove);
+                return;
+            }
+        }
+        // not on a control: fall through to the normal strip routing
+    }
+
     // Consumes stripHitAt's verdict; recomputes nothing. Every action below
     // is an EXISTING path reused, not a new implementation.
     switch (stripHitAt(sg, local))
@@ -7372,6 +7621,36 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
     if (processorRef.linkMixerContent == EchoJayProcessor::LinkMixerContent::Chain
         && sg.data.contains(p))
     {
+        // Over a block control, or a pending/failed edit: those speak first.
+        {
+            int count = 0;
+            juce::String uid;
+            if (sg.isBus)
+                count = (int)processorRef.getChainHost().getAllSlotInfos().size();
+            else if (have && en.info.uid.isNotEmpty())
+            {
+                uid = en.info.uid;
+                auto it = processorRef.linkRackCache.find(uid);
+                if (it != processorRef.linkRackCache.end() && it->second.valid)
+                    count = (int)it->second.rack.slots.size();
+            }
+            std::vector<juce::Rectangle<int>> blocks;
+            layOutChainBlocks(sg.data, count, blocks);
+            for (int i = 0; i < (int)blocks.size(); ++i)
+            {
+                if (!blocks[(size_t)i].contains(p)) continue;
+                if (uid.isNotEmpty())
+                    for (const auto& pb : linkBlockPending_)
+                        if (pb.uid == uid && pb.slotIdx == i)
+                            return pb.failed ? pb.reason
+                                 : juce::String("Applying") + juce::String::fromUTF8("\xe2\x80\xa6");
+                juce::Rectangle<int> bR, xR;
+                blockCtrlRects(blocks[(size_t)i], bR, xR);
+                // The Chain card's exact words: same control, same meaning.
+                if (xR.contains(p)) return "Remove from chain";
+                if (bR.contains(p)) return "Bypass this plugin";
+            }
+        }
         juce::StringArray names;
         if (sg.isBus)
         {
@@ -16406,6 +16685,19 @@ void EchoJayEditor::timerCallback()
         // itself); gated on the mode so the tab does no file IO otherwise.
         if (processorRef.linkMixerContent == EchoJayProcessor::LinkMixerContent::Chain)
             refreshLinkRackCache(false);
+        // Failed block edits show their coral edge + reason for ~4s, then
+        // sweep (in-flight entries are cleared by the ack poll, never here).
+        {
+            const uint32_t nowMs = juce::Time::getMillisecondCounter();
+            const size_t before = linkBlockPending_.size();
+            linkBlockPending_.erase(
+                std::remove_if(linkBlockPending_.begin(), linkBlockPending_.end(),
+                    [nowMs](const LinkBlockPending& p2)
+                    { return p2.failed && nowMs - p2.sentMs > 9000; }),
+                linkBlockPending_.end());
+            if (linkBlockPending_.size() != before)
+                linkMixerView_.repaint();
+        }
     }
 
     // ---- FINAL overlay re-front (24 Jul 2026) ----

@@ -1394,14 +1394,15 @@ private:
 
             Block()
             {
+                using Card = EchoJayLookAndFeel::ChainCard;
                 auto style = [](juce::TextButton& b, juce::Colour fg) {
-                    b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
+                    b.setColour(juce::TextButton::buttonColourId, Card::ctrlFill);
                     b.setColour(juce::TextButton::textColourOffId, fg);
                 };
-                style(bypassBtn, juce::Colour(0xffa0a0b8));
-                style(removeBtn, juce::Colour(0xffef4444));
-                style(prevBtn,   juce::Colour(0xffa0a0b8));
-                style(nextBtn,   juce::Colour(0xffa0a0b8));
+                style(bypassBtn, Card::ctrlText);
+                style(removeBtn, Card::ctrlDanger);
+                style(prevBtn,   Card::ctrlText);
+                style(nextBtn,   Card::ctrlText);
                 bypassBtn.setTooltip("Bypass this plugin");
                 removeBtn.setTooltip("Remove from chain");
                 prevBtn.setTooltip("Move earlier in the chain");
@@ -2835,6 +2836,40 @@ private:
                              const StripGeom& sg,
                              const EchoJayProcessor::LinkDisplayEntry* entry,
                              float dim, bool wide);
+
+    // ---- Block B/X (bypass / remove over the Link edit protocol) ----------
+    // Block rects depend on the CACHED row count, which changes outside
+    // resized(), so they use the computeColumns pattern rather than stored
+    // rects: ONE pure formula consumed by paint AND the hit test, never two.
+    static constexpr int kChainBlockH = 15, kChainBlockGap = 2, kChainHeadH = 12;
+    static constexpr int kBlockCtrlW = 14;         // B and X, each
+    /** SHOWN blocks only (overflow collapses into "+N more"; the fit logic
+        lives HERE so paint and hit test agree on how many blocks exist). */
+    static void layOutChainBlocks(juce::Rectangle<int> dataRect, int count,
+                                  std::vector<juce::Rectangle<int>>& out);
+    /** B and X inside a block's right end (the space the visual pass left
+        clear). 14x13 targets at the block's 15px height: small, but the
+        same scale as the segmented controls' pressable floor. */
+    static void blockCtrlRects(juce::Rectangle<int> block,
+                               juce::Rectangle<int>& bOut,
+                               juce::Rectangle<int>& xOut);
+    /** Pending block edits: editor-side like linkCtrlPending_ (cosmetic
+        across a Logic recreate; the ack plus the sidecar republish carry
+        the truth). ONE in flight per Link: seq is epoch-seconds, so two
+        sends inside a second would collide. */
+    struct LinkBlockPending {
+        juce::String uid;          // the Link; "" never occurs (bus is local)
+        int  seq      = 0;
+        int  slotIdx  = -1;        // 0-based rack slot
+        bool isRemove = false;
+        bool targetOn = false;     // bypass target state
+        bool failed   = false;     // failed / stale / timed out
+        juce::String reason;       // tooltip text for the failed state
+        uint32_t sentMs = 0;
+    };
+    std::vector<LinkBlockPending> linkBlockPending_;
+    void sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove);
+    void pollLinkBlockAck(const juce::String& uid, int seq, int attemptsLeft);
 
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row
