@@ -1,0 +1,1191 @@
+{
+  "_header": [
+    "controls-exposure conformance fixture: the exact ordered exposure the server",
+    "built from the LIVE registry at the moment below, including exclusions and why.",
+    "Checked by ejmap's preview conformance test (a DIFFERENT program), the",
+    "cross-language equivalent of the shared-header pattern.",
+    "REGENERATE ONLY DELIBERATELY, in its own commit, after a server-side ordering",
+    "or classing change or a map re-ingest:",
+    "  node scripts/params-generate-exposure-fixture.mjs <fp...>  (prod KV creds)",
+    "NEVER from a build, test, or hook, and server tests must not read it: a",
+    "fixture that regenerates alongside the code it verifies always agrees with",
+    "itself and proves nothing."
+  ],
+  "generatedAt": "2026-08-01T13:49:19.307Z",
+  "serverCommit": "55af972",
+  "orderingRule": "tier(primary first) > trust(human-verified > setread > llm-classified) > kind(anchored > mode) > vendor index asc",
+  "K": 12,
+  "classes": {
+    "audition": "bends to explicit user language, annotated for reversion",
+    "guarded": "bends to explicit user language",
+    "plumbing": "never exposed; name matches are logged, not obeyed",
+    "musical": "default pool"
+  },
+  "plugins": [
+    {
+      "plugin": "AMEK EQ 200",
+      "fp": "468224aee54644cb1fbd33aa875ee97ecde86aadc57b6bea197a3cef79900d64",
+      "rev": "b3f287f9537d",
+      "category": "eq",
+      "orderedCandidates": [
+        {
+          "name": "Input Gain",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 1,
+          "range": [
+            -15,
+            15
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "V-Gain",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 3,
+          "range": [
+            -110,
+            -70
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "THD",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 4,
+          "range": [
+            -120,
+            -30
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "Mono Maker",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 7,
+          "range": [
+            20,
+            2000
+          ],
+          "unit": "hz"
+        },
+        {
+          "name": "Stereo Width",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 9,
+          "range": [
+            0,
+            400
+          ],
+          "unit": "pct"
+        },
+        {
+          "name": "TMT Channel",
+          "kind": "anchored",
+          "cls": "plumbing",
+          "trust": "setread",
+          "index": 13,
+          "range": [
+            1,
+            20
+          ]
+        },
+        {
+          "name": "Auto Listen Band",
+          "kind": "anchored",
+          "cls": "audition",
+          "trust": "setread",
+          "index": 17,
+          "range": [
+            0,
+            10
+          ]
+        },
+        {
+          "name": "Gain Scale",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 18,
+          "range": [
+            0,
+            200
+          ],
+          "unit": "pct"
+        },
+        {
+          "name": "LP Freq 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 50,
+          "range": [
+            20,
+            30000
+          ],
+          "unit": "hz"
+        },
+        {
+          "name": "HP Freq 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 52,
+          "range": [
+            20,
+            20000
+          ],
+          "unit": "hz"
+        },
+        {
+          "name": "LF Gain 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 54,
+          "range": [
+            -15,
+            15
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "LMF Gain 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 55,
+          "range": [
+            -15,
+            15
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "MF Gain 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 56,
+          "range": [
+            -15,
+            15
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "HMF Gain 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 57,
+          "range": [
+            -15,
+            15
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "HF Gain 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 58,
+          "range": [
+            -15,
+            15
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "LF Freq 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 59,
+          "range": [
+            15,
+            780
+          ],
+          "unit": "hz"
+        },
+        {
+          "name": "LMF Freq 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 60,
+          "range": [
+            15,
+            780
+          ],
+          "unit": "hz"
+        },
+        {
+          "name": "MF Freq 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 61,
+          "range": [
+            120,
+            7800
+          ],
+          "unit": "hz"
+        },
+        {
+          "name": "HMF Freq 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 62,
+          "range": [
+            370,
+            26000
+          ],
+          "unit": "hz"
+        },
+        {
+          "name": "HF Freq 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 63,
+          "range": [
+            370,
+            26000
+          ],
+          "unit": "hz"
+        },
+        {
+          "name": "LF Q 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 64,
+          "range": [
+            0.400000005960464,
+            4
+          ]
+        },
+        {
+          "name": "LMF Q 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 65,
+          "range": [
+            0.400000005960464,
+            4
+          ]
+        },
+        {
+          "name": "MF Q 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 66,
+          "range": [
+            0.400000005960464,
+            4
+          ]
+        },
+        {
+          "name": "HMF Q 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 67,
+          "range": [
+            0.400000005960464,
+            4
+          ]
+        },
+        {
+          "name": "HF Q 2",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 68,
+          "range": [
+            0.400000005960464,
+            4
+          ]
+        },
+        {
+          "name": "Power",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 0,
+          "labels": [
+            "Off",
+            "On"
+          ]
+        },
+        {
+          "name": "THD In",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 5,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "Mid Side",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 6,
+          "labels": [
+            "Off",
+            "On"
+          ]
+        },
+        {
+          "name": "Mono Maker In",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 8,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "Stereo Width In",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 10,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "Bank",
+          "kind": "mode",
+          "cls": "plumbing",
+          "trust": "setread",
+          "index": 11,
+          "labels": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        {
+          "name": "Param Link",
+          "kind": "mode",
+          "cls": "plumbing",
+          "trust": "setread",
+          "index": 12,
+          "labels": [
+            "Off",
+            "On"
+          ]
+        },
+        {
+          "name": "Stereo Mode",
+          "kind": "mode",
+          "cls": "plumbing",
+          "trust": "setread",
+          "index": 14,
+          "labels": [
+            "Analog",
+            "Digital"
+          ]
+        },
+        {
+          "name": "Monitoring",
+          "kind": "mode",
+          "cls": "audition",
+          "trust": "setread",
+          "index": 15,
+          "labels": [
+            "Stereo",
+            "Mid",
+            "Side"
+          ]
+        },
+        {
+          "name": "Auto Listen",
+          "kind": "mode",
+          "cls": "audition",
+          "trust": "setread",
+          "index": 16,
+          "labels": [
+            "Off",
+            "On"
+          ]
+        },
+        {
+          "name": "Gain Scale Invert",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 19,
+          "labels": [
+            "Off",
+            "On"
+          ]
+        },
+        {
+          "name": "LP Bypass 1",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 21,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "HP Bypass 1",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 23,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "LF Bypass 1",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 39,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "LMF Bypass 1",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 40,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "MF Bypass 1",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 41,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "HMF Bypass 1",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 42,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "HF Bypass 1",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 43,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "LF Range 1",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 44,
+          "labels": [
+            "Full",
+            "Half"
+          ]
+        },
+        {
+          "name": "LMF Range 1",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 45,
+          "labels": [
+            "Full",
+            "Half"
+          ]
+        },
+        {
+          "name": "MF Range 1",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 46,
+          "labels": [
+            "Full",
+            "Half"
+          ]
+        },
+        {
+          "name": "HMF Range 1",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 47,
+          "labels": [
+            "Full",
+            "Half"
+          ]
+        },
+        {
+          "name": "HF Range 1",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 48,
+          "labels": [
+            "Full",
+            "Half"
+          ]
+        },
+        {
+          "name": "Bypass 1",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 49,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "LP Bypass 2",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 51,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "HP Bypass 2",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 53,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "LF Bypass 2",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 69,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "LMF Bypass 2",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 70,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "MF Bypass 2",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 71,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "HMF Bypass 2",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 72,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "HF Bypass 2",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 73,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        },
+        {
+          "name": "LF Range 2",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 74,
+          "labels": [
+            "Full",
+            "Half"
+          ]
+        },
+        {
+          "name": "LMF Range 2",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 75,
+          "labels": [
+            "Full",
+            "Half"
+          ]
+        },
+        {
+          "name": "MF Range 2",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 76,
+          "labels": [
+            "Full",
+            "Half"
+          ]
+        },
+        {
+          "name": "HMF Range 2",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 77,
+          "labels": [
+            "Full",
+            "Half"
+          ]
+        },
+        {
+          "name": "HF Range 2",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 78,
+          "labels": [
+            "Full",
+            "Half"
+          ]
+        },
+        {
+          "name": "Bypass 2",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 79,
+          "labels": [
+            "Out",
+            "In"
+          ]
+        }
+      ],
+      "defaultExposure": [
+        "Input Gain",
+        "V-Gain",
+        "THD",
+        "Mono Maker",
+        "Stereo Width",
+        "Gain Scale",
+        "LP Freq 2",
+        "HP Freq 2",
+        "LF Gain 2",
+        "LMF Gain 2",
+        "MF Gain 2",
+        "HMF Gain 2"
+      ],
+      "noteSection": "\"AMEK EQ 200\": Input Gain(-15..15 db), V-Gain(-110..-70 db), THD(-120..-30 db), Mono Maker(20..2000 hz), Stereo Width(0..400 pct), Gain Scale(0..200 pct), LP Freq 2(20..30000 hz), HP Freq 2(20..20000 hz), LF Gain 2(-15..15 db), LMF Gain 2(-15..15 db), MF Gain 2(-15..15 db), HMF Gain 2(-15..15 db)",
+      "excluded": [],
+      "counts": {
+        "inventory": 62,
+        "excluded": 0,
+        "lockstepTwins": 0,
+        "bandDuplicates": 0,
+        "caseCollisions": 0
+      }
+    },
+    {
+      "plugin": "spiff",
+      "fp": "8f6aa6109bfb23860645f947617acc8fe1c601df7e62296b2367339e3e9da90e",
+      "rev": "d8f800db2cdf",
+      "category": "transient_shaper",
+      "orderedCandidates": [
+        {
+          "name": "cut depth",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 2,
+          "range": [
+            0,
+            10
+          ]
+        },
+        {
+          "name": "boost depth",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 10,
+          "range": [
+            0,
+            10
+          ]
+        },
+        {
+          "name": "oversample",
+          "kind": "anchored",
+          "cls": "plumbing",
+          "trust": "setread",
+          "index": 11,
+          "range": [
+            2,
+            4
+          ]
+        },
+        {
+          "name": "sharpness",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 14,
+          "range": [
+            0,
+            10
+          ]
+        },
+        {
+          "name": "lo cut freq",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 17,
+          "range": [
+            20,
+            974
+          ]
+        },
+        {
+          "name": "lo cut slope",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 18,
+          "range": [
+            6,
+            48
+          ]
+        },
+        {
+          "name": "band1 freq",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 20,
+          "range": [
+            20,
+            974
+          ]
+        },
+        {
+          "name": "band1 sens",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 22,
+          "range": [
+            -18,
+            18
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "band2 freq",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 23,
+          "range": [
+            20,
+            974
+          ]
+        },
+        {
+          "name": "band2 sens",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 25,
+          "range": [
+            -18,
+            18
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "band3 freq",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 26,
+          "range": [
+            20,
+            974
+          ]
+        },
+        {
+          "name": "band3 sens",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 28,
+          "range": [
+            -18,
+            18
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "hi cut freq",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 29,
+          "range": [
+            20,
+            974
+          ]
+        },
+        {
+          "name": "hi cut slope",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 30,
+          "range": [
+            6,
+            48
+          ]
+        },
+        {
+          "name": "band1 q",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 33,
+          "range": [
+            0.100000001490116,
+            10
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "band2 q",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 34,
+          "range": [
+            0.100000001490116,
+            10
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "band3 q",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 35,
+          "range": [
+            0.100000001490116,
+            10
+          ],
+          "unit": "db"
+        },
+        {
+          "name": "stereo link",
+          "kind": "anchored",
+          "cls": "plumbing",
+          "trust": "setread",
+          "index": 36,
+          "range": [
+            0,
+            100
+          ],
+          "unit": "pct"
+        },
+        {
+          "name": "decay lf/hf",
+          "kind": "anchored",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 40,
+          "range": [
+            0,
+            10
+          ]
+        },
+        {
+          "name": "delta",
+          "kind": "mode",
+          "cls": "audition",
+          "trust": "setread",
+          "index": 4,
+          "labels": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "name": "lo cut on",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 5,
+          "labels": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "name": "band1 on",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 6,
+          "labels": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "name": "band2 on",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 7,
+          "labels": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "name": "band3 on",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 8,
+          "labels": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "name": "hi cut on",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 9,
+          "labels": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "name": "resolution",
+          "kind": "mode",
+          "cls": "plumbing",
+          "trust": "setread",
+          "index": 12,
+          "labels": [
+            "normal",
+            "high",
+            "ultra"
+          ]
+        },
+        {
+          "name": "bypass",
+          "kind": "mode",
+          "cls": "guarded",
+          "trust": "setread",
+          "index": 15,
+          "labels": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "name": "band solo on",
+          "kind": "mode",
+          "cls": "audition",
+          "trust": "setread",
+          "index": 16,
+          "labels": [
+            "off",
+            "on"
+          ]
+        },
+        {
+          "name": "band1 mode",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 21,
+          "labels": [
+            "lo shelf",
+            "peaking",
+            "hi shelf",
+            "tilt"
+          ]
+        },
+        {
+          "name": "band2 mode",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 24,
+          "labels": [
+            "lo shelf",
+            "peaking",
+            "hi shelf",
+            "tilt"
+          ]
+        },
+        {
+          "name": "band3 mode",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 27,
+          "labels": [
+            "lo shelf",
+            "peaking",
+            "hi shelf",
+            "tilt"
+          ]
+        },
+        {
+          "name": "window length",
+          "kind": "mode",
+          "cls": "plumbing",
+          "trust": "setread",
+          "index": 31,
+          "labels": [
+            "short",
+            "medium",
+            "long"
+          ]
+        },
+        {
+          "name": "phase mode",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 32,
+          "labels": [
+            "linear",
+            "minimum"
+          ]
+        },
+        {
+          "name": "stereo mode",
+          "kind": "mode",
+          "cls": "plumbing",
+          "trust": "setread",
+          "index": 37,
+          "labels": [
+            "left / right",
+            "mid / side"
+          ]
+        },
+        {
+          "name": "gain mode",
+          "kind": "mode",
+          "cls": "musical",
+          "trust": "setread",
+          "index": 39,
+          "labels": [
+            "cut",
+            "boost"
+          ]
+        }
+      ],
+      "defaultExposure": [
+        "cut depth",
+        "boost depth",
+        "sharpness",
+        "lo cut freq",
+        "lo cut slope",
+        "band1 freq",
+        "band1 sens",
+        "band2 freq",
+        "band2 sens",
+        "band3 freq",
+        "band3 sens",
+        "hi cut freq"
+      ],
+      "noteSection": "\"spiff\": cut depth(0..10), boost depth(0..10), sharpness(0..10), lo cut freq(20..974), lo cut slope(6..48), band1 freq(20..974), band1 sens(-18..18 db), band2 freq(20..974), band2 sens(-18..18 db), band3 freq(20..974), band3 sens(-18..18 db), hi cut freq(20..974)",
+      "excluded": [],
+      "counts": {
+        "inventory": 35,
+        "excluded": 0,
+        "lockstepTwins": 0,
+        "bandDuplicates": 0,
+        "caseCollisions": 0
+      }
+    }
+  ]
+}

@@ -1385,10 +1385,68 @@ public:
                 "exclusion recorded as a row");
         }
 
-        assignPanel.dispatchAction ("space");     // accept
+        assignPanel.dispatchAction ("space");     // accept -> tier preview card
         const int builtControls = assignPanel.controlsForSubmit().size();
         ok (builtControls > 0,
             "accept built " + juce::String (builtControls) + " named controls");
+
+        // THE TIER CARD (server contract 2026-08-02): exception-shaped. The
+        // exposed list is the PINNED server ordering; X kicks out, P pulls
+        // up, the same key clears, untouched rows emit nothing.
+        ok (assignPanel.tierPhase, "tier preview card follows the accept");
+        {
+            auto ex0 = assignPanel.tierExposure();
+            ok (! ex0.defaultExposure.isEmpty(),
+                "preview shows the server's exposed set ("
+                  + juce::String (ex0.defaultExposure.size()) + " of "
+                  + juce::String (ex0.orderedCandidates.size()) + ")");
+            std::cout << "---- tier card ----" << std::endl
+                      << assignPanel.bandTableText() << std::endl;
+
+            const auto firstName = ex0.defaultExposure[0];
+            assignPanel.dispatchAction ("kick");              // cursor row 0 out
+            auto ex1 = assignPanel.tierExposure();
+            ok (! ex1.defaultExposure.contains (firstName),
+                "X: '" + firstName + "' left the exposed set at the moment of the gesture");
+            ok (assignPanel.controlByName (firstName) != nullptr
+                  && assignPanel.controlByName (firstName)->tier == "hidden",
+                "X wrote tier: hidden on the staged control");
+            // The kicked row LEFT the exposed list, so clearing means going
+            // where it went: expand, navigate to it, X again.
+            assignPanel.dispatchAction ("expand");
+            while (assignPanel.tierViewNames[assignPanel.tierCursor] != firstName
+                    && assignPanel.tierCursor < assignPanel.tierViewNames.size() - 1)
+                assignPanel.dispatchAction ("next");
+            assignPanel.dispatchAction ("kick");              // same key clears
+            auto ex2 = assignPanel.tierExposure();
+            ok (ex2.defaultExposure.contains (firstName)
+                  && assignPanel.controlByName (firstName)->tier.isEmpty(),
+                "X again CLEARS the tier (reversible, visible)");
+            assignPanel.dispatchAction ("expand");            // collapse again
+            assignPanel.tierCursor = 0;
+
+            // Pull a collapsed row up, watch it arrive, then leave it set so
+            // submit proves the emission -- INCLUDING across the W re-sweep
+            // below, which rebuilds the staged controls.
+            assignPanel.dispatchAction ("expand");
+            juce::String pulled;
+            for (const auto& c : ex2.orderedCandidates)
+                if (! ex2.defaultExposure.contains (c.name) && c.cls != "plumbing")
+                { pulled = c.name; break; }
+            if (pulled.isNotEmpty())
+            {
+                while (assignPanel.tierViewNames[assignPanel.tierCursor] != pulled
+                        && assignPanel.tierCursor < assignPanel.tierViewNames.size() - 1)
+                    assignPanel.dispatchAction ("next");
+                assignPanel.dispatchAction ("pull");
+                auto ex3 = assignPanel.tierExposure();
+                ok (ex3.defaultExposure.contains (pulled),
+                    "P: '" + pulled + "' entered the exposed set (tier: primary)");
+            }
+            tierPulledName = pulled;
+            assignPanel.dispatchAction ("space");             // accept tiers
+            ok (! assignPanel.tierPhase, "SPACE closes the tier card");
+        }
 
         // THE KILL-AT-REVIEW PATH, exercised as the app lives it: re-begin
         // from disk (what a process restart does) and the cargo must ride
@@ -1411,13 +1469,31 @@ public:
             assignPanel.dispatchAction ("wiggle");
             ok (assignPanel.controlsPhase,
                 "W on the controls row re-sweeps the surface (table reopened, no capture armed)");
-            assignPanel.dispatchAction ("space");   // accept again
+            assignPanel.dispatchAction ("space");   // accept again -> tier card
+            ok (assignPanel.tierPhase, "re-accept re-offers the tier card");
+            assignPanel.dispatchAction ("space");   // zero-interaction pass-through
         }
 
         assignPanel.dispatchAction ("submit");
         ok (assignPanel.isSummaryShowing() && assignPanel.isSubmitEnabled(),
             "review offers submit (controls row is confirmed work)");
         assignPanel.confirmSubmitFromSummary();
+
+        // The emitted map: exactly ONE tier (the P), everything else absent.
+        {
+            auto map = juce::JSON::parse (ledger.getRoot().getChildFile ("maps")
+                          .getChildFile (currentFp + ".json").loadFileAsString());
+            int tiers = 0; juce::String tieredName;
+            if (auto* co = map.getProperty ("controls", juce::var()).getDynamicObject())
+                for (auto& kv : co->getProperties())
+                    if (! kv.value.getProperty ("tier", juce::var()).isVoid())
+                    { ++tiers; tieredName = kv.name.toString(); }
+            ok (tiers == (tierPulledName.isNotEmpty() ? 1 : 0)
+                  && (tierPulledName.isEmpty() || tieredName == tierPulledName),
+                "map emits EXACTLY the gestured tier ("
+                  + juce::String (tiers) + "), it SURVIVED the W re-sweep, "
+                  "untouched rows emit none");
+        }
 
         auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
         ok (f.existsAsFile(), "map written");
@@ -4048,6 +4124,93 @@ private:
             }
         }
 
+        // ------------------------------------------------------------------
+        // lockstep_of, Source B (signed 2026-08-02): write-verify over
+        // CANDIDATE pairs -- names equal after the M5 stripDigits equality,
+        // nothing speculative -- still inside the state-snapshot window.
+        // Canonical rule as signed: a Tier 1 / group claim wins; lower vendor
+        // index as fallback. Every stamp carries by: human_pick|write_verify;
+        // the two evidence sources never blur. The write is the observation:
+        // move the canonical, watch the partner follow 1:1, or stamp nothing.
+        juce::Array<NamedControl> stampedControls;
+        {
+            auto params = inst->getParameters();
+            std::set<int> claimed;
+            for (const auto& r : rws)
+                if (! r.isSurfaceRow() && r.state == AssignRow::State::confirmed && r.resolvedIndex >= 0)
+                    claimed.insert (r.resolvedIndex);
+            for (const auto& g : assignPanel.groupsForSubmit())
+                for (const auto& gm : g.params)
+                    for (int gi : gm.indices)
+                        claimed.insert (gi);
+
+            auto strippedOf = [&params] (int idx)
+            {
+                return juce::isPositiveAndBelow (idx, params.size())
+                         ? EvidenceIndex::stripDigits (params[idx]->getName (64)) : juce::String();
+            };
+
+            int stamped = 0, verifiedFailed = 0;
+            for (const auto& c0 : assignPanel.controlsForSubmit())
+            {
+                auto c = c0;
+                const int ci = c.indices.size() == 1 ? c.indices[0] : -1;
+                if (ci >= 0 && ! c.duplicate && c.lockstepOf < 0)
+                {
+                    // Source A first: an existing human-pick observation.
+                    auto it = assignPanel.lockstepObserved.find (ci);
+                    if (it != assignPanel.lockstepObserved.end())
+                    {
+                        c.lockstepOf = it->second;
+                        c.lockstepBy = assignPanel.lockstepSource.count (ci)
+                                         ? assignPanel.lockstepSource[ci] : "human_pick";
+                        ++stamped;
+                    }
+                    else
+                    {
+                        // Candidate canonical: claimed index with the same
+                        // stripped name; else a lower-indexed staged control.
+                        const auto key = EvidenceIndex::stripDigits (c.name);
+                        int canonical = -1;
+                        if (key.isNotEmpty())
+                        {
+                            for (int k : claimed)
+                                if (strippedOf (k) == key) { canonical = k; break; }
+                            if (canonical < 0)
+                                for (const auto& d : assignPanel.controlsForSubmit())
+                                    if (&d != &c0 && d.indices.size() == 1 && ! d.duplicate
+                                         && d.indices[0] < ci
+                                         && EvidenceIndex::stripDigits (d.name) == key)
+                                    { canonical = d.indices[0]; break; }
+                        }
+                        if (canonical >= 0 && canonical != ci
+                             && juce::isPositiveAndBelow (canonical, params.size())
+                             && juce::isPositiveAndBelow (ci, params.size()))
+                        {
+                            auto pump = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (60); };
+                            params[canonical]->setValueNotifyingHost (0.35f); pump();
+                            const float p1 = params[ci]->getValue();
+                            params[canonical]->setValueNotifyingHost (0.65f); pump();
+                            const float p2 = params[ci]->getValue();
+                            if (std::abs ((p2 - p1) - 0.30f) <= 0.02f)
+                            {
+                                c.lockstepOf = canonical;
+                                c.lockstepBy = "write_verify";
+                                ++stamped;
+                            }
+                            else
+                                ++verifiedFailed;   // candidate discarded, nothing emitted
+                        }
+                    }
+                }
+                stampedControls.add (c);
+            }
+            if (stamped > 0 || verifiedFailed > 0)
+                std::cout << "ASSIGN: lockstep: " << stamped << " twin(s) stamped, "
+                          << verifiedFailed << " candidate pair(s) did not track 1:1 "
+                          << "(discarded, nothing emitted)" << std::endl;
+        }
+
         if (stateBefore.getSize() > 0)
         {
             host.pausePumpForMutation();
@@ -4056,7 +4219,7 @@ private:
         }
 
         p.groups = assignPanel.groupsForSubmit();
-        for (const auto& c : assignPanel.controlsForSubmit())
+        for (const auto& c : stampedControls)
             p.controls.add (c);
 
         if (p.hasUnresolvedContradiction())
@@ -4885,7 +5048,8 @@ private:
     CaptureEngine::NoiseMask   mask;
     int stage = 0, failures = 0;
     int suppressIdx = -1;         // promotion-suppression self-test target
-    int kneeTestIdx = -1;         // assign self-test: the labelled discrete switch
+    int kneeTestIdx = -1;
+    juce::String tierPulledName;         // assign self-test: the labelled discrete switch
     juce::StringArray bandMemberNames;   // band self-test: member names to touch
     juce::String bandImposterName;
     int bandMemberCursor = 0;

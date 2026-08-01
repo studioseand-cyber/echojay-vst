@@ -32,6 +32,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <set>
 
 #include "EjmapSchema.h"       // pulls in EchoJayParamApply.h: the real sanitizer
 
@@ -112,11 +113,38 @@ struct Mouth
                            + "]: fails groupIsEqBand (matcher would skip it at dial time)");
             }
 
-        // Controls: shape per kind, duplicates carry their indices.
+        // Controls: shape per kind, duplicates carry their indices. Lockstep
+        // markers state an observation: the target must be a real index and
+        // never itself a marked twin (a chain would mean the "canonical"
+        // address is not canonical). Tier is the human field with a closed
+        // vocabulary.
+        std::set<int> lockstepCarriers;
+        if (auto* co = map.getProperty ("controls", juce::var()).getDynamicObject())
+            for (auto& kv : co->getProperties())
+                if (! kv.value.getProperty ("lockstep_of", juce::var()).isVoid())
+                    lockstepCarriers.insert ((int) kv.value.getProperty ("index", -1));
         if (auto* co = map.getProperty ("controls", juce::var()).getDynamicObject())
             for (auto& kv : co->getProperties())
             {
                 const auto nm = kv.name.toString();
+                const auto tier = kv.value.getProperty ("tier", juce::var());
+                if (! tier.isVoid() && tier.toString() != "primary" && tier.toString() != "hidden")
+                    rej ("controls." + nm + ": tier '" + tier.toString()
+                           + "' is not in the vocabulary (primary | hidden)");
+                if (! kv.value.getProperty ("lockstep_of", juce::var()).isVoid())
+                {
+                    const int lof = (int) kv.value.getProperty ("lockstep_of", -1);
+                    const auto by = kv.value.getProperty ("lockstep_by", "").toString();
+                    if (! juce::isPositiveAndBelow (lof, paramCount))
+                        rej ("controls." + nm + ": lockstep_of " + juce::String (lof)
+                               + " out of range [0," + juce::String (paramCount) + ")");
+                    if (by != "human_pick" && by != "write_verify")
+                        rej ("controls." + nm + ": lockstep_by '" + by
+                               + "' is not an evidence source (human_pick | write_verify)");
+                    if (lockstepCarriers.count (lof) > 0)
+                        rej ("controls." + nm + ": lockstep_of chains to [" + juce::String (lof)
+                               + "], itself a marked twin -- the canonical address must be canonical");
+                }
                 if ((bool) kv.value.getProperty ("duplicate", false))
                 {
                     auto* ia = kv.value.getProperty ("indices", juce::var()).getArray();

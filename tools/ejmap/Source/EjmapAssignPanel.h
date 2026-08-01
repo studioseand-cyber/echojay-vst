@@ -27,6 +27,7 @@
 #include "EjmapAssignment.h"
 #include "EjmapCapture.h"
 #include "EjmapBands.h"
+#include "EjmapExposure.h"
 
 namespace ejmap
 {
@@ -414,6 +415,9 @@ public:
     */
     bool keyValid (const juce::String& id)
     {
+        if (tierPhase)
+            return id == "space" || id == "expand" || id == "prev" || id == "next"
+                || id == "kick" || id == "pull" || id == "defer";
         if (rowCount() == 0) return id == "skipplugin";
         auto& r = rowAt (selected);
 
@@ -511,6 +515,19 @@ public:
                 return;
             }
             say ("Band card is waiting for a touch. R re-arms, D leaves bands for later.");
+            return;
+        }
+        if (tierPhase)
+        {
+            if (id == "space")  { tierAccept(); return; }
+            if (id == "expand") { tierExpanded = ! tierExpanded; showTierCard(); return; }
+            if (id == "prev")   { tierCursor = juce::jmax (0, tierCursor - 1); showTierCard(); return; }
+            if (id == "next")   { ++tierCursor; showTierCard(); return; }
+            if (id == "kick")   { tierKick(); return; }
+            if (id == "pull")   { tierPull(); return; }
+            if (id == "defer")  { tierDefer(); return; }
+            say ("Exposure preview: X kicks the selected row out, P pulls it up, "
+                 "V shows the rest, SPACE accepts, D reverts this visit.");
             return;
         }
         if (controlsPhase)
@@ -1410,7 +1427,17 @@ public:
             return;
         auto res = bandGesturePending;
         bandGesturePending = {};
-        processBandIndex (res.indices[oneBased - 1], res);
+        const int picked = res.indices[oneBased - 1];
+        // Source A of lockstep_of (signed 2026-08-02): the tool has just
+        // watched every candidate move together; the human named the touched
+        // one. The unpicked partner(s) are OBSERVED 1:1 movers of the picked
+        // address -- recorded here as cargo, or the observation dies with the
+        // pick (the spiff lesson: the session carries the cargo).
+        for (int i : res.indices)
+            if (i != picked)
+            { lockstepObserved[i] = picked; lockstepSource[i] = "human_pick"; }
+        persistSession();
+        processBandIndex (picked, res);
         updateQuestion();
     }
 
@@ -1680,6 +1707,189 @@ public:
 
     juce::Array<ControlEntry> controlEntries;
     juce::Array<NamedControl> pendingControls;
+
+    /** Lockstep observations: unpicked/partner index -> canonical index, with
+        the evidence source per record ("human_pick" | "write_verify"). Session
+        cargo; submit stamps matching staged controls with lockstep_of.
+    */
+    std::map<int, int> lockstepObserved;
+    std::map<int, juce::String> lockstepSource;
+
+    //==========================================================================
+    // The tier preview: EXCEPTION-SHAPED. After the controls table accepts,
+    // the card shows the EXACT twelve the server would expose (the pinned
+    // re-implementation, spec/controls-exposure-fixture.json) with the rest
+    // collapsed. Two gestures: X kicks one out (hidden), P pulls one up
+    // (primary). Every gesture re-runs the real ordering so the consequence
+    // is watched, not imagined. Untouched controls emit no tier; a capture
+    // where the heuristic was right costs zero interactions.
+    bool tierPhase = false;
+    int tierCursor = 0;
+    bool tierExpanded = false;
+    juce::StringArray tierSnapshot;                 // tiers at entry, for D
+    juce::StringArray tierViewNames;                // visible line -> control name
+
+    ejmap::Exposure::Result tierExposure()
+    {
+        auto* co = new juce::DynamicObject();
+        for (const auto& c : pendingControls)
+            co->setProperty (c.name, c.toVar());
+        juce::Array<juce::var> gv;
+        for (const auto& g : acceptedGroups) gv.add (g.toVar());
+        return ejmap::Exposure::build (juce::var (co), juce::var (gv));
+    }
+
+    NamedControl* controlByName (const juce::String& nm)
+    {
+        for (auto& c : pendingControls)
+            if (c.name == nm) return &c;
+        return nullptr;
+    }
+
+    void beginTierPhase()
+    {
+        tierSnapshot.clear();
+        for (const auto& c : pendingControls) tierSnapshot.add (c.tier);
+        tierPhase = true; tierCursor = 0; tierExpanded = false;
+        showTierCard();
+    }
+
+    void showTierCard()
+    {
+        auto ex = tierExposure();
+        tierViewNames.clear();
+
+        juce::String t;
+        t << "THE SERVER WOULD EXPOSE THESE " << ex.defaultExposure.size()
+          << ", IN THIS ORDER"+juce::String("\n\n");
+        auto detailFor = [&ex] (const juce::String& nm) -> juce::String
+        {
+            for (const auto& c : ex.orderedCandidates)
+                if (c.name == nm)
+                    return "(" + c.cls + ", " + (c.trust.isEmpty() ? "?" : c.trust) + ", " + c.kind
+                         + (c.tier.isNotEmpty() ? ", tier:" + c.tier : "") + ")";
+            return {};
+        };
+        for (const auto& nm : ex.defaultExposure) tierViewNames.add (nm);
+        juce::StringArray rest;
+        for (const auto& c : ex.orderedCandidates)
+            if (! ex.defaultExposure.contains (c.name)) rest.add (c.name);
+
+        tierCursor = juce::jlimit (0, juce::jmax (0,
+            (tierExpanded ? tierViewNames.size() + rest.size() : tierViewNames.size()) - 1), tierCursor);
+
+        for (int i = 0; i < tierViewNames.size(); ++i)
+            t << (i == tierCursor ? " > " : "   ") << juce::String (i + 1).paddedLeft (' ', 2)
+              << "  " << tierViewNames[i] << "  " << detailFor (tierViewNames[i]) << "\n";
+
+        if (! tierExpanded)
+            t << "\n --- " << rest.size() << " more stay collapsed (hidden by the heuristic"
+              << (ex.excludedNames.isEmpty() ? "" : "; "
+                    + juce::String (ex.excludedNames.size()) + " excluded outright") << ") - V to view ---\n";
+        else
+        {
+            t << "\n --- THE REST (P pulls one up) ---\n";
+            for (int i = 0; i < rest.size(); ++i)
+            {
+                const int line = tierViewNames.size() + i;
+                t << (line == tierCursor ? " > " : "   ") << "    " << rest[i]
+                  << "  " << detailFor (rest[i]) << "\n";
+            }
+            for (const auto& nm : rest) tierViewNames.add (nm);
+            if (! ex.excludedNames.isEmpty())
+            {
+                t << "\n --- EXCLUDED OUTRIGHT (no tier can reach these) ---\n";
+                for (int i = 0; i < ex.excludedNames.size(); ++i)
+                    t << "       " << ex.excludedNames[i] << "  <- " << ex.excludedReasons[i] << "\n";
+            }
+        }
+
+        summaryText.setText (t, juce::dontSendNotification);
+        summaryText.setVisible (true);
+        promptTitle.setText ("Exposure preview: correct the server, or cost nothing",
+                             juce::dontSendNotification);
+        question.setText ("SPACE accept as shown (untouched rows emit no tier) - X kick out - "
+                          "P pull up - V " + juce::String (tierExpanded ? "collapse" : "view")
+                          + " the rest - D revert this visit", juce::dontSendNotification);
+        rebuildTierAnswers();
+        resized();
+    }
+
+    void rebuildTierAnswers()
+    {
+        answerButtons.clear();
+        auto add = [this] (const juce::String& id, const juce::String& text)
+        {
+            auto* b = answerButtons.add (new juce::TextButton (text));
+            addAndMakeVisible (b);
+            b->onClick = [this, id] { dispatchAction (id); grabKeyboardFocus(); };
+        };
+        add ("space",  "SPACE - accept as shown");
+        add ("kick",   "X - kick out (tier: hidden)");
+        add ("pull",   "P - pull up (tier: primary)");
+        add ("expand", juce::String ("V - ") + (tierExpanded ? "collapse" : "view the rest"));
+        add ("defer",  "D - revert this visit");
+        resized();
+    }
+
+    void tierKick()
+    {
+        if (! juce::isPositiveAndBelow (tierCursor, tierViewNames.size())) return;
+        auto* c = controlByName (tierViewNames[tierCursor]);
+        if (c == nullptr) return;
+        if (c->tier == "hidden")
+        { c->tier.clear(); say ("Tier cleared on '" + c->name + "': the heuristic decides again."); }
+        else
+        { c->tier = "hidden"; say ("'" + c->name + "' kicked out (tier: hidden). Watch what replaces it."); }
+        persistSession();
+        showTierCard();
+    }
+
+    void tierPull()
+    {
+        if (! juce::isPositiveAndBelow (tierCursor, tierViewNames.size())) return;
+        auto* c = controlByName (tierViewNames[tierCursor]);
+        if (c == nullptr) return;
+        if (ejmap::Exposure::classifyControl (c->name) == "plumbing")
+        { say ("'" + c->name + "' is plumbing: the server never exposes it; a tier would be "
+               "recorded and ignored. Refusing to write a field that cannot act."); return; }
+        if (c->tier == "primary")
+        { c->tier.clear(); say ("Tier cleared on '" + c->name + "': the heuristic decides again."); }
+        else
+        { c->tier = "primary"; say ("'" + c->name + "' pulled up (tier: primary)."); }
+        persistSession();
+        showTierCard();
+    }
+
+    void tierAccept()
+    {
+        int tiers = 0;
+        for (const auto& c : pendingControls) tiers += c.tier.isNotEmpty();
+        tierPhase = false;
+        summaryText.setVisible (false);
+        persistSession();
+        say (tiers == 0 ? juce::String ("Exposure accepted as the heuristic built it: no tiers emitted.")
+                        : juce::String (tiers) + " tier(s) will be emitted; the rest stay heuristic.");
+        advance();
+        list.updateContent();
+        updateQuestion();
+        resized();
+    }
+
+    void tierDefer()
+    {
+        for (int i = 0; i < pendingControls.size() && i < tierSnapshot.size(); ++i)
+            pendingControls.getReference (i).tier = tierSnapshot[i];
+        tierPhase = false;
+        summaryText.setVisible (false);
+        persistSession();
+        say ("Tier changes from this visit reverted; the heuristic decides. "
+             "W on the controls row re-opens the flow.");
+        advance();
+        list.updateContent();
+        updateQuestion();
+        resized();
+    }
     bool controlsPhase = false;
     bool controlsExpanded = false;
     int  controlsCursor = 0;
@@ -1977,6 +2187,14 @@ public:
 
     void actionControlsAccept()
     {
+        // A re-sweep rebuilds the staged controls; the human's tiers must
+        // SURVIVE it by name (the controlsExcluded precedent -- found live:
+        // W after tiering silently emitted zero tiers). A control that no
+        // longer exists after the re-sweep takes its tier with it, honestly.
+        std::map<juce::String, juce::String> tierByName;
+        for (const auto& c : pendingControls)
+            if (c.tier.isNotEmpty()) tierByName[c.name] = c.tier;
+
         pendingControls.clear();
         juce::StringArray dupDone;
         int shipped = 0, modeN = 0;
@@ -2023,6 +2241,8 @@ public:
                 c.unit = e.sweep.unitFamily;
                 c.identityDisplay = e.sweep.identityDisplay;
             }
+            if (auto it = tierByName.find (c.name); it != tierByName.end())
+                c.tier = it->second;
             pendingControls.add (c);
             ++shipped;
         }
@@ -2038,10 +2258,11 @@ public:
         recordResolution (row, "controls_accept");
 
         controlsPhase = false;
-        summaryText.setVisible (false);
         say ("CONTROLS: " + row.skipReason);
         persistSession();
-        advance();
+        // The tier preview rides the same accept: exception-shaped, SPACE
+        // straight through when the heuristic was right.
+        beginTierPhase();
         list.updateContent();
         updateProgress();
         updateQuestion();
@@ -2225,6 +2446,9 @@ public:
         if (c == 'm' || c == 'M')                         { dispatchAction ("modematerial"); return true; }
         if (c == 'f' || c == 'F')                         { dispatchAction ("expand"); return true; }
         if (c == 'i' || c == 'I')                         { dispatchAction ("bulk"); return true; }
+        if (c == 'x' || c == 'X')                         { dispatchAction ("kick"); return true; }
+        if (c == 'p' || c == 'P')                         { dispatchAction ("pull"); return true; }
+        if (c == 'v' || c == 'V')                         { dispatchAction ("expand"); return true; }
         if (c == '?')                                     { dispatchAction ("evidence"); return true; }
         if (c == 's' || c == 'S')                         { dispatchAction ("skipplugin"); return true; }
         if (c >= '1' && c <= '9')
@@ -2869,6 +3093,18 @@ private:
         juce::Array<juce::var> cv;
         for (const auto& c : pendingControls) cv.add (c.toVar());
         o->setProperty ("pending_controls", juce::var (cv));
+        {
+            auto* lo = new juce::DynamicObject();
+            for (auto& kv : lockstepObserved)
+            {
+                auto* e = new juce::DynamicObject();
+                e->setProperty ("of", kv.second);
+                auto it = lockstepSource.find (kv.first);
+                e->setProperty ("by", it != lockstepSource.end() ? it->second : "human_pick");
+                lo->setProperty (juce::String (kv.first), juce::var (e));
+            }
+            o->setProperty ("lockstep_observed", juce::var (lo));
+        }
         juce::Array<juce::var> gv;
         for (const auto& g : acceptedGroups) gv.add (g.toVar());
         o->setProperty ("accepted_groups", juce::var (gv));
@@ -2926,6 +3162,12 @@ private:
         c.trust = v.getProperty ("trust", "").toString() == "human-verified"
                     ? Trust::humanVerified : Trust::setread;
         c.duplicate = (bool) v.getProperty ("duplicate", false);
+        if (! v.getProperty ("lockstep_of", juce::var()).isVoid())
+        {
+            c.lockstepOf = (int) v.getProperty ("lockstep_of", -1);
+            c.lockstepBy = v.getProperty ("lockstep_by", "").toString();
+        }
+        c.tier = v.getProperty ("tier", "").toString();
         return c;
     }
 
@@ -2983,6 +3225,13 @@ private:
         restore (ignoreRows, v.getProperty ("ignore_rows", juce::var()));
 
         pendingControls.clear();
+        if (auto* lo = v.getProperty ("lockstep_observed", juce::var()).getDynamicObject())
+            for (auto& kv : lo->getProperties())
+            {
+                lockstepObserved[kv.name.toString().getIntValue()] = (int) kv.value.getProperty ("of", -1);
+                lockstepSource[kv.name.toString().getIntValue()]
+                    = kv.value.getProperty ("by", "human_pick").toString();
+            }
         if (auto* ca = v.getProperty ("pending_controls", juce::var()).getArray())
             for (auto& cvr : *ca)
                 pendingControls.add (namedControlFromVar (cvr));

@@ -241,6 +241,23 @@ struct NamedControl
     bool duplicate = false;                 // same EXACT name twice: both indices
                                             // recorded here, neither resolvable
 
+    /** Channel-duplicate marker (server contract, 2026-08-02). States the
+        OBSERVATION -- this parameter moved 1:1 with the picked address during
+        discovery -- never the interpretation, so it survives whatever shape
+        the next vendor invents. The server excludes carriers from both the
+        exposure pool and the inventory. lockstepBy says which evidence source
+        made the observation ("human_pick" | "write_verify"); the two never
+        blur.
+    */
+    int lockstepOf = -1;
+    juce::String lockstepBy;
+
+    /** The HUMAN tier field ("primary" | "hidden"); empty means the server's
+        exposure heuristic decides. Set only by an explicit gesture on the
+        exposure preview card; untouched controls emit nothing.
+    */
+    juce::String tier;
+
     juce::var toVar() const;
 };
 
@@ -457,6 +474,13 @@ inline juce::var NamedControl::toVar() const
     if (identityDisplay) o->setProperty ("identity_display", true);
     o->setProperty ("trust", toString (trust));
     if (duplicate) o->setProperty ("duplicate", true);
+    if (lockstepOf >= 0)
+    {
+        o->setProperty ("lockstep_of", lockstepOf);
+        o->setProperty ("lockstep_by", lockstepBy);
+    }
+    if (tier == "primary" || tier == "hidden")
+        o->setProperty ("tier", tier);
     return juce::var (o);
 }
 
