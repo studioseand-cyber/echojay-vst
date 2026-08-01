@@ -452,6 +452,23 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   veteran cache reads not-dialable until a content rev bump. Decision
   needed from whoever owns the rev contract: overlay serve-time fields
   onto the cached object on unchanged rev, or fold them into rev.
+- THE INTENT CLASSIFIER IS FIVE REGEXES WHOSE FAILURE MODE IS A SILENT
+  DEFAULT TO CHAT (risk entry, 1 Aug 2026; recorded, not fixed). Four arms
+  existed and NONE matched "Add the AMEK EQ 200 and cut 300 Hz by 2 dB" -
+  close to the plainest chain request possible (CHAIN_REQUEST_RE requires
+  the literal word "chain"; EDIT_REQUEST_RE's add-arm requires a
+  positional). ADD_PLUGIN_RE is the fifth arm and the next shape will miss
+  too; every miss presents as the MODEL being unhelpful (or worse, lying
+  "Done" under the chat no-block note), never as routing. VISIBILITY NOW
+  EXISTS: every turn the client staged chain_generate/chain_edit that the
+  classifier downgrades to chat logs [chain-intent-downgrade] with the
+  typed excerpt AND persists intentDowngrade per turn (classificationEntry,
+  digest-countable) - the client's own judgement disagreeing with the
+  server's is exactly the miss signal. THE DECISION RULE, agreed 1 Aug: if
+  the downgrade count is non-trivial, the regex approach is the wrong
+  shape and the classifier should ask the model rather than pattern-match
+  (the Phase 1.5 fallback the spec already reserves). Do not add a sixth
+  regex without reading the counter first.
 - THE SILENTLY-DROPPED-FIELD CLASS: FOUR INSTANCES, THE FOURTH ON A SERVER
   ALREADY CARRYING THREE GUARDS AGAINST IT (risk entry, 1 Aug 2026). The
   class: a producer passes a field, a consumer rebuilds the object from an
