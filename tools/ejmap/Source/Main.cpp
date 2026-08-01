@@ -58,6 +58,7 @@ public:
         juce::String uploadTestId, uploadTestMap, uploadTestTester;
         juce::String settleId; int settleIdx = -1;
         juce::String resubmitId;
+        juce::String gateM9Mode;
         int stallN = 0;
         bool supervised = false;
         int  restartCount = 0;
@@ -117,6 +118,8 @@ public:
                 { settleId = args[i + 1]; settleIdx = args[i + 2].getIntValue(); i += 2; }
             else if (args[i] == "--resubmit" && i + 1 < args.size())
                 resubmitId = args[++i];
+            else if (args[i] == "--gate-m9")
+            { gateM9Mode = "run"; if (i + 1 < args.size() && ! args[i + 1].startsWith ("--")) gateM9Mode = args[++i]; }
             else if (args[i] == "--attribute-report" && i + 1 < args.size())
                 attributeReport = args[++i];
             else if (args[i] == "--child")
@@ -192,7 +195,13 @@ public:
         //
         // callAsync posts an ordinary message, which is the same context a button
         // click arrives in. That is why the UI path was never affected.
-        if (resubmitId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        if (gateM9Mode.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto m9 = gateM9Mode == "run" ? juce::String() : gateM9Mode;
+            auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, m9] { m->gateM9 (m9); });
+        }
+        else if (resubmitId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {
             auto id = resubmitId; auto* m = mainWindow->getMain();
             juce::MessageManager::callAsync ([m, id] { m->resubmitAndUpload (id); });

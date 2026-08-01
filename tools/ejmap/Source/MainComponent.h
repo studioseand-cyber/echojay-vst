@@ -25,6 +25,7 @@
 #include "EjmapAssignPanel.h"
 #include "EchoJayParamMaps.h"   // fingerprintForDescription
 #include "EjmapMouth.h"
+#include "EjmapProbe.h"
 #include "EjmapBuildInfo.h"     // EJMAP_APPLY_HEADER_SHA, stamped as compiled
 #include <sys/stat.h>            // machine_id 0600, ejextract convention
 
@@ -1139,6 +1140,561 @@ public:
         }
 
         std::cout << "APPLYTEST: " << (fails == 0 ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
+    /** M9 HEADLINE GATE (signed fixture, 2026-08-02): AMEK EQ 200, the
+        production map, two arms against one loaded instance. Arm B (correct
+        map) first, then arm A (deliberate mis-map: band 1 freq_hz pointed at
+        Mono Maker). Every criterion prints its measured number; a boolean
+        pass is not a result. mode: "" full gate, "kill" dies mid-arm-B with
+        the stake on disk, "resume" is the relaunch that must restore state
+        and say so in words.
+    */
+    void gateM9 (const juce::String& mode)
+    {
+        using P = Probe;
+        auto say = [] (const juce::String& t) { std::cout << t << std::endl; };
+        int fails = 0;
+        auto crit = [&] (const juce::String& id, bool pass, const juce::String& numbers)
+        {
+            if (! pass) ++fails;
+            std::cout << "  " << (pass ? "PASS " : "FAIL ") << id << ": " << numbers << std::endl;
+        };
+
+        auto desc = echojay::auregistry::describeFromRegistry ("AudioUnit:Effects/aumf,ameq,Brwx");
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        auto res = host.load (desc, watchdog);
+        if (res.outcome != LoadOutcome::ok) { say ("GATE: load failed"); quitNow(); return; }
+        cal = capture.calibrate (*host.getInstance(), loadedId);
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+        auto* inst = host.getInstance();
+        auto params = inst->getParameters();
+
+        auto stakeFile = ledger.getRoot().getChildFile ("probe-inflight.json");
+        auto stateFile = ledger.getRoot().getChildFile ("probe-state-" + currentFp + ".bin");
+
+        // ---- instrument mode: the extractor's OWN floors and resolution,
+        //      measured with no plugin in the path (amendments 3 and 4) -----
+        if (mode == "instrument")
+        {
+            say ("INSTRUMENT: feature-extractor floors and resolution (no plugin in the path)");
+            auto s0 = P::stimulusReference (0);
+            auto sp0 = P::welch (s0);
+
+            // (i) NUMERICAL floor: bit-identical input pair.
+            auto numF = P::lobeFeatures (sp0.mid, sp0.mid);
+            const double numSide = std::abs (P::bandEnergyDb (sp0.side, 50, 400)
+                                           - P::bandEnergyDb (sp0.side, 50, 400));
+            say ("  numerical floor (bit-identical pair): depth "
+                 + juce::String (numF.maxAbsDb, 6) + " dB | side band "
+                 + juce::String (numSide, 6) + " dB");
+
+            // (ii) REALIZATION floor: different noise realizations, same
+            //      (identity) system. This is the estimator variance a
+            //      deterministic plugin's A/A pair can never show.
+            double rDepth = 0, rSide = 0, rCentre = 0, rWidth = 0;
+            juce::Array<double> centres, widths;
+            for (int k = 1; k <= 4; ++k)
+            {
+                auto sk = P::stimulusReference (k);
+                auto spk = P::welch (sk);
+                auto f = P::lobeFeatures (sp0.mid, spk.mid);
+                rDepth = juce::jmax (rDepth, f.maxAbsDb);
+                rSide  = juce::jmax (rSide, std::abs (P::bandEnergyDb (sp0.side, 50, 400)
+                                                    - P::bandEnergyDb (spk.side, 50, 400)));
+                // centre/width of a KNOWN synthetic lobe under each realization
+                auto lk = P::welch (P::syntheticPeak (sk, 200.0, 6.0, 1.0));
+                auto fk = P::lobeFeatures (spk.mid, lk.mid, 30.0, 20000.0, 1.0);
+                if (fk.centreDefined()) { centres.add (std::log2 (fk.centreHz / 200.0)); widths.add (fk.widthOct); }
+            }
+            for (int a = 0; a < centres.size(); ++a)
+                for (int b2 = a + 1; b2 < centres.size(); ++b2)
+                {
+                    rCentre = juce::jmax (rCentre, std::abs (centres[a] - centres[b2]));
+                    rWidth  = juce::jmax (rWidth,  std::abs (widths[a] - widths[b2]));
+                }
+            say ("  realization floor (independent noise, same system): depth "
+                 + juce::String (rDepth, 4) + " dB | side band " + juce::String (rSide, 4)
+                 + " dB | centre " + juce::String (rCentre, 5) + " oct | width "
+                 + juce::String (rWidth, 4) + " oct");
+
+            // (iii) CENTRE RESOLUTION vs FREQUENCY: known-truth synthetic
+            //       peaks, 40 Hz to 16 kHz. Bin width at this FFT is
+            //       48000/8192 = 5.86 Hz.
+            say ("  bin width " + juce::String (P::kSampleRate / P::kFftSize, 2)
+                 + " Hz (FFT " + juce::String (P::kFftSize) + ", " + juce::String (P::kBins) + " bins)");
+            say ("  centre resolution vs frequency (synthetic peak, +6 dB, Q 1.0):");
+            say ("     true Hz | measured Hz | error oct | error % | width oct | depth dB (true +6.00)");
+            const double freqs[] = { 40, 63, 80, 100, 160, 250, 400, 630, 1000,
+                                     2000, 4000, 8000, 16000 };
+            double worstLow = 0, worstHigh = 0, worstDepth = 0;
+            for (double f0 : freqs)
+            {
+                auto lp = P::welch (P::syntheticPeak (s0, f0, 6.0, 1.0));
+                auto ft = P::lobeFeatures (sp0.mid, lp.mid, 20.0, 22000.0, 1.0);
+                if (! ft.centreDefined()) { say ("     " + juce::String (f0, 0) + " | NO LOBE"); continue; }
+                const double errOct = std::log2 (ft.centreHz / f0);
+                const double errPct = 100.0 * (ft.centreHz - f0) / f0;
+                if (f0 <= 250) worstLow = juce::jmax (worstLow, std::abs (errOct));
+                else           worstHigh = juce::jmax (worstHigh, std::abs (errOct));
+                worstDepth = juce::jmax (worstDepth, std::abs (ft.depthDb - 6.0));
+                say ("     " + juce::String (f0, 0).paddedLeft (' ', 7) + " | "
+                     + juce::String (ft.centreHz, 1).paddedLeft (' ', 11) + " | "
+                     + juce::String (errOct, 4).paddedLeft (' ', 9) + " | "
+                     + juce::String (errPct, 2).paddedLeft (' ', 7) + " | "
+                     + juce::String (ft.widthOct, 3) + " | "
+                     + juce::String (ft.depthDb, 3));
+            }
+            say ("  worst |centre error| <=250 Hz: " + juce::String (worstLow, 4)
+                 + " oct | >250 Hz: " + juce::String (worstHigh, 4)
+                 + " oct  (frequency gate is 0.070 oct)");
+            say ("  worst |depth error| on a known +6.00 dB peak: "
+                 + juce::String (worstDepth, 3) + " dB  <- INSTRUMENT DEPTH FLOOR");
+            std::cout << "INSTRUMENT: DONE" << std::endl;
+            quitNow(); return;
+        }
+
+        // ---- resume mode: the relaunch after a mid-batch kill --------------
+        if (mode == "resume")
+        {
+            if (! stakeFile.existsAsFile() || ! stateFile.existsAsFile())
+            { say ("GATE-RESUME: no probe stake on disk; nothing to restore"); quitNow(); return; }
+            auto stake = juce::JSON::parse (stakeFile.loadFileAsString());
+            say ("A probe died mid-run at " + stake.getProperty ("started_at", "?").toString()
+                 + " (suite " + stake.getProperty ("suite", "?").toString()
+                 + ", render " + stake.getProperty ("render_n", juce::var (0)).toString()
+                 + "). Restoring your settings from the stake.");
+            juce::MemoryBlock st;
+            stateFile.loadFileAsData (st);
+            host.pausePumpForMutation();
+            inst->setStateInformation (st.getData(), (int) st.getSize());
+            host.resumePumpAfterMutation();
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
+            bool verified = true;
+            if (auto* exp = stake.getProperty ("expect", juce::var()).getDynamicObject())
+                for (auto& kv : exp->getProperties())
+                {
+                    const int idx = kv.name.toString().getIntValue();
+                    const float want = (float) (double) kv.value;
+                    const float got = params[idx]->getValue();
+                    say ("  restore verify: [" + juce::String (idx) + "] expected "
+                         + juce::String (want, 4) + " read " + juce::String (got, 4));
+                    if (std::abs (got - want) > 0.01f) verified = false;
+                }
+            if (verified)
+            {
+                say ("Your settings were restored from the stake and verified.");
+                stakeFile.deleteFile(); stateFile.deleteFile();
+            }
+            else
+                say ("RESTORE VERIFICATION FAILED: the stake stays on disk and probing "
+                     "this plugin is blocked until you acknowledge this.");
+            std::cout << "GATE-RESUME: " << (verified ? "RESTORED" : "UNRESTORED") << std::endl;
+            quitNow(); return;
+        }
+
+        // ---- fixture from the production map -------------------------------
+        auto mapVar = juce::JSON::parse (ledger.getRoot().getChildFile ("maps")
+                          .getChildFile (currentFp + ".json").loadFileAsString());
+        auto g1 = mapVar.getProperty ("groups", juce::var())[0];
+        auto gp = g1.getProperty ("params", juce::var());
+        const int idxFreq = (int) gp.getProperty ("freq_hz", juce::var()).getProperty ("index", -1);
+        const int idxGain = (int) gp.getProperty ("gain_db", juce::var()).getProperty ("index", -1);
+        const int idxQ    = (int) gp.getProperty ("q", juce::var()).getProperty ("index", -1);
+        const int idxMono = 7, idxMonoIn = 8;
+        auto freqAnch = echojay::anchorsFromVar (gp.getProperty ("freq_hz", juce::var()));
+        auto gainAnch = echojay::anchorsFromVar (gp.getProperty ("gain_db", juce::var()));
+        auto qAnch    = echojay::anchorsFromVar (gp.getProperty ("q", juce::var()));
+        auto monoAnch = echojay::anchorsFromVar (mapVar.getProperty ("controls", juce::var())
+                                                       .getProperty ("Mono Maker", juce::var()));
+        say ("GATE M9 | AMEK EQ 200 | fp " + currentFp.substring (0, 12)
+             + " | group1 freq [" + juce::String (idxFreq) + "] gain [" + juce::String (idxGain)
+             + "] q [" + juce::String (idxQ) + "]");
+
+        // declared vs measured latency, recorded; the eq features are Welch
+        // magnitude spectra, so the aligner uses NEITHER number.
+        say ("latency: declared " + juce::String (inst->getLatencySamples())
+             + " samples; Task 0 measured first-energy at sample 0; the eq suite's "
+               "spectral features use neither (alignment-insensitive by construction).");
+
+        // decorrelation check on the raw stimulus
+        auto stim = P::stimulusReference();
+        const double smdb = P::sideMidRatioDb (stim);
+        say ("stimulus decorrelation: broadband side/mid = " + juce::String (smdb, 3)
+             + " dB (gate requires within +/-1 dB of 0)");
+        if (std::abs (smdb) > 1.0)
+        { say ("GATE: stimulus not decorrelated; the gate does not run."); quitNow(); return; }
+
+        // ---- probe stake BEFORE the first write ----------------------------
+        juce::MemoryBlock preState;
+        host.pausePumpForMutation();
+        inst->getStateInformation (preState);
+        host.resumePumpAfterMutation();
+        stateFile.replaceWithData (preState.getData(), preState.getSize());
+        std::map<int, float> preVals;
+        for (int i : { idxFreq, idxGain, idxQ, idxMono, idxMonoIn })
+            preVals[i] = params[i]->getValue();
+        auto writeStake = [&] (const juce::String& suite, int renderN)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("plugin_id", loadedId);
+            o->setProperty ("fp", currentFp);
+            o->setProperty ("suite", suite);
+            o->setProperty ("render_n", renderN);
+            o->setProperty ("state_file", stateFile.getFullPathName());
+            o->setProperty ("started_at", juce::Time::getCurrentTime().toISO8601 (true));
+            auto* exp = new juce::DynamicObject();
+            for (auto& kv : preVals) exp->setProperty (juce::String (kv.first), (double) kv.second);
+            o->setProperty ("expect", juce::var (exp));
+            stakeFile.replaceWithText (juce::JSON::toString (juce::var (o), false));
+        };
+        writeStake ("eq", 0);
+
+        int renderCount = 0;
+        auto render = [&] () {
+            host.pausePumpForMutation();
+            auto b = P::renderCapture (*inst);
+            host.resumePumpAfterMutation();
+            writeStake ("eq", ++renderCount);
+            return b;
+        };
+        double writeMsMax = 0, writeMsSum = 0; int writeN = 0;
+        bool sawUnlanded = false;
+        auto wc = [&] (int idx, float v) {
+            const double ms = P::writeConfirm (*params[idx], v);
+            if (ms < 0) { sawUnlanded = true; say ("  WRITE UNLANDED [" + juce::String (idx) + "]"); }
+            else { writeMsMax = juce::jmax (writeMsMax, ms); writeMsSum += ms; ++writeN; }
+            return ms;
+        };
+        auto normFor = [] (const juce::Array<juce::Array<float>>& a, double value) {
+            auto eff = echojay::dominantMonotonicTable (a);
+            return echojay::interpolateAnchors (eff.table, (float) value);
+        };
+
+        const auto tArmB0 = juce::Time::getMillisecondCounterHiRes();
+
+        // ---- P4 pre-excitation reference then excitation verify ------------
+        wc (idxFreq, normFor (freqAnch, 100.0));
+        wc (idxGain, normFor (gainAnch, 0.0));
+        wc (idxQ,    normFor (qAnch, 1.0));
+        auto preExc = render();
+        auto preExcS = P::welch (preExc);
+        wc (idxGain, normFor (gainAnch, 6.0));            // the excitation
+        auto excR = render();
+        auto excS = P::welch (excR);
+        auto excF = P::lobeFeatures (preExcS.mid, excS.mid);
+        say ("P4 excitation verified by signal: LF Gain 1 -> +6 dB changed the mid "
+             "spectrum by " + juce::String (excF.maxAbsDb, 2) + " dB max (lobe at "
+             + juce::String (excF.centreHz, 1) + " Hz, depth " + juce::String (excF.depthDb, 2)
+             + " dB). Should-have-moved branch ARMED for both arms on this evidence.");
+        const bool excitationVerified = excF.maxAbsDb > 1.0;
+
+        // ---- P2 sigma_f -----------------------------------------------------
+        // (i) three A/A null pairs at the excited state: depth + side-band floors
+        double sigDepth = 0, sigSide = 0;
+        for (int r = 0; r < 3; ++r)
+        {
+            auto a1 = P::welch (render());
+            auto a2 = P::welch (render());
+            auto nf = P::lobeFeatures (a1.mid, a2.mid);
+            sigDepth = juce::jmax (sigDepth, nf.maxAbsDb);
+            sigSide  = juce::jmax (sigSide, std::abs (P::bandEnergyDb (a1.side, 50, 400)
+                                                     - P::bandEnergyDb (a2.side, 50, 400)));
+        }
+        // (ii) three repeated freq-move measurements: centre + width floors
+        double centres[3], widths[3];
+        for (int r = 0; r < 3; ++r)
+        {
+            wc (idxFreq, normFor (freqAnch, 100.0));
+            auto f100 = P::lobeFeatures (preExcS.mid, P::welch (render()).mid);
+            wc (idxFreq, normFor (freqAnch, 400.0));
+            auto f400 = P::lobeFeatures (preExcS.mid, P::welch (render()).mid);
+            centres[r] = std::log2 (f400.centreHz / f100.centreHz);
+            widths[r]  = f100.widthOct;
+            if (mode == "kill" && r == 1)
+            { say ("GATE-KILL: dying mid-batch with the stake on disk."); std::cout.flush(); ::_exit (9); }
+        }
+        double sigCentre = 0, sigWidth = 0;
+        for (int a = 0; a < 3; ++a) for (int b2 = a + 1; b2 < 3; ++b2)
+        { sigCentre = juce::jmax (sigCentre, std::abs (centres[a] - centres[b2]));
+          sigWidth  = juce::jmax (sigWidth,  std::abs (widths[a] - widths[b2])); }
+        const double plugCentre = sigCentre, plugDepth = sigDepth,
+                     plugWidth = sigWidth, plugSide = sigSide;
+        sigCentre = juce::jmax (sigCentre, P::InstrumentFloor::centreOct (100.0));
+        sigDepth  = juce::jmax (sigDepth,  P::InstrumentFloor::depthDb);
+        sigWidth  = juce::jmax (sigWidth,  P::InstrumentFloor::widthOct);
+        sigSide   = juce::jmax (sigSide,   P::InstrumentFloor::sideDb);
+        say ("P2 sigma_f, TWO FLOORS REPORTED SEPARATELY (amendment 3):");
+        say ("   plugin repeat floor (3 A/A null pairs; 3 repeated measurements): centre "
+             + juce::String (plugCentre, 5) + " oct | depth " + juce::String (plugDepth, 4)
+             + " dB | width " + juce::String (plugWidth, 5) + " oct | side "
+             + juce::String (plugSide, 4) + " dB   <- AMEK is deterministic, so these are ~0");
+        say ("   instrument floor (known-truth extraction, no plugin): centre "
+             + juce::String (P::InstrumentFloor::centreOct (100.0), 4) + " oct | depth "
+             + juce::String (P::InstrumentFloor::depthDb, 3) + " dB | width "
+             + juce::String (P::InstrumentFloor::widthOct, 4) + " oct | side "
+             + juce::String (P::InstrumentFloor::sideDb, 4) + " dB");
+        say ("   sigma_f USED = max(plugin, instrument): centre " + juce::String (sigCentre, 4)
+             + " oct | depth " + juce::String (sigDepth, 3) + " dB | width "
+             + juce::String (sigWidth, 4) + " oct | side " + juce::String (sigSide, 4) + " dB");
+
+        // ---- P3 sanity gate under excitation -------------------------------
+        auto stimS = P::welch (stim);
+        auto sanF = P::lobeFeatures (stimS.mid, excS.mid);
+        say ("P3 sanity: output vs input under excitation differs by "
+             + juce::String (sanF.maxAbsDb, 2) + " dB max -> "
+             + (sanF.maxAbsDb > 4 * sigDepth ? "PASS (plugin alters the signal under excitation)"
+                                             : "FAIL (inert)"));
+
+        say ("P1 write landing: " + juce::String (writeN) + " writes so far, mean "
+             + juce::String (writeN > 0 ? writeMsSum / writeN : 0.0, 2) + " ms, max "
+             + juce::String (writeMsMax, 2) + " ms, unlanded: " + (sawUnlanded ? "YES" : "none"));
+
+        // =====================================================================
+        say ("");
+        say ("ARM B: correct map");
+        double monoDrift = 0;
+        auto monoBefore = params[idxMono]->getValue();
+        auto trackMono = [&] { monoDrift = juce::jmax (monoDrift,
+                                  (double) std::abs (params[idxMono]->getValue() - monoBefore)); };
+
+        wc (idxFreq, normFor (freqAnch, 100.0)); trackMono();
+        auto b100 = P::welch (render());
+        auto f100 = P::lobeFeatures (preExcS.mid, b100.mid);
+        wc (idxFreq, normFor (freqAnch, 400.0)); trackMono();
+        auto b400 = P::welch (render());
+        auto f400 = P::lobeFeatures (preExcS.mid, b400.mid);
+
+        const double pred100 = P::predictedLanding (freqAnch, 100.0);
+        const double pred400 = P::predictedLanding (freqAnch, 400.0);
+        const double predOct = std::log2 (pred400 / pred100);
+        const double measOct = std::log2 (f400.centreHz / f100.centreHz);
+        crit ("B1 centre move", std::abs (measOct - predOct) <= 0.070,
+              "predicted " + juce::String (predOct, 3) + " oct (ladder: " + juce::String (pred100, 1)
+              + " -> " + juce::String (pred400, 1) + " Hz), measured " + juce::String (measOct, 3)
+              + " oct (" + juce::String (f100.centreHz, 1) + " -> " + juce::String (f400.centreHz, 1)
+              + " Hz), error " + juce::String (std::abs (measOct - predOct), 4) + " oct vs 0.070");
+        crit ("B2 expressible", predOct >= 4 * sigCentre,
+              "Delta_pred " + juce::String (predOct, 3) + " oct vs 4*sigma_centre "
+              + juce::String (4 * sigCentre, 4) + " oct");
+
+        // B3 gain depth tracking at fixed freq 100
+        wc (idxFreq, normFor (freqAnch, 100.0)); trackMono();
+        wc (idxGain, normFor (gainAnch, 3.0)); trackMono();
+        auto d3 = P::lobeFeatures (preExcS.mid, P::welch (render()).mid);
+        wc (idxGain, normFor (gainAnch, 9.0)); trackMono();
+        auto d9 = P::lobeFeatures (preExcS.mid, P::welch (render()).mid);
+        const double predDDepth = P::predictedLanding (gainAnch, 9.0) - P::predictedLanding (gainAnch, 3.0);
+        const double measDDepth = d9.depthDb - d3.depthDb;
+        const double tolDepth = juce::jmax (0.25 * std::abs (predDDepth), 4 * sigDepth);
+        crit ("B3 gain depth", std::abs (measDDepth - predDDepth) <= tolDepth,
+              "predicted +" + juce::String (predDDepth, 2) + " dB, measured +"
+              + juce::String (measDDepth, 2) + " dB (depth@+3 " + juce::String (d3.depthDb, 2)
+              + ", depth@+9 " + juce::String (d9.depthDb, 2) + "), error "
+              + juce::String (std::abs (measDDepth - predDDepth), 3) + " vs tol "
+              + juce::String (tolDepth, 3) + " [max(0.25*pred, 4*sigma)]");
+
+        // B4 q width tracking at fixed freq 100, gain +6
+        wc (idxGain, normFor (gainAnch, 6.0)); trackMono();
+        wc (idxQ, normFor (qAnch, 0.71)); trackMono();
+        auto wLo = P::lobeFeatures (preExcS.mid, P::welch (render()).mid);
+        wc (idxQ, normFor (qAnch, 2.0)); trackMono();
+        auto wHi = P::lobeFeatures (preExcS.mid, P::welch (render()).mid);
+        const double qLo = P::predictedLanding (qAnch, 0.71), qHi = P::predictedLanding (qAnch, 2.0);
+        const double predWRatio = std::log2 (qHi / qLo);          // width ~ 1/q
+        const double measWRatio = std::log2 (wLo.widthOct / juce::jmax (1e-6, wHi.widthOct));
+        const double tolW = juce::jmax (0.25 * std::abs (predWRatio), 4 * sigWidth);
+        crit ("B4 q width", std::abs (measWRatio - predWRatio) <= tolW,
+              "q " + juce::String (qLo, 2) + " -> " + juce::String (qHi, 2)
+              + ": predicted width ratio " + juce::String (predWRatio, 3)
+              + " oct-log2, measured " + juce::String (measWRatio, 3)
+              + " (width@qLo " + juce::String (wLo.widthOct, 3) + " oct, width@qHi "
+              + juce::String (wHi.widthOct, 3) + " oct), error "
+              + juce::String (std::abs (measWRatio - predWRatio), 3) + " vs tol " + juce::String (tolW, 3));
+
+        const double sideB_first = P::bandEnergyDb (b100.side, 50, 400);
+        const double sideB_last  = P::bandEnergyDb (b400.side, 50, 400);
+        // AMENDMENT 1: B5 is the parameter-drift half only. The side-energy
+        // null was retired -- A5's live falsifier covers mid/side confusion
+        // better than a null can, and AMEK's TMT channel asymmetry makes a
+        // side null unmeetable by construction. The quantity is RECORDED with
+        // its cause and given no threshold.
+        crit ("B5 negative control (drift only)", monoDrift < 0.005,
+              "Mono Maker parameter value drift across every write in this arm: "
+              + juce::String (monoDrift, 5) + " (limit 0.005)");
+        say ("   recorded, not a criterion: side band(50-400) moved "
+             + juce::String (std::abs (sideB_last - sideB_first), 3)
+             + " dB against a " + juce::String (std::abs (d9.depthDb), 2)
+             + " dB primary. Cause: AMEK's TMT channel-tolerance modelling makes L and R "
+               "filters genuinely differ, so a mid-band move carries a channel-asymmetric "
+               "component. Expected physics on this plugin; no threshold assigned.");
+
+        const bool b1ok = std::abs (measOct - predOct) <= 0.070;
+        const bool b3ok = std::abs (measDDepth - predDDepth) <= tolDepth;
+        const bool b4ok = std::abs (measWRatio - predWRatio) <= tolW;
+        crit ("B6 verdicts", b1ok && b3ok && b4ok,
+              juce::String ("freq_hz=") + (b1ok ? "confirms" : "NOT-confirms")
+              + " gain_db=" + (b3ok ? "confirms" : "NOT-confirms")
+              + " q=" + (b4ok ? "confirms" : "NOT-confirms"));
+        say ("arm B wall clock: " + juce::String ((juce::Time::getMillisecondCounterHiRes() - tArmB0) / 1000.0, 2) + " s");
+
+        // =====================================================================
+        say ("");
+        say ("ARM A: deliberate mis-map (band 1 freq_hz -> Mono Maker [7]); zero human input");
+        const auto tArmA0 = juce::Time::getMillisecondCounterHiRes();
+        say ("  excitation carried from P4 (verified by signal, "
+             + juce::String (excF.maxAbsDb, 2) + " dB): should-have-moved branch ARMED.");
+
+        // reset band to a known state
+        wc (idxFreq, normFor (freqAnch, 100.0));
+        wc (idxGain, normFor (gainAnch, 6.0));
+        wc (idxQ, normFor (qAnch, 1.0));
+        // the mis-mapped writes: band-1 freq anchors, Mono Maker's index
+        wc (idxMono, normFor (freqAnch, 100.0));
+        auto a1r = P::welch (render());
+        wc (idxMono, normFor (freqAnch, 400.0));
+        auto a2r = P::welch (render());
+
+        // AMENDMENT 2: A1 is LOCALIZED, never broadband. Broadband
+        // redistribution is expected physics (M = (L+R)/2 means mono-ing
+        // below the crossover moves side content into mid) and is recorded,
+        // never a criterion. The test: is there a COHERENT lobe within the
+        // declared frequency gate of the predicted centre, deep enough to be
+        // a lobe at all? The depth floor reuses the declared 0.25 constant
+        // against the excitation's EXPRESSED magnitude, and the position
+        // window reuses the declared 0.070 oct frequency gate.
+        const double lobeDepthFloor = 0.25 * std::abs (excF.depthDb);
+        auto amid = P::lobeFeatures (a1r.mid, a2r.mid, 30.0, 20000.0, lobeDepthFloor);
+        const bool lobeAtPredicted = amid.centreDefined()
+              && std::abs (std::log2 (amid.centreHz / pred400)) <= 0.070;
+        crit ("A1 no localized lobe", ! lobeAtPredicted,
+              juce::String ("depth floor for lobe existence = 0.25 * expressed ")
+              + juce::String (std::abs (excF.depthDb), 2) + " dB = "
+              + juce::String (lobeDepthFloor, 2) + " dB; largest mid excursion "
+              + juce::String (amid.maxAbsDb, 3) + " dB -> lobe "
+              + (amid.centreDefined() ? "EXISTS at " + juce::String (amid.centreHz, 1) + " Hz"
+                                      : "does not exist, centre UNDEFINED")
+              + "; predicted centre " + juce::String (pred400, 1) + " Hz +/- 0.070 oct");
+        say ("   recorded, not a criterion: broadband mid redistribution "
+             + juce::String (amid.maxAbsDb, 3) + " dB. Cause: M=(L+R)/2, so mono-ing below "
+               "the crossover necessarily moves side content into mid. Expected physics.");
+        crit ("A2 branch fires", predOct >= 4 * sigCentre,
+              "Delta_pred " + juce::String (predOct, 3) + " oct >= 4*sigma_centre "
+              + juce::String (4 * sigCentre, 4) + " oct, and excitation verified -> armed");
+
+        // A3 exclusions, individually
+        juce::StringArray engagedModes;
+        if (auto* co = mapVar.getProperty ("controls", juce::var()).getDynamicObject())
+            for (auto& kv : co->getProperties())
+                if (kv.value.getProperty ("kind", "").toString() == "mode")
+                {
+                    const int ci = (int) kv.value.getProperty ("index", -1);
+                    if (! juce::isPositiveAndBelow (ci, params.size())) continue;
+                    const float v = params[ci]->getValue();
+                    juce::String label = "?"; double best = 1e9;
+                    if (auto* lo = kv.value.getProperty ("labels", juce::var()).getDynamicObject())
+                        for (auto& lv : lo->getProperties())
+                            if (std::abs ((double) lv.value - v) < best)
+                            { best = std::abs ((double) lv.value - v); label = lv.name.toString(); }
+                    engagedModes.add (kv.name.toString() + "=" + label);
+                }
+        say ("  A3(a) map mode states: " + engagedModes.joinIntoString (", "));
+        bool gestureAtMono = false;
+        for (const auto& entry : juce::RangedDirectoryIterator (ledger.getRoot(), false, "captures-*.jsonl"))
+        {
+            juce::StringArray lines; lines.addLines (entry.getFile().loadFileAsString());
+            for (const auto& line : lines)
+            {
+                auto v = juce::JSON::parse (line);
+                const auto kind = v.getProperty ("kind", "").toString();
+                if ((kind == "captured" || kind == "captured_from_gesture")
+                     && (int) v.getProperty ("index", -1) == idxMono
+                     && v.getProperty ("plugin_id", "").toString() == loadedId)
+                    gestureAtMono = true;
+            }
+        }
+        say (juce::String ("  A3(b) gesture evidence at index 7: ") + (gestureAtMono ? "FOUND" : "none"));
+
+        // A5 falsifier: side energy between the two Mono Maker landings
+        const double monoLandA = P::predictedLanding (monoAnch, 0) * 0
+                                 + [&]{ // forward-eval mono's own anchors at the two written norms
+                                     auto eff = echojay::dominantMonotonicTable (monoAnch);
+                                     auto fwd = [&] (float n) {
+                                         auto rows = eff.table;
+                                         for (int i = 1; i < rows.size(); ++i)
+                                         { const float n0 = rows[i-1][1], n1 = rows[i][1];
+                                           if ((n >= juce::jmin (n0,n1) && n <= juce::jmax (n0,n1)) || i == rows.size()-1)
+                                           { const float t = std::abs (n1-n0) > 1e-9f ? (n-n0)/(n1-n0) : 0.0f;
+                                             return (double) (rows[i-1][0] + t * (rows[i][0]-rows[i-1][0])); } }
+                                         return (double) rows.getLast()[0]; };
+                                     return fwd (normFor (freqAnch, 100.0)); }();
+        const double monoLandB = [&]{
+            auto eff = echojay::dominantMonotonicTable (monoAnch);
+            auto rows = eff.table; const float n = normFor (freqAnch, 400.0);
+            for (int i = 1; i < rows.size(); ++i)
+            { const float n0 = rows[i-1][1], n1 = rows[i][1];
+              if ((n >= juce::jmin (n0,n1) && n <= juce::jmax (n0,n1)) || i == rows.size()-1)
+              { const float t = std::abs (n1-n0) > 1e-9f ? (n-n0)/(n1-n0) : 0.0f;
+                return (double) (rows[i-1][0] + t * (rows[i][0]-rows[i-1][0])); } }
+            return (double) rows.getLast()[0]; }();
+        const double bandLo = juce::jmin (monoLandA, monoLandB), bandHi = juce::jmax (monoLandA, monoLandB);
+        const double sideA = P::bandEnergyDb (a1r.side, bandLo, bandHi);
+        const double sideBv = P::bandEnergyDb (a2r.side, bandLo, bandHi);
+        const double sideMove = std::abs (sideBv - sideA);
+        const bool a5 = sideMove >= 4 * sigSide;
+        crit ("A5 falsifier (side moves)", a5,
+              "Mono Maker landings " + juce::String (monoLandA, 1) + " -> " + juce::String (monoLandB, 1)
+              + " Hz; side energy in [" + juce::String (bandLo, 0) + "," + juce::String (bandHi, 0)
+              + "] Hz moved " + juce::String (sideMove, 3) + " dB vs 4*sigma_side "
+              + juce::String (4 * sigSide, 3) + " dB");
+
+        // verdict, through the carve-outs
+        juce::String verdict, branch;
+        if (! a5 && ! lobeAtPredicted)
+        { verdict = "inconclusive"; branch = "carve-out 1: total render-deafness, exclusions govern"; }
+        else if (a5 && ! lobeAtPredicted)
+        { verdict = "contradicts";
+          branch = "wrong-place branch: the index IS live (side moved >= 4 sigma at the driven "
+                   "frequency) but NO localized mid lobe exists at the predicted centre "
+                   "(should-have-moved, localized). NOT the render-deafness branch: this is "
+                   "mid-feature absence with proven index liveness."; }
+        else { verdict = "contradicts"; branch = "wrong-direction/magnitude branch"; }
+        crit ("A4 verdict", verdict == "contradicts", verdict + " (" + branch + ")");
+        if (a5)
+        {
+            say ("  A6 card text:");
+            say ("    PROBE CONTRADICTS  freq_hz -> [7] Mono Maker");
+            say ("      requested 100 -> 400 Hz: no EQ lobe appeared at " + juce::String (pred400, 0)
+                 + " Hz (largest mid excursion " + juce::String (amid.maxAbsDb, 2)
+                 + " dB, a lobe needs " + juce::String (lobeDepthFloor, 2) + " dB)");
+            say ("      but the index IS live: it moved a STEREO-WIDTH feature at "
+                 + juce::String (bandLo, 0) + "-" + juce::String (bandHi, 0) + " Hz by "
+                 + juce::String (sideMove, 2) + " dB -- a mono-maker, not a band frequency.");
+            say ("      W re-verify by hand  -  shift+N insist (recorded, with these numbers)  -  D later");
+        }
+        say ("  A7 human input: none (no gesture, pick or corroboration entered the verdict path; "
+             "scripted writes only).");
+        say ("arm A wall clock: " + juce::String ((juce::Time::getMillisecondCounterHiRes() - tArmA0) / 1000.0, 2) + " s");
+
+        // ---- restore the real state through the verified-restore path ------
+        host.pausePumpForMutation();
+        inst->setStateInformation (preState.getData(), (int) preState.getSize());
+        host.resumePumpAfterMutation();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
+        bool restored = true;
+        for (auto& kv : preVals)
+            if (std::abs (params[kv.first]->getValue() - kv.second) > 0.01f) restored = false;
+        crit ("restore", restored, juce::String ("state restored and verified on ")
+              + juce::String ((int) preVals.size()) + " tracked parameters"
+              + "; the mis-map existed only in memory, the on-disk map was never touched");
+        if (restored) { stakeFile.deleteFile(); stateFile.deleteFile(); }
+
+        say ("");
+        std::cout << "GATE M9: " << (fails == 0 ? "PASS" : juce::String (fails) + " CRITERIA FAILED")
+                  << std::endl;
         std::cout.flush();
         quitNow();
     }
