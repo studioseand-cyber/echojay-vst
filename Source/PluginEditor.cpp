@@ -5958,6 +5958,28 @@ void EchoJayEditor::presentCompareScopeAsk(const CompareSlotState& slotA,
 // =============================================================================
 
 // =============================================================================
+//  LINK MIXER console palette: ONE authority for the tab's grey.
+//
+//  The tab deliberately looks unlike the rest of the plugin: dark console
+//  grey, chrome removed, and CYAN MEANS SELECTION and nothing else here.
+//  The only other colours are STATUS: coral = fault (offline, timeout,
+//  clip, refusal), amber = pending or bypassed, and the meter's own
+//  green/amber/coral level zones. Every mixer painter reads these; none
+//  defines its own greys.
+// =============================================================================
+namespace LinkConsole
+{
+    const juce::Colour strip     (0xff1d1e22);   // strip body, dark grey
+    const juce::Colour stripSel  (0xff232529);   // selected body, lifted
+    const juce::Colour well      (0xff141518);   // recess behind fader+meter
+    const juce::Colour block     (0xff2a2c31);   // plugin block fill
+    const juce::Colour blockByp  (0xff222327);   // bypassed block fill
+    const juce::Colour textHi    (0xffd6d7db);   // primary text
+    const juce::Colour textLo    (0xff85878e);   // secondary text
+    const juce::Colour textDim   (0xff54565c);   // captions, inert marks
+}
+
+// =============================================================================
 //  LINK MIXER geometry: the single authority.
 //
 //  layOutStrips is PURE: same inputs, same rects, no editor state read. That is
@@ -6041,10 +6063,11 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         if (faderColW > 0)
         {
             auto col = fmBand.removeFromLeft(faderColW);
-            // Column height = image height (the 1:8 lock), centred in the
-            // band, so the drag mapping and the drawn travel are ONE rect.
-            sg.fader = col.withSizeKeepingCentre(
-                           faderColW, juce::jmin(faderH, col.getHeight()));
+            // Column height = image height (the 1:8 lock), BOTTOM-ALIGNED in
+            // the band since the console pass: the fader and the meter share
+            // a baseline so the pair reads as one unit, the reference's
+            // arrangement. Drag mapping and drawn travel stay ONE rect.
+            sg.fader = col.removeFromBottom(juce::jmin(faderH, col.getHeight()));
             fmBand.removeFromLeft(kBandGap);
         }
         // Clip lamp above the bars, stored like everything else: the reset
@@ -6352,21 +6375,24 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
 
     const auto coral = juce::Colour(0xffff6d5a);
     const auto amber = juce::Colour(0xfff59e0b);
-    const auto cyan  = juce::Colour(0xff22d3ee);
 
     // Same values, validity gates and zone colours as the horizontal cells;
     // SHORT labels because 38px is the narrow inner width. Display order
     // puts LRA last then PLR, so dropping from the end reproduces the old
     // width-budget priority (LRA goes first, then PLR).
+    // Console pass: readings are grey; colour appears only where it MEANS
+    // level (MOM hot in coral, PSR zones with green for healthy, since cyan
+    // is reserved for selection in this tab).
     struct Cell { const char* label; float v; bool valid; juce::Colour col; };
     const Cell all[6] = {
-        { "MOM",   st.smMom,   st.smMom   > -99.0f, st.smMom > -6.0f ? C::red : C::green },
-        { "SHORT", st.smShort, st.smShort > -99.0f, C::blue2 },
-        { "INT",   st.smInt,   st.smInt   > -99.0f, C::green },
+        { "MOM",   st.smMom,   st.smMom   > -99.0f,
+          st.smMom > -6.0f ? coral : LinkConsole::textHi },
+        { "SHORT", st.smShort, st.smShort > -99.0f, LinkConsole::textHi },
+        { "INT",   st.smInt,   st.smInt   > -99.0f, LinkConsole::textHi },
         { "PSR",   st.smPsr,   d.psrValid,
-          st.smPsr < 5.0f ? coral : st.smPsr < 8.0f ? amber : cyan },
-        { "PLR",   st.smPlr,   d.plrValid,          C::text },
-        { "LRA",   st.smLra,   true,                C::text },
+          st.smPsr < 5.0f ? coral : st.smPsr < 8.0f ? amber : C::green },
+        { "PLR",   st.smPlr,   d.plrValid,          LinkConsole::textHi },
+        { "LRA",   st.smLra,   true,                LinkConsole::textHi },
     };
 
     // Whole cells only: what does not fit is dropped, never half-drawn.
@@ -6644,17 +6670,17 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
 
     if (!wide)
     {
-        // NARROW: a COUNT, not a column of ellipsised fragments; at 46px a
-        // list of "Pro-..." rows says nothing. The full list is one WIDE
-        // press away. "IN RACK" is this pass's content-check marker.
+        // NARROW: a COUNT, not a column of ellipsised fragments; at this
+        // width a list of "Pro-..." rows says nothing. The full list is one
+        // WIDE press away. Compact caption, not a sentence.
         auto a2 = area.withTrimmedTop(juce::jmax(0, area.getHeight() / 2 - 26));
-        g.setColour(C::text.withMultipliedAlpha(dim));
+        g.setColour(LinkConsole::textHi.withMultipliedAlpha(dim));
         g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
         g.drawText(juce::String((int)rows.size()),
                    a2.removeFromTop(20), juce::Justification::centred);
-        g.setColour(C::text3.withMultipliedAlpha(dim));
-        g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
-        g.drawText("IN RACK", a2.removeFromTop(10), juce::Justification::centred);
+        g.setColour(LinkConsole::textDim.withMultipliedAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(6.5f, juce::Font::bold)));
+        g.drawText("RACK", a2.removeFromTop(9), juce::Justification::centred);
         if (bypassed > 0)
         {
             g.setColour(juce::Colour(0xfff59e0b).withMultipliedAlpha(dim));
@@ -6672,41 +6698,50 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
     }
     else
     {
-        // WIDE: the names, one per row, in rack order. Bypassed slots dim
-        // with a "b" tag; overflow collapses into "+N more" rather than
-        // half-drawing a row.
-        const int rowH = 12;
+        // WIDE: plugin BLOCKS, the way an insert slot reads in Logic: a
+        // filled row per plugin, name inside it, stacked. Bypassed blocks
+        // sink to the dimmer fill with an amber left edge (state, not
+        // chrome). Bypass/remove CONTROLS are a functionality pass; the
+        // block leaves its right end clear so they have somewhere to land.
+        // Overflow collapses into "+N more" rather than half-drawing.
+        const int blockH = 15, blockGap = 2, headH = 12;
         auto a2 = area.reduced(2, 0);
-        g.setColour(C::text3.withMultipliedAlpha(dim));
+        g.setColour(LinkConsole::textLo.withMultipliedAlpha(dim));
         g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
         g.drawText(chainCountLabel((int)rows.size(), bypassed)
                        + (offline ? " - offline" : ""),
-                   a2.removeFromTop(rowH), juce::Justification::centredLeft);
+                   a2.removeFromTop(headH), juce::Justification::centredLeft);
         a2.removeFromTop(2);
 
-        int fit = juce::jmax(0, a2.getHeight() / rowH);
+        const int per  = blockH + blockGap;
+        int fit   = juce::jmax(0, (a2.getHeight() + blockGap) / per);
         int shown = (int)rows.size() <= fit ? (int)rows.size()
                                             : juce::jmax(0, fit - 1);
-        g.setFont(juce::Font(juce::FontOptions(9.0f)));
         for (int i = 0; i < shown; ++i)
         {
-            auto rr = a2.removeFromTop(rowH);
+            auto rr = a2.removeFromTop(blockH);
+            a2.removeFromTop(blockGap);
             const auto& r = rows[(size_t)i];
+            g.setColour((r.bypassed ? LinkConsole::blockByp : LinkConsole::block)
+                            .withMultipliedAlpha(dim));
+            g.fillRoundedRectangle(rr.toFloat(), 3.0f);
             if (r.bypassed)
             {
                 g.setColour(juce::Colour(0xfff59e0b).withMultipliedAlpha(0.8f * dim));
-                g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
-                g.drawText("b", rr.removeFromRight(10), juce::Justification::centred);
-                g.setFont(juce::Font(juce::FontOptions(9.0f)));
+                g.fillRoundedRectangle(rr.removeFromLeft(2).toFloat(), 1.0f);
             }
-            g.setColour((r.bypassed ? C::text3 : C::text).withMultipliedAlpha(dim));
-            g.drawFittedText(r.name, rr, juce::Justification::centredLeft, 1, 0.9f);
+            g.setColour((r.bypassed ? LinkConsole::textDim : LinkConsole::textHi)
+                            .withMultipliedAlpha(dim));
+            g.setFont(juce::Font(juce::FontOptions(9.0f)));
+            g.drawFittedText(r.name, rr.reduced(4, 0),
+                             juce::Justification::centredLeft, 1, 0.9f);
         }
         if ((int)rows.size() > shown)
         {
-            g.setColour(C::text3.withMultipliedAlpha(dim));
+            g.setColour(LinkConsole::textDim.withMultipliedAlpha(dim));
+            g.setFont(juce::Font(juce::FontOptions(8.0f)));
             g.drawText("+" + juce::String((int)rows.size() - shown) + " more",
-                       a2.removeFromTop(rowH), juce::Justification::centredLeft);
+                       a2.removeFromTop(blockH), juce::Justification::centredLeft);
         }
     }
 }
@@ -6743,7 +6778,6 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     const auto cyan  = juce::Colour(0xff22d3ee);
     const auto amber = juce::Colour(0xfff59e0b);
     const auto coral = juce::Colour(0xffff6d5a);
-    const auto boxOutline = juce::Colour(0xffa0a0b8);
 
     // ---- Selection: read back from effectiveChannelUid() EVERY paint, no
     // cached copy, so this strip and the sidebar banner render the same fact.
@@ -6761,8 +6795,14 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         && (juce::Time::getMillisecondCounter() - linkLegacyFlashMs_)
                < kLegacyFlashDurMs;
 
-    // Strip body
-    g.setColour(selected ? C::bg3.brighter(0.06f) : C::bg3);
+    // Strip body: one console-grey object, NO outline in the resting state.
+    // A strip groups its elements with space and alignment, not borders; the
+    // only borders left are the two that MEAN something: cyan = selection,
+    // coral = the legacy-tap refusal flash. The bus reads as the bus by a
+    // slightly lifted fill and its MIX BUS caption, not by a coloured edge.
+    g.setColour(selected ? LinkConsole::stripSel
+              : isBus    ? LinkConsole::strip.brighter(0.03f)
+                         : LinkConsole::strip);
     g.fillRoundedRectangle(sg.full.toFloat(), 6.0f);
     if (refusing)
     {
@@ -6778,11 +6818,6 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                                (float)sg.full.getY() + 3.0f,
                                (float)sg.full.getWidth() - 6.0f, 3.0f, 1.5f);
     }
-    else
-    {
-        g.setColour(isBus ? C::blue2.withAlpha(0.4f) : C::border2);
-        g.drawRoundedRectangle(sg.full.toFloat().reduced(0.5f), 6.0f, 1.0f);
-    }
 
     // ---- Name. The entry's displayName IS resolveLinkDisplayName's answer
     // (that accessor reads the same display list); it is passed in rather
@@ -6794,7 +6829,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                                   : entry != nullptr ? entry->displayName
                                                      : juce::String();
         if (isBus && name.isEmpty()) name = "Host Channel";
-        g.setColour(C::text);
+        g.setColour(LinkConsole::textHi);
         g.setFont(juce::Font(juce::FontOptions(wide ? 12.0f : 10.5f,
                                                juce::Font::bold)));
         g.drawFittedText(name, sg.name, juce::Justification::centred, 1, 0.7f);
@@ -6812,13 +6847,13 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                               : entry->info.placement == 2 ? "CHANNEL" : "SET?";
         if (bl.isNotEmpty())
         {
-            const juce::Colour pc = isBus ? C::blue2
-                                  : entry->info.placement == 0 ? C::text3 : cyan;
-            g.setColour(pc.withAlpha(0.15f));
-            g.fillRoundedRectangle(sg.badge.toFloat(), 4.0f);
-            g.setColour(pc.withAlpha(0.7f));
-            g.drawRoundedRectangle(sg.badge.toFloat(), 4.0f, 1.0f);
-            g.setColour(pc);
+            // Console pass: TEXT ONLY, the boxed chip is gone. Set values
+            // read in the secondary grey, UNSET stays dim so it still asks
+            // quietly; the hit rect is unchanged, so it still opens the
+            // chooser.
+            g.setColour(isBus ? LinkConsole::textLo
+                      : entry->info.placement == 0 ? LinkConsole::textDim
+                                                   : LinkConsole::textLo);
             g.setFont(juce::Font(juce::FontOptions(wide ? 9.0f : 8.0f,
                                                    juce::Font::bold)));
             g.drawFittedText(bl, sg.badge, juce::Justification::centred, 1, 0.8f);
@@ -6829,7 +6864,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     // neither state, so its rect stays empty rather than showing a control
     // that does nothing). One glyph, three shapes so the states survive
     // colour-blindness AND the 46px narrow width:
-    //     tick        = connected and Active        (cyan; amber while pending)
+    //     tick        = connected and Active        (light grey; amber pending)
     //     empty box   = connected and inactive      (dim outline)
     //     cross       = no heartbeat                (coral)
     // plus the old rows' pending treatments kept verbatim: amber tick showing
@@ -6849,7 +6884,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                                       (float)sg.active.getCentreY() - side * 0.5f)
                    : box.withCentre(sg.active.toFloat().getCentre());
 
-        g.setColour(!connected || timedOut ? coral : boxOutline);
+        g.setColour(!connected || timedOut ? coral : LinkConsole::textDim);
         g.drawRoundedRectangle(box, 4.0f, 1.0f);
 
         if (!connected)
@@ -6865,7 +6900,8 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             const bool showTick = pending ? target : (!timedOut && active);
             if (showTick)
             {
-                g.setColour(pending ? amber.withAlpha(0.6f) : cyan);
+                g.setColour(pending ? amber.withAlpha(0.6f)
+                                    : LinkConsole::textHi);
                 auto tick = getLookAndFeel().getTickShape(0.75f);
                 g.fillPath(tick, tick.getTransformToScaleToFit(
                                      box.reduced(3.0f, 3.5f), false));
@@ -6874,7 +6910,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
 
         if (wide)
         {
-            g.setColour(!connected || timedOut ? coral : C::text);
+            g.setColour(!connected || timedOut ? coral : LinkConsole::textLo);
             g.setFont(juce::Font(juce::FontOptions(11.0f)));
             g.drawText(linkActiveLabel(connected, pending, timedOut),
                        sg.active.withTrimmedLeft(side + 6),
@@ -6889,12 +6925,11 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     {
         const bool aiEnabled = isBus
             || (entry != nullptr && entry->info.uid.isNotEmpty());
-        const juce::Colour ac = aiEnabled ? cyan : C::text3;
-        g.setColour(ac.withAlpha(aiEnabled ? 0.14f : 0.08f));
+        // Console pass: a quiet grey pill, no outline, no accent. Cyan means
+        // selection in this tab and a button is not a selection.
+        g.setColour(LinkConsole::block.withAlpha(aiEnabled ? 1.0f : 0.5f));
         g.fillRoundedRectangle(sg.ai.toFloat(), 5.0f);
-        g.setColour(ac.withAlpha(aiEnabled ? 0.7f : 0.35f));
-        g.drawRoundedRectangle(sg.ai.toFloat(), 5.0f, 1.0f);
-        g.setColour(ac.withAlpha(aiEnabled ? 1.0f : 0.5f));
+        g.setColour(aiEnabled ? LinkConsole::textHi : LinkConsole::textDim);
         g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
         g.drawText("AI", sg.ai, juce::Justification::centred);
     }
@@ -6945,7 +6980,19 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         }
 
         // The meter band: PERMANENT chrome, every strip, every mode. A
-        // mixer strip always shows its meter.
+        // mixer strip always shows its meter. ONE recessed well spans the
+        // fader column, the gap and the meter (a union of STORED rects,
+        // measured by nobody here), so the pair reads as one unit on a
+        // shared baseline rather than two neighbours.
+        {
+            auto wellRect = sg.meter.getUnion(sg.clip);
+            if (!sg.fader.isEmpty()) wellRect = wellRect.getUnion(sg.fader);
+            if (!wellRect.isEmpty())
+            {
+                g.setColour(LinkConsole::well);
+                g.fillRoundedRectangle(wellRect.expanded(2).toFloat(), 4.0f);
+            }
+        }
         if (st != nullptr && !sg.meter.isEmpty())
             paintLinkStripMeter(g, sg.meter, sg.clip, *st, dim, wide);
     }
@@ -6990,7 +7037,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             {
                 const int ty = yFromGain(mark, sg.fader);
                 const bool zero = mark == 0.0f;
-                g.setColour(C::text3.withAlpha(zero ? 0.8f : 0.35f));
+                g.setColour(zero ? LinkConsole::textLo : LinkConsole::textDim);
                 g.fillRect(sg.fader.getX(), ty, img.getX() - sg.fader.getX() - 1,
                            zero ? 2 : 1);
             }
@@ -7017,7 +7064,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 g.fillRoundedRectangle((float)cx - 2.0f, (float)sg.fader.getY(),
                                        4.0f, (float)sg.fader.getHeight(), 2.0f);
                 const int ty = yFromGain(gDb, sg.fader);
-                g.setColour(juce::Colour(0xff22d3ee));
+                g.setColour(LinkConsole::textHi);
                 g.fillRoundedRectangle((float)sg.fader.getX(), (float)ty - 2.0f,
                                        (float)sg.fader.getWidth(), 4.0f, 2.0f);
             }
@@ -7334,15 +7381,16 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     // pair of authorities is what this rebuild deletes.
     juce::ignoreUnused(area);
 
-    g.setColour(C::blue2);
+    // "LINK MIXER" is the console pass's content-check marker (raw byte
+    // search; the first 8 bytes survive LTO literal splitting).
+    g.setColour(LinkConsole::textLo);
     g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-    g.drawText("LINK MONITOR", linkTitleRect_, juce::Justification::centredLeft);
+    g.drawText("LINK MIXER", linkTitleRect_, juce::Justification::centredLeft);
 
     // View controls: painted from the STORED zones, selected state read back
     // from the processor's persisted modes right here, every paint. The
     // controls track nothing of their own.
     {
-        const auto cyan = juce::Colour(0xff22d3ee);
         for (const auto& z : linkCtrlZones_)
         {
             bool sel = false;
@@ -7359,12 +7407,12 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
                                    label = "CHAIN";   break;
                 default: continue;
             }
-            const juce::Colour col = sel ? cyan : C::text3;
-            g.setColour(col.withAlpha(sel ? 0.18f : 0.06f));
+            // Console grey: the pressed segment is a lifted fill with
+            // bright text. No cyan (a view mode is not a channel selection)
+            // and no outlines on the resting segments.
+            g.setColour(sel ? LinkConsole::block : LinkConsole::well);
             g.fillRoundedRectangle(z.rect.toFloat(), 4.0f);
-            g.setColour(col.withAlpha(sel ? 0.8f : 0.4f));
-            g.drawRoundedRectangle(z.rect.toFloat().reduced(0.5f), 4.0f, 1.0f);
-            g.setColour(sel ? cyan : C::text3);
+            g.setColour(sel ? LinkConsole::textHi : LinkConsole::textDim);
             g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
             g.drawFittedText(label, z.rect, juce::Justification::centred, 1, 0.8f);
         }

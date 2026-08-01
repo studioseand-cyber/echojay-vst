@@ -283,6 +283,10 @@ static void testFaderAspect (int stripW, int bandH)
         checkEq (s0.meter.getX() - f.getRight(), T::bandGap(),
                  "fader column and meter sit one band gap apart");
         check (f.getBottom() <= s0.ai.getY(), "the band sits above the AI button");
+        // Console pass (d): fader and meter share a BASELINE so the pair
+        // reads as one unit, the reference's arrangement.
+        checkEq (f.getBottom(), s0.meter.getBottom(),
+                 "fader and meter share a baseline");
     }
 }
 
