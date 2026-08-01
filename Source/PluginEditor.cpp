@@ -14171,8 +14171,16 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         juce::Rectangle<int> card(bubbleX, cardY, bubbleW, kGainCardH);
                         g.setColour(C::bg2);
                         g.fillRoundedRectangle(card.toFloat(), 8.0f);
-                        g.setColour(juce::Colour(refused ? 0xfff59e0b : 0xff22d3ee)
-                                        .withAlpha(applied ? 0.5f : 0.3f));
+                        // QUIET CONFIRMATION: an applied card's border
+                        // turns green. The Undo button appearing is the
+                        // primary success signal; the border carries the
+                        // confirmation for the case where the fader is off
+                        // screen, without a badge and without moving a
+                        // pixel: colour is the only difference between the
+                        // two states.
+                        g.setColour(applied ? C::green.withAlpha(0.45f)
+                                  : juce::Colour(refused ? 0xfff59e0b : 0xff22d3ee)
+                                        .withAlpha(0.3f));
                         g.drawRoundedRectangle(card.toFloat(), 8.0f, 1.0f);
 
                         // Title: "Vocal bus: -3.0 dB", and when clamped the
@@ -14231,12 +14239,13 @@ void EchoJayEditor::paint(juce::Graphics& g)
                             }
                             else
                             {
-                                g.setColour(juce::Colour(0xff22c55e));
-                                g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
-                                g.drawText(juce::String(juce::CharPointer_UTF8("Applied \xe2\x9c\x93")),
-                                           card.getRight() - 130, card.getY() + 12, 60, 28,
-                                           juce::Justification::centredRight);
-                                juce::Rectangle<int> un(card.getRight() - 62, card.getY() + 12, 50, 28);
+                                // Undo sits in APPLY'S EXACT RECT: the press
+                                // swaps the label, never moves the button,
+                                // so the card cannot read as a glitch. The
+                                // "Applied" badge is gone: Undo existing IS
+                                // the success signal, and the green border
+                                // above confirms quietly.
+                                juce::Rectangle<int> un(card.getRight() - 76, card.getY() + 12, 64, 28);
                                 g.setColour(juce::Colour(0xff0E1020));
                                 g.fillRoundedRectangle(un.toFloat(), 6.0f);
                                 g.setColour(C::text3);
@@ -19302,20 +19311,17 @@ void EchoJayEditor::applyGainProposal(const GainCardZone& z)
                    + " msg=" + juce::String(z.msgIndex)
                    + " pi=" + juce::String(z.propIndex)).toRawUTF8());
     if (z.uid.isEmpty() || z.msgIndex < 0 || z.msgIndex >= (int)chatMessages.size())
-    { EchoJay_NSLog("EJGainCard: REJECT bad zone (uid/msgIndex)"); return; }
+        return;
     auto& cm = chatMessages[(size_t)z.msgIndex];
 
     // Parse, mutate the target proposal's applied/prevGain, re-serialise.
     auto gv = juce::JSON::parse(cm.gainData);
     auto* go = gv.getDynamicObject();
-    if (go == nullptr)
-    { EchoJay_NSLog("EJGainCard: REJECT gainData parse failed"); return; }
+    if (go == nullptr) return;
     auto pr = go->getProperty("proposals");
-    if (!pr.isArray() || z.propIndex < 0 || z.propIndex >= pr.getArray()->size())
-    { EchoJay_NSLog("EJGainCard: REJECT proposal index out of range"); return; }
+    if (!pr.isArray() || z.propIndex < 0 || z.propIndex >= pr.getArray()->size()) return;
     auto* po = pr.getArray()->getReference(z.propIndex).getDynamicObject();
-    if (po == nullptr)
-    { EchoJay_NSLog("EJGainCard: REJECT proposal not an object"); return; }
+    if (po == nullptr) return;
 
     // VALIDATION THROUGH THE SAME PREDICATE THAT DREW THE BUTTON. Undo is
     // exempt from noMove/refused (undo restores a previous state and must
@@ -19325,13 +19331,12 @@ void EchoJayEditor::applyGainProposal(const GainCardZone& z)
         const auto v = gainCardVerdict(po);
         if (!v.actionable())
         {
-            EchoJay_NSLog(("EJGainCard: REJECT verdict present="
-                           + juce::String((int)v.present)
-                           + " refused=" + juce::String((int)v.refused)
-                           + " noMove=" + juce::String((int)v.noMove)
-                           + " cur=" + juce::String(v.curG, 1)
-                           + " prop=" + juce::String(v.propG, 1)).toRawUTF8());
-            repaint();   // the card redraws its own explanation
+            // Terse since the diagnosis pass: the card paints its own
+            // explanation, this line just marks that the shared predicate
+            // refused a press (which should be impossible while paint and
+            // apply share it, so any appearance is worth investigating).
+            EchoJay_NSLog("EJGainCard: verdict refused a press");
+            repaint();
             return;
         }
     }
