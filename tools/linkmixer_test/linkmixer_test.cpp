@@ -521,6 +521,13 @@ static void testFaderMapping()
     check (T::fineRatio() > 0.0f && T::fineRatio() < 1.0f,
            "the fine ratio slows the drag, never reverses or stops it");
 
+    // The bus trim shares this mapping wholesale, so its clamp range must
+    // BE the fader's range; a divergence here would let the processor hold
+    // a value the fader cannot express.
+    check (EchoJayProcessor::kBusGainMinDb == -24.0f
+        && EchoJayProcessor::kBusGainMaxDb == 12.0f,
+           "the bus trim clamps to the fader's own range");
+
     // Frames: full range maps 0..127, monotonic, and clamped so no gain can
     // index past the strip (frame*480 + 480 <= 61440 always).
     checkEq (T::frameFor (-24.0f), 0,               "-24 dB is frame 0");

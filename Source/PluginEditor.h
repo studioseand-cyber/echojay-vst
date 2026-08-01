@@ -2718,6 +2718,16 @@ private:
     uint32_t     linkLegacyFlashMs_ = 0;
     static constexpr uint32_t kLegacyFlashDurMs = 700;
 
+    // Bus fader drag (the bus strip is editor-painted, so its mouse stream
+    // lands here, not on LinkMixerView). Transient drag state only: the
+    // VALUE lives on the processor and applies immediately per event; there
+    // is no protocol, no ack, no pending display. Same incremental
+    // re-anchored model as the channel faders, same shift fine ratio.
+    bool busFaderDragging_ = false;
+    int  busFaderLastY_    = 0;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+
     void measureLinkStrips();
     /** Paint one strip from its stored geometry. Shared by the pinned Mix Bus
         strip and every Link strip so the two cannot drift. Measures nothing.

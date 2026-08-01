@@ -453,6 +453,10 @@ bool EchoJayProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 
 void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    // Bus trim smoothing: the Link's 30ms ramp, same feel both sides
+    busGainSmoothed_.reset(sampleRate, 0.030);
+    busGainSmoothed_.setCurrentAndTargetValue(
+        juce::Decibels::decibelsToGain(busGainDb_.load(std::memory_order_relaxed)));
     meterEngine.prepare(sampleRate, samplesPerBlock);
     captureEngine.prepare(sampleRate, samplesPerBlock);
     abMeterEngine.prepare(sampleRate, samplesPerBlock);
@@ -814,6 +818,13 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         juce::MidiBuffer emptyMidi;
         chainHost.process(buffer, emptyMidi);
     }
+
+    // ===== BUS TRIM: post-chain, PRE-meter-tap (the Link's placement) =====
+    // Everything below the tap reads the trimmed signal on purpose: the
+    // meters, the capture and the AI's level context all describe what
+    // actually LEAVES EchoJay. Bit-transparent at 0 dB (unity early-out
+    // inside), so the untouched default changes nothing.
+    applyBusGainSmoothed(buffer);
 
     // ===== POST-CHAIN TAP =====
     // meterEngine and the capture engine read the buffer AFTER chainHost has
@@ -2010,6 +2021,51 @@ void EchoJayProcessor::stopAllCompare()
 
 // ============ State Persistence ============
 
+bool EchoJayProcessor::applyBusGainSmoothed(juce::AudioBuffer<float>& buffer)
+{
+    // LinkProcessor::applyGainSmoothed, verbatim shape: target from the
+    // atomic, optional snap (state restore must not ramp from unity), unity
+    // early-out for bit-transparency at 0 dB, per-sample ramp while
+    // smoothing. No locks, no allocation.
+    const float targetLin =
+        juce::Decibels::decibelsToGain(busGainDb_.load(std::memory_order_relaxed));
+
+    if (busGainSnapPending_.exchange(false, std::memory_order_acq_rel))
+        busGainSmoothed_.setCurrentAndTargetValue(targetLin);
+    else
+        busGainSmoothed_.setTargetValue(targetLin);
+
+    if (!busGainSmoothed_.isSmoothing()
+        && busGainSmoothed_.getCurrentValue() == 1.0f)
+        return false;
+
+    const int n = buffer.getNumSamples();
+    const int numCh = buffer.getNumChannels();
+    if (busGainSmoothed_.isSmoothing())
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            const float g = busGainSmoothed_.getNextValue();
+            for (int ch = 0; ch < numCh; ++ch)
+                buffer.getWritePointer(ch)[i] *= g;
+        }
+    }
+    else
+    {
+        buffer.applyGain(busGainSmoothed_.getCurrentValue());
+    }
+    return true;
+}
+
+void EchoJayProcessor::setBusGainDb(float db, bool snapSmoothing)
+{
+    db = juce::jlimit(kBusGainMinDb, kBusGainMaxDb, db);
+    busGainDb_.store(db, std::memory_order_relaxed);
+    if (snapSmoothing)
+        busGainSnapPending_.store(true, std::memory_order_relaxed);
+    markStateDirty();
+}
+
 void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     ejTeardownLog("getStateInformation enter");
@@ -2032,6 +2088,7 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     // the mixer laid out is a layout choice worth writing into a project file.
     state->setProperty("linkMixerContent", (int)linkMixerContent);
     state->setProperty("linkMixerWide", linkMixerWide);
+    state->setProperty("busGainDb", busGainDb_.load(std::memory_order_relaxed));
 
     // Serialise snapshots — copy under lock, serialise outside
     std::vector<CaptureSnapshot> snapsCopy;
@@ -2220,6 +2277,12 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                     (int)obj->getProperty("linkMixerContent"));
             if (obj->hasProperty("linkMixerWide"))
                 linkMixerWide = (bool)obj->getProperty("linkMixerWide");
+            // Bus trim: guarded and else-less (absent = older save = 0 dB
+            // default untouched); snap the smoother so a restored trim does
+            // not ramp in from unity on the first block.
+            if (obj->hasProperty("busGainDb"))
+                setBusGainDb((float)(double)obj->getProperty("busGainDb"),
+                             /*snapSmoothing=*/true);
             // Project prompt: saves that predate the flag derive from having
             // a name (named project = question already answered)
             if (obj->hasProperty("projectPromptDismissed"))

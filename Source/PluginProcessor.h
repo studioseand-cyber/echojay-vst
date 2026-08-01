@@ -412,6 +412,21 @@ public:
         migration is silent. */
     bool chatSidebarCollapsed = false;
 
+    /** BUS OUTPUT TRIM (the mixer's Mix Bus fader). A plain persisted value,
+        deliberately NOT a host-automatable parameter: this is a mixer trim
+        on an analysis plugin, and an automatable output gain invites
+        automating the very thing the measurements are calibrated against
+        (and would change the published AU parameter list besides). Sits
+        POST-CHAIN, PRE-METER-TAP in processBlock, the Link's placement for
+        the Link's two reasons: the DAW hears it, and the meters read
+        post-gain so level-match stays displayed == applied. Smoothed on the
+        audio thread (LinearSmoothedValue, the Link's applyGainSmoothed shape
+        verbatim), bit-transparent at 0 dB via the settled-at-unity early
+        out. Clamped to the fader's own range. */
+    static constexpr float kBusGainMinDb = -24.0f, kBusGainMaxDb = 12.0f;
+    void  setBusGainDb(float db, bool snapSmoothing = false);
+    float getBusGainDb() const { return busGainDb_.load(std::memory_order_relaxed); }
+
     /** LINK MIXER view controls. Here, not on the editor, for the same reason
         as chatSidebarCollapsed: Logic destroys the editor every time you
         switch between the Link window and EchoJay, which in real Link work is
@@ -716,6 +731,12 @@ private:
 
     // UI snapshot (message thread only)
     std::vector<LinkSlotInfo> linkSlotInfos;
+
+    // Bus trim internals (see the public block): value, smoother, snap flag
+    std::atomic<float> busGainDb_ { 0.0f };
+    juce::LinearSmoothedValue<float> busGainSmoothed_ { 1.0f };
+    std::atomic<bool> busGainSnapPending_ { false };
+    bool applyBusGainSmoothed(juce::AudioBuffer<float>& buffer);
 
     // Per-link capture channels — message thread writes, audio thread reads via spinlock
     std::vector<std::unique_ptr<LinkCaptureChannel>> linkCaptureChannels;

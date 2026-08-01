@@ -7271,19 +7271,44 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     {
         if (isBus)
         {
-            // The main plugin has NO gain stage of its own (it is not a
-            // Link), so a fader here would be a control wired to nothing.
-            // Dim dash, the old pinned card's treatment; explicit escape.
-            // Centred BESIDE THE METER (a rect derived from two stored
-            // rects, like the well), not in the fader rect, whose vertical
-            // position tracks the image and would read as a low cap.
-            const juce::Rectangle<int> dashArea(sg.fader.getX(), sg.meter.getY(),
-                                                sg.fader.getWidth(),
-                                                sg.meter.getHeight());
-            g.setColour(LinkConsole::caption);
-            g.setFont(juce::Font(juce::FontOptions(12.0f)));
-            g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")),
-                       dashArea, juce::Justification::centred);
+            // The bus trim (a real gain stage since this pass): the SAME
+            // filmstrip, travel band and tick lane as the channels, driven
+            // by the processor's persisted value. No pending display: the
+            // value applies immediately and paint reads it straight back.
+            const float gDb = processorRef.getBusGainDb();
+            const int imgW = sg.fader.getHeight() / 8;
+            const juce::Rectangle<int> img(sg.fader.getRight() - imgW,
+                                           sg.fader.getY(), imgW,
+                                           sg.fader.getHeight());
+            for (float mark = 12.0f; mark >= -24.1f; mark -= 6.0f)
+            {
+                const int ty = yFromGain(mark, sg.fader);
+                const bool zero = mark == 0.0f;
+                g.setColour(zero ? LinkConsole::label : LinkConsole::structure);
+                g.fillRect(sg.fader.getX(), ty, img.getX() - sg.fader.getX() - 1,
+                           zero ? 2 : 1);
+            }
+            const auto strip = getFaderFilmstrip();
+            if (strip.isValid())
+            {
+                const int frame = faderFrameForGain(gDb);
+                g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+                g.drawImage(strip, img.getX(), img.getY(),
+                            img.getWidth(), img.getHeight(),
+                            0, frame * kFaderFrameH, kFaderFrameW, kFaderFrameH);
+            }
+            // A restored non-zero trim must be VISIBLE on load, not a
+            // surprise found by squinting at a cap: the value prints above
+            // the fader whenever it is not unity.
+            if (std::abs(gDb) >= 0.05f)
+            {
+                g.setColour(LinkConsole::caption);
+                g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
+                g.drawText(juce::String(gDb, 1),
+                           sg.fader.getX(), sg.fader.getY() - 11,
+                           sg.fader.getWidth(), 10,
+                           juce::Justification::centred);
+            }
         }
         else if (entry != nullptr)
         {
@@ -7409,9 +7434,26 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             // The old horizontal slider's contract, rotated: jump-to-press,
             // drag continues in LinkMixerView::mouseDrag, double-click
             // resets to 0 dB, every send through the existing
-            // sendLinkGainCommand throttle-and-ack path. The bus has no gain
-            // stage, so its fader rect is a no-op (it paints a dash).
-            if (sg.isBus) break;
+            // sendLinkGainCommand throttle-and-ack path. THE BUS drives the
+            // processor's own trim instead: same mapping, same fine drag,
+            // but LOCAL, so it applies immediately per event; the fader
+            // reads the processor back every paint and there is nothing to
+            // wait for and no pending display, because there is no ack to
+            // hold a target against.
+            if (sg.isBus)
+            {
+                if (numClicks >= 2)
+                {
+                    processorRef.setBusGainDb(0.0f);
+                    repaint();
+                    break;
+                }
+                processorRef.setBusGainDb(gainFromY(local.y, sg.fader));
+                busFaderDragging_ = true;
+                busFaderLastY_    = local.y;
+                repaint();
+                break;
+            }
             EchoJayProcessor::LinkDisplayEntry en;
             if (!findLinkEntryByAddr(sg.addr, en)) break;
             if (numClicks >= 2)
@@ -7594,7 +7636,9 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
                             : "Channel meter (Link engine)";
 
         case StripHit::Fader:
-            if (sg.isBus) return "No gain stage on the Mix Bus";
+            if (sg.isBus)
+                return "Bus trim " + juce::String(processorRef.getBusGainDb(), 1)
+                       + " dB (drag; shift = fine; double-click = 0)";
             if (have)
             {
                 // The same displayed-gain precedence paint uses, so the
@@ -22200,6 +22244,29 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
     }
 
     return false;
+}
+
+void EchoJayEditor::mouseDrag(const juce::MouseEvent& e)
+{
+    // Only the bus fader drags at editor level; everything else keeps its
+    // component-local streams. Incremental, re-anchored per event, the
+    // channel faders' exact model including the shift fine ratio; applied
+    // to the processor immediately (atomic store + smoother, no throttle
+    // needed for a local value).
+    if (!busFaderDragging_) return;
+    const int y = e.getPosition().y;
+    const float rate = gainPerPixel(linkBusGeom_.fader)
+                     * (e.mods.isShiftDown() ? kFaderFineRatio : 1.0f);
+    processorRef.setBusGainDb(juce::jlimit(-24.0f, 12.0f,
+        std::round((processorRef.getBusGainDb()
+                    + (float)(busFaderLastY_ - y) * rate) * 10.0f) / 10.0f));
+    busFaderLastY_ = y;
+    repaint();
+}
+
+void EchoJayEditor::mouseUp(const juce::MouseEvent&)
+{
+    busFaderDragging_ = false;
 }
 
 void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
