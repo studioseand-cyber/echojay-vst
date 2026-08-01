@@ -16,11 +16,11 @@ PLUGIN_NAME="EchoJay V2"
 LINK_NAME="EchoJay Link"
 IDENTIFIER="com.echojay.plugin.v2"
 LINK_IDENTIFIER="com.echojay.link"
-VERSION="2.23.71"
+VERSION="2.23.72"
 # Display-only: v2.MM.PP padding for FILENAMES and human text; every
 # parsed field (pkgbuild --version, plists) keeps the numeric $VERSION.
 DISPLAY_VERSION=$(echo "$VERSION" | awk -F. '{printf "%d.%02d.%02d", $1, $2, $3}')
-LINK_VERSION="0.8.4"
+LINK_VERSION="0.8.5"
 BUILD_DIR="build"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PKG_DIR="/tmp/EchoJayV2_pkg_build"
