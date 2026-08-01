@@ -289,7 +289,18 @@ struct Probe
     // exactly on a deterministic plugin.
     //==========================================================================
 
-    static constexpr int    kSteps       = 21;      // -40 .. 0 dBFS, 2 dB apart
+    /** -70 .. 0 dBFS in 2 dB steps. The first build used -40..0, which on
+        API-2500 at max ratio left NO unity-slope region inside the stimulus
+        -- the two-segment fit then had nothing to anchor its lower segment
+        to and put the knee at -37 dB for a threshold set at -20. Measured
+        on synthetic truth the fit is exact; measured on the plugin it was
+        worse than the grid it replaced. The stimulus, not the estimator,
+        was the defect: a knee can only be found inside the range you show
+        the plugin. 36 steps costs 10.8 s of rendered audio per capture,
+        ~50 ms wall on a bridged subject.
+    */
+    static constexpr int    kSteps       = 36;      // -70 .. 0 dBFS, 2 dB apart
+    static constexpr double kStepBaseDb  = -70.0;
     static constexpr double kStepSeconds = 0.30;
 
     /** Envelope RMS window in SAMPLES. 8 samples = 0.167 ms at 48 kHz.
@@ -340,7 +351,7 @@ struct Probe
         juce::Array<double> out;
         for (int sIdx = 0; sIdx < kSteps; ++sIdx)
         {
-            const double amp = std::pow (10.0, (-40.0 + 2.0 * sIdx) / 20.0);
+            const double amp = std::pow (10.0, (kStepBaseDb + 2.0 * sIdx) / 20.0);
             double acc = 0; int accN = 0;
             for (int k = 0; k < blocksPerStep; ++k)
             {
@@ -394,12 +405,12 @@ struct Probe
             if (slope[i] >= slopeFloor && slope[i - 1] >= slopeFloor) { kneeIdx = i; break; }
         if (kneeIdx < 0 || kneeIdx >= slope.size() - 1) return f;      // never compresses, or always
         f.kneeFound = true;
-        f.kneeInDb = -40.0 + 2.0 * (kneeIdx + 1);
+        f.kneeInDb = kStepBaseDb + 2.0 * (kneeIdx + 1);
 
         double sx = 0, sy = 0, sxx = 0, sxy = 0; int n = 0;
         for (int i = kneeIdx + 1; i < outDb.size(); ++i)
         {
-            const double x = -40.0 + 2.0 * i, y = outDb[i];
+            const double x = kStepBaseDb + 2.0 * i, y = outDb[i];
             sx += x; sy += y; sxx += x * x; sxy += x * y; ++n;
         }
         if (n >= 2)
@@ -407,6 +418,52 @@ struct Probe
             const double den = n * sxx - sx * sx;
             if (std::abs (den) > 1e-9) f.slopeAbove = (n * sxy - sx * sy) / den;
         }
+        return f;
+    }
+
+    /** See declaration above. Breakpoint search on a 0.1 dB grid across the
+        stimulus range; below it the curve is forced to unity slope (which is
+        what a compressor below threshold does), above it a free least-squares
+        line. The reported knee is the breakpoint, NOT a step index, so its
+        resolution is no longer the stimulus's 2 dB grid.
+    */
+    static CurveFeatures curveFeaturesTwoSegment (const juce::Array<double>& outDb)
+    {
+        CurveFeatures f;
+        if (outDb.size() < 6) return f;
+        f.offsetDb = outDb.getLast();
+        // CONTINUITY-CONSTRAINED hard-knee model: below the breakpoint the
+        // curve is y = x (a compressor passes unity below threshold); above
+        // it y = knee + (x - knee) * slope, meeting the lower segment exactly
+        // AT the knee. The first implementation left the two segments
+        // independent, which let the fit slide a whole step low -- measured
+        // 2.00 dB worst error against the step grid's 1.60, i.e. worse than
+        // the grid it was meant to beat. One free parameter per breakpoint.
+        double bestErr = 1e30, bestKnee = 0, bestSlope = 1.0;
+        for (double knee = kStepBaseDb + 2.0; knee <= -2.0; knee += 0.1)
+        {
+            double num = 0, den = 0; int n = 0;
+            for (int i = 0; i < outDb.size(); ++i)
+            {
+                const double x = kStepBaseDb + 2.0 * i;
+                if (x <= knee) continue;
+                const double dx = x - knee;
+                num += dx * (outDb[i] - knee); den += dx * dx; ++n;
+            }
+            if (n < 3 || den < 1e-9) continue;
+            const double m = num / den;
+            double err = 0;
+            for (int i = 0; i < outDb.size(); ++i)
+            {
+                const double x = kStepBaseDb + 2.0 * i;
+                const double pred = x <= knee ? x : knee + (x - knee) * m;
+                err += (outDb[i] - pred) * (outDb[i] - pred);
+            }
+            if (err < bestErr) { bestErr = err; bestKnee = knee; bestSlope = m; }
+        }
+        f.kneeFound = bestErr < 1e29 && bestSlope < 0.95;
+        f.kneeInDb = bestKnee;
+        f.slopeAbove = bestSlope;
         return f;
     }
 
@@ -420,7 +477,8 @@ struct Probe
         UNDEFINED by construction on API-2500. A quiet bed makes the release
         trajectory observable without re-triggering compression.
     */
-    static juce::Array<double> burstEnvelope (juce::AudioPluginInstance& p)
+    static juce::Array<double> burstEnvelope (juce::AudioPluginInstance& p,
+                                             bool dense = false)
     {
         const int chans = juce::jmax (2, p.getTotalNumInputChannels(),
                                          p.getTotalNumOutputChannels());
@@ -434,7 +492,8 @@ struct Probe
         { io.clear(); midi.clear(); p.processBlock (io, midi); }
 
         const int totalBlocks = (int) (4.0 * kSampleRate) / kBlock;
-        const int onSamples = (int) (0.4 * kSampleRate), periodSamples = (int) (1.0 * kSampleRate);
+        const int onSamples = (int) ((dense ? 0.12 : 0.4) * kSampleRate),
+                  periodSamples = (int) ((dense ? 0.30 : 1.0) * kSampleRate);
         const double bedAmp = std::pow (10.0, -30.0 / 20.0);
         juce::Array<double> env;
         long nAbs = 0;
@@ -526,7 +585,111 @@ struct Probe
         static constexpr double tauMs     = 0.5;
         static constexpr double realizationDepthDb = 6.2038;   // decorrelated case only
         static double centreOct (double hz) { return hz <= 250.0 ? 0.0322 : 0.0138; }
+
+        /** The MEASURED per-frequency centre bias (signed error extracting a
+            known-truth peak, --gate-m9 instrument). Item 1 of the review:
+            the bias is systematic, so it enters the confirm tolerance as an
+            ADDITIVE bias term -- never as 4*sigma, and never omitted. At
+            160 Hz it is 0.0322 oct, 46% of the signed 0.070 gate, which is
+            why omitting it was not acceptable either.
+        */
+        static double centreBiasOct (double hz)
+        {
+            static const double f[] = { 40, 63, 80, 100, 160, 250, 400, 630,
+                                        1000, 2000, 4000, 8000, 16000 };
+            static const double b[] = { 0.0158, 0.0152, 0.0028, 0.0051, 0.0322, 0.0077,
+                                        0.0138, 0.0071, 0.0022, 0.0042, 0.0032, 0.0035, 0.0007 };
+            const int n = 13;
+            if (hz <= f[0]) return b[0];
+            if (hz >= f[n - 1]) return b[n - 1];
+            for (int i = 1; i < n; ++i)
+                if (hz <= f[i])
+                {
+                    const double t = std::log2 (hz / f[i - 1]) / std::log2 (f[i] / f[i - 1]);
+                    return b[i - 1] + t * (b[i] - b[i - 1]);
+                }
+            return b[n - 1];
+        }
     };
+
+    //==========================================================================
+    /** THE MODE-TOKEN GUARD, harness-level (item 4). A parameter whose display
+        does not parse as a leading number is in a MODE where its numeric
+        semantics do not apply, and no numeric verdict may be issued against
+        it. This is not compressor-specific and must not be re-implemented per
+        suite -- API-2500's Release displays "Var" and the compressor suite
+        issued verdicts against it until this guard existed.
+
+        THERE IS NO TOKEN ALLOWLIST, deliberately. The test is numeric
+        parseability through the shared parseLeadingFloat, so it FAILS SAFE by
+        construction: any token the project has never seen -- a vendor's
+        "Prog", "Adapt", a localised string, a glyph -- is non-numeric,
+        therefore fires the guard, therefore yields inconclusive. An allowlist
+        would fail OPEN on exactly the tokens nobody anticipated, which is the
+        silent-drop class. The vocabulary below is used ONLY to name the
+        likely mode in the human-readable reason; an unrecognised token is
+        still guarded and is quoted verbatim so the human sees what the
+        plugin actually said.
+    */
+    static bool displayIsModeToken (const juce::String& display)
+    {
+        double dummy = 0;
+        return ! echojay::parseLeadingFloat (display, dummy);
+    }
+
+    static juce::String modeTokenReason (const juce::String& display)
+    {
+        const auto d = display.trim().toLowerCase();
+        auto named = [&d] (const char* t) { return d.startsWith (t); };
+        juce::String likely;
+        if (named ("var"))                       likely = "program-dependent (variable) mode";
+        else if (named ("auto"))                 likely = "automatic mode";
+        else if (named ("sync") || named ("tempo")) likely = "tempo-synced mode";
+        else if (named ("ext") || named ("side"))   likely = "external/sidechain source";
+        else if (named ("link"))                 likely = "linked mode";
+        else if (named ("off") || named ("byp"))  likely = "disengaged";
+        else                                     likely = "an unrecognised mode token (guarded anyway)";
+        return "displays '" + display + "' -- " + likely
+             + ", so its numeric semantics do not apply";
+    }
+
+    /** What fraction of a ladder lies above a resolution floor. A map whose
+        slow half was tested must not read as verified (review, this round).
+    */
+    static double ladderFractionAbove (const juce::Array<juce::Array<float>>& anchors,
+                                       double floorValue)
+    {
+        if (anchors.isEmpty()) return 0.0;
+        int above = 0;
+        for (const auto& a : anchors) if (a[0] >= floorValue) ++above;
+        return (double) above / anchors.size();
+    }
+
+    //==========================================================================
+    /** KNOWN-TRUTH static compressor: the exact output level of each stepped
+        input, hard knee, for measuring what the knee and slope estimators can
+        actually resolve with no plugin in the path.
+    */
+    static juce::Array<double> syntheticCurve (double thresholdDb, double ratio,
+                                               double makeupDb = 0.0)
+    {
+        juce::Array<double> out;
+        for (int i = 0; i < kSteps; ++i)
+        {
+            const double in = kStepBaseDb + 2.0 * i;
+            const double o = in <= thresholdDb ? in
+                                               : thresholdDb + (in - thresholdDb) / ratio;
+            out.add (o + makeupDb);
+        }
+        return out;
+    }
+
+    /** TWO-SEGMENT FIT: recovers sub-step knee resolution from the renders
+        already taken, by fitting a 1:1 line below a breakpoint and a free
+        line above it, and choosing the breakpoint (on a 0.1 dB grid, off the
+        step grid entirely) that minimises total squared error.
+    */
+
 
     /** Write with pump-until-getValue-confirms (Task 0-B rule). Returns the
         milliseconds the landing took; -1 when the bound expired unlanded.
