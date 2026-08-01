@@ -2069,6 +2069,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatScroll.setViewedComponent(&chatContent, false);
     chatScroll.setScrollBarsShown(true, false);
     chatContent.setInterceptsMouseClicks(true, true);
+    // chatContent is a TRANSPARENT child covering the editor-painted chat:
+    // without a listener, a click on it is swallowed by a component with no
+    // handlers, and the painted zones (gain cards, wave cards) never hear
+    // it: the editor's mouseDown only fires for clicks NOT on children.
+    // Forward them; mouseDown's pos is getEventRelativeTo(this), so
+    // forwarded coordinates are already correct.
+    chatContent.addMouseListener(this, false);
     
     // Repaint the editor on every scroll so the avatars (which we paint
     // ourselves into the editor, not into chatContent) stay in sync with the
@@ -2080,9 +2087,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatScroll.onClickCheck = [this](const juce::MouseEvent& e) -> bool {
         auto pos = e.getEventRelativeTo(this).getPosition();
         // AI gain-proposal Apply/Undo cards (painted in editor coords)
+        if (!gainCardZones_.empty())
+            EchoJay_NSLog(("EJGainCard: viewport route pos=" + juce::String(pos.x)
+                           + "," + juce::String(pos.y)
+                           + " zones=" + juce::String((int)gainCardZones_.size())).toRawUTF8());
         for (auto& gz : gainCardZones_)
             if (gz.rect.contains(pos))
             {
+                EchoJay_NSLog("EJGainCard: viewport route hit");
                 applyGainProposal(gz);
                 return true;   // consumed
             }
@@ -14139,44 +14151,22 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         auto* po = parr->getReference(pi).getDynamicObject();
                         if (po == nullptr) { cardY += kGainCardH + 6; continue; }
                         const juce::String linkId = po->getProperty("linkId").toString();
-                        // CLAMP HONESTY: keep the RAW proposal and the clamped
-                        // value both. A card may never show a number the prose
-                        // did not propose without SAYING it clamped, and a
-                        // shortfall is named, never swallowed.
-                        const float rawG  = (float)(double)po->getProperty("proposedGain");
-                        const float propG = juce::jlimit(-24.0f, 12.0f, rawG);
+                        // ONE PREDICATE: gainCardVerdict decides everything
+                        // that can make this card actionable, and
+                        // applyGainProposal consults the SAME function
+                        // before acting, so creation and validation cannot
+                        // disagree: the exact two-authorities shape that
+                        // produced the dead button.
+                        const auto v = gainCardVerdict(po);
+                        const float rawG  = v.rawG;
+                        const float propG = v.propG;
                         const float shortfall = rawG - propG;    // 0 when in range
                         const juce::String reason = po->getProperty("reason").toString();
                         const bool applied = (bool)po->getProperty("applied");   // persisted
-                        // faderDependent defaults TRUE when absent (safe: an
-                        // unmarked proposal on an insert Link is refused)
-                        const bool faderDep = po->hasProperty("faderDependent")
-                                            ? (bool)po->getProperty("faderDependent") : true;
-                        const juce::String uid = resolveLinkProposalAddr(linkId);
-                        const bool present = uid.isNotEmpty();
-                        const bool isBusProp = (uid == "MIX BUS");
-                        // Placement gate: a fader-dependent match on a
-                        // channel/unset Link is REFUSED (we can't see the
-                        // fader). The BUS is never refused: its meters are
-                        // this instance's own.
-                        int place = 0;
-                        for (const auto& li : processorRef.getLinkSlotInfos())
-                        {
-                            const juce::String a = li.uid.isNotEmpty()
-                                ? li.uid : LinkShm::makeSafeFilePart(li.name);
-                            if (a == uid) { place = li.placement; break; }
-                        }
-                        const bool refused = present && !isBusProp
-                                          && faderDep && place != 1;   // not "bus"
-                        // A DEAD BUTTON IS IMPOSSIBLE BY CONSTRUCTION: when
-                        // the clamped value equals the current gain there is
-                        // no move to offer, so the card DECLINES (no button)
-                        // and explains, instead of offering an Apply that
-                        // changes nothing.
-                        const float curG = isBusProp ? processorRef.getBusGainDb()
-                                                     : linkRowDisplayGain(uid);
-                        const bool noMove = present && !applied
-                                          && std::abs(propG - curG) < 0.05f;
+                        const juce::String uid = v.uid;
+                        const bool present = v.present;
+                        const bool refused = v.refused;
+                        const bool noMove  = v.noMove;
 
                         juce::Rectangle<int> card(bubbleX, cardY, bubbleW, kGainCardH);
                         g.setColour(C::bg2);
@@ -19279,20 +19269,72 @@ juce::String EchoJayEditor::resolveLinkProposalAddr(const juce::String& linkId) 
     return {};   // Link no longer present — card will no-op
 }
 
+EchoJayEditor::GainCardVerdict EchoJayEditor::gainCardVerdict(juce::DynamicObject* po) const
+{
+    GainCardVerdict v;
+    if (po == nullptr) return v;
+    const juce::String linkId = po->getProperty("linkId").toString();
+    v.rawG  = (float)(double)po->getProperty("proposedGain");
+    v.propG = juce::jlimit(-24.0f, 12.0f, v.rawG);
+    v.uid   = resolveLinkProposalAddr(linkId);
+    v.present = v.uid.isNotEmpty();
+    v.isBus   = (v.uid == "MIX BUS");
+    const bool faderDep = po->hasProperty("faderDependent")
+                        ? (bool)po->getProperty("faderDependent") : true;
+    int place = 0;
+    for (const auto& li : processorRef.getLinkSlotInfos())
+        if (linkAddrForSlot(li) == v.uid) { place = li.placement; break; }
+    v.refused = v.present && !v.isBus && faderDep && place != 1;
+    v.curG = v.isBus ? processorRef.getBusGainDb()
+           : v.present ? linkRowDisplayGain(v.uid) : 0.0f;
+    const bool applied = (bool)po->getProperty("applied");
+    v.noMove = v.present && !applied && std::abs(v.propG - v.curG) < 0.05f;
+    return v;
+}
+
 void EchoJayEditor::applyGainProposal(const GainCardZone& z)
 {
+    // INSTRUMENTED: every exit states its guard, so a dead press is a log
+    // line, never a shrug. Watch with:
+    //   log stream --predicate 'eventMessage CONTAINS "EJGainCard"'
+    EchoJay_NSLog(("EJGainCard: press " + juce::String(z.isUndo ? "UNDO" : "APPLY")
+                   + " uid=" + z.uid + " prop=" + juce::String(z.proposed, 1)
+                   + " msg=" + juce::String(z.msgIndex)
+                   + " pi=" + juce::String(z.propIndex)).toRawUTF8());
     if (z.uid.isEmpty() || z.msgIndex < 0 || z.msgIndex >= (int)chatMessages.size())
-        return;
+    { EchoJay_NSLog("EJGainCard: REJECT bad zone (uid/msgIndex)"); return; }
     auto& cm = chatMessages[(size_t)z.msgIndex];
 
     // Parse, mutate the target proposal's applied/prevGain, re-serialise.
     auto gv = juce::JSON::parse(cm.gainData);
     auto* go = gv.getDynamicObject();
-    if (go == nullptr) return;
+    if (go == nullptr)
+    { EchoJay_NSLog("EJGainCard: REJECT gainData parse failed"); return; }
     auto pr = go->getProperty("proposals");
-    if (!pr.isArray() || z.propIndex < 0 || z.propIndex >= pr.getArray()->size()) return;
+    if (!pr.isArray() || z.propIndex < 0 || z.propIndex >= pr.getArray()->size())
+    { EchoJay_NSLog("EJGainCard: REJECT proposal index out of range"); return; }
     auto* po = pr.getArray()->getReference(z.propIndex).getDynamicObject();
-    if (po == nullptr) return;
+    if (po == nullptr)
+    { EchoJay_NSLog("EJGainCard: REJECT proposal not an object"); return; }
+
+    // VALIDATION THROUGH THE SAME PREDICATE THAT DREW THE BUTTON. Undo is
+    // exempt from noMove/refused (undo restores a previous state and must
+    // always work), but a mis-created Apply now refuses HERE too, loudly.
+    if (!z.isUndo)
+    {
+        const auto v = gainCardVerdict(po);
+        if (!v.actionable())
+        {
+            EchoJay_NSLog(("EJGainCard: REJECT verdict present="
+                           + juce::String((int)v.present)
+                           + " refused=" + juce::String((int)v.refused)
+                           + " noMove=" + juce::String((int)v.noMove)
+                           + " cur=" + juce::String(v.curG, 1)
+                           + " prop=" + juce::String(v.propG, 1)).toRawUTF8());
+            repaint();   // the card redraws its own explanation
+            return;
+        }
+    }
 
     // The MIX BUS sentinel routes to the local trim; Links go over the
     // protocol as always. Same card semantics (applied flag, prevGain undo);
@@ -22453,11 +22495,21 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     // OWN mouseDown (the path that actually fires; the viewport's onClickCheck
     // does not reliably run for these, same class as the centred-input bug —
     // the cards are editor-painted, so they need the editor-level hit test).
+    if (!gainCardZones_.empty())
+    {
+        // Route log: with zones live, every click says where it landed and
+        // whether the gate passed, so a dead press points at its branch.
+        EchoJay_NSLog(("EJGainCard: editor click pos=" + juce::String(pos.x)
+                       + "," + juce::String(pos.y)
+                       + " zones=" + juce::String((int)gainCardZones_.size())
+                       + " gate=" + juce::String((int)assistantHit)).toRawUTF8());
+    }
     if (assistantHit && !gainCardZones_.empty())
     {
         for (auto& gz : gainCardZones_)
             if (gz.rect.contains(pos))
             {
+                EchoJay_NSLog("EJGainCard: editor route hit");
                 applyGainProposal(gz);
                 return;
             }

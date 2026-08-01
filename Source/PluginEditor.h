@@ -2367,6 +2367,22 @@ private:
     };
     std::vector<GainCardZone> gainCardZones_;
     static constexpr int kGainCardH = 52;
+    /** THE ONE PREDICATE for a gain card's actionability, consumed by the
+        PAINT (deciding whether an Apply button exists at all) and by
+        applyGainProposal (validating the press) so creation and validation
+        cannot disagree: the exact two-authorities shape that produced the
+        dead button. A button exists only when pressing it changes
+        something, and both sides now ask the same question. */
+    struct GainCardVerdict {
+        bool  present = false;    // target resolves to a live address
+        bool  refused = false;    // fader-dependent on a channel/unset Link
+        bool  noMove  = false;    // clamped target == current gain
+        bool  isBus   = false;    // the MIX BUS sentinel
+        float rawG = 0.0f, propG = 0.0f, curG = 0.0f;
+        juce::String uid;
+        bool actionable() const { return present && !refused && !noMove; }
+    };
+    GainCardVerdict gainCardVerdict(juce::DynamicObject* po) const;
     // Build the LINK LEVELS context + proposal format/grounding instructions
     // for a chat turn; empty when there are no live Links to reason about.
     juce::String buildLinkLevelsContext();
