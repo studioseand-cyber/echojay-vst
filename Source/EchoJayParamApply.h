@@ -682,6 +682,40 @@ inline bool readCurrentValue (juce::AudioPluginInstance& plugin, const juce::var
     return true;
 }
 
+// The band's reachable frequency window. freq_range when the map carries it;
+// otherwise DERIVED from the band's own freq_hz anchor values - the anchors
+// ARE the authoritative reachability, freq_range is only their summary (the
+// AMEK 8 kHz incident: ingestGroups dropped freq_range from every stored
+// map, "no range" read as "assume reachable", and a 15-780 Hz band took an
+// 8 kHz request as a verified-looking clamp to 780). known=false only when
+// the band has no freq entry at all: unknown, which is not unreachable.
+struct BandReach { float lo = 0.0f, hi = 0.0f; bool known = false; };
+inline BandReach bandReachRange (const juce::var& group)
+{
+    BandReach r;
+    auto fr = group.getProperty ("freq_range", juce::var());
+    if (auto* a = fr.getArray())
+        if (a->size() >= 2)
+        {
+            r.lo = (float) (double) (*a)[0];
+            r.hi = (float) (double) (*a)[1];
+            if (r.hi > r.lo) { r.known = true; return r; }
+        }
+    auto anchors = anchorsFromVar (group.getProperty ("params", juce::var())
+                                        .getProperty ("freq_hz", juce::var()));
+    if (anchors.size() >= 2)
+    {
+        r.lo = r.hi = anchors[0][0];
+        for (auto& p : anchors)
+        {
+            r.lo = juce::jmin (r.lo, p[0]);
+            r.hi = juce::jmax (r.hi, p[0]);
+        }
+        r.known = r.hi > r.lo;
+    }
+    return r;
+}
+
 // Assign a bands[] request to group bands and write each. One ApplyResult per
 // requested per-band control. Always reports (declines when no band is free),
 // so the caller never has to synthesise feedback.
@@ -754,16 +788,25 @@ inline void applyBands (juce::AudioPluginInstance& plugin, const juce::var& map,
         auto reaches = [&] (int ci) -> bool
         {
             if (! haveFreq) return true;
-            auto fr = cands[ci].group.getProperty ("freq_range", juce::var());
-            auto* a = fr.getArray();
-            if (a == nullptr || a->size() < 2) return true; // no range -> assume reachable
-            const float lo = (float) (double) (*a)[0], hi = (float) (double) (*a)[1];
-            return wantFreq >= lo && wantFreq <= hi;
+            auto r = bandReachRange (cands[ci].group);
+            if (! r.known) return true;   // unknown is not unreachable
+            return wantFreq >= r.lo && wantFreq <= r.hi;
         };
         juce::Array<int> reachable;
         for (int i : pool) if (reaches (i)) reachable.add (i);
-        const bool fellThrough = reachable.isEmpty();
-        juce::Array<int>& choosePool = fellThrough ? pool : reachable;
+        if (reachable.isEmpty())
+        {
+            // KNOWING-CLAMP GUARD (1 Aug 2026): every free band verifiably
+            // cannot reach the target, so DECLINE - the old first-free
+            // fallback produced a plausible-looking wrong setting (8 kHz
+            // "landed" at a low band's 780 Hz ceiling) that the clamped
+            // best-effort readback then VERIFIED. An honest decline beats a
+            // verified lie.
+            declineBand (bv, "no free band on this EQ reaches "
+                             + juce::String (wantFreq, 0) + " Hz, left manual");
+            continue;
+        }
+        juce::Array<int>& choosePool = reachable;
 
         // Low band number first, so both the default pick and the untouched
         // scan favour the lowest band.
@@ -786,8 +829,7 @@ inline void applyBands (juce::AudioPluginInstance& plugin, const juce::var& map,
         }
         consumed.add (best);
 
-        const juce::String tag = "band " + cands[best].family + juce::String (cands[best].n)
-                               + (fellThrough ? " (first-free, none reached target)" : "") + ": ";
+        const juce::String tag = "band " + cands[best].family + juce::String (cands[best].n) + ": ";
         auto bandParams = cands[best].group.getProperty ("params", juce::var());
         if (auto* o = bv.getDynamicObject())
             for (auto& kv : o->getProperties())

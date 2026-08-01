@@ -111,6 +111,47 @@ int main()
                "the override does not loosen the tolerance: a wrong landing still refuses");
     }
 
+    // Band reach (the AMEK 8 kHz incident): ingestGroups dropped freq_range
+    // from every stored map, "no range" read as reachable, and a 15-780 Hz
+    // band took an 8 kHz request as a verified clamp to 780. The reach
+    // window now derives from the band's own freq_hz anchors when the
+    // summary field is absent - the anchors ARE the reachability.
+    {
+        auto makeGroup = [] (float lo, float hi, bool withRangeField, bool withFreqEntry)
+        {
+            juce::DynamicObject::Ptr g = new juce::DynamicObject();
+            if (withRangeField)
+            {
+                juce::Array<juce::var> fr; fr.add (lo); fr.add (hi);
+                g->setProperty ("freq_range", juce::var (fr));
+            }
+            juce::DynamicObject::Ptr params = new juce::DynamicObject();
+            if (withFreqEntry)
+            {
+                juce::DynamicObject::Ptr fe = new juce::DynamicObject();
+                fe->setProperty ("index", 5);
+                fe->setProperty ("kind", "anchored");
+                juce::Array<juce::var> av;
+                for (auto p : { std::pair<float,float>{ lo, 0.0f }, { (lo + hi) / 2, 0.5f }, { hi, 1.0f } })
+                { juce::Array<juce::var> pr; pr.add (p.first); pr.add (p.second); av.add (juce::var (pr)); }
+                fe->setProperty ("anchors", juce::var (av));
+                params->setProperty ("freq_hz", juce::var (fe.get()));
+            }
+            g->setProperty ("params", juce::var (params.get()));
+            return juce::var (g.get());
+        };
+        auto rangeField = echojay::bandReachRange (makeGroup (15.0f, 780.0f, true, false));
+        check (rangeField.known && rangeField.lo == 15.0f && rangeField.hi == 780.0f,
+               "freq_range field wins when present");
+        auto derived = echojay::bandReachRange (makeGroup (15.0f, 780.0f, false, true));
+        check (derived.known && derived.lo == 15.0f && derived.hi == 780.0f,
+               "reach derives from freq_hz anchors when freq_range absent (the AMEK shape)");
+        check (! (8000.0f >= derived.lo && 8000.0f <= derived.hi),
+               "8 kHz is out of reach of the derived 15-780 window");
+        auto unknown = echojay::bandReachRange (makeGroup (0, 0, false, false));
+        check (! unknown.known, "no freq entry at all reads unknown, not unreachable");
+    }
+
     // The map entry itself is healthy - documents that the fleet failure was
     // never about the data. Mirrors the usableParamEntry rules.
     {
