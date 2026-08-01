@@ -2374,13 +2374,21 @@ private:
         dead button. A button exists only when pressing it changes
         something, and both sides now ask the same question. */
     struct GainCardVerdict {
-        bool  present = false;    // target resolves to a live address
-        bool  refused = false;    // fader-dependent on a channel/unset Link
-        bool  noMove  = false;    // clamped target == current gain
-        bool  isBus   = false;    // the MIX BUS sentinel
+        bool  present = false;      // target resolves to a live address
+        bool  insertPoint = false;  // channel/unset placement: the reading is
+                                    // pre-fader, so the card CARRIES A CAVEAT
+                                    // (it no longer refuses: an insert-point
+                                    // match is legitimate gain-staging when
+                                    // it says what it is). DERIVED FROM
+                                    // PLACEMENT ONLY: the old gate keyed on
+                                    // the model's own faderDependent flag, a
+                                    // model-controlled input that made two
+                                    // identical situations disagree.
+        bool  noMove  = false;      // clamped target == current gain
+        bool  isBus   = false;      // the MIX BUS sentinel
         float rawG = 0.0f, propG = 0.0f, curG = 0.0f;
         juce::String uid;
-        bool actionable() const { return present && !refused && !noMove; }
+        bool actionable() const { return present && !noMove; }
     };
     GainCardVerdict gainCardVerdict(juce::DynamicObject* po) const;
     // Build the LINK LEVELS context + proposal format/grounding instructions

@@ -14165,7 +14165,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         const bool applied = (bool)po->getProperty("applied");   // persisted
                         const juce::String uid = v.uid;
                         const bool present = v.present;
-                        const bool refused = v.refused;
+                        const bool insertPt = v.insertPoint;
                         const bool noMove  = v.noMove;
 
                         juce::Rectangle<int> card(bubbleX, cardY, bubbleW, kGainCardH);
@@ -14179,7 +14179,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         // pixel: colour is the only difference between the
                         // two states.
                         g.setColour(applied ? C::green.withAlpha(0.45f)
-                                  : juce::Colour(refused ? 0xfff59e0b : 0xff22d3ee)
+                                  : juce::Colour(insertPt ? 0xfff59e0b : 0xff22d3ee)
                                         .withAlpha(0.3f));
                         g.drawRoundedRectangle(card.toFloat(), 8.0f, 1.0f);
 
@@ -14188,23 +14188,31 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         // prose cannot disagree: "Music.cm: +12.0 dB (wants +14.5)"
                         g.setColour(present ? C::text : C::text3);
                         g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-                        juce::String title = linkId + ": "
-                            + (propG >= 0 ? "+" : "") + juce::String(propG, 1) + " dB";
-                        if (std::abs(shortfall) >= 0.05f)
-                            title << " (wants " << (rawG >= 0 ? "+" : "")
-                                  << juce::String(rawG, 1) << ")";
+                        // A card with NO button must not lead with a figure
+                        // that looks like an offer (the clamp fault in a
+                        // different guise): non-actionable, non-applied
+                        // cards title the name alone and let the line carry
+                        // the facts.
+                        juce::String title = linkId;
+                        if (v.actionable() || applied)
+                        {
+                            title << ": " << (propG >= 0 ? "+" : "")
+                                  << juce::String(propG, 1) << " dB";
+                            if (std::abs(shortfall) >= 0.05f)
+                                title << " (wants " << (rawG >= 0 ? "+" : "")
+                                      << juce::String(rawG, 1) << ")";
+                        }
                         g.drawText(title, card.getX() + 12, card.getY() + 7,
                                    card.getWidth() - 96, 16, juce::Justification::centredLeft);
                         // Reason line, in precedence: absent Link, refusal,
                         // nothing-to-apply, clamp shortfall, then the
                         // model's own reason.
-                        const bool amberLine = refused || noMove
+                        const bool amberLine = insertPt || noMove
                                             || std::abs(shortfall) >= 0.05f;
                         g.setColour(amberLine ? juce::Colour(0xfff59e0b) : C::text3);
                         g.setFont(juce::Font(juce::FontOptions(10.5f)));
                         juce::String line;
                         if (!present)      line = "Link no longer present";
-                        else if (refused)  line = "Can't match: EchoJay can't see this channel's fader";
                         else if (noMove)
                             line = "Already at " + juce::String(propG, 1) + " dB - the "
                                  + (shortfall > 0 ? "remaining +" : "remaining ")
@@ -14215,6 +14223,12 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                  + juce::String(shortfall, 1) + " dB beyond the "
                                  + (shortfall > 0 ? "+12" : "-24")
                                  + " dB limit stays unapplied";
+                        else if (insertPt)
+                            // Fork 2 from the placement investigation: the
+                            // caveat rides THE CARD, because the card is
+                            // what the user acts on and it can be read
+                            // without the paragraph above it.
+                            line = "Insert-point match - your DAW fader still scales this";
                         else line = reason;
                         g.drawText(line,
                                    card.getX() + 12, card.getY() + 26,
@@ -14224,7 +14238,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                         // when refused (level-match refused for insert Links)
                         const bool inView = card.getY() >= chatScroll.getBounds().getY() - kGainCardH
                                          && card.getY() <= chatScroll.getBounds().getBottom();
-                        if (present && !refused && !noMove && inView)
+                        if (v.actionable() && inView)
                         {
                             if (!applied)
                             {
@@ -19214,12 +19228,12 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
          "compare their levels to each other and to the mix bus, and MAY propose gain "
          "changes, when the MEASURED values justify it.\n"
          "- For \"channel\" or \"unset\" Links, the measurements are PRE-FADER. You "
-         "CANNOT see the channel fader, so you MUST NOT propose a gain change based on "
-         "comparing them to other channels or to the mix bus, and MUST NOT claim one "
-         "channel is louder/quieter than another in the actual mix. You MAY still "
-         "comment in prose, and MAY propose a gain change for a reason that does NOT "
-         "depend on the fader (a true-peak over at the insert point, or matching an "
-         "absolute target the user asked for).\n";
+         "CANNOT see the channel fader, so you MUST NOT claim one channel is "
+         "louder/quieter than another in the actual mix. You MAY propose a gain "
+         "change as an INSERT-POINT MATCH (gain-staging: aligning the level at the "
+         "insert point), for any target including the bus or another channel, but "
+         "your prose MUST say it matches the insert point and that the DAW fader "
+         "still scales the result afterwards. The card carries the same caveat.\n";
     if (anyInsertOrUnknown)
         c << "- Because at least one Link is channel/unset, ANY sentence comparing a "
              "channel/unset Link's level to anything else MUST carry this caveat once: "
@@ -19243,18 +19257,14 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
          "very last thing in your reply, nothing after <<<END_GAIN>>>:\n"
          "<<<ECHOJAY_GAIN>>>\n"
          "{\"proposals\":[{\"linkId\":\"<exact Link name>\",\"currentGain\":<dB now>,"
-         "\"proposedGain\":<dB target>,\"faderDependent\":<true if based on comparing "
-         "levels across channels/the bus; false if based only on an insert-point reason "
-         "like a TP over or an absolute target>,\"reason\":\"<one line citing the "
+         "\"proposedGain\":<dB target>,\"reason\":\"<one line citing the "
          "numbers>\"}]}\n"
          "<<<END_GAIN>>>\n"
          "proposedGain is ABSOLUTE (the new gain; the usable range is -24..+12), "
          "not a delta. If the computed target lies OUTSIDE that range, emit the TRUE "
          "target anyway and say in prose that it exceeds the range: the card clamps "
          "it and names the shortfall, and a silently capped number is worse than an "
-         "honest one. One entry per Link; multiple Links = multiple entries. Do NOT "
-         "include a proposal for an insert/unknown Link whose reason is "
-         "fader-dependent.\n";
+         "honest one. One entry per Link; multiple Links = multiple entries.\n";
     return c;
 }
 
@@ -19288,12 +19298,14 @@ EchoJayEditor::GainCardVerdict EchoJayEditor::gainCardVerdict(juce::DynamicObjec
     v.uid   = resolveLinkProposalAddr(linkId);
     v.present = v.uid.isNotEmpty();
     v.isBus   = (v.uid == "MIX BUS");
-    const bool faderDep = po->hasProperty("faderDependent")
-                        ? (bool)po->getProperty("faderDependent") : true;
+    // PLACEMENT ONLY, deliberately ignoring the model's faderDependent
+    // flag: two identical Music.cm matches got opposite cards because the
+    // model phrased one as an "absolute target". Facts gate; phrasing does
+    // not.
     int place = 0;
     for (const auto& li : processorRef.getLinkSlotInfos())
         if (linkAddrForSlot(li) == v.uid) { place = li.placement; break; }
-    v.refused = v.present && !v.isBus && faderDep && place != 1;
+    v.insertPoint = v.present && !v.isBus && place != 1;
     v.curG = v.isBus ? processorRef.getBusGainDb()
            : v.present ? linkRowDisplayGain(v.uid) : 0.0f;
     const bool applied = (bool)po->getProperty("applied");
