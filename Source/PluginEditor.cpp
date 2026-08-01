@@ -7423,6 +7423,7 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             }
             linkMixerView_.dragAddr       = sg.addr;
             linkMixerView_.dragValue      = gainFromY(local.y, sg.fader);
+            linkMixerView_.lastDragY      = local.y;   // incremental anchor
             linkMixerView_.lastGainSendMs = juce::Time::getMillisecondCounter();
             sendLinkGainCommand(sg.addr, linkMixerView_.dragValue);
             linkMixerView_.repaint();
@@ -7719,16 +7720,26 @@ void EchoJayEditor::LinkMixerView::mouseDown(const juce::MouseEvent& e)
 void EchoJayEditor::LinkMixerView::mouseDrag(const juce::MouseEvent& e)
 {
     if (owner == nullptr || dragAddr.isEmpty()) return;
-    // Value from the fader rect THIS addr owns, looked up in the same stored
-    // vector as everything else; y clamps inside gainFromY, so dragging past
-    // either end just pins the range. Sends throttle to ~10Hz; the visual cap
-    // tracks every move (repaint).
+    // INCREMENTAL, re-anchored on every event: delta = pixels moved since
+    // the last event times the travel rate, scaled by the shift fine ratio.
+    // Re-anchoring from the current position (never the drag origin) is
+    // what lets shift change mid-drag without the cap jumping. The rate
+    // comes from gainPerPixel, which the self-test holds to the gainFromY
+    // mapping, so fine and coarse agree where a dB lives. Sends throttle to
+    // ~10Hz; the visual cap tracks every move (repaint).
+    const int y = e.getPosition().y;
     for (const auto& sg : owner->linkStripGeom_)
         if (sg.addr == dragAddr)
         {
-            dragValue = EchoJayEditor::gainFromY(e.getPosition().y, sg.fader);
+            const float rate = EchoJayEditor::gainPerPixel(sg.fader)
+                             * (e.mods.isShiftDown()
+                                    ? EchoJayEditor::kFaderFineRatio : 1.0f);
+            dragValue = juce::jlimit(-24.0f, 12.0f,
+                std::round((dragValue + (float)(lastDragY - y) * rate) * 10.0f)
+                    / 10.0f);
             break;
         }
+    lastDragY = y;
     const uint32_t now = juce::Time::getMillisecondCounter();
     if (now - lastGainSendMs >= 100)
     {

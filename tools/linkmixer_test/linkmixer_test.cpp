@@ -71,6 +71,8 @@ struct EchoJayLinkMixerTestAccess
     static int   frameFor (float db)                        { return Ed::faderFrameForGain (db); }
     static float travelTop()                                { return Ed::kFaderTravelTopFrac; }
     static float travelBot()                                { return Ed::kFaderTravelBotFrac; }
+    static float perPixel (juce::Rectangle<int> t)          { return Ed::gainPerPixel (t); }
+    static float fineRatio()                                { return Ed::kFaderFineRatio; }
     static float gFromY (int y, juce::Rectangle<int> t)     { return Ed::gainFromY (y, t); }
     static int   yFromG (float db, juce::Rectangle<int> t)  { return Ed::yFromGain (db, t); }
     static int   frames()                                   { return Ed::kFaderFrames; }
@@ -505,6 +507,19 @@ static void testFaderMapping()
         const float back = T::gFromY (T::yFromG (db, t), t);
         check (std::abs (back - db) <= 0.35f, "dB<->y round-trips within tolerance");
     }
+
+    // gainPerPixel is DERIVED from the same travel constants the mapping
+    // uses; hold it to the mapping so the incremental (fine) drag and the
+    // absolute mapping can never disagree about where a dB lives. Over a
+    // 40px span the snap quantisation contributes at most 0.1.
+    {
+        const int y0 = t.getY() + 40;
+        const float mapped = T::gFromY (y0, t) - T::gFromY (y0 + 40, t);
+        check (std::abs (std::abs (mapped) - T::perPixel (t) * 40.0f) <= 0.15f,
+               "gainPerPixel matches the gainFromY mapping over a span");
+    }
+    check (T::fineRatio() > 0.0f && T::fineRatio() < 1.0f,
+           "the fine ratio slows the drag, never reverses or stops it");
 
     // Frames: full range maps 0..127, monotonic, and clamped so no gain can
     // index past the strip (frame*480 + 480 <= 61440 always).

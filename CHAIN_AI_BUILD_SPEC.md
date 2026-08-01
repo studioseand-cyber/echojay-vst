@@ -446,6 +446,24 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   Pick a marker that is a real string literal the feature emits; a pure code
   reorder has no marker, so verify those behaviourally instead. Neither the
   version number nor the mtime is evidence.
+  THE AUTHORITATIVE CHECK IS A RAW-BYTE SEARCH, NOT strings (1 Aug 2026,
+  learned twice: IN RACK, then HELD). strings coalesces a literal onto one
+  output line when it sits adjacent to another string in the cstring pool,
+  so `strings | grep -cF` reads 1 where the truth is 2; and LTO splits
+  literals longer than 8 bytes ("empty rack" pooled as "empty ra" plus an
+  immediate tail), which strings misses entirely. The exact command:
+    python3 -c "print(open('$HOME/Library/Audio/Plug-Ins/Components/EchoJay V2.component/Contents/MacOS/EchoJay V2','rb').read().count(b'<marker>'))"
+  EXPECTED COUNT IS 2, once per architecture slice of the universal binary.
+  A strings count of 1 against a raw count of 2 is the known false negative,
+  NOT evidence of a bad install; do not rebuild over it and do not mistrust
+  the install over it.
+  MARKER CHOICE: prefer a literal 8 BYTES OR SHORTER (LTO cannot split it)
+  whose INSTALLED BASELINE IS 0, checked before the commit lands: a 0 -> 2
+  flip is strong evidence, a delta against an existing count is weak. A pure
+  recolour or pure geometry pass may have NO honest marker at all, because
+  bare constants fold to compiler immediates (verified: zero rodata hits for
+  colour values); verification is then BEHAVIOURAL and the report must say
+  so plainly rather than inventing a marker that proves nothing.
 - Two Claude Code sessions must NOT build the shared repo simultaneously. Prefer
   separate worktrees; note the install DEST is still shared (last install wins)
   unless the branches carry distinct PRODUCT_NAME / BUNDLE_ID / PLUGIN_CODE.

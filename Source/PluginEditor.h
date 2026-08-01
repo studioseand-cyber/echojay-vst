@@ -2485,8 +2485,14 @@ private:
         // Fader drag, the old row list's shape verbatim: which addr is being
         // dragged, the live value (wins over pending/acked in paint), and a
         // ~10Hz send throttle; the final value always goes on mouseUp.
+        // lastDragY makes the drag INCREMENTAL, re-anchored on every event:
+        // each move applies (lastDragY - y) * rate from the CURRENT value,
+        // never recomputing from the drag origin, so pressing or releasing
+        // shift mid-drag changes only how fast the NEXT pixel moves and can
+        // never jump the cap.
         juce::String  dragAddr;
         float         dragValue = 0.0f;
+        int           lastDragY = 0;
         uint32_t      lastGainSendMs = 0;
     };
     LinkMixerView  linkMixerView_;
@@ -2582,6 +2588,21 @@ private:
         const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
         return (int)std::round(bot - f * (bot - top));
     }
+    /** dB per pixel of travel, derived from the SAME travel constants as
+        gainFromY/yFromGain and held to them by the self-test, so fine and
+        coarse drags agree about where a dB lives; the fine modifier only
+        scales how far a pixel moves. Used by the incremental drag, which
+        cannot consume gainFromY deltas directly: those clamp at the travel
+        rails, and a FINE drag whose cursor has passed a rail while its
+        value has not would stall. */
+    static float gainPerPixel(juce::Rectangle<int> track)
+    {
+        const float span = (kFaderTravelBotFrac - kFaderTravelTopFrac)
+                         * (float)juce::jmax(1, track.getHeight());
+        return 36.0f / juce::jmax(1.0f, span);
+    }
+    /** Shift = fine drag at one eighth speed. */
+    static constexpr float kFaderFineRatio = 1.0f / 8.0f;
 
     // Authored by measureLinkStrips(), consumed by paintLinkView() and the
     // mouse handlers. Nothing else writes them.
