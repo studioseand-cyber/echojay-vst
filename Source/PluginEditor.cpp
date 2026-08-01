@@ -19878,7 +19878,9 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         // scan-wide, not filtered by the Settings checklist.
         if (!found)
         {
-            auto d = ch.resolveByName(name, {}, nullptr);
+            juce::String gateLog;
+            auto d = ch.resolveByName(name, {}, &gateLog);
+            EchoJay_NSLog(("EJChain: build-gate resolve \"" + name + "\" -> " + gateLog).toRawUTF8());
             if (d.name.isNotEmpty())
             {
                 bool disabled = false;

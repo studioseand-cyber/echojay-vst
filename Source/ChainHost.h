@@ -145,6 +145,7 @@ public:
         bool on    = false;     // bypass state
         juce::String name;      // add/replace: name from AVAILABLE PLUGINS
         juce::String settings;  // prose settings for the slot tile (display)
+        juce::var    settingsStructured; // machine-readable dial values (add/replace)
     };
     // Parse edit-block JSON. Returns empty on malformed payloads. Static so
     // preview cards can humanize ops without touching a host.
@@ -563,6 +564,13 @@ private:
     // don't-re-request guard). Drives DialStatus::pending vs noMap.
     juce::StringArray                    pendingMapFps_;
     bool                                 mapsRevalidated_ = false; // once-per-session cache revalidation
+    // TTL-on-use: epoch-ms of the last server confirm per fp. A cached map
+    // older than the staleness bound is refetched before it can dial, so a
+    // since-corrected map (the AMEK suppression class) is never applied.
+    std::map<juce::String, juce::int64>  fpFetchedAt_;
+    std::shared_ptr<int>                 life_ { std::make_shared<int>(0) }; // weak-guard for deferred callbacks
+    bool mapFresh (const juce::String& fp) const;
+    void refetchStale (const juce::String& fp);
     void applyStructuredIfReady (int slotIndex);
     void loadParamMapsFromDisk();
     void saveParamMapsToDisk();

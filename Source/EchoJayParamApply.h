@@ -580,14 +580,18 @@ inline int usableCoreCount (const juce::var& map)
     return n;
 }
 
-// Marker/dialFlags threshold: >=2 usable CORE semantics (68 of 297 local
-// maps at last count). Apply-time honesty deliberately does NOT use this:
-// there the question is only "were the REQUESTED semantics written".
-// A role-aware version (match the slot's role to the semantics that role
-// needs) is feasible later once roles are normalized; not built now.
+// Dialability is the SERVER's answer: resolveFpV2 stamps map.dialable from
+// mapClearsCategoryBar (usable semantics across flat params AND groups, minus
+// suppressed, judged against the plugin's category bar). Read it, do not
+// reimplement it - the old flat, compressor-shaped usableCoreCount could not
+// see a suppressed key or a grouped band, so bx_digital read NOT dialable.
+// Absent flag = unknown = NOT dialable: this gates a strictness feature, so the
+// safe default is to withhold rather than guess, and TTL revalidation supplies
+// the flag within one window. usableCoreCount is left defined but no longer
+// consulted here - it was wrong in both directions.
 inline bool mapIsDialableForSignals (const juce::var& map)
 {
-    return usableCoreCount (map) >= 2;
+    return (bool) map.getProperty ("dialable", false);
 }
 
 // Dial signals master switch (feed "(dial)" markers + request dialFlags).
@@ -609,10 +613,190 @@ inline juce::String semanticLabel (const juce::String& key)
 }
 
 // ---------------------------------------------------------------------------
+// Band matcher (28 Jul 2026). A multiband EQ's per-band freq/gain controls
+// collapse to one flat freq_hz / gain_db key and get SUPPRESSED at build time
+// (>=2 candidates, no arbitrary winner), so the flat path declines them. The
+// matcher instead consumes map.groups: for a per-band request it picks a band
+// in the primary family whose freq control can REACH the target, sets that
+// band's freq and gain, and consumes the band so a second request in the same
+// block cannot land on it. Range is a tiebreaker allowed to fall through to
+// first-free by band number.
+//
+// EQ-band guard, carried from the corpus measurement into the runtime, not
+// left in the harness: a group whose "freq" is really a modulation rate
+// (Doubler "Voice1 Rate"), a delay tap (SuperTap "Tap 1 Freq") or a crossover
+// split is NOT an EQ band and MUST be declined. Placing a frequency there is
+// exactly the wrong-write class this track exists to remove.
+// ---------------------------------------------------------------------------
+
+// True when a group is a real EQ band: freq_hz + gain_db both usable, the freq
+// param is a band centre (not a rate/tap/crossover/feedback), and the family
+// is not a modulation/delay family. Mirrors the corpus guard (NOTFAM/NOTBAND).
+inline bool groupIsEqBand (const juce::String& family, const juce::var& group)
+{
+    const auto fam = family.toLowerCase();
+    for (auto* bad : { "voice", "tap", "damp", "crossover", "chorus", "phaser", "delay", "osc" })
+        if (fam.contains (bad)) return false;
+
+    auto params = group.getProperty ("params", juce::var());
+    auto freq = params.getProperty ("freq_hz", juce::var());
+    auto gain = params.getProperty ("gain_db", juce::var());
+    if (! freq.isObject() || ! gain.isObject())      return false; // both needed for an EQ move
+    if (! usableParamEntry (freq) || ! usableParamEntry (gain)) return false;
+
+    const auto fn = freq.getProperty ("name", "").toString().toLowerCase();
+    for (auto* bad : { "rate", "voice", "crossover", "feedback", "detune", "lfo", "min freq", "max freq", "pitch" })
+        if (fn.contains (bad)) return false;
+    return true;
+}
+
+// Read a param's current value in the semantic's unit, for the untouched check.
+inline bool readCurrentValue (juce::AudioPluginInstance& plugin, const juce::var& entry,
+                              const juce::String& semantic, float& out)
+{
+    auto& params = plugin.getParameters();
+    const int index = (int) entry.getProperty ("index", -1);
+    if (index < 0 || index >= params.size() || params[index] == nullptr) return false;
+    bool negInf = false;
+    if (! parseDisplayForUnit (params[index]->getCurrentValueAsText(), semanticUnit (semantic), out, negInf))
+        return false;
+    if (negInf) out = -120.0f; // "-oo" at the dB floor reads as fully attenuated, not unity
+    return true;
+}
+
+// Assign a bands[] request to group bands and write each. One ApplyResult per
+// requested per-band control. Always reports (declines when no band is free),
+// so the caller never has to synthesise feedback.
+inline void applyBands (juce::AudioPluginInstance& plugin, const juce::var& map,
+                        const juce::var& bandsVar, juce::Array<ApplyResult>& results)
+{
+    auto* bands = bandsVar.getArray();
+    if (bands == nullptr) return;
+
+    struct Cand { juce::String family; int n; juce::var group; };
+    struct ByN { const juce::Array<Cand>& c; int compareElements (int a, int b) const noexcept { return c[a].n - c[b].n; } };
+    constexpr int kUntouchedScan = 8; // cap on live gain reads per requested band
+    juce::Array<Cand> cands;
+    juce::String primaryFam;
+    auto groupsVar = map.getProperty ("groups", juce::var());
+    if (auto* groups = groupsVar.getArray())
+        for (auto& gv : *groups)
+        {
+            const auto fam = gv.getProperty ("family", "").toString();
+            if ((bool) gv.getProperty ("primary", false)) primaryFam = fam;
+            if (groupIsEqBand (fam, gv))
+                cands.add (Cand { fam, (int) gv.getProperty ("n", 0), gv });
+        }
+
+    auto declineBand = [&results] (const juce::var& bv, const juce::String& why)
+    {
+        if (auto* o = bv.getDynamicObject())
+            for (auto& kv : o->getProperties())
+            {
+                const juce::String bk = kv.name.toString();
+                if (bk == "family") continue;
+                ApplyResult r; r.semantic = bk; r.note = why;
+                results.add (r);
+            }
+    };
+
+    if (cands.isEmpty()) // no EQ band group on this plugin (e.g. ungrouped map)
+    {
+        for (auto& bv : *bands) declineBand (bv, "no EQ band group for this control on this plugin");
+        return;
+    }
+
+    juce::Array<int> consumed;
+    for (auto& bv : *bands)
+    {
+        const juce::String wantFam = bv.getProperty ("family", "").toString();
+
+        // Family preference: requested family, then the primary family, then any
+        // unconsumed band. A mislabelled family must not block the match.
+        juce::StringArray famOrder;
+        if (wantFam.isNotEmpty())    famOrder.add (wantFam);
+        if (primaryFam.isNotEmpty() && ! famOrder.contains (primaryFam, true)) famOrder.add (primaryFam);
+        juce::Array<int> pool;
+        for (auto& f : famOrder)
+        {
+            for (int i = 0; i < cands.size(); ++i)
+                if (! consumed.contains (i) && cands[i].family.equalsIgnoreCase (f)) pool.add (i);
+            if (! pool.isEmpty()) break;
+        }
+        if (pool.isEmpty())
+            for (int i = 0; i < cands.size(); ++i)
+                if (! consumed.contains (i)) pool.add (i);
+        if (pool.isEmpty()) { declineBand (bv, "no free band left in the family for this request"); continue; }
+
+        // Requested frequency, for the reach test.
+        float wantFreq = 0.0f; bool haveFreq = false;
+        auto fv = bv.getProperty ("freq_hz", juce::var());
+        if (! fv.isVoid()) { float t; if (semanticToFloat (fv, t)) { wantFreq = t; haveFreq = true; } }
+
+        auto reaches = [&] (int ci) -> bool
+        {
+            if (! haveFreq) return true;
+            auto fr = cands[ci].group.getProperty ("freq_range", juce::var());
+            auto* a = fr.getArray();
+            if (a == nullptr || a->size() < 2) return true; // no range -> assume reachable
+            const float lo = (float) (double) (*a)[0], hi = (float) (double) (*a)[1];
+            return wantFreq >= lo && wantFreq <= hi;
+        };
+        juce::Array<int> reachable;
+        for (int i : pool) if (reaches (i)) reachable.add (i);
+        const bool fellThrough = reachable.isEmpty();
+        juce::Array<int>& choosePool = fellThrough ? pool : reachable;
+
+        // Low band number first, so both the default pick and the untouched
+        // scan favour the lowest band.
+        ByN byN { cands };
+        choosePool.sort (byN);
+
+        // Prefer a band sitting at unity gain so the AI does not overwrite one
+        // the user already dialled. This read uses getCurrentValueAsText, the
+        // SAME call applyOne's read-back already makes on this loaded instance,
+        // so it adds no new stall class; it is still capped at kUntouchedScan
+        // reads so a 24-band bank cannot turn one apply into 24 text calls.
+        int best = choosePool.getFirst();               // lowest-n fallback
+        const int scan = juce::jmin (choosePool.size(), kUntouchedScan);
+        for (int idx = 0; idx < scan; ++idx)
+        {
+            const int i = choosePool[idx];
+            float g;
+            auto ge = cands[i].group.getProperty ("params", juce::var()).getProperty ("gain_db", juce::var());
+            if (readCurrentValue (plugin, ge, "gain_db", g) && std::abs (g) < 0.5f) { best = i; break; }
+        }
+        consumed.add (best);
+
+        const juce::String tag = "band " + cands[best].family + juce::String (cands[best].n)
+                               + (fellThrough ? " (first-free, none reached target)" : "") + ": ";
+        auto bandParams = cands[best].group.getProperty ("params", juce::var());
+        if (auto* o = bv.getDynamicObject())
+            for (auto& kv : o->getProperties())
+            {
+                const juce::String bk = kv.name.toString();
+                if (bk == "family") continue;
+                auto e = bandParams.getProperty (bk, juce::var());
+                if (! e.isObject())
+                {
+                    ApplyResult r; r.semantic = bk; r.note = tag + "band has no " + bk + " control";
+                    results.add (r); continue;
+                }
+                auto res = applyOne (plugin, bk, e, kv.value);
+                res.note = tag + res.note;
+                results.add (res);
+            }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Apply all semantic settings for one plugin slot.
 //   map      : the plugin's map object (from maps/<fp>.json), the whole thing
 //   settings : EchoJay's structured settings, e.g. { "ratio":"4:1", "attack_ms":30 }
-// Returns one ApplyResult per requested setting.
+// Returns one ApplyResult per requested setting. Band-class semantics that the
+// flat map cannot serve (a suppressed freq_hz/gain_db on a multiband plugin)
+// are diverted to the band matcher instead of a flat decline; an explicit
+// settings.bands array always goes to the matcher.
 // ---------------------------------------------------------------------------
 inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin,
                                                const juce::var& map,
@@ -623,10 +807,36 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
     auto* settingsObj = settings.getDynamicObject();
     if (settingsObj == nullptr) return results;
 
+    // A grouped multiband EQ: any freq/gain/q in the request is a BAND move and
+    // the whole pair must go to the band matcher as a unit. Otherwise routing
+    // each key by its own flat-usability splits one move across two controls -
+    // bx_digital's suppressed gain lands on a band while its flat freq_hz (the
+    // stray "Dynamic EQ Frequency") steals the frequency half. A stray flat
+    // control must never take half a band move.
+    bool mapHasEqBands = false;
+    if (auto* groups = map.getProperty ("groups", juce::var()).getArray())
+        for (auto& gv : *groups)
+            if (groupIsEqBand (gv.getProperty ("family", "").toString(), gv))
+            { mapHasEqBands = true; break; }
+
+    juce::DynamicObject::Ptr synthBand;   // band-class keys routed to the matcher
     for (auto& kv : settingsObj->getProperties())
     {
         const juce::String semantic = kv.name.toString();
+        if (semantic == "bands") continue; // handled after the flat pass
+
         auto mapEntry = mapParams.getProperty (semantic, juce::var());
+        const bool flatUsable = mapEntry.isObject() && usableParamEntry (mapEntry);
+        const bool bandClass  = (semantic == "freq_hz" || semantic == "gain_db" || semantic == "q");
+        if (bandClass && (mapHasEqBands || ! flatUsable))
+        {
+            // EQ-band map, or a suppressed/absent flat entry: divert to the
+            // matcher as one coherent band request. On a grouped EQ this fires
+            // even when a flat entry exists, so freq and gain stay together.
+            if (synthBand == nullptr) synthBand = new juce::DynamicObject();
+            synthBand->setProperty (semantic, kv.value);
+            continue;
+        }
         if (! mapEntry.isObject())
         {
             ApplyResult r; r.semantic = semantic;
@@ -635,6 +845,15 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
             continue;
         }
         results.add (applyOne (plugin, semantic, mapEntry, kv.value));
+    }
+
+    auto bandsVar = settings.getProperty ("bands", juce::var());
+    if (bandsVar.isArray())
+        applyBands (plugin, map, bandsVar, results);
+    else if (synthBand != nullptr)
+    {
+        juce::Array<juce::var> one; one.add (juce::var (synthBand.get()));
+        applyBands (plugin, map, juce::var (one), results);
     }
     return results;
 }

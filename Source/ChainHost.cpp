@@ -15,6 +15,10 @@
 
 // Defined later in this file (used by the shared name resolution above it)
 static juce::String normalizeName(const juce::String& raw);
+// Trailing all-digits MODEL number (the token normalizeName strips as a
+// "version"), or empty. Lets resolveByName keep "AMEK EQ 250" and "AMEK EQ
+// 200" distinct while still tolerating genuine version suffixes.
+static juce::String trailingModelNumber(const juce::String& raw);
 
 // ---------------------------------------------------------------------------
 // File path helpers
@@ -934,6 +938,11 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
         op.on       = (bool)eo->getProperty("on");
         op.name     = eo->getProperty("name").toString().trim();
         op.settings = eo->getProperty("settings").toString().trim();
+        // Machine-readable dial values on add/replace (28 Jul 2026, surgical
+        // EQ): the server sends the same settings_structured object a chain
+        // entry carries. Read as a raw var; setSlotStructuredSettings ignores
+        // a void/non-object, so ops without it behave exactly as before.
+        op.settingsStructured = eo->getProperty("settings_structured");
         if (op.op.isNotEmpty()) out.push_back(std::move(op));
     }
     return out;
@@ -1239,6 +1248,15 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             int newCur = getNumSlots() - 1;   // appended by completeLoad
             if (theOp.settings.isNotEmpty())
                 setSlotSettings(newCur, theOp.settings);
+            // Dial the placed slot through the ONE map-gated apply pipeline, the
+            // same one loadChainFromJson uses on the build path. Until now the
+            // edit path only wrote the prose display string (setSlotSettings)
+            // and left every parameter to hand-dialing, so an add/replace that
+            // carried settings_structured silently dropped it. Pending settings
+            // live on the slot object and survive the walkSlotTo renumber below
+            // (storeParamMaps re-scans all slots when the map arrives).
+            if (theOp.settingsStructured.getDynamicObject() != nullptr)
+                setSlotStructuredSettings(newCur, theOp.settingsStructured);
 
             if (theOp.op == "add")
             {
@@ -1508,6 +1526,11 @@ void ChainHost::storeParamMaps(const juce::var& mapsObj)
         const auto fp = p.name.toString();
         if (!p.value.isVoid() && p.value.getDynamicObject() != nullptr)
         {
+            // TTL: the server just confirmed this fp, so stamp it fresh BEFORE
+            // the rev-compare below. An unchanged-rev map must still lose its
+            // stale flag, otherwise the rev `continue` would leave the old
+            // timestamp and applyStructuredIfReady would refetch it forever.
+            fpFetchedAt_[fp] = juce::Time::currentTimeMillis();
             // Rev compare: overwrite only when the map is new or its content
             // revision differs (a cached map without a rev predates the
             // invalidation scheme and always counts as stale once). This is
@@ -1630,6 +1653,48 @@ void ChainHost::requestMapPrefetch()
     }
 }
 
+// TTL-on-use tuning. 6h staleness bound: shorter than a working session so a
+// server-side correction lands the same day it ships, longer than repeated use
+// within one task so a plugin dialled again and again refetches at most once
+// per window. The once-per-session revalidation (requestMapPrefetch) refreshes
+// everything at open, so this TTL is the safety bound for long sessions and the
+// pre-revalidation window, not the primary refresh. kStaleRefetchMs is the
+// brief block: exceed it and the slot falls back to hand-dial, never to the
+// stale map.
+static constexpr juce::int64 kMapTtlMs       = 6LL * 60 * 60 * 1000;
+static constexpr int         kStaleRefetchMs = 1500;
+
+bool ChainHost::mapFresh(const juce::String& fp) const
+{
+    auto it = fpFetchedAt_.find(fp);
+    if (it == fpFetchedAt_.end()) return false;   // never confirmed -> stale
+    return (juce::Time::currentTimeMillis() - it->second) <= kMapTtlMs;
+}
+
+// Refetch a stale cached fp and, if the answer does not arrive within the brief
+// window, fall back to HAND-DIAL for any slot still waiting - never to the
+// stale map. A returning fetch (storeParamMaps) re-stamps the fp fresh and the
+// re-eval loop dials it; a fetch that fails or hangs leaves the slot un-dialled.
+void ChainHost::refetchStale(const juce::String& fp)
+{
+    if (fp.isEmpty() || pendingMapFps_.contains(fp) || !onNeedParamMaps) return;
+    pendingMapFps_.addIfNotAlreadyThere(fp);
+    onNeedParamMaps(juce::StringArray(fp));
+    std::weak_ptr<int> alive = life_;
+    juce::Timer::callAfterDelay(kStaleRefetchMs, [this, alive, fp]()
+    {
+        if (alive.expired()) return;                 // ChainHost gone
+        if (!pendingMapFps_.contains(fp)) return;    // fetch already answered
+        pendingMapFps_.removeString(fp);             // stop waiting on it
+        bool changed = false;
+        for (auto& s : slots_)
+            if (s.fp == fp && !s.structuredApplied
+                && s.structuredSettings.getDynamicObject() != nullptr)
+            { s.dialStatus = DialStatus::noMap; changed = true; }
+        if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
+    });
+}
+
 void ChainHost::applyStructuredIfReady(int slotIndex)
 {
     if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return;
@@ -1661,6 +1726,32 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
                                                           : mapFp.substring(0, 12))
                        + ", apply refused").toRawUTF8());
         s.dialStatus = DialStatus::unusableMap;
+        return;
+    }
+
+    // Dialable-flag visibility: under the strict default (absent -> not
+    // dialable) a wiring bug and "no flag yet" both read false, so log the
+    // flag's ACTUAL state on the map this slot holds. "true"/"false" proves the
+    // server flag arrived and is readable; "ABSENT" means an old cache or a
+    // transport/parse drop - the two now look different in the log.
+    {
+        auto dv = it->second.getProperty("dialable", juce::var());
+        EchoJay_NSLog(("EJDialable: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                       + "\") fp=" + s.fp.substring(0, 12)
+                       + " dialable=" + (dv.isBool() ? (((bool) dv) ? "true" : "false") : "ABSENT")
+                       + " category=" + it->second.getProperty("category", juce::var()).toString()
+                       + " fresh=" + (mapFresh(s.fp) ? "y" : "n")).toRawUTF8());
+    }
+
+    // TTL-on-use: a cached map older than the staleness bound may be a since-
+    // corrected map (the AMEK suppression class that wrote Mono Maker). Do NOT
+    // apply it. Refetch and block briefly; refetchStale falls back to hand-dial
+    // on timeout rather than to the stale map. A confirming fetch re-stamps the
+    // fp and the storeParamMaps re-eval dials it.
+    if (!mapFresh(s.fp))
+    {
+        refetchStale(s.fp);
+        s.dialStatus = DialStatus::pending;
         return;
     }
 
@@ -1733,6 +1824,9 @@ void ChainHost::loadParamMapsFromDisk()
     if (auto* att = root.getProperty("fpAttempted", juce::var()).getArray())
         for (auto& v : *att)
             fpAttempted_.addIfNotAlreadyThere(v.toString());
+    if (auto* fa = root.getProperty("fpFetchedAt", juce::var()).getDynamicObject())
+        for (auto& p : fa->getProperties())
+            fpFetchedAt_[p.name.toString()] = (juce::int64)(double) p.value;
     EchoJay_NSLog(("EJParamMaps: cache loaded, " + juce::String((int)identityToFp_.size())
                    + " identities, " + juce::String((int)paramMaps_.size()) + " map(s), "
                    + juce::String(fpAttempted_.size()) + " fp skip marker(s)").toRawUTF8());
@@ -1746,10 +1840,13 @@ void ChainHost::saveParamMapsToDisk()
     for (auto& kv : paramMaps_) maps->setProperty(juce::Identifier(kv.first), kv.second);
     juce::var att;
     for (auto& s : fpAttempted_) att.append(s);
+    juce::DynamicObject::Ptr fetchedAt = new juce::DynamicObject();
+    for (auto& kv : fpFetchedAt_) fetchedAt->setProperty(juce::Identifier(kv.first), (double) kv.second);
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
     root->setProperty("identityToFp", juce::var(idx.get()));
     root->setProperty("maps", juce::var(maps.get()));
     root->setProperty("fpAttempted", att);
+    root->setProperty("fpFetchedAt", juce::var(fetchedAt.get()));
     getParamMapsCacheFile().replaceWithText(juce::JSON::toString(juce::var(root.get())));
 }
 
@@ -2094,7 +2191,13 @@ bool ChainHost::namesMatchLoose(const juce::String& incoming,
     if (in.equalsIgnoreCase(en)) return true;
     auto inBase = stripParenthetical(in);
     if (inBase.equalsIgnoreCase(en)) return true;
-    return normalizeName(inBase) == normalizeName(stripParenthetical(en));
+    auto enBase = stripParenthetical(en);
+    if (normalizeName(inBase) != normalizeName(enBase)) return false;
+    // Model-number guard (same as resolveByName): two names that share the
+    // stripped stem but carry DIFFERENT trailing numbers are different models
+    // ("AMEK EQ 250" vs "AMEK EQ 200"), not a loose match.
+    auto ni = trailingModelNumber(inBase), ne = trailingModelNumber(enBase);
+    return ! (ni.isNotEmpty() && ne.isNotEmpty() && ni != ne);
 }
 
 juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
@@ -2145,11 +2248,22 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
         return baseHits[0];
     }
 
-    // Normalised (case/punctuation/version-token tolerant)
+    // Normalised (case/punctuation/version-token tolerant). Model-number guard:
+    // normalizeName strips a trailing number as a version, which collapses
+    // "AMEK EQ 250" and "AMEK EQ 200" to the same stem. When the request AND
+    // the candidate each carry a trailing number and they DIFFER, the number is
+    // a model, not a version, so it is not a match. A number on only one side
+    // (e.g. "Saturn 2" vs a plugin named "Saturn") still tolerates the strip.
     auto keyIn = normalizeName(base);
+    auto numIn = trailingModelNumber(base);
     for (auto& d : cands)
         if (normalizeName(stripParenthetical(d.name)) == keyIn)
-        { logMatch("normalised", d); return d; }
+        {
+            auto numCand = trailingModelNumber(stripParenthetical(d.name));
+            if (numIn.isNotEmpty() && numCand.isNotEmpty() && numIn != numCand)
+                continue;
+            logMatch("normalised", d); return d;
+        }
 
     if (matchLogOut)
     {
@@ -2248,6 +2362,24 @@ static juce::String normalizeName(const juce::String& raw)
         if (isVersion) parts.remove(parts.size() - 1);
     }
     return parts.joinIntoString(" ").trim();
+}
+
+// The trailing all-digits token normalizeName would strip, or empty. Mirrors
+// that tokenization so the number it returns is exactly the one stripped. Only
+// bare digits count as a model (v2 / II / III stay version suffixes); those are
+// still stripped and never guarded.
+static juce::String trailingModelNumber(const juce::String& raw)
+{
+    juce::String s = raw.toLowerCase().trim();
+    s = s.replace("-", " ").replace("_", " ").replace(".", " ");
+    while (s.contains("  ")) s = s.replace("  ", " ");
+    juce::StringArray parts = juce::StringArray::fromTokens(s.trim(), " ", "");
+    if (parts.size() >= 2)
+    {
+        const auto& last = parts[parts.size() - 1];
+        if (last.containsOnly("0123456789")) return last;
+    }
+    return {};
 }
 
 void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
@@ -2404,6 +2536,10 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
     {
         juce::String matchLog;
         auto d = resolveByName(name, recommendableFormat_, &matchLog);
+        // Log which stage resolved (or failed) so a future mis-resolution -
+        // like "AMEK EQ 250" landing on "AMEK EQ 200" - is diagnosable from
+        // the unified log instead of invisible.
+        EchoJay_NSLog(("EJChain: resolve \"" + name + "\" -> " + matchLog).toRawUTF8());
         if (d.name.isNotEmpty())
         {
             loadPluginAsync(preferInlineHostableDesc(d), std::move(callback));
