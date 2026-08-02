@@ -2054,8 +2054,29 @@ public:
                     if (cp[i]->getName (64).containsIgnoreCase (sub) && cp[i]->isAutomatable())
                         out.add (i);
                 return out; };
+            // PINNED BY INDEX, the pattern the subject-by-id fix established.
+            // bx_saturator V2 is an M/S multiband: five Drive controls (Master,
+            // Mid Lo/Hi, Side Lo/Hi) plus four Drive Compensation, so every
+            // name pattern is ambiguous and the rule correctly declines. Rather
+            // than invent an M/S convention on one subject, pin the global
+            // control and print it before use.
             int iDrive = -1;
-            for (auto* n : { "Drive", "Saturation", "Amount", "Gain" })
+            {
+                const int pinned = 34;      // "Master Drive"
+                if (juce::isPositiveAndBelow (pinned, cp.size())
+                     && cp[pinned]->getName (64).containsIgnoreCase ("Master Drive"))
+                {
+                    iDrive = pinned;
+                    say ("  drive PINNED by index: [" + juce::String (iDrive) + "] "
+                         + cp[iDrive]->getName (32) + " (five Drive controls exist on this M/S "
+                           "multiband; the ambiguity rule declines to pick, so the global one is "
+                           "named explicitly)");
+                }
+                else
+                    say ("  pinned index 34 is not 'Master Drive' on this build -- refusing to use it");
+            }
+            for (auto* n : (iDrive >= 0 ? std::initializer_list<const char*>{}
+                                        : std::initializer_list<const char*>{ "Drive", "Saturation", "Amount" }))
             { auto c = candidates2 (n);
               if (c.size() == 1) { iDrive = c[0];
                   say ("  drive target: [" + juce::String (iDrive) + "] " + cp[iDrive]->getName (32));
@@ -2063,7 +2084,14 @@ public:
               if (c.size() > 1)
                   say ("  pattern '" + juce::String (n) + "' AMBIGUOUS (" + juce::String (c.size())
                        + " matches) -- declining to pick"); }
-            if (iDrive < 0) { say ("  no unambiguous drive parameter"); quitNow(); return; }
+            if (iDrive < 0)
+            {
+                juce::StringArray all;
+                for (int i = 0; i < cp.size(); ++i)
+                    all.add ("[" + juce::String (i) + "]" + cp[i]->getName (22));
+                say ("  no unambiguous drive parameter. Params: " + all.joinIntoString (" "));
+                quitNow(); return;
+            }
 
             auto swD = sweepOneIndex (*ci, iDrive, watchdog, loadedId);
             auto nfD = [] (const juce::Array<juce::Array<float>>& a, double v) {
