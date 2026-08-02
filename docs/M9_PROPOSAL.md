@@ -368,6 +368,22 @@ of six false contradicts.
 
 ## The Waves dead-parameter census (run before build, as ordered)
 
+> **CAVEAT ADDED 2026-08-02, PENDING RE-RUN.** This census was run through the
+> OLD `writeConfirm`, which serviced the macOS runloop only when a plugin's
+> property plane was slow enough to trip its wait loop. On fast-property-plane
+> subjects it dispatched nothing at all, so a written parameter could never
+> reach the DSP (`juce_MessageManager_mac.mm:379`; fixed in `e428ee4` by an
+> unconditional `runDispatchLoopUntil(1)`). Most of the ten products censused
+> are fast-property-plane.
+>
+> **A render-blind write is indistinguishable from a dead index by this
+> census's own liveness test**, and it pushes the rate the WRONG way — every
+> such write reads as deaf. The measured 0.8% dead-index rate is therefore an
+> UPPER bound that may be substantially inflated, and it is the number that
+> decided the conflict card is an edge case rather than the primary
+> interface. **That design decision is not safe until the census is re-run
+> under the fix.** No conclusion below should be cited until then.
+
 Ten products, full automatable parameter surface, burst stimulus (so
 envelope-shaped parameters can express), write-confirm via pumped
 `getValue`, liveness = max sample difference > 1e-5 between aligned
@@ -737,6 +753,13 @@ cases 1 and 3 are consumer-side defects M9 arms but cannot fire.**
 ---
 
 ## Future work, recorded not built: the over-claiming-scale defect class
+
+> **Same caveat, lesser exposure (2026-08-02).** Measured through the old
+> `writeConfirm` too, but far less exposed: two independent estimators sharing
+> no machinery agreed (44% and 47%), and gain reduction is a DIFFERENCE of two
+> readings taken in the same convention, so a systematically missing write
+> would have to affect both estimators identically to preserve the agreement.
+> Re-run alongside the census, but the finding is expected to hold.
 
 **A third defect category, alongside dead indices and mode suppression.**
 Measured on API-2500 (2026-08-02): its threshold ladder delivers **~45% of
