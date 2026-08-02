@@ -479,6 +479,42 @@ struct Probe
         return f;
     }
 
+    /** GATE feature (bottom-of-curve): the input level at which output
+        DEPARTS UNITY GOING DOWN, walked from the loudest step downward. The
+        top-of-curve plateau estimator is structurally wrong for this
+        category -- a gate is open at the top whatever its threshold, which
+        is why the plateau read a constant -7.01 dB across every setting.
+
+        Both axes are dBFS PEAK after the convention audit, so the unity
+        region is departure ~= 0 and needs no offset. Returns the highest
+        input level whose departure first reaches departureDb, or -1000 when
+        the curve never departs (a gate that never closes inside the
+        stimulus) -- stated as undefined, never fitted.
+    */
+    static double gateOpenPointDb (const juce::Array<double>& outDb,
+                                   double departureDb = 3.0)
+    {
+        for (int i = outDb.size() - 1; i >= 0; --i)
+        {
+            const double in = kStepBaseDb + 2.0 * i;
+            if (in - outDb[i] >= departureDb)
+                return in;
+        }
+        return -1000.0;
+    }
+
+    /** Gain reduction at the loudest step: input minus output, both peak.
+        Near zero means the stimulus never drove the processor, so there was
+        no plateau to read -- the distinction the limiter's 4.82 dB point
+        needs before anything is built around it.
+    */
+    static double grAtTopDb (const juce::Array<double>& outDb)
+    {
+        if (outDb.isEmpty()) return 0.0;
+        const double in = kStepBaseDb + 2.0 * (outDb.size() - 1);
+        return in - outDb.getLast();
+    }
+
     /** Burst train over a QUIET BED: 400 ms at -6 dBFS alternating with
         600 ms at -30 dBFS (NOT silence), 997 Hz, 4 cycles. Returns the output
         envelope in dB at kEnvWindow resolution.

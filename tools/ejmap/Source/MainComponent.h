@@ -1261,7 +1261,8 @@ public:
                      "burst train's bed (-30 dBFS) is used only for envelope work.");
 
             // EFFECT-BASED walk: 4 ladder points, plateau (primary) + knee (corroboration)
-            say ("     requested | landed | plateau out dBFS PEAK | knee dBFS PEAK | plateau err | knee err");
+            say (isLim ? "     requested | landed | plateau out dBFS PEAK | knee dBFS PEAK | plateau err | knee err"
+                       : "     requested | landed | gate open point dBFS PEAK | knee dBFS PEAK | open err | knee err");
             const double frac[] = { 0.15, 0.4, 0.65, 0.9 };
             juce::Array<double> plErr, knErr;
             for (double f : frac)
@@ -1271,9 +1272,30 @@ public:
                 P::writeConfirm (*cp[iCtl], nf3 (sw.anchors, want));
                 const double landed = P::predictedLanding (sw.anchors, want);
                 auto c = cap();
-                double plat = 0; int pn = 0;
-                for (int i = c.size() - 5; i < c.size(); ++i) { plat += c[i]; ++pn; }
-                plat = pn > 0 ? plat / pn : 0.0;
+                double plat = 0;
+                if (isLim)
+                {
+                    int pn = 0;
+                    for (int i = c.size() - 5; i < c.size(); ++i) { plat += c[i]; ++pn; }
+                    plat = pn > 0 ? plat / pn : 0.0;
+                    // ITEM 2: was there a plateau to read at all?
+                    const double gr = P::grAtTopDb (c);
+                    say ("       [ceiling " + juce::String (landed, 2) + "] gain reduction at the "
+                         "loudest step: " + juce::String (gr, 2) + " dB peak"
+                         + (gr < 1.0 ? "  <- NEAR ZERO: the stimulus never drove the limiter, so "
+                                       "there is NO plateau here; the cause is stimulus headroom, "
+                                       "not true-peak behaviour"
+                                     : "  <- the limiter is working, a plateau exists"));
+                }
+                else
+                {
+                    // BOTTOM-of-curve: where output departs unity going down.
+                    plat = P::gateOpenPointDb (c, 3.0);
+                    if (plat <= -999.0)
+                        say ("       [threshold " + juce::String (landed, 2) + "] the curve NEVER "
+                             "departs unity by 3 dB inside the stimulus -- gate open point UNDEFINED, "
+                             "not fitted");
+                }
                 auto kf = P::curveFeaturesTwoSegment (c);
                 const double pe = std::abs (plat - landed), ke = kf.kneeFound ? std::abs (kf.kneeInDb - landed) : -1;
                 plErr.add (pe); if (ke >= 0) knErr.add (ke);
