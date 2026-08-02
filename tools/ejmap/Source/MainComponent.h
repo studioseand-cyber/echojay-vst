@@ -1178,6 +1178,83 @@ public:
         auto stakeFile = ledger.getRoot().getChildFile ("probe-inflight.json");
         auto stateFile = ledger.getRoot().getChildFile ("probe-state-" + currentFp + ".bin");
 
+        // ---- planes: WHY is the render blind to writes the property plane
+        //      confirmed? Three orderings, one of them will land ------------
+        if (mode == "planes")
+        {
+            auto census4 = echojay::auregistry::buildCensus();
+            juce::PluginDescription pd4;
+            for (const auto& t : census4.targets)
+            { auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+              if (d.name.containsIgnoreCase ("SSL X-Gate")) { pd4 = d; break; } }
+            if (pd4.fileOrIdentifier.isEmpty()) { say ("PLANES: no subject"); quitNow(); return; }
+            host.unload();
+            loadedName = pd4.name; loadedId = pd4.fileOrIdentifier; loadedDesc = pd4;
+            if (host.load (pd4, watchdog).outcome != LoadOutcome::ok)
+            { say ("PLANES: load failed"); quitNow(); return; }
+            auto* ci = host.getInstance();
+            auto cp = ci->getParameters();
+            int iRel = -1;
+            for (int i = 0; i < cp.size(); ++i)
+                if (cp[i]->getName (64).containsIgnoreCase ("Release")) { iRel = i; break; }
+            auto swRel = sweepOneIndex (*ci, iRel, watchdog, loadedId);
+            auto toNorm = [] (const juce::Array<juce::Array<float>>& a, double v) {
+                auto e = echojay::dominantMonotonicTable (a);
+                return echojay::interpolateAnchors (e.table, (float) v); };
+            const float nLo = toNorm (swRel.anchors, swRel.anchors.getFirst()[0]);
+            const float nHi = toNorm (swRel.anchors, swRel.anchors.getLast()[0]);
+            say ("PLANES | " + pd4.name + " | moving [" + juce::String (iRel) + "] "
+                 + cp[iRel]->getName (32) + " " + juce::String (swRel.anchors.getFirst()[0], 1)
+                 + " -> " + juce::String (swRel.anchors.getLast()[0], 1));
+
+            auto rowsFor = [&] (int variant, float norm)
+            {
+                // variant 0: write BEFORE pause (what the suites do today)
+                // variant 1: write AFTER pause, inside the paused window
+                // variant 2: write before pause, message loop PUMPED during render
+                if (variant == 0) P::writeConfirm (*cp[norm == nLo ? iRel : iRel], norm);
+                host.pausePumpForMutation();
+                if (variant == 1)
+                {
+                    cp[iRel]->setValueNotifyingHost (norm);
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+                }
+                juce::Array<double> v;
+                if (variant == 2)
+                {
+                    // render in slices, pumping between them
+                    for (int slice = 0; slice < 3; ++slice)
+                    {
+                        auto part = P::levelSweptBursts (*ci, 0.6, 0.0 - slice * 12.0, 4.0, 3);
+                        for (auto x : part) v.add (x);
+                        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+                    }
+                }
+                else
+                    v = P::levelSweptBursts (*ci, 0.6, 0.0, 4.0, 9);
+                host.resumePumpAfterMutation();
+                return v;
+            };
+            const char* names[] = { "write BEFORE pause (current)",
+                                    "write AFTER pause (inside paused window)",
+                                    "write before pause, loop PUMPED during render" };
+            for (int variant = 0; variant < 3; ++variant)
+            {
+                if (variant == 2) P::writeConfirm (*cp[iRel], nLo);
+                auto a = rowsFor (variant, nLo);
+                if (variant == 2) P::writeConfirm (*cp[iRel], nHi);
+                auto b = rowsFor (variant, nHi);
+                double worst = 0; juce::String d;
+                for (int i = 0; i < a.size() && i < b.size(); ++i)
+                { const double x = b[i] - a[i]; worst = juce::jmax (worst, std::abs (x));
+                  d << " " << juce::String (x, 1); }
+                say ("  variant " + juce::String (variant) + " (" + names[variant] + "): worst |delta| "
+                     + juce::String (worst, 2) + " dB, per-burst:" + d
+                     + (worst > 0.5 ? "   <- LANDS" : "   <- blind"));
+            }
+            std::cout << "PLANES: DONE" << std::endl; quitNow(); return;
+        }
+
         // ---- limgate: LIMITER and GATE off the compressor stimuli --------
         if (mode == "limiter" || mode == "gate")
         {
