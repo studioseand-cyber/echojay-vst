@@ -515,6 +515,80 @@ struct Probe
         return in - outDb.getLast();
     }
 
+    /** LEVEL-SWEPT BURST TRAIN (gate stimulus). A gate threshold is an EVENT
+        feature, not a level-curve feature: a 300 ms held tone descending
+        through steps lets the gate open at the loudest step and coast through
+        hold and release, so a static curve cannot express the threshold no
+        matter how the estimator walks it. This descends in DISCRETE BURSTS
+        with silence between them long enough that the gate has certainly
+        closed before the next burst arrives.
+
+        gapSeconds is the caller's, and must exceed the plugin's own maximum
+        release; the caller reads that from the release parameter's ladder
+        rather than guessing. Returns one output PEAK level per burst, in the
+        same dBFS PEAK convention as everything else.
+    */
+    static juce::Array<double> levelSweptBursts (juce::AudioPluginInstance& p,
+                                                 double gapSeconds,
+                                                 double topDb = 0.0,
+                                                 double stepDb = 4.0,
+                                                 int nBursts = 21)
+    {
+        const int chans = juce::jmax (2, p.getTotalNumInputChannels(),
+                                         p.getTotalNumOutputChannels());
+        juce::AudioBuffer<float> io (chans, kBlock);
+        juce::MidiBuffer midi;
+        double phase = 0.0;
+        const double step = juce::MathConstants<double>::twoPi * 997.0 / kSampleRate;
+        juce::Array<double> out;
+
+        for (int k = 0; k < (int) (0.5 * kSampleRate) / kBlock; ++k)
+        { io.clear(); midi.clear(); p.processBlock (io, midi); }
+
+        const int onBlocks  = (int) (0.15 * kSampleRate) / kBlock;
+        const int gapBlocks = (int) (gapSeconds * kSampleRate) / kBlock;
+        for (int b = 0; b < nBursts; ++b)
+        {
+            const double amp = std::pow (10.0, (topDb - stepDb * b) / 20.0);
+            double peak = 0;
+            for (int k = 0; k < onBlocks; ++k)
+            {
+                for (int n = 0; n < kBlock; ++n)
+                {
+                    const float v = (float) (amp * std::sin (phase));
+                    for (int ch = 0; ch < chans; ++ch) io.setSample (ch, n, v);
+                    phase += step;
+                    if (phase > juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
+                }
+                midi.clear(); p.processBlock (io, midi);
+                // read the LAST third of the burst: past attack, before release
+                if (k >= onBlocks * 2 / 3)
+                    for (int n = 0; n < kBlock; ++n)
+                        peak = juce::jmax (peak, (double) std::abs (io.getSample (0, n)));
+            }
+            out.add (20.0 * std::log10 (peak + 1e-12));
+            for (int k = 0; k < gapBlocks; ++k)
+            { io.clear(); midi.clear(); p.processBlock (io, midi); }
+        }
+        return out;
+    }
+
+    /** Gate threshold by effect: the LOUDEST burst that gets attenuated by
+        more than departureDb. Returns -1000 when no burst is attenuated
+        (stated undefined, never fitted).
+    */
+    static double loudestAttenuatedBurstDb (const juce::Array<double>& outPeaks,
+                                            double topDb, double stepDb,
+                                            double departureDb = 3.0)
+    {
+        for (int b = 0; b < outPeaks.size(); ++b)
+        {
+            const double in = topDb - stepDb * b;
+            if (in - outPeaks[b] >= departureDb) return in;
+        }
+        return -1000.0;
+    }
+
     /** Burst train over a QUIET BED: 400 ms at -6 dBFS alternating with
         600 ms at -30 dBFS (NOT silence), 997 Hz, 4 cycles. Returns the output
         envelope in dB at kEnvWindow resolution.

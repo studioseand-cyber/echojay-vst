@@ -1257,6 +1257,29 @@ public:
             if (P::displayIsModeToken (cp[iCtl]->getCurrentValueAsText()))
             { say ("  INCONCLUSIVE: " + P::modeTokenReason (cp[iCtl]->getCurrentValueAsText()));
               std::cout << (isLim ? "LIMITER" : "GATE") << ": DONE" << std::endl; quitNow(); return; }
+            // The burst gap must exceed this plugin's OWN maximum release,
+            // read from its release ladder rather than guessed.
+            double gateGapS = 1.5;
+            if (! isLim)
+            {
+                auto relC = candidates ("Release");
+                if (relC.size() == 1)
+                {
+                    auto swR2 = sweepOneIndex (*ci, relC[0], watchdog, loadedId);
+                    if (swR2.anchors.size() > 1)
+                    {
+                        const double maxRel = juce::jmax ((double) swR2.anchors.getFirst()[0],
+                                                          (double) swR2.anchors.getLast()[0]);
+                        gateGapS = juce::jmax (1.5, 3.0 * (maxRel > 50 ? maxRel / 1000.0 : maxRel));
+                        say ("  burst gap " + juce::String (gateGapS, 2) + " s = 3x this plugin's own "
+                             "max release (" + juce::String (maxRel, 2) + ", ladder from ["
+                             + juce::String (relC[0]) + "] " + cp[relC[0]]->getName (32) + ")");
+                    }
+                }
+                else
+                    say ("  burst gap 1.50 s (no unambiguous Release parameter to read a max from: "
+                         + juce::String (relC.size()) + " candidates)");
+            }
             SweepOutcome sw;
             {
                 Watchdog::Scope g (watchdog, "probe_gate_sweep", loadedId, pd.name,
@@ -1327,12 +1350,20 @@ public:
                 }
                 else
                 {
-                    // BOTTOM-of-curve: where output departs unity going down.
-                    plat = P::gateOpenPointDb (c, 3.0);
+                    // LEVEL-SWEPT BURSTS: a gate threshold is an EVENT feature.
+                    host.pausePumpForMutation();
+                    auto pk = P::levelSweptBursts (*ci, gateGapS, 0.0, 4.0, 21);
+                    host.resumePumpAfterMutation();
+                    plat = P::loudestAttenuatedBurstDb (pk, 0.0, 4.0, 3.0);
+                    juce::String pkLine;
+                    for (int b = 0; b < pk.size(); b += 4)
+                        pkLine << " " << juce::String (0.0 - 4.0 * b, 0) << "->"
+                               << juce::String (pk[b], 1);
+                    say ("       burst peaks (in->out, every 4th):" + pkLine);
                     if (plat <= -999.0)
-                        say ("       [threshold " + juce::String (landed, 2) + "] the curve NEVER "
-                             "departs unity by 3 dB inside the stimulus -- gate open point UNDEFINED, "
-                             "not fitted");
+                        say ("       [threshold " + juce::String (landed, 2) + "] NO burst "
+                             "is attenuated by 3 dB anywhere in the sweep -- gate threshold "
+                             "UNDEFINED, not fitted");
                 }
                 auto kf = P::curveFeaturesTwoSegment (c);
                 const double pe = std::abs (plat - landed), ke = kf.kneeFound ? std::abs (kf.kneeInDb - landed) : -1;
