@@ -7090,9 +7090,6 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
                                          : Card::bypAccent).withAlpha(0.9f));
                 g.drawRoundedRectangle(rr.toFloat().reduced(0.5f), rad, 1.2f);
             }
-            g.setColour((r.bypassed ? Card::nameBypassed : Card::nameOn)
-                            .withMultipliedAlpha(dim));
-            g.setFont(juce::Font(juce::FontOptions(9.5f)));
             auto nameArea = rr.reduced(4, 0);
             // B and X in the space the visual pass left clear, the Chain
             // card's controls at mixer scale. Wide only BY CONSTRUCTION:
@@ -7119,9 +7116,19 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
                 g.drawText(juce::String(Card::bypCaption).substring(0, 3),
                            nameArea.removeFromRight(22),
                            juce::Justification::centredRight);
-                g.setColour(Card::nameBypassed.withMultipliedAlpha(dim));
-                g.setFont(juce::Font(juce::FontOptions(9.0f)));
             }
+            // EVERY DRAW OWNS ITS COLOUR, set immediately before it. The
+            // name used to take its colour from a setColour several draws
+            // earlier, and the B/X controls landed in between: the X leaves
+            // the danger red set, so an unbypassed plugin's name inherited
+            // it and every healthy block read as faulted. Bypassed blocks
+            // were accidentally right, because their caption happened to
+            // restore a name colour on the way past. Coral and this red are
+            // for faults and destructive controls; a loaded plugin is
+            // neither.
+            g.setColour((r.bypassed ? Card::nameBypassed : Card::nameOn)
+                            .withMultipliedAlpha(dim));
+            g.setFont(juce::Font(juce::FontOptions(9.5f)));
             g.drawText(r.name, nameArea,
                        juce::Justification::centredLeft, true);   // ellipsise
         }
