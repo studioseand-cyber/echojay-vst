@@ -1243,10 +1243,7 @@ public:
             auto n1 = cap(), n2 = cap();
             double sgPlateau = 0, sgKnee2 = 0;
             {
-                auto topOf = [] (const juce::Array<double>& c) {
-                    double m = 0; int n = 0;
-                    for (int i = c.size() - 5; i < c.size(); ++i) { m += c[i]; ++n; }
-                    return n > 0 ? m / n : 0.0; };
+                auto topOf = [] (const juce::Array<double>& c) { return c.getLast(); };
                 sgPlateau = std::abs (topOf (n1) - topOf (n2));
                 auto k1 = P::curveFeaturesTwoSegment (n1), k2 = P::curveFeaturesTwoSegment (n2);
                 sgKnee2 = (k1.kneeFound && k2.kneeFound) ? std::abs (k1.kneeInDb - k2.kneeInDb) : -1;
@@ -1275,9 +1272,12 @@ public:
                 double plat = 0;
                 if (isLim)
                 {
-                    int pn = 0;
-                    for (int i = c.size() - 5; i < c.size(); ++i) { plat += c[i]; ++pn; }
-                    plat = pn > 0 ? plat / pn : 0.0;
+                    // TOP STEP ONLY. The five-step mean was contaminated: as the
+                    // ceiling rises, steps BELOW it pass through unlimited and
+                    // enter the average, which is exactly the measured error
+                    // sequence 3.00 / 3.01 / 3.01 / 4.82. GR tracks |ceiling| to
+                    // 0.02 dB, so the limiter is clean and the estimator was not.
+                    plat = c.getLast();
                     // ITEM 2: was there a plateau to read at all?
                     const double gr = P::grAtTopDb (c);
                     say ("       [ceiling " + juce::String (landed, 2) + "] gain reduction at the "
