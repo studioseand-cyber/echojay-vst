@@ -1280,6 +1280,57 @@ public:
                     say ("  burst gap 1.50 s (no unambiguous Release parameter to read a max from: "
                          + juce::String (relC.size()) + " candidates)");
             }
+            // ITEM 1: is the BURST PATH parameter-sensitive at all? Four
+            // byte-identical rows are either a clean null or an A/A, and
+            // getValue only proves the PROPERTY plane -- this project has
+            // already measured the two planes diverging (API-2500). Move a
+            // parameter known live and require the render to change.
+            if (! isLim)
+            {
+                auto relC2 = candidates ("Release");
+                if (relC2.size() == 1)
+                {
+                    auto swRel = sweepOneIndex (*ci, relC2[0], watchdog, loadedId);
+                    auto burstsNow = [&] {
+                        host.pausePumpForMutation();
+                        auto v = P::levelSweptBursts (*ci, 1.0, 0.0, 4.0, 9);
+                        host.resumePumpAfterMutation(); return v; };
+                    auto toNorm = [] (const juce::Array<juce::Array<float>>& a, double v) {
+                        auto e = echojay::dominantMonotonicTable (a);
+                        return echojay::interpolateAnchors (e.table, (float) v); };
+                    P::writeConfirm (*cp[relC2[0]], toNorm (swRel.anchors, swRel.anchors.getFirst()[0]));
+                    auto rA = burstsNow();
+                    P::writeConfirm (*cp[relC2[0]], toNorm (swRel.anchors, swRel.anchors.getLast()[0]));
+                    auto rB = burstsNow();
+                    double worstD = 0; juce::String deltas;
+                    for (int i = 0; i < rA.size() && i < rB.size(); ++i)
+                    {
+                        const double d = rB[i] - rA[i];
+                        worstD = juce::jmax (worstD, std::abs (d));
+                        if (i % 2 == 0) deltas << " " << juce::String (0.0 - 4.0 * i, 0)
+                                               << ":" << juce::String (d, 1);
+                    }
+                    say ("  RENDER-PLANE CHECK: moved [" + juce::String (relC2[0]) + "] "
+                         + cp[relC2[0]]->getName (32) + " across its full ladder ("
+                         + juce::String (swRel.anchors.getFirst()[0], 1) + " -> "
+                         + juce::String (swRel.anchors.getLast()[0], 1) + "), burst-row deltas:"
+                         + deltas);
+                    say ("  worst |delta| " + juce::String (worstD, 2) + " dB -> "
+                         + (worstD > 0.5
+                              ? juce::String ("the burst path IS parameter-sensitive, so a null on "
+                                              "another parameter is that parameter's null, not the harness")
+                              : juce::String ("THE BURST PATH DOES NOT SEE PARAMETER STATE -- the "
+                                              "Upper Threshold null is the HARNESS, not the plugin, "
+                                              "and no verdict may be issued from it")));
+                    if (worstD <= 0.5)
+                    { std::cout << "GATE SUITE: HARNESS DEFECT (burst path parameter-blind)"
+                                << std::endl; quitNow(); return; }
+                }
+                else
+                    say ("  RENDER-PLANE CHECK SKIPPED: no unambiguous Release parameter ("
+                         + juce::String (relC2.size()) + " candidates) -- the null below is "
+                           "therefore UNPROVEN as a plugin property");
+            }
             SweepOutcome sw;
             {
                 Watchdog::Scope g (watchdog, "probe_gate_sweep", loadedId, pd.name,
@@ -1407,7 +1458,8 @@ public:
             }
             // ITEM 1: the WORDS come from the route. Routing right with wrong
             // words is the failure the fork existed to prevent.
-            crit (isLim ? "ceiling_db (plateau, PRIMARY)" : "threshold_db (level curve, PRIMARY)",
+            crit (isLim ? "ceiling_db (top-step plateau, PRIMARY)"
+                        : "threshold_db (level-swept burst train, PRIMARY)",
                   route == P::Route::tracks || route == P::Route::deafness,
                   P::routeText (route, featMoved, ladderSpan, juce::jmax (sgPlateau, 0.088))
                   + " | worst |feature - ladder| " + juce::String (worstPl, 2) + " dB vs tol "
