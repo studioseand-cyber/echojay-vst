@@ -1781,7 +1781,7 @@ public:
             say (isLim ? "     requested | landed | plateau out dBFS PEAK | knee dBFS PEAK | plateau err | knee err"
                        : "     requested | landed | gate open point dBFS PEAK | knee dBFS PEAK | open err | knee err");
             const double frac[] = { 0.15, 0.4, 0.65, 0.9 };
-            juce::Array<double> plErr, knErr, plPoints;
+            juce::Array<double> plErr, knErr, plPoints, plLanded;
             for (double f : frac)
             {
                 const double lo = sw.anchors.getFirst()[0], hi = sw.anchors.getLast()[0];
@@ -1830,7 +1830,8 @@ public:
                 }
                 auto kf = P::curveFeaturesTwoSegment (c);
                 const double pe = std::abs (plat - landed), ke = kf.kneeFound ? std::abs (kf.kneeInDb - landed) : -1;
-                plErr.add (pe); plPoints.add (plat); if (ke >= 0) knErr.add (ke);
+                plErr.add (pe); plPoints.add (plat); plLanded.add (landed);
+                if (ke >= 0) knErr.add (ke);
                 say ("     " + juce::String (want, 2).paddedLeft (' ', 9) + " | "
                      + juce::String (landed, 2).paddedLeft (' ', 6) + " | "
                      + juce::String (plat, 2).paddedLeft (' ', 14) + " | "
@@ -1887,11 +1888,30 @@ public:
                  + juce::String (100.0 * exprFrac, 0) + "%) can express -- Delta_pred clipped from "
                  + juce::String (ladderRaw, 2) + " to " + juce::String (ladderSpan, 2)
                  + " dB. A verdict below covers THAT sub-range, not the whole ladder.");
+            // Delta_pred IS THE PROBED SPAN, not the ladder's. featMoved is the
+            // span between the FIRST and LAST probed points, so predicting
+            // against the whole ladder compares a four-point probe against a
+            // twenty-one-point range: (0.90 - 0.15) x 30 = 22.50 dB, which
+            // matched the "over-claim" to the decimal. The expressible-range
+            // clipping above is KEPT -- it was aimed at the wrong cause here
+            // but is correct in general, and this stimulus reaching -0.04 dBFS
+            // is a property of this stimulus, not a guarantee. Both suites take
+            // this input; the gate's copy was masked only by its feature not
+            // moving, which is how a defect survives to be rediscovered.
+            const double probedSpan = plLanded.size() >= 2
+                ? std::abs (plLanded.getLast() - plLanded.getFirst())
+                : ladderSpan;
+            const double predForRoute = juce::jmin (probedSpan, ladderSpan);
             const auto route = P::routeVerdict (featMoved, juce::jmax (sgPlateau, 0.088),
-                                                ladderSpan * (isLim ? 1.0 : 1.0), tolPl);
+                                                predForRoute, tolPl);
+            say ("  Delta_pred: probed span " + juce::String (probedSpan, 2)
+                 + " dB (ladder points " + juce::String (plLanded.getFirst(), 2) + " -> "
+                 + juce::String (plLanded.getLast(), 2) + "), expressible-clipped ladder "
+                 + juce::String (ladderSpan, 2) + " dB -> using "
+                 + juce::String (predForRoute, 2) + " dB");
             say ("  ROUTING: feature moved " + juce::String (featMoved, 2)
-                 + " dB across a ladder span of " + juce::String (ladderSpan, 2) + " dB -> "
-                 + P::routeText (route, featMoved, ladderSpan, juce::jmax (sgPlateau, 0.088)));
+                 + " dB against a predicted " + juce::String (predForRoute, 2) + " dB -> "
+                 + P::routeText (route, featMoved, predForRoute, juce::jmax (sgPlateau, 0.088)));
             if (route == P::Route::deafness)
             {
                 say ("  carve-out 1 exclusion (a) mode states on this plugin:");
@@ -1908,7 +1928,7 @@ public:
             crit (isLim ? "ceiling_db (top-step plateau, PRIMARY)"
                         : "threshold_db (level-swept burst train, PRIMARY)",
                   route == P::Route::tracks || route == P::Route::deafness,
-                  P::routeText (route, featMoved, ladderSpan, juce::jmax (sgPlateau, 0.088))
+                  P::routeText (route, featMoved, predForRoute, juce::jmax (sgPlateau, 0.088))
                   + " | worst |feature - ladder| " + juce::String (worstPl, 2) + " dB vs tol "
                   + juce::String (tolPl, 2) + "; corroborating knee estimator "
                   + (knErr.isEmpty() ? juce::String ("found no resolvable corner")
