@@ -271,6 +271,11 @@ private:
     }
 
     Ledger& ledger;
+public:
+    /** The choke-point stake in PluginHost::load needs the ledger, and the
+        watchdog is already threaded to every load site that could want one. */
+    Ledger& getLedger() const noexcept { return ledger; }
+private:
 
     juce::CriticalSection lock;
     bool armed = false;

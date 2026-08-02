@@ -20,6 +20,36 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Wa
 {
     LoadResult result;
 
+    // THE STAKE, AT THE CHOKE POINT (the misplaced-guard class, third
+    // instance). It used to be planted by CALLERS: 5 of 16 load sites in the
+    // gate path did so, and kHs Gate and Weiss Deess died on one of the
+    // eleven that did not, leaving nothing on disk naming them. A sixth
+    // per-site beginLoad would only leave the seventh site to forget, so it
+    // lives HERE, in the one function every load already goes through.
+    // Callers that plant their own stake are harmless: beginLoad overwrites
+    // inflight.json rather than nesting, and endLoad below closes whichever
+    // is current.
+    const juce::String stakeId = desc.pluginFormatName + ":" + desc.fileOrIdentifier;
+    watchdog.getLedger().beginLoad (stakeId, desc.name, desc.manufacturerName,
+                                    desc.pluginFormatName, desc.version, "load", "PluginHost::load");
+
+    // Every early return below goes through this, so a non-ok outcome records
+    // its DETAIL rather than having callers discard it on an early continue --
+    // which is how the two load failures above became unexplainable.
+    struct StakeCloser
+    {
+        Watchdog& w; const juce::String& id; const LoadResult& r;
+        ~StakeCloser()
+        {
+            LedgerRecord rec;
+            rec.pluginId = id;
+            rec.stage    = "load";
+            rec.outcome  = r.outcome;
+            rec.detail   = r.detail;
+            w.getLedger().endLoad (rec);
+        }
+    } stakeCloser { watchdog, stakeId, result };
+
     // Refuse to start a new load while the previous plugin's pump is still
     // rendering. Tearing down underneath it is what crashed on soothe2.
     if (! unload())

@@ -800,6 +800,36 @@ amplitude, so steppedCurve now converts its RMS reading to peak
 (+3.0103 dB) and every curve number is dBFS PEAK. The mismatch was never
 limiter-only -- it offset the knee estimator too.
 
+## THE MISPLACED GUARD — a named defect class, beside the silent-drop list
+
+Three instances in this module, all the same shape, all fixed the same way.
+
+| instance | the guard | where it was | where it belonged |
+|---|---|---|---|
+| compressor envelopes issued verdicts without consulting the mode guard | `displayIsModeToken` | existed, in the harness | called before every envelope verdict |
+| gate wrote over-claim text on its own authority | the over-claim/deafness fork | existed, in the gate suite | `routeVerdict` in the shared path |
+| probe stake applied per-site | `ledger.beginLoad` | present at 5 of 16 `host.load` sites | inside `host.load` itself |
+
+**The signature, and it is what makes this class expensive:** the guard is
+not missing. Reading the code shows it present, correct, and recently
+worked on. **Only running the path shows it absent.** Every one of these
+three was found by executing a case, never by inspection — and in two of
+the three the guard had been added *in the session immediately before*, at
+the sites then in view.
+
+**The fix is never another call site.** Adding a sixth `beginLoad` would
+leave the seventh site to be forgotten by whoever writes it next, which is
+precisely how the first five accumulated. The fix is to move the guard to
+the one place every path already goes through, so forgetting becomes
+impossible rather than merely unlikely. The same reasoning produced
+`duplicateIndexConflicts` in the shared header (after the rule existed
+twice and the copies drifted) and `routeVerdict` in the probe header.
+
+**Test the property, not the happy path.** A choke-point guard is only
+proven by adding a caller that does *not* cooperate and confirming the
+guard still fires — the forgettability property is the whole point, and a
+passing happy path demonstrates nothing about it.
+
 ## Open questions (all prior ones decided or answered by measurement)
 
 0. **The frequency gate vs its own σ floor — raised, not resolved, because it
