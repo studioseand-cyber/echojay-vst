@@ -825,6 +825,22 @@ impossible rather than merely unlikely. The same reasoning produced
 `duplicateIndexConflicts` in the shared header (after the rule existed
 twice and the copies drifted) and `routeVerdict` in the probe header.
 
+**A fourth instance, and it is the tool blaming a plugin for its own
+defect.** Not a new class — the same shape, caught the same way:
+
+| the tool said | the truth |
+|---|---|
+| Mono Maker is a band frequency | the classifier read a name |
+| the limiter's ceiling is 3.01 dB off | an RMS plateau read against a peak ladder |
+| the ceiling error grows to 4.82 dB | a five-step mean contaminated by unlimited steps |
+| kHs Gate failed to load | it loads fine; the harness searched the AU census for a VST3-only plugin |
+
+Every one was caught by something **recording what happened** rather than
+what the code believed — a probe measuring effect, a convention declared
+next to a number, a per-ceiling gain-reduction line, a ledger detail string
+at the choke point. None was caught by reading the code, and in each case
+the tool's own report was the most confident-sounding thing in the room.
+
 **Test the property, not the happy path.** A choke-point guard is only
 proven by adding a caller that does *not* cooperate and confirming the
 guard still fires — the forgettability property is the whole point, and a
