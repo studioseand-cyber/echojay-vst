@@ -1178,6 +1178,60 @@ public:
         auto stakeFile = ledger.getRoot().getChildFile ("probe-inflight.json");
         auto stateFile = ledger.getRoot().getChildFile ("probe-state-" + currentFp + ".bin");
 
+        // ---- settle: pump-duration sweep, four subjects, FULL CURVE ------
+        if (mode == "settle")
+        {
+            const char* subs[] = { "SSL X-Gate", "AMEK EQ 200", "Pro-Q 3", "API-2500 (m)" };
+            const int pumps[] = { 0, 1, 2, 5, 10, 20, 50, 100 };
+            auto census5 = echojay::auregistry::buildCensus();
+            say ("SETTLE CURVE: minimum message-loop pump for a write to reach the DSP");
+            say ("  (delta between two parameter settings, per pump duration, dB)");
+            for (auto* want : subs)
+            {
+                juce::PluginDescription pd5;
+                for (const auto& t : census5.targets)
+                { auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+                  if (d.name.containsIgnoreCase (want)) { pd5 = d; break; } }
+                if (pd5.fileOrIdentifier.isEmpty()) { say ("  " + juce::String (want) + ": absent"); continue; }
+                host.unload();
+                loadedName = pd5.name; loadedId = pd5.fileOrIdentifier; loadedDesc = pd5;
+                if (host.load (pd5, watchdog).outcome != LoadOutcome::ok)
+                { say ("  " + juce::String (want) + ": load failed"); continue; }
+                auto* ci = host.getInstance();
+                auto cp = ci->getParameters();
+                // a parameter whose move is audible on a steady tone: prefer
+                // an output/gain-shaped one, else the first automatable.
+                int ip = -1;
+                for (auto* n : { "Output", "Gain", "Ceiling", "Threshold", "Release", "Mix" })
+                { for (int i = 0; i < cp.size(); ++i)
+                    if (cp[i]->getName (64).containsIgnoreCase (n) && cp[i]->isAutomatable())
+                    { ip = i; break; }
+                  if (ip >= 0) break; }
+                if (ip < 0) { say ("  " + juce::String (want) + ": no candidate param"); continue; }
+                juce::String line = "  " + juce::String (pd5.name).paddedRight (' ', 18)
+                                  + "[" + juce::String (ip) + "] "
+                                  + cp[ip]->getName (18).paddedRight (' ', 18) + "|";
+                for (int pm : pumps)
+                {
+                    auto once = [&] (float v) {
+                        cp[ip]->setValueNotifyingHost (v);
+                        if (pm > 0) juce::MessageManager::getInstance()->runDispatchLoopUntil (pm);
+                        host.pausePumpForMutation();
+                        auto r = P::levelSweptBursts (*ci, 0.25, 0.0, 6.0, 5);
+                        host.resumePumpAfterMutation();
+                        return r; };
+                    auto a = once (0.15f);
+                    auto b = once (0.85f);
+                    double worst = 0;
+                    for (int i = 0; i < a.size() && i < b.size(); ++i)
+                        worst = juce::jmax (worst, std::abs (b[i] - a[i]));
+                    line << " " << juce::String (pm) << "ms:" << juce::String (worst, 1);
+                }
+                say (line);
+            }
+            std::cout << "SETTLE: DONE" << std::endl; quitNow(); return;
+        }
+
         // ---- planes: WHY is the render blind to writes the property plane
         //      confirmed? Three orderings, one of them will land ------------
         if (mode == "planes")
