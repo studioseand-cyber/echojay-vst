@@ -589,6 +589,77 @@ struct Probe
         return -1000.0;
     }
 
+    /** SATURATION: a steady 997 Hz sine at -12 dBFS, rendered, returning the
+        output spectrum. 997 avoids bin-boundary and harmonic coincidence at
+        this FFT size, so harmonics land clear of the fundamental's leakage.
+    */
+    static juce::AudioBuffer<float> renderSine (juce::AudioPluginInstance& p,
+                                                double hz = 997.0, double dbfs = -12.0)
+    {
+        const int chans = juce::jmax (2, p.getTotalNumInputChannels(),
+                                         p.getTotalNumOutputChannels());
+        juce::AudioBuffer<float> io (chans, kBlock);
+        juce::MidiBuffer midi;
+        double phase = 0.0;
+        const double step = juce::MathConstants<double>::twoPi * hz / kSampleRate;
+        const double amp = std::pow (10.0, dbfs / 20.0);
+        for (int k = 0; k < (int) (0.5 * kSampleRate) / kBlock; ++k)
+        { io.clear(); midi.clear(); p.processBlock (io, midi); }
+        const int blocks = (int) (2.0 * kSampleRate) / kBlock;
+        const int discard = (int) (0.25 * kSampleRate) / kBlock;
+        juce::AudioBuffer<float> out (2, (blocks - discard) * kBlock);
+        for (int k = 0; k < blocks; ++k)
+        {
+            for (int n = 0; n < kBlock; ++n)
+            {
+                const float v = (float) (amp * std::sin (phase));
+                for (int ch = 0; ch < chans; ++ch) io.setSample (ch, n, v);
+                phase += step;
+                if (phase > juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
+            }
+            midi.clear(); p.processBlock (io, midi);
+            if (k >= discard)
+                for (int ch = 0; ch < 2; ++ch)
+                    out.copyFrom (ch, (k - discard) * kBlock, io, juce::jmin (ch, chans - 1), 0, kBlock);
+        }
+        return out;
+    }
+
+    struct ThdResult
+    {
+        double thdDb = -200.0;              // total harmonic energy vs fundamental
+        double fundamentalDb = -200.0;      // output level of the fundamental
+        juce::Array<double> harmonicsDb;    // h2..h7, each relative to fundamental
+    };
+
+    /** THD and the harmonic PROFILE. The profile is evidence (which harmonics
+        a drive emphasises is a character fingerprint), the THD number is the
+        feature a verdict is issued on.
+    */
+    static ThdResult thdOf (const Spectra& sp, double fundamentalHz = 997.0)
+    {
+        ThdResult r;
+        auto peakNear = [&sp] (double hz) {
+            const int centre = (int) std::round (hz * kFftSize / kSampleRate);
+            double best = 0;
+            for (int b = juce::jmax (1, centre - 3); b <= juce::jmin (kBins - 1, centre + 3); ++b)
+                best = juce::jmax (best, sp.mid[(size_t) b]);
+            return best; };
+        const double f0 = peakNear (fundamentalHz);
+        r.fundamentalDb = 10.0 * std::log10 (f0 + 1e-30);
+        double harmSum = 0;
+        for (int h = 2; h <= 7; ++h)
+        {
+            const double hz = fundamentalHz * h;
+            if (hz >= kSampleRate * 0.5) break;
+            const double e = peakNear (hz);
+            harmSum += e;
+            r.harmonicsDb.add (10.0 * std::log10 ((e + 1e-30) / (f0 + 1e-30)));
+        }
+        r.thdDb = 10.0 * std::log10 ((harmSum + 1e-30) / (f0 + 1e-30));
+        return r;
+    }
+
     /** Burst train over a QUIET BED: 400 ms at -6 dBFS alternating with
         600 ms at -30 dBFS (NOT silence), 997 Hz, 4 cycles. Returns the output
         envelope in dB at kEnvWindow resolution.

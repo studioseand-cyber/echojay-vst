@@ -2001,6 +2001,90 @@ public:
             quitNow(); return;
         }
 
+        // ---- SATURATION: THD monotone in drive, profile as evidence -------
+        if (mode == "saturation")
+        {
+            auto pd9 = resolveSubjectByName ("bx_saturator V2");
+            if (pd9.fileOrIdentifier.isEmpty()) { quitNow(); return; }
+            host.unload();
+            loadedName = pd9.name; loadedId = pd9.fileOrIdentifier; loadedDesc = pd9;
+            if (host.load (pd9, watchdog).outcome != LoadOutcome::ok)
+            { say ("SATURATION: load failed"); quitNow(); return; }
+            auto* ci = host.getInstance();
+            auto cp = ci->getParameters();
+            say ("SATURATION SUITE | " + pd9.name + " | " + juce::String (cp.size()) + " params");
+
+            auto sine = [&] { host.pausePumpForMutation();
+                              auto b = P::renderSine (*ci);
+                              host.resumePumpAfterMutation(); return b; };
+            // INHERITANCE CHECK 1: the shared sensitivity check must fire here.
+            if (! renderPlaneSensitive (*ci, pd9.name,
+                    [&] { auto sp = P::welch (sine());
+                          juce::Array<double> rows;
+                          for (int h = 1; h <= 6; ++h)
+                              rows.add (P::bandEnergyDb (sp.mid, 997.0 * h - 40, 997.0 * h + 40));
+                          return rows; }))
+            { std::cout << "SATURATION SUITE: STOPPED (render plane blind)" << std::endl;
+              quitNow(); return; }
+
+            auto candidates2 = [&] (const juce::String& sub) {
+                juce::Array<int> out;
+                for (int i = 0; i < cp.size(); ++i)
+                    if (cp[i]->getName (64).containsIgnoreCase (sub) && cp[i]->isAutomatable())
+                        out.add (i);
+                return out; };
+            int iDrive = -1;
+            for (auto* n : { "Drive", "Saturation", "Amount", "Gain" })
+            { auto c = candidates2 (n);
+              if (c.size() == 1) { iDrive = c[0];
+                  say ("  drive target: [" + juce::String (iDrive) + "] " + cp[iDrive]->getName (32));
+                  break; }
+              if (c.size() > 1)
+                  say ("  pattern '" + juce::String (n) + "' AMBIGUOUS (" + juce::String (c.size())
+                       + " matches) -- declining to pick"); }
+            if (iDrive < 0) { say ("  no unambiguous drive parameter"); quitNow(); return; }
+
+            auto swD = sweepOneIndex (*ci, iDrive, watchdog, loadedId);
+            auto nfD = [] (const juce::Array<juce::Array<float>>& a, double v) {
+                auto e = echojay::dominantMonotonicTable (a);
+                return echojay::interpolateAnchors (e.table, (float) v); };
+            say ("  drive ladder " + juce::String (swD.anchors.getFirst()[0], 2) + " .. "
+                 + juce::String (swD.anchors.getLast()[0], 2) + " (unit '" + swD.unitFamily + "')");
+
+            say ("     drive | landed |  THD dB  | harmonic profile h2..h7 (dB rel. fundamental)");
+            juce::Array<double> thds, landeds;
+            for (double f : { 0.1, 0.4, 0.7, 1.0 })
+            {
+                const double lo = swD.anchors.getFirst()[0], hi = swD.anchors.getLast()[0];
+                const double want = lo + f * (hi - lo);
+                P::writeAndServiceRunloop (*cp[iDrive], nfD (swD.anchors, want));
+                const double landed = P::predictedLanding (swD.anchors, want);
+                auto t = P::thdOf (P::welch (sine()));
+                thds.add (t.thdDb); landeds.add (landed);
+                juce::String prof;
+                for (auto h : t.harmonicsDb) prof << " " << juce::String (h, 1);
+                say ("     " + juce::String (want, 2).paddedLeft (' ', 5) + " | "
+                     + juce::String (landed, 2).paddedLeft (' ', 6) + " | "
+                     + juce::String (t.thdDb, 2).paddedLeft (' ', 8) + " |" + prof);
+            }
+            bool mono = true;
+            for (int i = 1; i < thds.size(); ++i) if (thds[i] < thds[i-1] - 0.5) mono = false;
+            // INHERITANCE CHECK 2: Delta_pred from the PROBED span, not the ladder.
+            const double probedSpan2 = std::abs (landeds.getLast() - landeds.getFirst());
+            const double ladderRaw2 = std::abs (swD.anchors.getLast()[0] - swD.anchors.getFirst()[0]);
+            say ("  Delta_pred: probed span " + juce::String (probedSpan2, 2)
+                 + " (ladder " + juce::String (ladderRaw2, 2) + ") -- probed span used");
+            const double thdMoved = std::abs (thds.getLast() - thds.getFirst());
+            crit ("drive (THD monotone, PRIMARY)", mono && thdMoved > 1.0,
+                  "THD " + juce::String (thds.getFirst(), 2) + " -> " + juce::String (thds.getLast(), 2)
+                  + " dB across drive " + juce::String (landeds.getFirst(), 2) + " -> "
+                  + juce::String (landeds.getLast(), 2) + " (moved " + juce::String (thdMoved, 2)
+                  + " dB), monotone: " + (mono ? "YES" : "NO")
+                  + ". Harmonic profile recorded as evidence, no verdict issued on it.");
+            std::cout << "SATURATION SUITE: " << (fails == 0 ? "PASS" : "FAILED") << std::endl;
+            quitNow(); return;
+        }
+
         if (mode == "guardtest")
         {
             say ("MODE GUARD TEST: feeding the guard displays it must refuse");
