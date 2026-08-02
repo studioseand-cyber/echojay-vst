@@ -87,9 +87,10 @@ struct EchoJayLinkMixerTestAccess
     static const float* meterMarks (int& n)
     { n = Ed::kMeterMarkCount; return Ed::kMeterMarks; }
 
-    static void chainBlocks (juce::Rectangle<int> data, int count,
-                             std::vector<juce::Rectangle<int>>& out)
-    { Ed::layOutChainBlocks (data, count, out); }
+    using Rows = Ed::ChainRows;
+    static Rows chainRows (juce::Rectangle<int> data, int occupied, int scrollY)
+    { return Ed::layOutChainRows (data, occupied, scrollY); }
+    static int blockPitch() { return Ed::kChainBlockH + Ed::kChainBlockGap; }
     static void ctrls2 (juce::Rectangle<int> block,
                         juce::Rectangle<int>& b, juce::Rectangle<int>& x)
     { Ed::blockCtrlRects (block, b, x); }
@@ -647,50 +648,77 @@ static void testChainStates()
 
 static void testChainBlocks()
 {
-    // The block rects and their B/X controls: ONE pure formula consumed by
-    // paint and the hit test, so agreement is proven by proving the formula.
-    std::printf ("chain blocks: layout, controls, overflow, purity\n");
+    // The rack rows and their B/X controls: ONE pure formula consumed by
+    // paint, hit testing, the tooltip and the wheel, so agreement is proven
+    // by proving the formula.
+    std::printf ("chain rows: empties, controls, scroll offset, purity\n");
     const juce::Rectangle<int> data { 10, 40, 84, 187 };   // wide data area
 
-    std::vector<juce::Rectangle<int>> blocks;
-    T::chainBlocks (data, 4, blocks);
-    checkEq ((int) blocks.size(), 4, "four plugins fit as four blocks");
-    for (size_t i = 0; i < blocks.size(); ++i)
+    auto r4 = T::chainRows (data, 4, 0);
+    checkEq (r4.occupied, 4, "four plugins occupy four rows");
+    check ((int) r4.rects.size() > 4, "empty slots fill the space beneath");
+    checkEq (r4.maxScroll, 0, "a list that fits does not scroll");
+    for (size_t i = 0; i < r4.rects.size(); ++i)
     {
-        check (data.contains (blocks[i]), "block stays inside the data area");
+        check (data.contains (r4.rects[i]), "row stays inside the data area");
         if (i > 0)
-            check (blocks[i].getY() > blocks[i-1].getBottom(),
-                   "blocks stack without overlap");
+            check (r4.rects[i].getY() > r4.rects[i-1].getBottom(),
+                   "rows stack without overlap");
+    }
+    for (int i = 0; i < r4.occupied; ++i)
+    {
         juce::Rectangle<int> b, x;
-        T::ctrls2 (blocks[i], b, x);
-        check (blocks[i].contains (b) && blocks[i].contains (x),
+        T::ctrls2 (r4.rects[(size_t) i], b, x);
+        check (r4.rects[(size_t) i].contains (b) && r4.rects[(size_t) i].contains (x),
                "controls sit inside their block");
         check (! b.intersects (x), "B and X do not overlap");
         check (x.getX() > b.getX(), "X is outermost, matching the Chain card");
-        check (b.getWidth() >= 12 && b.getHeight() >= 12,
-               "B is big enough to press");
-        check (x.getWidth() >= 12 && x.getHeight() >= 12,
-               "X is big enough to press");
+        check (b.getWidth() >= 12 && b.getHeight() >= 12, "B is big enough to press");
+        check (x.getWidth() >= 12 && x.getHeight() >= 12, "X is big enough to press");
     }
 
-    // Overflow: more plugins than height reserves a +N more row, so shown
-    // count drops rather than half-drawing.
-    std::vector<juce::Rectangle<int>> many;
-    T::chainBlocks (data, 40, many);
-    check ((int) many.size() < 40, "overflow shows fewer blocks than plugins");
-    check (! many.empty() && data.contains (many.back()),
-           "the last shown block is still contained");
+    // AN EMPTY RACK IS ALL EMPTY SLOTS, never zero rows: the strip shows
+    // capacity rather than absence.
+    auto r0 = T::chainRows (data, 0, 0);
+    checkEq (r0.occupied, 0, "an empty rack occupies no rows");
+    check (! r0.rects.empty(), "an empty rack still draws empty slots");
+    checkEq (r0.maxScroll, 0, "an empty rack has nothing to scroll");
+
+    // OVERFLOW SCROLLS instead of collapsing: every plugin gets a full-size
+    // row and maxScroll covers exactly the hidden remainder.
+    auto rMany = T::chainRows (data, 40, 0);
+    checkEq (rMany.occupied, 40, "every plugin gets a row when the rack overflows");
+    checkEq ((int) rMany.rects.size(), 40, "an overflowing rack adds no empty slots");
+    check (rMany.maxScroll > 0, "an overflowing rack can scroll");
+    checkEq (rMany.rects[0].getHeight(), r4.rects[0].getHeight(),
+             "blocks keep their size when the rack overflows");
+
+    // THE OFFSET IS IN THE RECTS, which is what makes painting and hit
+    // testing agree: scrolling by one pitch moves row 1 to where row 0 was.
+    const int pitch = T::blockPitch();
+    auto rScrolled = T::chainRows (data, 40, pitch);
+    checkEq (rScrolled.rects[1].getY(), rMany.rects[0].getY(),
+             "one pitch of scroll lifts row 1 into row 0's place");
+    for (size_t i = 0; i < rMany.rects.size(); ++i)
+        checkEq (rScrolled.rects[i].getY(), rMany.rects[i].getY() - pitch,
+                 "every row shifts by exactly the scroll offset");
+
+    // A stale offset (rack shrank under it) is CLAMPED, never left to
+    // misplace a block.
+    auto rClamped = T::chainRows (data, 40, 99999);
+    checkEq (rClamped.rects[0].getY(), rMany.rects[0].getY() - rMany.maxScroll,
+             "an over-large offset clamps to maxScroll");
+    auto rNeg = T::chainRows (data, 40, -500);
+    checkEq (rNeg.rects[0].getY(), rMany.rects[0].getY(),
+             "a negative offset clamps to zero");
 
     // Purity + degenerate.
-    std::vector<juce::Rectangle<int>> again;
-    T::chainBlocks (data, 4, again);
-    checkEq ((int) again.size(), (int) blocks.size(), "block layout is pure");
-    for (size_t i = 0; i < blocks.size(); ++i)
-        check (blocks[i] == again[i], "block rects are stable");
-    T::chainBlocks ({ 0, 0, 0, 0 }, 4, again);
-    checkEq ((int) again.size(), 0, "a degenerate area has no blocks");
-    T::chainBlocks (data, 0, again);
-    checkEq ((int) again.size(), 0, "an empty rack has no blocks");
+    auto again = T::chainRows (data, 4, 0);
+    checkEq ((int) again.rects.size(), (int) r4.rects.size(), "row layout is pure");
+    for (size_t i = 0; i < r4.rects.size() && i < again.rects.size(); ++i)
+        check (r4.rects[i] == again.rects[i], "row rects are stable");
+    auto rDegen = T::chainRows ({ 0, 0, 0, 0 }, 4, 0);
+    checkEq ((int) rDegen.rects.size(), 0, "a degenerate area has no rows");
 }
 
 static void testMaskGating()

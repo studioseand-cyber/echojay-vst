@@ -2504,6 +2504,12 @@ private:
         void mouseDown(const juce::MouseEvent& e) override;
         void mouseDrag(const juce::MouseEvent& e) override;
         void mouseUp(const juce::MouseEvent& e) override;
+        /** Vertical wheel over a scrollable rack list scrolls THAT list;
+            anything else falls through to the Viewport, which scrolls the
+            mixer horizontally (JUCE maps a vertical wheel onto a
+            single-axis viewport). */
+        void mouseWheelMove(const juce::MouseEvent& e,
+                            const juce::MouseWheelDetails& w) override;
         /** Position-dependent: narrow strips ellipsise real track names, so
             the full name (and the merged control's status words, which have
             no room to render at 46px) must be reachable somewhere. Served by
@@ -2766,6 +2772,12 @@ private:
     int  busFaderLastY_    = 0;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    /** The pinned bus strip is editor-painted, so ITS wheel events arrive
+        here rather than on LinkMixerView. Consumes only over the bus rack
+        list when that list can scroll; everything else keeps today's
+        behaviour untouched. */
+    void mouseWheelMove(const juce::MouseEvent& e,
+                        const juce::MouseWheelDetails& w) override;
 
     void measureLinkStrips();
     /** Paint one strip from its stored geometry. Shared by the pinned Mix Bus
@@ -2934,10 +2946,31 @@ private:
     // blocks themselves are legible.
     static constexpr int kChainBlockH = 20, kChainBlockGap = 3;
     static constexpr int kBlockCtrlW = 14;         // B and X, each
-    /** SHOWN blocks only (overflow collapses into "+N more"; the fit logic
-        lives HERE so paint and hit test agree on how many blocks exist). */
-    static void layOutChainBlocks(juce::Rectangle<int> dataRect, int count,
-                                  std::vector<juce::Rectangle<int>>& out);
+    /** THE rack row layout: occupied blocks, then INERT empty slots filling
+        whatever visible space is left, with the scroll offset ALREADY
+        APPLIED to every rect. Pure, and the single author paint, hit
+        testing, the tooltip and the wheel all consume, so a scrolled block
+        cannot be painted in one place and tested in another (the
+        Visualisation preset bug's exact shape).
+
+        Empty slots fill the VISIBLE AREA and nothing more: that is an
+        honest statement about the view. ChainHost enforces no rack ceiling
+        to quote, so a fixed "capacity" number would be invented. */
+    struct ChainRows {
+        std::vector<juce::Rectangle<int>> rects;  // occupied first, then empties
+        int occupied  = 0;   // rects[0 .. occupied-1] are real plugins
+        int maxScroll = 0;   // 0 when everything fits, so the wheel passes through
+    };
+    static ChainRows layOutChainRows(juce::Rectangle<int> dataRect,
+                                     int occupied, int scrollY);
+    /** Occupied rack size for a strip: host ChainHost for the bus, the
+        processor-side sidecar cache for a Link. ONE lookup, four consumers. */
+    int linkRackCount(const StripGeom& sg) const;
+    int linkChainScrollFor(const StripGeom& sg) const;
+    /** Returns true when the strip's rack list consumed the wheel. It only
+        does so when it can actually scroll, so a list that fits lets the
+        event through to the mixer's horizontal viewport. */
+    bool linkChainWheel(const StripGeom& sg, juce::Point<int> local, float deltaY);
     /** B and X inside a block's right end (the space the visual pass left
         clear). 14x13 targets at the block's 15px height: small, but the
         same scale as the segmented controls' pressable floor. */

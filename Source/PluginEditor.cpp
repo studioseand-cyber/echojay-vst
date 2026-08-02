@@ -5989,7 +5989,6 @@ namespace LinkConsole
     // the app's own ramp (C::text / text2 / text3): fewer authorities, and
     // the blue-grey cast comes with it.
     const juce::Colour strip    (0xff090B12);   // at/below the window bg
-    const juce::Colour stripSel (0xff0D1524);   // selected: a step lighter
     const juce::Colour well     (0xff05070C);   // recess behind fader+meter
     const juce::Colour edge     (juce::Colour::fromFloatRGBA(1, 1, 1, 0.06f));
 
@@ -6721,23 +6720,79 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
     }
 }
 
-void EchoJayEditor::layOutChainBlocks(juce::Rectangle<int> dataRect, int count,
-                                      std::vector<juce::Rectangle<int>>& out)
+EchoJayEditor::ChainRows
+EchoJayEditor::layOutChainRows(juce::Rectangle<int> dataRect, int occupied,
+                               int scrollY)
 {
-    // Pure: same inputs, same rects. The SHOWN-count rule lives here so the
-    // painter and the hit test cannot disagree about how many blocks exist
-    // (overflow reserves a "+N more" row instead of half-drawing).
-    out.clear();
-    if (count <= 0 || dataRect.getWidth() <= 0) return;
-    auto a2 = dataRect.reduced(2, 0);
-    const int per = kChainBlockH + kChainBlockGap;
-    const int fit = juce::jmax(0, (a2.getHeight() + kChainBlockGap) / per);
-    const int shown = count <= fit ? count : juce::jmax(0, fit - 1);
-    for (int i = 0; i < shown; ++i)
-    {
-        out.push_back(a2.removeFromTop(kChainBlockH));
-        a2.removeFromTop(kChainBlockGap);
-    }
+    // Pure: same inputs, same rects, offset included. Blocks KEEP their size
+    // when a rack overflows; the list scrolls instead of collapsing into a
+    // "+N more" row, so a long rack is browsable rather than summarised.
+    ChainRows r;
+    if (dataRect.getWidth() <= 0 || dataRect.getHeight() <= 0) return r;
+    occupied = juce::jmax(0, occupied);
+    const auto a2  = dataRect.reduced(2, 0);
+    const int  per = kChainBlockH + kChainBlockGap;
+    const int  fits = juce::jmax(0, (a2.getHeight() + kChainBlockGap) / per);
+    // INERT empty slots fill the space the plugins leave, so the strip shows
+    // capacity rather than absence. None are added once the rack overflows:
+    // there is no slack to show them in.
+    const int empties = juce::jmax(0, fits - occupied);
+    const int rows    = occupied + empties;
+    r.occupied = occupied;
+    if (rows <= 0) return r;
+
+    const int contentH = rows * per - kChainBlockGap;
+    r.maxScroll = juce::jmax(0, contentH - a2.getHeight());
+    const int off = juce::jlimit(0, r.maxScroll, scrollY);
+    r.rects.reserve((size_t)rows);
+    for (int i = 0; i < rows; ++i)
+        r.rects.push_back({ a2.getX(), a2.getY() + i * per - off,
+                            a2.getWidth(), kChainBlockH });
+    return r;
+}
+
+int EchoJayEditor::linkRackCount(const StripGeom& sg) const
+{
+    if (sg.isBus)
+        return (int)processorRef.getChainHost().getAllSlotInfos().size();
+    EchoJayProcessor::LinkDisplayEntry en;
+    if (!findLinkEntryByAddr(sg.addr, en) || en.info.uid.isEmpty()) return 0;
+    auto it = processorRef.linkRackCache.find(en.info.uid);
+    return (it != processorRef.linkRackCache.end() && it->second.valid)
+         ? (int)it->second.rack.slots.size() : 0;
+}
+
+int EchoJayEditor::linkChainScrollFor(const StripGeom& sg) const
+{
+    const juce::String key = sg.isBus ? juce::String("MIX BUS") : sg.addr;
+    auto it = processorRef.linkChainScroll.find(key);
+    return it == processorRef.linkChainScroll.end() ? 0 : it->second;
+}
+
+bool EchoJayEditor::linkChainWheel(const StripGeom& sg, juce::Point<int> local,
+                                   float deltaY)
+{
+    // NARROW shows a count, not blocks, so it has nothing to scroll and never
+    // steals the wheel. Wide only, over the data area, and only when the list
+    // can actually move: a list that fits lets the mixer have the event, so
+    // the wheel never feels like it stopped working.
+    if (processorRef.linkMixerContent != EchoJayProcessor::LinkMixerContent::Chain
+        || !processorRef.linkMixerWide
+        || !sg.data.contains(local))
+        return false;
+    const auto rows = layOutChainRows(sg.data, linkRackCount(sg),
+                                      linkChainScrollFor(sg));
+    if (rows.maxScroll <= 0) return false;
+
+    const juce::String key = sg.isBus ? juce::String("MIX BUS") : sg.addr;
+    const int step = kChainBlockH + kChainBlockGap;
+    processorRef.linkChainScroll[key] =
+        juce::jlimit(0, rows.maxScroll,
+                     linkChainScrollFor(sg)
+                         - juce::roundToInt(deltaY * (float)step * 3.0f));
+    linkMixerView_.repaint();
+    repaint();
+    return true;
 }
 
 void EchoJayEditor::blockCtrlRects(juce::Rectangle<int> block,
@@ -6936,11 +6991,11 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
             g.drawText("no data", area, juce::Justification::centred);
             return;
         case ChainDisplayState::Empty:
-            g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
-            g.setFont(juce::Font(juce::FontOptions(9.0f)));
-            g.drawText("empty rack", area, juce::Justification::centred);
-            return;
         case ChainDisplayState::List:
+            // Both fall through: an empty rack is drawn as EMPTY SLOTS, so
+            // the strip shows capacity rather than absence. NoData above
+            // still returns its own words, which is what keeps "cannot
+            // see this rack" and "this rack is empty" distinct facts.
             break;
     }
 
@@ -6979,13 +7034,30 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
         // offline still declares itself on a line of its own below the
         // blocks when it applies. Overflow collapses into "+N more".
 
-        // THE block rects: the same pure function the hit test consumes.
-        std::vector<juce::Rectangle<int>> blocks;
-        layOutChainBlocks(area, (int)rows.size(), blocks);
-        const int shown = (int)blocks.size();
+        // THE rows: the same pure function the hit test, the tooltip and
+        // the wheel consume, offset already applied. Clipped to the data
+        // area so a scrolled row cannot paint over the strip's chrome.
+        juce::Graphics::ScopedSaveState clipGuard(g);
+        g.reduceClipRegion(area);
+        const auto layout = layOutChainRows(area, (int)rows.size(),
+                                            linkChainScrollFor(sg));
+        // INERT empty slots first, behind everything: a recessed outline,
+        // no fill weight, no label, nothing that reads as pressable,
+        // because nothing is wired to them yet.
+        for (size_t k = (size_t)layout.occupied; k < layout.rects.size(); ++k)
+        {
+            const auto er = layout.rects[k];
+            if (!er.intersects(area)) continue;
+            g.setColour(LinkConsole::well.withMultipliedAlpha(dim));
+            g.fillRoundedRectangle(er.toFloat(), 3.0f);
+            g.setColour(LinkConsole::structure.withMultipliedAlpha(0.7f * dim));
+            g.drawRoundedRectangle(er.toFloat().reduced(0.5f), 3.0f, 1.0f);
+        }
+        const int shown = layout.occupied;
         for (int i = 0; i < shown; ++i)
         {
-            auto rr = blocks[(size_t)i];
+            auto rr = layout.rects[(size_t)i];
+            if (!rr.intersects(area)) continue;
             const auto& r = rows[(size_t)i];
 
             // Pending / failed edit on THIS slot: amber = in flight (the
@@ -7053,21 +7125,16 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
             g.drawText(r.name, nameArea,
                        juce::Justification::centredLeft, true);   // ellipsise
         }
-        auto below = blocks.empty() ? area.reduced(2, 0)
-                   : blocks.back().translated(0, kChainBlockH + kChainBlockGap);
-        if ((int)rows.size() > shown && !blocks.empty())
-        {
-            g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
-            g.setFont(juce::Font(juce::FontOptions(8.0f)));
-            g.drawText("+" + juce::String((int)rows.size() - shown) + " more",
-                       below, juce::Justification::centredLeft);
-            below.translate(0, kChainBlockH + kChainBlockGap);
-        }
+        // Overflow no longer collapses into "+N more": the list scrolls and
+        // the blocks keep their size. Offline still declares itself, pinned
+        // to the bottom of the data area so scrolling cannot carry it away.
         if (offline)
         {
             g.setColour(juce::Colour(0xffff6d5a).withMultipliedAlpha(0.9f));
             g.setFont(juce::Font(juce::FontOptions(7.5f)));
-            g.drawText("offline", below, juce::Justification::centredLeft);
+            g.drawText("offline",
+                       area.removeFromBottom(10).reduced(2, 0),
+                       juce::Justification::centredLeft);
         }
         juce::ignoreUnused(bypassed);
     }
@@ -7134,9 +7201,12 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     // only borders left are the two that MEAN something: cyan = selection,
     // coral = the legacy-tap refusal flash. The bus reads as the bus by a
     // slightly lifted fill and its MIX BUS caption, not by a coloured edge.
-    g.setColour(selected ? LinkConsole::stripSel
-              : isBus    ? LinkConsole::strip.brighter(0.02f)
-                         : LinkConsole::strip);
+    // The body is the SAME fill selected or not: a uniformly lifted strip
+    // was what pushed selection colour all the way down behind the well and
+    // made it read as a lit box. Selection is now the top bar plus a tint
+    // that dies above the well, so from the well down the two states are
+    // pixel-identical.
+    g.setColour(isBus ? LinkConsole::strip.brighter(0.02f) : LinkConsole::strip);
     g.fillRoundedRectangle(sg.full.toFloat(), 6.0f);
     if (!selected && !refusing)
     {
@@ -7158,13 +7228,23 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         g.fillRoundedRectangle((float)sg.full.getX() + 3.0f,
                                (float)sg.full.getY() + 2.0f,
                                (float)sg.full.getWidth() - 6.0f, 3.0f, 1.5f);
-        juce::ColourGradient glow(
-            cyan.withAlpha(0.16f), (float)sg.full.getCentreX(), (float)sg.full.getY() + 5.0f,
-            cyan.withAlpha(0.0f),  (float)sg.full.getCentreX(), (float)sg.full.getY() + 34.0f,
-            false);
-        g.setGradientFill(glow);
-        g.fillRect((float)sg.full.getX() + 1.0f, (float)sg.full.getY() + 5.0f,
-                   (float)sg.full.getWidth() - 2.0f, 29.0f);
+        // The tint runs from under the bar to the TOP OF THE WELL and is
+        // fully transparent by the time it arrives, so the well and
+        // everything below it render identically in both states. The well's
+        // own top is its union rect expanded by 2 (see the data block).
+        const int wellTop = (sg.clip.isEmpty() ? sg.meter.getY()
+                                               : sg.clip.getY()) - 2;
+        const float top = (float)sg.full.getY() + 5.0f;
+        if ((float)wellTop > top + 2.0f)
+        {
+            juce::ColourGradient glow(
+                cyan.withAlpha(0.20f), (float)sg.full.getCentreX(), top,
+                cyan.withAlpha(0.0f),  (float)sg.full.getCentreX(), (float)wellTop,
+                false);
+            g.setGradientFill(glow);
+            g.fillRect((float)sg.full.getX() + 1.0f, top,
+                       (float)sg.full.getWidth() - 2.0f, (float)wellTop - top);
+        }
     }
 
     // ---- Name. The entry's displayName IS resolveLinkDisplayName's answer
@@ -7510,25 +7590,16 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
     if (processorRef.linkMixerContent == EchoJayProcessor::LinkMixerContent::Chain
         && processorRef.linkMixerWide && sg.data.contains(local))
     {
-        int count = 0;
-        if (sg.isBus)
-            count = (int)processorRef.getChainHost().getAllSlotInfos().size();
-        else
-        {
-            EchoJayProcessor::LinkDisplayEntry en;
-            if (findLinkEntryByAddr(sg.addr, en) && en.info.uid.isNotEmpty())
-            {
-                auto it = processorRef.linkRackCache.find(en.info.uid);
-                if (it != processorRef.linkRackCache.end() && it->second.valid)
-                    count = (int)it->second.rack.slots.size();
-            }
-        }
-        std::vector<juce::Rectangle<int>> blocks;
-        layOutChainBlocks(sg.data, count, blocks);
-        for (int i = 0; i < (int)blocks.size(); ++i)
+        // The SAME rows the painter drew, offset included, so a scrolled
+        // block is tested exactly where it was painted. Only the OCCUPIED
+        // rows are interactive: the empty slots are inert by construction,
+        // not by a guard that could drift.
+        const auto layout = layOutChainRows(sg.data, linkRackCount(sg),
+                                            linkChainScrollFor(sg));
+        for (int i = 0; i < layout.occupied; ++i)
         {
             juce::Rectangle<int> bR, xR;
-            blockCtrlRects(blocks[(size_t)i], bR, xR);
+            blockCtrlRects(layout.rects[(size_t)i], bR, xR);
             if (bR.contains(local) || xR.contains(local))
             {
                 const bool isRemove = xR.contains(local);
@@ -7795,29 +7866,20 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
     {
         // Over a block control, or a pending/failed edit: those speak first.
         {
-            int count = 0;
-            juce::String uid;
-            if (sg.isBus)
-                count = (int)processorRef.getChainHost().getAllSlotInfos().size();
-            else if (have && en.info.uid.isNotEmpty())
+            const juce::String uid = sg.isBus ? juce::String()
+                                   : have ? en.info.uid : juce::String();
+            const auto layout = layOutChainRows(sg.data, linkRackCount(sg),
+                                                linkChainScrollFor(sg));
+            for (int i = 0; i < layout.occupied; ++i)
             {
-                uid = en.info.uid;
-                auto it = processorRef.linkRackCache.find(uid);
-                if (it != processorRef.linkRackCache.end() && it->second.valid)
-                    count = (int)it->second.rack.slots.size();
-            }
-            std::vector<juce::Rectangle<int>> blocks;
-            layOutChainBlocks(sg.data, count, blocks);
-            for (int i = 0; i < (int)blocks.size(); ++i)
-            {
-                if (!blocks[(size_t)i].contains(p)) continue;
+                if (!layout.rects[(size_t)i].contains(p)) continue;
                 if (uid.isNotEmpty())
                     for (const auto& pb : linkBlockPending_)
                         if (pb.uid == uid && pb.slotIdx == i)
                             return pb.failed ? pb.reason
                                  : juce::String("Applying") + juce::String::fromUTF8("\xe2\x80\xa6");
                 juce::Rectangle<int> bR, xR;
-                blockCtrlRects(blocks[(size_t)i], bR, xR);
+                blockCtrlRects(layout.rects[(size_t)i], bR, xR);
                 // The Chain card's exact words: same control, same meaning.
                 if (xR.contains(p)) return "Remove from chain";
                 if (bR.contains(p)) return "Bypass this plugin";
@@ -7886,6 +7948,24 @@ void EchoJayEditor::LinkMixerView::mouseDown(const juce::MouseEvent& e)
             owner->linkStripMouseDown(sg, p, e.getNumberOfClicks());
             return;
         }
+}
+
+void EchoJayEditor::LinkMixerView::mouseWheelMove(const juce::MouseEvent& e,
+                                                 const juce::MouseWheelDetails& w)
+{
+    // A strip's rack list gets the wheel ONLY when it can scroll; otherwise
+    // the event falls through to the Viewport, which scrolls the mixer
+    // horizontally (JUCE maps a vertical wheel onto a single-axis viewport).
+    // So the wheel means "scroll this rack" over a long rack and "scroll the
+    // mixer" everywhere else, and never silently does nothing.
+    if (owner != nullptr)
+    {
+        const auto p = e.getPosition();
+        for (const auto& sg : owner->linkStripGeom_)
+            if (sg.full.contains(p) && owner->linkChainWheel(sg, p, w.deltaY))
+                return;
+    }
+    juce::Component::mouseWheelMove(e, w);
 }
 
 void EchoJayEditor::LinkMixerView::mouseDrag(const juce::MouseEvent& e)
@@ -22523,6 +22603,23 @@ void EchoJayEditor::mouseDrag(const juce::MouseEvent& e)
 void EchoJayEditor::mouseUp(const juce::MouseEvent&)
 {
     busFaderDragging_ = false;
+}
+
+void EchoJayEditor::mouseWheelMove(const juce::MouseEvent& e,
+                                   const juce::MouseWheelDetails& w)
+{
+    // The pinned bus strip is painted by the editor, not by LinkMixerView,
+    // so its wheel events land here. Same rule as the Link strips: consume
+    // only when that rack list can actually scroll, otherwise leave the
+    // event exactly as it behaved before this existed.
+    if (currentTab == Tab::Link && linkMixerViewport_.isVisible()
+        && !linkBusGeom_.full.isEmpty())
+    {
+        const auto p = e.getEventRelativeTo(this).getPosition();
+        if (linkBusGeom_.full.contains(p) && linkChainWheel(linkBusGeom_, p, w.deltaY))
+            return;
+    }
+    juce::AudioProcessorEditor::mouseWheelMove(e, w);
 }
 
 void EchoJayEditor::mouseDown(const juce::MouseEvent& e)

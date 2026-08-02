@@ -477,6 +477,15 @@ public:
     };
     std::map<juce::String, LinkRackCacheEntry> linkRackCache;
 
+    /** LINK MIXER per-strip rack SCROLL offset in pixels, keyed the same way
+        the cache is (Link uid, or "MIX BUS" for the pinned strip). ON THE
+        PROCESSOR for the standing reason: Logic recreates the editor on
+        every Link window switch, and a scroll position that reset on every
+        switch would be worse than no scrolling. Written only by the wheel
+        handler, read only by the row layout, and CLAMPED there, so a stale
+        offset left by a rack that shrank can never misplace a block. */
+    std::map<juce::String, int> linkChainScroll;
+
     // A/B playback — toggle between DAW audio and reference WAV
     void loadABFile(const juce::String& wavPath, double startOffsetSeconds = 0.0);
     void stopAB();
