@@ -1974,7 +1974,19 @@ public:
             // VST3-only product searched in the AU census exercises the
             // recorder. Both names below are real products on this machine;
             // neither ships an AU.
-            for (auto* n : { "bx_saturator V2" })
+            // list EVERY match, not the first -- substring resolution took
+            // the UAD component last time because it matched first.
+            {
+                auto cen = echojay::auregistry::buildCensus();
+                for (const auto& t : cen.targets)
+                {
+                    auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+                    if (d.name.containsIgnoreCase ("saturat") || d.name.containsIgnoreCase ("crusher"))
+                        say ("  CANDIDATE: '" + d.name + "' | vendor '" + d.manufacturerName
+                             + "' | id " + d.fileOrIdentifier);
+                }
+            }
+            for (auto* n : std::initializer_list<const char*>{})
             {
                 say ("  searching AU census for '" + juce::String (n) + "':");
                 auto d = resolveSubjectByName (n);
@@ -2005,8 +2017,16 @@ public:
         // ---- SATURATION: THD monotone in drive, profile as evidence -------
         if (mode == "saturation")
         {
-            auto pd9 = resolveSubjectByName ("bx_saturator V2");
-            if (pd9.fileOrIdentifier.isEmpty()) { quitNow(); return; }
+            // PINNED BY ID, not by name. "bx_saturator V2" resolved to the
+            // UAD component (aufx,33au,!UAD) because substring matching takes
+            // the first container of the string; the intended Plugin Alliance
+            // product is aufx,bxa2,Brwx. A suite naming a specific product
+            // matches on the id. Identity is PRINTED before the load.
+            auto pd9 = echojay::auregistry::describeFromRegistry ("AudioUnit:Effects/aufx,bxa2,Brwx");
+            if (pd9.fileOrIdentifier.isEmpty())
+            { say ("SATURATION: pinned id not in the census"); quitNow(); return; }
+            say ("SATURATION subject, resolved BEFORE load: name '" + pd9.name + "' | vendor '"
+                 + pd9.manufacturerName + "' | id " + pd9.fileOrIdentifier);
             host.unload();
             loadedName = pd9.name; loadedId = pd9.fileOrIdentifier; loadedDesc = pd9;
             if (host.load (pd9, watchdog).outcome != LoadOutcome::ok)
