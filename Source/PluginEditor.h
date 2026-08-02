@@ -2483,9 +2483,10 @@ private:
         juce::Rectangle<int> fader;     // fader LANE: full band height, so
                                         // lane and meter share height and
                                         // baseline (the drag target too)
-        juce::Rectangle<int> faderImg;  // the aspect-locked image, centred
-                                        // in the lane; CAP TRAVEL and the
-                                        // dB mapping live on THIS rect
+        juce::Rectangle<int> faderImg;  // the CAP AREA: FULL lane height,
+                                        // right of the tick lane. The cap
+                                        // travels all of it; the dB mapping
+                                        // lives on THIS rect
         juce::Rectangle<int> meter;     // fast-peak bars, always present
         juce::Rectangle<int> clip;      // latching clip lamp atop the meter
         juce::Rectangle<int> ai;        // opens this channel's conversation
@@ -2592,44 +2593,55 @@ private:
     // the wet-knob pattern). Frame indexing follows ChainWetKnob::paint: ONE
     // filmstrip implementation pattern, not a second.
     static constexpr int kFaderFrames = 128, kFaderFrameW = 60, kFaderFrameH = 480;
-    /** THE frame selector, pure: -24 dB = frame 0 (cap at the bottom),
-        +12 dB = frame 127 (cap at the top), clamped so an out-of-range gain
-        can never index past the strip. */
-    static int faderFrameForGain(float db)
+    // THE CAP SPRITE. Measured from the asset by alpha bounding box: every
+    // frame is TRANSPARENT except a constant 54x113 cap at x[3..56],
+    // translated vertically (frame 0's cap top at y 363, frame 127's at 3),
+    // and frame 64 carries ZERO pixels of alpha outside that band. THERE IS
+    // NO TRACK IN THE ARTWORK, so the track is drawn and ONE frame's cap is
+    // cropped at draw time: no asset change, no regenerated header.
+    //
+    // This retires the full-frame draw and with it the 1:8 lock, which was
+    // never the cap's aspect but the FRAME's. It capped image height at
+    // eight times image width, so the cap stopped short of the lane however
+    // long the lane was: the fault three passes could not reach. The cap now
+    // travels the WHOLE lane, and its own 54:113 aspect is preserved by
+    // deriving height from width.
+    static constexpr int kFaderCapSrcX = 3, kFaderCapSrcW = 54, kFaderCapSrcH = 113;
+    static constexpr int kFaderCapSrcY = 64 * kFaderFrameH + 182;   // frame 64
+    /** Drawn cap height for a cap area. UNIFORM scale: both axes take the
+        same capArea.getWidth() / 54 factor, so the cap is never stretched;
+        integer rounding is the only deviation, under half a pixel. */
+    static int faderCapH(juce::Rectangle<int> capArea)
     {
-        const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
-        return juce::jlimit(0, kFaderFrames - 1,
-                            (int)std::round(f * (float)(kFaderFrames - 1)));
+        return juce::jmax(4, (int)std::round((double)capArea.getWidth()
+                                             * (double)kFaderCapSrcH
+                                             / (double)kFaderCapSrcW));
     }
-    // The artwork's cap TRAVEL is inset from the frame edges: measured from
-    // the filmstrip itself (background-subtracted brightness centroid per
-    // frame), the cap centre runs row 419 (frame 0, -24 dB) to row 60
-    // (frame 127, +12 dB) of the 480-row frame, LINEAR at 2.83 rows/frame.
-    // dB therefore maps onto that band, not the full rect, so the ticks,
-    // the drag and the drawn cap land on the same pixel. Change these only
-    // by re-measuring the artwork.
-    static constexpr float kFaderTravelTopFrac = 60.0f  / 480.0f;
-    static constexpr float kFaderTravelBotFrac = 419.0f / 480.0f;
+    /** THE TRAVEL BAND, now DERIVED rather than measured off the artwork:
+        the cap CENTRE runs from half a cap below the lane top to half a cap
+        above the lane bottom, because a cap cannot leave its lane. The old
+        12.5 / 12.7 percent frame insets retire with the full-frame draw.
+        `capArea` is the full-height rect the cap travels
+        (StripGeom::faderImg). ONE pair, consumed by the drag, the ticks and
+        the drawn cap alike. */
+    static float faderTravelTop(juce::Rectangle<int> capArea)
+    { return (float)capArea.getY() + 0.5f * (float)faderCapH(capArea); }
+    static float faderTravelBot(juce::Rectangle<int> capArea)
+    { return (float)capArea.getBottom() - 0.5f * (float)faderCapH(capArea); }
     /** dB<->y for the fader rect, mapped across the artwork's cap travel
         band (see above). Same range (-24..+12), same 0.1 dB snap. Pure,
         shared by the drag, the travel ticks and the fallback thumb. */
-    static float gainFromY(int y, juce::Rectangle<int> track)
+    static float gainFromY(int y, juce::Rectangle<int> capArea)
     {
-        const float top = (float)track.getY()
-                        + kFaderTravelTopFrac * (float)track.getHeight();
-        const float bot = (float)track.getY()
-                        + kFaderTravelBotFrac * (float)track.getHeight();
+        const float top = faderTravelTop(capArea), bot = faderTravelBot(capArea);
         const float f = juce::jlimit(0.0f, 1.0f,
             (bot - (float)y) / juce::jmax(1.0f, bot - top));
         return juce::jlimit(-24.0f, 12.0f,
             std::round((-24.0f + f * 36.0f) * 10.0f) / 10.0f);
     }
-    static int yFromGain(float db, juce::Rectangle<int> track)
+    static int yFromGain(float db, juce::Rectangle<int> capArea)
     {
-        const float top = (float)track.getY()
-                        + kFaderTravelTopFrac * (float)track.getHeight();
-        const float bot = (float)track.getY()
-                        + kFaderTravelBotFrac * (float)track.getHeight();
+        const float top = faderTravelTop(capArea), bot = faderTravelBot(capArea);
         const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
         return (int)std::round(bot - f * (bot - top));
     }
@@ -2640,11 +2652,10 @@ private:
         cannot consume gainFromY deltas directly: those clamp at the travel
         rails, and a FINE drag whose cursor has passed a rail while its
         value has not would stall. */
-    static float gainPerPixel(juce::Rectangle<int> track)
+    static float gainPerPixel(juce::Rectangle<int> capArea)
     {
-        const float span = (kFaderTravelBotFrac - kFaderTravelTopFrac)
-                         * (float)juce::jmax(1, track.getHeight());
-        return 36.0f / juce::jmax(1.0f, span);
+        return 36.0f / juce::jmax(1.0f, faderTravelBot(capArea)
+                                      - faderTravelTop(capArea));
     }
     /** Shift = fine drag at one eighth speed. */
     static constexpr float kFaderFineRatio = 1.0f / 8.0f;
@@ -2789,6 +2800,9 @@ private:
         frame, not pay one each. */
     void paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                         const EchoJayProcessor::LinkDisplayEntry* entry);
+    /** The drawn track, its ticks and the cap sprite at `gDb`. ONE painter
+        for the channel strips and the bus, so the two cannot drift. */
+    void paintFaderLane(juce::Graphics& g, const StripGeom& sg, float gDb);
     /** Routes one press through stripHitAt. `local` is in sg's space.
         numClicks carries the double-click (fader reset to 0 dB). */
     void linkStripMouseDown(const StripGeom& sg, juce::Point<int> local,

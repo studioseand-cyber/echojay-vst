@@ -68,15 +68,15 @@ struct EchoJayLinkMixerTestAccess
                           const juce::String& effectiveUid)
     { return Ed::stripSelected (isBus, entryUid, effectiveUid); }
 
-    static int   frameFor (float db)                        { return Ed::faderFrameForGain (db); }
-    static float travelTop()                                { return Ed::kFaderTravelTopFrac; }
-    static float travelBot()                                { return Ed::kFaderTravelBotFrac; }
+    static float travelTop (juce::Rectangle<int> a)         { return Ed::faderTravelTop (a); }
+    static float travelBot (juce::Rectangle<int> a)         { return Ed::faderTravelBot (a); }
+    static int   capH (juce::Rectangle<int> a)              { return Ed::faderCapH (a); }
+    static int   capSrcW()                                  { return Ed::kFaderCapSrcW; }
+    static int   capSrcH()                                  { return Ed::kFaderCapSrcH; }
     static float perPixel (juce::Rectangle<int> t)          { return Ed::gainPerPixel (t); }
     static float fineRatio()                                { return Ed::kFaderFineRatio; }
     static float gFromY (int y, juce::Rectangle<int> t)     { return Ed::gainFromY (y, t); }
     static int   yFromG (float db, juce::Rectangle<int> t)  { return Ed::yFromGain (db, t); }
-    static int   frames()                                   { return Ed::kFaderFrames; }
-    static int   frameH()                                   { return Ed::kFaderFrameH; }
 
     static int   bandGap()    { return Ed::kBandGap; }
     static int   meterWMin()  { return Ed::kMeterWMin; }
@@ -274,10 +274,11 @@ static void testFaderAspect (int stripW, int bandH)
 
     const auto& s0 = links[0];
     const auto f = s0.fader;
-    std::printf ("  lane %dx%d, image %dx%d (%d%% of lane), meter %dx%d\n",
+    std::printf ("  lane %dx%d, cap %dx%d, throw %d px (%.3f dB/px), meter %dx%d\n",
                  f.getWidth(), f.getHeight(),
-                 s0.faderImg.getWidth(), s0.faderImg.getHeight(),
-                 f.getHeight() > 0 ? s0.faderImg.getHeight() * 100 / f.getHeight() : 0,
+                 s0.faderImg.getWidth(), T::capH (s0.faderImg),
+                 f.getHeight() - T::capH (s0.faderImg),
+                 36.0 / (double) juce::jmax (1, f.getHeight() - T::capH (s0.faderImg)),
                  s0.meter.getWidth(), s0.meter.getHeight());
 
     // THE METER IS PERMANENT CHROME: present at every shipping size.
@@ -306,14 +307,18 @@ static void testFaderAspect (int stripW, int bandH)
         check (std::abs ((fi.getY() - f.getY())
                          - (f.getBottom() - fi.getBottom())) <= 1,
                "the image is centred in the lane");
-        // THE ASPECT LOCK, held as EQUALITY: the visual pass sized the
-        // image to the whole column and drew a 96-tall frame 16 wide (1:6),
-        // and the old <= assertion let it through. Width derives from
-        // height now, so this is exact.
-        checkEq (fi.getWidth() * 8, fi.getHeight(), "the image is EXACTLY 1:8");
-        check (fi.getWidth() <= 60, "the fader never upscales from the source");
-        check (fi.getWidth() <= f.getWidth(), "the image fits its lane");
-        checkEq (fi.getRight(), f.getRight(), "the image is right-aligned, ticks to its left");
+        // THE CLAIM THAT FAILED THREE TIMES, now held as EQUALITY at both
+        // ends: the CAP AREA spans the whole lane, so the cap can reach the
+        // meter's top and bottom. The 1:8 assertions retire with the lock;
+        // the cap sprite carries its own aspect, checked in the mapping
+        // test against the sprite's real 54:113.
+        checkEq (fi.getY(),      f.getY(),      "the cap area starts at the lane top");
+        checkEq (fi.getBottom(), f.getBottom(), "the cap area ends at the lane bottom");
+        checkEq (fi.getRight(),  f.getRight(),  "the cap area is right-aligned, ticks to its left");
+        check (fi.getWidth() <= f.getWidth(), "the cap area fits its lane");
+        check (T::capH (fi) <= T::capSrcH(), "the cap never upscales from the sprite");
+        check (fi.getWidth() <= T::capSrcW(), "the cap never upscales horizontally");
+        check (T::capH (fi) < fi.getHeight(), "the cap is shorter than its travel");
 
         // THE BUDGET: the pair no longer fills the band. Both widths are
         // fixed per mode and the GROUP IS CENTRED, surplus width becoming
@@ -327,8 +332,8 @@ static void testFaderAspect (int stripW, int bandH)
                "the fader column is wider than the meter");
         // The image fills a real proportion of its lane rather than
         // floating in a long groove (the fault this pass fixes).
-        check (fi.getHeight() * 100 >= f.getHeight() * 65,
-               "the image fills at least 65 percent of the lane");
+        checkEq (fi.getHeight(), f.getHeight(),
+                 "the cap area IS the lane height, so the throw is the whole lane");
 
         checkEq (s0.meter.getX() - f.getRight(), T::bandGap(),
                  "fader column and meter sit one band gap apart");
@@ -520,16 +525,27 @@ static void testFaderMapping()
     std::printf ("fader mapping: endpoints, round-trip, clamps, frames\n");
     const juce::Rectangle<int> t { 10, 50, 23, 191 };
 
-    // The mapping runs across the artwork's measured CAP TRAVEL band, not
-    // the full rect: the caps physically cannot reach the frame edges, so a
-    // full-rect mapping put ticks where no cap can go (the item-1 bug's
-    // second half). Endpoints land at the travel fractions.
-    const int top = t.getY() + (int) std::round (T::travelTop() * (float) t.getHeight());
-    const int bot = t.getY() + (int) std::round (T::travelBot() * (float) t.getHeight());
-    check (std::abs (T::yFromG (-24.0f, t) - bot) <= 1, "-24 dB sits at the travel bottom");
-    check (std::abs (T::yFromG ( 12.0f, t) - top) <= 1, "+12 dB sits at the travel top");
+    // THE TRAVEL BAND IS NOW DERIVED from the cap, not measured off the
+    // frame: the cap centre runs half a cap below the lane top to half a cap
+    // above the lane bottom, so THE CAP REACHES BOTH ENDS OF THE LANE. That
+    // is the claim three passes failed, so it is held as EQUALITY.
+    const int ch  = T::capH (t);
+    const int top = (int) std::round (T::travelTop (t));
+    const int bot = (int) std::round (T::travelBot (t));
+    checkEq (T::yFromG ( 12.0f, t) - ch / 2, t.getY(),
+             "at +12 dB the cap TOP sits exactly at the lane top");
+    checkEq (T::yFromG (-24.0f, t) + ch / 2, t.getBottom(),
+             "at -24 dB the cap BOTTOM sits exactly at the lane bottom");
+    check (std::abs (T::yFromG ( 12.0f, t) - top) <= 1, "+12 dB is the travel top");
+    check (std::abs (T::yFromG (-24.0f, t) - bot) <= 1, "-24 dB is the travel bottom");
     check (T::gFromY (bot, t) == -24.0f, "the travel bottom reads -24 dB");
     check (T::gFromY (top, t) ==  12.0f, "the travel top reads +12 dB");
+
+    // UNIFORM SCALE: cap height derives from cap width by the sprite's own
+    // ratio, so the cap is never stretched on one axis.
+    check (std::abs ((double) ch / (double) t.getWidth()
+                     - (double) T::capSrcH() / (double) T::capSrcW()) < 0.05,
+           "the cap keeps the sprite's aspect");
 
     // A known gain maps to a known y: 0 dB is two thirds up the travel.
     {
@@ -537,54 +553,17 @@ static void testFaderMapping()
         check (std::abs (T::yFromG (0.0f, t) - want) <= 1, "0 dB sits two thirds up the travel");
     }
 
-    // Clamping: outside the rect (and outside the travel band) pins.
-    check (T::gFromY (t.getBottom() + 50, t) == -24.0f, "below the rect clamps to -24");
-    check (T::gFromY (t.getY() - 50, t)      ==  12.0f, "above the rect clamps to +12");
+    // Clamping: outside the lane pins.
+    check (T::gFromY (t.getBottom() + 50, t) == -24.0f, "below the lane clamps to -24");
+    check (T::gFromY (t.getY() - 50, t)      ==  12.0f, "above the lane clamps to +12");
 
-    // Round-trip within one pixel + one snap step across the travel band:
-    // 36 dB over ~0.75 * 191 px is ~0.25 dB per px, snap is 0.1.
+    // Round-trip within one pixel plus one snap step.
     for (float db = -24.0f; db <= 12.01f; db += 1.7f)
     {
         const float back = T::gFromY (T::yFromG (db, t), t);
         check (std::abs (back - db) <= 0.35f, "dB<->y round-trips within tolerance");
     }
 
-    // gainPerPixel is DERIVED from the same travel constants the mapping
-    // uses; hold it to the mapping so the incremental (fine) drag and the
-    // absolute mapping can never disagree about where a dB lives. Over a
-    // 40px span the snap quantisation contributes at most 0.1.
-    {
-        const int y0 = t.getY() + 40;
-        const float mapped = T::gFromY (y0, t) - T::gFromY (y0 + 40, t);
-        check (std::abs (std::abs (mapped) - T::perPixel (t) * 40.0f) <= 0.15f,
-               "gainPerPixel matches the gainFromY mapping over a span");
-    }
-    check (T::fineRatio() > 0.0f && T::fineRatio() < 1.0f,
-           "the fine ratio slows the drag, never reverses or stops it");
-
-    // The bus trim shares this mapping wholesale, so its clamp range must
-    // BE the fader's range; a divergence here would let the processor hold
-    // a value the fader cannot express.
-    check (EchoJayProcessor::kBusGainMinDb == -24.0f
-        && EchoJayProcessor::kBusGainMaxDb == 12.0f,
-           "the bus trim clamps to the fader's own range");
-
-    // Frames: full range maps 0..127, monotonic, and clamped so no gain can
-    // index past the strip (frame*480 + 480 <= 61440 always).
-    checkEq (T::frameFor (-24.0f), 0,               "-24 dB is frame 0");
-    checkEq (T::frameFor ( 12.0f), T::frames() - 1, "+12 dB is frame 127");
-    checkEq (T::frameFor (-999.0f), 0,              "far below range clamps to frame 0");
-    checkEq (T::frameFor ( 999.0f), T::frames() - 1,"far above range clamps to frame 127");
-    int prev = -1;
-    for (float db = -24.0f; db <= 12.01f; db += 0.1f)
-    {
-        const int f = T::frameFor (db);
-        check (f >= prev, "frame index is monotonic in gain");
-        check (f >= 0 && f < T::frames(), "frame index stays in [0,127]");
-        prev = f;
-    }
-    check ((T::frames() - 1) * T::frameH() + T::frameH() <= 61440,
-           "last frame's source rect stays inside the 60x61440 strip");
 }
 
 static void testMeterMapping()

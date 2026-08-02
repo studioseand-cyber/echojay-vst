@@ -6095,11 +6095,10 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
     const int lead   = juce::jmax(0, (bandInnerW - groupW) / 2);
     const int tickLane = faderColW >= kFaderColWide ? kFaderTickLaneW
                                                     : kFaderTickLaneN;
-    const int faderImgW = juce::jmax(0, faderColW - tickLane);
-    // 1:8 lock, snapped DOWN to an exact multiple of 8 after the band-height
-    // clamp, so the drawn width (faderH / 8) is exact rather than nearly so.
-    int faderH = juce::jmin(bandH, faderImgW * 8);
-    faderH -= faderH % 8;
+    // The CAP AREA is the lane minus its tick lane, at FULL lane height:
+    // the cap travels all of it. No height derivation survives here, because
+    // the frame's 1:8 lock retired with the full-frame draw.
+    const int capAreaW = juce::jmax(0, faderColW - tickLane);
 
     // ---- ONE element-layout routine, used by the bus strip AND every Link
     // strip, so the pinned master cannot drift from the channels ------------
@@ -6126,16 +6125,14 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
             // The LANE is the full column, so fader and meter share height
             // and baseline (and the drag target grows with it). The IMAGE
             // is EXACTLY 1:8 and right-aligned in the lane, tick lane to its
-            // left, vertically centred. The visual pass sized this rect to
-            // the whole column width, which stretched the artwork (a 96-tall
-            // image drawn 16 wide is 1:6, not 1:8); the width now derives
-            // from the height, so the lock cannot be lost again.
-            sg.fader = col;
-            int ih = juce::jmin(faderH, col.getHeight());
-            ih -= ih % 8;
-            const int iw = ih / 8;
-            sg.faderImg = { col.getRight() - iw,
-                            col.getCentreY() - ih / 2, iw, ih };
+            // left. THE CAP AREA IS THE FULL LANE HEIGHT, so lane, cap
+            // area and meter share top and bottom exactly and the cap
+            // travels the whole of it: the thing three passes could not
+            // deliver while the frame's 1:8 lock capped image height at
+            // eight times image width.
+            sg.fader    = col;
+            sg.faderImg = { col.getRight() - capAreaW, col.getY(),
+                            capAreaW, col.getHeight() };
             fmBand.removeFromLeft(kBandGap);
         }
         // The meter is a FIXED width now (the remainder is breathing room),
@@ -7175,6 +7172,62 @@ void EchoJayEditor::linkPendingFor(const juce::String& addr, bool& pending,
         { pending = !p.timedOut; timedOut = p.timedOut; target = p.target; }
 }
 
+void EchoJayEditor::paintFaderLane(juce::Graphics& g, const StripGeom& sg,
+                                   float gDb)
+{
+    const auto cap = sg.faderImg;              // the CAP AREA: full lane height
+    if (cap.isEmpty()) return;
+    const int capH = faderCapH(cap);
+
+    // ---- THE TRACK, drawn rather than baked. The artwork carries no track
+    // at all (every frame is transparent outside its cap), which is exactly
+    // what frees the cap to travel the whole lane. A recessed slot down the
+    // cap area's centre, full height, so the throw reads as a real one.
+    const int slotX = cap.getCentreX() - 1;
+    g.setColour(LinkConsole::well.darker(0.25f));
+    g.fillRoundedRectangle((float)slotX, (float)cap.getY(),
+                           3.0f, (float)cap.getHeight(), 1.5f);
+    g.setColour(juce::Colours::white.withAlpha(0.05f));
+    g.fillRect(slotX + 3, cap.getY(), 1, cap.getHeight());
+
+    // ---- Ticks: MINOR every 2 dB, MAJOR every 6, zero emphasised, all
+    // mapped by the SAME yFromGain the drag and the cap use.
+    const int laneR = cap.getX() - 1;
+    for (int m = 12; m >= -24; m -= 2)
+    {
+        const int ty = yFromGain((float)m, cap);
+        const bool major = (m % 6 == 0);
+        const bool zero  = (m == 0);
+        g.setColour(zero ? LinkConsole::label
+                  : major ? LinkConsole::structure
+                          : LinkConsole::structure.withAlpha(0.5f));
+        const int tx = major ? sg.fader.getX() : sg.fader.getX() + 1;
+        g.fillRect(tx, ty, juce::jmax(1, laneR - tx), zero ? 2 : 1);
+    }
+
+    // ---- The cap, cropped straight out of frame 64 and scaled UNIFORMLY
+    // (height derives from width via faderCapH). Its centre is yFromGain's
+    // answer, so ticks, drag and drawn cap cannot disagree.
+    const int cy = yFromGain(gDb, cap);
+    const juce::Rectangle<int> dest(cap.getX(), cy - capH / 2,
+                                    cap.getWidth(), capH);
+    const auto strip = getFaderFilmstrip();
+    if (strip.isValid())
+    {
+        g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+        g.drawImage(strip, dest.getX(), dest.getY(),
+                    dest.getWidth(), dest.getHeight(),
+                    kFaderCapSrcX, kFaderCapSrcY, kFaderCapSrcW, kFaderCapSrcH);
+    }
+    else
+    {
+        // Decode-failure fallback on the SAME mapping, so the control stays
+        // usable and stays in the right place.
+        g.setColour(LinkConsole::value);
+        g.fillRoundedRectangle(dest.toFloat(), 2.0f);
+    }
+}
+
 void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                                    const EchoJayProcessor::LinkDisplayEntry* entry)
 {
@@ -7470,36 +7523,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             // by the processor's persisted value. No pending display: the
             // value applies immediately and paint reads it straight back.
             const float gDb = processorRef.getBusGainDb();
-            const juce::Rectangle<int> img = sg.faderImg;
-            const int imgW = img.getHeight() / 8;
-            const int slotX = img.getRight() - imgW / 2 - 1;
-            g.setColour(LinkConsole::well.brighter(0.06f));
-            if (img.getY() > sg.fader.getY())
-                g.fillRect(slotX, sg.fader.getY(), 2, img.getY() - sg.fader.getY());
-            if (sg.fader.getBottom() > img.getBottom())
-                g.fillRect(slotX, img.getBottom(), 2,
-                           sg.fader.getBottom() - img.getBottom());
-            const int laneR = img.getX() - 1;
-            for (int m = 12; m >= -24; m -= 2)
-            {
-                const int ty = yFromGain((float)m, img);
-                const bool major = (m % 6 == 0);
-                const bool zero  = (m == 0);
-                g.setColour(zero ? LinkConsole::label
-                          : major ? LinkConsole::structure
-                                  : LinkConsole::structure.withAlpha(0.5f));
-                const int tx = major ? sg.fader.getX() : sg.fader.getX() + 1;
-                g.fillRect(tx, ty, juce::jmax(1, laneR - tx), zero ? 2 : 1);
-            }
-            const auto strip = getFaderFilmstrip();
-            if (strip.isValid())
-            {
-                const int frame = faderFrameForGain(gDb);
-                g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
-                g.drawImage(strip, img.getX(), img.getY(),
-                            img.getWidth(), img.getHeight(),
-                            0, frame * kFaderFrameH, kFaderFrameW, kFaderFrameH);
-            }
+            paintFaderLane(g, sg, gDb);
             // A restored non-zero trim must be VISIBLE on load, not a
             // surprise found by squinting at a cap: the value prints above
             // the fader whenever it is not unity.
@@ -7508,8 +7532,8 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 g.setColour(LinkConsole::caption);
                 g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
                 g.drawText(juce::String(gDb, 1),
-                           img.getX() - 4, img.getY() - 11,
-                           img.getWidth() + 8, 10,
+                           sg.faderImg.getX() - 4, sg.faderImg.getY() + 1,
+                           sg.faderImg.getWidth() + 8, 10,
                            juce::Justification::centred);
             }
         }
@@ -7528,60 +7552,7 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             // construction. The lane (sg.fader) runs the full band height:
             // a groove line continues the slot above and below the image so
             // the lane reads as one object sharing the meter's extent.
-            const juce::Rectangle<int> img = sg.faderImg;
-            const int imgW = img.getHeight() / 8;
-            const int slotX = img.getRight() - imgW / 2 - 1;
-            g.setColour(LinkConsole::well.brighter(0.06f));
-            if (img.getY() > sg.fader.getY())
-                g.fillRect(slotX, sg.fader.getY(), 2, img.getY() - sg.fader.getY());
-            if (sg.fader.getBottom() > img.getBottom())
-                g.fillRect(slotX, img.getBottom(), 2,
-                           sg.fader.getBottom() - img.getBottom());
-
-            // Travel ticks, reference density: MINOR every 2 dB (short,
-            // dim), MAJOR every 6 dB (longer), 0 dB emphasised. All mapped
-            // by the same yFromGain the drag consumes, over the IMAGE rect,
-            // where the travel physically lives.
-            const int laneR = img.getX() - 1;
-            for (int m = 12; m >= -24; m -= 2)
-            {
-                const float mark = (float)m;
-                const int ty = yFromGain(mark, img);
-                const bool major = (m % 6 == 0);
-                const bool zero  = (m == 0);
-                g.setColour(zero ? LinkConsole::label
-                          : major ? LinkConsole::structure
-                                  : LinkConsole::structure.withAlpha(0.5f));
-                const int tx = major ? sg.fader.getX() : sg.fader.getX() + 1;
-                g.fillRect(tx, ty, juce::jmax(1, laneR - tx), zero ? 2 : 1);
-            }
-
-            const auto strip = getFaderFilmstrip();
-            if (strip.isValid())
-            {
-                // Frame indexing per ChainWetKnob::paint: clamped index,
-                // source rect 0, frame * frameH, frameW, frameH.
-                const int frame = faderFrameForGain(gDb);
-                g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
-                g.drawImage(strip,
-                            img.getX(), img.getY(),
-                            img.getWidth(), img.getHeight(),
-                            0, frame * kFaderFrameH, kFaderFrameW, kFaderFrameH);
-            }
-            else
-            {
-                // Decode-failure fallback, the wet-knob pattern: a plain
-                // groove + thumb line so the control stays usable. yFromGain
-                // is the same mapping the drag consumes.
-                const int cx = sg.fader.getCentreX();
-                g.setColour(C::bg4);
-                g.fillRoundedRectangle((float)cx - 2.0f, (float)sg.fader.getY(),
-                                       4.0f, (float)sg.fader.getHeight(), 2.0f);
-                const int ty = yFromGain(gDb, img);
-                g.setColour(LinkConsole::value);
-                g.fillRoundedRectangle((float)sg.fader.getX(), (float)ty - 2.0f,
-                                       (float)sg.fader.getWidth(), 4.0f, 2.0f);
-            }
+            paintFaderLane(g, sg, gDb);
         }
     }
 }
