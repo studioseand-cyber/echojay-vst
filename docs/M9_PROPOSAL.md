@@ -901,6 +901,23 @@ code does not — **suitability must be measured, never named** — which is
 why the sensitivity check now tries several candidates and treats one
 mover as proof and one null as nothing.
 
+**An eighth entry, and it is a procedure rather than an instance: A DEFECT
+FOUND IN ONE SUITE MUST BE CHECKED IN THE OTHERS BEFORE CONCLUDING THEY
+ARE UNAFFECTED.** The Delta_pred defect — predicting against a full ladder
+span while the feature moved only across the probed points — was found in
+the limiter. The gate carried it **identically**, and was invisible because
+a null feature absorbed the symptom: with nothing moving, no comparison
+could look wrong. Fixing it un-masked a gate threshold that tracks (52.00
+dB measured against 54.00 predicted), the first real verdict that suite
+ever produced.
+
+**Masking is what made it hard to see, not the defect.** A suite that is
+already failing for another reason cannot report a second defect, so the
+quiet ones are where shared inputs go wrong unnoticed. The exposure check —
+grep the input, not the symptom — is what found it, and it costs one search
+against the alternative of rediscovering the same bug per suite over
+following sessions.
+
 **Test the property, not the happy path.** A choke-point guard is only
 proven by adding a caller that does *not* cooperate and confirming the
 guard still fires — the forgettability property is the whole point, and a

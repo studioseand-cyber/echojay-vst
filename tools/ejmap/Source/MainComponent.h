@@ -1381,7 +1381,8 @@ public:
 
         if (mode == "turns")
         {
-            const char* subs2[] = { "SSL X-Gate", "AMEK EQ 200" };
+            const char* subs2[] = { "SSL X-Gate", "SSL X-Limit", "kHs Gate",
+                                    "Weiss Deess", "bx_limiter True Peak", "spiff" };
             auto census6 = echojay::auregistry::buildCensus();
             say ("TURNS: does ONE dispatch turn (zero sleep) deliver the write?");
             for (auto* want : subs2)
