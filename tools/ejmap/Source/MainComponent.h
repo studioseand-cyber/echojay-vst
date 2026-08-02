@@ -26,6 +26,8 @@
 #include "EchoJayParamMaps.h"   // fingerprintForDescription
 #include "EjmapMouth.h"
 #include "EjmapProbe.h"
+#include <thread>
+#include <atomic>
 #include "EjmapBuildInfo.h"     // EJMAP_APPLY_HEADER_SHA, stamped as compiled
 #include <sys/stat.h>            // machine_id 0600, ejextract convention
 
@@ -1184,6 +1186,77 @@ public:
         // one turn after every write" with no duration constant -- which
         // cannot be wrong on a slower or busier machine, and the cost
         // question dissolves.
+        if (mode == "subms")
+        {
+            // Sub-millisecond pump: spin while dispatching, so elapsed CLOCK
+            // passes (which the turn test proved is what matters) at a
+            // resolution runDispatchLoopUntil's integer ms cannot reach.
+            auto pumpFor = [] (double ms) {
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                do { juce::MessageManager::getInstance()->runDispatchLoopUntil (0); }
+                while (juce::Time::getMillisecondCounterHiRes() - t0 < ms); };
+
+            const char* cands[] = { "SSL X-Gate", "kHs Gate", "SSL X-Limit", "Weiss Deess" };
+            const double durs[] = { 0.0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 2.0 };
+            auto census7 = echojay::auregistry::buildCensus();
+            say ("SUB-MS SWEEP (spin-pump, clock-accurate). Delta per pump duration, dB.");
+
+            std::atomic<bool> busy { false };
+            juce::OwnedArray<std::thread> loaders;
+
+            for (auto* want : cands)
+            {
+                juce::PluginDescription pd7;
+                for (const auto& t : census7.targets)
+                { auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+                  if (d.name.containsIgnoreCase (want)) { pd7 = d; break; } }
+                if (pd7.fileOrIdentifier.isEmpty()) { say ("  " + juce::String (want) + ": absent"); continue; }
+                host.unload();
+                loadedName = pd7.name; loadedId = pd7.fileOrIdentifier; loadedDesc = pd7;
+                if (host.load (pd7, watchdog).outcome != LoadOutcome::ok)
+                { say ("  " + juce::String (want) + ": load failed"); continue; }
+                auto* ci = host.getInstance();
+                auto cp = ci->getParameters();
+                int ip = -1;
+                for (auto* n : { "Output", "Gain", "Ceiling", "Threshold", "Mix" })
+                { for (int i = 0; i < cp.size(); ++i)
+                    if (cp[i]->getName (64).containsIgnoreCase (n) && cp[i]->isAutomatable())
+                    { ip = i; break; }
+                  if (ip >= 0) break; }
+                if (ip < 0) { say ("  " + juce::String (want) + ": no candidate param"); continue; }
+
+                auto sweepOnce = [&] (bool loaded) {
+                    juce::String line = juce::String ("    ") + (loaded ? "LOADED" : "idle  ") + " |";
+                    for (double d : durs)
+                    {
+                        auto once = [&] (float v) {
+                            cp[ip]->setValueNotifyingHost (v);
+                            if (d > 0) pumpFor (d);
+                            host.pausePumpForMutation();
+                            auto r = P::levelSweptBursts (*ci, 0.2, 0.0, 6.0, 4);
+                            host.resumePumpAfterMutation(); return r; };
+                        auto a = once (0.15f); auto b = once (0.85f);
+                        double w = 0;
+                        for (int i = 0; i < a.size() && i < b.size(); ++i)
+                            w = juce::jmax (w, std::abs (b[i] - a[i]));
+                        line << " " << juce::String (d, 2) << ":" << juce::String (w, 1);
+                    }
+                    return line; };
+
+                say ("  " + pd7.name + "  [" + juce::String (ip) + "] " + cp[ip]->getName (24));
+                say (sweepOnce (false));
+                busy = true;
+                for (int t = 0; t < 6; ++t)
+                    loaders.add (new std::thread ([&busy] { volatile double x = 0;
+                        while (busy) for (int k = 0; k < 100000; ++k) x += std::sin ((double) k); }));
+                say (sweepOnce (true));
+                busy = false;
+                for (auto* t : loaders) if (t->joinable()) t->join();
+                loaders.clear();
+            }
+            std::cout << "SUBMS: DONE" << std::endl; quitNow(); return;
+        }
+
         if (mode == "turns")
         {
             const char* subs2[] = { "SSL X-Gate", "AMEK EQ 200" };
