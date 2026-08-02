@@ -736,6 +736,33 @@ cases 1 and 3 are consumer-side defects M9 arms but cannot fire.**
 
 ---
 
+## Future work, recorded not built: the over-claiming-scale defect class
+
+**A third defect category, alongside dead indices and mode suppression.**
+Measured on API-2500 (2026-08-02): its threshold ladder delivers **~45% of
+nameplate** — walking the ladder 15 dB moves the actual compression onset
+about 6.4 dB. Confirmed by **two independent estimators sharing no
+machinery** (knee location via two-segment fit: 44%; gain reduction at
+three fixed probe levels: 47%), with the ratio confounder excluded by
+recomputing against the *measured* 7.04:1 rather than the nominal 10:1.
+
+The shape of the defect: **the map is correct** — the index is right, the
+anchors are right, the write lands — **and the plugin's own scale
+over-claims**, so a dialled value lands well short of what the user asked
+for. Neither a dead index nor a suppressing mode; nothing in the parameter
+list, the display, or the readback can reveal it. **Only a probe that
+measures EFFECT rather than POSITION can see it**, which is the argument
+for M9 stated in a single measurement.
+
+The method that found it is the one to reuse: hold the confounding
+parameter fixed, walk the ladder across ≥4 points, measure the effect at
+fixed probe levels, and require two estimators to agree before attributing
+the shortfall to the plugin rather than the instrument.
+
+The consumer-side question — what a dial-time layer should DO when a map
+is correct but its scale under-delivers — is out of M9's scope and needs
+its own decision.
+
 ## Open questions (all prior ones decided or answered by measurement)
 
 0. **The frequency gate vs its own σ floor — raised, not resolved, because it

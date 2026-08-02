@@ -1218,11 +1218,31 @@ public:
         // ---- knee2 (ITEM 1): the knee estimator on a SHARP-curve design ---
         if (mode == "knee2")
         {
-            auto census2 = echojay::auregistry::buildCensus();
+            // ITEM 1: the scopes were the right shape at the WRONG SITE.
+            // MCompressor dies inside the registry walk, before any load, so
+            // the stake and the deadline belong HERE -- around buildCensus and
+            // the per-target describeFromRegistry loop. The stake names the
+            // search target because no plugin id exists yet.
+            const juce::String want = "MCompressor";
+            ledger.beginLoad ("census:" + want, want, "", "AudioUnit", "",
+                              "probe_gate_census", "probe_gate_census");
             juce::PluginDescription mc;
-            for (const auto& t : census2.targets)
-            { auto d = echojay::auregistry::describeFromRegistry (t.identifier);
-              if (d.name.containsIgnoreCase ("MCompressor")) { mc = d; break; } }
+            {
+                Watchdog::Scope guard (watchdog, "probe_gate_census", "census:" + want,
+                                       want, "AudioUnit", "probe", 30000);
+                auto census2 = echojay::auregistry::buildCensus();
+                for (const auto& t : census2.targets)
+                {
+                    // per-target scope: the walk is a loop, and a wedge inside
+                    // ONE describe must name that target, not the whole walk.
+                    Watchdog::Scope inner (watchdog, "probe_gate_describe", t.identifier,
+                                           t.identifier, "AudioUnit", "probe", 15000);
+                    auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+                    if (d.name.containsIgnoreCase (want)) { mc = d; break; }
+                }
+            }
+            if (mc.fileOrIdentifier.isNotEmpty())
+                ledger.quarantine ("census:" + want, "probe gate: census walk completed", "probe");
             if (mc.fileOrIdentifier.isEmpty())
             { say ("KNEE2: no digital-style compressor on this machine"); quitNow(); return; }
             host.unload();
