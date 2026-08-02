@@ -821,6 +821,29 @@ amplitude, so steppedCurve now converts its RMS reading to peak
 (+3.0103 dB) and every curve number is dBFS PEAK. The mismatch was never
 limiter-only -- it offset the knee estimator too.
 
+## VERIFICATION MUST READ WHAT THE CONSUMER READS
+
+**The general rule, stated once above the instances: confirming a write by
+the writer's return value tests the writer, not the artefact.** Four
+instances in this module, the same shape in four different materials:
+
+| the write | what was checked | what the consumer reads |
+|---|---|---|
+| `writeConfirm` on a parameter | `getValue()` — the property plane, which answers instantly | the DSP, which needed the runloop serviced. Five sessions of misdiagnosis |
+| the probe stake's plugin id | the string, by eye, and it looked plausible | `ScannedPlugin::pluginId()`. A doubled prefix would have keyed the quarantine row to a plugin that does not exist — downstream that reads as NO row, not a wrong one |
+| proposal edit (backticked identifiers) | the edit returned | the file, where the shell had eaten three identifiers before python saw them |
+| proposal edit (stale anchor) | the edit returned | the file, unchanged — the anchor no longer matched |
+| proposal edit (invented anchor) | the edit returned | the file, unchanged — the anchor **never existed**; `grep` for it returns nothing |
+
+Three of those five were caught by chance, one by a later run, and only the
+last by an actual check. **Verification has to read the thing the consumer
+reads** — the rendered signal, not the property; the id scheme's own
+constructor, not the eye; the file on disk, not the writer's return value.
+
+A corollary worth keeping: a check that cannot fail is not a check. `grep -c`
+on text you also wrote in the same breath tests nothing unless the pattern
+comes from the consumer's side of the contract.
+
 ## THE MISPLACED GUARD — a named defect class, beside the silent-drop list
 
 Three instances in this module, all the same shape, all fixed the same way.
