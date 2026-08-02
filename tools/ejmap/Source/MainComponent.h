@@ -1396,11 +1396,36 @@ public:
                 if (host.load (pd6, watchdog).outcome != LoadOutcome::ok) continue;
                 auto* ci = host.getInstance();
                 auto cp = ci->getParameters();
+                // NO SILENT SKIP. The previous version required the name
+                // "Output" and did a bare `continue`, so spiff (sensitivity,
+                // decay, trim, mix) was dropped without a word and its absence
+                // was then reported as the subject's problem. Suitability is
+                // measured, not named -- instance seven's rule applied to a
+                // diagnostic rather than a suite -- so any automatable
+                // parameter that actually moves the render will do.
                 int ip = -1;
-                for (int i = 0; i < cp.size(); ++i)
-                    if (cp[i]->getName (64).containsIgnoreCase ("Output") && cp[i]->isAutomatable())
-                    { ip = i; break; }
-                if (ip < 0) continue;
+                for (auto* n : { "Output", "Gain", "Trim", "Mix", "Ceiling",
+                                 "Threshold", "Drive", "Depth", "Amount" })
+                {
+                    for (int i = 0; i < cp.size(); ++i)
+                        if (cp[i]->getName (64).containsIgnoreCase (n) && cp[i]->isAutomatable())
+                        { ip = i; break; }
+                    if (ip >= 0) break;
+                }
+                if (ip < 0)
+                    for (int i = 0; i < cp.size(); ++i)      // last resort: anything automatable
+                        if (cp[i]->isAutomatable() && ! cp[i]->isDiscrete()) { ip = i; break; }
+                if (ip < 0)
+                {
+                    juce::StringArray names;
+                    for (int i = 0; i < juce::jmin (8, cp.size()); ++i) names.add (cp[i]->getName (20));
+                    say ("  " + juce::String (pd6.name).paddedRight (' ', 16)
+                         + "| SKIPPED, and here is why: no automatable continuous parameter. Its "
+                         + juce::String (cp.size()) + " params begin: " + names.joinIntoString (", "));
+                    continue;
+                }
+                say ("  " + juce::String (pd6.name).paddedRight (' ', 16) + "| probing ["
+                     + juce::String (ip) + "] " + cp[ip]->getName (24));
                 // three deliveries: none, ONE turn (zero sleep), 1 ms
                 const char* how[] = { "no pump at all", "ONE turn, zero sleep", "1 ms sleep-pump" };
                 juce::String line = "  " + juce::String (pd6.name).paddedRight (' ', 16) + "|";
