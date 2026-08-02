@@ -314,11 +314,14 @@ static void testFaderAspect (int stripW, int bandH)
         check (fi.getWidth() <= f.getWidth(), "the image fits its lane");
         checkEq (fi.getRight(), f.getRight(), "the image is right-aligned, ticks to its left");
 
-        // THE BUDGET (visual pass 3): fader column + gap + meter fills the
-        // band exactly, and the FADER takes the larger share, because
-        // column width is fader height is throw.
-        const int inner = f.getWidth() + T::bandGap() + s0.meter.getWidth();
-        checkEq (inner, stripW - 8, "fader, gap and meter fill the band exactly");
+        // THE BUDGET: the pair no longer fills the band. Both widths are
+        // fixed per mode and the GROUP IS CENTRED, surplus width becoming
+        // breathing room rather than fatter controls.
+        const int bandL = s0.full.getX() + 4, bandR = s0.full.getRight() - 4;
+        const int groupW = f.getWidth() + T::bandGap() + s0.meter.getWidth();
+        check (groupW <= bandR - bandL, "the pair fits the band");
+        check (std::abs ((f.getX() - bandL) - (bandR - s0.meter.getRight())) <= 1,
+               "the pair is centred in the band");
         check (f.getWidth() > s0.meter.getWidth(),
                "the fader column is wider than the meter");
         // The image fills a real proportion of its lane rather than

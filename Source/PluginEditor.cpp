@@ -6076,10 +6076,24 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
     // label threshold dropped with it, so wide still numbers every mark on
     // slimmer bars.
     const int bandInnerW = juce::jmax(0, stripW - inner * 2);
-    int faderColW = bandInnerW >= 60 ? kFaderColWide : kFaderColNarrow;
-    if (faderColW + kBandGap + kMeterWMin > bandInnerW)
-        faderColW = juce::jmax(0, bandInnerW - kBandGap - kMeterWMin);
+    const bool wideBand = bandInnerW >= 60;
+    int faderColW = wideBand ? kFaderColWide   : kFaderColNarrow;
+    int meterW    = wideBand ? kMeterWWide     : kMeterWNarrow;
+    // BOTH WIDTHS ARE FIXED per mode now, and wide is only a modest step up
+    // from narrow: the surplus strip width becomes BREATHING ROOM around the
+    // pair rather than fatter controls. Squeeze order is unchanged, the
+    // meter still wins: it gives way only to its own floor, then the fader
+    // column absorbs the rest and drops entirely below a usable sliver.
+    if (faderColW + kBandGap + meterW > bandInnerW)
+    {
+        meterW    = juce::jmin(meterW,
+                               juce::jmax(kMeterWMin, bandInnerW - kBandGap));
+        faderColW = juce::jmax(0, bandInnerW - kBandGap - meterW);
+    }
     if (faderColW < 8) faderColW = 0;            // fader dropped, meter stays
+    meterW = juce::jmin(meterW, bandInnerW);
+    const int groupW = (faderColW > 0 ? faderColW + kBandGap : 0) + meterW;
+    const int lead   = juce::jmax(0, (bandInnerW - groupW) / 2);
     const int tickLane = faderColW >= kFaderColWide ? kFaderTickLaneW
                                                     : kFaderTickLaneN;
     const int faderImgW = juce::jmax(0, faderColW - tickLane);
@@ -6106,6 +6120,7 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         // what is left above it. Fader column LEFT, meter RIGHT, console
         // style. Both rects stored; neither is ever derived from the other.
         auto fmBand = b.removeFromBottom(juce::jmin(bandH, b.getHeight()));
+        fmBand.removeFromLeft(lead);        // centring margin, not a control
         if (faderColW > 0)
         {
             auto col = fmBand.removeFromLeft(faderColW);
@@ -6124,15 +6139,18 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
                             col.getCentreY() - ih / 2, iw, ih };
             fmBand.removeFromLeft(kBandGap);
         }
+        // The meter is a FIXED width now (the remainder is breathing room),
+        // so it is taken explicitly rather than absorbing what is left.
+        auto meterCol = fmBand.removeFromLeft(meterW);
         // Clip lamp above the bars, stored like everything else: the reset
         // click consumes THIS rect, no handler re-derives "the top of the
         // meter". 7px lamp + 2px gap.
-        if (fmBand.getHeight() > 24)
+        if (meterCol.getHeight() > 24)
         {
-            sg.clip = fmBand.removeFromTop(7);
-            fmBand.removeFromTop(2);
+            sg.clip = meterCol.removeFromTop(7);
+            meterCol.removeFromTop(2);
         }
-        sg.meter = fmBand;
+        sg.meter = meterCol;
         b.removeFromBottom(kStripVGap);
         sg.data = b;
     };
@@ -19652,8 +19670,19 @@ void EchoJayEditor::pollLinkCtrlAck(const juce::String& linkAddr, int seq, int a
             if (auto* o = v.getDynamicObject())
                 if ((int)o->getProperty("seq") == seq)
                 {
-                    ack.deleteFile();   // consumed — the registry flag is now
+                    ack.deleteFile();   // consumed - the registry flag is now
                                         // the truth the row reflects
+                    // THE HANDOVER MUST BE ATOMIC (the fader-jump fix). The
+                    // pending is the optimistic display value; the registry
+                    // cache is what replaces it. That cache refreshes on a
+                    // 500ms tick, so dropping the pending the instant the
+                    // ack lands left up to half a second showing a STALE
+                    // slot value: the cap jumped to where the gain used to
+                    // be, then snapped back on the next refresh. The Link
+                    // mirrors the new gain into its registry slot BEFORE it
+                    // writes this ack, so re-reading here is guaranteed to
+                    // pick up the applied value; refresh first, then drop.
+                    safeThis->processorRef.refreshLinkRegistry();
                     safeThis->linkCtrlPending_.erase(
                         std::remove_if(safeThis->linkCtrlPending_.begin(),
                                        safeThis->linkCtrlPending_.end(),
@@ -19676,6 +19705,9 @@ void EchoJayEditor::pollLinkCtrlAck(const juce::String& linkAddr, int seq, int a
             juce::Timer::callAfterDelay(2500, [safeThis, linkAddr, seq]
             {
                 if (safeThis == nullptr) return;
+                // Same handover rule on the timeout path: whatever the
+                // registry says becomes the display, so read it first.
+                safeThis->processorRef.refreshLinkRegistry();
                 safeThis->linkCtrlPending_.erase(
                     std::remove_if(safeThis->linkCtrlPending_.begin(),
                                    safeThis->linkCtrlPending_.end(),
