@@ -934,14 +934,43 @@ struct Probe
     */
 
 
-    /** Write with pump-until-getValue-confirms (Task 0-B rule). Returns the
-        milliseconds the landing took; -1 when the bound expired unlanded.
-        MESSAGE THREAD ONLY (it pumps the dispatch loop the XPC reply needs).
+    /** Write a parameter, service the runloop once so the value can reach the
+        DSP, then wait for the PROPERTY plane to confirm it.
+
+        WHAT THIS GUARANTEES, PRECISELY -- and it is less than the old name
+        "writeConfirm" implied, which is the false assurance that cost five
+        sessions of misdiagnosis:
+
+          GUARANTEED  the value was written, the macOS runloop was serviced
+                      at least once (so a plugin delivering parameters via a
+                      runloop source or timer has had its opportunity), and
+                      getValue() now agrees with what was written.
+          NOT         that the plugin's DSP has consumed it. Nothing short of
+                      rendering can establish that, and rendering is what the
+                      write is preparing for. Callers needing render-plane
+                      proof must measure it (the sensitivity check), not
+                      assume this function provided it.
+
+        THE n=1 IS DERIVED, NOT TUNED. juce_MessageManager_mac.mm:379 computes
+        msRemaining = endTime - now and breaks BEFORE CFRunLoopRunInMode when
+        it is <= 0, so runDispatchLoopUntil(0) dispatches nothing whatsoever;
+        n=1 is the smallest argument that reaches CFRunLoopRunInMode at all.
+        There is no margin being bet and nothing to re-derive from a corpus:
+        the value is a property of that source, not of any plugin. It was
+        found by reading fifteen lines of JUCE rather than by measuring
+        through them.
+
+        Returns the milliseconds the property confirmation took; -1 when the
+        bound expired without it. MESSAGE THREAD ONLY.
     */
-    static double writeConfirm (juce::AudioProcessorParameter& p, float v,
-                                int boundMs = 500)
+    static double writeAndServiceRunloop (juce::AudioProcessorParameter& p, float v,
+                                          int boundMs = 500)
     {
         p.setValueNotifyingHost (v);
+        // Unconditional: fast-property-plane plugins confirm getValue before
+        // the loop below would ever run, so without this the runloop is never
+        // serviced and the DSP never sees the write. That was the bug.
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
         const auto t0 = juce::Time::getMillisecondCounterHiRes();
         while (std::abs (p.getValue() - v) > 0.005f)
         {

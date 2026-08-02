@@ -1395,7 +1395,7 @@ public:
                 // variant 0: write BEFORE pause (what the suites do today)
                 // variant 1: write AFTER pause, inside the paused window
                 // variant 2: write before pause, message loop PUMPED during render
-                if (variant == 0) P::writeConfirm (*cp[norm == nLo ? iRel : iRel], norm);
+                if (variant == 0) P::writeAndServiceRunloop (*cp[norm == nLo ? iRel : iRel], norm);
                 host.pausePumpForMutation();
                 if (variant == 1)
                 {
@@ -1428,13 +1428,13 @@ public:
             {
                 if (! insideWindow)
                 {
-                    if (useConfirm) P::writeConfirm (*cp[iRel], norm);
+                    if (useConfirm) P::writeAndServiceRunloop (*cp[iRel], norm);
                     else            cp[iRel]->setValueNotifyingHost (norm);
                 }
                 host.pausePumpForMutation();
                 if (insideWindow)
                 {
-                    if (useConfirm) P::writeConfirm (*cp[iRel], norm);
+                    if (useConfirm) P::writeAndServiceRunloop (*cp[iRel], norm);
                     else
                     {
                         cp[iRel]->setValueNotifyingHost (norm);
@@ -1584,9 +1584,9 @@ public:
                     auto toNorm = [] (const juce::Array<juce::Array<float>>& a, double v) {
                         auto e = echojay::dominantMonotonicTable (a);
                         return echojay::interpolateAnchors (e.table, (float) v); };
-                    P::writeConfirm (*cp[relC2[0]], toNorm (swRel.anchors, swRel.anchors.getFirst()[0]));
+                    P::writeAndServiceRunloop (*cp[relC2[0]], toNorm (swRel.anchors, swRel.anchors.getFirst()[0]));
                     auto rA = burstsNow();
-                    P::writeConfirm (*cp[relC2[0]], toNorm (swRel.anchors, swRel.anchors.getLast()[0]));
+                    P::writeAndServiceRunloop (*cp[relC2[0]], toNorm (swRel.anchors, swRel.anchors.getLast()[0]));
                     auto rB = burstsNow();
                     double worstD = 0; juce::String deltas;
                     for (int i = 0; i < rA.size() && i < rB.size(); ++i)
@@ -1660,7 +1660,7 @@ public:
             {
                 const double lo = sw.anchors.getFirst()[0], hi = sw.anchors.getLast()[0];
                 const double want = lo + f * (hi - lo);
-                const double wms = P::writeConfirm (*cp[iCtl], nf3 (sw.anchors, want));
+                const double wms = P::writeAndServiceRunloop (*cp[iCtl], nf3 (sw.anchors, want));
                 const double landed = P::predictedLanding (sw.anchors, want);
                 say ("       write: norm " + juce::String (nf3 (sw.anchors, want), 4)
                      + " -> getValue " + juce::String (cp[iCtl]->getValue(), 4)
@@ -1870,15 +1870,15 @@ public:
             auto nf = [] (const juce::Array<juce::Array<float>>& a, double v) {
                 auto e = echojay::dominantMonotonicTable (a);
                 return echojay::interpolateAnchors (e.table, (float) v); };
-            if (iKn >= 0) { P::writeConfirm (*cp[iKn], 0.0f);
+            if (iKn >= 0) { P::writeAndServiceRunloop (*cp[iKn], 0.0f);
                             say ("  Knee -> hard end (display '"
                                  + cp[iKn]->getCurrentValueAsText() + "')"); }
-            P::writeConfirm (*cp[iRa], nf (swR.anchors, 8.0));
+            P::writeAndServiceRunloop (*cp[iRa], nf (swR.anchors, 8.0));
             say ("     requested thr | landed (ladder) | measured knee | error dB");
             double worst = 0; int n = 0;
             for (double want : { -30.0, -24.0, -18.0, -12.0 })
             {
-                P::writeConfirm (*cp[iTh], nf (swT.anchors, want));
+                P::writeAndServiceRunloop (*cp[iTh], nf (swT.anchors, want));
                 const double landed = P::predictedLanding (swT.anchors, want);
                 host.pausePumpForMutation();
                 auto c = P::steppedCurve (*ci);
@@ -1963,8 +1963,8 @@ public:
             auto nf = [] (const juce::Array<juce::Array<float>>& a, double v) {
                 auto e = echojay::dominantMonotonicTable (a);
                 return echojay::interpolateAnchors (e.table, (float) v); };
-            P::writeConfirm (*cp[iTh], nf (swTh.anchors, -30.0));
-            P::writeConfirm (*cp[iRa], nf (swRa.anchors, swRa.anchors.getLast()[0]));
+            P::writeAndServiceRunloop (*cp[iTh], nf (swTh.anchors, -30.0));
+            P::writeAndServiceRunloop (*cp[iRa], nf (swRa.anchors, swRa.anchors.getLast()[0]));
             say ("RELEASE LADDER WALK | " + cdesc.name + " | ladder "
                  + juce::String (swRe.anchors.getFirst()[0], 3) + " .. "
                  + juce::String (swRe.anchors.getLast()[0], 3)
@@ -1977,7 +1977,7 @@ public:
             {
                 const double v = swRe.anchors.getFirst()[0]
                                + k * (swRe.anchors.getLast()[0] - swRe.anchors.getFirst()[0]) / 4.0;
-                P::writeConfirm (*cp[iRe], nf (swRe.anchors, v));
+                P::writeAndServiceRunloop (*cp[iRe], nf (swRe.anchors, v));
                 const auto disp = cp[iRe]->getCurrentValueAsText();
                 host.pausePumpForMutation();
                 auto eS = P::burstEnvelope (*ci, false);
@@ -2078,7 +2078,7 @@ public:
                 return echojay::interpolateAnchors (eff.table, (float) v); };
             double wMax = 0; int wN = 0; bool unl = false;
             auto w2 = [&] (int idx, float v) {
-                const double ms = P::writeConfirm (*cp[idx], v);
+                const double ms = P::writeAndServiceRunloop (*cp[idx], v);
                 if (ms < 0) { unl = true; say ("  WRITE UNLANDED [" + juce::String (idx) + "]"); }
                 else { wMax = juce::jmax (wMax, ms); ++wN; } };
             auto curve = [&] { host.pausePumpForMutation();
@@ -2557,7 +2557,7 @@ public:
         double writeMsMax = 0, writeMsSum = 0; int writeN = 0;
         bool sawUnlanded = false;
         auto wc = [&] (int idx, float v) {
-            const double ms = P::writeConfirm (*params[idx], v);
+            const double ms = P::writeAndServiceRunloop (*params[idx], v);
             if (ms < 0) { sawUnlanded = true; say ("  WRITE UNLANDED [" + juce::String (idx) + "]"); }
             else { writeMsMax = juce::jmax (writeMsMax, ms); writeMsSum += ms; ++writeN; }
             return ms;
