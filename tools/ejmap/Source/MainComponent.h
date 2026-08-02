@@ -1261,7 +1261,7 @@ public:
                      "burst train's bed (-30 dBFS) is used only for envelope work.");
 
             // EFFECT-BASED walk: 4 ladder points, plateau (primary) + knee (corroboration)
-            say ("     requested | landed | plateau out dB | knee dB | plateau err | knee err");
+            say ("     requested | landed | plateau out dBFS PEAK | knee dBFS PEAK | plateau err | knee err");
             const double frac[] = { 0.15, 0.4, 0.65, 0.9 };
             juce::Array<double> plErr, knErr;
             for (double f : frac)
@@ -1744,8 +1744,9 @@ public:
             w2 (iRa, normFor2 (swRa.a, swRa.a.getLast()[0]));    // ratio high, fixed
             const double probeLevels[] = { -30.0, -20.0, -10.0 };
             const double thrPoints[]   = { -20.0, -15.0, -10.0, -5.0 };
-            say ("     threshold | landed |  GR@-30  |  GR@-20  |  GR@-10   (dB, vs the "
-                 "highest-threshold reference)");
+            say ("     threshold | landed |  GR@-30  |  GR@-20  |  GR@-10   (dB PEAK, vs the "
+                 "highest-threshold reference; GR is a DIFFERENCE of two peak readings, so "
+                 "the convention cancels)");
             juce::Array<double> grRef;
             juce::Array<juce::Array<double>> grRows;
             for (double th : thrPoints)
@@ -1755,7 +1756,7 @@ public:
                 juce::Array<double> row;
                 for (double lv : probeLevels)
                 {
-                    const int idx2 = (int) ((lv - (-70.0)) / 2.0);
+                    const int idx2 = (int) ((lv - P::kStepBaseDb) / 2.0);
                     row.add (juce::isPositiveAndBelow (idx2, c.size()) ? c[idx2] : -200.0);
                 }
                 grRows.add (row);

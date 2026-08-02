@@ -299,8 +299,10 @@ struct Probe
         the plugin. 36 steps costs 10.8 s of rendered audio per capture,
         ~50 ms wall on a bridged subject.
     */
-    static constexpr int    kSteps       = 36;      // -70 .. 0 dBFS, 2 dB apart
-    static constexpr double kStepBaseDb  = -70.0;
+    static constexpr int    kSteps       = 46;      // -90 .. 0 dBFS peak, 2 dB apart
+    static constexpr double kStepBaseDb  = -90.0;   // low enough to see a gate
+                                                // threshold's BOTH sides (X-Gate
+                                                // ladder reaches -72)
     static constexpr double kStepSeconds = 0.30;
 
     /** Envelope RMS window in SAMPLES. 8 samples = 0.167 ms at 48 kHz.
@@ -372,7 +374,17 @@ struct Probe
                     accN += kBlock;
                 }
             }
-            out.add (accN > 0 ? 20.0 * std::log10 (std::sqrt (acc / accN) + 1e-12) : -200.0);
+            // LEVEL CONVENTION, declared (audit item 1): the stimulus step is
+            // a PEAK amplitude (amp = 10^(dB/20) of a sine), so the output
+            // must be reported in the SAME convention or the curve is offset
+            // by 20*log10(sqrt(2)) = 3.01 dB and every unity assumption in
+            // the estimators is wrong by that much. RMS of a sine is peak
+            // minus 3.01 dB, so the conversion is exact for this stimulus and
+            // is applied here rather than left for each caller to remember.
+            // This is the same 3.01 dB the limiter plateau exposed; it was
+            // never limiter-only.
+            const double rmsDb = accN > 0 ? 20.0 * std::log10 (std::sqrt (acc / accN) + 1e-12) : -200.0;
+            out.add (rmsDb + 3.0103);      // -> PEAK dBFS, matching the input axis
         }
         return out;
     }

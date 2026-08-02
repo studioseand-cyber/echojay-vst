@@ -763,6 +763,20 @@ The consumer-side question — what a dial-time layer should DO when a map
 is correct but its scale under-delivers — is out of M9's scope and needs
 its own decision.
 
+**Observation, two specimens: empty unit families on the parameters that
+matter most.** API-2500  (Waves shell) and SSL X-Gate
+ both sweep with  EMPTY -- on two different
+vendor shells. The display-declared unit path is therefore unreliable on
+precisely the parameters where MAGNITUDE verdicts are wanted (times and
+thresholds), which is why both currently return inconclusive-with-reason
+rather than a scaled comparison. Recorded, not yet acted on.
+
+**Level convention is declared at every level number** (peak / RMS / true
+peak) after the 3.01 dB audit: the stepped stimulus is a sine PEAK
+amplitude, so  now converts its RMS reading to peak
+(+3.0103 dB) and every curve number is dBFS PEAK. The mismatch was never
+limiter-only -- it offset the knee estimator too.
+
 ## Open questions (all prior ones decided or answered by measurement)
 
 0. **The frequency gate vs its own σ floor — raised, not resolved, because it
