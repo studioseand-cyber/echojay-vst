@@ -1949,7 +1949,7 @@ public:
             // VST3-only product searched in the AU census exercises the
             // recorder. Both names below are real products on this machine;
             // neither ships an AU.
-            for (auto* n : { "bx_digital V2", "BASSROOM" })   // VST3-only on this machine
+            for (auto* n : { "spiff", "SSL X-Limit", "kHs Gate", "Weiss Deess" })  // the four no-row subjects
             {
                 say ("  searching AU census for '" + juce::String (n) + "':");
                 auto d = resolveSubjectByName (n);
