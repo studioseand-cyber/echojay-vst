@@ -1974,12 +1974,13 @@ public:
             // VST3-only product searched in the AU census exercises the
             // recorder. Both names below are real products on this machine;
             // neither ships an AU.
-            for (auto* n : { "spiff", "SSL X-Limit", "kHs Gate", "Weiss Deess" })  // the four no-row subjects
+            for (auto* n : { "bx_saturator V2" })
             {
                 say ("  searching AU census for '" + juce::String (n) + "':");
                 auto d = resolveSubjectByName (n);
                 if (d.fileOrIdentifier.isNotEmpty())
-                    say ("    (resolved -- not a VST3-only specimen after all)");
+                    say ("    RESOLVED TO: name '" + d.name + "' | vendor '" + d.manufacturerName
+                         + "' | format " + d.pluginFormatName + " | id " + d.fileOrIdentifier);
             }
             std::cout << "LOOKUPMISS: DONE" << std::endl; quitNow(); return;
         }

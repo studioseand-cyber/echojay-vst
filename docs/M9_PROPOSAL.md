@@ -821,6 +821,37 @@ amplitude, so steppedCurve now converts its RMS reading to peak
 (+3.0103 dB) and every curve number is dBFS PEAK. The mismatch was never
 limiter-only -- it offset the knee estimator too.
 
+## A NAME IS NOT EVIDENCE OF IDENTITY (sibling to instance seven)
+
+Instance seven says a name is not evidence of *behaviour*. Its sibling:
+**a name is not evidence of identity.** Substring matching resolves the
+first thing that contains the string, which is not the thing you meant.
+
+Worked example, 2026-08-02. The saturation suite asked for
+`"bx_saturator V2"` and got:
+
+```
+name 'UAD bx_saturator V2' | vendor 'Universal Audio'
+id AudioUnit:Effects/aufx,33au,!UAD
+```
+
+A **UAD** plugin, not the Plugin Alliance one intended — same product
+licensed through a different host, requiring UAD hardware, whose load
+drowned the run in `UADLogger` output and tripped an editor-ready stall
+sample. The suite reported nothing because it never reached its subject.
+
+The resolver was exonerated in the same pass: `describeFromRegistry` reads
+`AudioComponentFindNext` / `GetDescription` / `CopyName` — registry
+metadata only, no instantiation — so the census walk is cheap and safe and
+does **not** explain load failures elsewhere. The cost came entirely from
+loading what the name matched.
+
+**The rule:** a subject resolved by name must have its resolved identity
+printed — name, vendor, format, id — *before* it is loaded, and a suite
+naming a specific product should match on the id rather than a substring
+of the display name. Verified identity is as much a precondition as
+verified suitability.
+
 ## VERIFICATION MUST READ WHAT THE CONSUMER READS
 
 **The general rule, stated once above the instances: confirming a write by
