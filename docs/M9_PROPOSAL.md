@@ -884,6 +884,23 @@ claim that reads as plausible is tested against belief, and only executing
 it tests it against the world. This one cost two sessions of building the
 right mechanism against the wrong motivating example.
 
+**A seventh instance, and it is the module's most-filed defect stated as a
+rule: A NAME IS NOT EVIDENCE OF BEHAVIOUR.** Three times, and each time the
+name was *correct* — it was the inference from it that was wrong:
+
+| the name | what was assumed | what was true |
+|---|---|---|
+| Mono Maker | a band frequency, mapped as `freq_hz` | a stereo-width control; the probe's headline contradicts |
+| X-Gate `Lower Threshold` | the gate's open point | the hysteresis *close* point; the open point is a different index |
+| bx_limiter `Release` | a live probe parameter for the sensitivity check | genuinely Release, and genuinely not expressible in a static level curve |
+
+The third is the sharpest because it defeated a rule already written for
+the first two: the ambiguity guard (enumerate candidates, decline to pick)
+does not fire on an *unambiguous* match. The principle transfers where the
+code does not — **suitability must be measured, never named** — which is
+why the sensitivity check now tries several candidates and treats one
+mover as proof and one null as nothing.
+
 **Test the property, not the happy path.** A choke-point guard is only
 proven by adding a caller that does *not* cooperate and confirming the
 guard still fires — the forgettability property is the whole point, and a

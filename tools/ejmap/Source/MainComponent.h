@@ -1851,7 +1851,42 @@ public:
             double featMoved = 0;
             if (plPoints.size() >= 2)
                 featMoved = std::abs (plPoints.getLast() - plPoints.getFirst());
-            const double ladderSpan = std::abs (sw.anchors.getLast()[0] - sw.anchors.getFirst()[0]);
+            // Delta_pred IS NOT THE FULL LADDER SPAN. A limiter's plateau follows
+            // its ceiling only while the ceiling sits BELOW the signal, so a
+            // -30..0 ladder against a signal peaking lower has ladder that
+            // cannot express, and predicting against the whole span reports a
+            // correct plugin as an over-claim. Measured here rather than
+            // assumed, and NOT fixed by raising the stimulus, which would work
+            // on this subject and fail on any ladder exceeding a renderable
+            // level. The compressor's -70 lesson, at the other end of the
+            // curve. NOTE the gate shares this input and therefore this
+            // exposure; both now clip.
+            const double ladderRaw = std::abs (sw.anchors.getLast()[0] - sw.anchors.getFirst()[0]);
+            double signalLevelDb = 0.0;
+            {
+                // most-permissive end of the ladder = least processing = the
+                // signal's own level through this plugin, measured not guessed
+                const double permissive = isLim ? juce::jmax ((double) sw.anchors.getFirst()[0],
+                                                              (double) sw.anchors.getLast()[0])
+                                                : juce::jmin ((double) sw.anchors.getFirst()[0],
+                                                              (double) sw.anchors.getLast()[0]);
+                P::writeAndServiceRunloop (*cp[iCtl], nf3 (sw.anchors, permissive));
+                auto c0 = cap();
+                signalLevelDb = c0.isEmpty() ? 0.0 : c0.getLast();
+            }
+            int expressible = 0;
+            for (const auto& a2 : sw.anchors)
+                if (isLim ? (a2[0] <= signalLevelDb) : (a2[0] >= P::kStepBaseDb))
+                    ++expressible;
+            const double exprFrac = sw.anchors.isEmpty() ? 0.0
+                              : (double) expressible / sw.anchors.size();
+            const double ladderSpan = ladderRaw * exprFrac;
+            say ("  EXPRESSIBLE RANGE: signal through this plugin measures "
+                 + juce::String (signalLevelDb, 2) + " dBFS peak, so " + juce::String (expressible)
+                 + " of " + juce::String (sw.anchors.size()) + " ladder points ("
+                 + juce::String (100.0 * exprFrac, 0) + "%) can express -- Delta_pred clipped from "
+                 + juce::String (ladderRaw, 2) + " to " + juce::String (ladderSpan, 2)
+                 + " dB. A verdict below covers THAT sub-range, not the whole ladder.");
             const auto route = P::routeVerdict (featMoved, juce::jmax (sgPlateau, 0.088),
                                                 ladderSpan * (isLim ? 1.0 : 1.0), tolPl);
             say ("  ROUTING: feature moved " + juce::String (featMoved, 2)
