@@ -1146,6 +1146,62 @@ public:
         quitNow();
     }
 
+    /** RENDER-PLANE SENSITIVITY CHECK, shared preamble (unproven mechanism
+        #2 until each suite is seen firing it).
+
+        Moves a known-live parameter across its full ladder and requires the
+        rendered output to change. getValue only proves the PROPERTY plane;
+        this is the only thing that proves writes reach the DSP, and two
+        sessions of gate findings were built on a path where they did not.
+        Returns false when the render is blind, and the CALLER MUST STOP:
+        no verdict may be issued from a parameter-blind path.
+
+        Lives here, not per suite, for the misplaced-guard reason -- the gate
+        had it and comp and limiter did not, which is the exact shape that
+        put it on the unproven list.
+    */
+    bool renderPlaneSensitive (juce::AudioPluginInstance& inst,
+                               const juce::String& probeName,
+                               std::function<juce::Array<double>()> renderRows)
+    {
+        auto params = inst.getParameters();
+        int idx = -1;
+        for (auto* n : { "Release", "Output", "Gain", "Mix", "Threshold" })
+        {
+            juce::Array<int> hits;
+            for (int i = 0; i < params.size(); ++i)
+                if (params[i]->getName (64).containsIgnoreCase (n) && params[i]->isAutomatable())
+                    hits.add (i);
+            if (hits.size() == 1) { idx = hits[0]; break; }   // unambiguous only
+        }
+        if (idx < 0)
+        { std::cout << "  SENSITIVITY: no unambiguous known-live parameter on " << probeName
+                    << " -- cannot prove the render plane; suite must not proceed" << std::endl;
+          return false; }
+
+        auto sw = sweepOneIndex (inst, idx, watchdog, loadedId);
+        if (sw.anchors.size() < 2)
+        { std::cout << "  SENSITIVITY: [" << idx << "] did not sweep; cannot prove the render plane"
+                    << std::endl; return false; }
+        auto toNorm = [] (const juce::Array<juce::Array<float>>& a, double v) {
+            auto e = echojay::dominantMonotonicTable (a);
+            return echojay::interpolateAnchors (e.table, (float) v); };
+        Probe::writeAndServiceRunloop (*params[idx], toNorm (sw.anchors, sw.anchors.getFirst()[0]));
+        auto a = renderRows();
+        Probe::writeAndServiceRunloop (*params[idx], toNorm (sw.anchors, sw.anchors.getLast()[0]));
+        auto b = renderRows();
+        double worst = 0;
+        for (int i = 0; i < a.size() && i < b.size(); ++i)
+            worst = juce::jmax (worst, std::abs (b[i] - a[i]));
+        const bool live = worst > 0.5;
+        std::cout << "  SENSITIVITY: moved [" << idx << "] " << params[idx]->getName (32)
+                  << " across its ladder -> worst |delta| " << juce::String (worst, 2) << " dB -> "
+                  << (live ? "render plane LIVE, suite may proceed"
+                           : "RENDER PLANE BLIND -- suite STOPPED, no verdict may be issued")
+                  << std::endl;
+        return live;
+    }
+
     /** Resolve a subject by NAME, and record a miss as the HARNESS's rather
         than the plugin's.
 
@@ -1684,6 +1740,10 @@ public:
                              auto c = P::steppedCurve (*ci);
                              host.resumePumpAfterMutation(); return c; };
 
+            if (isLim && ! renderPlaneSensitive (*ci, pd.name, [&] { return cap(); }))
+            { std::cout << "LIMITER SUITE: STOPPED (render plane blind)" << std::endl;
+              quitNow(); return; }
+
             // A/A floor for both estimators, on this subject.
             auto n1 = cap(), n2 = cap();
             double sgPlateau = 0, sgKnee2 = 0;
@@ -2182,6 +2242,12 @@ public:
             auto bursts = [&] { host.pausePumpForMutation();
                                 auto e = P::burstEnvelope (*ci);
                                 host.resumePumpAfterMutation(); return e; };
+
+            if (! renderPlaneSensitive (*ci, cdesc.name,
+                    [&] { host.pausePumpForMutation();
+                          auto c = P::steppedCurve (*ci);
+                          host.resumePumpAfterMutation(); return c; }))
+            { std::cout << "COMP SUITE: STOPPED (render plane blind)" << std::endl; quitNow(); return; }
 
             const auto tc0 = juce::Time::getMillisecondCounterHiRes();
 
