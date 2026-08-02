@@ -1146,6 +1146,60 @@ public:
         quitNow();
     }
 
+    /** Resolve a subject by NAME, and record a miss as the HARNESS's rather
+        than the plugin's.
+
+        A name-lookup miss never calls PluginHost::load, so the choke-point
+        stake cannot see it -- this is the misplaced-guard family's second
+        fix: a path that never reaches a choke point needs its own recording.
+        The specimen is kHs Gate, which is VST3-only on this machine and was
+        searched for in the AU census, then reported as "load failed" when
+        the plugin loads perfectly well.
+
+        Records what was searched for, WHICH CATALOGUE was searched, how many
+        entries it held, and that the miss is attributable here.
+    */
+    juce::PluginDescription resolveSubjectByName (const juce::String& wanted,
+                                                  const juce::String& catalogue = "AU census")
+    {
+        juce::PluginDescription out;
+        auto census = echojay::auregistry::buildCensus();
+        for (const auto& t : census.targets)
+        {
+            auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+            if (d.name.containsIgnoreCase (wanted)) return d;
+        }
+        // MISS. Say whose it is, in words and on disk.
+        int inScan = 0; juce::String seenAs;
+        for (const auto& r : rows)
+            if (r.desc.name.containsIgnoreCase (wanted))
+            { ++inScan; seenAs = r.desc.pluginFormatName + " " + r.desc.version; }
+        const juce::String verdict = inScan > 0
+            ? "HARNESS MISS: '" + wanted + "' is not in the " + catalogue + " ("
+              + juce::String ((int) census.targets.size()) + " entries) but IS in the saved scan as "
+              + seenAs + ". The lookup searched the wrong catalogue; this is not a plugin failure."
+            : "MISS: '" + wanted + "' is not in the " + catalogue + " ("
+              + juce::String ((int) census.targets.size()) + " entries) and not in the saved scan either. "
+              "Not installed, or named differently.";
+        std::cout << "  " << verdict << std::endl;
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("kind", "subject_lookup_miss");
+        o->setProperty ("searched_for", wanted);
+        o->setProperty ("catalogue", catalogue);
+        o->setProperty ("catalogue_size", (int) census.targets.size());
+        o->setProperty ("found_in_saved_scan", inScan > 0);
+        o->setProperty ("attributable_to", inScan > 0 ? "harness (wrong catalogue)" : "absent");
+        o->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
+        // captures-<run>.jsonl, the same artifact every other probe record
+        // rides, so a miss is findable beside the run it belongs to.
+        auto f = ledger.runArtifact ("captures", "jsonl");
+        juce::FileOutputStream fo (f);
+        if (fo.openedOk()) { fo.setPosition (f.getSize());
+                             fo.writeText (juce::JSON::toString (juce::var (o), false) + "\n",
+                                           false, false, nullptr); fo.flush(); }
+        return out;
+    }
+
     /** M9 HEADLINE GATE (signed fixture, 2026-08-02): AMEK EQ 200, the
         production map, two arms against one loaded instance. Arm B (correct
         map) first, then arm A (deliberate mis-map: band 1 freq_hz pointed at
@@ -1206,11 +1260,8 @@ public:
 
             for (auto* want : cands)
             {
-                juce::PluginDescription pd7;
-                for (const auto& t : census7.targets)
-                { auto d = echojay::auregistry::describeFromRegistry (t.identifier);
-                  if (d.name.containsIgnoreCase (want)) { pd7 = d; break; } }
-                if (pd7.fileOrIdentifier.isEmpty()) { say ("  " + juce::String (want) + ": absent"); continue; }
+                auto pd7 = resolveSubjectByName (want);
+                if (pd7.fileOrIdentifier.isEmpty()) continue;   // miss already recorded
                 host.unload();
                 loadedName = pd7.name; loadedId = pd7.fileOrIdentifier; loadedDesc = pd7;
                 if (host.load (pd7, watchdog).outcome != LoadOutcome::ok)
