@@ -1218,7 +1218,6 @@ public:
         // ---- knee2 (ITEM 1): the knee estimator on a SHARP-curve design ---
         if (mode == "knee2")
         {
-            auto d2 = echojay::auregistry::describeFromRegistry ("");
             auto census2 = echojay::auregistry::buildCensus();
             juce::PluginDescription mc;
             for (const auto& t : census2.targets)
@@ -1228,8 +1227,24 @@ public:
             { say ("KNEE2: no digital-style compressor on this machine"); quitNow(); return; }
             host.unload();
             loadedName = mc.name; loadedId = mc.fileOrIdentifier; loadedDesc = mc;
-            if (host.load (mc, watchdog).outcome != LoadOutcome::ok)
-            { say ("KNEE2: load failed"); quitNow(); return; }
+
+            // ITEM 1: the gate path had NO watchdog around its own load and
+            // sweep -- MCompressor wedged it for ten minutes with nothing on
+            // disk naming the plugin. Same class as the endLoad() finding.
+            // The stake goes down BEFORE the call, so a hang that terminates
+            // the process is attributable on relaunch.
+            ledger.beginLoad (loadedId, mc.name, mc.manufacturerName,
+                              mc.pluginFormatName, mc.version, "probe_gate_load");
+            {
+                Watchdog::Scope guard (watchdog, "probe_gate_load", loadedId,
+                                       mc.name, mc.pluginFormatName, "probe", 30000);
+                if (host.load (mc, watchdog).outcome != LoadOutcome::ok)
+                {
+                    ledger.quarantine (loadedId, "probe gate: load failed", "probe");
+                    say ("KNEE2: load failed, quarantined with a reason on disk");
+                    quitNow(); return;
+                }
+            }
             auto* ci = host.getInstance();
             auto cp = ci->getParameters();
             say ("KNEE ESTIMATOR vs A SHARP-CURVE DESIGN | " + mc.name
@@ -1242,8 +1257,13 @@ public:
             say ("  Threshold [" + juce::String (iTh) + "] Ratio [" + juce::String (iRa)
                  + "] Knee [" + juce::String (iKn) + "]");
             if (iTh < 0 || iRa < 0) { say ("KNEE2: no threshold/ratio"); quitNow(); return; }
-            auto swT = sweepOneIndex (*ci, iTh, watchdog, loadedId);
-            auto swR = sweepOneIndex (*ci, iRa, watchdog, loadedId);
+            SweepOutcome swT, swR;
+            {
+                Watchdog::Scope guard (watchdog, "probe_gate_sweep", loadedId,
+                                       mc.name, mc.pluginFormatName, "probe", 30000);
+                swT = sweepOneIndex (*ci, iTh, watchdog, loadedId);
+                swR = sweepOneIndex (*ci, iRa, watchdog, loadedId);
+            }
             say ("  threshold ladder " + juce::String (swT.anchors.getFirst()[0], 1) + ".."
                  + juce::String (swT.anchors.getLast()[0], 1) + " (unit '" + swT.unitFamily
                  + "'), ratio ladder " + juce::String (swR.anchors.getFirst()[0], 1) + ".."
@@ -1563,6 +1583,69 @@ public:
                   + " -> " + (cHi.kneeFound ? juce::String (cHi.kneeInDb, 1) : juce::String ("UNDEFINED"))
                   + " dB (moved +" + juce::String (measTh, 1) + "), error "
                   + juce::String (std::abs (measTh - predTh), 2) + " vs tol " + juce::String (tolTh, 2));
+
+            // ---- THRESHOLD VIA GR AT FIXED LEVEL (ITEM 2, PRIMARY) --------
+            // Threshold means gain reduction BEGINS around X dB, not that a
+            // corner exists at X dB. This tests the actual semantics on every
+            // design including soft-knee ones: no breakpoint, no unity region,
+            // no extended stimulus needed. The knee estimator stays as
+            // corroboration where a resolvable corner exists.
+            say ("");
+            say ("THRESHOLD via GAIN REDUCTION AT FIXED LEVEL (primary test)");
+            w2 (iRa, normFor2 (swRa.a, swRa.a.getLast()[0]));    // ratio high, fixed
+            const double probeLevels[] = { -30.0, -20.0, -10.0 };
+            const double thrPoints[]   = { -20.0, -15.0, -10.0, -5.0 };
+            say ("     threshold | landed |  GR@-30  |  GR@-20  |  GR@-10   (dB, vs the "
+                 "highest-threshold reference)");
+            juce::Array<double> grRef;
+            juce::Array<juce::Array<double>> grRows;
+            for (double th : thrPoints)
+            {
+                w2 (iTh, normFor2 (swTh.a, th));
+                auto c = curve();
+                juce::Array<double> row;
+                for (double lv : probeLevels)
+                {
+                    const int idx2 = (int) ((lv - (-70.0)) / 2.0);
+                    row.add (juce::isPositiveAndBelow (idx2, c.size()) ? c[idx2] : -200.0);
+                }
+                grRows.add (row);
+            }
+            // reference = the HIGHEST threshold (least compression)
+            grRef = grRows.getLast();
+            for (int r = 0; r < grRows.size(); ++r)
+            {
+                juce::String line = "     " + juce::String (thrPoints[r], 1).paddedLeft (' ', 9)
+                                  + " | " + juce::String (P::predictedLanding (swTh.a, thrPoints[r]), 1).paddedLeft (' ', 6) + " |";
+                for (int c2 = 0; c2 < grRows[r].size(); ++c2)
+                    line += juce::String (grRows[r][c2] - grRef[c2], 2).paddedLeft (' ', 9) + " |";
+                say (line);
+            }
+            // verdict: GR must move monotonically with threshold at the loudest probe
+            bool monotone = true; double totalGr = 0;
+            for (int r = 1; r < grRows.size(); ++r)
+            {
+                const double a2 = grRows[r - 1].getLast() - grRef.getLast();
+                const double b2 = grRows[r].getLast() - grRef.getLast();
+                if (b2 < a2 - 0.5) monotone = false;
+            }
+            totalGr = std::abs (grRows.getFirst().getLast() - grRef.getLast());
+            const double predSpan = std::abs (P::predictedLanding (swTh.a, thrPoints[3])
+                                            - P::predictedLanding (swTh.a, thrPoints[0]));
+            const double ratioMax = swRa.a.getLast()[0] > 1.01f ? (double) swRa.a.getLast()[0] : 1.01;
+            const double predGr = predSpan * (1.0 - 1.0 / ratioMax);
+            const double sgKneeFloor = sgKnee > 0.1 ? sgKnee : 0.1;
+            const double tolGr = juce::jmax (0.25 * predGr, 4.0 * sgKneeFloor);
+            crit ("threshold_db (GR-at-level, PRIMARY)",
+                  monotone && std::abs (totalGr - predGr) <= tolGr,
+                  "threshold " + juce::String (P::predictedLanding (swTh.a, thrPoints[0]), 1)
+                  + " -> " + juce::String (P::predictedLanding (swTh.a, thrPoints[3]), 1)
+                  + " dB across " + juce::String (predSpan, 1) + " dB at ratio "
+                  + juce::String (swRa.a.getLast()[0], 1) + ":1 predicts " + juce::String (predGr, 2)
+                  + " dB of GR change at -10 dBFS; MEASURED " + juce::String (totalGr, 2)
+                  + " dB, monotone: " + (monotone ? "YES" : "NO") + ", error "
+                  + juce::String (std::abs (totalGr - predGr), 2) + " vs tol "
+                  + juce::String (tolGr, 2));
 
             // ---- ratio A/B (excitation: threshold low) ---------------------
             say ("");
