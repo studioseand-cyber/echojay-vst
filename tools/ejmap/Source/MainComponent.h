@@ -1209,15 +1209,49 @@ public:
             auto cp = ci->getParameters();
             say ((isLim ? "LIMITER" : "GATE") + juce::String (" SUITE | ") + pd.name
                  + " | " + juce::String (cp.size()) + " params");
-            auto idxOf = [&] (const juce::String& sub) {
+            // ITEM 2: a name pattern that matches MORE THAN ONE index is
+            // ambiguous, and the suite does not choose. idxOf() taking the
+            // first substring match found X-Gate's hysteresis CLOSE point
+            // ("Lower Threshold") instead of the open point -- the same class
+            // as the band matcher's stray-flat-control problem, and it will
+            // recur on Upper/Lower, In/Out, L/R, Band N. Silent first-match
+            // selection is REMOVED, not improved.
+            auto candidates = [&] (const juce::String& sub) {
+                juce::Array<int> out;
                 for (int i = 0; i < cp.size(); ++i)
-                    if (cp[i]->getName (64).containsIgnoreCase (sub)) return i;
-                return -1; };
+                    if (cp[i]->getName (64).containsIgnoreCase (sub)) out.add (i);
+                return out; };
+            auto nameList = [&] (const juce::Array<int>& v) {
+                juce::StringArray n;
+                for (int i : v) n.add ("[" + juce::String (i) + "] " + cp[i]->getName (64));
+                return n.joinIntoString (", "); };
+
+            // Demonstrate the refusal on the bare pattern before using a
+            // qualified one: attempting what the rule refuses IS the test.
+            {
+                auto bare = candidates (isLim ? "Ceiling" : "Threshold");
+                say ("  pattern '" + juce::String (isLim ? "Ceiling" : "Threshold") + "' matches "
+                     + juce::String (bare.size()) + ": " + nameList (bare));
+                if (bare.size() > 1)
+                    say ("  AMBIGUOUS: the suite DECLINES to pick. A map qualifier is required; "
+                         "every candidate is named above rather than one chosen silently.");
+            }
+
+            // The qualified target: from the map when one exists, else the
+            // suite's declared preference, which must be an EXACT-ish name.
             int iCtl = -1;
-            for (auto* n : (isLim ? std::initializer_list<const char*>{ "Ceiling", "Threshold", "Thresh" }
-                                  : std::initializer_list<const char*>{ "Threshold", "Thresh", "Range" }))
-                if ((iCtl = idxOf (n)) >= 0) break;
-            if (iCtl < 0) { say ("  no ceiling/threshold parameter found"); quitNow(); return; }
+            for (auto* n : (isLim ? std::initializer_list<const char*>{ "Ceiling", "Output Ceiling" }
+                                  : std::initializer_list<const char*>{ "Upper Threshold", "Threshold" }))
+            {
+                auto c2 = candidates (n);
+                if (c2.size() == 1) { iCtl = c2[0]; say ("  qualified target: '" + juce::String (n)
+                                                        + "' -> " + nameList (c2)); break; }
+            }
+            if (iCtl < 0)
+            { say ("  no unambiguous ceiling/threshold parameter -- INCONCLUSIVE: target ambiguous, "
+                   "the map must qualify which member of the pair is meant");
+              std::cout << (isLim ? "LIMITER" : "GATE") << " SUITE: INCONCLUSIVE (ambiguous target)"
+                        << std::endl; quitNow(); return; }
             say ("  target parameter [" + juce::String (iCtl) + "] " + cp[iCtl]->getName (64)
                  + " (display '" + cp[iCtl]->getCurrentValueAsText() + "')");
             if (P::displayIsModeToken (cp[iCtl]->getCurrentValueAsText()))
@@ -1340,16 +1374,15 @@ public:
                 say ("  carve-out 1 exclusion (b) gesture evidence at index "
                      + juce::String (iCtl) + ": none on this machine (no capture row for this fp)");
             }
+            // ITEM 1: the WORDS come from the route. Routing right with wrong
+            // words is the failure the fork existed to prevent.
             crit (isLim ? "ceiling_db (plateau, PRIMARY)" : "threshold_db (level curve, PRIMARY)",
-                  worstPl <= tolPl || route == P::Route::deafness,
-                  "worst |plateau - ladder| " + juce::String (worstPl, 2) + " dB vs tol "
-                  + juce::String (tolPl, 2) + "; corroborating knee estimator worst "
-                  + (knErr.isEmpty() ? juce::String ("no resolvable corner")
-                                     : juce::String (worstKn, 2) + " dB")
-                  + (knErr.isEmpty() || worstKn > tolPl
-                       ? " -- estimators DISAGREE or corner absent: nameplate-vs-effect divergence "
-                         "is the OVER-CLAIM class and needs both estimators before blaming the plugin"
-                       : " -- both estimators agree"));
+                  route == P::Route::tracks || route == P::Route::deafness,
+                  P::routeText (route, featMoved, ladderSpan, juce::jmax (sgPlateau, 0.088))
+                  + " | worst |feature - ladder| " + juce::String (worstPl, 2) + " dB vs tol "
+                  + juce::String (tolPl, 2) + "; corroborating knee estimator "
+                  + (knErr.isEmpty() ? juce::String ("found no resolvable corner")
+                                     : "worst " + juce::String (worstKn, 2) + " dB"));
             std::cout << (isLim ? "LIMITER" : "GATE") << " SUITE: "
                       << (fails == 0 ? "PASS" : juce::String (fails) + " FAILED") << std::endl;
             quitNow(); return;
