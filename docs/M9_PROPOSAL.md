@@ -821,6 +821,46 @@ amplitude, so steppedCurve now converts its RMS reading to peak
 (+3.0103 dB) and every curve number is dBFS PEAK. The mismatch was never
 limiter-only -- it offset the knee estimator too.
 
+## NAMING A CLASS DOES NOT PREVENT IT (eighth instance)
+
+The misplaced-guard class had been named, written up, and sat in this
+document when the **newest suite reproduced it anyway**. Saturation calls
+`crit()` directly instead of `routeVerdict()`, so a null that belongs in
+carve-out 1 (`inconclusive: possibly mode-suppressed`, with `[8] Master XL
+On` as the named suppressor candidate) was emitted as a FAIL against the
+plugin.
+
+**What makes this instance different from the seven before it:** the rule
+was not missing, forgotten, or undiscovered. It was written down, recent,
+and known to the author at the time of writing. Documentation did not
+prevent the defect, and there is no reason to expect the next write-up to
+do better.
+
+**The audit that followed is the real finding.** Of **19 verdict-emitting
+sites, only 3 route**:
+
+| suite | verdict | routes? |
+|---|---|---|
+| limiter | `ceiling_db` | yes |
+| gate | `threshold_db` | yes |
+| saturation | `drive` | **no** |
+| compressor | `threshold_db` (GR-at-level) | **no** |
+| compressor | `ratio` | **no** |
+
+So the compressor's headline results — the 45% over-claim and the ratio
+confirm, both reported repeatedly — **have never passed through carve-out
+1**. Had either been a deafness case, it would have been published as a
+plugin finding. They may well be correct; they are simply unrouted, and
+that is not the same thing.
+
+**The conclusion the evidence supports:** a guard that suites are *supposed
+to call* is not at a choke point, it is at a convention. The sensitivity
+check and ambiguity rule fired unprompted in this same suite because they
+sit in the shared **preamble** — code the suite cannot run without. The
+verdict path needs the same property: `crit()` routes internally, or the
+emit path collapses to one function that cannot be bypassed. **Only moving
+the guard somewhere it cannot be skipped prevents the class.**
+
 ## A NAME IS NOT EVIDENCE OF IDENTITY (sibling to instance seven)
 
 Instance seven says a name is not evidence of *behaviour*. Its sibling:
