@@ -521,6 +521,27 @@ Mode-kind controls get the same activity record as mode params, nothing more.
 
 As revision 1 (eq / compressor / limiter / gate / de-esser / delay /
 saturation tables of provable ✔ / partial ✚ / not-provable ✘; reverb honest;
+> **ACTUAL PER-CATEGORY PARAMETER COVERAGE (2026-08-02), stated next to the
+> claim so the gap is visible rather than inferred.** M9's scope claim is
+> *decisiveness on seven categories*. What the built suites decide is
+> narrower: **one to four parameters, on one subject each.**
+>
+> | suite | parameters decided | subject |
+> |---|---|---|
+> | eq | 3 — `freq_hz`, `gain_db`, `q` | AMEK EQ 200 |
+> | compressor | 4 — `threshold_db`, `ratio`, `attack_ms`, `release_ms` | API-2500 |
+> | limiter | **1** — `ceiling_db` | bx_limiter True Peak |
+> | gate | **1** — `threshold_db` | SSL X-Gate |
+> | saturation, de-esser, delay | not built | — |
+>
+> The gate is the specific example: it probes only its qualified target and
+> has no attack, release or range coverage at all, so a passing gate suite
+> must not be read as having cleared SSL X-Gate. The 226-of-390 figure below
+> counts parameters the suites COULD decide by category, not parameters any
+> suite has decided. **Expanding coverage is separate work and should be
+> scoped as such**, not absorbed into the suite build: the categories are
+> demonstrated, the parameter sets are not.
+
 mode activity-only; coverage 226 of 390 unchanged and not inflated), with
 three amendments from this revision:
 
