@@ -91,7 +91,12 @@ public:
     // 0 = unset/unknown (treated as pre-fader for level gating), 1 = bus
     // (post-fader — loudness IS its contribution), 2 = insert (pre-fader —
     // measurements are before the fader, not comparable across channels).
-    enum Placement { PlacementUnset = 0, PlacementBus = 1, PlacementInsert = 2 };
+    // 3 = send return: a parallel/FX bus fed by sends. POST-FADER like
+    // PlacementBus for MEASUREMENT (its readings are its real
+    // contribution), but it earns its own guidance in the AI context,
+    // because a send that reads below the dry channel is blended, not quiet.
+    enum Placement { PlacementUnset = 0, PlacementBus = 1, PlacementInsert = 2,
+                     PlacementSend = 3 };
     std::atomic<int> placement_ { PlacementUnset };
     int  getPlacement() const { return placement_.load(std::memory_order_relaxed); }
     void setPlacement(int p);   // message thread: store, mirror, dirty-mark, notify

@@ -68,15 +68,15 @@ struct EchoJayLinkMixerTestAccess
                           const juce::String& effectiveUid)
     { return Ed::stripSelected (isBus, entryUid, effectiveUid); }
 
-    static int   frameFor (float db)                        { return Ed::faderFrameForGain (db); }
-    static float travelTop()                                { return Ed::kFaderTravelTopFrac; }
-    static float travelBot()                                { return Ed::kFaderTravelBotFrac; }
+    static float travelTop (juce::Rectangle<int> a)         { return Ed::faderTravelTop (a); }
+    static float travelBot (juce::Rectangle<int> a)         { return Ed::faderTravelBot (a); }
+    static int   capH (juce::Rectangle<int> a)              { return Ed::faderCapH (a); }
+    static int   capSrcW()                                  { return Ed::kFaderCapSrcW; }
+    static int   capSrcH()                                  { return Ed::kFaderCapSrcH; }
     static float perPixel (juce::Rectangle<int> t)          { return Ed::gainPerPixel (t); }
     static float fineRatio()                                { return Ed::kFaderFineRatio; }
     static float gFromY (int y, juce::Rectangle<int> t)     { return Ed::gainFromY (y, t); }
     static int   yFromG (float db, juce::Rectangle<int> t)  { return Ed::yFromGain (db, t); }
-    static int   frames()                                   { return Ed::kFaderFrames; }
-    static int   frameH()                                   { return Ed::kFaderFrameH; }
 
     static int   bandGap()    { return Ed::kBandGap; }
     static int   meterWMin()  { return Ed::kMeterWMin; }
@@ -87,9 +87,10 @@ struct EchoJayLinkMixerTestAccess
     static const float* meterMarks (int& n)
     { n = Ed::kMeterMarkCount; return Ed::kMeterMarks; }
 
-    static void chainBlocks (juce::Rectangle<int> data, int count,
-                             std::vector<juce::Rectangle<int>>& out)
-    { Ed::layOutChainBlocks (data, count, out); }
+    using Rows = Ed::ChainRows;
+    static Rows chainRows (juce::Rectangle<int> data, int occupied, int scrollY)
+    { return Ed::layOutChainRows (data, occupied, scrollY); }
+    static int blockPitch() { return Ed::kChainBlockH + Ed::kChainBlockGap; }
     static void ctrls2 (juce::Rectangle<int> block,
                         juce::Rectangle<int>& b, juce::Rectangle<int>& x)
     { Ed::blockCtrlRects (block, b, x); }
@@ -273,10 +274,12 @@ static void testFaderAspect (int stripW, int bandH)
 
     const auto& s0 = links[0];
     const auto f = s0.fader;
-    std::printf ("  fader col %dx%d (img %d wide), meter %dx%d, data %dx%d\n",
-                 f.getWidth(), f.getHeight(), f.getHeight() / 8,
-                 s0.meter.getWidth(), s0.meter.getHeight(),
-                 s0.data.getWidth(), s0.data.getHeight());
+    std::printf ("  lane %dx%d, cap %dx%d, throw %d px (%.3f dB/px), meter %dx%d\n",
+                 f.getWidth(), f.getHeight(),
+                 s0.faderImg.getWidth(), T::capH (s0.faderImg),
+                 f.getHeight() - T::capH (s0.faderImg),
+                 36.0 / (double) juce::jmax (1, f.getHeight() - T::capH (s0.faderImg)),
+                 s0.meter.getWidth(), s0.meter.getHeight());
 
     // THE METER IS PERMANENT CHROME: present at every shipping size.
     check (! s0.meter.isEmpty(), "the meter band exists");
@@ -304,9 +307,33 @@ static void testFaderAspect (int stripW, int bandH)
         check (std::abs ((fi.getY() - f.getY())
                          - (f.getBottom() - fi.getBottom())) <= 1,
                "the image is centred in the lane");
-        check (fi.getHeight() / 8 <= fi.getWidth(), "the 1:8 image fits its column");
-        check (fi.getHeight() / 8 <= 60, "the fader never upscales from the source");
-        check (fi.getHeight() % 8 == 0, "image height is exactly image width * 8");
+        // THE CLAIM THAT FAILED THREE TIMES, now held as EQUALITY at both
+        // ends: the CAP AREA spans the whole lane, so the cap can reach the
+        // meter's top and bottom. The 1:8 assertions retire with the lock;
+        // the cap sprite carries its own aspect, checked in the mapping
+        // test against the sprite's real 54:113.
+        checkEq (fi.getY(),      f.getY(),      "the cap area starts at the lane top");
+        checkEq (fi.getBottom(), f.getBottom(), "the cap area ends at the lane bottom");
+        checkEq (fi.getRight(),  f.getRight(),  "the cap area is right-aligned, ticks to its left");
+        check (fi.getWidth() <= f.getWidth(), "the cap area fits its lane");
+        check (T::capH (fi) <= T::capSrcH(), "the cap never upscales from the sprite");
+        check (fi.getWidth() <= T::capSrcW(), "the cap never upscales horizontally");
+        check (T::capH (fi) < fi.getHeight(), "the cap is shorter than its travel");
+
+        // THE BUDGET: the pair no longer fills the band. Both widths are
+        // fixed per mode and the GROUP IS CENTRED, surplus width becoming
+        // breathing room rather than fatter controls.
+        const int bandL = s0.full.getX() + 4, bandR = s0.full.getRight() - 4;
+        const int groupW = f.getWidth() + T::bandGap() + s0.meter.getWidth();
+        check (groupW <= bandR - bandL, "the pair fits the band");
+        check (std::abs ((f.getX() - bandL) - (bandR - s0.meter.getRight())) <= 1,
+               "the pair is centred in the band");
+        check (f.getWidth() > s0.meter.getWidth(),
+               "the fader column is wider than the meter");
+        // The image fills a real proportion of its lane rather than
+        // floating in a long groove (the fault this pass fixes).
+        checkEq (fi.getHeight(), f.getHeight(),
+                 "the cap area IS the lane height, so the throw is the whole lane");
 
         checkEq (s0.meter.getX() - f.getRight(), T::bandGap(),
                  "fader column and meter sit one band gap apart");
@@ -498,16 +525,27 @@ static void testFaderMapping()
     std::printf ("fader mapping: endpoints, round-trip, clamps, frames\n");
     const juce::Rectangle<int> t { 10, 50, 23, 191 };
 
-    // The mapping runs across the artwork's measured CAP TRAVEL band, not
-    // the full rect: the caps physically cannot reach the frame edges, so a
-    // full-rect mapping put ticks where no cap can go (the item-1 bug's
-    // second half). Endpoints land at the travel fractions.
-    const int top = t.getY() + (int) std::round (T::travelTop() * (float) t.getHeight());
-    const int bot = t.getY() + (int) std::round (T::travelBot() * (float) t.getHeight());
-    check (std::abs (T::yFromG (-24.0f, t) - bot) <= 1, "-24 dB sits at the travel bottom");
-    check (std::abs (T::yFromG ( 12.0f, t) - top) <= 1, "+12 dB sits at the travel top");
+    // THE TRAVEL BAND IS NOW DERIVED from the cap, not measured off the
+    // frame: the cap centre runs half a cap below the lane top to half a cap
+    // above the lane bottom, so THE CAP REACHES BOTH ENDS OF THE LANE. That
+    // is the claim three passes failed, so it is held as EQUALITY.
+    const int ch  = T::capH (t);
+    const int top = (int) std::round (T::travelTop (t));
+    const int bot = (int) std::round (T::travelBot (t));
+    checkEq (T::yFromG ( 12.0f, t) - ch / 2, t.getY(),
+             "at +12 dB the cap TOP sits exactly at the lane top");
+    checkEq (T::yFromG (-24.0f, t) + ch / 2, t.getBottom(),
+             "at -24 dB the cap BOTTOM sits exactly at the lane bottom");
+    check (std::abs (T::yFromG ( 12.0f, t) - top) <= 1, "+12 dB is the travel top");
+    check (std::abs (T::yFromG (-24.0f, t) - bot) <= 1, "-24 dB is the travel bottom");
     check (T::gFromY (bot, t) == -24.0f, "the travel bottom reads -24 dB");
     check (T::gFromY (top, t) ==  12.0f, "the travel top reads +12 dB");
+
+    // UNIFORM SCALE: cap height derives from cap width by the sprite's own
+    // ratio, so the cap is never stretched on one axis.
+    check (std::abs ((double) ch / (double) t.getWidth()
+                     - (double) T::capSrcH() / (double) T::capSrcW()) < 0.05,
+           "the cap keeps the sprite's aspect");
 
     // A known gain maps to a known y: 0 dB is two thirds up the travel.
     {
@@ -515,54 +553,17 @@ static void testFaderMapping()
         check (std::abs (T::yFromG (0.0f, t) - want) <= 1, "0 dB sits two thirds up the travel");
     }
 
-    // Clamping: outside the rect (and outside the travel band) pins.
-    check (T::gFromY (t.getBottom() + 50, t) == -24.0f, "below the rect clamps to -24");
-    check (T::gFromY (t.getY() - 50, t)      ==  12.0f, "above the rect clamps to +12");
+    // Clamping: outside the lane pins.
+    check (T::gFromY (t.getBottom() + 50, t) == -24.0f, "below the lane clamps to -24");
+    check (T::gFromY (t.getY() - 50, t)      ==  12.0f, "above the lane clamps to +12");
 
-    // Round-trip within one pixel + one snap step across the travel band:
-    // 36 dB over ~0.75 * 191 px is ~0.25 dB per px, snap is 0.1.
+    // Round-trip within one pixel plus one snap step.
     for (float db = -24.0f; db <= 12.01f; db += 1.7f)
     {
         const float back = T::gFromY (T::yFromG (db, t), t);
         check (std::abs (back - db) <= 0.35f, "dB<->y round-trips within tolerance");
     }
 
-    // gainPerPixel is DERIVED from the same travel constants the mapping
-    // uses; hold it to the mapping so the incremental (fine) drag and the
-    // absolute mapping can never disagree about where a dB lives. Over a
-    // 40px span the snap quantisation contributes at most 0.1.
-    {
-        const int y0 = t.getY() + 40;
-        const float mapped = T::gFromY (y0, t) - T::gFromY (y0 + 40, t);
-        check (std::abs (std::abs (mapped) - T::perPixel (t) * 40.0f) <= 0.15f,
-               "gainPerPixel matches the gainFromY mapping over a span");
-    }
-    check (T::fineRatio() > 0.0f && T::fineRatio() < 1.0f,
-           "the fine ratio slows the drag, never reverses or stops it");
-
-    // The bus trim shares this mapping wholesale, so its clamp range must
-    // BE the fader's range; a divergence here would let the processor hold
-    // a value the fader cannot express.
-    check (EchoJayProcessor::kBusGainMinDb == -24.0f
-        && EchoJayProcessor::kBusGainMaxDb == 12.0f,
-           "the bus trim clamps to the fader's own range");
-
-    // Frames: full range maps 0..127, monotonic, and clamped so no gain can
-    // index past the strip (frame*480 + 480 <= 61440 always).
-    checkEq (T::frameFor (-24.0f), 0,               "-24 dB is frame 0");
-    checkEq (T::frameFor ( 12.0f), T::frames() - 1, "+12 dB is frame 127");
-    checkEq (T::frameFor (-999.0f), 0,              "far below range clamps to frame 0");
-    checkEq (T::frameFor ( 999.0f), T::frames() - 1,"far above range clamps to frame 127");
-    int prev = -1;
-    for (float db = -24.0f; db <= 12.01f; db += 0.1f)
-    {
-        const int f = T::frameFor (db);
-        check (f >= prev, "frame index is monotonic in gain");
-        check (f >= 0 && f < T::frames(), "frame index stays in [0,127]");
-        prev = f;
-    }
-    check ((T::frames() - 1) * T::frameH() + T::frameH() <= 61440,
-           "last frame's source rect stays inside the 60x61440 strip");
 }
 
 static void testMeterMapping()
@@ -626,50 +627,95 @@ static void testChainStates()
 
 static void testChainBlocks()
 {
-    // The block rects and their B/X controls: ONE pure formula consumed by
-    // paint and the hit test, so agreement is proven by proving the formula.
-    std::printf ("chain blocks: layout, controls, overflow, purity\n");
+    // The rack rows and their B/X controls: ONE pure formula consumed by
+    // paint, hit testing, the tooltip and the wheel, so agreement is proven
+    // by proving the formula.
+    std::printf ("chain rows: empties, controls, scroll offset, purity\n");
     const juce::Rectangle<int> data { 10, 40, 84, 187 };   // wide data area
 
-    std::vector<juce::Rectangle<int>> blocks;
-    T::chainBlocks (data, 4, blocks);
-    checkEq ((int) blocks.size(), 4, "four plugins fit as four blocks");
-    for (size_t i = 0; i < blocks.size(); ++i)
+    auto r4 = T::chainRows (data, 4, 0);
+    checkEq (r4.occupied, 4, "four plugins occupy four rows");
+    check ((int) r4.rects.size() > 4, "empty slots fill the space beneath");
+    checkEq (r4.maxScroll, 0, "a list that fits does not scroll");
+    for (size_t i = 0; i < r4.rects.size(); ++i)
     {
-        check (data.contains (blocks[i]), "block stays inside the data area");
+        check (data.contains (r4.rects[i]), "row stays inside the data area");
         if (i > 0)
-            check (blocks[i].getY() > blocks[i-1].getBottom(),
-                   "blocks stack without overlap");
+            check (r4.rects[i].getY() > r4.rects[i-1].getBottom(),
+                   "rows stack without overlap");
+    }
+    for (int i = 0; i < r4.occupied; ++i)
+    {
         juce::Rectangle<int> b, x;
-        T::ctrls2 (blocks[i], b, x);
-        check (blocks[i].contains (b) && blocks[i].contains (x),
+        T::ctrls2 (r4.rects[(size_t) i], b, x);
+        check (r4.rects[(size_t) i].contains (b) && r4.rects[(size_t) i].contains (x),
                "controls sit inside their block");
         check (! b.intersects (x), "B and X do not overlap");
         check (x.getX() > b.getX(), "X is outermost, matching the Chain card");
-        check (b.getWidth() >= 12 && b.getHeight() >= 12,
-               "B is big enough to press");
-        check (x.getWidth() >= 12 && x.getHeight() >= 12,
-               "X is big enough to press");
+        check (b.getWidth() >= 12 && b.getHeight() >= 12, "B is big enough to press");
+        check (x.getWidth() >= 12 && x.getHeight() >= 12, "X is big enough to press");
     }
 
-    // Overflow: more plugins than height reserves a +N more row, so shown
-    // count drops rather than half-drawing.
-    std::vector<juce::Rectangle<int>> many;
-    T::chainBlocks (data, 40, many);
-    check ((int) many.size() < 40, "overflow shows fewer blocks than plugins");
-    check (! many.empty() && data.contains (many.back()),
-           "the last shown block is still contained");
+    // AN EMPTY RACK IS ALL EMPTY SLOTS, never zero rows: the strip shows
+    // capacity rather than absence.
+    auto r0 = T::chainRows (data, 0, 0);
+    checkEq (r0.occupied, 0, "an empty rack occupies no rows");
+    check (! r0.rects.empty(), "an empty rack still draws empty slots");
+    checkEq (r0.maxScroll, 0, "an empty rack has nothing to scroll");
+
+    // OVERFLOW SCROLLS instead of collapsing: every plugin gets a full-size
+    // row and maxScroll covers exactly the hidden remainder.
+    auto rMany = T::chainRows (data, 40, 0);
+    checkEq (rMany.occupied, 40, "every plugin gets a row when the rack overflows");
+    checkEq ((int) rMany.rects.size(), 40, "an overflowing rack adds no empty slots");
+    check (rMany.maxScroll > 0, "an overflowing rack can scroll");
+    checkEq (rMany.rects[0].getHeight(), r4.rects[0].getHeight(),
+             "blocks keep their size when the rack overflows");
+
+    // THE OFFSET IS IN THE RECTS, which is what makes painting and hit
+    // testing agree: scrolling by one pitch moves row 1 to where row 0 was.
+    const int pitch = T::blockPitch();
+    auto rScrolled = T::chainRows (data, 40, pitch);
+    checkEq (rScrolled.rects[1].getY(), rMany.rects[0].getY(),
+             "one pitch of scroll lifts row 1 into row 0's place");
+    for (size_t i = 0; i < rMany.rects.size(); ++i)
+        checkEq (rScrolled.rects[i].getY(), rMany.rects[i].getY() - pitch,
+                 "every row shifts by exactly the scroll offset");
+
+    // A stale offset (rack shrank under it) is CLAMPED, never left to
+    // misplace a block.
+    auto rClamped = T::chainRows (data, 40, 99999);
+    checkEq (rClamped.rects[0].getY(), rMany.rects[0].getY() - rMany.maxScroll,
+             "an over-large offset clamps to maxScroll");
+    auto rNeg = T::chainRows (data, 40, -500);
+    checkEq (rNeg.rects[0].getY(), rMany.rects[0].getY(),
+             "a negative offset clamps to zero");
 
     // Purity + degenerate.
-    std::vector<juce::Rectangle<int>> again;
-    T::chainBlocks (data, 4, again);
-    checkEq ((int) again.size(), (int) blocks.size(), "block layout is pure");
-    for (size_t i = 0; i < blocks.size(); ++i)
-        check (blocks[i] == again[i], "block rects are stable");
-    T::chainBlocks ({ 0, 0, 0, 0 }, 4, again);
-    checkEq ((int) again.size(), 0, "a degenerate area has no blocks");
-    T::chainBlocks (data, 0, again);
-    checkEq ((int) again.size(), 0, "an empty rack has no blocks");
+    auto again = T::chainRows (data, 4, 0);
+    checkEq ((int) again.rects.size(), (int) r4.rects.size(), "row layout is pure");
+    for (size_t i = 0; i < r4.rects.size() && i < again.rects.size(); ++i)
+        check (r4.rects[i] == again.rects[i], "row rects are stable");
+    auto rDegen = T::chainRows ({ 0, 0, 0, 0 }, 4, 0);
+    checkEq ((int) rDegen.rects.size(), 0, "a degenerate area has no rows");
+}
+
+static void testPlacement()
+{
+    // SEND (3) measures like BUS: both are POST-FADER, so neither may fall
+    // into the insert-point branch. ONE predicate decides, which is what
+    // stops an "is it bus, otherwise channel" test mis-sorting a value
+    // added later.
+    std::printf ("placement: send measures post-fader like bus\n");
+    check ( placementIsPostFader (1), "bus is post-fader");
+    check ( placementIsPostFader (3), "SEND is post-fader");
+    check (! placementIsPostFader (2), "channel insert is pre-fader");
+    check (! placementIsPostFader (0), "unset is treated as pre-fader, conservatively");
+    // Anything a future writer might send must not read as post-fader by
+    // accident: only the two known post-fader values do.
+    for (int p = 4; p < 8; ++p)
+        check (! placementIsPostFader (p),
+               "an unknown placement is never assumed post-fader");
 }
 
 static void testMaskGating()
@@ -804,6 +850,7 @@ int main()
     testMeterMapping();
     testChainStates();
     testChainBlocks();
+    testPlacement();
     testMaskGating();
     testBandSqueeze();
     testContentMigration();

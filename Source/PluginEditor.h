@@ -2488,9 +2488,10 @@ private:
         juce::Rectangle<int> fader;     // fader LANE: full band height, so
                                         // lane and meter share height and
                                         // baseline (the drag target too)
-        juce::Rectangle<int> faderImg;  // the aspect-locked image, centred
-                                        // in the lane; CAP TRAVEL and the
-                                        // dB mapping live on THIS rect
+        juce::Rectangle<int> faderImg;  // the CAP AREA: FULL lane height,
+                                        // right of the tick lane. The cap
+                                        // travels all of it; the dB mapping
+                                        // lives on THIS rect
         juce::Rectangle<int> meter;     // fast-peak bars, always present
         juce::Rectangle<int> clip;      // latching clip lamp atop the meter
         juce::Rectangle<int> ai;        // opens this channel's conversation
@@ -2509,6 +2510,12 @@ private:
         void mouseDown(const juce::MouseEvent& e) override;
         void mouseDrag(const juce::MouseEvent& e) override;
         void mouseUp(const juce::MouseEvent& e) override;
+        /** Vertical wheel over a scrollable rack list scrolls THAT list;
+            anything else falls through to the Viewport, which scrolls the
+            mixer horizontally (JUCE maps a vertical wheel onto a
+            single-axis viewport). */
+        void mouseWheelMove(const juce::MouseEvent& e,
+                            const juce::MouseWheelDetails& w) override;
         /** Position-dependent: narrow strips ellipsise real track names, so
             the full name (and the merged control's status words, which have
             no room to render at 46px) must be reachable somewhere. Served by
@@ -2571,54 +2578,75 @@ private:
     // Unreachable at shipping widths; defined and tested anyway.
     static constexpr int kFaderHMax = 240;
     static constexpr int kFaderHMin = 144;
-    static constexpr int kFaderColNarrow  = 16;  // 4 ticks lane + 12 image
-    static constexpr int kFaderColWide    = 26;  // 6 ticks lane + 20 image
+    // Rebalanced (visual pass 3): the fader column takes the larger share
+    // of the band because column width IS fader height (1:8) and therefore
+    // throw and resolution; the meter takes the remainder and keeps its
+    // legibility through the gutter, not through fat bars.
+    // Wide is a MODEST step up from narrow, not a different instrument:
+    // the surplus width becomes breathing room around a centred pair.
+    //   narrow 46 inner = 26 fader + 4 gap + 16 meter, 0 spare
+    //   wide   88 inner = 32 fader + 4 gap + 28 meter, 24 spare (12 a side)
+    static constexpr int kFaderColNarrow  = 26;  // 4 ticks lane + 22 image
+    static constexpr int kFaderColWide    = 32;  // 6 ticks lane + 26 image
     static constexpr int kFaderTickLaneN  = 4;
     static constexpr int kFaderTickLaneW  = 6;
+    static constexpr int kMeterWNarrow    = 16;
+    static constexpr int kMeterWWide      = 28;
     static constexpr int kBandGap         = 4;   // fader column <-> meter
     static constexpr int kMeterWMin       = 12;  // meter survival floor
     // The filmstrip asset (Assets/iron_fader_60.png -> EchoJayFaderFilmstrip.h,
     // the wet-knob pattern). Frame indexing follows ChainWetKnob::paint: ONE
     // filmstrip implementation pattern, not a second.
     static constexpr int kFaderFrames = 128, kFaderFrameW = 60, kFaderFrameH = 480;
-    /** THE frame selector, pure: -24 dB = frame 0 (cap at the bottom),
-        +12 dB = frame 127 (cap at the top), clamped so an out-of-range gain
-        can never index past the strip. */
-    static int faderFrameForGain(float db)
+    // THE CAP SPRITE. Measured from the asset by alpha bounding box: every
+    // frame is TRANSPARENT except a constant 54x113 cap at x[3..56],
+    // translated vertically (frame 0's cap top at y 363, frame 127's at 3),
+    // and frame 64 carries ZERO pixels of alpha outside that band. THERE IS
+    // NO TRACK IN THE ARTWORK, so the track is drawn and ONE frame's cap is
+    // cropped at draw time: no asset change, no regenerated header.
+    //
+    // This retires the full-frame draw and with it the 1:8 lock, which was
+    // never the cap's aspect but the FRAME's. It capped image height at
+    // eight times image width, so the cap stopped short of the lane however
+    // long the lane was: the fault three passes could not reach. The cap now
+    // travels the WHOLE lane, and its own 54:113 aspect is preserved by
+    // deriving height from width.
+    static constexpr int kFaderCapSrcX = 3, kFaderCapSrcW = 54, kFaderCapSrcH = 113;
+    static constexpr int kFaderCapSrcY = 64 * kFaderFrameH + 182;   // frame 64
+    /** Drawn cap height for a cap area. UNIFORM scale: both axes take the
+        same capArea.getWidth() / 54 factor, so the cap is never stretched;
+        integer rounding is the only deviation, under half a pixel. */
+    static int faderCapH(juce::Rectangle<int> capArea)
     {
-        const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
-        return juce::jlimit(0, kFaderFrames - 1,
-                            (int)std::round(f * (float)(kFaderFrames - 1)));
+        return juce::jmax(4, (int)std::round((double)capArea.getWidth()
+                                             * (double)kFaderCapSrcH
+                                             / (double)kFaderCapSrcW));
     }
-    // The artwork's cap TRAVEL is inset from the frame edges: measured from
-    // the filmstrip itself (background-subtracted brightness centroid per
-    // frame), the cap centre runs row 419 (frame 0, -24 dB) to row 60
-    // (frame 127, +12 dB) of the 480-row frame, LINEAR at 2.83 rows/frame.
-    // dB therefore maps onto that band, not the full rect, so the ticks,
-    // the drag and the drawn cap land on the same pixel. Change these only
-    // by re-measuring the artwork.
-    static constexpr float kFaderTravelTopFrac = 60.0f  / 480.0f;
-    static constexpr float kFaderTravelBotFrac = 419.0f / 480.0f;
+    /** THE TRAVEL BAND, now DERIVED rather than measured off the artwork:
+        the cap CENTRE runs from half a cap below the lane top to half a cap
+        above the lane bottom, because a cap cannot leave its lane. The old
+        12.5 / 12.7 percent frame insets retire with the full-frame draw.
+        `capArea` is the full-height rect the cap travels
+        (StripGeom::faderImg). ONE pair, consumed by the drag, the ticks and
+        the drawn cap alike. */
+    static float faderTravelTop(juce::Rectangle<int> capArea)
+    { return (float)capArea.getY() + 0.5f * (float)faderCapH(capArea); }
+    static float faderTravelBot(juce::Rectangle<int> capArea)
+    { return (float)capArea.getBottom() - 0.5f * (float)faderCapH(capArea); }
     /** dB<->y for the fader rect, mapped across the artwork's cap travel
         band (see above). Same range (-24..+12), same 0.1 dB snap. Pure,
         shared by the drag, the travel ticks and the fallback thumb. */
-    static float gainFromY(int y, juce::Rectangle<int> track)
+    static float gainFromY(int y, juce::Rectangle<int> capArea)
     {
-        const float top = (float)track.getY()
-                        + kFaderTravelTopFrac * (float)track.getHeight();
-        const float bot = (float)track.getY()
-                        + kFaderTravelBotFrac * (float)track.getHeight();
+        const float top = faderTravelTop(capArea), bot = faderTravelBot(capArea);
         const float f = juce::jlimit(0.0f, 1.0f,
             (bot - (float)y) / juce::jmax(1.0f, bot - top));
         return juce::jlimit(-24.0f, 12.0f,
             std::round((-24.0f + f * 36.0f) * 10.0f) / 10.0f);
     }
-    static int yFromGain(float db, juce::Rectangle<int> track)
+    static int yFromGain(float db, juce::Rectangle<int> capArea)
     {
-        const float top = (float)track.getY()
-                        + kFaderTravelTopFrac * (float)track.getHeight();
-        const float bot = (float)track.getY()
-                        + kFaderTravelBotFrac * (float)track.getHeight();
+        const float top = faderTravelTop(capArea), bot = faderTravelBot(capArea);
         const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
         return (int)std::round(bot - f * (bot - top));
     }
@@ -2629,11 +2657,10 @@ private:
         cannot consume gainFromY deltas directly: those clamp at the travel
         rails, and a FINE drag whose cursor has passed a rail while its
         value has not would stall. */
-    static float gainPerPixel(juce::Rectangle<int> track)
+    static float gainPerPixel(juce::Rectangle<int> capArea)
     {
-        const float span = (kFaderTravelBotFrac - kFaderTravelTopFrac)
-                         * (float)juce::jmax(1, track.getHeight());
-        return 36.0f / juce::jmax(1.0f, span);
+        return 36.0f / juce::jmax(1.0f, faderTravelBot(capArea)
+                                      - faderTravelTop(capArea));
     }
     /** Shift = fine drag at one eighth speed. */
     static constexpr float kFaderFineRatio = 1.0f / 8.0f;
@@ -2761,6 +2788,12 @@ private:
     int  busFaderLastY_    = 0;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    /** The pinned bus strip is editor-painted, so ITS wheel events arrive
+        here rather than on LinkMixerView. Consumes only over the bus rack
+        list when that list can scroll; everything else keeps today's
+        behaviour untouched. */
+    void mouseWheelMove(const juce::MouseEvent& e,
+                        const juce::MouseWheelDetails& w) override;
 
     void measureLinkStrips();
     /** Paint one strip from its stored geometry. Shared by the pinned Mix Bus
@@ -2772,6 +2805,9 @@ private:
         frame, not pay one each. */
     void paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                         const EchoJayProcessor::LinkDisplayEntry* entry);
+    /** The drawn track, its ticks and the cap sprite at `gDb`. ONE painter
+        for the channel strips and the bus, so the two cannot drift. */
+    void paintFaderLane(juce::Graphics& g, const StripGeom& sg, float gDb);
     /** Routes one press through stripHitAt. `local` is in sg's space.
         numClicks carries the double-click (fader reset to 0 dB). */
     void linkStripMouseDown(const StripGeom& sg, juce::Point<int> local,
@@ -2882,7 +2918,11 @@ private:
     static void meterBarRects(juce::Rectangle<int> area,
                               int& gutterOut, juce::Rectangle<int> barsOut[2])
     {
-        gutterOut = area.getWidth() >= 50 ? 16
+        // 26, not 38: the wide meter came down to 28 and the gutter is
+        // what scale legibility actually needs, so full numbering survives
+        // on 5px bars. Width off the meter buys fader throw; the gutter
+        // keeps the reading.
+        gutterOut = area.getWidth() >= 26 ? 16
                   : area.getWidth() >= 24 ? 11 : 6;
         auto bars = area.withTrimmedTop(2).withTrimmedBottom(2)
                         .withTrimmedLeft(gutterOut);
@@ -2925,10 +2965,31 @@ private:
     // blocks themselves are legible.
     static constexpr int kChainBlockH = 20, kChainBlockGap = 3;
     static constexpr int kBlockCtrlW = 14;         // B and X, each
-    /** SHOWN blocks only (overflow collapses into "+N more"; the fit logic
-        lives HERE so paint and hit test agree on how many blocks exist). */
-    static void layOutChainBlocks(juce::Rectangle<int> dataRect, int count,
-                                  std::vector<juce::Rectangle<int>>& out);
+    /** THE rack row layout: occupied blocks, then INERT empty slots filling
+        whatever visible space is left, with the scroll offset ALREADY
+        APPLIED to every rect. Pure, and the single author paint, hit
+        testing, the tooltip and the wheel all consume, so a scrolled block
+        cannot be painted in one place and tested in another (the
+        Visualisation preset bug's exact shape).
+
+        Empty slots fill the VISIBLE AREA and nothing more: that is an
+        honest statement about the view. ChainHost enforces no rack ceiling
+        to quote, so a fixed "capacity" number would be invented. */
+    struct ChainRows {
+        std::vector<juce::Rectangle<int>> rects;  // occupied first, then empties
+        int occupied  = 0;   // rects[0 .. occupied-1] are real plugins
+        int maxScroll = 0;   // 0 when everything fits, so the wheel passes through
+    };
+    static ChainRows layOutChainRows(juce::Rectangle<int> dataRect,
+                                     int occupied, int scrollY);
+    /** Occupied rack size for a strip: host ChainHost for the bus, the
+        processor-side sidecar cache for a Link. ONE lookup, four consumers. */
+    int linkRackCount(const StripGeom& sg) const;
+    int linkChainScrollFor(const StripGeom& sg) const;
+    /** Returns true when the strip's rack list consumed the wheel. It only
+        does so when it can actually scroll, so a list that fits lets the
+        event through to the mixer's horizontal viewport. */
+    bool linkChainWheel(const StripGeom& sg, juce::Point<int> local, float deltaY);
     /** B and X inside a block's right end (the space the visual pass left
         clear). 14x13 targets at the block's 15px height: small, but the
         same scale as the segmented controls' pressable floor. */

@@ -537,6 +537,10 @@ void LinkEditor::updatePlacementBtn()
             placementBtn.setButtonText("Channel");
             placementBtn.setColour(juce::TextButton::textColourOffId, kCyan);
             break;
+        case LinkProcessor::PlacementSend:
+            placementBtn.setButtonText("Send");
+            placementBtn.setColour(juce::TextButton::textColourOffId, kCyan);
+            break;
         default:
             // Only the UNSET state is dim; never amber/nagging. Behaves as
             // Channel until set.
@@ -643,13 +647,15 @@ void LinkEditor::showPlacementChooser()
     const int cur = proc.getPlacement();
     m.addItem(1, "Bus",     true, cur == LinkProcessor::PlacementBus);
     m.addItem(2, "Channel", true, cur == LinkProcessor::PlacementInsert);
+    m.addItem(3, "Send",    true, cur == LinkProcessor::PlacementSend);
     auto safeThis = juce::Component::SafePointer<LinkEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&placementBtn),
         [safeThis](int r)
         {
             if (safeThis == nullptr || r == 0) return;
             safeThis->applyPlacement(r == 1 ? LinkProcessor::PlacementBus
-                                            : LinkProcessor::PlacementInsert);
+                                  : r == 3 ? LinkProcessor::PlacementSend
+                                           : LinkProcessor::PlacementInsert);
         });
 }
 
