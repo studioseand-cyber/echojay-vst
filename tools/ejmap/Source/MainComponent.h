@@ -1164,42 +1164,57 @@ public:
                                const juce::String& probeName,
                                std::function<juce::Array<double>()> renderRows)
     {
+        // ONE MOVER PROVES LIVE; ONE NULL PROVES NOTHING. The first build
+        // took a single unambiguous name match and declared bx_limiter's
+        // render plane blind on its Release -- a parameter that is genuinely
+        // Release and genuinely not expressible in a STATIC level curve,
+        // while the same plugin's ceiling had confirmed to 0.02 dB. The name
+        // was right and the behaviour was not what the name implied, which is
+        // this module's most-filed defect. Suitability is now MEASURED: try
+        // several, stop at the first that moves the render, and declare
+        // blindness only when every candidate is null.
         auto params = inst.getParameters();
-        int idx = -1;
-        for (auto* n : { "Release", "Output", "Gain", "Mix", "Threshold" })
-        {
-            juce::Array<int> hits;
+        juce::Array<int> cands;
+        for (auto* n : { "Output", "Gain", "Mix", "Threshold", "Ceiling", "Drive", "Release" })
             for (int i = 0; i < params.size(); ++i)
-                if (params[i]->getName (64).containsIgnoreCase (n) && params[i]->isAutomatable())
-                    hits.add (i);
-            if (hits.size() == 1) { idx = hits[0]; break; }   // unambiguous only
-        }
-        if (idx < 0)
-        { std::cout << "  SENSITIVITY: no unambiguous known-live parameter on " << probeName
+                if (params[i]->getName (64).containsIgnoreCase (n) && params[i]->isAutomatable()
+                     && ! cands.contains (i))
+                    cands.add (i);
+        if (cands.isEmpty())
+        { std::cout << "  SENSITIVITY: no candidate parameter on " << probeName
                     << " -- cannot prove the render plane; suite must not proceed" << std::endl;
           return false; }
 
-        auto sw = sweepOneIndex (inst, idx, watchdog, loadedId);
-        if (sw.anchors.size() < 2)
-        { std::cout << "  SENSITIVITY: [" << idx << "] did not sweep; cannot prove the render plane"
-                    << std::endl; return false; }
         auto toNorm = [] (const juce::Array<juce::Array<float>>& a, double v) {
             auto e = echojay::dominantMonotonicTable (a);
             return echojay::interpolateAnchors (e.table, (float) v); };
-        Probe::writeAndServiceRunloop (*params[idx], toNorm (sw.anchors, sw.anchors.getFirst()[0]));
-        auto a = renderRows();
-        Probe::writeAndServiceRunloop (*params[idx], toNorm (sw.anchors, sw.anchors.getLast()[0]));
-        auto b = renderRows();
-        double worst = 0;
-        for (int i = 0; i < a.size() && i < b.size(); ++i)
-            worst = juce::jmax (worst, std::abs (b[i] - a[i]));
-        const bool live = worst > 0.5;
-        std::cout << "  SENSITIVITY: moved [" << idx << "] " << params[idx]->getName (32)
-                  << " across its ladder -> worst |delta| " << juce::String (worst, 2) << " dB -> "
-                  << (live ? "render plane LIVE, suite may proceed"
-                           : "RENDER PLANE BLIND -- suite STOPPED, no verdict may be issued")
+        juce::StringArray tried;
+        for (int k = 0; k < juce::jmin (5, cands.size()); ++k)
+        {
+            const int idx = cands[k];
+            auto sw = sweepOneIndex (inst, idx, watchdog, loadedId);
+            if (sw.anchors.size() < 2) { tried.add (params[idx]->getName (24) + ":no-sweep"); continue; }
+            Probe::writeAndServiceRunloop (*params[idx], toNorm (sw.anchors, sw.anchors.getFirst()[0]));
+            auto a = renderRows();
+            Probe::writeAndServiceRunloop (*params[idx], toNorm (sw.anchors, sw.anchors.getLast()[0]));
+            auto b = renderRows();
+            double worst = 0;
+            for (int i = 0; i < a.size() && i < b.size(); ++i)
+                worst = juce::jmax (worst, std::abs (b[i] - a[i]));
+            tried.add (params[idx]->getName (24) + ":" + juce::String (worst, 2));
+            if (worst > 0.5)
+            {
+                std::cout << "  SENSITIVITY: [" << idx << "] " << params[idx]->getName (32)
+                          << " moved the render " << juce::String (worst, 2)
+                          << " dB -> render plane LIVE, suite may proceed  (tried "
+                          << tried.joinIntoString (", ") << ")" << std::endl;
+                return true;
+            }
+        }
+        std::cout << "  SENSITIVITY: EVERY candidate was null (" << tried.joinIntoString (", ")
+                  << ") -> RENDER PLANE BLIND -- suite STOPPED, no verdict may be issued"
                   << std::endl;
-        return live;
+        return false;
     }
 
     /** Resolve a subject by NAME, and record a miss as the HARNESS's rather
