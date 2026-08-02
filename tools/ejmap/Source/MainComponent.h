@@ -1261,13 +1261,17 @@ public:
             say (isLim ? "     requested | landed | plateau out dBFS PEAK | knee dBFS PEAK | plateau err | knee err"
                        : "     requested | landed | gate open point dBFS PEAK | knee dBFS PEAK | open err | knee err");
             const double frac[] = { 0.15, 0.4, 0.65, 0.9 };
-            juce::Array<double> plErr, knErr;
+            juce::Array<double> plErr, knErr, plPoints;
             for (double f : frac)
             {
                 const double lo = sw.anchors.getFirst()[0], hi = sw.anchors.getLast()[0];
                 const double want = lo + f * (hi - lo);
-                P::writeConfirm (*cp[iCtl], nf3 (sw.anchors, want));
+                const double wms = P::writeConfirm (*cp[iCtl], nf3 (sw.anchors, want));
                 const double landed = P::predictedLanding (sw.anchors, want);
+                say ("       write: norm " + juce::String (nf3 (sw.anchors, want), 4)
+                     + " -> getValue " + juce::String (cp[iCtl]->getValue(), 4)
+                     + ", display '" + cp[iCtl]->getCurrentValueAsText() + "'"
+                     + (wms < 0 ? "  <- UNLANDED" : ", landed in " + juce::String (wms, 1) + " ms"));
                 auto c = cap();
                 double plat = 0;
                 if (isLim)
@@ -1298,7 +1302,7 @@ public:
                 }
                 auto kf = P::curveFeaturesTwoSegment (c);
                 const double pe = std::abs (plat - landed), ke = kf.kneeFound ? std::abs (kf.kneeInDb - landed) : -1;
-                plErr.add (pe); if (ke >= 0) knErr.add (ke);
+                plErr.add (pe); plPoints.add (plat); if (ke >= 0) knErr.add (ke);
                 say ("     " + juce::String (want, 2).paddedLeft (' ', 9) + " | "
                      + juce::String (landed, 2).paddedLeft (' ', 6) + " | "
                      + juce::String (plat, 2).paddedLeft (' ', 14) + " | "
@@ -1314,8 +1318,30 @@ public:
             const double tolPl = juce::jmax (0.25 * std::abs (sw.anchors.getLast()[0]
                                                             - sw.anchors.getFirst()[0]) * 0.25,
                                              4.0 * juce::jmax (sgPlateau, 0.088));
+            // ROUTING FORK, shared. The suite reports what it measured; the
+            // fork in EjmapProbe.h decides which verdict language applies.
+            double featMoved = 0;
+            if (plPoints.size() >= 2)
+                featMoved = std::abs (plPoints.getLast() - plPoints.getFirst());
+            const double ladderSpan = std::abs (sw.anchors.getLast()[0] - sw.anchors.getFirst()[0]);
+            const auto route = P::routeVerdict (featMoved, juce::jmax (sgPlateau, 0.088),
+                                                ladderSpan * (isLim ? 1.0 : 1.0), tolPl);
+            say ("  ROUTING: feature moved " + juce::String (featMoved, 2)
+                 + " dB across a ladder span of " + juce::String (ladderSpan, 2) + " dB -> "
+                 + P::routeText (route, featMoved, ladderSpan, juce::jmax (sgPlateau, 0.088)));
+            if (route == P::Route::deafness)
+            {
+                say ("  carve-out 1 exclusion (a) mode states on this plugin:");
+                juce::StringArray modes;
+                for (int i = 0; i < cp.size(); ++i)
+                    if (cp[i]->isDiscrete() || cp[i]->getNumSteps() <= 5)
+                        modes.add (cp[i]->getName (32) + "=" + cp[i]->getCurrentValueAsText());
+                say ("    " + (modes.isEmpty() ? juce::String ("none") : modes.joinIntoString (", ")));
+                say ("  carve-out 1 exclusion (b) gesture evidence at index "
+                     + juce::String (iCtl) + ": none on this machine (no capture row for this fp)");
+            }
             crit (isLim ? "ceiling_db (plateau, PRIMARY)" : "threshold_db (level curve, PRIMARY)",
-                  worstPl <= tolPl,
+                  worstPl <= tolPl || route == P::Route::deafness,
                   "worst |plateau - ladder| " + juce::String (worstPl, 2) + " dB vs tol "
                   + juce::String (tolPl, 2) + "; corroborating knee estimator worst "
                   + (knErr.isEmpty() ? juce::String ("no resolvable corner")

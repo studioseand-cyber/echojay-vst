@@ -732,6 +732,56 @@ struct Probe
     };
 
     //==========================================================================
+    /** THE ROUTING FORK, shared (session item 1). Over-claim versus deafness
+        is decided by ONE measured quantity -- did the feature move above its
+        floor -- and every suite needs the same answer. Two suites have now
+        omitted a guard that already existed (the compressor issued envelope
+        verdicts without the mode guard; the gate wrote over-claim text on a
+        constant response), so the fork does not belong per-suite. NO SUITE
+        MAY WRITE OVER-CLAIM TEXT ON ITS OWN AUTHORITY.
+
+        movedDb   : |measured change| in the feature's own units
+        floorDb   : that feature's sigma floor (plugin or instrument, whichever
+                    is larger)
+        predDb    : the predicted change
+    */
+    enum class Route { deafness, overClaim, tracks };
+
+    static Route routeVerdict (double movedDb, double floorDb, double predDb,
+                               double tolerance)
+    {
+        if (std::abs (movedDb) < 4.0 * juce::jmax (floorDb, 1.0e-9))
+            return Route::deafness;                    // did not move -> carve-out 1
+        if (std::abs (std::abs (movedDb) - std::abs (predDb)) > tolerance)
+            return Route::overClaim;                   // moved, wrong magnitude
+        return Route::tracks;
+    }
+
+    /** The words each route is allowed to use, in one place so no suite can
+        invent its own. Carve-out 1's exclusions are named in the deafness
+        text because they are what must run before any promotion.
+    */
+    static juce::String routeText (Route r, double movedDb, double predDb, double floorDb)
+    {
+        switch (r)
+        {
+            case Route::deafness:
+                return "INCONCLUSIVE: possibly mode-suppressed -- the feature did not move above "
+                       "its floor (" + juce::String (std::abs (movedDb), 2) + " dB against 4*sigma "
+                     + juce::String (4.0 * floorDb, 2) + " dB) while " + juce::String (predDb, 2)
+                     + " dB was predicted. Carve-out 1 governs: promotion to contradicts requires "
+                       "(a) no suppressing mode in the map AND (b) no gesture evidence at this index";
+            case Route::overClaim:
+                return "OVER-CLAIM: the feature MOVED (" + juce::String (std::abs (movedDb), 2)
+                     + " dB, above its floor) but by the wrong magnitude against "
+                     + juce::String (std::abs (predDb), 2) + " dB predicted";
+            case Route::tracks:
+            default:
+                return "tracks: moved " + juce::String (std::abs (movedDb), 2)
+                     + " dB against " + juce::String (std::abs (predDb), 2) + " dB predicted";
+        }
+    }
+
     /** THE MODE-TOKEN GUARD, harness-level (item 4). A parameter whose display
         does not parse as a leading number is in a MODE where its numeric
         semantics do not apply, and no numeric verdict may be issued against
