@@ -833,7 +833,7 @@ defect.** Not a new class — the same shape, caught the same way:
 | Mono Maker is a band frequency | the classifier read a name |
 | the limiter's ceiling is 3.01 dB off | an RMS plateau read against a peak ladder |
 | the ceiling error grows to 4.82 dB | a five-step mean contaminated by unlimited steps |
-| kHs Gate failed to load | it loads fine; the harness searched the AU census for a VST3-only plugin |
+| kHs Gate failed to load | it loads fine — but NOT for the reason recorded here. See the correction below: the "wrong catalogue" reading was itself wrong |
 
 Every one was caught by something **recording what happened** rather than
 what the code believed — a probe measuring effect, a convention declared
@@ -861,9 +861,28 @@ Move the guard to the choke point every path already goes through — or,
 when a path *never reaches* a choke point, give that path its own
 recording. The second is harder because the guard looks correct where it
 sits and the path looks unrelated to it: nothing inside `PluginHost::load`
-can record a name-lookup miss, because a miss never calls it. kHs Gate is
-the specimen — VST3-only, searched in the AU census, reported as a plugin
-load failure that never happened.
+can record a name-lookup miss, because a miss never calls it.
+
+**CORRECTION (2026-08-02). kHs Gate was recorded here as the specimen and
+is not one.** It resolves in the AU census (`[3] Threshold`), loads, and
+renders 234 dB across its threshold ladder. The harness *found* it;
+`host.load` failed at that moment for reasons still unknown, and the
+"searched the wrong catalogue" reading was inferred from a VST3 ledger row
+that had come from the SCAN path. The recorder (`resolveSubjectByName`) is
+built and correct and **has no demonstrated instance** — two attempts to
+construct one (TDR SlickEQ M, MTurboReverb) both resolved in the AU census
+too. Kept by name rather than deleted, because the failure mode is the
+point.
+
+**A sixth instance of the family, and the cheapest to make.** That claim
+entered this document and two rounds of instructions on a plausible
+reading, unchallenged, until something ran against it. Nobody measured it;
+it sounded right and was repeated — including by the reviewer, who wrote
+"kHs Gate is the specimen" into the next instructions on the strength of
+my report. **The family's signature applies to prose as well as code:** a
+claim that reads as plausible is tested against belief, and only executing
+it tests it against the world. This one cost two sessions of building the
+right mechanism against the wrong motivating example.
 
 **Test the property, not the happy path.** A choke-point guard is only
 proven by adding a caller that does *not* cooperate and confirming the

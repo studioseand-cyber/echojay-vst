@@ -1812,6 +1812,22 @@ public:
         // FORGETTABILITY TEST: a load site that plants NO stake of its own.
         // If the choke point works, a hard death here is still attributed.
         // Deliberately bare -- adding a beginLoad here would test nothing.
+        if (mode == "lookupmiss")
+        {
+            // Item 2: CONSTRUCT the specimen rather than hunt one. Any
+            // VST3-only product searched in the AU census exercises the
+            // recorder. Both names below are real products on this machine;
+            // neither ships an AU.
+            for (auto* n : { "TDR SlickEQ M", "MTurboReverb" })
+            {
+                say ("  searching AU census for '" + juce::String (n) + "':");
+                auto d = resolveSubjectByName (n);
+                if (d.fileOrIdentifier.isNotEmpty())
+                    say ("    (resolved -- not a VST3-only specimen after all)");
+            }
+            std::cout << "LOOKUPMISS: DONE" << std::endl; quitNow(); return;
+        }
+
         if (mode == "forget")
         {
             auto census8 = echojay::auregistry::buildCensus();
