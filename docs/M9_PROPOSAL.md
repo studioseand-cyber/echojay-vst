@@ -841,6 +841,30 @@ next to a number, a per-ceiling gain-reduction line, a ledger detail string
 at the choke point. None was caught by reading the code, and in each case
 the tool's own report was the most confident-sounding thing in the room.
 
+**A fifth instance, with the sharpened signature.** Checking a written
+artefact BY EYE tests it against your belief about the format; only
+comparing it against its CONSUMER tests it against the format. The stake's
+doubled `AudioUnit:AudioUnit:` prefix read as plausible on screen and would
+have produced a quarantine row keyed to a plugin that does not exist —
+which downstream reads as **no row at all**, not as a wrong one. Same shape
+as `writeConfirm` reading the plane that confirms instantly: both checked
+the thing that answers, not the thing that matters. The rule that follows:
+an identifier written for another component to key on is constructed by
+**that component's own constructor**, never assembled at the write site.
+The first correction to this bug was itself a second invented scheme
+(conditional prefixing, still wrong for VST3, whose `fileOrIdentifier`
+carries no format prefix to detect) — which is the argument for the rule
+rather than for more careful assembly.
+
+**The family has TWO distinct fixes, and the second is harder to see.**
+Move the guard to the choke point every path already goes through — or,
+when a path *never reaches* a choke point, give that path its own
+recording. The second is harder because the guard looks correct where it
+sits and the path looks unrelated to it: nothing inside `PluginHost::load`
+can record a name-lookup miss, because a miss never calls it. kHs Gate is
+the specimen — VST3-only, searched in the AU census, reported as a plugin
+load failure that never happened.
+
 **Test the property, not the happy path.** A choke-point guard is only
 proven by adding a caller that does *not* cooperate and confirming the
 guard still fires — the forgettability property is the whole point, and a
