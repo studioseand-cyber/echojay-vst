@@ -1422,7 +1422,7 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
                           std::memory_order_relaxed);
         gainSnapPending_.store(true, std::memory_order_relaxed);  // restore: jump, don't swell
         if (obj->hasProperty("placement"))
-            placement_.store(juce::jlimit((int)PlacementUnset, (int)PlacementInsert,
+            placement_.store(juce::jlimit((int)PlacementUnset, (int)PlacementSend,
                                           (int)obj->getProperty("placement")),
                              std::memory_order_relaxed);
         if (obj->hasProperty("projectName"))

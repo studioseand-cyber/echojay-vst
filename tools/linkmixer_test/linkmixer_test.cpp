@@ -700,6 +700,24 @@ static void testChainBlocks()
     checkEq ((int) rDegen.rects.size(), 0, "a degenerate area has no rows");
 }
 
+static void testPlacement()
+{
+    // SEND (3) measures like BUS: both are POST-FADER, so neither may fall
+    // into the insert-point branch. ONE predicate decides, which is what
+    // stops an "is it bus, otherwise channel" test mis-sorting a value
+    // added later.
+    std::printf ("placement: send measures post-fader like bus\n");
+    check ( placementIsPostFader (1), "bus is post-fader");
+    check ( placementIsPostFader (3), "SEND is post-fader");
+    check (! placementIsPostFader (2), "channel insert is pre-fader");
+    check (! placementIsPostFader (0), "unset is treated as pre-fader, conservatively");
+    // Anything a future writer might send must not read as post-fader by
+    // accident: only the two known post-fader values do.
+    for (int p = 4; p < 8; ++p)
+        check (! placementIsPostFader (p),
+               "an unknown placement is never assumed post-fader");
+}
+
 static void testMaskGating()
 {
     // 8c: the cross-version gate. An OLD writer's frame reads
@@ -832,6 +850,7 @@ int main()
     testMeterMapping();
     testChainStates();
     testChainBlocks();
+    testPlacement();
     testMaskGating();
     testBandSqueeze();
     testContentMigration();

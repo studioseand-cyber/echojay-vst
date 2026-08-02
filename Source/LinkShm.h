@@ -71,6 +71,15 @@ static_assert(kLinkHdrSize == sizeof(LinkShmHeader), "");
 // =============================================================================
 
 static constexpr uint32_t kRegMagic      = 0xEC4A2002u;
+
+/// Placement values as they cross the registry and the ctrl protocol:
+/// 0 unset, 1 bus, 2 channel insert, 3 send return.
+/// POST-FADER placements measure their real contribution to the mix, so
+/// comparative claims about them are legitimate; pre-fader ones cannot be
+/// compared because the channel fader is invisible to a plugin. ONE
+/// predicate, consumed by both plugins, so no "is it bus, otherwise
+/// channel" branch can quietly mis-sort a value added later.
+inline bool placementIsPostFader(int p) { return p == 1 || p == 3; }
 static constexpr int      kRegMaxSlots   = 16;
 static constexpr int      kRegStaleCycles = 60;   // ~30 s at 2 Hz probing
 
@@ -96,7 +105,8 @@ struct alignas(128) RegistrySlot
                                //     regardless of Active. Carved from _pad;
                                //     old writers leave it 0.0 = unity (benign).
     uint8_t  placement;        //  1  Link placement (v0.6.0): 0=unset/unknown,
-                               //     1=bus (post-fader), 2=insert (pre-fader).
+                               //     1=bus (post-fader), 2=insert (pre-fader),
+                               //     3=send return (post-fader, v0.8.6).
                                //     Old writers leave 0 = unknown (treated as
                                //     pre-fader for level gating). Carved from _pad.
     uint8_t  _pad[3];          //  3  → total 128

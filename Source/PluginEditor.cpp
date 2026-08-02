@@ -7334,7 +7334,8 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         const juce::String bl = isBus ? "MIX BUS"
                               : entry == nullptr        ? juce::String()
                               : entry->info.placement == 1 ? "BUS"
-                              : entry->info.placement == 2 ? "CHANNEL" : "SET?";
+                              : entry->info.placement == 2 ? "CHANNEL"
+                              : entry->info.placement == 3 ? "SEND" : "SET?";
         if (bl.isNotEmpty())
         {
             // Console pass: TEXT ONLY, the boxed chip is gone. Set values
@@ -7787,6 +7788,7 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
             return !have ? name
                  : en.info.placement == 1 ? "Placement: Bus (click to change)"
                  : en.info.placement == 2 ? "Placement: Channel (click to change)"
+                 : en.info.placement == 3 ? "Placement: Send return (click to change)"
                                           : "Placement not set (click to set)";
 
         case StripHit::Active:
@@ -19349,7 +19351,10 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
         r.uid = li.uid;
         r.gain = li.gainDb; r.has = false; r.placement = li.placement;
         r.integ = r.mom = r.tp = -100.0f;
-        if (li.placement != 1) anyInsertOrUnknown = true;   // not "bus"
+        // Pre-fader only: bus AND send are post-fader (one predicate,
+        // placementIsPostFader, so a later value cannot be
+        // mis-sorted by an "is it bus, otherwise channel" test).
+        if (!placementIsPostFader(li.placement)) anyInsertOrUnknown = true;
         if (li.placement == 0) anyUnset = true;             // placement never set
         LinkMeterFrame f;
         if (li.regIdx >= 0 && processorRef.readLinkMeterFrame(li.regIdx, f)
@@ -19363,7 +19368,8 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
     if (rows.empty()) return {};
 
     auto f1 = [](float v) { return juce::String(v, 1); };
-    auto placeStr = [](int p) { return p == 1 ? "bus" : p == 2 ? "channel" : "unset"; };
+    auto placeStr = [](int p) { return p == 1 ? "bus" : p == 2 ? "channel"
+                                     : p == 3 ? "send return" : "unset"; };
     const auto busMd = processorRef.getMeterEngine().getMeterData();
 
     juce::String c;
@@ -19397,9 +19403,20 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
          "- A Link's placement is either \"bus\" (post-fader: its loudness IS what "
          "reaches the mix), \"channel\" (pre-fader), or \"unset\" (user hasn't said; "
          "treat it as channel — conservative).\n"
-         "- For \"bus\" Links, their loudness is their real contribution. You MAY "
-         "compare their levels to each other and to the mix bus, and MAY propose gain "
-         "changes, when the MEASURED values justify it.\n"
+         "- For \"bus\" and \"send return\" Links, their loudness is their real "
+         "contribution. You MAY compare their levels to each other and to the mix "
+         "bus, and MAY propose gain changes, when the MEASURED values justify it.\n"
+         "- A \"send return\" is a parallel or FX bus fed by sends (parallel "
+         "compression, a reverb or delay return). Its level is RELATIVE TO THE DRY "
+         "SIGNAL BY DESIGN: a return sitting well below the channels it serves is "
+         "BLENDED, not quiet, and telling the user to raise it toward a channel or "
+         "the mix bus is usually wrong. Absolute loudness targets do not apply to it "
+         "the way they do to a bus. What IS worth commenting on for a send return is "
+         "the blend and its character: how much of it is present relative to the dry "
+         "source, its width, and whether its tone sits with or against the source. "
+         "Propose a gain change on one only when the user asks for more or less of "
+         "that effect, or when a measurement genuinely justifies it (a true-peak "
+         "over, or a return so loud it dominates the source).\n"
          "- For \"channel\" or \"unset\" Links, the measurements are PRE-FADER. You "
          "CANNOT see the channel fader, so you MUST NOT claim one channel is "
          "louder/quieter than another in the actual mix. You MAY propose a gain "
@@ -19478,7 +19495,10 @@ EchoJayEditor::GainCardVerdict EchoJayEditor::gainCardVerdict(juce::DynamicObjec
     int place = 0;
     for (const auto& li : processorRef.getLinkSlotInfos())
         if (linkAddrForSlot(li) == v.uid) { place = li.placement; break; }
-    v.insertPoint = v.present && !v.isBus && place != 1;
+    // SEND is post-fader, so it must NOT land in the insert-point branch.
+    // The old "place != 1" test would have swept it in with channel the
+    // moment 3 existed; the shared predicate cannot.
+    v.insertPoint = v.present && !v.isBus && !placementIsPostFader(place);
     v.curG = v.isBus ? processorRef.getBusGainDb()
            : v.present ? linkRowDisplayGain(v.uid) : 0.0f;
     const bool applied = (bool)po->getProperty("applied");
@@ -19586,7 +19606,15 @@ void EchoJayEditor::sendLinkPlacementCommand(const juce::String& linkAddr, int p
     cmd->setProperty("v",         1);
     cmd->setProperty("seq",       seq);
     cmd->setProperty("active",    active);
-    cmd->setProperty("placement", juce::jlimit(0, 2, placement));
+    // 0..3 since SEND. RAISING THIS IS WHAT LETS SEND CROSS THE WIRE, so
+    // the old-Link behaviour is stated where the change is: an old Link does
+    // not validate on arrival, stores 3, mirrors it, and its own header
+    // selector falls to the UNSET label ("Placement", dim) because its
+    // switch has no case for 3 - honest, not a wrong label. Its state
+    // restore clamps to its own max, so after a session reload that Link
+    // reads CHANNEL. Both ends of that are conservative: an unknown
+    // placement is treated as pre-fader, never silently as BUS.
+    cmd->setProperty("placement", juce::jlimit(0, 3, placement));
     juce::File(dir + "ctrl-ack-" + id + ".json").deleteFile();
     juce::File(dir + "ctrl-cmd-" + id + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
@@ -19609,12 +19637,16 @@ void EchoJayEditor::showLinkPlacementMenu(const juce::String& linkAddr)
     m.addSectionHeader((name.isEmpty() ? juce::String("Link") : name) + " placement");
     m.addItem(1, "Bus",     true, cur == 1);
     m.addItem(2, "Channel", true, cur == 2);
+    m.addItem(3, "Send",    true, cur == 3);
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options(),
         [safeThis, linkAddr](int r)
         {
             if (safeThis == nullptr || r == 0) return;
-            safeThis->sendLinkPlacementCommand(linkAddr, r == 1 ? 1 : 2);
+            // The menu id IS the placement value (1 bus, 2 channel, 3
+            // send). The old "r == 1 ? 1 : 2" would have folded Send into
+            // Channel the moment a third item existed.
+            safeThis->sendLinkPlacementCommand(linkAddr, r);
         });
 }
 
@@ -21705,7 +21737,8 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                         // Bus = post-fader real contribution; Channel/unset =
                         // pre-fader (no cross-channel level claims).
                         const char* pl = li.placement == 1 ? "Bus"
-                                       : li.placement == 2 ? "Channel" : "unset";
+                                       : li.placement == 2 ? "Channel"
+                                       : li.placement == 3 ? "Send" : "unset";
                         mcCtx += juce::String("Placement: ") + pl + "\n";
                         mcCtx += "Link gain: " + (li.gainDb >= 0 ? juce::String("+") : juce::String())
                                + ff2(li.gainDb) + " dB (built-in; user can level-match via the "
