@@ -29,7 +29,15 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Wa
     // Callers that plant their own stake are harmless: beginLoad overwrites
     // inflight.json rather than nesting, and endLoad below closes whichever
     // is current.
-    const juce::String stakeId = desc.pluginFormatName + ":" + desc.fileOrIdentifier;
+    // fileOrIdentifier ALREADY carries the format prefix for AU
+    // ("AudioUnit:Effects/..."), so prefixing again produced the doubled
+    // "AudioUnit:AudioUnit:Effects/..." the forgettability test surfaced.
+    // Match ScannedPlugin::pluginId rather than inventing a second scheme:
+    // a stake whose id does not match the quarantine's id attributes to a
+    // plugin that does not exist.
+    const juce::String stakeId = desc.fileOrIdentifier.startsWith (desc.pluginFormatName + ":")
+                                   ? desc.fileOrIdentifier
+                                   : desc.pluginFormatName + ":" + desc.fileOrIdentifier;
     watchdog.getLedger().beginLoad (stakeId, desc.name, desc.manufacturerName,
                                     desc.pluginFormatName, desc.version, "load", "PluginHost::load");
 

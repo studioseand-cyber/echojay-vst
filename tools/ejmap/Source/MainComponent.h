@@ -1758,6 +1758,26 @@ public:
         }
 
         // ---- guardtest (ITEM 3): attempt what the guard refuses ----------
+        // FORGETTABILITY TEST: a load site that plants NO stake of its own.
+        // If the choke point works, a hard death here is still attributed.
+        // Deliberately bare -- adding a beginLoad here would test nothing.
+        if (mode == "forget")
+        {
+            auto census8 = echojay::auregistry::buildCensus();
+            juce::PluginDescription pd8;
+            for (const auto& t : census8.targets)
+            { auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+              if (d.name.containsIgnoreCase ("MCompressor")) { pd8 = d; break; } }
+            if (pd8.fileOrIdentifier.isEmpty())
+            { say ("FORGET: MCompressor absent"); quitNow(); return; }
+            say ("FORGET: bare load site, NO caller stake, loading " + pd8.name);
+            std::cout.flush();
+            host.unload();
+            auto r8 = host.load (pd8, watchdog);      // expected: dies inside
+            say ("FORGET: survived the load, outcome detail: " + r8.detail);
+            quitNow(); return;
+        }
+
         if (mode == "guardtest")
         {
             say ("MODE GUARD TEST: feeding the guard displays it must refuse");
