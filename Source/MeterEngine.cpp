@@ -119,7 +119,9 @@ void MeterEngine::prepare(double sampleRate, int /*samplesPerBlock*/)
     // Visual-only FFT (display detail; see MeterEngine.h)
     for (int i = 0; i < kVisFftSize; ++i)
         visWindow[(size_t)i] = 0.5f * (1.0f - std::cos(2.0f * juce::MathConstants<float>::pi * (float)i / (float)kVisFftSize));
+   #if ! ECHOJAY_NO_VISUAL_FFT
     visAccumulator.resize((size_t)kVisFftSize, 0.0f);
+   #endif
     visWritePos = 0;
     visSamplesSinceFft = 0;
     visMagDb.fill(-120.0f);
@@ -200,8 +202,10 @@ void MeterEngine::resetState()
     smoothedSpectrum.fill(-100.0f);
     smoothedMacroBands.fill(-120.0f);
     visFftData.fill(0.0f);
+   #if ! ECHOJAY_NO_VISUAL_FFT
     if (!visAccumulator.empty())
         std::fill(visAccumulator.begin(), visAccumulator.end(), 0.0f);
+   #endif
     visWritePos = 0;
     visSamplesSinceFft = 0;
     visMagDb.fill(-120.0f);
@@ -256,10 +260,14 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
         float mono = (left[i] + right[i]) * 0.5f;
         fftAccumulator[(size_t)fftWritePos] = mono;
         fftWritePos = (fftWritePos + 1) % fftSize;
+       #if ! ECHOJAY_NO_VISUAL_FFT
         visAccumulator[(size_t)visWritePos] = mono;
         visWritePos = (visWritePos + 1) % kVisFftSize;
+       #endif
     }
+   #if ! ECHOJAY_NO_VISUAL_FFT
     visSamplesSinceFft += numSamples;
+   #endif
     for (int i = 0; i < fftSize; ++i)
     {
         int idx = (fftWritePos + i) % fftSize;
@@ -402,6 +410,16 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
     }
 
     // ===== Visual-only FFT (display detail; never serialised) =====
+    // GATED OFF IN THE LINK BUILD (ECHOJAY_NO_VISUAL_FFT, set on the
+    // EchoJayLink target only). The Link has no consumer for it: LinkEditor
+    // never touches meterEngine_ and LinkMeterFrame carries no spectrum
+    // bins, so on up to 16 Links this was computed and discarded. The
+    // ANALYSIS FFT above is untouched and must stay: macroBandDb, and
+    // therefore the published frame's bandRel[6], is integrated from
+    // fftData, not from visFftData. The two share no transform, no window,
+    // no buffer and no output; the only common work is the mono downmix at
+    // the top of this function, which the analysis path needs anyway.
+   #if ! ECHOJAY_NO_VISUAL_FFT
     // Hop-gated (~43/s at 44.1k) rather than per-buffer: the display only
     // repaints at UI rate, so per-buffer transforms would be waste. Raw dB
     // per bin, no attack/release shaping — the paint side owns smoothing so
@@ -428,14 +446,25 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
         visMagDb = mags;
         visReady = true;
     }
+   #else
+    juce::ignoreUnused(kVisHopSamples);
+   #endif
 }
 
 bool MeterEngine::getVisualSpectrum(std::array<float, kVisBins>& dest, double& binHzOut) const
 {
+   #if ECHOJAY_NO_VISUAL_FFT
+    // Gated build: say NO DATA rather than hand back a buffer nothing
+    // filled. The Link never calls this; the honest answer costs nothing.
+    dest.fill(-120.0f);
+    binHzOut = currentSampleRate / (double)kVisFftSize;
+    return false;
+   #else
     std::lock_guard<std::mutex> lock(dataMutex);
     dest = visMagDb;
     binHzOut = currentSampleRate / (double)kVisFftSize;
     return visReady;
+   #endif
 }
 
 void MeterEngine::pushWaveformSamples(const float* left, const float* right, int numSamples)

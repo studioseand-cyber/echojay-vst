@@ -4,7 +4,7 @@ set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures")
 # Minimum macOS: Big Sur (11.0). Covers anything 4+ years old.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(EchoJay VERSION 2.24.2)
+project(EchoJay VERSION 2.24.4)
 
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/
@@ -266,6 +266,16 @@ target_compile_definitions(EchoJayLink PUBLIC
     # plugins can host inline in the same process without colliding
     ECHOJAY_CLIP_CLASS=EchoJayClipContainerLink
     NATIVECLIP_LOG_TAG="NativeClipLink"
+    # The Link consumes no spectrum: LinkEditor never touches meterEngine_
+    # and LinkMeterFrame carries no bins, so MeterEngine's 4096-point
+    # VISUAL FFT (~43/s, per Link, up to 16 of them) was computed and
+    # thrown away. Compile-time because the decision is fixed at build
+    # time; a runtime flag would cost a test per block forever to answer a
+    # question that can never change. THIS TARGET ONLY: the main plugin
+    # reads the visual spectrum on Visualisation, the spectrum and
+    # spectrogram views and the Compare page, and its own
+    # target_compile_definitions does not carry this.
+    ECHOJAY_NO_VISUAL_FFT=1
 )
 
 target_link_libraries(EchoJayLink

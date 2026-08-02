@@ -18,6 +18,15 @@ LinkProcessor::LinkProcessor()
     // file part for unnamed Links). Serialised in state; regenerated on
     // registry collision after track duplication.
     instanceUid_ = juce::String::toHexString(juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
+   #if ECHOJAY_NO_VISUAL_FFT
+    // Build-configuration diagnostic, and this pass's content check: the
+    // 4096-point VISUAL FFT is compiled out of the Link (nothing here reads
+    // a spectrum). The 2048-point ANALYSIS FFT stays, so macroBandDb and
+    // the published bandRel[6] are unaffected. Absent from the main
+    // plugin's binary, which consumes the visual spectrum.
+    EchoJay_NSLog("EJLinkMeter: visual FFT gated out of this build; "
+                  "analysis FFT and bandRel unaffected");
+   #endif
     startTimerHz(30); // 30Hz meter-frame publish (fast ballistics step at
                       // 10Hz was ~1.3 dB per sample); polls every 3rd tick
                       // (~100ms, the old cadence), heartbeat every 30th (1s)
