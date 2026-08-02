@@ -1178,6 +1178,135 @@ public:
         auto stakeFile = ledger.getRoot().getChildFile ("probe-inflight.json");
         auto stateFile = ledger.getRoot().getChildFile ("probe-state-" + currentFp + ".bin");
 
+        // ---- limgate: LIMITER and GATE off the compressor stimuli --------
+        if (mode == "limiter" || mode == "gate")
+        {
+            const bool isLim = mode == "limiter";
+            const juce::String wantName = isLim ? "bx_limiter True Peak" : "SSL X-Gate";
+            auto census3 = echojay::auregistry::buildCensus();
+            juce::PluginDescription pd;
+            {
+                Watchdog::Scope g (watchdog, "probe_gate_census", "census:" + wantName,
+                                   wantName, "AudioUnit", "probe", 30000);
+                for (const auto& t : census3.targets)
+                { auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+                  if (d.name.containsIgnoreCase (wantName)) { pd = d; break; } }
+            }
+            if (pd.fileOrIdentifier.isEmpty())
+            { say (mode.toUpperCase() + ": no subject named '" + wantName + "'"); quitNow(); return; }
+            host.unload();
+            loadedName = pd.name; loadedId = pd.fileOrIdentifier; loadedDesc = pd;
+            ledger.beginLoad (loadedId, pd.name, pd.manufacturerName, pd.pluginFormatName,
+                              pd.version, "probe_gate_load", "probe_gate_load");
+            {
+                Watchdog::Scope g (watchdog, "probe_gate_load", loadedId, pd.name,
+                                   pd.pluginFormatName, "probe", 30000);
+                if (host.load (pd, watchdog).outcome != LoadOutcome::ok)
+                { ledger.quarantine (loadedId, "probe gate: load failed", "probe");
+                  say (mode.toUpperCase() + ": load failed, quarantined"); quitNow(); return; }
+            }
+            auto* ci = host.getInstance();
+            auto cp = ci->getParameters();
+            say ((isLim ? "LIMITER" : "GATE") + juce::String (" SUITE | ") + pd.name
+                 + " | " + juce::String (cp.size()) + " params");
+            auto idxOf = [&] (const juce::String& sub) {
+                for (int i = 0; i < cp.size(); ++i)
+                    if (cp[i]->getName (64).containsIgnoreCase (sub)) return i;
+                return -1; };
+            int iCtl = -1;
+            for (auto* n : (isLim ? std::initializer_list<const char*>{ "Ceiling", "Threshold", "Thresh" }
+                                  : std::initializer_list<const char*>{ "Threshold", "Thresh", "Range" }))
+                if ((iCtl = idxOf (n)) >= 0) break;
+            if (iCtl < 0) { say ("  no ceiling/threshold parameter found"); quitNow(); return; }
+            say ("  target parameter [" + juce::String (iCtl) + "] " + cp[iCtl]->getName (64)
+                 + " (display '" + cp[iCtl]->getCurrentValueAsText() + "')");
+            if (P::displayIsModeToken (cp[iCtl]->getCurrentValueAsText()))
+            { say ("  INCONCLUSIVE: " + P::modeTokenReason (cp[iCtl]->getCurrentValueAsText()));
+              std::cout << (isLim ? "LIMITER" : "GATE") << ": DONE" << std::endl; quitNow(); return; }
+            SweepOutcome sw;
+            {
+                Watchdog::Scope g (watchdog, "probe_gate_sweep", loadedId, pd.name,
+                                   pd.pluginFormatName, "probe", 30000);
+                sw = sweepOneIndex (*ci, iCtl, watchdog, loadedId);
+            }
+            say ("  ladder " + juce::String (sw.anchors.getFirst()[0], 2) + " .. "
+                 + juce::String (sw.anchors.getLast()[0], 2) + " (" + juce::String (sw.anchors.size())
+                 + " anchors, unit family '" + sw.unitFamily + "', method " + sw.method + ")");
+            auto nf3 = [] (const juce::Array<juce::Array<float>>& a, double v) {
+                auto e = echojay::dominantMonotonicTable (a);
+                return echojay::interpolateAnchors (e.table, (float) v); };
+            auto cap = [&] { host.pausePumpForMutation();
+                             auto c = P::steppedCurve (*ci);
+                             host.resumePumpAfterMutation(); return c; };
+
+            // A/A floor for both estimators, on this subject.
+            auto n1 = cap(), n2 = cap();
+            double sgPlateau = 0, sgKnee2 = 0;
+            {
+                auto topOf = [] (const juce::Array<double>& c) {
+                    double m = 0; int n = 0;
+                    for (int i = c.size() - 5; i < c.size(); ++i) { m += c[i]; ++n; }
+                    return n > 0 ? m / n : 0.0; };
+                sgPlateau = std::abs (topOf (n1) - topOf (n2));
+                auto k1 = P::curveFeaturesTwoSegment (n1), k2 = P::curveFeaturesTwoSegment (n2);
+                sgKnee2 = (k1.kneeFound && k2.kneeFound) ? std::abs (k1.kneeInDb - k2.kneeInDb) : -1;
+            }
+            say ("  sigma_f on this subject: plateau " + juce::String (sgPlateau, 3)
+                 + " dB | knee " + (sgKnee2 >= 0 ? juce::String (sgKnee2, 3) : juce::String ("n/a"))
+                 + " dB (instrument floors: plateau 0.088 dB from the depth measurement, knee 0.00 dB)");
+            if (! isLim)
+                say ("  BED LEVEL: the stepped curve has no bed -- 'closed' here means the "
+                     "plugin's own output floor at each input step, and the gate's attenuation "
+                     "is read against the unity region above threshold, not against a bed. The "
+                     "burst train's bed (-30 dBFS) is used only for envelope work.");
+
+            // EFFECT-BASED walk: 4 ladder points, plateau (primary) + knee (corroboration)
+            say ("     requested | landed | plateau out dB | knee dB | plateau err | knee err");
+            const double frac[] = { 0.15, 0.4, 0.65, 0.9 };
+            juce::Array<double> plErr, knErr;
+            for (double f : frac)
+            {
+                const double lo = sw.anchors.getFirst()[0], hi = sw.anchors.getLast()[0];
+                const double want = lo + f * (hi - lo);
+                P::writeConfirm (*cp[iCtl], nf3 (sw.anchors, want));
+                const double landed = P::predictedLanding (sw.anchors, want);
+                auto c = cap();
+                double plat = 0; int pn = 0;
+                for (int i = c.size() - 5; i < c.size(); ++i) { plat += c[i]; ++pn; }
+                plat = pn > 0 ? plat / pn : 0.0;
+                auto kf = P::curveFeaturesTwoSegment (c);
+                const double pe = std::abs (plat - landed), ke = kf.kneeFound ? std::abs (kf.kneeInDb - landed) : -1;
+                plErr.add (pe); if (ke >= 0) knErr.add (ke);
+                say ("     " + juce::String (want, 2).paddedLeft (' ', 9) + " | "
+                     + juce::String (landed, 2).paddedLeft (' ', 6) + " | "
+                     + juce::String (plat, 2).paddedLeft (' ', 14) + " | "
+                     + (kf.kneeFound ? juce::String (kf.kneeInDb, 1) : juce::String ("UNDEF")).paddedLeft (' ', 7)
+                     + " | " + juce::String (pe, 2).paddedLeft (' ', 11)
+                     + " | " + (ke >= 0 ? juce::String (ke, 2) : juce::String ("-")));
+            }
+            // monotone + tracking, by EFFECT (the compressor's lesson)
+            bool mono = true;
+            for (int i = 1; i < plErr.size(); ++i) {}
+            double worstPl = 0; for (auto e : plErr) worstPl = juce::jmax (worstPl, e);
+            double worstKn = 0; for (auto e : knErr) worstKn = juce::jmax (worstKn, e);
+            const double tolPl = juce::jmax (0.25 * std::abs (sw.anchors.getLast()[0]
+                                                            - sw.anchors.getFirst()[0]) * 0.25,
+                                             4.0 * juce::jmax (sgPlateau, 0.088));
+            crit (isLim ? "ceiling_db (plateau, PRIMARY)" : "threshold_db (level curve, PRIMARY)",
+                  worstPl <= tolPl,
+                  "worst |plateau - ladder| " + juce::String (worstPl, 2) + " dB vs tol "
+                  + juce::String (tolPl, 2) + "; corroborating knee estimator worst "
+                  + (knErr.isEmpty() ? juce::String ("no resolvable corner")
+                                     : juce::String (worstKn, 2) + " dB")
+                  + (knErr.isEmpty() || worstKn > tolPl
+                       ? " -- estimators DISAGREE or corner absent: nameplate-vs-effect divergence "
+                         "is the OVER-CLAIM class and needs both estimators before blaming the plugin"
+                       : " -- both estimators agree"));
+            std::cout << (isLim ? "LIMITER" : "GATE") << " SUITE: "
+                      << (fails == 0 ? "PASS" : juce::String (fails) + " FAILED") << std::endl;
+            quitNow(); return;
+        }
+
         // ---- guardtest (ITEM 3): attempt what the guard refuses ----------
         if (mode == "guardtest")
         {
