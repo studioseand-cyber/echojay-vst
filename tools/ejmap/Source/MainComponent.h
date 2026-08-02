@@ -1179,9 +1179,59 @@ public:
         auto stateFile = ledger.getRoot().getChildFile ("probe-state-" + currentFp + ".bin");
 
         // ---- settle: pump-duration sweep, four subjects, FULL CURVE ------
+        // ITEM 2: is the natural unit a TURN rather than a duration? If one
+        // explicit dispatch turn with zero sleep suffices, the fix is "pump
+        // one turn after every write" with no duration constant -- which
+        // cannot be wrong on a slower or busier machine, and the cost
+        // question dissolves.
+        if (mode == "turns")
+        {
+            const char* subs2[] = { "SSL X-Gate", "AMEK EQ 200" };
+            auto census6 = echojay::auregistry::buildCensus();
+            say ("TURNS: does ONE dispatch turn (zero sleep) deliver the write?");
+            for (auto* want : subs2)
+            {
+                juce::PluginDescription pd6;
+                for (const auto& t : census6.targets)
+                { auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+                  if (d.name.containsIgnoreCase (want)) { pd6 = d; break; } }
+                host.unload();
+                loadedName = pd6.name; loadedId = pd6.fileOrIdentifier; loadedDesc = pd6;
+                if (host.load (pd6, watchdog).outcome != LoadOutcome::ok) continue;
+                auto* ci = host.getInstance();
+                auto cp = ci->getParameters();
+                int ip = -1;
+                for (int i = 0; i < cp.size(); ++i)
+                    if (cp[i]->getName (64).containsIgnoreCase ("Output") && cp[i]->isAutomatable())
+                    { ip = i; break; }
+                if (ip < 0) continue;
+                // three deliveries: none, ONE turn (zero sleep), 1 ms
+                const char* how[] = { "no pump at all", "ONE turn, zero sleep", "1 ms sleep-pump" };
+                juce::String line = "  " + juce::String (pd6.name).paddedRight (' ', 16) + "|";
+                for (int variant = 0; variant < 3; ++variant)
+                {
+                    auto once = [&] (float v) {
+                        cp[ip]->setValueNotifyingHost (v);
+                        if (variant == 1) juce::MessageManager::getInstance()->runDispatchLoopUntil (0);
+                        if (variant == 2) juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
+                        host.pausePumpForMutation();
+                        auto r = P::levelSweptBursts (*ci, 0.25, 0.0, 6.0, 5);
+                        host.resumePumpAfterMutation();
+                        return r; };
+                    auto a = once (0.15f); auto b = once (0.85f);
+                    double worst = 0;
+                    for (int i = 0; i < a.size() && i < b.size(); ++i)
+                        worst = juce::jmax (worst, std::abs (b[i] - a[i]));
+                    line << "  " << how[variant] << ": " << juce::String (worst, 1) << " dB |";
+                }
+                say (line);
+            }
+            std::cout << "TURNS: DONE" << std::endl; quitNow(); return;
+        }
+
         if (mode == "settle")
         {
-            const char* subs[] = { "SSL X-Gate", "AMEK EQ 200", "Pro-Q 3", "API-2500 (m)" };
+            const char* subs[] = { "API-2500 (m)" };
             const int pumps[] = { 0, 1, 2, 5, 10, 20, 50, 100 };
             auto census5 = echojay::auregistry::buildCensus();
             say ("SETTLE CURVE: minimum message-loop pump for a write to reach the DSP");
@@ -1225,6 +1275,12 @@ public:
                     double worst = 0;
                     for (int i = 0; i < a.size() && i < b.size(); ++i)
                         worst = juce::jmax (worst, std::abs (b[i] - a[i]));
+                    // ITEM 1: the DELTA hides whether a level moved at all.
+                    // Print the underlying burst-0 levels for both settings.
+                    say ("    pump " + juce::String (pm) + " ms: lo-setting burst0 "
+                         + juce::String (a.isEmpty() ? 0.0 : a[0], 2) + " dB, hi-setting burst0 "
+                         + juce::String (b.isEmpty() ? 0.0 : b[0], 2) + " dB, worst |delta| "
+                         + juce::String (worst, 2));
                     line << " " << juce::String (pm) << "ms:" << juce::String (worst, 1);
                 }
                 say (line);
