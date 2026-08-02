@@ -1235,22 +1235,48 @@ public:
                 host.resumePumpAfterMutation();
                 return v;
             };
-            const char* names[] = { "write BEFORE pause (current)",
-                                    "write AFTER pause (inside paused window)",
-                                    "write before pause, loop PUMPED during render" };
-            for (int variant = 0; variant < 3; ++variant)
+            // THE 2x2. Variant 0 and 1 differed in TWO ways -- write position
+            // relative to the pause AND writeConfirm (which pumps the message
+            // loop) versus a bare setValueNotifyingHost. Four cells separate
+            // them. The dangerous cell is "writeConfirm INSIDE the window":
+            // if that is blind, the path built to GUARANTEE writes land is
+            // the path losing them, and every suite uses it.
+            auto cell = [&] (bool useConfirm, bool insideWindow, float norm)
             {
-                if (variant == 2) P::writeConfirm (*cp[iRel], nLo);
-                auto a = rowsFor (variant, nLo);
-                if (variant == 2) P::writeConfirm (*cp[iRel], nHi);
-                auto b = rowsFor (variant, nHi);
-                double worst = 0; juce::String d;
+                if (! insideWindow)
+                {
+                    if (useConfirm) P::writeConfirm (*cp[iRel], norm);
+                    else            cp[iRel]->setValueNotifyingHost (norm);
+                }
+                host.pausePumpForMutation();
+                if (insideWindow)
+                {
+                    if (useConfirm) P::writeConfirm (*cp[iRel], norm);
+                    else
+                    {
+                        cp[iRel]->setValueNotifyingHost (norm);
+                        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+                    }
+                }
+                auto v = P::levelSweptBursts (*ci, 0.6, 0.0, 4.0, 9);
+                host.resumePumpAfterMutation();
+                return v;
+            };
+            struct Cell { bool confirm, inside; const char* name; };
+            const Cell cells[] = {
+                { true,  false, "A  writeConfirm  BEFORE pause  (what every suite does)" },
+                { true,  true,  "B  writeConfirm  INSIDE window (the dangerous cell)" },
+                { false, false, "C  bare write    BEFORE pause" },
+                { false, true,  "D  bare write    INSIDE window (variant 1 previously)" } };
+            for (const auto& c : cells)
+            {
+                auto a = cell (c.confirm, c.inside, nLo);
+                auto b = cell (c.confirm, c.inside, nHi);
+                double worst = 0;
                 for (int i = 0; i < a.size() && i < b.size(); ++i)
-                { const double x = b[i] - a[i]; worst = juce::jmax (worst, std::abs (x));
-                  d << " " << juce::String (x, 1); }
-                say ("  variant " + juce::String (variant) + " (" + names[variant] + "): worst |delta| "
-                     + juce::String (worst, 2) + " dB, per-burst:" + d
-                     + (worst > 0.5 ? "   <- LANDS" : "   <- blind"));
+                    worst = juce::jmax (worst, std::abs (b[i] - a[i]));
+                say ("  " + juce::String (c.name) + ": worst |delta| "
+                     + juce::String (worst, 2) + " dB" + (worst > 0.5 ? "   <- LANDS" : "   <- BLIND"));
             }
             std::cout << "PLANES: DONE" << std::endl; quitNow(); return;
         }
