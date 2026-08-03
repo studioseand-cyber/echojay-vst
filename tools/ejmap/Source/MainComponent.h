@@ -2013,6 +2013,24 @@ public:
         // FORGETTABILITY TEST: a load site that plants NO stake of its own.
         // If the choke point works, a hard death here is still attributed.
         // Deliberately bare -- adding a beginLoad here would test nothing.
+        if (mode == "identkey")
+        {
+            // Print the CLIENT identity key for the two live subjects, built
+            // by the shipping function from a real PluginDescription. The
+            // server key is computed separately from the stored map and the
+            // two STRINGS are compared -- reading both implementations and
+            // concluding they agree is the failure mode this check exists to
+            // avoid (the doubled stake id looked plausible by eye too).
+            for (auto* id : { "AudioUnit:Effects/aumf,ameq,Brwx",
+                              "AudioUnit:Effects/aufx,SpfA,OekS" })
+            {
+                auto d = echojay::auregistry::describeFromRegistry (id);
+                if (d.fileOrIdentifier.isEmpty()) { say ("  absent: " + juce::String (id)); continue; }
+                say ("CLIENTKEY\t" + d.name + "\t" + echojay::identityKeyForDescription (d));
+            }
+            std::cout << "IDENTKEY: DONE" << std::endl; quitNow(); return;
+        }
+
         if (mode == "lookupmiss")
         {
             // Item 2: CONSTRUCT the specimen rather than hunt one. Any

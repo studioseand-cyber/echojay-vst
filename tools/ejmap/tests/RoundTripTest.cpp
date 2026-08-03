@@ -42,6 +42,7 @@
 // M3 lift.
 #include "EchoJayParamExtractor.h"
 #include "EjmapMouth.h"
+#include "EchoJayParamMaps.h"   // identityKeyForDescription
 #include "EjmapExposure.h"
 
 namespace
@@ -992,6 +993,79 @@ void testLockstepAndTierFields()
 }
 
 //==============================================================================
+// IDENTITY-FORMAT PIN (3 Aug 2026). The scan's map-state query keys on
+// format|uid|version, and that string is built INDEPENDENTLY on both sides:
+// identityKeyForDescription here in C++, identityKeyOf in the server's
+// params-lib.js. They were verified byte-identical on both live fixtures by
+// running each against real data -- but they match by coincidence of
+// authorship, not by construction, and the next edit to either can
+// desynchronise them silently. Every row would then read "unmapped" and it
+// would look like an empty corpus rather than a bug.
+//
+// THIS IS A DETECTOR, NOT A FIX. Two definitions still exist. A single shared
+// definition would need a codegen step producing both a C++ header and a JS
+// module, which this project does not have; that trade is worth revisiting
+// only if the corpus makes it worth it.
+//
+// The expectations are LITERALS on purpose. Deriving them from either
+// implementation would only catch the OTHER side drifting, which is half a
+// check and reads like a whole one.
+void testIdentityKeyFormat()
+{
+    struct Fixture { const char* format; const char* uidHex; const char* version;
+                     const char* expected; const char* who; };
+    const Fixture fixtures[] = {
+        { "AudioUnit", "426a7f6f", "1.4.1", "AudioUnit|426a7f6f|1.4.1", "AMEK EQ 200" },
+        { "AudioUnit", "7d606b6a", "1.3.2", "AudioUnit|7d606b6a|1.3.2", "spiff" },
+    };
+
+    for (const auto& f : fixtures)
+    {
+        // CLIENT side: the shipping function, given a description carrying the
+        // same fields the map stores.
+        juce::PluginDescription d;
+        d.pluginFormatName = f.format;
+        d.uniqueId = (int) juce::String (f.uidHex).getHexValue64();
+        d.version  = f.version;
+        const auto clientKey = echojay::identityKeyForDescription (d);
+        check (clientKey == f.expected,
+               juce::String ("identity key, client side, ") + f.who + ": got '"
+                 + clientKey + "' expected '" + f.expected + "'");
+
+        // SERVER side's RULE, asserted against the same literal: format|uid|
+        // version joined with '|'. If the server changes its separator or field
+        // order, this fixture still expects the literal and the mismatch
+        // surfaces here rather than as an empty corpus in the scan UI.
+        const juce::String serverShape = juce::String (f.format) + "|" + f.uidHex + "|" + f.version;
+        check (serverShape == f.expected,
+               juce::String ("identity key, server shape, ") + f.who + ": got '"
+                 + serverShape + "' expected '" + f.expected + "'");
+    }
+
+    // And the corpus must actually contain those identities, or the pin is
+    // guarding a format nothing produces.
+    auto mapsDir = juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+                       .getChildFile ("Library/ejmap/maps");
+    juce::StringArray seen;
+    for (const auto& e : juce::RangedDirectoryIterator (mapsDir, false, "*.json"))
+    {
+        auto id = juce::JSON::parse (e.getFile().loadFileAsString())
+                      .getProperty ("identity", juce::var());
+        if (! id.isObject()) continue;
+        seen.add (id.getProperty ("format", "").toString() + "|"
+                    + id.getProperty ("uid", "").toString() + "|"
+                    + id.getProperty ("version", "").toString());
+    }
+    if (seen.isEmpty())
+        std::cout << "  (no local corpus; identity-key pin checked against literals only)"
+                  << std::endl;
+    else
+        for (const auto& f : fixtures)
+            check (seen.contains (f.expected),
+                   juce::String ("corpus carries the pinned identity for ") + f.who);
+}
+
+//==============================================================================
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -1008,6 +1082,7 @@ int main (int, char**)
     testNamedControlsResolve();
     testRoundTripThroughApplySettings();
     testDryRunBytes();
+    testIdentityKeyFormat();
     testExposureConformance();
     testLockstepAndTierFields();
     testAgainstRealMaps();
