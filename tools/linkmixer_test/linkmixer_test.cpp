@@ -71,6 +71,7 @@ struct EchoJayLinkMixerTestAccess
     static float travelTop (juce::Rectangle<int> a)         { return Ed::faderTravelTop (a); }
     static float travelBot (juce::Rectangle<int> a)         { return Ed::faderTravelBot (a); }
     static int   capH (juce::Rectangle<int> a)              { return Ed::faderCapH (a); }
+    static int   capW (juce::Rectangle<int> a)              { return Ed::faderCapW (a); }
     static int   capSrcW()                                  { return Ed::kFaderCapSrcW; }
     static int   capSrcH()                                  { return Ed::kFaderCapSrcH; }
     static float perPixel (juce::Rectangle<int> t)          { return Ed::gainPerPixel (t); }
@@ -276,7 +277,7 @@ static void testFaderAspect (int stripW, int bandH)
     const auto f = s0.fader;
     std::printf ("  lane %dx%d, cap %dx%d, throw %d px (%.3f dB/px), meter %dx%d\n",
                  f.getWidth(), f.getHeight(),
-                 s0.faderImg.getWidth(), T::capH (s0.faderImg),
+                 T::capW (s0.faderImg), T::capH (s0.faderImg),
                  f.getHeight() - T::capH (s0.faderImg),
                  36.0 / (double) juce::jmax (1, f.getHeight() - T::capH (s0.faderImg)),
                  s0.meter.getWidth(), s0.meter.getHeight());
@@ -317,7 +318,8 @@ static void testFaderAspect (int stripW, int bandH)
         checkEq (fi.getRight(),  f.getRight(),  "the cap area is right-aligned, ticks to its left");
         check (fi.getWidth() <= f.getWidth(), "the cap area fits its lane");
         check (T::capH (fi) <= T::capSrcH(), "the cap never upscales from the sprite");
-        check (fi.getWidth() <= T::capSrcW(), "the cap never upscales horizontally");
+        check (T::capW (fi) <= T::capSrcW(), "the cap never upscales horizontally");
+        check (T::capW (fi) <  fi.getWidth(), "the cap is narrower than its area");
         check (T::capH (fi) < fi.getHeight(), "the cap is shorter than its travel");
 
         // THE BUDGET: the pair no longer fills the band. Both widths are
@@ -543,9 +545,14 @@ static void testFaderMapping()
 
     // UNIFORM SCALE: cap height derives from cap width by the sprite's own
     // ratio, so the cap is never stretched on one axis.
-    check (std::abs ((double) ch / (double) t.getWidth()
+    check (std::abs ((double) ch / (double) T::capW (t)
                      - (double) T::capSrcH() / (double) T::capSrcW()) < 0.05,
            "the cap keeps the sprite's aspect");
+    // The cap is SMALLER than the area it travels, so the drawn track shows
+    // either side of it; and it is always a downscale from the sprite.
+    check (T::capW (t) <  t.getWidth(),  "the cap is narrower than its area");
+    check (T::capW (t) <= T::capSrcW(),  "the cap never upscales horizontally");
+    check (ch          <= T::capSrcH(),  "the cap never upscales vertically");
 
     // A known gain maps to a known y: 0 dB is two thirds up the travel.
     {

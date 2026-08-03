@@ -2672,12 +2672,25 @@ private:
     // deriving height from width.
     static constexpr int kFaderCapSrcX = 3, kFaderCapSrcW = 54, kFaderCapSrcH = 113;
     static constexpr int kFaderCapSrcY = 64 * kFaderFrameH + 182;   // frame 64
-    /** Drawn cap height for a cap area. UNIFORM scale: both axes take the
-        same capArea.getWidth() / 54 factor, so the cap is never stretched;
-        integer rounding is the only deviation, under half a pixel. */
+    // Drawn cap WIDTH, now independent of the lane it travels. While the
+    // cap was a whole filmstrip frame these were the same number and size
+    // was chained to travel; a sprite decouples them, so the cap can be
+    // small and still run the full lane. Chosen to read as a fader cap
+    // rather than a slab: 18 in the 22-wide narrow area, 20 in the 26-wide
+    // one, both centred in the area with the track visible either side.
+    static constexpr int kFaderCapWNarrow = 18, kFaderCapWWide = 20;
+    static int faderCapW(juce::Rectangle<int> capArea)
+    {
+        const int w = capArea.getWidth() >= 24 ? kFaderCapWWide : kFaderCapWNarrow;
+        return juce::jmax(4, juce::jmin(w, capArea.getWidth()));
+    }
+    /** Drawn cap height. UNIFORM scale: height derives from the DRAWN WIDTH
+        by the sprite's own 113/54, so the cap is never stretched; integer
+        rounding is the only deviation, under half a pixel. Always a
+        DOWNSCALE, 18 and 20 against a 54-wide source. */
     static int faderCapH(juce::Rectangle<int> capArea)
     {
-        return juce::jmax(4, (int)std::round((double)capArea.getWidth()
+        return juce::jmax(4, (int)std::round((double)faderCapW(capArea)
                                              * (double)kFaderCapSrcH
                                              / (double)kFaderCapSrcW));
     }
