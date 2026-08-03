@@ -22,9 +22,28 @@ echo "pre-commit gate: branch $(git branch --show-current)"
 REPO=$(git rev-parse --show-toplevel)
 LIB="$REPO/build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a"
 
+# SHELL-ONLY SUITES RUN FIRST, BEFORE THE UNBUILT-TREE SKIP BELOW (3 Aug
+# 2026). They need no library and no compile_commands.json, so letting the
+# skip swallow them would take them dark for a reason that has nothing to do
+# with them — the same shape as the bug reinstall_v2_test exists to catch. A
+# gate that can skip everything should at least always run the suites that
+# have no excuse not to.
+for T in reinstall_v2_test; do
+  RUNNER="$REPO/tools/$T/build_and_run.sh"
+  [ -x "$RUNNER" ] || { echo "  SKIP  $T (not in this worktree)"; continue; }
+  echo "  running $T..."
+  out=$("$RUNNER" 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "GATE FAIL: $T"
+    echo "$out" | tail -12
+    exit 1
+  fi
+  echo "  ok  $T: $(echo "$out" | tail -1)"
+done
+
 if [ ! -f "$LIB" ] || [ ! -f "$REPO/build/compile_commands.json" ]; then
   echo "  SKIP  workspace round-trip test (tree not built; run reinstall-v2.sh first)"
-  echo "pre-commit gate: branch printed, tests skipped (unbuilt tree)"
+  echo "pre-commit gate: shell suites green, build-dependent tests skipped (unbuilt tree)"
   exit 0
 fi
 
