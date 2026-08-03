@@ -2,7 +2,7 @@
 
 **Date:** 2 August 2026
 **HEAD at pause:** a3730f0, drift gate 130/130, tree clean
-**Status:** paused deliberately at a clean resting point, not abandoned, not blocked
+**Status:** paused 2 August 2026; **resumed and parameterised 3 August 2026** (items 0-6 of `M9_PARAMETERISATION_PROPOSAL.md`). This document describes the pause and the state at it; sections marked with a 3 August date describe the state after.
 
 ---
 
@@ -64,19 +64,31 @@ Before pausing, one question was traced to its answer: does M3's sweep write thr
 | compressor | ratio confirms (0.020 vs 0.100). threshold direction-provable, magnitude inconclusive at ~45% of nameplate, both estimators agreeing |
 | limiter | ceiling confirms at 0.02 dB against a 1.88 tolerance |
 | gate | threshold_db tracks: 52.00 dB measured vs 54.00 predicted, worst error 1.20 vs 4.50 tolerance |
-| saturation | built, subject and preamble correct, verdict null pending an excitation plan |
+| saturation | **verdict null RESOLVED 3 Aug 2026.** The stage toggle read On and its AMOUNT read 0 %, so drive distorted nothing at any value. With the excitation plan applied and verified by signal (THD -145.41 -> -45.00 dB), THD rises monotonically -45.00 -> -9.70 dB across the ladder. Direction confirms; magnitude is refused, because drive is unitless and nothing predicts a THD magnitude from it. Unblocking it exposed a tautological verdict that had been hidden by the null |
 | de-esser | not built |
 | delay | not built |
 
 **Harness:** render harness, pump discipline, stakes and restore, sanity gate, σ_f extraction, excitation verification, the routing fork, the mode guard, the ambiguity rule, and the shared sensitivity check are all built and, where stated, proven by attempting the thing they refuse.
 
-**Coverage, stated honestly** (amended 2026-08-03, after the batch runner measured it). The earlier wording — "one to four parameters on one subject each" — reads as a sampling limitation, as though the suites work and have only been pointed at a few plugins so far. That is not the situation.
+**Coverage, stated honestly** (rewritten 3 August 2026, after the parameterisation milestone).
 
-**The suites cannot run on a second subject at all.** Each resolves one product by id and measures that product; the eq suite additionally hard-codes the signed AMEK fixture's `group1` and Mono Maker indices 7/8. Pointing a suite at another plugin's map does not produce a weaker verdict, it produces a verdict about the fixture filed under the other plugin's fingerprint. Everything M9 has measured is therefore **a self-test of four fixtures**, not a sample of the plugin population.
+The note this replaces said the suites *"cannot run on a second subject at all"* and that everything measured was *"a self-test of four fixtures"*. **That is no longer true.** All four suites now resolve their target, ladder and excitation from the map for the loaded fingerprint:
 
-**The headline number is 3 decided of 80 mappable slots** — AMEK EQ 200, the one map in the corpus any suite can run on, measured by `--probe-batch`. The 80 is params + group params + named controls; the 3 are group 1's `freq_hz`, `gain_db` and `q`. The other 77 have no suite that can decide them. On the second map in the corpus (spiff, `transient_shaper`) the number is 0 of 39, because no suite exists for the category.
+| Suite | Reads from the map | Verdicts, each in its own unit |
+|---|---|---|
+| eq | primary group's `freq_hz` / `gain_db` / `q`, the `stereo_width` role and its enable link | 3 — oct, dB, oct-log2 |
+| compressor | `threshold_db`, `ratio` | 2 — dB, dB/dB (plus attack/release, inconclusive under undeclared units) |
+| limiter | `ceiling_db` | 1 — dB |
+| gate | `threshold_db` | 1 — dB |
+| saturation | `drive`, and an excitation plan | 1 — direction only; magnitude refused, since drive is unitless |
 
-A passing gate suite does not mean SSL X-Gate is cleared. It means the gate suite still reproduces on SSL X-Gate.
+**What that buys and what it does not.** The claim changed: a suite no longer asks whether a plugin agrees with its own display ladder, it asks whether the plugin does what **the map claims**. Those diverge exactly when a map is stale, made in another mode or preset, or made against another version — and every suite now stops rather than issuing a verdict when they do.
+
+**THE STANDING CAVEAT: there is still no real map for any subject but AMEK and spiff.** Every map-driven result recorded in this milestone came from a **constructed specimen** — a self-map, or a self-map deliberately corrupted. The suites label it: a run with no map prints `SELF-CONSISTENCY CHECK, not a check of any map's claims`, and its verdict evidence carries `self-consistency only (no map)`. The machinery is proven; it has not yet been **used** on a map a human made.
+
+**Coverage per category is unchanged: one to four parameters each.** Parameterisation changed *which subjects* a suite can run on, not *how much of a plugin* it decides. de-esser and delay remain unbuilt.
+
+**The headline number.** On the one map any suite can run against today, AMEK EQ 200: **3 decided of 80 mappable slots**, and 0 of 39 on spiff, whose category has no suite.
 
 ---
 

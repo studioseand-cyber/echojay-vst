@@ -47,7 +47,23 @@ enum class Route { deafness, overClaim, tracks };
     double with no unit, so that guard did not cover this.
 
     Pairing the value with its unit makes the mismatch a loud failure at the
-    choke point instead of a silent flip. */
+    choke point instead of a silent flip.
+
+    WHAT THIS GUARD DOES NOT COVER, recorded here because a reader of the guard
+    will otherwise assume it covers more: IT PROTECTS THE DIMENSION, NOT THE
+    QUANTITY. A floor for a DIFFERENT FEATURE in the SAME unit passes it
+    untouched.
+
+    Measured instance: saturation's verdict used InstrumentFloor::depthDb =
+    0.088 -- eq's spectral LOBE-DEPTH floor -- as the floor for a THD
+    measurement. Both are decibels, so this guard was satisfied and said
+    nothing, while the number described the repeatability of a different
+    measurement, of a different feature, on a different subject. The fix was
+    not to the guard but to the suite: measure sigma_THD on this feature, on
+    this subject.
+
+    This guard answers "are these numbers in the same units". It cannot answer
+    "is this floor a floor for THIS measurement", and nothing currently does. */
 struct Floor
 {
     double value = 0;

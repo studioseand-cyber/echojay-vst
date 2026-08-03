@@ -946,7 +946,15 @@ identity before trusting anything measured there. The merged-tree checks were
 re-run only because the refusal happened to be visible in the output; had it
 scrolled past, the report would have been false.
 
-## A NULL CAN HIDE A TAUTOLOGY (3 August 2026)
+## UNBLOCKING A PATH PUBLISHES WHATEVER BROKEN CHECK IT WAS HOLDING (3 August 2026)
+
+**A null is a check that has never been exercised.** While a suite returns
+null, its verdict machinery is untested by construction: nothing it computes
+has ever been compared against anything, and no output has ever been read. The
+moment the blockage clears, whatever was sitting there publishes.
+
+**When a suite stops returning null, re-read what its verdict compares before
+trusting the first result it produces.**
 
 **Instance 1: saturation's drive verdict.** It passed `thdMoved` as the
 measurement and `jmax(1.0, thdMoved)` as the prediction — **the same number**.
@@ -972,6 +980,88 @@ centre or threshold predicts gain reduction. The magnitude claim is refused and
 the falsifiable claim, that THD rises monotonically with drive, is decided on
 its own. Same treatment comp's attack/release already gets under an undeclared
 unit family.
+
+---
+
+## THE PASS: what else has been returning null or inconclusive (3 August 2026)
+
+Run after saturation's tautology, on the reasoning that a long-standing null is
+a long-standing unexercised check. **Reported, not fixed.**
+
+**Checked and clean.** Every remaining `emitVerdict` site was read for the
+saturation shape — a measurement passed as its own prediction. There are five,
+and all five compare genuinely different quantities: limiter/gate (feature span
+vs clipped ladder span), comp threshold (measured GR span vs span x ratio
+factor), comp ratio (measured slope delta vs ladder-derived delta), comp
+envelope (measured tau ratio vs ladder ratio), eq (measured feature vs ladder
+prediction). **Saturation was the only tautology.**
+
+**Finding 1: comp's envelope floor is an invented constant, and the verdict
+that would use it has never issued.** `sgTau` IS measured, by A/A pair, and
+printed — then discarded. The verdict passes `Floor(0.0001, "log2 ratio")`, a
+hardcoded number, while the measured floor sits in milliseconds and is never
+converted. attack_ms and release_ms have returned INCONCLUSIVE on every run
+(API-2500's ladders declare no unit family), so the floor has never been
+exercised. Same family as saturation's: a number nobody has checked, protected
+from scrutiny by a path that never runs.
+
+**Finding 2: carve-out 1's promotion is described in output and implemented
+nowhere.** `routeText`'s deafness branch tells the operator *"promotion to
+contradicts requires (a) no suppressing mode in the map AND (b) no gesture
+evidence at this index"*. The limiter/gate suite gathers and prints both
+exclusions when the route is deafness. **No code promotes.** Whether promotion
+is meant to be automatic or a human judgement is not decided anywhere in the
+source; the sentence reads as a rule the tool applies. The deafness route has
+fired rarely enough that nobody followed the sentence to its implementation.
+(The `promot*` matches elsewhere in the tree are EjmapCapture.h's noise
+promotion, an unrelated mechanism.)
+
+**Not in this class, but noted while looking:** `resolveSubjectByName`'s
+harness-miss branch and eq's `B2 expressible` are both built, correct on
+inspection, and have never fired — already M9 open item 6. A never-fired branch
+is unproven rather than broken, but it is the same blind spot.
+
+---
+
+## AN ENABLE LINK AND AN EXCITATION STEP CARRY OPPOSITE NULL REQUIREMENTS (3 August 2026)
+
+They share one type, `ExcitationStep`, because "set index 8 to 1.0 so index 7
+is live" and "set ratio to max so the compressor compresses" are the same
+sentence mechanically. Their correctness conditions are opposites:
+
+- an **enable link** must be **null** — it makes a control live and changes
+  nothing else. eq's null-test refuses one that moves the primary feature,
+  because a link with side effects contaminates the arm that is not testing it.
+- an **excitation step** must **not** be null — it exists to change the
+  feature. Saturation's `Master XL -> 100%` moves THD by 100.41 dB, and that
+  movement IS the verification.
+
+**So eq's enable null-test would refuse a correct saturation plan.** The shared
+type is right; applying one's verification to the other is not. Recorded
+because the type invites exactly that mistake, and the next suite to declare a
+plan will have both mechanisms in front of it.
+
+---
+
+## THE FLOOR-UNIT GUARD PROTECTS THE DIMENSION, NOT THE QUANTITY (3 August 2026)
+
+Recorded beside the guard itself in `EjmapProbeRoute.h`, because a reader of
+the guard will otherwise assume it covers more than it does.
+
+`Probe::Floor` pairs a floor with its unit and `emitVerdict` refuses a
+mismatch, which closes the hazard that a dB floor silently turns an octave
+verdict from `contradicts` into `inconclusive`. It does **not** close this:
+
+**Instance 1.** Saturation's verdict used `InstrumentFloor::depthDb` = 0.088 --
+eq's spectral **lobe-depth** floor -- as the floor for a **THD** measurement.
+Both are decibels. The guard was satisfied and said nothing, while the number
+described the repeatability of a different measurement, of a different feature,
+on a different subject.
+
+A floor for the wrong quantity in the right unit is invisible to a unit check.
+The fix was to the suite, not the guard: measure sigma_THD on this feature, on
+this subject. **Nothing currently answers "is this floor a floor for THIS
+measurement"**, and the guard should not be read as if it did.
 
 ---
 
