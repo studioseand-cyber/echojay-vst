@@ -74,6 +74,27 @@ Before pausing, one question was traced to its answer: does M3's sweep write thr
 
 ---
 
+## Feature 3's write-back: two decisions and their evidence
+
+**`probed` is server-side only**, returned by `identities=`, never on the map
+body. Nothing in the plugin consumes it and no case for it exists: refusing to
+dial unprobed maps would refuse nearly everything, and dialing differently on a
+probe verdict would act on a verdict a human already reviewed. Moving it onto
+the map later is a smaller change than un-shipping bytes from every prefetch.
+
+**`rev` is NOT bumped, decided from what `rev` is used for.** `stampRev`
+(`lib/params-lib.js:325`) hashes `params / groups / controls / skips` only, and
+the client compares `newRev` against `oldRev` in `storeParamMaps`
+(`ChainHost.cpp:1500`) purely to detect content change. Probing changes none of
+the hashed fields, so a bump would be a **false content-change signal**, costing
+every client a refetch for a field it never sees. `stampRev` would not alter it
+in any case.
+
+**Neither write touches `plugin:<fp>:meta.ejmap.at`**, which is what the
+supersession guard compares. A batch run restamping the corpus as freshly
+human-submitted would be invisible until a second mapper existed, and would
+then decide whose maps serve.
+
 ## CAMPAIGN PRECONDITION: the supersession gap must close before anyone else gets a build
 
 **Recorded here so it cannot be lost between now and then.** Two rules already
