@@ -70,7 +70,13 @@ Before pausing, one question was traced to its answer: does M3's sweep write thr
 
 **Harness:** render harness, pump discipline, stakes and restore, sanity gate, σ_f extraction, excitation verification, the routing fork, the mode guard, the ambiguity rule, and the shared sensitivity check are all built and, where stated, proven by attempting the thing they refuse.
 
-**Coverage, stated honestly** (recorded in the proposal): M9 claims decisiveness on seven categories. The built suites decide **one to four parameters on one subject each** (eq 3, compressor 4, limiter 1, gate 1). A passing gate suite does not mean SSL X-Gate is cleared.
+**Coverage, stated honestly** (amended 2026-08-03, after the batch runner measured it). The earlier wording — "one to four parameters on one subject each" — reads as a sampling limitation, as though the suites work and have only been pointed at a few plugins so far. That is not the situation.
+
+**The suites cannot run on a second subject at all.** Each resolves one product by id and measures that product; the eq suite additionally hard-codes the signed AMEK fixture's `group1` and Mono Maker indices 7/8. Pointing a suite at another plugin's map does not produce a weaker verdict, it produces a verdict about the fixture filed under the other plugin's fingerprint. Everything M9 has measured is therefore **a self-test of four fixtures**, not a sample of the plugin population.
+
+**The headline number is 3 decided of 80 mappable slots** — AMEK EQ 200, the one map in the corpus any suite can run on, measured by `--probe-batch`. The 80 is params + group params + named controls; the 3 are group 1's `freq_hz`, `gain_db` and `q`. The other 77 have no suite that can decide them. On the second map in the corpus (spiff, `transient_shaper`) the number is 0 of 39, because no suite exists for the category.
+
+A passing gate suite does not mean SSL X-Gate is cleared. It means the gate suite still reproduces on SSL X-Gate.
 
 ---
 
