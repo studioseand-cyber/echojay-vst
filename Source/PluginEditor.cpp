@@ -7246,9 +7246,11 @@ void EchoJayEditor::paintFaderLane(juce::Graphics& g, const StripGeom& sg,
     // ---- The cap, cropped straight out of frame 64 and scaled UNIFORMLY
     // (height derives from width via faderCapH). Its centre is yFromGain's
     // answer, so ticks, drag and drawn cap cannot disagree.
-    const int cy = yFromGain(gDb, cap);
-    const juce::Rectangle<int> dest(cap.getX(), cy - capH / 2,
-                                    cap.getWidth(), capH);
+    const int cy   = yFromGain(gDb, cap);
+    const int capW = faderCapW(cap);
+    // Centred in the cap area, so the drawn track shows either side of it.
+    const juce::Rectangle<int> dest(cap.getCentreX() - capW / 2, cy - capH / 2,
+                                    capW, capH);
     const auto strip = getFaderFilmstrip();
     if (strip.isValid())
     {
