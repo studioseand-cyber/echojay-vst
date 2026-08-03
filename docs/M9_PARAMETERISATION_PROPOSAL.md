@@ -138,7 +138,7 @@ Not uniform. eq is roughly four times gate.
 | 0 | **Shared machinery**: fixture-file format, assert-vs-report modes, map-reading helpers (`semanticIndex`, `anchorsFor`, `primaryGroup`), and the ladder-point chooser that picks in-range points from a map's own anchors | **1–2** | All four suites need it. Building it inside the first suite and extracting it later is the misplaced-guard shape |
 | 1 | **gate + limiter** | **1** | Least welded, and they share one body. Subject from the map, target from `threshold_db`/`ceiling_db`, ladder from map anchors. Also fixes the by-name subject resolution to by-id — the same defect saturation already had fixed |
 | 2 | **compressor** | **1–2** | Five name lookups → five semantics; probe levels derived from the threshold ladder instead of fixed absolutes. Two sessions if the derived levels change the measured numbers, which must then be explained rather than accepted |
-| 3 | **eq** | **3** | (a) generic band probing: primary group, map anchors, in-range ladder points; (b) fixture-as-test-case, re-prove 12/12 with identical numbers; (c) arm A scoped explicitly as fixture-only, plus the group-selection and Mono-Maker-role questions |
+| 3 | **eq** | **3** | (a) generic band probing: primary group, map anchors, in-range ladder points; (b) fixture-as-test-case, re-prove 11/11 with identical numbers; (c) arm A scoped explicitly as fixture-only, plus the group-selection and Mono-Maker-role questions |
 | 4 | **saturation** | **1**, blocked | Parameterisation is small (one pinned index → `drive`). It is blocked behind its excitation plan, which is its own session and is not this work |
 | 5 | **Schema 2.3**: excitation plan, control roles, enable links | **2** | Section 2's gaps 1–3. Can run in parallel with 1–2, but eq (3) wants control roles, so it lands before eq |
 | 6 | **Final: all four fixtures, numbers compared** | **1** | The behaviour-preservation proof |
@@ -435,6 +435,53 @@ reason — the same shape as (b).
 
 None of this is speculative — every entry is a path that exists in arm A today
 and is currently held correct by a constant.
+
+---
+
+## 4g. Item 3 (eq): the three-session split, proposed before starting
+
+**A correction first.** The gate has **11 assertions, not 12**: B1–B6, A1, A2, A5, A4, restore. `A3` is an exclusions block that enumerates engaged modes and issues no assertion of its own. Both `M9_PAUSED.md` and this document said 12/12 — documentation asserting a property the code lacks, in our own records, including a line I wrote. The number to re-prove is 11.
+
+### Session 1 — diagnostics and the role/enable machinery
+
+Requirement 4 goes **first**, not last. It is diagnostic rather than functional, which is exactly why it gets dropped under pressure, and everything after it consumes its answer.
+
+- **Cause triage** for the single symptom "the control did nothing": index out of range (refused at lookup, exists), write did not land (`applyExcitation` reports it, exists), write landed and the control is inert (**new** — requires a measurement). Output names the cause, never the symptom.
+- **Role verification by signal** (req 1): a control claiming `stereo_width` is written across its ladder and must move the side band ≥ 4σ_side while leaving the mid band within σ_depth. Attribution is its own: *the map's `stereo_width` claim is not supported by measurement* — not *the gate failed*.
+- **Enable null-test** (req 3): engage the link, measure the primary feature before and after, require no movement beyond σ_f. An enable that changes the measurement is not an enable.
+- **The known limit** (req 2) printed wherever a role is used: this verification separates a width control from a gain or a filter, and **cannot** separate it from another width control. The role is supported, never proven.
+- A5 and B5 both consume the verified role. B5's exposure is the same as A5's: under a map-supplied role its negative control would test drift on the wrong parameter and pass for the wrong reason.
+
+**Provable at the end:** four specimens — a role naming a control with no stereo effect, an enable link at the wrong index, an enable link whose write does not land, and an enable link with global side effects — each producing a distinct and correctly attributed message; and AMEK still reporting 11/11 with identical numbers.
+
+### Session 2 — per-semantic attribution and generic band probing. **This is where it gets hard.**
+
+Not an even third. The difficulty is physical, not organisational:
+
+`freq_hz`, `gain_db` and `q` are read from **one pair of Welch spectra** through `lobeFeatures`, which returns centre, depth and width **together**. Pooling is not a reporting choice here — it is how the measurement is taken. Worse, the three are **coupled**: a wrong q shifts the measured centre and depth; a wrong gain changes depth and, through lobe fitting, the apparent width. So one report per semantic requires **isolation probes** — move exactly one semantic at a time from a common reference state and attribute each feature to the parameter that actually moved. That is a restructure of arm B, not a refactor of its output.
+
+Also landing here: `groups[].primary` instead of `groups[0]`; ladder points from the map with the chooser only when nothing pins them; and the conversion of B1/B3/B4 from `assertHarness` to `emitVerdict`, which closes M9's open item 1 for eq and makes the routing fork decide eq's language **for the first time** — its behaviour on octave-domain features is currently unproven.
+
+**The tension to name now:** behaviour preservation says the numbers must not move, and isolation probes legitimately change the reference state they are measured from. If the numbers move, the honest outcome is a recorded explanation per change, not a forced match. A session that must produce identical numbers *and* a different measurement structure can only succeed by pretending one of the two did not happen.
+
+**Planned relief valve, decided now rather than discovered at the end:** if session 2 overruns, isolation probes and per-semantic attribution land, and the `emitVerdict` conversion moves to session 3. Splitting there keeps a working gate at every boundary.
+
+**Provable at the end:** three isolation specimens — corrupting only q, only `gain_db`, only `freq_hz` — each producing a contradiction naming exactly that semantic with the other two clean; each verdict carrying its own unit (octaves, dB, oct-log2 width ratio) with no "dB" on an octave measurement; and either identical numbers to the pinned run or a documented cause for each change.
+
+### Session 3 — fixture-as-test-case, arm A scoped, full re-proof
+
+- The eq fixture carries its ladder points (100 → 400 Hz, 0/+3/+6/+9 dB, q 0.71 → 2.00), the role and enable link for the AMEK case, and **arm A's injection**: which index to mis-map to and what it must do.
+- One code path, two modes: assert against the fixture, or report without one.
+- **Arm A refuses to run without a fixture-declared injection.** That is the fixture-only scoping made executable instead of documented — a deliberate mis-map needs a nominated wrong-index control of a specific character, which no general map declares.
+- All 11 assertions re-proven with identical numbers; full regression across five suites; drift gate.
+
+**The corpus question, needing a decision and not taken unilaterally:** the real AMEK map carries no `role` or `enabled_by`. Three options — (i) the fixture carries them for the regression case and the corpus gets them when AMEK is re-mapped under 2.3; (ii) AMEK is re-mapped now; (iii) tooling writes them into the existing map with provenance. **Recommend (i).** Option (iii) mutates a human-verified artefact to make our tests convenient, which is the pressure the schema-gate change was accepted to remove.
+
+**Provable at the end:** `--gate-m9 eq` reproduces 11/11 with identical numbers; `--probe-batch` drives the same code path in report mode; arm A with no fixture refuses and says why.
+
+### What item 3 does not buy
+
+eq will read its band, roles and links from a map, but the only EQ map in the corpus is AMEK. "Runs generically" will be proven on constructed specimens, not measured on a second real EQ — the no-real-map limit, restated for eq specifically.
 
 ---
 

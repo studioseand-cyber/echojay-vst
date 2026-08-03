@@ -60,7 +60,7 @@ Before pausing, one question was traced to its answer: does M3's sweep write thr
 
 | Category | Status |
 |---|---|
-| eq | confirms. Headline gate 12/12: a deliberate Mono Maker mis-map returns `contradicts` with zero human input and names the index from the side spectrum |
+| eq | confirms. Headline gate **11/11** (counted 3 Aug 2026; the "12/12" recorded earlier was stale — `A3` is an exclusions block that issues no assertion): a deliberate Mono Maker mis-map returns `contradicts` with zero human input and names the index from the side spectrum |
 | compressor | ratio confirms (0.020 vs 0.100). threshold direction-provable, magnitude inconclusive at ~45% of nameplate, both estimators agreeing |
 | limiter | ceiling confirms at 0.02 dB against a 1.88 tolerance |
 | gate | threshold_db tracks: 52.00 dB measured vs 54.00 predicted, worst error 1.20 vs 4.50 tolerance |
