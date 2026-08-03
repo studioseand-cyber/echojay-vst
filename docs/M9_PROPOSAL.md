@@ -821,6 +821,35 @@ amplitude, so steppedCurve now converts its RMS reading to peak
 (+3.0103 dB) and every curve number is dBFS PEAK. The mismatch was never
 limiter-only -- it offset the knee estimator too.
 
+## WHEN A GUARD CANNOT SIT AT THE CHOKE POINT, THE CHOKE POINT IS DOING TWO JOBS
+
+**Amendment to the misplaced-guard entry: the fork's placement was a
+structural collision, not an omission**, and that is a different lesson
+from the other instances.
+
+`routeVerdict` could not be moved onto `crit()` because `crit()` served
+**two populations**: 11 harness assertions (the headline gate testing
+*itself* against a fixture) and 8 parameter verdicts (claims about a
+plugin). Forcing a harness assertion through the fork is meaningless —
+there is no Δ_pred for *"the stake restored five parameters"* — so any
+attempt to put the guard at the choke point would have broken the gate's
+own self-test. The guard was pushed out to a convention because the choke
+point **could not accept it**, not because anyone forgot.
+
+**The diagnostic:** if a guard "obviously belongs" somewhere and resists
+being put there, stop trying to place the guard and look at what the site
+is doing. A function that two kinds of caller use for two kinds of purpose
+cannot enforce a rule that applies to only one of them.
+
+**The fix is to split the site, not to relocate the guard:**
+`assertHarness()` for assertions, `emitVerdict()` for verdicts with the
+routing inputs as *required arguments*, and `emitInconclusive()` for
+inconclusive-by-precondition — structurally unable to express a confirm,
+since no branch, parameter or return value in it can produce one. After
+the split the guard sits where it always belonged, and enforcement is by
+signature rather than by convention: a suite that omits the routing inputs
+does not compile.
+
 ## NAMING A CLASS DOES NOT PREVENT IT (eighth instance)
 
 The misplaced-guard class had been named, written up, and sat in this

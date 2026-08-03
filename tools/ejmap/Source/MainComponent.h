@@ -1997,11 +1997,10 @@ public:
             }
             // ITEM 1: the WORDS come from the route. Routing right with wrong
             // words is the failure the fork existed to prevent.
-            assertHarness (isLim ? "ceiling_db (top-step plateau, PRIMARY)"
+            emitVerdict (isLim ? "ceiling_db (top-step plateau, PRIMARY)"
                         : "threshold_db (level-swept burst train, PRIMARY)",
-                  route == P::Route::tracks || route == P::Route::deafness,
-                  P::routeText (route, featMoved, predForRoute, juce::jmax (sgPlateau, 0.088))
-                  + " | worst |feature - ladder| " + juce::String (worstPl, 2) + " dB vs tol "
+                  featMoved, predForRoute, juce::jmax (sgPlateau, 0.088), tolPl,
+                  juce::String ("worst |feature - ladder| ") + juce::String (worstPl, 2) + " dB vs tol "
                   + juce::String (tolPl, 2) + "; corroborating knee estimator "
                   + (knErr.isEmpty() ? juce::String ("found no resolvable corner")
                                      : "worst " + juce::String (worstKn, 2) + " dB"));
@@ -2170,7 +2169,9 @@ public:
             say ("  Delta_pred: probed span " + juce::String (probedSpan2, 2)
                  + " (ladder " + juce::String (ladderRaw2, 2) + ") -- probed span used");
             const double thdMoved = std::abs (thds.getLast() - thds.getFirst());
-            assertHarness ("drive (THD monotone, PRIMARY)", mono && thdMoved > 1.0,
+            emitVerdict ("drive (THD monotone, PRIMARY)",
+                  thdMoved, juce::jmax (1.0, std::abs (thds.getLast() - thds.getFirst())),
+                  0.088, 0.25 * juce::jmax (1.0, thdMoved),
                   "THD " + juce::String (thds.getFirst(), 2) + " -> " + juce::String (thds.getLast(), 2)
                   + " dB across drive " + juce::String (landeds.getFirst(), 2) + " -> "
                   + juce::String (landeds.getLast(), 2) + " (moved " + juce::String (thdMoved, 2)
@@ -2754,8 +2755,8 @@ public:
                 const juce::String unitFam = atk ? swAtUnit : swReUnit;
                 if (P::displayIsModeToken (disp))          // HARNESS-level guard
                 {
-                    assertHarness (atk ? "attack_ms" : "release_ms", true,
-                          juce::String ("INCONCLUSIVE: possibly mode-suppressed -- the parameter ")
+                    emitInconclusive (atk ? "attack_ms" : "release_ms",
+                          juce::String ("possibly mode-suppressed -- the parameter ")
                           + P::modeTokenReason (disp)
                           + ". Carve-out 1 exclusion (a) FAILS: a suppressing state is present. "
                             "No contradicts may be issued. Measured anyway for the record: tau "
@@ -2764,8 +2765,8 @@ public:
                 }
                 if (unitFam.isEmpty())
                 {
-                    assertHarness (atk ? "attack_ms" : "release_ms", true,
-                          juce::String ("INCONCLUSIVE: ladder units undeclared -- the display ('")
+                    emitInconclusive (atk ? "attack_ms" : "release_ms",
+                          juce::String ("ladder units undeclared -- the display ('")
                           + disp + "') carries no unit family, so the ladder's numbers cannot be "
                           "checked against milliseconds. Measured tau "
                           + juce::String (tA, 1) + " -> " + juce::String (tB, 1)
@@ -2784,8 +2785,9 @@ public:
                                                   / juce::jmax (0.001, P::predictedLanding (sw.a, lo)));
                 const double measRatio = (tA > 0 && tB > 0) ? std::log2 (tB / juce::jmax (1.0, tA)) : 0.0;
                 const bool defined = tA > 0 && tB > 0;
-                assertHarness (atk ? "attack_ms" : "release_ms",
-                      defined && std::abs (measRatio - predRatio) <= juce::jmax (0.25 * std::abs (predRatio), 0.25),
+                emitVerdict (atk ? "attack_ms" : "release_ms",
+                      measRatio, predRatio, 0.0001,
+                      juce::jmax (0.25 * std::abs (predRatio), 0.25),
                       "ladder " + juce::String (P::predictedLanding (sw.a, lo), 2) + " -> "
                       + juce::String (P::predictedLanding (sw.a, hi), 2) + " (predicted log2 ratio "
                       + juce::String (predRatio, 2) + "); measured tau "
