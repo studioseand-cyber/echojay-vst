@@ -2013,6 +2013,65 @@ public:
         // FORGETTABILITY TEST: a load site that plants NO stake of its own.
         // If the choke point works, a hard death here is still attributed.
         // Deliberately bare -- adding a beginLoad here would test nothing.
+        if (mode == "mapstate")
+        {
+            // FIXTURE, not live data: the endpoint does not exist yet. One
+            // synthetic identity per state, so the filter is tested by
+            // ATTEMPTING WHAT IT REFUSES rather than by reading it.
+            say ("MAPSTATE: fixture with one identity per state");
+            const char* names[] = { "unmapped", "localOnly", "submittedByYou",
+                                    "submittedByOther", "differentBuild", "unknown" };
+            mapStateByIdentity.clear();
+            for (int i = 0; i < 6; ++i)
+            {
+                MapStateRow r;
+                r.state = (MapState) i;
+                r.by = i == 3 ? "mapper-jonas" : "sean-studio";
+                r.at = "2026-08-02"; r.schema = "2.2"; r.probed = (i == 2);
+                r.mapsForIdentity = (i == 4 ? 2 : (i == 0 || i == 5 ? 0 : 1));
+                r.paramCountHere = 86;
+                mapStateByIdentity[juce::String ("Fixture|") + names[i] + "|1.0"] = r;
+            }
+            mapStateFetchedAt = juce::Time::getCurrentTime();
+            mapStateFailure = {};
+
+            saveMapStateCache();
+            auto before = mapStateByIdentity;
+            mapStateByIdentity.clear(); mapStateFetchedAt = juce::Time();
+            loadMapStateCache();
+            bool same = mapStateByIdentity.size() == before.size();
+            for (const auto& kv : before)
+                if (mapStateByIdentity.count (kv.first) == 0
+                     || mapStateByIdentity[kv.first].state != kv.second.state
+                     || mapStateByIdentity[kv.first].by != kv.second.by) same = false;
+            say (juce::String (same ? "  ok   " : "  FAIL ")
+                 + "cache round-trips through the FILE with all six states and their fields");
+            say ("  status line: " + mapStateStatusLine());
+
+            say ("  hide-mapped, per state:");
+            int hidden = 0, hiddenWrongly = 0;
+            for (int i = 0; i < 6; ++i)
+            {
+                const auto st = (MapState) i;
+                const bool wouldHide = (st == MapState::submittedByYou
+                                     || st == MapState::submittedByOther);
+                const bool mustNotHide = (st == MapState::differentBuild
+                                       || st == MapState::unknown);
+                if (wouldHide) ++hidden;
+                if (wouldHide && mustNotHide) ++hiddenWrongly;
+                say (juce::String ("    ") + names[i] + " -> " + (wouldHide ? "HIDDEN" : "shown")
+                     + (mustNotHide ? "   (must never be hidden)" : ""));
+            }
+            say (juce::String (hidden == 2 && hiddenWrongly == 0 ? "  ok   " : "  FAIL ")
+                 + "hides exactly the two submitted states; differentBuild and unknown survive");
+
+            mapStateFailure = "connection refused";
+            say ("  on failure:      " + mapStateStatusLine());
+            mapStateFailure = {}; mapStateByIdentity.clear();
+            say ("  never fetched:   " + mapStateStatusLine());
+            std::cout << "MAPSTATE: DONE" << std::endl; quitNow(); return;
+        }
+
         if (mode == "identkey")
         {
             // Print the CLIENT identity key for the two live subjects, built
@@ -7029,6 +7088,16 @@ private:
         for (int i = 0; i < rows.size(); ++i)
         {
             const auto& d = rows.getReference (i).desc;
+            // HIDE-MAPPED hides ONLY the two submitted states. differentBuild
+            // and unknown both mean "something needs a decision", so hiding
+            // them would turn a filter into a silent drop -- a product with a
+            // map for the wrong build would vanish and read as handled.
+            if (hideMapped)
+            {
+                const auto st = mapStateFor (rows.getReference (i)).state;
+                if (st == MapState::submittedByYou || st == MapState::submittedByOther)
+                    continue;
+            }
             if (needle.isEmpty()
                  || d.name.containsIgnoreCase (needle)
                  || d.manufacturerName.containsIgnoreCase (needle))
@@ -7356,6 +7425,92 @@ private:
                          ? "map state unknown: " + mapStateFailure
                          : "map state not fetched yet";
         }
+    }
+
+    juce::File mapStateCacheFile() const
+    { return ledger.getRoot().getChildFile ("map-state.json"); }
+
+    /** Persist with the stamp, ALWAYS. A cached state that cannot say its age
+        is indistinguishable from a fresh one, which is the shape the scan
+        cache already refuses (it prints its run id and age on every restore).
+    */
+    void saveMapStateCache()
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("fetched_at", mapStateFetchedAt.toISO8601 (true));
+        o->setProperty ("failure", mapStateFailure);
+        auto* by = new juce::DynamicObject();
+        for (const auto& kv : mapStateByIdentity)
+        {
+            auto* e = new juce::DynamicObject();
+            e->setProperty ("state", (int) kv.second.state);
+            e->setProperty ("by", kv.second.by);
+            e->setProperty ("at", kv.second.at);
+            e->setProperty ("schema", kv.second.schema);
+            e->setProperty ("probed", kv.second.probed);
+            e->setProperty ("maps_for_identity", kv.second.mapsForIdentity);
+            e->setProperty ("param_count_here", kv.second.paramCountHere);
+            by->setProperty (kv.first, juce::var (e));
+        }
+        o->setProperty ("identities", juce::var (by));
+        mapStateCacheFile().replaceWithText (juce::JSON::toString (juce::var (o), false));
+    }
+
+    void loadMapStateCache()
+    {
+        auto f = mapStateCacheFile();
+        if (! f.existsAsFile()) return;
+        auto v = juce::JSON::parse (f.loadFileAsString());
+        mapStateFetchedAt = juce::Time::fromISO8601 (v.getProperty ("fetched_at", "").toString());
+        mapStateFailure   = v.getProperty ("failure", "").toString();
+        mapStateByIdentity.clear();
+        if (auto* by = v.getProperty ("identities", juce::var()).getDynamicObject())
+            for (auto& kv : by->getProperties())
+            {
+                MapStateRow r;
+                r.state  = (MapState) (int) kv.value.getProperty ("state", 5);
+                r.by     = kv.value.getProperty ("by", "").toString();
+                r.at     = kv.value.getProperty ("at", "").toString();
+                r.schema = kv.value.getProperty ("schema", "").toString();
+                r.probed = (bool) kv.value.getProperty ("probed", false);
+                r.mapsForIdentity = (int) kv.value.getProperty ("maps_for_identity", 0);
+                r.paramCountHere  = (int) kv.value.getProperty ("param_count_here", 0);
+                mapStateByIdentity[kv.name.toString()] = r;
+            }
+    }
+
+    /** The status-line fragment. Says its age, and says a failure in words --
+        an empty answer and a failed answer must never read alike.
+    */
+    juce::String mapStateStatusLine() const
+    {
+        if (mapStateFailure.isNotEmpty())
+            return "map state unavailable: " + mapStateFailure + " (checked "
+                 + mapStateCacheAge() + ") -- everything shows ?";
+        if (mapStateByIdentity.empty())
+            return "map state not fetched; everything shows ?";
+        return "map state from " + mapStateCacheAge() + " ("
+             + juce::String ((int) mapStateByIdentity.size()) + " identities)";
+    }
+
+    /** The ? listing: every fp this product has, across builds. This is what
+        out.identities is for -- the list is data, not inferred from one fp.
+    */
+    juce::String mapStateFpListing (const ScannedPlugin& sp) const
+    {
+        const auto key = echojay::identityKeyForDescription (sp.desc);
+        const auto st  = mapStateFor (sp);
+        juce::String t;
+        t << "IDENTITY " << key << "\n";
+        if (st.mapsForIdentity <= 0)
+        { t << "  no maps recorded for this product\n"; return t; }
+        t << "  " << st.mapsForIdentity << " map(s) for this product\n"
+          << "  this build: " << st.paramCountHere << " params -> "
+          << (st.state == MapState::differentBuild ? "NOT mapped" : "mapped") << "\n";
+        if (st.by.isNotEmpty())
+            t << "  most recent: " << st.by << ", " << st.at << ", schema " << st.schema
+              << (st.probed ? ", probed" : ", not probed") << "\n";
+        return t;
     }
 
     juce::String mapStateCacheAge() const
