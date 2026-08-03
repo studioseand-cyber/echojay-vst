@@ -74,6 +74,31 @@ Before pausing, one question was traced to its answer: does M3's sweep write thr
 
 ---
 
+## CAMPAIGN PRECONDITION: the supersession gap must close before anyone else gets a build
+
+**Recorded here so it cannot be lost between now and then.** Two rules already
+govern which map wins, and together they are correct for a single submitter:
+
+- **ingest** (`lib/params-lib.js:632`): *"A newer human submission replaces an
+  older one; a stale replay does not. A human map always replaces a crowd map."*
+- **serve** (`api/params/maps.js`): *"a human-verified map is never
+  second-guessed by ANY serve-time substitution."*
+
+**The gap:** both key on `origin === "human"` and **neither distinguishes which
+human**. A mapper's submission and Sean's are the same origin, so a mapper's
+later map silently replaces Sean's on the same fp — and the serve-side guard
+then protects *their* map from substitution. `tester_id` is stored in
+`plugin:<fp>:meta` and consulted by nothing.
+
+**Deadline, stated precisely:** it does not block Sean's own mapping, because
+last-human-wins is correct with one submitter. **It bites the moment a second
+person submits.** Features 1 and 2 make it visible; they do not make it safe.
+**It must close before any build goes to another person.**
+
+The shape of the fix is a rule about people rather than data: either ingest
+weights owner over mapper, or a mapper's overwrite of an owner map lands in a
+review state rather than serving.
+
 ## Open items at the pause
 
 Carried in the proposal; none blocks mapping.
