@@ -1,0 +1,8 @@
+{
+  "_note": "M9 fixture: bx_limiter True Peak. See the gate fixture for why points are pinned rather than chosen.",
+  "subject_id": "AudioUnit:Effects/aumf,bxtp,Brwx",
+  "subject_name": "bx_limiter True Peak",
+  "semantic": "ceiling_db",
+  "ladder_points": [-25.50, -18.00, -10.50, -3.00],
+  "points_origin": "the 0.15/0.4/0.65/0.9 fractions of the live -30..0 ladder, as measured on 3 Aug 2026 before parameterisation"
+}

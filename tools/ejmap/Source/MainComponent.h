@@ -26,6 +26,7 @@
 #include "EchoJayParamMaps.h"   // fingerprintForDescription
 #include "EjmapMouth.h"
 #include "EjmapProbe.h"
+#include "EjmapSubject.h"
 #include <thread>
 #include <atomic>
 #include "EjmapBuildInfo.h"     // EJMAP_APPLY_HEADER_SHA, stamped as compiled
@@ -1650,14 +1651,46 @@ public:
         // numbers to route. It cannot express a confirm STRUCTURALLY: this
         // function has no branch, no parameter and no return value that could
         // produce one, and it never touches the route enum at all.
-        auto emitInconclusive = [&] (const juce::String& semantic, const juce::String& reason)
+        auto emitInconclusive = [&] (const juce::String& semantic, const juce::String& reason,
+                                     bool measurementWasTaken = false)
         {
-            std::cout << "  INCONCLUSIVE " << semantic << ": " << reason
-                      << "  [by precondition -- no measurement was taken, so no verdict is "
-                         "reachable from here]" << std::endl;
-            batchRows.add ({ semantic, "inconclusive", reason + "  [by precondition]" });
+            // The basis must not assert something untrue. The default wording
+            // says no measurement was taken, which is right for the precondition
+            // sites and WRONG for the excitation guard, where four renders were
+            // taken and the feature simply never appeared in them. A fixed
+            // suffix that lies in one caller is documentation asserting a
+            // property the code lacks, in the smallest possible form.
+            const juce::String basis = measurementWasTaken
+                ? "  [measured, and the feature never appeared -- no verdict is reachable from a "
+                  "feature that did not move]"
+                : "  [by precondition -- no measurement was taken, so no verdict is reachable "
+                  "from here]";
+            std::cout << "  INCONCLUSIVE " << semantic << ": " << reason << basis << std::endl;
+            batchRows.add ({ semantic, "inconclusive", reason + basis });
         };
-        juce::ignoreUnused (emitInconclusive);
+        /** (4) CONTRADICTED BY MEASUREMENT. Distinct from emitInconclusive
+            (which is reached before any measurement exists) and from
+            emitVerdict (which routes a movement claim). This one carries a
+            measurement that DISAGREES, and like emitInconclusive it has no
+            branch, parameter or return value that could produce a confirm.
+
+            It exists because parameterisation created a claim the routing fork
+            cannot express: routeVerdict decides whether a feature MOVED as
+            predicted, over a span. A map whose ladder is uniformly offset
+            produces exactly the right span with every point in the wrong
+            place, and routes as `tracks`. Measured on bx_limiter with a
+            constructed 6 dB-offset map: CONFIRMS, worst |feature - ladder|
+            7.20 dB against a 1.88 dB tolerance, in the evidence string of a
+            passing verdict. That failure was unreachable before item 1,
+            because the ladder came from the plugin itself and could not be
+            offset from it. */
+        auto emitContradicts = [&] (const juce::String& semantic, const juce::String& reason)
+        {
+            ++fails;
+            std::cout << "  CONTRADICTS  " << semantic << ": " << reason << std::endl;
+            batchRows.add ({ semantic, "contradicts", reason });
+        };
+        juce::ignoreUnused (emitInconclusive, emitContradicts);
 
         auto desc = echojay::auregistry::describeFromRegistry (
                         mode == "comp" ? "AudioUnit:Effects/aufx,APCM,ksWV"
@@ -2052,20 +2085,61 @@ public:
                          "to its own name preferences below.");
             }
 
-            // The qualified target, FROM NAMES ONLY. No map is read here, and
-            // none was ever read: the comment that stood in this place said the
-            // target came "from the map when one exists", which answered a
-            // reader's question confidently and wrongly -- it reads as though
-            // the suite were already half-parameterised. Reading ceiling_db /
-            // threshold_db out of the map is M9 parameterisation step 1, and
-            // until it lands this list of names IS the mechanism.
+            // ---- THE UPGRADE (M9 parameterisation item 1) ------------------
+            // The target and its ladder come FROM THE MAP. That changes what
+            // this suite tests: sweeping the plugin and comparing a rendered
+            // feature against the ladder just read from that same plugin is a
+            // display-versus-render self-consistency check. Driving the MAP's
+            // numbers asks whether the plugin does what THE MAP CLAIMS -- which
+            // diverges exactly when the map is stale, was made in another mode
+            // or preset, or was made against another version.
+            cal = capture.calibrate (*ci, loadedId);
+            currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+            auto mapFile = ledger.getRoot().getChildFile ("maps")
+                                 .getChildFile (currentFp + ".json");
+            auto mapVar = juce::JSON::parse (mapFile.loadFileAsString());
+            const bool haveMap = mapVar.isObject();
+            const juce::String wantSem = isLim ? "ceiling_db" : "threshold_db";
+            auto slot = ejmap::subject::slotFor (mapVar, wantSem);
+            say ("  fp " + currentFp.substring (0, 12) + " | map "
+                 + (haveMap ? mapFile.getFileName() : juce::String ("NONE on this machine")));
+
             int iCtl = -1;
-            for (auto* n : (isLim ? std::initializer_list<const char*>{ "Ceiling", "Output Ceiling" }
-                                  : std::initializer_list<const char*>{ "Upper Threshold", "Threshold" }))
+            juce::String targetSource;
+            if (slot.ok())
             {
-                auto c2 = candidates (n);
-                if (c2.size() == 1) { iCtl = c2[0]; say ("  qualified target: '" + juce::String (n)
-                                                        + "' -> " + nameList (c2)); break; }
+                iCtl = slot.index;
+                targetSource = "map";
+                say ("  target FROM THE MAP: " + wantSem + " -> [" + juce::String (iCtl) + "] "
+                     + (juce::isPositiveAndBelow (iCtl, cp.size()) ? cp[iCtl]->getName (64)
+                                                                   : juce::String ("INDEX OUT OF RANGE"))
+                     + ", ladder " + juce::String (slot.ladderLo(), 2) + " .. "
+                     + juce::String (slot.ladderHi(), 2) + " (" + juce::String (slot.anchors.size())
+                     + " anchors, map name '" + slot.name + "')");
+                if (! juce::isPositiveAndBelow (iCtl, cp.size()))
+                { emitInconclusive (wantSem, "the map's index " + juce::String (iCtl)
+                        + " is outside this instance's " + juce::String (cp.size())
+                        + " parameters -- the map does not describe this plugin");
+                  std::cout << (isLim ? "LIMITER" : "GATE") << " SUITE: INCONCLUSIVE (map index "
+                            "out of range)" << std::endl; quitNow(); return; }
+            }
+            else
+            {
+                // NO MAP, OR THE MAP DOES NOT CARRY THIS SEMANTIC. The suite
+                // still runs, but it is back to the WEAKER CLAIM and says so:
+                // self-consistency, not map correctness.
+                targetSource = haveMap ? "names (map carries no " + wantSem + ")" : "names (no map)";
+                say ("  NO MAP-DRIVEN TARGET: " + (slot.why.isNotEmpty() ? slot.why
+                                                                         : juce::String ("no map"))
+                     + ". Falling back to name preferences -- this run is a DISPLAY-VS-RENDER "
+                       "SELF-CONSISTENCY CHECK, not a check of any map's claims.");
+                for (auto* n : (isLim ? std::initializer_list<const char*>{ "Ceiling", "Output Ceiling" }
+                                      : std::initializer_list<const char*>{ "Upper Threshold", "Threshold" }))
+                {
+                    auto c2 = candidates (n);
+                    if (c2.size() == 1) { iCtl = c2[0]; say ("  qualified target: '" + juce::String (n)
+                                                            + "' -> " + nameList (c2)); break; }
+                }
             }
             if (iCtl < 0)
             { say ("  no unambiguous ceiling/threshold parameter -- INCONCLUSIVE: target ambiguous. "
@@ -2158,9 +2232,52 @@ public:
                                    pd.pluginFormatName, "probe", 30000);
                 sw = sweepOneIndex (*ci, iCtl, watchdog, loadedId);
             }
-            say ("  ladder " + juce::String (sw.anchors.getFirst()[0], 2) + " .. "
+            say ("  live ladder " + juce::String (sw.anchors.getFirst()[0], 2) + " .. "
                  + juce::String (sw.anchors.getLast()[0], 2) + " (" + juce::String (sw.anchors.size())
                  + " anchors, unit family '" + sw.unitFamily + "', method " + sw.method + ")");
+
+            // The live sweep is KEPT even when the map drives the run. It is no
+            // longer the source of truth; it is the second opinion, and the
+            // disagreement between the two is the thing that was invisible
+            // before -- only one of them was ever consulted.
+            const bool mapDriven = slot.ok();
+
+            // ---- probe points: fixture pins them, chooser only if nothing does
+            juce::Array<double> points;
+            juce::String pointSource;
+            {
+                auto fx = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures")
+                            .getChildFile (juce::String (isLim ? "m9-limiter" : "m9-gate") + "-"
+                                           + pd.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)
+                                                                .replaceCharacter (',', '-') + ".json");
+                auto fv = juce::JSON::parse (fx.loadFileAsString());
+                if (auto* arr = fv.getProperty ("ladder_points", juce::var()).getArray())
+                    for (const auto& v : *arr) points.add ((double) v);
+                if (! points.isEmpty())
+                    pointSource = "fixture " + fx.getFileName();
+            }
+            if (points.isEmpty())
+            {
+                // THE CHOOSER RUNS ONLY WHEN NOTHING PINS THE POINTS. A test case
+                // that lets a chooser move its own stimulus is not a regression
+                // test -- measured on eq, where a centred 2-octave pair lands at
+                // 54.1/216.3 Hz against the fixture's 100/400.
+                const juce::Array<double> fracs { 0.15, 0.4, 0.65, 0.9 };
+                points = mapDriven ? ejmap::subject::spreadAcrossLadder (slot, fracs)
+                                   : juce::Array<double>();
+                if (points.isEmpty())
+                    for (double f : fracs)
+                    { const double lo = sw.anchors.getFirst()[0], hi = sw.anchors.getLast()[0];
+                      points.add (lo + f * (hi - lo)); }
+                pointSource = mapDriven ? "chooser over the MAP ladder (no fixture pins points)"
+                                        : "chooser over the LIVE ladder (no map, no fixture)";
+            }
+            say ("  probe points from " + pointSource + ": ");
+            {
+                juce::StringArray ps;
+                for (double v : points) ps.add (juce::String (v, 2));
+                say ("    " + ps.joinIntoString (", "));
+            }
             auto nf3 = [] (const juce::Array<juce::Array<float>>& a, double v) {
                 auto e = echojay::dominantMonotonicTable (a);
                 return echojay::interpolateAnchors (e.table, (float) v); };
@@ -2193,14 +2310,65 @@ public:
             // EFFECT-BASED walk: 4 ladder points, plateau (primary) + knee (corroboration)
             say (isLim ? "     requested | landed | plateau out dBFS PEAK | knee dBFS PEAK | plateau err | knee err"
                        : "     requested | landed | gate open point dBFS PEAK | knee dBFS PEAK | open err | knee err");
-            const double frac[] = { 0.15, 0.4, 0.65, 0.9 };
+            // EXCITATION, through the single resolution point. These two suites
+            // declare NO plan: the limiter reads its own expressible range and
+            // the gate drives level-swept bursts, so neither needs the plugin
+            // put into a special state first. That was checked rather than
+            // assumed, and the check that keeps it honest is below: when the
+            // feature never moves, the suite must say INCONCLUSIVE and name
+            // excitation as a candidate cause -- never route a verdict from a
+            // plugin that was never engaged.
+            ejmap::subject::ExcitationPlan declaredPlan;      // deliberately none
+            const auto excPlan = ejmap::subject::resolveExcitation (mapVar, declaredPlan);
+            say ("  " + excPlan.describe()
+                 + (excPlan.declared() ? "" : " -- neither suite needs one; a missing plan may "
+                                              "still leave the plugin unengaged, which is handled "
+                                              "as inconclusive below, not as a verdict"));
+
             juce::Array<double> plErr, knErr, plPoints, plLanded;
-            for (double f : frac)
+            double worstClaimErr = 0; int claimChecks = 0; juce::StringArray claimRows;
+            int featureUndefined = 0;
+            for (double want : points)
             {
-                const double lo = sw.anchors.getFirst()[0], hi = sw.anchors.getLast()[0];
-                const double want = lo + f * (hi - lo);
-                const double wms = P::writeAndServiceRunloop (*cp[iCtl], nf3 (sw.anchors, want));
-                const double landed = P::predictedLanding (sw.anchors, want);
+                // WRITE WHAT THE MAP SAYS. When map-driven, the norm and the
+                // predicted landing both come from the map's anchors, so the
+                // feature error below is measured against THE MAP'S CLAIM, not
+                // against the plugin's own display ladder.
+                const float norm = mapDriven ? slot.normFor (want) : nf3 (sw.anchors, want);
+                const double wms = P::writeAndServiceRunloop (*cp[iCtl], norm);
+                const double landed = mapDriven ? P::predictedLanding (slot.anchors, want)
+                                                : P::predictedLanding (sw.anchors, want);
+
+                // ---- THE DIVERGENCE THAT WAS INVISIBLE BEFORE --------------
+                // The map claims this norm means `want`. The plugin's display
+                // says what it actually means. A stale map, a map made in
+                // another mode or preset, or one made against another version
+                // disagrees HERE, and nothing in this suite could see it while
+                // the ladder came from the plugin itself.
+                if (mapDriven)
+                {
+                    const double liveLanded = P::predictedLanding (sw.anchors, want);
+                    double shown = 0; bool parsed = false;
+                    {
+                        const auto txt = cp[iCtl]->getCurrentValueAsText();
+                        const auto unit = slot.unit.isNotEmpty() ? slot.unit : sw.unitFamily;
+                        float f = 0; bool negInf = false;
+                        parsed = echojay::parseDisplayForUnit (txt, unit, f, negInf);
+                        if (! parsed) parsed = echojay::parseDisplayForUnit (txt, "db", f, negInf);
+                        // -inf is a real landing at a dB bottom, not a parse
+                        // failure, and it must not read as 0.
+                        shown = negInf ? -std::numeric_limits<double>::infinity() : (double) f;
+                    }
+                    const double claimErr = parsed ? std::abs (shown - want)
+                                                   : std::abs (liveLanded - want);
+                    worstClaimErr = juce::jmax (worstClaimErr, claimErr); ++claimChecks;
+                    claimRows.add ("     map says " + juce::String (want, 2)
+                        + " at norm " + juce::String (norm, 4) + " -> plugin "
+                        + (parsed ? "displays " + juce::String (shown, 2)
+                                  : "display unparsed, live ladder says "
+                                    + juce::String (liveLanded, 2))
+                        + "  |diff| " + juce::String (claimErr, 2));
+                }
                 say ("       write: norm " + juce::String (nf3 (sw.anchors, want), 4)
                      + " -> getValue " + juce::String (cp[iCtl]->getValue(), 4)
                      + ", display '" + cp[iCtl]->getCurrentValueAsText() + "'"
@@ -2217,6 +2385,7 @@ public:
                     plat = c.getLast();
                     // ITEM 2: was there a plateau to read at all?
                     const double gr = P::grAtTopDb (c);
+                    if (gr < 1.0) ++featureUndefined;
                     say ("       [ceiling " + juce::String (landed, 2) + "] gain reduction at the "
                          "loudest step: " + juce::String (gr, 2) + " dB peak"
                          + (gr < 1.0 ? "  <- NEAR ZERO: the stimulus never drove the limiter, so "
@@ -2236,6 +2405,7 @@ public:
                         pkLine << " " << juce::String (0.0 - 4.0 * b, 0) << "->"
                                << juce::String (pk[b], 1);
                     say ("       burst peaks (in->out, every 4th):" + pkLine);
+                    if (plat <= -999.0) ++featureUndefined;
                     if (plat <= -999.0)
                         say ("       [threshold " + juce::String (landed, 2) + "] NO burst "
                              "is attenuated by 3 dB anywhere in the sweep -- gate threshold "
@@ -2252,6 +2422,57 @@ public:
                      + " | " + juce::String (pe, 2).paddedLeft (' ', 11)
                      + " | " + (ke >= 0 ? juce::String (ke, 2) : juce::String ("-")));
             }
+            // THE EXCITATION GUARD. If the feature never appeared at ANY ladder
+            // point there is nothing to route: the plugin was never engaged, and
+            // a route computed from -999s or from zero gain reduction would
+            // publish a verdict about a plugin that did nothing. Inconclusive by
+            // precondition -- the function that cannot express a confirm.
+            if (featureUndefined >= points.size() && points.size() > 0)
+            {
+                emitInconclusive (isLim ? "ceiling_db" : "threshold_db",
+                    juce::String (isLim ? "gain reduction stayed below 1 dB"
+                                        : "no burst was attenuated by 3 dB")
+                    + " at every one of the " + juce::String (points.size())
+                    + " ladder points, so the feature never existed to measure. Candidate causes, "
+                      "in order: the plugin was never engaged (no excitation plan is declared for "
+                      "this suite -- " + excPlan.source + "), the stimulus does not reach the "
+                      "ladder's range, or the target index is not the "
+                    + juce::String (isLim ? "ceiling" : "threshold") + ". No verdict is reachable "
+                      "from a feature that did not move", /*measurementWasTaken*/ true);
+                std::cout << (isLim ? "LIMITER" : "GATE") << " SUITE: INCONCLUSIVE "
+                             "(feature never appeared; not a verdict)" << std::endl;
+                quitNow(); return;
+            }
+
+            // With no map on this machine, write the live sweep out in map
+            // shape. It is a SELF-MAP: circular as verification (it cannot
+            // disagree with the plugin it came from) and useful as a specimen,
+            // because a divergence check that has never been shown NOT to fire
+            // is as unproven as one that has never fired.
+            if (! mapDriven && sw.anchors.size() >= 2)
+            {
+                juce::Array<juce::var> aRows;
+                for (const auto& a : sw.anchors)
+                    aRows.add (juce::var (juce::Array<juce::var> { (double) a[0], (double) a[1] }));
+                auto* pe = new juce::DynamicObject();
+                pe->setProperty ("index", iCtl);
+                pe->setProperty ("name", cp[iCtl]->getName (64));
+                pe->setProperty ("kind", wantSem);
+                pe->setProperty ("unit", sw.unitFamily);
+                pe->setProperty ("anchors", juce::var (aRows));
+                auto* pp = new juce::DynamicObject(); pp->setProperty (wantSem, juce::var (pe));
+                auto* mo = new juce::DynamicObject();
+                mo->setProperty ("fp", currentFp);
+                mo->setProperty ("schema", ejmap::kMapSchemaString);
+                mo->setProperty ("category", isLim ? "limiter" : "gate");
+                mo->setProperty ("mode", "self-map (live sweep, NOT a mapped artefact)");
+                mo->setProperty ("params", juce::var (pp));
+                auto out = ledger.getRoot().getChildFile ("selfmap-" + currentFp + ".json");
+                out.replaceWithText (juce::JSON::toString (juce::var (mo), false));
+                say ("  self-map written: " + out.getFullPathName()
+                     + " (the live ladder in map shape; circular as verification)");
+            }
+
             // monotone + tracking, by EFFECT (the compressor's lesson)
             bool mono = true;
             for (int i = 1; i < plErr.size(); ++i) {}
@@ -2336,12 +2557,56 @@ public:
                 say ("  carve-out 1 exclusion (b) gesture evidence at index "
                      + juce::String (iCtl) + ": none on this machine (no capture row for this fp)");
             }
+            // ---- what the map claimed vs what the plugin does ---------------
+            if (mapDriven)
+            {
+                say ("");
+                say ("  MAP-CLAIM CHECK (the upgrade: does the plugin do what the MAP says?)");
+                for (const auto& r : claimRows) say (r);
+                say ("  worst |map claim - plugin| " + juce::String (worstClaimErr, 2)
+                     + " over " + juce::String (claimChecks) + " points"
+                     + (worstClaimErr > 1.0
+                          ? "  <- THE MAP AND THE PLUGIN DISAGREE. A ladder read live from this "
+                            "plugin would have hidden this: the suite would have driven the "
+                            "plugin's own numbers and confirmed them against themselves."
+                          : "  <- the map's ladder and this plugin agree"));
+            }
+            else
+                say ("  (no map-claim check: this run measured the plugin against its own "
+                     "display ladder, which is the weaker claim)");
+
+            // PER-POINT ACCURACY GATES THE SPAN VERDICT. When the map supplies
+            // the ladder, "the feature moved by the predicted amount" is only a
+            // statement about THE MAP if each point also landed where the map
+            // said. Where it did not, the span verdict is a statement about the
+            // plugin's own ladder and must not be published as a confirm about
+            // the map's. One semantic, one verdict: two verdicts on one
+            // semantic is its own confusion.
+            if (mapDriven && worstPl > tolPl)
+            {
+                emitContradicts (isLim ? "ceiling_db" : "threshold_db",
+                    "the feature tracks over its SPAN (moved " + juce::String (featMoved, 2)
+                    + " dB against " + juce::String (predForRoute, 2) + " predicted) but each point "
+                      "lands away from where the map says: worst |feature - map claim| "
+                    + juce::String (worstPl, 2) + " dB against a " + juce::String (tolPl, 2)
+                    + " dB tolerance, worst |map claim - display| "
+                    + juce::String (worstClaimErr, 2) + " dB. A uniformly offset ladder moves by "
+                      "the right amount with every point wrong, so the span alone cannot decide "
+                      "this. The map does not describe this plugin as installed: stale, made in "
+                      "another mode or preset, or made against another version");
+                std::cout << (isLim ? "LIMITER" : "GATE") << " SUITE: "
+                          << juce::String (fails) << " FAILED" << std::endl;
+                quitNow(); return;
+            }
+
             // ITEM 1: the WORDS come from the route. Routing right with wrong
             // words is the failure the fork existed to prevent.
             emitVerdict (isLim ? "ceiling_db (top-step plateau, PRIMARY)"
                         : "threshold_db (level-swept burst train, PRIMARY)",
                   featMoved, predForRoute, juce::jmax (sgPlateau, 0.088), tolPl,
-                  juce::String ("worst |feature - ladder| ") + juce::String (worstPl, 2) + " dB vs tol "
+                  juce::String (mapDriven ? "MAP-DRIVEN (feature vs the map's claim); "
+                                          : "self-consistency only (no map); ")
+                  + "worst |feature - ladder| " + juce::String (worstPl, 2) + " dB vs tol "
                   + juce::String (tolPl, 2) + "; corroborating knee estimator "
                   + (knErr.isEmpty() ? juce::String ("found no resolvable corner")
                                      : "worst " + juce::String (worstKn, 2) + " dB"));

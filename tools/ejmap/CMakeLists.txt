@@ -60,6 +60,7 @@ target_sources(ejmap PRIVATE
     Source/PluginHost.cpp)
 
 target_compile_definitions(ejmap PRIVATE
+    EJMAP_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../.."
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:ejmap,JUCE_PRODUCT_NAME>"

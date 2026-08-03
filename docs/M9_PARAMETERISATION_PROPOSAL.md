@@ -212,6 +212,61 @@ Discovered by running the chooser against a real map rather than by reasoning ab
 
 ---
 
+## 4c. Item 1 built: gate and limiter read the map (3 August 2026)
+
+Both suites now resolve `ceiling_db` / `threshold_db` from the map for the loaded fingerprint, drive the **map's** norms, and measure the feature against the **map's** predicted landing. The live sweep is kept as the second opinion rather than the source of truth, and the disagreement between them is reported.
+
+**Behaviour preserved against pinned points.** Fixtures carry their ladder points (`tools/ejmap/tests/fixtures/`), the chooser runs only when nothing pins them. With no map on this machine both suites reproduce their pre-parameterisation numbers exactly: limiter moved 22.50 dB against 22.50 predicted, worst 0.02 dB vs tol 1.88; gate moved 52.00 against 54.00, worst 1.20 vs tol 4.50. eq is untouched and still reports `GATE M9: PASS`.
+
+**The weaker claim is labelled.** With no map, the run prints `DISPLAY-VS-RENDER SELF-CONSISTENCY CHECK, not a check of any map's claims`, and the verdict evidence carries `self-consistency only (no map)`. Map-driven runs carry `MAP-DRIVEN (feature vs the map's claim)`.
+
+### The divergence, with numbers
+
+Against a **self-map** (the live ladder in map shape — circular as verification, kept as a specimen so the check is shown *not* firing as well as firing):
+
+```
+map says -25.50 at norm 0.0784 -> plugin displays -25.48   |diff| 0.02
+map says -18.00 at norm 0.2258 -> plugin displays -17.98   |diff| 0.02
+worst 0.02 over 4 points  <- the map's ladder and this plugin agree
+```
+
+Against a **stale map** (the same self-map with every value shifted 6 dB, as a map made in another mode or preset would be):
+
+```
+map says -25.50 at norm 0.1940 -> plugin displays -19.49   |diff| 6.01
+map says -18.00 at norm 0.3681 -> plugin displays -11.98   |diff| 6.02
+worst 6.02 over 4 points  <- THE MAP AND THE PLUGIN DISAGREE
+```
+
+This is the upgrade made visible for the first time. A ladder read live from the plugin cannot express this failure at all: the suite would have driven the plugin's own numbers and confirmed them against themselves.
+
+### What building it found: PARAMETERISATION CREATED A CLAIM THE FORK CANNOT EXPRESS
+
+The first stale-map run returned **`CONFIRMS`**, carrying `worst |feature - ladder| 7.20 dB vs tol 1.88` inside the evidence string of a passing verdict.
+
+`routeVerdict` decides whether a feature **moved** as predicted — a span claim. A uniformly offset ladder moves by exactly the right amount with every point in the wrong place: on the 6 dB specimen the span moved 19.46 dB against 19.50 predicted, so the span check alone says *tracks*. Per-point accuracy never entered the routing; it only rode in the evidence.
+
+**This failure was unreachable before item 1.** While the ladder came from the plugin itself, an offset between map and plugin could not exist by construction. Parameterisation introduced the claim, and shipping item 1 without noticing would have produced a suite that confirms stale maps — strictly worse than the self-consistency check it replaced.
+
+**Fix:** a fourth emit function, `emitContradicts`, mirroring the existing split and structurally unable to express a confirm; and per-point accuracy now gates the span verdict whenever the map drives the ladder. The stale specimen now returns `CONTRADICTS ... the feature tracks over its SPAN but each point lands away from where the map says`, and the suite reports FAILED.
+
+### The excitation rule, tested by attempting it
+
+Neither suite declares an excitation plan, and the claim was that a missing plan degrades them to an honest inconclusive rather than a false verdict. Attempted with a map pinning the ceiling at the top, so the limiter can never engage:
+
+```
+INCONCLUSIVE ceiling_db: gain reduction stayed below 1 dB at every one of the 4
+ladder points, so the feature never existed to measure. Candidate causes, in
+order: the plugin was never engaged (no excitation plan is declared for this
+suite -- none), the stimulus does not reach the ladder's range, or the target
+index is not the ceiling.
+LIMITER SUITE: INCONCLUSIVE (feature never appeared; not a verdict)
+```
+
+The guard runs before any routing, so the route narrative never gets to describe a feature that did not exist. Two smaller corrections came out of it: `emitInconclusive`'s fixed suffix asserted *no measurement was taken*, which is false at this site — four renders were taken and the feature never appeared — so the basis is now stated per call; and a first attempt on the gate produced an honest inconclusive by a *different* path (span did not move → carve-out 1), which is why the guard needed its own specimen rather than being credited with that result.
+
+---
+
 ## Appendix: the uid-ambiguity refusal, tested (3 August 2026)
 
 The other three runner refusals were proven by attempting them. This one is now too, and it is load-bearing rather than defensive.
