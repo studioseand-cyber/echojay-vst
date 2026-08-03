@@ -4,6 +4,8 @@
 
 #import <Network/Network.h>
 #include <atomic>
+#include <cerrno>
+#include <cstring>
 #include <chrono>
 #include <functional>
 #include <mutex>
@@ -11,6 +13,43 @@
 
 namespace ejmap
 {
+
+/** Name the cause instead of listing the possibilities. */
+static juce::String describeNwError (nw_error_t error, bool waiting)
+{
+    const juce::String prefix = waiting ? "connection could not be established: "
+                                        : "connection failed: ";
+    if (error == nullptr) return prefix + "no error detail from the network stack";
+
+    const nw_error_domain_t domain = nw_error_get_error_domain (error);
+    const int code = nw_error_get_error_code (error);
+
+    if (domain == nw_error_domain_dns)
+        return prefix + "DNS could not resolve the host (dns error " + juce::String (code)
+             + "). The Host header names somewhere that does not exist -- check the URL the "
+               "artefact was built with, not the network.";
+    if (domain == nw_error_domain_tls)
+        return prefix + "TLS handshake failed (tls error " + juce::String (code)
+             + "). The host resolved and answered, but the certificate or protocol was refused.";
+    if (domain == nw_error_domain_posix)
+    {
+        switch (code)
+        {
+            case ECONNREFUSED: return prefix + "connection REFUSED (ECONNREFUSED). The host "
+                                                "exists and is reachable; nothing is listening on "
+                                                "that port.";
+            case EHOSTUNREACH: return prefix + "host UNREACHABLE (EHOSTUNREACH). Routing, not DNS "
+                                                "and not the server.";
+            case ENETUNREACH:  return prefix + "network UNREACHABLE (ENETUNREACH). This machine "
+                                                "has no route out.";
+            case ETIMEDOUT:    return prefix + "connection timed out (ETIMEDOUT) before the server "
+                                                "answered.";
+            default:           return prefix + "posix error " + juce::String (code) + " ("
+                                      + juce::String (strerror (code)) + ")";
+        }
+    }
+    return prefix + "error domain " + juce::String ((int) domain) + ", code " + juce::String (code);
+}
 
 SendResult sendBytesOverTls (const juce::MemoryBlock& bytes,
                              const juce::String& hostPort,
@@ -125,12 +164,15 @@ SendResult sendBytesOverTls (const juce::MemoryBlock& bytes,
 
     auto* payloadBytes = &bytes;
     nw_connection_set_state_changed_handler (conn,
-        ^(nw_connection_state_t state, nw_error_t)
+        ^(nw_connection_state_t state, nw_error_t error)
         {
-            if (state == nw_connection_state_waiting)
-                sp->finish ("connection waiting (unreachable, DNS or refused)");
-            else if (state == nw_connection_state_failed)
-                sp->finish ("connection failed");
+            // THREE CAUSES, NOT ONE. "unreachable, DNS or refused" collapsed
+            // failures that need different fixes: a name that does not resolve
+            // is a configuration error, a refused connection is a server that
+            // is up and saying no, and an unreachable host is the network.
+            // NWConnection knows which; it was simply not being asked.
+            if (state == nw_connection_state_waiting || state == nw_connection_state_failed)
+                sp->finish (describeNwError (error, state == nw_connection_state_waiting));
             else if (state == nw_connection_state_ready)
             {
                 dispatch_data_t payload = dispatch_data_create (

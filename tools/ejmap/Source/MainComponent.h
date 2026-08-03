@@ -29,6 +29,7 @@
 #include "EjmapSubject.h"
 #include "EjmapTriage.h"
 #include "EjmapSend.h"
+#include <sys/stat.h>
 #include <thread>
 #include <atomic>
 #include "EjmapBuildInfo.h"     // EJMAP_APPLY_HEADER_SHA, stamped as compiled
@@ -132,19 +133,13 @@ public:
         assignButton.onClick = [this] { startAssignment(); };
 
         addAndMakeVisible (uploadButton);
-        uploadButton.setButtonText ("Upload...");
+        // "Upload..." promised an upload and a dialogue and delivered neither:
+        // it gated and wrote an artefact and stopped. One action now does what
+        // its name says.
+        uploadButton.setButtonText ("Submit to server");
         uploadButton.setEnabled (false);
         uploadButton.onClick = [this] { openUploadCard(); };
 
-        addAndMakeVisible (sendButton);
-        sendButton.setButtonText ("Send");
-        // ALWAYS CLICKABLE, NEVER SILENT. A disabled button on the one control
-        // that reaches the server is a no-op that looks like an action: press
-        // it, nothing happens, and the reasonable conclusion is that the map
-        // was sent. Readiness is shown by COLOUR; the click always answers, and
-        // when it will not send it says which precondition is missing.
-        sendButton.onClick = [this] { sendArtefactNow(); };
-        setSendReady (false);
 
         addAndMakeVisible (deepToggle);
         deepToggle.setButtonText ("Deep");
@@ -2667,6 +2662,30 @@ public:
         // THE SEND, AND ITS THREE REFUSALS, ATTEMPTED. A refusal that has never
         // fired is the misplaced-guard class, and on a network write the
         // untested one is the one that double-submits.
+        if (mode == "endpoint")
+        {
+            auto show = [&] (const juce::String& label)
+            {
+                auto e = Mouth::resolveEndpoint (ledger.getRoot());
+                say ("  " + label);
+                say ("    " + e.describe().replace ("\n", "\n    "));
+                say ("    token refused: " + juce::String (e.tokenRefused ? "YES" : "no"));
+            };
+            auto cfg = Mouth::configFile (ledger.getRoot());
+            say ("ENDPOINT RESOLUTION: env -> " + cfg.getFileName() + " -> placeholder");
+            say ("");
+            show ("(1) as configured now");
+
+            // ATTEMPT THE REFUSAL: make the file group-readable and confirm the
+            // token is refused rather than merely warned about.
+            ::chmod (cfg.getFullPathName().toRawUTF8(), 0644);
+            show ("(2) after chmod 644 -- a token the machine can read is not a secret");
+            ::chmod (cfg.getFullPathName().toRawUTF8(), 0600);
+            show ("(3) after chmod 600 again");
+            std::cout << "ENDPOINT: DONE" << std::endl;
+            quitNow(); return;
+        }
+
         if (mode == "sendtest")
         {
             auto attempt = [&] (const juce::String& label, const juce::String& hostPort,
@@ -2717,10 +2736,17 @@ public:
                               "www.echojay.ai", "POST /api/params/ejmap/probed",
                               "INGEST-TOKEN-UNSET", 1);
 
+            // 4. the failure that actually happened: an unset endpoint, whose
+            //    placeholder host is reserved by RFC 2606 and cannot resolve.
+            auto d = attempt ("(4) unset endpoint -> expect refused, named as DNS",
+                              "UPLOAD-ENDPOINT-UNSET.echojay.invalid",
+                              "POST /api/params/ejmap", "INGEST-TOKEN-UNSET", 15000);
+
             const bool ok = ! a.sent && a.status == 401
                          && ! b.sent && b.status >= 300 && b.status < 400
                             && b.refusedReason.contains ("NOT followed")
-                         && ! c.sent && c.queueState() == "refused";
+                         && ! c.sent && c.queueState() == "refused"
+                         && ! d.sent && d.refusedReason.containsIgnoreCase ("DNS");
             say ("");
             say (juce::String ("  all three refused, none reported unknown: ")
                  + (ok ? "YES" : "NO"));
@@ -6732,8 +6758,7 @@ public:
         top.removeFromLeft (6);
         assignButton.setBounds (top.removeFromLeft (76));
         top.removeFromLeft (6);
-        uploadButton.setBounds (top.removeFromLeft (80));
-        sendButton.setBounds (top.removeFromLeft (60));
+        uploadButton.setBounds (top.removeFromLeft (130));
         top.removeFromLeft (6);
         deepToggle.setBounds (top.removeFromLeft (64));
         top.removeFromLeft (6);
@@ -8258,19 +8283,57 @@ private:
     /** Readiness is visible without being a lock. Green when a gated artefact
         for the LOADED plugin is on disk; grey otherwise, and the click still
         explains why. */
-    void setSendReady (bool ready)
-    {
-        sendButton.setColour (juce::TextButton::buttonColourId,
-                              ready ? juce::Colour (0xff2f6f45) : juce::Colour (0xff3a3a3a));
-        sendButton.setTooltip (ready ? "Send the gated artefact for this plugin"
-                                     : "Not ready -- click to find out why");
-    }
+    void setSendReady (bool) {}      // readiness is no longer a separate control
 
     /** Put the artefact on the wire and SAY WHAT HAPPENED. A refusal must not
         read like a success at a glance, which is why the outcome leads with the
         word and not with the status number, and why a timeout says in full that
         it may or may not have arrived.
     */
+    /** Send the artefact and RETURN what happened, so one readout carries the
+        gate result and the send outcome together. */
+    juce::String sendResolvedArtefact (const juce::File& artefact)
+    {
+        juce::MemoryBlock bytes;
+        artefact.loadFileAsData (bytes);
+        const juce::String text (juce::CharPointer_UTF8 ((const char*) bytes.getData()),
+                                 (size_t) bytes.getSize());
+        juce::String hostPort;
+        for (const auto& line : juce::StringArray::fromLines (
+                 text.upToFirstOccurrenceOf ("\r\n\r\n", false, false)))
+            if (line.startsWithIgnoreCase ("Host:"))
+                hostPort = line.fromFirstOccurrenceOf (":", false, false).trim();
+        if (hostPort.isEmpty())
+            return "REFUSED: the artefact carries no Host header, so there is no destination "
+                   "it names.\n";
+
+        const auto res = ejmap::sendBytesOverTls (bytes, hostPort);
+        Mouth::setQueueState (ledger.getRoot(), currentFp, res.queueState(),
+                              res.sent ? "HTTP " + juce::String (res.status) : res.refusedReason);
+        std::cout << "SEND: " << (res.sent ? "sent" : "refused") << " status " << res.status
+                  << " -- " << (res.sent ? res.body.substring (0, 120) : res.refusedReason)
+                  << std::endl;
+
+        juce::String out;
+        if (res.sent)
+            out << "SENT.  HTTP " << res.status << "  (" << juce::String (res.elapsedMs, 0)
+                << " ms)\n" << hostPort << "\n\nserver said: " << res.body.substring (0, 400)
+                << "\n\nqueue state: sent";
+        else
+        {
+            out << "REFUSED -- NOTHING WAS ACCEPTED.\n"
+                << hostPort << "  (" << juce::String (res.elapsedMs, 0) << " ms)\n\n"
+                << res.refusedReason << "\n\nqueue state: refused\n\n"
+                << "The artefact stays on disk as pending work:\n  "
+                << artefact.getFullPathName();
+            if (res.status == 0)
+                out << "\n\nNo status came back at all. If this was a timeout the request MAY OR "
+                       "MAY NOT have reached the server: check before sending again, because a "
+                       "retry from here is how one submission becomes two.";
+        }
+        return out;
+    }
+
     void sendArtefactNow()
     {
         // EACH PRECONDITION NAMED SEPARATELY, in the order they fail. "Not
@@ -8402,9 +8465,20 @@ private:
                                   stub.accepted ? "stub_accepted" : "stub_rejected",
                                   stub.reasons.joinIntoString ("; "));
             for (const auto& r : stub.reasons) t << r << "\n";
-            t << "\nThe stub above is a hypothesis about the server, not a test of it.\n"
-                 "NOTHING HAS BEEN SENT YET. Press Send to put these exact bytes on a\n"
-                 "TLS stream -- what is written above is what goes on the wire.\n";
+            // ONE ACTION. The gate has passed and the artefact is written, so
+            // the send happens HERE rather than waiting for a second press.
+            // Showing the gate result before anything leaves was the only real
+            // argument for two buttons, and it is satisfied by showing it in
+            // this readout -- above the send outcome, in the same text.
+            auto ep = Mouth::resolveEndpoint (ledger.getRoot());
+            t << "\nDESTINATION, resolved now rather than assumed:\n  "
+              << ep.describe().replace ("\n", "\n  ") << "\n\n";
+            captureReadout.setText (t + "Sending...", juce::dontSendNotification);
+            repaint();
+
+            t << sendResolvedArtefact (dry);
+            captureReadout.setText (t, juce::dontSendNotification);
+            return;
         }
         else
         {
@@ -9545,7 +9619,7 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
-    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton, uploadButton, sendButton;
+    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton, uploadButton;
     juce::ToggleButton deepToggle;
     AssignPanel assignPanel;
     bool assigning = false;

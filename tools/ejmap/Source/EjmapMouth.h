@@ -31,6 +31,8 @@
 
 #pragma once
 
+#include <sys/stat.h>
+
 #include <juce_core/juce_core.h>
 #include <set>
 
@@ -246,13 +248,108 @@ struct Mouth
         Host header. This artifact is checked byte for byte, so the user's
         string is used byte for byte.
     */
-    static juce::String uploadBaseUrl (const juce::String& urlOverride = {})
+    /** WHERE THE ENDPOINT AND TOKEN COME FROM, in one place.
+
+        Environment first, then a config file in the ledger root, then the
+        visibly-unset placeholder. The file exists because a GUI launch does
+        NOT inherit the shell: a terminal-only workaround is one nobody
+        remembers three weeks into a campaign, and the placeholder's whole
+        value is that it fails loudly rather than posting somewhere real --
+        which is exactly how the first send told us what was wrong.
+
+        THE FILE HOLDS A TOKEN, so it is treated as a secret: readable by
+        anyone but the owner and the token is REFUSED, not merely warned about.
+        A refused token falls back to the placeholder and the send fails loudly
+        with an explanation, which is a better outcome than quietly using a
+        credential the whole machine can read.
+    */
+    struct Endpoint
     {
-        return urlOverride.isNotEmpty()
-                 ? urlOverride
-                 : juce::SystemStats::getEnvironmentVariable (
-                       "EJMAP_UPLOAD_URL",
-                       "https://UPLOAD-ENDPOINT-UNSET.echojay.invalid/api/params/ejmap");
+        juce::String url, token;
+        juce::String urlFrom = "placeholder", tokenFrom = "placeholder";
+        juce::String warning;                       // empty when nothing is wrong
+        bool tokenRefused = false;
+
+        juce::String describe() const
+        {
+            return "endpoint " + url + "  [from " + urlFrom + "]\n"
+                   "token    " + (token.startsWith ("INGEST-TOKEN-UNSET")
+                                    ? juce::String ("UNSET -- the server fails closed; this would 401")
+                                    : "set (value not shown)")
+                 + "  [from " + tokenFrom + "]"
+                 + (warning.isNotEmpty() ? "\n" + warning : "");
+        }
+    };
+
+    static juce::File configFile (const juce::File& root) { return root.getChildFile ("config.json"); }
+
+    static Endpoint resolveEndpoint (const juce::File& root)
+    {
+        Endpoint e;
+        e.url   = "https://UPLOAD-ENDPOINT-UNSET.echojay.invalid/api/params/ejmap";
+        e.token = "INGEST-TOKEN-UNSET";
+
+        auto cfgFile = configFile (root);
+        juce::var cfg;
+        bool cfgReadable = false;
+        if (cfgFile.existsAsFile())
+        {
+            cfg = juce::JSON::parse (cfgFile.loadFileAsString());
+            cfgReadable = cfg.isObject();
+            if (! cfgReadable)
+                e.warning = "config.json exists but does not parse as JSON; ignoring it.";
+        }
+
+        // PERMISSIONS, checked before the token is read out of it.
+        bool permsOk = true;
+        if (cfgFile.existsAsFile())
+        {
+            struct stat st {};
+            if (::stat (cfgFile.getFullPathName().toRawUTF8(), &st) == 0)
+                permsOk = (st.st_mode & (S_IRWXG | S_IRWXO)) == 0;
+        }
+
+        const auto envUrl = juce::SystemStats::getEnvironmentVariable ("EJMAP_UPLOAD_URL", "");
+        if (envUrl.isNotEmpty()) { e.url = envUrl; e.urlFrom = "EJMAP_UPLOAD_URL"; }
+        else if (cfgReadable)
+        {
+            const auto u = cfg.getProperty ("upload_url", "").toString();
+            if (u.isNotEmpty()) { e.url = u; e.urlFrom = configFile (root).getFileName(); }
+        }
+
+        const auto envTok = juce::SystemStats::getEnvironmentVariable ("EJMAP_INGEST_TOKEN", "");
+        if (envTok.isNotEmpty()) { e.token = envTok; e.tokenFrom = "EJMAP_INGEST_TOKEN"; }
+        else if (cfgReadable)
+        {
+            const auto t = cfg.getProperty ("ingest_token", "").toString();
+            if (t.isNotEmpty())
+            {
+                if (! permsOk)
+                {
+                    e.tokenRefused = true;
+                    e.warning = "REFUSED to read the token from " + cfgFile.getFullPathName()
+                              + ": it is readable by group or other. A token the whole machine "
+                                "can read is not a secret.\n  Fix:  chmod 600 "
+                              + cfgFile.getFullPathName();
+                }
+                else { e.token = t; e.tokenFrom = configFile (root).getFileName(); }
+            }
+        }
+        if (! headerValueSafe (e.token))
+            e.token = "INGEST-TOKEN-UNSAFE (not printable ASCII; fix the token)";
+        return e;
+    }
+
+    static juce::String uploadBaseUrl (const juce::String& urlOverride = {},
+                                       const juce::File& root = {})
+    {
+        if (urlOverride.isNotEmpty()) return urlOverride;
+        if (root != juce::File()) return resolveEndpoint (root).url;
+        // No root to consult: environment, then the placeholder. Callers that
+        // can supply the ledger root get the config file too.
+        return juce::SystemStats::getEnvironmentVariable (
+                   "EJMAP_UPLOAD_URL",
+                   "https://UPLOAD-ENDPOINT-UNSET.echojay.invalid/api/params/ejmap");
     }
 
     /** ONE BUILDER for every request this tool emits, per the locked transport
@@ -283,10 +380,10 @@ struct Mouth
         // keychain when M11 issues per-tester tokens -- never a file in the
         // tree. The placeholders are visibly unset/unsafe, same convention
         // as the endpoint host: a 401 you can read coming, never a mystery.
-        auto token = juce::SystemStats::getEnvironmentVariable (
-                         "EJMAP_INGEST_TOKEN", "INGEST-TOKEN-UNSET");
-        if (! headerValueSafe (token))
-            token = "INGEST-TOKEN-UNSAFE (not printable ASCII; fix EJMAP_INGEST_TOKEN)";
+        // Resolved through ONE path -- env, then config, then placeholder --
+        // so the header and the readout can never disagree about which token
+        // is in play.
+        const auto token = resolveEndpoint (root).token;
 
         juce::String head;
         head << "POST " << pathQuery << " HTTP/1.1\r\n"
@@ -323,7 +420,7 @@ struct Mouth
                                    const juce::String& ejmapVersion,
                                    const juce::String& urlOverride = {})
     {
-        return writeRequestArtifact (root, uploadBaseUrl (urlOverride), fp + ".http",
+        return writeRequestArtifact (root, uploadBaseUrl (urlOverride, root), fp + ".http",
                                      body, testerName, machineId, ejmapVersion);
     }
 
