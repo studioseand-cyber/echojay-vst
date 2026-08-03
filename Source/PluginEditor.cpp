@@ -1888,10 +1888,20 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addChildComponent(chainRecommendLabel);
 
     chainListPanel.onCreateEditor = [this](int i) -> juce::AudioProcessorEditor* {
+        // GENUINELY IMPOSSIBLE for a remote rack, not deferred: that plugin
+        // instance lives in the Link's process slot and no protocol addition
+        // can render its view here. The panel closes its editors on entering
+        // remote mode and says so; this returns nullptr as a backstop.
+        if (chainViewUid().isNotEmpty()) return nullptr;
         return processorRef.getChainHost().createEditorForSlot(i);
     };
     chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
     chainListPanel.onRemoveSlot = [this](int i) {
+        // Same fork, same reason. The local body keeps its 80ms deferred
+        // destroy (the AMEK EQ 250 segfault); a remote remove needs none of
+        // that, because nothing in this process is being destroyed.
+        const juce::String uid = chainViewUid();
+        if (uid.isNotEmpty()) { sendRackEdit(uid, i, true); return; }
         auto& ch = processorRef.getChainHost();
         if (i < 0 || i >= ch.getNumSlots() || chainRemovePending_) return;
         // Close/remap open editors FIRST, then destroy the processor a
@@ -1916,6 +1926,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         });
     };
     chainListPanel.onBypassSlot = [this](int i) {
+        // THE FORK, and it is the only one: a REMOTE rack sends the op and
+        // waits for the ack and the republished sidecar; the LOCAL rack runs
+        // the original synchronous body below, untouched. The two never share
+        // a line after this test, which is why the local path cannot pick up
+        // remote behaviour.
+        const juce::String uid = chainViewUid();
+        if (uid.isNotEmpty()) { sendRackEdit(uid, i, false); return; }
         auto& ch = processorRef.getChainHost();
         if (i < 0 || i >= ch.getNumSlots()) return;
         ch.setSlotBypassed(i, !ch.getSlotInfo(i).bypassed);
@@ -1923,6 +1940,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         repaint();
     };
     chainListPanel.onMoveSlot = [this](int i, int dir) {
+        // Stage 2: the move op exists but is not wired this pass. Disabled in
+        // the panel; guarded here so a remote view can never reorder the
+        // LOCAL rack by mistake.
+        if (chainViewUid().isNotEmpty()) return;
         auto& ch = processorRef.getChainHost();
         int j = i + dir;
         if (i < 0 || i >= ch.getNumSlots() || j < 0 || j >= ch.getNumSlots()) return;
@@ -1940,13 +1961,31 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // audio thread) — no rebuild, safe at knob-drag rate. Persisted via the
     // chain slots XML on the next host state save.
     chainListPanel.onSlotWet = [this](int i, float v) {
+        // Stage 2. There is no wet op, so a remote rack must not silently
+        // write the LOCAL one; the knob is hidden in remote mode and this
+        // guard is the second lock on the same door.
+        if (chainViewUid().isNotEmpty()) return;
         processorRef.getChainHost().setSlotWet(i, v);
     };
     chainListPanel.onMasterWet = [this](float v) {
+        if (chainViewUid().isNotEmpty()) return;
         processorRef.getChainHost().setMasterWet(v);
     };
     chainListPanel.masterKnob.setValue(processorRef.getChainHost().getMasterWet());
     addChildComponent(chainListPanel);
+
+    // THE RACK SELECTOR. A dropdown rather than a row of names: a session can
+    // carry kRegMaxSlots = 16 Links, a row would not fit the 32px header at
+    // any window width, and the product already selects channels through a
+    // menu (the banner dropdown that replaced the chip bar, for the same
+    // reason). It holds NO state of its own; its label is derived from
+    // chainViewUid() on every refresh, so it cannot disagree with the mixer.
+    chainRackBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+    chainRackBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+    chainRackBtn.setTooltip("Choose which Link's rack this tab shows. "
+                            "The Link mixer follows the same selection.");
+    chainRackBtn.onClick = [this] { showChainRackMenu(); };
+    addChildComponent(chainRackBtn);
 
     // Sidebar collapse toggle. Collapsing gives the main column the full tab
     // width. NOT Chain only any more: one flag for every chat-hosting
@@ -3990,6 +4029,7 @@ void EchoJayEditor::applyReviewModalState()
     // Rack (incl. hosted native editors — NSViews composite over lightweight
     // components, so they must be HIDDEN, not out-z-ordered).
     chainListPanel.setVisible(onChain && !modal);
+    chainRackBtn.setVisible(onChain && !modal);
     // Chain header chrome.
     const bool chrome = onChain && !modal && !compactMode && !visualOnlyMode;
     // chatCollapseBtn is NOT set here any more. It left the Chain header for
@@ -6992,7 +7032,161 @@ void EchoJayEditor::blockCtrlRects(juce::Rectangle<int> block,
     bOut = r.removeFromRight(kBlockCtrlW);
 }
 
+EchoJayEditor::ChainRackView EchoJayEditor::chainRackView() const
+{
+    ChainRackView v;
+    const juce::String uid = chainViewUid();
+    if (uid.isEmpty())
+    {
+        // THE LOCAL PATH, byte for byte what the Chain tab did before this
+        // pass: straight off the host's own ChainHost, synchronous, valid by
+        // construction. Nothing about the remote path can reach it.
+        v.slots  = processorRef.getChainHost().getAllSlotInfos();
+        v.valid  = true;
+        v.remote = false;
+        v.name   = "this instance";
+        return v;
+    }
+
+    v.remote = true;
+    // Name and connectivity come from the SAME display list the mixer reads,
+    // so a Link is called one thing on both surfaces.
+    bool have = false, connected = false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) { have = true; connected = e.info.connected; break; }
+    v.name    = have ? processorRef.resolveLinkDisplayName(uid)
+                     : juce::String("this Link");
+    v.offline = have && !connected;
+
+    auto it = processorRef.linkRackCache.find(uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid)
+        return v;                       // valid stays false: NO DATA, not empty
+
+    v.valid    = true;
+    v.revision = it->second.rack.revision;
+    // The five fields line up one for one, which is what makes this a
+    // conversion rather than a translation. SlotInfo order is
+    // {name, bypassed, settings, format, wet}.
+    for (const auto& rs : it->second.rack.slots)
+        v.slots.push_back(slotInfoFromSidecar(rs));
+    return v;
+}
+
+void EchoJayEditor::refreshChainPanelForView(bool force)
+{
+    const auto v = chainRackView();
+    // A cheap signature so a 20Hz tick does not rebuild the panel (and tear
+    // down its child components) sixty times a second for nothing. Revision
+    // covers structure; validity and offline cover the honesty states.
+    //
+    // THE ROUND TRIP, shown rather than hidden. During the ~1.3s between a
+    // press and the republished sidecar the panel keeps showing CACHE state
+    // (the old truth) and says what is in flight; it never renders the
+    // requested state early. A slot must not read bypassed before the Link
+    // has bypassed it, which is the same rule the mixer's blocks follow.
+    juce::String pendingNote;
+    for (const auto& pb : linkBlockPending_)
+    {
+        if (pb.uid != chainViewUid()) continue;
+        if (pb.failed) { pendingNote = pb.reason; break; }   // failures win
+        pendingNote = pb.isAdd
+            ? "Adding " + pb.addName + " to " + v.name + "..."
+            : (pb.isRemove ? "Removing slot " : "Bypassing slot ")
+              + juce::String(pb.slotIdx + 1) + "...";
+    }
+
+    juce::String sig;
+    sig << chainViewUid() << "|" << v.revision << "|" << (int) v.valid
+        << (int) v.offline << "|" << (int) v.slots.size() << "|" << pendingNote;
+    if (!force && sig == chainViewSig_) return;
+    chainViewSig_ = sig;
+
+    chainListPanel.remote        = v.remote;
+    chainListPanel.remoteName    = v.name;
+    chainListPanel.remoteOffline = v.offline;
+    if (v.remote && !v.valid)
+    {
+        // NO DATA, said in words, and NOT an empty rack. The panel is given
+        // no slots and the reason is stated; an empty strip alone would read
+        // as "this Link has no plugins", which is a different claim.
+        chainListPanel.statusText =
+            v.name + " has not published its rack yet. Nothing is shown because "
+            "there is nothing to read, which is not the same as an empty rack.";
+        chainListPanel.rebuild({}, -1);
+    }
+    else
+    {
+        chainSelectedSlot_ = juce::jlimit(-1, (int) v.slots.size() - 1, chainSelectedSlot_);
+        chainListPanel.rebuild(v.slots, chainSelectedSlot_);
+        // rebuild() sets its own remote note; an in-flight or refused edit is
+        // more urgent, so it overwrites afterwards. A refusal by the
+        // baseSlots guard arrives here as its stated reason ("the chain
+        // changed before this could apply"), and because nothing was ever
+        // drawn as changed there is no optimistic state to roll back.
+        if (pendingNote.isNotEmpty()) chainListPanel.statusText = pendingNote;
+    }
+    chainRackBtn.setButtonText("RACK: " + v.name.toUpperCase());
+    repaint();
+}
+
+void EchoJayEditor::showChainRackMenu()
+{
+    // ONE SELECTION, ONE AUTHORITY. This menu does not store anything: it
+    // calls the SAME two functions the Link mixer's strip tap calls, so the
+    // Chain tab and the mixer are reading and writing one fact
+    // (effectiveChannelUid) and cannot drift apart. Legacy Links carry no
+    // uid, so they are simply not listed and the Chain tab can never be
+    // pointed at one; the mixer refuses them with a coral flash for the same
+    // reason.
+    juce::PopupMenu m;
+    const juce::String cur = chainViewUid();
+    m.addItem(1, "Mix Bus (this instance)", true, cur.isEmpty());
+    m.addSeparator();
+    int id = 2;
+    std::vector<juce::String> uids;
+    for (const auto& e : processorRef.getLinkDisplayList())
+    {
+        if (e.info.uid.isEmpty()) continue;            // legacy: never listed
+        juce::String label = processorRef.resolveLinkDisplayName(e.info.uid);
+        if (!e.info.connected) label += "  (offline)";
+        m.addItem(id++, label, true, e.info.uid == cur);
+        uids.push_back(e.info.uid);
+    }
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(chainRackBtn),
+        [safeThis, uids](int r)
+        {
+            if (safeThis == nullptr || r <= 0) return;
+            if (r == 1)
+            {
+                // The mixer's bus arm, guard included.
+                if (safeThis->effectiveChannelUid().isNotEmpty())
+                    safeThis->resetToMainContext();
+            }
+            else
+            {
+                const size_t i = (size_t) (r - 2);
+                if (i < uids.size() && uids[i] != safeThis->effectiveChannelUid())
+                    safeThis->openChannelByUid(uids[i]);
+            }
+            safeThis->refreshChainPanelForView(true);
+        });
+}
+
 void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove)
+{
+    // A THIN WRAPPER since the Chain tab gained remote editing: this resolves
+    // a StripGeom to a uid and nothing else. The sending, the baseSlots
+    // guard and the pending model all live in sendRackEdit, because two
+    // senders would have meant two staleness stories and baseSlots is the
+    // entire safety argument.
+    if (sg.isBus) return;                       // the bus routes locally
+    EchoJayProcessor::LinkDisplayEntry en;
+    if (!findLinkEntryByAddr(sg.addr, en) || en.info.uid.isEmpty()) return;
+    sendRackEdit(en.info.uid, slotIdx, isRemove);
+}
+
+void EchoJayEditor::sendRackEdit(const juce::String& uid, int slotIdx, bool isRemove)
 {
     // IDENTITY, NOT INDEX: the op carries the slot number PLUS baseSlots,
     // the full name list of the rack THE USER IS LOOKING AT (the cache).
@@ -7001,34 +7195,39 @@ void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemov
     // with ack "stale" on any mismatch. A press against a stale cache can
     // therefore never mutate the wrong plugin; it comes back refused with
     // a stated reason.
-    if (sg.isBus) return;                       // the bus routes locally
-    EchoJayProcessor::LinkDisplayEntry en;
-    if (!findLinkEntryByAddr(sg.addr, en) || en.info.uid.isEmpty()) return;
+    if (uid.isEmpty()) return;                  // local racks never come here
 
     // ONE edit in flight per Link: seq is epoch-seconds (the existing
     // sender's scheme), so two sends inside a second would collide on ack
     // correlation. A press while one is pending is ignored, not queued.
     for (const auto& pnd : linkBlockPending_)
-        if (pnd.uid == en.info.uid && !pnd.failed) return;
+        if (pnd.uid == uid && !pnd.failed) return;
+
+    bool connected = false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) { connected = e.info.connected; break; }
 
     auto fail = [&](const juce::String& why)
     {
         LinkBlockPending p2;
-        p2.uid = en.info.uid; p2.slotIdx = slotIdx; p2.isRemove = isRemove;
+        p2.uid = uid; p2.slotIdx = slotIdx; p2.isRemove = isRemove;
         p2.failed = true; p2.reason = why;
         p2.sentMs = juce::Time::getMillisecondCounter();
         linkBlockPending_.push_back(p2);
         linkMixerView_.repaint();
+        repaint();
     };
 
-    if (!en.info.connected)
+    if (!connected)
     {
         // Same refusal applyChainEditToLink states: never send into a void.
+        // This is also the offline rule the Chain tab needs: refused, with a
+        // reason, never queued for later.
         fail("Not applied: this Link is not connected right now - nothing was changed.");
         return;
     }
 
-    auto it = processorRef.linkRackCache.find(en.info.uid);
+    auto it = processorRef.linkRackCache.find(uid);
     if (it == processorRef.linkRackCache.end() || !it->second.valid
         || slotIdx < 0 || slotIdx >= (int)it->second.rack.slots.size())
         return;                                  // no honest base to send
@@ -7048,7 +7247,7 @@ void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemov
     payload->setProperty("edit", ops);
     payload->setProperty("baseSlots", baseSlots);
 
-    const int seq = sendChainEditToLink(en.info.uid,
+    const int seq = sendChainEditToLink(uid,
                         juce::JSON::toString(juce::var(payload), true));
     if (seq < 0)
     {
@@ -7056,12 +7255,82 @@ void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemov
         return;
     }
     LinkBlockPending p;
-    p.uid = en.info.uid; p.seq = seq; p.slotIdx = slotIdx;
+    p.uid = uid; p.seq = seq; p.slotIdx = slotIdx;
     p.isRemove = isRemove; p.targetOn = targetOn;
     p.sentMs = juce::Time::getMillisecondCounter();
     linkBlockPending_.push_back(p);
     linkMixerView_.repaint();
-    pollLinkBlockAck(en.info.uid, seq, 20);
+    repaint();
+    pollLinkBlockAck(uid, seq, 20);
+}
+
+void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& pluginName)
+{
+    // ADD BY NAME, which is the op's own contract, and the reason this can
+    // fail in a way remove and bypass cannot: the Link resolves the name
+    // against ITS loadable plugin list, which is a different machine-scan
+    // from this instance's. A plugin sitting in this picker may simply not
+    // exist over there. ChainHost answers that with
+    // "<name> not in the loadable plugin list" and the whole batch is
+    // refused; that string is carried back in perPluginResults and shown
+    // verbatim, so the failure says WHY rather than doing nothing.
+    if (uid.isEmpty() || pluginName.isEmpty()) return;
+    for (const auto& pnd : linkBlockPending_)
+        if (pnd.uid == uid && !pnd.failed) return;
+
+    bool connected = false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) { connected = e.info.connected; break; }
+
+    auto fail = [&](const juce::String& why)
+    {
+        LinkBlockPending p2;
+        p2.uid = uid; p2.slotIdx = -1; p2.isAdd = true; p2.addName = pluginName;
+        p2.failed = true; p2.reason = why;
+        p2.sentMs = juce::Time::getMillisecondCounter();
+        linkBlockPending_.push_back(p2);
+        repaint();
+    };
+    if (!connected)
+    {
+        fail("Not added: this Link is not connected right now - nothing was changed.");
+        return;
+    }
+
+    auto it = processorRef.linkRackCache.find(uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid) return;
+
+    juce::Array<juce::var> baseSlots;
+    for (const auto& rs : it->second.rack.slots)
+        baseSlots.add(rs.name);
+
+    auto* op = new juce::DynamicObject();
+    op->setProperty("op",   "add");
+    op->setProperty("name", pluginName);
+    // APPEND: "after" is the last ORIGINAL slot, and -1 means first, which is
+    // also the right answer for an empty rack. An out-of-range after clamps
+    // to append rather than aborting, so this cannot fail on position alone.
+    op->setProperty("after", (int)it->second.rack.slots.size() - 1);
+
+    auto* payload = new juce::DynamicObject();
+    juce::Array<juce::var> ops; ops.add(juce::var(op));
+    payload->setProperty("edit", ops);
+    payload->setProperty("baseSlots", baseSlots);
+
+    const int seq = sendChainEditToLink(uid,
+                        juce::JSON::toString(juce::var(payload), true));
+    if (seq < 0)
+    {
+        fail("Not added: shared Link directory unavailable - nothing was changed.");
+        return;
+    }
+    LinkBlockPending p;
+    p.uid = uid; p.seq = seq; p.slotIdx = -1;
+    p.isAdd = true; p.addName = pluginName;
+    p.sentMs = juce::Time::getMillisecondCounter();
+    linkBlockPending_.push_back(p);
+    repaint();
+    pollLinkBlockAck(uid, seq, 20);
 }
 
 void EchoJayEditor::pollLinkBlockAck(const juce::String& uid, int seq, int attemptsLeft)
@@ -9064,6 +9333,7 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
     if (currentView == View::Settings) hideSettingsView();
     // Close any hosted plugin editor (inline or pop-out) when leaving Chain tab
     if (t != Tab::Chain) chainListPanel.closeAllEditors();
+    else                 refreshChainPanelForView(true);   // enter: adopt the current rack at once
     // Note: the first addChildComponent(chainListPanel) is in the constructor
 
     // (Link tab has no persistent child components — all painted)
@@ -15291,6 +15561,8 @@ void EchoJayEditor::resized()
         int contentH = b.getHeight() - topH - abOff3;
         // Panel fills from below the header strip to the bottom
         chainListPanel.setBounds(0, topH + 32, mW, contentH - 32);
+        // The selector lives in the 32px header strip above the panel.
+        chainRackBtn.setBounds(12, topH + 4, 220, 24);
 
         // (The collapse chevron is authored UNCONDITIONALLY below, outside
         // this branch, for the same reason Save / Save As / Open are. See the
@@ -17303,6 +17575,21 @@ void EchoJayEditor::timerCallback()
     {
         updateOverlay.setBounds(getLocalBounds());
         updateOverlay.toFront(false);
+    }
+
+    // -------------------------------------------------------------------------
+    //  CHAIN TAB: keep the panel in step with whichever rack is selected.
+    //  A remote rack changes underneath us (its own edits, the AI's, another
+    //  surface's), so this polls the sidecar cache and rebuilds ONLY when the
+    //  signature moves. Without the signature test a 20Hz tick would tear
+    //  down and rebuild the panel's child components sixty times a second.
+    //  The LOCAL rack costs nothing here: its signature only moves when its
+    //  slot count does, and every local mutation already rebuilds inline.
+    // -------------------------------------------------------------------------
+    if (currentTab == Tab::Chain && chainListPanel.isVisible())
+    {
+        if (chainViewUid().isNotEmpty()) refreshLinkRackCache(false);
+        refreshChainPanelForView(false);
     }
 
     // -------------------------------------------------------------------------
@@ -19470,6 +19757,22 @@ void EchoJayEditor::showChainPluginPicker()
         [safeThis, plugins](int result)
         {
             if (safeThis == nullptr || result <= 0 || result > plugins.size()) return;
+            // REMOTE ADD forks here. The op adds BY NAME, so it is the raw
+            // picker name that travels, NOT preferInlineHostableDesc's
+            // possible AU-to-VST3 swap: that swap exists so the editor can be
+            // hosted INLINE in this window, which is meaningless for a plugin
+            // that will live in the Link and be edited there. Sending the
+            // swapped name would also ask the Link for a build it may not
+            // have, turning a working add into a spurious refusal.
+            const juce::String rackUid = safeThis->chainViewUid();
+            if (rackUid.isNotEmpty())
+            {
+                const juce::String want = plugins[result - 1].name;
+                safeThis->chainListPanel.statusText = "Adding " + want + "...";
+                safeThis->chainListPanel.repaint();
+                safeThis->sendRackAdd(rackUid, want);
+                return;
+            }
             auto& ch2 = safeThis->processorRef.getChainHost();
             // NEW instantiation — popout-only AUs may swap to their VST3 build
             auto desc = ch2.preferInlineHostableDesc(plugins[result - 1]);

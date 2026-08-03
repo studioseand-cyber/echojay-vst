@@ -1535,6 +1535,16 @@ private:
 
         juce::String statusText;
 
+        /** REMOTE MODE: the panel is showing another Link's rack, read from
+            its sidecar rather than from the local ChainHost. Stage 1 carries
+            read, bypass, remove and add; move, per-slot wet, master wet and
+            the inline editor have no op over the command protocol yet, so
+            they are DISABLED WITH A REASON rather than left present and dead.
+            A control that does nothing when pressed is worse than one that
+            says why it cannot. */
+        bool         remote = false;
+        juce::String remoteName;     // the Link's display name, for the note
+        bool         remoteOffline = false;
         std::function<void(int)>        onSelectSlot;
         std::function<void(int)>        onRemoveSlot;
         std::function<void(int)>        onBypassSlot;
@@ -2033,19 +2043,49 @@ private:
                 bl->onRemove = [this, ci] { if (onRemoveSlot) onRemoveSlot(ci); };
                 bl->onMove   = [this, ci](int dir) { if (onMoveSlot) onMoveSlot(ci, dir); };
                 bl->wetKnob.setValue(slotInfos[(size_t)i].wet);
-                bl->wetKnob.setVisible(!slotInfos[(size_t)i].bypassed);
+                // STAGE 1 SCOPE, stated per control rather than by hiding a
+                // whole row: wet and move have no op over the command
+                // protocol, so on a remote rack they are disabled and their
+                // tooltip says why. Bypass and remove stay live because those
+                // ops exist and the mixer already sends them.
+                bl->wetKnob.setVisible(!remote && !slotInfos[(size_t)i].bypassed);
                 bl->onWet    = [this, ci](float v) { if (onSlotWet) onSlotWet(ci, v); };
-                bl->prevBtn.setEnabled(i > 0);
-                bl->nextBtn.setEnabled(i < (int)slotInfos.size() - 1);
+                bl->prevBtn.setEnabled(!remote && i > 0);
+                bl->nextBtn.setEnabled(!remote && i < (int)slotInfos.size() - 1);
+                if (remote)
+                {
+                    const juce::String why = "Reordering another Link's rack is not in this "
+                                             "version. Open " + remoteName + " to reorder.";
+                    bl->prevBtn.setTooltip(why);
+                    bl->nextBtn.setTooltip(why);
+                }
+                if (remoteOffline)
+                {
+                    const juce::String off = remoteName + " is offline. This rack is the last "
+                                             "thing it published; edits are refused.";
+                    bl->bypassBtn.setEnabled(false);
+                    bl->removeBtn.setEnabled(false);
+                    bl->bypassBtn.setTooltip(off);
+                    bl->removeBtn.setTooltip(off);
+                }
                 stripContent.addAndMakeVisible(*bl);
                 blocks.push_back(std::move(bl));
             }
             layoutStrip();
-            popBtn.setVisible(selectedIdx >= 0);
+            // MASTER WET is whole-rack and has no remote op either.
+            masterKnob.setVisible(!remote);
+            // THE INLINE EDITOR IS THE ONE GENUINELY IMPOSSIBLE ITEM, not a
+            // deferred one: the plugin instance lives in the Link's process
+            // slot, so no protocol addition can render it here. Every editor
+            // is closed on entering remote mode and the pop-out is hidden.
+            popBtn.setVisible(!remote && selectedIdx >= 0);
 
             // Bring the inline editor in line with the selection
-            if (selectedIdx < 0)
+            if (remote || selectedIdx < 0)
                 closeAllEditors();
+            if (remote)
+                statusText = "Viewing " + remoteName + ". Its plugin editors live in that "
+                             "Link, so open its window to adjust settings.";
             else if ((inlineSlot != selectedIdx || inlineEditor == nullptr)
                      && !(popout != nullptr && popoutSlot == selectedIdx))
                 showInline(selectedIdx);
@@ -3189,6 +3229,8 @@ private:
         int  seq      = 0;
         int  slotIdx  = -1;        // 0-based rack slot
         bool isRemove = false;
+        bool isAdd    = false;     // stage 1 Chain tab: add-by-name in flight
+        juce::String addName;      // the requested plugin, for the failure text
         bool targetOn = false;     // bypass target state
         bool failed   = false;     // failed / stale / timed out
         juce::String reason;       // tooltip text for the failed state
@@ -3196,7 +3238,59 @@ private:
     };
     std::vector<LinkBlockPending> linkBlockPending_;
     void sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove);
+    /** THE op-send path, extracted from sendBlockEdit so the Chain tab's
+        remote rack editing and the mixer's per-strip B/X are ONE sender with
+        one pending model. sendBlockEdit is now a thin wrapper that resolves a
+        StripGeom to a uid and calls this. A second sender would have meant a
+        second staleness story, and baseSlots is the whole safety argument. */
+    void sendRackEdit(const juce::String& uid, int slotIdx, bool isRemove);
+    /** Stage 1's add. Same transport, same pending model, same baseSlots
+        guard; the op adds BY NAME, which is why it can fail on a Link whose
+        loadable plugin set differs from this one's. */
+    void sendRackAdd(const juce::String& uid, const juce::String& pluginName);
     void pollLinkBlockAck(const juce::String& uid, int seq, int attemptsLeft);
+
+    // ---- Chain tab: which rack is being viewed ---------------------------
+    /** THE rack the Chain tab shows. NOT new state: it is the mixer's own
+        channel selection, read through effectiveChannelUid(), so the two
+        surfaces cannot disagree and nothing extra has to survive a Logic
+        editor recreate (that selection already does, on the processor).
+        Empty means the LOCAL rack, exactly as an empty channel uid means the
+        main context everywhere else. */
+    juce::String chainViewUid() const { return effectiveChannelUid(); }
+    /** Slots for whichever rack chainViewUid() names, in the panel's own
+        type. Local reads ChainHost directly; remote converts the sidecar,
+        whose RackSidecarSlot carries the same five fields SlotInfo does.
+        `valid` distinguishes "this rack is empty" from "no sidecar", which
+        the panel must render differently. */
+    struct ChainRackView {
+        std::vector<ChainHost::SlotInfo> slots;
+        bool valid   = false;      // false = no readable sidecar
+        bool remote  = false;
+        bool offline = false;
+        juce::String name;         // display name of the rack's owner
+        int  revision = -1;
+    };
+    /** THE conversion, named and static so the self-test can pin it. Both
+        types carry the same five fields, but SlotInfo is a plain aggregate:
+        if anyone ever reorders its members, an inline brace-initialiser would
+        keep compiling and silently put the format string in the settings
+        field. This is the one place that mapping is written down. */
+    static ChainHost::SlotInfo slotInfoFromSidecar(const LinkShm::RackSidecarSlot& rs)
+    {
+        ChainHost::SlotInfo si;
+        si.name     = rs.name;
+        si.bypassed = rs.bypassed;
+        si.settings = rs.settings;
+        si.format   = rs.format;
+        si.wet      = rs.wet;
+        return si;
+    }
+    ChainRackView chainRackView() const;
+    void refreshChainPanelForView(bool force);
+    juce::String chainViewSig_;    // change detector for the remote refresh
+    void showChainRackMenu();
+    juce::TextButton chainRackBtn { "RACK" };
 
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row
