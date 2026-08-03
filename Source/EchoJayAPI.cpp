@@ -2,6 +2,7 @@
 #include "ChainHost.h"    // buildCurrentChainInjection reads the live rack
 #include "LinkShm.h"      // RackSidecar — targeted [CURRENT CHAIN] (Phase R)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
+#include "EqPresets.h"    // the EQ teaching block lists presets from the table
 
 // Defined later in this file (used by both /api/me parse sites)
 static void parseUsagePool(juce::DynamicObject* root, UserInfo& info);
@@ -977,6 +978,7 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
     {
         auto c = contents[i];
         for (auto* marker : { "\n\n[AVAILABLE PLUGINS", "\n\n[USER'S FULL PLUGIN LIST",
+                              "\n\n[AVAILABLE BUILTINS",
                               "\n\n[CURRENT CHAIN", "\n\n[TARGET CHANNEL" })
         {
             int cut = c.indexOf(marker);
@@ -1812,6 +1814,66 @@ bool EchoJayAPI::messageNeedsPlugins(const juce::String& userMessage)
     return false;
 }
 
+// The [AVAILABLE BUILTINS] advertisement - EchoJay's own devices and their full
+// ParamSchemas. Shared by BOTH feed builders on purpose: the built-ins are always
+// available, so they must be advertised whether or not the user owns recommendable
+// third-party plugins. Attaching it to only one path left the whole built-in suite
+// invisible to every user WITH plugins installed - i.e. exactly the users it is for.
+static juce::String echojayBuiltinsBlock()
+{
+    juce::String block;
+    const auto& registry = BuiltinDeviceRegistry::instance();
+    if (! registry.all().empty())
+    {
+        block << "\n\n[AVAILABLE BUILTINS — EchoJay's own built-in devices, always "
+                 "available regardless of installed plugins; use in a chain by exact "
+                 "name. Dial one by putting real-world values under "
+                 "settings_structured.params using the ids listed; any param you omit "
+                 "is left as it is. The EchoJay EQ additionally takes: "
+                 "eq_bands — an array of band objects {type: bell|lowshelf|highshelf|"
+                 "notch|highpass|lowpass, freq_hz OR note (\"G5\",\"C#3\", A4=440), "
+                 "gain_db, q, slope_db_oct (HP/LP), band (1-24 to target, omit to "
+                 "auto-place), channel: stereo|mid|side|left|right (default stereo), "
+                 "dynamic:{threshold_db,range_db,attack_ms,release_ms}, disable:true "
+                 "to clear a band}; "
+                 "eq_settings — {output_db, auto_gain, phase_mode: zero|linear, "
+                 "ms_mode} (same ids as params); "
+                 "eq_action — {type:\"tame_resonances\", sensitivity: low|medium|high, "
+                 "range_hz:[lo,hi], max_bands:1-8, dynamic:true|false} finds resonant "
+                 "peaks in the LIVE signal and places taming bands itself — use it "
+                 "when the user says tame the ringing/harshness/resonances without "
+                 "naming frequencies (audio must be playing); "
+                 "eq_preset — a named base loaded BEFORE eq_bands merge, one of: ";
+
+        // The preset menu comes from the same table the apply path resolves
+        // against, so this list cannot drift from what actually loads.
+        for (int pi = 0; pi < echojay::kNumEqPresets; ++pi)
+        {
+            const auto& p = echojay::kEqPresets[pi];
+            block << (pi > 0 ? "; " : "") << p.name << " (" << p.blurb << ")";
+        }
+        block << "]:";
+
+        juce::String currentCategory;
+        for (const auto& d : registry.all())
+        {
+            if (d.category != currentCategory)
+            {
+                currentCategory = d.category;
+                block << "\n\n-- " << currentCategory << " --";
+            }
+
+            block << "\n" << d.name;
+            if (d.summary.isNotEmpty())
+                block << "\n  " << d.summary;
+
+            for (const auto& p : d.schema.params())
+                block << "\n    " << juce::String (echojay::ParamSchema::describeLine (p));
+        }
+    }
+    return block;
+}
+
 juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
 {
     if (fullList.isEmpty()) return {};
@@ -1822,6 +1884,26 @@ juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
     juce::String block;
     block << "\n\n[USER'S FULL PLUGIN LIST — for this question, recommend only from these, using their exact names; rotate your picks rather than defaulting to the same few]:\n"
           << fullList;
+
+    // Built-in devices can never appear in the scanned feed above — they are
+    // compiled into the plugin, not installed on the machine — so the server
+    // would otherwise have no way to know this build has them. Advertising
+    // them explicitly is what lets the backend gate on a CAPABILITY the client
+    // states rather than guessing from a version number (version guessing is
+    // unreliable here: an unrelated branch can carry a higher version and no
+    // EQ at all). A client that does not send this block simply never gets
+    // built-ins offered.
+    //
+    // GENERATED FROM THE REGISTRY, grouped by category (BUILTIN_SUITE_PLAN.md
+    // §1/§3). A device registers itself in its own .cpp and appears here with no
+    // edit to this function — which is the property that lets several Wave 1
+    // sessions add devices in parallel without touching a shared line.
+    //
+    // Each entry carries its ParamSchema, so this one block teaches the model
+    // BOTH that the device exists and exactly how to dial it. The server
+    // validates against the same numbers it reads here, so the two cannot drift.
+    block << echojayBuiltinsBlock();
+
     return block;
 }
 
@@ -1872,6 +1954,9 @@ juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availableP
           << "- Keep the ENTIRE block compact — short names, 2-4 word roles, 3-6 value settings. "
           << "  This is machine data written after the prose; it must fit in the remaining response budget.\n"
           << "- Write prose first (full technical detail), then append the compact block as the final output.";
+
+    // Built-ins ride the chain feed too - see echojayBuiltinsBlock().
+    block << echojayBuiltinsBlock();
 
     return block;
 }

@@ -17734,35 +17734,42 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 auto ev = juce::JSON::parse(cm2.editData);
                 if (auto* eo = ev.getDynamicObject())
                 {
-                    // Apply-time honesty (26 Jul 2026): edit ops never write
-                    // parameters (no settings_structured rides an op), so
-                    // the model's "result" line claiming a problem is
-                    // handled is only honest when nothing new needs
-                    // dialing. Added/replaced slots get factual wording,
-                    // and a dial_miss event measures the delivery gap.
-                    juce::StringArray addedNames;
+                    // Apply-time honesty (26 Jul 2026, revised): edit ops CAN
+                    // now write parameters — settings_structured rides an
+                    // add/replace and ChainHost applies it once the slot
+                    // loads, exactly as the build path does. So the old
+                    // blanket "dial it in by hand" is no longer true for
+                    // every added slot, and claiming it for one that was just
+                    // dialled exactly would be the same overclaim in reverse.
+                    //
+                    // The distinction is per-op: a slot that carried
+                    // structured settings was dialled and the model's own
+                    // result line stands; one that did not still needs hand
+                    // dialling and still measures a delivery gap.
+                    juce::StringArray undialledNames;
                     if (auto* ops = eo->getProperty("edit").getArray())
                         for (auto& opv : *ops)
                         {
                             const auto opName = opv.getProperty("op", juce::var()).toString();
                             const auto plug   = opv.getProperty("name", juce::var()).toString().trim();
-                            if ((opName == "add" || opName == "replace") && plug.isNotEmpty())
-                                addedNames.addIfNotAlreadyThere(plug);
+                            if ((opName == "add" || opName == "replace") && plug.isNotEmpty()
+                                && opv.getProperty("settings_structured", juce::var()).isVoid())
+                                undialledNames.addIfNotAlreadyThere(plug);
                         }
                     auto modelResult = eo->getProperty("result").toString().trim();
-                    if (addedNames.isEmpty())
+                    if (undialledNames.isEmpty())
                     {
                         if (modelResult.isNotEmpty())
                             safeThis->appendLocalResultBubble(modelResult);
                     }
                     else
                     {
-                        const bool one = addedNames.size() == 1;
+                        const bool one = undialledNames.size() == 1;
                         safeThis->appendLocalResultBubble(
-                            addedNames.joinIntoString(", ")
+                            undialledNames.joinIntoString(", ")
                             + (one ? " is in - dial it in by hand with the values on its card."
                                    : " are in - dial them in by hand with the values on their cards."));
-                        for (auto& an : addedNames)
+                        for (auto& an : undialledNames)
                             safeThis->logDialMiss(an, juce::String(), "edit_add_no_dial", {});
                     }
                 }
@@ -18598,10 +18605,58 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
     return out;
 }
 
+// DEV ONLY. See the header. Applies a hand-written eq_bands JSON straight to
+// the built-in EQ slot so the exact-apply path can be proven from the app
+// before the backend contract that emits eq_bands is deployed.
+void EchoJayEditor::handleDevEqTest(const juce::String& jsonArg)
+{
+    auto& ch = processorRef.getChainHost();
+
+    // Prefer the selected slot when it IS the EQ, so with several in the rack
+    // you choose by selecting; otherwise fall back to the first one.
+    int slot = ch.isBuiltinEqSlot(chainSelectedSlot_) ? chainSelectedSlot_
+                                                     : ch.findFirstBuiltinEqSlot();
+
+    juce::String reply;
+    if (slot < 0)
+        reply = "[dev] no EchoJay EQ in the chain — add one from the plugin list first.";
+    else if (jsonArg.isEmpty())
+        reply = "[dev] usage: /eqtest {\"eq_bands\":[{\"type\":\"bell\",\"freq_hz\":203,"
+                "\"gain_db\":-3,\"q\":4.5,\"band\":3}]}";
+    else
+        reply = "[dev] slot " + juce::String(slot + 1) + " — "
+              + ch.devApplyEqJson(slot, jsonArg);
+
+    chatMessages.push_back({"assistant", reply});
+    processorRef.chatHistory.push_back({"assistant", reply});
+    chatInput.clear();
+
+    // Reflect any band change the apply made in an open editor / rack card.
+    chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+    resized();
+    repaint();
+}
+
 void EchoJayEditor::sendChatMessage(const juce::String& msg,
                                     const juce::String& displayLabel,
                                     const juce::String& turnTypeOverride)
 {
+    // ---- DEV ONLY: /eqtest {...} -----------------------------------------
+    // Intercepted before the send-quota gate and before any network call, so
+    // it costs nothing and never reaches the backend. Compiled in always but
+    // unreachable without the dev-mode marker file, so release behaviour is
+    // byte-identical to before.
+    //
+    // FIRST, ahead of the scan-window hold below: /eqtest writes straight to a
+    // built-in slot that is already in the rack. It needs no feed, no
+    // recommendable list and no network, so holding it behind a plugin scan
+    // would stall a purely local dev command for up to 20s for nothing.
+    if (msg.startsWithIgnoreCase("/eqtest") && ChainHost::devModeActive())
+    {
+        handleDevEqTest(msg.fromFirstOccurrenceOf("/eqtest", false, true).trim());
+        return;
+    }
+
     // ===== SCAN-WINDOW HOLD (1 Aug 2026) =====
     // The chain feed attaches only once the recommendable list has resolved,
     // and turn staging follows the feed - so a first message typed promptly

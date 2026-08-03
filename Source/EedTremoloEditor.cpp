@@ -1,0 +1,113 @@
+/*
+    EedTremoloEditor.cpp  —  see EedTremoloEditor.h.
+*/
+
+#include "EedTremoloEditor.h"
+
+namespace
+{
+    // Seven dials in a row, the scope seated above. 540 rather than 500 so the
+    // depth pass's SMOOTH dial joins the row instead of forcing a second, and
+    // the header has room for the MODE selector without crowding the title.
+    constexpr int kDefaultW = 540;
+    constexpr int kScopeH   = 108;
+    constexpr int kDefaultH = 150 + kScopeH + 6;
+
+    // Wide enough for "OPTICAL", the longest of the three.
+    constexpr int kModeW = 92;
+
+    // Below this the waveform is a smear rather than a reading, so it is dropped
+    // entirely instead of drawn uselessly small.
+    constexpr int kMinScopeH = 46;
+}
+
+EedTremoloEditor::EedTremoloEditor (EedTremoloProcessor& p)
+    : EedModEditorBase (p, "TREMOLO", kDefaultW, kDefaultH), proc_ (p)
+{
+    setHeaderHint ("rhythmic level modulation");
+
+    using P = EedTremoloProcessor;
+
+    addHeaderToggle (P::kSync, "SYNC");
+    addHeaderChoice (P::kMode, kModeW);
+
+    // Rate is skewed so the musically useful 1-6 Hz range occupies the middle of
+    // the dial's travel instead of the first few degrees of it.
+    addParamKnob (P::kRateHz,      "RATE",   2, " Hz",  2.0);
+    addParamKnob (P::kDivision,    "DIV",    0, "",     0.0, echojay::mod::divisionReadout);
+    addParamKnob (P::kDepth,       "DEPTH",  0, " %");
+    addParamKnob (P::kShape,       "SHAPE",  0, "",     0.0, echojay::mod::shapeReadout);
+    addParamKnob (P::kStereoPhase, "PHASE",  0, " deg");
+    // Skewed low: the audible difference between 0 and 20 ms is the click
+    // fix, and it deserves more travel than the glide range above it.
+    addParamKnob (P::kSmoothing,   "SMOOTH", 1, " ms", 20.0);
+    addParamKnob (P::kMix,         "MIX",    0, " %");
+
+    setRateGroup (P::kSync, P::kRateHz, P::kDivision);
+
+    scope_.setCaption ("GAIN");
+
+    // A tremolo's modulator is a GAIN: it rests at unity and only ever dips.
+    // Drawn bipolar it would claim the signal spends half its cycle louder than
+    // the input, which is the one thing this device never does — and it would
+    // put the resting position in the middle of the plot rather than at the top
+    // where the ear puts it. LfoScopeView has the mode for exactly this.
+    scope_.setUnipolar (true);
+    addAndMakeVisible (scope_);
+
+    // Seeded before the first timer tick, so the picture is already right in the
+    // frame the editor opens in rather than one 50 ms later.
+    refreshExtras();
+
+    finishSetup();
+}
+
+int EedTremoloEditor::topContentHeight() const
+{
+    return kScopeH;
+}
+
+void EedTremoloEditor::layoutTopContent (juce::Rectangle<int> area)
+{
+    const bool room = area.getHeight() >= kMinScopeH && area.getWidth() >= 80;
+    scope_.setVisible (room);
+    if (room) scope_.setBounds (area);
+}
+
+float EedTremoloEditor::lfoPhase() const
+{
+    return proc_.engine().lfo().displayPhase();
+}
+
+void EedTremoloEditor::refreshExtras()
+{
+    using P = EedTremoloProcessor;
+
+    const bool byp = proc_.isBypassed();
+
+    // Analytic: read through the same getParamValue path the knobs and an AI
+    // move use, so the picture cannot be looking at a different set of numbers
+    // than the DSP is.
+    scope_.setShape          ((int)   proc_.getParamValue (P::kShape));
+    scope_.setDepthPercent   ((float) proc_.getParamValue (P::kDepth));
+    scope_.setStereoPhaseDeg ((float) proc_.getParamValue (P::kStereoPhase));
+
+    scope_.setDimmed (byp);
+    scope_.setPhase (lfoPhase());
+
+    // The hint names the circuit: the same depth is a very different sound in
+    // `bias`, and without the name the dials look like the whole story.
+    juce::String h;
+    switch (proc_.engine().getMode())
+    {
+        case echojay::TremoloMode::Optical: h = "optical - soft program-ish edges"; break;
+        case echojay::TremoloMode::Bias:    h = "bias - lows and highs counter-swing"; break;
+        case echojay::TremoloMode::Sine:
+        default:                            h = "rhythmic level modulation"; break;
+    }
+    if (h != lastHint_)
+    {
+        lastHint_ = h;
+        setHeaderHint (h);
+    }
+}

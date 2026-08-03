@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "NativeClip.h"   // EchoJay_NSLog (memdiag)
 #include "EchoJayWorkspace.h"   // runRoundTripSelfTest (C1/C3 verify)
+#include "EedTempoClock.h"      // publishHostTempo (built-in tempo-synced devices)
 #include <cmath>
 
 // ---------------------------------------------------------------------------
@@ -491,7 +492,14 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         {
             bool playing = pos->getIsPlaying();
             transportPlaying.store(playing);
-            
+
+            // Publish the host tempo for built-in devices that sync to it (the
+            // Time cluster's delay). They live inside ChainHost's graph, which
+            // has no playhead of its own, so this read — which we are doing
+            // anyway — is their only route to a BPM. See EedTempoClock.h.
+            if (auto bpm = pos->getBpm())
+                echojay::publishHostTempo(*bpm);
+
             // Sync AB playback position to DAW transport
             if (abSyncToDAW.load() && abActive.load() && abSampleCount > 0)
             {

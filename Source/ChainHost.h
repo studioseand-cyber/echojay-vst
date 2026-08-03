@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "PluginScanner.h"
+#include "EedDeviceRegistry.h"
 #include <atomic>
 #include <map>
 #include <mutex>
@@ -145,7 +146,17 @@ public:
         bool on    = false;     // bypass state
         juce::String name;      // add/replace: name from AVAILABLE PLUGINS
         juce::String settings;  // prose settings for the slot tile (display)
-        juce::var    settingsStructured; // machine-readable dial values (add/replace)
+        // add/replace: the machine-readable settings_structured that rides the
+        // op, applied once the new slot has loaded. Same payload and same
+        // consumer as the build path, so an EQ added by an EDIT turn is dialled
+        // exactly like one added by a chain build instead of arriving flat.
+        //
+        // MERGE NOTE (feat/v2-with-devices): both branches independently grew
+        // this field — the dashboard line called it `settingsStructured`, the
+        // device line `structuredSettings`. One field, one name: it keeps the
+        // device line's spelling because that is what Slot::structuredSettings
+        // is already called, and the two are the same payload end to end.
+        juce::var    structuredSettings;
     };
     // Parse edit-block JSON. Returns empty on malformed payloads. Static so
     // preview cards can humanize ops without touching a host.
@@ -286,6 +297,62 @@ public:
     juce::PluginDescription resolveByName(const juce::String& rawName,
                                           const juce::String& formatFilter,
                                           juce::String* matchLogOut = nullptr) const;
+
+    // ---- Built-in devices (EchoJay-owned nodes hosted as ordinary slots) ---
+    // The chain otherwise only hosts what formatManager_ can instantiate from
+    // a SCANNED description. EchoJay's own EQ has no scanned description, so
+    // it travels as a synthetic juce::PluginDescription whose format name is
+    // kBuiltinFormat. loadPluginAsync recognises that and builds the node
+    // directly instead of calling the format manager.
+    //
+    // Putting the branch there rather than at each caller is deliberate: the
+    // add-plugin menu, AI chain-edit ops, loadByRecommendedName and session
+    // restore ALL already funnel through loadPluginAsync, so one branch makes
+    // every one of those paths work — including restore, which cannot go
+    // through the format manager for a built-in by definition.
+    static constexpr const char* kBuiltinFormat = kEchoJayBuiltinFormat;
+
+    // Every built-in device the chain can host, by exact name — GENERATED from
+    // BuiltinDeviceRegistry, which each device adds itself to from its own .cpp
+    // (BUILTIN_SUITE_PLAN.md §1). The AI feed advertises from here (see
+    // EchoJayAPI::buildPluginInjection) and the backend offers a built-in only
+    // when its exact name appears in that advertisement, so a new device becomes
+    // offerable by existing — no list to edit here, and no version pin on either
+    // side.
+    static juce::StringArray builtinDeviceNames()
+    {
+        return BuiltinDeviceRegistry::instance().names();
+    }
+
+    // Canonical synthetic description for a named built-in, or an empty
+    // description when the name is not one of ours. Stable across machines and
+    // sessions: it is what gets written into the saved chain XML and matched on
+    // restore.
+    static juce::PluginDescription builtinDescriptionFor (const juce::String& rawName);
+    static bool isBuiltinDescription (const juce::PluginDescription& d) noexcept;
+    static bool isBuiltinName        (const juce::String& rawName);
+
+    // True when slot i holds ANY built-in device (used to route exact apply).
+    bool isBuiltinSlot (int i) const;
+
+    // True when slot i holds the built-in EQ specifically. Only for things that
+    // are genuinely EQ-shaped (the dev /eqtest command, the editor's EQ panel) —
+    // dispatch and hosting must use isBuiltinSlot instead.
+    bool isBuiltinEqSlot (int i) const;
+
+    // DEV ONLY. Apply a hand-written eq_bands JSON to a built-in EQ slot,
+    // exercising the exact-apply path without the backend (the server
+    // contract that emits eq_bands is not deployed yet). Returns a summary,
+    // or a human-readable reason it did nothing. Callers gate on
+    // devModeActive(); this is inert in a release session because nothing
+    // reachable calls it there.
+    juce::String devApplyEqJson (int slotIndex, const juce::String& json);
+
+    // Index of the first built-in EQ slot, or -1. Used by the dev command to
+    // pick a target when the selected slot is not an EQ. Genuinely EQ-specific
+    // (the /eqtest command writes eq_bands), so it stays keyed to the EQ rather
+    // than to "any built-in".
+    int findFirstBuiltinEqSlot() const;
 
     // Full-entries cache (chain_entries.xml): written after every scan so
     // the OTHER host resolves against the same list without scanning.
@@ -573,6 +640,19 @@ private:
     bool mapFresh (const juce::String& fp) const;
     void refetchStale (const juce::String& fp);
     void applyStructuredIfReady (int slotIndex);
+    // Construct + append a built-in node synchronously. Returns an error
+    // string, empty on success. Called only from loadPluginAsync.
+    juce::String loadBuiltinNow (const juce::PluginDescription& desc);
+    // Exact apply for ANY built-in slot. Hands the WHOLE settings_structured
+    // value to the device's own funnel, which owns its schema — the array form
+    // (eq_bands) for a structured device, the flat `params` map for everything
+    // else. Returns a summary, or empty when the value carried nothing that
+    // device understands. appliedOut/skippedOut count whatever the device counts
+    // (bands, or params) — a settings-only move legitimately applies zero of
+    // them and still returns a summary.
+    juce::String applyStructuredToBuiltinSlot (int slotIndex, const juce::var& structured,
+                                               int* appliedOut = nullptr,
+                                               int* skippedOut = nullptr);
     void loadParamMapsFromDisk();
     void saveParamMapsToDisk();
     // Read-only merge of the opt-in background mapper's output file

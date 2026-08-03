@@ -1,6 +1,7 @@
 #include "ChainHost.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
+#include "SurgicalEqProcessor.h"   // built-in EQ device (see kBuiltinFormat)
 #include "AUEnumerator.h"
 #include "NativeClip.h"   // EchoJay_NSLog
 #include <algorithm>
@@ -353,8 +354,39 @@ void ChainHost::setSessionAutoProject(const juce::String& name)
     sessionAutoProjectLoadTime() = f.getLastModificationTime();
 }
 
+// ---------------------------------------------------------------------------
+// Built-in devices
+// ---------------------------------------------------------------------------
+// Every built-in now comes from BuiltinDeviceRegistry, which each device adds
+// itself to from its own .cpp. Identity (name, identifier, uid) lives with the
+// device, so nothing here has to be edited when one is added.
+juce::PluginDescription ChainHost::builtinDescriptionFor(const juce::String& rawName)
+{
+    if (auto* d = BuiltinDeviceRegistry::instance().findByName(stripParenthetical(rawName.trim())))
+        return BuiltinDeviceRegistry::descriptionFor(*d);
+    return {};
+}
+
+bool ChainHost::isBuiltinDescription(const juce::PluginDescription& d) noexcept
+{
+    return BuiltinDeviceRegistry::isBuiltinDescription(d);
+}
+
+bool ChainHost::isBuiltinName(const juce::String& rawName)
+{
+    return BuiltinDeviceRegistry::instance()
+             .findByName(stripParenthetical(rawName.trim())) != nullptr;
+}
+
+bool ChainHost::isBuiltinSlot(int i) const
+{
+    if (i < 0 || i >= (int)slots_.size()) return false;
+    return isBuiltinDescription(slots_[(size_t)i].desc);
+}
+
 juce::PluginDescription ChainHost::preferInlineHostableDesc(const juce::PluginDescription& d)
 {
+    if (isBuiltinDescription(d)) return d;   // never swapped for a VST3 build
     if (d.pluginFormatName != "AudioUnit") return d;
     if (!isPopoutOnly(d.name, "AudioUnit")) return d;
     auto alt = findVst3Alternative(d.name);
@@ -855,6 +887,24 @@ juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(
     std::lock_guard<std::mutex> lock(pluginsMutex_);
     juce::Array<juce::PluginDescription> result;
     juce::String lf = filter.toLowerCase();
+
+    // Built-ins are pinned to the top and are NOT subject to the format filter:
+    // they are compiled into the plugin, so they are equally available whether
+    // this instance is running as an AU or a VST3. They still honour the search
+    // text so typing narrows the list as expected.
+    //
+    // Generated from the registry, already ordered by category then name — so a
+    // new device appears in the add-menu, in its category group, with no edit
+    // here (BUILTIN_SUITE_PLAN.md §1).
+    for (const auto& d : BuiltinDeviceRegistry::instance().descriptions())
+    {
+        if (lf.isEmpty()
+            || d.name.toLowerCase().contains(lf)
+            || d.manufacturerName.toLowerCase().contains(lf)
+            || d.category.toLowerCase().contains(lf))
+            result.add(d);
+    }
+
     for (auto& d : entries_)
     {
         if (formatFilter.isNotEmpty() && d.pluginFormatName != formatFilter) continue;
@@ -938,11 +988,14 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
         op.on       = (bool)eo->getProperty("on");
         op.name     = eo->getProperty("name").toString().trim();
         op.settings = eo->getProperty("settings").toString().trim();
-        // Machine-readable dial values on add/replace (28 Jul 2026, surgical
-        // EQ): the server sends the same settings_structured object a chain
-        // entry carries. Read as a raw var; setSlotStructuredSettings ignores
-        // a void/non-object, so ops without it behave exactly as before.
-        op.settingsStructured = eo->getProperty("settings_structured");
+        // Machine-readable dial values on add/replace: the server sends the
+        // same settings_structured object a chain entry carries, so this is the
+        // same key the build path reads. Only add/replace consume it (they are
+        // the only ops that produce a slot to dial); reading it unconditionally
+        // costs nothing and keeps this parse a straight field copy. Read as a
+        // raw var — setSlotStructuredSettings ignores a void/non-object, so ops
+        // without it behave exactly as before.
+        op.structuredSettings = eo->getProperty("settings_structured");
         if (op.op.isNotEmpty()) out.push_back(std::move(op));
     }
     return out;
@@ -1082,7 +1135,7 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
                 // footgun: a settings request on a racked plugin had no op
                 // that was not destructive.
                 if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
-                if (op.settings.isEmpty() && op.settingsStructured.getDynamicObject() == nullptr)
+                if (op.settings.isEmpty() && op.structuredSettings.getDynamicObject() == nullptr)
                     return bad("set without any settings");
             }
             else return bad("unknown operation \"" + op.op + "\"");
@@ -1239,8 +1292,8 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         const juce::String nm = slots_[(size_t)cur].desc.name;
         if (op.settings.isNotEmpty())
             setSlotSettings(cur, op.settings);
-        if (op.settingsStructured.getDynamicObject() != nullptr)
-            setSlotStructuredSettings(cur, op.settingsStructured);
+        if (op.structuredSettings.getDynamicObject() != nullptr)
+            setSlotStructuredSettings(cur, op.structuredSettings);
         finishOpAndContinue("dialled " + nm);
         return;
     }
@@ -1296,12 +1349,19 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             // On replace this runs AFTER the same-plugin state restore below,
             // never before: settings dialled into an instance whose state is
             // about to be overwritten would be dialled into the void.
+            //
+            // It routes through applyStructuredIfReady, so a built-in device
+            // gets its exact schema write and third-party slots take the anchor
+            // path exactly as they already do: no new apply logic, just the same
+            // payload reaching the same consumer. The index passed is the one
+            // the slot occupies at call time; the slot struct carries the
+            // pending settings with it through any later walkSlotTo shuffle.
             auto applyOpSettings = [this, &theOp](int slotIdx)
             {
                 if (theOp.settings.isNotEmpty())
                     setSlotSettings(slotIdx, theOp.settings);
-                if (theOp.settingsStructured.getDynamicObject() != nullptr)
-                    setSlotStructuredSettings(slotIdx, theOp.settingsStructured);
+                if (theOp.structuredSettings.getDynamicObject() != nullptr)
+                    setSlotStructuredSettings(slotIdx, theOp.structuredSettings);
             };
 
             if (theOp.op == "add")
@@ -1569,7 +1629,13 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
 void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
-    if (structured.isVoid() || structured.getDynamicObject() == nullptr) return;
+    if (structured.isVoid()) return;
+    // Normally settings_structured is a flat object. A STRUCTURED built-in (the
+    // EQ's eq_bands, a future 4-band comp's comp_bands) also accepts a bare
+    // ARRAY, so a caller can hand it the list directly without wrapping it.
+    if (structured.getDynamicObject() == nullptr
+        && ! (structured.isArray() && isBuiltinSlot(i)))
+        return;
 
     slots_[(size_t)i].structuredSettings = structured;
     slots_[(size_t)i].structuredApplied  = false;
@@ -1772,12 +1838,126 @@ void ChainHost::refetchStale(const juce::String& fp)
     });
 }
 
+namespace
+{
+    // The EQ's frozen identifier. The dev command below is genuinely EQ-specific
+    // (it writes eq_bands), so it keys on this rather than on "any built-in".
+    // Matching the identifier rather than the display name means a rename cannot
+    // quietly break it.
+    constexpr const char* kBuiltinEqIdentifier = "echojay:builtin:eq";
+}
+
+bool ChainHost::isBuiltinEqSlot(int i) const
+{
+    return isBuiltinSlot(i)
+        && slots_[(size_t)i].desc.fileOrIdentifier == kBuiltinEqIdentifier;
+}
+
+int ChainHost::findFirstBuiltinEqSlot() const
+{
+    for (int i = 0; i < (int)slots_.size(); ++i)
+        if (isBuiltinEqSlot(i)) return i;
+    return -1;
+}
+
+juce::String ChainHost::devApplyEqJson(int slotIndex, const juce::String& json)
+{
+    if (!isBuiltinEqSlot(slotIndex))
+        return "slot " + juce::String(slotIndex + 1) + " is not the EchoJay EQ";
+
+    juce::var parsed;
+    const auto res = juce::JSON::parse(json, parsed);
+    if (res.failed())
+        return "JSON parse error: " + res.getErrorMessage();
+
+    int applied = 0, skipped = 0;
+    const auto summary = applyStructuredToBuiltinSlot(slotIndex, parsed, &applied, &skipped);
+    if (summary.isEmpty())
+        return "nothing the EQ understands — expected a bare [...] eq_bands array, or "
+               "{\"eq_bands\":[...], \"eq_settings\":{...}}";
+
+    // Keep the rack card in step with what was just written.
+    if (slotIndex >= 0 && slotIndex < (int)slots_.size())
+    {
+        slots_[(size_t)slotIndex].settings = "Applied automatically\n" + summary;
+        slots_[(size_t)slotIndex].dialAppliedCount = applied;
+        slots_[(size_t)slotIndex].dialStatus =
+            (skipped > 0) ? DialStatus::partial : DialStatus::applied;
+        if (onSlotSettingsChanged) onSlotSettingsChanged();
+    }
+    return summary;
+}
+
+juce::String ChainHost::applyStructuredToBuiltinSlot(int slotIndex, const juce::var& structured,
+                                                     int* appliedOut, int* skippedOut)
+{
+    if (appliedOut != nullptr) *appliedOut = 0;
+    if (skippedOut != nullptr) *skippedOut = 0;
+    if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return {};
+
+    // ANY built-in, not just the EQ. The cast is to the shared device base, so
+    // this one call site serves all 19 devices and a Wave 1 session adds nothing
+    // here (BUILTIN_SUITE_PLAN.md §1).
+    auto* device = dynamic_cast<EedDeviceProcessor*>(getSlotProcessor(slotIndex));
+    if (device == nullptr) return {};
+
+    // One call, whole value. The chain deliberately does NOT reach in for
+    // .eq_bands or .params: which keys exist and in what order they resolve is
+    // the DEVICE's schema. A structured device resolves its array form and the
+    // flat `params` map; a flat device handles `params` alone. A semantic bag
+    // meant for the anchor path carries neither and comes back empty.
+    return device->applyStructured(structured, appliedOut, skippedOut);
+}
+
 void ChainHost::applyStructuredIfReady(int slotIndex)
 {
     if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return;
     auto& s = slots_[(size_t)slotIndex];
     if (s.structuredApplied) return;
-    if (s.structuredSettings.isVoid() || s.structuredSettings.getDynamicObject() == nullptr) return;
+    if (s.structuredSettings.isVoid()) return;
+
+    // ---- Built-in devices: the exact path --------------------------------
+    // This is the entire reason built-ins exist. A move becomes a direct typed
+    // write: no fingerprint, no map lookup, no anchor-table interpolation, no
+    // write-then-read-back-and-revert. It MUST be handled before the fp/map
+    // gates below, which would otherwise park the slot in "pending" forever —
+    // a built-in deliberately never gets a fingerprint.
+    if (isBuiltinSlot(slotIndex))
+    {
+        int applied = 0, skipped = 0;
+        const auto summary = applyStructuredToBuiltinSlot(slotIndex, s.structuredSettings,
+                                                          &applied, &skipped);
+        s.structuredApplied = true;
+        s.dialAppliedCount  = applied;
+
+        // The summary, not the applied count, is the verdict. A move can be
+        // entirely device-global ({"eq_settings":{"auto_gain":true}}) — it
+        // applies zero BANDS and is a complete success.
+        if (summary.isNotEmpty())
+        {
+            s.settings   = "Applied automatically\n" + summary;
+            // Honest verdict, same contract as the mapped path: anything the
+            // device could not place (the EQ was full, an id was unknown) is
+            // partial, not success.
+            s.dialStatus = (skipped > 0) ? DialStatus::partial : DialStatus::applied;
+        }
+        else
+        {
+            // Structured settings arrived but carried nothing this device
+            // understands, so flat semantics are ignored.
+            s.dialStatus = DialStatus::unusableMap;
+        }
+
+        EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex)
+                       + " (\"" + s.desc.name + "\") EXACT built-in apply, "
+                       + juce::String(applied) + " band(s), "
+                       + juce::String(skipped) + " skipped").toRawUTF8());
+
+        if (onSlotSettingsChanged) onSlotSettingsChanged();
+        return;
+    }
+
+    if (s.structuredSettings.getDynamicObject() == nullptr) return;
     if (s.fp.isEmpty()) { s.dialStatus = DialStatus::pending; return; } // fp arrives at load
     auto it = paramMaps_.find(s.fp);
     if (it == paramMaps_.end())
@@ -2077,9 +2257,74 @@ static void pollVST3Validation(
     });
 }
 
+juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
+{
+    if (!graph_) return "chain graph not ready";
+
+    // Resolved from whatever the description carries — identifier, then uid, then
+    // name — because a desc rebuilt from restore XML may be missing fields. One
+    // lookup replaces what used to be a per-device if-chain.
+    const auto* device = BuiltinDeviceRegistry::instance().findForDescription(desc);
+    if (device == nullptr)
+        return "unknown built-in device \"" + desc.name + "\"";
+
+    std::unique_ptr<juce::AudioProcessor> proc = device->create();
+    if (!proc)
+        return "built-in device \"" + desc.name + "\" failed to construct";
+
+    proc->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+
+    ChainSlot slot;
+    slot.node = graph_->addNode(std::move(proc));
+    if (!slot.node) return "could not add the built-in node to the chain graph";
+
+    // Always store the CANONICAL description, never the one we were handed: a
+    // desc rebuilt from restore XML can be missing fields, and this is what
+    // gets written back out on the next save.
+    slot.desc     = BuiltinDeviceRegistry::descriptionFor(*device);
+    slot.bypassed = false;
+    slots_.push_back(std::move(slot));
+
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+
+    const int idx = (int)slots_.size() - 1;
+
+    // Deliberately NO fingerprint and no identity/param-map registration. A
+    // built-in is dialled by direct typed writes; giving it a fingerprint
+    // would invite the anchor-table path this device exists to bypass.
+    applyStructuredIfReady(idx);
+
+    if (stateCacheEnabled_)
+    {
+        attachStateListener(idx);
+        captureSlotState(idx, juce::Time::getMillisecondCounterHiRes());
+    }
+
+    EchoJay_NSLog(("ChainHost: built-in \"" + slot.desc.name + "\" added as slot "
+                   + juce::String(idx)).toRawUTF8());
+    return {};
+}
+
 void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
                                 std::function<void(const juce::String& error)> callback)
 {
+    // Built-in device: constructed directly, no format manager, no scan.
+    // The callback fires synchronously — every existing caller either just
+    // updates UI or re-enters its sequencer through Timer::callAfterDelay,
+    // so there is no re-entrancy to guard against here.
+    if (isBuiltinDescription(desc))
+    {
+        const auto err = loadBuiltinNow(desc);
+        if (callback) callback(err);
+        return;
+    }
+
     bool needsValidation = (desc.pluginFormatName == "VST3" && desc.version.isEmpty());
 
     juce::PluginDescription fullDesc = desc;
@@ -2287,6 +2532,16 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
 {
     auto raw  = rawName.trim();
     auto base = stripParenthetical(raw);
+
+    // Built-ins resolve before (and regardless of) the scanned entries and the
+    // format filter: they are compiled into both hosts, so they are available in
+    // an AU session and a VST3 session alike.
+    if (const auto* device = BuiltinDeviceRegistry::instance().findByName(raw))
+    {
+        if (matchLogOut) *matchLogOut = "built-in -> \"" + device->name + "\"";
+        return BuiltinDeviceRegistry::descriptionFor(*device);
+    }
+
     // Manufacturer from the parenthetical (if any) — disambiguation only
     juce::String manu;
     if (raw.endsWithChar(')') && raw.contains(" ("))

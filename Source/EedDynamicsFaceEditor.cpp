@@ -1,0 +1,144 @@
+/*
+    EedDynamicsFaceEditor.cpp  —  see EedDynamicsFaceEditor.h.
+*/
+
+#include "EedDynamicsFaceEditor.h"
+
+using namespace echojay::device;
+using namespace echojay::device::metrics;
+
+EedDynamicsFaceEditor::EedDynamicsFaceEditor (EedDeviceProcessor& proc,
+                                              const juce::String& title,
+                                              const juce::String& hint,
+                                              const KnobSpec* specs, int numSpecs,
+                                              float meterMaxDb,
+                                              std::function<float()> grSource,
+                                              int defaultWidth, int defaultHeight)
+    : DeviceEditorBase (proc, title, defaultWidth, defaultHeight),
+      proc_ (proc), specs_ (specs), numSpecs_ (juce::jmax (0, numSpecs)),
+      meter_ (meterMaxDb), grSource_ (std::move (grSource))
+{
+    setHeaderHint (hint);
+
+    for (int i = 0; i < numSpecs_; ++i)
+    {
+        auto* k = knobs_.add (new EchoJayDeviceKnob());
+        if (bindKnob (*k, specs_[i], proc_.paramSchema(), proc_, &suppressCallbacks_))
+            addAndMakeVisible (k);
+    }
+
+    if (grSource_ != nullptr)
+    {
+        meter_.setCaption ("GR");
+        addAndMakeVisible (meter_);
+    }
+
+    // Fast enough that the meter reads as motion rather than as steps, slow
+    // enough that six of these open at once cost nothing.
+    startTimerHz (20);
+}
+
+EedDynamicsFaceEditor::~EedDynamicsFaceEditor()
+{
+    stopTimer();
+}
+
+void EedDynamicsFaceEditor::layoutContent (juce::Rectangle<int> content)
+{
+    if (content.isEmpty()) return;
+
+    // The meter is reserved FIRST, from the bottom. When the rack lays the
+    // editor out shorter than it wants, the dials give up room and the meter
+    // survives — it is the readout that shows the device is doing anything at
+    // all, so it is the last thing that should vanish.
+    juce::Rectangle<int> meterArea;
+    if (grSource_ != nullptr)
+    {
+        const int meterH = juce::jmin (18, juce::jmax (0, content.getHeight() - kKnobH));
+        if (meterH > 0)
+        {
+            meterArea = content.removeFromBottom (meterH);
+            content.removeFromBottom (6);
+        }
+        meter_.setVisible (meterH > 0);
+    }
+
+    const int extraH = extraContentHeight();
+    juce::Rectangle<int> extraArea;
+    if (extraH > 0)
+    {
+        const int h = juce::jmin (extraH, juce::jmax (0, content.getHeight() - kKnobH));
+        if (h > 0)
+        {
+            extraArea = content.removeFromBottom (h);
+            content.removeFromBottom (4);
+        }
+    }
+
+    // The visualisation is reserved LAST and from the TOP, out of whatever is
+    // left once the dial row is whole. That ordering is the shrink policy: the
+    // meter survives first, the dials second, and the picture is what a short
+    // rack slot loses — it is the only part of the editor that is purely a
+    // readout of things the controls already state.
+    juce::Rectangle<int> topArea;
+    const int wantTop = topContentHeight();
+    if (wantTop > 0)
+    {
+        const int h = juce::jmin (wantTop, juce::jmax (0, content.getHeight() - kKnobH));
+        if (h > 0)
+        {
+            topArea = content.removeFromTop (h);
+            content.removeFromTop (6);
+        }
+    }
+
+    // Only the dials this face is currently showing get laid out — and the ones
+    // it is not are hidden rather than left sitting at last frame's bounds under
+    // whatever took their place.
+    //
+    // A knob that failed to bind (an id the schema does not carry, which is a
+    // device bug) was never added as a child, and must not be made visible here
+    // by the mode logic: it has no spec behind it, so it would draw an empty dial.
+    juce::Array<EchoJayDeviceKnob*> shown;
+    shown.ensureStorageAllocated (knobs_.size());
+
+    for (int i = 0; i < knobs_.size(); ++i)
+    {
+        auto* k = knobs_[i];
+        if (k->getParentComponent() == nullptr) continue;      // never bound
+
+        const bool vis = knobVisible (i);
+        k->setVisible (vis);
+        if (vis) shown.add (k);
+    }
+
+    layoutKnobRow (content, shown.getRawDataPointer(), shown.size());
+
+    // Called even when the area came out EMPTY — that is how the subclass
+    // learns to hide its view rather than leave it sitting at last frame's
+    // bounds, on top of the dials it just lost its room to.
+    if (wantTop > 0) layoutTopContent (topArea);
+
+    if (! extraArea.isEmpty()) layoutExtraContent (extraArea);
+    if (! meterArea.isEmpty()) meter_.setBounds (meterArea);
+}
+
+void EedDynamicsFaceEditor::timerCallback()
+{
+    {
+        const juce::ScopedValueSetter<bool> guard (suppressCallbacks_, true);
+        syncKnobs (knobs_.getRawDataPointer(), specs_, knobs_.size(), proc_);
+    }
+
+    const bool byp = proc_.isBypassed();
+    if (bypassButton().getToggleState() != byp)
+        bypassButton().setToggleState (byp, juce::dontSendNotification);
+
+    if (grSource_ != nullptr)
+    {
+        meter_.setDimmed (byp);
+        if (! byp) meter_.setGainReductionDb (grSource_());
+    }
+
+    refreshExtras();
+}
