@@ -33,6 +33,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>   // ScopedJuceInitialiser_GUI
 #include "EjmapSchema.h"
+#include "EjmapSubject.h"
 
 // The shared sweep and parsers, compiled here so the drift gate proves both
 // binaries build the SAME code: ejextract compiles these headers to produce
@@ -667,6 +668,48 @@ void testAgainstRealMaps()
         // asked -> wrote) must reproduce through the real interpolateAnchors
         // over the map's own table. This is the stage that drifted in the
         // usableCoreCount incident, and it needs no instantiation.
+        // M9 PARAMETERISATION ITEM 0, against the real corpus: the new
+        // map-side path must resolve the SAME indices the eq suite reaches by
+        // its fixture route (groups[0] + hardcoded semantics). Equality of the
+        // two paths on real maps is the behaviour-preservation proof in
+        // miniature -- a synthetic test proves the helper's logic, this proves
+        // it agrees with the code it is replacing.
+        if (auto* gs = v.getProperty ("groups", juce::var()).getArray())
+            if (! gs->isEmpty())
+            {
+                auto pick = ejmap::subject::primaryGroup (v);
+                check (pick.ok, "corpus: a primary group resolves in "
+                                + entry.getFile().getFileName());
+                if (pick.ok)
+                {
+                    // the fixture route the eq suite uses today
+                    auto fixtureGroup = (*gs)[0];
+                    for (const char* sem : { "freq_hz", "gain_db", "q" })
+                    {
+                        const int fixtureIdx = (int) fixtureGroup
+                                                   .getProperty ("params", juce::var())
+                                                   .getProperty (sem, juce::var())
+                                                   .getProperty ("index", -1);
+                        auto slot = ejmap::subject::slotInGroup (v, pick.arrayIndex, sem);
+                        check (slot.ok() && slot.index == fixtureIdx,
+                               juce::String ("corpus: map-side ") + sem + " resolves to the same "
+                               "index as the fixture route (" + juce::String (fixtureIdx) + ") in "
+                               + entry.getFile().getFileName());
+                    }
+                    // and the ladder the suite would drive is expressible
+                    auto fslot = ejmap::subject::slotInGroup (v, pick.arrayIndex, "freq_hz");
+                    auto oct = ejmap::subject::octavesApartWithin (fslot, 2.0);
+                    check (oct.ok, "corpus: the primary band can express the 2-octave move the eq "
+                                   "suite makes (" + entry.getFile().getFileName() + ")");
+                    if (oct.ok)
+                        std::cout << "  " << entry.getFile().getFileName().substring (0, 12)
+                                  << " primary band n=" << pick.n << ": 2-octave pair "
+                                  << juce::String (oct.lowHz, 1) << " -> "
+                                  << juce::String (oct.highHz, 1) << " Hz (fixture used 100 -> 400)"
+                                  << std::endl;
+                }
+            }
+
         auto params = v.getProperty ("params", juce::var());
         if (auto* rbObj = v.getProperty ("evidence", juce::var())
                            .getProperty ("readback", juce::var()).getDynamicObject())
@@ -1066,6 +1109,163 @@ void testIdentityKeyFormat()
 }
 
 //==============================================================================
+
+//==============================================================================
+/** M9 PARAMETERISATION ITEM 0: the map-side lookups a suite reads instead of
+    its fixture constants.
+
+    Every REFUSAL is tested by attempting it, not by inspecting the branch --
+    the machinery's whole purpose is to refuse where a fixture constant used to
+    assume, so an untested refusal is the feature untested. Values here are
+    hand-written, never taken from a real map, so the test cannot shape itself
+    to the corpus it judges.
+*/
+void testSubjectLookups()
+{
+    using namespace ejmap::subject;
+
+    auto anchorsVar = [] (std::initializer_list<std::pair<double,double>> pts)
+    {
+        juce::Array<juce::var> rows;
+        for (auto& p : pts)
+            rows.add (juce::var (juce::Array<juce::var> { p.first, p.second }));
+        return juce::var (rows);
+    };
+    auto entry = [&] (int index, const juce::String& name,
+                      std::initializer_list<std::pair<double,double>> pts)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("index", index);
+        o->setProperty ("name", name);
+        o->setProperty ("unit", "hz");
+        o->setProperty ("anchors", anchorsVar (pts));
+        return juce::var (o);
+    };
+
+    // ---- a map with one primary group and one top-level semantic ----------
+    auto* freq = new juce::DynamicObject();
+    freq->setProperty ("freq_hz", entry (29, "LF Freq 1", { {100.0, 0.0}, {200.0, 0.5}, {1600.0, 1.0} }));
+    auto* g1 = new juce::DynamicObject();
+    g1->setProperty ("n", 1);
+    g1->setProperty ("primary", true);
+    g1->setProperty ("params", juce::var (freq));
+    auto* g2 = new juce::DynamicObject();
+    g2->setProperty ("n", 2);
+    g2->setProperty ("params", juce::var (new juce::DynamicObject()));
+    auto* params = new juce::DynamicObject();
+    params->setProperty ("output_db", entry (2, "Output Gain", { {-15.0, 0.0}, {15.0, 1.0} }));
+    auto* mp = new juce::DynamicObject();
+    mp->setProperty ("params", juce::var (params));
+    mp->setProperty ("groups", juce::var (juce::Array<juce::var> { juce::var (g1), juce::var (g2) }));
+    juce::var map (mp);
+
+    auto pick = primaryGroup (map);
+    check (pick.ok && pick.arrayIndex == 0 && pick.n == 1,
+           "subject: primary group is found by its flag, not by position");
+
+    auto fs = slotInGroup (map, pick.arrayIndex, "freq_hz");
+    check (fs.ok() && fs.index == 29 && fs.where == "group 1 / freq_hz",
+           "subject: a group semantic resolves to its index and location");
+    check (fs.ladderLo() == 100.0 && fs.ladderHi() == 1600.0,
+           "subject: the ladder comes from the map's anchors");
+    check (std::abs (fs.normFor (200.0) - 0.5f) < 1.0e-6,
+           "subject: normFor goes through the SAME interpolation as the dial path");
+
+    auto os = slotFor (map, "output_db");
+    check (os.ok() && os.index == 2 && os.where == "params / output_db",
+           "subject: a top-level semantic resolves");
+
+    // ---- REFUSALS, each attempted ----------------------------------------
+    auto missing = slotFor (map, "ratio");
+    check (! missing.ok() && missing.why.contains ("no 'ratio'"),
+           "subject REFUSES an absent semantic, and says which one");
+
+    auto notInGroup = slotInGroup (map, 1, "freq_hz");
+    check (! notInGroup.ok() && notInGroup.why.isNotEmpty(),
+           "subject REFUSES a semantic absent from the named group");
+
+    auto badGroup = slotInGroup (map, 7, "freq_hz");
+    check (! badGroup.ok() && badGroup.why.contains ("no such group"),
+           "subject REFUSES an out-of-range group rather than clamping");
+
+    // one-anchor ladder: present, addressable, and unusable
+    auto* thin = new juce::DynamicObject();
+    thin->setProperty ("thin", entry (5, "Thin", { {1.0, 0.0} }));
+    auto* tm = new juce::DynamicObject();
+    tm->setProperty ("params", juce::var (thin));
+    auto thinSlot = slotFor (juce::var (tm), "thin");
+    check (thinSlot.found && ! thinSlot.ok() && thinSlot.why.contains ("at least 2"),
+           "subject REFUSES a one-anchor ladder: found is not the same as usable");
+
+    // no primary flag anywhere
+    auto* np1 = new juce::DynamicObject(); np1->setProperty ("n", 1);
+    auto* npm = new juce::DynamicObject();
+    npm->setProperty ("groups", juce::var (juce::Array<juce::var> { juce::var (np1) }));
+    auto noPrimary = primaryGroup (juce::var (npm));
+    check (! noPrimary.ok && noPrimary.why.contains ("no group is flagged primary"),
+           "subject REFUSES when no group is primary, rather than taking groups[0]");
+
+    // two primaries
+    auto* tp1 = new juce::DynamicObject(); tp1->setProperty ("n", 1); tp1->setProperty ("primary", true);
+    auto* tp2 = new juce::DynamicObject(); tp2->setProperty ("n", 4); tp2->setProperty ("primary", true);
+    auto* tpm = new juce::DynamicObject();
+    tpm->setProperty ("groups", juce::var (juce::Array<juce::var> { juce::var (tp1), juce::var (tp2) }));
+    auto twoPrimary = primaryGroup (juce::var (tpm));
+    check (! twoPrimary.ok && twoPrimary.why.contains ("n = 1, 4"),
+           "subject REFUSES two primary groups and names both");
+
+    // ---- ladder-point choosers -------------------------------------------
+    auto spread = spreadAcrossLadder (fs, { 0.0, 0.5, 1.0 });
+    check (spread.size() == 3 && spread[0] == 100.0 && spread[2] == 1600.0,
+           "subject: ladder points come from the map's own range");
+
+    auto oct = octavesApartWithin (fs, 2.0);
+    check (oct.ok && std::abs (std::log2 (oct.highHz / oct.lowHz) - 2.0) < 1.0e-9,
+           "subject: an octave pair is exactly the interval asked for");
+    check (oct.lowHz > fs.ladderLo() && oct.highHz < fs.ladderHi(),
+           "subject: the octave pair is centred, so neither point sits on an endpoint");
+
+    // a ladder too narrow to express the interval REFUSES rather than stretching
+    auto narrow = slotFor (juce::var (mp), "output_db");   // -15..15, not a frequency
+    auto badOct = octavesApartWithin (narrow, 2.0);
+    check (! badOct.ok && badOct.why.contains ("not in a positive frequency domain"),
+           "subject REFUSES octaves on a non-frequency ladder");
+
+    auto* nb = new juce::DynamicObject();
+    nb->setProperty ("f", entry (1, "Narrow", { {200.0, 0.0}, {400.0, 1.0} }));
+    auto* nbm = new juce::DynamicObject(); nbm->setProperty ("params", juce::var (nb));
+    auto narrowOct = octavesApartWithin (slotFor (juce::var (nbm), "f"), 4.0);
+    check (! narrowOct.ok && narrowOct.why.contains ("cannot express"),
+           "subject REFUSES an interval the ladder cannot express, rather than shrinking it");
+
+    // ---- excitation: the single resolution point --------------------------
+    ExcitationPlan suitePlan;
+    suitePlan.source = "suite:comp";
+    suitePlan.steps.add ({ 12, 10.0, "ratio", "ratio at max" });
+
+    auto viaSuite = resolveExcitation (map, suitePlan);
+    check (viaSuite.source == "suite:comp" && viaSuite.declared(),
+           "excitation: a schema-2.2 map falls through to the suite's plan");
+
+    ExcitationPlan none;
+    check (! resolveExcitation (map, none).declared(),
+           "excitation: absent everywhere is 'none', not an empty plan pretending to be one");
+
+    // the 2.3a hook: a map carrying a plan wins
+    auto* st = new juce::DynamicObject();
+    st->setProperty ("index", 40);
+    st->setProperty ("value", 1.0);
+    st->setProperty ("semantic", "xl_stage");
+    st->setProperty ("why", "the stage is bypassed by default");
+    auto* m23 = new juce::DynamicObject();
+    m23->setProperty ("excitation", juce::var (juce::Array<juce::var> { juce::var (st) }));
+    auto viaMap = resolveExcitation (juce::var (m23), suitePlan);
+    check (viaMap.source == "map" && viaMap.steps.size() == 1 && viaMap.steps[0].index == 40,
+           "excitation: a map plan overrides the suite plan (the 2.3a hook, wired ahead of the schema)");
+    check (viaMap.describe().contains ("xl_stage[40]") && viaMap.describe().contains ("bypassed"),
+           "excitation: the plan describes itself, including WHY a step exists");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -1086,6 +1286,7 @@ int main (int, char**)
     testExposureConformance();
     testLockstepAndTierFields();
     testAgainstRealMaps();
+    testSubjectLookups();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

@@ -196,6 +196,22 @@ Net change from the accepted proposal: item 5 splits in two, 5a moves one slot e
 
 ---
 
+## 4b. Item 0 built, and one finding that changes item 3 (3 August 2026)
+
+`EjmapSubject.h` ships the map-side lookups: `primaryGroup`, `slotFor`, `slotInGroup`, `controlNamed`, `spreadAcrossLadder`, `octavesApartWithin`, and `resolveExcitation` as the single excitation resolution point with the 2.3a hook already branched. Drift gate 136 → 161 checks. Every refusal is tested by attempting it, because refusing where a fixture constant used to assume is the whole feature.
+
+Against the real corpus the new path resolves the **same indices** as the fixture route (`groups[0]` → 29 / 24 / 34), which is the behaviour-preservation proof in miniature.
+
+**The finding.** Asked for a centred two-octave pair inside AMEK's primary band, the generic chooser returns **54.1 → 216.3 Hz**. The fixture uses **100 → 400 Hz**. Both are two octaves, both sit inside the band's 15–780 Hz range, and they are different measurements.
+
+So a parameterised eq suite driven by the generic chooser **cannot reproduce the fixture's numbers**, and the behaviour-preservation rule proposed in section 3 — same verdicts *and* same numbers within σ_f — would be unsatisfiable as written.
+
+**Consequence, which resolves rather than weakens the design:** the fixture file **must carry its ladder points**, and the generic chooser is what runs when no fixture pins them. That is exactly what "a fixture becomes a test case" has to mean — the fixture's job is to hold the specific numbers that make a regression reproducible, and a test case that lets a chooser move its own stimulus is not a regression test. Item 3 adopts this: fixture pins points, generic path chooses them, and the assert mode compares against the pinned run.
+
+Discovered by running the chooser against a real map rather than by reasoning about it, which is the only reason it surfaced before item 3 rather than during it.
+
+---
+
 ## Appendix: the uid-ambiguity refusal, tested (3 August 2026)
 
 The other three runner refusals were proven by attempting them. This one is now too, and it is load-bearing rather than defensive.
