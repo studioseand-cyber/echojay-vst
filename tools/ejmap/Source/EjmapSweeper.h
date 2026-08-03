@@ -114,6 +114,35 @@ struct SweepOutcome
     int durationMs = 0;
 };
 
+/** THE DISPLAY SETTLE, in one place.
+
+    A bridged AU's display does not update until the message loop has delivered
+    the XPC reply, so a read taken immediately after a write returns the
+    PRE-WRITE value. Measured on CLA-76 (Waves, bridged): writing norm 0.475 to
+    attack_ms and reading at once returned the parked value 6.70; after one
+    dispatch turn it was STILL 6.70; after 50 ms it was 3.85, which is exactly
+    what was asked for.
+
+    ONE TURN IS NOT ENOUGH -- that is why this pumps for 50 ms rather than
+    calling runDispatchLoopUntil(1), and why it is a named function rather than
+    a constant copied to each caller.
+
+    Pumps, never sleeps: a sleep blocks the very loop the reply needs (measured
+    on API-2500, where 15 ms of sleep changed nothing and one pumped interval
+    fixed every label).
+
+    RETURNS whether it actually pumped. Off the message thread there is no loop
+    to run, and a caller that cannot settle must say so rather than record a
+    read as verified.
+*/
+inline bool settleDisplayPumped (int ms = 50)
+{
+    auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+    if (mm == nullptr || ! mm->isThisTheMessageThread()) return false;
+    mm->runDispatchLoopUntil (ms);
+    return true;
+}
+
 inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
                                    int index,
                                    Watchdog& watchdog,
@@ -140,9 +169,7 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
     // on API-2500: 15 ms of sleep changed nothing; one pumped interval fixed
     // every label).
     cfg.settleMs = 15;
-    if (juce::MessageManager::getInstanceWithoutCreating() != nullptr
-         && juce::MessageManager::getInstance()->isThisTheMessageThread())
-        cfg.settle = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (50); };
+    cfg.settle = [] { settleDisplayPumped(); };
 
     // Read-only first, exactly like the extractor -- unless the caller has
     // already MEASURED that this plugin's getText lies about set positions

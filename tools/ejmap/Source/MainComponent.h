@@ -2653,6 +2653,100 @@ public:
         // FORGETTABILITY TEST: a load site that plants NO stake of its own.
         // If the choke point works, a hard death here is still attributed.
         // Deliberately bare -- adding a beginLoad here would test nothing.
+        // THE READBACK MEASUREMENT. One question: does servicing the runloop
+        // between write and read change what the display says? Stale-read
+        // recovers, bad-anchor does not.
+        if (mode == "readback")
+        {
+            auto mapFile = ledger.getRoot().getChildFile ("maps")
+                             .getChildFile ("49ccce6d17b9338b07bff81b7de10e43b1cb7089a95076bc8f44697b715b27d4.json");
+            auto mv = juce::JSON::parse (mapFile.loadFileAsString());
+            auto id = mv.getProperty ("identity", juce::var());
+            const auto uid = id.getProperty ("uid", "").toString();
+
+            juce::PluginDescription pd;
+            auto census = echojay::auregistry::buildCensus();
+            for (const auto& t : census.targets)
+            {
+                auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+                if (juce::String::toHexString (d.uniqueId).equalsIgnoreCase (uid)) { pd = d; break; }
+            }
+            if (pd.fileOrIdentifier.isEmpty())
+            { say ("READBACK: could not resolve uid " + uid); quitNow(); return; }
+            say ("READBACK subject, resolved BEFORE load: '" + pd.name + "' | " + pd.fileOrIdentifier
+                 + " | v" + pd.version);
+
+            host.unload();
+            loadedName = pd.name; loadedId = pd.fileOrIdentifier; loadedDesc = pd;
+            if (host.load (pd, watchdog).outcome != LoadOutcome::ok)
+            { say ("READBACK: load failed"); quitNow(); return; }
+            auto* inst = host.getInstance();
+            auto params = inst->getParameters();
+
+            say ("");
+            int rbBeforeFix = 0, rbAfterFix = 0, rbTotal = 0;
+            say ("  semantic      asked    norm      read#1(immediate)  read#2(runloop)  read#3(+50ms)");
+            auto* po = mv.getProperty ("params", juce::var()).getDynamicObject();
+            if (po == nullptr) { say ("  no params"); quitNow(); return; }
+            for (auto& kv : po->getProperties())
+            {
+                const auto sem = kv.name.toString();
+                const int idx = (int) kv.value.getProperty ("index", -1);
+                auto anch = echojay::anchorsFromVar (kv.value);
+                if (! juce::isPositiveAndBelow (idx, params.size()) || anch.size() < 3) continue;
+
+                // EXACTLY the evidence path's arithmetic, so the comparison is
+                // against the number the wizard reported and not a new one.
+                const int mid = anch.size() / 2;
+                const float vAsk = 0.5f * (anch[mid][0] + anch[mid - 1][0]);
+                const float n = juce::jlimit (0.0f, 1.0f, echojay::interpolateAnchors (anch, vAsk));
+
+                // Park it somewhere else first, so a "recovered" read cannot be
+                // the value that was already there.
+                params[idx]->setValueNotifyingHost (n > 0.5f ? 0.05f : 0.95f);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+
+                params[idx]->setValueNotifyingHost (n);
+                const auto r1 = params[idx]->getCurrentValueAsText();      // immediate, ON PURPOSE
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
+                const auto r2 = params[idx]->getCurrentValueAsText();      // one turn
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+                const auto r3 = params[idx]->getCurrentValueAsText();      // settled
+
+                // Score it EXACTLY as the evidence path does, so "5/5" here means
+                // what "5/5" would mean in a submission.
+                float lo = anch.getFirst()[0], hi = lo;
+                for (const auto& a : anch) { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
+                const float tol = juce::jmax (0.02f * (hi - lo),
+                                    0.6f * std::abs (anch[mid][0] - anch[mid - 1][0]));
+                auto scored = [&] (const juce::String& disp)
+                {
+                    double v = 0.0;
+                    const bool ok = echojay::parseLeadingFloat (disp, v)
+                                      && std::abs ((float) v - vAsk) <= tol;
+                    return ok;
+                };
+                const bool m1 = scored (r1), m3 = scored (r3);
+                if (m1) ++rbBeforeFix;
+                if (m3) ++rbAfterFix;
+                ++rbTotal;
+                say ("  " + sem.paddedRight (' ', 14) + juce::String (vAsk, 4).paddedRight (' ', 9)
+                     + juce::String (n, 6).paddedRight (' ', 10)
+                     + (r1 + (m1 ? " OK" : "")).paddedRight (' ', 19)
+                     + r2.paddedRight (' ', 17)
+                     + r3 + (m3 ? "  OK" : "  MISMATCH")
+                     + "   tol " + juce::String (tol, 3));
+            }
+            say ("");
+            say ("  SCORED ON THE EVIDENCE PATH'S OWN ARITHMETIC:");
+            say ("    unsettled read (what the submission recorded): "
+                 + juce::String (rbBeforeFix) + "/" + juce::String (rbTotal));
+            say ("    settled read   (what the fix records):         "
+                 + juce::String (rbAfterFix) + "/" + juce::String (rbTotal));
+            std::cout << "READBACK: DONE" << std::endl;
+            quitNow(); return;
+        }
+
         // LIVE map-state fetch against the real endpoint, and the degradation
         // path attempted rather than assumed.
         if (mode.startsWith ("mapstate-live") || mode == "mapstate-dead")
@@ -6319,6 +6413,12 @@ public:
             const float n = juce::jlimit (0.0f, 1.0f,
                                 echojay::interpolateAnchors (sw.anchors, vTarget));
             writeNormGesture (idx, n);
+            // THE THIRD INSTANCE, found by auditing after the readback fix. A
+            // gate is the worst place for an unsettled read: on a bridged AU it
+            // either fails correct anchors or passes on the stale value landing
+            // inside tolerance, and a gate that passes by luck is worse than
+            // one that fails.
+            const bool settledTyped = ejmap::settleDisplayPumped();
             const auto landed = params[idx]->getCurrentValueAsText();
             double vLanded = 0.0;
             const bool parsed = echojay::parseLeadingFloat (landed, vLanded);
@@ -6328,7 +6428,8 @@ public:
             const float gap = std::abs (sw.anchors[i + 1][0] - sw.anchors[i][0]);
             const float tol = juce::jmax (0.02f * (hi - lo), 0.6f * gap);
 
-            const bool match = parsed && std::abs ((float) vLanded - vTarget) <= tol;
+            const bool match = settledTyped && parsed
+                                 && std::abs ((float) vLanded - vTarget) <= tol;
             if (! match) ++fails;
             std::cout << "  " << (match ? "ok   " : "FAIL ")
                       << "interpolateAnchors round trip: asked " << vTarget
@@ -7852,6 +7953,19 @@ private:
                     const float n = juce::jlimit (0.0f, 1.0f,
                                         echojay::interpolateAnchors (r.sweep.anchors, vAsk));
                     writeNormGesture (r.resolvedIndex, n);
+                    // SETTLE BEFORE READING. Without this the read returns the
+                    // PRE-WRITE display on any bridged AU, and the evidence
+                    // records a correct write as a failure. Measured on CLA-76:
+                    // 0 of 5 verified before, 5 of 5 after, with the map
+                    // unchanged. The sweeper two files away has always done
+                    // this; this path never did, which is why the anchors were
+                    // right and the evidence disagreed with them.
+                    //
+                    // The consequence was not cosmetic: structuralGate refuses
+                    // a payload with "params present but zero matching readback
+                    // evidence", so a guard was rejecting correct maps on false
+                    // evidence -- and 604 of 622 bridged AUs are Waves.
+                    const bool settled = ejmap::settleDisplayPumped();
                     const auto landed = inst->getParameters()[r.resolvedIndex]->getCurrentValueAsText();
                     double vLanded = 0.0;
                     const bool parsed = echojay::parseLeadingFloat (landed, vLanded);
@@ -7865,7 +7979,12 @@ private:
                     rb.asked = juce::String (vAsk, 4);
                     rb.wrote = juce::String (n, 6);
                     rb.read  = landed;
-                    rb.match = parsed && std::abs ((float) vLanded - vAsk) <= tol;
+                    // A read taken without a settle is not evidence. Say so
+                    // rather than scoring it, so an off-message-thread caller
+                    // cannot silently produce a map full of stale reads.
+                    rb.match = settled && parsed && std::abs ((float) vLanded - vAsk) <= tol;
+                    if (! settled) rb.read = landed + "  [UNSETTLED: read without a display "
+                                                      "settle; not evidence]";
                     p.evidence.readback.add (rb);
                 }
             }

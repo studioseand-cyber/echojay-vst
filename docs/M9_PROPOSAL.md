@@ -972,6 +972,40 @@ second cap has not been the operative one since.
 
 ---
 
+## A VERIFICATION THAT PASSES BY ACCIDENT IS WORSE THAN ONE THAT FAILS (3 August 2026)
+
+**Instance 1: CLA-76's "readback 1/5".** Four of five parameters recorded a
+mismatch and one recorded a match. The one that "passed" was reading the same
+stale pre-write display as the other four -- it passed because its stale value,
+8, happened to sit inside a tolerance of 2.40 around an asked value of 10.0.
+
+The true state was **0 of 5 verified and 5 of 5 correct**: every write landed
+exactly, and every read was taken before the display updated.
+
+**Why the accidental pass is the expensive part.** A score of 0/5 reads as a
+broken harness and gets investigated. A score of 1/5 reads as four bad
+parameters and one good one -- it moves the question from "is this measurement
+working" to "which parameters are wrong", and the genuine disagreements become
+the outliers rather than the rule. The single passing row is what made the
+number look like data.
+
+**Is the tolerance wide enough for this to recur WITH the fix in place?**
+Measured, on the same five: tolerances are `max(2% of ladder span, 60% of the
+gap between the two middle anchors)` -- 2.400 for ratio, 0.180 for the time
+constants, 1.440 for the dB trims. A stale read returns the PARKED value, which
+is an arbitrary point on the ladder, so the chance it lands inside the
+tolerance is roughly the tolerance as a fraction of the span: about 8% for
+ratio, well under 2% for the others.
+
+So with one parameter it is unlikely; across a campaign of thousands it is
+routine. **The defence is not a narrower tolerance** -- that would fail correct
+writes -- **it is that a read taken without a settle is now not scored at all**,
+recorded as `[UNSETTLED: read without a display settle; not evidence]`. An
+unverifiable read reports as unverifiable rather than rolling dice against a
+tolerance.
+
+---
+
 ## UNBLOCKING A PATH PUBLISHES WHATEVER BROKEN CHECK IT WAS HOLDING (3 August 2026)
 
 **A null is a check that has never been exercised.** While a suite returns
