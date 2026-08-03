@@ -53,9 +53,9 @@ Arm A is the headline gate's whole point and the most fixture-bound thing in M9.
 
 | Weld | Where | Class |
 |---|---|---|
-| Subject **by name** `"bx_limiter True Peak"` / `"SSL X-Gate"` | `:1985-1993` | **F**, and by the *wrong mechanism* — saturation was pinned by id after `bx_saturator V2` resolved to the UAD product; this suite still substring-matches names. Same class, unfixed here |
+| Subject **by name** `"bx_limiter True Peak"` / `"SSL X-Gate"` | `:1985-1993` | **F**, and by the *wrong mechanism* — saturation was pinned by id after `bx_saturator V2` resolved to the UAD product; this suite substring-matched names. Same class. **FIXED 3 Aug 2026**: pinned to `aumf,bxtp,Brwx` (limiter) and `aufx,XGAT,SSLN` (gate), identity printed before load, both suites re-run and still PASS |
 | Target by preference list `"Ceiling"`/`"Output Ceiling"`, `"Upper Threshold"`/`"Threshold"` | `:2043-2044` | **F/C** |
-| Comment claims the target comes "from the map when one exists" | `:2040-2041` | **no map is read anywhere in this branch** — the comment describes behaviour that does not exist |
+| Comment claims the target comes "from the map when one exists" | `:2040-2041` | **no map is read anywhere in this branch** — the comment described behaviour that does not exist. **FIXED 3 Aug 2026**, plus the two console lines carrying the same implication; recorded in `M9_PROPOSAL.md` as its own mechanism |
 | Ambiguity refusal, demonstrated on the bare pattern first | `:2029-2038` | **C** — exemplary, keep as is |
 | Ladder from a live sweep of the target | `:2134-2142` | **C** → replace with map anchors |
 | Burst gap = 3× *this plugin's own* max release, read from its ladder | `:2060-2081` | **C** — the model for how a suite should adapt |
@@ -148,6 +148,51 @@ Not uniform. eq is roughly four times gate.
 Reasoning for that order: prove the shared machinery on the cheapest suite (gate/limiter) before committing it; do comp next because it is the one with a live scientific question (the over-claim class) that a corpus will need; land the schema before eq because eq's remaining welds are precisely the things the schema is missing; eq late because its regression evidence is the one that must not break; saturation last because it is blocked on work that is not this.
 
 **What this does not buy.** After all of it, coverage is still one to four parameters per category — but on *any* subject in that category rather than one. The corpus question ("is the over-claim class endemic?") becomes answerable; the coverage question does not improve until suites decide more parameters, which is separate work.
+
+---
+
+## 4a. Schema-ordering check (asked before starting, 3 August 2026)
+
+**The question:** do items 0, 1, 2 and 5 commit to a schema shape before 2.3 is designed?
+
+**Answer: yes, but the exposure is concentrated in exactly one concept, and it is not the one the ordering suggested.**
+
+Going through the 2.3 contents separately rather than as a block:
+
+| 2.3 concept | Who needs it | Exposure in 0/1/2 |
+|---|---|---|
+| **Excitation plans** | comp (0/1/2 era), saturation, eventually all | **Real.** comp's excitation (ratio→max, threshold→−30) *is* an excitation plan written inline. Item 0's fixture files would carry one too. Three local encodings of one concept, invented before the concept is designed |
+| **Semantic roles for non-dial controls** | eq only (arm A, M/S) | None — item 3 is already after item 5 |
+| **Enable / companion links** | eq only (index 8 gates 7) | None — same |
+
+So the only genuine collision is the **excitation plan**, and it appears in item 2, not item 5.
+
+**The map-reading helpers are safe.** `semanticIndex`, `anchorsFor`, `primaryGroup` and the ladder-point chooser read `params[sem].index`, `groups[].primary` and `anchors[]` — all schema 2.2, all present in the two live maps, and `chainSlotsXml`-style frozen. 2.3 is additive.
+
+**The fixture-file format is low-risk but not zero.** Fixture files are test artefacts versioned with the tests, not corpus data; there are four of them and rewriting one is cheap. They may also legitimately stay more specific than any map, since a test case is allowed to pin what a general map cannot.
+
+### Two candidate reorderings, and why not the obvious one
+
+**Option A — design excitation plans first (2.3a → 0 → 1 → 2 …).** Rejected. It designs the serialised shape with *zero* parameterised consumers, which is precisely how M9 got here: four suites finished blind against two maps, then the batch runner discovered what was wrong the moment real maps arrived. Designing a schema for excitation before any suite consumes one repeats that exactly.
+
+**Option B — one interface early, serialisation after two real consumers.** Recommended. Item 0 gains a required deliverable: **`ExcitationPlan` as a named type with a single resolution point**, not inline setup code in each suite. Items 1 and 2 consume it — item 1 mostly with an empty plan, item 2 with the real one comp already has. Then 2.3a designs the *serialised* form informed by two working consumers, and only the plan's **source** changes (in-code → map), behind an interface that does not move. That is the mouth's one-builder-two-callers lesson applied before the duplication rather than after it.
+
+**Does item 1 need excitation at all?** Checked rather than assumed: no. The limiter reads its expressible range from the signal, and the gate reports `threshold UNDEFINED, not fitted` when no burst is attenuated. Missing excitation degrades those suites to an honest inconclusive, never to a false verdict. comp is the first real consumer.
+
+**Migration.** 2.3 fields are additive and optional; existing maps stay valid, and a suite treats an absent excitation plan as *no plan* — absent-key-means-unavailable, the convention already used for metering. `kMapSchemaVersion` 22 → 23 and the pinned drift-gate strings move together when 2.3a lands.
+
+### The order the check produces
+
+**0 → 1 → 2 → 5a → 5b → 3 → 4 → 6**
+
+- **0** shared machinery, **now including the `ExcitationPlan` interface**
+- **1** gate + limiter (least welded; proves the machinery; empty plans)
+- **2** compressor (first real excitation consumer)
+- **5a** schema 2.3a: excitation plans serialised, designed against two consumers
+- **5b** schema 2.3b: control roles + enable links
+- **3** eq (needs 5b), **4** saturation (blocked on its own excitation plan), **6** final numbers comparison
+
+Net change from the accepted proposal: item 5 splits in two, 5a moves one slot earlier, and item 0 grows one deliverable. The original order was substantially right; the risk it carried was one concept, and the fix is an interface rather than a reordering.
 
 ---
 

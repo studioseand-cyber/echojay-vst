@@ -1322,8 +1322,11 @@ public:
         std::vector<SuiteBinding> b;
         b.push_back ({ "eq",         "eq",      "AudioUnit:Effects/aumf,ameq,Brwx", "AMEK EQ 200" });
         b.push_back ({ "compressor", "comp",    "AudioUnit:Effects/aufx,APCM,ksWV", "API-2500 (m)" });
-        b.push_back ({ "limiter",    "limiter", "AudioUnit:Effects/aufx,bxa2,Brwx", "bx_limiter True Peak" });
-        b.push_back ({ "gate",       "gate",    "",                                 "SSL X-Gate" });
+        // MEASURED, not guessed: aufx,bxa2,Brwx is bx_SATURATOR, which sat here
+        // as the limiter's subject id. A bx_limiter map would have been refused
+        // and a bx_saturator map mis-categorised as a limiter accepted.
+        b.push_back ({ "limiter",    "limiter", "AudioUnit:Effects/aumf,bxtp,Brwx", "bx_limiter True Peak" });
+        b.push_back ({ "gate",       "gate",    "AudioUnit:Effects/aufx,XGAT,SSLN", "SSL X-Gate" });
         return b;
     }
 
@@ -1466,9 +1469,9 @@ public:
             }
 
             // The refusal. Fixture-bound suite, so the map must BE the fixture.
-            const bool isSubject = bind.subjectId.isNotEmpty()
-                                     ? sub.desc.fileOrIdentifier == bind.subjectId
-                                     : sub.desc.name.containsIgnoreCase (bind.subjectName);
+            // Id only. The by-name fallback that stood here was the same
+            // mechanism this session removed from the limiter/gate suite.
+            const bool isSubject = sub.desc.fileOrIdentifier == bind.subjectId;
             if (! isSubject)
             {
                 ++notSubject;
@@ -1982,18 +1985,28 @@ public:
         if (mode == "limiter" || mode == "gate")
         {
             const bool isLim = mode == "limiter";
+            // PINNED BY ID, not by name -- the unfixed member of the class that
+            // resolved "bx_saturator V2" to the UAD component. Substring
+            // matching takes the first container of the string, so "SSL X-Gate"
+            // would also match a plugin named "SSL X-Gate Legacy" and
+            // "bx_limiter True Peak" sits beside bx_limiter and bx_limiter V5.
+            // Ids measured from the component registry, 3 Aug 2026.
+            const juce::String wantId = isLim ? "AudioUnit:Effects/aumf,bxtp,Brwx"
+                                              : "AudioUnit:Effects/aufx,XGAT,SSLN";
             const juce::String wantName = isLim ? "bx_limiter True Peak" : "SSL X-Gate";
-            auto census3 = echojay::auregistry::buildCensus();
-            juce::PluginDescription pd;
-            {
-                Watchdog::Scope g (watchdog, "probe_gate_census", "census:" + wantName,
-                                   wantName, "AudioUnit", "probe", 30000);
-                for (const auto& t : census3.targets)
-                { auto d = echojay::auregistry::describeFromRegistry (t.identifier);
-                  if (d.name.containsIgnoreCase (wantName)) { pd = d; break; } }
-            }
+            auto pd = echojay::auregistry::describeFromRegistry (wantId);
             if (pd.fileOrIdentifier.isEmpty())
-            { say (mode.toUpperCase() + ": no subject named '" + wantName + "'"); quitNow(); return; }
+            { say (mode.toUpperCase() + ": pinned id " + wantId + " is not in the census "
+                   "(expected " + wantName + ")"); quitNow(); return; }
+            // Identity PRINTED BEFORE THE LOAD, per "a name is not evidence of
+            // identity": the name is now a check on the id, not the lookup key.
+            say (mode.toUpperCase() + " subject, resolved BEFORE load: name '" + pd.name
+                 + "' | vendor '" + pd.manufacturerName + "' | version " + pd.version
+                 + " | id " + pd.fileOrIdentifier);
+            if (! pd.name.containsIgnoreCase (wantName))
+                say ("  NOTE: the pinned id resolves to '" + pd.name + "', not '" + wantName
+                     + "'. The id is authoritative; this suite's thresholds were derived on '"
+                     + wantName + "'.");
             host.unload();
             loadedName = pd.name; loadedId = pd.fileOrIdentifier; loadedDesc = pd;
             ledger.beginLoad (loadedId, pd.name, pd.manufacturerName, pd.pluginFormatName,
@@ -2033,12 +2046,19 @@ public:
                 say ("  pattern '" + juce::String (isLim ? "Ceiling" : "Threshold") + "' matches "
                      + juce::String (bare.size()) + ": " + nameList (bare));
                 if (bare.size() > 1)
-                    say ("  AMBIGUOUS: the suite DECLINES to pick. A map qualifier is required; "
-                         "every candidate is named above rather than one chosen silently.");
+                    say ("  AMBIGUOUS: the suite DECLINES to pick. Every candidate is named "
+                         "above rather than one chosen silently. NOTE: a map qualifier would "
+                         "resolve this, and this suite does not yet read one -- it falls through "
+                         "to its own name preferences below.");
             }
 
-            // The qualified target: from the map when one exists, else the
-            // suite's declared preference, which must be an EXACT-ish name.
+            // The qualified target, FROM NAMES ONLY. No map is read here, and
+            // none was ever read: the comment that stood in this place said the
+            // target came "from the map when one exists", which answered a
+            // reader's question confidently and wrongly -- it reads as though
+            // the suite were already half-parameterised. Reading ceiling_db /
+            // threshold_db out of the map is M9 parameterisation step 1, and
+            // until it lands this list of names IS the mechanism.
             int iCtl = -1;
             for (auto* n : (isLim ? std::initializer_list<const char*>{ "Ceiling", "Output Ceiling" }
                                   : std::initializer_list<const char*>{ "Upper Threshold", "Threshold" }))
@@ -2048,8 +2068,9 @@ public:
                                                         + "' -> " + nameList (c2)); break; }
             }
             if (iCtl < 0)
-            { say ("  no unambiguous ceiling/threshold parameter -- INCONCLUSIVE: target ambiguous, "
-                   "the map must qualify which member of the pair is meant");
+            { say ("  no unambiguous ceiling/threshold parameter -- INCONCLUSIVE: target ambiguous. "
+                   "A map qualifier is what would resolve it; this suite cannot consult one yet, "
+                   "so the stop is final rather than recoverable here");
               std::cout << (isLim ? "LIMITER" : "GATE") << " SUITE: INCONCLUSIVE (ambiguous target)"
                         << std::endl; quitNow(); return; }
             say ("  target parameter [" + juce::String (iCtl) + "] " + cp[iCtl]->getName (64)

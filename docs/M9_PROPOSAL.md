@@ -946,6 +946,40 @@ identity before trusting anything measured there. The merged-tree checks were
 re-run only because the refusal happened to be visible in the output; had it
 scrolled past, the report would have been false.
 
+## DOCUMENTATION ASSERTING A PROPERTY THE CODE LACKS (new mechanism, 3 August 2026)
+
+A member of the verification family, and the worst-behaved one: it does not
+fail to answer the reader's question, it answers it confidently and wrongly.
+Absent documentation makes a reader go and look. False documentation stops
+them looking.
+
+**Instance 1.** The limiter/gate suite carried, directly above its target
+selection: *"The qualified target: from the map when one exists, else the
+suite's declared preference."* No map is read anywhere in that branch, and
+none ever was. A reader — including the one who wrote the parameterisation
+proposal — concludes the suite is already half-parameterised and that only the
+fallback needs work. The truth is that the name list IS the mechanism.
+
+Two console lines carried the same implication to the operator: *"A map
+qualifier is required"* and *"the map must qualify which member of the pair is
+meant"*, printed by a suite that cannot consult a map. Both now say plainly
+that the qualifier would resolve it and that this suite cannot read one yet.
+
+**Why it is distinct from the misplaced guard.** The misplaced guard is code
+that is present but unreached: running the path exposes it. This one has
+nothing to run. It survives every test, because it is not executable. Only
+reading the code *against* its comment finds it, and the comment is precisely
+what persuades a reader they need not.
+
+**The check that finds it.** For any comment asserting a data source, a guard
+or an invariant, name the line that implements it. If you cannot, the comment
+is a claim under test and not a description. Applied across the suites this
+session, the other data-source claims held — the gate's burst gap really is
+read from the plugin's own release ladder (`MainComponent.h:2074`), and
+saturation's pinned index really is name-guarded before use.
+
+---
+
 ## VERIFICATION MUST READ WHAT THE CONSUMER READS
 
 **The general rule, stated once above the instances: confirming a write by
