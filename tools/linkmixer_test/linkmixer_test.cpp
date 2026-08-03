@@ -52,12 +52,14 @@ struct EchoJayLinkMixerTestAccess
     static void layOut (juce::Rectangle<int> band, int stripW,
                         const std::vector<juce::String>& addrs,
                         Geom& bus, std::vector<Geom>& links,
-                        const std::vector<bool>& hasEq = {})
-    { Ed::layOutStrips (band, stripW, addrs, hasEq, bus, links); }
+                        const std::vector<bool>& hasEq = {},
+                        bool busHasEq = false)
+    { Ed::layOutStrips (band, stripW, addrs, hasEq, busHasEq, bus, links); }
 
-    static int eqH()          { return Ed::kStripEqH; }
-    static int eqMinData()    { return Ed::kStripEqMinData; }
-    static int vGap()         { return Ed::kStripVGap; }
+    static int eqH (bool wide) { return Ed::stripEqH (wide); }
+    static int eqHMin()        { return Ed::kStripEqHMin; }
+    static int eqMinData()     { return Ed::kStripEqMinData; }
+    static int vGap()          { return Ed::kStripVGap; }
 
     static Hit hitAt (const Geom& sg, juce::Point<int> p)
     { return Ed::stripHitAt (sg, p); }
@@ -781,7 +783,8 @@ static void testEqSlot (int stripW, int bandH)
 {
     // THE EQ CURVE SLOT. The load-bearing claim is not that the rect exists,
     // it is that a strip WITHOUT a curve is not merely blank there but has no
-    // rect at all, and that the fader baseline does not move between the two.
+    // rect at all, and that nothing else on the strip moves between the two.
+    const bool wide = (stripW >= T::wWide());
     std::printf ("eq slot: %dpx strip, %dpx band\n", stripW, bandH);
     const juce::Rectangle<int> band { 32, 142, 1050, bandH };
 
@@ -796,27 +799,80 @@ static void testEqSlot (int stripW, int bandH)
     check (links[0].eq.isEmpty(), "no curve means NO RECT, not an empty one");
     check (links[2].eq.isEmpty(), "no curve means NO RECT on the last strip");
     check (! links[1].eq.isEmpty(), "a published curve gets a rect");
-    checkEq (links[1].eq.getHeight(), T::eqH(), "eq rect height");
 
     // THE ALIGNMENT CLAIM: the slot comes out of the data area, so every
     // other element keeps its place. A console whose faders step up and down
     // between neighbours is the bug this guards.
     checkEq (links[1].fader.getY(), links[0].fader.getY(), "fader top unmoved by the eq slot");
     checkEq (links[1].fader.getHeight(), links[0].fader.getHeight(), "fader height unmoved");
+    checkEq (links[1].fader.getBottom(), links[0].fader.getBottom(), "fader bottom unmoved");
     checkEq (links[1].meter.getY(), links[0].meter.getY(), "meter top unmoved");
+    checkEq (links[1].meter.getBottom(), links[0].meter.getBottom(), "meter bottom unmoved");
     checkEq (links[1].ai.getY(), links[0].ai.getY(), "AI button unmoved");
     checkEq (links[1].name.getY(), links[0].name.getY(), "name unmoved");
+    checkEq (links[1].badge.getY(), links[0].badge.getY(), "badge unmoved");
+    checkEq (links[1].active.getY(), links[0].active.getY(), "active unmoved");
+    // The fader/meter shared-baseline claim must survive the slot too. NOTE
+    // the top is shared with the meter COLUMN, which begins at the clip lamp:
+    // sg.meter starts 9px lower because the lamp is taken off its top. The
+    // bottoms are shared outright.
+    check (links[1].fader.isEmpty()
+           || links[1].fader.getBottom() == links[1].meter.getBottom(),
+           "fader and meter still share a bottom on an EQ strip");
+    check (links[1].fader.isEmpty() || links[1].clip.isEmpty()
+           || links[1].fader.getY() == links[1].clip.getY(),
+           "fader still shares its top with the meter column on an EQ strip");
 
     // It is the DATA area that pays, and it pays exactly the slot plus a gap.
+    // Expressed against the slot's OWN height rather than the constant,
+    // because the height is now spare-space-up-to-a-cap.
     checkEq (links[0].data.getHeight() - links[1].data.getHeight(),
-             T::eqH() + T::vGap(), "the data area pays for the slot");
-    // And the slot sits inside the space the data area used to hold, above
-    // what is left of it.
-    check (links[1].eq.getBottom() <= links[1].data.getY(),
-           "the eq slot sits above the data area");
+             links[1].eq.getHeight() + T::vGap(), "the data area pays for the slot");
+    check (links[1].eq.getHeight() <= T::eqH (wide), "the slot never exceeds its cap");
+    check (links[1].eq.getHeight() >= T::eqHMin(),   "a drawn slot is never a smear");
+    // At a roomy band the cap is actually REACHED. Without this, "taller"
+    // would pass on a slot that silently stayed at the minimum.
+    if (bandH >= 540)
+        checkEq (links[1].eq.getHeight(), T::eqH (wide),
+                 "a roomy strip reaches the full preferred height");
+    // POSITION: the slot is now BELOW the data area, above the band.
+    check (links[1].eq.getY() >= links[1].data.getBottom(),
+           "the eq slot sits BELOW the data area");
+    check (links[1].fader.isEmpty()
+           || links[1].eq.getBottom() <= links[1].fader.getY(),
+           "the eq slot sits ABOVE the fader+meter band");
     check (links[1].eq.getX() == links[1].data.getX()
            && links[1].eq.getWidth() == links[1].data.getWidth(),
            "the eq slot spans the data column");
+    // Wide must be genuinely taller: the point of item 3 was more pixels per dB.
+    if (wide) check (T::eqH (true) > T::eqH (false),
+                     "wide gets a taller slot than narrow");
+}
+
+static void testEqSlotBus()
+{
+    // THE MIX BUS gets a curve on the same terms as a channel, and its slot
+    // must be laid out identically: same height, same column, and the pinned
+    // master must not drift from the channels just because its data comes
+    // from a different place.
+    std::printf ("eq slot: the Mix Bus strip\n");
+    const juce::Rectangle<int> band { 32, 142, 1050, 540 };
+    Geom bus;
+    std::vector<Geom> links;
+
+    T::layOut (band, T::wWide(), addrs (2), bus, links, { true, true }, true);
+    check (! bus.eq.isEmpty(), "the bus gets a slot when the local rack has an EQ");
+    if (! links.empty())
+    {
+        checkEq (bus.eq.getHeight(), links[0].eq.getHeight(), "bus slot height matches a channel");
+        checkEq (bus.fader.getHeight(), links[0].fader.getHeight(), "bus fader still matches");
+    }
+
+    // And no local EQ means no bus slot, independently of the channels.
+    T::layOut (band, T::wWide(), addrs (2), bus, links, { true, true }, false);
+    check (bus.eq.isEmpty(), "no local EQ means NO bus slot even when channels have one");
+    if (! links.empty())
+        check (! links[0].eq.isEmpty(), "a channel keeps its slot when the bus has none");
 }
 
 static void testEqSlotSqueeze()
@@ -841,7 +897,11 @@ static void testEqSlotSqueeze()
         else
         {
             sawKept = true;
-            checkEq (L.eq.getHeight(), T::eqH(), "a kept slot is always full height");
+            // Height TAPERS with the band (spare space up to a cap), so the
+            // claim is bounds, not a constant. What must never happen is a
+            // slot below the smear threshold or one that ate the floor.
+            check (L.eq.getHeight() <= T::eqH (false), "a kept slot never exceeds its cap");
+            check (L.eq.getHeight() >= T::eqHMin(),    "a kept slot is never a smear");
             check (L.data.getHeight() >= T::eqMinData(),
                    "a kept slot leaves the data area its floor");
         }
@@ -942,6 +1002,8 @@ int main()
     testBandSqueeze();
     testEqSlot (T::wNarrow(), 540);
     testEqSlot (T::wWide(),   540);
+    testEqSlot (T::wWide(),   424);
+    testEqSlotBus();
     testEqSlotSqueeze();
     testContentMigration();
     testDegenerate();

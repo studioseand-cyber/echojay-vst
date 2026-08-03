@@ -246,6 +246,28 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   correct given the information available — the gap is upstream in what
   the registry can tell us; and the Link monitor behaves identically, so
   it is consistent, not a new inconsistency.
+- THE BUILT-IN DEVICES NOTIFY NOTHING, so any design that waits to be told
+  a built-in changed waits forever. SurgicalEqProcessor deliberately has no
+  APVTS and no juce parameters (EchoJay uses none anywhere); its editor
+  calls setBand and applyStructured straight into the engine, and nothing
+  on that path calls updateHostDisplay. So audioProcessorParameterChanged
+  and audioProcessorChanged NEVER fire for a built-in, and a hosted-change
+  epoch built on them never moves. This shipped once as a curve that drew
+  when the EQ was added (chainRevision, which does fire) and then never
+  updated again. THE RULE: for built-ins, POLL THE DATA, do not wait for a
+  notification. Polling getMagnitudeResponse is 64 points times kMaxBands
+  complex multiplies with no FFT and no allocation, and unlike a
+  notification it cannot be defeated by a device that forgets to announce
+  itself. Proven rather than assumed: a listener attached to a real
+  SurgicalEqProcessor counted 0 notifications across a setBand that moved
+  the curve 7.9 dB.
+- MODE-GATING A SHARED CACHE is only safe while exactly ONE mode consumes
+  it. refreshLinkRackCache was called only in CHAIN content mode, so the
+  Link tab did no file IO otherwise, which was correct until the EQ curve
+  started reading the same cache from EVERY mode. In NUMBERS mode the
+  curve was then drawn once from whatever the cache happened to hold and
+  never refreshed. Whenever a second consumer appears, re-check the
+  refresh gate as well as the read path: the read looked completely fine.
 - A SIGNAL GATED ON ONE OF ITS CONSUMERS is invisible to every other
   consumer, and the gate reads as deliberate long after it stopped being
   so. ChainHost's AudioProcessorListener (the only way a HOSTED plugin's

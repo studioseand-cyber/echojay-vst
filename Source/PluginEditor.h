@@ -2567,7 +2567,9 @@ private:
         juce::Rectangle<int> meter;     // fast-peak bars, always present
         juce::Rectangle<int> clip;      // latching clip lamp atop the meter
         juce::Rectangle<int> ai;        // opens this channel's conversation
-        // The EQ curve thumbnail. EMPTY WHENEVER THERE IS NOTHING TO DRAW,
+        // The EQ curve thumbnail, sitting BELOW the data area and directly
+        // above the fader+meter band, in both content modes.
+        // EMPTY WHENEVER THERE IS NOTHING TO DRAW,
         // which is the whole contract: no EQ in this Link's rack, an EQ whose
         // curve did not arrive (an older Link publishes none), or a data area
         // too short to give the slot its height. No space is reserved for the
@@ -2642,27 +2644,50 @@ private:
     static constexpr int kStripVGap   = 6;
     static constexpr int kStripDataHMin = 120;
     // ---- The EQ curve slot -------------------------------------------------
-    // Taken from the TOP OF THE DATA AREA, not from the strip's fixed budget,
-    // and this is the whole reason the fader+meter band still lines up across
-    // a mixer where only some Links carry an EQ. The band's height is solved
-    // once for every strip; if the EQ slot came out of that shared budget, a
-    // strip with an EQ would sit its fader 32px higher than its neighbour and
-    // the console would read as broken. The data area is a scrolling list and
-    // gives up its last row gracefully instead.
-    static constexpr int kStripEqH = 26;
-    // Below this the data area has no room worth keeping, so the curve is
-    // dropped rather than squeezing the list to nothing. This is one chain
-    // block plus its gap; it cannot say so in terms of kChainBlockH, which is
-    // declared further down this class and so is not yet in scope here, and a
-    // static_assert in PluginEditor.cpp holds the two together instead.
-    static constexpr int kStripEqMinData = 23;
+    // Taken from the BOTTOM OF THE DATA AREA: below the readings (or the chain
+    // blocks) and directly above the fader+meter band, which is where the
+    // spare space actually sits. It comes out of the data area rather than out
+    // of the strip's shared vertical budget, and that is the whole reason the
+    // band still lines up across a mixer where only some Links carry an EQ.
+    // The band's height is solved ONCE for every strip; if the slot came out
+    // of that shared budget, a strip with an EQ would sit its fader lower than
+    // its neighbour and the console would read as broken. Only the data area
+    // pays, and it is a list that drops its last rows gracefully.
+    //
+    // WIDTH-DEPENDENT HEIGHT, because the spare space is width dependent. The
+    // readings stack at 26px per cell narrow and 18px wide, six cells max, and
+    // whole cells only. At a 540px band the data area is 181px: wide fills
+    // 108 of that and genuinely leaves a gap, narrow fills 156 and does not.
+    // So wide takes 66 (leaving 109, still all six readings) and narrow takes
+    // 40 (leaving 135, five readings). Narrow therefore trades ONE reading for
+    // the curve, and it trades away LRA, which is already the first thing the
+    // numbers painter drops on its own width priority.
+    // These are the PREFERRED heights, which is to say a cap. The slot takes
+    // the spare space up to this and no more, so at a tall window it is the
+    // number below and at a short one it is whatever is genuinely spare. That
+    // is what "fill the gap" has to mean: a fixed height would either leave a
+    // gap unfilled at 1044px or evict three readings at 424px.
+    static constexpr int kStripEqHNarrow = 40;
+    static constexpr int kStripEqHWide   = 66;
+    // Below this a curve is a smear rather than a small curve, so the slot is
+    // dropped WHOLE instead.
+    static constexpr int kStripEqHMin = 28;
+    // Floor for what is LEFT. Two readings narrow, three chain blocks wide:
+    // below that the data area is not showing enough to be worth the space,
+    // and the readings are the primary content. The curve fills what they do
+    // not need, never the other way round.
+    static constexpr int kStripEqMinData = 60;
     // DRAWN range, tighter than LinkShm::kEqCurveClampDeciDb's published plus
-    // or minus 30 dB, and deliberately so. At 26px tall the published range
-    // would put an ordinary 4 dB cut 1.3px off the centre line, so every
-    // normal EQ move would render as a flat line. Plus or minus 12 dB gives
-    // that same cut about 3px and lets a steep high-pass pin to the floor,
-    // which reads correctly as "everything below here is gone".
+    // or minus 30 dB, and deliberately so. The published range would put an
+    // ordinary 4 dB cut a pixel or two off the centre line, so every normal EQ
+    // move would render as a flat line. Plus or minus 12 dB gives that same
+    // cut about 11px in the 66px slot and lets a steep high-pass pin to the
+    // floor, which reads correctly as "everything below here is gone".
     static constexpr float kEqDrawRangeDb = 12.0f;
+    /** The slot height for a width mode. ONE place, so layout and the
+        self-test cannot disagree about which constant applies. */
+    static int stripEqH(bool wide) noexcept
+        { return wide ? kStripEqHWide : kStripEqHNarrow; }
     // The fader+meter BAND (8b). kFaderHMax/Min now bound the BAND height
     // (they used to bound the lone fader box; the formula is unchanged).
     // Inside the band: a fixed-width fader column on the left (ticks lane +
@@ -2818,10 +2843,13 @@ private:
         published an EQ curve THIS refresh. It is an input rather than
         something this function looks up, because looking it up would mean
         reading the rack cache and this function stays pure. A shorter vector
-        (or a false entry) simply means no eq rect for that strip. */
+        (or a false entry) simply means no eq rect for that strip.
+        `busHasEq` is the same fact for the pinned Mix Bus strip, which
+        resolves it from the local ChainHost rather than from a sidecar. */
     static void layOutStrips(juce::Rectangle<int> band, int stripW,
                              const std::vector<juce::String>& addrs,
                              const std::vector<bool>& hasEqCurve,
+                             bool busHasEq,
                              StripGeom& busOut,
                              std::vector<StripGeom>& linkOut);
 
@@ -3077,6 +3105,23 @@ private:
         EDITOR-side (unlike the cache) because it is only a change detector:
         a fresh editor simply re-measures once, which is correct anyway. */
     juce::String linkEqSig_;
+    /** THE MIX BUS CURVE, which does NOT come from a sidecar. The bus strip
+        is the main plugin's own rack, so its curve is read straight off the
+        local ChainHost with no file and no 1Hz cache in the way.
+
+        Refreshed on the editor's 20Hz timer, NOT from paint: computing a
+        reading inside a painter is the thing the chain reader was written to
+        avoid, and paint must stay a consumer. Empty means no EQ in the local
+        rack (or it could not answer), which draws no slot, exactly as an
+        absent sidecar curve does.
+
+        CONSEQUENCE, stated because it is visible: the bus curve tracks an EQ
+        knob at 20Hz while a channel's lags by up to ~1.3s. The two CANNOT
+        disagree about the same data, because they describe different racks
+        (this plugin's own versus a Link's), so the difference reads as the
+        local one being live rather than as two answers to one question. */
+    std::vector<int16_t> busEqCurve_;
+    void refreshBusEqCurve();
     void paintLinkStripChain(juce::Graphics& g, juce::Rectangle<int> area,
                              const StripGeom& sg,
                              const EchoJayProcessor::LinkDisplayEntry* entry,

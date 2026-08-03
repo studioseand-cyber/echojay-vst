@@ -127,38 +127,31 @@ void LinkProcessor::publishRackSidecar()
         resolvedDir = LinkShm::resolveDir(err);
         if (resolvedDir.isEmpty()) return;
     }
-    // TWO TRIGGERS, because they mean different things.
+    // THE CURVE IS POLLED, NOT NOTIFIED, and that is the whole fix for the
+    // bug where it drew once and never moved again.
     //
-    // The REVISION covers structure (add, remove, move, bypass, wet) and
-    // publishes AT ONCE: those are discrete events and the main plugin's rack
-    // card should follow them without a lag the user can feel.
+    // The obvious design is to publish when something tells you a parameter
+    // changed. It does not work HERE, because the built-in devices have no
+    // parameters to change: SurgicalEqProcessor deliberately runs without an
+    // APVTS and without juce parameters (its editor calls setBand and
+    // applyStructured straight into the engine), and nothing on that path
+    // calls updateHostDisplay either. So audioProcessorParameterChanged and
+    // audioProcessorChanged NEVER fire for the EQ, the hosted-change epoch
+    // never moves, and a publish gated on notifications is silent forever.
+    // The one publish that did happen came from chainRevision when the EQ was
+    // ADDED, which is exactly the reported symptom.
     //
-    // The EPOCH covers a hosted plugin's own knobs, which the revision cannot
-    // see at all. Those arrive in floods -- one EQ drag is dozens of events a
-    // second -- so an epoch-only wake WAITS FOR THE GESTURE TO SETTLE. Without
-    // that, a single drag would rewrite this file a hundred times to feed a
-    // reader that polls at 1 Hz.
+    // So the authoritative trigger is the DATA. getMagnitudeResponse is 64
+    // points times kMaxBands complex multiplies with no FFT and no allocation
+    // (analysisScratch_ is a member), which at this poll rate is nothing, and
+    // unlike a notification it cannot be silently defeated by a device that
+    // forgets to announce itself. The epoch stays as an ADDITIONAL trigger:
+    // it is correct for real hosted plugins and costs nothing here.
     const int  rev      = chainHost.getChainRevision();
     const int  epoch    = chainHost.getHostedChangeEpoch();
     const bool revMoved = (rev   != lastPublishedRackRev_);
     const bool epMoved  = (epoch != lastPublishedEpoch_);
-    if (!revMoved && !epMoved) return;
-    const double nowMs = juce::Time::getMillisecondCounterHiRes();
-    if (!revMoved)
-    {
-        // A settle test ALONE would starve under sustained automation: a host
-        // automating an EQ parameter emits changes every block, so the "last
-        // change" timestamp never falls behind and a pure settle would wait
-        // forever, leaving the curve frozen exactly while it is moving most.
-        // So the settle coalesces a gesture, and the staleness bound
-        // guarantees progress regardless. Whichever comes first.
-        const bool settled = (nowMs - chainHost.lastHostedChangeMs()) >= kRackSettleMs;
-        const bool stale   = (nowMs - lastRackPublishMs_) >= kRackMaxStaleMs;
-        if (!settled && !stale) return;
-    }
-    lastPublishedRackRev_ = rev;
-    lastPublishedEpoch_   = epoch;
-    lastRackPublishMs_    = nowMs;
+    const double nowMs  = juce::Time::getMillisecondCounterHiRes();
 
     // The EQ curve, fetched ONCE for the rack rather than per slot: the
     // accessor already resolves "the first built-in EQ" and there is at most
@@ -174,6 +167,36 @@ void LinkProcessor::publishRackSidecar()
         if (chainHost.getBuiltinEqCurveDeciDb(tmp.data(), LinkShm::kEqCurvePoints))
             curve = std::move(tmp);
     }
+    // Track when the curve last MOVED, so a drag can coalesce. Compared
+    // against the last COMPUTED curve, not the last published one: otherwise
+    // every tick of a slow drag would look like "still changing" relative to
+    // a published value that is deliberately behind.
+    if (curve != lastComputedCurve_)
+    {
+        lastComputedCurve_ = curve;
+        lastCurveChangeMs_ = nowMs;
+    }
+    const bool curveMoved = (curve != lastPublishedCurve_);
+
+    if (!revMoved && !epMoved && !curveMoved) return;
+    if (!revMoved)
+    {
+        // A settle test ALONE would starve under sustained automation: a host
+        // automating an EQ emits changes every block, so the "last change"
+        // stamp never falls behind and a pure settle would wait forever,
+        // leaving the curve frozen exactly while it is moving most. So the
+        // settle coalesces a gesture and the staleness bound guarantees
+        // progress. Whichever comes first.
+        const double lastMoveMs = juce::jmax(chainHost.lastHostedChangeMs(),
+                                             lastCurveChangeMs_);
+        const bool settled = (nowMs - lastMoveMs)         >= kRackSettleMs;
+        const bool stale   = (nowMs - lastRackPublishMs_) >= kRackMaxStaleMs;
+        if (!settled && !stale) return;
+    }
+    lastPublishedRackRev_ = rev;
+    lastPublishedEpoch_   = epoch;
+    lastPublishedCurve_   = curve;
+    lastRackPublishMs_    = nowMs;
 
     LinkShm::RackSidecar rc;
     rc.valid     = true;

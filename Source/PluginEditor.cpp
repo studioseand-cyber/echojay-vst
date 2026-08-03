@@ -6068,16 +6068,18 @@ namespace LinkConsole
 void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
                                  const std::vector<juce::String>& addrs,
                                  const std::vector<bool>& hasEqCurve,
+                                 bool busHasEq,
                                  StripGeom& busOut,
                                  std::vector<StripGeom>& linkOut)
 {
-    // kStripEqMinData cannot be written in terms of kChainBlockH in the header
-    // (declaration order), so the two are tied together here. Inside the
-    // member function rather than at file scope, because both are private. If
-    // the chain block ever changes height this fires, rather than letting the
-    // EQ slot quietly keep a floor that no longer means "one row".
-    static_assert(kStripEqMinData == kChainBlockH + kChainBlockGap,
-                  "kStripEqMinData must stay one chain block plus its gap");
+    // The floor must stay worth keeping in BOTH content modes: at least two
+    // readings narrow (26px each) and at least two chain blocks wide. Written
+    // here rather than in the header because kChainBlockH is declared further
+    // down the class, and inside the member function because both are private.
+    static_assert(kStripEqMinData >= 2 * (kChainBlockH + kChainBlockGap),
+                  "kStripEqMinData must leave at least two chain blocks");
+    static_assert(kStripEqMinData >= 2 * 26,
+                  "kStripEqMinData must leave at least two narrow readings");
 
     busOut = StripGeom{};
     linkOut.clear();
@@ -6195,31 +6197,43 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         }
         sg.meter = meterCol;
         b.removeFromBottom(kStripVGap);
-        // THE EQ CURVE SLOT, off the TOP of what is left for the data area.
+        // THE EQ CURVE SLOT, off the BOTTOM of what is left for the data
+        // area: under the readings or the chain blocks, directly above the
+        // fader+meter band. That is where the spare space actually is, and it
+        // is the same place in both content modes, so the toggle never moves
+        // the curve.
+        //
         // Everything above (name, badge, active) and everything below (the
-        // fader+meter band, the AI button) is already placed, so taking the
-        // slot here cannot move any of them: a strip with an EQ and a strip
-        // without one keep the same fader baseline, which is the difference
-        // between a console and a set of unrelated columns.
+        // band, the AI button) is ALREADY placed by the time this runs, so
+        // taking the slot here cannot move any of them: a strip with an EQ
+        // and a strip without one keep identical fader, meter, AI and name
+        // rects, which is the difference between a console and a set of
+        // unrelated columns. Only the data area pays.
         //
         // Dropped entirely rather than shrunk when the data area cannot spare
-        // the height. A 6px curve is not a smaller curve, it is a smear.
-        if (hasEq && b.getHeight() >= kStripEqH + kStripVGap + kStripEqMinData)
+        // the height. A 12px curve is not a smaller curve, it is a smear.
+        // SPARE SPACE UP TO A CAP, not a fixed height. The readings are the
+        // primary content and keep their floor first; the curve takes what is
+        // genuinely left, capped at the preferred height for this width. A
+        // fixed height would leave the gap unfilled on a tall window and evict
+        // three readings on a short one.
+        const int eqAvail = b.getHeight() - kStripVGap - kStripEqMinData;
+        const int eqH     = juce::jmin(stripEqH(wideBand), eqAvail);
+        if (hasEq && eqH >= kStripEqHMin)
         {
-            sg.eq = b.removeFromTop(kStripEqH);
-            b.removeFromTop(kStripVGap);
+            sg.eq = b.removeFromBottom(eqH);
+            b.removeFromBottom(kStripVGap);
         }
         sg.data = b;
     };
 
     // ---- The pinned Mix Bus strip: EDITOR coords, left edge of the band ----
     busOut.isBus = true;               // addr stays empty: the bus has no uid
-    // NO CURVE ON THE BUS STRIP this pass. The bus is the main plugin's own
-    // rack, so its curve would come from chainHost directly rather than from a
-    // sidecar -- a second data path with its own staleness story, for a strip
-    // the brief did not ask for. It is a small follow-up, not a hole here.
+    // The bus reads its own ChainHost rather than a sidecar, so busHasEq is
+    // resolved by the caller from live rack state. The GEOMETRY is identical
+    // to a channel's: only where the data comes from differs.
     layOutOne(busOut, { band.getX(), band.getY(), stripW, band.getHeight() },
-              false);
+              busHasEq);
 
     // ---- The scrolling Link strips: VIEW-LOCAL coords, x from 0 ------------
     linkOut.reserve(addrs.size());
@@ -6304,7 +6318,12 @@ void EchoJayEditor::measureLinkStrips()
         hasEqCurve.push_back(linkHasEqCurve(entry.info.uid));
     }
 
-    layOutStrips(linkStripAreaRect_, stripWidth(), addrs, hasEqCurve,
+    // The bus resolves its own EQ from the LOCAL rack, not from a sidecar.
+    // Asked of ChainHost directly rather than of busEqCurve_, so the slot
+    // exists from the first layout even if the timer has not run yet.
+    const bool busHasEq = processorRef.getChainHost().findFirstBuiltinEqSlot() >= 0;
+
+    layOutStrips(linkStripAreaRect_, stripWidth(), addrs, hasEqCurve, busHasEq,
                  linkBusGeom_, linkStripGeom_);
 }
 
@@ -6844,6 +6863,24 @@ EchoJayEditor::layOutChainRows(juce::Rectangle<int> dataRect, int occupied,
     return r;
 }
 
+void EchoJayEditor::refreshBusEqCurve()
+{
+    // Live off the local ChainHost: no sidecar, no file, no 1Hz cache. The
+    // whole point of the bus path is that it can be current, so it is polled
+    // at the editor's own rate and the result cached for paint to consume.
+    //
+    // Same honesty rule as the sidecar path: a rack with no EQ, or an EQ that
+    // cannot answer, leaves this EMPTY and the strip draws no slot. It never
+    // holds a stale curve from a rack that has since lost its EQ, because the
+    // clear happens before the fetch, not after a failure.
+    busEqCurve_.clear();
+    auto& host = processorRef.getChainHost();
+    if (host.findFirstBuiltinEqSlot() < 0) return;
+    std::vector<int16_t> tmp((size_t) LinkShm::kEqCurvePoints, (int16_t) 0);
+    if (host.getBuiltinEqCurveDeciDb(tmp.data(), LinkShm::kEqCurvePoints))
+        busEqCurve_ = std::move(tmp);
+}
+
 const std::vector<int16_t>*
 EchoJayEditor::linkEqCurve(const juce::String& uid) const
 {
@@ -7065,14 +7102,19 @@ void EchoJayEditor::paintLinkStripEq(juce::Graphics& g, juce::Rectangle<int> are
     g.setColour(LinkConsole::well);
     g.fillRoundedRectangle(wr, 3.0f);
 
-    // CURVE ONLY: no grid, no zero line, no labels, no numbers. At 26px tall
-    // a scale would take more pixels than the thing it annotates. The cost is
-    // real and worth stating: without a centre line, boost and cut are told
-    // apart by the curve's shape against the well, not by a reference.
     const auto pr = wr.reduced(1.0f);         // keep the stroke inside the well
     if (pr.getWidth() <= 1.0f || pr.getHeight() <= 1.0f) return;
     const float midY  = pr.getCentreY();
     const float perDb = (pr.getHeight() * 0.5f) / kEqDrawRangeDb;
+
+    // THE ZERO DATUM, and nothing else. Still no grid, no labels, no numbers:
+    // those were ruled out because they cost more pixels than the curve they
+    // annotate. This one hairline is not in that category. Without it a curve
+    // cannot be read as boost or cut at all, only as "wiggly", which makes it
+    // decoration rather than information. One line, dim enough that the curve
+    // stays the brightest thing in the slot.
+    g.setColour(LinkConsole::structure.withMultipliedAlpha(dim * 0.7f));
+    g.fillRect(pr.getX(), midY, pr.getWidth(), 1.0f);
 
     const int n = LinkShm::kEqCurvePoints;
     juce::Path p;
@@ -7629,16 +7671,27 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             drv = advanceLinkStripSmoothing(*st, fresh);
         }
 
-        // The EQ curve, ABOVE the content area and in BOTH content modes: it
+        // The EQ curve, BELOW the content area and in BOTH content modes: it
         // is a property of the rack, not of the numbers/chain toggle. Nothing
-        // runs when this Link published no curve, because then sg.eq is empty
-        // and there is no slot to fill. The second lookup is not redundant
-        // with the geometry's: the cache can refresh between a measure and a
-        // paint, and drawing nothing for one frame is right where drawing a
-        // flat line would be a claim.
-        if (!sg.eq.isEmpty() && entry != nullptr)
-            if (const auto* c = linkEqCurve(entry->info.uid))
+        // runs when there is no curve, because then sg.eq is empty and there
+        // is no slot to fill. The second lookup is not redundant with the
+        // geometry's: either source can change between a measure and a paint,
+        // and drawing nothing for one frame is right where drawing a flat
+        // line would be a claim.
+        //
+        // TWO SOURCES, one painter. The bus reads the local rack live off
+        // busEqCurve_; a channel reads the sidecar cache. Only the lookup
+        // differs, so the two strips cannot drift apart in how they DRAW.
+        if (!sg.eq.isEmpty())
+        {
+            const std::vector<int16_t>* c = nullptr;
+            if (sg.isBus)
+                c = busEqCurve_.empty() ? nullptr : &busEqCurve_;
+            else if (entry != nullptr)
+                c = linkEqCurve(entry->info.uid);
+            if (c != nullptr)
                 paintLinkStripEq(g, sg.eq, *c, dim, wide);
+        }
 
         switch (processorRef.linkMixerContent)
         {
@@ -17137,10 +17190,19 @@ void EchoJayEditor::timerCallback()
         const int n = (int) processorRef.getLinkDisplayList().size();
         if (n != (int) linkStripGeom_.size())
             resized();
-        // CHAIN mode feeds its cache here, ~1Hz (the function throttles
-        // itself); gated on the mode so the tab does no file IO otherwise.
-        if (processorRef.linkMixerContent == EchoJayProcessor::LinkMixerContent::Chain)
-            refreshLinkRackCache(false);
+        // The rack cache feeds BOTH consumers now, ~1Hz (the function
+        // throttles itself). It used to be gated on CHAIN mode so the tab did
+        // no file IO otherwise, and that gate became a bug the moment the EQ
+        // curve started reading the same cache: the curve sits in every
+        // content mode, so in NUMBERS mode it was drawn once from whatever the
+        // cache happened to hold and then never refreshed again. Mode-gating a
+        // cache is only safe while exactly one mode consumes it.
+        refreshLinkRackCache(false);
+        // The Mix Bus curve is NOT in that cache: it comes off the local
+        // ChainHost live, every tick (20Hz), which is why the bus tracks an EQ
+        // knob while a channel lags by up to a second. Cheap enough to do
+        // unconditionally: it early-outs when the local rack has no EQ.
+        refreshBusEqCurve();
         // Failed block edits show their coral edge + reason for ~4s, then
         // sweep (in-flight entries are cleared by the ack poll, never here).
         {

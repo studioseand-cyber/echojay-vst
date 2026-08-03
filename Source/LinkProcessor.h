@@ -365,6 +365,16 @@ private:
     // gets roughly one publish a second, matching the reader's own cadence.
     static constexpr double kRackMaxStaleMs = 1000.0;
     double lastRackPublishMs_ = 0.0;
+    // THE CURVE IS POLLED because the built-in devices notify nothing (see
+    // publishRackSidecar). Two copies, not one, and they are different facts:
+    // `lastComputed` is what the engine said on the PREVIOUS tick and dates
+    // the settle timer; `lastPublished` is what is actually in the file and
+    // decides whether a write is owed. Collapsing them would make a slow drag
+    // read as "still moving" forever, because the published value is meant to
+    // lag.
+    std::vector<int16_t> lastComputedCurve_;
+    std::vector<int16_t> lastPublishedCurve_;
+    double lastCurveChangeMs_ = 0.0;
     void publishRackSidecar();
     juce::String effectiveFilePart() const;
     juce::String chainInstanceId() const;
