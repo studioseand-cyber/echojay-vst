@@ -27,6 +27,7 @@
 #include "EjmapMouth.h"
 #include "EjmapProbe.h"
 #include "EjmapSubject.h"
+#include "EjmapTriage.h"
 #include <thread>
 #include <atomic>
 #include "EjmapBuildInfo.h"     // EJMAP_APPLY_HEADER_SHA, stamped as compiled
@@ -3842,7 +3843,66 @@ public:
         const int idxFreq = (int) gp.getProperty ("freq_hz", juce::var()).getProperty ("index", -1);
         const int idxGain = (int) gp.getProperty ("gain_db", juce::var()).getProperty ("index", -1);
         const int idxQ    = (int) gp.getProperty ("q", juce::var()).getProperty ("index", -1);
-        const int idxMono = 7, idxMonoIn = 8;
+        // ---- ROLE AND ENABLE LINK, RESOLVED (M9 item 3, session 1) ---------
+        // These were `idxMono = 7, idxMonoIn = 8` -- facts about one plugin,
+        // verified once by a human and frozen in code. They now come from the
+        // map, or from the fixture when the map predates schema 2.3b. The real
+        // AMEK map carries neither: signed option (i), the fixture holds them
+        // until AMEK is re-mapped, because writing them into a human-verified
+        // artefact to make our own tests convenient is the pressure the schema
+        // gate change was accepted to remove.
+        // THE CLAIM AND THE LADDER COME FROM DIFFERENT PLACES, deliberately.
+        // The fixture supplies the ROLE and the LINK -- the two fields schema
+        // 2.3b added and the real AMEK map predates. The LADDER always comes
+        // from the map, because that is the artefact under test: a fixture
+        // carrying its own anchors would be probing itself.
+        juce::var roleSource = mapVar;
+        juce::String roleFrom = "map";
+        auto rolePick = ejmap::subject::controlWithRole (mapVar, "stereo_width");
+        if (! rolePick.ok && rolePick.candidates == 0)
+        {
+            auto fx = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures")
+                        .getChildFile ("m9-eq-aumf-ameq-Brwx.json");
+            auto fv = juce::JSON::parse (fx.loadFileAsString());
+            auto claim = ejmap::subject::controlWithRole (fv, "stereo_width");
+            if (claim.candidates == 1)
+            {
+                roleSource = fv;
+                roleFrom = "fixture " + fx.getFileName() + " (the map predates schema 2.3b)";
+                // ladder from the MAP's control of that name
+                auto fromMap = ejmap::subject::controlNamed (mapVar, claim.controlName);
+                const int fixtureIdx = (int) fv.getProperty ("controls", juce::var())
+                                              .getProperty (claim.controlName, juce::var())
+                                              .getProperty ("index", -1);
+                if (fromMap.ok() && fromMap.index != fixtureIdx)
+                {
+                    say ("GATE: the fixture claims '" + claim.controlName + "' is at index "
+                         + juce::String (fixtureIdx) + " and the map puts it at index "
+                         + juce::String (fromMap.index) + ". The fixture describes a different "
+                           "build than the map under test; nothing runs on that disagreement.");
+                    quitNow(); return;
+                }
+                rolePick.ok = fromMap.ok();
+                rolePick.slot = fromMap;
+                rolePick.controlName = claim.controlName;
+                rolePick.why = fromMap.why;
+            }
+        }
+        if (! rolePick.ok)
+        {
+            say ("GATE: no usable stereo_width control (" + rolePick.why + "). Arm A's falsifier "
+                 "and B5's negative control both write that control, so neither can run.");
+            quitNow(); return;
+        }
+        const int idxMono = rolePick.slot.index;
+        auto monoLink = ejmap::subject::enableLinkFor (roleSource, rolePick.controlName);
+        const int idxMonoIn = monoLink.declared ? monoLink.index : -1;
+        say ("stereo_width role from " + roleFrom + ": '" + rolePick.controlName + "' ["
+             + juce::String (idxMono) + "]"
+             + (monoLink.declared ? ", enabled by [" + juce::String (idxMonoIn) + "] "
+                                    + monoLink.name + " = " + juce::String (monoLink.value, 2)
+                                  : ", NO enable link declared -- whether it is live in the "
+                                    "default state is UNKNOWN, not assumed"));
         auto freqAnch = echojay::anchorsFromVar (gp.getProperty ("freq_hz", juce::var()));
         auto gainAnch = echojay::anchorsFromVar (gp.getProperty ("gain_db", juce::var()));
         auto qAnch    = echojay::anchorsFromVar (gp.getProperty ("q", juce::var()));
@@ -3874,7 +3934,8 @@ public:
         stateFile.replaceWithData (preState.getData(), preState.getSize());
         std::map<int, float> preVals;
         for (int i : { idxFreq, idxGain, idxQ, idxMono, idxMonoIn })
-            preVals[i] = params[i]->getValue();
+            if (juce::isPositiveAndBelow (i, params.size()))
+                preVals[i] = params[i]->getValue();
         auto writeStake = [&] (const juce::String& suite, int renderN)
         {
             auto* o = new juce::DynamicObject();
@@ -3978,6 +4039,86 @@ public:
         say ("   sigma_f USED = max(plugin, instrument): centre " + juce::String (sigCentre, 4)
              + " oct | depth " + juce::String (sigDepth, 3) + " dB | width "
              + juce::String (sigWidth, 4) + " oct | side " + juce::String (sigSide, 4) + " dB");
+
+        // ---- P5 ROLE AND ENABLE, VERIFIED BEFORE ANYTHING ACTS ON THEM -----
+        // Order is deliberate and was decided before building: triage first,
+        // because it names WHICH of three causes produced one symptom and
+        // everything below quotes its answer; then the role, because arm A's
+        // falsifier and B5's negative control both write that control; then
+        // the enable null-test, because a link with side effects contaminates
+        // the arm that is not testing it.
+        say ("");
+        say ("P5 ROLE AND ENABLE (map claims, checked before use)");
+
+        // (1) TRIAGE. One symptom, three causes, named apart.
+        auto monoAnchLive = monoAnch;
+        auto sideEnergyNow = [&] {
+            auto sp = P::welch (render());
+            return P::bandEnergyDb (sp.side, 50, 400); };
+        const float monoLo = monoAnchLive.size() >= 2 ? normFor (monoAnchLive, monoAnchLive.getFirst()[0]) : 0.0f;
+        const float monoHi = monoAnchLive.size() >= 2 ? normFor (monoAnchLive, monoAnchLive.getLast()[0]) : 1.0f;
+
+        // engage the enable FIRST if one is declared -- an undeclared link is
+        // UNKNOWN, so the triage below reports what it finds either way
+        double primaryBefore = 0, primaryAfter = 0;
+        if (monoLink.declared)
+        {
+            auto preEnable = P::welch (render());
+            primaryBefore = P::bandEnergyDb (preEnable.mid, 50, 400);
+            const auto ms = P::writeAndServiceRunloop (*params[idxMonoIn], (float) monoLink.value);
+            auto postEnable = P::welch (render());
+            primaryAfter = P::bandEnergyDb (postEnable.mid, 50, 400);
+            say ("  enable [" + juce::String (idxMonoIn) + "] " + monoLink.name + " -> "
+                 + juce::String (monoLink.value, 2)
+                 + (ms < 0 ? "  <- WRITE DID NOT LAND" : ", landed in " + juce::String (ms, 1) + " ms"));
+        }
+
+        auto tri = ejmap::triage::classifyLiveness (idxMono, params.size(), monoLo, monoHi, sigSide,
+                       [&] (float n) { return P::writeAndServiceRunloop (*params[idxMono], n); },
+                       [&] { return sideEnergyNow(); });
+        say ("  TRIAGE of '" + rolePick.controlName + "': " + tri.cause());
+
+        // (2) ROLE, verified by signal.
+        P::writeAndServiceRunloop (*params[idxMono], monoLo);
+        auto rA = P::welch (render());
+        P::writeAndServiceRunloop (*params[idxMono], monoHi);
+        auto rB = P::welch (render());
+        const double roleSideMoved = std::abs (P::bandEnergyDb (rB.side, 50, 400)
+                                             - P::bandEnergyDb (rA.side, 50, 400));
+        const double roleMidMoved  = std::abs (P::bandEnergyDb (rB.mid, 50, 400)
+                                             - P::bandEnergyDb (rA.mid, 50, 400));
+        auto roleEv = ejmap::triage::verifyStereoWidthRole (rolePick.controlName, roleSideMoved, roleMidMoved,
+                                                4.0 * sigSide, 4.0 * sigDepth);
+        say ("  ROLE: " + roleEv.why);
+        say ("  " + roleEv.limitStatement());
+
+        // (3) ENABLE NULL-TEST.
+        if (monoLink.declared)
+        {
+            auto nul = ejmap::triage::checkEnableIsNull (monoLink.name, std::abs (primaryAfter - primaryBefore),
+                                             4.0 * sigDepth);
+            say ("  ENABLE NULL: " + nul.why);
+            if (! nul.clean)
+            {
+                emitInconclusive ("stereo_width role", nul.why + ". No arm runs on a plugin whose "
+                    "measurement the enable itself moved",
+                    "measured: the enable link is not null, so arm B would measure a different "
+                    "plugin than the one the map describes");
+                std::cout << "GATE M9: STOPPED (enable link is not null)" << std::endl;
+                quitNow(); return;
+            }
+        }
+        if (! roleEv.supported)
+        {
+            emitInconclusive ("stereo_width role", roleEv.why + ". Triage says: " + tri.cause()
+                + ". Arm A's falsifier and B5's negative control both write this control, so "
+                  "neither can produce a verdict",
+                "measured: the role claim was checked by signal before any arm ran");
+            std::cout << "GATE M9: STOPPED (map's stereo_width claim not supported)" << std::endl;
+            quitNow(); return;
+        }
+        // restore the control to where the arms expect it
+        P::writeAndServiceRunloop (*params[idxMono], preVals.count (idxMono) ? preVals[idxMono] : monoLo);
 
         // ---- P3 sanity gate under excitation -------------------------------
         auto stimS = P::welch (stim);

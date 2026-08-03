@@ -34,6 +34,7 @@
 #include <juce_events/juce_events.h>   // ScopedJuceInitialiser_GUI
 #include "EjmapSchema.h"
 #include "EjmapSubject.h"
+#include "EjmapTriage.h"
 
 // The shared sweep and parsers, compiled here so the drift gate proves both
 // binaries build the SAME code: ejextract compiles these headers to produce
@@ -1250,6 +1251,76 @@ void testSubjectLookups()
     auto narrowOct = octavesApartWithin (slotFor (juce::var (nbm), "f"), 4.0);
     check (! narrowOct.ok && narrowOct.why.contains ("cannot express"),
            "subject REFUSES an interval the ladder cannot express, rather than shrinking it");
+
+    // ---- item 3 session 1: cause triage, all four states -------------------
+    // The write-did-not-land state cannot be forced on real hardware -- writes
+    // land -- so it is proven HERE, where the write function can be made to
+    // fail, and the other three are proven end to end on AMEK.
+    {
+        using namespace ejmap::triage;
+        auto ok    = [] (float) { return 1.0; };
+        auto fails = [] (float) { return -1.0; };
+
+        auto oor = classifyLiveness (9, 4, 0.0f, 1.0f, 0.1, ok, [] { return 0.0; });
+        check (oor.state == Liveness::indexOutOfRange
+                 && oor.cause().contains ("statement about the MAP"),
+               "triage: an out-of-range index is a statement about the MAP");
+
+        auto unl = classifyLiveness (1, 4, 0.0f, 1.0f, 0.1, fails, [] { return 0.0; });
+        check (unl.state == Liveness::writeDidNotLand
+                 && unl.cause().contains ("WRITE PATH")
+                 && unl.cause().contains ("Nothing was measured"),
+               "triage: an unlanded write is a statement about the WRITE PATH, and measures nothing");
+
+        double v = 0;
+        auto inert = classifyLiveness (1, 4, 0.0f, 1.0f, 0.1, ok, [&v] { return v; });
+        check (inert.state == Liveness::landedButInert
+                 && inert.cause().contains ("statement about the PLUGIN"),
+               "triage: landed-but-inert is the ONLY one of the three about the plugin");
+
+        int n = 0;
+        auto live = classifyLiveness (1, 4, 0.0f, 1.0f, 0.1, ok, [&n] { return n++ * 5.0; });
+        check (live.state == Liveness::live && live.isLive(),
+               "triage: a landed write that moves the feature is live");
+
+        // the three causes produce three DIFFERENT sentences -- the whole point
+        check (oor.cause() != unl.cause() && unl.cause() != inert.cause()
+                 && oor.cause() != inert.cause(),
+               "triage: one symptom, three causes, three different sentences");
+    }
+
+    // ---- item 3 session 1: role verification and the enable null-test ------
+    {
+        using namespace ejmap::triage;
+        // a width control: side moves, mid is a minority of it
+        auto width = verifyStereoWidthRole ("Mono Maker", 35.0, 0.44, 1.94, 0.35);
+        check (width.supported && width.why.contains ("supported"),
+               "role: side moving with mid as a minority is supported");
+        check (width.why.contains ("RECORDED, NOT A CRITERION"),
+               "role: a mid movement above its own floor is RECORDED, not used as a criterion -- "
+               "the first version of this check failed the signed AMEK fixture on exactly that");
+
+        // a level control: side and mid move together
+        auto gain = verifyStereoWidthRole ("Input Gain", 30.0, 30.0, 1.94, 0.35);
+        check (! gain.supported && gain.why.contains ("not a minority"),
+               "role REFUSES a level control, which moves mid and side together");
+
+        // an inert index: nothing moves
+        auto dead = verifyStereoWidthRole ("Mono Maker", 0.0, 0.0, 1.94, 0.35);
+        check (! dead.supported && dead.why.contains ("does nothing measurable"),
+               "role REFUSES an inert control, and says so differently from a level control");
+        check (dead.why != gain.why, "role: inert and level-like failures read differently");
+
+        check (width.limitStatement().contains ("CANNOT separate it from another"),
+               "role states its own limit: supported by measurement, never proven");
+
+        auto clean = checkEnableIsNull ("Mono Maker In", 0.0, 0.35);
+        check (clean.clean, "enable null: an enable that changes nothing else is clean");
+        auto dirty = checkEnableIsNull ("Power", 4.39, 0.35);
+        check (! dirty.clean && dirty.why.contains ("not a per-control enable")
+                 && dirty.why.contains ("arms not testing this link"),
+               "enable null REFUSES a global switch, naming the contamination of other arms");
+    }
 
     // ---- 5b: control roles and enable links -------------------------------
     {

@@ -485,6 +485,51 @@ eq will read its band, roles and links from a map, but the only EQ map in the co
 
 ---
 
+## 4h. Item 3, session 1 built: diagnostics, role verification, enable null-test
+
+Requirement 4 first, as scheduled. `EjmapTriage.h` holds pure decision logic — no audio types — so the drift gate compiles it without linking the message loop and **every state it can report is provable in a test**, including the one that cannot be forced on hardware.
+
+`idxMono = 7, idxMonoIn = 8` are deleted. The role and link resolve from the map, falling back to the eq fixture (signed option (i)) with the **claim from the fixture and the ladder always from the map** — a fixture carrying its own anchors would be probing itself. The fixture's index is cross-checked against the map's, and a disagreement stops the run.
+
+### Cause triage: one symptom, three causes, three sentences
+
+| State | The sentence says it is a statement about |
+|---|---|
+| `indexOutOfRange` | the **MAP** |
+| `writeDidNotLand` | the **WRITE PATH** (bridge, message thread) — and nothing was measured, because nothing was set |
+| `landedButInert` | the **PLUGIN**, or what the map claims this control is |
+
+Only the third is about the plugin, and M9 has reported all three with the same words. Proven at unit level for all four states (the unlanded case cannot be forced on real hardware — writes land) and end to end on AMEK for the other three.
+
+### The four specimens, each distinctly attributed
+
+| Specimen | Result |
+|---|---|
+| `stereo_width` on **Input Gain** (a level control) | side 29.994 dB, mid 29.994 dB → *not a minority of the side movement* → **STOPPED** |
+| enable link with the **value reversed** (`Mono Maker In → 0`) | triage: *landed and inert*; role: *does nothing measurable here* → **STOPPED** |
+| enable link at an **unrelated index** (`V-Gain`) | **PASSED** — see the limit below |
+| enable link pointing at the **global Power switch** | null-test: moved the primary feature **4.391 dB** → *not a per-control enable; every arm after it measures a different plugin* → **STOPPED** |
+
+The null-test's stop takes precedence over the role check, which is the right order: a contaminated measurement invalidates the role result rather than the other way round.
+
+### Two findings
+
+**1. My first role criterion failed the signed fixture.** Requiring mid movement below 4σ_depth rejected AMEK: engaging Mono Maker moves the mid band 0.437 dB against a 0.352 floor. That number is neither a defect nor news — **arm A already records it, with its cause**, as *"recorded, not a criterion: M=(L+R)/2, so mono-ing below the crossover necessarily moves side content into mid. Expected physics."*
+
+A new check must not silently assign a threshold to a quantity an existing check deliberately left unthresholded **with a documented physical cause**. Doing so re-litigates a settled question, and the first thing it disqualifies is the fixture the settlement came from. The criterion is now **dominance**: mid must be a minority (≤ 0.25×, the project's declared constant) of the side movement, which is what actually separates a width control from a gain. The absolute mid figure is reported the same way arm A reports it.
+
+**2. A wrong enable link is invisible when the control is already live.** The `V-Gain` specimen passed, correctly: AMEK's Mono Maker is engaged by default, so a link pointing anywhere harmless makes no difference and nothing can tell. **An enable link is only falsifiable when it matters** — when the control would otherwise be inert. Discovered by attempting it rather than assumed, and it bounds what the null-test is worth: it catches links that do damage, not links that do nothing.
+
+### Numbers, and what "identical" can mean
+
+11/11 PASS. B3 (0.131) and B4 (0.026) reproduce exactly. **B1 does not, and did not before this change either**: four runs gave 0.0280, 0.0282, 0.0283, 0.0284 oct. The measurement is not deterministic across runs at the fourth decimal.
+
+That matters for session 2's signed criterion. "Identical numbers where the measurement is unchanged" must mean **within the measured run-to-run spread**, and the spread is now measured for B1 rather than assumed to be zero. A criterion demanding bit-equality of B1 would be unmeetable by an unchanged build.
+
+Drift gate 172 → 185. limiter, gate and saturation PASS; comp unchanged at 1 FAILED (the API-2500 over-claim).
+
+---
+
 ## Why resolution is INDEX-FIRST with the name as the check
 
 Recorded because the intuitive order is the wrong one and someone will

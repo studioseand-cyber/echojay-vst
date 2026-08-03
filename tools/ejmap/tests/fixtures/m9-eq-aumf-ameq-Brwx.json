@@ -1,0 +1,18 @@
+{
+  "_note": "M9 fixture: AMEK EQ 200. Session 1 carries the ROLE and ENABLE LINK the suite used to hold as the constants idxMono=7, idxMonoIn=8. Session 3 adds ladder_points and arm A's injection. The real AMEK map carries neither field: option (i) was signed -- the fixture carries them for the regression case and the corpus gets them when AMEK is re-mapped under schema 2.3, rather than tooling writing them into a human-verified artefact to make our tests convenient.",
+  "subject_id": "AudioUnit:Effects/aumf,ameq,Brwx",
+  "subject_name": "AMEK EQ 200",
+  "controls": {
+    "Mono Maker": {
+      "index": 7,
+      "name": "Mono Maker",
+      "role": "stereo_width",
+      "enabled_by": {
+        "index": 8,
+        "value": 1.0,
+        "name": "Mono Maker In",
+        "why": "Mono Maker is inert until its In switch is engaged"
+      }
+    }
+  }
+}

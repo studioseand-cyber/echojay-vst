@@ -970,6 +970,26 @@ correct and the language wrong; here the measurement is correct and the
 subject wrong. Both produce a sentence that is confidently about the wrong
 thing.
 
+**THE FIX IS NOT THE SAME IN BOTH SUITES, AND THE DIFFERENCE MATTERS.**
+
+In comp the pooling was a **reporting** choice: threshold and ratio are
+measured by separate walks, and one shared report merged two independent
+results. Splitting the report fixed it, and no measurement changed.
+
+In eq the pooling is **physical**. `lobeFeatures` returns centre, depth and
+width from ONE pair of Welch spectra, and the three quantities are coupled: a
+wrong q shifts the measured centre and depth, a wrong gain changes depth and
+through lobe fitting the apparent width. There is no separate result to
+un-merge. Attribution there requires **isolation probes in the measurement** —
+move one semantic at a time from a common reference state and attribute each
+feature to the parameter that actually moved — which restructures arm B rather
+than reorganising its output.
+
+Recorded explicitly because someone reading comp's fix will otherwise apply it
+to eq, split the report, and get three separately-labelled numbers that are
+still derived from one coupled measurement. That is worse than the pooled
+version: it looks attributed and is not.
+
 ---
 
 ## ANY FIXED EXPLANATORY TEXT AT A SHARED EXIT IS THE SAME TRAP (3 August 2026)
