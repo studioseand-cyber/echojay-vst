@@ -1,7 +1,12 @@
 // Standalone test for the two Harmonic faces that are more than a HarmonicCore
 // with knobs on: Tape (transport + head bump + HF loss) and Exciter (band split).
 // No JUCE. Build:
-//   g++ -std=c++17 -O2 -I../Source harmonic_faces_test.cpp ../Source/EedHarmonicCore.cpp -o ftest && ./ftest
+//   g++ -std=c++17 -O2 -I../Source harmonic_faces_test.cpp ../Source/EedHarmonicCore.cpp \
+//       ../Source/EedHarmonicAnalysis.cpp -o ftest && ./ftest
+//
+// EedHarmonicAnalysis.cpp is not optional: the Exciter checks pull in
+// harmonicMagnitudesDb(), so the line without it compiles and then fails at
+// link, which reads like a broken test rather than a short build line.
 //
 // The properties worth pinning are the ones a listener would only ever notice as
 // "something is subtly wrong": a dry path that is not delay-matched (comb
