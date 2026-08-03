@@ -226,7 +226,116 @@ public:
         nextChatTurnType_.clear();
         nextChatBusCount_ = 0;
         nextChatIsExplicitCapture_ = false;
+        nextClassifyIntent_.clear();
+        nextClassifyToken_.clear();
     }
+
+    // ============ Classifier (split call) ============
+    //
+    // POST /api/classify runs BEFORE the main /api/chat call. The client
+    // renders the returned preamble as a provisional bubble, then fires the
+    // main call carrying the intent and its token — turning classifier
+    // latency into a time-to-first-content improvement rather than an
+    // addition. Some turns short-circuit: the question IS the turn and no
+    // main call fires at all.
+    //
+    // EVERY failure path answers `usable=false`, which means BEHAVE EXACTLY
+    // AS TODAY. Nothing here may block, delay or fail a send.
+    //
+    // THE MESSAGE IS THE FULL COMPOSED CONTENT, injections and all — the
+    // same string that goes out as messages[last].content. Do NOT pre-strip
+    // to the typed portion:
+    //   - the server runs userTypedPortion() itself on BOTH calls, so hash
+    //     parity (and therefore token verification in chat.js) is
+    //     server-to-server by construction. A client-side strip would have
+    //     to be byte-identical to the server's, which is exactly the
+    //     equivalence the server contract tells clients not to attempt.
+    //   - hasCurrentChain is derived server-side from the "[CURRENT CHAIN"
+    //     marker in this string. Pre-stripping makes it permanently false.
+    struct ClassifyRequest
+    {
+        juce::String message;          // FULL composed content (required)
+        juce::String channel;          // CHANNEL TYPE / material name; server caps at 40
+        juce::String genre;            // server caps at 40
+        juce::String priorAssistant;   // previous assistant turn; server tail-caps at 400
+        juce::String turnType;         // staged label ("chat", "chain_generate", ...)
+        juce::var    links;            // array of {"name":...}; server caps at 24
+    };
+
+    // Mirrors the server's response one field per field. `usable` is the
+    // client's own flag: false means the call failed, timed out, was gated
+    // off, or returned nothing actionable — fall through.
+    struct ClassifyResult
+    {
+        bool usable = false;
+        juce::String intent;          // chat | chain_generate | chain_edit | ambiguous
+        juce::String precondition;    // channel_mismatch | needs_scoping | (empty)
+        juce::String preamble;        // provisional-bubble copy; empty on a short-circuit
+        juce::String question;        // non-empty only when shortCircuit
+        juce::String token;           // signed intent binding for the main call
+        juce::String mode;            // off | shadow | live
+        juce::String fallback;        // server's reason string, diagnostics only
+        // EXPLICIT SERVER FLAGS, never inferred from field presence. A build
+        // turn can carry a stray question and still be shortCircuit=false;
+        // reading "there is a question, so it must be a short-circuit" is the
+        // bug the server's explicit boolean exists to prevent.
+        bool shortCircuit    = false;
+        bool questionFollows = false; // a SECOND call owns the wording
+        juce::var chips;              // [{label, detail?, intent?}] or void
+    };
+
+    // ---- abort budgets ----------------------------------------------------
+    //
+    // PROVISIONAL. These are the web client's numbers, and the web client set
+    // them from a measurement window taken on 3 Aug 2026 (deployed endpoint,
+    // n=18 across four turn types, laptop network):
+    //
+    //   pre-model overhead   165-248 ms typical, 331 ms cold
+    //   call 1 total         min 1682 / med 1922 / max 3167 ms
+    //   call 2 total         min 1559 / med 1783 / max 1964 ms  (n=13)
+    //   network RTT          ~250-300 ms on top of those totals
+    //
+    // 3800 clears call 1's observed max plus network; 2800 does the same for
+    // call 2, which has the tighter spread and so gets the tighter budget.
+    // Two earlier web values (2200, then 2800 for call 1) both failed by
+    // sitting INSIDE the normal range — which presents as a flaky classifier
+    // rather than as a number that is too small.
+    //
+    // An 8-hour latency sampler is running as of 3 Aug 2026. Treat both
+    // numbers as provisional until it lands and expect to change them: they
+    // are two constants in one place for exactly that reason.
+    //
+    // NOT comparable to the server's CLASSIFY_TIMEOUT_MS (3000). That is an
+    // AbortController around the model call alone; these cover the whole
+    // round trip — network out, auth, getUser, mode resolution, the rate
+    // limiter, the model call, the response, network back.
+    static constexpr int kClassifyBudgetMs         = 3800;
+    static constexpr int kClassifyQuestionBudgetMs = 2800;
+
+    /** Call 1. Calls back EXACTLY ONCE on the message thread.
+
+        Must be called FROM the message thread (it arms a Timer).
+
+        NO RETRIES, deliberately — see the deadline latch in the .cpp.
+    */
+    void classify(const ClassifyRequest& req,
+                  std::function<void(const ClassifyResult&)> onComplete);
+
+    /** Call 2, the scoping question's wording. Fire ONLY when call 1
+        answered questionFollows=true AND left the question empty.
+
+        Never key this off the precondition. Which preconditions defer their
+        question is a server decision; a client that maps
+        needs_scoping -> "ask the second endpoint" breaks silently the day a
+        second precondition splits.
+
+        Calls back once on the message thread with the question, or empty —
+        and empty means fall through to the ordinary send.
+    */
+    void classifyQuestion(const juce::String& message,
+                          const juce::String& channel,
+                          const juce::String& genre,
+                          std::function<void(const juce::String& question)> onComplete);
 
     // usage-v2 accessors. Percent works against BOTH server states.
     float getUsagePercent() const
@@ -276,6 +385,18 @@ public:
     // for any behaviour that depends on what the turn actually was (e.g.
     // gating the prose name-scan chain fallback).
     juce::String getLastResolvedTurnType() const { return lastResolvedTurnType_; }
+
+    // The classifier binding for the NEXT sendChat: the intent call 1
+    // resolved and the signed token that brands it. Staged like the meters
+    // blob and the turnType, consumed at body build (so the limit-refresh
+    // retry keeps it) and cleared after every send.
+    //
+    // The server accepts an ASSERTED intent only with a valid token and
+    // re-classifies otherwise, so sending them is safe when absent and safe
+    // when stale. chat.js verifies the token and logs the outcome; until
+    // cutover it acts on nothing.
+    void setNextClassifyBinding(const juce::String& intent, const juce::String& token)
+    { nextClassifyIntent_ = intent; nextClassifyToken_ = token; }
 
     // 2.4 dialFlags (26 Jul 2026, DARK): names from the AVAILABLE PLUGINS
     // feed whose LOCAL map passes the dial-signals threshold. Staged per
@@ -647,6 +768,7 @@ private:
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
     juce::StringArray nextDialFlags_; // see setNextDialFlags(); cleared per send
+    juce::String nextClassifyIntent_, nextClassifyToken_; // setNextClassifyBinding()
     int          nextChatBusCount_ = 0;
     bool         nextChatIsExplicitCapture_ = false;   // see stageCapturePayload
     UserInfo userInfo;
@@ -657,9 +779,22 @@ private:
     // know the object is gone and skip any member access.
     std::shared_ptr<std::atomic<bool>> alive { std::make_shared<std::atomic<bool>>(true) };
     
-    // Helper: make a POST request with auth header
+    // Helper: make a POST request with auth header.
+    //
+    // maxAttempts / connectTimeoutMs default to the values every caller has
+    // always used, so existing call sites are unchanged. They exist for the
+    // classifier, which must NOT retry: see classify() in the .cpp.
     void postJSON(const juce::String& endpoint, const juce::String& body,
-                  std::function<void(const juce::var& json, int statusCode)> onComplete);
+                  std::function<void(const juce::var& json, int statusCode)> onComplete,
+                  int maxAttempts = 3, int connectTimeoutMs = 60000);
+
+    // Classifier gate, latched for the process. Once the server has answered
+    // mode:"off" there is nothing to re-ask: the allowlist is keyed on the
+    // account's uid and cannot change without a reload, so a gated-off user
+    // must not pay an authenticated round trip on every send. STATIC because
+    // every plugin instance in the host shares one account; reset on
+    // login/logout, where the account genuinely can change.
+    static std::atomic<bool> classifierOff_;
 
     // Development transport (Session B). Both are the identity/empty case in
     // a release build: the implementations are wrapped in

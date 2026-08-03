@@ -2345,6 +2345,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // sendChatMessage -> supersedePendingAsks marks + persists.
             // intent -> staged turnType (3-pre): "edit" chips act on the
             // existing rack; server trust-but-validates as always
+            //
+            // TWO PRODUCERS reach this line now: the ASK block in a reply,
+            // and /api/classify's short-circuit chips. The classifier sends
+            // the SAME "build"/"edit" vocabulary, so it needed no branch of
+            // its own — and it must NOT get one above, because unlike the
+            // compare-scope pair its chips DO send a turn. A mismatch chip
+            // with no intent ("I'll switch over") lands here with tt empty
+            // and sends a plain chat turn, which is right: the user is
+            // telling the model what they are about to go and do.
             const juce::String tt = intent == "edit" ? "chain_edit"
                                   : intent == "build" ? "chain_generate"
                                   : juce::String();
@@ -19519,17 +19528,24 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     processorRef.chatContents.add(userContent);
     bumpMonthlyStat("chats");   // THIS MONTH card (local counter)
 
+    // Channel and genre, once: the SAME two values that go into the system
+    // prompt also go to the classifier, so CHANNEL there and CHANNEL TYPE
+    // here can never describe different material.
+    const juce::String channelName = materialContextName(processorRef.getEffectiveChannelName());
+    const juce::String genreName   = processorRef.getGenre();
+
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
-        materialContextName(processorRef.getEffectiveChannelName()), processorRef.getGenre(),
+        channelName, genreName,
         processorRef.getPluginScanner().getPluginSummary());
 
     // usage-v2: no meter blob on plain chat turns (see above). turnType is
     // chain_generate when the chain-feed injection rode along (the model is
     // being asked for a chain), plain chat otherwise. A gain proposal rides
     // on whatever turn produced it — never its own turnType.
-    api.setNextChatTurnType(
+    const juce::String stagedTurnType =
         turnTypeOverride.isNotEmpty() ? turnTypeOverride
-                                      : (hadChainFeed ? "chain_generate" : "chat"));
+                                      : (hadChainFeed ? "chain_generate" : "chat");
+    api.setNextChatTurnType(stagedTurnType);
     // 1d model-wait stage: generic-safe label only (the one-shot transport
     // has no sub-stages to report; a specific claim could desync).
     // 26 Jul 2026: ALWAYS "Thinking" here. hadChainFeed is true on
@@ -19540,9 +19556,140 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     setStageStatus(juce::String::fromUTF8("Thinking\xe2\x80\xa6"));
 
     juce::String activeChatId = currentChatId; // capture before async
+    // The history AS COMPOSED. See fireChatMainCall's declaration for why
+    // this is a snapshot and not the live arrays.
+    const juce::StringArray rolesSnap    = processorRef.chatRoles;
+    const juce::StringArray contentsSnap = processorRef.chatContents;
+
+    // ===================== SPLIT CALL: /api/classify =====================
+    //
+    // HERE, and the position is the whole design:
+    //
+    //  - AFTER scanHoldStartMs_ = 0, so the scan-window hold cannot re-enter
+    //    this function and fire a classify per 400ms poll.
+    //  - AFTER userContent is fully composed and pushed to chatRoles /
+    //    chatContents, so the message carries its injections. The server
+    //    derives hasCurrentChain from the [CURRENT CHAIN] marker in that
+    //    string and runs userTypedPortion() over it for both calls — which
+    //    is why what goes out is the FULL composed content, unstripped.
+    //  - OUTSIDE EchoJayAPI::sendChat, which re-enters ITSELF on the
+    //    limit-refresh retry. A classify fired in there would go twice.
+    //
+    // The quota decision (recorded in EchoJayAPI.cpp): this call is NOT
+    // pre-gated, and a short-circuited turn is not billed. The send gate
+    // above still stands in front of the MAIN call.
+    EchoJayAPI::ClassifyRequest creq;
+    creq.message        = userContent;          // full, unstripped
+    creq.channel        = channelName;
+    creq.genre          = genreName;
+    creq.priorAssistant = priorAssistantForClassify();
+    creq.turnType       = stagedTurnType;
+    creq.links          = buildClassifyLinks();
+
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
-        [safeThis, activeChatId, turnTargetUid, turnTargetName](const juce::String& reply, bool success) {
+    api.classify(creq, [safeThis, activeChatId, turnTargetUid, turnTargetName,
+                        sysPrompt, channelName, genreName, userContent,
+                        rolesSnap, contentsSnap]
+                       (const EchoJayAPI::ClassifyResult& c)
+    {
+        if (safeThis == nullptr) return;
+
+        // Nothing usable: the turn proceeds EXACTLY as it did before the
+        // classifier existed. This is the common path while the account is
+        // gated off, and it must stay the cheap one.
+        if (! c.usable)
+        {
+            safeThis->fireChatMainCall(sysPrompt, activeChatId,
+                                       turnTargetUid, turnTargetName, 0,
+                                       rolesSnap, contentsSnap);
+            return;
+        }
+
+        // ---- call 2: the scoping question's wording -------------------
+        // Fired ONLY on the server's flag, never on a client-side reading
+        // of the precondition. Which preconditions defer their question is
+        // the server's decision; encoding needs_scoping here would break
+        // silently the day a second one splits.
+        if (c.questionFollows && c.question.isEmpty())
+        {
+            safeThis->api.classifyQuestion(userContent, channelName, genreName,
+                [safeThis, activeChatId, turnTargetUid, turnTargetName, sysPrompt,
+                 rolesSnap, contentsSnap, c]
+                (const juce::String& q)
+            {
+                if (safeThis == nullptr) return;
+                if (q.isNotEmpty())
+                {
+                    // needs_scoping is PROSE: the server nulls its chips on
+                    // purpose, and call 2 returns no chips at all.
+                    safeThis->renderClassifierQuestion(q, juce::var(), activeChatId);
+                    return;
+                }
+                // The server declined to ask, or we ran past the budget.
+                // Fall through to the ordinary send — which is exactly the
+                // pre-classifier behaviour, never a dead turn. The binding
+                // still rides: call 1 succeeded, only the wording failed.
+                safeThis->api.setNextClassifyBinding(c.intent, c.token);
+                safeThis->fireChatMainCall(sysPrompt, activeChatId,
+                                           turnTargetUid, turnTargetName, 0,
+                                           rolesSnap, contentsSnap);
+            });
+            return;
+        }
+
+        // ---- the short-circuit: the classify call IS the turn ----------
+        // Read from the EXPLICIT boolean plus a question. A build turn can
+        // carry a stray question with shortCircuit=false and the server
+        // drops it; inferring the short-circuit from "a question is
+        // present" would render it and swallow the turn.
+        if (c.shortCircuit && c.question.isNotEmpty())
+        {
+            safeThis->renderClassifierQuestion(c.question, c.chips, activeChatId);
+            return;
+        }
+
+        // ---- the provisional bubble ------------------------------------
+        // chatMessages and NOTHING ELSE. See ChatMsg::provisionalId for the
+        // four stores and why only one of them is written here.
+        int provisionalId = 0;
+        if (c.preamble.isNotEmpty())
+        {
+            ChatMsg pm;
+            pm.role          = "assistant";
+            pm.content       = c.preamble;
+            pm.provisionalId = safeThis->nextProvisionalId_++;
+            provisionalId    = pm.provisionalId;
+            safeThis->chatMessages.push_back(std::move(pm));
+            // Deliberately NOT: chatHistory, chatRoles/chatContents, or
+            // workspace.appendMessageToChat. Not an omission — see the
+            // header comment.
+            safeThis->resized();
+            safeThis->repaint();
+        }
+
+        // The binding rides the main call. Absent when the classifier had
+        // no intent, which the server handles by classifying for itself.
+        safeThis->api.setNextClassifyBinding(c.intent, c.token);
+        safeThis->fireChatMainCall(sysPrompt, activeChatId,
+                                   turnTargetUid, turnTargetName, provisionalId,
+                                   rolesSnap, contentsSnap);
+    });
+}
+
+// The main /api/chat send. Lifted out of sendChatMessage unchanged so the
+// classifier can run in front of it; the reply handling below is the same
+// code it always was, plus the provisional-bubble replacement.
+void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
+                                     const juce::String& activeChatId,
+                                     const juce::String& turnTargetUid,
+                                     const juce::String& turnTargetName,
+                                     int provisionalId,
+                                     const juce::StringArray& roles,
+                                     const juce::StringArray& contents)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.sendChat(roles, contents, sysPrompt,
+        [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
             if (safeThis == nullptr)
                 return;
             safeThis->chatLoading = false;
@@ -19695,11 +19842,27 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                     else
                         cm.editBaseRevision = safeThis->processorRef.getChainHost().getChainRevision();
                 }
-                safeThis->chatMessages.push_back(cm);
+                // DROP PATH 1 of 2: the real reply REPLACES the provisional
+                // in place, never push-then-push — the user must never see
+                // two assistant turns for one send. The provisional's slot
+                // is found by IDENTITY, so a second send landing first
+                // cannot make this overwrite the wrong message.
+                const int pIdx = safeThis->findProvisionalIdx(provisionalId);
+                if (pIdx >= 0) safeThis->chatMessages[(size_t) pIdx] = cm;
+                else           safeThis->chatMessages.push_back(cm);
+                // The REAL turn goes to all four stores; the provisional
+                // went to one. These three lines are why the provisional
+                // never touched them.
                 safeThis->processorRef.chatHistory.push_back({"assistant", visibleReply});
                 safeThis->processorRef.chatRoles.add("assistant");
                 safeThis->processorRef.chatContents.add(visibleReply);
             } else {
+                // DROP PATH 2 of 2: every failure, INCLUDING the
+                // limit-reached copy, which arrives here as an ordinary
+                // failed send. Drop first, then push, or the turn ends with
+                // a preamble promising work above a message saying it never
+                // happened.
+                safeThis->dropProvisional(provisionalId);
                 safeThis->chatMessages.push_back({"assistant", reply});
                 safeThis->processorRef.chatHistory.push_back({"assistant", reply});
             }
@@ -19728,6 +19891,166 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
             safeThis->workspace.requestMutationSync();
             safeThis->repaint();
         });
+}
+
+// ---------------------------------------------------------------------------
+//  Provisional-bubble lifetime
+// ---------------------------------------------------------------------------
+//
+// BY IDENTITY, NEVER BY INDEX. Both call sites are reached from an async
+// reply, and a second send whose reply lands first shifts the vector under
+// the first send's callback — so a captured index can point at the wrong
+// message, or past the end. An id cannot drift.
+
+int EchoJayEditor::findProvisionalIdx(int provisionalId) const
+{
+    if (provisionalId == 0) return -1;
+    for (int i = (int) chatMessages.size() - 1; i >= 0; --i)
+        if (chatMessages[(size_t) i].provisionalId == provisionalId)
+            return i;
+    return -1;   // already replaced or dropped
+}
+
+void EchoJayEditor::dropProvisional(int provisionalId)
+{
+    const int idx = findProvisionalIdx(provisionalId);
+    if (idx < 0) return;   // idempotent: nothing to drop
+
+    // THE GUARD THAT MATTERS. A drop that takes the user's message instead
+    // of the bubble presents as "my message vanished" and gets blamed on
+    // persistence, on the sidebar, on anything but the drop. findProvisional
+    // already keys on the id, so this can only fire if the id were reused —
+    // and then it fires loudly, in the one place that could do the damage.
+    jassert(chatMessages[(size_t) idx].role == "assistant");
+    jassert(chatMessages[(size_t) idx].provisionalId == provisionalId);
+
+    chatMessages.erase(chatMessages.begin() + idx);
+    resized();     // indices stamped during layout are recomputed there
+    repaint();
+}
+
+juce::String EchoJayEditor::priorAssistantForClassify() const
+{
+    // Newest assistant turn the user actually saw. The server caps it at 400
+    // characters (tail, marked truncated), so nothing is trimmed here.
+    //
+    // SKIPS PROVISIONALS. A preamble is a rendering artefact; feeding one
+    // back as PRIOR REPLY would have the classifier reason about its own
+    // ack. By send time any earlier provisional has been replaced or
+    // dropped, so this is belt and braces — and cheap.
+    for (int i = (int) chatMessages.size() - 1; i >= 0; --i)
+    {
+        const auto& m = chatMessages[(size_t) i];
+        if (m.provisionalId != 0) continue;
+        if (m.role == "assistant") return m.content;
+    }
+    return {};
+}
+
+juce::String EchoJayEditor::askDataFromClassifyChips(const juce::String& question,
+                                                     const juce::var& chips)
+{
+    // EMPTY IN MUST MEAN EMPTY OUT. needs_scoping nulls its chips on
+    // purpose — a scoping question is prose, because the useful answers are
+    // the user's own words and not a menu — so a null must render as a
+    // question with no shelf, never as an empty shelf.
+    auto* arr = chips.getArray();
+    if (arr == nullptr || arr->isEmpty()) return {};
+
+    juce::Array<juce::var> choices;
+    for (const auto& cv : *arr)
+    {
+        if (choices.size() >= kMaxAskChips) break;
+        juce::String label, detail, intent;
+        if (auto* co = cv.getDynamicObject())
+        {
+            label  = co->getProperty("label").toString().trim();
+            detail = co->getProperty("detail").toString().trim();
+            intent = co->getProperty("intent").toString().trim();
+        }
+        else
+        {
+            label = cv.toString().trim();   // bare strings are legal too
+        }
+        if (label.isEmpty()) continue;      // a blank button is worse than no chip
+
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label", label);
+        if (detail.isNotEmpty()) c->setProperty("detail", detail);
+        if (intent.isNotEmpty()) c->setProperty("intent", intent);
+        choices.add(juce::var(c));
+    }
+
+    // The shelf draws from two chips up (measureAskShelf), so anything
+    // less is prose here too rather than a half-drawn shelf.
+    if (choices.size() < 2) return {};
+
+    auto* root = new juce::DynamicObject();
+    root->setProperty("question", question);
+    root->setProperty("choices", choices);
+    root->setProperty("allowFreeText", true);
+    return juce::JSON::toString(juce::var(root), true);
+}
+
+void EchoJayEditor::renderClassifierQuestion(const juce::String& question,
+                                             const juce::var& chips,
+                                             const juce::String& activeChatId)
+{
+    // The classify call IS the turn: no main call fires. Built the same way
+    // presentCompareScopeAsk builds its local ASK — askData constructed
+    // client-side, one assistant ChatMsg, then a layout pass so the docked
+    // shelf appears.
+    //
+    // UNLIKE presentCompareScopeAsk in ONE respect, deliberately: this turn
+    // also goes to chatRoles/chatContents. The compare-scope ask is a local
+    // UI question the model has no business knowing about; this one is a
+    // real assistant turn that the user answers next, and the server reads
+    // the previous assistant message to decide whether a scoping question
+    // was already asked (suppressScoping) and whether the user answered it
+    // or took the build escape. Leave it out of the API history and the
+    // next turn re-asks the question the user just answered.
+    //
+    // This is history, NOT a provisional: provisionalId stays 0, and it is
+    // written to all four stores exactly like any other assistant turn.
+    const juce::String askJson = askDataFromClassifyChips(question, chips);
+
+    ChatMsg cm;
+    cm.role    = "assistant";
+    cm.content = question;
+    cm.askData = askJson;              // empty = prose, no shelf
+    chatMessages.push_back(cm);
+    processorRef.chatHistory.push_back({ "assistant", question });
+    processorRef.chatRoles.add("assistant");
+    processorRef.chatContents.add(question);
+
+    if (activeChatId.isNotEmpty())
+    {
+        workspace.appendMessageToChat(activeChatId, "assistant", question,
+                                      {}, {}, {}, askJson, {});
+        workspace.requestMutationSync();   // append does not sync by itself
+    }
+
+    // The send never happened, so the send's UI state has to be unwound
+    // here — nothing downstream is going to do it.
+    chatLoading = false;
+    clearStageStatus();
+
+    if (sidebarModel)
+    {
+        sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                  workspace.getReviews(), workspace.getPinnedProjects(),
+                                  collapsedAlbums, currentChatId);
+        chatSidebar.updateContent();
+    }
+
+    EchoJay_NSLog(("EJClassify: short-circuit rendered ("
+                   + juce::String(askJson.isNotEmpty() ? "with chips" : "prose only")
+                   + ")").toRawUTF8());
+
+    // Lays out the shelf over the input row (findNewestUnansweredAsk sees
+    // the message now) and reflows the viewport above it.
+    resized();
+    repaint();
 }
 
 void EchoJayEditor::showChainPluginPicker()
@@ -20130,6 +20453,58 @@ void EchoJayEditor::sendLinkGainCommand(const juce::String& linkAddr, float gain
 // there are no live Links (so plain chats are unaffected). The instructions
 // live here (not the server prompt) so the whole feature is client-owned and
 // conditional on Links being present.
+// The same Links, structured, for /api/classify's LINKS fact.
+//
+// ONE SOURCE with buildLinkLevelsContext below — getLinkDisplayList(), the
+// canonical list every Link-listing surface uses — so the prose block the
+// model reads on the main call and the LINKS fact the classifier reads can
+// never name different channels.
+//
+// NOT the prose block, deliberately. /api/classify compares LINKS against
+// CHANNEL to decide the channel_mismatch precondition, and builds its
+// deterministic replacement copy ("that would sit better on your <name>
+// track") out of a NAME taken from this array. Handing it a paragraph of
+// levels, placements and grounding rules would make it parse prose to find
+// one, and would put the model's own measurement caveats in front of a
+// question that is not about levels at all.
+//
+// Entries are {"name": ...}. The endpoint accepts bare strings too, but its
+// readers take `.name` off an object, so this shape is the one they are
+// written against — and placement or gain can be added later as a field
+// rather than as a shape change.
+//
+// THE MIX BUS IS DELIBERATELY ABSENT. LINKS is the set of other channels the
+// user could switch to, and the server puts a name from it into "your <name>
+// track" — a sentence the mix bus cannot be the subject of.
+// buildLinkLevelsContext states the bus on its own line for the same reason.
+//
+// No refreshLinkRegistry() here: the editor timer already refreshes the
+// registry at ~2 Hz, and this sits on the latency-critical path in front of
+// a send.
+juce::var EchoJayEditor::buildClassifyLinks() const
+{
+    // The endpoint slices at 24. Stopping at the same number keeps the
+    // request honest about what it asked to have considered, rather than
+    // sending a tail that is silently dropped.
+    constexpr int kMaxClassifyLinks = 24;
+
+    juce::Array<juce::var> out;
+    for (const auto& e : processorRef.getLinkDisplayList())
+    {
+        if (out.size() >= kMaxClassifyLinks) break;
+        if (e.info.uid.isEmpty()) continue;          // unaddressable, as in the prose block
+        const juce::String name = e.displayName.trim();
+        if (name.isEmpty()) continue;
+        auto* o = new juce::DynamicObject();
+        o->setProperty("name", name);
+        out.add(juce::var(o));
+    }
+    // Void, not an empty array: classify() omits the field entirely, and the
+    // facts block then reads "LINKS: (none)" — which is the honest statement
+    // that there are no other channels, not an empty list of them.
+    return out.isEmpty() ? juce::var() : juce::var(out);
+}
+
 juce::String EchoJayEditor::buildLinkLevelsContext()
 {
     processorRef.refreshLinkRegistry();

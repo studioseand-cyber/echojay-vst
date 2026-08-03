@@ -1021,6 +1021,28 @@ private:
         // as the figure card; persisted on the message so a reloaded chat
         // redraws it identically (the prose no longer restates the numbers).
         juce::String figuresData;
+        // Split call: non-zero on the PROVISIONAL bubble rendered from the
+        // classifier's preamble. A rendering artefact, never history.
+        //
+        // FOUR STORES, ONE DESTINATION. A provisional bubble reaches
+        // chatMessages and nothing else:
+        //   chatMessages              <- here, and only here
+        //   processorRef.chatHistory  <- no: replayed on editor recreate
+        //   chatRoles / chatContents  <- no: this IS the API history, and a
+        //                                phantom assistant turn there would
+        //                                ride out inside the next send's
+        //                                12-message trim
+        //   workspace (/api/data)     <- no: round-trips to the server and
+        //                                comes back on reload
+        // WsMessage has no counterpart to this field, deliberately: there is
+        // nothing to serialise it into, so the persistence side cannot carry
+        // a provisional even by accident.
+        //
+        // An ID rather than a bool because the drop/replace sites are
+        // reached asynchronously and a captured INDEX can drift — a second
+        // send landing first shifts the vector under the first send's
+        // callback. Identity survives that; an index does not.
+        int provisionalId = 0;
     };
     std::vector<ChatMsg> chatMessages;
     // THE shared display source: both text-layout passes (measure + paint)
@@ -2498,6 +2520,43 @@ private:
     // Build the LINK LEVELS context + proposal format/grounding instructions
     // for a chat turn; empty when there are no live Links to reason about.
     juce::String buildLinkLevelsContext();
+    // The SAME Links, structured, for /api/classify — see the .cpp.
+    juce::var buildClassifyLinks() const;
+
+    // ---- split call (classifier) ----
+    // The main /api/chat send, deferred so /api/classify can run in front of
+    // it. provisionalId is 0 when no provisional bubble was rendered.
+    // roles/contents are a SNAPSHOT taken at compose time, not the live
+    // arrays. Before the split, sendChat built its body synchronously at the
+    // call site, so the history was fixed the moment the user pressed send.
+    // The classifier puts up to 3.8s between those two points, and a second
+    // send landing inside that window would otherwise fold its user turn
+    // into THIS turn's body. juce::String is refcounted, so the copy is a
+    // handful of refcount bumps rather than the payload.
+    void fireChatMainCall(const juce::String& sysPrompt,
+                          const juce::String& activeChatId,
+                          const juce::String& turnTargetUid,
+                          const juce::String& turnTargetName,
+                          int provisionalId,
+                          const juce::StringArray& roles,
+                          const juce::StringArray& contents);
+    // Render the classifier's question as the whole turn: no main call.
+    void renderClassifierQuestion(const juce::String& question,
+                                  const juce::var& chips,
+                                  const juce::String& activeChatId);
+    // chips -> the ASK shelf's askData, or empty when there is no shelf to
+    // draw. needs_scoping nulls its chips ON PURPOSE (prose, no shelf), so
+    // empty in must mean empty out.
+    static juce::String askDataFromClassifyChips(const juce::String& question,
+                                                 const juce::var& chips);
+    // Newest assistant turn the user has actually seen, for the classifier's
+    // PRIOR REPLY fact. Skips provisional bubbles.
+    juce::String priorAssistantForClassify() const;
+    // Provisional-bubble lifetime. findProvisionalIdx returns -1 when it has
+    // already gone; dropProvisional is idempotent.
+    int  findProvisionalIdx(int provisionalId) const;
+    void dropProvisional(int provisionalId);
+    int  nextProvisionalId_ = 1;   // 0 means "not provisional"
     // Resolve a proposal's linkId (name or uid) to a sendable address.
     juce::String resolveLinkProposalAddr(const juce::String& linkId) const;
     void applyGainProposal(const GainCardZone& z);

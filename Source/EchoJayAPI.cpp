@@ -135,7 +135,8 @@ EchoJayAPI::~EchoJayAPI()
 // ============ Generic POST helper ============
 
 void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
-                           std::function<void(const juce::var& json, int statusCode)> onComplete)
+                           std::function<void(const juce::var& json, int statusCode)> onComplete,
+                           int maxAttempts, int connectTimeoutMs)
 {
     auto endpoint = apiEndpoint;
     auto token = authToken;
@@ -152,7 +153,6 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
         // stall before first byte). These never reach the server, so retrying
         // is safe. Real HTTP responses (200/4xx/5xx) are NOT retried here —
         // the caller's status-code logic handles those.
-        constexpr int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; ++attempt)
         {
             // Bail immediately if the plugin has been removed. Without this the
@@ -174,7 +174,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
             statusCode = 0;
             auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
                                .withExtraHeaders(headers)
-                               .withConnectionTimeoutMs(60000)
+                               .withConnectionTimeoutMs(connectTimeoutMs)
                                .withStatusCode(&statusCode);
 
             auto stream = url.createInputStream(options);
@@ -481,7 +481,11 @@ void EchoJayAPI::login(const juce::String& email, const juce::String& password,
             if (obj && obj->hasProperty("token"))
             {
                 authToken = obj->getProperty("token").toString();
-                
+                // The classifier gate is per ACCOUNT (allowlisted uid), and
+                // the account just changed. Un-latch so a signed-in user is
+                // never stuck with the previous account's answer.
+                classifierOff_.store(false);
+
                 // Try to parse user info from login response (may or may not have it)
                 userInfo.email = obj->getProperty("email").toString();
                 
@@ -631,6 +635,7 @@ void EchoJayAPI::pollDeviceCode(const juce::String& deviceCode, int intervalMs, 
             if (statusCode == 200 && st == "authorised" && obj != nullptr && obj->hasProperty("token"))
             {
                 authToken = obj->getProperty("token").toString();
+                classifierOff_.store(false);   // account changed; see login()
 
                 // Same payload shape as /api/login: parse identically so the
                 // post-pairing state matches a password login exactly
@@ -685,6 +690,7 @@ void EchoJayAPI::logout()
 {
     authToken = "";
     userInfo = UserInfo();
+    classifierOff_.store(false);   // see the note on the login path
     saveSettings();
 }
 
@@ -947,6 +953,12 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
             nextChatTurnType_.clear();
             nextChatBusCount_ = 0;
             nextChatIsExplicitCapture_ = false;
+            // The classifier binding dies with the turn it was minted for:
+            // the token is bound to THIS message's typed portion, so letting
+            // it ride the next send would assert an intent for text it was
+            // never issued against.
+            nextClassifyIntent_.clear();
+            nextClassifyToken_.clear();
             onComplete(getLimitReachedMessage(gateTurnType), false);
         });
         return;
@@ -1067,6 +1079,15 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
         body += ",\"dialFlags\":" + juce::JSON::toString(juce::var(arr), true);
         nextDialFlags_.clear();
     }
+    // Classifier binding (split call). Absent on any turn the classifier
+    // did not answer for, which is every turn when it is gated off — and
+    // the server then classifies for itself exactly as it does today.
+    if (nextClassifyIntent_.isNotEmpty())
+        body += ",\"classifyIntent\":" + juce::JSON::toString(nextClassifyIntent_);
+    if (nextClassifyToken_.isNotEmpty())
+        body += ",\"classifyToken\":" + juce::JSON::toString(nextClassifyToken_);
+    nextClassifyIntent_.clear();
+    nextClassifyToken_.clear();
 
     // Meter/band payload: EXPLICIT CAPTURE ONLY. Anything staged (or passed
     // via the legacy parameter) without the flag is discarded loudly — a
@@ -1262,6 +1283,253 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
         }
         onComplete(error, false);
     });
+}
+
+// ===========================================================================
+// Classifier — the split call
+// ===========================================================================
+//
+// Two endpoints, and the client never guesses which it needs:
+//
+//   POST /api/classify           call 1. Always. Returns the intent, the
+//                                preamble, the token, and — for
+//                                channel_mismatch and ambiguous — the
+//                                short-circuit question and its chips.
+//   POST /api/classify-question  call 2. ONLY when call 1 answered
+//                                questionFollows=true and left the question
+//                                empty. needs_scoping defers its wording
+//                                here because generating a question is ~102
+//                                output tokens against a classification's
+//                                ~28, and output generation is what costs
+//                                time. Only the turns that ask one pay.
+//
+// EVERY failure — offline, 4xx, 5xx, unparseable, gated off, past budget —
+// answers usable=false, which means BEHAVE EXACTLY AS TODAY. A classifier
+// that can fail a send is worse than no classifier.
+//
+// -------- quota: RECORDED, not inferred --------------------------------
+//
+// DECISION (Sean, 3 Aug 2026): the classify call is NOT pre-gated, and a
+// short-circuited turn is NOT billed.
+//
+// Written down because it is a decision, not a fact anyone can read off the
+// code — the next person here will find classify() sitting in front of
+// canSendTurn() and reasonably wonder whether that is an oversight. It is
+// not. It matches the server, where no charging code executes on this path:
+// /api/classify logs its own cost line with weight 0 and tier 'system', so
+// it never touches a user's pool, and a turn that short-circuits never
+// reaches /api/chat, which is the only place a turn is charged.
+//
+// So classify() deliberately does NOT consult canSendMessage/canSendTurn.
+// The gates stay exactly where they are, in front of the MAIN call, and a
+// user at their limit still gets the limit copy from the send path rather
+// than a silent nothing from here.
+//
+// -------- the deadline latch, and why there are no retries -----------------
+//
+// juce::URL has no cancellation, so a classify request cannot be aborted the
+// way the web client aborts its fetch. What we can do is stop WAITING for
+// it: a Timer armed at the budget races the response, whichever lands first
+// answers the caller, and the loser is discarded. The request itself keeps
+// running to completion on its worker thread and its result is dropped on
+// the floor — the discarded path returns before it can reach the caller, so
+// it renders nothing, replaces nothing, and touches no UI. That is the whole
+// contract of the latch, and it is why the check is the FIRST line of both
+// paths rather than somewhere inside them.
+//
+// Both halves run on the message thread (postJSON marshals its completion
+// through callAsync; callAfterDelay is a message-thread timer), so the
+// exchange is uncontended. It is an atomic anyway so the one-shot invariant
+// is enforced by the code rather than promised by this comment.
+//
+// NO RETRIES. postJSON's default is 3 attempts with 1s then 2s of backoff,
+// which is right for a send that must not be lost and WRONG here in a way
+// that compounds: a hung classify would outlive its 3.8s budget by minutes,
+// holding a socket and a detached thread for a result nobody is waiting for
+// any more. A classification is cheap to lose — the fallback IS the current
+// behaviour — and a stalled preamble is not cheap, so this asks once and
+// takes the answer or the fallback. maxAttempts=1, and the connection
+// timeout comes down to the budget for the same reason.
+
+std::atomic<bool> EchoJayAPI::classifierOff_ { false };
+
+namespace
+{
+    // Arms the deadline half of the latch and hands back the latch itself so
+    // the response half can race it with the same exchange().
+    std::shared_ptr<std::atomic<bool>>
+    armClassifyDeadline(int budgetMs, std::function<void()> onExpired)
+    {
+        auto latch = std::make_shared<std::atomic<bool>>(false);
+        juce::Timer::callAfterDelay(budgetMs, [latch, onExpired]
+        {
+            if (latch->exchange(true)) return;   // the response already answered
+            onExpired();
+        });
+        return latch;
+    }
+}
+
+void EchoJayAPI::classify(const ClassifyRequest& req,
+                          std::function<void(const ClassifyResult&)> onComplete)
+{
+    JUCE_ASSERT_MESSAGE_THREAD   // arms a Timer
+
+    auto answer = std::make_shared<std::function<void(const ClassifyResult&)>>(std::move(onComplete));
+    auto fallThrough = [answer] { if (*answer) (*answer)(ClassifyResult{}); };
+
+    // ONE callback path for the caller: even the cases we can answer without
+    // touching the network answer ASYNCHRONOUSLY, so the splice never has to
+    // handle "sometimes this calls back before it returns".
+    if (classifierOff_.load() || ! isLoggedIn() || req.message.trim().isEmpty())
+    {
+        juce::MessageManager::callAsync(fallThrough);
+        return;
+    }
+
+    // THE FULL COMPOSED MESSAGE, unstripped — see the contract note on
+    // ClassifyRequest. The server strips it for both calls itself.
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+    body->setProperty("message", req.message);
+    if (req.channel.isNotEmpty())        body->setProperty("channel", req.channel);
+    if (req.genre.isNotEmpty())          body->setProperty("genre", req.genre);
+    if (req.priorAssistant.isNotEmpty()) body->setProperty("priorAssistant", req.priorAssistant);
+    if (req.turnType.isNotEmpty())       body->setProperty("turnType", req.turnType);
+    if (auto* linkArr = req.links.getArray())
+        if (! linkArr->isEmpty()) body->setProperty("links", req.links);
+
+    auto aliveFlag = alive;
+    auto latch = armClassifyDeadline(kClassifyBudgetMs, [answer, aliveFlag]
+    {
+        if (! aliveFlag->load()) return;
+        EchoJay_NSLog("EJClassify: budget expired -- falling through");
+        if (*answer) (*answer)(ClassifyResult{});
+    });
+
+    postJSON("/api/classify", juce::JSON::toString(juce::var(body.get())),
+             [answer, latch, aliveFlag](const juce::var& json, int statusCode)
+    {
+        if (latch->exchange(true)) return;   // the deadline already answered
+        if (! aliveFlag->load()) return;
+
+        auto* obj = json.getDynamicObject();
+        if (statusCode != 200 || obj == nullptr)
+        {
+            // NOTE 401 DELIBERATELY DOES NOT CLEAR authToken, unlike
+            // sendChat's 401 handling. This is a side call the user did not
+            // ask for; an auth blip on it must never log anybody out.
+            // 429 is classify_rate_limited (40/min per account) and gets the
+            // same answer as everything else here: fall through.
+            EchoJay_NSLog(("EJClassify: fell through (status "
+                           + juce::String(statusCode) + ")").toRawUTF8());
+            if (*answer) (*answer)(ClassifyResult{});
+            return;
+        }
+
+        ClassifyResult r;
+        r.mode = obj->getProperty("mode").toString().trim();
+        if (r.mode == "off")
+        {
+            classifierOff_.store(true);
+            EchoJay_NSLog("EJClassify: mode=off -- latched for the session");
+            if (*answer) (*answer)(ClassifyResult{});
+            return;
+        }
+
+        // usable = "the server answered", nothing more. What to DO with the
+        // answer is read from the explicit fields below, never from this.
+        r.usable          = true;
+        r.intent          = obj->getProperty("intent").toString().trim();
+        r.precondition    = obj->getProperty("precondition").toString().trim();
+        r.preamble        = obj->getProperty("preamble").toString().trim();
+        r.question        = obj->getProperty("question").toString().trim();
+        r.token           = obj->getProperty("token").toString().trim();
+        r.fallback        = obj->getProperty("fallback").toString().trim();
+        // EXPLICIT SERVER BOOLEANS. A build turn can return a stray question
+        // with shortCircuit=false and the server drops it; inferring the
+        // short-circuit from "question is non-empty" would render it anyway
+        // and swallow the turn.
+        r.shortCircuit    = (bool) obj->getProperty("shortCircuit");
+        r.questionFollows = (bool) obj->getProperty("questionFollows");
+        r.chips           = obj->getProperty("chips");
+
+        EchoJay_NSLog(("EJClassify: intent=" + (r.intent.isNotEmpty() ? r.intent : juce::String("(none)"))
+                       + " precondition=" + (r.precondition.isNotEmpty() ? r.precondition : juce::String("(none)"))
+                       + " shortCircuit=" + (r.shortCircuit ? "yes" : "no")
+                       + " questionFollows=" + (r.questionFollows ? "yes" : "no")
+                       + " preamble=" + (r.preamble.isNotEmpty() ? "yes" : "no")
+                       + " token=" + (r.token.isNotEmpty() ? "yes" : "no")
+                       + " mode=" + r.mode
+                       + (r.fallback.isNotEmpty() ? " fallback=" + r.fallback : juce::String())).toRawUTF8());
+
+        if (*answer) (*answer)(r);
+    }, /*maxAttempts*/ 1, /*connectTimeoutMs*/ kClassifyBudgetMs);
+}
+
+void EchoJayAPI::classifyQuestion(const juce::String& message,
+                                  const juce::String& channel,
+                                  const juce::String& genre,
+                                  std::function<void(const juce::String& question)> onComplete)
+{
+    JUCE_ASSERT_MESSAGE_THREAD   // arms a Timer
+
+    auto answer = std::make_shared<std::function<void(const juce::String&)>>(std::move(onComplete));
+    auto fallThrough = [answer] { if (*answer) (*answer)({}); };
+
+    if (classifierOff_.load() || ! isLoggedIn() || message.trim().isEmpty())
+    {
+        juce::MessageManager::callAsync(fallThrough);
+        return;
+    }
+
+    // Same unstripped message as call 1, for the same reason: this endpoint
+    // runs the same userTypedPortion() over it.
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+    body->setProperty("message", message);
+    if (channel.isNotEmpty()) body->setProperty("channel", channel);
+    if (genre.isNotEmpty())   body->setProperty("genre", genre);
+
+    auto aliveFlag = alive;
+    // Its OWN budget, not call 1's. This call generates ~102 output tokens
+    // to call 1's ~28 but has the TIGHTER measured spread (max 1964 ms
+    // against 3167), so inheriting call 1's number would leave a hung
+    // question sitting for over a second longer than it can ever need.
+    auto latch = armClassifyDeadline(kClassifyQuestionBudgetMs, [answer, aliveFlag]
+    {
+        if (! aliveFlag->load()) return;
+        EchoJay_NSLog("EJClassify: question budget expired -- falling through");
+        if (*answer) (*answer)({});
+    });
+
+    postJSON("/api/classify-question", juce::JSON::toString(juce::var(body.get())),
+             [answer, latch, aliveFlag](const juce::var& json, int statusCode)
+    {
+        if (latch->exchange(true)) return;
+        if (! aliveFlag->load()) return;
+
+        auto* obj = json.getDynamicObject();
+        if (statusCode != 200 || obj == nullptr)
+        {
+            EchoJay_NSLog(("EJClassify: question fell through (status "
+                           + juce::String(statusCode) + ")").toRawUTF8());
+            if (*answer) (*answer)({});
+            return;
+        }
+        if (obj->getProperty("mode").toString().trim() == "off")
+        {
+            classifierOff_.store(true);
+            if (*answer) (*answer)({});
+            return;
+        }
+        // Every server-side failure here already returns question:null with
+        // a 200 rather than an error status, so an empty question is the
+        // ordinary "ask nothing, build normally" answer — not a fault.
+        const juce::String q = obj->getProperty("question").toString().trim();
+        const juce::String fb = obj->getProperty("fallback").toString().trim();
+        EchoJay_NSLog(("EJClassify: question " + juce::String(q.isNotEmpty() ? "received" : "declined")
+                       + (fb.isNotEmpty() ? " fallback=" + fb : juce::String())).toRawUTF8());
+        if (*answer) (*answer)(q);
+    }, /*maxAttempts*/ 1, /*connectTimeoutMs*/ kClassifyQuestionBudgetMs);
 }
 
 // ============ Remote Config ============
