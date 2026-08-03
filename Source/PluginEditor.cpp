@@ -6312,7 +6312,24 @@ void EchoJayEditor::measureLinkStrips()
     layOutLinkCtrls(linkCtrlRect_, linkCtrlZones_);
     y += kLinkCtrlH + kStripVGap;
 
-    const int bandH = juce::jmax(0, getHeight() - abOff - 8 - y);
+    // THE HORIZONTAL SCROLLBAR'S HEIGHT IS RESERVED HERE, and this is the fix
+    // for Active being clipped at the bottom of the strip.
+    //
+    // The rect arithmetic in layOutStrips was never wrong: Active is taken off
+    // the bottom of a rect already inset by the strip padding, so it always
+    // sat inside sg.full with its full height. What was wrong is the BAND
+    // handed to it. linkMixerViewport_ is created with setScrollBarsShown
+    // (false, true), so a horizontal bar appears as soon as the strips
+    // overflow, and a Viewport's bar covers the bottom of its CHILD. The child
+    // was sized to the whole band, so its bottom 8px lived under the bar. The
+    // AI button used to occupy that row and was clipped the same way; a filled
+    // pill just hid it better than a tick and a word do.
+    //
+    // Reserved UNCONDITIONALLY rather than only when the bar is showing: a
+    // band that changed height as Links are added would resize every strip
+    // (and move every fader) on a count change, which is far worse than 8px.
+    const int barH  = linkMixerViewport_.getScrollBarThickness();
+    const int bandH = juce::jmax(0, getHeight() - abOff - 8 - y - barH);
     linkStripAreaRect_ = { bandL, y, bandW, bandH };
     if (bandW <= 0 || bandH <= 0) return;
 
@@ -7140,32 +7157,74 @@ void EchoJayEditor::paintLinkStripEq(juce::Graphics& g, juce::Rectangle<int> are
     // it is not annotation, it is the frame that makes an empty box legible
     // as empty.
     //
-    // Verticals at the decade boundaries of the log axis the publisher
-    // defines (100 Hz, 1 kHz, 10 kHz), placed by the SAME log mapping
-    // LinkShm::eqCurveFreqs uses so a line and the curve above it cannot
-    // disagree about where a frequency is.
+    // THE FREQUENCY MAPPING IS THE PUBLISHER'S OWN, inverted. eqCurveFreqs
+    // places sample i at exp(lo + (hi - lo) * i / (n - 1)); this solves the
+    // same expression for x given f. There is no second axis definition, so a
+    // grid line and the curve above it cannot disagree about where a
+    // frequency is.
+    const double logLo = std::log((double) LinkShm::kEqCurveLoHz);
+    const double logHi = std::log((double) LinkShm::kEqCurveHiHz);
+    auto xForHz = [&](double f)
     {
-        g.setColour(LinkConsole::structure.withMultipliedAlpha(dim * 0.35f));
-        const double lo = std::log((double) LinkShm::kEqCurveLoHz);
-        const double hi = std::log((double) LinkShm::kEqCurveHiHz);
-        for (double f : { 100.0, 1000.0, 10000.0 })
-        {
-            const float t = (float) ((std::log(f) - lo) / (hi - lo));
-            const float x = pr.getX() + pr.getWidth() * t;
+        const float t = (float) ((std::log(f) - logLo) / (logHi - logLo));
+        return pr.getX() + pr.getWidth() * t;
+    };
+    auto vline = [&](double f)
+    {
+        const float x = xForHz(f);
+        // Endpoints would land on the box edge and read as a border, not a
+        // grid line, so anything not strictly inside is skipped.
+        if (x > pr.getX() + 0.5f && x < pr.getRight() - 0.5f)
             g.fillRect(x, pr.getY(), 1.0f, pr.getHeight());
+    };
+
+    // THREE WEIGHTS, faintest first so the stronger lines paint over them.
+    // Minor lines are the faintest thing in the box; the decades sit above
+    // them; the zero datum is the strongest grid line. Every one of them is
+    // far below the curve's own colour (LinkConsole::value at full dim), so
+    // the curve stays the first thing the eye finds and an empty box still
+    // reads as ruled chrome rather than as a busy graphic.
+    {
+        // MINOR VERTICALS, the 2x and 5x steps inside each decade. A full
+        // 2..9 series is what a big EQ display does and it is unreadable at
+        // 88px, let alone 44: 27 lines in 88px is a grey wash. WIDE ONLY,
+        // because at narrow even this set crowds the three decades that
+        // carry the meaning.
+        if (wide)
+        {
+            g.setColour(LinkConsole::structure.withMultipliedAlpha(dim * 0.18f));
+            for (double f : { 50.0, 200.0, 500.0, 2000.0, 5000.0 })
+                vline(f);
         }
-        // Horizontals at the half-range marks (plus and minus 6 dB at the
-        // shipping 12 dB range), which give the curve's height something to
-        // be read against without spelling out a number.
-        for (float db : { -kEqDrawRangeDb * 0.5f, kEqDrawRangeDb * 0.5f })
+
+        // MINOR HORIZONTALS. 3 dB steps at wide across the plus/minus 12 dB
+        // drawn range (plus/minus 3, 6, 9), about 8px apart in a 66px box;
+        // narrow steps 4 dB (plus/minus 4, 8), about 6px apart in a 40px box.
+        // Narrow gets fewer than wide but still more than the single
+        // half-range mark it had, because the horizontals cost no width and
+        // it is width that is scarce here.
+        g.setColour(LinkConsole::structure.withMultipliedAlpha(dim * 0.18f));
+        const float step = wide ? 3.0f : 4.0f;
+        for (float db = step; db < kEqDrawRangeDb - 0.01f; db += step)
+        {
             g.fillRect(pr.getX(), midY - db * perDb, pr.getWidth(), 1.0f);
+            g.fillRect(pr.getX(), midY + db * perDb, pr.getWidth(), 1.0f);
+        }
+
+        // DECADE VERTICALS, the strongest lines after the datum, at both
+        // widths: these are the ones that say where the spectrum is.
+        g.setColour(LinkConsole::structure.withMultipliedAlpha(dim * 0.42f));
+        for (double f : { 100.0, 1000.0, 10000.0 })
+            vline(f);
     }
 
-    // THE ZERO LINE, brighter than the rest of the grid but still plainly
-    // PART of it rather than data: same colour family, one step up in alpha.
-    // It has to be the strongest grid line (it is the datum that makes boost
-    // and cut readable) and weaker than any curve, or an empty box would
-    // read as a flat response, which is the exact claim this must not make.
+    // THE ZERO LINE, the top of the hierarchy: stronger than the decades,
+    // which are stronger than the minor lines. Still plainly PART of the grid
+    // rather than data, because it shares the grid's colour family and only
+    // steps up in alpha. It has to be the strongest grid line (it is the datum
+    // that makes boost and cut readable) and weaker than any curve, or an
+    // empty box would read as a flat response, which is the exact claim this
+    // must not make.
     g.setColour(LinkConsole::structure.withMultipliedAlpha(dim * 0.75f));
     g.fillRect(pr.getX(), midY, pr.getWidth(), 1.0f);
 
@@ -15207,7 +15266,14 @@ void EchoJayEditor::resized()
         const int busW  = linkBusGeom_.full.isEmpty() ? 0 : linkBusGeom_.full.getWidth();
         const int viewX = band.getX() + busW + (busW > 0 ? kStripGap * 2 : 0);
         const int viewW = juce::jmax(0, band.getRight() - viewX);
-        linkMixerViewport_.setBounds(viewX, band.getY(), viewW, band.getHeight());
+        // THE VIEWPORT IS TALLER THAN THE STRIPS by exactly the scrollbar's
+        // thickness, which measureLinkStrips already took out of the band.
+        // The bar therefore sits BELOW the strips instead of over them; give
+        // the viewport only the band height and the bar would eat the bottom
+        // of the child all over again.
+        const int barH = linkMixerViewport_.getScrollBarThickness();
+        linkMixerViewport_.setBounds(viewX, band.getY(), viewW,
+                                     band.getHeight() + barH);
         // Child width is stripsTotalWidth, the SAME formula layOutStrips lays
         // the strips out with, so the scroll range cannot disagree with the
         // rects. Height matches the band exactly: a strip is as tall as the

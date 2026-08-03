@@ -848,8 +848,41 @@ static void testEqSlot (int stripW, int bandH)
     check (links[1].active.getY() >= links[1].fader.getBottom()
            || links[1].fader.isEmpty(),
            "Active sits BELOW the fader+meter band");
-    check (links[1].active.getBottom() <= links[1].full.getBottom(),
-           "Active stays inside the strip");
+}
+
+static void testActiveBottomRow (int stripW, int bandH)
+{
+    // ACTIVE MUST FIT, WHOLE, INSIDE THE STRIP. It moved to the bottom row and
+    // came back clipped, so this is the guard for the next time rows move.
+    // The clip was NOT in these rects (the band handed to layOutStrips was too
+    // tall for the viewport, whose horizontal scrollbar covers the child's
+    // bottom), but the two failures are indistinguishable on screen, so the
+    // rect side is pinned here and the reservation is asserted separately
+    // below.
+    std::printf ("active row: %dpx strip, %dpx band\n", stripW, bandH);
+    Geom bus;
+    std::vector<Geom> links;
+    T::layOut ({ 32, 142, 1050, bandH }, stripW, addrs (2), bus, links);
+    if (links.empty()) { check (false, "strips laid out"); return; }
+
+    for (const Geom* s : { (const Geom*) &bus, (const Geom*) &links[0] })
+    {
+        check (s->full.contains (s->active), "Active is wholly inside the strip");
+        checkEq (s->active.getHeight(), 20, "Active keeps its FULL height");
+        check (s->active.getBottom() <= s->full.getBottom(),
+               "Active does not overhang the strip bottom");
+        // It must also clear the strip's own bottom inset rather than merely
+        // touching the edge: sitting flush would be clipped by any border.
+        check (s->full.getBottom() - s->active.getBottom() >= 4,
+               "Active keeps the strip's bottom inset");
+        // And it must be the LAST element: nothing may sit below it.
+        for (const auto& e : elements (*s))
+            if (e.second != s->active && ! e.second.isEmpty())
+                check (e.second.getBottom() <= s->active.getY()
+                       || e.second.getY() >= s->active.getBottom()
+                       || e.second == s->active,
+                       "nothing overlaps the Active row");
+    }
 }
 
 static void testEqSlotBus()
@@ -1077,6 +1110,10 @@ int main()
     testEqSlot (T::wWide(),   540);
     testEqSlot (T::wWide(),   424);
     testEqSlotBus();
+    testActiveBottomRow (T::wNarrow(), 540);
+    testActiveBottomRow (T::wWide(),   540);
+    testActiveBottomRow (T::wNarrow(), 424);
+    testActiveBottomRow (T::wWide(),   1044);
     testEqSlotSqueeze();
     testNarrowChainSlots();
     testElideMiddle();
