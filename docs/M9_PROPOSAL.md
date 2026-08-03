@@ -946,6 +946,41 @@ identity before trusting anything measured there. The merged-tree checks were
 re-run only because the refusal happened to be visible in the output; had it
 scrolled past, the report would have been false.
 
+## PROSE ASSERTING WHAT A MEASUREMENT SHOWED, WITH NOTHING MEASURING IT (3 August 2026)
+
+The false-comment class one layer in, and in the worst possible place: inside a
+suite whose entire purpose is verification.
+
+**Instance 1.** Arm B printed `-- probing freq_hz, the other two held` on every
+isolation block. Nothing held anything. The reference was re-established before
+each block, so a parameter that drifted *during* a block would have been
+silently corrected at the start of the next one and never seen. The sentence
+described an intent, and a reader — including the person writing the next
+check — would take it for a result the suite had established.
+
+It is now `B-hold`, an assertion: after each block the two parameters not being
+probed must still be at the reference, drift < 0.005. Three new assertions,
+reading 0.00000 on AMEK. The sentence became a check, and the check passes; the
+point is that until it existed, nobody could have known either way.
+
+**Why this is worse than an ordinary false comment.** An out-of-date comment
+misleads a reader of the source. This misled a reader of the *output* — the
+artefact the tool exists to produce, in a suite that publishes verdicts about
+other people's correctness. A verification tool asserting an unverified
+premise in its own report is the failure it exists to catch, pointed inward.
+
+**Audit of the other suites (3 August 2026).** comp's three section headers
+carry the same shape more weakly: `THRESHOLD (excitation: ratio at max,
+verified)`, `RATIO (excitation: threshold at -30 dB, verified)` and `ENVELOPE
+(excitation: threshold -30, ratio max, verified)`. Each section does WRITE the
+state it names, immediately, so the claim is not false — but "verified" refers
+to P4's one-time verification by signal, not to a re-measurement at that point,
+and nothing checks the state survived the writes between sections. comp has no
+equivalent of `B-hold`. Recorded as a gap in comp rather than fixed here:
+eq's session should not quietly edit another suite's assertions.
+
+---
+
 ## A NEW CHECK MUST NOT SILENTLY THRESHOLD A QUANTITY AN EXISTING CHECK DELIBERATELY LEFT UNTHRESHOLDED (3 August 2026)
 
 **Instance 1.** Item 3's role verification first required the mid band to move

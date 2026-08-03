@@ -35,6 +35,7 @@
 #include "EjmapSchema.h"
 #include "EjmapSubject.h"
 #include "EjmapTriage.h"
+#include "EjmapProbeRoute.h"
 
 // The shared sweep and parsers, compiled here so the drift gate proves both
 // binaries build the SAME code: ejextract compiles these headers to produce
@@ -1251,6 +1252,33 @@ void testSubjectLookups()
     auto narrowOct = octavesApartWithin (slotFor (juce::var (nbm), "f"), 4.0);
     check (! narrowOct.ok && narrowOct.why.contains ("cannot express"),
            "subject REFUSES an interval the ladder cannot express, rather than shrinking it");
+
+    // ---- item 3 session 3: the floor's unit decides the verdict ------------
+    // The standing-question answer for handing eq to the routing fork, proven
+    // rather than argued. routeVerdict is dimensionless, so the SAME
+    // measurements route differently depending only on which floor is passed.
+    {
+        // eq's centre feature: moved 0.20 oct against a predicted 2.0 oct.
+        const double moved = 0.20, predicted = 2.0, tol = 0.0838;
+        const double octaveFloor = 0.0322;   // sigma_centre, in octaves
+        const double dbFloor     = 0.088;    // sigma_depth, in decibels
+
+        const auto withOct = ejmap::route::routeVerdict (moved, octaveFloor, predicted, tol);
+        const auto withDb  = ejmap::route::routeVerdict (moved, dbFloor,     predicted, tol);
+
+        check (withOct == ejmap::route::Route::overClaim,
+               "floor unit: with the OCTAVE floor the feature moved above 4*sigma -> over-claim");
+        check (withDb == ejmap::route::Route::deafness,
+               "floor unit: with the dB floor the SAME measurement reads as deafness");
+        check (withOct != withDb,
+               "floor unit: identical measurements, opposite verdicts, decided only by which "
+               "floor was passed -- contradicts vs inconclusive");
+
+        // and the pairing that makes it loud
+        ejmap::route::Floor f (0.0322, "oct");
+        check (f.unit == "oct" && f.value == 0.0322,
+               "floor carries its unit, so a mismatch is checkable at the emit");
+    }
 
     // ---- item 3 session 1: cause triage, all four states -------------------
     // The write-did-not-land state cannot be forced on real hardware -- writes

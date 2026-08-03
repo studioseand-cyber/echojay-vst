@@ -1,5 +1,5 @@
 {
-  "_note": "M9 fixture: AMEK EQ 200. Session 1 carries the ROLE and ENABLE LINK the suite used to hold as the constants idxMono=7, idxMonoIn=8. Session 3 adds ladder_points and arm A's injection. The real AMEK map carries neither field: option (i) was signed -- the fixture carries them for the regression case and the corpus gets them when AMEK is re-mapped under schema 2.3, rather than tooling writing them into a human-verified artefact to make our tests convenient.",
+  "_note": "M9 fixture: AMEK EQ 200. Carries the ROLE and ENABLE LINK (session 1), and the LADDER POINTS and ARM A INJECTION (session 3). The chooser runs only when nothing pins the points: measured on this suite, a centred 2-octave pair lands at 54.1/216.3 Hz against these pinned 100/400, so a chooser-driven run cannot reproduce a pinned run's numbers and is not a regression test. The real AMEK map carries neither role nor enabled_by: option (i) was signed -- the corpus gets them when AMEK is re-mapped under schema 2.3, rather than tooling writing them into a human-verified artefact.",
   "subject_id": "AudioUnit:Effects/aumf,ameq,Brwx",
   "subject_name": "AMEK EQ 200",
   "controls": {
@@ -14,5 +14,29 @@
         "why": "Mono Maker is inert until its In switch is engaged"
       }
     }
+  },
+  "reference_state": {
+    "freq_hz": 100.0,
+    "gain_db": 6.0,
+    "q": 1.0
+  },
+  "ladder_points": {
+    "freq_hz": [
+      100.0,
+      400.0
+    ],
+    "gain_db": [
+      3.0,
+      9.0
+    ],
+    "q": [
+      0.71,
+      2.0
+    ]
+  },
+  "arm_a_injection": {
+    "semantic": "freq_hz",
+    "to_control": "Mono Maker",
+    "why": "A deliberate mis-map needs a nominated wrong-index control of a specific character: not a filter, and measurably live in a band the falsifier can read. No general map declares such a thing, which is why arm A is FIXTURE-ONLY and refuses to run without this declaration."
   }
 }

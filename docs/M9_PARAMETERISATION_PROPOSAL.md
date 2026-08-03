@@ -574,6 +574,66 @@ Session 3 therefore carries: the `emitVerdict` conversion **with its standing-qu
 
 ---
 
+## 4j. Item 3, session 3: the conversion, the fixture, arm A scoped. Item 3 closed.
+
+### The standing question, answered by measurement before the conversion landed
+
+`routeVerdict` is **dimensionless**: deafness is `|moved| < 4×floor`, over-claim is `||moved| − |pred|| > tolerance`. Nothing in either comparison knows whether the numbers are decibels or octaves, so it works on octave features arithmetically — which is what makes the hazard subtle.
+
+eq's assertions used only the **tolerance** (`|meas − pred| ≤ tol`, a binary pass). Handing eq to the fork introduces a **second input those assertions never consulted: the floor** — and the floor is what decides between `contradicts` and `inconclusive`.
+
+**So the newly falsifiable thing is a floor in the wrong unit.** Proven, not argued:
+
+```
+moved 0.20 oct, predicted 2.00 oct, tolerance 0.0838
+  with the octave floor (0.0322)  -> 0.20 > 0.1288 -> over-claim  -> CONTRADICTS
+  with the dB floor     (0.088)   -> 0.20 < 0.352  -> deafness    -> INCONCLUSIVE
+```
+
+Identical measurements, opposite verdicts, decided entirely by which floor was passed. 5a made the *unit* required at emit, but the floor was a bare `double` with no unit, so that guard did not cover this.
+
+**The guard:** `Probe::Floor` pairs a value with its unit, and `emitVerdict` refuses when `floor.unit != unit` — a loud `HARNESS DEFECT` and no verdict, instead of a silent flip. Attempted via `--gate-m9 floorunit`, which emits the same measurement twice:
+
+```
+correct floor (octaves):        CONTRADICTS freq_hz (band centre): OVER-CLAIM ...
+floor from the dB domain:       HARNESS DEFECT freq_hz (band centre): the verdict is in
+                                'oct' and its floor is in 'dB' ... No verdict is issued.
+```
+
+The control case still produces a real contradicts, so the guard is not simply refusing everything. All five pre-existing call sites were forced to declare their floor's unit by the compiler: dB, dB, dB, `dB/dB`, `log2 ratio`.
+
+The fork moved to `EjmapProbeRoute.h` for the same reason `EjmapTriage.h` exists — the drift gate compiles it without the message loop, so what it decides is provable in a test rather than only on hardware.
+
+### The conversion: three units on one band
+
+`freq_hz (band centre)` in **oct**, `gain_db (lobe depth)` in **dB**, `q (lobe width ratio)` in **oct-log2** — each with a floor in its own unit. M9's open item 1 is closed for eq.
+
+### Fixture-as-test-case, and arm A refusing
+
+The fixture now carries the reference state, the ladder points (100/400 Hz, 3/9 dB, q 0.71/2.0), the role, the enable link and **arm A's injection**. One code path, two modes, announced at the top of every run:
+
+- `MODE: assert against the fixture — ladder points pinned, numbers comparable run to run`
+- `MODE: report — the chooser picks them and the numbers are NOT comparable against a pinned run`
+
+**Arm A refuses, and the refusal was attempted** (the fixture path is env-overridable precisely so it could be): with no declared injection, and with an injection nominating a control that is not the resolved one. Both refuse with distinct reasons and the gate reports `ARM B ONLY`. A refusal that has never fired is the misplaced-guard class.
+
+### Re-proof: 14 results
+
+11 assertions (three `B-hold`, B2, B5, B6, A1, A2, A5, A4, restore) plus 3 verdicts. The count holds; three of the fourteen changed **kind**, from harness assertion to parameter verdict, which is the conversion.
+
+Against the amended criterion:
+
+| Result | Status |
+|---|---|
+| `gain_db` 0.131, `q` 0.026 | **exact**, every run |
+| `freq_hz` centre error | **0.0280–0.0286 oct** across 7 runs spanning the unchanged pre-session build and the converted one. Not deterministic, was never deterministic, and the conversion did not move it outside its own noise |
+
+The spread was re-measured on this build before comparing, rather than reused from session 1's measurement — the earlier range was 0.0280–0.0284 and one run here read 0.0286, so quoting the old range would have understated it.
+
+Regression: limiter, gate, saturation PASS; comp 1 FAILED (the API-2500 over-claim). Drift gate 185 → 189.
+
+---
+
 ## Why resolution is INDEX-FIRST with the name as the check
 
 Recorded because the intuitive order is the wrong one and someone will

@@ -1628,11 +1628,26 @@ public:
         // route so a caller can branch, but the words are composed here.
         auto emitVerdict = [&] (const juce::String& semantic,
                                 double measured, double predicted,
-                                double floor, double tolerance,
+                                P::Floor floor, double tolerance,
                                 const juce::String& evidence,
                                 const juce::String& unit)
         {
-            const auto route = P::routeVerdict (measured, floor, predicted, tolerance);
+            // THE FLOOR MUST BE IN THE VERDICT'S OWN UNIT. A floor from another
+            // domain flips the route between contradicts and inconclusive with
+            // the measurements unchanged, and nothing downstream could tell.
+            // Loud here rather than silent there.
+            if (floor.unit != unit)
+            {
+                ++fails;
+                std::cout << "  HARNESS DEFECT " << semantic << ": the verdict is in '" << unit
+                          << "' and its floor is in '" << floor.unit << "'. The fork decides "
+                             "deafness by 4*floor, so a floor from another domain silently "
+                             "changes the verdict. No verdict is issued." << std::endl;
+                batchRows.add ({ semantic, "harness-defect",
+                                 "floor unit '" + floor.unit + "' != verdict unit '" + unit + "'" });
+                return P::Route::deafness;
+            }
+            const auto route = P::routeVerdict (measured, floor.value, predicted, tolerance);
             if (route == P::Route::overClaim) ++fails;
             const juce::String label = route == P::Route::tracks ? "confirms"
                                      : route == P::Route::deafness ? "inconclusive"
@@ -1641,10 +1656,10 @@ public:
                                : route == P::Route::deafness ? "INCONCLUSIVE"
                                                              : "CONTRADICTS ")
                       << " " << semantic << ": "
-                      << P::routeText (route, measured, predicted, floor, unit)
+                      << P::routeText (route, measured, predicted, floor.value, unit)
                       << " | " << evidence << std::endl;
             batchRows.add ({ semantic, label,
-                             P::routeText (route, measured, predicted, floor, unit)
+                             P::routeText (route, measured, predicted, floor.value, unit)
                              + " | " + evidence });
             return route;
         };
@@ -2598,7 +2613,7 @@ public:
             // words is the failure the fork existed to prevent.
             emitVerdict (isLim ? "ceiling_db (top-step plateau, PRIMARY)"
                         : "threshold_db (level-swept burst train, PRIMARY)",
-                  featMoved, predForRoute, juce::jmax (sgPlateau, 0.088), tolPl,
+                  featMoved, predForRoute, P::Floor (juce::jmax (sgPlateau, 0.088), "dB"), tolPl,
                   juce::String (mapDriven ? "MAP-DRIVEN (feature vs the map's claim); "
                                           : "self-consistency only (no map); ")
                   + "worst |feature - ladder| " + juce::String (worstPl, 2) + " dB vs tol "
@@ -2608,6 +2623,24 @@ public:
                   "dB");
             std::cout << (isLim ? "LIMITER" : "GATE") << " SUITE: "
                       << (fails == 0 ? "PASS" : juce::String (fails) + " FAILED") << std::endl;
+            quitNow(); return;
+        }
+
+        // ---- floorunit: attempt the mismatch the floor guard refuses ------
+        if (mode == "floorunit")
+        {
+            say ("FLOOR-UNIT GUARD: emitting a verdict whose floor is in another domain.");
+            say ("  the measurements are eq's: moved 0.20 oct, predicted 2.00 oct, tol 0.0838.");
+            say ("  correct floor (octaves):");
+            emitVerdict ("freq_hz (band centre)", 0.20, 2.00, P::Floor (0.0322, "oct"), 0.0838,
+                  "constructed specimen, correct floor", "oct");
+            say ("  floor from the dB domain, everything else identical:");
+            emitVerdict ("freq_hz (band centre)", 0.20, 2.00, P::Floor (0.088, "dB"), 0.0838,
+                  "constructed specimen, floor from another domain", "oct");
+            std::cout << "FLOOR-UNIT: " << (fails == 2 ? "GUARD FIRED (and the correct floor "
+                         "produced a real contradicts, so the guard is not simply refusing "
+                         "everything)" : "UNEXPECTED: " + juce::String (fails) + " failures")
+                      << std::endl;
             quitNow(); return;
         }
 
@@ -2850,7 +2883,7 @@ public:
             const double thdMoved = std::abs (thds.getLast() - thds.getFirst());
             emitVerdict ("drive (THD monotone, PRIMARY)",
                   thdMoved, juce::jmax (1.0, std::abs (thds.getLast() - thds.getFirst())),
-                  0.088, 0.25 * juce::jmax (1.0, thdMoved),
+                  P::Floor (0.088, "dB"), 0.25 * juce::jmax (1.0, thdMoved),
                   "THD " + juce::String (thds.getFirst(), 2) + " -> " + juce::String (thds.getLast(), 2)
                   + " dB across drive " + juce::String (landeds.getFirst(), 2) + " -> "
                   + juce::String (landeds.getLast(), 2) + " (moved " + juce::String (thdMoved, 2)
@@ -3555,7 +3588,7 @@ public:
             }
 
             emitVerdict ("threshold_db (GR-at-level, PRIMARY)",
-                  totalGr, predGr, juce::jmax (sgKneeFloor, 0.001), tolGr,
+                  totalGr, predGr, P::Floor (juce::jmax (sgKneeFloor, 0.001), "dB"), tolGr,
                   "threshold " + juce::String (P::predictedLanding (swTh.a, thrPoints[0]), 1)
                   + " -> " + juce::String (P::predictedLanding (swTh.a, thrPoints[3]), 1)
                   + " dB across " + juce::String (predSpan, 1) + " dB at ratio "
@@ -3596,7 +3629,8 @@ public:
                 quitNow(); return;
             }
 
-            emitVerdict ("ratio", measDS, predDS, juce::jmax (sgSlope, 0.0001), tolS,
+            emitVerdict ("ratio", measDS, predDS, P::Floor (juce::jmax (sgSlope, 0.0001), "dB/dB"),
+                  tolS,
                   "ladder " + juce::String (predRLo, 2) + ":1 -> " + juce::String (predRHi, 2)
                   + ":1 => predicted slope " + juce::String (predSlopeLo, 3) + " -> "
                   + juce::String (predSlopeHi, 3) + " (delta " + juce::String (predDS, 3)
@@ -3692,7 +3726,7 @@ public:
                 const double measRatio = (tA > 0 && tB > 0) ? std::log2 (tB / juce::jmax (1.0, tA)) : 0.0;
                 const bool defined = tA > 0 && tB > 0;
                 emitVerdict (atk ? "attack_ms" : "release_ms",
-                      measRatio, predRatio, 0.0001,
+                      measRatio, predRatio, P::Floor (0.0001, "log2 ratio"),
                       juce::jmax (0.25 * std::abs (predRatio), 0.25),
                       "ladder " + juce::String (P::predictedLanding (sw.a, lo), 2) + " -> "
                       + juce::String (P::predictedLanding (sw.a, hi), 2) + " (predicted log2 ratio "
@@ -3894,6 +3928,25 @@ public:
                  "and B5's negative control both write that control, so neither can run.");
             quitNow(); return;
         }
+        // The fixture, loaded once: role and link (session 1), ladder points,
+        // reference state and arm A's injection (session 3).
+        // The path is overridable so the refusals below can be ATTEMPTED. A
+        // refusal that has never fired is the misplaced-guard class: present in
+        // the source, absent in every run.
+        auto fixturePath = juce::SystemStats::getEnvironmentVariable ("EJMAP_EQ_FIXTURE", "");
+        auto fixtureFile = fixturePath.isNotEmpty()
+            ? juce::File (fixturePath)
+            : juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures")
+                  .getChildFile ("m9-eq-aumf-ameq-Brwx.json");
+        auto eqFixture = juce::JSON::parse (fixtureFile.loadFileAsString());
+        const bool assertMode = eqFixture.isObject()
+                             && eqFixture.getProperty ("ladder_points", juce::var()).isObject();
+        say (assertMode
+               ? "MODE: assert against the fixture -- ladder points pinned, numbers comparable "
+                 "run to run"
+               : "MODE: report -- no fixture pins the points, so the chooser picks them and the "
+                 "numbers are NOT comparable against a pinned run");
+
         const int idxMono = rolePick.slot.index;
         auto monoLink = ejmap::subject::enableLinkFor (roleSource, rolePick.controlName);
         const int idxMonoIn = monoLink.declared ? monoLink.index : -1;
@@ -4156,6 +4209,34 @@ public:
         // is necessary and insufficient; the per-semantic claim checks below
         // are what make the attribution sound.
         struct BandRef { double freqHz = 100.0, gainDb = 6.0, q = 1.0; } bandRef;
+        auto pinned = [&] (const juce::String& sem, int which, double fallback)
+        {
+            if (auto* a = eqFixture.getProperty ("ladder_points", juce::var())
+                                   .getProperty (sem, juce::var()).getArray())
+                if (juce::isPositiveAndBelow (which, a->size())) return (double) (*a)[which];
+            return fallback;
+        };
+        {
+            auto rs = eqFixture.getProperty ("reference_state", juce::var());
+            if (rs.isObject())
+            {
+                bandRef.freqHz = (double) rs.getProperty ("freq_hz", bandRef.freqHz);
+                bandRef.gainDb = (double) rs.getProperty ("gain_db", bandRef.gainDb);
+                bandRef.q      = (double) rs.getProperty ("q",       bandRef.q);
+            }
+            else if (! assertMode)
+            {
+                // NOTHING PINS THE POINTS: the chooser picks, from the map's own
+                // band range. Measured in item 0: a centred 2-octave pair on
+                // AMEK lands at 54.1/216.3 Hz against the fixture's 100/400, so
+                // this path CANNOT reproduce a pinned run and does not claim to.
+                auto fslot = ejmap::subject::slotInGroup (mapVar, 0, "freq_hz");
+                auto oct = ejmap::subject::octavesApartWithin (fslot, 2.0);
+                if (oct.ok) bandRef.freqHz = oct.lowHz;
+                say ("  chooser: reference freq " + juce::String (bandRef.freqHz, 1)
+                     + " Hz from the map's own band range (" + (oct.ok ? "ok" : oct.why) + ")");
+            }
+        }
         auto establishReference = [&] (const juce::String& probing)
         {
             wc (idxFreq, normFor (freqAnch, bandRef.freqHz));
@@ -4247,12 +4328,12 @@ public:
         establishReference ("freq_hz");
         auto b100 = P::welch (render());
         auto f100 = P::lobeFeatures (preExcS.mid, b100.mid);
-        wc (idxFreq, normFor (freqAnch, 400.0)); trackMono();
+        wc (idxFreq, normFor (freqAnch, pinned ("freq_hz", 1, 400.0))); trackMono();
         auto b400 = P::welch (render());
         auto f400 = P::lobeFeatures (preExcS.mid, b400.mid);
 
-        const double pred100 = P::predictedLanding (freqAnch, 100.0);
-        const double pred400 = P::predictedLanding (freqAnch, 400.0);
+        const double pred100 = P::predictedLanding (freqAnch, pinned ("freq_hz", 0, 100.0));
+        const double pred400 = P::predictedLanding (freqAnch, pinned ("freq_hz", 1, 400.0));
         const double predOct = std::log2 (pred400 / pred100);
         const double measOct = std::log2 (f400.centreHz / f100.centreHz);
         // ITEM 1 (decided): tolerance = signed 0.070 plugin-error gate PLUS the
@@ -4263,7 +4344,12 @@ public:
         const double biasB = P::InstrumentFloor::centreBiasOct (pred400);
         const double biasTerm = juce::jmax (biasA, biasB);
         const double centreTol = 0.070 + biasTerm;
-        assertHarness ("B1 centre move", std::abs (measOct - predOct) <= centreTol,
+        // CONVERTED (item 3, session 3). These three were the last of eq's
+        // parameter verdicts published as harness assertions -- M9 open item 1
+        // for this suite. Each carries ITS OWN UNIT and a floor in that same
+        // unit: octaves here, dB for depth, oct-log2 for the width ratio.
+        emitVerdict ("freq_hz (band centre)", measOct, predOct,
+              P::Floor (sigCentre, "oct"), centreTol,
               "predicted " + juce::String (predOct, 3) + " oct (ladder: " + juce::String (pred100, 1)
               + " -> " + juce::String (pred400, 1) + " Hz), measured " + juce::String (measOct, 3)
               + " oct (" + juce::String (f100.centreHz, 1) + " -> " + juce::String (f400.centreHz, 1)
@@ -4271,7 +4357,7 @@ public:
               + " oct vs tol " + juce::String (centreTol, 4)
               + " = 0.070 gate + " + juce::String (biasTerm, 4) + " instrument bias @"
               + juce::String (pred400, 0) + " Hz [terms recorded separately: gate 0.0700, bias "
-              + juce::String (biasTerm, 4) + "]");
+              + juce::String (biasTerm, 4) + "]", "oct");
         verifyHeld ("freq_hz", idxGain, idxQ, gainAnch, qAnch, bandRef.gainDb, bandRef.q,
                     "gain_db", "q");
         assertHarness ("B2 expressible", predOct >= 4 * sigCentre,
@@ -4280,40 +4366,45 @@ public:
 
         // B3 gain depth, from the declared reference
         establishReference ("gain_db");
-        wc (idxGain, normFor (gainAnch, 3.0)); trackMono();
+        wc (idxGain, normFor (gainAnch, pinned ("gain_db", 0, 3.0))); trackMono();
         auto d3 = P::lobeFeatures (preExcS.mid, P::welch (render()).mid);
-        wc (idxGain, normFor (gainAnch, 9.0)); trackMono();
+        wc (idxGain, normFor (gainAnch, pinned ("gain_db", 1, 9.0))); trackMono();
         auto d9 = P::lobeFeatures (preExcS.mid, P::welch (render()).mid);
-        const double predDDepth = P::predictedLanding (gainAnch, 9.0) - P::predictedLanding (gainAnch, 3.0);
+        const double predDDepth = P::predictedLanding (gainAnch, pinned ("gain_db", 1, 9.0))
+                                - P::predictedLanding (gainAnch, pinned ("gain_db", 0, 3.0));
         const double measDDepth = d9.depthDb - d3.depthDb;
         const double tolDepth = juce::jmax (0.25 * std::abs (predDDepth), 4 * sigDepth);
-        assertHarness ("B3 gain depth", std::abs (measDDepth - predDDepth) <= tolDepth,
+        emitVerdict ("gain_db (lobe depth)", measDDepth, predDDepth,
+              P::Floor (sigDepth, "dB"), tolDepth,
               "predicted +" + juce::String (predDDepth, 2) + " dB, measured +"
               + juce::String (measDDepth, 2) + " dB (depth@+3 " + juce::String (d3.depthDb, 2)
               + ", depth@+9 " + juce::String (d9.depthDb, 2) + "), error "
               + juce::String (std::abs (measDDepth - predDDepth), 3) + " vs tol "
-              + juce::String (tolDepth, 3) + " [max(0.25*pred, 4*sigma)]");
+              + juce::String (tolDepth, 3) + " [max(0.25*pred, 4*sigma)]", "dB");
 
         verifyHeld ("gain_db", idxFreq, idxQ, freqAnch, qAnch, bandRef.freqHz, bandRef.q,
                     "freq_hz", "q");
 
         // B4 q width, from the declared reference
         establishReference ("q");
-        wc (idxQ, normFor (qAnch, 0.71)); trackMono();
+        wc (idxQ, normFor (qAnch, pinned ("q", 0, 0.71))); trackMono();
         auto wLo = P::lobeFeatures (preExcS.mid, P::welch (render()).mid);
-        wc (idxQ, normFor (qAnch, 2.0)); trackMono();
+        wc (idxQ, normFor (qAnch, pinned ("q", 1, 2.0))); trackMono();
         auto wHi = P::lobeFeatures (preExcS.mid, P::welch (render()).mid);
-        const double qLo = P::predictedLanding (qAnch, 0.71), qHi = P::predictedLanding (qAnch, 2.0);
+        const double qLo = P::predictedLanding (qAnch, pinned ("q", 0, 0.71)),
+                     qHi = P::predictedLanding (qAnch, pinned ("q", 1, 2.0));
         const double predWRatio = std::log2 (qHi / qLo);          // width ~ 1/q
         const double measWRatio = std::log2 (wLo.widthOct / juce::jmax (1e-6, wHi.widthOct));
         const double tolW = juce::jmax (0.25 * std::abs (predWRatio), 4 * sigWidth);
-        assertHarness ("B4 q width", std::abs (measWRatio - predWRatio) <= tolW,
+        emitVerdict ("q (lobe width ratio)", measWRatio, predWRatio,
+              P::Floor (sigWidth, "oct-log2"), tolW,
               "q " + juce::String (qLo, 2) + " -> " + juce::String (qHi, 2)
               + ": predicted width ratio " + juce::String (predWRatio, 3)
               + " oct-log2, measured " + juce::String (measWRatio, 3)
               + " (width@qLo " + juce::String (wLo.widthOct, 3) + " oct, width@qHi "
               + juce::String (wHi.widthOct, 3) + " oct), error "
-              + juce::String (std::abs (measWRatio - predWRatio), 3) + " vs tol " + juce::String (tolW, 3));
+              + juce::String (std::abs (measWRatio - predWRatio), 3) + " vs tol "
+              + juce::String (tolW, 3), "oct-log2");
 
         verifyHeld ("q", idxFreq, idxGain, freqAnch, gainAnch, bandRef.freqHz, bandRef.gainDb,
                     "freq_hz", "gain_db");
@@ -4389,7 +4480,30 @@ public:
 
         // =====================================================================
         say ("");
-        say ("ARM A: deliberate mis-map (band 1 freq_hz -> Mono Maker [7]); zero human input");
+        // ARM A IS FIXTURE-ONLY, MADE EXECUTABLE. A deliberate mis-map needs a
+        // nominated wrong-index control of a specific character -- not a filter,
+        // measurably live in a band the falsifier can read. No general map
+        // declares such a thing, so scoping arm A as fixture-only is not a
+        // documentation note: it is a refusal.
+        auto injection = eqFixture.getProperty ("arm_a_injection", juce::var());
+        if (! injection.isObject()
+            || injection.getProperty ("to_control", "").toString() != rolePick.controlName)
+        {
+            say ("");
+            say ("ARM A: NOT RUN. " + juce::String (injection.isObject()
+                    ? "the fixture nominates '" + injection.getProperty ("to_control", "").toString()
+                      + "' and the resolved stereo_width control is '" + rolePick.controlName
+                      + "'; a mis-map to a control the fixture did not nominate proves nothing"
+                    : "no fixture declares an arm A injection. Arm A needs a nominated "
+                      "wrong-index control of a specific character, which no general map "
+                      "carries -- this is the fixture-only scoping, refusing rather than "
+                      "assuming."));
+            std::cout << "GATE M9: ARM B ONLY (no fixture-declared arm A injection)" << std::endl;
+            quitNow(); return;
+        }
+        say ("ARM A: deliberate mis-map (band 1 " + injection.getProperty ("semantic", "").toString()
+             + " -> " + rolePick.controlName + " [" + juce::String (idxMono)
+             + "], nominated by the fixture); zero human input");
         const auto tArmA0 = juce::Time::getMillisecondCounterHiRes();
         say ("  excitation carried from P4 (verified by signal, "
              + juce::String (excF.maxAbsDb, 2) + " dB): should-have-moved branch ARMED.");
