@@ -946,6 +946,32 @@ identity before trusting anything measured there. The merged-tree checks were
 re-run only because the refusal happened to be visible in the output; had it
 scrolled past, the report would have been false.
 
+## THE DOCUMENTED CAP IS NOT ALWAYS THE BINDING ONE (3 August 2026)
+
+**Instance 1: the map-state query.** `api/params/maps.js` refuses more than 500
+identities and says so in a 413. Feature 2 batched to exactly that cap and got
+**nothing back at all** — not a 413, not an error, no response.
+
+500 identities is roughly **13,000 characters of query string**, and the edge
+rejects the URL before any handler runs, so the documented limit was never
+reached and the handler that would have explained the refusal never executed.
+Measured: 1,376 identities in 500-wide batches returned no response; 3
+identities worked.
+
+**The failure mode is what makes this worth a name.** A cap enforced by the
+application answers you. A cap enforced by the transport in front of it does
+not — it returns silence, which reads as "the server is down" rather than "your
+request was too big", and the number in the documentation is the one you will
+check first.
+
+**The rule:** bound a batch by the SIZE of what it produces, then by count.
+Count is a proxy for size and it is wrong whenever an element's length varies —
+here a long version string moves the boundary and no count can see it. Batches
+are now capped at 3,000 characters first and 500 identities second, and the
+second cap has not been the operative one since.
+
+---
+
 ## UNBLOCKING A PATH PUBLISHES WHATEVER BROKEN CHECK IT WAS HOLDING (3 August 2026)
 
 **A null is a check that has never been exercised.** While a suite returns

@@ -167,6 +167,34 @@ The shape of the fix is a rule about people rather than data: either ingest
 weights owner over mapper, or a mapper's overwrite of an owner map lands in a
 review state rather than serving.
 
+## CAMPAIGN PRECONDITION: "submitted by you" rests on a local map, not on the server
+
+**Same root as the supersession gap above, and the same fix closes both.**
+`tester_id` is stored in `plugin:<fp>:meta.ejmap` and consulted by nothing.
+`api/params/maps.js` returns the map BODY, and the map carries
+`origin: "human"` but no `provenance` — so the response says *a human mapped
+this* and cannot say *which human*.
+
+Feature 2's column therefore attributes from local evidence: a map on this
+machine for that identity means this machine did the work. Measured live on
+3 Aug 2026 — AMEK and spiff both render ✓ "submitted by you" on that basis,
+correctly.
+
+**It is honest with one submitter and wrong the moment there are two:**
+
+- a mapper's map on the server with **no local copy** renders as **unmapped**,
+  so the campaign re-maps work that is already done;
+- and if this machine happens to hold a local map for the same identity, the
+  same row renders as **mine** when it is not.
+
+The client cannot fix this from what it is given. The fix is server-side:
+**return `tester_id` in the maps response**, alongside the supersession rule,
+since both are blocked on the same field being served and both bite at the
+same moment — when a second person submits.
+
+**Deadline:** same as the supersession gap. It does not block Sean's own
+mapping. It must close before any build goes to another person.
+
 ## Open items at the pause
 
 Carried in the proposal; none blocks mapping.
