@@ -2487,8 +2487,6 @@ private:
         The pointer is into the processor's rack cache and is valid only until
         the next refreshLinkRackCache; paint uses it within one call. */
     const std::vector<int16_t>* linkEqCurve(const juce::String& uid) const;
-    bool linkHasEqCurve(const juce::String& uid) const
-        { return linkEqCurve(uid) != nullptr; }
     void applyChainEditToLink(int msgIdx);
     int  sendChainEditToLink(const juce::String& linkUid,
                              const juce::String& editJson);   // returns seq, -1 on failure
@@ -2566,17 +2564,18 @@ private:
                                         // lives on THIS rect
         juce::Rectangle<int> meter;     // fast-peak bars, always present
         juce::Rectangle<int> clip;      // latching clip lamp atop the meter
-        juce::Rectangle<int> ai;        // opens this channel's conversation
-        // The EQ curve thumbnail, sitting BELOW the data area and directly
-        // above the fader+meter band, in both content modes.
-        // EMPTY WHENEVER THERE IS NOTHING TO DRAW,
-        // which is the whole contract: no EQ in this Link's rack, an EQ whose
-        // curve did not arrive (an older Link publishes none), or a data area
-        // too short to give the slot its height. No space is reserved for the
-        // absent case, because 16 empty recessed wells read as broken rather
-        // than as reserved, and a flat line drawn in one would be worse still
-        // -- that is a positive claim that the EQ is doing nothing. Absent
-        // curve, absent rect, nothing painted.
+        // The EQ box, BELOW the data area and directly above the fader+meter
+        // band, in both content modes. PRESENT ON EVERY STRIP whether or not
+        // the rack has an EQ, and empty only when the data area is too short
+        // to give it a usable height.
+        //
+        // That reverses the earlier "no curve, no rect" rule and the GRID is
+        // what makes the reversal honest: grid lines read as chrome, so an
+        // empty box with a grid and no curve says "nothing here yet", where a
+        // bare box would be ambiguous and a flat line at 0 dB would be a
+        // positive claim that the EQ is doing nothing. Placeholder and
+        // populated are the same object in two states, so the layout no
+        // longer has to know which racks have an EQ.
         juce::Rectangle<int> eq;
     };
 
@@ -2640,7 +2639,6 @@ private:
     static constexpr int kStripNameH  = 16;
     static constexpr int kStripBadgeH = 17;
     static constexpr int kStripActH   = 20;
-    static constexpr int kStripAiH    = 22;
     static constexpr int kStripVGap   = 6;
     static constexpr int kStripDataHMin = 120;
     // ---- The EQ curve slot -------------------------------------------------
@@ -2839,17 +2837,12 @@ private:
         at 0, because those strips scroll. Mixing the two spaces is a
         hit-test bug, which is why they are documented at every boundary.
 
-        `hasEqCurve` is parallel to `addrs`: true where that Link's rack
-        published an EQ curve THIS refresh. It is an input rather than
-        something this function looks up, because looking it up would mean
-        reading the rack cache and this function stays pure. A shorter vector
-        (or a false entry) simply means no eq rect for that strip.
-        `busHasEq` is the same fact for the pinned Mix Bus strip, which
-        resolves it from the local ChainHost rather than from a sidecar. */
+        It takes NO EQ input: every strip carries the curve box whether or
+        not its rack has an EQ, so the layout no longer depends on the rack
+        cache at all. Which strips actually DRAW a curve is a paint-time
+        question about data, not a layout-time question about rects. */
     static void layOutStrips(juce::Rectangle<int> band, int stripW,
                              const std::vector<juce::String>& addrs,
-                             const std::vector<bool>& hasEqCurve,
-                             bool busHasEq,
                              StripGeom& busOut,
                              std::vector<StripGeom>& linkOut);
 
@@ -2858,11 +2851,13 @@ private:
     static int stripsTotalWidth(int count, int stripW)
     { return count <= 0 ? 0 : count * (stripW + kStripGap) - kStripGap; }
 
-    enum class StripHit { None = 0, Fader, Clip, Meter, Ai, Badge, Active, Background };
+    enum class StripHit { None = 0, Fader, Clip, Meter, Badge, Active, Background };
     /** HIT-TEST PRECEDENCE, in ONE place and stated in code rather than left
-        to the order handlers happen to test in: fader, then meter, then AI
-        button, then placement badge, then the merged Active control, then
-        the strip background as the fallback that SELECTS the channel. The
+        to the order handlers happen to test in: fader, then meter, then the
+        placement badge, then the merged Active control, then the strip
+        background as the fallback that SELECTS the channel. There is no AI
+        entry: that button was removed and the eq box is deliberately absent
+        too, both falling through to Background. The
         FADER IS TESTED BEFORE THE METER so it wins where the two abut: a
         drag that starts a pixel into the boundary must not be swallowed by
         the meter (which itself just selects, like the background). Pure,
@@ -3096,15 +3091,6 @@ private:
     void refreshLinkRackCache(bool force);
     uint32_t lastRackCacheMs_ = 0;   // throttle stamp only; the CACHE lives
                                      // on the processor and survives recreate
-    /** Which Links had an EQ curve at the last refresh, as a joined key.
-        WHICH Links, not how many: a rack losing an EQ while another gains one
-        keeps the count identical and would otherwise leave two strips laid
-        out for the wrong shape. Whenever this changes the strip geometry is
-        re-measured, because the eq rect's very existence is part of the
-        layout and layOutStrips is the only thing allowed to author it.
-        EDITOR-side (unlike the cache) because it is only a change detector:
-        a fresh editor simply re-measures once, which is correct anyway. */
-    juce::String linkEqSig_;
     /** THE MIX BUS CURVE, which does NOT come from a sidecar. The bus strip
         is the main plugin's own rack, so its curve is read straight off the
         local ChainHost with no file and no 1Hz cache in the way.
@@ -3126,10 +3112,10 @@ private:
                              const StripGeom& sg,
                              const EchoJayProcessor::LinkDisplayEntry* entry,
                              float dim, bool wide);
-    /** The EQ curve thumbnail. Called ONLY with a non-empty sg.eq and a curve
-        of exactly LinkShm::kEqCurvePoints, so it never has to decide what to
-        do about missing data: that decision belongs to the geometry, which
-        gives an EQ-less strip no rect at all.
+    /** The EQ box. Called for EVERY strip with a non-empty sg.eq, with or
+        without data: it draws the well and grid unconditionally and adds the
+        curve only when `curve` holds exactly LinkShm::kEqCurvePoints. Passing
+        an empty vector is the PLACEHOLDER state, not an error.
 
         DISCRETE, NOT ANIMATED, and deliberately so. It takes no part in
         advanceLinkStripSmoothing and holds no state between paints: it draws

@@ -6067,8 +6067,6 @@ namespace LinkConsole
 
 void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
                                  const std::vector<juce::String>& addrs,
-                                 const std::vector<bool>& hasEqCurve,
-                                 bool busHasEq,
                                  StripGeom& busOut,
                                  std::vector<StripGeom>& linkOut)
 {
@@ -6095,10 +6093,17 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
     // Seventeen strips computing their own element heights is the same shape
     // of bug as a painter and a hit test computing their own.
     //
-    // Five gaps: name | badge | active | data | fader | ai.
+    // Five gaps: name | badge | data | eq | fader | active.
+    //
+    // THE AI BUTTON IS GONE and Active took its place at the bottom, which
+    // frees Active's old row near the top. Selecting a strip already targets
+    // that channel's conversation, so a separate button for it was mostly
+    // redundant; what it uniquely did (expanding a collapsed sidebar) moved
+    // onto a second click of an already-selected strip. See the Background
+    // arm in stripClicked.
     const int gaps   = kStripVGap * 5;
-    const int fixedH = kStripNameH + kStripBadgeH + kStripActH + kStripAiH + gaps;
-    const int flexH  = juce::jmax(0, innerH - fixedH);   // data + fader share this
+    const int fixedH = kStripNameH + kStripBadgeH + kStripActH + gaps;
+    const int flexH  = juce::jmax(0, innerH - fixedH);   // data + eq + fader share this
 
     // The fader+meter BAND (8b) gets its full height wherever there is room,
     // squeezed only once the data area is already at its minimum. Same
@@ -6151,7 +6156,7 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
 
     // ---- ONE element-layout routine, used by the bus strip AND every Link
     // strip, so the pinned master cannot drift from the channels ------------
-    auto layOutOne = [&](StripGeom& sg, juce::Rectangle<int> full, bool hasEq)
+    auto layOutOne = [&](StripGeom& sg, juce::Rectangle<int> full)
     {
         sg.full = full;
         auto b = full.reduced(inner, inner);
@@ -6159,12 +6164,14 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         b.removeFromTop(kStripVGap);
         sg.badge = b.removeFromTop(kStripBadgeH);
         b.removeFromTop(kStripVGap);
-        sg.active = b.removeFromTop(kStripActH);
-        b.removeFromTop(kStripVGap);
-        sg.ai = b.removeFromBottom(kStripAiH);
+        // ACTIVE AT THE BOTTOM now, in the row the AI button used to hold.
+        // Its old row near the top goes to the data area, which is the whole
+        // point of the move: a strip is a list of plugins with controls top
+        // and bottom, rather than three stacked controls and a short list.
+        sg.active = b.removeFromBottom(kStripActH);
         b.removeFromBottom(kStripVGap);
-        // The band sits directly above the AI button; the data area takes
-        // what is left above it. Fader column LEFT, meter RIGHT, console
+        // The band sits directly above Active; the data area takes what is
+        // left above it. Fader column LEFT, meter RIGHT, console
         // style. Both rects stored; neither is ever derived from the other.
         auto fmBand = b.removeFromBottom(juce::jmin(bandH, b.getHeight()));
         fmBand.removeFromLeft(lead);        // centring margin, not a control
@@ -6212,14 +6219,23 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         //
         // Dropped entirely rather than shrunk when the data area cannot spare
         // the height. A 12px curve is not a smaller curve, it is a smear.
+        // EVERY STRIP GETS THE BOX, whether or not its rack has an EQ. That
+        // reverses the earlier "no curve, no slot" rule, and the thing that
+        // makes the reversal honest is the GRID: an empty box with grid lines
+        // and no curve reads as chrome awaiting content, where a bare empty
+        // box (or worse, a flat line) would be a claim about response. The
+        // placeholder and the populated state are now the SAME object in two
+        // states rather than two different drawings, so geometry no longer
+        // depends on the rack cache at all.
+        //
         // SPARE SPACE UP TO A CAP, not a fixed height. The readings are the
-        // primary content and keep their floor first; the curve takes what is
+        // primary content and keep their floor first; the box takes what is
         // genuinely left, capped at the preferred height for this width. A
         // fixed height would leave the gap unfilled on a tall window and evict
         // three readings on a short one.
         const int eqAvail = b.getHeight() - kStripVGap - kStripEqMinData;
         const int eqH     = juce::jmin(stripEqH(wideBand), eqAvail);
-        if (hasEq && eqH >= kStripEqHMin)
+        if (eqH >= kStripEqHMin)
         {
             sg.eq = b.removeFromBottom(eqH);
             b.removeFromBottom(kStripVGap);
@@ -6229,11 +6245,7 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
 
     // ---- The pinned Mix Bus strip: EDITOR coords, left edge of the band ----
     busOut.isBus = true;               // addr stays empty: the bus has no uid
-    // The bus reads its own ChainHost rather than a sidecar, so busHasEq is
-    // resolved by the caller from live rack state. The GEOMETRY is identical
-    // to a channel's: only where the data comes from differs.
-    layOutOne(busOut, { band.getX(), band.getY(), stripW, band.getHeight() },
-              busHasEq);
+    layOutOne(busOut, { band.getX(), band.getY(), stripW, band.getHeight() });
 
     // ---- The scrolling Link strips: VIEW-LOCAL coords, x from 0 ------------
     linkOut.reserve(addrs.size());
@@ -6242,10 +6254,8 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         StripGeom sg;
         sg.addr  = addrs[i];
         sg.isBus = false;
-        // A short hasEqCurve means "no curve", never an out-of-range read.
-        const bool hasEq = i < hasEqCurve.size() && hasEqCurve[i];
         layOutOne(sg, { (int)i * (stripW + kStripGap), 0,
-                        stripW, band.getHeight() }, hasEq);
+                        stripW, band.getHeight() });
         linkOut.push_back(sg);
     }
 }
@@ -6262,7 +6272,6 @@ EchoJayEditor::StripHit EchoJayEditor::stripHitAt(const StripGeom& sg,
     if (sg.fader.contains(p))     return StripHit::Fader;   // wins at the abutment
     if (sg.clip.contains(p))      return StripHit::Clip;
     if (sg.meter.contains(p))     return StripHit::Meter;
-    if (sg.ai.contains(p))        return StripHit::Ai;
     if (sg.badge.contains(p))     return StripHit::Badge;
     if (sg.active.contains(p))    return StripHit::Active;
     // sg.eq IS DELIBERATELY ABSENT FROM THIS LIST, which is a decision rather
@@ -6311,19 +6320,13 @@ void EchoJayEditor::measureLinkStrips()
     // whole product uses, so an instance keeps one label everywhere. The addr
     // derivation is linkAddrForSlot, the one place it lives.
     std::vector<juce::String> addrs;
-    std::vector<bool>         hasEqCurve;
     for (const auto& entry : processorRef.getLinkDisplayList())
-    {
         addrs.push_back(linkAddrForSlot(entry.info));
-        hasEqCurve.push_back(linkHasEqCurve(entry.info.uid));
-    }
 
-    // The bus resolves its own EQ from the LOCAL rack, not from a sidecar.
-    // Asked of ChainHost directly rather than of busEqCurve_, so the slot
-    // exists from the first layout even if the timer has not run yet.
-    const bool busHasEq = processorRef.getChainHost().findFirstBuiltinEqSlot() >= 0;
-
-    layOutStrips(linkStripAreaRect_, stripWidth(), addrs, hasEqCurve, busHasEq,
+    // NO EQ INPUT any more: every strip gets the box, so the geometry no
+    // longer depends on the rack cache. That also retires the re-measure
+    // this used to need whenever a curve appeared or vanished.
+    layOutStrips(linkStripAreaRect_, stripWidth(), addrs,
                  linkBusGeom_, linkStripGeom_);
 }
 
@@ -6815,21 +6818,12 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
         ce.readMs = nowMs;
     }
 
-    // An EQ appearing in (or leaving) a rack changes the strip's GEOMETRY,
-    // not just its pixels, because a strip with a curve carves an eq rect out
-    // of its data area. Geometry has one author, so this re-measures rather
-    // than letting paint improvise a rect: the standing rule that produced
-    // four bugs in two days when it was broken.
-    juce::String sig;
-    for (const auto& e : processorRef.getLinkDisplayList())
-        if (linkHasEqCurve(e.info.uid))
-            sig << e.info.uid << ",";
-    if (sig != linkEqSig_)
-    {
-        linkEqSig_ = sig;
-        measureLinkStrips();
-        repaint();
-    }
+    // NO RE-MEASURE HERE ANY MORE. An EQ appearing in or leaving a rack used
+    // to change the strip's GEOMETRY, because only a strip with a curve got
+    // an eq rect, so this had to re-run the layout when the set changed. Now
+    // that every strip carries the box, a curve arriving changes only what is
+    // drawn INSIDE a rect that already existed, which is a repaint the timer
+    // does anyway. One less thing that can make geometry depend on IO.
 }
 
 juce::String EchoJayEditor::elideMiddle(const juce::String& s, int head, int tail)
@@ -7119,12 +7113,16 @@ void EchoJayEditor::paintLinkStripEq(juce::Graphics& g, juce::Rectangle<int> are
                                      const std::vector<int16_t>& curve,
                                      float dim, bool wide)
 {
-    // Both guards are belt and braces: layOutStrips only ever gives this a
-    // rect when linkEqCurve said yes. They stay because "draw nothing" is the
-    // right answer to bad data here, and the alternative would be a flat line.
-    if (area.isEmpty() || (int) curve.size() != LinkShm::kEqCurvePoints) return;
+    // TWO STATES OF ONE OBJECT, not two drawings. The box, the well and the
+    // grid are drawn for EVERY strip; the curve is drawn only where there is
+    // data. An empty box therefore reads as chrome awaiting content, which is
+    // what makes drawing it everywhere honest: grid lines are visibly
+    // structure, so their presence claims nothing about response, where a
+    // flat line at 0 dB would claim the EQ is doing nothing.
+    if (area.isEmpty()) return;
+    const bool haveCurve = ((int) curve.size() == LinkShm::kEqCurvePoints);
 
-    // The same recessed well the fader and meter share, so the curve reads as
+    // The same recessed well the fader and meter share, so the box reads as
     // a READOUT rather than as ink floating on the strip fill. One depth
     // element, matching the rest of the console.
     const auto wr = area.toFloat();
@@ -7136,14 +7134,42 @@ void EchoJayEditor::paintLinkStripEq(juce::Graphics& g, juce::Rectangle<int> are
     const float midY  = pr.getCentreY();
     const float perDb = (pr.getHeight() * 0.5f) / kEqDrawRangeDb;
 
-    // THE ZERO DATUM, and nothing else. Still no grid, no labels, no numbers:
-    // those were ruled out because they cost more pixels than the curve they
-    // annotate. This one hairline is not in that category. Without it a curve
-    // cannot be read as boost or cut at all, only as "wiggly", which makes it
-    // decoration rather than information. One line, dim enough that the curve
-    // stays the brightest thing in the slot.
-    g.setColour(LinkConsole::structure.withMultipliedAlpha(dim * 0.7f));
+    // ---- THE GRID, behind everything and identical in both states --------
+    // Still no labels and no numbers: those cost more pixels than the curve
+    // they annotate at this size. The grid is not in that category, because
+    // it is not annotation, it is the frame that makes an empty box legible
+    // as empty.
+    //
+    // Verticals at the decade boundaries of the log axis the publisher
+    // defines (100 Hz, 1 kHz, 10 kHz), placed by the SAME log mapping
+    // LinkShm::eqCurveFreqs uses so a line and the curve above it cannot
+    // disagree about where a frequency is.
+    {
+        g.setColour(LinkConsole::structure.withMultipliedAlpha(dim * 0.35f));
+        const double lo = std::log((double) LinkShm::kEqCurveLoHz);
+        const double hi = std::log((double) LinkShm::kEqCurveHiHz);
+        for (double f : { 100.0, 1000.0, 10000.0 })
+        {
+            const float t = (float) ((std::log(f) - lo) / (hi - lo));
+            const float x = pr.getX() + pr.getWidth() * t;
+            g.fillRect(x, pr.getY(), 1.0f, pr.getHeight());
+        }
+        // Horizontals at the half-range marks (plus and minus 6 dB at the
+        // shipping 12 dB range), which give the curve's height something to
+        // be read against without spelling out a number.
+        for (float db : { -kEqDrawRangeDb * 0.5f, kEqDrawRangeDb * 0.5f })
+            g.fillRect(pr.getX(), midY - db * perDb, pr.getWidth(), 1.0f);
+    }
+
+    // THE ZERO LINE, brighter than the rest of the grid but still plainly
+    // PART of it rather than data: same colour family, one step up in alpha.
+    // It has to be the strongest grid line (it is the datum that makes boost
+    // and cut readable) and weaker than any curve, or an empty box would
+    // read as a flat response, which is the exact claim this must not make.
+    g.setColour(LinkConsole::structure.withMultipliedAlpha(dim * 0.75f));
     g.fillRect(pr.getX(), midY, pr.getWidth(), 1.0f);
+
+    if (!haveCurve) return;   // placeholder state: grid only, no curve
 
     const int n = LinkShm::kEqCurvePoints;
     juce::Path p;
@@ -7710,22 +7736,13 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         }
     }
 
-    // ---- AI button: opens this channel's conversation. Dimmed and inert for
-    // legacy Links (empty uid): openChannelByUid needs a real uid, and a
-    // button that silently targets a synthesized addr would open a chat no
-    // other surface can find. The tooltip says why.
-    {
-        const bool aiEnabled = isBus
-            || (entry != nullptr && entry->info.uid.isNotEmpty());
-        // Console pass: a quiet grey pill, no outline, no accent. Cyan means
-        // selection in this tab and a button is not a selection.
-        g.setColour(EchoJayLookAndFeel::ChainCard::fill
-                        .withAlpha(aiEnabled ? 1.0f : 0.5f));
-        g.fillRoundedRectangle(sg.ai.toFloat(), 5.0f);
-        g.setColour(aiEnabled ? LinkConsole::value : LinkConsole::caption);
-        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-        g.drawText("AI", sg.ai, juce::Justification::centred);
-    }
+    // ---- The AI button is GONE. Selecting a strip already targets that
+    // channel's conversation, so a dedicated button was mostly redundant and
+    // its row now belongs to the plugin list. The one thing it did that
+    // selection did not -- force-expanding a collapsed sidebar -- moved onto
+    // a SECOND click of an already-selected strip (see stripClicked's
+    // Background arm), which keeps the deliberate "select without the sidebar
+    // popping open" workflow intact for the common case of switching channel.
 
     // ---- Data area: what draws is the persisted CONTENT mode, read from the
     // processor here, every paint, no cached copy. Modes that are not built
@@ -7779,8 +7796,13 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 c = busEqCurve_.empty() ? nullptr : &busEqCurve_;
             else if (entry != nullptr)
                 c = linkEqCurve(entry->info.uid);
-            if (c != nullptr)
-                paintLinkStripEq(g, sg.eq, *c, dim, wide);
+            // ALWAYS CALLED, with or without data: the painter draws the box
+            // and grid either way and adds the curve only when there is one.
+            // Skipping the call for a rack with no EQ would put the "is there
+            // a curve" decision in two places, and the empty box is not an
+            // absence to be hidden, it is the placeholder state.
+            static const std::vector<int16_t> none;
+            paintLinkStripEq(g, sg.eq, c != nullptr ? *c : none, dim, wide);
         }
 
         switch (processorRef.linkMixerContent)
@@ -7967,40 +7989,6 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             break;
         }
 
-        case StripHit::Ai:
-        {
-            // FORCE-EXPAND, the chainOpenBtn pattern: this button's whole
-            // purpose is the conversation, which lives in the sidebar, so a
-            // collapsed sidebar opens. The flag is persisted, so the change
-            // is marked dirty like any other author of it.
-            if (processorRef.chatSidebarCollapsed)
-            {
-                processorRef.chatSidebarCollapsed = false;
-                processorRef.markStateDirty();
-            }
-            if (sg.isBus)
-            {
-                // The banner menu's Mix Bus arm, guard included: resetting
-                // while already in the main context would wipe a live main
-                // conversation for nothing.
-                if (effectiveChannelUid().isNotEmpty())
-                    resetToMainContext();
-            }
-            else
-            {
-                // Only a REAL uid may open a channel (the button paints
-                // dimmed and lands here inert for legacy Links); same
-                // already-here guard as the banner menu.
-                EchoJayProcessor::LinkDisplayEntry en;
-                if (findLinkEntryByAddr(sg.addr, en) && en.info.uid.isNotEmpty()
-                    && en.info.uid != effectiveChannelUid())
-                    openChannelByUid(en.info.uid);
-            }
-            resized();   // the collapse flag may have changed the columns
-            repaint();
-            break;
-        }
-
         case StripHit::Badge:
             // The existing chooser; second menu implementations are how the
             // product grows two authorities on one setting.
@@ -8041,10 +8029,37 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
         {
             // TAPPING A STRIP SELECTS THAT CHANNEL. This is the load-bearing
             // arm: with the sidebar collapsed, the banner is gone and this is
-            // the ONLY channel selector (see the standing spec note). It
-            // deliberately does NOT expand the sidebar: selecting while
-            // collapsed is the workflow this exists for; the AI button is the
-            // arm that opens the conversation view.
+            // the ONLY channel selector (see the standing spec note).
+            //
+            // A FIRST tap still deliberately does NOT expand the sidebar:
+            // selecting while collapsed is the workflow this exists for, and
+            // making every selection pop the sidebar open would destroy it.
+            // A tap on the ALREADY-SELECTED strip does expand, which is the
+            // one thing the removed AI button did that selection did not.
+            // Reading it as "I am already here, take me there" keeps both
+            // behaviours: switching channel stays quiet, reaching the
+            // conversation stays reachable, and no gesture is overloaded
+            // with two meanings at once.
+            const bool alreadyHere = sg.isBus
+                ? effectiveChannelUid().isEmpty()
+                : [&]
+                  {
+                      EchoJayProcessor::LinkDisplayEntry e;
+                      return findLinkEntryByAddr(sg.addr, e)
+                          && e.info.uid.isNotEmpty()
+                          && e.info.uid == effectiveChannelUid();
+                  }();
+            if (alreadyHere && processorRef.chatSidebarCollapsed)
+            {
+                // The chainOpenBtn pattern, inherited from the AI arm: the
+                // flag is persisted, so the change is marked dirty like any
+                // other author of it, and the columns are re-measured.
+                processorRef.chatSidebarCollapsed = false;
+                processorRef.markStateDirty();
+                resized();
+                repaint();
+                break;
+            }
             if (sg.isBus)
             {
                 // Selecting the bus = the main context, via the banner
@@ -8095,12 +8110,6 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
 
     switch (stripHitAt(sg, p))
     {
-        case StripHit::Ai:
-            if (sg.isBus) return "Open the main AI conversation";
-            if (have && en.info.uid.isEmpty())
-                return "AI chat needs this channel's Link updated";
-            return "Open this channel's AI conversation";
-
         case StripHit::Badge:
             if (sg.isBus) return name + " (this instance)";
             return !have ? name
