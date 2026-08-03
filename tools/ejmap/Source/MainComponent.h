@@ -8459,12 +8459,17 @@ private:
             lastArtefactFp = currentFp;
             setSendReady (dry.existsAsFile());
 
-            auto stub = Mouth::stubMouthSubmit (ledger.getRoot(), currentFp,
-                                                f.loadFileAsString(), testerName());
-            Mouth::setQueueState (ledger.getRoot(), currentFp,
-                                  stub.accepted ? "stub_accepted" : "stub_rejected",
-                                  stub.reasons.joinIntoString ("; "));
-            for (const auto& r : stub.reasons) t << r << "\n";
+            // THE STUB IS GONE FROM THIS PATH. It existed to be a hypothesis
+            // about a server that did not exist yet, and a real server now
+            // answers a few lines below. A guess about what a server would say,
+            // printed immediately before that server says something, is noise
+            // at best -- and it read as the terminal verdict, because it was
+            // the last judgement-shaped sentence before the send. It also
+            // wrote a queue state that the send then overwrote, so the queue
+            // briefly recorded an opinion as an outcome.
+            //
+            // stubMouthSubmit still exists and is still exercised by
+            // --selftest-upload, where a hypothesis is the point.
             // ONE ACTION. The gate has passed and the artefact is written, so
             // the send happens HERE rather than waiting for a second press.
             // Showing the gate result before anything leaves was the only real
