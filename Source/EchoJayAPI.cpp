@@ -953,6 +953,12 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
             nextChatTurnType_.clear();
             nextChatBusCount_ = 0;
             nextChatIsExplicitCapture_ = false;
+            // The classifier binding dies with the turn it was minted for:
+            // the token is bound to THIS message's typed portion, so letting
+            // it ride the next send would assert an intent for text it was
+            // never issued against.
+            nextClassifyIntent_.clear();
+            nextClassifyToken_.clear();
             onComplete(getLimitReachedMessage(gateTurnType), false);
         });
         return;
@@ -1073,6 +1079,15 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
         body += ",\"dialFlags\":" + juce::JSON::toString(juce::var(arr), true);
         nextDialFlags_.clear();
     }
+    // Classifier binding (split call). Absent on any turn the classifier
+    // did not answer for, which is every turn when it is gated off — and
+    // the server then classifies for itself exactly as it does today.
+    if (nextClassifyIntent_.isNotEmpty())
+        body += ",\"classifyIntent\":" + juce::JSON::toString(nextClassifyIntent_);
+    if (nextClassifyToken_.isNotEmpty())
+        body += ",\"classifyToken\":" + juce::JSON::toString(nextClassifyToken_);
+    nextClassifyIntent_.clear();
+    nextClassifyToken_.clear();
 
     // Meter/band payload: EXPLICIT CAPTURE ONLY. Anything staged (or passed
     // via the legacy parameter) without the flag is discarded loudly — a

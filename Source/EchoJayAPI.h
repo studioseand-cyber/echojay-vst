@@ -226,6 +226,8 @@ public:
         nextChatTurnType_.clear();
         nextChatBusCount_ = 0;
         nextChatIsExplicitCapture_ = false;
+        nextClassifyIntent_.clear();
+        nextClassifyToken_.clear();
     }
 
     // ============ Classifier (split call) ============
@@ -383,6 +385,18 @@ public:
     // for any behaviour that depends on what the turn actually was (e.g.
     // gating the prose name-scan chain fallback).
     juce::String getLastResolvedTurnType() const { return lastResolvedTurnType_; }
+
+    // The classifier binding for the NEXT sendChat: the intent call 1
+    // resolved and the signed token that brands it. Staged like the meters
+    // blob and the turnType, consumed at body build (so the limit-refresh
+    // retry keeps it) and cleared after every send.
+    //
+    // The server accepts an ASSERTED intent only with a valid token and
+    // re-classifies otherwise, so sending them is safe when absent and safe
+    // when stale. chat.js verifies the token and logs the outcome; until
+    // cutover it acts on nothing.
+    void setNextClassifyBinding(const juce::String& intent, const juce::String& token)
+    { nextClassifyIntent_ = intent; nextClassifyToken_ = token; }
 
     // 2.4 dialFlags (26 Jul 2026, DARK): names from the AVAILABLE PLUGINS
     // feed whose LOCAL map passes the dial-signals threshold. Staged per
@@ -754,6 +768,7 @@ private:
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
     juce::StringArray nextDialFlags_; // see setNextDialFlags(); cleared per send
+    juce::String nextClassifyIntent_, nextClassifyToken_; // setNextClassifyBinding()
     int          nextChatBusCount_ = 0;
     bool         nextChatIsExplicitCapture_ = false;   // see stageCapturePayload
     UserInfo userInfo;
