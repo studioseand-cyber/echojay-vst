@@ -921,6 +921,31 @@ naming a specific product should match on the id rather than a substring
 of the display name. Verified identity is as much a precondition as
 verified suitability.
 
+### A refused operation can leave you checking the wrong thing
+
+**Sixth instance, and it adds a mechanism the others did not have.** Verifying
+the params work on a merged tree, `git checkout feat/preview-combined` was
+**refused** — that branch was already checked out in a different worktree. The
+checkout failed; the checks that followed did not. They ran happily against the
+branch still checked out, reported `node --check` clean, both hazard counts
+correct, and would have been reported as "the merged tree is good."
+
+The tree they described was not the merged tree.
+
+Same shape as the invented doc anchor — a verification that ran against the
+wrong artefact and reported success — but with a new mechanism worth naming:
+**a refused operation leaves you somewhere, and that somewhere is usually the
+place you were trying to leave.** The failure mode is not "the check did not
+run"; it is "the check ran, on the wrong thing, and passed." A command that
+silently no-ops leaves nothing behind; a *refused* one leaves a plausible
+context that answers every subsequent question confidently and wrongly.
+
+**The practice that follows:** after any operation that changes *where* you
+are working — checkout, cd, worktree switch — print the resulting location and
+identity before trusting anything measured there. The merged-tree checks were
+re-run only because the refusal happened to be visible in the output; had it
+scrolled past, the report would have been false.
+
 ## VERIFICATION MUST READ WHAT THE CONSUMER READS
 
 **The general rule, stated once above the instances: confirming a write by

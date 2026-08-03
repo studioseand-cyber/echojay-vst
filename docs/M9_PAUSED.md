@@ -95,6 +95,35 @@ supersession guard compares. A batch run restamping the corpus as freshly
 human-submitted would be invisible until a second mapper existed, and would
 then decide whose maps serve.
 
+## CAMPAIGN PRECONDITION 2: preview and production share one KV instance
+
+**Decided 3 Aug 2026.** All three Vercel environments — `production`,
+`preview`, `development` — point at a single KV instance
+(`docs/redis-region-move.md:61`). So a preview deployment does not write a
+preview copy of anything; **it writes into the maps the shipping plugin
+serves.**
+
+**Content-addressing makes this deterministic rather than unlikely.** The fp
+hashes `format|uid|version|paramCount`, so the same plugin build produces the
+*same fingerprint* in both environments — a preview ingest lands on exactly
+the production key, every time. A randomly-keyed store would collide by
+accident; this one collides by design. The survey counts `plugin:*` at 4,434
+keys and `pmap2:*` at 10,737 in that instance.
+
+**The fix is Phase 0's instance split, NOT key scoping.** The runbook already
+rejected scoping (`docs/redis-region-move.md:67`): *"Splitting the instance is
+therefore the fix. The alternative, threading `scopedKey()` through every
+unscoped call site … is strictly worse."* Splitting separates by connection
+rather than by key, so it covers `plugin:*` and `index:*` for free. Scoping the
+params family alone would be the rejected alternative in one corner, would be
+unwound when the split lands, and would mean a **dual-read window across a
+serving path** while a shipping plugin still reads the old shape.
+
+**Deadline: before campaign volume, not before the backfill.** The backfill
+adds a derived index over data that is already shared, so it changes no
+exposure — and at two maps it is rebuildable in seconds. What changes the
+exposure is a corpus of 1,376 maps, which is the real deadline.
+
 ## CAMPAIGN PRECONDITION: the supersession gap must close before anyone else gets a build
 
 **Recorded here so it cannot be lost between now and then.** Two rules already
