@@ -59,6 +59,8 @@ public:
         juce::String settleId; int settleIdx = -1;
         juce::String resubmitId;
         juce::String gateM9Mode;
+        bool probeBatch = false;
+        juce::String probeMaps, probeOut, probeOnly;
         int stallN = 0;
         bool supervised = false;
         int  restartCount = 0;
@@ -118,6 +120,16 @@ public:
                 { settleId = args[i + 1]; settleIdx = args[i + 2].getIntValue(); i += 2; }
             else if (args[i] == "--resubmit" && i + 1 < args.size())
                 resubmitId = args[++i];
+            else if (args[i] == "--probe-batch")
+            {
+                probeBatch = true;
+                for (int j = i + 1; j + 1 < args.size(); j += 2)
+                {
+                    if (args[j] == "--maps") probeMaps = args[j + 1];
+                    else if (args[j] == "--out") probeOut = args[j + 1];
+                    else if (args[j] == "--only") probeOnly = args[j + 1];
+                }
+            }
             else if (args[i] == "--gate-m9")
             { gateM9Mode = "run"; if (i + 1 < args.size() && ! args[i + 1].startsWith ("--")) gateM9Mode = args[++i]; }
             else if (args[i] == "--attribute-report" && i + 1 < args.size())
@@ -195,7 +207,13 @@ public:
         //
         // callAsync posts an ordinary message, which is the same context a button
         // click arrives in. That is why the UI path was never affected.
-        if (gateM9Mode.isNotEmpty() && mainWindow->getMain() != nullptr)
+        if (probeBatch && mainWindow->getMain() != nullptr)
+        {
+            auto m = mainWindow->getMain();
+            auto md = probeMaps, o = probeOut, oc = probeOnly;
+            juce::MessageManager::callAsync ([m, md, o, oc] { m->probeBatch (md, o, oc); });
+        }
+        else if (gateM9Mode.isNotEmpty() && mainWindow->getMain() != nullptr)
         {
             auto m9 = gateM9Mode == "run" ? juce::String() : gateM9Mode;
             auto* m = mainWindow->getMain();

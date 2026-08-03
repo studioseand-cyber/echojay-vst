@@ -514,7 +514,27 @@ public:
         runCaptureStage();
     }
 
-    void quitNow() { juce::JUCEApplication::getInstance()->quit(); }
+    /** THE CHOKE POINT for suite termination. A suite ends with quitNow(),
+        87 times over -- so a batch runner that needs suites to RETURN rather
+        than exit changes this one function instead of 87 call sites. Editing
+        each site is how the seventh instance of the misplaced guard happened;
+        this is the same lesson applied before rather than after.
+    */
+    bool batchMode = false;
+    void quitNow()
+    {
+        if (batchMode) return;                 // the loop owns the lifetime
+        juce::JUCEApplication::getInstance()->quit();
+    }
+
+    //==========================================================================
+    // BATCH PROBE RUNNER (feature 3). Collected verdicts, one row per
+    // parameter, so the report can state what a suite decided AND what it did
+    // not reach -- a parameter absent from a report is indistinguishable from
+    // one that passed.
+    struct ProbeRow { juce::String semantic, verdict, evidence, slot; };
+    juce::Array<ProbeRow> batchRows;
+    juce::StringArray     batchSuitesRun;
 
     /** Loads one plugin repeatedly from ordinary message context, which is what
         a button click is, until it stalls or the attempt budget runs out.
@@ -1271,6 +1291,300 @@ public:
         return out;
     }
 
+    /** BATCH PROBE RUNNER: map for a day, probe overnight.
+
+        Drives the BUILT suites over local maps unattended and writes ONE
+        report. No new verdict logic, no new suites.
+
+        WHAT IT REFUSES, AND WHY THAT IS MOST OF THE POINT.
+        The four suites are fixture-bound, not subject-parameterised: each
+        resolves a specific product by id (eq aumf,ameq,Brwx; comp
+        aufx,APCM,ksWV; limiter aufx,bxa2,Brwx; gate SSL X-Gate by name) and
+        the eq suite additionally hard-codes group1 and the Mono Maker indices
+        7/8 of the signed AMEK fixture. So calling gateM9("comp") while
+        iterating some other compressor's map would load API-2500, measure
+        API-2500, and file API-2500's verdicts under that map's fp -- then POST
+        them there. The runner therefore probes a map ONLY when the map's own
+        identity IS the suite's signed subject, and counts every other map as
+        uncovered with the reason named. Subject-parameterising the suites is
+        real work and is not this runner.
+
+        Honest by construction elsewhere too: coverage is written FIRST, every
+        parameter of every map gets a line including the ones no suite reaches,
+        and there is NO summary verdict per map -- with four suites deciding
+        one-to-four parameters each, a map labelled "clean" is a partial pass
+        reading as a clean bill of health.
+    */
+    struct SuiteBinding { juce::String category, suite, subjectId, subjectName; };
+
+    std::vector<SuiteBinding> suiteBindings() const
+    {
+        std::vector<SuiteBinding> b;
+        b.push_back ({ "eq",         "eq",      "AudioUnit:Effects/aumf,ameq,Brwx", "AMEK EQ 200" });
+        b.push_back ({ "compressor", "comp",    "AudioUnit:Effects/aufx,APCM,ksWV", "API-2500 (m)" });
+        b.push_back ({ "limiter",    "limiter", "AudioUnit:Effects/aufx,bxa2,Brwx", "bx_limiter True Peak" });
+        b.push_back ({ "gate",       "gate",    "",                                 "SSL X-Gate" });
+        return b;
+    }
+
+    /** Resolve a map's subject from its identity, BY ID, never by name -- and
+        refuse an ambiguous answer rather than pick. The uid is JUCE's XOR of
+        type^subtype^manufacturer, which EchoJayAuRegistry.h records as NOT
+        unique (2 collisions across 4 Waves components in a 1419-component
+        registry). So this collects every candidate and reports the count.
+    */
+    struct SubjectResolution
+    {
+        juce::PluginDescription desc;
+        int  candidates = 0;
+        bool versionMismatch = false;
+        juce::String installedVersion, detail;
+        bool ok() const { return candidates == 1 && ! versionMismatch; }
+    };
+
+    SubjectResolution resolveSubjectByIdentity (const juce::String& uidHex,
+                                                const juce::String& version,
+                                                const juce::String& name) const
+    {
+        SubjectResolution r;
+        auto census = echojay::auregistry::buildCensus();
+        for (const auto& t : census.targets)
+        {
+            auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+            if (! juce::String::toHexString (d.uniqueId).equalsIgnoreCase (uidHex)) continue;
+            ++r.candidates;
+            if (r.candidates == 1) { r.desc = d; r.installedVersion = d.version; }
+            else r.detail << " | also " << d.name << " " << d.fileOrIdentifier;
+        }
+        if (r.candidates == 1 && r.installedVersion != version)
+            r.versionMismatch = true;
+        if (r.candidates > 1)
+            r.detail = "uid " + uidHex + " matches " + juce::String (r.candidates)
+                     + " installed components (the uid XOR is not unique): "
+                     + r.desc.name + " " + r.desc.fileOrIdentifier + r.detail;
+        juce::ignoreUnused (name);
+        return r;
+    }
+
+    /** The map's mappable surface: params + group params + named controls.
+        ONE enumerator, because the params-only count understated AMEK by 77
+        slots and the same undercount sat in every "unexamined" line. */
+    static juce::StringArray mappableSlots (const juce::var& v)
+    {
+        juce::StringArray slots;
+        if (auto* po = v.getProperty ("params", juce::var()).getDynamicObject())
+            for (auto& kv : po->getProperties())
+                slots.add ("params / " + kv.name.toString());
+        if (auto* ga = v.getProperty ("groups", juce::var()).getArray())
+            for (const auto& gv : *ga)
+            {
+                const auto n = gv.getProperty ("n", juce::var()).toString();
+                if (auto* gp = gv.getProperty ("params", juce::var()).getDynamicObject())
+                    for (auto& kv : gp->getProperties())
+                        slots.add ("group " + n + " / " + kv.name.toString());
+            }
+        if (auto* co = v.getProperty ("controls", juce::var()).getDynamicObject())
+            for (auto& kv : co->getProperties())
+                slots.add ("controls / " + kv.name.toString());
+        return slots;
+    }
+
+    void probeBatch (const juce::String& mapsDir, const juce::String& outPath,
+                     const juce::String& onlyCategory)
+    {
+        batchMode = true;
+        auto dir = mapsDir.isNotEmpty()
+                     ? juce::File::getCurrentWorkingDirectory().getChildFile (mapsDir)
+                     : ledger.getRoot().getChildFile ("maps");
+
+        juce::String rep;
+        rep << "EJMAP BATCH PROBE\n"
+            << "run at    " << juce::Time::getCurrentTime().toISO8601 (true) << "\n"
+            << "binary    " << EJMAP_VERSION << " (" << EJMAP_GIT_HASH << ")\n"
+            << "maps dir  " << dir.getFullPathName() << "\n"
+            << (onlyCategory.isNotEmpty() ? "filter    --only " + onlyCategory + "\n" : "")
+            << "\nWHAT THIS TOOL CAN DECIDE, STATED BEFORE ANY RESULT\n"
+               "  M9 decides ONE TO FOUR PARAMETERS ON ONE SUBJECT per category\n"
+               "  (eq 3, compressor 4, limiter 1, gate 1). saturation, de-esser\n"
+               "  and delay produce no verdicts at all.\n"
+               "  The suites are FIXTURE-BOUND: each measures one signed product,\n"
+               "  so a map is probed only when it IS that product. Every other map\n"
+               "  is listed below as uncovered, with the reason.\n"
+               "  No map here is called clean or verified. With this coverage there\n"
+               "  is no honest summary verdict for a map.\n\n";
+
+        int probed = 0, noSuite = 0, notSubject = 0, unresolved = 0, found = 0;
+        juce::StringArray noSuiteLines, notSubjectLines, unresolvedLines, body;
+        juce::Array<juce::var> posts;
+
+        for (const auto& e : juce::RangedDirectoryIterator (dir, false, "*.json"))
+        {
+            auto v  = juce::JSON::parse (e.getFile().loadFileAsString());
+            auto id = v.getProperty ("identity", juce::var());
+            const auto name     = id.getProperty ("name", "?").toString();
+            const auto uid      = id.getProperty ("uid", "").toString();
+            const auto version  = id.getProperty ("version", "").toString();
+            const auto category = v.getProperty ("category", "").toString();
+            const auto fp       = v.getProperty ("fp", "").toString();
+            const int nSlots = mappableSlots (v).size();
+
+            if (onlyCategory.isNotEmpty() && category != onlyCategory) continue;
+            ++found;
+
+            SuiteBinding bind;
+            for (const auto& b : suiteBindings())
+                if (b.category == category) bind = b;
+
+            if (bind.suite.isEmpty())
+            {
+                ++noSuite;
+                noSuiteLines.add ("    " + name + " (" + category + ") -- no suite exists for this "
+                                  "category; " + juce::String (nSlots) + " mappable slots unexamined");
+                continue;
+            }
+
+            // Identity printed BEFORE the load, per "a name is not evidence of
+            // identity" -- the bx_saturator V2 instance resolved to the UAD product.
+            auto sub = resolveSubjectByIdentity (uid, version, name);
+            std::cout << "SUBJECT " << name << " (map identity AudioUnit|" << uid << "|" << version
+                      << ") -> " << sub.candidates << " candidate(s); resolved '"
+                      << sub.desc.name << "' " << sub.desc.fileOrIdentifier
+                      << " v" << sub.installedVersion << std::endl;
+
+            if (! sub.ok())
+            {
+                ++unresolved;
+                unresolvedLines.add ("    " + name + " -- "
+                    + (sub.candidates == 0
+                         ? "not installed: no component carries uid " + uid
+                         : sub.versionMismatch
+                             ? "installed version " + sub.installedVersion + " != mapped version "
+                               + version + "; the fp differs, so a probe would be filed against "
+                               "a fingerprint this machine cannot produce"
+                             : sub.detail));
+                continue;
+            }
+
+            // The refusal. Fixture-bound suite, so the map must BE the fixture.
+            const bool isSubject = bind.subjectId.isNotEmpty()
+                                     ? sub.desc.fileOrIdentifier == bind.subjectId
+                                     : sub.desc.name.containsIgnoreCase (bind.subjectName);
+            if (! isSubject)
+            {
+                ++notSubject;
+                notSubjectLines.add ("    " + name + " (" + category + ") -- the " + bind.suite
+                    + " suite is bound to " + bind.subjectName + " and would measure THAT plugin. "
+                    "Probing this map would file " + bind.subjectName + "'s verdicts under fp "
+                    + fp.substring (0, 12) + ". " + juce::String (nSlots) + " mappable slots unexamined");
+                continue;
+            }
+
+            batchRows.clearQuick();
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            gateM9 (bind.suite);                       // the suite, unchanged
+            const double secs = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
+            ++probed;
+            batchSuitesRun.addIfNotAlreadyThere (bind.suite);
+
+            body.add ("  " + name + "   fp " + fp.substring (0, 12) + "   category " + category
+                      + "   suite " + bind.suite + "   " + juce::String (secs, 1) + " s");
+            juce::StringArray decided;
+            juce::Array<juce::var> verdicts;
+            for (const auto& r : batchRows)
+            {
+                body.add ("      " + (r.slot.isNotEmpty() ? r.slot : r.semantic).paddedRight (' ', 34)
+                          + r.verdict.paddedRight (' ', 14) + r.evidence);
+                decided.add (r.semantic.upToFirstOccurrenceOf (" ", false, false).trim());
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("semantic", r.semantic);
+                o->setProperty ("slot", r.slot.isNotEmpty() ? r.slot : r.semantic);
+                o->setProperty ("verdict",  r.verdict);
+                o->setProperty ("evidence", r.evidence);
+                verdicts.add (juce::var (o));
+            }
+            // EVERY parameter gets a line. The map's mappable surface is
+            // params + group params + named controls; walking params alone hid
+            // 5 groups and 62 controls behind a report that read as complete.
+            const auto slots = mappableSlots (v);
+            int uncovered = 0;
+            for (const auto& slot : slots)
+            {
+                const auto leaf = slot.fromLastOccurrenceOf ("/ ", false, false).trim();
+                bool touched = false;
+                for (const auto& r : batchRows)
+                    if ((r.slot.isNotEmpty() && r.slot == slot)
+                        || (r.slot.isEmpty() && r.semantic.equalsIgnoreCase (leaf)))
+                        touched = true;
+                if (! touched)
+                {
+                    ++uncovered;
+                    body.add ("      " + slot.paddedRight (' ', 34)
+                              + juce::String ("not covered").paddedRight (' ', 14)
+                              + "no suite can decide this parameter");
+                }
+            }
+            body.add ("      -- " + juce::String (batchRows.size()) + " decided, "
+                      + juce::String (uncovered) + " of " + juce::String (slots.size())
+                      + " mappable slots not covered; no summary verdict is given for this map");
+            body.add ("");
+
+            auto* pr = new juce::DynamicObject();
+            pr->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
+            pr->setProperty ("ejmap_version", juce::String (EJMAP_VERSION) + " (" + EJMAP_GIT_HASH + ")");
+            pr->setProperty ("suites_run", juce::var (juce::Array<juce::var> { bind.suite }));
+            pr->setProperty ("verdicts", juce::var (verdicts));
+            auto* env = new juce::DynamicObject();
+            env->setProperty ("fp", fp);
+            env->setProperty ("probed", juce::var (pr));
+            posts.add (juce::var (env));
+        }
+
+        rep << "COVERAGE\n"
+            << "  maps found                  " << found << "\n"
+            << "  probed                      " << probed << "\n"
+            << "  no suite for category       " << noSuite << "\n";
+        for (const auto& l : noSuiteLines) rep << l << "\n";
+        rep << "  suite bound to another plugin " << notSubject << "\n";
+        for (const auto& l : notSubjectLines) rep << l << "\n";
+        rep << "  subject unresolved          " << unresolved << "\n";
+        for (const auto& l : unresolvedLines) rep << l << "\n";
+        rep << "\nPER MAP\n";
+        if (body.isEmpty()) rep << "  (no map was probed)\n";
+        for (const auto& l : body) rep << l << "\n";
+
+        // ---- the POST ---------------------------------------------------
+        // Built through the ONE request builder, emitted as an artifact, NOT
+        // sent: ejmap has no live transport, and which TLS path carries one is
+        // signed at M11, not chosen here by whoever wrote the runner. Nothing
+        // below claims an upload happened.
+        rep << "\nPOST /api/params/ejmap/probed\n";
+        const auto base = Mouth::uploadBaseUrl();
+        for (const auto& envv : posts)
+        {
+            const auto fp = envv.getProperty ("fp", "").toString();
+            const auto json = juce::JSON::toString (envv, false);
+            juce::MemoryBlock mb (json.toRawUTF8(), json.getNumBytesAsUTF8());
+            auto f = Mouth::writeRequestArtifact (ledger.getRoot(), base + "/probed",
+                                                  fp + ".probed.http", mb,
+                                                  testerName(), machineIdString(), EJMAP_VERSION);
+            rep << "  " << fp.substring (0, 12) << "  request bytes written: "
+                << f.getFullPathName() << " (" << f.getSize() << " bytes)\n";
+        }
+        if (posts.isEmpty()) rep << "  (nothing probed, so nothing to post)\n";
+        rep << "  NOT SENT. ejmap has no live transport; the TLS option is signed at M11.\n"
+            << "  Endpoint base: " << base << "\n";
+
+        auto out = outPath.isNotEmpty()
+                     ? juce::File::getCurrentWorkingDirectory().getChildFile (outPath)
+                     : ledger.getRoot().getChildFile ("probe-report-"
+                         + juce::Time::getCurrentTime().formatted ("%Y%m%dT%H%M%S") + ".txt");
+        out.replaceWithText (rep);
+        std::cout << "\n" << rep << std::endl;
+        std::cout << "BATCH: report written to " << out.getFullPathName() << std::endl;
+        batchMode = false;
+        juce::JUCEApplication::getInstance()->quit();
+    }
+
     /** M9 HEADLINE GATE (signed fixture, 2026-08-02): AMEK EQ 200, the
         production map, two arms against one loaded instance. Arm B (correct
         map) first, then arm A (deliberate mis-map: band 1 freq_hz pointed at
@@ -1314,12 +1628,17 @@ public:
         {
             const auto route = P::routeVerdict (measured, floor, predicted, tolerance);
             if (route == P::Route::overClaim) ++fails;
+            const juce::String label = route == P::Route::tracks ? "confirms"
+                                     : route == P::Route::deafness ? "inconclusive"
+                                                                   : "contradicts";
             std::cout << "  " << (route == P::Route::tracks ? "CONFIRMS    "
                                : route == P::Route::deafness ? "INCONCLUSIVE"
                                                              : "CONTRADICTS ")
                       << " " << semantic << ": "
                       << P::routeText (route, measured, predicted, floor)
                       << " | " << evidence << std::endl;
+            batchRows.add ({ semantic, label,
+                             P::routeText (route, measured, predicted, floor) + " | " + evidence });
             return route;
         };
 
@@ -1333,6 +1652,7 @@ public:
             std::cout << "  INCONCLUSIVE " << semantic << ": " << reason
                       << "  [by precondition -- no measurement was taken, so no verdict is "
                          "reachable from here]" << std::endl;
+            batchRows.add ({ semantic, "inconclusive", reason + "  [by precondition]" });
         };
         juce::ignoreUnused (emitInconclusive);
 
@@ -3258,6 +3578,27 @@ public:
               juce::String ("freq_hz=") + (b1ok ? "confirms" : "NOT-confirms")
               + " gain_db=" + (b3ok ? "confirms" : "NOT-confirms")
               + " q=" + (b4ok ? "confirms" : "NOT-confirms"));
+
+        // The gate publishes these three as HARNESS ASSERTIONS, not through
+        // emitVerdict (M9_PAUSED open item 1: 3 of 19 sites route). The batch
+        // runner records them HERE, where the booleans and their numbers are in
+        // scope, rather than parsing B6's sentence back into a verdict --
+        // reading a result out of prose is the same class as confirming a write
+        // by the writer's return value. ARM B ONLY: arm A's verdicts are about
+        // a deliberately falsified map and say nothing about the map on disk.
+        batchRows.add ({ "freq_hz", b1ok ? "confirms" : "NOT-confirms",
+                         "centre: predicted " + juce::String (predOct, 3) + " oct, measured "
+                         + juce::String (measOct, 3) + ", tol " + juce::String (centreTol, 4)
+                         + " [gate assertion B1, unrouted]", "group 1 / freq_hz" });
+        batchRows.add ({ "gain_db", b3ok ? "confirms" : "NOT-confirms",
+                         "depth: predicted " + juce::String (predDDepth, 2) + " dB, measured "
+                         + juce::String (measDDepth, 2) + ", tol " + juce::String (tolDepth, 3)
+                         + " [gate assertion B3, unrouted]", "group 1 / gain_db" });
+        batchRows.add ({ "q", b4ok ? "confirms" : "NOT-confirms",
+                         "width ratio: predicted " + juce::String (predWRatio, 3) + ", measured "
+                         + juce::String (measWRatio, 3) + ", tol " + juce::String (tolW, 3)
+                         + " [gate assertion B4, unrouted]", "group 1 / q" });
+
         say ("arm B wall clock: " + juce::String ((juce::Time::getMillisecondCounterHiRes() - tArmB0) / 1000.0, 2) + " s");
 
         // =====================================================================

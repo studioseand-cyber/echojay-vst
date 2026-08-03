@@ -246,18 +246,28 @@ struct Mouth
         Host header. This artifact is checked byte for byte, so the user's
         string is used byte for byte.
     */
-    static juce::File writeDryRun (const juce::File& root, const juce::String& fp,
-                                   const juce::MemoryBlock& body,
-                                   const juce::String& testerName,
-                                   const juce::String& machineId,
-                                   const juce::String& ejmapVersion,
-                                   const juce::String& urlOverride = {})
+    static juce::String uploadBaseUrl (const juce::String& urlOverride = {})
     {
-        const auto url = urlOverride.isNotEmpty()
-                           ? urlOverride
-                           : juce::SystemStats::getEnvironmentVariable (
-                                 "EJMAP_UPLOAD_URL",
-                                 "https://UPLOAD-ENDPOINT-UNSET.echojay.invalid/api/params/ejmap");
+        return urlOverride.isNotEmpty()
+                 ? urlOverride
+                 : juce::SystemStats::getEnvironmentVariable (
+                       "EJMAP_UPLOAD_URL",
+                       "https://UPLOAD-ENDPOINT-UNSET.echojay.invalid/api/params/ejmap");
+    }
+
+    /** ONE BUILDER for every request this tool emits, per the locked transport
+        constraint: artifact and wire come from the same bytes. A second route
+        (the probe runner's /probed POST) gets a second CALLER, never a second
+        copy of the header composer -- a duplicated rule is the [-1] duplicate
+        refusal defect, which survived its own fix because it existed twice.
+    */
+    static juce::File writeRequestArtifact (const juce::File& root, const juce::String& url,
+                                            const juce::String& artifactName,
+                                            const juce::MemoryBlock& body,
+                                            const juce::String& testerName,
+                                            const juce::String& machineId,
+                                            const juce::String& ejmapVersion)
+    {
 
         auto rest = url.contains ("://") ? url.fromFirstOccurrenceOf ("://", false, false)
                                          : url;
@@ -291,7 +301,7 @@ struct Mouth
 
         auto dir = root.getChildFile ("upload");
         dir.createDirectory();
-        auto f = dir.getChildFile (fp + ".http");
+        auto f = dir.getChildFile (artifactName);
         juce::FileOutputStream out (f);
         if (out.openedOk())
         {
@@ -304,6 +314,17 @@ struct Mouth
             out.flush();
         }
         return f;
+    }
+
+    static juce::File writeDryRun (const juce::File& root, const juce::String& fp,
+                                   const juce::MemoryBlock& body,
+                                   const juce::String& testerName,
+                                   const juce::String& machineId,
+                                   const juce::String& ejmapVersion,
+                                   const juce::String& urlOverride = {})
+    {
+        return writeRequestArtifact (root, uploadBaseUrl (urlOverride), fp + ".http",
+                                     body, testerName, machineId, ejmapVersion);
     }
 
     //==========================================================================

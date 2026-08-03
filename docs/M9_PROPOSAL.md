@@ -1092,6 +1092,47 @@ proven by adding a caller that does *not* cooperate and confirming the
 guard still fires — the forgettability property is the whole point, and a
 passing happy path demonstrates nothing about it.
 
+## THE SUITES ARE FIXTURE-BOUND, WHICH BOUNDS THE BATCH RUNNER (measured 2026-08-03)
+
+Found by building `--probe-batch` and running it, not by reading the suites.
+
+Each suite resolves ONE product by id and measures it: eq `aumf,ameq,Brwx`,
+comp `aufx,APCM,ksWV`, limiter `aufx,bxa2,Brwx`, gate `SSL X-Gate` by name.
+The eq suite goes further and hard-codes the signed AMEK fixture's shape --
+`group1`, and Mono Maker at indices 7/8.
+
+So `gateM9("comp")` called while iterating an arbitrary compressor's map loads
+API-2500, measures API-2500, and files API-2500's verdicts under that map's
+fingerprint -- then POSTs them there. The map is never touched. Nothing in the
+suite would report anything wrong, because nothing in the suite is wrong; the
+falsehood is entirely in the attribution.
+
+**The runner therefore probes a map only when the map's own identity IS the
+suite's signed subject**, and counts every other map as uncovered with the
+reason named in the report. Proven by attempting it: a compressor-labelled map
+carrying AMEK's identity is refused with "the comp suite is bound to API-2500
+(m) and would measure THAT plugin", 0 probed, 0 posted.
+
+**Consequence for the campaign:** the runner is an unattended re-runner for the
+four signed fixtures today, not a corpus prober. Probing a real corpus needs the
+suites parameterised by subject -- subject in, map's own indices in, fixture
+constants out. That is a milestone-sized piece of work and it is the thing
+standing between M9 and the corpus, so it belongs at the top of the resume list
+rather than inside the runner.
+
+**Second finding from the same run:** the runner first reported AMEK as "0
+decided, 3 not covered". Both numbers were false. The eq gate publishes its
+three parameter verdicts through `assertHarness` (B6), not `emitVerdict`, so the
+row capture saw none of them; and the per-parameter enumeration walked `params`
+only, so 5 groups and 62 controls were absent from a report that read as
+complete. Corrected, the same run reads **3 decided, 77 of 80 mappable slots not
+covered** -- which is the honest coverage headline and a far more useful one
+than "probed 1". A report that enumerates a subset of the surface understates
+the uncovered area silently, which is the silent-drop class wearing a coverage
+table.
+
+---
+
 ## Open questions (all prior ones decided or answered by measurement)
 
 0. **The frequency gate vs its own σ floor — raised, not resolved, because it
