@@ -28,6 +28,7 @@
 #include "EjmapProbe.h"
 #include "EjmapSubject.h"
 #include "EjmapTriage.h"
+#include "EjmapSend.h"
 #include <thread>
 #include <atomic>
 #include "EjmapBuildInfo.h"     // EJMAP_APPLY_HEADER_SHA, stamped as compiled
@@ -2653,6 +2654,70 @@ public:
         // FORGETTABILITY TEST: a load site that plants NO stake of its own.
         // If the choke point works, a hard death here is still attributed.
         // Deliberately bare -- adding a beginLoad here would test nothing.
+        // THE SEND, AND ITS THREE REFUSALS, ATTEMPTED. A refusal that has never
+        // fired is the misplaced-guard class, and on a network write the
+        // untested one is the one that double-submits.
+        if (mode == "sendtest")
+        {
+            auto attempt = [&] (const juce::String& label, const juce::String& hostPort,
+                                const juce::String& requestLine, const juce::String& token,
+                                int timeoutMs)
+            {
+                juce::String head;
+                juce::String body = "{\"fp\":\"" + juce::String::repeatedString ("0", 64)
+                                  + "\",\"probed\":{\"at\":\"now\"}}";
+                head << requestLine << " HTTP/1.1\r\n"
+                     << "Host: " << hostPort << "\r\n"
+                     << "Content-Type: application/json\r\n"
+                     << "Content-Length: " << juce::String ((juce::int64) body.getNumBytesAsUTF8()) << "\r\n"
+                     << "X-EJMap-Token: " << token << "\r\n\r\n";
+                juce::MemoryBlock mb;
+                mb.append (head.toRawUTF8(), head.getNumBytesAsUTF8());
+                mb.append (body.toRawUTF8(), body.getNumBytesAsUTF8());
+                auto res = ejmap::sendBytesOverTls (mb, hostPort, timeoutMs);
+                say ("");
+                say ("  " + label);
+                say ("    sent        : " + juce::String (res.sent ? "true" : "false"));
+                say ("    status      : " + juce::String (res.status));
+                say ("    queue state : " + res.queueState());
+                say ("    reason      : " + (res.refusedReason.isEmpty() ? juce::String ("(none)")
+                                                                         : res.refusedReason));
+                say ("    elapsed     : " + juce::String (res.elapsedMs, 0) + " ms");
+                return res;
+            };
+
+            say ("SEND TEST: three refusals, each attempted against a real endpoint");
+
+            // 1. 401: the token deliberately unset. The route fails closed.
+            auto a = attempt ("(1) token unset -> expect refused, HTTP 401",
+                              "www.echojay.ai", "POST /api/params/ejmap/probed",
+                              "INGEST-TOKEN-UNSET", 20000);
+
+            // 2. redirect: /forgot is a real 307 in vercel.json. NOT followed.
+            auto b = attempt ("(2) redirect -> expect refused, NOT followed",
+                              "www.echojay.ai", "POST /forgot",
+                              "INGEST-TOKEN-UNSET", 20000);
+
+            // 3. timeout: the REAL endpoint with a deadline shorter than any
+            //    round trip can be. The request may well arrive -- that is the
+            //    point. The outcome is genuinely unknown and must read as
+            //    refused-with-cause, because unknown is the state a retry
+            //    double-submits from.
+            auto c = attempt ("(3) timeout -> expect refused-with-cause, never unknown",
+                              "www.echojay.ai", "POST /api/params/ejmap/probed",
+                              "INGEST-TOKEN-UNSET", 1);
+
+            const bool ok = ! a.sent && a.status == 401
+                         && ! b.sent && b.status >= 300 && b.status < 400
+                            && b.refusedReason.contains ("NOT followed")
+                         && ! c.sent && c.queueState() == "refused";
+            say ("");
+            say (juce::String ("  all three refused, none reported unknown: ")
+                 + (ok ? "YES" : "NO"));
+            std::cout << "SENDTEST: " << (ok ? "PASS" : "FAIL") << std::endl;
+            quitNow(); return;
+        }
+
         // THE READBACK MEASUREMENT. One question: does servicing the runloop
         // between write and read change what the display says? Stale-read
         // recovers, bad-anchor does not.

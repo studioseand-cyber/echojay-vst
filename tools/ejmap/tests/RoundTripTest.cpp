@@ -35,6 +35,7 @@
 #include "EjmapSchema.h"
 #include "EjmapSubject.h"
 #include "EjmapTriage.h"
+#include "EjmapSend.h"
 #include "EjmapProbeRoute.h"
 
 // The shared sweep and parsers, compiled here so the drift gate proves both
@@ -1252,6 +1253,45 @@ void testSubjectLookups()
     auto narrowOct = octavesApartWithin (slotFor (juce::var (nbm), "f"), 4.0);
     check (! narrowOct.ok && narrowOct.why.contains ("cannot express"),
            "subject REFUSES an interval the ladder cannot express, rather than shrinking it");
+
+    // ---- the send's refusals, on the function the send path itself calls ---
+    // The live 401 and the timeout are proven against the real endpoint by
+    // --gate-m9 sendtest. The redirect is proven HERE, because a live 307
+    // specimen through that path did not return bytes and an unproven refusal
+    // is the misplaced-guard class. This is not a copy of the decision: the
+    // send path calls this exact function.
+    {
+        using ejmap::classifyReply;
+        const juce::String ok200 = "HTTP/1.1 200 OK\r\nContent-Length: 15\r\n\r\n{\"ok\":true}";
+        auto a = classifyReply (ok200, (size_t) ok200.length());
+        check (a.sent && a.status == 200 && a.queueState() == "sent",
+               "send: a 2xx with a body is the only outcome that counts as sent");
+
+        const juce::String r307 = "HTTP/1.1 307 Temporary Redirect\r\n"
+                                  "Location: https://elsewhere.example/api\r\n"
+                                  "Content-Length: 0\r\n\r\n";
+        auto b = classifyReply (r307, (size_t) r307.length());
+        check (! b.sent && b.status == 307, "send REFUSES a redirect");
+        check (b.refusedReason.contains ("NOT followed")
+                 && b.refusedReason.contains ("elsewhere.example"),
+               "send names the Location it did not follow, so the refusal is auditable");
+        check (b.queueState() == "refused", "a refused redirect is queued as refused");
+
+        const juce::String r401 = "HTTP/1.1 401 Unauthorized\r\nContent-Length: 24\r\n\r\n"
+                                  "{\"error\":\"unauthorized\"}";
+        auto c = classifyReply (r401, (size_t) r401.length());
+        check (! c.sent && c.status == 401 && c.refusedReason.contains ("unauthorized"),
+               "send REFUSES a 401 and carries the server's own words");
+
+        auto d = classifyReply ("", 0);
+        check (! d.sent && d.status == 0 && d.refusedReason.contains ("no status line"),
+               "send REFUSES an empty reply rather than reading it as success");
+
+        // The property that matters most: NOTHING reports unknown.
+        for (const auto* r : { &a, &b, &c, &d })
+            check (r->queueState() == "sent" || r->queueState() == "refused",
+                   "every outcome is sent or refused, never unknown");
+    }
 
     // ---- item 3 session 3: the floor's unit decides the verdict ------------
     // The standing-question answer for handing eq to the routing fork, proven

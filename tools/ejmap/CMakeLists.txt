@@ -57,7 +57,8 @@ juce_add_gui_app(ejmap
 target_sources(ejmap PRIVATE
     Source/Main.cpp
     Source/PluginScanner.cpp
-    Source/PluginHost.cpp)
+    Source/PluginHost.cpp
+    Source/EjmapSend.mm)
 
 target_compile_definitions(ejmap PRIVATE
     EJMAP_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../.."
@@ -102,7 +103,8 @@ target_link_libraries(ejmap PRIVATE
     juce::juce_recommended_warning_flags)
 
 if(APPLE)
-    target_link_libraries(ejmap PRIVATE "-framework AudioToolbox" "-framework CoreAudioKit")
+    target_link_libraries(ejmap PRIVATE "-framework AudioToolbox" "-framework CoreAudioKit"
+                                        "-framework Network")   # Option A: the TLS stream
 endif()
 
 #==============================================================================
