@@ -2458,6 +2458,8 @@ private:
     // Build the LINK LEVELS context + proposal format/grounding instructions
     // for a chat turn; empty when there are no live Links to reason about.
     juce::String buildLinkLevelsContext();
+    // The SAME Links, structured, for /api/classify — see the .cpp.
+    juce::var buildClassifyLinks() const;
     // Resolve a proposal's linkId (name or uid) to a sendable address.
     juce::String resolveLinkProposalAddr(const juce::String& linkId) const;
     void applyGainProposal(const GainCardZone& z);

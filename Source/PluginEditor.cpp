@@ -19761,6 +19761,58 @@ void EchoJayEditor::sendLinkGainCommand(const juce::String& linkAddr, float gain
 // there are no live Links (so plain chats are unaffected). The instructions
 // live here (not the server prompt) so the whole feature is client-owned and
 // conditional on Links being present.
+// The same Links, structured, for /api/classify's LINKS fact.
+//
+// ONE SOURCE with buildLinkLevelsContext below — getLinkDisplayList(), the
+// canonical list every Link-listing surface uses — so the prose block the
+// model reads on the main call and the LINKS fact the classifier reads can
+// never name different channels.
+//
+// NOT the prose block, deliberately. /api/classify compares LINKS against
+// CHANNEL to decide the channel_mismatch precondition, and builds its
+// deterministic replacement copy ("that would sit better on your <name>
+// track") out of a NAME taken from this array. Handing it a paragraph of
+// levels, placements and grounding rules would make it parse prose to find
+// one, and would put the model's own measurement caveats in front of a
+// question that is not about levels at all.
+//
+// Entries are {"name": ...}. The endpoint accepts bare strings too, but its
+// readers take `.name` off an object, so this shape is the one they are
+// written against — and placement or gain can be added later as a field
+// rather than as a shape change.
+//
+// THE MIX BUS IS DELIBERATELY ABSENT. LINKS is the set of other channels the
+// user could switch to, and the server puts a name from it into "your <name>
+// track" — a sentence the mix bus cannot be the subject of.
+// buildLinkLevelsContext states the bus on its own line for the same reason.
+//
+// No refreshLinkRegistry() here: the editor timer already refreshes the
+// registry at ~2 Hz, and this sits on the latency-critical path in front of
+// a send.
+juce::var EchoJayEditor::buildClassifyLinks() const
+{
+    // The endpoint slices at 24. Stopping at the same number keeps the
+    // request honest about what it asked to have considered, rather than
+    // sending a tail that is silently dropped.
+    constexpr int kMaxClassifyLinks = 24;
+
+    juce::Array<juce::var> out;
+    for (const auto& e : processorRef.getLinkDisplayList())
+    {
+        if (out.size() >= kMaxClassifyLinks) break;
+        if (e.info.uid.isEmpty()) continue;          // unaddressable, as in the prose block
+        const juce::String name = e.displayName.trim();
+        if (name.isEmpty()) continue;
+        auto* o = new juce::DynamicObject();
+        o->setProperty("name", name);
+        out.add(juce::var(o));
+    }
+    // Void, not an empty array: classify() omits the field entirely, and the
+    // facts block then reads "LINKS: (none)" — which is the honest statement
+    // that there are no other channels, not an empty list of them.
+    return out.isEmpty() ? juce::var() : juce::var(out);
+}
+
 juce::String EchoJayEditor::buildLinkLevelsContext()
 {
     processorRef.refreshLinkRegistry();
