@@ -2805,6 +2805,18 @@ public:
             { std::cout << "SATURATION SUITE: STOPPED (render plane blind)" << std::endl;
               quitNow(); return; }
 
+            // The map for this fp, if one exists. Same shape as every other
+            // suite: map-driven when it can be, labelled self-consistency when
+            // it cannot.
+            cal = capture.calibrate (*ci, loadedId);
+            currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+            auto satMapFile = ledger.getRoot().getChildFile ("maps")
+                                    .getChildFile (currentFp + ".json");
+            auto satMap = juce::JSON::parse (satMapFile.loadFileAsString());
+            auto driveSlot = ejmap::subject::slotFor (satMap, "drive");
+            say ("  fp " + currentFp.substring (0, 12) + " | map "
+                 + (satMap.isObject() ? satMapFile.getFileName() : juce::String ("NONE on this machine")));
+
             auto candidates2 = [&] (const juce::String& sub) {
                 juce::Array<int> out;
                 for (int i = 0; i < cp.size(); ++i)
@@ -2818,6 +2830,26 @@ public:
             // than invent an M/S convention on one subject, pin the global
             // control and print it before use.
             int iDrive = -1;
+            bool satMapDriven = false;
+            if (driveSlot.ok() && juce::isPositiveAndBelow (driveSlot.index, cp.size()))
+            {
+                auto nc = ejmap::subject::crossCheckName (driveSlot, cp[driveSlot.index]->getName (64));
+                if (nc.checkable && ! nc.agrees)
+                {
+                    emitContradicts ("drive", nc.why + ". A THD span measured through the wrong "
+                        "index would look like a perfectly ordinary saturation curve");
+                    std::cout << "SATURATION SUITE: " << fails << " FAILED (map index names the "
+                                 "wrong parameter)" << std::endl;
+                    quitNow(); return;
+                }
+                iDrive = driveSlot.index;
+                satMapDriven = true;
+                say ("  drive FROM THE MAP: [" + juce::String (iDrive) + "] "
+                     + cp[iDrive]->getName (32) + ", ladder "
+                     + juce::String (driveSlot.ladderLo(), 2) + " .. "
+                     + juce::String (driveSlot.ladderHi(), 2));
+            }
+            if (iDrive < 0)
             {
                 const int pinned = 34;      // "Master Drive"
                 if (juce::isPositiveAndBelow (pinned, cp.size())
@@ -2831,6 +2863,9 @@ public:
                 }
                 else
                     say ("  pinned index 34 is not 'Master Drive' on this build -- refusing to use it");
+                say ("  NO MAP-DRIVEN DRIVE: " + (satMap.isObject() ? driveSlot.why
+                                                                    : juce::String ("no map for this fp"))
+                     + " -- this run is a SELF-CONSISTENCY CHECK, not a check of any map's claims");
             }
             for (auto* n : (iDrive >= 0 ? std::initializer_list<const char*>{}
                                         : std::initializer_list<const char*>{ "Drive", "Saturation", "Amount" }))
@@ -2850,12 +2885,111 @@ public:
                 quitNow(); return;
             }
 
+            // The gating candidates, named before any plan declares one. This
+            // suite drove a BYPASSED stage and reported a null; the stages were
+            // found by inspection and never written down.
+            {
+                juce::StringArray stages;
+                for (int i = 0; i < cp.size(); ++i)
+                {
+                    const auto n = cp[i]->getName (64);
+                    if (n.containsIgnoreCase ("XL") || n.containsIgnoreCase ("Stage")
+                        || n.containsIgnoreCase ("Engage") || n.containsIgnoreCase ("On"))
+                        stages.add ("[" + juce::String (i) + "] " + n + "="
+                                    + cp[i]->getCurrentValueAsText());
+                }
+                say ("  gating candidates: " + (stages.isEmpty() ? juce::String ("none found")
+                                                                 : stages.joinIntoString (", ")));
+            }
+
             auto swD = sweepOneIndex (*ci, iDrive, watchdog, loadedId);
             auto nfD = [] (const juce::Array<juce::Array<float>>& a, double v) {
                 auto e = echojay::dominantMonotonicTable (a);
                 return echojay::interpolateAnchors (e.table, (float) v); };
             say ("  drive ladder " + juce::String (swD.anchors.getFirst()[0], 2) + " .. "
                  + juce::String (swD.anchors.getLast()[0], 2) + " (unit '" + swD.unitFamily + "')");
+
+            // ---- SATURATION'S OWN FLOOR (item 4) ---------------------------
+            // The floor used here was InstrumentFloor::depthDb = 0.088 -- eq's
+            // spectral LOBE DEPTH floor, borrowed for a THD measurement. The
+            // unit matched (dB), which is exactly why the floor-unit guard
+            // passed it: the guard protects the DIMENSION, not the QUANTITY.
+            // A floor for a different feature in the same unit is invisible to
+            // it. Measured here instead, on this feature, on this subject.
+            double sgThd = 0;
+            {
+                auto t1 = P::thdOf (P::welch (sine()));
+                auto t2 = P::thdOf (P::welch (sine()));
+                sgThd = std::abs (t1.thdDb - t2.thdDb);
+                say ("  sigma_THD on this subject (1 A/A pair): " + juce::String (sgThd, 4)
+                     + " dB (the borrowed eq lobe-depth floor was 0.088 dB, a floor for a "
+                       "different feature that happened to share the unit)");
+            }
+
+            // ---- THE EXCITATION PLAN (carve-out 2: verified by signal) ------
+            // The original null was attributed to "a bypassed stage". Measured
+            // here: [8] Master XL On reads On and [9] Master XL reads 0 %. The
+            // stage is ENABLED and its AMOUNT is zero, so Master Drive distorts
+            // nothing at any value. The plan therefore declares the amount, not
+            // the toggle -- the toggle was already where a reader would want it.
+            ejmap::subject::ExcitationPlan satPlan;
+            satPlan.source = "suite:saturation";
+            {
+                int iXl = -1, iXlOn = -1;
+                for (int i = 0; i < cp.size(); ++i)
+                {
+                    const auto n = cp[i]->getName (64);
+                    if (n.equalsIgnoreCase ("Master XL"))    iXl = i;
+                    if (n.equalsIgnoreCase ("Master XL On")) iXlOn = i;
+                }
+                if (iXlOn >= 0) satPlan.steps.add ({ iXlOn, 1.0, "xl_stage_on",
+                        "the stage toggle; already On by default, declared so the plan is the "
+                        "whole state and not the part someone noticed" });
+                if (iXl >= 0)   satPlan.steps.add ({ iXl, 1.0, "xl_stage_amount",
+                        "THE ONE THAT MATTERED: Master XL reads 0 %, so Master Drive distorts "
+                        "nothing at any value. This is what the original null was measuring" });
+            }
+            const auto satExc = ejmap::subject::resolveExcitation (satMap, satPlan);
+            say ("  " + satExc.describe());
+
+            const double thdBeforeExc = P::thdOf (P::welch (sine())).thdDb;
+            const auto satExcResult = ejmap::subject::applyExcitation (satExc, cp.size(),
+                [&] (int idx, double value, const juce::String&) -> double
+                { return P::writeAndServiceRunloop (*cp[idx], (float) value); });
+            const double thdAfterExc = P::thdOf (P::welch (sine())).thdDb;
+            const double excMoved = std::abs (thdAfterExc - thdBeforeExc);
+            say ("  excitation applied from " + satExcResult.source + ": "
+                 + juce::String (satExcResult.applied) + " step(s) landed"
+                 + (satExcResult.ok() ? "" : ", " + satExcResult.detail));
+            // CARVE-OUT 2: verified BY SIGNAL, not by the write returning.
+            // THE VERIFICATION THRESHOLD IS ABSOLUTE, NOT 4*sigma. On a
+            // deterministic plugin sigma_THD is 0.0000, so 4*sigma is 0.004 dB
+            // and ANY incidental spectral change reads as verified: measured on
+            // a constructed plan naming Mono-Maker, which moved THD 0.15 dB,
+            // cleared 4*sigma and was reported VERIFIED while the drive walk
+            // that followed moved 0.00 dB. The other suites use an absolute
+            // 1 dB for exactly this claim (comp's curveDelta > 1.0, eq's
+            // excF.maxAbsDb > 1.0); this one had inherited the noise floor by
+            // accident and a noise floor cannot certify an effect.
+            const double excVerifyFloor = juce::jmax (1.0, 4.0 * juce::jmax (sgThd, 0.001));
+            const bool excVerified = excMoved > excVerifyFloor;
+            say ("  EXCITATION VERIFIED BY SIGNAL: THD " + juce::String (thdBeforeExc, 2)
+                 + " -> " + juce::String (thdAfterExc, 2) + " dB, moved "
+                 + juce::String (excMoved, 2) + " dB against a floor of "
+                 + juce::String (excVerifyFloor, 3) + " dB (max of 1 dB and 4*sigma_THD "
+                 + juce::String (4.0 * juce::jmax (sgThd, 0.001), 4) + ") -> "
+                 + (excVerified
+                      ? "VERIFIED, the plan put this plugin into a state it was not in"
+                      : "NOT VERIFIED -- the plan changed nothing that matters at this scale"));
+            if (! satExcResult.ok())
+            {
+                emitInconclusive ("drive", "the excitation plan did not apply ("
+                    + satExcResult.detail + "), so the stage every verdict below assumes is "
+                      "active was never established",
+                    "measured: the plan's writes were attempted and did not land");
+                std::cout << "SATURATION SUITE: INCONCLUSIVE (excitation did not apply)" << std::endl;
+                quitNow(); return;
+            }
 
             say ("     drive | landed |  THD dB  | harmonic profile h2..h7 (dB rel. fundamental)");
             juce::Array<double> thds, landeds;
@@ -2881,15 +3015,56 @@ public:
             say ("  Delta_pred: probed span " + juce::String (probedSpan2, 2)
                  + " (ladder " + juce::String (ladderRaw2, 2) + ") -- probed span used");
             const double thdMoved = std::abs (thds.getLast() - thds.getFirst());
-            emitVerdict ("drive (THD monotone, PRIMARY)",
-                  thdMoved, juce::jmax (1.0, std::abs (thds.getLast() - thds.getFirst())),
-                  P::Floor (0.088, "dB"), 0.25 * juce::jmax (1.0, thdMoved),
-                  "THD " + juce::String (thds.getFirst(), 2) + " -> " + juce::String (thds.getLast(), 2)
-                  + " dB across drive " + juce::String (landeds.getFirst(), 2) + " -> "
-                  + juce::String (landeds.getLast(), 2) + " (moved " + juce::String (thdMoved, 2)
-                  + " dB), monotone: " + (mono ? "YES" : "NO")
-                  + ". Harmonic profile recorded as evidence, no verdict issued on it.",
-                  "dB");
+            // A CHECK THAT CANNOT FAIL IS NOT A CHECK. What stood here passed
+            // `thdMoved` as the measurement AND `jmax(1.0, thdMoved)` as the
+            // prediction, so measured == predicted by construction and the fork
+            // returned `tracks` for any plugin whatever. It was invisible for
+            // the module's whole life because THD never moved -- the null hid a
+            // tautology, and fixing the excitation is what exposed it.
+            //
+            // Nothing predicts a THD MAGNITUDE from a drive value: drive is
+            // unitless (ladder unit ''), so unlike freq->centre or
+            // threshold->GR there is no prediction to test against. The
+            // magnitude claim is therefore refused, and the claim that IS
+            // falsifiable -- THD rises monotonically with drive -- is decided
+            // on its own. Same treatment comp's attack/release already gets
+            // when a ladder's units are undeclared.
+            if (! mono)
+                emitContradicts ("drive",
+                    "THD does not rise monotonically with drive: " + juce::String (thds.getFirst(), 2)
+                    + " -> " + juce::String (thds.getLast(), 2) + " dB across the ladder, with a "
+                      "fall of more than 0.5 dB between adjacent points. A drive control whose "
+                      "distortion decreases as it rises is not what the map says it is");
+            else if (thdMoved <= 4.0 * juce::jmax (sgThd, 0.001))
+                emitInconclusive ("drive",
+                    "THD moved " + juce::String (thdMoved, 2) + " dB across the whole drive "
+                      "ladder, at or below 4*sigma_THD "
+                    + juce::String (4.0 * juce::jmax (sgThd, 0.001), 4) + " dB. Carve-out 1 "
+                      "governs, and the FIRST named candidate depends on the excitation: "
+                    + (excVerified
+                         ? "the plan moved THD " + juce::String (excMoved, 2) + " dB and IS "
+                           "verified, so the suppressor is not the plan -- candidates are a mode "
+                           "state on this instance, or a drive index that is not the drive"
+                         : "the plan moved THD only " + juce::String (excMoved, 2)
+                           + " dB and is NOT verified, so THE PLAN ITSELF IS THE FIRST SUSPECT: "
+                             "it did not establish the state the drive needs, and nothing below "
+                             "can distinguish a dead drive from an unexcited one"),
+                    juce::String ("measured across the full ladder; the excitation was ")
+                    + (excVerified ? "verified by signal" : "NOT verified by signal"));
+            else
+                emitInconclusive ("drive",
+                    "THD rises monotonically with drive, " + juce::String (thds.getFirst(), 2)
+                    + " -> " + juce::String (thds.getLast(), 2) + " dB across ladder "
+                    + juce::String (landeds.getFirst(), 2) + " -> "
+                    + juce::String (landeds.getLast(), 2) + " (moved "
+                    + juce::String (thdMoved, 2) + " dB, above 4*sigma_THD "
+                    + juce::String (4.0 * juce::jmax (sgThd, 0.001), 4) + "). DIRECTION CONFIRMS. "
+                      "MAGNITUDE IS NOT DECIDED: drive is unitless, so no prediction exists from a "
+                      "drive value to a THD magnitude and there is nothing to route against. "
+                      "Harmonic profile recorded as evidence",
+                    "measured; the direction is decided and the magnitude has no prediction to "
+                    "test against");
+            juce::ignoreUnused (probedSpan2, ladderRaw2);
             std::cout << "SATURATION SUITE: " << (fails == 0 ? "PASS" : "FAILED") << std::endl;
             quitNow(); return;
         }

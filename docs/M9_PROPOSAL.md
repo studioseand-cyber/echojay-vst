@@ -946,6 +946,55 @@ identity before trusting anything measured there. The merged-tree checks were
 re-run only because the refusal happened to be visible in the output; had it
 scrolled past, the report would have been false.
 
+## A NULL CAN HIDE A TAUTOLOGY (3 August 2026)
+
+**Instance 1: saturation's drive verdict.** It passed `thdMoved` as the
+measurement and `jmax(1.0, thdMoved)` as the prediction — **the same number**.
+`routeVerdict` compares `||moved| - |pred||` against a tolerance, so the
+comparison was of a quantity with itself and the route was `tracks` for any
+plugin whatever.
+
+It survived the module's whole life because THD never moved: the suite drove a
+stage whose amount was 0%, reported a null, and nobody looked at what the
+verdict was comparing, because it never issued one. **Fixing the excitation is
+what exposed the tautology** — the first genuinely excited run produced
+`CONFIRMS ... moved 35.29 dB against 35.29 dB predicted`, and the two numbers
+being identical is the tell.
+
+*A check that cannot fail is not a check*, already recorded, with a new way of
+arriving there: a blocked path holds a broken check indefinitely, and
+unblocking the path publishes it. **When a suite stops returning null, re-read
+what its verdict compares before trusting the first result it produces.**
+
+The fix is not a better prediction — none exists. Drive is unitless, so
+nothing predicts a THD magnitude from a drive value the way freq predicts a
+centre or threshold predicts gain reduction. The magnitude claim is refused and
+the falsifiable claim, that THD rises monotonically with drive, is decided on
+its own. Same treatment comp's attack/release already gets under an undeclared
+unit family.
+
+---
+
+## A NOISE FLOOR CANNOT CERTIFY AN EFFECT (3 August 2026)
+
+**Instance 1: saturation's excitation verification.** It verified the plan by
+`excMoved > 4*sigma_THD`. On a deterministic plugin sigma_THD is 0.0000, so the
+bar was 0.004 dB — and a constructed plan naming the wrong control moved THD
+0.15 dB, cleared it, and was reported **VERIFIED** while the drive walk that
+followed moved 0.00 dB. The suite then told the operator *"the suppressor is
+not the plan"* about a plan that was the entire problem.
+
+4σ answers "is this distinguishable from noise". Verification asks "did this
+establish the state the measurement needs", which is a different and much
+larger question. The other suites use an absolute 1 dB for exactly this claim
+(comp's `curveDelta > 1.0`, eq's `excF.maxAbsDb > 1.0`); saturation had
+inherited the noise floor by accident.
+
+Now `max(1 dB, 4σ)`, and the carve-out 1 message **names the plan itself as the
+first suspect when the plan is unverified** rather than exonerating it.
+
+---
+
 ## PROSE ASSERTING WHAT A MEASUREMENT SHOWED, WITH NOTHING MEASURING IT (3 August 2026)
 
 The false-comment class one layer in, and in the worst possible place: inside a

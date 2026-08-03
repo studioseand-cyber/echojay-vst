@@ -634,6 +634,58 @@ Regression: limiter, gate, saturation PASS; comp 1 FAILED (the API-2500 over-cla
 
 ---
 
+## 4k. Item 4 (saturation) and item 6 (the final comparison)
+
+### The standing question for saturation
+
+| Newly possible once drive index, ladder and excitation come from a map | Seen? |
+|---|---|
+| The map's **drive index** addresses another parameter | **Yes** — `crossCheckName`. Specimen: index moved to 39 → *"the map calls it 'Master Drive' and this instance calls it 'Mid Lo Drive Compensation'. A THD span measured through the wrong index would look like a perfectly ordinary saturation curve"* |
+| The **excitation plan names a control that does not gate the drive** | **Yes**, after a fix — see below |
+| An **offset drive ladder** (right span, wrong points) | **No, and correctly so.** Saturation makes no magnitude claim, so an offset ladder does not falsify anything it asserts. Stated rather than left as a gap: this suite cannot detect a stale ladder because it never predicts a magnitude from one |
+
+**The asymmetry worth naming:** an *enable link* must be null — it makes a control live and changes nothing else. An *excitation step* must **not** be null — it exists to change the feature. They resolve into the same `ExcitationStep` type but carry opposite null requirements, and applying eq's enable null-test to saturation's XL stage would refuse a correct plan.
+
+### The floor: unit-correct, quantity-wrong
+
+Asked to check the unit rather than assume it, the answer is that the unit **was** right — and that is the finding. Saturation's floor was `InstrumentFloor::depthDb` = 0.088, eq's spectral **lobe-depth** floor, borrowed for a THD measurement. Both are decibels, so the floor-unit guard passed it.
+
+**The guard protects the dimension, not the quantity.** A floor for a different feature in the same unit is invisible to it. Saturation now measures its own σ_THD by A/A pair (0.0000 dB on this deterministic subject) instead of borrowing eq's.
+
+### The excitation plan, which was the whole blockage
+
+The original diagnosis was "a bypassed stage". Measured: `[8] Master XL On` reads **On** and `[9] Master XL` reads **0 %**. The stage is enabled and its *amount* is zero, so Master Drive distorts nothing at any value. The plan declares both — the toggle as well, so the plan is the whole state rather than the part someone noticed.
+
+Applied through `applyExcitation`, verified by signal per carve-out 2: **THD −145.41 → −45.00 dB, moved 100.41 dB**. The drive walk then produces real numbers for the first time: −45.00 → −9.70 dB, monotone.
+
+Two defects fell out, both recorded as their own entries:
+
+1. **A null hid a tautology.** The verdict passed `thdMoved` as measurement and `jmax(1.0, thdMoved)` as prediction — the same number — so it read `tracks` for any plugin. Invisible while THD never moved; the first excited run printed `moved 35.29 dB against 35.29 dB predicted`. Fixed by refusing the magnitude claim (drive is unitless; nothing predicts a THD magnitude from it) and deciding the falsifiable one: monotonicity.
+2. **A noise floor cannot certify an effect.** Excitation was verified against 4σ_THD = 0.004 dB, so a plan naming Mono-Maker moved THD 0.15 dB and was reported VERIFIED — while the suite told the operator "the suppressor is not the plan". Now `max(1 dB, 4σ)`, matching comp and eq, and the message names the plan as the first suspect when it is unverified.
+
+### Item 6: the final numbers, spread measured per feature first
+
+| Fixture | Feature | Runs | Result |
+|---|---|---|---|
+| eq | `freq_hz` centre error | 7 | **0.0280 – 0.0286 oct — not deterministic** |
+| eq | `gain_db` depth error | 7 | 0.131, exact |
+| eq | `q` width ratio error | 7 | 0.026, exact |
+| limiter | ceiling moved / worst | 3 | 22.50 vs 22.50, worst 0.02 — exact |
+| gate | threshold moved / worst | 3 | 52.00 vs 54.00, worst 1.20 — exact |
+| comp | threshold GR measured | 2 | 6.41 dB, exact |
+| comp | ratio error | 2 | 0.020, exact |
+| saturation | THD moved across ladder | 2 | 35.29 dB, exact |
+
+**Exactly one feature in M9 is non-deterministic: eq's lobe centre.** Everything else reproduces exactly, run to run, across the whole parameterisation. Against the amended criterion that is the intended outcome — exact where the measurement is unchanged, within measured spread where it is not.
+
+Suite status: eq `GATE M9: PASS` (14 results), limiter PASS, gate PASS, saturation PASS, comp 1 FAILED (the API-2500 over-claim, unchanged since before parameterisation). Drift gate 189.
+
+### Carried gap, recorded so it is not lost
+
+**comp has no `B-hold` equivalent.** Its three section headers — `THRESHOLD (excitation: ratio at max, verified)`, `RATIO (excitation: threshold at -30 dB, verified)`, `ENVELOPE (excitation: threshold -30, ratio max, verified)` — name states that nothing checks survived the writes between sections. Each section does write the state it names, so the claim is not false; "verified" refers to P4's one-time verification by signal, not to a re-measurement at that point. eq now asserts this and comp does not. Not fixed here, deliberately: eq's and saturation's sessions should not quietly edit another suite's assertions.
+
+---
+
 ## Why resolution is INDEX-FIRST with the name as the check
 
 Recorded because the intuitive order is the wrong one and someone will
