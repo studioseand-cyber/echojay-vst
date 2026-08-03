@@ -267,6 +267,54 @@ The guard runs before any routing, so the route narrative never gets to describe
 
 ---
 
+## 4d. Item 2 built: comp reads the map (3 August 2026)
+
+### The standing question, answered before converting
+
+*What can now be wrong that could not be before, and does the verdict machinery see it?*
+
+Before conversion, comp found indices by exact name on the live instance and swept its ladders live. So the index always addressed the parameter whose name matched, and the ladder always described the plugin in front of it. Four things become possible the moment the map supplies them:
+
+| # | Newly possible | Seen by the machinery as it stood? |
+|---|---|---|
+| 1 | The map's **index** addresses a different parameter (a Bank insertion broke 339 indices on this project) | **No.** Every span it produced would look plausible |
+| 2 | An **offset threshold ladder**: right GR span, every point wrong | **No.** The threshold verdict routes on `totalGr`, a span — item 1's class exactly |
+| 3 | A **ratio ladder with correct values and wrong norms**: the plugin lands elsewhere on a curve the map describes correctly | **Partly.** The slope-delta shifts, but only a large error exceeds tolerance |
+| 4 | A **declared but wrong unit family** (ms against a seconds ladder) scaling every time prediction by 1000 | **No.** The suite refuses *undeclared* units; declared-and-wrong was the gap |
+
+Answered with machinery, not argument: an index **range guard** and a **name cross-check** for 1, and the shared **map-claim check** with a **per-point gate** for 2, 3 and 4. Resolution is by index because that is what the map carries; the name is the check on it, deliberately the reverse order — names survived every version transition this project measured, indices did not.
+
+### The specimens, all four run
+
+**Control — self-map** (the live ladders in map shape). Worst 0.00 dB over 4 threshold points and 0.00:1 over 2 ratio points, and the verdicts are **identical to the pre-parameterisation baseline**: threshold OVER-CLAIM 6.41 dB measured against 13.50 predicted, error 7.09 vs tol 3.38; ratio CONFIRMS 0.38 against 0.40, error 0.020 vs tol 0.100. That is behaviour preservation for comp, against pinned points.
+
+**Candidate 1 — index shifted to Attack, still named `Thresh` in the map:**
+```
+CONTRADICTS threshold_db: the map's threshold_db points at index 1, which the map calls
+'Thresh' and this instance calls 'Attack'. A verdict computed from this index would be
+about the wrong parameter, and every span it produced would look plausible.
+```
+
+**Candidate 2 — threshold ladder offset 6 dB, span intact:** threshold worst **6.03 dB**, ratio 0.00 — contradicted, correctly attributed.
+
+**Candidate 3 — ratio values right, norms wrong:** threshold 0.00, ratio worst **4.00:1** (`map says 2.00 → plugin displays 6.00`) — contradicted, correctly attributed. The 10:1 point displays `Inf`, a real landing rather than a parse failure, and is reported as unreadable rather than counted.
+
+### What building it found
+
+**Pooled evidence names the wrong parameter.** The first implementation kept one claim report for the whole suite, so candidate 3 — a ratio failure with every threshold point exact — was reported as `CONTRADICTS threshold_db`. Routing right with wrong words is the failure the verdict fork exists to prevent, and it reappears wherever evidence from two parameters is merged before it is attributed. Now one report per semantic, each gating its own verdict, in its own units (dB for threshold, `:1` for ratio).
+
+**A hand-built ladder is the wrong specimen, twice.** Constructed "agreeing" maps failed at 4.52 dB (comp) and 7.20 dB (limiter) because both assumed a ladder linear in norm; API-2500's threshold is 10 → −0.48 → −20 across norms 0 → 0.5 → 1. The self-map dump exists for exactly this, and is now one shared builder rather than a copy per suite.
+
+**The inconclusive basis, twice wrong.** A fixed suffix asserted *no measurement was taken*, false at the excitation guard. Replacing it with a bool produced a second fixed suffix asserting *the feature never appeared*, false at the envelope sites where tau moved 11.5 → 63.7 ms and the obstacle was an undeclared unit family. The basis is now a free string supplied by the caller, because only the caller knows why no verdict is reachable. Two rounds of the same named class in three lines of code.
+
+### ExcitationPlan: the type earns itself, and shows one gap
+
+comp declares `ratio → max` and `threshold → −30` through the named type, with a reason per step (`a compressor at 1:1 compresses nothing`). It prints as one line and is now the first real consumer, so schema 2.3a will serialise a shape that already has a working consumer.
+
+**What it is missing, found by using it:** the type carries steps but nothing *applies* them — comp still writes its own excitation inline, and the declaration is descriptive. A plan that is declared but not applied can drift from the code that does the work, which is the false-comment class waiting to happen. 2.3a should land `applyExcitation()` beside the serialised form so declaration and application are the same act.
+
+---
+
 ## Appendix: the uid-ambiguity refusal, tested (3 August 2026)
 
 The other three runner refusals were proven by attempting them. This one is now too, and it is load-bearing rather than defensive.

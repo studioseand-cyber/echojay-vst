@@ -256,6 +256,154 @@ inline OctavePair octavesApartWithin (const SlotRef& slot, double octaves)
 }
 
 //==============================================================================
+/** DOES THE PLUGIN DO WHAT THE MAP SAYS? -- one implementation, every suite.
+
+    Write the norm the map gives for a semantic value, read what the plugin
+    then displays, and compare it to the value the map claimed. This is the
+    check that makes parameterisation worth doing, and it is the check that
+    catches the failure parameterisation CREATES: a ladder whose values are
+    right and whose norms are not lands the plugin somewhere else on a curve
+    the map describes correctly, and every span- or delta-based verdict in M9
+    is blind to it because the span is unchanged.
+
+    It lives here rather than in a suite because the second copy is where the
+    [-1] duplicate refusal survived its own fix.
+
+    NOTE what this does NOT prove: the display is the plugin's own claim about
+    itself, so a plugin whose display and DSP disagree passes this and fails
+    the acoustic check. The two are complementary and neither replaces the
+    other -- that divergence is measured on this project (API-2500).
+*/
+struct MapClaim
+{
+    double claimed = 0;      // what the map says this norm means
+    double shown   = 0;      // what the plugin displays after the write
+    float  norm    = 0;
+    bool   parsed  = false;  // could the display be read as a number at all
+    juce::String display;
+
+    double error() const { return std::abs (shown - claimed); }
+};
+
+/** `readDisplay` is supplied by the caller so this header stays free of the
+    audio-processor types: pass a lambda returning getCurrentValueAsText(). */
+template <typename WriteFn, typename ReadDisplayFn>
+inline MapClaim checkMapClaim (const SlotRef& slot, double wantValue,
+                               WriteFn&& write, ReadDisplayFn&& readDisplay)
+{
+    MapClaim c;
+    c.claimed = wantValue;
+    c.norm    = slot.normFor (wantValue);
+    write (c.norm);
+    c.display = readDisplay();
+    float f = 0; bool negInf = false;
+    const auto unit = slot.unit.isNotEmpty() ? slot.unit : juce::String ("db");
+    c.parsed = echojay::parseDisplayForUnit (c.display, unit, f, negInf);
+    if (! c.parsed) c.parsed = echojay::parseDisplayForUnit (c.display, "db", f, negInf);
+    c.shown = negInf ? -std::numeric_limits<double>::infinity() : (double) f;
+    return c;
+}
+
+/** Worst |claim - display| over a set of checks, and a line per check. */
+struct MapClaimReport
+{
+    double worst = 0;
+    int    checked = 0, unparsed = 0;
+    juce::StringArray rows;
+
+    void add (const MapClaim& c)
+    {
+        ++checked;
+        if (! c.parsed) { ++unparsed;
+            rows.add ("     map says " + juce::String (c.claimed, 2) + " at norm "
+                      + juce::String (c.norm, 4) + " -> plugin displays '" + c.display
+                      + "' (unreadable as a number; not counted)");
+            return; }
+        worst = juce::jmax (worst, c.error());
+        rows.add ("     map says " + juce::String (c.claimed, 2) + " at norm "
+                  + juce::String (c.norm, 4) + " -> plugin displays "
+                  + juce::String (c.shown, 2) + "  |diff| " + juce::String (c.error(), 2));
+    }
+};
+
+/** The map's index must address the parameter the map NAMES. A map whose
+    indices shifted (a plugin update inserting a Bank broke 339 indices on this
+    project) still resolves to a valid index, and every verdict computed from
+    it would be about the wrong parameter. Names survived every version
+    transition measured, so the name is the cross-check on the index -- the
+    reverse of the resolution order, deliberately. */
+struct IndexNameCheck
+{
+    bool agrees = false, checkable = false;
+    juce::String mapName, pluginName, why;
+};
+
+inline IndexNameCheck crossCheckName (const SlotRef& slot, const juce::String& pluginParamName)
+{
+    IndexNameCheck r;
+    r.mapName = slot.name;
+    r.pluginName = pluginParamName;
+    if (slot.name.isEmpty() || pluginParamName.isEmpty())
+    { r.why = "no name on one side; the index cannot be cross-checked"; return r; }
+    r.checkable = true;
+    r.agrees = slot.name.trim().equalsIgnoreCase (pluginParamName.trim());
+    if (! r.agrees)
+        r.why = "the map's " + slot.semantic + " points at index " + juce::String (slot.index)
+              + ", which the map calls '" + slot.name + "' and this instance calls '"
+              + pluginParamName + "'";
+    return r;
+}
+
+//==============================================================================
+/** A SELF-MAP: live ladders written in map shape.
+
+    Circular as verification -- it cannot disagree with the plugin it came
+    from -- and exactly what is needed as a SPECIMEN, because a divergence
+    check that has never been shown NOT to fire is as unproven as one that has
+    never fired. Both times a ladder was hand-constructed for this purpose on
+    this project it was wrong (linear assumed, curved in fact), and the wrong
+    specimen read as a real divergence.
+
+    One builder, two suites: the limiter/gate copy was the first, and a second
+    inline copy in comp is where duplicated rules start drifting apart.
+*/
+struct SelfMapEntry
+{
+    juce::String semantic, name, unit;
+    int index = -1;
+    juce::Array<juce::Array<float>> anchors;
+};
+
+inline juce::var selfMapVar (const juce::String& fp, const juce::String& schema,
+                             const juce::String& category,
+                             const juce::Array<SelfMapEntry>& entries)
+{
+    auto* params = new juce::DynamicObject();
+    for (const auto& e : entries)
+    {
+        juce::Array<juce::var> rows;
+        for (const auto& a : e.anchors)
+            rows.add (juce::var (juce::Array<juce::var> { (double) a[0], (double) a[1] }));
+        auto* pe = new juce::DynamicObject();
+        pe->setProperty ("index", e.index);
+        pe->setProperty ("name", e.name);
+        pe->setProperty ("kind", e.semantic);
+        pe->setProperty ("unit", e.unit);
+        pe->setProperty ("anchors", juce::var (rows));
+        params->setProperty (e.semantic, juce::var (pe));
+    }
+    auto* mo = new juce::DynamicObject();
+    mo->setProperty ("fp", fp);
+    mo->setProperty ("schema", schema);
+    mo->setProperty ("category", category);
+    mo->setProperty ("mode", "self-map (live sweep in map shape, NOT a mapped artefact)");
+    mo->setProperty ("params", juce::var (params));
+    mo->setProperty ("controls", juce::var (new juce::DynamicObject()));
+    mo->setProperty ("groups", juce::var (juce::Array<juce::var> {}));
+    return juce::var (mo);
+}
+
+//==============================================================================
 /** EXCITATION: what must be set before the effect being probed exists at all.
 
     A compressor with ratio 1:1 compresses nothing; a saturator with its stage

@@ -1652,17 +1652,20 @@ public:
         // function has no branch, no parameter and no return value that could
         // produce one, and it never touches the route enum at all.
         auto emitInconclusive = [&] (const juce::String& semantic, const juce::String& reason,
-                                     bool measurementWasTaken = false)
+                                     const juce::String& basisFromCaller = {})
         {
-            // The basis must not assert something untrue. The default wording
-            // says no measurement was taken, which is right for the precondition
-            // sites and WRONG for the excitation guard, where four renders were
-            // taken and the feature simply never appeared in them. A fixed
-            // suffix that lies in one caller is documentation asserting a
-            // property the code lacks, in the smallest possible form.
-            const juce::String basis = measurementWasTaken
-                ? "  [measured, and the feature never appeared -- no verdict is reachable from a "
-                  "feature that did not move]"
+            // THE BASIS BELONGS TO THE CALLER, because only the caller knows
+            // why no verdict is reachable. This started as a fixed suffix
+            // asserting "no measurement was taken", which was false at the
+            // excitation guard; replacing it with a bool produced a second
+            // fixed suffix asserting "the feature never appeared", which is
+            // false at the envelope sites, where the feature moved 11.5 -> 63.7
+            // ms and the obstacle was an undeclared unit family. Two rounds of
+            // the same defect -- documentation asserting a property the code
+            // lacks -- in the same three lines. A free string cannot lie unless
+            // the caller writes a lie.
+            const juce::String basis = basisFromCaller.isNotEmpty()
+                ? "  [" + basisFromCaller + "]"
                 : "  [by precondition -- no measurement was taken, so no verdict is reachable "
                   "from here]";
             std::cout << "  INCONCLUSIVE " << semantic << ": " << reason << basis << std::endl;
@@ -2438,7 +2441,8 @@ public:
                       "this suite -- " + excPlan.source + "), the stimulus does not reach the "
                       "ladder's range, or the target index is not the "
                     + juce::String (isLim ? "ceiling" : "threshold") + ". No verdict is reachable "
-                      "from a feature that did not move", /*measurementWasTaken*/ true);
+                      "from a feature that did not move",
+                    "measured over 4 ladder points, and the feature never appeared in any of them");
                 std::cout << (isLim ? "LIMITER" : "GATE") << " SUITE: INCONCLUSIVE "
                              "(feature never appeared; not a verdict)" << std::endl;
                 quitNow(); return;
@@ -2451,24 +2455,12 @@ public:
             // is as unproven as one that has never fired.
             if (! mapDriven && sw.anchors.size() >= 2)
             {
-                juce::Array<juce::var> aRows;
-                for (const auto& a : sw.anchors)
-                    aRows.add (juce::var (juce::Array<juce::var> { (double) a[0], (double) a[1] }));
-                auto* pe = new juce::DynamicObject();
-                pe->setProperty ("index", iCtl);
-                pe->setProperty ("name", cp[iCtl]->getName (64));
-                pe->setProperty ("kind", wantSem);
-                pe->setProperty ("unit", sw.unitFamily);
-                pe->setProperty ("anchors", juce::var (aRows));
-                auto* pp = new juce::DynamicObject(); pp->setProperty (wantSem, juce::var (pe));
-                auto* mo = new juce::DynamicObject();
-                mo->setProperty ("fp", currentFp);
-                mo->setProperty ("schema", ejmap::kMapSchemaString);
-                mo->setProperty ("category", isLim ? "limiter" : "gate");
-                mo->setProperty ("mode", "self-map (live sweep, NOT a mapped artefact)");
-                mo->setProperty ("params", juce::var (pp));
+                juce::Array<ejmap::subject::SelfMapEntry> entries;
+                entries.add ({ wantSem, cp[iCtl]->getName (64), sw.unitFamily, iCtl, sw.anchors });
                 auto out = ledger.getRoot().getChildFile ("selfmap-" + currentFp + ".json");
-                out.replaceWithText (juce::JSON::toString (juce::var (mo), false));
+                out.replaceWithText (juce::JSON::toString (
+                    ejmap::subject::selfMapVar (currentFp, ejmap::kMapSchemaString,
+                                                isLim ? "limiter" : "gate", entries), false));
                 say ("  self-map written: " + out.getFullPathName()
                      + " (the live ladder in map shape; circular as verification)");
             }
@@ -3155,8 +3147,82 @@ public:
                 for (int i = 0; i < cp.size(); ++i)
                     if (cp[i]->getName (64).equalsIgnoreCase (nm)) return i;
                 return -1; };
-            const int iTh = idxOf ("Thresh"), iRa = idxOf ("Ratio"),
-                      iAt = idxOf ("Attack"), iRe = idxOf ("Release"), iOut = idxOf ("Output");
+            // ---- THE MAP (M9 parameterisation item 2) ----------------------
+            // What can now be wrong that could not be before, asked BEFORE the
+            // conversion rather than discovered during it:
+            //   1. the map's INDEX may address a different parameter (a Bank
+            //      insertion broke 339 indices on this project). Impossible
+            //      while indices came from a name lookup on the live instance.
+            //   2. an OFFSET threshold ladder gives the right GR span with
+            //      every point wrong -- item 1's class, and this suite's
+            //      threshold verdict routes on totalGr, a span.
+            //   3. a RATIO ladder whose values are right and whose norms are
+            //      not lands the plugin elsewhere on a curve the map describes
+            //      correctly; the slope-delta verdict sees only the delta.
+            //   4. a DECLARED BUT WRONG unit family (ms against a seconds
+            //      ladder) scales every time prediction by 1000.
+            // 1 is caught by crossCheckName + a range guard, 2/3/4 by the
+            // map-claim check and the per-point gate below. None was reachable
+            // before, and none is visible to a span or delta verdict.
+            cal = capture.calibrate (*ci, loadedId);
+            currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+            auto compMapFile = ledger.getRoot().getChildFile ("maps")
+                                     .getChildFile (currentFp + ".json");
+            auto compMap = juce::JSON::parse (compMapFile.loadFileAsString());
+            const bool haveCompMap = compMap.isObject();
+            auto thSlot = ejmap::subject::slotFor (compMap, "threshold_db");
+            auto raSlot = ejmap::subject::slotFor (compMap, "ratio");
+            const bool compMapDriven = thSlot.ok() && raSlot.ok();
+            say ("  fp " + currentFp.substring (0, 12) + " | map "
+                 + (haveCompMap ? compMapFile.getFileName() : juce::String ("NONE on this machine")));
+
+            int iTh = idxOf ("Thresh"), iRa = idxOf ("Ratio");
+            const int iAt = idxOf ("Attack"), iRe = idxOf ("Release"), iOut = idxOf ("Output");
+            if (compMapDriven)
+            {
+                // Range guard, then the NAME CROSS-CHECK. Resolution is by
+                // index because that is what the map carries; the name is the
+                // check on it, deliberately the reverse order -- names survived
+                // every version transition measured, indices did not.
+                if (! juce::isPositiveAndBelow (thSlot.index, cp.size())
+                    || ! juce::isPositiveAndBelow (raSlot.index, cp.size()))
+                {
+                    emitInconclusive ("threshold_db", "the map's indices ("
+                        + juce::String (thSlot.index) + ", " + juce::String (raSlot.index)
+                        + ") are outside this instance's " + juce::String (cp.size())
+                        + " parameters -- the map does not describe this plugin");
+                    std::cout << "COMP SUITE: INCONCLUSIVE (map index out of range)" << std::endl;
+                    quitNow(); return;
+                }
+                for (const auto* pr : { &thSlot, &raSlot })
+                {
+                    auto nc = ejmap::subject::crossCheckName (*pr, cp[pr->index]->getName (64));
+                    if (nc.checkable && ! nc.agrees)
+                    {
+                        emitContradicts (pr->semantic, nc.why + ". A verdict computed from this "
+                            "index would be about the wrong parameter, and every span it produced "
+                            "would look plausible. Names survived every version transition this "
+                            "project measured; indices did not");
+                        std::cout << "COMP SUITE: " << fails << " FAILED (map index names the "
+                                     "wrong parameter)" << std::endl;
+                        quitNow(); return;
+                    }
+                    say ("  index/name cross-check: " + pr->semantic + " -> ["
+                         + juce::String (pr->index) + "] map '" + pr->name + "' vs instance '"
+                         + cp[pr->index]->getName (64) + "'"
+                         + (nc.checkable ? " -- agree" : " -- " + nc.why));
+                }
+                iTh = thSlot.index; iRa = raSlot.index;
+                say ("  target FROM THE MAP: threshold_db [" + juce::String (iTh) + "] ladder "
+                     + juce::String (thSlot.ladderLo(), 2) + " .. " + juce::String (thSlot.ladderHi(), 2)
+                     + " | ratio [" + juce::String (iRa) + "] ladder "
+                     + juce::String (raSlot.ladderLo(), 2) + " .. " + juce::String (raSlot.ladderHi(), 2));
+            }
+            else
+                say ("  NO MAP-DRIVEN TARGETS: " + (haveCompMap ? thSlot.why + " / " + raSlot.why
+                                                                : juce::String ("no map for this fp"))
+                     + ". Falling back to name lookup -- this run is a DISPLAY-VS-RENDER "
+                       "SELF-CONSISTENCY CHECK, not a check of any map's claims.");
             say ("  indices: Thresh [" + juce::String (iTh) + "] Ratio [" + juce::String (iRa)
                  + "] Attack [" + juce::String (iAt) + "] Release [" + juce::String (iRe)
                  + "] Output [" + juce::String (iOut) + "]");
@@ -3177,6 +3243,18 @@ public:
                 return r; };
             auto swTh = sweep (iTh); auto swRa = sweep (iRa);
             auto swAt = sweep (iAt); auto swRe = sweep (iRe);
+            // The live sweep stays as the second opinion; the MAP's ladder is
+            // what the suite drives and predicts against, so every downstream
+            // use becomes map-driven by this one substitution rather than by
+            // threading a flag through forty call sites.
+            const auto liveThAnchors = swTh.a, liveRaAnchors = swRa.a;
+            if (compMapDriven)
+            {
+                swTh.a = thSlot.anchors; swRa.a = raSlot.anchors;
+                say ("  ladders now FROM THE MAP (live sweep kept as the second opinion): "
+                     "threshold " + juce::String (swTh.a.size()) + " anchors, ratio "
+                     + juce::String (swRa.a.size()) + " anchors");
+            }
             const juce::String swAtUnit = swAt.unit, swReUnit = swRe.unit;
 
             auto normFor2 = [] (const juce::Array<juce::Array<float>>& a, double v) {
@@ -3209,6 +3287,33 @@ public:
             { std::cout << "COMP SUITE: STOPPED (render plane blind)" << std::endl; quitNow(); return; }
 
             const auto tc0 = juce::Time::getMillisecondCounterHiRes();
+
+            if (! compMapDriven && swTh.a.size() >= 2 && swRa.a.size() >= 2)
+            {
+                juce::Array<ejmap::subject::SelfMapEntry> entries;
+                entries.add ({ "threshold_db", cp[iTh]->getName (64), swTh.unit, iTh, swTh.a });
+                entries.add ({ "ratio",        cp[iRa]->getName (64), swRa.unit, iRa, swRa.a });
+                auto out = ledger.getRoot().getChildFile ("selfmap-" + currentFp + ".json");
+                out.replaceWithText (juce::JSON::toString (
+                    ejmap::subject::selfMapVar (currentFp, ejmap::kMapSchemaString,
+                                                "compressor", entries), false));
+                say ("  self-map written: " + out.getFullPathName());
+            }
+
+            // EXCITATION, DECLARED. comp is the first real consumer of the named
+            // type: this suite cannot measure a threshold on a compressor that
+            // is not compressing, so "ratio to its maximum, threshold to -30"
+            // is not setup code, it is a precondition of every verdict below.
+            // Declaring it here means schema 2.3a serialises a shape that
+            // already has a working consumer, rather than one designed blind.
+            ejmap::subject::ExcitationPlan compPlan;
+            compPlan.source = "suite:comp";
+            compPlan.steps.add ({ iRa, (double) swRa.a.getLast()[0], "ratio",
+                                  "a compressor at 1:1 compresses nothing" });
+            compPlan.steps.add ({ iTh, -30.0, "threshold_db",
+                                  "the threshold must sit below the stimulus" });
+            const auto compExc = ejmap::subject::resolveExcitation (compMap, compPlan);
+            say ("  " + compExc.describe());
 
             // pre-excitation reference: ratio at minimum
             w2 (iRa, normFor2 (swRa.a, swRa.a.getFirst()[0]));
@@ -3340,6 +3445,43 @@ public:
                     line += juce::String (grRows[r][c2] - grRef[c2], 2).paddedLeft (' ', 9) + " |";
                 say (line);
             }
+            // ---- DOES THE PLUGIN DO WHAT THE MAP SAYS? ----------------------
+            // The same check item 1 introduced, through the SHARED helper --
+            // not a second copy. It is what sees failures 2, 3 and 4 above:
+            // each is a value<->norm disagreement that leaves the span intact.
+            // ONE REPORT PER SEMANTIC. Pooling them into a single worst-error
+            // named the wrong parameter: a ratio ladder with bad norms produced
+            // a contradiction attributed to threshold_db, whose every point was
+            // exact. Routing right with wrong words is the failure the verdict
+            // fork exists to prevent, and it reappears wherever evidence from
+            // two parameters is merged before it is attributed.
+            ejmap::subject::MapClaimReport thClaims, raClaims;
+            if (compMapDriven)
+            {
+                auto writeTo = [&] (int idx) { return [&, idx] (float n) { w2 (idx, n); }; };
+                auto readOf  = [&] (int idx) { return [&, idx] { return cp[idx]->getCurrentValueAsText(); }; };
+                for (double v : { thrPoints[0], thrPoints[1], thrPoints[2], thrPoints[3] })
+                    thClaims.add (ejmap::subject::checkMapClaim (thSlot, v,
+                                      writeTo (iTh), readOf (iTh)));
+                for (double v : { 2.0, 10.0 })
+                    raClaims.add (ejmap::subject::checkMapClaim (raSlot, v,
+                                      writeTo (iRa), readOf (iRa)));
+                say ("");
+                say ("  MAP-CLAIM CHECK, threshold_db");
+                for (const auto& r : thClaims.rows) say (r);
+                say ("    worst " + juce::String (thClaims.worst, 2) + " dB over "
+                     + juce::String (thClaims.checked - thClaims.unparsed) + " readable points");
+                say ("  MAP-CLAIM CHECK, ratio");
+                for (const auto& r : raClaims.rows) say (r);
+                say ("    worst " + juce::String (raClaims.worst, 2) + " :1 over "
+                     + juce::String (raClaims.checked - raClaims.unparsed) + " readable points"
+                     + (raClaims.unparsed > 0 ? " (" + juce::String (raClaims.unparsed)
+                                                + " unreadable -- a ratio display of 'Inf' is a "
+                                                  "real landing, not a parse failure)" : ""));
+                // restore the excitation state the claim walk just disturbed
+                w2 (iRa, normFor2 (swRa.a, swRa.a.getLast()[0]));
+            }
+
             // verdict: GR must move monotonically with threshold at the loudest probe
             bool monotone = true; double totalGr = 0;
             for (int r = 1; r < grRows.size(); ++r)
@@ -3355,6 +3497,25 @@ public:
             const double predGr = predSpan * (1.0 - 1.0 / ratioMax);
             const double sgKneeFloor = sgKnee > 0.1 ? sgKnee : 0.1;
             const double tolGr = juce::jmax (0.25 * predGr, 4.0 * sgKneeFloor);
+            // PER-POINT ACCURACY GATES THE SPAN VERDICT. totalGr is a span, and
+            // a uniformly offset ladder produces the right span with every
+            // point in the wrong place. Measured on the limiter in item 1:
+            // CONFIRMS carrying a 7.20 dB error in its evidence.
+            if (compMapDriven && thClaims.worst > juce::jmax (0.25 * std::abs (predSpan), 1.0))
+            {
+                emitContradicts ("threshold_db",
+                    "the ladder's SPAN is intact (" + juce::String (predSpan, 1)
+                    + " dB predicted) but the plugin does not land where the map says: worst "
+                      "|map claim - plugin| " + juce::String (thClaims.worst, 2)
+                    + " dB over " + juce::String (thClaims.checked - thClaims.unparsed)
+                    + " points. A span verdict cannot see this -- an offset ladder moves by the "
+                      "right amount with every point wrong. The map does not describe this plugin "
+                      "as installed: stale, made in another mode or preset, or made against "
+                      "another version");
+                std::cout << "COMP SUITE: " << fails << " FAILED (map claims not met)" << std::endl;
+                quitNow(); return;
+            }
+
             emitVerdict ("threshold_db (GR-at-level, PRIMARY)",
                   totalGr, predGr, juce::jmax (sgKneeFloor, 0.001), tolGr,
                   "threshold " + juce::String (P::predictedLanding (swTh.a, thrPoints[0]), 1)
@@ -3379,6 +3540,20 @@ public:
             const double predSlopeLo = 1.0 / predRLo, predSlopeHi = 1.0 / predRHi;
             const double predDS = predSlopeHi - predSlopeLo, measDS = sHi.slopeAbove - sLo.slopeAbove;
             const double tolS = juce::jmax (0.25 * std::abs (predDS), 4 * sgSlope);
+            if (compMapDriven && raClaims.worst > juce::jmax (0.25 * std::abs (rHi - rLo), 0.5))
+            {
+                emitContradicts ("ratio",
+                    "the map's ratio ladder does not land where it says: worst |map claim - "
+                    "plugin| " + juce::String (raClaims.worst, 2) + ":1 over "
+                    + juce::String (raClaims.checked - raClaims.unparsed) + " readable points. The "
+                      "ladder's VALUES may be correct while its norms are not, which puts the "
+                      "plugin somewhere else on a curve the map describes accurately -- the "
+                      "slope-delta verdict below sees only the delta and would not notice");
+                std::cout << "COMP SUITE: " << fails << " FAILED (ratio map claims not met)"
+                          << std::endl;
+                quitNow(); return;
+            }
+
             emitVerdict ("ratio", measDS, predDS, juce::jmax (sgSlope, 0.0001), tolS,
                   "ladder " + juce::String (predRLo, 2) + ":1 -> " + juce::String (predRHi, 2)
                   + ":1 => predicted slope " + juce::String (predSlopeLo, 3) + " -> "
@@ -3443,7 +3618,9 @@ public:
                           + P::modeTokenReason (disp)
                           + ". Carve-out 1 exclusion (a) FAILS: a suppressing state is present. "
                             "No contradicts may be issued. Measured anyway for the record: tau "
-                          + juce::String (tA, 1) + " -> " + juce::String (tB, 1) + " ms.");
+                          + juce::String (tA, 1) + " -> " + juce::String (tB, 1) + " ms.",
+                          "measured, and the parameter did not move the envelope; carve-out 1 "
+                          "governs whether that is suppression or absence");
                     continue;
                 }
                 if (unitFam.isEmpty())
@@ -3461,7 +3638,9 @@ public:
                                        "(--gate-m9 relwalk) showed the ladder is monotone up and "
                                        "plateaus, so a two-point read here samples the plateau and "
                                        "must not be reported as a reversal")
-                          + ". Recorded as evidence; no verdict.");
+                          + ". Recorded as evidence; no verdict.",
+                          "measured, and the direction recorded; the ladder's unit family is "
+                          "undeclared, so there is no numeric prediction to test against");
                     continue;
                 }
                 const double predRatio = std::log2 (P::predictedLanding (sw.a, hi)
