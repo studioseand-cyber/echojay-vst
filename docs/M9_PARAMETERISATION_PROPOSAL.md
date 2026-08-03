@@ -315,6 +315,96 @@ comp declares `ratio → max` and `threshold → −30` through the named type, 
 
 ---
 
+## 4e. Item 5a built: excitation plans serialised, and applied (3 August 2026)
+
+Schema **2.2 → 2.3**. A map may carry `excitation`: an array of
+`{index, value, semantic, why}`. Absent means unavailable, so every map
+already written resolves to its suite's declared plan and stays probeable.
+
+**`applyExcitation()` lands with the serialised form, and the inline writes are
+deleted.** comp's excitation is now applied only through the plan. An unlanded
+write or an out-of-range index is reported rather than assumed: the suite
+stops with `INCONCLUSIVE (excitation did not apply)` rather than measuring a
+compressor that was never put into the state its verdicts assume.
+
+Proven end to end with a map declaring `ratio → 6:1` where the suite's own
+plan says 10:1. The map's plan wins, the run measures **5.95 dB against 12.50
+predicted**, and the suite-plan run still measures **6.41 against 13.50** —
+the pre-parameterisation baseline, unchanged.
+
+### What building it found: a declared plan can be silently overridden
+
+The first working version resolved and applied the map's plan, printed
+`excitation from map: ratio[2] -> 6.00`, and then measured at 10:1 — because a
+later line re-established the excitation with `swRa.a.getLast()[0]`, the
+ladder's top. **One inline write deleted, three left standing.** The report
+asserted a state the measurement did not run in, which is the false-comment
+class in output rather than in a comment.
+
+Three fixes, all of the same shape — ask the plan, never the ladder:
+
+1. the two re-establishing writes now use `compExc.valueFor("ratio", ...)`;
+2. the **prediction** uses the ratio actually established, not the ladder's
+   maximum — otherwise it predicts 10:1 behaviour from a plugin sitting at
+   6:1 and reads the difference as the plugin's fault;
+3. the evidence sentence prints the established ratio, having said
+   `at ratio 10.0:1 predicts 12.50` about a number computed from 6:1.
+
+The general lesson for the remaining suites: **deleting the first inline write
+is not the same as deleting the path.** A declared plan is only the real path
+when nothing else can establish the same state.
+
+### Schema bump forced a better gate rule
+
+Pinning `map schema == kMapSchemaString` in the corpus check meant every bump
+broke the gate on real maps, leaving only two ways to green: rewrite the
+corpus — mutating evidence — or never bump. The check now expresses the real
+rule: this binary can **read** any map at or below its own schema, and maps it
+**emits** carry the current string, pinned separately.
+
+Drift gate 161 → 165, including three `applyExcitation` cases: every step
+applied in order, unlanded writes reported rather than assumed, and an
+out-of-range index refused rather than clamped.
+
+---
+
+## Why resolution is INDEX-FIRST with the name as the check
+
+Recorded because the intuitive order is the wrong one and someone will
+otherwise "fix" it back.
+
+A parameterised suite has two handles on a mapped parameter: the **index** the
+map recorded, and the **name** the map recorded beside it. The instinct is to
+resolve by name — names are meaningful, indices are opaque — and to treat the
+index as a hint.
+
+**The measurements on this project say the opposite.** Names survived every
+version transition measured, including a `Bank` insertion that broke **339
+indices** in one release. Indices are the volatile handle; names are the
+stable one.
+
+So the map is *authored* against indices because that is what a host writes
+to, and the suite *resolves* by index because that is the only thing that can
+actually drive a parameter — but the name is then used to **check** that the
+index still points where the map thought. That ordering means a shifted index
+is caught by a disagreement rather than silently obeyed:
+
+```
+CONTRADICTS threshold_db: the map's threshold_db points at index 1, which the
+map calls 'Thresh' and this instance calls 'Attack'. A verdict computed from
+this index would be about the wrong parameter, and every span it produced
+would look plausible.
+```
+
+Resolving by name instead would quietly "repair" a stale map by finding the
+right parameter under its new index — and the map would stay wrong, the tool
+would report success, and the consumer that dials by index would still write
+to the wrong place. **The probe must fail where the consumer would fail.**
+Repair is a separate operation (M12's name-based transfer) and it must be a
+decision, not a side effect of a verification pass.
+
+---
+
 ## Appendix: the uid-ambiguity refusal, tested (3 August 2026)
 
 The other three runner refusals were proven by attempting them. This one is now too, and it is load-bearing rather than defensive.

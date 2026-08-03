@@ -433,6 +433,18 @@ struct ExcitationPlan
 
     bool declared() const { return source != "none" && ! steps.isEmpty(); }
 
+    /** The declared value for a semantic, or `fallback` when the plan says
+        nothing about it. Suites re-establishing excitation between measurement
+        blocks must ask HERE: reading the ladder's own maximum instead is how a
+        map-declared ratio of 6:1 got silently overwritten with 10:1 while the
+        report still said 6. */
+    double valueFor (const juce::String& semantic, double fallback) const
+    {
+        for (const auto& s : steps)
+            if (s.semantic == semantic) return s.value;
+        return fallback;
+    }
+
     juce::String describe() const
     {
         if (! declared()) return "no excitation plan (source: " + source + ")";
@@ -444,6 +456,46 @@ struct ExcitationPlan
     }
 };
 
+/** THE RESULT OF APPLYING A PLAN. Reported, never assumed: a write that did
+    not land is the difference between "the plugin was excited" and "the suite
+    believes the plugin was excited". */
+struct ExcitationResult
+{
+    int applied = 0, unlanded = 0, outOfRange = 0;
+    juce::String source, detail;
+    bool ok() const { return unlanded == 0 && outOfRange == 0 && applied > 0; }
+};
+
+/** APPLY the plan. `write` returns the landing time in ms, negative if the
+    write never landed -- the same contract writeAndServiceRunloop already has.
+
+    This exists because comp declared a plan and then wrote its excitation
+    inline anyway: the declaration described the code instead of being it, and
+    a description beside an implementation is the false-comment class with a
+    struct around it. The inline writes are deleted; this is the only path.
+*/
+template <typename WriteFn>
+inline ExcitationResult applyExcitation (const ExcitationPlan& plan, int paramCount,
+                                         WriteFn&& write)
+{
+    ExcitationResult r;
+    r.source = plan.source;
+    juce::StringArray notes;
+    for (const auto& st : plan.steps)
+    {
+        if (! juce::isPositiveAndBelow (st.index, paramCount))
+        { ++r.outOfRange;
+          notes.add (st.semantic + "[" + juce::String (st.index) + "] is outside the instance's "
+                     + juce::String (paramCount) + " parameters");
+          continue; }
+        const double ms = write (st.index, st.value, st.semantic);
+        if (ms < 0) { ++r.unlanded; notes.add (st.semantic + " did not land"); }
+        else ++r.applied;
+    }
+    r.detail = notes.joinIntoString ("; ");
+    return r;
+}
+
 /** THE SINGLE RESOLUTION POINT. Every suite asks here and nowhere else.
 
     Order: the map's own plan wins when one exists (schema 2.3a), otherwise the
@@ -454,8 +506,9 @@ struct ExcitationPlan
 inline ExcitationPlan resolveExcitation (const juce::var& mapVar,
                                          const ExcitationPlan& suiteDeclared)
 {
-    // SCHEMA 2.3a HOOK. Nothing writes this key yet; the branch is here so
-    // that landing 2.3a is an edit to one function rather than a search.
+    // SCHEMA 2.3a, SERIALISED. `excitation` is an array of
+    // {index, value, semantic, why}. Absent means unavailable, so every
+    // schema-2.2 map still resolves to its suite's declared plan.
     if (auto* arr = mapVar.getProperty ("excitation", juce::var()).getArray())
     {
         ExcitationPlan p;

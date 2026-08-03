@@ -68,8 +68,8 @@ namespace schemaDetail
     }
 }
 
-inline constexpr int         kMapSchemaVersion = 22;      // 2.2
-inline constexpr const char* kMapSchemaString  = "2.2";
+inline constexpr int         kMapSchemaVersion = 23;      // 2.3
+inline constexpr const char* kMapSchemaString  = "2.3";
 
 static_assert (schemaDetail::schemaStringMatches (kMapSchemaString, kMapSchemaVersion),
                "kMapSchemaVersion and kMapSchemaString disagree. Bump both together, "

@@ -69,10 +69,10 @@ void testSchemaVersionPinned()
     // is in EjmapSchema.h, which this file includes: drift stops this target at
     // the compiler, before these run. These stay as the runtime restatement, so
     // a binary that somehow linked against a different constant still says so.
-    check (ejmap::kMapSchemaVersion == 22, "kMapSchemaVersion is 22");
+    check (ejmap::kMapSchemaVersion == 23, "kMapSchemaVersion is 23");
     check (&ejmap::kMapSchemaVersion == &echojay::kMapSchemaVersion,
            "ejmap and echojay name the same object, not two copies");
-    check (juce::String (ejmap::kMapSchemaString) == "2.2", "kMapSchemaString is 2.2");
+    check (juce::String (ejmap::kMapSchemaString) == "2.3", "kMapSchemaString is 2.3");
 }
 
 void testVerdictSemantics()
@@ -658,8 +658,21 @@ void testAgainstRealMaps()
         auto v = juce::JSON::parse (entry.getFile().loadFileAsString());
         check (v.isObject(), "map parses: " + entry.getFile().getFileName());
 
-        check (v.getProperty ("schema", "").toString() == ejmap::kMapSchemaString,
-               "map schema matches binary: " + entry.getFile().getFileName());
+        // READABLE, not identical. Pinning equality here meant every schema
+        // bump broke the gate on real maps, and the only ways to make it green
+        // again are to rewrite the corpus -- mutating evidence -- or to not
+        // bump. The actual rule is that this binary can READ any map at or
+        // below its own schema; maps it EMITS carry the current string, which
+        // testPayloadSerialises pins separately.
+        {
+            const auto ms = v.getProperty ("schema", "").toString();
+            const int major = ms.upToFirstOccurrenceOf (".", false, false).getIntValue();
+            const int minor = ms.fromFirstOccurrenceOf (".", false, false).getIntValue();
+            const int mv = major * 10 + minor;
+            check (mv > 0 && mv <= ejmap::kMapSchemaVersion,
+                   "map schema " + ms + " is readable by this binary ("
+                   + ejmap::kMapSchemaString + "): " + entry.getFile().getFileName());
+        }
 
         // The write-level round trip runs against the synthetic instance in
         // testRoundTripThroughApplySettings, because this gate must not load
@@ -1245,13 +1258,41 @@ void testSubjectLookups()
 
     auto viaSuite = resolveExcitation (map, suitePlan);
     check (viaSuite.source == "suite:comp" && viaSuite.declared(),
-           "excitation: a schema-2.2 map falls through to the suite's plan");
+           "excitation: a map with no excitation key falls through to the suite's plan");
 
     ExcitationPlan none;
     check (! resolveExcitation (map, none).declared(),
            "excitation: absent everywhere is 'none', not an empty plan pretending to be one");
 
-    // the 2.3a hook: a map carrying a plan wins
+    // ---- applyExcitation: declaration and application are one act --------
+    {
+        ExcitationPlan p2;
+        p2.source = "suite:test";
+        p2.steps.add ({ 3, 10.0, "ratio", "a compressor at 1:1 compresses nothing" });
+        p2.steps.add ({ 1, -30.0, "threshold_db", "below the stimulus" });
+
+        juce::Array<int> wroteIdx; juce::Array<double> wroteVal;
+        auto r = applyExcitation (p2, 8, [&] (int i, double v, const juce::String&)
+                                  { wroteIdx.add (i); wroteVal.add (v); return 1.0; });
+        check (r.applied == 2 && r.ok(), "applyExcitation applies every step");
+        check (wroteIdx.size() == 2 && wroteIdx[0] == 3 && wroteVal[1] == -30.0,
+               "applyExcitation writes the declared indices and values, in order");
+
+        // an unlanded write is REPORTED, never assumed away
+        auto r2 = applyExcitation (p2, 8, [] (int, double, const juce::String&) { return -1.0; });
+        check (r2.unlanded == 2 && ! r2.ok() && r2.detail.contains ("did not land"),
+               "applyExcitation reports unlanded writes rather than assuming excitation");
+
+        // an index the instance does not have is refused, not clamped
+        // paramCount 2: index 3 is out of range, index 1 is not. The step that
+        // CAN apply still does, and the plan is not ok() because one could not.
+        auto r3 = applyExcitation (p2, 2, [] (int, double, const juce::String&) { return 1.0; });
+        check (r3.outOfRange == 1 && r3.applied == 1 && ! r3.ok()
+                 && r3.detail.contains ("outside the instance's 2 parameters"),
+               "applyExcitation REFUSES an out-of-range index rather than clamping it");
+    }
+
+    // the 2.3a serialised form: a map carrying a plan wins
     auto* st = new juce::DynamicObject();
     st->setProperty ("index", 40);
     st->setProperty ("value", 1.0);
@@ -1261,7 +1302,7 @@ void testSubjectLookups()
     m23->setProperty ("excitation", juce::var (juce::Array<juce::var> { juce::var (st) }));
     auto viaMap = resolveExcitation (juce::var (m23), suitePlan);
     check (viaMap.source == "map" && viaMap.steps.size() == 1 && viaMap.steps[0].index == 40,
-           "excitation: a map plan overrides the suite plan (the 2.3a hook, wired ahead of the schema)");
+           "excitation: a map plan overrides the suite plan (schema 2.3a, serialised)");
     check (viaMap.describe().contains ("xl_stage[40]") && viaMap.describe().contains ("bypassed"),
            "excitation: the plan describes itself, including WHY a step exists");
 }

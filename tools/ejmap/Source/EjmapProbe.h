@@ -906,24 +906,34 @@ struct Probe
         invent its own. Carve-out 1's exclusions are named in the deafness
         text because they are what must run before any promotion.
     */
-    static juce::String routeText (Route r, double movedDb, double predDb, double floorDb)
+    /** `unit` is REQUIRED and comes from the caller. This function used to
+        write "dB" into every route sentence, which was false for comp's ratio
+        verdict -- a slope delta, dimensionless -- printing "moved 0.38 dB
+        against 0.40 dB predicted" about a ratio. It would be false again for
+        eq (octaves) and for attack/release (ms). Fixed explanatory text at a
+        shared exit is the same trap as a fixed inconclusive basis: it answers
+        confidently for callers it knows nothing about, and only the caller
+        knows the units of its own measurement. */
+    static juce::String routeText (Route r, double movedDb, double predDb, double floorDb,
+                                   const juce::String& unit)
     {
+        const juce::String u = unit.isEmpty() ? juce::String() : " " + unit;
         switch (r)
         {
             case Route::deafness:
                 return "INCONCLUSIVE: possibly mode-suppressed -- the feature did not move above "
-                       "its floor (" + juce::String (std::abs (movedDb), 2) + " dB against 4*sigma "
-                     + juce::String (4.0 * floorDb, 2) + " dB) while " + juce::String (predDb, 2)
-                     + " dB was predicted. Carve-out 1 governs: promotion to contradicts requires "
+                       "its floor (" + juce::String (std::abs (movedDb), 2) + u + " against 4*sigma "
+                     + juce::String (4.0 * floorDb, 2) + u + ") while " + juce::String (predDb, 2)
+                     + u + " was predicted. Carve-out 1 governs: promotion to contradicts requires "
                        "(a) no suppressing mode in the map AND (b) no gesture evidence at this index";
             case Route::overClaim:
                 return "OVER-CLAIM: the feature MOVED (" + juce::String (std::abs (movedDb), 2)
-                     + " dB, above its floor) but by the wrong magnitude against "
-                     + juce::String (std::abs (predDb), 2) + " dB predicted";
+                     + u + ", above its floor) but by the wrong magnitude against "
+                     + juce::String (std::abs (predDb), 2) + u + " predicted";
             case Route::tracks:
             default:
                 return "tracks: moved " + juce::String (std::abs (movedDb), 2)
-                     + " dB against " + juce::String (std::abs (predDb), 2) + " dB predicted";
+                     + u + " against " + juce::String (std::abs (predDb), 2) + u + " predicted";
         }
     }
 

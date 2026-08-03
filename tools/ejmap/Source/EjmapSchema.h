@@ -38,7 +38,7 @@ using echojay::kMapSchemaString;
 // field set. If the shared constant moves, this fails and the writer gets read
 // before it ships maps EchoJay would parse differently. Bumping the wire format
 // means changing this pin deliberately, in the same commit as the writer.
-static_assert (kMapSchemaVersion == 22,
+static_assert (kMapSchemaVersion == 23,
                "EjmapSchema.h's payload writer targets schema 2.2. The shared "
                "kMapSchemaVersion in Source/EchoJayParamApply.h has moved: update "
                "the writer, then this pin.");

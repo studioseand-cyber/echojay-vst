@@ -1628,7 +1628,8 @@ public:
         auto emitVerdict = [&] (const juce::String& semantic,
                                 double measured, double predicted,
                                 double floor, double tolerance,
-                                const juce::String& evidence)
+                                const juce::String& evidence,
+                                const juce::String& unit)
         {
             const auto route = P::routeVerdict (measured, floor, predicted, tolerance);
             if (route == P::Route::overClaim) ++fails;
@@ -1639,10 +1640,11 @@ public:
                                : route == P::Route::deafness ? "INCONCLUSIVE"
                                                              : "CONTRADICTS ")
                       << " " << semantic << ": "
-                      << P::routeText (route, measured, predicted, floor)
+                      << P::routeText (route, measured, predicted, floor, unit)
                       << " | " << evidence << std::endl;
             batchRows.add ({ semantic, label,
-                             P::routeText (route, measured, predicted, floor) + " | " + evidence });
+                             P::routeText (route, measured, predicted, floor, unit)
+                             + " | " + evidence });
             return route;
         };
 
@@ -2537,7 +2539,7 @@ public:
                  + juce::String (predForRoute, 2) + " dB");
             say ("  ROUTING: feature moved " + juce::String (featMoved, 2)
                  + " dB against a predicted " + juce::String (predForRoute, 2) + " dB -> "
-                 + P::routeText (route, featMoved, predForRoute, juce::jmax (sgPlateau, 0.088)));
+                 + P::routeText (route, featMoved, predForRoute, juce::jmax (sgPlateau, 0.088), "dB"));
             if (route == P::Route::deafness)
             {
                 say ("  carve-out 1 exclusion (a) mode states on this plugin:");
@@ -2601,7 +2603,8 @@ public:
                   + "worst |feature - ladder| " + juce::String (worstPl, 2) + " dB vs tol "
                   + juce::String (tolPl, 2) + "; corroborating knee estimator "
                   + (knErr.isEmpty() ? juce::String ("found no resolvable corner")
-                                     : "worst " + juce::String (worstKn, 2) + " dB"));
+                                     : "worst " + juce::String (worstKn, 2) + " dB"),
+                  "dB");
             std::cout << (isLim ? "LIMITER" : "GATE") << " SUITE: "
                       << (fails == 0 ? "PASS" : juce::String (fails) + " FAILED") << std::endl;
             quitNow(); return;
@@ -2851,7 +2854,8 @@ public:
                   + " dB across drive " + juce::String (landeds.getFirst(), 2) + " -> "
                   + juce::String (landeds.getLast(), 2) + " (moved " + juce::String (thdMoved, 2)
                   + " dB), monotone: " + (mono ? "YES" : "NO")
-                  + ". Harmonic profile recorded as evidence, no verdict issued on it.");
+                  + ". Harmonic profile recorded as evidence, no verdict issued on it.",
+                  "dB");
             std::cout << "SATURATION SUITE: " << (fails == 0 ? "PASS" : "FAILED") << std::endl;
             quitNow(); return;
         }
@@ -3320,10 +3324,35 @@ public:
             w2 (iTh, normFor2 (swTh.a, 0.0));
             auto preC = curve();
             auto preF = feats (preC);
-            // EXCITATION: ratio high + threshold low, verified by signal
+            // EXCITATION: APPLIED THROUGH THE PLAN, not beside it. The inline
+            // writes that stood here are deleted -- a declared plan that
+            // something else re-implements is the false-comment class with a
+            // struct around it, and the two would drift the first time either
+            // changed.
             const double ratHi = swRa.a.getLast()[0];
-            w2 (iRa, normFor2 (swRa.a, ratHi));
-            w2 (iTh, normFor2 (swTh.a, -30.0));
+            const auto excResult = ejmap::subject::applyExcitation (compExc, cp.size(),
+                [&] (int idx, double value, const juce::String&) -> double
+                {
+                    const auto& ladder = (idx == iRa) ? swRa.a : swTh.a;
+                    const double ms = P::writeAndServiceRunloop (*cp[idx], normFor2 (ladder, value));
+                    if (ms < 0) { unl = true; say ("  WRITE UNLANDED [" + juce::String (idx) + "]"); }
+                    else { wMax = juce::jmax (wMax, ms); ++wN; }
+                    return ms;
+                });
+            say ("  excitation applied from " + excResult.source + ": "
+                 + juce::String (excResult.applied) + " step(s) landed"
+                 + (excResult.ok() ? "" : ", " + juce::String (excResult.unlanded) + " unlanded, "
+                    + juce::String (excResult.outOfRange) + " out of range -- " + excResult.detail));
+            if (! excResult.ok())
+            {
+                emitInconclusive ("threshold_db", "the excitation plan did not apply ("
+                    + excResult.detail + "), so the compressor was not put into the state every "
+                      "verdict below assumes. Measuring anyway would attribute an unexcited "
+                      "plugin's silence to its parameters",
+                    "the excitation plan failed to apply; nothing downstream was measured");
+                std::cout << "COMP SUITE: INCONCLUSIVE (excitation did not apply)" << std::endl;
+                quitNow(); return;
+            }
             auto excC = curve();
             auto excF2 = feats (excC);
             double curveDelta = 0;
@@ -3415,7 +3444,11 @@ public:
             // corroboration where a resolvable corner exists.
             say ("");
             say ("THRESHOLD via GAIN REDUCTION AT FIXED LEVEL (primary test)");
-            w2 (iRa, normFor2 (swRa.a, swRa.a.getLast()[0]));    // ratio high, fixed
+            // RE-ESTABLISHED FROM THE PLAN, not from the ladder's maximum. This
+            // line used to write the ladder top and silently overrode a
+            // map-declared ratio, while the run still reported the map's value.
+            const double excRatio = compExc.valueFor ("ratio", (double) swRa.a.getLast()[0]);
+            w2 (iRa, normFor2 (swRa.a, excRatio));
             const double probeLevels[] = { -30.0, -20.0, -10.0 };
             const double thrPoints[]   = { -20.0, -15.0, -10.0, -5.0 };
             say ("     threshold | landed |  GR@-30  |  GR@-20  |  GR@-10   (dB PEAK, vs the "
@@ -3479,7 +3512,7 @@ public:
                                                 + " unreadable -- a ratio display of 'Inf' is a "
                                                   "real landing, not a parse failure)" : ""));
                 // restore the excitation state the claim walk just disturbed
-                w2 (iRa, normFor2 (swRa.a, swRa.a.getLast()[0]));
+                w2 (iRa, normFor2 (swRa.a, excRatio));   // the plan's ratio, not the ladder top
             }
 
             // verdict: GR must move monotonically with threshold at the loudest probe
@@ -3493,7 +3526,11 @@ public:
             totalGr = std::abs (grRows.getFirst().getLast() - grRef.getLast());
             const double predSpan = std::abs (P::predictedLanding (swTh.a, thrPoints[3])
                                             - P::predictedLanding (swTh.a, thrPoints[0]));
-            const double ratioMax = swRa.a.getLast()[0] > 1.01f ? (double) swRa.a.getLast()[0] : 1.01;
+            // The prediction must describe the state the plugin is ACTUALLY in.
+            // Using the ladder's maximum here would predict 10:1 behaviour from
+            // a plugin the plan had set to 6:1, and the error would be read as
+            // the plugin's fault.
+            const double ratioMax = juce::jmax (1.01, P::predictedLanding (swRa.a, excRatio));
             const double predGr = predSpan * (1.0 - 1.0 / ratioMax);
             const double sgKneeFloor = sgKnee > 0.1 ? sgKnee : 0.1;
             const double tolGr = juce::jmax (0.25 * predGr, 4.0 * sgKneeFloor);
@@ -3521,11 +3558,15 @@ public:
                   "threshold " + juce::String (P::predictedLanding (swTh.a, thrPoints[0]), 1)
                   + " -> " + juce::String (P::predictedLanding (swTh.a, thrPoints[3]), 1)
                   + " dB across " + juce::String (predSpan, 1) + " dB at ratio "
-                  + juce::String (swRa.a.getLast()[0], 1) + ":1 predicts " + juce::String (predGr, 2)
+                  // the ratio the excitation plan ACTUALLY established, not the
+                  // ladder's top: printing the top said "at ratio 10.0:1
+                  // predicts 12.50" about a prediction computed from 6:1.
+                  + juce::String (ratioMax, 1) + ":1 predicts " + juce::String (predGr, 2)
                   + " dB of GR change at -10 dBFS; MEASURED " + juce::String (totalGr, 2)
                   + " dB, monotone: " + (monotone ? "YES" : "NO") + ", error "
                   + juce::String (std::abs (totalGr - predGr), 2) + " vs tol "
-                  + juce::String (tolGr, 2));
+                  + juce::String (tolGr, 2),
+                  "dB");
 
             // ---- ratio A/B (excitation: threshold low) ---------------------
             say ("");
@@ -3563,12 +3604,14 @@ public:
                   + " => " + juce::String (sLo.slopeAbove > 0.01 ? 1.0 / sLo.slopeAbove : 0.0, 2)
                   + ":1 -> " + juce::String (sHi.slopeAbove > 0.01 ? 1.0 / sHi.slopeAbove : 0.0, 2)
                   + ":1), error " + juce::String (std::abs (measDS - predDS), 3)
-                  + " vs tol " + juce::String (tolS, 3));
+                  + " vs tol " + juce::String (tolS, 3),
+                  // a slope DELTA: output dB per input dB. Never "dB".
+                  "dB/dB");
 
             // ---- attack / release A/B --------------------------------------
             say ("");
             say ("ENVELOPE (excitation: threshold -30, ratio max, verified)");
-            w2 (iRa, normFor2 (swRa.a, ratHi));
+            w2 (iRa, normFor2 (swRa.a, excRatio));   // the plan's ratio
             for (int which = 0; which < 2; ++which)
             {
                 const bool atk = which == 0;
@@ -3655,7 +3698,10 @@ public:
                       + juce::String (predRatio, 2) + "); measured tau "
                       + (defined ? juce::String (tA, 0) + " -> " + juce::String (tB, 0) + " ms (log2 "
                                    + juce::String (measRatio, 2) + ")"
-                                 : juce::String ("UNDEFINED (excursion below 1 dB -- no tau fitted)")));
+                                 : juce::String ("UNDEFINED (excursion below 1 dB -- no tau fitted)")),
+                  // log2 of a TIME RATIO, dimensionless. "dB" here would have
+                      // described milliseconds as decibels.
+                      "log2 ratio");
             }
 
             say ("");

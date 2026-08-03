@@ -946,6 +946,64 @@ identity before trusting anything measured there. The merged-tree checks were
 re-run only because the refusal happened to be visible in the output; had it
 scrolled past, the report would have been false.
 
+## ATTRIBUTION IS LOST WHEREVER EVIDENCE FROM TWO SOURCES IS MERGED BEFORE IT IS ATTRIBUTED (3 August 2026)
+
+**Instance 1.** comp's first map-claim implementation kept ONE report for the
+whole suite. A specimen with a correct threshold ladder and a corrupted ratio
+ladder — every threshold point exact to 0.00 dB — reported
+`CONTRADICTS threshold_db`. The measurement was right, the merge destroyed the
+attribution, and the sentence named a parameter that was fine.
+
+The fix is structural, not careful wording: **one report per semantic, each
+gating its own verdict, in its own units.** Merging is what loses the
+attribution, so nothing is merged.
+
+**Where it bites next: eq.** Three parameters share a band — `freq_hz`,
+`gain_db`, `q` — driven against one spectrum and one set of lobe features. A q
+failure reported as `freq_hz` is this defect exactly, and the shared feature
+extraction makes the merge the natural way to write it. Item 3 carries the
+same rule in: per-semantic reports, per-semantic gates, per-semantic units
+(octaves, dB, and a width ratio — three different units on one band).
+
+This is a sibling of *routing right with wrong words*: there the route was
+correct and the language wrong; here the measurement is correct and the
+subject wrong. Both produce a sentence that is confidently about the wrong
+thing.
+
+---
+
+## ANY FIXED EXPLANATORY TEXT AT A SHARED EXIT IS THE SAME TRAP (3 August 2026)
+
+A shared exit knows the shape of what it is reporting and nothing about the
+caller's subject matter. Text written there answers for callers it knows
+nothing about.
+
+- **`emitInconclusive`'s basis, twice.** A fixed suffix said *no measurement
+  was taken*, false at the excitation guard where four renders were taken.
+  Replacing it with a bool produced a second fixed suffix saying *the feature
+  never appeared*, false at the envelope sites where tau moved 11.5 → 63.7 ms
+  and the obstacle was an undeclared unit family. Two false suffixes in three
+  lines of the same function.
+- **`routeText`'s units.** Found by the audit this class prompted. Every route
+  sentence hard-coded **dB**, so comp's ratio verdict — a slope delta, output
+  dB per input dB — printed `moved 0.38 dB against 0.40 dB predicted` about a
+  ratio, and attack/release printed a log2 time ratio as decibels. `unit` is
+  now a REQUIRED argument at both `routeText` and `emitVerdict`: five call
+  sites, five different answers (dB, dB, dB, `dB/dB`, `log2 ratio`). Making it
+  required rather than defaulted is deliberate — a default is how the trap
+  regrows.
+
+**The rule:** a shared exit may format, count and route. It may not explain.
+Explanation belongs to the caller, who is the only one who knows why.
+
+**Audit result (3 August 2026):** `routeText` was the last shared exit
+carrying fixed explanatory text. `emitVerdict` now composes only from
+caller-supplied units and evidence; `emitContradicts` and `emitInconclusive`
+take their whole reason and basis from the caller; `assertHarness` prints
+numbers only; `MapClaimReport` states what it measured without saying why.
+
+---
+
 ## DOCUMENTATION ASSERTING A PROPERTY THE CODE LACKS (new mechanism, 3 August 2026)
 
 A member of the verification family, and the worst-behaved one: it does not
