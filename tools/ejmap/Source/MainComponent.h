@@ -2662,6 +2662,69 @@ public:
         // THE SEND, AND ITS THREE REFUSALS, ATTEMPTED. A refusal that has never
         // fired is the misplaced-guard class, and on a network write the
         // untested one is the one that double-submits.
+        // MONO/STEREO LOAD DIAGNOSIS. Times each stage separately so a hang is
+        // attributed to a stage rather than to "loading". Instrumentation only.
+        if (mode.startsWith ("monotest"))
+        {
+            const char* ids[] = {
+                "AudioUnit:Effects/aufx,76CM,ksWV",   // CLA-76 (m)   <- reported hang
+                "AudioUnit:Effects/aufx,76CS,ksWV",   // CLA-76 (s)   <- maps fine
+                "AudioUnit:Effects/aufx,APCM,ksWV",   // API-2500 (m) <- mono, works all session
+                "AudioUnit:Effects/aufx,LA2M,ksWV",   // CLA-2A (m)
+                "AudioUnit:Effects/aufx,LA2S,ksWV",   // CLA-2A (s)
+            };
+            say ("MONOTEST: per-stage timing. A stage that never prints is where it wedges.");
+            for (const char* id : ids)
+            {
+                auto d = echojay::auregistry::describeFromRegistry (id);
+                if (d.fileOrIdentifier.isEmpty()) { say (juce::String (id) + ": not installed"); continue; }
+                std::cout << "\n  === " << d.name << "  " << id << " ===" << std::endl;
+                std::cout.flush();
+
+                host.unload();
+                loadedName = d.name; loadedId = d.fileOrIdentifier; loadedDesc = d;
+                ledger.beginLoad (loadedId, d.name, d.manufacturerName, d.pluginFormatName,
+                                  d.version, "monotest", "monotest");
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                std::cout << "    [stage] load starting" << std::endl; std::cout.flush();
+                auto res = host.load (d, watchdog);
+                const auto t1 = juce::Time::getMillisecondCounterHiRes();
+                std::cout << "    [stage] load returned in " << juce::String (t1 - t0, 0)
+                          << " ms" << std::endl; std::cout.flush();
+                // The stake stays on disk deliberately if this wedges: that is
+                // what attributes a silent death on the next launch.
+
+                std::cout << "    outcome  : " << (int) res.outcome
+                          << (res.outcome == LoadOutcome::ok ? " (ok)" : " (NOT ok)") << std::endl;
+                std::cout << "    detail   : " << res.detail << std::endl;
+                std::cout << "    editor   : " << (res.hasEditor ? "yes" : "no") << "  "
+                          << res.editorWidth << "x" << res.editorHeight << std::endl;
+                std::cout.flush();
+                if (auto* inst = host.getInstance())
+                {
+                    std::cout << "    channels : in " << inst->getTotalNumInputChannels()
+                              << "  out " << inst->getTotalNumOutputChannels()
+                              << "  buses in " << inst->getBusCount (true)
+                              << " out " << inst->getBusCount (false) << std::endl;
+                    std::cout << "    params   : " << inst->getParameters().size() << std::endl;
+                    std::cout.flush();
+                    const auto t2 = juce::Time::getMillisecondCounterHiRes();
+                    host.pausePumpForMutation();
+                    auto b = P::renderCapture (*inst);
+                    host.resumePumpAfterMutation();
+                    std::cout << "    render   : " << b.getNumChannels() << " ch, "
+                              << b.getNumSamples() << " samples, "
+                              << juce::String (juce::Time::getMillisecondCounterHiRes() - t2, 0)
+                              << " ms" << std::endl;
+                    std::cout.flush();
+                }
+                host.unload();
+                std::cout << "    [stage] unloaded" << std::endl; std::cout.flush();
+            }
+            std::cout << "MONOTEST: DONE" << std::endl;
+            quitNow(); return;
+        }
+
         if (mode == "endpoint")
         {
             auto show = [&] (const juce::String& label)
@@ -2933,6 +2996,7 @@ public:
             auto before = mapStateByIdentity;
             mapStateByIdentity.clear(); mapStateFetchedAt = juce::Time();
             loadMapStateCache();
+            refreshLocalMapIdentities();
             bool same = mapStateByIdentity.size() == before.size();
             for (const auto& kv : before)
                 if (mapStateByIdentity.count (kv.first) == 0
@@ -7170,6 +7234,7 @@ private:
         // every identity UNKNOWN, says why in the status line, and the scan
         // proceeds -- a mapper with no network still gets a working tool, and
         // a "?" column is honest where a "not mapped" column would be a lie.
+        refreshLocalMapIdentities();
         fetchMapStates (lastScan.plugins);
 
         // Rebuilds the DISPLAYED set only. lastScan and rows keep the whole
@@ -8314,6 +8379,33 @@ private:
                   << " -- " << (res.sent ? res.body.substring (0, 120) : res.refusedReason)
                   << std::endl;
 
+        if (res.sent)
+        {
+            // MARKED FROM THE 200, NOT FROM A REFETCH. The server accepted it,
+            // so the row is green on evidence we already hold. A refetch here
+            // would be a second network round trip that can fail, and a failed
+            // refetch turns a row we KNOW is submitted into "?" -- losing
+            // information by asking a question we already had the answer to.
+            //
+            // The identity comes from the LOADED description, the same
+            // function the column keys on, so the row this marks is the row
+            // the operator is looking at.
+            const auto key = echojay::identityKeyForDescription (loadedDesc);
+            MapStateRow row;
+            row.state = MapState::submittedByYou;
+            row.fromLocalSubmit = true;          // NOT a server answer
+            row.by = testerName();
+            row.at = juce::Time::getCurrentTime().toISO8601 (true);
+            row.mapsForIdentity = juce::jmax (1, mapStateByIdentity.count (key) > 0
+                                                   ? mapStateByIdentity[key].mapsForIdentity : 1);
+            mapStateByIdentity[key] = row;
+            refreshLocalMapIdentities();
+            saveMapStateCache();
+            applyFilter();                       // the row repaints green now
+            std::cout << "MAP STATE: " << key << " marked submittedByYou from the 200 "
+                                                 "(no refetch)" << std::endl;
+        }
+
         juce::String out;
         if (res.sent)
             out << "SENT.  HTTP " << res.status << "  (" << juce::String (res.elapsedMs, 0)
@@ -9197,7 +9289,34 @@ private:
         bool probed = false;
         int  mapsForIdentity = 0;      // how many fps this product has, any build
         int  paramCountHere = 0;       // the param count of the build we matched
+
+        /** HOW this row is known. A row marked locally after a 200 is a fact
+            we hold, not a server answer, and the two must never read alike:
+            a locally marked row cannot say "the server has this" because the
+            server was never asked again. */
+        bool fromServer = false;
+        bool fromLocalSubmit = false;
     };
+
+    /** Identities with a map on THIS machine. Cached because mapStateFor runs
+        per row per repaint and haveLocalMapFor walks the maps directory: at
+        1,376 rows that is 1,376 directory scans a frame. */
+    std::set<juce::String> localMapIdentities;
+
+    void refreshLocalMapIdentities()
+    {
+        localMapIdentities.clear();
+        auto dir = ledger.getRoot().getChildFile ("maps");
+        for (const auto& e : juce::RangedDirectoryIterator (dir, false, "*.json"))
+        {
+            auto id = juce::JSON::parse (e.getFile().loadFileAsString())
+                          .getProperty ("identity", juce::var());
+            if (! id.isObject()) continue;
+            localMapIdentities.insert (id.getProperty ("format", "").toString() + "|"
+                                     + id.getProperty ("uid", "").toString() + "|"
+                                     + id.getProperty ("version", "").toString());
+        }
+    }
 
     std::map<juce::String, MapStateRow> mapStateByIdentity;
     juce::Time mapStateFetchedAt;
@@ -9331,6 +9450,7 @@ private:
             const auto identity = kv.name.toString();
             auto* fpArr = kv.value.getArray();
             MapStateRow row;
+            row.fromServer = true;
             row.mapsForIdentity = fpArr ? fpArr->size() : 0;
 
             if (! fpArr || fpArr->isEmpty())
@@ -9486,9 +9606,19 @@ private:
         auto it = mapStateByIdentity.find (key);
         if (it != mapStateByIdentity.end()) return it->second;
         MapStateRow r;
-        // No server answer. A local map is still a fact we hold; without one,
-        // an unqueried row is UNKNOWN, never "unmapped" -- claiming unmapped
-        // on no evidence is how a mapper re-maps a mapped product.
+        // A LOCAL MAP IS A FACT WE HOLD, and it outranks not knowing. A scan
+        // that reports only what the SERVER has tells the mapper nothing about
+        // what they have already done, and working through 1,376 rows that is
+        // half the question. Checked before the unknown/unmapped fork, so a
+        // mapped-but-unsubmitted plugin reads as localOnly even offline.
+        if (localMapIdentities.count (key) > 0)
+        {
+            r.state = MapState::localOnly;
+            return r;
+        }
+        // No server answer and no local map: an unqueried row is UNKNOWN,
+        // never "unmapped" -- claiming unmapped on no evidence is how a mapper
+        // re-maps a mapped product.
         r.state = mapStateFailure.isNotEmpty() || mapStateByIdentity.empty()
                     ? MapState::unknown : MapState::unmapped;
         return r;
@@ -9548,6 +9678,10 @@ private:
             e->setProperty ("probed", kv.second.probed);
             e->setProperty ("maps_for_identity", kv.second.mapsForIdentity);
             e->setProperty ("param_count_here", kv.second.paramCountHere);
+            // PERSISTED, or the distinction dies at the next launch and a row
+            // marked here would come back looking like a server answer.
+            e->setProperty ("from_server", kv.second.fromServer);
+            e->setProperty ("from_local_submit", kv.second.fromLocalSubmit);
             by->setProperty (kv.first, juce::var (e));
         }
         o->setProperty ("identities", juce::var (by));
@@ -9573,6 +9707,12 @@ private:
                 r.probed = (bool) kv.value.getProperty ("probed", false);
                 r.mapsForIdentity = (int) kv.value.getProperty ("maps_for_identity", 0);
                 r.paramCountHere  = (int) kv.value.getProperty ("param_count_here", 0);
+                // Default fromServer TRUE for caches written before these
+                // fields existed: those rows all came from a fetch, and
+                // claiming otherwise would invent a local submit that never
+                // happened.
+                r.fromServer      = (bool) kv.value.getProperty ("from_server", true);
+                r.fromLocalSubmit = (bool) kv.value.getProperty ("from_local_submit", false);
                 mapStateByIdentity[kv.name.toString()] = r;
             }
     }
@@ -9585,10 +9725,27 @@ private:
         if (mapStateFailure.isNotEmpty())
             return "map state unavailable: " + mapStateFailure + " (checked "
                  + mapStateCacheAge() + ") -- everything shows ?";
-        if (mapStateByIdentity.empty())
+        if (mapStateByIdentity.empty() && localMapIdentities.empty())
             return "map state not fetched; everything shows ?";
-        return "map state from " + mapStateCacheAge() + " ("
-             + juce::String ((int) mapStateByIdentity.size()) + " identities)";
+
+        // A LOCALLY MARKED ROW MUST NOT MASQUERADE AS A SERVER ANSWER. Counted
+        // apart and named apart: "3 marked here since" is a claim about what
+        // this machine did, and the server has not been asked about those rows
+        // since they were marked.
+        int fetched = 0, local = 0;
+        for (const auto& kv : mapStateByIdentity)
+        {
+            if (kv.second.fromLocalSubmit) ++local;
+            else if (kv.second.fromServer) ++fetched;
+        }
+        juce::String t = "map state from " + mapStateCacheAge() + " ("
+                       + juce::String (fetched) + " from the server";
+        if (local > 0)
+            t << ", " + juce::String (local) + " marked here on submit since -- not re-queried";
+        t << ")";
+        if (! localMapIdentities.empty())
+            t << "; " << (int) localMapIdentities.size() << " map(s) on this machine";
+        return t;
     }
 
     /** The ? listing: every fp this product has, across builds. This is what
