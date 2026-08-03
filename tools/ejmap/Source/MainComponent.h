@@ -40,6 +40,7 @@ namespace ejmap
 
 class MainComponent  : public juce::Component,
                        private juce::ListBoxModel,
+                       public  juce::KeyListener,
                        private juce::Timer
 {
 public:
@@ -73,6 +74,10 @@ public:
 
         addAndMakeVisible (list);
         list.setModel (this);
+        // M and ? are read here rather than by the ListBox, which owns the arrow
+        // keys and selection. A KeyListener gets first refusal and returning
+        // false hands the key straight back, so navigation is untouched.
+        list.addKeyListener (this);
         list.setRowHeight (22);
 
         addAndMakeVisible (status);
@@ -2648,6 +2653,65 @@ public:
         // FORGETTABILITY TEST: a load site that plants NO stake of its own.
         // If the choke point works, a hard death here is still attributed.
         // Deliberately bare -- adding a beginLoad here would test nothing.
+        // LIVE map-state fetch against the real endpoint, and the degradation
+        // path attempted rather than assumed.
+        if (mode.startsWith ("mapstate-live") || mode == "mapstate-dead")
+        {
+            const bool dead = mode == "mapstate-dead";
+            if (dead) ::setenv ("EJMAP_MAPS_URL",
+                          "https://endpoint-that-does-not-exist.echojay.invalid/api/params/maps", 1);
+            say (juce::String ("MAPSTATE ") + (dead ? "DEAD-ENDPOINT" : "LIVE") + ": " + mapsEndpoint());
+
+            juce::Array<ScannedPlugin> probe;
+            if (juce::String (mode).contains ("full"))
+            {
+                // THE WHOLE REGISTRY: the end-to-end check, from the client's
+                // identity string through the index to the column.
+                auto census = echojay::auregistry::buildCensus();
+                for (const auto& t : census.targets)
+                {
+                    ScannedPlugin sp; sp.desc = echojay::auregistry::describeFromRegistry (t.identifier);
+                    if (sp.desc.fileOrIdentifier.isNotEmpty()) probe.add (sp);
+                }
+            }
+            else
+            for (const char* id : { "AudioUnit:Effects/aumf,ameq,Brwx",     // AMEK, mapped
+                                    "AudioUnit:Effects/aufx,SpfA,OekS",     // spiff, mapped
+                                    "AudioUnit:Effects/aufx,APCM,ksWV" })   // API-2500, not mapped
+            {
+                ScannedPlugin sp; sp.desc = echojay::auregistry::describeFromRegistry (id);
+                if (sp.desc.fileOrIdentifier.isNotEmpty()) probe.add (sp);
+            }
+            say ("  probing " + juce::String (probe.size()) + " identities");
+            if (probe.size() <= 8)
+                for (const auto& sp : probe)
+                    say ("    " + echojay::identityKeyForDescription (sp.desc) + "  " + sp.desc.name);
+
+            fetchMapStates (probe);
+
+            say ("");
+            say ("  status line: " + mapStateStatusLine());
+            std::map<int, int> tally;
+            for (const auto& sp : probe)
+            {
+                const auto st = mapStateFor (sp);
+                tally[(int) st.state]++;
+                if (probe.size() <= 8 || st.state != MapState::unmapped)
+                    say ("    " + glyphFor (st.state) + "  " + sp.desc.name.paddedRight (' ', 26)
+                         + mapStateDetail (sp));
+            }
+            const char* stateNames[] = { "unmapped", "local only", "submitted by you",
+                                         "submitted by mapper", "different build", "unknown" };
+            say ("");
+            say ("  COLUMN TALLY over " + juce::String (probe.size()) + " identities:");
+            for (const auto& kv : tally)
+                say ("    " + juce::String (glyphFor ((MapState) kv.first)) + " "
+                     + juce::String (stateNames[kv.first]).paddedRight (' ', 22)
+                     + juce::String (kv.second));
+            std::cout << "MAPSTATE-" << (dead ? "DEAD" : "LIVE") << ": DONE" << std::endl;
+            quitNow(); return;
+        }
+
         if (mode == "mapstate")
         {
             // FIXTURE, not live data: the endpoint does not exist yet. One
@@ -6900,6 +6964,12 @@ private:
         for (const auto& p : lastScan.plugins)
             rows.add (p);
 
+        // MAP STATE, fetched once per scan. Failure is not fatal: it leaves
+        // every identity UNKNOWN, says why in the status line, and the scan
+        // proceeds -- a mapper with no network still gets a working tool, and
+        // a "?" column is honest where a "not mapped" column would be a lie.
+        fetchMapStates (lastScan.plugins);
+
         // Rebuilds the DISPLAYED set only. lastScan and rows keep the whole
         // result, so every census number below counts what was scanned, not
         // what happens to be on screen.
@@ -8796,6 +8866,234 @@ private:
             if (k == identityKey) return true;
         }
         return false;
+    }
+
+    /** M toggles hide-mapped; ? lists every fingerprint this product has.
+        Both behaviours were built and tested; only the bindings were missing,
+        which meant the tested logic was unreachable from the keyboard.
+    */
+    bool keyPressed (const juce::KeyPress& k, juce::Component*) override
+    {
+        const auto ch = k.getTextCharacter();
+        if (ch == 'm' || ch == 'M')
+        {
+            hideMapped = ! hideMapped;
+            applyFilter();
+            std::cout << "FILTER: hide-mapped " << (hideMapped ? "ON" : "OFF")
+                      << " -- " << rows.size() << " rows shown" << std::endl;
+            return true;
+        }
+        if (ch == '?')
+        {
+            const int r = list.getSelectedRow();
+            if (juce::isPositiveAndBelow (r, rows.size()))
+                std::cout << mapStateFpListing (rows.getReference (r)) << std::endl;
+            return true;
+        }
+        return false;      // everything else belongs to the ListBox
+    }
+
+    /** THE MAP-STATE FETCH (feature 2). GET /api/params/maps?identities=...
+        at scan time, batched to the endpoint's 500-identity cap.
+
+        THE READ PATH, NOT THE WRITE PATH. M11's locked transport constraint --
+        one builder for artifact and wire, byte replay on every send, HTTP/1.1
+        pinned -- governs the INGEST POST, where a request that differs from
+        its artifact writes the wrong thing to a shared store. This is a GET
+        with no body and no auth (maps.js has none; the token is only for the
+        probed POST), so nothing is written and there is no artifact to diverge
+        from. It uses juce::URL::withParameter rather than composing a query
+        by hand, because URL::init() parses a query string away and
+        getSubPath(true) re-escapes it -- the defect that dropped the leading
+        slash from the upload path. withParameter is the encoder that survives
+        that round trip.
+
+        WHY THERE IS NO "SEEDED" STATE. A sixth state was designed and
+        deliberately not built. It would have distinguished a machine-extracted
+        map from a human one, because 2,105 seeded maps existed and rendering
+        them as `submitted` would have hidden every one of them behind the M
+        filter -- the campaign skipping the plugins it exists to map. Those maps
+        were deleted on 3 Aug 2026; every map in the corpus now carries
+        origin "human", so the distinction has no members. It is recorded here
+        rather than omitted silently: if seeded maps ever return, the state
+        comes back with them, and `submitted` must not absorb them.
+    */
+    juce::String mapsEndpoint() const
+    {
+        auto explicitUrl = juce::SystemStats::getEnvironmentVariable ("EJMAP_MAPS_URL", "");
+        if (explicitUrl.isNotEmpty()) return explicitUrl;
+        // Derived from the upload endpoint when one is set, so a tester who
+        // points the tool at a preview deployment gets BOTH paths there rather
+        // than reading one environment and writing to another.
+        auto up = juce::SystemStats::getEnvironmentVariable ("EJMAP_UPLOAD_URL", "");
+        if (up.isNotEmpty())
+            return up.endsWith ("/ejmap") ? up.dropLastCharacters (6) + "maps"
+                                          : up.upToLastOccurrenceOf ("/", true, false) + "maps";
+        return "https://www.echojay.ai/api/params/maps";
+    }
+
+    /** Parse one server response into the state model. Separated from the
+        transport so the drift gate can exercise it without a network. */
+    void ingestMapStateResponse (const juce::var& body)
+    {
+        auto maps = body.getProperty ("maps", juce::var());
+        auto ids  = body.getProperty ("identities", juce::var());
+        auto probed = body.getProperty ("probed", juce::var());
+        auto* idObj = ids.getDynamicObject();
+        if (idObj == nullptr) return;
+
+        for (auto& kv : idObj->getProperties())
+        {
+            const auto identity = kv.name.toString();
+            auto* fpArr = kv.value.getArray();
+            MapStateRow row;
+            row.mapsForIdentity = fpArr ? fpArr->size() : 0;
+
+            if (! fpArr || fpArr->isEmpty())
+            {
+                row.state = haveLocalMapFor (identity) ? MapState::localOnly
+                                                       : MapState::unmapped;
+                mapStateByIdentity[identity] = row;
+                continue;
+            }
+            // WHAT SCAN TIME CANNOT KNOW, and why differentBuild is not
+            // decided here. A fingerprint is SHA256(format|uid|version|
+            // paramCount) and paramCount needs a LOADED instance -- that
+            // constraint is the reason the identity index exists at all, since
+            // a scan of ~1,376 candidates cannot load them to ask. So the
+            // column can say "this product is mapped" from the identity alone,
+            // and cannot say "this BUILD is mapped" until something loads it.
+            //
+            // Attribution therefore reads the newest map the product has, and
+            // differentBuild is left to the loaded-plugin path, where
+            // currentFp is known and the comparison is exact. Claiming
+            // differentBuild here would be inferring a build mismatch from a
+            // number nobody measured.
+            for (const auto& fpv : *fpArr)
+            {
+                const auto fp = fpv.toString();
+                auto m = maps.getProperty (fp, juce::var());
+                if (! m.isObject()) continue;
+                auto mid = m.getProperty ("identity", juce::var());
+                row.paramCountHere = (int) mid.getProperty ("param_count", 0);
+                row.schema = m.getProperty ("schema", "").toString();
+                auto prov = m.getProperty ("provenance", juce::var());
+                row.by = prov.getProperty ("tester_id", "").toString();
+                row.at = prov.getProperty ("at", "").toString();
+                if (row.at.isEmpty()) row.at = m.getProperty ("rev", "").toString();
+                // ATTRIBUTION IS NOT IN THE RESPONSE. The served map carries
+                // origin "human" but no provenance: tester_id lives on
+                // plugin:<fp>:meta.ejmap, and maps.js returns the map only.
+                // Defaulting to submittedByOther would ASSERT that somebody
+                // else mapped it, on no evidence -- the same shape as claiming
+                // "unmapped" for an unqueried row.
+                //
+                // So attribution comes from local evidence, which is real: a
+                // map on this machine for this identity means this machine did
+                // the work. tester_id is preferred when the server ever carries
+                // it; until then a local map is the only fact available, and
+                // its absence means "submitted, not from here".
+                const bool serverKnowsWho = row.by.isNotEmpty();
+                const bool mine = serverKnowsWho ? (row.by == testerName())
+                                                 : haveLocalMapFor (identity);
+                row.state = mine ? MapState::submittedByYou : MapState::submittedByOther;
+                if (! serverKnowsWho) row.by = mine ? testerName() + " (from a local map; the "
+                                                      "response carries no tester_id)"
+                                                    : "not this machine";
+                auto pr = probed.getProperty (fp, juce::var());
+                row.probed = pr.isObject();
+                break;
+            }
+            if (row.state == MapState::unknown)
+                row.state = haveLocalMapFor (identity) ? MapState::localOnly
+                                                       : MapState::unmapped;
+            mapStateByIdentity[identity] = row;
+        }
+    }
+
+    /** Fetch, batched. Any failure yields UNKNOWN for every identity and says
+        why in words: an empty answer and a failed answer must never read
+        alike, and a stale cache must never read as fresh. */
+    void fetchMapStates (const juce::Array<ScannedPlugin>& plugins)
+    {
+        juce::StringArray identities;
+        for (const auto& sp : plugins)
+        {
+            const auto k = echojay::identityKeyForDescription (sp.desc);
+            if (k.isNotEmpty() && ! identities.contains (k)) identities.add (k);
+        }
+        if (identities.isEmpty()) return;
+
+        const auto endpoint = mapsEndpoint();
+        mapStateByIdentity.clear();
+        mapStateFailure.clear();
+        int batches = 0, ok = 0;
+
+        // TWO CAPS, AND THE SMALLER ONE IS NOT THE DOCUMENTED ONE. maps.js
+        // refuses more than 500 identities, but 500 of them is ~13,000
+        // characters of query string and the edge rejects the request before
+        // any handler sees it -- measured: 1,376 identities in 500-wide
+        // batches returned no response at all, while 3 worked. So batches are
+        // bounded by LENGTH as well as count, and by length first, because a
+        // long version string moves the boundary and a count cannot see that.
+        const int kMaxIdentities = 500;          // the endpoint's own cap
+        const int kMaxQueryChars = 3000;         // stays well inside the edge's limit
+        for (int i = 0; i < identities.size(); )
+        {
+            juce::StringArray batch;
+            int chars = 0;
+            while (i < identities.size()
+                   && batch.size() < kMaxIdentities
+                   && chars + identities[i].length() + 3 < kMaxQueryChars)
+            {
+                chars += identities[i].length() + 3;   // + separator and escaping
+                batch.add (identities[i]);
+                ++i;
+            }
+            if (batch.isEmpty()) break;              // one identity longer than the cap
+            ++batches;
+
+            juce::URL url = juce::URL (endpoint).withParameter ("identities", batch.joinIntoString (","));
+            juce::String text;
+            int status = 0;
+            {
+                auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
+                                .withConnectionTimeoutMs (15000)
+                                .withStatusCode (&status);
+                std::unique_ptr<juce::InputStream> in (url.createInputStream (opts));
+                if (in != nullptr) text = in->readEntireStreamAsString();
+            }
+            if (text.isEmpty() || status < 200 || status >= 300)
+            {
+                mapStateFailure = status != 0
+                    ? "HTTP " + juce::String (status) + " from " + endpoint
+                    : "no response from " + endpoint;
+                // EVERY identity goes unknown, including ones an earlier batch
+                // resolved: a column that is fresh for the first 300 rows and
+                // stale for the rest is worse than one that says it does not
+                // know, because nothing on screen says which is which.
+                mapStateByIdentity.clear();
+                mapStateFetchedAt = juce::Time::getCurrentTime();
+                saveMapStateCache();
+                return;
+            }
+            auto body = juce::JSON::parse (text);
+            if (! body.isObject())
+            {
+                mapStateFailure = "unparseable response from " + endpoint;
+                mapStateByIdentity.clear();
+                mapStateFetchedAt = juce::Time::getCurrentTime();
+                saveMapStateCache();
+                return;
+            }
+            ingestMapStateResponse (body);
+            ++ok;
+        }
+        mapStateFetchedAt = juce::Time::getCurrentTime();
+        saveMapStateCache();
+        std::cout << "MAP STATE: " << identities.size() << " identities in " << batches
+                  << " batch(es), " << ok << " ok, " << mapStateByIdentity.size()
+                  << " resolved, endpoint " << endpoint << std::endl;
     }
 
     MapStateRow mapStateFor (const ScannedPlugin& sp) const
