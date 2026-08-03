@@ -54,7 +54,30 @@ struct SendResult
     juce::String queueState() const { return sent ? "sent" : "refused"; }
 };
 
-/** Turn a raw HTTP reply into a verdict. PURE: no network, no state, so every
+/** KNOWN GAP, 3 August 2026: THE REDIRECT REFUSAL HAS NEVER FIRED LIVE.
+
+    The 401 and the timeout are proven against the real endpoint
+    (--gate-m9 sendtest). The redirect is proven only here, on classifyReply --
+    which IS the function the send path calls, so the logic that runs is the
+    logic proven, but the wire path has never carried a 3xx end to end.
+
+    Why: a genuine 307 (POST /forgot, confirmed 307 by curl) returns NO BYTES
+    through this connection, and the cause was not found. So today a real
+    redirect exhausts the deadline and is reported as a TIMEOUT.
+
+    IT FAILS SAFE IN THE RIGHT DIRECTION WITH THE WRONG REASON. Both outcomes
+    refuse, both queue as "refused", and neither follows the redirect or
+    reports success -- so nothing is sent to an address the artefact does not
+    name. But the operator is told "may or may not have arrived" when the truth
+    is "the server answered and told us to go elsewhere", and those call for
+    different next steps: one means check the server before retrying, the other
+    means the endpoint moved.
+
+    What would close it: find why the 3xx reply never arrives at
+    nw_connection_receive. Until then, treat a timeout against an endpoint that
+    is otherwise healthy as a possible redirect.
+
+    Turn a raw HTTP reply into a verdict. PURE: no network, no state, so every
     branch is provable in a test rather than only against a server that happens
     to produce that status today.
 

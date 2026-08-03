@@ -195,6 +195,29 @@ same moment — when a second person submits.
 **Deadline:** same as the supersession gap. It does not block Sean's own
 mapping. It must close before any build goes to another person.
 
+## TRANSPORT GAP: the redirect refusal has never fired live (3 August 2026)
+
+Option A is built and wired to the submit card. Two of its three refusals are
+proven against the real endpoint: a **401** with the token unset (HTTP 401 in
+245 ms, queued `refused`) and a **timeout** (refused with cause, naming that the
+request may or may not have arrived).
+
+**The redirect refusal is proven only on `classifyReply`** — the function the
+send path itself calls, so the running logic is the proven logic, but no 3xx has
+ever crossed the wire. A genuine 307 (`POST /forgot`, confirmed by curl) returns
+**no bytes** through the connection and the cause was not found.
+
+**Consequence:** a real redirect today exhausts the deadline and reports as a
+**timeout**. It fails safe in the right direction with the wrong reason —
+both outcomes refuse, both queue as `refused`, neither follows the redirect nor
+reports success, so nothing reaches an address the artefact does not name. But
+the operator is told "may or may not have arrived" when the truth is "the server
+answered and redirected", and those demand different responses: check before
+retrying, versus the endpoint moved.
+
+Recorded at `EjmapSend.h` as well, beside the function, because that is where
+someone debugging a mystery timeout will be looking.
+
 ## Open items at the pause
 
 Carried in the proposal; none blocks mapping.

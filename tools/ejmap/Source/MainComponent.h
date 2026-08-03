@@ -136,6 +136,11 @@ public:
         uploadButton.setEnabled (false);
         uploadButton.onClick = [this] { openUploadCard(); };
 
+        addAndMakeVisible (sendButton);
+        sendButton.setButtonText ("Send");
+        sendButton.setEnabled (false);          // gate must pass and the artefact must exist
+        sendButton.onClick = [this] { sendArtefactNow(); };
+
         addAndMakeVisible (deepToggle);
         deepToggle.setButtonText ("Deep");
         deepToggle.onClick = [this] { assignPanel.deepMode = deepToggle.getToggleState(); };
@@ -6723,6 +6728,7 @@ public:
         assignButton.setBounds (top.removeFromLeft (76));
         top.removeFromLeft (6);
         uploadButton.setBounds (top.removeFromLeft (80));
+        sendButton.setBounds (top.removeFromLeft (60));
         top.removeFromLeft (6);
         deepToggle.setBounds (top.removeFromLeft (64));
         top.removeFromLeft (6);
@@ -8241,6 +8247,72 @@ private:
     /** The upload card. EXPLICIT ACTION ONLY: upload is the one irreversible
         step in the tool and is reachable by button, never by auto-advance.
     */
+    juce::File lastArtefact;
+
+    /** Put the artefact on the wire and SAY WHAT HAPPENED. A refusal must not
+        read like a success at a glance, which is why the outcome leads with the
+        word and not with the status number, and why a timeout says in full that
+        it may or may not have arrived.
+    */
+    void sendArtefactNow()
+    {
+        if (! lastArtefact.existsAsFile())
+        { captureReadout.setText ("No artefact to send: open Upload... first.",
+                                  juce::dontSendNotification); return; }
+
+        juce::MemoryBlock bytes;
+        lastArtefact.loadFileAsData (bytes);
+
+        // The destination is the artefact's OWN Host header, read back off the
+        // disk rather than recomposed: the bytes decide where they go.
+        const juce::String text (juce::CharPointer_UTF8 ((const char*) bytes.getData()),
+                                 (size_t) bytes.getSize());
+        juce::String hostPort;
+        for (const auto& line : juce::StringArray::fromLines (text.upToFirstOccurrenceOf ("\r\n\r\n", false, false)))
+            if (line.startsWithIgnoreCase ("Host:")) hostPort = line.fromFirstOccurrenceOf (":", false, false).trim();
+        if (hostPort.isEmpty())
+        { captureReadout.setText ("REFUSED: the artefact carries no Host header, so there is no "
+                                  "destination it names.", juce::dontSendNotification); return; }
+
+        sendButton.setEnabled (false);
+        captureReadout.setText ("Sending " + juce::String ((int) bytes.getSize()) + " bytes to "
+                                + hostPort + "...", juce::dontSendNotification);
+        repaint();
+
+        const auto res = ejmap::sendBytesOverTls (bytes, hostPort);
+        Mouth::setQueueState (ledger.getRoot(), currentFp, res.queueState(),
+                              res.sent ? "HTTP " + juce::String (res.status)
+                                       : res.refusedReason);
+
+        juce::String t;
+        if (res.sent)
+        {
+            t << "SENT.  HTTP " << res.status << "  (" << juce::String (res.elapsedMs, 0) << " ms)\n"
+              << hostPort << "\n\n"
+              << "server said: " << res.body.substring (0, 400) << "\n\n"
+              << "queue state: sent";
+        }
+        else
+        {
+            // REFUSED leads. The status, where there is one, comes after -- a
+            // reader glancing at this must not be able to mistake it for a
+            // success, and "401" alone is a number that looks like data.
+            t << "REFUSED -- NOTHING WAS ACCEPTED.\n"
+              << hostPort << "  (" << juce::String (res.elapsedMs, 0) << " ms)\n\n"
+              << res.refusedReason << "\n\n"
+              << "queue state: refused";
+            if (res.status == 0)
+                t << "\n\nNo status came back at all. If this was a timeout the request MAY OR "
+                     "MAY NOT have reached the server: check before sending again, because a "
+                     "retry from here is how one submission becomes two.";
+            sendButton.setEnabled (true);       // a refusal may be retried BY A HUMAN
+        }
+        captureReadout.setText (t, juce::dontSendNotification);
+        std::cout << "SEND: " << (res.sent ? "sent" : "refused") << " status " << res.status
+                  << " -- " << (res.sent ? res.body.substring (0, 120) : res.refusedReason)
+                  << std::endl;
+    }
+
     void openUploadCard()
     {
         auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
@@ -8278,17 +8350,26 @@ private:
                     : "UNSET -- the server fails closed; this request would 401")
               << "\n\n";
 
+            // SEND IS ENABLED HERE AND NOWHERE ELSE: the gate has just passed
+            // and the artefact has just been written, which are exactly the two
+            // preconditions. Anywhere else and the button would be offering to
+            // send bytes that may not exist or may not have been gated.
+            sendButton.setEnabled (dry.existsAsFile());
+            lastArtefact = dry;
+
             auto stub = Mouth::stubMouthSubmit (ledger.getRoot(), currentFp,
                                                 f.loadFileAsString(), testerName());
             Mouth::setQueueState (ledger.getRoot(), currentFp,
                                   stub.accepted ? "stub_accepted" : "stub_rejected",
                                   stub.reasons.joinIntoString ("; "));
             for (const auto& r : stub.reasons) t << r << "\n";
-            t << "\nNOTHING HAS BEEN UPLOADED. There is no real endpoint yet; the stub\n"
-                 "is a hypothesis about the server, not a test of it.\n";
+            t << "\nThe stub above is a hypothesis about the server, not a test of it.\n"
+                 "NOTHING HAS BEEN SENT YET. Press Send to put these exact bytes on a\n"
+                 "TLS stream -- what is written above is what goes on the wire.\n";
         }
         else
         {
+            sendButton.setEnabled (false);      // gate refused: nothing to send
             Mouth::setQueueState (ledger.getRoot(), currentFp, "rejected",
                                   verdict.rejections.joinIntoString ("; "));
             t << "STRUCTURAL GATE: REFUSED\n";
@@ -9424,7 +9505,7 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
-    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton, uploadButton;
+    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton, uploadButton, sendButton;
     juce::ToggleButton deepToggle;
     AssignPanel assignPanel;
     bool assigning = false;
