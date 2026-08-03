@@ -2307,17 +2307,37 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // intent -> staged turnType (3-pre): "edit" chips act on the
             // existing rack; server trust-but-validates as always
             //
-            // TWO PRODUCERS reach this line now: the ASK block in a reply,
-            // and /api/classify's short-circuit chips. The classifier sends
-            // the SAME "build"/"edit" vocabulary, so it needed no branch of
-            // its own — and it must NOT get one above, because unlike the
-            // compare-scope pair its chips DO send a turn. A mismatch chip
-            // with no intent ("I'll switch over") lands here with tt empty
-            // and sends a plain chat turn, which is right: the user is
-            // telling the model what they are about to go and do.
+            // TWO PRODUCERS reach this line: the ASK block in a reply, and
+            // /api/classify's short-circuit chips. The classifier sends the
+            // SAME "build"/"edit" vocabulary, so it needs no branch of its
+            // own — and it must NOT get one above, because unlike the
+            // compare-scope pair its chips DO send a turn.
+            //
+            // NO INTENT MEANS "chat", EXPLICITLY (3 Aug 2026, live defect).
+            // This used to fall through to an empty string, which let
+            // sendChatMessage decide from hadChainFeed — and hadChainFeed is
+            // true on effectively every send, so the fall-through was
+            // "always build" wearing a conditional. Tapping the
+            // channel_mismatch chip "I'll switch over" therefore staged
+            // chain_generate and built a chain on the channel the user had
+            // just declined. The classifier had returned intent=chat for
+            // that tap and was correct; nothing routes on its verdict until
+            // cutover, so the staged label won.
+            //
+            // Absence of an intent is a POSITIVE signal, not missing
+            // information: build and edit are stated when meant, so a chip
+            // without one is deliberately not a build. Staging "chat" is
+            // also the conservative direction on BILLING — chain_generate
+            // draws the premium lane (monthly pool + credits), chat draws
+            // the daily one, and the old behaviour spent a premium action on
+            // a turn where the user declined to build.
+            //
+            // Safe as a floor rather than a ceiling: the server runs
+            // classifyChainIntent over the text and upgrades a genuine build
+            // request back to chain_generate, so a real ask still routes.
             const juce::String tt = intent == "edit" ? "chain_edit"
                                   : intent == "build" ? "chain_generate"
-                                  : juce::String();
+                                  : juce::String("chat");
             sendChatMessage(askChipLabels[(size_t)i]
                             + " (answering: \"" + askChipQuestion_ + "\")",
                             askChipLabels[(size_t)i], tt);   // bubble shows the label only
