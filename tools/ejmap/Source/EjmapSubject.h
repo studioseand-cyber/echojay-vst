@@ -397,8 +397,16 @@ inline MapClaim checkMapClaim (const SlotRef& slot, double wantValue,
     write (c.norm);
     c.display = readDisplay();
     float f = 0; bool negInf = false;
-    const auto unit = slot.unit.isNotEmpty() ? slot.unit : juce::String ("db");
-    c.parsed = echojay::parseDisplayForUnit (c.display, unit, f, negInf);
+    // UNIT ORDER: the slot's own declared unit, then the unit IMPLIED BY THE
+    // SEMANTIC, then dB as the last resort. The middle step matters: group
+    // params carry `kind` but no `unit`, so a freq_hz display of "689 Hz" was
+    // being parsed as decibels -- the shared parser refuses a "k" multiplier
+    // under a non-hz target, so the failure would have been silent narrowing
+    // rather than a visible error.
+    const auto declared = slot.unit.isNotEmpty() ? slot.unit
+                                                 : echojay::semanticUnit (slot.semantic);
+    if (declared.isNotEmpty())
+        c.parsed = echojay::parseDisplayForUnit (c.display, declared, f, negInf);
     if (! c.parsed) c.parsed = echojay::parseDisplayForUnit (c.display, "db", f, negInf);
     c.shown = negInf ? -std::numeric_limits<double>::infinity() : (double) f;
     return c;

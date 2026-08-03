@@ -4140,7 +4140,111 @@ public:
         auto trackMono = [&] { monoDrift = juce::jmax (monoDrift,
                                   (double) std::abs (params[idxMono]->getValue() - monoBefore)); };
 
-        wc (idxFreq, normFor (freqAnch, 100.0)); trackMono();
+        // ---- ISOLATION: A DECLARED REFERENCE STATE (item 3, session 2) -----
+        // Arm B already moved one parameter per block, but the reference each
+        // block started from was implicit and different: B1 ran at whatever q
+        // the excitation left, B3 re-established freq but not q, B4 set gain
+        // but not freq. Nothing stated the reference and nothing verified it,
+        // so a reordering would have re-coupled the blocks silently.
+        //
+        // WHY THIS IS NOT ENOUGH ON ITS OWN, which is the whole difficulty:
+        // lobeFeatures returns centre, depth and width from ONE spectrum pair
+        // and the three are physically coupled. Moving one parameter at a time
+        // does not decouple the FEATURES -- a band sitting at the wrong q
+        // measures a different centre, so a q defect surfaces as a centre
+        // failure and would be attributed to freq_hz. Isolation of the inputs
+        // is necessary and insufficient; the per-semantic claim checks below
+        // are what make the attribution sound.
+        struct BandRef { double freqHz = 100.0, gainDb = 6.0, q = 1.0; } bandRef;
+        auto establishReference = [&] (const juce::String& probing)
+        {
+            wc (idxFreq, normFor (freqAnch, bandRef.freqHz));
+            wc (idxGain, normFor (gainAnch, bandRef.gainDb));
+            wc (idxQ,    normFor (qAnch,    bandRef.q));
+            trackMono();
+            say ("  reference: freq " + juce::String (bandRef.freqHz, 1) + " Hz, gain "
+                 + juce::String (bandRef.gainDb, 1) + " dB, q " + juce::String (bandRef.q, 2)
+                 + " -- probing " + probing);
+        };
+
+        // "the other two held" was a sentence, not a check. Verify it: after a
+        // block, the two parameters that were supposed to stay put must still
+        // be at the reference. A held parameter that drifted would put the
+        // feature somewhere the attribution above has already vouched for.
+        auto verifyHeld = [&] (const juce::String& probing, int a, int b,
+                               const juce::Array<juce::Array<float>>& aA,
+                               const juce::Array<juce::Array<float>>& bA,
+                               double aRef, double bRef, const juce::String& aName,
+                               const juce::String& bName)
+        {
+            const double da = std::abs (params[a]->getValue() - normFor (aA, aRef));
+            const double db = std::abs (params[b]->getValue() - normFor (bA, bRef));
+            const bool held = da < 0.005 && db < 0.005;
+            assertHarness ("B-hold while probing " + probing, held,
+                  aName + " drift " + juce::String (da, 5) + ", " + bName + " drift "
+                  + juce::String (db, 5) + " (limit 0.005) -- the two parameters not being "
+                    "probed stayed at the reference, so the feature measured belongs to "
+                  + probing);
+        };
+
+        // ---- PER-SEMANTIC CLAIM CHECKS -------------------------------------
+        // Did each parameter land where the MAP says? Attribution rests on
+        // this: a centre failure is only freq_hz's when gain and q are proven
+        // to be where the map claimed. Otherwise the coupled feature is
+        // reporting somebody else's defect under freq_hz's name.
+        struct SemClaim { juce::String semantic, unit; double worst = 0; bool checked = false, parsed = false;
+                          juce::String row; };
+        auto claimFor = [&] (const juce::String& semantic, int idx,
+                             const juce::Array<juce::Array<float>>& anchors,
+                             double value, const juce::String& unit)
+        {
+            ejmap::subject::SlotRef sl;
+            sl.found = true; sl.index = idx; sl.semantic = semantic; sl.anchors = anchors;
+            auto c = ejmap::subject::checkMapClaim (sl, value,
+                        [&] (float n) { wc (idx, n); },
+                        [&] { return params[idx]->getCurrentValueAsText(); });
+            SemClaim sc; sc.semantic = semantic; sc.unit = unit; sc.checked = true;
+            sc.parsed = c.parsed; sc.worst = c.parsed ? c.error() : 0.0;
+            sc.row = "    " + semantic.paddedRight (' ', 10) + "map says "
+                   + juce::String (c.claimed, 2) + " " + unit + " at norm "
+                   + juce::String (c.norm, 4) + " -> plugin displays '" + c.display + "'"
+                   + (c.parsed ? "  |diff| " + juce::String (c.error(), 2) + " " + unit
+                               : "  (unreadable as a number)");
+            return sc;
+        };
+        say ("");
+        say ("  PER-SEMANTIC CLAIM CHECK (did each input land where the map says?)");
+        auto clFreq = claimFor ("freq_hz", idxFreq, freqAnch, bandRef.freqHz, "Hz");
+        auto clGain = claimFor ("gain_db", idxGain, gainAnch, bandRef.gainDb, "dB");
+        auto clQ    = claimFor ("q",       idxQ,    qAnch,    bandRef.q,      "");
+        for (const auto* c : { &clFreq, &clGain, &clQ }) say (c->row);
+        // Tolerances in each semantic's OWN unit -- never one number for three.
+        const double clTolFreq = 0.05 * bandRef.freqHz;      // 5% of the asked frequency
+        const double clTolGain = 1.0;                        // dB
+        const double clTolQ    = 0.25 * bandRef.q;           // a quarter of the asked q
+        auto claimBad = [] (const SemClaim& c, double tol)
+                        { return c.parsed && c.worst > tol; };
+        if (claimBad (clFreq, clTolFreq) || claimBad (clGain, clTolGain) || claimBad (clQ, clTolQ))
+        {
+            juce::StringArray bad;
+            if (claimBad (clFreq, clTolFreq)) bad.add ("freq_hz (" + juce::String (clFreq.worst, 2) + " Hz)");
+            if (claimBad (clGain, clTolGain)) bad.add ("gain_db (" + juce::String (clGain.worst, 2) + " dB)");
+            if (claimBad (clQ,    clTolQ))    bad.add ("q (" + juce::String (clQ.worst, 3) + ")");
+            emitContradicts (bad.joinIntoString (", "),
+                "the reference state the band measurements are taken from does not match the map: "
+                + bad.joinIntoString ("; ") + " landed away from what the map claims. Every arm-B "
+                  "feature is measured from this state, and centre, depth and width all come "
+                  "from one spectrum pair and move together. A verdict issued now would attribute "
+                  "this defect to whichever FEATURE moved rather than to the PARAMETER that "
+                  "caused it, which is why the inputs are checked before any feature is read");
+            std::cout << "GATE M9: STOPPED (reference state does not match the map)" << std::endl;
+            quitNow(); return;
+        }
+        say ("    all three inputs land within tolerance (freq " + juce::String (clTolFreq, 1)
+             + " Hz, gain " + juce::String (clTolGain, 1) + " dB, q " + juce::String (clTolQ, 2)
+             + "), so a feature failure below is attributable to its OWN parameter");
+
+        establishReference ("freq_hz");
         auto b100 = P::welch (render());
         auto f100 = P::lobeFeatures (preExcS.mid, b100.mid);
         wc (idxFreq, normFor (freqAnch, 400.0)); trackMono();
@@ -4168,12 +4272,14 @@ public:
               + " = 0.070 gate + " + juce::String (biasTerm, 4) + " instrument bias @"
               + juce::String (pred400, 0) + " Hz [terms recorded separately: gate 0.0700, bias "
               + juce::String (biasTerm, 4) + "]");
+        verifyHeld ("freq_hz", idxGain, idxQ, gainAnch, qAnch, bandRef.gainDb, bandRef.q,
+                    "gain_db", "q");
         assertHarness ("B2 expressible", predOct >= 4 * sigCentre,
               "Delta_pred " + juce::String (predOct, 3) + " oct vs 4*sigma_centre "
               + juce::String (4 * sigCentre, 4) + " oct");
 
-        // B3 gain depth tracking at fixed freq 100
-        wc (idxFreq, normFor (freqAnch, 100.0)); trackMono();
+        // B3 gain depth, from the declared reference
+        establishReference ("gain_db");
         wc (idxGain, normFor (gainAnch, 3.0)); trackMono();
         auto d3 = P::lobeFeatures (preExcS.mid, P::welch (render()).mid);
         wc (idxGain, normFor (gainAnch, 9.0)); trackMono();
@@ -4188,8 +4294,11 @@ public:
               + juce::String (std::abs (measDDepth - predDDepth), 3) + " vs tol "
               + juce::String (tolDepth, 3) + " [max(0.25*pred, 4*sigma)]");
 
-        // B4 q width tracking at fixed freq 100, gain +6
-        wc (idxGain, normFor (gainAnch, 6.0)); trackMono();
+        verifyHeld ("gain_db", idxFreq, idxQ, freqAnch, qAnch, bandRef.freqHz, bandRef.q,
+                    "freq_hz", "q");
+
+        // B4 q width, from the declared reference
+        establishReference ("q");
         wc (idxQ, normFor (qAnch, 0.71)); trackMono();
         auto wLo = P::lobeFeatures (preExcS.mid, P::welch (render()).mid);
         wc (idxQ, normFor (qAnch, 2.0)); trackMono();
@@ -4205,6 +4314,31 @@ public:
               + " (width@qLo " + juce::String (wLo.widthOct, 3) + " oct, width@qHi "
               + juce::String (wHi.widthOct, 3) + " oct), error "
               + juce::String (std::abs (measWRatio - predWRatio), 3) + " vs tol " + juce::String (tolW, 3));
+
+        verifyHeld ("q", idxFreq, idxGain, freqAnch, gainAnch, bandRef.freqHz, bandRef.gainDb,
+                    "freq_hz", "gain_db");
+
+        // THE COUPLING, MEASURED FROM DATA THIS RUN ALREADY HAS. B4 moved only
+        // q; if the centre estimate moved with it, then centre is not a pure
+        // function of freq_hz and a q defect can surface as a freq_hz failure.
+        // This is the number that makes eq's pooling physical rather than a
+        // reporting choice, and it is free -- both features come from the two
+        // spectra B4 already captured.
+        {
+            const double centreShiftOct = std::abs (std::log2 (wHi.centreHz
+                                                    / juce::jmax (1.0, wLo.centreHz)));
+            say ("  COUPLING (recorded, not a criterion): moving ONLY q from "
+                 + juce::String (qLo, 2) + " to " + juce::String (qHi, 2) + " moved the CENTRE "
+                   "estimate " + juce::String (wLo.centreHz, 1) + " -> "
+                 + juce::String (wHi.centreHz, 1) + " Hz = " + juce::String (centreShiftOct, 4)
+                 + " oct, against B1's centre tolerance of " + juce::String (centreTol, 4)
+                 + " oct. Centre is NOT a pure function of freq_hz: at "
+                 + juce::String ((int) std::round (100.0 * centreShiftOct
+                                                  / juce::jmax (1e-9, centreTol)))
+                 + "% of B1's tolerance, a q defect can surface as a freq_hz failure. That is why "
+                   "attribution rests on the per-semantic claim checks above and not on which "
+                   "feature moved");
+        }
 
         const double sideB_first = P::bandEnergyDb (b100.side, 50, 400);
         const double sideB_last  = P::bandEnergyDb (b400.side, 50, 400);

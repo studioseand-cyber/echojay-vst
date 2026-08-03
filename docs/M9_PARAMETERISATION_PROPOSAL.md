@@ -530,6 +530,50 @@ Drift gate 172 → 185. limiter, gate and saturation PASS; comp unchanged at 1 F
 
 ---
 
+## 4i. Item 3, session 2: per-semantic attribution. **Relief valve invoked.**
+
+### What landed
+
+**A declared reference state.** Arm B already moved one parameter per block, but the reference each block started from was implicit and different — B1 ran at whatever q the excitation left, B3 re-established freq but not q, B4 set gain but not freq. Nothing stated the reference and nothing verified it, so a reordering would have re-coupled the blocks silently. `bandRef` (100 Hz, +6 dB, q 1.0) is now established explicitly before each block.
+
+**Isolation of the inputs is necessary and insufficient** — the point that makes eq different from comp. The features remain coupled no matter what order the parameters move in, so attribution rests on **per-semantic claim checks**: each of `freq_hz`, `gain_db` and `q` is written to the map's norm and its display read back, in **its own unit**, against **its own tolerance** (5% of the asked frequency, 1 dB, 0.25×q). Only when all three inputs are proven to be where the map claims is a feature failure attributable to its own parameter.
+
+**The coupling, measured, from data the run already had.** B4 moves only q; the centre estimate moves with it:
+
+```
+COUPLING (recorded, not a criterion): moving ONLY q from 0.71 to 2.00 moved the
+CENTRE estimate 94.0 -> 95.1 Hz = 0.0168 oct, against B1's centre tolerance of
+0.0838 oct ... at 20% of B1's tolerance, a q defect can surface as a freq_hz failure.
+```
+
+That is eq's pooling shown to be physical rather than argued: a modest q change eats a fifth of the frequency tolerance, and a wrong q ladder eats all of it.
+
+**"The other two held" was a sentence, not a check.** It is now `B-hold`, asserted after each block: the two parameters not being probed must still be at the reference (drift < 0.005). Three new assertions, all reading 0.00000.
+
+### The three isolation specimens
+
+| Specimen | Result |
+|---|---|
+| `q` ladder scaled ×0.25 (map says 1.0, plugin lands 4.0) | `CONTRADICTS q (3.000)` — freq_hz and gain_db both 0.00 |
+| `gain_db` ladder scaled ×0.5 (map says +6, plugin lands +12) | `CONTRADICTS gain_db (6.00 dB)` — freq_hz and q both 0.00 |
+| `freq_hz` ladder scaled ×0.5 (map says 100, plugin lands 200) | `CONTRADICTS freq_hz (100.00 Hz)` — gain_db and q both 0.00 |
+
+Each names exactly the corrupted semantic, in that semantic's unit, with the other two clean. A q failure reporting as `freq_hz` — comp's defect in its worst form — is what these prove does not happen.
+
+### Numbers, against the amended criterion
+
+Assertions went **11 → 14** (the original 11 plus three `B-hold`). B3 (0.131) and B4 (0.026) reproduce exactly. B1 read 0.0282, inside the spread measured on the unchanged build before the work started (0.0280–0.0284). No forced match, no bit-equality demanded of a feature that was never deterministic.
+
+A fixed explanatory clause was caught in the new code too: the contradiction message named q as the cause whatever had failed. Removed — the class is a week old and still reappears in the first draft of new text.
+
+### Relief valve invoked: the `emitVerdict` conversion moves to session 3
+
+Attribution landed; B1/B3/B4 still publish through `assertHarness`. The conversion is not mechanical — it hands eq's verdict language to the routing fork **for the first time on octave-domain features**, and the standing question applies to it: `routeVerdict` was derived and tuned on dB-domain magnitudes, so what it does with an octave feature against an octave tolerance is unmeasured. Answering that needs its own measurement, not the tail end of a session.
+
+Session 3 therefore carries: the `emitVerdict` conversion **with its standing-question answer**, the fixture-as-test-case machinery, arm A scoped fixture-only, and the full re-proof — now of 14 assertions rather than 11.
+
+---
+
 ## Why resolution is INDEX-FIRST with the name as the check
 
 Recorded because the intuitive order is the wrong one and someone will

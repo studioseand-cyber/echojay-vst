@@ -946,6 +946,64 @@ identity before trusting anything measured there. The merged-tree checks were
 re-run only because the refusal happened to be visible in the output; had it
 scrolled past, the report would have been false.
 
+## A NEW CHECK MUST NOT SILENTLY THRESHOLD A QUANTITY AN EXISTING CHECK DELIBERATELY LEFT UNTHRESHOLDED (3 August 2026)
+
+**Instance 1.** Item 3's role verification first required the mid band to move
+less than 4σ_depth while the claimed width control was written. It **failed
+the signed AMEK fixture**: engaging Mono Maker moves the mid band 0.437 dB
+against a 0.352 dB floor.
+
+That number is neither a defect nor a discovery. Arm A already records it,
+with its cause, as *"recorded, not a criterion: M=(L+R)/2, so mono-ing below
+the crossover necessarily moves side content into mid. Expected physics."* A
+previous session measured it, explained it, and decided on purpose not to give
+it a threshold.
+
+The new check assigned one anyway, and the first thing it disqualified was the
+fixture the settlement came from.
+
+**Same family as feeding correct machinery an input somebody else already
+decided about.** The check was not wrong in construction — a width control
+that moves the mid band IS suspicious in general. It was wrong because the
+quantity had already been adjudicated, and the new code re-opened the question
+without knowing it had been closed. The machinery works; the input was
+somebody else's settled decision.
+
+**The rule:** before thresholding a quantity, look for whether an existing
+check already measures it. If one does and assigns no threshold, the reason is
+in the code beside it, and a new threshold must argue against that reason
+explicitly rather than silently outvote it.
+
+The corrected criterion is **dominance**, not absolute: mid must be a minority
+(≤ 0.25×, the project's declared constant) of the side movement, which is what
+actually separates a width control from a gain. The absolute mid figure is now
+reported the same way arm A reports it — recorded, not a criterion.
+
+---
+
+## A GUARD IS ONLY FALSIFIABLE WHERE IT MATTERS (3 August 2026)
+
+**Instance 1: the enable null-test.** A wrong enable link is **invisible when
+the control is already live in the instance's default state**. Measured: a link
+pointed at `V-Gain` instead of `Mono Maker In` passed the gate, correctly —
+AMEK's Mono Maker is engaged by default, so the link makes no difference and
+nothing can tell whether it was right.
+
+The test catches links that **do damage** (the global `Power` specimen moved
+the primary feature 4.391 dB and was refused), not links that **do nothing**.
+
+This is the second known limit on M9's role machinery, beside the first: role
+verification by signal cannot separate the claimed width control from any
+other width control, because two controls with the same measurable character
+are indistinguishable by that character.
+
+**Both limits now print at the point of use**, not only here. A limit recorded
+only in a proposal is invisible to the person reading a passing run, and a
+passing run is exactly where a limit needs stating — it is the moment someone
+concludes more than the evidence supports.
+
+---
+
 ## ATTRIBUTION IS LOST WHEREVER EVIDENCE FROM TWO SOURCES IS MERGED BEFORE IT IS ATTRIBUTED (3 August 2026)
 
 **Instance 1.** comp's first map-claim implementation kept ONE report for the

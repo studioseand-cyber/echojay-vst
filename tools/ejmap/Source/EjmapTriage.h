@@ -223,6 +223,20 @@ struct EnableNull
     bool clean = false;
     double primaryMoved = 0, floor = 0;
     juce::String linkName, why;
+
+    /** KNOWN LIMIT, printed wherever a link is used rather than only in the
+        proposal. A wrong enable link is INVISIBLE when the control is already
+        live in the instance's default state: the link makes no difference, so
+        nothing can tell whether it was right. Measured on AMEK, whose Mono
+        Maker is engaged by default -- a link pointed at an unrelated control
+        passed. This test catches links that DO DAMAGE, not links that do
+        nothing. */
+    static juce::String limitStatement()
+    {
+        return "LIMIT: this test catches an enable link that does damage, not one that does "
+               "nothing. A wrong link is invisible when the control is already live by default, "
+               "because the link makes no difference and nothing can tell";
+    }
 };
 
 inline EnableNull checkEnableIsNull (const juce::String& linkName,
@@ -233,7 +247,8 @@ inline EnableNull checkEnableIsNull (const juce::String& linkName,
     n.clean = primaryMovedDb <= floorDb;
     n.why = n.clean
         ? "engaging '" + linkName + "' left the primary feature within its floor ("
-          + juce::String (primaryMovedDb, 3) + " <= " + juce::String (floorDb, 3) + ")"
+          + juce::String (primaryMovedDb, 3) + " <= " + juce::String (floorDb, 3) + "). "
+          + EnableNull::limitStatement()
         : "engaging '" + linkName + "' moved the PRIMARY feature by "
           + juce::String (primaryMovedDb, 3) + " dB against a floor of "
           + juce::String (floorDb, 3) + ". This is not a per-control enable: it changes what "
