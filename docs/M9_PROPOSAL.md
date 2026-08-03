@@ -993,8 +993,23 @@ nothing about.
   required rather than defaulted is deliberate — a default is how the trap
   regrows.
 
-**The rule:** a shared exit may format, count and route. It may not explain.
+**THE RULE: a shared exit may format, count and route; it may not explain.**
+
 Explanation belongs to the caller, who is the only one who knows why.
+
+The rule covers **both materials the defect appeared in**, which were the same
+defect wearing different clothes:
+
+- **Fixed explanatory text** — `emitInconclusive`'s basis, asserting a cause
+  ("no measurement was taken", then "the feature never appeared") that was
+  false for callers the exit knew nothing about.
+- **A hardcoded unit** — `routeText`'s "dB", asserting a dimension for
+  measurements that were slope deltas and log2 time ratios.
+
+A unit is an explanation: it says what kind of quantity this is. Writing one
+at a shared exit is the same act as writing a cause there, and it fails the
+same way. Both are now caller-supplied and both are **required**, not
+defaulted, because a default is how the trap regrows.
 
 **Audit result (3 August 2026):** `routeText` was the last shared exit
 carrying fixed explanatory text. `emitVerdict` now composes only from

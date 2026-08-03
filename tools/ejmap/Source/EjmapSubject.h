@@ -256,6 +256,106 @@ inline OctavePair octavesApartWithin (const SlotRef& slot, double octaves)
 }
 
 //==============================================================================
+/** SCHEMA 2.3b: CONTROL ROLES AND ENABLE LINKS.
+
+    A named control carries index, kind, unit, range and anchors -- everything
+    needed to DRIVE it and nothing about what it IS. eq needs both: its
+    falsifier writes a stereo-width control and requires the side band to move,
+    and that control is dead unless its companion enable is on. Today both are
+    AMEK constants: `controls["Mono Maker"]` by name at index 7, with index 8
+    as its gate.
+
+    ROLE VOCABULARY (deliberately small; a role is a claim a suite can act on,
+    not a description):
+      stereo_width  a control that changes the side/mid balance
+      enable        a switch that makes another control live
+      bypass        a switch that removes the plugin or a section from the path
+      mode          a discrete state that changes what other parameters mean
+
+    WHAT A ROLE IS NOT: proof. A role is the map's CLAIM about a control, and
+    5b only carries it. Verifying a claimed role by signal before acting on it
+    is item 3's job, and the reason it must be item 3's job is written up in
+    the proposal: a wrong role that happens to work produces a correct verdict
+    for the wrong reason, and no lookup can catch that.
+
+    ENABLE LINKS RESOLVE INTO EXCITATION STEPS, not into a second mechanism.
+    "Set index 8 to 1.0 so index 7 is live" is the same sentence as "set ratio
+    to max so the compressor compresses", and it goes through the same
+    applyExcitation() -- so an unlanded enable write is already reported rather
+    than assumed, without a line of new reporting code.
+*/
+struct RolePick
+{
+    bool ok = false;
+    SlotRef slot;
+    juce::String role, controlName, why;
+    int candidates = 0;
+};
+
+/** The one control claiming a role. REFUSES on none and on more than one:
+    two controls both claiming `stereo_width` is a question the map has not
+    answered, and picking the first would fabricate the answer -- the same
+    rule primaryGroup() applies to bands. */
+inline RolePick controlWithRole (const juce::var& mapVar, const juce::String& role)
+{
+    RolePick r;
+    r.role = role;
+    auto* co = mapVar.getProperty ("controls", juce::var()).getDynamicObject();
+    if (co == nullptr)
+    { r.why = "the map carries no controls"; return r; }
+
+    juce::StringArray hits;
+    for (auto& kv : co->getProperties())
+        if (kv.value.getProperty ("role", "").toString().equalsIgnoreCase (role))
+            hits.add (kv.name.toString());
+
+    r.candidates = hits.size();
+    if (hits.isEmpty())
+    { r.why = "no control declares the role '" + role + "'"; return r; }
+    if (hits.size() > 1)
+    { r.why = juce::String (hits.size()) + " controls declare the role '" + role + "' ("
+            + hits.joinIntoString (", ") + "); the suite does not choose between them";
+      return r; }
+
+    r.controlName = hits[0];
+    r.slot = detail::fromEntry (co->getProperty (hits[0]), role, "controls / " + hits[0]);
+    r.slot.name = co->getProperty (hits[0]).getProperty ("name", hits[0]).toString();
+    r.ok = r.slot.ok();
+    if (! r.ok) r.why = r.slot.why;
+    return r;
+}
+
+/** What must be set for a control to be live. Absent means unavailable -- NOT
+    "nothing needs setting". A suite that cannot tell those apart writes a
+    parameter behind a disabled section and measures its own silence. */
+struct EnableLink
+{
+    bool declared = false;
+    int  index = -1;
+    double value = 1.0;
+    juce::String name, why, forControl;
+};
+
+inline EnableLink enableLinkFor (const juce::var& mapVar, const juce::String& controlName)
+{
+    EnableLink e;
+    e.forControl = controlName;
+    auto entry = mapVar.getProperty ("controls", juce::var()).getProperty (controlName, juce::var());
+    auto link = entry.getProperty ("enabled_by", juce::var());
+    if (! link.isObject())
+    { e.why = "'" + controlName + "' declares no enabled_by; whether it is live in the "
+              "instance's default state is UNKNOWN, not assumed";
+      return e; }
+    e.index = (int) link.getProperty ("index", -1);
+    e.value = (double) link.getProperty ("value", 1.0);
+    e.name  = link.getProperty ("name", "").toString();
+    e.why   = link.getProperty ("why", "").toString();
+    e.declared = e.index >= 0;
+    if (! e.declared) e.why = "'" + controlName + "' has an enabled_by with no index";
+    return e;
+}
+
+//==============================================================================
 /** DOES THE PLUGIN DO WHAT THE MAP SAYS? -- one implementation, every suite.
 
     Write the norm the map gives for a semantic value, read what the plugin
@@ -525,6 +625,19 @@ inline ExcitationPlan resolveExcitation (const juce::var& mapVar,
         if (! p.steps.isEmpty()) return p;
     }
     return suiteDeclared;
+}
+
+/** An enable link IS excitation. One mechanism, so an unlanded enable write is
+    reported by the machinery that already reports unlanded excitation. */
+inline ExcitationStep asExcitationStep (const EnableLink& link)
+{
+    ExcitationStep st;
+    st.index = link.index;
+    st.value = link.value;
+    st.semantic = "enable:" + link.forControl;
+    st.why = link.why.isNotEmpty() ? link.why
+                                   : link.forControl + " is not live until this is set";
+    return st;
 }
 
 } // namespace subject

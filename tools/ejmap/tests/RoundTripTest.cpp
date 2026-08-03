@@ -1251,6 +1251,73 @@ void testSubjectLookups()
     check (! narrowOct.ok && narrowOct.why.contains ("cannot express"),
            "subject REFUSES an interval the ladder cannot express, rather than shrinking it");
 
+    // ---- 5b: control roles and enable links -------------------------------
+    {
+        auto ctl = [&] (int index, const juce::String& name, const juce::String& role,
+                        juce::var enabledBy = juce::var())
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("index", index);
+            o->setProperty ("name", name);
+            o->setProperty ("unit", "hz");
+            juce::Array<juce::var> rows;
+            rows.add (juce::var (juce::Array<juce::var> { 20.0, 0.0 }));
+            rows.add (juce::var (juce::Array<juce::var> { 2000.0, 1.0 }));
+            o->setProperty ("anchors", juce::var (rows));
+            if (role.isNotEmpty()) o->setProperty ("role", role);
+            if (enabledBy.isObject()) o->setProperty ("enabled_by", enabledBy);
+            return juce::var (o);
+        };
+        auto* link = new juce::DynamicObject();
+        link->setProperty ("index", 8);
+        link->setProperty ("value", 1.0);
+        link->setProperty ("name", "Mono Maker In");
+        link->setProperty ("why", "Mono Maker is inert until its In switch is engaged");
+
+        auto* controls = new juce::DynamicObject();
+        controls->setProperty ("Mono Maker", ctl (7, "Mono Maker", "stereo_width", juce::var (link)));
+        controls->setProperty ("Output Gain", ctl (2, "Output Gain", ""));
+        auto* m = new juce::DynamicObject();
+        m->setProperty ("controls", juce::var (controls));
+        juce::var rmap (m);
+
+        auto w = controlWithRole (rmap, "stereo_width");
+        check (w.ok && w.slot.index == 7 && w.controlName == "Mono Maker",
+               "role: the stereo_width control resolves by ROLE, not by the name 'Mono Maker'");
+
+        auto none = controlWithRole (rmap, "bypass");
+        check (! none.ok && none.candidates == 0 && none.why.contains ("no control declares"),
+               "role REFUSES when no control claims it");
+
+        auto* two = new juce::DynamicObject();
+        two->setProperty ("Width A", ctl (7, "Width A", "stereo_width"));
+        two->setProperty ("Width B", ctl (9, "Width B", "stereo_width"));
+        auto* m2 = new juce::DynamicObject(); m2->setProperty ("controls", juce::var (two));
+        auto amb = controlWithRole (juce::var (m2), "stereo_width");
+        check (! amb.ok && amb.candidates == 2
+                 && amb.why.contains ("Width A") && amb.why.contains ("Width B"),
+               "role REFUSES two claimants and names both, rather than taking the first");
+
+        auto el = enableLinkFor (rmap, "Mono Maker");
+        check (el.declared && el.index == 8 && el.value == 1.0,
+               "enable link resolves to the index and value that make the control live");
+
+        auto missing = enableLinkFor (rmap, "Output Gain");
+        check (! missing.declared && missing.why.contains ("UNKNOWN, not assumed"),
+               "an absent enable link is UNKNOWN, never 'nothing needs setting'");
+
+        auto st = asExcitationStep (el);
+        check (st.index == 8 && st.value == 1.0 && st.semantic == "enable:Mono Maker"
+                 && st.why.contains ("In switch"),
+               "an enable link becomes an excitation step, so one mechanism reports both");
+
+        // and it flows through applyExcitation, including the unlanded case
+        ExcitationPlan linkPlan; linkPlan.source = "map"; linkPlan.steps.add (st);
+        auto lr = applyExcitation (linkPlan, 12, [] (int, double, const juce::String&) { return -1.0; });
+        check (lr.unlanded == 1 && ! lr.ok(),
+               "an enable write that does not land is reported by the excitation machinery");
+    }
+
     // ---- excitation: the single resolution point --------------------------
     ExcitationPlan suitePlan;
     suitePlan.source = "suite:comp";

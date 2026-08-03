@@ -368,6 +368,76 @@ out-of-range index refused rather than clamped.
 
 ---
 
+## 4f. Item 5b built: control roles and enable links (3 August 2026)
+
+Schema 2.3b. A named control may declare `role` and `enabled_by`:
+
+```json
+"Mono Maker": { "index": 7, "role": "stereo_width",
+                "enabled_by": { "index": 8, "value": 1.0, "name": "Mono Maker In",
+                                "why": "Mono Maker is inert until its In switch is engaged" } }
+```
+
+Role vocabulary, deliberately small because a role is a claim a suite can act
+on rather than a description: `stereo_width`, `enable`, `bypass`, `mode`.
+
+`controlWithRole()` refuses on none and on more than one, naming both
+claimants — the rule `primaryGroup()` already applies to bands. An absent
+`enabled_by` resolves to **UNKNOWN, never "nothing needs setting"**: a suite
+that cannot tell those apart writes a parameter behind a disabled section and
+measures its own silence.
+
+**Enable links resolve into `ExcitationStep`s.** "Set index 8 to 1.0 so index 7
+is live" is the same sentence as "set ratio to max so the compressor
+compresses", so links go through `applyExcitation()` and an unlanded enable
+write is reported by machinery that already exists. Drift gate 165 → 172.
+
+### The standing question for an item that adds no verdict
+
+5b introduces no measurement. The question becomes: **what will eq be able to
+get wrong once the role and the link come from a map instead of from AMEK's
+constants?** Today `controls["Mono Maker"]` at index 7 with index 8 as its gate
+are facts about one plugin, verified once by a human and frozen in code. After
+item 3 they are claims in every map, re-verified by nobody.
+
+| # | What is wrong | What it produces | Caught? |
+|---|---|---|---|
+| a | Role names a control with **no** stereo effect | Arm A writes it, side energy does not move, **A5 fails** | The failure is caught; **the attribution is not**. Today an A5 failure means the harness is broken. With a map-supplied role the identical symptom means the map's claim is false. Item 3 must say which |
+| b | Role names a **different** control that genuinely moves stereo width | A5 passes, A1 passes, arm A reports `contradicts` — **the right verdict through a mislabelled control** | **No, and nothing can, by behaviour.** Two controls with the same measurable character are indistinguishable by that character. The gate stays green while the map is wrong |
+| c | Enable link has the wrong index, wrong value, or is absent | The gated control never becomes live, so writing it does nothing and **A5 fails — identical to (a)**, and identical to a dead index and to a bridged-write failure. Three causes, one symptom | Failure caught, cause not separated. Now separable: links go through `applyExcitation()`, which reports landing, so "the enable did not land" and "the enable landed and the control is still inert" are different facts |
+| d | Enable link points at a **global** bypass or mode rather than a per-control enable | Engaging it changes the plugin generally, so **arm B** — the correct-map arm, which is not testing the link at all — measures a different plugin | **No.** Nothing checks that engaging an enable left the primary measurement where it was |
+
+There is a fifth, quieter one: eq's **B5 negative control** asserts that Mono
+Maker does not drift across arm B's writes. If the role names a different
+control, B5 tests drift on the wrong parameter and passes for the wrong
+reason — the same shape as (b).
+
+### What item 3 must therefore build, decided before it starts
+
+1. **Verify a claimed role by signal before acting on it**, with its own
+   attribution: write the control, require the side band to move AND the mid
+   band not to. That separates a width control from a gain or a filter, and it
+   converts (a) and (c) from "the gate failed" into "the map's `stereo_width`
+   claim is not supported by measurement".
+2. **State the limit of that verification plainly**: it cannot separate the
+   claimed width control from any other width control, so (b) is not
+   falsifiable by behaviour. The map's identity claim for an
+   equivalent-behaviour control is checkable only against itself, by the
+   index/name cross-check item 2 built. Record it as a known limit rather than
+   implying the role is proven.
+3. **Null-test the enable** (d): measure the primary feature before and after
+   engaging the link and require it not to move beyond σ_f, or record the
+   movement as contamination. An enable that changes the measurement is not an
+   enable.
+4. **Distinguish the three causes behind one symptom** (c): unlanded write
+   (reported by `applyExcitation`), landed-but-inert (role claim false), and
+   index-out-of-range (refused at lookup).
+
+None of this is speculative — every entry is a path that exists in arm A today
+and is currently held correct by a constant.
+
+---
+
 ## Why resolution is INDEX-FIRST with the name as the check
 
 Recorded because the intuitive order is the wrong one and someone will
