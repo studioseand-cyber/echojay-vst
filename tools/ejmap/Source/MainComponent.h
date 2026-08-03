@@ -138,8 +138,13 @@ public:
 
         addAndMakeVisible (sendButton);
         sendButton.setButtonText ("Send");
-        sendButton.setEnabled (false);          // gate must pass and the artefact must exist
+        // ALWAYS CLICKABLE, NEVER SILENT. A disabled button on the one control
+        // that reaches the server is a no-op that looks like an action: press
+        // it, nothing happens, and the reasonable conclusion is that the map
+        // was sent. Readiness is shown by COLOUR; the click always answers, and
+        // when it will not send it says which precondition is missing.
         sendButton.onClick = [this] { sendArtefactNow(); };
+        setSendReady (false);
 
         addAndMakeVisible (deepToggle);
         deepToggle.setButtonText ("Deep");
@@ -8248,6 +8253,18 @@ private:
         step in the tool and is reachable by button, never by auto-advance.
     */
     juce::File lastArtefact;
+    juce::String lastArtefactFp;      // the artefact belongs to ONE fingerprint
+
+    /** Readiness is visible without being a lock. Green when a gated artefact
+        for the LOADED plugin is on disk; grey otherwise, and the click still
+        explains why. */
+    void setSendReady (bool ready)
+    {
+        sendButton.setColour (juce::TextButton::buttonColourId,
+                              ready ? juce::Colour (0xff2f6f45) : juce::Colour (0xff3a3a3a));
+        sendButton.setTooltip (ready ? "Send the gated artefact for this plugin"
+                                     : "Not ready -- click to find out why");
+    }
 
     /** Put the artefact on the wire and SAY WHAT HAPPENED. A refusal must not
         read like a success at a glance, which is why the outcome leads with the
@@ -8256,9 +8273,30 @@ private:
     */
     void sendArtefactNow()
     {
-        if (! lastArtefact.existsAsFile())
-        { captureReadout.setText ("No artefact to send: open Upload... first.",
-                                  juce::dontSendNotification); return; }
+        // EACH PRECONDITION NAMED SEPARATELY, in the order they fail. "Not
+        // ready" would be as useless as silence: the three causes need three
+        // different actions from the operator.
+        if (currentFp.isEmpty())
+        { captureReadout.setText ("CANNOT SEND: no plugin is loaded.\n\n"
+              "The card sends the gated artefact for the LOADED plugin, so load the "
+              "plugin whose map you want to send, then press Upload...",
+              juce::dontSendNotification); return; }
+
+        auto mapOnDisk = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
+        if (! mapOnDisk.existsAsFile())
+        { captureReadout.setText ("CANNOT SEND: there is no map on disk for this plugin ("
+              + currentFp.substring (0, 12) + ").\n\nAssign and submit first.",
+              juce::dontSendNotification); return; }
+
+        if (! lastArtefact.existsAsFile() || lastArtefactFp != currentFp)
+        { captureReadout.setText ("CANNOT SEND: the structural gate has not run for this plugin.\n\n"
+              + juce::String (lastArtefactFp.isNotEmpty() && lastArtefactFp != currentFp
+                    ? "The last artefact belongs to a DIFFERENT plugin ("
+                      + lastArtefactFp.substring (0, 12) + "), and sending it here would post "
+                      "the wrong map.\n\n"
+                    : "")
+              + "Press Upload... to gate this map and write its artefact, then Send.",
+              juce::dontSendNotification); return; }
 
         juce::MemoryBlock bytes;
         lastArtefact.loadFileAsData (bytes);
@@ -8274,7 +8312,7 @@ private:
         { captureReadout.setText ("REFUSED: the artefact carries no Host header, so there is no "
                                   "destination it names.", juce::dontSendNotification); return; }
 
-        sendButton.setEnabled (false);
+        setSendReady (false);
         captureReadout.setText ("Sending " + juce::String ((int) bytes.getSize()) + " bytes to "
                                 + hostPort + "...", juce::dontSendNotification);
         repaint();
@@ -8305,7 +8343,7 @@ private:
                 t << "\n\nNo status came back at all. If this was a timeout the request MAY OR "
                      "MAY NOT have reached the server: check before sending again, because a "
                      "retry from here is how one submission becomes two.";
-            sendButton.setEnabled (true);       // a refusal may be retried BY A HUMAN
+            setSendReady (true);                // a refusal may be retried BY A HUMAN
         }
         captureReadout.setText (t, juce::dontSendNotification);
         std::cout << "SEND: " << (res.sent ? "sent" : "refused") << " status " << res.status
@@ -8354,8 +8392,9 @@ private:
             // and the artefact has just been written, which are exactly the two
             // preconditions. Anywhere else and the button would be offering to
             // send bytes that may not exist or may not have been gated.
-            sendButton.setEnabled (dry.existsAsFile());
             lastArtefact = dry;
+            lastArtefactFp = currentFp;
+            setSendReady (dry.existsAsFile());
 
             auto stub = Mouth::stubMouthSubmit (ledger.getRoot(), currentFp,
                                                 f.loadFileAsString(), testerName());
@@ -8369,7 +8408,8 @@ private:
         }
         else
         {
-            sendButton.setEnabled (false);      // gate refused: nothing to send
+            lastArtefactFp.clear();             // gate refused: nothing to send
+            setSendReady (false);
             Mouth::setQueueState (ledger.getRoot(), currentFp, "rejected",
                                   verdict.rejections.joinIntoString ("; "));
             t << "STRUCTURAL GATE: REFUSED\n";
