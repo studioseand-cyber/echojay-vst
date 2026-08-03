@@ -1284,11 +1284,57 @@ public:
         using P = Probe;
         auto say = [] (const juce::String& t) { std::cout << t << std::endl; };
         int fails = 0;
-        auto crit = [&] (const juce::String& id, bool pass, const juce::String& numbers)
+        // TWO POPULATIONS, TWO FUNCTIONS. The 19 emit sites were never one
+        // kind: 11 are the headline gate asserting things about ITSELF against
+        // a fixture, and 8 are parameter verdicts about a plugin. crit()
+        // served both, which is why routing could not sit on it -- forcing a
+        // harness assertion through routeVerdict is meaningless (there is no
+        // Delta_pred for "the stake restored five parameters"), so the fork
+        // was pushed out to a convention suites were supposed to follow. The
+        // choke point was doing two jobs; splitting it is what lets the guard
+        // sit there.
+
+        // (1) HARNESS ASSERTIONS. Unchanged behaviour, renamed so no suite
+        // reaches for it to publish a verdict by analogy.
+        auto assertHarness = [&] (const juce::String& id, bool pass, const juce::String& numbers)
         {
             if (! pass) ++fails;
             std::cout << "  " << (pass ? "PASS " : "FAIL ") << id << ": " << numbers << std::endl;
         };
+
+        // (2) PARAMETER VERDICTS. The only path a verdict leaves a suite. The
+        // four routing inputs are REQUIRED ARGUMENTS: a suite that omits them
+        // does not compile, which is the property the sensitivity check and
+        // the ambiguity rule already have and the fork did not. Returns the
+        // route so a caller can branch, but the words are composed here.
+        auto emitVerdict = [&] (const juce::String& semantic,
+                                double measured, double predicted,
+                                double floor, double tolerance,
+                                const juce::String& evidence)
+        {
+            const auto route = P::routeVerdict (measured, floor, predicted, tolerance);
+            if (route == P::Route::overClaim) ++fails;
+            std::cout << "  " << (route == P::Route::tracks ? "CONFIRMS    "
+                               : route == P::Route::deafness ? "INCONCLUSIVE"
+                                                             : "CONTRADICTS ")
+                      << " " << semantic << ": "
+                      << P::routeText (route, measured, predicted, floor)
+                      << " | " << evidence << std::endl;
+            return route;
+        };
+
+        // (3) INCONCLUSIVE BY PRECONDITION. Reached BEFORE any measurement
+        // exists -- a mode token, an undeclared unit family -- so there are no
+        // numbers to route. It cannot express a confirm STRUCTURALLY: this
+        // function has no branch, no parameter and no return value that could
+        // produce one, and it never touches the route enum at all.
+        auto emitInconclusive = [&] (const juce::String& semantic, const juce::String& reason)
+        {
+            std::cout << "  INCONCLUSIVE " << semantic << ": " << reason
+                      << "  [by precondition -- no measurement was taken, so no verdict is "
+                         "reachable from here]" << std::endl;
+        };
+        juce::ignoreUnused (emitInconclusive);
 
         auto desc = echojay::auregistry::describeFromRegistry (
                         mode == "comp" ? "AudioUnit:Effects/aufx,APCM,ksWV"
@@ -1951,7 +1997,7 @@ public:
             }
             // ITEM 1: the WORDS come from the route. Routing right with wrong
             // words is the failure the fork existed to prevent.
-            crit (isLim ? "ceiling_db (top-step plateau, PRIMARY)"
+            assertHarness (isLim ? "ceiling_db (top-step plateau, PRIMARY)"
                         : "threshold_db (level-swept burst train, PRIMARY)",
                   route == P::Route::tracks || route == P::Route::deafness,
                   P::routeText (route, featMoved, predForRoute, juce::jmax (sgPlateau, 0.088))
@@ -2124,7 +2170,7 @@ public:
             say ("  Delta_pred: probed span " + juce::String (probedSpan2, 2)
                  + " (ladder " + juce::String (ladderRaw2, 2) + ") -- probed span used");
             const double thdMoved = std::abs (thds.getLast() - thds.getFirst());
-            crit ("drive (THD monotone, PRIMARY)", mono && thdMoved > 1.0,
+            assertHarness ("drive (THD monotone, PRIMARY)", mono && thdMoved > 1.0,
                   "THD " + juce::String (thds.getFirst(), 2) + " -> " + juce::String (thds.getLast(), 2)
                   + " dB across drive " + juce::String (landeds.getFirst(), 2) + " -> "
                   + juce::String (landeds.getLast(), 2) + " (moved " + juce::String (thdMoved, 2)
@@ -2546,6 +2592,14 @@ public:
             const double predTh = P::predictedLanding (swTh.a, -10.0) - P::predictedLanding (swTh.a, -30.0);
             const double measTh = cHi.kneeInDb - cLo.kneeInDb;
             const double tolTh = juce::jmax (0.25 * std::abs (predTh), 4 * sgKnee);
+            // FOLDED, NOT DROPPED. The knee estimator is corroboration for the
+            // GR-at-level primary, not a second verdict on the same semantic.
+            // Two verdicts on one semantic is its own confusion. The number
+            // stays VISIBLE -- the 44%-vs-47% agreement between two estimators
+            // sharing no machinery is the strongest evidence in the over-claim
+            // finding, and reducing it to a footnote would weaken the claim it
+            // supports.
+            juce::String kneeEvidence;
             const bool thrTracks = std::abs (measTh - predTh) <= tolTh;
             const bool thrDirection = (measTh > 0) == (predTh > 0) && std::abs (measTh) > 1.0;
             if (cLo.kneeFound && cHi.kneeFound && ! thrTracks && thrDirection)
@@ -2555,15 +2609,14 @@ public:
                        "knee softness sets the residual, and the transfer curve has no sharp "
                        "breakpoint to resolve. Reported as INCONCLUSIVE: knee unresolvable to the "
                        "tolerance the prediction demands.");
-            crit (thrTracks ? "threshold_db" : "threshold_db [INCONCLUSIVE, not confirms]",
-                  cLo.kneeFound && cHi.kneeFound && (thrTracks || thrDirection),
+            kneeEvidence =
                   "ladder " + juce::String (P::predictedLanding (swTh.a, -30.0), 1) + " -> "
                   + juce::String (P::predictedLanding (swTh.a, -10.0), 1) + " dB (predicted move +"
                   + juce::String (predTh, 1) + " dB); knee measured "
                   + (cLo.kneeFound ? juce::String (cLo.kneeInDb, 1) : juce::String ("UNDEFINED"))
                   + " -> " + (cHi.kneeFound ? juce::String (cHi.kneeInDb, 1) : juce::String ("UNDEFINED"))
                   + " dB (moved +" + juce::String (measTh, 1) + "), error "
-                  + juce::String (std::abs (measTh - predTh), 2) + " vs tol " + juce::String (tolTh, 2));
+                  + juce::String (std::abs (measTh - predTh), 2) + " vs tol " + juce::String (tolTh, 2);
 
             // ---- THRESHOLD VIA GR AT FIXED LEVEL (ITEM 2, PRIMARY) --------
             // Threshold means gain reduction BEGINS around X dB, not that a
@@ -2618,8 +2671,8 @@ public:
             const double predGr = predSpan * (1.0 - 1.0 / ratioMax);
             const double sgKneeFloor = sgKnee > 0.1 ? sgKnee : 0.1;
             const double tolGr = juce::jmax (0.25 * predGr, 4.0 * sgKneeFloor);
-            crit ("threshold_db (GR-at-level, PRIMARY)",
-                  monotone && std::abs (totalGr - predGr) <= tolGr,
+            emitVerdict ("threshold_db (GR-at-level, PRIMARY)",
+                  totalGr, predGr, juce::jmax (sgKneeFloor, 0.001), tolGr,
                   "threshold " + juce::String (P::predictedLanding (swTh.a, thrPoints[0]), 1)
                   + " -> " + juce::String (P::predictedLanding (swTh.a, thrPoints[3]), 1)
                   + " dB across " + juce::String (predSpan, 1) + " dB at ratio "
@@ -2642,7 +2695,7 @@ public:
             const double predSlopeLo = 1.0 / predRLo, predSlopeHi = 1.0 / predRHi;
             const double predDS = predSlopeHi - predSlopeLo, measDS = sHi.slopeAbove - sLo.slopeAbove;
             const double tolS = juce::jmax (0.25 * std::abs (predDS), 4 * sgSlope);
-            crit ("ratio", std::abs (measDS - predDS) <= tolS,
+            emitVerdict ("ratio", measDS, predDS, juce::jmax (sgSlope, 0.0001), tolS,
                   "ladder " + juce::String (predRLo, 2) + ":1 -> " + juce::String (predRHi, 2)
                   + ":1 => predicted slope " + juce::String (predSlopeLo, 3) + " -> "
                   + juce::String (predSlopeHi, 3) + " (delta " + juce::String (predDS, 3)
@@ -2701,7 +2754,7 @@ public:
                 const juce::String unitFam = atk ? swAtUnit : swReUnit;
                 if (P::displayIsModeToken (disp))          // HARNESS-level guard
                 {
-                    crit (atk ? "attack_ms" : "release_ms", true,
+                    assertHarness (atk ? "attack_ms" : "release_ms", true,
                           juce::String ("INCONCLUSIVE: possibly mode-suppressed -- the parameter ")
                           + P::modeTokenReason (disp)
                           + ". Carve-out 1 exclusion (a) FAILS: a suppressing state is present. "
@@ -2711,7 +2764,7 @@ public:
                 }
                 if (unitFam.isEmpty())
                 {
-                    crit (atk ? "attack_ms" : "release_ms", true,
+                    assertHarness (atk ? "attack_ms" : "release_ms", true,
                           juce::String ("INCONCLUSIVE: ladder units undeclared -- the display ('")
                           + disp + "') carries no unit family, so the ladder's numbers cannot be "
                           "checked against milliseconds. Measured tau "
@@ -2731,7 +2784,7 @@ public:
                                                   / juce::jmax (0.001, P::predictedLanding (sw.a, lo)));
                 const double measRatio = (tA > 0 && tB > 0) ? std::log2 (tB / juce::jmax (1.0, tA)) : 0.0;
                 const bool defined = tA > 0 && tB > 0;
-                crit (atk ? "attack_ms" : "release_ms",
+                assertHarness (atk ? "attack_ms" : "release_ms",
                       defined && std::abs (measRatio - predRatio) <= juce::jmax (0.25 * std::abs (predRatio), 0.25),
                       "ladder " + juce::String (P::predictedLanding (sw.a, lo), 2) + " -> "
                       + juce::String (P::predictedLanding (sw.a, hi), 2) + " (predicted log2 ratio "
@@ -3055,7 +3108,7 @@ public:
         const double biasB = P::InstrumentFloor::centreBiasOct (pred400);
         const double biasTerm = juce::jmax (biasA, biasB);
         const double centreTol = 0.070 + biasTerm;
-        crit ("B1 centre move", std::abs (measOct - predOct) <= centreTol,
+        assertHarness ("B1 centre move", std::abs (measOct - predOct) <= centreTol,
               "predicted " + juce::String (predOct, 3) + " oct (ladder: " + juce::String (pred100, 1)
               + " -> " + juce::String (pred400, 1) + " Hz), measured " + juce::String (measOct, 3)
               + " oct (" + juce::String (f100.centreHz, 1) + " -> " + juce::String (f400.centreHz, 1)
@@ -3064,7 +3117,7 @@ public:
               + " = 0.070 gate + " + juce::String (biasTerm, 4) + " instrument bias @"
               + juce::String (pred400, 0) + " Hz [terms recorded separately: gate 0.0700, bias "
               + juce::String (biasTerm, 4) + "]");
-        crit ("B2 expressible", predOct >= 4 * sigCentre,
+        assertHarness ("B2 expressible", predOct >= 4 * sigCentre,
               "Delta_pred " + juce::String (predOct, 3) + " oct vs 4*sigma_centre "
               + juce::String (4 * sigCentre, 4) + " oct");
 
@@ -3077,7 +3130,7 @@ public:
         const double predDDepth = P::predictedLanding (gainAnch, 9.0) - P::predictedLanding (gainAnch, 3.0);
         const double measDDepth = d9.depthDb - d3.depthDb;
         const double tolDepth = juce::jmax (0.25 * std::abs (predDDepth), 4 * sigDepth);
-        crit ("B3 gain depth", std::abs (measDDepth - predDDepth) <= tolDepth,
+        assertHarness ("B3 gain depth", std::abs (measDDepth - predDDepth) <= tolDepth,
               "predicted +" + juce::String (predDDepth, 2) + " dB, measured +"
               + juce::String (measDDepth, 2) + " dB (depth@+3 " + juce::String (d3.depthDb, 2)
               + ", depth@+9 " + juce::String (d9.depthDb, 2) + "), error "
@@ -3094,7 +3147,7 @@ public:
         const double predWRatio = std::log2 (qHi / qLo);          // width ~ 1/q
         const double measWRatio = std::log2 (wLo.widthOct / juce::jmax (1e-6, wHi.widthOct));
         const double tolW = juce::jmax (0.25 * std::abs (predWRatio), 4 * sigWidth);
-        crit ("B4 q width", std::abs (measWRatio - predWRatio) <= tolW,
+        assertHarness ("B4 q width", std::abs (measWRatio - predWRatio) <= tolW,
               "q " + juce::String (qLo, 2) + " -> " + juce::String (qHi, 2)
               + ": predicted width ratio " + juce::String (predWRatio, 3)
               + " oct-log2, measured " + juce::String (measWRatio, 3)
@@ -3109,7 +3162,7 @@ public:
         // better than a null can, and AMEK's TMT channel asymmetry makes a
         // side null unmeetable by construction. The quantity is RECORDED with
         // its cause and given no threshold.
-        crit ("B5 negative control (drift only)", monoDrift < 0.005,
+        assertHarness ("B5 negative control (drift only)", monoDrift < 0.005,
               "Mono Maker parameter value drift across every write in this arm: "
               + juce::String (monoDrift, 5) + " (limit 0.005)");
         say ("   recorded, not a criterion: side band(50-400) moved "
@@ -3122,7 +3175,7 @@ public:
         const bool b1ok = std::abs (measOct - predOct) <= centreTol;
         const bool b3ok = std::abs (measDDepth - predDDepth) <= tolDepth;
         const bool b4ok = std::abs (measWRatio - predWRatio) <= tolW;
-        crit ("B6 verdicts", b1ok && b3ok && b4ok,
+        assertHarness ("B6 verdicts", b1ok && b3ok && b4ok,
               juce::String ("freq_hz=") + (b1ok ? "confirms" : "NOT-confirms")
               + " gain_db=" + (b3ok ? "confirms" : "NOT-confirms")
               + " q=" + (b4ok ? "confirms" : "NOT-confirms"));
@@ -3157,7 +3210,7 @@ public:
         auto amid = P::lobeFeatures (a1r.mid, a2r.mid, 30.0, 20000.0, lobeDepthFloor);
         const bool lobeAtPredicted = amid.centreDefined()
               && std::abs (std::log2 (amid.centreHz / pred400)) <= centreTol;
-        crit ("A1 no localized lobe", ! lobeAtPredicted,
+        assertHarness ("A1 no localized lobe", ! lobeAtPredicted,
               juce::String ("depth floor for lobe existence = 0.25 * expressed ")
               + juce::String (std::abs (excF.depthDb), 2) + " dB = "
               + juce::String (lobeDepthFloor, 2) + " dB; largest mid excursion "
@@ -3168,7 +3221,7 @@ public:
         say ("   recorded, not a criterion: broadband mid redistribution "
              + juce::String (amid.maxAbsDb, 3) + " dB. Cause: M=(L+R)/2, so mono-ing below "
                "the crossover necessarily moves side content into mid. Expected physics.");
-        crit ("A2 branch fires", predOct >= 4 * sigCentre,
+        assertHarness ("A2 branch fires", predOct >= 4 * sigCentre,
               "Delta_pred " + juce::String (predOct, 3) + " oct >= 4*sigma_centre "
               + juce::String (4 * sigCentre, 4) + " oct, and excitation verified -> armed");
 
@@ -3232,7 +3285,7 @@ public:
         const double sideBv = P::bandEnergyDb (a2r.side, bandLo, bandHi);
         const double sideMove = std::abs (sideBv - sideA);
         const bool a5 = sideMove >= 4 * sigSide;
-        crit ("A5 falsifier (side moves)", a5,
+        assertHarness ("A5 falsifier (side moves)", a5,
               "Mono Maker landings " + juce::String (monoLandA, 1) + " -> " + juce::String (monoLandB, 1)
               + " Hz; side energy in [" + juce::String (bandLo, 0) + "," + juce::String (bandHi, 0)
               + "] Hz moved " + juce::String (sideMove, 3) + " dB vs 4*sigma_side "
@@ -3249,7 +3302,7 @@ public:
                    "(should-have-moved, localized). NOT the render-deafness branch: this is "
                    "mid-feature absence with proven index liveness."; }
         else { verdict = "contradicts"; branch = "wrong-direction/magnitude branch"; }
-        crit ("A4 verdict", verdict == "contradicts", verdict + " (" + branch + ")");
+        assertHarness ("A4 verdict", verdict == "contradicts", verdict + " (" + branch + ")");
         if (a5)
         {
             say ("  A6 card text:");
@@ -3274,7 +3327,7 @@ public:
         bool restored = true;
         for (auto& kv : preVals)
             if (std::abs (params[kv.first]->getValue() - kv.second) > 0.01f) restored = false;
-        crit ("restore", restored, juce::String ("state restored and verified on ")
+        assertHarness ("restore", restored, juce::String ("state restored and verified on ")
               + juce::String ((int) preVals.size()) + " tracked parameters"
               + "; the mis-map existed only in memory, the on-disk map was never touched");
         if (restored) { stakeFile.deleteFile(); stateFile.deleteFile(); }
