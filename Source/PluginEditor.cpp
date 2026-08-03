@@ -6067,9 +6067,18 @@ namespace LinkConsole
 
 void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
                                  const std::vector<juce::String>& addrs,
+                                 const std::vector<bool>& hasEqCurve,
                                  StripGeom& busOut,
                                  std::vector<StripGeom>& linkOut)
 {
+    // kStripEqMinData cannot be written in terms of kChainBlockH in the header
+    // (declaration order), so the two are tied together here. Inside the
+    // member function rather than at file scope, because both are private. If
+    // the chain block ever changes height this fires, rather than letting the
+    // EQ slot quietly keep a floor that no longer means "one row".
+    static_assert(kStripEqMinData == kChainBlockH + kChainBlockGap,
+                  "kStripEqMinData must stay one chain block plus its gap");
+
     busOut = StripGeom{};
     linkOut.clear();
     if (band.getWidth() <= 0 || band.getHeight() <= 0 || stripW <= 0)
@@ -6140,7 +6149,7 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
 
     // ---- ONE element-layout routine, used by the bus strip AND every Link
     // strip, so the pinned master cannot drift from the channels ------------
-    auto layOutOne = [&](StripGeom& sg, juce::Rectangle<int> full)
+    auto layOutOne = [&](StripGeom& sg, juce::Rectangle<int> full, bool hasEq)
     {
         sg.full = full;
         auto b = full.reduced(inner, inner);
@@ -6186,12 +6195,31 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         }
         sg.meter = meterCol;
         b.removeFromBottom(kStripVGap);
+        // THE EQ CURVE SLOT, off the TOP of what is left for the data area.
+        // Everything above (name, badge, active) and everything below (the
+        // fader+meter band, the AI button) is already placed, so taking the
+        // slot here cannot move any of them: a strip with an EQ and a strip
+        // without one keep the same fader baseline, which is the difference
+        // between a console and a set of unrelated columns.
+        //
+        // Dropped entirely rather than shrunk when the data area cannot spare
+        // the height. A 6px curve is not a smaller curve, it is a smear.
+        if (hasEq && b.getHeight() >= kStripEqH + kStripVGap + kStripEqMinData)
+        {
+            sg.eq = b.removeFromTop(kStripEqH);
+            b.removeFromTop(kStripVGap);
+        }
         sg.data = b;
     };
 
     // ---- The pinned Mix Bus strip: EDITOR coords, left edge of the band ----
     busOut.isBus = true;               // addr stays empty: the bus has no uid
-    layOutOne(busOut, { band.getX(), band.getY(), stripW, band.getHeight() });
+    // NO CURVE ON THE BUS STRIP this pass. The bus is the main plugin's own
+    // rack, so its curve would come from chainHost directly rather than from a
+    // sidecar -- a second data path with its own staleness story, for a strip
+    // the brief did not ask for. It is a small follow-up, not a hole here.
+    layOutOne(busOut, { band.getX(), band.getY(), stripW, band.getHeight() },
+              false);
 
     // ---- The scrolling Link strips: VIEW-LOCAL coords, x from 0 ------------
     linkOut.reserve(addrs.size());
@@ -6200,8 +6228,10 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         StripGeom sg;
         sg.addr  = addrs[i];
         sg.isBus = false;
+        // A short hasEqCurve means "no curve", never an out-of-range read.
+        const bool hasEq = i < hasEqCurve.size() && hasEqCurve[i];
         layOutOne(sg, { (int)i * (stripW + kStripGap), 0,
-                        stripW, band.getHeight() });
+                        stripW, band.getHeight() }, hasEq);
         linkOut.push_back(sg);
     }
 }
@@ -6221,6 +6251,14 @@ EchoJayEditor::StripHit EchoJayEditor::stripHitAt(const StripGeom& sg,
     if (sg.ai.contains(p))        return StripHit::Ai;
     if (sg.badge.contains(p))     return StripHit::Badge;
     if (sg.active.contains(p))    return StripHit::Active;
+    // sg.eq IS DELIBERATELY ABSENT FROM THIS LIST, which is a decision rather
+    // than an omission and is written down because the order above is the
+    // contract. The curve is a readout with nothing to operate: it has no
+    // value to drag, and a click that opened the EQ's editor would be a
+    // different feature (and one the mixer cannot honour for a plugin hosted
+    // inside another instance). So a click on it falls through to Background
+    // and SELECTS THE CHANNEL, which is what a click on any other inert part
+    // of the strip already does. Consistent beats clever.
     return StripHit::Background;
 }
 
@@ -6259,10 +6297,14 @@ void EchoJayEditor::measureLinkStrips()
     // whole product uses, so an instance keeps one label everywhere. The addr
     // derivation is linkAddrForSlot, the one place it lives.
     std::vector<juce::String> addrs;
+    std::vector<bool>         hasEqCurve;
     for (const auto& entry : processorRef.getLinkDisplayList())
+    {
         addrs.push_back(linkAddrForSlot(entry.info));
+        hasEqCurve.push_back(linkHasEqCurve(entry.info.uid));
+    }
 
-    layOutStrips(linkStripAreaRect_, stripWidth(), addrs,
+    layOutStrips(linkStripAreaRect_, stripWidth(), addrs, hasEqCurve,
                  linkBusGeom_, linkStripGeom_);
 }
 
@@ -6753,6 +6795,22 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
         ce.rack   = std::move(rack);
         ce.readMs = nowMs;
     }
+
+    // An EQ appearing in (or leaving) a rack changes the strip's GEOMETRY,
+    // not just its pixels, because a strip with a curve carves an eq rect out
+    // of its data area. Geometry has one author, so this re-measures rather
+    // than letting paint improvise a rect: the standing rule that produced
+    // four bugs in two days when it was broken.
+    juce::String sig;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (linkHasEqCurve(e.info.uid))
+            sig << e.info.uid << ",";
+    if (sig != linkEqSig_)
+    {
+        linkEqSig_ = sig;
+        measureLinkStrips();
+        repaint();
+    }
 }
 
 EchoJayEditor::ChainRows
@@ -6784,6 +6842,22 @@ EchoJayEditor::layOutChainRows(juce::Rectangle<int> dataRect, int occupied,
         r.rects.push_back({ a2.getX(), a2.getY() + i * per - off,
                             a2.getWidth(), kChainBlockH });
     return r;
+}
+
+const std::vector<int16_t>*
+EchoJayEditor::linkEqCurve(const juce::String& uid) const
+{
+    if (uid.isEmpty()) return nullptr;         // legacy Link: no sidecar address
+    auto it = processorRef.linkRackCache.find(uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid)
+        return nullptr;                        // rack unknown, NOT "rack flat"
+    // The FIRST slot carrying a curve, which is the EQ's own slot: the
+    // publisher attaches it there and nowhere else, so this needs no second
+    // identity test and cannot be fooled by a plugin merely named "EQ".
+    for (const auto& s : it->second.rack.slots)
+        if ((int) s.curveDeciDb.size() == LinkShm::kEqCurvePoints)
+            return &s.curveDeciDb;
+    return nullptr;
 }
 
 int EchoJayEditor::linkRackCount(const StripGeom& sg) const
@@ -6973,6 +7047,55 @@ void EchoJayEditor::pollLinkBlockAck(const juce::String& uid, int seq, int attem
         entry->reason = "No response from this Link - nothing was changed.";
         safeThis->linkMixerView_.repaint();
     });
+}
+
+void EchoJayEditor::paintLinkStripEq(juce::Graphics& g, juce::Rectangle<int> area,
+                                     const std::vector<int16_t>& curve,
+                                     float dim, bool wide)
+{
+    // Both guards are belt and braces: layOutStrips only ever gives this a
+    // rect when linkEqCurve said yes. They stay because "draw nothing" is the
+    // right answer to bad data here, and the alternative would be a flat line.
+    if (area.isEmpty() || (int) curve.size() != LinkShm::kEqCurvePoints) return;
+
+    // The same recessed well the fader and meter share, so the curve reads as
+    // a READOUT rather than as ink floating on the strip fill. One depth
+    // element, matching the rest of the console.
+    const auto wr = area.toFloat();
+    g.setColour(LinkConsole::well);
+    g.fillRoundedRectangle(wr, 3.0f);
+
+    // CURVE ONLY: no grid, no zero line, no labels, no numbers. At 26px tall
+    // a scale would take more pixels than the thing it annotates. The cost is
+    // real and worth stating: without a centre line, boost and cut are told
+    // apart by the curve's shape against the well, not by a reference.
+    const auto pr = wr.reduced(1.0f);         // keep the stroke inside the well
+    if (pr.getWidth() <= 1.0f || pr.getHeight() <= 1.0f) return;
+    const float midY  = pr.getCentreY();
+    const float perDb = (pr.getHeight() * 0.5f) / kEqDrawRangeDb;
+
+    const int n = LinkShm::kEqCurvePoints;
+    juce::Path p;
+    for (int i = 0; i < n; ++i)
+    {
+        // x is the INDEX across the rect, which is the log-spaced grid
+        // LinkShm::eqCurveFreqs defines: 20 Hz at the left edge, 20 kHz at
+        // the right. Nothing here re-derives a frequency, so the writer's
+        // axis and this one cannot drift apart.
+        const float x  = pr.getX() + pr.getWidth() * (float) i / (float) (n - 1);
+        // Clamped to the DRAWN range, which is tighter than the published
+        // one: a steep high-pass pins to the floor instead of leaving the
+        // rect, and that pinning is the honest reading of "everything below
+        // here is gone".
+        const float db = juce::jlimit(-kEqDrawRangeDb, kEqDrawRangeDb,
+                                      (float) curve[(size_t) i] * 0.1f);
+        const float y  = midY - db * perDb;
+        if (i == 0) p.startNewSubPath(x, y);
+        else        p.lineTo(x, y);
+    }
+
+    g.setColour(LinkConsole::value.withMultipliedAlpha(dim));
+    g.strokePath(p, juce::PathStrokeType(wide ? 1.3f : 1.1f));
 }
 
 void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
@@ -7505,6 +7628,17 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 dim = juce::jmin(dim, 0.55f);
             drv = advanceLinkStripSmoothing(*st, fresh);
         }
+
+        // The EQ curve, ABOVE the content area and in BOTH content modes: it
+        // is a property of the rack, not of the numbers/chain toggle. Nothing
+        // runs when this Link published no curve, because then sg.eq is empty
+        // and there is no slot to fill. The second lookup is not redundant
+        // with the geometry's: the cache can refresh between a measure and a
+        // paint, and drawing nothing for one frame is right where drawing a
+        // flat line would be a claim.
+        if (!sg.eq.isEmpty() && entry != nullptr)
+            if (const auto* c = linkEqCurve(entry->info.uid))
+                paintLinkStripEq(g, sg.eq, *c, dim, wide);
 
         switch (processorRef.linkMixerContent)
         {

@@ -246,6 +246,42 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   correct given the information available — the gap is upstream in what
   the registry can tell us; and the Link monitor behaves identically, so
   it is consistent, not a new inconsistency.
+- A SIGNAL GATED ON ONE OF ITS CONSUMERS is invisible to every other
+  consumer, and the gate reads as deliberate long after it stopped being
+  so. ChainHost's AudioProcessorListener (the only way a HOSTED plugin's
+  own knob movement is ever observed) refused to attach unless
+  stateCacheEnabled_ was set, which only the main plugin does. The Link
+  therefore could not see a hosted parameter change at all, and the EQ
+  curve's publish trigger had nothing to hang on. The fix was to attach
+  the listener ALWAYS and leave the expensive part (state capture) gated
+  where it already was: stateCacheTick, refreshStateCacheIfIdle and
+  captureAllSlotStatesNow each test the flag for themselves. THE RULE:
+  gate the expensive CONSUMER, never the cheap SIGNAL. Attaching costs
+  two relaxed atomic stores per notification.
+- chainRevision COVERS STRUCTURE ONLY: add, remove, move, bypass, per-slot
+  wet, master wet. It does NOT move when a hosted plugin's own parameters
+  change, so anything revision-gated freezes at whatever the rack looked
+  like when a plugin was last added. That is correct for the rack CARD and
+  wrong for anything reflecting a plugin's settings. Use
+  getHostedChangeEpoch alongside it, and note the two want different
+  timing: structure should publish at once (a discrete event), knob floods
+  need a settle window or one drag rewrites the file a hundred times.
+- AN EXACT-MATCH VERSION FIELD IS NOT A MINIMUM. readRackSidecar rejects
+  on `(int) obj->getProperty("v") != 1`, so bumping the sidecar to v:2 to
+  announce a new field would make every OLDER main plugin discard the
+  WHOLE document and lose that rack's names, bypass and wet as well as the
+  field it did not understand. New keys go in AT v:1: an old reader simply
+  never asks for them, and a new reader parsing an old file finds the key
+  absent, which is the same "no data" it must already handle. Check how a
+  version field is TESTED before you bump it.
+- A "NEW" STRING LITERAL MAY NOT BE NEW, and a marker with a non-zero
+  baseline proves nothing. "eqCurve" looked like a fresh JSON key for the
+  EQ curve until a grep of HEAD found ReferenceAnalyser already using that
+  exact literal for reference-track curves in an unrelated document. Two
+  unrelated keys sharing a name also traps the next person grepping. Both
+  problems went away by renaming the key to "eqMagDb" (which additionally
+  says the values are magnitudes in dB, not band settings). ALWAYS grep
+  HEAD for a candidate marker before claiming a zero baseline.
 - LOGIC RECREATES THE PLUGIN EDITOR whenever you switch between the Link
   window and EchoJay (single plugin window) — every couple of minutes in
   real Link work. ANY editor-instance state that matters across that

@@ -47,10 +47,17 @@ struct EchoJayLinkMixerTestAccess
     using Geom  = EchoJayEditor::StripGeom;
     using Hit   = EchoJayEditor::StripHit;
 
+    /** hasEq defaults to empty, which means "no strip has an EQ curve" and
+        keeps every pre-EQ case in this file testing exactly what it did. */
     static void layOut (juce::Rectangle<int> band, int stripW,
                         const std::vector<juce::String>& addrs,
-                        Geom& bus, std::vector<Geom>& links)
-    { Ed::layOutStrips (band, stripW, addrs, bus, links); }
+                        Geom& bus, std::vector<Geom>& links,
+                        const std::vector<bool>& hasEq = {})
+    { Ed::layOutStrips (band, stripW, addrs, hasEq, bus, links); }
+
+    static int eqH()          { return Ed::kStripEqH; }
+    static int eqMinData()    { return Ed::kStripEqMinData; }
+    static int vGap()         { return Ed::kStripVGap; }
 
     static Hit hitAt (const Geom& sg, juce::Point<int> p)
     { return Ed::stripHitAt (sg, p); }
@@ -770,6 +777,79 @@ static void testBandSqueeze()
     }
 }
 
+static void testEqSlot (int stripW, int bandH)
+{
+    // THE EQ CURVE SLOT. The load-bearing claim is not that the rect exists,
+    // it is that a strip WITHOUT a curve is not merely blank there but has no
+    // rect at all, and that the fader baseline does not move between the two.
+    std::printf ("eq slot: %dpx strip, %dpx band\n", stripW, bandH);
+    const juce::Rectangle<int> band { 32, 142, 1050, bandH };
+
+    Geom bus;
+    std::vector<Geom> links;
+    // Three strips, only the middle one carrying a curve. Mixed on purpose:
+    // an all-or-nothing case would pass even if the flag were ignored and the
+    // slot given to everybody.
+    T::layOut (band, stripW, addrs (3), bus, links, { false, true, false });
+    if (links.size() != 3) { check (false, "three strips laid out"); return; }
+
+    check (links[0].eq.isEmpty(), "no curve means NO RECT, not an empty one");
+    check (links[2].eq.isEmpty(), "no curve means NO RECT on the last strip");
+    check (! links[1].eq.isEmpty(), "a published curve gets a rect");
+    checkEq (links[1].eq.getHeight(), T::eqH(), "eq rect height");
+
+    // THE ALIGNMENT CLAIM: the slot comes out of the data area, so every
+    // other element keeps its place. A console whose faders step up and down
+    // between neighbours is the bug this guards.
+    checkEq (links[1].fader.getY(), links[0].fader.getY(), "fader top unmoved by the eq slot");
+    checkEq (links[1].fader.getHeight(), links[0].fader.getHeight(), "fader height unmoved");
+    checkEq (links[1].meter.getY(), links[0].meter.getY(), "meter top unmoved");
+    checkEq (links[1].ai.getY(), links[0].ai.getY(), "AI button unmoved");
+    checkEq (links[1].name.getY(), links[0].name.getY(), "name unmoved");
+
+    // It is the DATA area that pays, and it pays exactly the slot plus a gap.
+    checkEq (links[0].data.getHeight() - links[1].data.getHeight(),
+             T::eqH() + T::vGap(), "the data area pays for the slot");
+    // And the slot sits inside the space the data area used to hold, above
+    // what is left of it.
+    check (links[1].eq.getBottom() <= links[1].data.getY(),
+           "the eq slot sits above the data area");
+    check (links[1].eq.getX() == links[1].data.getX()
+           && links[1].eq.getWidth() == links[1].data.getWidth(),
+           "the eq slot spans the data column");
+}
+
+static void testEqSlotSqueeze()
+{
+    // A data area too short to keep a usable list DROPS the curve rather than
+    // shrinking it: a 6px curve is a smear, not a small curve. Absence here
+    // is the same absence as "no EQ", which is what lets paint have exactly
+    // one no-slot path instead of two.
+    std::printf ("eq slot: dropped when the data area cannot pay\n");
+    Geom bus;
+    std::vector<Geom> links;
+
+    // Walk the band down until the slot can no longer be afforded, and check
+    // that when it goes it goes WHOLE, and that the strip stays coherent.
+    bool sawDropped = false, sawKept = false;
+    for (int h = 520; h >= 220; h -= 4)
+    {
+        T::layOut ({ 32, 142, 1050, h }, T::wNarrow(), addrs (1), bus, links, { true });
+        if (links.empty()) continue;
+        const auto& L = links[0];
+        if (L.eq.isEmpty()) sawDropped = true;
+        else
+        {
+            sawKept = true;
+            checkEq (L.eq.getHeight(), T::eqH(), "a kept slot is always full height");
+            check (L.data.getHeight() >= T::eqMinData(),
+                   "a kept slot leaves the data area its floor");
+        }
+    }
+    check (sawKept,    "the slot is affordable at a normal height");
+    check (sawDropped, "the slot is dropped at a squeezed height");
+}
+
 static void testContentMigration()
 {
     // 8b removed the meter content mode. Saved projects persisted 0/1/2 for
@@ -860,6 +940,9 @@ int main()
     testPlacement();
     testMaskGating();
     testBandSqueeze();
+    testEqSlot (T::wNarrow(), 540);
+    testEqSlot (T::wWide(),   540);
+    testEqSlotSqueeze();
     testContentMigration();
     testDegenerate();
 

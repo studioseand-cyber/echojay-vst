@@ -2476,6 +2476,19 @@ private:
                           const juce::String& chainJson = juce::String());
     // ---- Phase R: Link-targeted edits over the v:2 cmd/ack transport ----
     LinkShm::RackSidecar readLinkRackSidecar(const juce::String& uid) const;
+    /** THE one place a published EQ curve is looked up, so geometry, paint
+        and the re-measure trigger cannot disagree about whether a Link has
+        one. Returns nullptr for: no cache entry, an invalid entry, a rack
+        with no EQ slot, or a slot whose array is not exactly
+        LinkShm::kEqCurvePoints long. Never returns an empty-but-valid
+        vector, because "no curve" and "a flat curve" are different claims and
+        only the caller's null check keeps them apart.
+
+        The pointer is into the processor's rack cache and is valid only until
+        the next refreshLinkRackCache; paint uses it within one call. */
+    const std::vector<int16_t>* linkEqCurve(const juce::String& uid) const;
+    bool linkHasEqCurve(const juce::String& uid) const
+        { return linkEqCurve(uid) != nullptr; }
     void applyChainEditToLink(int msgIdx);
     int  sendChainEditToLink(const juce::String& linkUid,
                              const juce::String& editJson);   // returns seq, -1 on failure
@@ -2554,12 +2567,15 @@ private:
         juce::Rectangle<int> meter;     // fast-peak bars, always present
         juce::Rectangle<int> clip;      // latching clip lamp atop the meter
         juce::Rectangle<int> ai;        // opens this channel's conversation
-        // NO EQ RECT AND NO RESERVED SPACE. The surgical EQ is being built in
-        // another tree and its parameter shape is not settled, and 16 empty
-        // recessed wells read as broken rather than reserved. The fader takes
-        // that height instead, which matters because the vertical budget
-        // floors it at kFaderHMin at minimum window height. measureLinkStrips
-        // can grow an eq rect later; nothing else has to change.
+        // The EQ curve thumbnail. EMPTY WHENEVER THERE IS NOTHING TO DRAW,
+        // which is the whole contract: no EQ in this Link's rack, an EQ whose
+        // curve did not arrive (an older Link publishes none), or a data area
+        // too short to give the slot its height. No space is reserved for the
+        // absent case, because 16 empty recessed wells read as broken rather
+        // than as reserved, and a flat line drawn in one would be worse still
+        // -- that is a positive claim that the EQ is doing nothing. Absent
+        // curve, absent rect, nothing painted.
+        juce::Rectangle<int> eq;
     };
 
     struct LinkMixerView : juce::Component, juce::TooltipClient
@@ -2625,6 +2641,28 @@ private:
     static constexpr int kStripAiH    = 22;
     static constexpr int kStripVGap   = 6;
     static constexpr int kStripDataHMin = 120;
+    // ---- The EQ curve slot -------------------------------------------------
+    // Taken from the TOP OF THE DATA AREA, not from the strip's fixed budget,
+    // and this is the whole reason the fader+meter band still lines up across
+    // a mixer where only some Links carry an EQ. The band's height is solved
+    // once for every strip; if the EQ slot came out of that shared budget, a
+    // strip with an EQ would sit its fader 32px higher than its neighbour and
+    // the console would read as broken. The data area is a scrolling list and
+    // gives up its last row gracefully instead.
+    static constexpr int kStripEqH = 26;
+    // Below this the data area has no room worth keeping, so the curve is
+    // dropped rather than squeezing the list to nothing. This is one chain
+    // block plus its gap; it cannot say so in terms of kChainBlockH, which is
+    // declared further down this class and so is not yet in scope here, and a
+    // static_assert in PluginEditor.cpp holds the two together instead.
+    static constexpr int kStripEqMinData = 23;
+    // DRAWN range, tighter than LinkShm::kEqCurveClampDeciDb's published plus
+    // or minus 30 dB, and deliberately so. At 26px tall the published range
+    // would put an ordinary 4 dB cut 1.3px off the centre line, so every
+    // normal EQ move would render as a flat line. Plus or minus 12 dB gives
+    // that same cut about 3px and lets a steep high-pass pin to the floor,
+    // which reads correctly as "everything below here is gone".
+    static constexpr float kEqDrawRangeDb = 12.0f;
     // The fader+meter BAND (8b). kFaderHMax/Min now bound the BAND height
     // (they used to bound the lone fader box; the formula is unchanged).
     // Inside the band: a fixed-width fader column on the left (ticks lane +
@@ -2774,9 +2812,16 @@ private:
         those same coords, because the Mix Bus strip is painted directly and
         pinned. linkOut comes back in linkMixerView_ LOCAL coords, x starting
         at 0, because those strips scroll. Mixing the two spaces is a
-        hit-test bug, which is why they are documented at every boundary. */
+        hit-test bug, which is why they are documented at every boundary.
+
+        `hasEqCurve` is parallel to `addrs`: true where that Link's rack
+        published an EQ curve THIS refresh. It is an input rather than
+        something this function looks up, because looking it up would mean
+        reading the rack cache and this function stays pure. A shorter vector
+        (or a false entry) simply means no eq rect for that strip. */
     static void layOutStrips(juce::Rectangle<int> band, int stripW,
                              const std::vector<juce::String>& addrs,
+                             const std::vector<bool>& hasEqCurve,
                              StripGeom& busOut,
                              std::vector<StripGeom>& linkOut);
 
@@ -3023,10 +3068,33 @@ private:
     void refreshLinkRackCache(bool force);
     uint32_t lastRackCacheMs_ = 0;   // throttle stamp only; the CACHE lives
                                      // on the processor and survives recreate
+    /** Which Links had an EQ curve at the last refresh, as a joined key.
+        WHICH Links, not how many: a rack losing an EQ while another gains one
+        keeps the count identical and would otherwise leave two strips laid
+        out for the wrong shape. Whenever this changes the strip geometry is
+        re-measured, because the eq rect's very existence is part of the
+        layout and layOutStrips is the only thing allowed to author it.
+        EDITOR-side (unlike the cache) because it is only a change detector:
+        a fresh editor simply re-measures once, which is correct anyway. */
+    juce::String linkEqSig_;
     void paintLinkStripChain(juce::Graphics& g, juce::Rectangle<int> area,
                              const StripGeom& sg,
                              const EchoJayProcessor::LinkDisplayEntry* entry,
                              float dim, bool wide);
+    /** The EQ curve thumbnail. Called ONLY with a non-empty sg.eq and a curve
+        of exactly LinkShm::kEqCurvePoints, so it never has to decide what to
+        do about missing data: that decision belongs to the geometry, which
+        gives an EQ-less strip no rect at all.
+
+        DISCRETE, NOT ANIMATED, and deliberately so. It takes no part in
+        advanceLinkStripSmoothing and holds no state between paints: it draws
+        whatever the last sidecar read carried. A curve that eased toward each
+        new value would read as tracking the knob and failing, when what is
+        actually happening is a thumbnail refreshing about once a second. A
+        clean jump reads as what it is. */
+    void paintLinkStripEq(juce::Graphics& g, juce::Rectangle<int> area,
+                          const std::vector<int16_t>& curve,
+                          float dim, bool wide);
 
     // ---- Block B/X (bypass / remove over the Link edit protocol) ----------
     // Block rects depend on the CACHED row count, which changes outside

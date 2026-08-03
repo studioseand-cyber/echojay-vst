@@ -127,9 +127,53 @@ void LinkProcessor::publishRackSidecar()
         resolvedDir = LinkShm::resolveDir(err);
         if (resolvedDir.isEmpty()) return;
     }
-    const int rev = chainHost.getChainRevision();
-    if (rev == lastPublishedRackRev_) return;
+    // TWO TRIGGERS, because they mean different things.
+    //
+    // The REVISION covers structure (add, remove, move, bypass, wet) and
+    // publishes AT ONCE: those are discrete events and the main plugin's rack
+    // card should follow them without a lag the user can feel.
+    //
+    // The EPOCH covers a hosted plugin's own knobs, which the revision cannot
+    // see at all. Those arrive in floods -- one EQ drag is dozens of events a
+    // second -- so an epoch-only wake WAITS FOR THE GESTURE TO SETTLE. Without
+    // that, a single drag would rewrite this file a hundred times to feed a
+    // reader that polls at 1 Hz.
+    const int  rev      = chainHost.getChainRevision();
+    const int  epoch    = chainHost.getHostedChangeEpoch();
+    const bool revMoved = (rev   != lastPublishedRackRev_);
+    const bool epMoved  = (epoch != lastPublishedEpoch_);
+    if (!revMoved && !epMoved) return;
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    if (!revMoved)
+    {
+        // A settle test ALONE would starve under sustained automation: a host
+        // automating an EQ parameter emits changes every block, so the "last
+        // change" timestamp never falls behind and a pure settle would wait
+        // forever, leaving the curve frozen exactly while it is moving most.
+        // So the settle coalesces a gesture, and the staleness bound
+        // guarantees progress regardless. Whichever comes first.
+        const bool settled = (nowMs - chainHost.lastHostedChangeMs()) >= kRackSettleMs;
+        const bool stale   = (nowMs - lastRackPublishMs_) >= kRackMaxStaleMs;
+        if (!settled && !stale) return;
+    }
     lastPublishedRackRev_ = rev;
+    lastPublishedEpoch_   = epoch;
+    lastRackPublishMs_    = nowMs;
+
+    // The EQ curve, fetched ONCE for the rack rather than per slot: the
+    // accessor already resolves "the first built-in EQ" and there is at most
+    // one curve to publish. Absent (no EQ, or the slot could not answer) it
+    // stays empty and NO eqMagDb key is written, which is what makes an old
+    // Link and a new one indistinguishable to a reader: both simply have no
+    // curve, and neither claims a flat one.
+    std::vector<int16_t> curve;
+    const int eqSlot = chainHost.findFirstBuiltinEqSlot();
+    if (eqSlot >= 0)
+    {
+        std::vector<int16_t> tmp((size_t) LinkShm::kEqCurvePoints, (int16_t) 0);
+        if (chainHost.getBuiltinEqCurveDeciDb(tmp.data(), LinkShm::kEqCurvePoints))
+            curve = std::move(tmp);
+    }
 
     LinkShm::RackSidecar rc;
     rc.valid     = true;
@@ -137,10 +181,20 @@ void LinkProcessor::publishRackSidecar()
     rc.name      = effectiveDisplayName();
     rc.revision  = rev;
     rc.masterWet = chainHost.getMasterWet();
-    for (const auto& s : chainHost.getAllSlotInfos())
-        rc.slots.push_back({ s.name, s.format,
-                             s.settings.substring(0, 200),   // bound file size
-                             s.bypassed, s.wet });
+    {
+        const auto infos = chainHost.getAllSlotInfos();
+        for (int i = 0; i < (int) infos.size(); ++i)
+        {
+            const auto& s = infos[(size_t) i];
+            rc.slots.push_back({ s.name, s.format,
+                                 s.settings.substring(0, 200),   // bound file size
+                                 s.bypassed, s.wet,
+                                 // The curve rides on the EQ's OWN slot, so a
+                                 // reader never has to guess which entry it
+                                 // describes. Every other slot leaves it empty.
+                                 i == eqSlot ? curve : std::vector<int16_t>{} });
+        }
+    }
     LinkShm::writeRackSidecar(resolvedDir, rc);
 }
 

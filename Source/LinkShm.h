@@ -34,6 +34,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cstddef>   // offsetof (LinkMeterFrame layout freeze)
+#include <cmath>     // log/exp (the EQ curve's log-spaced x axis)
+#include <vector>
 #include <JuceHeader.h>
 
 // =============================================================================
@@ -714,10 +716,57 @@ inline void reapSlot(void* regMap, int i)
 //
 //  Writes are plain replaceWithText (same non-atomic exposure as cmd/ack
 //  files); a rare torn read parses as invalid → "rack unknown" → safe.
+// ---- The built-in EQ's magnitude curve -------------------------------------
+//
+//  PRECOMPUTED RESPONSE, NOT BAND PARAMETERS, and the reason is stronger than
+//  "the reader might replicate the maths wrongly". Replicating it correctly is
+//  already hard (six band types, high/low pass at 6..96 dB per octave, which is
+//  cascaded sections rather than one biquad, plus per-band Stereo/Mid/Side/
+//  Left/Right routing, all exact with respect to the SVF at the ENGINE's sample
+//  rate). But a DYNAMIC band's contribution is signal dependent and is simply
+//  absent from any parameter snapshot: a reader drawing from parameters would
+//  show a static curve while the audio did something else. That is not a
+//  divergence risk to be managed, it is a guaranteed lie for any dynamic band.
+//  So the writer calls EqEngine::getMagnitudeResponse, which is the same call
+//  the EQ's own editor draws from, and ships the answer.
+//
+//  Integer deci-dB: the payload is predictable (see kEqCurvePoints) and the
+//  0.05 dB quantisation error is orders of magnitude below one pixel at strip
+//  size.
+static constexpr int   kEqCurvePoints = 64;
+static constexpr float kEqCurveLoHz   = 20.0f;
+static constexpr float kEqCurveHiHz   = 20000.0f;
+//  The PUBLISHED clamp, deliberately generous. A steep high-pass runs toward
+//  minus infinity at 20 Hz, so an unclamped curve has no bottom at all. Plus
+//  or minus 30 dB captures everything a bell or shelf does and pins the rest.
+//  A reader may DRAW a tighter range (the mixer's strip thumbnail does, so
+//  that ordinary moves are visible at 20-odd pixels tall) but must not assume
+//  the published data is inside one.
+static constexpr int   kEqCurveClampDeciDb = 300;
+
+/// The curve's x axis, defined ONCE so writer and reader cannot disagree about
+/// which frequency a sample belongs to. Log spaced, endpoints inclusive.
+inline void eqCurveFreqs (float* out, int n) noexcept
+{
+    if (out == nullptr || n <= 0) return;
+    if (n == 1) { out[0] = kEqCurveLoHz; return; }
+    const double lo = std::log ((double) kEqCurveLoHz);
+    const double hi = std::log ((double) kEqCurveHiHz);
+    for (int i = 0; i < n; ++i)
+        out[i] = (float) std::exp (lo + (hi - lo) * (double) i / (double) (n - 1));
+}
+
 struct RackSidecarSlot {
     juce::String name, format, settings;
     bool  bypassed = false;
     float wet = 1.0f;
+    // kEqCurvePoints integer deci-dB samples on the eqCurveFreqs grid.
+    // EMPTY MEANS NO CURVE WAS PUBLISHED: this slot is not the built-in EQ,
+    // or the writer predates the field. Empty is NOT a flat response and must
+    // never be drawn as one, because a flat line is a positive claim that the
+    // EQ is doing nothing. Absent key = unavailable, the same convention the
+    // meter fields keep.
+    std::vector<int16_t> curveDeciDb;
 };
 struct RackSidecar {
     bool  valid = false;
@@ -749,6 +798,22 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
         so->setProperty("settings", s.settings);
         so->setProperty("bypassed", s.bypassed);
         so->setProperty("wet",      s.wet);
+        // ADDITIVE AT v:1, and it must stay that way. `v` is an EXACT-match
+        // reject in readRackSidecar below, not a minimum, so publishing v:2
+        // would make an older main plugin discard the WHOLE sidecar and lose
+        // this rack's names, bypass and wet as well as the curve it does not
+        // understand. A new key at v:1 is simply never read by an old reader.
+        // KEY NAME: deliberately NOT "eqCurve", which this codebase already
+        // uses as a JSON key for something else entirely (ReferenceAnalyser's
+        // reference-track curve, in a different document). Two unrelated keys
+        // sharing a name is a trap for whoever greps next. "eqMagDb" also
+        // says what the numbers ARE: magnitudes in dB, not band settings.
+        if ((int) s.curveDeciDb.size() == kEqCurvePoints)
+        {
+            juce::Array<juce::var> pts;
+            for (auto d : s.curveDeciDb) pts.add ((int) d);
+            so->setProperty("eqMagDb", pts);
+        }
         slots.add(juce::var(so));
     }
     obj->setProperty("slots", slots);
@@ -780,6 +845,19 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                 s.bypassed = (bool)so->getProperty("bypassed");
                 s.wet      = so->hasProperty("wet")
                                ? (float)(double)so->getProperty("wet") : 1.0f;
+                // Accepted ONLY at the exact published length. A short or long
+                // array is a version this reader does not understand, and half
+                // a curve drawn as a whole one would misplace every frequency
+                // on it. Anything else leaves curveDeciDb empty, which the
+                // mixer renders as NO SLOT rather than as a flat response.
+                if (auto* ca = so->getProperty("eqMagDb").getArray())
+                    if (ca->size() == kEqCurvePoints)
+                    {
+                        s.curveDeciDb.reserve ((size_t) kEqCurvePoints);
+                        for (auto& pv : *ca)
+                            s.curveDeciDb.push_back ((int16_t) juce::jlimit (
+                                -kEqCurveClampDeciDb, kEqCurveClampDeciDb, (int) pv));
+                    }
                 if (s.name.isNotEmpty()) rc.slots.push_back(std::move(s));
             }
     rc.valid = rc.uid == uid && rc.revision >= 0;

@@ -2,6 +2,7 @@
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
 #include "SurgicalEqProcessor.h"   // built-in EQ device (see kBuiltinFormat)
+#include "LinkShm.h"               // the EQ curve's grid, clamp and point count
 #include "AUEnumerator.h"
 #include "NativeClip.h"   // EchoJay_NSLog
 #include <algorithm>
@@ -593,7 +594,7 @@ ChainHost::~ChainHost()
     if (stateCacheTimer_) stateCacheTimer_->stopTimer();
     stateCacheEnabled_ = false;
     for (int i = 0; i < (int)slots_.size(); ++i)
-        detachStateListener(i);
+        detachHostedListener(i);
     for (auto& n : graveyard_)
         if (n)
             if (auto* p = n->getProcessor())
@@ -1488,7 +1489,7 @@ void ChainHost::removeSlot(int i)
     // Before the instance goes to the graveyard, where it stays ALIVE for
     // the session: a parked plugin with a leaked UI timer must not be able
     // to call a listener on a ChainHost that has since gone away.
-    detachStateListener(i);
+    detachHostedListener(i);
     for (auto& c : graph_->getConnections()) graph_->removeConnection(c);
     if (slots_[i].node)
     {
@@ -1618,7 +1619,7 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     // with. Every later capture for this slot goes through the timer.
     if (stateCacheEnabled_)
     {
-        attachStateListener(newSlotIdx);
+        attachHostedListener(newSlotIdx);
         captureSlotState(newSlotIdx, juce::Time::getMillisecondCounterHiRes());
     }
 }
@@ -2302,7 +2303,7 @@ juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
 
     if (stateCacheEnabled_)
     {
-        attachStateListener(idx);
+        attachHostedListener(idx);
         captureSlotState(idx, juce::Time::getMillisecondCounterHiRes());
     }
 
@@ -3127,7 +3128,7 @@ void ChainHost::setStateCacheEnabled(bool shouldBeEnabled)
         return;
     }
     for (int i = 0; i < (int)slots_.size(); ++i)
-        attachStateListener(i);
+        attachHostedListener(i);
     if (stateCacheTimer_ == nullptr)
         stateCacheTimer_ = std::make_unique<StateCacheTimer>(*this);
     stateCacheTimer_->startTimer(kStateTickMs);
@@ -3136,15 +3137,69 @@ void ChainHost::setStateCacheEnabled(bool shouldBeEnabled)
 
 void ChainHost::noteHostedChange() noexcept
 {
-    // Reachable from the audio thread during automation: two relaxed atomic
+    // Reachable from the audio thread during automation: three relaxed atomic
     // stores, nothing else. No container access, no allocation, no lock.
     lastChangeMs_.store(juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
     stateDirty_.store(true, std::memory_order_relaxed);
+    // The epoch is a SEPARATE counter from stateDirty_ rather than a reuse of
+    // it, because the two are consumed differently: the dirty flag is CLEARED
+    // by the state cache once it has captured, so a second consumer testing it
+    // would silently lose every change the cache happened to service first.
+    // A monotonic counter each consumer compares against its own last-seen
+    // value cannot be consumed out from under anyone.
+    hostedEpoch_.fetch_add(1, std::memory_order_relaxed);
 }
 
-void ChainHost::attachStateListener(int i)
+bool ChainHost::getBuiltinEqCurveDeciDb(int16_t* out, int n)
 {
-    if (!stateCacheEnabled_) return;
+    if (out == nullptr || n != LinkShm::kEqCurvePoints) return false;
+
+    // Identity by the FROZEN IDENTIFIER, never by display name: see
+    // kBuiltinEqIdentifier. findFirstBuiltinEqSlot is deliberately "first":
+    // a second EQ in the same rack is NOT drawn and its response is NOT
+    // merged in, because combining two responses correctly means replicating
+    // the cascade, which is the exact duplication that publishing a
+    // precomputed curve exists to avoid.
+    const int slot = findFirstBuiltinEqSlot();
+    if (slot < 0) return false;
+
+    auto* eq = dynamic_cast<SurgicalEqProcessor*>(getSlotProcessor(slot));
+    if (eq == nullptr) return false;
+
+    float freqs[LinkShm::kEqCurvePoints];
+    float mags [LinkShm::kEqCurvePoints];
+    LinkShm::eqCurveFreqs(freqs, n);
+    eq->getEngine().getMagnitudeResponse(freqs, mags, n);
+
+    for (int i = 0; i < n; ++i)
+    {
+        // A non-finite sample means the engine could not answer (an
+        // unprepared slot, a degenerate filter). Publish NOTHING rather than
+        // substituting a number: one fabricated point in a curve is a curve
+        // that lies about one frequency, which is no better than lying about
+        // all of them.
+        if (!std::isfinite(mags[i])) return false;
+        const float clampedDb = juce::jlimit(-(float)LinkShm::kEqCurveClampDeciDb * 0.1f,
+                                              (float)LinkShm::kEqCurveClampDeciDb * 0.1f,
+                                              mags[i]);
+        out[i] = (int16_t) juce::roundToInt(clampedDb * 10.0f);
+    }
+    return true;
+}
+
+void ChainHost::attachHostedListener(int i)
+{
+    // NO stateCacheEnabled_ GATE, deliberately, and this is a fix rather than
+    // a relaxation. The listener is the SIGNAL that a hosted plugin changed;
+    // the state cache is only one CONSUMER of it, and gating the signal on
+    // that one consumer meant the Link -- which never calls
+    // setStateCacheEnabled -- could not observe a hosted knob move at all.
+    // The rack sidecar's EQ curve is a second consumer and needs the same
+    // signal. Cost of attaching regardless: audioProcessorParameterChanged
+    // does two relaxed atomic stores. Everything that actually SERIALISES
+    // state still checks stateCacheEnabled_ for itself (stateCacheTick and
+    // refreshStateCacheIfIdle both return early), so the Link gains the
+    // notifications without gaining the capture.
     if (i < 0 || i >= (int)slots_.size() || !slots_[(size_t)i].node) return;
     if (auto* p = slots_[(size_t)i].node->getProcessor())
     {
@@ -3153,7 +3208,7 @@ void ChainHost::attachStateListener(int i)
     }
 }
 
-void ChainHost::detachStateListener(int i)
+void ChainHost::detachHostedListener(int i)
 {
     if (i < 0 || i >= (int)slots_.size() || !slots_[(size_t)i].node) return;
     if (auto* p = slots_[(size_t)i].node->getProcessor())

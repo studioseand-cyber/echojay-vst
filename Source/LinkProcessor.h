@@ -341,6 +341,30 @@ private:
     // rack-<uid>.json. -1 so the first tick publishes even an empty rack
     // ("known empty" is a different fact from "rack unknown").
     int lastPublishedRackRev_ = -1;
+    // Last hosted-parameter epoch written. Separate from the revision because
+    // the two publish on different terms: structure at once, knobs after they
+    // settle. -1 for the same reason as above.
+    int lastPublishedEpoch_ = -1;
+    // SETTLE TIME for an epoch-only republish. Deliberately NOT ChainHost's
+    // kStateDebounceMs (2000ms): that exists to avoid serialising a whole
+    // plugin's state blob mid-drag, an expensive operation this one is not.
+    // Recomputing 64 analytic magnitudes and rewriting a small JSON file is
+    // cheap, so it waits only long enough to coalesce a gesture.
+    //
+    // THE HONEST END-TO-END NUMBER: publishRackSidecar is polled every 3rd
+    // 30Hz tick, so the settle is TESTED at 100ms granularity and fires 200
+    // to 300ms after the last knob event. The main plugin then re-reads
+    // sidecars at ~1Hz, so a knob turn reaches a drawn curve up to ~1.3s
+    // later. That is a thumbnail refresh rate, not a live meter, and the
+    // drawing side is written to look like one (see the strip's EQ paint).
+    static constexpr double kRackSettleMs = 200.0;
+    // STALENESS BOUND, the companion to the settle. Sustained automation
+    // moves a parameter every block, so the settle test alone would never
+    // fire and the curve would freeze precisely while it was moving most.
+    // Whichever comes first wins, so a gesture coalesces and a ramp still
+    // gets roughly one publish a second, matching the reader's own cadence.
+    static constexpr double kRackMaxStaleMs = 1000.0;
+    double lastRackPublishMs_ = 0.0;
     void publishRackSidecar();
     juce::String effectiveFilePart() const;
     juce::String chainInstanceId() const;

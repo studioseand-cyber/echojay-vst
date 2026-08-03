@@ -208,6 +208,40 @@ public:
     // Atomic so any thread may read; mutations happen on the message thread.
     int getChainRevision() const noexcept { return chainRevision_.load(std::memory_order_relaxed); }
 
+    // ---- Hosted-parameter epoch (the curve's publish trigger) --------------
+    // chainRevision covers STRUCTURE and nothing else: add, remove, move,
+    // bypass, wet. Turning a knob INSIDE a hosted plugin bumps none of them,
+    // so anything gated on the revision alone freezes at whatever the rack
+    // last looked like when a plugin was added. This counter covers exactly
+    // that gap: it is bumped from audioProcessorParameterChanged, which the
+    // hosted plugins already call.
+    //
+    // REACHABLE FROM THE AUDIO THREAD during automation, so the write side is
+    // two relaxed atomic stores and nothing else. Readers poll it; it shares
+    // a numbering space with nothing, and like the revision it is only ever
+    // compared with a value read from the SAME ChainHost.
+    int getHostedChangeEpoch() const noexcept
+        { return hostedEpoch_.load(std::memory_order_relaxed); }
+
+    /** Milliseconds (getMillisecondCounterHiRes clock) of the last hosted
+        change of any kind. Lets a poller wait for a gesture to SETTLE rather
+        than republishing on every event of a knob drag. */
+    double lastHostedChangeMs() const noexcept
+        { return lastChangeMs_.load(std::memory_order_relaxed); }
+
+    /** Fill out[0..n) with the FIRST built-in EQ's magnitude response,
+        quantised to integer deci-dB on the LinkShm::eqCurveFreqs grid.
+        n must be LinkShm::kEqCurvePoints.
+
+        Returns FALSE when the rack has no built-in EQ, when the slot cannot
+        answer, or when the engine returns a non-finite sample. On false the
+        caller must publish NOTHING: a fabricated flat curve would claim the
+        EQ is doing nothing, which is a different statement from "no reading".
+
+        Message thread. getMagnitudeResponse is analytic over the published
+        targets and allocates nothing, but it is not an audio-thread call. */
+    bool getBuiltinEqCurveDeciDb(int16_t* out, int n);
+
     // ---- Wet/dry (house pattern: internal smoothed state, NOT host params) --
     // Per-slot: blended inside the graph by a SlotWetBlend node whose dry leg
     // is latency-aligned by the graph's render sequence. Master: blended in
@@ -778,6 +812,7 @@ private:
     bool                             inStateCapture_ = false;
     std::atomic<double>              lastChangeMs_ { 0.0 };  // any hosted change, any thread
     std::atomic<bool>                stateDirty_   { false };
+    std::atomic<int>                 hostedEpoch_  { 0 };    // see getHostedChangeEpoch()
     mutable juce::StringArray        stateNotes_;            // guarded by stateCacheMutex_
 
     void  stateCacheTick();
@@ -786,8 +821,13 @@ private:
     // cap drops, and that path is const.
     void  addStateNote(const juce::String& note) const;
     void  noteHostedChange() noexcept;      // callable from any thread
-    void  attachStateListener(int i);
-    void  detachStateListener(int i);
+    // RENAMED from attachStateListener/detachStateListener: the listener is
+    // the SIGNAL, the state cache is only one consumer of it. It used to
+    // refuse to attach unless the state cache was on, which meant the Link
+    // (which never enables that cache) could not see a hosted knob move at
+    // all. See attachHostedListener's body.
+    void  attachHostedListener(int i);
+    void  detachHostedListener(int i);
 
     // juce::AudioProcessorListener: the hosted plugins tell us when
     // something moved. Both can arrive on the audio thread during
