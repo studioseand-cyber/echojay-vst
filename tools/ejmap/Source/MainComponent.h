@@ -7193,6 +7193,17 @@ private:
         if (selected)
             g.fillAll (juce::Colour (0xff1d3a44));
 
+        // STATE COLUMN, left of the name so the eye lands on it while scanning
+        // 1,376 rows rather than reading to the end of each line. It recolours
+        // the GLYPH ONLY, never the row: quarantine already owns the row
+        // colour and a quarantined plugin should read as quarantined first.
+        const auto st = mapStateFor (sp);
+        auto bounds = juce::Rectangle<int> (0, 0, w, h);
+        auto col = bounds.removeFromLeft (22);
+        g.setColour (colourFor (st.state));
+        g.setFont (13.0f);
+        g.drawText (glyphFor (st.state), col, juce::Justification::centred);
+
         g.setColour (quarantined ? juce::Colours::orangered
                                  : juce::Colour (0xff9fd8e0));
         g.setFont (13.0f);
@@ -7232,6 +7243,130 @@ private:
     ParamListenerBank listeners;   // after host: destroyed (and detached) first
 
     PluginScanner::Result lastScan;
+    //==========================================================================
+    // MAP STATE (feature 2). Six states, and two of them are deliberately
+    // distinct characters rather than one glyph dimmed: "unmapped" and
+    // "unknown" are DIFFERENT FACTS, and the whole reason the query degrades
+    // instead of blocking is that they must never render alike.
+    enum class MapState { unmapped, localOnly, submittedByYou, submittedByOther,
+                          differentBuild, unknown };
+
+    struct MapStateRow
+    {
+        MapState state = MapState::unknown;
+        juce::String by, at, schema;
+        bool probed = false;
+        int  mapsForIdentity = 0;      // how many fps this product has, any build
+        int  paramCountHere = 0;       // the param count of the build we matched
+    };
+
+    std::map<juce::String, MapStateRow> mapStateByIdentity;
+    juce::Time mapStateFetchedAt;
+    juce::String mapStateFailure;      // empty when the last fetch succeeded
+    bool hideMapped = false;
+
+    static juce::String glyphFor (MapState s)
+    {
+        switch (s)
+        {
+            case MapState::unmapped:          return juce::String::fromUTF8 ("\u00b7");  // ·
+            case MapState::localOnly:         return juce::String::fromUTF8 ("\u270e");  // ✎
+            case MapState::submittedByYou:    return juce::String::fromUTF8 ("\u2713");  // ✓
+            case MapState::submittedByOther:  return juce::String::fromUTF8 ("\u25d0");  // ◐
+            case MapState::differentBuild:    return juce::String::fromUTF8 ("\u26a0");  // ⚠
+            case MapState::unknown:
+            default:                          return "?";
+        }
+    }
+
+    static juce::Colour colourFor (MapState s)
+    {
+        switch (s)
+        {
+            case MapState::unmapped:          return juce::Colour (0xff4a5a5e);
+            case MapState::localOnly:         return juce::Colours::orange;
+            case MapState::submittedByYou:    return juce::Colour (0xff6fd08c);
+            case MapState::submittedByOther:  return juce::Colour (0xff6fa8d0);
+            case MapState::differentBuild:    return juce::Colours::darkorange;
+            case MapState::unknown:
+            default:                          return juce::Colour (0xff707070);
+        }
+    }
+
+    /** Local maps are known without the server: a map on disk whose fp the
+        server has not confirmed is "local, not submitted". Checked first so an
+        offline session still distinguishes work done from work not done.
+    */
+    bool haveLocalMapFor (const juce::String& identityKey) const
+    {
+        auto dir = ledger.getRoot().getChildFile ("maps");
+        for (const auto& e : juce::RangedDirectoryIterator (dir, false, "*.json"))
+        {
+            auto id = juce::JSON::parse (e.getFile().loadFileAsString())
+                          .getProperty ("identity", juce::var());
+            if (! id.isObject()) continue;
+            const auto k = id.getProperty ("format", "").toString() + "|"
+                         + id.getProperty ("uid", "").toString() + "|"
+                         + id.getProperty ("version", "").toString();
+            if (k == identityKey) return true;
+        }
+        return false;
+    }
+
+    MapStateRow mapStateFor (const ScannedPlugin& sp) const
+    {
+        const auto key = echojay::identityKeyForDescription (sp.desc);
+        auto it = mapStateByIdentity.find (key);
+        if (it != mapStateByIdentity.end()) return it->second;
+        MapStateRow r;
+        // No server answer. A local map is still a fact we hold; without one,
+        // an unqueried row is UNKNOWN, never "unmapped" -- claiming unmapped
+        // on no evidence is how a mapper re-maps a mapped product.
+        r.state = mapStateFailure.isNotEmpty() || mapStateByIdentity.empty()
+                    ? MapState::unknown : MapState::unmapped;
+        return r;
+    }
+
+    /** The detail line. The differentBuild case says what will HAPPEN if you
+        map it, because "mapped, different build" is otherwise ambiguous
+        between "already done" and "do it again".
+    */
+    juce::String mapStateDetail (const ScannedPlugin& sp) const
+    {
+        const auto st = mapStateFor (sp);
+        switch (st.state)
+        {
+            case MapState::unmapped:
+                return "no map for this build or any other";
+            case MapState::localOnly:
+                return "mapped locally, NOT submitted -- it exists only on this machine";
+            case MapState::submittedByYou:
+                return "submitted by you, " + st.at + ", schema " + st.schema
+                     + (st.probed ? ", probed" : ", not probed");
+            case MapState::submittedByOther:
+                return "submitted by " + st.by + ", " + st.at + ", schema " + st.schema
+                     + (st.probed ? ", probed" : ", not probed");
+            case MapState::differentBuild:
+                return juce::String (st.mapsForIdentity) + " map(s) for this product, none for "
+                       "this build (" + juce::String (st.paramCountHere) + " params). "
+                       "Mapping this creates another.";
+            case MapState::unknown:
+            default:
+                return mapStateFailure.isNotEmpty()
+                         ? "map state unknown: " + mapStateFailure
+                         : "map state not fetched yet";
+        }
+    }
+
+    juce::String mapStateCacheAge() const
+    {
+        if (mapStateFetchedAt == juce::Time()) return "never fetched";
+        const auto d = juce::Time::getCurrentTime() - mapStateFetchedAt;
+        if (d.inMinutes() < 1.0) return "just now";
+        if (d.inHours() < 1.0)   return juce::String ((int) d.inMinutes()) + " min ago";
+        return juce::String (d.inHours(), 1) + " h ago";
+    }
+
     juce::Array<ScannedPlugin> rows;        // the whole scan result, never filtered
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
