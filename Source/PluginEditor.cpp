@@ -6832,18 +6832,43 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
     }
 }
 
+juce::String EchoJayEditor::elideMiddle(const juce::String& s, int head, int tail)
+{
+    // Pure string surgery, no font: the caller owns the width fitting, which
+    // keeps this testable without a graphics context.
+    //
+    // WHY THE MIDDLE AND NOT THE END. Measured at 8pt in a 36px narrow slot,
+    // plain leading truncation renders "FabFilter Pro-Q 3", "Pro-C 2" and
+    // "Pro-L 2" as the SAME string, "FabFilter P". Middle elision renders
+    // them "FabFi...Q 3", "FabFi...C 2", "FabFi...L 2", which tells them
+    // apart in the same pixels, because the disambiguating part of a plugin
+    // name is nearly always its tail.
+    if (head < 1 || tail < 1) return s;
+    if (s.length() <= head + tail + 1) return s;   // elision would not shorten
+    return s.substring(0, head)
+         + juce::String::fromUTF8("\xe2\x80\xa6")   // U+2026 HORIZONTAL ELLIPSIS
+         + s.substring(s.length() - tail);
+}
+
 EchoJayEditor::ChainRows
 EchoJayEditor::layOutChainRows(juce::Rectangle<int> dataRect, int occupied,
-                               int scrollY)
+                               int scrollY, bool wide)
 {
     // Pure: same inputs, same rects, offset included. Blocks KEEP their size
     // when a rack overflows; the list scrolls instead of collapsing into a
     // "+N more" row, so a long rack is browsable rather than summarised.
+    //
+    // BOTH WIDTHS use this now. Narrow used to draw a count instead of a
+    // list, which is why this took no width: the rack's SHAPE at a glance
+    // beats its size as a number, so narrow gets the same column in smaller
+    // blocks. Everything downstream (hit test, tooltip, wheel) consumes these
+    // same rects, so narrow inherits their behaviour rather than growing a
+    // parallel set of rules.
     ChainRows r;
     if (dataRect.getWidth() <= 0 || dataRect.getHeight() <= 0) return r;
     occupied = juce::jmax(0, occupied);
     const auto a2  = dataRect.reduced(2, 0);
-    const int  per = kChainBlockH + kChainBlockGap;
+    const int  per = chainBlockH(wide) + kChainBlockGap;
     const int  fits = juce::jmax(0, (a2.getHeight() + kChainBlockGap) / per);
     // INERT empty slots fill the space the plugins leave, so the strip shows
     // capacity rather than absence. None are added once the rack overflows:
@@ -6859,7 +6884,7 @@ EchoJayEditor::layOutChainRows(juce::Rectangle<int> dataRect, int occupied,
     r.rects.reserve((size_t)rows);
     for (int i = 0; i < rows; ++i)
         r.rects.push_back({ a2.getX(), a2.getY() + i * per - off,
-                            a2.getWidth(), kChainBlockH });
+                            a2.getWidth(), chainBlockH(wide) });
     return r;
 }
 
@@ -6918,20 +6943,24 @@ int EchoJayEditor::linkChainScrollFor(const StripGeom& sg) const
 bool EchoJayEditor::linkChainWheel(const StripGeom& sg, juce::Point<int> local,
                                    float deltaY)
 {
-    // NARROW shows a count, not blocks, so it has nothing to scroll and never
-    // steals the wheel. Wide only, over the data area, and only when the list
-    // can actually move: a list that fits lets the mixer have the event, so
-    // the wheel never feels like it stopped working.
+    // BOTH WIDTHS now. Narrow used to show a count, which has nothing to
+    // scroll, so the wheel was gated to wide; narrow draws the same slot
+    // column now and inherits the same behaviour rather than needing a rule
+    // of its own. Over the data area, and only when the list can actually
+    // move: a list that fits lets the mixer have the event, so the wheel
+    // never feels like it stopped working.
+    const bool wide = processorRef.linkMixerWide;
     if (processorRef.linkMixerContent != EchoJayProcessor::LinkMixerContent::Chain
-        || !processorRef.linkMixerWide
         || !sg.data.contains(local))
         return false;
     const auto rows = layOutChainRows(sg.data, linkRackCount(sg),
-                                      linkChainScrollFor(sg));
+                                      linkChainScrollFor(sg), wide);
     if (rows.maxScroll <= 0) return false;
 
     const juce::String key = sg.isBus ? juce::String("MIX BUS") : sg.addr;
-    const int step = kChainBlockH + kChainBlockGap;
+    // The step follows the BLOCK, so a wheel notch moves the same number of
+    // rows at either width rather than three wide rows or five narrow ones.
+    const int step = chainBlockH(wide) + kChainBlockGap;
     processorRef.linkChainScroll[key] =
         juce::jlimit(0, rows.maxScroll,
                      linkChainScrollFor(sg)
@@ -7201,31 +7230,92 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
 
     if (!wide)
     {
-        // NARROW: a COUNT, not a column of ellipsised fragments; at this
-        // width a list of "Pro-..." rows says nothing. The full list is one
-        // WIDE press away. Compact caption, not a sentence.
-        auto a2 = area.withTrimmedTop(juce::jmax(0, area.getHeight() / 2 - 26));
-        g.setColour(LinkConsole::value.withMultipliedAlpha(dim));
-        g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
-        g.drawText(juce::String((int)rows.size()),
-                   a2.removeFromTop(20), juce::Justification::centred);
-        g.setColour(LinkConsole::caption.withMultipliedAlpha(dim));
-        g.setFont(juce::Font(juce::FontOptions(6.5f, juce::Font::bold)));
-        g.drawText("RACK", a2.removeFromTop(9), juce::Justification::centred);
-        if (bypassed > 0)
+        // NARROW: the SAME slot column wide draws, in smaller blocks. It used
+        // to be a count ("1 RACK"), on the reasoning that a stack of
+        // "Pro-..." fragments says nothing. That reasoning was right about
+        // LEADING truncation and wrong about the column: the rack's SHAPE at
+        // a glance (how many, which are bypassed, where the gaps are) beats
+        // its size as a number, and middle elision makes the names carry
+        // their identity in the same pixels. See elideMiddle.
+        juce::Graphics::ScopedSaveState clipGuard(g);
+        g.reduceClipRegion(area);
+        const auto layout = layOutChainRows(area, (int)rows.size(),
+                                            linkChainScrollFor(sg), false);
+
+        // Empty slots first and behind, inert exactly as at wide: a recessed
+        // outline, no fill weight, no label, nothing that reads as pressable.
+        // Nothing is wired to them at either width.
+        for (size_t k = (size_t)layout.occupied; k < layout.rects.size(); ++k)
         {
-            g.setColour(juce::Colour(0xfff59e0b).withMultipliedAlpha(dim));
-            g.setFont(juce::Font(juce::FontOptions(7.0f)));
-            g.drawText(juce::String(bypassed) + " byp",
-                       a2.removeFromTop(10), juce::Justification::centred);
+            const auto er = layout.rects[k];
+            if (!er.intersects(area)) continue;
+            g.setColour(LinkConsole::well.withMultipliedAlpha(dim));
+            g.fillRoundedRectangle(er.toFloat(), 2.0f);
+            g.setColour(LinkConsole::structure.withMultipliedAlpha(0.7f * dim));
+            g.drawRoundedRectangle(er.toFloat().reduced(0.5f), 2.0f, 1.0f);
         }
+
+        using Card = EchoJayLookAndFeel::ChainCard;
+        // 8pt measured against the 36px name area below: eight characters,
+        // which is enough for a head plus a three-character tail. NO B/X
+        // CONTROLS at narrow, by construction rather than by a guard: they
+        // are simply not drawn here, and the hit test that would find them is
+        // already gated on wide. The affordance for them stays the WIDE
+        // toggle.
+        const juce::Font nameFont { juce::FontOptions(8.0f) };
+        for (int i = 0; i < layout.occupied; ++i)
+        {
+            auto rr = layout.rects[(size_t)i];
+            if (!rr.intersects(area)) continue;
+            const auto& r = rows[(size_t)i];
+
+            const float rad = 2.0f;
+            g.setColour(Card::fill.withMultipliedAlpha(dim));
+            g.fillRoundedRectangle(rr.toFloat(), rad);
+            g.setColour(Card::edge.withMultipliedAlpha(dim));
+            g.drawRoundedRectangle(rr.toFloat().reduced(0.5f), rad, 1.0f);
+
+            // 3px inset rather than wide's 4px: at this width every pixel is
+            // a character. 42 - 6 = 36px of name.
+            const auto nameArea = rr.reduced(3, 0);
+            const float maxW = (float)nameArea.getWidth();
+
+            // Fit by SHRINKING THE HEAD and keeping the tail, so the part
+            // that disambiguates survives longest. The tail only gives way
+            // once no head at all would fit, which no real plugin name
+            // reaches at this width.
+            juce::String shown = r.name;
+            if (nameFont.getStringWidthFloat(shown) > maxW)
+            {
+                for (int tail = 3; tail >= 1 && nameFont.getStringWidthFloat(shown) > maxW; --tail)
+                    for (int head = 6; head >= 1; --head)
+                    {
+                        auto cand = elideMiddle(r.name, head, tail);
+                        if (nameFont.getStringWidthFloat(cand) <= maxW)
+                        { shown = cand; break; }
+                    }
+            }
+
+            // EVERY DRAW OWNS ITS COLOUR, set immediately before it: the same
+            // rule the wide blocks learned when the X control's red leaked
+            // into healthy plugin names. Bypass is carried by the NAME colour
+            // here, because there is no room for wide's "byp" caption.
+            g.setColour((r.bypassed ? Card::nameBypassed : Card::nameOn)
+                            .withMultipliedAlpha(dim));
+            g.setFont(nameFont);
+            g.drawText(shown, nameArea, juce::Justification::centredLeft, false);
+        }
+
+        // Offline pinned to the bottom, as at wide, so scrolling cannot carry
+        // it away.
         if (offline)
         {
             g.setColour(juce::Colour(0xffff6d5a).withMultipliedAlpha(0.9f));
             g.setFont(juce::Font(juce::FontOptions(7.0f)));
-            g.drawText("offline", a2.removeFromTop(10),
+            g.drawText("offline", area.removeFromBottom(9),
                        juce::Justification::centred);
         }
+        juce::ignoreUnused(bypassed);
     }
     else
     {
@@ -7240,7 +7330,7 @@ void EchoJayEditor::paintLinkStripChain(juce::Graphics& g,
         juce::Graphics::ScopedSaveState clipGuard(g);
         g.reduceClipRegion(area);
         const auto layout = layOutChainRows(area, (int)rows.size(),
-                                            linkChainScrollFor(sg));
+                                            linkChainScrollFor(sg), wide);
         // INERT empty slots first, behind everything: a recessed outline,
         // no fill weight, no label, nothing that reads as pressable,
         // because nothing is wired to them yet.
@@ -7801,7 +7891,8 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
         // rows are interactive: the empty slots are inert by construction,
         // not by a guard that could drift.
         const auto layout = layOutChainRows(sg.data, linkRackCount(sg),
-                                            linkChainScrollFor(sg));
+                                            linkChainScrollFor(sg),
+                                            processorRef.linkMixerWide);
         for (int i = 0; i < layout.occupied; ++i)
         {
             juce::Rectangle<int> bR, xR;
@@ -8064,10 +8155,11 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
     // says why a tap will refuse (matches the coral flash the tap draws).
     if (have && en.info.uid.isEmpty())
         return name + " (cannot select: update this channel's Link plugin)";
-    // CHAIN mode: the data area's tooltip lists the FULL rack, because
-    // narrow shows only a count and wide ellipsises long names. Reads the
-    // same processor-side cache paint reads; no file IO. "Rack: " is this
-    // pass's content-check marker.
+    // CHAIN mode: the data area's tooltip lists the FULL rack, because BOTH
+    // widths shorten names now -- wide ellipsises the tail, narrow elides the
+    // middle -- so the untruncated list has to be reachable somewhere. Reads
+    // the same processor-side cache paint reads; no file IO. "Rack: " is an
+    // earlier pass's content-check marker.
     if (processorRef.linkMixerContent == EchoJayProcessor::LinkMixerContent::Chain
         && sg.data.contains(p))
     {
@@ -8076,7 +8168,8 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
             const juce::String uid = sg.isBus ? juce::String()
                                    : have ? en.info.uid : juce::String();
             const auto layout = layOutChainRows(sg.data, linkRackCount(sg),
-                                                linkChainScrollFor(sg));
+                                                linkChainScrollFor(sg),
+                                                processorRef.linkMixerWide);
             for (int i = 0; i < layout.occupied; ++i)
             {
                 if (!layout.rects[(size_t)i].contains(p)) continue;

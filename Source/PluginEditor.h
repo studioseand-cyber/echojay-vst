@@ -3149,6 +3149,19 @@ private:
     // card); the count header above them is gone, redundant once the
     // blocks themselves are legible.
     static constexpr int kChainBlockH = 20, kChainBlockGap = 3;
+    // NARROW slots: the same shapes, smaller. 15px holds an 8pt name with
+    // breathing room, and at a 54px strip that is ten rows in the space the
+    // old "N RACK" number occupied with one.
+    static constexpr int kChainBlockHNarrow = 15;
+    static int chainBlockH(bool wide) noexcept
+        { return wide ? kChainBlockH : kChainBlockHNarrow; }
+    /** MIDDLE elision: keep the head AND the tail, drop the centre.
+        Leading truncation cannot tell "FabFilter Pro-Q 3" from "Pro-C 2"
+        from "Pro-L 2" -- all three read "FabFilter P" -- because the
+        disambiguating part of a plugin name is almost always its TAIL. Pure
+        string surgery with no font involved, so the self-test can check it
+        without a graphics context; the caller does the width fitting. */
+    static juce::String elideMiddle(const juce::String& s, int head, int tail);
     static constexpr int kBlockCtrlW = 14;         // B and X, each
     /** THE rack row layout: occupied blocks, then INERT empty slots filling
         whatever visible space is left, with the scroll offset ALREADY
@@ -3166,7 +3179,7 @@ private:
         int maxScroll = 0;   // 0 when everything fits, so the wheel passes through
     };
     static ChainRows layOutChainRows(juce::Rectangle<int> dataRect,
-                                     int occupied, int scrollY);
+                                     int occupied, int scrollY, bool wide);
     /** Occupied rack size for a strip: host ChainHost for the bus, the
         processor-side sidecar cache for a Link. ONE lookup, four consumers. */
     int linkRackCount(const StripGeom& sg) const;

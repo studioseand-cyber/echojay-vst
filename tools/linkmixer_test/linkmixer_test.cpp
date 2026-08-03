@@ -99,7 +99,16 @@ struct EchoJayLinkMixerTestAccess
 
     using Rows = Ed::ChainRows;
     static Rows chainRows (juce::Rectangle<int> data, int occupied, int scrollY)
-    { return Ed::layOutChainRows (data, occupied, scrollY); }
+    { return Ed::layOutChainRows (data, occupied, scrollY, true); }
+
+    static Ed::ChainRows chainRowsW (juce::Rectangle<int> data, int occupied,
+                                     int scrollY, bool wide)
+    { return Ed::layOutChainRows (data, occupied, scrollY, wide); }
+
+    static juce::String elide (const juce::String& s, int head, int tail)
+    { return Ed::elideMiddle (s, head, tail); }
+
+    static int blockH (bool wide) { return Ed::chainBlockH (wide); }
     static int blockPitch() { return Ed::kChainBlockH + Ed::kChainBlockGap; }
     static void ctrls2 (juce::Rectangle<int> block,
                         juce::Rectangle<int>& b, juce::Rectangle<int>& x)
@@ -910,6 +919,77 @@ static void testEqSlotSqueeze()
     check (sawDropped, "the slot is dropped at a squeezed height");
 }
 
+static void testNarrowChainSlots()
+{
+    // NARROW CHAIN is a slot column now, not a count. The claims are that it
+    // uses the SAME layout function as wide (so hit test, tooltip and wheel
+    // inherit it rather than growing narrow-only rules), that its blocks are
+    // genuinely smaller, and that it therefore fits MORE rows in the same
+    // height rather than fewer.
+    std::printf ("narrow chain: slots, not a count\n");
+    const juce::Rectangle<int> data { 0, 0, 46, 135 };   // a 54px strip's data area
+
+    const auto nar = T::chainRowsW (data, 2, 0, false);
+    const auto wid = T::chainRowsW (data, 2, 0, true);
+
+    check (T::blockH (false) < T::blockH (true), "a narrow block is smaller than a wide one");
+    check (! nar.rects.empty(), "narrow lays out slots at all");
+    if (! nar.rects.empty())
+    {
+        checkEq (nar.rects[0].getHeight(), T::blockH (false), "narrow block height");
+        checkEq (nar.rects[0].getWidth(), 42, "narrow block width (46 data minus 2+2)");
+        checkEq (nar.occupied, 2, "two occupied slots");
+        // Empty slots beneath, exactly as at wide: capacity, not absence.
+        check (nar.rects.size() > (size_t) nar.occupied,
+               "empty slots are laid out beneath the occupied ones");
+    }
+    check (nar.rects.size() > wid.rects.size(),
+           "narrow fits MORE rows than wide in the same height");
+
+    // The name budget the 8pt font was measured against: block width minus a
+    // 3px inset each side. If this drifts, the character count in the paint
+    // comment is no longer true.
+    if (! nar.rects.empty())
+        checkEq (nar.rects[0].getWidth() - 6, 36, "narrow name area is 36px");
+
+    // OVERFLOW SCROLLS at narrow, same as wide: maxScroll must become
+    // non-zero once the rack cannot fit, which is what lets the wheel work.
+    const auto many = T::chainRowsW (data, 40, 0, false);
+    check (many.maxScroll > 0, "a narrow rack that overflows can scroll");
+    const auto few = T::chainRowsW (data, 1, 0, false);
+    checkEq (few.maxScroll, 0, "a narrow rack that fits does not steal the wheel");
+}
+
+static void testElideMiddle()
+{
+    // The reason narrow can carry names at all. Leading truncation renders
+    // the three FabFilter plugins identically; middle elision does not.
+    std::printf ("middle elision: heads and tails\n");
+
+    checkEq (T::elide ("FabFilter Pro-Q 3", 5, 3) == juce::String::fromUTF8 ("FabFi\xe2\x80\xa6" "Q 3") ? 1 : 0, 1,
+             "Pro-Q 3 keeps its tail");
+    checkEq (T::elide ("FabFilter Pro-C 2", 5, 3) == juce::String::fromUTF8 ("FabFi\xe2\x80\xa6" "C 2") ? 1 : 0, 1,
+             "Pro-C 2 keeps its tail");
+    // THE POINT: the three are DIFFERENT strings after elision. Leading
+    // truncation to the same width makes all three "FabFilter P".
+    check (T::elide ("FabFilter Pro-Q 3", 5, 3) != T::elide ("FabFilter Pro-C 2", 5, 3),
+           "Pro-Q and Pro-C are distinguishable after elision");
+    check (T::elide ("FabFilter Pro-L 2", 5, 3) != T::elide ("FabFilter Pro-C 2", 5, 3),
+           "Pro-L and Pro-C are distinguishable after elision");
+
+    // A name that already fits is returned untouched: no ellipsis is spent
+    // where none is needed.
+    checkEq (T::elide ("CLA-2A", 5, 3) == juce::String ("CLA-2A") ? 1 : 0, 1,
+             "a short name is not elided");
+    checkEq (T::elide ("Pro-Q 3", 5, 3) == juce::String ("Pro-Q 3") ? 1 : 0, 1,
+             "an exactly-fitting name is not elided");
+    // Degenerate arguments return the input rather than something malformed.
+    checkEq (T::elide ("Whatever", 0, 3) == juce::String ("Whatever") ? 1 : 0, 1,
+             "a zero head returns the input");
+    checkEq (T::elide ("Whatever", 5, 0) == juce::String ("Whatever") ? 1 : 0, 1,
+             "a zero tail returns the input");
+}
+
 static void testContentMigration()
 {
     // 8b removed the meter content mode. Saved projects persisted 0/1/2 for
@@ -1005,6 +1085,8 @@ int main()
     testEqSlot (T::wWide(),   424);
     testEqSlotBus();
     testEqSlotSqueeze();
+    testNarrowChainSlots();
+    testElideMiddle();
     testContentMigration();
     testDegenerate();
 
