@@ -99,4 +99,30 @@ inline std::vector<std::string> orderSwitchDestinations (
     return out;
 }
 
+// ----------------------------------------------------------------------------
+// CAPABILITY, NOT VERSION. The server decides whether it may offer to move the
+// conversation, and it must not decide that from the plugin version.
+//
+// THE CONCRETE CASE, because an abstract warning will not survive the next
+// person reaching for versionBelow: on 4 Aug 2026 the ONLY binary in existence
+// containing the chooser reported v2.25.10, while the binary actually
+// INSTALLED reported v2.25.14 and contained no chooser at all. A "2.25.10 or
+// higher" floor would have handed the move offer to the one real client that
+// could not honour it. tools/reinstall-v2.sh bumps unconditionally on every
+// install and parses each worktree's own CMakeLists, so a version is an
+// install count on one branch, not a statement about content — and two
+// branches counting independently are not comparable at all.
+//
+// Emitted on the classify body by EchoJayAPI::classify. It lives HERE, in the
+// chooser's own header beside orderSwitchDestinations, so the declaration and
+// the feature are read together. That is a convention, not a compiler-enforced
+// link: deleting the chooser would not fail the build for leaving this true.
+// The check that WOULD catch it is content-based and belongs where the floor
+// was established — grep a built binary for the marker string
+// "MOVE THIS REQUEST TO" and confirm it is present in any build that sends
+// this flag. Absent means NO on the server, so every client predating this —
+// which on 4 Aug 2026 was all of them — is correctly treated as chooser-less
+// without anyone maintaining a list.
+inline constexpr const char* kChannelChooserCapability = "hasChannelChooser";
+
 } // namespace echojay

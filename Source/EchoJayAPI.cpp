@@ -3,6 +3,8 @@
 #include "LinkShm.h"      // RackSidecar — targeted [CURRENT CHAIN] (Phase R)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
 #include "EqPresets.h"    // the EQ teaching block lists presets from the table
+#include "EchoJayChannelLabel.h" // kChannelChooserCapability — the classify flag
+                                 // is declared beside the chooser it describes
 
 // Defined later in this file (used by both /api/me parse sites)
 static void parseUsagePool(juce::DynamicObject* root, UserInfo& info);
@@ -1397,19 +1399,27 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
     if (req.turnType.isNotEmpty())       body->setProperty("turnType", req.turnType);
     if (auto* linkArr = req.links.getArray())
         if (! linkArr->isEmpty()) body->setProperty("links", req.links);
-    // CLIENT VERSION, so the server can tell a plugin that HAS the channel
-    // chooser from one that does not. sendChat has always sent this; classify
-    // never did, and classify is where it decides copy.
-    //
-    // The mismatch question's guard (questionPromisesOffsiteBuild) cannot
-    // simply be switched off when the chooser lands: the backend reaches
-    // everyone on the next deploy and the plugin reaches users over months, so
-    // a global lift would offer "move over to Lead Vox" to an installed base
-    // that has no chooser to honour it — the unkeepable promise the guard was
-    // built to prevent, pointed the other way. With this field the lift is
-    // PER CLIENT: old clients keep the deterministic template, new ones get
-    // the offer and the ranked candidates.
+    // Client version — telemetry and the existing chat-side gates. sendChat has
+    // always sent this; classify never did.
     body->setProperty("appVersion", juce::String(JucePlugin_VersionString));
+
+    // CAPABILITY, NOT VERSION — this is what the mismatch copy is gated on.
+    //
+    // The guard (questionPromisesOffsiteBuild) is not lifted when the chooser
+    // lands; it is KEYED on this flag and kept forever for clients without it.
+    // The backend reaches everyone on the next deploy and the plugin reaches
+    // users over months, so a global lift would offer "move over to Lead Vox"
+    // to an installed base with no chooser behind it — the unkeepable promise
+    // the guard exists to prevent, pointed the other way.
+    //
+    // WHY NOT appVersion, established by content on 4 Aug 2026: the ONLY
+    // binary containing the chooser reported v2.25.10, and the binary actually
+    // INSTALLED reported v2.25.14 with no chooser in it. A ">= 2.25.10" floor
+    // would have been wrong on the one real client. reinstall-v2.sh bumps
+    // unconditionally per worktree, so the number is an install count on one
+    // branch. See kChannelChooserCapability for how to re-verify by content
+    // rather than trusting this comment.
+    body->setProperty(echojay::kChannelChooserCapability, true);
 
     auto aliveFlag = alive;
     auto latch = armClassifyDeadline(kClassifyBudgetMs, [answer, aliveFlag]
