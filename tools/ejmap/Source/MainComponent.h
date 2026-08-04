@@ -9113,6 +9113,9 @@ private:
         list.repaint();
     }
 
+    double loadStartMs = 0;
+    juce::String loadingName;
+
     void loadSelected()
     {
         ++loadCalls;
@@ -9156,6 +9159,24 @@ private:
                             juce::dontSendNotification);
             return;
         }
+
+        // SAY THAT A LOAD IS RUNNING, AND FOR HOW LONG. The message thread is
+        // inside the load for its whole duration, so the window cannot repaint
+        // and the UI says nothing -- on CLA-76 (m) that silence is 1.6 seconds,
+        // three times its stereo sibling, and it is why a slow load reads as a
+        // freeze and gets force quit. A tick published BEFORE the blocking call
+        // is the cheapest of the three fixes here: it prevents the mistake
+        // rather than recording it afterwards.
+        loadStartMs = juce::Time::getMillisecondCounterHiRes();
+        loadingName = sp.desc.name;
+        status.setText ("Loading " + sp.desc.name + "...  (slow plugins can take several "
+                        "seconds; the window will not repaint until it returns)",
+                        juce::dontSendNotification);
+        // Force the paint out NOW: after this the message loop belongs to the
+        // plugin until the editor settles.
+        status.repaint();
+        if (auto* d = juce::Desktop::getInstance().getComponent (0)) d->repaint();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
 
         capture.stop();          // before unload: teardown is what a read can race
         listeners.detach();      // same rule: they hang off the instance's parameters
