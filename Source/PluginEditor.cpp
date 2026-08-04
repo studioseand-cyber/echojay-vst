@@ -4,6 +4,7 @@
 #include "EchoJayVisualiserTexture.h"  // shared SPECTRUM/SPECTROGRAM texture
 #include "EchoJayEventLog.h"   // events.jsonl + machine_id (dial_miss telemetry)
 #include "EchoJayParamApply.h" // kDialSignalsEnabled + dial predicate (shared)
+#include "EchoJayChannelLabel.h" // channelLabelUsable — ONE uid-passthrough test
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
                                     // include, so only THIS TU pays its 8.4MB
 #include <cmath>
@@ -18493,9 +18494,24 @@ juce::String EchoJayEditor::computeNextCaptureName() const
 
 juce::String EchoJayEditor::materialContextName(const juce::String& mainDefault) const
 {
-    if (auto uid = effectiveChannelUid(); uid.isNotEmpty())
-        return channelDisplayLabel(uid);   // the channel IS the material
-    return mainDefault;
+    // MUST STAY IN STEP WITH the [TARGET CHANNEL] composer's guard (search
+    // channelLabelUsable) — both reject channelDisplayLabel's uid passthrough,
+    // and they share the PREDICATE precisely so they cannot drift. They
+    // deliberately differ in what they substitute: prose wants a phrase, a
+    // field wants emptiness. See EchoJayChannelLabel.h.
+    //
+    // EMPTY MEANS UNKNOWN, and it is a real third answer. It must not fall
+    // back to mainDefault: this conversation is NOT on the processor's own
+    // channel, and saying so would make the model's CHANNEL disagree with the
+    // conversation it is having. Downstream, empty is expressed as absence —
+    // the classify body omits the field (so the prompt's "if CHANNEL is
+    // unknown, never guess" fail-safe engages), and buildSystemPrompt omits
+    // the CHANNEL TYPE block rather than emitting an empty quoted string.
+    const auto uid = effectiveChannelUid();
+    if (uid.isEmpty()) return mainDefault;          // main chat
+    const auto label = channelDisplayLabel(uid);    // the channel IS the material
+    return echojay::channelLabelUsable(uid.toStdString(), label.toStdString())
+             ? label : juce::String();
 }
 
 juce::String EchoJayEditor::mainContextLabel() const
@@ -18813,10 +18829,19 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         // Channel identity, resolved ONCE for both channel states, with
         // neutral degradation: never a raw uid interpolated into prose,
         // never an empty quoted string.
+        //
+        // MUST STAY IN STEP WITH materialContextName, which feeds CHANNEL to
+        // /api/classify and CHANNEL TYPE to the system prompt. This site
+        // guarded the uid passthrough from the start; that one did not, so the
+        // same unnamed Link produced careful prose here and a 12-character hex
+        // string there. The PREDICATE is now shared (EchoJayChannelLabel.h) so
+        // the two cannot drift again — only the substitution differs, because
+        // prose wants a phrase and a field wants emptiness.
         const juce::String label = channelDisplayLabel(targetLinkUid);
-        const juce::String channelPhrase = (label.isEmpty() || label == targetLinkUid)
-            ? juce::String("one of the user's Link channels")
-            : "the user's \"" + label + "\" Link channel";
+        const juce::String channelPhrase =
+            echojay::channelLabelUsable(targetLinkUid.toStdString(), label.toStdString())
+                ? "the user's \"" + label + "\" Link channel"
+                : juce::String("one of the user's Link channels");
 
         if (linkUidLive(targetLinkUid))
         {
