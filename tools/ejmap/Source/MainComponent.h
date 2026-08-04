@@ -2915,7 +2915,17 @@ public:
         // path attempted rather than assumed.
         if (mode.startsWith ("mapstate-live") || mode == "mapstate-dead")
         {
+            // THE DIAGNOSTIC MUST NOT WRITE ITS FAILURE INTO THE REAL CACHE.
+            // It did: mapstate-dead saved "no response from ...invalid" to
+            // map-state.json, the app loaded that at startup, and every
+            // column-3 cell read "?" long after the endpoint was fine. A test
+            // that leaves the tool believing the network is down is worse than
+            // no test.
             const bool dead = mode == "mapstate-dead";
+            const bool restoreCache = dead;
+            juce::String savedCache;
+            if (restoreCache && mapStateCacheFile().existsAsFile())
+                savedCache = mapStateCacheFile().loadFileAsString();
             if (dead) ::setenv ("EJMAP_MAPS_URL",
                           "https://endpoint-that-does-not-exist.echojay.invalid/api/params/maps", 1);
             say (juce::String ("MAPSTATE ") + (dead ? "DEAD-ENDPOINT" : "LIVE") + ": " + mapsEndpoint());
@@ -2987,6 +2997,12 @@ public:
                 say ("    " + juce::String (glyphFor ((MapState) kv.first)) + " "
                      + juce::String (stateNames[kv.first]).paddedRight (' ', 22)
                      + juce::String (kv.second));
+            if (restoreCache)
+            {
+                if (savedCache.isNotEmpty()) mapStateCacheFile().replaceWithText (savedCache);
+                else mapStateCacheFile().deleteFile();
+                say ("  (cache restored: the dead-endpoint run left no trace)");
+            }
             std::cout << "MAPSTATE-" << (dead ? "DEAD" : "LIVE") << ": DONE" << std::endl;
             quitNow(); return;
         }
@@ -9285,13 +9301,24 @@ private:
         // NO BLANK CELLS. A blank reads as "no" and would be indistinguishable
         // from "not asked", so every cell carries an explicit glyph and "." is
         // a deliberate no.
+        // COLUMNS ON THE RIGHT. The names are what the eye scans by, so the
+        // columns must not push them across.
+        //
+        // AND THE NAME NOW DRAWS INTO A RECT, not to hardcoded coordinates.
+        // It drew at (6, 0, w-12, h) regardless of what the columns reserved,
+        // so removeFromLeft moved nothing: all three cells painted INSIDE the
+        // name's rect and two of them were buried in the text, which is why one
+        // glyph was visible instead of three. The overlap predates the three
+        // columns -- the single glyph drew at 0..22 over a name starting at
+        // x=6 -- tripling the cells is what made it obvious.
         const auto key = echojay::identityKeyForDescription (sp.desc);
         auto bounds = juce::Rectangle<int> (0, 0, w, h);
+        auto colArea = bounds.removeFromRight (3 * 18 + 10);
         g.setFont (13.0f);
 
         auto cell = [&] (const juce::String& glyph, juce::Colour c)
         {
-            auto box = bounds.removeFromLeft (18);
+            auto box = colArea.removeFromLeft (18);
             g.setColour (c);
             g.drawText (glyph, box, juce::Justification::centred);
         };
@@ -9317,14 +9344,40 @@ private:
             case Col3::no:
             default:                   cell (".", no); break;
         }
-        bounds.removeFromLeft (6);
-
         g.setColour (quarantined ? juce::Colours::orangered
                                  : juce::Colour (0xff9fd8e0));
         g.setFont (13.0f);
         g.drawText (sp.desc.name + "   [" + sp.desc.pluginFormatName + "]"
-                      + (quarantined ? "  QUARANTINED" : ""),
-                    6, 0, w - 12, h, juce::Justification::centredLeft, true);
+                      + (quarantined ? "  QUARANTINED - right-click to release" : ""),
+                    bounds.reduced (6, 0), juce::Justification::centredLeft, true);
+    }
+
+    /** RELEASE FROM THE ROW. A quarantined row could not be selected, so the
+        toolbar's Release button applied to nothing the operator could point at
+        -- an action with no reachable subject. Right-click names the action on
+        the thing it acts on, which is also where someone looks when a row says
+        QUARANTINED. Selection is left alone: loadSelected already refuses a
+        quarantined row with a message, so nothing here re-opens that path.
+    */
+    void listBoxItemClicked (int row, const juce::MouseEvent& e) override
+    {
+        if (! e.mods.isPopupMenu()) return;
+        if (! juce::isPositiveAndBelow (row, visibleRows.size())) return;
+        const auto& sp = rows.getReference (visibleRows[row]);
+        const auto id  = sp.pluginId();
+        if (! ledger.isQuarantined (id)) return;
+
+        juce::PopupMenu m;
+        m.addSectionHeader (sp.desc.name);
+        m.addItem (1, "Release from quarantine");
+        m.showMenuAsync (juce::PopupMenu::Options(), [this, id, name = sp.desc.name] (int r)
+        {
+            if (r != 1) return;
+            ledger.releaseFromQuarantine (id);
+            status.setText (name + " released from quarantine. It can be loaded again.",
+                            juce::dontSendNotification);
+            applyFilter();
+        });
     }
 
     void selectedRowsChanged (int) override
