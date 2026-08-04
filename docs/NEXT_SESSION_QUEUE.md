@@ -2,6 +2,77 @@
 
 Three items, in the user's order. Nothing here is started.
 
+## BUILT 4 Aug 2026 — items 4 and 1, and the naming question ANSWERED for API-550A
+
+**Item 4 (manual band entry) and item 1 (`strideNote` persistence) are built and proven.**
+`--selftest-manualbands <plugin_id> [accept|refuse]` runs both halves against API-550A.
+
+**The acceptance test the queue demanded, passing:** three bands entered by hand on API-550A,
+submitted, **and the written map carries three band groups** with
+`grouping_source: "mapper"`. The derived order came out **50 < 400 < 5000 Hz**, sorted from
+the swept frequencies rather than from the order the bands were entered in.
+
+**The guards, each proven by attempting the thing it refuses** (`refuse` mode):
+
+- **order** — bands entered high-first are REFUSED, and the message shows both:
+  *"You entered band 1 10000.0 Hz, band 2 2700.0 Hz, band 3 225.0 Hz, which puts them in the
+  order band 3, band 2, band 1."*
+- **unit sanity** — a frequency slot pointed at a dB control: *"band 1 frequency [2] sweeps in
+  'db', not Hz."*
+- **the fixed-frequency answer** — N on a frequency row, which the band card could not answer
+  at all before, confirms the band with **no index** and `freq_source: "typed_fixed"`.
+
+### THE NAMING QUESTION, ANSWERED BY READING (item 1's whole purpose)
+
+API-550A's parameters, printed from the loaded plugin:
+
+```
+[0] High Gain   [1] High Freq   [2] Mid Gain   [3] Mid Freq   [4] Low Gain   [5] Low Freq
+[6] Filter  [7] LF-Type  [8] In  [9] HF-Type  [10] Polarity  [11] Analog  [12] Output
+```
+
+**The recollection was right, and is now a reading.** `prefixOrder()` is
+`{LF, LMF, MF, HMF, HF}` matched WHOLE-TOKEN, so `"Low Freq"` -> `["Low","Freq"]` matches
+nothing, `morphSlot` returns -1, and the inference yields zero bands. Note `LF-Type` and
+`HF-Type` DO carry the vocabulary — on the two parameters that are not bands.
+
+**This is ONE plugin.** It settles API-550A and it does not settle the category: item 0
+step 2's corpus is still what decides whether a synonym fold is the right shape or whether
+there are forty conventions. Do not widen `prefixOrder()` on the strength of this.
+
+### Three smaller defects found and fixed on the way
+
+- **W left the card stale.** Re-opening a row changed what its keys meant and the answer strip
+  kept showing the old row's answers. Found by a self-test asserting a re-opened frequency row
+  offers "N - no frequency control": N worked, and the card had not said so.
+- **The fixed-frequency answer did not stand a live capture down**, so a later touch could have
+  landed in a row that had already answered. Same discipline as `actionSkip`'s armed branch.
+- **The corpus gate demanded every primary group carry a `q`.** It means to assert that two
+  routing paths AGREE, and also required them to reach something — so the first real map with
+  a q-less group (Dangerous BAX EQ Master, submitted by the user 4 Aug 14:36 BST) failed a
+  gate that had simply never met one. Both-absent is agreement. **A q-less band is legitimate
+  and the design says so**, which makes this failure routine from here rather than rare.
+
+**Gates after all of it:** round-trip **331 checks / 0 failures** over 22 corpus maps,
+registry conformance **90 / 0**, `--selftest-dupescape` **17 / 17**.
+
+### Not done, and deliberately
+
+- **`enable` rows are offered and recorded, but nothing HONOURS them yet.** The consumer reads
+  an enable link from `controls.<name>.enabled_by` (`EjmapSubject.h:339`), which is a Tier 2
+  control field, not a band-group param. A manually entered enable is captured so the mapper's
+  work is not lost; wiring it to the consumer is separate and unbuilt. **Nothing claims it
+  works.**
+- **`typed_parametric`** — the schema field and its meaning are defined, and the wizard has no
+  key that produces it yet. Only `swept` and `typed_fixed` are reachable today.
+
+---
+
+**Items 5-9 were added 4 Aug 2026 (session start, nothing built yet). Items 5-8 come
+from the user during that session; item 9 was measured while answering item 6's
+questions. Read the ANSWERS block (item 10) before building item 4 — two of the three
+graphic-EQ questions are now answered from source.**
+
 ---
 
 ## 1. Persist the band diagnostic
@@ -205,6 +276,41 @@ by measured midpoint. Then:
 > LF-below-MF-below-HF as *the claim*, so the manual path must ESTABLISH that claim rather
 > than inherit it from the order the mapper happened to type.
 
+### AMENDMENT 4 Aug 2026 — fixed-frequency bands, and WHY ordering stays derived
+
+Raised when the graphic-EQ fold-in was answered. The first reading of it was that a typed
+frequency weakens the ordering claim to `ordering_source: "mapper"`. **That reading was
+wrong and the correction is the important part of this section.**
+
+On a graphic EQ the frequency is typed because **it is printed on the panel** — 31, 63, 125,
+250. The ordering still derives from those numbers, not from an assertion about which band
+is which. **Sorting typed values by magnitude is derivation, not trust.** What the original
+design protects against is ENTRY ORDER becoming the claim, and that does not happen here,
+because the numbers order themselves.
+
+**So `ordering_source` stays `"derived"`, and a THIRD field records where the frequency came
+from.** The two claims stay separate, as everything else in this design does:
+
+| field | values | what it says |
+|---|---|---|
+| `grouping_source` | `mapper` \| `inferred` | who decided these indices form a band |
+| `ordering_source` | `derived` | the order came from frequency magnitudes, never from entry order |
+| `freq_source` | `swept` \| `typed_fixed` \| `typed_parametric` | where the frequency numbers came from |
+
+**THE DISTINCTION THAT IS EASY TO COLLAPSE, AND MUST NOT BE:**
+
+- **`typed_fixed`** — a graphic-EQ band with no frequency parameter. The typed number is a
+  **transcription of a constant** printed on the panel. Strong.
+- **`typed_parametric`** — a movable frequency control the mapper typed instead of sweeping.
+  The number is **the mapper's reading of a control that can be anywhere**. Weak, and weak
+  for a different reason than grouping is: nothing measured it, and it can drift the moment
+  the control moves.
+
+If manual entry allows both — and it should — they cannot share a source value. A consumer
+reading `typed_fixed` is reading a constant; one reading `typed_parametric` is reading a
+snapshot of a control's position. Collapsing them would let the weakest case borrow the
+credibility of the strongest.
+
 ### Two cheap checks (the sweep already runs; these cost nothing)
 
 - **Unit sanity** — a slot claimed as frequency that sweeps to a dB unit family is
@@ -295,3 +401,489 @@ WHOLE-TOKEN via `prefixOrder().contains(toks[i], true)`. Two axes exist, `"digit
 `"Low Frequency"` → `["Low","Frequency"]` does not.
 
 `strideNote` already names the parameter it failed on — it simply is not persisted (item 1).
+
+---
+
+## 5. Eiosis AirEQ's editor draws over the whole ejmap window
+
+**Reported by the user, 4 Aug 2026.** Loading Eiosis AirEQ leaves only the plugin GUI and
+the title bar: toolbar, list and wizard all disappear. Not a crash — the app is still
+running. A plugin that hides the tool cannot be mapped, and this recurs on any oversized
+editor.
+
+**Established by source read at 6f610c8, not by watching it happen:**
+
+- `layoutEditor()` (`MainComponent.h:9396`) does **one thing**: `setTopLeftPosition (0, 0)`.
+  It never sets a size and never clamps one. The comment says why a transform is refused —
+  *"M2 records mouse position inside these bounds and a transform would make ui_hint
+  coordinates lie"* — so scaling is a decision already taken against, not an oversight.
+- The editor is added to `editorHolder` (`MainComponent.h:9382`), which gets whatever is
+  left of the window after the list/panel column (`MainComponent.h:6974`). An editor larger
+  than that region overflows it, and nothing anywhere constrains it.
+- **No plugin editor is being clamped today.** There is no call that sizes a hosted editor
+  in `MainComponent.h`; `layoutEditor` is the only sizing code and it sets position only.
+  That answers the second half of the question: nothing else is being clamped either.
+
+**Why the overflow paints over the toolbar rather than being clipped by the parent** — a
+hypothesis, but a well-supported one: a hosted AU/VST3 editor on macOS is a real `NSView`
+child of the window's view, not a JUCE-painted component, so JUCE's parent-bounds clipping
+does not apply to it. **This project has already solved exactly this**, in the main plugin:
+`Source/NativeClip.mm:12` — *"wantsLayer + masksToBounds go on the CONTAINER; the plugin
+view …"* — with `[container layer].masksToBounds = YES` at `NativeClip.mm:141`. That recipe
+is also recorded in memory as the CHAIN inline-hosting rule: **a fixed clip-container NSView
+with masksToBounds, the plugin view reparented into it, real NSView frames rather than JUCE
+sizes, and never clamp the JUCE editor component.**
+
+**So the fix has a proven shape already in this repo**, and it is the one that does not
+touch coordinates: clip, do not scale. Scrolling the clipped container is the natural
+follow-on for reaching the bottom of a tall editor. Scaling stays refused for the ui_hint
+reason above unless someone first decides what a transform does to recorded mouse positions.
+
+### MEASURED 4 Aug 2026 — and it REFUTES the size hypothesis
+
+`--selftest-editorfit <plugin_id> [holdSeconds]` was built for this and now exists. It
+loads one plugin, attaches the editor, prints the geometry at attach and again 3 s later
+(a bridged editor "reaches its real size about 2.5 s" after createEditorIfNeeded,
+`PluginHost.h:65`), and writes a JUCE-layer snapshot.
+
+```
+Eiosis AirEQ Premium  editor 1022x700 | holder 996x824 | window 1440x900 | OVERFLOWS
+API-2500 (m)          editor  690x393 | holder 996x824 | fits
+API-550A (m)          editor  316x597 | holder 996x824 | fits
+```
+
+**The overflow is 26 px, horizontally, off the RIGHT edge.** It cannot hide a toolbar at the
+top and a list on the left. Three further facts, all measured:
+
+- **The JUCE layer is correct.** `createComponentSnapshot` of the whole window shows the
+  toolbar and the list drawn normally, with the editor's region blank — a hosted `NSView`
+  never renders into a JUCE snapshot, so blank there is expected and proves nothing about
+  the native layer, but toolbar-and-list-intact proves the layout is not the fault.
+- **ejmap has exactly ONE window while AirEQ is loaded** (`AXStandardWindow`, 1440x928 at
+  144,99, via System Events against the test process's pid). So AirEQ does **not** open its
+  own window: its editor is a subview of ejmap's window. The "plugin opens a borderless
+  window over the client area" explanation is out.
+- **No editor is clamped**, confirming the earlier source read: `layoutEditor` only
+  positions.
+
+**NOT ESTABLISHED, and this is the gap:** the reported symptom was never reproduced on
+screen. Every screen grab caught an empty Space — the test process's window opens on a
+different Space from the one the capture tool sees, `screencapture -l<windowid>` returned
+*"could not create image from window"*, and chasing it further was not worth the session.
+**So the mechanism behind "toolbar, list and wizard all disappear" is still unexplained by
+anything measured.** The measurements and the report disagree, and the rule is that the
+measurement wins — which here means *do not build the clip container yet*, because it would
+be a fix aimed at a mechanism nobody has seen.
+
+**The cheapest way to close this** is on the mapping machine, where AirEQ and the app are
+already in front of the operator: load it, screenshot the window, and note the window size
+at the time. Two candidates the screenshot separates immediately —
+
+1. an unclipped `NSView` covering more than its frame (the `NativeClip.mm:141`
+   `masksToBounds` recipe is then the fix, and it is proven in this repo), or
+2. a much smaller ejmap window at the time, which changes the arithmetic entirely — the
+   test ran at 1440x900 and the holder was 996 wide, so a narrower window makes the same
+   editor overflow far more.
+
+**Also worth knowing:** AirEQ's editor is 1022x700, so at any window narrower than about
+1530 px the editor cannot fit beside a 500 px control column. Whatever the mechanism turns
+out to be, "the editor does not fit" is a real and recurring state, and the requirement
+stands: ejmap's controls must stay reachable regardless of editor size.
+
+**Also a test fixture:** AirEQ is the better manual-band-entry subject when item 4 lands —
+seven bands each with Freq/Gain/Q, plus LoCut, HiCut, Earth and Air. Bigger and cleaner
+than API-550A. API-550A stays the acceptance test (it is the parked one); AirEQ is the
+second subject that shows the flow scales past three bands.
+
+---
+
+## 6. The category list does not cover everything worth mapping, and cannot say "not worth mapping"
+
+**Raised by the user, 4 Aug 2026, from two live cases.**
+
+**Auto-Key** — key detection, three parameters, no audio processing, output goes to
+Auto-Tune. None of the categories fit. Skipping it is right, but the dropdown offers no
+"not a processor", so the honest answer is only reachable by abandoning the plugin.
+
+**Auto-Tune** — the opposite: genuinely dialable (retune speed, humanize, formant, key,
+scale), users would ask for it, and pitch correction is not a category either. Same for
+tuners, meters, analysers and utility plugins.
+
+### What the picker actually offers (source, 6f610c8)
+
+`DialSets::categories()` (`EjmapAssignment.h:85`) returns **eleven**: compressor, limiter,
+eq, de-esser, delay, reverb, saturation, gate, transient_shaper, channel_strip, amp_sim.
+The dropdown is built straight off it (`EjmapAssignPanel.h:91`). There is a twelfth,
+unreachable path: `forCategory()` falls through to `{ mix_pct, output_db }` for an unknown
+string, but only a classifier verdict or an explicit override can put an unlisted category
+there — the human cannot type one.
+
+### Question 1 — a "not a processor" outcome. **Yes, and it is nearly free.**
+
+What exists today: **S ("S skip plugin", `EjmapAssignPanel.h:112`)** marks every unresolved
+row `deferred` with reason `"plugin skipped by mapper"`, persists the session, and returns to
+the list. So a dismissal IS recorded — but:
+
+- it is recorded as **deferred**, which means *not done yet*, and the corpus cannot tell it
+  from a plugin the mapper simply ran out of time on;
+- it is recorded **only in the local session file**. Submit requires ≥1 confirmed row
+  (`actionSubmit`, `EjmapAssignPanel.h:1279`), so a dismissal never reaches the server. The
+  corpus the user wants to be able to ask "considered and dismissed?" is on one machine.
+
+Both are the project's own distinction — `noMap` versus `unmapped`, `not_present` versus
+`deferred` — applied one level up, to the plugin instead of the row. The shape:
+
+- a category or an S-variant that records **`not_a_processor`** with a reason, distinct from
+  deferred;
+- a **list state** for it, so column 1 stops calling it unmapped (this is the same missing
+  vocabulary as item 2's parked state — build them together);
+- whether it should reach the server is a **separate decision** with a cost: it would need a
+  submit path that carries zero params, which the empty-map refusal currently forbids for
+  good reason. Recommend recording locally first, and deciding server-side once the parked
+  state exists, since both need the same "a statement about a plugin, not a map of it"
+  channel.
+
+### Question 2 — is pitch correction worth a category? **Say what it contains first.**
+
+A `pitch_correction` dial set, checked against what the consumer can actually do:
+
+| key | unit | consumer support |
+|---|---|---|
+| `retune_speed_ms` | ms | **free** — `semanticUnit()` (`EchoJayParamApply.h`) is suffix-driven: `_ms` → ms |
+| `humanize_pct` | pct | **free** — `_pct` → pct |
+| `formant_pct` or `formant_shift` | pct / none | free if `_pct`; a bare `formant_shift` has **no unit** and lands in the same "unitless, magnitude unverifiable" hole as `drive` |
+| `mix_pct`, `output_db` | pct, dB | already in every dial set |
+| key, scale | — | **not anchorable.** These are enumerations. They ride the existing `mode` / labels path (`NamedControl.kind == "mode"`, `EjmapSchema.h:225`), which was built before ejmap and is fed by Tier 2 — so they are reachable *as named controls*, not as dial-set semantics |
+
+**So the consumer could use most of it with no new machinery**: the unit inference is
+suffix-driven, so any `_ms`/`_pct`/`_db` key works the day it is invented; and `key`/`scale`
+already have a home in Tier 2's labelled-mode entries.
+
+**What is NOT established:** the server-side vocabulary. `lib/params-lib.js` is not in this
+worktree, so whether ingest validates semantics against a fixed list is **unread**. If it
+does, a new semantic is a two-repo change and that decides the cost. **Check that before
+adding the category, not after.**
+
+**Recommendation, stated as a recommendation:** add `pitch_correction` with
+`{ retune_speed_ms, humanize_pct, formant_pct, mix_pct, output_db }` and let key/scale ride
+Tier 2 — *after* the server vocabulary is read. It is a real request shape ("make the tuning
+tighter"), it costs one array entry client-side, and Tier 2 already carries the rest.
+
+---
+
+## 7. No way to leave a loaded plugin and get back to the list
+
+**Raised by the user, 4 Aug 2026:** once a plugin loads there is no exit. A wrong load, an
+unmappable one (Auto-Key), or one worth parking — restart-map resets the wizard but keeps
+you on the plugin. Same class as the other three: the wizard supports a state it gives no
+way to reach, and the state here is *"not working on this plugin any more."*
+
+**Correction from source (6f610c8), because it changes what to build:** an exit does exist
+and is on screen. **S — "S skip plugin"** (`EjmapAssignPanel.h:112`, in the button strip,
+visible whenever the wizard is) runs `actionSkipPlugin()` → `hooks.exitPanel` →
+`endAssignment()` (`MainComponent.h`), which hides the panel and **shows the list again**.
+The plugin **stays loaded**; nothing unloads it.
+
+So the capability is there and the gap is narrower and sharper than "no exit":
+
+1. **It is labelled as a verdict, not as an exit.** "Skip plugin" reads as *dismiss this
+   plugin*, so it is not what you reach for when you mean *come back to this later*.
+2. **It costs the row states.** Every unresolved row is written `deferred` with reason
+   `"plugin skipped by mapper"` — a resolution recorded about rows the mapper never
+   considered. Returning later means re-opening rows that now claim they were decided.
+3. **It says nothing about the session being saved**, which is item 2's gap exactly.
+4. Whether the user knew S was there is worth asking — if the answer is no, that is a
+   **labelling defect** and half the fix is a word.
+
+**Propose:**
+
+- **A park exit, distinct from skip.** Leaves every row exactly as it is (no `deferred`
+  sweep), persists the session — `persistSession()` already writes on every accept and
+  `restoreSession()` already matches on `fp` — returns to the list, and **says so**: "AirEQ
+  parked: 4 confirmed, 6 open, saved. It will be waiting."
+- **Keep S as it is**, and reword it so the two read as different acts: *"S — dismiss this
+  plugin (records every open row as deferred)"* versus *"ESC — park and return to the list"*.
+- **A half-resolved row parks as it stands.** `armed` / `captured` / `swept` are honest
+  descriptions of where the mapper stopped, and the sweep evidence is already in the row.
+  Nothing should be promoted or demoted on the way out. **One thing to check:**
+  `actionWiggle` does not call `persistSession()`, so a row armed and then parked may not
+  reach disk in that state — the park exit must persist, not assume.
+- **Unload or stay loaded?** **Unload.** Staying loaded keeps a plugin's editor, its
+  timers and its audio thread alive behind the list, and the next load then runs against a
+  process that is already hosting something — the exact condition `--load-once`'s separate
+  child processes exist to avoid. Parking is *"I am done with this for now"*, and leaving it
+  resident contradicts that. Counter-argument worth weighing: re-loading costs 0.5-1.6 s and
+  a re-load is where crashes happen, so parking-and-returning twice is two more load
+  attempts against a plugin that may be flaky. If that matters, the compromise is unload on
+  park and **keep the session**, never the instance.
+
+**This is the one that costs most at volume** — every wrong load currently costs the whole
+plugin.
+
+---
+
+## 8. The two live issues from the handover, now checked
+
+Both were carried in `ejmap-handover-prompt.md` with a "NOT VERIFIED" note. The note is now
+resolved in one direction each. **Source-read at 6f610c8; neither was run.**
+
+### PROVEN BY RUNNING IT, 4 Aug 2026: `--selftest-dupescape`
+
+`ejmap --selftest-dupescape <plugin_id>` runs against API-2500 (m) itself, on a scratch
+ledger root. It constructs the duplicate (and SAYS it constructs it — no keypress sequence
+in this build reaches that state), sweeps the real plugin for real anchors, and then uses
+only keys a human presses. **17 of 17 ok.** Both escapes already exist:
+
+| the shape on disk | the keys | result |
+|---|---|---|
+| `[3]` claimed by `release_ms` AND `release_ms` | **W then D** | the loser defers, submit enabled |
+| `[8]` claimed by `makeup_db` AND `output_db` | **W, re-touch, SPACE** | `INSISTED: [0] serves both makeup_db and output_db`, submit enabled |
+
+So **nothing needed building for the un-confirm affordance**. W on a confirmed row is not
+gated by state (`keyValid`, `:466` refuses `wiggle` only for `ignore` rows), it sets the row
+`armed`, and the sweep anchors and resolvedIndex survive — evidence intact, verdict
+withdrawn. The test asserts that survival explicitly.
+
+**One real defect was found and fixed:** the stale reason. `actionSkip` overwrites
+`skipReason`, every confirm path did not, and that is how a row superseded at 11:53:01 came
+to sit on disk CONFIRMED while still carrying `"superseded: [3] confirmed for release_ms"`.
+Cleared now at `actionWiggle` — the single choke point where a resolved row becomes
+unresolved again — rather than at the four confirm sites. Two assertions cover it.
+
+**Still not built, and still true:** W does not `persistSession()`, so a withdrawn verdict
+does not reach disk until the next action writes. Left alone deliberately: persisting would
+mean a crash mid-re-open loses a confirmation, and not persisting means the disk briefly
+disagrees with the screen. That is a decision, not an oversight, and it wants deciding
+rather than defaulting.
+
+### 8a. The duplicate-index insist IS reachable. The handover's blocker reads the wrong path.
+
+**The question asked:** does the review screen set `conflictWith` and re-open the rows on
+detecting the duplicate? **It does not.** `openSummary()` (`EjmapAssignPanel.h:2384`) calls
+`duplicateConflicts()`, prints the strings and disables submit. It touches no row state.
+`conflictWith` is written in exactly **two** places, both at capture time
+(`EjmapAssignPanel.h:799` in `actionSpace`, `:3069` in `finishCaptureWith`) — enumerated,
+not inferred from a comment.
+
+**But the insist is still reachable, and the route is already in the self-test.** `W` on a
+confirmed row (`actionWiggle`, `:856-857`) clears `conflictWith` and sets the row to
+`armed` — it is **not** blocked on confirmed rows (`keyValid`, `:466`: `wiggle` is refused
+only for `ignore` rows). Re-touching the same control lands in `finishCaptureWith`, which
+asks `confirmedHolderOf` — the *other* row still holds [8] — and raises the conflict card.
+**SPACE then insists.** `MainComponent.h:6504-6526` drives precisely this sequence (`W` →
+re-capture → *"re-capture raised the conflict card again"* → SPACE → `sharedInsisted`) and
+asserts it passes.
+
+`duplicateIndexConflicts` (`EjmapAssignment.h:372`) drops `sharedInsisted` rows from the
+map entirely, so **one** of the pair carrying the flag clears the conflict; both is not
+needed.
+
+**So: probably nothing to build here.** What is missing is that nothing on the confirmed
+row says the route exists — the legend offers `> - next row` and `W - re-open (re-capture)`
+(`:2855-2861`) and the review's refusal text says *"W re-captures or re-opens, D defers"*
+without connecting that to the shared-control decision.
+
+**Prove it before believing it:** on API-2500 (m), W the `output_db` row, touch the output
+knob, confirm the card names `makeup_db`, press SPACE, and check submit is enabled. If that
+works, the fix is a sentence in the refusal, not a feature. **A guard is tested by
+attempting the thing it refuses.**
+
+### 8b. Clearing a confirmation: W already does most of it, and does not persist it
+
+`W` on a confirmed row sets `armed` and **keeps `resolvedIndex` and the sweep** — evidence
+intact, verdict withdrawn, which is the affordance the handover asked for. Two real gaps:
+
+- **It arms a capture.** There is no "un-confirm and stop"; the mapper must either touch
+  something or navigate away (`clearCaptureTargets`, `:430`, fires on row change).
+- **It does not persist.** `actionWiggle` calls `list.updateContent()` and no
+  `persistSession()`, so disk still says `confirmed` until something else writes. A crash
+  between the two leaves the withdrawn verdict standing.
+
+---
+
+## 9. MEASURED: API-2500 (m) has a second duplicate the insist cannot fix
+
+**Read 4 Aug 2026 12:22Z from `assign-c1c6a082…json`, mtime 12:09:39Z (13 minutes before
+the read, and the app was running — this is a sample, not a state).**
+
+`AudioUnit:Effects/aufx,APCM,ksWV` carries **two** duplicate-index conflicts, not one:
+
+| index | claimed by | resolved_at |
+|---|---|---|
+| 8 | `makeup_db`, `output_db` | 11:53:38, 11:54:42 (31 Jul) |
+| **3** | **`release_ms`, `release_ms`** | 11:53:01, 11:54:30 (31 Jul) |
+
+The second is **the same semantic twice on the same index** — and the losing row still
+carries `skip_reason: "superseded: [3] confirmed for release_ms"` while being `confirmed`.
+
+**What the file says happened**, in its own timestamps: the row proposing [10] "Release
+Variable" was W-captured onto [3] and confirmed at 11:53:01; `supersedeSiblings`
+(`EjmapAssignPanel.h:3113`) deferred the sibling row proposing [3] "Release" and wrote it
+that reason; then at 11:54:30 that deferred row was **confirmed anyway** (W re-opens a
+resolved row, and nothing stops a superseded row being re-confirmed). Its stale
+`skip_reason` was never cleared.
+
+**Two consequences:**
+
+1. `duplicateIndexConflicts` emits **`"[3] claimed by: release_ms AND release_ms"`** — a
+   refusal that reads as nonsense and names no way out. The SPACE insist is the wrong
+   remedy: `sharedInsisted` means *this plugin genuinely shares one control between two
+   semantics*, which is false here. One of the two rows should simply cease to claim [3],
+   and **nothing in the wizard can make a confirmed row stop claiming an index** — which is
+   8b, arriving as a live blocker rather than a design point.
+2. `supersedeSiblings` only touches `! r.isResolved()` rows, so it cannot supersede a
+   sibling that is already confirmed. Confirming the same semantic twice is therefore
+   reachable and unguarded.
+
+**Fix candidates, not yet chosen:** clear `skip_reason` on re-confirm (a one-liner, and
+independent); make a same-semantic duplicate a distinct refusal that offers to drop the
+older row; or let `supersedeSiblings` supersede a confirmed sibling **with a recorded
+reason**, which is the same "the verdict is withdrawn, the evidence survives" move as 8b.
+
+**This is live** — API-2500 (m) cannot submit while it stands.
+
+---
+
+## 10. ANSWERS to the three graphic-EQ questions the handover asked before item 4
+
+Source-read at 6f610c8. Question 3 is answered only to a floor and says so.
+
+### Q1 — Can schema 2.3 express a fixed frequency with a gain index? **Almost, and the consumer is closer than the schema.**
+
+`GroupSpec` (`EjmapSchema.h:264`) is `{ family, n, primary, params[], freqLo, freqHi }`, and
+`params` is an array of `ParamMapping` — each of which needs an index. **A band whose
+frequency is not a parameter cannot be a `ParamMapping`.** So the frequency has to live as
+group metadata, and `freqLo`/`freqHi` are already exactly that shape.
+
+The consumer already behaves correctly on such a group. `applyBands`
+(`EchoJayParamApply.h:681`) picks a band by a **reach test against `freq_range`**, then
+writes only the request keys the band actually carries — a missing key returns
+*"band has no <key> control"* (`:793`) rather than failing the move. So *"cut 250 Hz by
+3 dB"* against a group with a freq range covering 250 and a `gain_db` param **lands the gain
+and declines the frequency, with a reason.** That is the correct behaviour and it is already
+built.
+
+**One blocker, and it is one function:** `groupIsEqBand` (`EchoJayParamApply.h:646`)
+**requires both** `freq_hz` and `gain_db` to be usable objects, or the group is not an EQ
+band at all — so a gain-only group is filtered out before the reach test ever runs, and
+`applyBands` reports *"no EQ band group for this control on this plugin"*.
+
+**What it would take**, therefore: (a) let `groupIsEqBand` accept a group with `gain_db` and
+a declared frequency range but no `freq_hz` param; (b) have ejmap write the fixed frequency
+into the group's range. **Note the range is not a point.** A 250 Hz slider on a ten-band EQ
+covers a band, so `[250, 250]` would fail the reach test for a 240 Hz request and fall
+through to *"first-free, none reached target"*. Octave-spaced bands want roughly
+`f × 2^±0.5`, third-octave `f × 2^±(1/6)` — and **the honest source for that is the
+plugin's own band spacing**, which manual entry can read off the labels the mapper is
+already looking at. This is a consumer-side change in the shipping plugin, not only in
+ejmap, so it is **cross-repo and needs the drift gate**.
+
+### Q2 — The band card needs an N. **Confirmed: there is none, and D costs everything.**
+
+While the band flow is live (`bandStep` in `capFreq1`/`capGain1`/`capQ1`/`capFreqLast`) the
+dispatcher (`EjmapAssignPanel.h:509-548`) accepts only: `wiggle` (re-arm), `notpresent`
+**only at `capQ1`**, and `defer`. Everything else answers *"Band card is waiting for a
+touch. R re-arms, D leaves bands for later."* The legend agrees (`:2889-2894`). And `D`
+does not skip the frequency — it exits the whole flow: *"Bands left for later; nothing
+recorded."*
+
+So on a graphic EQ the first card asks for band 1's frequency and the only honest answer
+costs the entire bands row. **N at `capFreq1` must mean "this band has no frequency
+control", not "no bands"** — and it is exactly the same one-line shape as the `capQ1` N that
+already exists.
+
+**This lands inside item 4, not beside it.** Item 4's synthesised rows are
+`band N frequency` / `band N gain`; a graphic EQ answers `not_present` to every frequency
+row and the group is built from gain plus a typed frequency. Which raises the design point
+item 4's accepted spec did not cover: **when the frequency is not a parameter, the mapper
+types the frequency as a number rather than sweeping it** — and item 4's ordering rule
+("the tool derives the order from the swept frequency") **cannot run**, because there is no
+sweep. For graphic EQs the ordering claim must come from the typed frequencies, recorded as
+`ordering_source: "mapper"` rather than `"measured"`. That is a weaker claim and must be
+recorded as one — do not let it inherit `"measured"`.
+
+### Q3 — How wide is this? **Floor of ~10 descriptions by name; the real answer needs the corpus.**
+
+Name search over `scan-cache.xml` (read 4 Aug 2026 12:21Z, cache mtime 10:03Z, **1,819
+descriptions**): API-560 (m), API-560 (s), UAD API 560, GEQ Classic (m/s), GEQ Modern (m/s)
+— call it **~10 descriptions across ~5 products**. F6, Q10 and Sontec matched the pattern
+and are parametric; they are not members.
+
+**That number is a floor and a weak one.** The defining property of this class is *a gain
+control with no frequency parameter*, which **is not visible in a name** — the search cannot
+see console strips with stepped frequencies, amp tone stacks, or any fixed-band EQ not
+called "GEQ". So the breadth question is **the same question item 0 step 2 answers**: read
+every EQ's parameter list, and count the ones whose bands have gain but no frequency. It
+comes free with that corpus and cannot be had honestly before it.
+
+**One narrowing that costs nothing:** the bands flow is reached **only when the category is
+`eq`** (`EjmapAssignPanel.h:230`). `amp_sim` has no band-class semantics at all and
+`channel_strip` gets flat `freq_hz`/`gain_db`, so neither hits this card. The blast radius
+today is EQ-categorised plugins only.
+
+---
+
+## 11. Character boxes: is Tier 2 the right home? **Yes — and it already works end to end**
+
+**Raised by the user, 4 Aug 2026, alongside item 6.** Scheps Parallel Particles has four
+character controls — Thick, Air, Bite, Sub — plus input, output and a Sub frequency. It is a
+parallel-processing multi-effect and no category fits: `saturation` would map three of seven
+controls and miss the point of the plugin.
+
+**A class, not a plugin:** modern character boxes whose controls are named for what they do
+rather than for a standard semantic. Decapitator, Soothe, the Scheps range, most one-knob
+plugins.
+
+### Can the consumer dial a named control it has no semantic for? **Yes. Built, and fed.**
+
+`applySettings` (`EchoJayParamApply.h:851-884`) — when a settings key has no Tier 1 entry in
+`map.params`, it resolves the key **by exact, case-sensitive name against `map.controls`** and
+dials it through `applyOne`, the *same* anchor path a semantic uses. Anchored entries ride the
+anchor path; `kind: "mode"` entries ride the labels path. A duplicate name refuses with both
+indices — *"two controls wearing one name means neither is addressable by it."* An unknown
+name declines with *"no mapping for this control on this plugin"*.
+
+So `{ "Bite": 6.5 }` on a Scheps map is a real dial, with real anchors and real read-back.
+**Nothing needs building on the consumer for this.**
+
+### And ejmap can already submit such a map
+
+`actionControlsAccept` (`EjmapAssignPanel.h`) sets the controls row to **confirmed**, and
+`actionSubmit` only requires `confirmed >= 1` — which that row satisfies on its own. So a map
+with **zero Tier 1 params and a full Tier 2 surface is submittable today**, by choosing any
+category, dismissing its dial-set rows, and accepting the controls row.
+
+**The gap is therefore honesty and friction, not capability:**
+
+- the mapper must pick a category that is **false** (`saturation` on a parallel multi-effect),
+  and the map then carries that false category;
+- 5-9 manufactured dial-set rows must each be dismissed, and each dismissal is a recorded
+  claim about a semantic the plugin was never going to have;
+- nothing in the map says *"this plugin's whole surface is Tier 2 by decision"* as opposed to
+  *"someone mapped three rows and gave up."*
+
+**So the dropdown option the user asked for is right, and it is small:** a
+`controls_only` (or `character`) category whose `DialSets::forCategory()` returns an **empty**
+array, so `buildRows` produces the controls row and nothing else. `forCategory` already has an
+unknown-category fallback of `{ mix_pct, output_db }` — this needs an explicit empty entry, not
+that fallback, because even those two are a claim.
+
+### Two things that are NOT established, and one that bites later
+
+1. **The model is not told control names.** `standardChainInjections`
+   (`PluginEditor.cpp:14656`) injects **plugin names only** — `buildChainInjection(recommendable)`.
+   Nothing in the client feed carries a map's control names. So *"more bite"* → `{"Bite": …}`
+   depends on the model already knowing the product's controls, or on a server-side prompt that
+   carries them. **The server prompt is not in this worktree and was not read.** This decides
+   whether these maps are USED, and it is the single most important unknown in this item —
+   answer it before mapping a shelf of character boxes.
+2. **`dialable` is stamped server-side** by `mapClearsCategoryBar` over params **and groups**
+   (`EchoJayParamApply.h:594-605`). A controls-only map has neither, so it will almost
+   certainly read **not dialable**. Today that gates only `kDialSignalsEnabled`, which is
+   **false** (`:612`), so it costs nothing live — but when dial signals are enabled these
+   plugins never light up. Either the flag learns about Tier 2 surfaces, or this class is
+   permanently invisible to that feature.
+3. Verify (1) before deciding these are worth mapping at all. If the model cannot name the
+   controls, a Scheps map is dialable by a request nobody can phrase — and then this class
+   belongs with Auto-Key in item 6 as a deliberate non-processor, recorded and dismissed
+   rather than mapped.
