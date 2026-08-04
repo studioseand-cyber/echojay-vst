@@ -624,10 +624,36 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   whether that content is trustworthy.
 
 ## Standing engineering rules (from prior work)
-- Build via ~/reinstall-v2.sh (kills AU host, bumps version, rebuilds, installs
-  atomically). It now derives REPO from `git rev-parse --show-toplevel` and
-  configures the build tree if `$BUILD/CMakeCache.txt` is missing, so it builds
-  whichever worktree you run it from and survives a `rm -rf build`.
+- ANY STEP THAT CAN SILENTLY DO NOTHING MUST ASSERT IT DID SOMETHING (3 Aug
+  2026, three instances in one day). The family, all the same shape — a tool
+  reports SUCCESS for work it did not do, and nothing points at the cause:
+  - an assertion whose needle stopped matching, so it SKIPPED rather than
+    failed and went dark while still reading green;
+  - a gate that exited on its first failure, hiding three suites that were
+    never run at all;
+  - `sed -i` reporting success when it replaced nothing — for THIRTEEN
+    versions, which is how build-installer.sh and package-dmg.sh sat at
+    2.24.2 while CMakeLists.txt reached 2.25.10.
+  None of these broke anything at the time. That is the point: the damage is
+  deferred to a release, a debug session or an afternoon spent re-testing a
+  fix that was never installed, and by then the cause is invisible. So a
+  search that finds nothing, a substitution that replaces nothing, and a
+  suite that runs nothing must all be LOUD, and must be distinguishable from
+  the same step succeeding. Prefer failing the run over reporting green.
+  Where "not present" is legitimate (an older branch without a file), make it
+  a stated SKIP naming the thing — never silence.
+- Build via ~/reinstall-v2.sh, which since 3 Aug 2026 is a THIN SHIM: it
+  resolves the worktree with `git rev-parse --show-toplevel` and execs that
+  worktree's tracked `tools/reinstall-v2.sh`. The real script is in the repo,
+  per branch, under the pre-commit gate and bisectable — it lived in $HOME
+  until two edits in one afternoon went live for five worktrees with no
+  history and no review, the second of which could abort a build that
+  previously succeeded. Behaviour goes in the tracked copy; keep the shim
+  thin. It derives REPO the same way and configures the build tree if
+  `$BUILD/CMakeCache.txt` is missing, so it builds whichever worktree you run
+  it from and survives a `rm -rf build`. Its version-bump assertions are
+  covered by `tools/reinstall_v2_test/build_and_run.sh`, which the pre-commit
+  gate runs BEFORE its unbuilt-tree skip because it needs no build.
 - BINARY VERIFICATION IS A CONTENT CHECK, NOT A VERSION OR TIMESTAMP (28 Jul
   2026, learned the hard way). The old rule "version on screen = proof of fresh
   binary" is WRONG and cost a full afternoon: an installed component read

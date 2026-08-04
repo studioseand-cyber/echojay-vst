@@ -1831,7 +1831,20 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     // the material and would ask "is this a vocal, a bus, a synth?" even
     // though the user had set Mix Bus. It now states the full-mix material;
     // only the element-specific FOCUS stays gated to non-bus material.
-    if (channelType == "Mix Bus" || channelType == "Master Bus")
+    if (channelType.isEmpty())
+    {
+        // UNKNOWN CHANNEL — no block at all, deliberately (3 Aug 2026).
+        // materialContextName returns empty for a channel chat whose Link
+        // vanished or was never named; before it guarded that, the raw uid
+        // arrived here and rendered as CHANNEL TYPE: "a1b2c3d4e5f6", which the
+        // model then reasoned about as if it were a kind of material.
+        //
+        // Omitting is the honest shape AND an already-handled one: the bus
+        // branch below emits no CHANNEL TYPE line either, and the server's
+        // cache-prefix extractor tolerates a prompt with no channel block for
+        // exactly that reason. An empty quoted string would be neither.
+    }
+    else if (channelType == "Mix Bus" || channelType == "Master Bus")
     {
         prompt += "MATERIAL: the FULL MIX (" + channelType + "). Review it as a "
                   "complete mix, not a single element.\n\n";
