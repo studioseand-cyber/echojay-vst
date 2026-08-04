@@ -2501,6 +2501,10 @@ private:
                           const juce::StringArray& roles,
                           const juce::StringArray& contents);
     // Render the classifier's question as the whole turn: no main call.
+    // channel_mismatch, rendered entirely client-side: the sentence and both
+    // chips are built here, never by the model. See the .cpp.
+    void renderChannelMismatch(const juce::String& channelName,
+                               const juce::String& activeChatId);
     void renderClassifierQuestion(const juce::String& question,
                                   const juce::var& chips,
                                   const juce::String& activeChatId);

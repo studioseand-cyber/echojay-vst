@@ -19352,6 +19352,26 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
             return;
         }
 
+        // ---- channel_mismatch: LABEL ONLY, the client owns the copy -----
+        // Since prompt v13 the server sends intent and precondition and
+        // stops. The question and both chips are built HERE, locally, the
+        // same way presentCompareScopeAsk builds its ASK — no model, no
+        // second call, no latency. That is the whole point: writing this
+        // question cost ~100 output tokens on the one turn generated inline
+        // while the user waits, and it took the mismatch shape from 4,498 ms
+        // to 2,235 ms to stop.
+        //
+        // Keyed on the PRECONDITION, not on an empty question, and it sits
+        // AFTER the branch above so a server that still sends copy (an older
+        // deployment, or the flagless template path) keeps winning. That
+        // ordering is what makes the two halves deployable independently in
+        // either order.
+        if (c.shortCircuit && c.precondition == "channel_mismatch")
+        {
+            safeThis->renderChannelMismatch(channelName, activeChatId);
+            return;
+        }
+
         // ---- the provisional bubble ------------------------------------
         // chatMessages and NOTHING ELSE. See ChatMsg::provisionalId for the
         // four stores and why only one of them is written here.
@@ -19705,6 +19725,57 @@ juce::String EchoJayEditor::askDataFromClassifyChips(const juce::String& questio
     root->setProperty("choices", choices);
     root->setProperty("allowFreeText", true);
     return juce::JSON::toString(juce::var(root), true);
+}
+
+// channel_mismatch, rendered entirely client-side (prompt v13, 4 Aug 2026).
+//
+// The server sends intent and precondition and nothing else. Everything the
+// user sees is built here, the same way presentCompareScopeAsk builds its
+// local ASK: no model call, no second round trip, no latency.
+//
+// WHY IT MOVED. Writing this question was ~100 output tokens on top of a
+// ~30-token classification, generated INLINE on the turn the user waits
+// through, at ~16 ms/token. It was the whole of a 4,498 ms mismatch turn
+// against a 2,940 ms chat turn in the same run. Label-only, the same shape
+// measures ~2,235 ms — faster than a plain chat turn.
+//
+// THE COPY NAMES ONLY WHAT THIS SIDE KNOWS: the current channel. It does not
+// name a better destination, and must not learn to. Picking one is the one
+// part that genuinely needed a model, and it bought a TAP rather than a
+// decision — the chooser below lists every Link from the local registry a
+// tap later, including ones the model never saw. A guessed destination here
+// would be worse than none: wrong often, and stated with the client's own
+// authority rather than the model's hedging.
+void EchoJayEditor::renderChannelMismatch(const juce::String& channelName,
+                                          const juce::String& activeChatId)
+{
+    // ASK, never tell. The user may have a reason — a vocal sample used as a
+    // kick layer is a real thing — so this raises the mismatch as a question
+    // and never as a verdict. Same register as CHANNEL SHAPE CHECK.
+    const juce::String where = channelName.isNotEmpty() ? channelName
+                                                        : juce::String("this channel");
+    const juce::String question =
+        "You're on " + where + ". Are you sure you want to build here?";
+
+    // Two chips, built locally. "build" is the existing vocabulary and stages
+    // chain_generate through the ladder; "switch" is intercepted before any
+    // send and opens the Link chooser (59adea7). Never a cancel chip — not
+    // answering is cancelling.
+    auto mk = [](const juce::String& label, const juce::String& intent)
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",  label);
+        c->setProperty("intent", intent);
+        return juce::var(c);
+    };
+    juce::Array<juce::var> chips;
+    chips.add(mk("Build it here",        "build"));
+    chips.add(mk("Move this request",    "switch"));
+
+    EchoJay_NSLog(("EJClassify: channel_mismatch rendered locally (channel=\""
+                   + where + "\")").toRawUTF8());
+
+    renderClassifierQuestion(question, juce::var(chips), activeChatId);
 }
 
 void EchoJayEditor::renderClassifierQuestion(const juce::String& question,
