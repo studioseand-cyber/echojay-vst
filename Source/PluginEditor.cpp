@@ -2314,6 +2314,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 openChannelChooser((int) i);
                 return;
             }
+            // A TAP IS AN ANSWER; a typed message is a new request. The two are
+            // byte-identical on the wire otherwise ("build me a vocal chain"
+            // either way), so the server cannot tell them apart and stopped
+            // asking after the first mismatch. Stated as a fact here instead.
+            if (askChipMsgIdx_ >= 0 && askChipMsgIdx_ < (int) chatMessages.size())
+                nextClassifyAnswers_ = chatMessages[(size_t) askChipMsgIdx_].clientAskKind;
             // Answer format per CHAIN_AI_BUILD_SPEC: self-contained Q->A pair
             // that survives history trimming (blocks are stripped in storage).
             // sendChatMessage -> supersedePendingAsks marks + persists.
@@ -19289,6 +19295,10 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     creq.priorAssistant = priorAssistantForClassify();
     creq.turnType       = stagedTurnType;
     creq.links          = buildClassifyLinks();
+    // Consumed here and cleared: it describes THIS turn only, and a stale
+    // value would suppress the mismatch on an unrelated later send.
+    creq.answers        = nextClassifyAnswers_;
+    nextClassifyAnswers_.clear();
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.classify(creq, [safeThis, activeChatId, turnTargetUid, turnTargetName,
@@ -19653,6 +19663,26 @@ void EchoJayEditor::dropProvisional(int provisionalId)
     repaint();
 }
 
+// The switch guard's real question, asked exactly. It used to be
+// approximated by "is there any prior assistant reply at all", which also
+// rejected a target channel that legitimately had its own history — so
+// switching to a channel you had chatted on before silently refused to carry
+// the request. What the guard actually needs to know is whether the newest
+// assistant turn is the mismatch question THIS CLIENT just rendered, and the
+// client stamped that at render time, so it can be tested rather than
+// inferred from prose.
+bool EchoJayEditor::newestAssistantIsClientAsk(const juce::String& kind) const
+{
+    for (int i = (int) chatMessages.size() - 1; i >= 0; --i)
+    {
+        const auto& m = chatMessages[(size_t) i];
+        if (m.provisionalId != 0) continue;          // never history
+        if (m.role != "assistant") continue;
+        return m.clientAskKind == kind;              // newest assistant turn decides
+    }
+    return false;
+}
+
 juce::String EchoJayEditor::priorAssistantForClassify() const
 {
     // Newest assistant turn the user actually saw. The server caps it at 400
@@ -19775,12 +19805,14 @@ void EchoJayEditor::renderChannelMismatch(const juce::String& channelName,
     EchoJay_NSLog(("EJClassify: channel_mismatch rendered locally (channel=\""
                    + where + "\")").toRawUTF8());
 
-    renderClassifierQuestion(question, juce::var(chips), activeChatId);
+    renderClassifierQuestion(question, juce::var(chips), activeChatId,
+                             "channel_mismatch");
 }
 
 void EchoJayEditor::renderClassifierQuestion(const juce::String& question,
                                              const juce::var& chips,
-                                             const juce::String& activeChatId)
+                                             const juce::String& activeChatId,
+                                             const juce::String& askKind)
 {
     // The classify call IS the turn: no main call fires. Built the same way
     // presentCompareScopeAsk builds its local ASK — askData constructed
@@ -19804,6 +19836,7 @@ void EchoJayEditor::renderClassifierQuestion(const juce::String& question,
     cm.role    = "assistant";
     cm.content = question;
     cm.askData = askJson;              // empty = prose, no shelf
+    cm.clientAskKind = askKind;        // "" unless the CLIENT wrote this ask
     chatMessages.push_back(cm);
     processorRef.chatHistory.push_back({ "assistant", question });
     processorRef.chatRoles.add("assistant");
@@ -19969,14 +20002,19 @@ void EchoJayEditor::switchChannelCarryingRequest(const juce::String& uid)
 
     openChannelByUid(uid);           // <-- THE SWITCH
 
-    const bool switched     = (effectiveChannelUid() == uid);
-    const bool freshHistory = priorAssistantForClassify().isEmpty();
-    jassert(switched && freshHistory);
-    if (! switched || ! freshHistory)
+    const bool switched = (effectiveChannelUid() == uid);
+    // NOT "is there any prior reply" — that also refused a target channel with
+    // its own history, which is a normal chat, not a violated ordering. After
+    // a correct switch the active chat is the TARGET and the mismatch question
+    // lives in the SOURCE, so this is structurally false; after a failed one
+    // we are still in the source chat and it is right there.
+    const bool priorIsOurMismatchAsk = newestAssistantIsClientAsk("channel_mismatch");
+    jassert(switched && ! priorIsOurMismatchAsk);
+    if (! switched || priorIsOurMismatchAsk)
     {
         EchoJay_NSLog(("EJSwitch: REFUSING to seed - ordering violated (switched="
-                       + juce::String(switched ? 1 : 0) + " freshHistory="
-                       + juce::String(freshHistory ? 1 : 0) + ")").toRawUTF8());
+                       + juce::String(switched ? 1 : 0) + " priorIsOurMismatchAsk="
+                       + juce::String(priorIsOurMismatchAsk ? 1 : 0) + ")").toRawUTF8());
         resized(); repaint();
         return;
     }

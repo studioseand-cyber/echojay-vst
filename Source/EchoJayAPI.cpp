@@ -1397,6 +1397,7 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
     if (req.genre.isNotEmpty())          body->setProperty("genre", req.genre);
     if (req.priorAssistant.isNotEmpty()) body->setProperty("priorAssistant", req.priorAssistant);
     if (req.turnType.isNotEmpty())       body->setProperty("turnType", req.turnType);
+    if (req.answers.isNotEmpty())        body->setProperty("answers", req.answers);
     if (auto* linkArr = req.links.getArray())
         if (! linkArr->isEmpty()) body->setProperty("links", req.links);
     // Client version — telemetry and the existing chat-side gates. sendChat has

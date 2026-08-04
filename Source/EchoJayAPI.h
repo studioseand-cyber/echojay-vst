@@ -260,6 +260,13 @@ public:
         juce::String priorAssistant;   // previous assistant turn; server tail-caps at 400
         juce::String turnType;         // staged label ("chat", "chain_generate", ...)
         juce::var    links;            // array of {"name":...}; server caps at 24
+        // Which client-rendered ASK this turn ANSWERS ("channel_mismatch").
+        // Set ONLY on a tap-originated turn. A repeated build request and an
+        // answer to the mismatch question are byte-identical, so the server
+        // cannot tell them apart from the text; this states it as a fact and
+        // suppresses the precondition deterministically. Empty on a typed
+        // turn, which is what lets the mismatch fire again.
+        juce::String answers;
     };
 
     // Mirrors the server's response one field per field. `usable` is the

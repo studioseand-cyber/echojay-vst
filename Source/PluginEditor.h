@@ -1043,6 +1043,19 @@ private:
         // send landing first shifts the vector under the first send's
         // callback. Identity survives that; an index does not.
         int provisionalId = 0;
+        // Which client-rendered ASK this message IS, when the client built it
+        // rather than the model ("channel_mismatch"). Empty for every other
+        // message, including model-authored ASK blocks.
+        //
+        // NOT PERSISTED, AND NOT AN OVERSIGHT. WsMessage has no counterpart
+        // and must not grow one. The only reader is the switch guard, which
+        // runs IN-SESSION immediately after a chip tap to answer "is the
+        // newest assistant turn the mismatch question I just rendered?" — a
+        // question that only has meaning between rendering it and acting on
+        // it. Same lifetime and same reasoning as provisionalId above. A
+        // reloaded chat has no tap in flight, so there is nothing for a
+        // persisted copy to answer.
+        juce::String clientAskKind;
     };
     std::vector<ChatMsg> chatMessages;
     // THE shared display source: both text-layout passes (measure + paint)
@@ -2507,7 +2520,15 @@ private:
                                const juce::String& activeChatId);
     void renderClassifierQuestion(const juce::String& question,
                                   const juce::var& chips,
-                                  const juce::String& activeChatId);
+                                  const juce::String& activeChatId,
+                                  const juce::String& askKind = {});
+    // Is the newest assistant turn the client-rendered ASK of this kind?
+    // The switch guard's real question, asked exactly rather than
+    // approximated by "is there any prior reply at all".
+    bool newestAssistantIsClientAsk(const juce::String& kind) const;
+    // Staged for the NEXT classify call: which client ASK this turn ANSWERS.
+    // Set by a chip tap, consumed and cleared when the request is built.
+    juce::String nextClassifyAnswers_;
     // chips -> the ASK shelf's askData, or empty when there is no shelf to
     // draw. needs_scoping nulls its chips ON PURPOSE (prose, no shelf), so
     // empty in must mean empty out.
