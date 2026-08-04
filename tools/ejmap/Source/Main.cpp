@@ -57,6 +57,7 @@ public:
         juce::String fitTestId; int fitHoldSeconds = 0;
         juce::String mbandsTestId, mbandsMode;
         bool sendPending = false, sendPendingDry = false;
+        juce::String typedReasonId;
         juce::String applyMapId, applyMapPath, applyMapImposter;
         juce::String ctrlTestId, ctrlTestMode, ctrlTestLabel, ctrlTestNames;
         juce::String uploadTestId, uploadTestMap, uploadTestTester;
@@ -104,6 +105,8 @@ public:
                 catTestId = args[++i];
             else if (args[i] == "--selftest-dupescape" && i + 1 < args.size())
                 dupTestId = args[++i];
+            else if (args[i] == "--selftest-typedreason" && i + 1 < args.size())
+                typedReasonId = args[++i];
             else if (args[i] == "--send-pending")
                 sendPending = true;
             else if (args[i] == "--send-pending-dry")
@@ -308,6 +311,11 @@ public:
         {
             auto id = dupTestId; auto* m = mainWindow->getMain();
             juce::MessageManager::callAsync ([m, id] { m->selfTestDupEscape (id); });
+        }
+        else if (typedReasonId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = typedReasonId; auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id] { m->selfTestTypedReason (id); });
         }
         else if (sendPending && mainWindow->getMain() != nullptr)
         {

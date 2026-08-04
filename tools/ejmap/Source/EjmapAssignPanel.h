@@ -1285,6 +1285,30 @@ public:
         say (t);
     }
 
+    /** What the sweeper OBSERVED about this parameter, in the words of the
+        flags it set. Never "the mapper preferred to type": that is the one
+        answer this must not be able to give, because it is the answer a
+        bypass would want.
+
+        An empty string means the sweep left no refusal behind -- typing over a
+        sweep that WORKED is a legitimate act (a mapper correcting a bad table)
+        and it is recorded as exactly that, unearned, so a gate can tell the
+        two apart.
+    */
+    static juce::String describeTypedReason (const SweepOutcome& s)
+    {
+        juce::StringArray why;
+        if (s.points.isEmpty())      why.add ("no sweep was taken");
+        if (s.flat)                  why.add ("display flat through both paths (text liar)");
+        if (s.nonNumeric)            why.add ("display is labels, not numbers");
+        if (s.identityDisplay)       why.add ("identity display: every value equalled its own norm");
+        if (! s.ok && ! s.points.isEmpty() && s.reason.isNotEmpty())
+            why.add ("sweep refused: " + s.reason.substring (0, 80));
+        if (why.isEmpty())
+            return "typed over a usable sweep (no refusal recorded): NOT earned";
+        return why.joinIntoString ("; ");
+    }
+
     void actionTyped()
     {
         if (rowCount() == 0) return;
@@ -1316,6 +1340,13 @@ public:
         }
         if (typedRow < 0 || typedRow >= rowCount()) return;
         auto& r = rowAt (typedRow);
+
+        // READ THE REFUSING SWEEP BEFORE OVERWRITING IT. The sweep that failed
+        // is the evidence for why typing was necessary, and the next line
+        // replaces it with the typed table. Ordered deliberately: after the
+        // assignment there is nothing left to read.
+        r.typedReason = describeTypedReason (r.sweep);
+
         r.sweep = sw;
         if (sw.ok && r.semantic.isNotEmpty())
         {
@@ -3894,6 +3925,7 @@ private:
                     r.trust           = rv.getProperty ("trust", "").toString();
                     r.skipReason      = rv.getProperty ("skip_reason", "").toString();
                     r.resolvedAt      = rv.getProperty ("resolved_at", "").toString();
+                    r.typedReason     = rv.getProperty ("typed_reason", "").toString();
                     r.freqSource      = rv.getProperty ("freq_source", "").toString();
                     r.typedFreqHz     = (double) rv.getProperty ("typed_freq_hz", 0.0);
                     r.sweep.anchorsReversed = (bool) rv.getProperty ("anchors_reversed", false);

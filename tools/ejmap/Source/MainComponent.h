@@ -6990,6 +6990,84 @@ public:
         g.fillAll (juce::Colour (0xff10141c));   // dark navy, house style
     }
 
+    /** THE TYPED REASON, PROVEN ON A PLUGIN THAT ACTUALLY REFUSES A SWEEP.
+
+        The sweep here is REAL -- taken from the loaded instance through the
+        same hook the wizard uses -- and its refusal is what the reason is
+        derived from. The typed table itself is synthetic, because what is
+        under test is not the typing but whether the artefact records WHY
+        typing was necessary, measured rather than claimed.
+
+        Cenozoix is the subject: 99 parameters, no readable display, and six
+        map entries whose readback came back empty. It is the plugin the gate
+        currently refuses for having no readback it could never have produced.
+    */
+    void selfTestTypedReason (const juce::String& identifier)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "TYPEDREASON: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        auto res = host.load (desc, watchdog);
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "TYPEDREASON: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        listeners.attach (*inst);
+        cal = capture.calibrate (*inst, loadedId);
+        mask = capture.buildNoiseMask (*inst, cal, loadedId);
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+        failures = 0;
+        std::cout << "TYPEDREASON: " << desc.name << std::endl;
+
+        startAssignmentForCategory ("compressor");
+
+        // A REAL sweep of a real parameter, through the wizard's own hook.
+        int subject = -1;
+        SweepOutcome real;
+        auto& params = inst->getParameters();
+        for (int i = 0; i < params.size() && subject < 0; ++i)
+        {
+            if (mask.indices.contains (i)) continue;
+            if (params[i]->isDiscrete() || ! params[i]->isAutomatable()) continue;
+            real = assignPanel.hooks.sweepIndex (i);
+            subject = i;
+        }
+        if (subject < 0)
+        { std::cout << "TYPEDREASON: no sweepable parameter" << std::endl; quitNow(); return; }
+
+        std::cout << "  subject [" << subject << "] " << params[subject]->getName (48)
+                  << " | sweep ok=" << (real.ok ? "yes" : "no")
+                  << " flat=" << (real.flat ? "yes" : "no")
+                  << " nonNumeric=" << (real.nonNumeric ? "yes" : "no")
+                  << " identityDisplay=" << (real.identityDisplay ? "yes" : "no")
+                  << " | reason: " << real.reason.substring (0, 70) << std::endl;
+
+        const auto derived = ejmap::AssignPanel::describeTypedReason (real);
+        std::cout << "  derived reason: " << derived << std::endl;
+        okM (derived.isNotEmpty(), "a reason is derived from what the sweeper measured");
+        okM (! derived.contains ("preferred") && ! derived.contains ("chose"),
+             "the reason names an OBSERVATION, never a preference");
+
+        if (real.ok && ! real.flat && ! real.nonNumeric && ! real.identityDisplay)
+            okM (derived.contains ("NOT earned"),
+                 "typing over a USABLE sweep is recorded as unearned, so a gate can tell "
+                 "the two apart");
+        else
+            okM (! derived.contains ("NOT earned"),
+                 "a genuinely refused sweep is recorded as earned, naming what refused it");
+
+        std::cout << "TYPEDREASON: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
     /** SEND EVERY PENDING MAP, WITHOUT LOADING A SINGLE PLUGIN.
 
         The send path never needed an instance: it takes the map's bytes and
@@ -9130,6 +9208,7 @@ private:
                 m.method = r.sweep.method == "setread" ? AnchorMethod::setread
                           : r.sweep.method == "human-typed" ? AnchorMethod::humanTyped
                           : AnchorMethod::gettext;
+                m.typedReason = r.typedReason;
                 {
                     auto hb = byByIdx.find (r.resolvedIndex);
                     m.capturedBy = hb == byByIdx.end() ? CaptureSource::poll

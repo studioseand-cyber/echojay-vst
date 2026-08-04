@@ -203,6 +203,19 @@ struct ParamMapping
     UiHint uiHint;
     CaptureSource capturedBy = CaptureSource::poll;
 
+    /** Set only when method is humanTyped: what the sweeper OBSERVED that made
+        typing necessary ("display flat through both paths", "identity
+        display", "display is labels, not numbers"). Empty on every other
+        method.
+
+        The artefact recorded the method and not the reason, so nothing
+        downstream could tell a table typed because the plugin has no readable
+        display from one typed by preference. A gate that means to accept the
+        first and refuse the second needs this field to exist before it can be
+        written (queue item 12).
+    */
+    juce::String typedReason;
+
     juce::var toVar() const;
 };
 
@@ -473,6 +486,10 @@ inline juce::var ParamMapping::toVar() const
     if (anchorsReversed) o->setProperty ("anchors_reversed", true);
     o->setProperty ("trust", toString (trust));
     o->setProperty ("method", toString (method));
+    // Only where it means something. An empty typed_reason on a swept
+    // parameter would read as "no reason given" rather than "not applicable".
+    if (method == AnchorMethod::humanTyped && typedReason.isNotEmpty())
+        o->setProperty ("typed_reason", typedReason);
     o->setProperty ("ui_hint", uiHint.toVar());
     o->setProperty ("captured_by", toString (capturedBy));
     return juce::var (o);

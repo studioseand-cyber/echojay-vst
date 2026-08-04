@@ -295,6 +295,20 @@ struct AssignRow
         swept -- the graphic-EQ case, where the band has no frequency parameter
         at all and the number is transcribed off the panel.
     */
+    /** WHY THE TYPED PATH WAS TAKEN, from what the sweeper MEASURED rather
+        than from a claim. Captured at the moment the typed table replaces the
+        refusing sweep, because that sweep is the evidence and typedCompleted
+        overwrites it.
+
+        The gate cannot currently tell "typed because the display was
+        unreadable" from "typed because someone chose to": the map records the
+        METHOD and not the REASON. Recording the reason is what has to exist
+        before a gate can treat human-typed as earned rather than asserted
+        (queue item 12), which is why it lands on its own and the gate split
+        does not follow it here.
+    */
+    juce::String typedReason;
+
     int bandOrdinal = -1;
     juce::String bandLabel;
     double typedFreqHz = 0.0;
@@ -384,6 +398,7 @@ struct AssignRow
             o->setProperty ("band_ordinal", bandOrdinal);
             o->setProperty ("band_label", bandLabel);
         }
+        if (typedReason.isNotEmpty()) o->setProperty ("typed_reason", typedReason);
         if (freqSource.isNotEmpty())
         {
             o->setProperty ("freq_source", freqSource);
