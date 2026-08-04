@@ -404,9 +404,39 @@ public:
                                                       : ignoreRows.getReference (i - rows.size()); }
     int selectedRow() const { return selected; }
     juce::String currentQuestionText() const { return question.getText(); }
-    void selectRow (int i) { selected = juce::jlimit (0, juce::jmax (0, rowCount() - 1), i);
-                             list.selectRow (selected); list.scrollToEnsureRowIsOnscreen (selected);
-                             list.updateContent(); updateQuestion(); }
+    /** THE ROUTING TARGET FOLLOWS THE CURSOR. It used to persist independently:
+        W on a control set controlsWiggleTarget, the wizard advanced to a Tier 1
+        row, and nothing cleared it -- so every later touch was checked against
+        the control armed earlier while the card asked about the parameter, and
+        SPACE stayed locked because no evidence ever reached the row on screen.
+        Two sources for one act, which is the attribution-lost-on-merge class in
+        the interaction layer.
+
+        Cleared HERE because selectRow is the choke point every cursor move goes
+        through, rather than at each call site -- a guard at the sites is the one
+        that gets forgotten by the next path added. */
+    void selectRow (int i)
+    {
+        const int want = juce::jlimit (0, juce::jmax (0, rowCount() - 1), i);
+        if (want != selected) clearCaptureTargets();
+        selected = want;
+        list.selectRow (selected); list.scrollToEnsureRowIsOnscreen (selected);
+        list.updateContent(); updateQuestion();
+    }
+
+    /** Every field that says "a capture arriving now belongs to X". If a new
+        one is ever added it belongs in this list, and the list is why there is
+        a function rather than three assignments. */
+    void clearCaptureTargets()
+    {
+        if (controlsWiggleTarget >= 0 || bandWiggleTarget >= 0 || awaitingCaptureRow >= 0)
+            say ("(capture target cleared: the row moved, so a touch now belongs "
+                 "to the row on screen)");
+        controlsWiggleTarget = -1;
+        bandWiggleTarget = -1;
+        controlsTypedEntry = -1;
+        awaitingCaptureRow = -1;
+    }
 
     //==========================================================================
     /** ONE validity function for every surface. The question strip, the key
@@ -839,7 +869,11 @@ public:
              || bandStep == BandStep::capQ1 || bandStep == BandStep::capFreqLast)
         { bandCaptureArrived (res); return; }
 
-        if (controlsPhase && controlsWiggleTarget >= 0)
+        // BOTH conditions, not either: the target must be live AND the capture
+        // must belong to the controls row. The row check is what stops a stale
+        // target from claiming a capture meant for a Tier 1 parameter.
+        if (controlsPhase && controlsWiggleTarget >= 0
+             && awaitingCaptureRow == controlsRowIndex)
         {
             const int idx = res.primaryIndex >= 0 ? res.primaryIndex
                             : (res.indices.size() == 1 ? res.indices[0] : -1);
