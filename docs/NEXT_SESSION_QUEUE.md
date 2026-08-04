@@ -114,11 +114,32 @@ to have one. Separate child process per attempt, one JSON line per attempt.
 
 ---
 
-## 4. Manual band entry — ACCEPTED AS PROPOSED, not yet built
+## 4. Manual band entry — ACCEPTED, AND NOW THE FIRST THING TO BUILD
+
+**PRIORITY CHANGED 4 Aug 2026, BY THE USER, AFTER the corpus ordering was recorded
+below. Build THIS first — ahead of item 0's corpus, ahead of item 1.**
+
+The scope note at the end of this item, and item 0's ordering, both argued corpus-first.
+That reasoning still holds for what the corpus DECIDES; it was wrong about what to build
+first. The user's correction, verbatim in substance:
+
+> the priority was wrong: I am the one typing, manual entry works whatever the corpus
+> says, and vintage EQs are blocked today. The corpus later just reduces how often I
+> need it.
+
+Manual entry is unblocked by nothing and unblocks the category today. The corpus changes
+only the FREQUENCY with which it is needed, not whether it works.
+
+**Persisting `strideNote` (item 1) ships WITH this**, not after: a failed inference should
+still say why even once a manual path exists.
+
+**ACCEPTANCE TEST — API-550A**, parked with three bands the mapper knows to be LF, MF and
+HF (`aufx,A5AM,ksWV`, session `assign-bdc578da…json`, `output_db` already confirmed at
+index 12). Enter its bands manually and submit a map carrying three band groups. Nothing
+short of a submitted three-group map is proof.
 
 The typed-anchors equivalent for bands: when inference cannot group a band, the mapper
-says which indices form it. **Build item 1 BEFORE this** — see the scope note at the end,
-which is a design reason and not merely a size one.
+says which indices form it.
 
 ### What a band group needs
 
