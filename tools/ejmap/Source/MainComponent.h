@@ -6990,6 +6990,126 @@ public:
         g.fillAll (juce::Colour (0xff10141c));   // dark navy, house style
     }
 
+    /** SEND EVERY PENDING MAP, WITHOUT LOADING A SINGLE PLUGIN.
+
+        The send path never needed an instance: it takes the map's bytes and
+        the Host header out of the artefact. Only the BUTTON needed one,
+        because it keys on currentFp -- the loaded plugin. That accident is
+        what let eighteen finished maps sit unsent for a day, and at volume it
+        guarantees a backlog nobody can see.
+
+        NOT a re-emit. --resubmit reloads the plugin and re-runs the write-back
+        verify, which REWRITES the map -- and that is how three maps that had
+        been fine on disk acquired a fresh zero-match readback and were
+        refused. This reads what is on disk and sends exactly that.
+
+        ONE LINE PER MAP, never a summary. A bulk send reporting "done" would
+        have hidden those three refusals, which are the whole reason the
+        per-map report is the requirement rather than a nicety.
+    */
+    void sendPendingMaps (bool dryRun)
+    {
+        std::map<juce::String, juce::String> stateByFp;
+        {
+            auto qv = juce::JSON::parse (ledger.getRoot().getChildFile ("queue.json").loadFileAsString());
+            if (auto* arr = qv.getArray())
+                for (auto& e : *arr)
+                    stateByFp[e.getProperty ("fp", "").toString()]
+                        = e.getProperty ("state", "").toString();
+        }
+
+        juce::Array<juce::File> pending;
+        for (const auto& entry : juce::RangedDirectoryIterator (
+                 ledger.getRoot().getChildFile ("maps"), false, "*.json"))
+        {
+            const auto fp = entry.getFile().getFileNameWithoutExtension();
+            auto it = stateByFp.find (fp);
+            // Already sent stays sent; already REJECTED is re-offered, because
+            // a rejection can be fixed and the operator asked for it to go.
+            if (it != stateByFp.end() && it->second == "sent") continue;
+            pending.add (entry.getFile());
+        }
+
+        std::cout << "SENDPENDING: " << pending.size() << " map(s) to offer"
+                  << (dryRun ? " (DRY RUN: gate and artefact only, nothing leaves)" : "")
+                  << std::endl;
+
+        int sent = 0, refused = 0;
+        for (const auto& f : pending)
+        {
+            const auto fp = f.getFileNameWithoutExtension();
+            auto map = juce::JSON::parse (f.loadFileAsString());
+            auto ident = map.getProperty ("identity", juce::var());
+            const auto name = ident.getProperty ("name", "?").toString();
+            const auto identityKey = ident.getProperty ("format", "").toString() + "|"
+                                   + ident.getProperty ("uid", "").toString() + "|"
+                                   + ident.getProperty ("version", "").toString();
+
+            auto printLine = [&] (const juce::String& outcome, const juce::String& why)
+            {
+                std::cout << "  " << (outcome == "sent" ? "SENT    " : "REFUSED ")
+                          << fp.substring (0, 12) << "  " << name.paddedRight (' ', 32).substring (0, 32)
+                          << "  " << why << std::endl;
+                std::cout.flush();
+            };
+
+            // THE SAME GATE THE CARD RUNS. One implementation, not a second
+            // copy with its own opinion.
+            auto verdict = Mouth::structuralGate (map, testerName());
+            if (! verdict.pass())
+            {
+                Mouth::setQueueState (ledger.getRoot(), fp, "rejected",
+                                      verdict.rejections.joinIntoString ("; "), identityKey);
+                printLine ("refused", "gate: " + verdict.rejections.joinIntoString ("; ").substring (0, 90));
+                ++refused;
+                continue;
+            }
+
+            juce::MemoryBlock body;
+            f.loadFileAsData (body);
+            auto dry = Mouth::writeDryRun (ledger.getRoot(), fp, body,
+                                           testerName(), machineIdString(),
+                                           juce::String (EJMAP_VERSION) + " (" + EJMAP_GIT_HASH + ")");
+            if (dryRun)
+            {
+                Mouth::setQueueState (ledger.getRoot(), fp, "dry_run_written", {}, identityKey);
+                printLine ("refused", "dry run written, nothing sent: " + dry.getFileName());
+                continue;
+            }
+
+            juce::MemoryBlock bytes;
+            dry.loadFileAsData (bytes);
+            const juce::String text (juce::CharPointer_UTF8 ((const char*) bytes.getData()),
+                                     (size_t) bytes.getSize());
+            juce::String hostPort;
+            for (const auto& line : juce::StringArray::fromLines (
+                     text.upToFirstOccurrenceOf ("\r\n\r\n", false, false)))
+                if (line.startsWithIgnoreCase ("Host:"))
+                    hostPort = line.fromFirstOccurrenceOf (":", false, false).trim();
+            if (hostPort.isEmpty())
+            {
+                Mouth::setQueueState (ledger.getRoot(), fp, "refused",
+                                      "artefact carries no Host header", identityKey);
+                printLine ("refused", "the artefact names no destination");
+                ++refused;
+                continue;
+            }
+
+            const auto res = ejmap::sendBytesOverTls (bytes, hostPort);
+            Mouth::setQueueState (ledger.getRoot(), fp, res.queueState(),
+                                  res.sent ? "HTTP " + juce::String (res.status) : res.refusedReason,
+                                  identityKey);
+            if (res.sent) { ++sent; printLine ("sent", "HTTP " + juce::String (res.status)); }
+            else          { ++refused; printLine ("refused", res.refusedReason.substring (0, 90)); }
+        }
+
+        updateBacklogLabel();
+        std::cout << "SENDPENDING: " << sent << " sent, " << refused << " refused | backlog now: "
+                  << backlogLine() << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
     /** EDITOR FIT: load one plugin, attach its editor, print the geometry
         twice and quit. The second read is 3 s later because a bridged editor
         "reaches its real size about 2.5 s" after createEditorIfNeeded

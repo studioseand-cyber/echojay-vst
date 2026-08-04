@@ -56,6 +56,7 @@ public:
         juce::String bandTestId, bandTestMembers, bandTestImposter, catTestId, dupTestId;
         juce::String fitTestId; int fitHoldSeconds = 0;
         juce::String mbandsTestId, mbandsMode;
+        bool sendPending = false, sendPendingDry = false;
         juce::String applyMapId, applyMapPath, applyMapImposter;
         juce::String ctrlTestId, ctrlTestMode, ctrlTestLabel, ctrlTestNames;
         juce::String uploadTestId, uploadTestMap, uploadTestTester;
@@ -103,6 +104,10 @@ public:
                 catTestId = args[++i];
             else if (args[i] == "--selftest-dupescape" && i + 1 < args.size())
                 dupTestId = args[++i];
+            else if (args[i] == "--send-pending")
+                sendPending = true;
+            else if (args[i] == "--send-pending-dry")
+            { sendPending = true; sendPendingDry = true; }
             else if (args[i] == "--selftest-manualbands" && i + 1 < args.size())
             {
                 mbandsTestId = args[++i];
@@ -303,6 +308,11 @@ public:
         {
             auto id = dupTestId; auto* m = mainWindow->getMain();
             juce::MessageManager::callAsync ([m, id] { m->selfTestDupEscape (id); });
+        }
+        else if (sendPending && mainWindow->getMain() != nullptr)
+        {
+            auto* m = mainWindow->getMain(); auto d = sendPendingDry;
+            juce::MessageManager::callAsync ([m, d] { m->sendPendingMaps (d); });
         }
         else if (mbandsTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {
