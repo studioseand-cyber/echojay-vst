@@ -6990,6 +6990,121 @@ public:
         g.fillAll (juce::Colour (0xff10141c));   // dark navy, house style
     }
 
+    /** PARK AND RETURN, proven by comparing the rows on both sides.
+
+        The requirement is "ESC must not lose rows", so the test does not
+        inspect the mechanism -- it snapshots every row, parks, re-enters
+        through the SAME entry path the operator uses, and compares. A park
+        that quietly resolved something, or dropped a state the restore ladder
+        does not handle (which is exactly how mode_material was lost), shows up
+        as a difference rather than as an opinion.
+    */
+    juce::StringArray parkSnapshot;
+    void selfTestPark (const juce::String& identifier)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "PARKTEST: unknown identifier" << std::endl; quitNow(); return; }
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        auto res = host.load (desc, watchdog);
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "PARKTEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        listeners.attach (*inst);
+        cal = capture.calibrate (*inst, loadedId);
+        mask = capture.buildNoiseMask (*inst, cal, loadedId);
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+        failures = 0;
+
+        auto sess = ledger.getRoot().getChildFile ("assign-" + currentFp + ".json");
+        if (sess.existsAsFile())
+        { std::cout << "PARKTEST: REFUSED -- a session exists and would be restored over the\n"
+                    << "          state this test builds: " << sess.getFullPathName()
+                    << "\nPARKTEST: FAIL" << std::endl; quitNow(); return; }
+
+        std::cout << "PARKTEST: " << desc.name << std::endl;
+        startAssignmentForCategory ("eq");
+
+        // One row resolved by a real touch, one by N, the rest left open --
+        // so the snapshot spans resolved, skipped and untouched.
+        const int outRow = [this] {
+            for (int i = 0; i < assignPanel.rows.size(); ++i)
+                if (assignPanel.rows.getReference (i).semantic == "output_db") return i;
+            return -1; }();
+        const int idx = paramIndexByName ("Output");
+        assignPanel.selectRow (outRow);
+        inst->getParameters()[idx]->setValueNotifyingHost (0.25f);
+        juce::Thread::sleep (120);
+        assignPanel.dispatchAction ("wiggle");
+        juce::Timer::callAfterDelay (300, [this, idx]
+        {
+            auto* i2 = host.getInstance();
+            if (i2 != nullptr) i2->getParameters()[idx]->setValueNotifyingHost (0.70f);
+        });
+        juce::Timer::callAfterDelay (1500, [this] { parkStep2(); });
+    }
+
+    juce::String rowFingerprintLine (const AssignRow& r) const
+    {
+        return r.semantic + "|" + r.kind + "|" + r.stateString() + "|"
+             + juce::String (r.resolvedIndex) + "|" + r.skipReason + "|" + r.trust;
+    }
+
+    void parkStep2()
+    {
+        // A skip too, so the snapshot is not all one state.
+        for (int i = 0; i < assignPanel.rows.size(); ++i)
+            if (assignPanel.rows.getReference (i).semantic == "low_cut_freq_hz")
+            { assignPanel.selectRow (i); assignPanel.dispatchAction ("notpresent");
+              assignPanel.dispatchAction ("notpresent"); break; }
+
+        parkSnapshot.clear();
+        for (const auto& r : assignPanel.rows) parkSnapshot.add (rowFingerprintLine (r));
+        int confirmed = 0, open = 0;
+        for (const auto& r : assignPanel.rows)
+        { confirmed += r.state == AssignRow::State::confirmed; open += ! r.isResolved(); }
+        okM (confirmed >= 1 && open >= 1,
+             "the parked session spans resolved and open rows ("
+               + juce::String (confirmed) + " confirmed, " + juce::String (open) + " open)");
+
+        assignPanel.dispatchAction ("park");
+        okM (! assigning, "ESC returned to the list");
+        okM (host.getInstance() != nullptr, "the plugin is STILL LOADED after a park");
+
+        // NOT a dismissal: park must not have written a verdict anywhere.
+        bool anyDeferredByPark = false;
+        for (const auto& r : assignPanel.rows)
+            if (r.skipReason.contains ("plugin skipped by mapper")) anyDeferredByPark = true;
+        okM (! anyDeferredByPark,
+             "park wrote NO verdict on the open rows (S's 'plugin skipped by mapper' is absent)");
+
+        // Re-enter through the operator's own path.
+        startAssignment();
+        okM (! assignPanel.isAwaitingCategory(),
+             "the category came back with the session: no re-pick, and rows exist immediately");
+        juce::StringArray after;
+        for (const auto& r : assignPanel.rows) after.add (rowFingerprintLine (r));
+
+        okM (after.size() == parkSnapshot.size(),
+             "row COUNT survives the round trip (" + juce::String (parkSnapshot.size())
+               + " -> " + juce::String (after.size()) + ")");
+        int diff = 0;
+        for (int i = 0; i < juce::jmin (after.size(), parkSnapshot.size()); ++i)
+            if (after[i] != parkSnapshot[i])
+            {
+                ++diff;
+                std::cout << "    DIFF  before: " << parkSnapshot[i] << "\n"
+                          << "          after:  " << after[i] << std::endl;
+            }
+        okM (diff == 0, "every row came back identical: state, index, reason and trust");
+
+        std::cout << "PARKTEST: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
     /** THE TYPED REASON, PROVEN ON A PLUGIN THAT ACTUALLY REFUSES A SWEEP.
 
         The sweep here is REAL -- taken from the loaded instance through the

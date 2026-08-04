@@ -103,13 +103,14 @@ public:
         promptTitle.setFont (juce::FontOptions (17.0f, juce::Font::bold));
         promptTitle.setColour (juce::Label::textColourId, juce::Colour (0xffe8e0b0));
 
-        for (auto* b : { &prevBtn, &nextBtn, &evidBtn, &bulkBtn, &skipPluginBtn, &reviewBtn })
+        for (auto* b : { &prevBtn, &nextBtn, &evidBtn, &bulkBtn, &skipPluginBtn, &parkBtn, &reviewBtn })
             addAndMakeVisible (b);
         prevBtn.setButtonText ("< prev");            prevBtn.onClick = [this] { dispatchAction ("prev"); grabKeyboardFocus(); };
         nextBtn.setButtonText ("> next");            nextBtn.onClick = [this] { dispatchAction ("next"); grabKeyboardFocus(); };
         evidBtn.setButtonText ("? evidence");        evidBtn.onClick = [this] { dispatchAction ("evidence"); grabKeyboardFocus(); };
         bulkBtn.setButtonText ("I bulk ignores");    bulkBtn.onClick = [this] { dispatchAction ("bulk"); grabKeyboardFocus(); };
-        skipPluginBtn.setButtonText ("S skip plugin"); skipPluginBtn.onClick = [this] { dispatchAction ("skipplugin"); grabKeyboardFocus(); };
+        skipPluginBtn.setButtonText ("S dismiss"); skipPluginBtn.onClick = [this] { dispatchAction ("skipplugin"); grabKeyboardFocus(); };
+        parkBtn.setButtonText ("ESC park"); parkBtn.onClick = [this] { dispatchAction ("park"); grabKeyboardFocus(); };
         reviewBtn.setButtonText ("Review & submit (cmd-return)");
         reviewBtn.onClick = [this] { dispatchAction ("submit"); grabKeyboardFocus(); };
 
@@ -162,6 +163,20 @@ public:
         // before any row exists.
         if (categoryOverride.isNotEmpty())      category = categoryOverride;
         else if (proposals.present)             category = proposals.category;
+        else if (restoredCategory().isNotEmpty())
+        {
+            // A PARKED SESSION ALREADY ANSWERED THIS. Asking again is not
+            // caution, it is amnesia: the category is in the session file, it
+            // was chosen by the same human, and until it is answered the panel
+            // has NO ROWS -- so a park-and-return looked like a lost session.
+            // Caught by the park round-trip test, which compared 5 rows before
+            // against 0 after.
+            //
+            // This is not the silent default the rule above forbids: the
+            // category is read from what the mapper chose, and the header
+            // shows it, and it stays changeable.
+            category = restoredCategory();
+        }
         else
         {
             awaitingCategory = true;
@@ -176,6 +191,18 @@ public:
             return;
         }
         buildRows (proposals);
+    }
+
+    /** The category this fp was last mapped under, from the session file.
+        Empty when there is no session, which is when the human is asked.
+    */
+    juce::String restoredCategory() const
+    {
+        auto f = sessionFile();
+        if (! f.existsAsFile()) return {};
+        auto v = juce::JSON::parse (f.loadFileAsString());
+        if (v.getProperty ("fp", "").toString() != fp) return {};
+        return v.getProperty ("category", "").toString();
     }
 
     void buildRows (const ProposalSet& proposals)
@@ -700,6 +727,7 @@ public:
         else if (id == "bulk")       actionBulkIgnores();
         else if (id == "evidence")   actionEvidence();
         else if (id == "skipplugin") actionSkipPlugin();
+        else if (id == "park")       actionParkPlugin();
         else if (id == "prev")       selectRow (selected - 1);
         else if (id == "next")       selectRow (selected + 1);
     }
@@ -1367,6 +1395,44 @@ public:
         persistSession();
         list.updateContent();
         updateProgress();
+    }
+
+    /** ESC: PARK. Return to the list without deciding anything.
+
+        S already returned to the list, and that is the whole of what it shares
+        with this: it writes `deferred` and "plugin skipped by mapper" onto
+        every unresolved row first, which is a VERDICT about rows the mapper
+        never considered. Coming back then means re-opening rows that claim
+        they were decided.
+
+        Parking writes NO row state. The session is already on disk -- persist
+        happens on every accept and, since 4 Aug, on every W -- so this call
+        catches only the gap between the last action and the keypress. It is
+        one line of machinery and a sentence of wording, which is why it came
+        before the two features it sits beside.
+
+        The plugin stays loaded, because exitPanel only hides the panel. That
+        is deliberate for ESC: the commonest reason to park is to look
+        something up, and reloading a plugin costs 0.5-1.6 s and is where
+        crashes happen.
+    */
+    void actionParkPlugin()
+    {
+        if (hooks.cancelArm) hooks.cancelArm();
+        awaitingCaptureRow = -1;
+
+        int confirmed = 0, open = 0;
+        for (const auto& r : rows)
+        {
+            if (r.state == AssignRow::State::confirmed) ++confirmed;
+            else if (! r.isResolved()) ++open;
+        }
+
+        persistSession();
+        say ("PARKED: " + juce::String (confirmed) + " confirmed, " + juce::String (open)
+               + " still open, saved to " + sessionFile().getFileName()
+               + ". Load it again and everything comes back.");
+        if (hooks.exitPanel) hooks.exitPanel();
     }
 
     /** S: every unresolved semantic row becomes deferred, recorded, exit. */
@@ -2995,7 +3061,7 @@ public:
         notice.setVisible (v);
         list.setVisible (v);
         for (auto* b : answerButtons) b->setVisible (v);
-        for (auto* b : { &prevBtn, &nextBtn, &evidBtn, &bulkBtn, &skipPluginBtn, &reviewBtn })
+        for (auto* b : { &prevBtn, &nextBtn, &evidBtn, &bulkBtn, &skipPluginBtn, &parkBtn, &reviewBtn })
             b->setVisible (v);
     }
 
@@ -3016,6 +3082,7 @@ public:
         const auto c = k.getTextCharacter();
         const bool shift = k.getModifiers().isShiftDown();
 
+        if (k == juce::KeyPress::escapeKey)               { dispatchAction ("park"); return true; }
         if (k == juce::KeyPress::spaceKey)                { dispatchAction ("space"); return true; }
         if (c == 'w' || c == 'W' || c == 'r' || c == 'R') { dispatchAction ("wiggle"); return true; }
         if (c == 'n' || c == 'N')                         { dispatchAction ("notpresent", shift); return true; }
@@ -3094,6 +3161,7 @@ public:
         evidBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
         bulkBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
         skipPluginBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
+        parkBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
         reviewBtn.setBounds (strip.reduced (1));
 
         if (reasonEntry.isVisible())
@@ -4029,7 +4097,7 @@ private:
     ProposalSet beginProposals;
     juce::Label notice;
     juce::OwnedArray<juce::TextButton> answerButtons;
-    juce::TextButton prevBtn, nextBtn, evidBtn, bulkBtn, skipPluginBtn, reviewBtn;
+    juce::TextButton prevBtn, nextBtn, evidBtn, bulkBtn, skipPluginBtn, parkBtn, reviewBtn;
     juce::TextEditor summaryText;
     juce::TextButton submitBtn, backBtn;
     bool summaryShowing = false;
