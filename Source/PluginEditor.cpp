@@ -14692,6 +14692,30 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
             api.setNextDialFlags(dialable);
         }
         out += EchoJayAPI::buildChainInjection(recommendable);
+
+        // THE RACKED CONTROL SURFACE. Every control of every racked plugin,
+        // by name, with range and unit -- so a mapped control is reachable
+        // rather than merely dialable. See ChainHost::rackedControlSurface for
+        // the measurement that says this is affordable (the bulk of a map is
+        // anchors, which the model cannot use, and dropping them takes the
+        // largest surface in the corpus from ~6,371 tokens to ~364).
+        //
+        // NOT the catalogue: only what is in the rack, which is what the user
+        // is looking at and what keeps this bounded as the corpus grows.
+        {
+            const auto surface = chainHost.rackedControlSurface();
+            if (surface.isNotEmpty())
+            {
+                out << "\n\n[RACKED PLUGIN CONTROLS -- every control on the plugins currently "
+                    << "in the rack, with its range and unit. Name them EXACTLY as written "
+                    << "here; matching is exact and case-sensitive, and a name that matches "
+                    << "nothing is declined rather than guessed at.]\n"
+                    << surface;
+                EchoJay_NSLog(("EJChat: racked control surface attached -- "
+                               + juce::String (surface.length()) + " chars").toRawUTF8());
+            }
+        }
+
         hadFeed = true;
         EchoJay_NSLog(("EJChat: chain injection attached -- "
                        + juce::String(recommendable.size())

@@ -957,3 +957,70 @@ Two different indices returning one display needs a live probe to explain — a 
 read landing on the wrong control, or a plugin that ignores host writes without its UI open.
 **Not diagnosed, and deliberately not guessed at**: an asserted cause gets believed and acted
 on. One plugin, parked; ADA (fixed) and Cenozoix (item 12) are the general cases.
+
+---
+
+## 14. WAITING ON THE DASHBOARD REPO — two items, one session
+
+Both are half-built here and worthless until the server half lands. They are listed together
+so they can be done in one sitting rather than two.
+
+### 14a. `settings_by_name` — the return path for a named control
+
+**Built client-side (4 Aug 2026):** `ChainHost::rackedControlSurface()` and the
+`[RACKED PLUGIN CONTROLS]` block in `standardChainInjections`. The model is now TOLD every
+control of every racked plugin, by name, with range and unit.
+
+**What is missing is somewhere for it to answer.** The chain block's `settings` field is free
+prose (`"4:1, -18dB thr, 30ms att"`) that is drawn on a card and never parsed. The field that
+actually dials is `settings_structured`, composed SERVER-SIDE (`ChainHost.cpp:919` — *"the
+server sends the same settings_structured object"*). So:
+
+- the block format needs a `settings_by_name: {"Sustain": 4}` field;
+- whatever composes `settings_structured` must pass those through.
+
+`applySettings` already resolves an unknown key by EXACT, case-sensitive name against
+`map.controls` and declines anything else with a reason. That is the only matcher, by
+decision. **No fuzzy matching** — see item 15.
+
+### 14b. `unmappable` transport
+
+The local half is built (`marks.json`, keyed `format|uid`). To travel it needs an
+authenticated POST beside the ingest one, storage keyed on the product rather than the fp, and
+`identities=` extended to return the flag. The record is already shaped `{by, at}` so it
+uploads unchanged.
+
+---
+
+## 15. NO FUZZY MATCHING UNTIL THERE IS A FEEDBACK PATH
+
+Recorded because it will be proposed again the first time a model names a control slightly
+wrong.
+
+**The blocker is not the matcher, it is that nothing reports back.** Measured 4 Aug 2026: an
+unmatched settings key returns `"no mapping for this control on this plugin"`, and
+`ChainHost` routes it into `s.dialManual`, which surfaces on the card as *needs hand-dialing*.
+The USER sees it. **The model never does** — the chat is a single `postJSON` with no
+tool-call loop and no second turn. So a fuzzy match that picks the wrong knob is silent to
+the thing that made the request.
+
+If it is ever added it must REFUSE, not guess, on: two controls within the same edit distance;
+any match crossing a unit family (`Drive` -> `Drive Mix`); and any numeric request matched to
+a `mode` control. And it needs the feedback path first.
+
+---
+
+## 16. THE CHAT DOES NOT STREAM — a gap independent of any feature
+
+Established 4 Aug 2026 while investigating the control-surface work. There is no
+`text/event-stream`, no partial-delta handling: `EchoJayAPI` sends one `postJSON` and waits.
+The typewriter reveal (`PluginEditor.cpp:2487`) animates an ALREADY-COMPLETE reply.
+
+**What this changes:** any "show progress while it works" idea buys a longer wait on a blank
+bubble rather than visible work. That applies to a per-plugin resolution pass, to a tool-call
+loop, and to anything else slow enough to want narrating -- so it is worth fixing on its own
+terms rather than as part of whichever feature next needs it.
+
+The scope is real, not cosmetic: SSE or chunked reads in `EchoJayAPI`, a partial-reply sink on
+the editor, and a decision about what happens to the typewriter when text arrives in chunks
+rather than all at once.

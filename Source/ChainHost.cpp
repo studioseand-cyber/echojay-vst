@@ -1297,6 +1297,63 @@ float ChainHost::getSlotWet(int i) const
     return slots_[(size_t)i].wet;
 }
 
+juce::var ChainHost::paramMapForSlot (int slotIndex) const
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return {};
+    auto it = paramMaps_.find (slots_[slotIndex].fp);
+    return it == paramMaps_.end() ? juce::var() : it->second;
+}
+
+juce::String ChainHost::rackedControlSurface() const
+{
+    juce::String out;
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        const auto map = paramMapForSlot (i);
+        auto* controls = map.getProperty ("controls", juce::var()).getDynamicObject();
+        if (controls == nullptr || controls->getProperties().size() == 0) continue;
+
+        juce::StringArray items;
+        for (const auto& kv : controls->getProperties())
+        {
+            const auto name = kv.name.toString();
+            const auto v    = kv.value;
+
+            // A duplicate name is not addressable BY NAME, which is exactly
+            // what this block offers, so it is not offered. The map records
+            // both indices and refuses at apply time; naming it here would
+            // invite a request that can only be declined.
+            if ((bool) v.getProperty ("duplicate", false)) continue;
+
+            if (v.getProperty ("kind", "").toString() == "mode")
+            {
+                juce::StringArray labels;
+                if (auto* lo = v.getProperty ("labels", juce::var()).getDynamicObject())
+                    for (const auto& l : lo->getProperties()) labels.add (l.name.toString());
+                items.add (labels.isEmpty() ? name
+                                            : name + "[" + labels.joinIntoString ("/") + "]");
+                continue;
+            }
+
+            // Range and unit are what turn "more sustain" into "sustain to 4".
+            // Both come from the map: the unit is DISPLAY-DECLARED, never
+            // inferred from the name, so an absent unit is stated by absence
+            // rather than guessed.
+            auto* r = v.getProperty ("range", juce::var()).getArray();
+            const auto unit = v.getProperty ("unit", "").toString();
+            if (r != nullptr && r->size() >= 2 && (double) (*r)[0] != (double) (*r)[1])
+                items.add (name + "(" + juce::String ((double) (*r)[0], 0) + ".."
+                                      + juce::String ((double) (*r)[1], 0) + unit + ")");
+            else
+                items.add (name);
+        }
+        if (items.isEmpty()) continue;
+
+        out << "- " << slots_[i].desc.name << ": " << items.joinIntoString ("; ") << "\n";
+    }
+    return out;
+}
+
 std::vector<ChainHost::ApplyReport>
 ChainHost::applyStructuredSettings (int slotIndex,
                                     const juce::var& structuredSettings,

@@ -227,6 +227,41 @@ public:
     // persist them, and apply any slots that were waiting on them.
     void storeParamMaps (const juce::var& mapsObj);
 
+    /** THE CONTROL SURFACE OF EVERY RACKED SLOT, one line per slot, compact.
+
+        WHY THIS FORM, AND WHY NOT TIERING. Measured 4 Aug 2026 on the largest
+        mapped surface in the corpus, AMEK EQ 200 at 62 controls:
+
+            full map JSON, with anchors     ~6,371 tokens
+            name + range + unit               ~364 tokens
+            names only                        ~198 tokens
+
+        The bulk is ANCHORS, and the model can do nothing with an anchor: the
+        client interpolates. Drop them and a whole rack costs about what one
+        plugin's raw map would. Across all 33 mapped plugins, EVERY control of
+        EVERY map is ~2,977 tokens; a six-plugin rack is ~510.
+
+        SO DO NOT "OPTIMISE" THIS BY TIERING. A primary/hidden split was the
+        obvious fix while the 6,371 figure was the one in view, and it is the
+        wrong one: it costs prompt size the measurement says is not scarce, and
+        it buys it by making part of a mapped surface unreachable -- Sustain on
+        a Transient Designer, Thick/Air/Bite on Scheps, the whole Maag surface.
+        Everything mapped should be reachable. The number above is why that is
+        affordable.
+
+        ONLY WHAT IS RACKED. Never the catalogue: the surface the model sees is
+        the surface in front of the user, which is also what keeps this bounded
+        as the corpus grows past a thousand maps.
+    */
+    juce::String rackedControlSurface() const;
+
+    /** The map this slot is dialling, or a void var. Exposed because the
+        editor composes the prompt and the maps live here, fetched by
+        fingerprint at session open -- so the injection is a formatting change,
+        not a fetch.
+    */
+    juce::var paramMapForSlot (int slotIndex) const;
+
     // Batch-prefetch (via onNeedParamMaps) maps for every fingerprint the
     // persistent identity index knows but has no cached map for, <=500 per
     // request. Called after scans so Build needs no round trip. Fps already
