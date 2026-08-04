@@ -85,9 +85,52 @@ juce::String layerBackHostedViews (juce::Component& topLevel)
     return out;
 }
 
+juce::String captureHostedEditor (juce::Component& topLevel, const juce::File& out)
+{
+    NSView* peer = peerViewOf (topLevel);
+    if (peer == nil) return "no peer\n";
+
+    NSView* editor = nil;
+    for (NSView* sub in [peer subviews])
+        if (NSWidth ([sub frame]) > 100 && NSHeight ([sub frame]) > 100)
+            editor = sub;                       // the hosted container
+    if (editor == nil) return "no hosted view under the peer\n";
+
+    const auto r = [editor bounds];
+    NSBitmapImageRep* rep = [editor bitmapImageRepForCachingDisplayInRect: r];
+    if (rep == nil) return "bitmapImageRepForCachingDisplayInRect returned nil\n";
+    [editor cacheDisplayInRect: r toBitmapImageRep: rep];
+
+    // HOW MUCH OF IT IS ACTUALLY THERE. A bridged editor's pixels live in
+    // another process, so this can succeed and hand back an empty rectangle;
+    // reporting "captured" on that would be the class this project keeps
+    // filing. Sampled, not exhaustive: every 8th pixel is plenty to tell an
+    // empty rect from a drawn one.
+    long lit = 0, seen = 0;
+    for (NSInteger y = 0; y < [rep pixelsHigh]; y += 8)
+        for (NSInteger x = 0; x < [rep pixelsWide]; x += 8)
+        {
+            NSUInteger px[5] = {0,0,0,0,0};
+            [rep getPixel: px atX: x y: y];
+            ++seen;
+            if (px[0] > 8 || px[1] > 8 || px[2] > 8) ++lit;
+        }
+    const double frac = seen > 0 ? (double) lit / (double) seen : 0.0;
+
+    NSData* png = [rep representationUsingType: NSBitmapImageFileTypePNG properties: @{}];
+    const bool wrote = png != nil
+        && [png writeToFile: [NSString stringWithUTF8String: out.getFullPathName().toRawUTF8()] atomically: YES];
+
+    return juce::String ("captured ") + juce::String ((int) [rep pixelsWide]) + "x"
+             + juce::String ((int) [rep pixelsHigh])
+             + ", non-background " + juce::String (frac * 100.0, 1) + "%"
+             + ", png " + (wrote ? "written" : "FAILED") + "\n";
+}
+
 #else
 
 juce::String describeViewTree (juce::Component&)      { return {}; }
+juce::String captureHostedEditor (juce::Component&, const juce::File&) { return {}; }
 juce::String layerBackHostedViews (juce::Component&)  { return "not macOS: nothing to do\n"; }
 
 #endif

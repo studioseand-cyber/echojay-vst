@@ -7392,6 +7392,12 @@ public:
         {
             std::cout << "EDITORFIT: (settled read, 3 s after attach)" << std::endl;
             reportEditorFit();
+            {
+                auto png = ledger.getRoot().getChildFile ("screenshots")
+                             .getChildFile (loadedName.replaceCharacter ('/', '_') + ".png");
+                png.getParentDirectory().createDirectory();
+                std::cout << "CAPTURE: " << ejmap::captureHostedEditor (*this, png) << std::flush;
+            }
 
             // A JUCE snapshot of the tool's own component tree. It renders
             // what JUCE draws and NOT a hosted NSView, so comparing it with a

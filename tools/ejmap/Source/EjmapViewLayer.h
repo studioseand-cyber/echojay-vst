@@ -61,4 +61,20 @@ juce::String describeViewTree (juce::Component& topLevel);
 */
 juce::String layerBackHostedViews (juce::Component& topLevel);
 
+/** DIAGNOSTIC: capture the hosted editor's own NSView to a PNG, in-process.
+
+    Not the window and not the screen: the VIEW. createComponentSnapshot draws
+    the JUCE layer and leaves a hosted editor blank (M8, and confirmed here on
+    AirEQ), while window-level capture is unavailable on this SDK --
+    CGWindowListCreateImage is gone and screencapture cannot reach a window on
+    another Space. An NSView can be asked to draw itself, which needs no
+    permission and no window server.
+
+    Returns a one-line report of what happened, including the fraction of
+    non-background pixels, because a capture that "succeeds" and returns an
+    empty rectangle is the failure mode that matters -- a bridged AU's content
+    lives in another process and its NSRemoteView may draw nothing here.
+*/
+juce::String captureHostedEditor (juce::Component& topLevel, const juce::File& out);
+
 } // namespace ejmap
