@@ -9173,8 +9173,30 @@ private:
                     // evidence -- and 604 of 622 bridged AUs are Waves.
                     const bool settled = ejmap::settleDisplayPumped();
                     const auto landed = inst->getParameters()[r.resolvedIndex]->getCurrentValueAsText();
-                    double vLanded = 0.0;
-                    const bool parsed = echojay::parseLeadingFloat (landed, vLanded);
+
+                    // ONE PARSER ON BOTH SIDES. The anchors were built through
+                    // parseDisplayForUnit, which does the unit arithmetic
+                    // (kHz x1000, bare-k, s<->ms -- EjmapSweeper.h:242); this
+                    // verified them through parseLeadingFloat, which stops at
+                    // the unit. So 4750 Hz displayed as "4.8 kHz" read back as
+                    // 4.8 and was scored a mismatch, and the map recorded a
+                    // correct write as a failure. Every frequency parameter
+                    // whose display crosses into kHz was affected, which is
+                    // most EQs. Measured on ADA STD-1: high_cut asked 4750.0,
+                    // read "4.8 kHz", match false.
+                    //
+                    // Building evidence with one parser and judging it with
+                    // another is the same shape as the settle defect recorded
+                    // just above: a guard rejecting correct maps on false
+                    // evidence.
+                    float vLandedF = 0.0f;
+                    bool negInf = false;
+                    const bool parsed = echojay::parseDisplayForUnit (
+                                            landed, echojay::semanticUnit (r.semantic),
+                                            vLandedF, negInf);
+                    // "-oo" at a dB floor is fully attenuated, the same reading
+                    // applyOne's untouched-check makes.
+                    const double vLanded = negInf ? -120.0 : (double) vLandedF;
                     float lo = r.sweep.anchors.getFirst()[0], hi = lo;
                     for (const auto& a : r.sweep.anchors)
                     { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
