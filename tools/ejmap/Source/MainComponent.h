@@ -142,6 +142,10 @@ public:
         assignButton.setEnabled (false);
         assignButton.onClick = [this] { startAssignment(); };
 
+        addAndMakeVisible (backlogLabel);
+        backlogLabel.setJustificationType (juce::Justification::centredRight);
+        backlogLabel.setFont (juce::Font (juce::FontOptions (12.0f).withStyle ("Bold")));
+
         addAndMakeVisible (uploadButton);
         // "Upload..." promised an upload and a dialogue and delivered neither:
         // it gated and wrote an artefact and stopped. One action now does what
@@ -161,6 +165,8 @@ public:
 
         addChildComponent (assignPanel);
         wireAssignHooks();
+        updateBacklogLabel();
+        std::cout << "BACKLOG: " << backlogLine() << std::endl;
 
         addChildComponent (typedPrompt);
         typedPrompt.setColour (juce::Label::textColourId, juce::Colour (0xffd8b06a));
@@ -6899,6 +6905,9 @@ public:
         top.removeFromLeft (6);
         summaryButton.setBounds (top.removeFromLeft (90));
         top.removeFromLeft (12);
+        // The backlog sits at the right-hand end of the toolbar, where it is
+        // in view for the whole session rather than for one keystroke.
+        backlogLabel.setBounds (top.removeFromRight (240));
         status.setBounds (top);
 
         // Only takes space while it is showing, so the idle layout is unchanged.
@@ -7940,6 +7949,63 @@ private:
             m << "; " << cacheDropped << " no longer installed, dropped";
         m << ". Scan to refresh.";
         return m;
+    }
+
+    /** THE BACKLOG, AS A NUMBER. Eighteen finished maps sat unsent for a day
+        and nothing said so: the per-map line says "local only" once, at the
+        moment you are least likely to act on it, and column 2 is a dot among
+        1,819 dots. A count cannot be missed and cannot drift, because it is
+        recomputed from the two artefacts that decide it -- the maps on disk
+        and the queue's per-fp state.
+
+        Reads disk, asserts nothing. Absent from the queue means never offered,
+        which is a different fact from rejected, so the two are counted apart.
+    */
+    struct SendBacklog { int mapped = 0, sent = 0, rejected = 0, neverOffered = 0; };
+
+    SendBacklog computeBacklog() const
+    {
+        SendBacklog b;
+        std::map<juce::String, juce::String> stateByFp;
+        auto qv = juce::JSON::parse (ledger.getRoot().getChildFile ("queue.json").loadFileAsString());
+        if (auto* arr = qv.getArray())
+            for (auto& e : *arr)
+                stateByFp[e.getProperty ("fp", "").toString()]
+                    = e.getProperty ("state", "").toString();
+
+        for (const auto& entry : juce::RangedDirectoryIterator (
+                 ledger.getRoot().getChildFile ("maps"), false, "*.json"))
+        {
+            ++b.mapped;
+            const auto fp = entry.getFile().getFileNameWithoutExtension();
+            auto it = stateByFp.find (fp);
+            if (it == stateByFp.end())        ++b.neverOffered;
+            else if (it->second == "sent")    ++b.sent;
+            else if (it->second == "rejected") ++b.rejected;
+            else                              ++b.neverOffered;   // gated, dry_run, stub: not delivered
+        }
+        return b;
+    }
+
+    /** One line, always visible, never a dot. */
+    juce::String backlogLine() const
+    {
+        const auto b = computeBacklog();
+        juce::String t;
+        t << b.mapped << " mapped, " << b.sent << " sent";
+        if (b.rejected > 0)     t << ", " << b.rejected << " REJECTED";
+        if (b.neverOffered > 0) t << ", " << b.neverOffered << " NOT SENT";
+        return t;
+    }
+
+    void updateBacklogLabel()
+    {
+        backlogLabel.setText (backlogLine(), juce::dontSendNotification);
+        const auto b = computeBacklog();
+        backlogLabel.setColour (juce::Label::textColourId,
+                                (b.neverOffered > 0 || b.rejected > 0)
+                                  ? juce::Colour (0xffe0c060)      // amber: work is waiting
+                                  : juce::Colour (0xff6ad86a));    // green: nothing pending
     }
 
     void showProgress (bool shouldShow)
@@ -9161,6 +9227,7 @@ private:
         // comment previously claimed it and no such call existed) and after a send --
         // none of which is "the wizard wrote a map", which is exactly when
         // column 1 becomes true.
+        updateBacklogLabel();
         refreshLocalMapIdentities();
         applyFilter();
         logColumns ("map saved", echojay::identityKeyForDescription (loadedDesc));
@@ -9240,6 +9307,7 @@ private:
                    "it names.\n";
 
         const auto res = ejmap::sendBytesOverTls (bytes, hostPort);
+        updateBacklogLabel();
         Mouth::setQueueState (ledger.getRoot(), currentFp, res.queueState(),
                               res.sent ? "HTTP " + juce::String (res.status) : res.refusedReason,
                               echojay::identityKeyForDescription (loadedDesc));
@@ -9451,6 +9519,7 @@ private:
         {
             lastArtefactFp.clear();             // gate refused: nothing to send
             setSendReady (false);
+        updateBacklogLabel();
             Mouth::setQueueState (ledger.getRoot(), currentFp, "rejected",
                                   verdict.rejections.joinIntoString ("; "));
             t << "STRUCTURAL GATE: REFUSED\n";
@@ -10955,6 +11024,7 @@ private:
     juce::Time   cacheAt;
     int          cacheDropped = 0, cacheErrors = 0;
     juce::Label      status;
+    juce::Label      backlogLabel;
     double scanProgress = 0.0;                       // declared before the bar that references it
     juce::ProgressBar progressBar { scanProgress };
     juce::Label       progressLabel;
