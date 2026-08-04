@@ -2924,6 +2924,34 @@ public:
     BandStep currentBandStep() const { return bandStep; }
     bool isSubmitEnabled() const  { return submitBtn.isEnabled(); }
 
+    /** EVERY BUTTON IN THE STRIP, WITH THE WIDTH IT WAS GIVEN.
+
+        A zero width is the failure this exists to catch: a button that is
+        present, enabled, correctly bound, and unpressable. Nothing in the
+        state of the component says so -- isVisible() is true, isEnabled() is
+        true -- so only the geometry can report it.
+    */
+    juce::String stripWidths() const
+    {
+        juce::String t;
+        auto add = [&t] (const char* n, const juce::Component& c)
+        { t << (t.isEmpty() ? "" : " ") << n << "=" << c.getWidth(); };
+        add ("prev", prevBtn);   add ("next", nextBtn);  add ("evidence", evidBtn);
+        add ("bulk", bulkBtn);   add ("dismiss", skipPluginBtn);
+        add ("park", parkBtn);   add ("review", reviewBtn);
+        return t;
+    }
+
+    /** The narrowest strip button, or 0 if any is unpressable. */
+    int narrowestStripButton() const
+    {
+        int w = 1 << 30;
+        for (const juce::TextButton* c : { &prevBtn, &nextBtn, &evidBtn,
+                                           &bulkBtn, &skipPluginBtn, &parkBtn, &reviewBtn })
+            w = juce::jmin (w, c->getWidth());
+        return w;
+    }
+
     void openSummary()
     {
         int confirmed = 0, modePos = 0, skips = 0, open = 0;
@@ -3155,13 +3183,25 @@ public:
 
         notice.setBounds (r.removeFromTop (18));
         auto strip = r.removeFromTop (26);
-        const int gw = strip.getWidth() / 6;
-        prevBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
-        nextBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
-        evidBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
-        bulkBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
-        skipPluginBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
-        parkBtn.setBounds (strip.removeFromLeft (gw).reduced (1));
+        // THE DIVISOR COMES FROM THE LIST, NOT FROM A NUMBER TYPED ONCE.
+        //
+        // This read `getWidth() / 6` against six removeFromLeft calls, with
+        // reviewBtn taking "the rest". Adding ESC park as a sixth
+        // removeFromLeft therefore consumed the last sixth and left Review &
+        // submit a ZERO-WIDTH rectangle -- still there, still enabled, still
+        // bound to cmd-return, and invisible. The mapper had 8 of 8 rows
+        // confirmed and no way to finish the plugin.
+        //
+        // A fixed divisor beside a hand-written list is a silent trap for the
+        // NEXT button too, so the count is derived: add a button to the array
+        // and the strip re-divides. reviewBtn keeps the remainder because it
+        // is the widest label, and the remainder is now a real share rather
+        // than whatever is left over.
+        const juce::Array<juce::Component*> stripButtons
+            { &prevBtn, &nextBtn, &evidBtn, &bulkBtn, &skipPluginBtn, &parkBtn };
+        const int gw = strip.getWidth() / juce::jmax (1, stripButtons.size() + 1);
+        for (auto* b : stripButtons)
+            b->setBounds (strip.removeFromLeft (gw).reduced (1));
         reviewBtn.setBounds (strip.reduced (1));
 
         if (reasonEntry.isVisible())

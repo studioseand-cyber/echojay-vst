@@ -7067,6 +7067,14 @@ public:
         int confirmed = 0, open = 0;
         for (const auto& r : assignPanel.rows)
         { confirmed += r.state == AssignRow::State::confirmed; open += ! r.isResolved(); }
+        // THE BUTTON STRIP, before anything else touches it. ESC park was added
+        // beside a hand-written divisor and silently gave Review & submit a
+        // zero-width rectangle -- present, enabled, bound to cmd-return, and
+        // unpressable, with 8 of 8 rows confirmed and no way to finish.
+        std::cout << "  strip: " << assignPanel.stripWidths() << std::endl;
+        okM (assignPanel.narrowestStripButton() > 0,
+             "every button in the strip has a pressable width (" + assignPanel.stripWidths() + ")");
+
         okM (confirmed >= 1 && open >= 1,
              "the parked session spans resolved and open rows ("
                + juce::String (confirmed) + " confirmed, " + juce::String (open) + " open)");
