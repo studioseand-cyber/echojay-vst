@@ -111,3 +111,95 @@ do three easy ones, come back.
 load. Wanted twice in two days: Drawmer 1973 could not be reproduced because `--probe-batch`
 needs a map, and the plugins worth diagnosing are precisely those that never got far enough
 to have one. Separate child process per attempt, one JSON line per attempt.
+
+---
+
+## 4. Manual band entry — ACCEPTED AS PROPOSED, not yet built
+
+The typed-anchors equivalent for bands: when inference cannot group a band, the mapper
+says which indices form it. **Build item 1 BEFORE this** — see the scope note at the end,
+which is a design reason and not merely a size one.
+
+### What a band group needs
+
+- **Required: `freq_hz` + `gain_db`.** A band the consumer cannot place or cannot move is
+  not dialable. This is also the pair the band matcher already routes as a unit on
+  grouped EQs.
+- **`q` — optional, and genuinely often absent.** API-550A has none; several vintage EQs
+  fix or step it. A group without `q` dials fine.
+- **`enable` — optional to HAVE, mandatory to HONOUR.** If a band has an enable reading
+  off, the freq/gain writes are inert and the dial silently does nothing. A manually
+  entered band goes through `enableLinkFor` / `checkEnableIsNull` exactly as an inferred
+  one does.
+
+### Interaction: synthesise rows, do NOT build a picker
+
+Do not ask "which of these three is band 1's frequency?" — that is a new widget and a new
+mental model. Instead: one count prompt ("how many bands?"), then synthesised assignment
+rows, one per band-slot:
+
+```
+band 1 frequency      unresolved
+band 1 gain           unresolved
+band 2 frequency      unresolved
+```
+
+Each resolves through the flow the mapper already knows — touch, W to sweep, confirm.
+`q` and `enable` rows are offered and D-able without penalty, since both are legitimately
+absent. The panel already renders and resolves rows generically, so mismatch warnings,
+readback and skip reasons all come along free.
+
+### Recording: TWO CLAIMS, RECORDED SEPARATELY
+
+```json
+{ "n": 1, "label": "LF", "grouping_source": "mapper",
+  "ordering_source": "measured",
+  "params": { "freq_hz": {...}, "gain_db": {...} } }
+```
+
+- `grouping_source: "mapper" | "inferred"` — who decided these indices form a band. Human
+  is stronger evidence FOR THE GROUPING.
+- **Per-parameter evidence is unchanged** — sweep anchors, unit family, trust, readback.
+
+The mapper's say-so groups them; the sweep says what they do. Nothing asserted is ever
+promoted to a measurement. Do not merge these into one trust field.
+
+### Ordering: the mapper supplies the LABEL, the tool derives the ORDER
+
+The mapper supplies `LF`/`MF`/`HF` (or `1/2/3`). Ordering is derived from the **swept
+frequency range** — each freq slot is swept anyway, yielding a real lo/hi — and bands sort
+by measured midpoint. Then:
+
+- **agree** → `n` assigned from measured order, both recorded, the label rides along
+- **disagree** → **REFUSE and show both.** "You labelled index 4 as LF, but it sweeps
+  800–8000 Hz and sits above the band you called MF." Either a mislabel or a mis-picked
+  index; both are worth stopping for.
+
+> **DO NOT "SIMPLIFY" THIS BACK TO ENTRY ORDER.** This is the strongest part of the design
+> and it is counterintuitive, so someone will try.
+>
+> Deriving order from measured frequency makes the manual path **better than inference on
+> the ordering claim**, not a weaker fallback. Inference reads order from NAME POSITION
+> (`prefixOrder()`'s LF→LMF→MF→HMF→HF); this reads it from BEHAVIOUR. M5 treats
+> LF-below-MF-below-HF as *the claim*, so the manual path must ESTABLISH that claim rather
+> than inherit it from the order the mapper happened to type.
+
+### Two cheap checks (the sweep already runs; these cost nothing)
+
+- **Unit sanity** — a slot claimed as frequency that sweeps to a dB unit family is
+  refused, and vice versa. Catches the commonest slip: picking the gain when you meant
+  the freq.
+- **Distinctness** — two bands with identical swept ranges suggest the same parameter
+  picked twice, or a channel bank rather than distinct bands. Flag; refusal optional.
+
+### SCOPE NOTE — why item 1 comes first
+
+Item 1 (persisting `strideNote`) decides whether manual entry is an **escape hatch** or
+the **main road**, and that changes what should be built.
+
+If most vintage EQs miss because their names are spelled out ("Low Frequency" rather than
+"LF"), then widening `prefixOrder()` plus a synonym fold (Low→LF, Low Mid→LMF, …) is the
+cheaper fix and manual entry stays the exception. Building manual entry first would be
+building an exception path for the common case.
+
+**So: item 1 first for this reason, not merely because it is smaller.**
