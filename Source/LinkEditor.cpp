@@ -153,6 +153,28 @@ LinkEditor::LinkEditor(LinkProcessor& p)
         safe->repaint();
     };
 
+    // STAGE 1 REMOTE EDITOR: the main plugin asks this Link to raise one of
+    // its own hosted editors. Registered here and cleared in the destructor,
+    // so its very existence is the "this Link has a window" signal the
+    // command needs -- a closed Link leaves the callback null and the ack
+    // reports that honestly instead of the main plugin guessing.
+    //
+    // hostIdx, not model index: the wire carries the RACK slot, which is what
+    // the sidecar publishes and what the main plugin's Chain tab is showing.
+    proc.onOpenSlotEditor = [safe = juce::Component::SafePointer<LinkEditor>(this)](int hostIdx) -> bool
+    {
+        if (safe == nullptr) return false;
+        const int mi = safe->chainPanel.modelIdxForHostIdx(hostIdx);
+        if (mi < 0) return false;              // missing/unresolved slot
+        safe->chainPanel.selectSlot(mi);       // selects AND opens its editor
+        // Bring the Link's own window forward: the point of the feature is
+        // that the editor is reachable, and a raised editor behind another
+        // window has not been raised.
+        if (auto* top = safe->getTopLevelComponent()) top->toFront(true);
+        safe->chainPanel.raiseOpenEditor();
+        return true;
+    };
+
     // Chain panel fills everything below the header
     addAndMakeVisible(chainPanel);
     chainPanel.onAddClick = [this] { showChainPluginPicker(); };
@@ -185,6 +207,7 @@ LinkEditor::~LinkEditor()
     proc.onChainModelChanged = nullptr;
     proc.onChainAboutToChange = nullptr;
     proc.onLinkStateChanged = nullptr;
+    proc.onOpenSlotEditor   = nullptr;   // null again = "no window", see above
     chainPanel.closeAllEditors();
 }
 

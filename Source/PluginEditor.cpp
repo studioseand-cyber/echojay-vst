@@ -1982,6 +1982,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // label is derived from chainViewUid() on every refresh, so it cannot
     // disagree with the mixer.
     chainListPanel.onRackClick = [this] { showChainRackMenu(); };
+    chainListPanel.onRemoteEditorRequest = [this](int slotIdx)
+    {
+        const juce::String uid = chainViewUid();
+        if (uid.isEmpty()) return;      // local racks open inline, unchanged
+        sendOpenSlotEditor(uid, slotIdx);
+    };
 
     // Sidebar collapse toggle. Collapsing gives the main column the full tab
     // width. NOT Chain only any more: one flag for every chat-hosting
@@ -7292,6 +7298,90 @@ void EchoJayEditor::sendRackEdit(const juce::String& uid, int slotIdx, bool isRe
     pollLinkBlockAck(uid, seq, 20);
 }
 
+const juce::String EchoJayEditor::kRemoteEditorBoundary =
+    "This plugin runs inside %LINK%, so its editor opens in that window. "
+    "Open the %LINK% Link to edit it.";
+
+void EchoJayEditor::sendOpenSlotEditor(const juce::String& uid, int slotIdx)
+{
+    if (uid.isEmpty() || slotIdx < 0) return;
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    const juce::String name = processorRef.resolveLinkDisplayName(uid);
+    if (dir.isEmpty())
+    {
+        chainListPanel.statusText = "Cannot reach " + name
+            + " right now: the shared Link folder is unavailable.";
+        chainListPanel.repaint();
+        return;
+    }
+
+    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    for (auto& p : linkCtrlPending_)
+        if (p.addr == uid && p.seq >= seq) seq = p.seq + 1;
+
+    // openSlot ONLY: no active, no gainDb, no placement, so this can never
+    // disturb anything else about the Link. Every field is applied by
+    // presence on that side, which is what makes a single-purpose command
+    // safe to send. 1-based on the wire like every other slot reference.
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",        1);
+    cmd->setProperty("seq",      seq);
+    cmd->setProperty("openSlot", slotIdx + 1);
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();   // stale ack
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+
+    chainListPanel.statusText = "Asking " + name + " to open this plugin...";
+    chainListPanel.repaint();
+    pollOpenSlotAck(uid, seq, 20, name);
+}
+
+void EchoJayEditor::pollOpenSlotAck(const juce::String& uid, int seq,
+                                    int attemptsLeft, const juce::String& linkName)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay(250, [safeThis, uid, seq, attemptsLeft, linkName]
+    {
+        if (safeThis == nullptr) return;
+        int err = 0;
+        juce::String dir = LinkShm::resolveDir(err);
+        juce::File ack(dir + "ctrl-ack-" + uid + ".json");
+        if (dir.isNotEmpty() && ack.existsAsFile())
+        {
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+                if ((int)o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();
+                    // THREE OUTCOMES, and the third is why the ack echoes at
+                    // all. An OLD Link ignores openSlot and still writes a
+                    // perfectly normal ack, so a missing key is the version
+                    // signal: without it this could not tell "opened" from
+                    // "too old" and would have to claim success.
+                    if (!o->hasProperty("openedSlot"))
+                        safeThis->chainListPanel.statusText =
+                            linkName + " is running an older EchoJay Link that cannot "
+                            "open its editors from here. Update it, or open its "
+                            "window directly.";
+                    else if ((bool) o->getProperty("openedSlot"))
+                        safeThis->chainListPanel.statusText =
+                            "Opened in " + linkName + ". Your edits are live there.";
+                    else
+                        safeThis->chainListPanel.statusText =
+                            kRemoteEditorBoundary.replace("%LINK%", linkName);
+                    safeThis->chainListPanel.repaint();
+                    return;
+                }
+        }
+        if (attemptsLeft > 1)
+        { safeThis->pollOpenSlotAck(uid, seq, attemptsLeft - 1, linkName); return; }
+        safeThis->chainListPanel.statusText =
+            "No response from " + linkName + ". Nothing was opened.";
+        safeThis->chainListPanel.repaint();
+    });
+}
+
 void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& pluginName)
 {
     // ADD BY NAME, which is the op's own contract, and the reason this can
@@ -7335,10 +7425,17 @@ void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& plu
     auto* op = new juce::DynamicObject();
     op->setProperty("op",   "add");
     op->setProperty("name", pluginName);
-    // APPEND: "after" is the last ORIGINAL slot, and -1 means first, which is
-    // also the right answer for an empty rack. An out-of-range after clamps
-    // to append rather than aborting, so this cannot fail on position alone.
-    op->setProperty("after", (int)it->second.rack.slots.size() - 1);
+    // APPEND. "after" IS 1-BASED IN THE JSON, exactly like "slot" and "to":
+    // parseChainEditOps subtracts one at the single conversion point, and
+    // "after": 0 is the documented way to say insert FIRST. So appending
+    // after N slots is "after": N, not N-1.
+    //
+    // Sending N-1 was an off-by-one that landed every add SECOND TO LAST:
+    // N-1 parsed to an internal N-2, and the sequencer inserts at
+    // map[after] + 1 = N-1. It looked correct only on an empty rack, where
+    // there is one position; a one-slot rack clamped to -1 and inserted
+    // FIRST, which read as a different bug entirely.
+    op->setProperty("after", (int)it->second.rack.slots.size());
 
     auto* payload = new juce::DynamicObject();
     juce::Array<juce::var> ops; ops.add(juce::var(op));

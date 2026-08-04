@@ -418,12 +418,38 @@ void LinkProcessor::pollControlCommand()
     if (obj->hasProperty("placement"))
         setPlacement((int)obj->getProperty("placement"));
 
+    // ---- Remote editor open (stage 1) -------------------------------------
+    // 1-BASED like every other slot reference on the wire (slot, to, after);
+    // the conversion to a 0-based rack index happens here, once.
+    //
+    // The instance opened is THIS Link's own, in the signal path, so the user
+    // hears their edits immediately. Nothing is transferred and the audio is
+    // untouched: this moves a window to the front, nothing more.
+    bool openAttempted = false, openSucceeded = false;
+    if (obj->hasProperty("openSlot"))
+    {
+        openAttempted = true;
+        const int slot0 = (int)obj->getProperty("openSlot") - 1;
+        // A null callback means this Link has no editor open, and only a
+        // window can raise a window. That is a boundary, not a failure, and
+        // the ack says so rather than the main plugin guessing from silence.
+        if (onOpenSlotEditor && slot0 >= 0)
+            openSucceeded = onOpenSlotEditor(slot0);
+    }
+
     auto* ack = new juce::DynamicObject();
     ack->setProperty("v",         1);
     ack->setProperty("seq",       seq);
     ack->setProperty("active",    linkOn.load());
     ack->setProperty("gainDb",    (double)gainDb_.load(std::memory_order_relaxed));
     ack->setProperty("placement", placement_.load(std::memory_order_relaxed));
+    // CROSS-VERSION: this key is what tells an "opened" apart from a Link too
+    // old to know the field at all. An older build ignores openSlot and still
+    // writes a perfectly normal ack, so its ABSENCE is the version signal.
+    // Written only when the command actually asked, so ordinary Active and
+    // gain acks stay byte-identical to what old readers expect.
+    if (openAttempted)
+        ack->setProperty("openedSlot", openSucceeded);
     juce::File(resolvedDir + "ctrl-ack-" + id + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(ack), true));
 }

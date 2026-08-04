@@ -1582,6 +1582,9 @@ private:
             A control that does nothing when pressed is worse than one that
             says why it cannot. */
         bool         remote = false;
+        /** Remote slot tapped: the editor asks that Link to raise its own.
+            Slot index is the panel's (rack) index. */
+        std::function<void(int)> onRemoteEditorRequest;
         juce::String remoteName;     // the Link's display name, for the note
         bool         remoteOffline = false;
         std::function<void(int)>        onSelectSlot;
@@ -1997,6 +2000,21 @@ private:
             if (onSelectSlot) onSelectSlot(i);
             for (auto& bl : blocks)
             { bl->selected = (bl->slotIdx == i); bl->repaint(); }
+            // A REMOTE slot never tries to open an editor here. That instance
+            // lives in the Link's process and cannot render in this window,
+            // which is architectural and permanent, not a failure -- routing
+            // it through showInline produced "Failed: could not open editor",
+            // a fault message for a boundary. Instead we ASK THE LINK to open
+            // its own, which is the one arrangement where the user edits the
+            // real instance in the real signal path and hears it immediately.
+            if (remote)
+            {
+                if (onRemoteEditorRequest) onRemoteEditorRequest(i);
+                popBtn.setVisible(false);
+                resized();
+                repaint();
+                return;
+            }
             if (inlineSlot != i || inlineEditor == nullptr)
                 showInline(i);
             popBtn.setVisible(selectedIdx >= 0);
@@ -2129,9 +2147,10 @@ private:
             // Bring the inline editor in line with the selection
             if (remote || selectedIdx < 0)
                 closeAllEditors();
+            // ONE boundary message, shared with the remote-open's
+            // window-closed outcome: they are the same fact.
             if (remote)
-                statusText = "Viewing " + remoteName + ". Its plugin editors live in that "
-                             "Link, so open its window to adjust settings.";
+                statusText = kRemoteEditorBoundary.replace("%LINK%", remoteName);
             else if ((inlineSlot != selectedIdx || inlineEditor == nullptr)
                      && !(popout != nullptr && popoutSlot == selectedIdx))
                 showInline(selectedIdx);
@@ -3337,6 +3356,24 @@ private:
         guard; the op adds BY NAME, which is why it can fail on a Link whose
         loadable plugin set differs from this one's. */
     void sendRackAdd(const juce::String& uid, const juce::String& pluginName);
+    /** STAGE 1 REMOTE EDITOR. Ask a Link to raise its own editor for a rack
+        slot. The instance stays where it is, in its own signal path, so the
+        user hears every change instantly; this moves a window, not state and
+        not audio. One additive ctrl field, additive exactly like gainDb and
+        placement were. */
+    /** THE BOUNDARY MESSAGE, and there is exactly one of it. A hosted
+        plugin's editor lives in the process that instantiated it, so a Link's
+        plugin cannot render in this window. That is architectural and
+        permanent, not a fault, and "Failed: could not open editor" described
+        it as a failure. This is also the window-closed answer for the remote
+        open, because they are the SAME boundary: the editor exists over
+        there, and only that window can show it. One message, not two
+        explanations of one fact. %LINK% is the channel name from
+        resolveLinkDisplayName, the same accessor every other surface uses. */
+    static const juce::String kRemoteEditorBoundary;
+    void sendOpenSlotEditor(const juce::String& uid, int slotIdx);
+    void pollOpenSlotAck(const juce::String& uid, int seq, int attemptsLeft,
+                         const juce::String& linkName);
     void pollLinkBlockAck(const juce::String& uid, int seq, int attemptsLeft);
 
     // ---- Chain tab: which rack is being viewed ---------------------------

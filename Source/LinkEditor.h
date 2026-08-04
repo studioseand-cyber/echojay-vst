@@ -495,6 +495,28 @@ public:
             repaint();
         }
 
+        /** Rack (host) index to model index. The wire and the sidecar both
+            speak RACK slots; the panel is indexed by MODEL slots, which also
+            contain unresolved entries with hostIdx = -1. Returns -1 when no
+            live slot answers to that rack index, which is the honest answer
+            for a plugin that failed to load on this Link. */
+        int modelIdxForHostIdx(int hostIdx) const
+        {
+            if (hostIdx < 0) return -1;
+            const auto& model = proc.getChainModel();
+            for (int i = 0; i < (int)model.size(); ++i)
+                if (model[(size_t)i].hostIdx == hostIdx) return i;
+            return -1;
+        }
+
+        /** Bring whichever editor is currently up to the front. Inline
+            editors ride the Link window (already raised by the caller), so
+            only a pop-out needs its own raise. */
+        void raiseOpenEditor()
+        {
+            if (popout != nullptr) popout->toFront(true);
+        }
+
         bool canPopOut() const
         {
             auto& model = proc.getChainModel();

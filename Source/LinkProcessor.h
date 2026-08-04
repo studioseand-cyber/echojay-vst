@@ -120,6 +120,20 @@ public:
     /// sync its toggle — a stale ON toggle writing itself back into the
     /// processor is a re-activation path.
     std::function<void()> onLinkStateChanged;
+    /** STAGE 1 REMOTE EDITOR. The main plugin asks this Link to open one of
+        its OWN hosted editors, in its OWN window. Nothing is transferred and
+        nothing about the audio changes: the instance being edited is the one
+        already in the signal path, so the user hears every change instantly,
+        which is the whole reason this beats moving state or moving audio.
+
+        Set by LinkEditor while it exists. NULL IS THE ANSWER, not a failure:
+        no editor means the Link's window is closed, and only a window can
+        show a window. The caller reports that honestly rather than silently
+        doing nothing.
+
+        Takes a 0-based rack index, returns true only if an editor was
+        actually brought up. Message thread. */
+    std::function<bool(int)> onOpenSlotEditor;
 
     // ========================================================================
     // Chain hosting (phase 1) — chains arrive from the main plugin.

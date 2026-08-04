@@ -722,3 +722,39 @@ between two release-stores. That is also why RAISING the publish rate above
 10 Hz would be cheap if it is ever wanted; the only real constraint there is
 dataMutex, which processBlock also takes, so a faster publish means more
 contention with each Link's audio thread.
+
+## QUEUED: the audio ring has no resync (4 Aug 2026)
+
+NOT A BUG TODAY, and that is exactly why it is written down: capture tolerates
+it because nothing notices, so it will surface later wearing someone else's
+clothes.
+
+LinkShm::ringConsume advances readIdx by AT MOST numFrames per call:
+
+    const uint32_t n = std::min((uint32_t)numFrames, w - r);
+
+Nothing anywhere skips readIdx forward. I checked every reference to it; the
+only other writer is the producer-side init. So the ring has no catch-up path
+of any kind.
+
+Consumes ARE skipped. PluginProcessor's per-slot drain does
+`if (!ls.lock.tryEnter()) continue;`, and any cycle in which the main plugin
+does not run is a cycle the Link still produced into. Every skip therefore adds
+one block of backlog PERMANENTLY, and backlog is monotonic: it only ever grows,
+up to the kLinkRingFrames ceiling (65536 frames, about 1.49 s at 44.1k) where
+ringProduce begins dropping frames instead.
+
+For capture this is invisible: you still get every sample, just later, into a
+file nobody is timing. For anything LIVE it is unbounded one-way drift. It also
+means the delay between a Link and its own meters can creep apart over a long
+session, which is the shape of bug that gets reported as "the meters lag" or
+"capture is out of sync with the project" long after the cause.
+
+THE FIX when it is wanted: a bounded backlog. If (w - r) exceeds a target,
+jump readIdx forward to w - target rather than draining one block at a time.
+That is a few lines, but it changes capture's sample continuity guarantee, so
+it needs its own pass and its own thought about what capture promises.
+
+Raised while investigating audio-monitoring for the remote editor (that design
+was not built; stage 1 asks the Link to open its own editor instead, where the
+ring is not in the path at all).
