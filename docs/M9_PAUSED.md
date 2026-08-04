@@ -261,6 +261,13 @@ These outlived the module and belong to the project. Each is in `docs/M9_PROPOSA
   Crystallizer's identity and a real EchoBoy map was filed under it. The tell is a local
   that is written and never read; the fix is to compare it and refuse, which is two lines
   and was always available.
+
+  **The refusal that replaced it carries its own measurement**, which is the part worth
+  copying: the fix refuses on a zero OSType rather than querying with it, and what makes
+  that safe to keep is the count taken afterwards -- **1,376 components resolved, 0
+  unresolved**. A refusal with no false-positive number is a rule someone later relaxes as
+  "probably too strict". The conformance gate recomputes it every run, so it stays a
+  measurement rather than becoming a claim about the past.
 - **VERIFICATION MUST READ WHAT THE CONSUMER READS.** Confirming a write by the writer's return value tests the writer, not the artefact. Five instances across four materials: `writeConfirm` reading the property plane that answers instantly; a stake id checked by eye rather than against `ScannedPlugin::pluginId`; three document writes checked only by the edit returning (shell-eaten backticks, a stale anchor, an anchor that never existed). Corollary: **a check that cannot fail is not a check.**
 - **THE MISPLACED GUARD.** The guard is present, so reading the code shows it there; only running the path shows it absent. Eight instances. Two distinct fixes: move the guard to the choke point every path already goes through, or, where a path never reaches one, give that path its own recording. Naming the class did not prevent it — the newest suite reproduced it with the rule in front of it.
 - **A NAME IS NOT EVIDENCE OF BEHAVIOUR.** Mono Maker mapped as `freq_hz`; X-Gate's Lower Threshold taken for its open point; bx_limiter's Release taken as a live probe parameter. Each time the name was correct and the behaviour was not what the name implied.
