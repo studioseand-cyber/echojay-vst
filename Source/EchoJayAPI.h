@@ -301,15 +301,36 @@ public:
     // sitting INSIDE the normal range — which presents as a flaky classifier
     // rather than as a number that is too small.
     //
-    // An 8-hour latency sampler is running as of 3 Aug 2026. Treat both
-    // numbers as provisional until it lands and expect to change them: they
-    // are two constants in one place for exactly that reason.
+    // MEASURED, 4 Aug 2026 — call 1 raised 3800 -> 4500, from real durations
+    // rather than the censored ones above. Every earlier mismatch reading was
+    // cut off at the server's own ceiling with inTok/outTok/intent all null,
+    // so the true cost was unknown. With that ceiling lifted to 8000 as
+    // instrumentation, six runs on the same laptop, model and facts
+    // (channel="Mix Bus", seven links, staged=chain_generate):
     //
-    // NOT comparable to the server's CLASSIFY_TIMEOUT_MS (3000). That is an
-    // AbortController around the model call alone; these cover the whole
-    // round trip — network out, auth, getUser, mode resolution, the rate
-    // limiter, the model call, the response, network back.
-    static constexpr int kClassifyBudgetMs         = 3800;
+    //   mismatch turn (the slowest shape)  median 2886 ms, max 3044 ms
+    //                                      6130 in / 188-198 out
+    //   plain chat turn                    1993 ms, 35 out
+    //   needs_scoping (question split out) median 1962 ms, 43 out
+    //
+    // Output volume is the whole cost: ~194 tokens against 35 is 5.6x, and
+    // generation is serial. The server ceiling moved 3000 -> 4000 on the same
+    // measurement (max 3044, so ~950 ms headroom).
+    //
+    // 4500 HERE BECAUSE THIS BUDGET SPANS MORE THAN THE SERVER'S. The server
+    // ceiling is an AbortController around the model call ALONE; this covers
+    // the whole round trip — network out, auth, getUser, mode resolution, the
+    // rate limiter, the model call, the response, network back. On the worst
+    // observed turn that is 3044 model + ~200-330 pre-model + ~300 network
+    // ≈ 3650, which 3800 cleared by ~150 ms — inside the noise. 4500 sits
+    // ~850 ms above it and ~500 ms above the server's own ceiling, so the
+    // server's fallback reaches the client instead of the client giving up
+    // first on a call that was about to answer.
+    //
+    // Call 2 stays at 2800: it was measured on 4 Aug at median 2590 ms
+    // (769 in / 68-71 out) and has the tighter spread, so it keeps the
+    // tighter budget. Do not raise it in sympathy.
+    static constexpr int kClassifyBudgetMs         = 4500;
     static constexpr int kClassifyQuestionBudgetMs = 2800;
 
     /** Call 1. Calls back EXACTLY ONCE on the message thread.
