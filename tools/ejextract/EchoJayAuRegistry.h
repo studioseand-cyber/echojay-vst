@@ -191,9 +191,27 @@ namespace detail
         component description we can look up. Kept private: callers deal in
         identifiers, never in OSTypes.
     */
+    /** MEASURE WHAT YOU READ. This guarded on the TRIMMED length and then read
+        four UNTRIMMED bytes, so every space-padded OSType -- and AU subtypes
+        shorter than four characters are space-padded, "CR  ", "PM  ", "EB  " --
+        failed the guard and returned 0.
+
+        0 is not an error value to AudioComponentFindNext. It is a WILDCARD, so
+        the caller silently received the first component matching type and
+        manufacturer instead of the one it asked for: all 17 space-padded
+        Soundtoys aufx components resolved to Crystallizer and all 3 aumf ones
+        to EffectRack, sharing one uid, one identity key and four fingerprint
+        collisions between them. Measured 4 Aug 2026; Little Plate ("LPL8", a
+        full four characters) was the only Soundtoys AU that survived, which is
+        the control case.
+
+        Exactly four BYTES, because exactly four bytes are read. A longer token
+        is a mis-parse and a multi-byte character would make the indexing below
+        read something other than what it counted.
+    */
     inline OSType stringToOSType (const juce::String& s)
     {
-        if (s.trim().length() < 4)
+        if (s.getNumBytesAsUTF8() != 4)
             return 0;
 
         auto utf8 = s.toUTF8();
@@ -228,6 +246,19 @@ namespace detail
         out.componentType         = stringToOSType (tokens[0]);
         out.componentSubType      = stringToOSType (tokens[1]);
         out.componentManufacturer = stringToOSType (tokens[2]);
+
+        // A ZERO IS A WILDCARD, NEVER A QUERY. AudioComponentFindNext treats a
+        // zero field as "match anything", so passing a failed parse through
+        // turns "which component is this identifier" into "give me any
+        // component" -- and it answers, confidently, with the wrong product.
+        // A component in the registry cannot legitimately carry a zero code in
+        // any of the three fields, so this refuses rather than asks.
+        if (out.componentType == 0 || out.componentSubType == 0
+             || out.componentManufacturer == 0)
+        {
+            juce::zerostruct (out);
+            return false;
+        }
         return true;
     }
 }
@@ -263,6 +294,22 @@ inline juce::PluginDescription describeFromRegistry (const juce::String& identif
     // the identifier does not carry come from here, not from our parse.
     AudioComponentDescription actual {};
     if (AudioComponentGetDescription (comp, &actual) != noErr)
+        return desc;
+
+    // A MEASUREMENT TAKEN AND NOT COMPARED IS NOT A CHECK. `actual` was
+    // already being fetched here and then discarded, so when the lookup above
+    // matched a DIFFERENT component -- which it did for every space-padded
+    // subtype, via the zero-wildcard defect fixed in stringToOSType -- this
+    // function had the evidence in hand and returned the wrong product's name,
+    // vendor and uid anyway. The identifier is the question; the found
+    // component must be the answer to THAT question or there is no answer.
+    //
+    // This is the second, independent guard: the parse could be wrong again in
+    // some future form, and a caller must never receive a description for a
+    // component it did not name.
+    if (actual.componentType         != cd.componentType
+         || actual.componentSubType      != cd.componentSubType
+         || actual.componentManufacturer != cd.componentManufacturer)
         return desc;
 
     // AudioComponentCopyName reads registry metadata. It does not open the

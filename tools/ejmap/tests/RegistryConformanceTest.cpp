@@ -120,6 +120,69 @@ int main (int, char**)
         return 0;
     }
 
+    // IDENTITY COLLAPSE, checked over the WHOLE registry and not the sample.
+    // This costs one census walk and no instantiation, and it is the check the
+    // sample structurally cannot make: a collapse is invisible one plugin at a
+    // time and obvious in a column of uids.
+    //
+    // The defect it pins (4 Aug 2026): stringToOSType guarded on the TRIMMED
+    // length and then read four UNTRIMMED bytes, so every space-padded AU
+    // subtype -- "CR  ", "PM  ", "EB  " -- returned 0, and 0 is a WILDCARD to
+    // AudioComponentFindNext. Seventeen Soundtoys aufx components resolved to
+    // Crystallizer's name and uid, three aumf ones to EffectRack, and a real
+    // EchoBoy map was filed under Crystallizer's identity.
+    {
+        std::map<juce::String, juce::StringArray> byUid;
+        int padded = 0, paddedResolved = 0, unresolved = 0;
+        for (const auto& t : census.targets)
+        {
+            const auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+            if (d.name.isEmpty()) { ++unresolved; continue; }
+            byUid[juce::String::toHexString (d.uniqueId)].add (t.identifier);
+
+            // The subtype sits between the two commas of the tail.
+            const auto tail = t.identifier.fromLastOccurrenceOf ("/", false, false);
+            juce::StringArray parts;
+            parts.addTokens (tail, ",", juce::StringRef());
+            if (parts.size() == 3 && parts[1].containsChar (' '))
+            {
+                ++padded;
+                if (d.name.isNotEmpty()) ++paddedResolved;
+            }
+        }
+
+        // Every space-padded subtype must resolve, and to ITS OWN identity.
+        int paddedSharing = 0;
+        for (auto& kv : byUid)
+            if (kv.second.size() > 1)
+                for (const auto& id : kv.second)
+                {
+                    const auto tail = id.fromLastOccurrenceOf ("/", false, false);
+                    juce::StringArray parts;
+                    parts.addTokens (tail, ",", juce::StringRef());
+                    if (parts.size() == 3 && parts[1].containsChar (' ')) ++paddedSharing;
+                }
+
+        check (padded == 0 || paddedResolved == padded,
+               "every space-padded AU subtype resolves (" + juce::String (paddedResolved)
+                 + " of " + juce::String (padded) + ")");
+        check (paddedSharing == 0,
+               "no space-padded subtype shares a uid with another component ("
+                 + juce::String (paddedSharing) + " sharing)");
+        std::cout << "identity: " << census.targets.size() << " components, "
+                  << padded << " space-padded subtype(s), " << unresolved
+                  << " unresolved" << std::endl;
+
+        // Components that share a uid are reported ALWAYS, because the ones
+        // that remain are a different defect (JUCE's uid formula collides for
+        // Waves Sibilance-Live / EMO-Generator) and must not be mistaken for
+        // this one returning.
+        for (auto& kv : byUid)
+            if (kv.second.size() > 1)
+                std::cout << "  NOTE uid " << kv.first << " shared by "
+                          << kv.second.joinIntoString (", ") << std::endl;
+    }
+
     auto sample = chooseSample (census);
     std::cout << "sample: " << sample.size() << " plugin(s), max " << kMaxSample
               << ", one per vendor" << std::endl;

@@ -19,6 +19,7 @@
 #include "EjmapBuildInfo.h"
 #include "EjmapSupervisor.h"
 
+#include <map>
 #include <csignal>
 #include <unistd.h>
 #include <signal.h>
@@ -433,6 +434,50 @@ namespace
     int runHeadlessCli (int argc, char* argv[])
     {
         juce::String release, qId, qReason, qStage { "load" }, report;
+
+        // --registry-report [substring]
+        // Every AU component the registry holds, resolved through the SAME
+        // describeFromRegistry the scan and every load path use, printed as
+        // identifier / name / uid / version. Headless and read-only: it
+        // touches no ledger, so it can be run against a live session.
+        //
+        // Built 4 Aug 2026 to answer whether identities collapse. It is the
+        // check that would have caught the space-padded-subtype defect on the
+        // day it landed, because a collapse is invisible one plugin at a time
+        // and obvious in a column of uids.
+        for (int i = 1; i < argc; ++i)
+            if (juce::String (argv[i]) == "--registry-report")
+            {
+                const juce::String filter = (i + 1 < argc && argv[i + 1][0] != '-')
+                                              ? juce::String (argv[i + 1]).unquoted().toLowerCase()
+                                              : juce::String();
+                auto census = echojay::auregistry::buildCensus();
+                std::cout << "registry: " << census.targets.size() << " components" << std::endl;
+                std::map<juce::String, int> uidCount;
+                juce::Array<juce::String> lines;
+                int unresolved = 0;
+                for (const auto& t : census.targets)
+                {
+                    auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+                    const auto uid = juce::String::toHexString (d.uniqueId);
+                    if (d.name.isEmpty()) ++unresolved;
+                    else ++uidCount[uid];
+                    if (filter.isEmpty() || t.identifier.toLowerCase().contains (filter)
+                         || d.name.toLowerCase().contains (filter)
+                         || d.manufacturerName.toLowerCase().contains (filter))
+                        lines.add (t.identifier + "\t" + (d.name.isEmpty() ? "(UNRESOLVED)" : d.name)
+                                     + "\t" + uid + "\t" + d.version);
+                }
+                for (const auto& l : lines) std::cout << l << std::endl;
+                int shared = 0, entriesOnShared = 0;
+                for (auto& kv : uidCount)
+                    if (kv.second > 1) { ++shared; entriesOnShared += kv.second; }
+                std::cout << "resolved with a name: " << (census.targets.size() - unresolved)
+                          << " | unresolved (refused, not guessed): " << unresolved
+                          << " | uids shared by >1 component: " << shared
+                          << " covering " << entriesOnShared << " components" << std::endl;
+                return 0;
+            }
 
         for (int i = 1; i < argc; ++i)
         {
