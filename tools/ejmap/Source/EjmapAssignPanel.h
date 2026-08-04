@@ -1890,6 +1890,38 @@ public:
         updateQuestion();
         resized();
     }
+    /** Clear every piece of in-progress state so the wizard can start again on
+        the same loaded plugin. Written for Restart, and deliberately explicit
+        rather than a memset: the stale-state bug this exists to recover from
+        was controlsWiggleTarget surviving a stage change, so a reset that
+        quietly missed a field would be the same defect wearing a fix. */
+    void resetAll()
+    {
+        rows.clear();
+        controlEntries.clear();
+        controlsExcluded.clear();
+        controlsPhase = false;
+        controlsExpanded = false;
+        controlsCursor = 0;
+        controlsRowIndex = -1;
+        controlsWiggleTarget = -1;      // the field that caused the interleave
+        controlsTypedEntry = -1;
+        controlsSkippedClaimed = 0;
+        controlsSkippedMasked = 0;
+        selected = 0;
+        tierCursor = 0;
+        awaitingCaptureRow = -1;
+        bandStep = BandStep::none;
+        bandCursor = 0;
+        bandWiggleTarget = -1;          // the band-stage twin of the same field
+        bandsRowIndex = -1;
+        ignoreRows.clear();
+        summaryText.setVisible (false);
+        list.updateContent();
+        updateQuestion();
+        resized();
+    }
+
     bool controlsPhase = false;
     bool controlsExpanded = false;
     int  controlsCursor = 0;

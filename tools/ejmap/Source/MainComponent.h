@@ -141,6 +141,10 @@ public:
         uploadButton.onClick = [this] { openUploadCard(); };
 
 
+        addAndMakeVisible (restartButton);
+        restartButton.setButtonText ("Restart map");
+        restartButton.onClick = [this] { restartMap(); };
+
         addAndMakeVisible (deepToggle);
         deepToggle.setButtonText ("Deep");
         deepToggle.onClick = [this] { assignPanel.deepMode = deepToggle.getToggleState(); };
@@ -6861,6 +6865,7 @@ public:
         assignButton.setBounds (top.removeFromLeft (76));
         top.removeFromLeft (6);
         uploadButton.setBounds (top.removeFromLeft (130));
+        restartButton.setBounds (top.removeFromLeft (95));
         top.removeFromLeft (6);
         deepToggle.setBounds (top.removeFromLeft (64));
         top.removeFromLeft (6);
@@ -7992,6 +7997,55 @@ private:
                                            const juce::String& cat, const juce::String& lane)
         { submitMap (rws, cat, lane); };
         assignPanel.hooks.exitPanel = [this] { endAssignment(); };
+    }
+
+    /** RESTART THE MAP IN PROGRESS. Local only: it clears this machine's
+        in-progress session for the loaded plugin and returns to the start of
+        the wizard with the plugin still loaded. Nothing is sent, nothing on
+        the server is touched.
+
+        IT LEAVES AN EXISTING MAP FILE ALONE. maps/<fp>.json is the map you
+        already finished; a restart is the start of a replacement, not the
+        destruction of the thing being replaced. If you abandon the restart you
+        still have the old map, and the next successful submit overwrites it in
+        the ordinary way. Deleting it here would mean a restart you thought
+        better of cost you a finished map.
+    */
+    void restartMap()
+    {
+        if (currentFp.isEmpty())
+        { status.setText ("Nothing to restart: no plugin is loaded.",
+                          juce::dontSendNotification); return; }
+
+        auto sessionFile = ledger.getRoot().getChildFile ("assign-" + currentFp + ".json");
+        auto mapFile     = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
+        const bool haveSession = sessionFile.existsAsFile();
+        const bool haveMap     = mapFile.existsAsFile();
+
+        juce::String q;
+        q << "Restart the map for " << loadedName << "?\n\n"
+          << "This DESTROYS the in-progress work on this machine:\n"
+          << "  - every assignment, capture and trust record for this session\n"
+          << "  - the controls stage and anything accepted in it\n"
+          << (haveSession ? "  - " + sessionFile.getFileName() + "\n" : "  (no saved session on disk)\n")
+          << "\nIt does NOT touch the server, and it does NOT delete "
+          << (haveMap ? "your existing map (" + mapFile.getFileName() + ") -- that stays until a new "
+                        "submit replaces it."
+                      : "anything else; there is no finished map for this fingerprint yet.");
+
+        juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::WarningIcon,
+            "Restart map", q, "Restart", "Cancel", nullptr,
+            juce::ModalCallbackFunction::create ([this, sessionFile] (int r)
+            {
+                if (r != 1) { status.setText ("Restart cancelled; nothing was cleared.",
+                                              juce::dontSendNotification); return; }
+                sessionFile.deleteFile();
+                assignPanel.resetAll();
+                status.setText ("Map restarted. The plugin is still loaded; the wizard is back "
+                                "at the start and your previous map, if any, is untouched.",
+                                juce::dontSendNotification);
+                startAssignment();
+            }));
     }
 
     void startAssignment()
@@ -9983,7 +10037,7 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
-    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton, uploadButton;
+    juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton, uploadButton, restartButton;
     juce::ToggleButton deepToggle;
     AssignPanel assignPanel;
     bool assigning = false;
