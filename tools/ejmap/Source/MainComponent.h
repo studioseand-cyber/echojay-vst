@@ -7161,7 +7161,24 @@ private:
         lastScan.vst3Probed         = xml->getIntAttribute ("vst3_probed");
         cacheErrors                 = xml->getIntAttribute ("errors");
 
+        // COLUMN 1 READS DISK, SO IT MUST BE READ HERE TOO. Restoring the
+        // cache rebuilds every row; without this the local-map set stays empty
+        // and every tick reads as a dot until a full rescan -- five minutes,
+        // unresumable, and needed only to re-learn what maps/ already knows.
+        //
+        // That is the state after EVERY restart and every crash, which over a
+        // campaign of several hundred plugins is a certainty, and it makes the
+        // column useless exactly when it matters: after losing the session.
+        //
+        // Measured 4 Aug 2026: the five existing call sites are two diagnostic
+        // modes, the scan, the map save and the send. None runs at startup --
+        // though the comment at the map-save site claimed one refreshed "at
+        // cache load", which is why enumerating the calls beat reading about
+        // them.
+        refreshLocalMapIdentities();
+
         applyFilter();
+        logColumns ("cache restored");
         return true;
     }
 
@@ -8435,7 +8452,8 @@ private:
         // one wrote a local file, the other sent to the server, and the same
         // word for both made a finished map read as a completed send.
         // THE MAP JUST CHANGED ON DISK, so the column that reads disk must be
-        // told. It was refreshed at scan, at cache load and after a send --
+        // told. Refreshed at scan, at CACHE RESTORE (added 4 Aug 2026 -- this
+        // comment previously claimed it and no such call existed) and after a send --
         // none of which is "the wizard wrote a map", which is exactly when
         // column 1 becomes true.
         refreshLocalMapIdentities();
