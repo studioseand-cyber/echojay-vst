@@ -887,3 +887,73 @@ that fallback, because even those two are a claim.
    controls, a Scheps map is dialable by a request nobody can phrase — and then this class
    belongs with Auto-Key in item 6 as a deliberate non-processor, recorded and dismissed
    rather than mapped.
+
+---
+
+## 12. THE HUMAN-TYPED READBACK GATE — proposal only, agree the shape before building
+
+**The case, measured 4 Aug 2026.** TBTECH Cenozoix Compressor's map is refused by
+`structuralGate` with *"params present but zero matching readback evidence: the map was never
+write-back verified"*. Its six readback entries all carry an **empty** `read` — the plugin
+returns nothing from `getCurrentValueAsText()` — and every one of its params is
+`method: "human-typed"` with 5 anchors. The mapper typed the table **precisely because** the
+display was unreadable. This is the plugin already on record as 99 params with 0 nameable
+controls.
+
+So the gate demands a display readback from a plugin that has no display, and the answer it
+demands cannot exist. **A human-typed table is stronger evidence about the mapping than a
+display read, not weaker** — a human read the plugin's own UI and wrote down what it said,
+where a display read only proves the host can echo a number back to itself.
+
+### The shape proposed
+
+**The gate should stop asking one question of two different things.** Today it asks "did any
+parameter verify by readback", which conflates *was this map verified* with *was it verified
+BY READBACK*. Split it:
+
+- a param whose `method` is `setread` or `gettext` **must** carry a matching readback, exactly
+  as now — nothing is relaxed for the ordinary path;
+- a param whose `method` is `human-typed` satisfies the gate **without** a readback, because
+  the verification it carries is a different and declared one.
+
+**What stops it becoming a bypass**, which is the real risk and the reason not to build this
+yet:
+
+1. **`human-typed` must be earned, not asserted.** It is set by the typed-anchor flow, which
+   runs only after a sweep has been ATTEMPTED and refused (`sw.flat`, or a non-parsing
+   display). The gate should require that evidence to be present — the map should carry why
+   the sweep could not be used, per parameter. Today it records the method and not the
+   reason, so **this is the piece that needs building first**, and it is the honest place to
+   start.
+2. **A typed table still has to be internally coherent**: monotonic, at least N points, values
+   inside the parameter's own declared range. A typed table that is not monotonic is a
+   mis-typing and should refuse.
+3. **The map must SAY which lane each param passed by.** A consumer reading the map should be
+   able to tell a display-verified param from a typed one without inferring it from `method`,
+   and the count should appear in the submit line — "readback 1/2, typed 4/4" rather than a
+   single ratio that hides the mixture.
+4. **A map where EVERY param is typed and NONE was verifiable is worth flagging** even if it
+   passes, because that is the shape a fabricated map would also have. Flag, not refuse: it
+   is also the shape a legitimately display-less plugin has, which is exactly Cenozoix.
+
+### What is NOT proposed
+
+Relaxing the readback requirement for `setread` params. The three rejections that started
+this were ADA (a real parser defect, fixed), Cenozoix (this item), and SPL Vitalizer (parked,
+below) — and only Cenozoix's is an argument about the gate's question being wrong.
+
+**Do not build until the shape is agreed.** The gate decides what enters the corpus, and a
+bypass here is indistinguishable from a fabricated map at the point where it matters.
+
+---
+
+## 13. PARKED: SPL Vitalizer MK2-T, two indices returning one display
+
+`drive` at index 2 ("Drive") and `output_db` at index 10 ("Output Gain"), 17 anchors each,
+both `setread`. On a live re-verify both read back the **same** string, `-2.89 dB`, for
+different asked values (2.355 and 1.57).
+
+Two different indices returning one display needs a live probe to explain — a shared meter, a
+read landing on the wrong control, or a plugin that ignores host writes without its UI open.
+**Not diagnosed, and deliberately not guessed at**: an asserted cause gets believed and acted
+on. One plugin, parked; ADA (fixed) and Cenozoix (item 12) are the general cases.
