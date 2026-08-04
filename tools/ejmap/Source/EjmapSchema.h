@@ -190,6 +190,79 @@ struct AnchorPoint
 };
 
 //==============================================================================
+/** THE READBACK PROBE, in one place.
+
+    The old rule asked for the MIDPOINT of the two middle anchors and allowed
+    60% of that same gap. On a quantised parameter the plugin can only land on
+    one of those two anchors, and both are 50% away, so both passed: the check
+    could not fail. Measured on Dangerous BAX EQ Master -- anchors
+    18000/12600, ask 15300, landed 12600, miss 2700, tolerance 3240, verified.
+    A check that cannot fail is not a check.
+
+    Three changes, and each has a reason:
+
+    1. ASK OFF-CENTRE, at 25% of the gap. The nearest step is then unambiguous
+       -- 25% away against 75% -- so "it landed on the nearest step" becomes a
+       statement with a false case.
+    2. LANDING ON THE FAR ANCHOR IS A FAILURE, stated rather than left to
+       arithmetic. This is the failure mode the old rule could not express.
+    3. PROPORTIONAL TOLERANCE FOR FREQUENCY. A fraction of the anchor span is
+       backwards for Hz: 2% of a 7.5k-70k span is 1250 Hz, which is 17% at the
+       bottom of the range and 1.8% at the top, while the error that matters to
+       an ear is proportional. Frequency gets 3% of the asked value.
+
+    A quantised parameter still passes, by landing on the NEAREST anchor. A
+    continuous one still passes, by landing near the ask. What no longer passes
+    is landing on the wrong one of the two.
+*/
+struct ReadbackProbe
+{
+    bool   valid   = false;
+    double ask     = 0.0;   // what to write
+    double nearest = 0.0;   // the step a quantised parameter should snap to
+    double far     = 0.0;   // the other anchor: landing here is a failure
+    double tol     = 0.0;
+
+    /** The single decision. Kept beside the plan so the two can never drift:
+        one function builds the question, the same struct answers it.
+    */
+    bool matches (double landed) const
+    {
+        if (! valid) return false;
+        // Landing closer to the anchor we deliberately asked AWAY from is a
+        // fail whatever the tolerance says.
+        if (std::abs (landed - far) < std::abs (landed - nearest)) return false;
+        return std::abs (landed - ask) <= tol || std::abs (landed - nearest) <= tol;
+    }
+};
+
+inline ReadbackProbe planReadback (const juce::Array<juce::Array<float>>& anchors,
+                                   const juce::String& semantic)
+{
+    ReadbackProbe p;
+    if (anchors.size() < 3) return p;              // as before: needs a middle
+
+    const int mid = anchors.size() / 2;
+    const double a = anchors[mid - 1][0], b = anchors[mid][0];
+    if (std::abs (b - a) < 1.0e-9) return p;       // a degenerate pair decides nothing
+
+    p.nearest = a;
+    p.far     = b;
+    p.ask     = a + 0.25 * (b - a);
+
+    double lo = anchors.getFirst()[0], hi = lo;
+    for (const auto& an : anchors) { lo = juce::jmin (lo, (double) an[0]); hi = juce::jmax (hi, (double) an[0]); }
+
+    if (echojay::semanticUnit (semantic) == "hz")
+        p.tol = juce::jmax (0.03 * std::abs (p.ask), 0.5);   // proportional, with a floor
+    else
+        p.tol = juce::jmax (0.02 * (hi - lo), 0.05);
+
+    p.valid = true;
+    return p;
+}
+
+//==============================================================================
 struct ParamMapping
 {
     juce::String semantic;                  // "freq_hz", "threshold_db"

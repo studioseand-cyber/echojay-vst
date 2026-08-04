@@ -1525,6 +1525,50 @@ void testSubjectLookups()
            "excitation: the plan describes itself, including WHY a step exists");
 }
 
+/** THE READBACK PROBE HAS A FALSE CASE, which the rule it replaced did not.
+
+    The old rule asked the MIDPOINT of two anchors and allowed 60% of that gap,
+    so on a quantised parameter both possible landings passed and the check
+    could not fail. These assertions are the ones that would have caught that:
+    landing on the far anchor must FAIL.
+*/
+void testReadbackProbe()
+{
+    // A coarse ladder, descending, as Dangerous BAX EQ Master's high cut is.
+    juce::Array<juce::Array<float>> anchors;
+    for (float v : { 70000.0f, 28000.0f, 18000.0f, 12600.0f, 11100.0f, 9000.0f, 7500.0f })
+    {
+        juce::Array<float> a; a.add (v); a.add (0.5f); anchors.add (a);
+    }
+
+    const auto p = ejmap::planReadback (anchors, "high_cut_freq_hz");
+    check (p.valid, "probe: a 7-anchor ladder yields a plan");
+    check (std::abs (p.ask - 16650.0) < 1.0,
+           "probe: the ask is 25% off-centre (16650), not the midpoint (15300)");
+    check (std::abs (p.nearest - 18000.0) < 1.0 && std::abs (p.far - 12600.0) < 1.0,
+           "probe: nearest and far are unambiguous at a 25% ask");
+
+    check (p.matches (18000.0),
+           "probe: landing on the NEAREST step passes (a quantised parameter is still verified)");
+    check (! p.matches (12600.0),
+           "probe: landing on the FAR step FAILS -- the case the old rule could not express");
+    check (p.matches (16650.0),
+           "probe: landing exactly on the ask passes (a continuous parameter)");
+    check (! p.matches (9000.0),
+           "probe: landing two steps away fails");
+
+    // Proportional tolerance for frequency, a fraction of range for the rest.
+    check (std::abs (p.tol - 0.03 * 16650.0) < 1.0,
+           "probe: _hz tolerance is proportional to the ask, not a fraction of range");
+
+    juce::Array<juce::Array<float>> db;
+    for (float v : { -24.0f, -18.0f, -12.0f, -6.0f, 0.0f })
+    { juce::Array<float> a; a.add (v); a.add (0.5f); db.add (a); }
+    const auto q = ejmap::planReadback (db, "threshold_db");
+    check (q.valid && std::abs (q.tol - juce::jmax (0.02 * 24.0, 0.05)) < 1.0e-6,
+           "probe: a dB parameter keeps the fraction-of-range tolerance");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -1546,6 +1590,7 @@ int main (int, char**)
     testLockstepAndTierFields();
     testAgainstRealMaps();
     testSubjectLookups();
+    testReadbackProbe();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

@@ -9231,10 +9231,10 @@ private:
                 p.params.add (m);
 
                 // Write-back verify through the real interpolation.
-                if (r.sweep.anchors.size() >= 3)
+                const auto probe = ejmap::planReadback (r.sweep.anchors, r.semantic);
+                if (probe.valid)
                 {
-                    const int mid = r.sweep.anchors.size() / 2;
-                    const float vAsk = 0.5f * (r.sweep.anchors[mid][0] + r.sweep.anchors[mid - 1][0]);
+                    const float vAsk = (float) probe.ask;
                     const float n = juce::jlimit (0.0f, 1.0f,
                                         echojay::interpolateAnchors (r.sweep.anchors, vAsk));
                     writeNormGesture (r.resolvedIndex, n);
@@ -9276,11 +9276,6 @@ private:
                     // "-oo" at a dB floor is fully attenuated, the same reading
                     // applyOne's untouched-check makes.
                     const double vLanded = negInf ? -120.0 : (double) vLandedF;
-                    float lo = r.sweep.anchors.getFirst()[0], hi = lo;
-                    for (const auto& a : r.sweep.anchors)
-                    { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
-                    const float tol = juce::jmax (0.02f * (hi - lo),
-                                        0.6f * std::abs (r.sweep.anchors[mid][0] - r.sweep.anchors[mid - 1][0]));
                     ReadbackResult rb;
                     rb.semantic = r.semantic;
                     rb.asked = juce::String (vAsk, 4);
@@ -9289,7 +9284,9 @@ private:
                     // A read taken without a settle is not evidence. Say so
                     // rather than scoring it, so an off-message-thread caller
                     // cannot silently produce a map full of stale reads.
-                    rb.match = settled && parsed && std::abs ((float) vLanded - vAsk) <= tol;
+                    // ONE implementation of the rule, in EjmapSchema.h beside the
+                    // plan that produced the question.
+                    rb.match = settled && parsed && probe.matches (vLanded);
                     if (! settled) rb.read = landed + "  [UNSETTLED: read without a display "
                                                       "settle; not evidence]";
                     p.evidence.readback.add (rb);
