@@ -52,7 +52,9 @@ public:
         bool cacheTest = false, progressTest = false;
         juce::String attributeReport, afterExit, captureTestId, maskTestId, stallId, promoSuppressId;
         juce::String sweepTestId, sweepTestParam, typedTestId, typedTestParam, assignTestId;
-        juce::String bandTestId, bandTestMembers, bandTestImposter, catTestId;
+        juce::String bandTestId, bandTestMembers, bandTestImposter, catTestId, dupTestId;
+        juce::String fitTestId; int fitHoldSeconds = 0;
+        juce::String mbandsTestId, mbandsMode;
         juce::String applyMapId, applyMapPath, applyMapImposter;
         juce::String ctrlTestId, ctrlTestMode, ctrlTestLabel, ctrlTestNames;
         juce::String uploadTestId, uploadTestMap, uploadTestTester;
@@ -98,6 +100,20 @@ public:
                 assignTestId = args[++i];
             else if (args[i] == "--selftest-category" && i + 1 < args.size())
                 catTestId = args[++i];
+            else if (args[i] == "--selftest-dupescape" && i + 1 < args.size())
+                dupTestId = args[++i];
+            else if (args[i] == "--selftest-manualbands" && i + 1 < args.size())
+            {
+                mbandsTestId = args[++i];
+                if (i + 1 < args.size() && ! args[i + 1].startsWith ("--"))
+                    mbandsMode = args[++i];
+            }
+            else if (args[i] == "--selftest-editorfit" && i + 1 < args.size())
+            {
+                fitTestId = args[++i];
+                if (i + 1 < args.size() && ! args[i + 1].startsWith ("--"))
+                    fitHoldSeconds = args[++i].getIntValue();
+            }
             else if (args[i] == "--selftest-upload" && i + 3 < args.size())
             { uploadTestId = args[i+1]; uploadTestMap = args[i+2]; uploadTestTester = args[i+3]; i += 3; }
             else if (args[i] == "--selftest-controls" && i + 1 < args.size())
@@ -281,6 +297,21 @@ public:
         {
             auto id = catTestId; auto* m = mainWindow->getMain();
             juce::MessageManager::callAsync ([m, id] { m->selfTestCategory (id); });
+        }
+        else if (dupTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = dupTestId; auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id] { m->selfTestDupEscape (id); });
+        }
+        else if (mbandsTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = mbandsTestId; auto md = mbandsMode; auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id, md] { m->selfTestManualBands (id, md); });
+        }
+        else if (fitTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = fitTestId; auto hs = fitHoldSeconds; auto* m = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m, id, hs] { m->selfTestEditorFit (id, hs); });
         }
         else if (bandTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {

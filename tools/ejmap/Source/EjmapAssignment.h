@@ -281,6 +281,43 @@ struct AssignRow
     */
     bool sharedInsisted = false;
 
+    /** MANUAL BAND ENTRY (M5b). A synthesised row standing for one slot of one
+        band: "band 2 frequency". It resolves through the flow the mapper
+        already knows -- touch, W, confirm -- and the panel assembles the
+        groups from these rows at accept.
+
+        bandOrdinal is the 1-based slot the mapper was asked about, and is NOT
+        the band's final n: the order is derived from the frequencies at accept
+        (see GroupSpec::orderingSource), so a mapper who enters LF second still
+        gets the low band numbered first.
+
+        typedFreqHz / freqSource carry a frequency that was TYPED rather than
+        swept -- the graphic-EQ case, where the band has no frequency parameter
+        at all and the number is transcribed off the panel.
+    */
+    int bandOrdinal = -1;
+    juce::String bandLabel;
+    double typedFreqHz = 0.0;
+    juce::String freqSource;               // "swept" | "typed_fixed" | "typed_parametric"
+
+    bool isBandMemberRow() const { return kind == "band_member"; }
+
+    /** WHAT MAKES TWO ROWS THE SAME SLOT. Everywhere else in this file a row
+        is identified by its semantic, because a checklist holds one row per
+        semantic. Band-member rows break that: four bands all carry freq_hz,
+        and they are four different questions.
+
+        Two places consumed the bare semantic and would both be wrong here --
+        supersedeSiblings (confirming band 2's freq would DEFER band 1's) and
+        buildRows' merge of preserved rows (band 1's freq would overwrite band
+        2's on a category change). Both ask this instead.
+    */
+    juce::String slotKey() const
+    {
+        return isBandMemberRow() ? "band" + juce::String (bandOrdinal) + ":" + semantic
+                                 : semantic;
+    }
+
     juce::Array<int> coMoved;
     SweepOutcome sweep;
     juce::String resolvedAt;               // ISO 8601
@@ -342,6 +379,16 @@ struct AssignRow
         o->setProperty ("trust", trust);
         o->setProperty ("skip_reason", skipReason);
         o->setProperty ("resolved_at", resolvedAt);
+        if (bandOrdinal > 0)
+        {
+            o->setProperty ("band_ordinal", bandOrdinal);
+            o->setProperty ("band_label", bandLabel);
+        }
+        if (freqSource.isNotEmpty())
+        {
+            o->setProperty ("freq_source", freqSource);
+            if (typedFreqHz > 0.0) o->setProperty ("typed_freq_hz", typedFreqHz);
+        }
         juce::Array<juce::var> anch;
         for (const auto& a : sweep.anchors)
         { juce::Array<juce::var> p; p.add (a[0]); p.add (a[1]); anch.add (juce::var (p)); }
@@ -358,6 +405,12 @@ struct AssignRow
     CONFIRMED [8] on API-2500). Surface rows are excluded: their -1 is a
     placeholder, not a claim. sharedInsisted pairs are exempt by decision.
 
+    A row with NO index claims no index: resolvedIndex < 0 is excluded for the
+    same reason surface rows are. A fixed-frequency band (a graphic EQ's 250 Hz
+    slider) confirms its frequency as a transcribed constant with no parameter
+    behind it, and two of those would otherwise collide at [-1] and refuse a
+    correct map -- the "[-1] bands AND controls" shape, one class wider.
+
     One implementation ONLY. The review screen and the submit path each had a
     copy of this rule; the review's learned the surface-row exclusion and the
     submit's did not, so the review showed clean and submit refused "[-1]
@@ -369,7 +422,8 @@ inline juce::StringArray duplicateIndexConflicts (const juce::Array<AssignRow>& 
     juce::StringArray out;
     std::map<int, juce::StringArray> byIndex;
     for (const auto& r : rows)
-        if (r.state == AssignRow::State::confirmed && ! r.sharedInsisted && ! r.isSurfaceRow())
+        if (r.state == AssignRow::State::confirmed && ! r.sharedInsisted && ! r.isSurfaceRow()
+             && r.resolvedIndex >= 0)
             byIndex[r.resolvedIndex].add (r.semantic);
     for (auto& kv : byIndex)
         if (kv.second.size() > 1)

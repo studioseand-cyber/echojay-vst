@@ -127,8 +127,14 @@ public:
 
         addChildComponent (reasonEntry);
         reasonEntry.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff161c26));
-        reasonEntry.onReturnKey = [this] { commitCustomReason(); };
-        reasonEntry.onEscapeKey = [this] { pendingSkip = {}; reasonEntry.setVisible (false); grabKeyboardFocus(); };
+        reasonEntry.onReturnKey = [this] { commitEntry(); };
+        reasonEntry.onEscapeKey = [this]
+        {
+            pendingSkip = {}; pendingEntry = nullptr;
+            reasonEntry.setVisible (false);
+            say ("Cancelled.");
+            grabKeyboardFocus();
+        };
 
         setWantsKeyboardFocus (true);
         startTimer (1000);
@@ -281,7 +287,7 @@ public:
         {
             bool merged = false;
             for (auto& r : rows)
-                if (r.semantic == pr.semantic && pr.semantic.isNotEmpty())
+                if (r.slotKey() == pr.slotKey() && pr.semantic.isNotEmpty())
                 { r = pr; merged = true; break; }
             if (! merged)
                 rows.add (pr);
@@ -451,8 +457,10 @@ public:
         if (rowCount() == 0) return id == "skipplugin";
         auto& r = rowAt (selected);
 
+        if (id == "typed" && r.kind == "bands" && ! r.isResolved())
+            return true;                               // T enters bands by hand
         if (id == "space" && r.kind == "bands" && ! r.isResolved())
-            return true;                               // begins the band flow
+            return true;                               // begins the band flow (or accepts manual)
         if (id == "space" && r.kind == "controls" && ! r.isResolved())
             return true;                               // begins the controls sweep
         if (id == "space" && r.conflictWith.isNotEmpty() && ! r.isResolved() && r.sweep.ok)
@@ -464,6 +472,10 @@ public:
                 && r.proposedIndex >= 0
                 && evidence.corroborationFor (r.proposedIndex, r.proposedName).isNotEmpty();
         if (id == "wiggle")      return r.kind != "ignore";
+        // A fixed-frequency band is the one row that could not be answered.
+        // N here means "this band has no frequency CONTROL", not "no bands".
+        if (id == "notpresent" && r.isBandMemberRow() && r.semantic == "freq_hz")
+            return r.state != AssignRow::State::confirmed;
         if (id == "notpresent" || id == "noparam" || id == "defer")
             return r.state != AssignRow::State::confirmed;
         if (id == "typed")       return r.resolvedIndex >= 0 || r.proposedIndex >= 0;
@@ -667,6 +679,14 @@ public:
             say ("KEY REFUSED (" + keyCapFor (id) + "): " + refusalFor (id));
             return;
         }
+        if (id == "typed" && rowCount() > 0 && rowAt (selected).kind == "bands"
+             && ! rowAt (selected).isResolved())
+        { actionManualBandsBegin(); return; }
+        if (id == "notpresent" && rowCount() > 0 && rowAt (selected).isBandMemberRow()
+             && rowAt (selected).semantic == "freq_hz"
+             && rowAt (selected).state != AssignRow::State::confirmed)
+        { actionBandFreqFixed(); return; }
+
         if (id == "space")           actionSpace();
         else if (id == "wiggle")     actionWiggle();
         else if (id == "notpresent") shift ? beginCustomReason (AssignRow::State::skipNotPresent)
@@ -741,7 +761,11 @@ public:
 
         if (r.kind == "bands" && ! r.isResolved())
         {
-            actionBandsBegin();
+            // SPACE means "accept what I entered" once manual rows exist, and
+            // "start the guided captures" before that. Same key, and the card
+            // says which it is.
+            if (manualBands && anyManualBandRows()) actionManualBandsAccept();
+            else                                    actionBandsBegin();
             return;
         }
 
@@ -853,13 +877,40 @@ public:
         if (r.kind == "controls") { actionControlsBegin(); return; }
         if (r.kind == "bands")    { actionBandsBegin(); return; }
 
+        // RE-OPENING WITHDRAWS THE PREVIOUS OUTCOME, AND ITS REASON WITH IT.
+        // W is the only route from a resolved row back to an unresolved one,
+        // so it is the choke point where a stale reason must die. Measured on
+        // API-2500 (m): a row superseded at 11:53:01 was re-opened and
+        // confirmed again at 11:54:30 on 31 Jul, and reached disk CONFIRMED
+        // while still carrying "superseded: [3] confirmed for release_ms" --
+        // a record of an outcome that no longer applied. actionSkip already
+        // overwrites the reason when the row is skipped again; the confirm
+        // paths never did, and a reason nobody clears outlives its verdict.
+        // Cleared here rather than at each confirm site, because there are
+        // four of those and one of this.
         r.conflictWith = {};
+        r.skipReason = {};
         r.state = AssignRow::State::armed;
         awaitingCaptureRow = selected;
         say ("ARMED for " + (r.semantic.isNotEmpty() ? r.semantic : juce::String ("unsure row"))
                + " - move the control on the plugin");
         if (hooks.armForRow) hooks.armForRow();
+        // THE WITHDRAWAL IS DURABLE. W used to change the row on screen and
+        // leave the session file saying "confirmed" until some later action
+        // wrote -- so the disk and the screen disagreed about a verdict, which
+        // is the class this project keeps filing, and the session file is what
+        // a parked plugin is restored from. Decided 4 Aug 2026: a crash here
+        // costs one confirmation and seconds to redo; a session file that
+        // vouches for a withdrawn verdict costs trust in every parked plugin.
+        persistSession();
         list.updateContent();
+        // THE CARD MUST FOLLOW THE ROW. W changes what the row is and what its
+        // keys mean -- a confirmed row offers "> and W", a re-opened one
+        // offers the answers again -- and without this the strip kept showing
+        // the OLD row's answers until some later action refreshed it. Found by
+        // a self-test asserting the re-opened frequency row offers "N - no
+        // frequency control": N worked, and the card had not said so.
+        updateQuestion();
     }
 
     /** Routed from the capture engine via MainComponent. */
@@ -1118,6 +1169,39 @@ public:
     }
 
     /** Shift+skip: same outcome, human reason. */
+    /** ONE text entry, two callers. The skip-reason box and every numeric
+        prompt manual band entry needs are the same widget with the same Enter
+        and Esc; a second entry field would be a second set of keys to get
+        wrong. pendingEntry, when set, owns Return.
+    */
+    std::function<void (const juce::String&)> pendingEntry;
+
+    void askText (const juce::String& prompt, std::function<void (const juce::String&)> onCommit)
+    {
+        pendingEntry = std::move (onCommit);
+        reasonEntry.setVisible (true);
+        reasonEntry.setText ({}, juce::dontSendNotification);
+        reasonEntry.grabKeyboardFocus();
+        resized();
+        say (prompt);
+    }
+
+    void commitEntry()
+    {
+        if (pendingEntry != nullptr)
+        {
+            const auto text = reasonEntry.getText().trim();
+            auto fn = pendingEntry;
+            pendingEntry = nullptr;
+            reasonEntry.setVisible (false);
+            resized();
+            grabKeyboardFocus();
+            fn (text);
+            return;
+        }
+        commitCustomReason();
+    }
+
     void beginCustomReason (AssignRow::State outcome)
     {
         pendingSkip = outcome;
@@ -1475,6 +1559,32 @@ public:
         updateQuestion();
     }
 
+    /** Test seams for the text prompt: answering it IS typing the text and
+        pressing Enter, so the self-test drives the same call the key does.
+    */
+    bool isAskingText() const { return pendingEntry != nullptr; }
+    bool answerEntry (const juce::String& text)
+    {
+        if (pendingEntry == nullptr) return false;
+        reasonEntry.setText (text, juce::dontSendNotification);
+        commitEntry();
+        return true;
+    }
+
+    /** Row lookup by band slot, for the self-test and for anything that needs
+        to point at "band 2's gain" without knowing the checklist's order.
+    */
+    int bandRowIndex (int ordinal, const juce::String& semantic) const
+    {
+        for (int i = 0; i < rows.size(); ++i)
+        {
+            const auto& r = rows.getReference (i);
+            if (r.isBandMemberRow() && r.bandOrdinal == ordinal && r.semantic == semantic)
+                return i;
+        }
+        return -1;
+    }
+
     /** Test seam: pick a pending lockstep candidate by its parameter index,
         which is what a human does by reading the names.
     */
@@ -1705,6 +1815,355 @@ public:
             return;
         }
 
+        persistSession();
+        advance();
+        list.updateContent();
+        updateProgress();
+        updateQuestion();
+    }
+
+    //==========================================================================
+    // MANUAL BAND ENTRY (M5b, 4 Aug 2026). The typed-anchors equivalent for
+    // bands: when inference cannot group a band, the mapper says which indices
+    // form it.
+    //
+    // NO PICKER. One count prompt, then synthesised rows -- "band 1 frequency",
+    // "band 1 gain" -- each resolved through the flow the mapper already knows
+    // (touch, W, confirm). The panel renders and resolves rows generically, so
+    // mismatch warnings, readback and skip reasons all arrive free, and there
+    // is no new widget and no new mental model.
+    //
+    // ORDER IS NEVER ENTRY ORDER. The mapper supplies the LABEL; accept sorts
+    // the bands by frequency and refuses when the two disagree. On a swept
+    // band the frequency is measured; on a FIXED band (a graphic EQ: 31, 63,
+    // 125...) it is transcribed off the panel, and sorting transcribed
+    // constants is still derivation. What is never allowed to become the claim
+    // is the order the mapper happened to type.
+
+    bool manualBands = false;
+    int  manualBandCount = 0;
+
+    bool anyManualBandRows() const
+    {
+        for (const auto& r : rows) if (r.isBandMemberRow()) return true;
+        return false;
+    }
+
+    /** T on the bands row, or T at the band table when inference produced
+        nothing usable.
+    */
+    void actionManualBandsBegin()
+    {
+        if (bandsRowIndex < 0) bandsRowIndex = selected;
+        if (hooks.cancelArm) hooks.cancelArm();
+        awaitingCaptureRow = -1;
+        bandStep = BandStep::none;
+        summaryText.setVisible (false);
+
+        askText ("How many bands does this EQ have? (a number, then Enter. Esc cancels)",
+                 [this] (const juce::String& text)
+        {
+            const int n = text.getIntValue();
+            if (n < 1 || n > 32)
+            {
+                say ("Band count must be 1-32; '" + text + "' is not usable. T to try again.");
+                return;
+            }
+            synthesiseBandRows (n);
+        });
+    }
+
+    /** THE COUNT PROMPT AND ROW SYNTHESIS COME BEFORE ANY GROUP EXISTS. A
+        group only materialises at accept, once its frequency rows resolve --
+        because the order is derived from those frequencies, and a group
+        formed earlier would have to be renumbered by the thing that decides
+        the numbering.
+    */
+    void synthesiseBandRows (int n)
+    {
+        // Restart-safe: T again rebuilds the slots rather than doubling them.
+        for (int i = rows.size(); --i >= 0;)
+            if (rows.getReference (i).isBandMemberRow())
+                rows.remove (i);
+
+        manualBands = true;
+        manualBandCount = n;
+
+        int at = juce::jmax (0, bandsRowIndex + 1);
+        for (int b = 1; b <= n; ++b)
+            for (auto* sem : { "freq_hz", "gain_db", "q", "enable" })
+            {
+                AssignRow r;
+                r.kind = "band_member";
+                r.semantic = sem;
+                r.proposalSource = "none";
+                r.bandOrdinal = b;
+                r.bandLabel = juce::String (b);
+                rows.insert (at++, r);
+            }
+
+        auto& br = rowAt (bandsRowIndex);
+        br.state = AssignRow::State::proposed;
+        br.skipReason = {};
+
+        selectRow (bandsRowIndex + 1);
+        say (juce::String (n) + " bands: " + juce::String (n * 4) + " rows added. Resolve each "
+             "frequency and gain (W to touch it); Q and enable are D-able without penalty. "
+             "SPACE on the bands row accepts when the frequencies are in.");
+        persistSession();
+        list.updateContent();
+        updateProgress();
+        updateQuestion();
+    }
+
+    /** N on a band frequency row: this band has no frequency CONTROL. That is
+        the graphic-EQ answer the card could not previously give -- every other
+        row can be answered "not present" and this one could not, so the only
+        honest response was to abandon the whole bands row.
+        The frequency is then transcribed, not measured, and says so.
+    */
+    void actionBandFreqFixed()
+    {
+        auto& r = rowAt (selected);
+        // STAND THE CAPTURE DOWN, as actionSkip does for an armed row. N here
+        // is reached from an ARMED row whenever the mapper re-opened it with W
+        // first, and an arm left live would deliver a later touch into a row
+        // that has already answered.
+        if (r.state == AssignRow::State::armed)
+        {
+            if (hooks.cancelArm) hooks.cancelArm();
+            awaitingCaptureRow = -1;
+        }
+        askText ("Band " + r.bandLabel + " has no frequency control. What frequency is it "
+                 "FIXED at, as printed on the plugin? (Hz, then Enter)",
+                 [this] (const juce::String& text)
+        {
+            auto& rr = rowAt (selected);
+            const double hz = text.retainCharacters ("0123456789.").getDoubleValue();
+            if (hz <= 0.0 || hz > 30000.0)
+            { say ("'" + text + "' is not a frequency in Hz. N to try again."); return; }
+
+            rr.typedFreqHz = hz;
+            rr.freqSource = "typed_fixed";
+            rr.resolvedIndex = -1;            // there is no parameter: not a claim, an absence
+            rr.state = AssignRow::State::confirmed;
+            rr.trust = "human-verified";
+            rr.mode = deepMode ? "deep" : "fast";
+            rr.resolvedAt = juce::Time::getCurrentTime().toISO8601 (true);
+            recordResolution (rr, "band_freq_fixed");
+            say ("Band " + rr.bandLabel + " fixed at " + juce::String (hz, 1)
+                   + " Hz (transcribed from the panel, not measured).");
+            advance();
+            persistSession(); list.updateContent(); updateProgress(); updateQuestion();
+        });
+    }
+
+    /** Every band's frequency, in Hz, however it was established. Empty
+        optional semantics: 0 means "this band has no frequency yet".
+    */
+    double bandFreqOf (int ordinal) const
+    {
+        for (const auto& r : rows)
+        {
+            if (! r.isBandMemberRow() || r.bandOrdinal != ordinal || r.semantic != "freq_hz")
+                continue;
+            if (r.freqSource == "typed_fixed") return r.typedFreqHz;
+            if (r.state == AssignRow::State::confirmed && ! r.sweep.anchors.isEmpty())
+            {
+                // The measured MIDPOINT of the swept range, which is what
+                // orders a parametric band: its lo and hi overlap its
+                // neighbours' and its centre does not.
+                float lo = r.sweep.anchors.getFirst()[0], hi = lo;
+                for (const auto& a : r.sweep.anchors)
+                { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
+                return 0.5 * ((double) lo + (double) hi);
+            }
+        }
+        return 0.0;
+    }
+
+    /** SPACE on the bands row while manual entry is live. Builds the groups,
+        derives the order from the frequencies, and refuses rather than guess.
+    */
+    void actionManualBandsAccept()
+    {
+        juce::SortedSet<int> ordinals;
+        for (const auto& r : rows)
+            if (r.isBandMemberRow()) ordinals.add (r.bandOrdinal);
+
+        // 1. UNIT SANITY FIRST, and the order of these checks is the point.
+        //    It ran second until a self-test caught the consequence: a
+        //    frequency slot pointed at a dB control has no frequency, so the
+        //    "still unresolved" check fired first and reported a MISSING
+        //    frequency for a row that was confirmed and simply wrong. The
+        //    coarser refusal masked the precise one -- the same shape as a
+        //    suite failing for one reason being unable to report a second.
+        //    Ask the specific question before the general one. A slot claimed
+        //    as frequency that sweeps to a dB family is the commonest slip --
+        //    picking the gain when you meant the freq.
+        juce::StringArray unitWrong;
+        for (const auto& r : rows)
+        {
+            if (! r.isBandMemberRow() || r.state != AssignRow::State::confirmed) continue;
+            const auto fam = r.sweep.unitFamily;
+            if (fam.isEmpty()) continue;                    // undeclared: no claim to check
+            if (r.semantic == "freq_hz" && fam != "hz")
+                unitWrong.add ("band " + r.bandLabel + " frequency [" + juce::String (r.resolvedIndex)
+                                 + "] sweeps in '" + fam + "', not Hz");
+            if (r.semantic == "gain_db" && fam != "db")
+                unitWrong.add ("band " + r.bandLabel + " gain [" + juce::String (r.resolvedIndex)
+                                 + "] sweeps in '" + fam + "', not dB");
+        }
+        if (! unitWrong.isEmpty())
+        {
+            say ("REFUSED - " + unitWrong.joinIntoString ("; ")
+                   + ". W re-captures the right control.");
+            return;
+        }
+
+        // 2. Every band needs a frequency AND a gain. A band the consumer
+        //    cannot place or cannot move is not dialable, so it is refused
+        //    here rather than shipped as half a band.
+        juce::StringArray missing;
+        for (int i = 0; i < ordinals.size(); ++i)
+        {
+            const int b = ordinals[i];
+            if (bandFreqOf (b) <= 0.0) missing.add ("band " + juce::String (b) + " frequency");
+            bool gain = false;
+            for (const auto& r : rows)
+                if (r.isBandMemberRow() && r.bandOrdinal == b && r.semantic == "gain_db"
+                     && r.state == AssignRow::State::confirmed && r.resolvedIndex >= 0)
+                    gain = true;
+            if (! gain) missing.add ("band " + juce::String (b) + " gain");
+        }
+        if (! missing.isEmpty())
+        {
+            say ("Not yet: " + missing.joinIntoString (", ")
+                   + " still unresolved. W to touch it, or N on a frequency whose band has no "
+                     "frequency control.");
+            return;
+        }
+
+        // 3. ORDER IS DERIVED FROM FREQUENCY, and disagreement with the
+        //    mapper's own labels STOPS. Either a mislabel or a mis-picked
+        //    index; both are worth stopping for.
+        struct Slot { int ordinal; double hz; };
+        juce::Array<Slot> slots;
+        for (int i = 0; i < ordinals.size(); ++i)
+            slots.add ({ ordinals[i], bandFreqOf (ordinals[i]) });
+        auto byHz = slots;
+        std::stable_sort (byHz.begin(), byHz.end(),
+                          [] (const Slot& a, const Slot& b) { return a.hz < b.hz; });
+
+        for (int i = 0; i < byHz.size(); ++i)
+            if (byHz[i].ordinal != slots[i].ordinal)
+            {
+                juce::String said, measured;
+                for (int j = 0; j < slots.size(); ++j)
+                    said << (j ? ", " : "") << "band " << slots[j].ordinal
+                         << " " << juce::String (slots[j].hz, 1) << " Hz";
+                for (int j = 0; j < byHz.size(); ++j)
+                    measured << (j ? ", " : "") << "band " << byHz[j].ordinal;
+                say ("REFUSED - your band order and the frequencies disagree. You entered "
+                     + said + ", which puts them in the order " + measured
+                     + ". Either a label is wrong or an index is. Fix the row, or re-enter "
+                       "the bands with T.");
+                return;
+            }
+
+        // 4. DISTINCTNESS, flagged not refused: two bands with the same
+        //    frequency suggest one parameter picked twice, or a channel bank
+        //    rather than distinct bands.
+        for (int i = 1; i < byHz.size(); ++i)
+            if (byHz[i].hz > 0.0 && std::abs (byHz[i].hz - byHz[i - 1].hz) < 0.01)
+                say ("NOTE: bands " + juce::String (byHz[i - 1].ordinal) + " and "
+                       + juce::String (byHz[i].ordinal) + " sit at the same frequency - the same "
+                         "control picked twice, or a channel bank rather than two bands.");
+
+        // 5. Groups, numbered by the DERIVED order.
+        juce::String freqSourceOverall;
+        for (int i = 0; i < byHz.size(); ++i)
+        {
+            const int b = byHz[i].ordinal;
+            GroupSpec g;
+            g.n = i + 1;                          // derived, not the entry ordinal
+            g.primary = (i == 0);
+            g.groupingSource = "mapper";
+            g.orderingSource = "derived";
+
+            juce::String fs = "swept";
+            for (const auto& r : rows)
+            {
+                if (! r.isBandMemberRow() || r.bandOrdinal != b) continue;
+                if (r.state != AssignRow::State::confirmed) continue;
+                if (r.semantic == "freq_hz" && r.freqSource == "typed_fixed")
+                {
+                    // A fixed band has no frequency PARAMETER, so it emits no
+                    // freq_hz mapping. The number lives in the group's range,
+                    // where the band matcher's reach test reads it, and
+                    // applyBands then declines a freq request on this band
+                    // with a reason instead of writing something.
+                    fs = "typed_fixed";
+                    const double hz = r.typedFreqHz;
+                    // A fixed band is not a point: it covers a slice. Half an
+                    // octave either side is the honest default for a
+                    // graphic-EQ slider, and it is what makes "cut 250 Hz"
+                    // reach the 250 slider at all.
+                    g.freqLo = hz / std::sqrt (2.0);
+                    g.freqHi = hz * std::sqrt (2.0);
+                    continue;
+                }
+                if (r.resolvedIndex < 0 || r.sweep.anchors.size() < 2) continue;
+                ParamMapping pm;
+                pm.semantic = r.semantic;
+                pm.kind = r.semantic;
+                pm.paramName = hooks.paramName ? hooks.paramName (r.resolvedIndex) : juce::String();
+                pm.indices.add (r.resolvedIndex);
+                for (const auto& a : r.sweep.anchors)
+                    pm.anchors.add ({ (double) a[1], (double) a[0] });
+                pm.anchorsReversed = r.sweep.anchorsReversed;
+                pm.trust  = Trust::humanVerified;      // the mapper touched it
+                pm.method = r.sweep.method == "setread" ? AnchorMethod::setread
+                          : r.sweep.method == "human-typed" ? AnchorMethod::humanTyped
+                                                            : AnchorMethod::gettext;
+                if (r.semantic == "freq_hz")
+                {
+                    float lo = r.sweep.anchors.getFirst()[0], hi = lo;
+                    for (const auto& a : r.sweep.anchors)
+                    { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
+                    g.freqLo = lo; g.freqHi = hi;
+                }
+                g.params.add (pm);
+            }
+            g.freqSource = fs;
+            if (freqSourceOverall.isEmpty()) freqSourceOverall = fs;
+            else if (freqSourceOverall != fs)  freqSourceOverall = "mixed";
+            if (! g.params.isEmpty())
+                acceptedGroups.add (g);
+        }
+
+        auto& row = rowAt (bandsRowIndex);
+        row.state = AssignRow::State::confirmed;
+        row.trust = "human-verified";
+        row.mode = deepMode ? "deep" : "fast";
+        row.resolvedAt = juce::Time::getCurrentTime().toISO8601 (true);
+        row.skipReason = juce::String (acceptedGroups.size())
+                       + " band group(s) accepted (entered by hand, " + freqSourceOverall + ")";
+        recordResolution (row, "manual_bands_accept");
+
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("kind", "manual_bands_accepted");
+        o->setProperty ("groups", acceptedGroups.size());
+        o->setProperty ("grouping_source", "mapper");
+        o->setProperty ("ordering_source", "derived");
+        o->setProperty ("freq_source", freqSourceOverall);
+        juce::Array<juce::var> hz;
+        for (int i = 0; i < byHz.size(); ++i) hz.add (byHz[i].hz);
+        o->setProperty ("derived_order_hz", juce::var (hz));
+        if (hooks.writeRow) hooks.writeRow (juce::var (o));
+
+        manualBands = false;
+        say ("BANDS: " + row.skipReason);
         persistSession();
         advance();
         list.updateContent();
@@ -2626,6 +3085,22 @@ public:
     {
         if (r.kind == "ignore")  return "ignore: " + r.proposedName;
         if (r.kind == "unsure")  return "unsure: " + r.proposedName;
+        if (r.isBandMemberRow())
+        {
+            // "band LF frequency". The mapper's own label rides here so the
+            // row they are answering is the row they meant; the ORDER those
+            // labels imply is never trusted (accept derives it from the
+            // frequencies).
+            juce::String slot = r.semantic == "freq_hz" ? "frequency"
+                              : r.semantic == "gain_db" ? "gain"
+                              : r.semantic == "q"       ? "Q"
+                              : r.semantic == "enable"  ? "enable"
+                                                        : r.semantic;
+            juce::String t = "band " + r.bandLabel + " " + slot;
+            if (r.freqSource == "typed_fixed" && r.typedFreqHz > 0.0)
+                t << "  = " << juce::String (r.typedFreqHz, 1) << " Hz fixed";
+            return t;
+        }
         auto label = echojay::semanticLabel (r.semantic);
         auto unit = echojay::semanticUnit (r.semantic);
         if (unit == "db")  unit = "dB";
@@ -2882,7 +3357,22 @@ public:
         }
         if (r.kind == "bands" && ! r.isResolved() && bandStep == BandStep::none)
         {
-            add ("space", "SPACE - begin mapping bands");
+            if (manualBands && anyManualBandRows())
+                add ("space", "SPACE - accept the bands you entered");
+            else
+                add ("space", "SPACE - begin mapping bands");
+            add ("typed", manualBands && anyManualBandRows() ? "T - re-enter by hand"
+                                                             : "T - enter bands by hand");
+            add ("defer", "D - later");
+            resized(); return;
+        }
+        if (r.isBandMemberRow() && ! r.isResolved())
+        {
+            add ("wiggle", "W - touch it on the GUI");
+            if (r.semantic == "freq_hz")
+                add ("notpresent", "N - no frequency control (fixed band)");
+            else
+                add ("notpresent", "N - this band has no " + r.semantic);
             add ("defer", "D - later");
             resized(); return;
         }
@@ -3113,7 +3603,7 @@ private:
     void supersedeSiblings (const AssignRow& winner)
     {
         for (auto& r : rows)
-            if (&r != &winner && r.semantic == winner.semantic && ! r.isResolved())
+            if (&r != &winner && r.slotKey() == winner.slotKey() && ! r.isResolved())
             {
                 r.state = AssignRow::State::skipDeferred;
                 r.skipReason = "superseded: [" + juce::String (winner.resolvedIndex)
@@ -3212,6 +3702,50 @@ private:
         juce::Array<juce::var> gv;
         for (const auto& g : acceptedGroups) gv.add (g.toVar());
         o->setProperty ("accepted_groups", juce::var (gv));
+
+        // THE BAND DIAGNOSTIC (queue item 1). "0 bands inferred from your 3
+        // touches" reached the screen and nothing else: the session file held
+        // accepted_groups: 0, which is indistinguishable from never having
+        // attempted the inference. strideNote already names the parameter the
+        // inference failed on; it simply was not written down. Recorded
+        // whenever an inference has been ATTEMPTED, so that an absent block
+        // means not attempted and a present one with zero bands means
+        // attempted and found nothing -- which are different facts.
+        if (bandPlan.strideNote.isNotEmpty() || ! bandCaptured.isEmpty()
+             || ! bandPlan.bands.isEmpty())
+        {
+            auto* bd = new juce::DynamicObject();
+            bd->setProperty ("stride_note", bandPlan.strideNote);
+            bd->setProperty ("axis", bandPlan.axis);
+            bd->setProperty ("family", bandPlan.family);
+            bd->setProperty ("bands_inferred", bandPlan.bands.size());
+            bd->setProperty ("stride_verified",
+                             bandPlan.strideNote.contains ("verifying the rest"));
+            juce::Array<juce::var> touched;
+            for (const auto& m : bandCaptured)
+            {
+                auto* t = new juce::DynamicObject();
+                t->setProperty ("semantic", m.semantic);
+                t->setProperty ("index", m.index);
+                // The name AS THE PLUGIN REPORTS IT: the whole point of the
+                // record is to answer the naming question by reading rather
+                // than by recalling the product.
+                t->setProperty ("param_name", m.name);
+                touched.add (juce::var (t));
+            }
+            if (bandSecondFreqIdx >= 0)
+            {
+                auto* t = new juce::DynamicObject();
+                t->setProperty ("semantic", "freq_hz");
+                t->setProperty ("index", bandSecondFreqIdx);
+                t->setProperty ("param_name", hooks.paramName ? hooks.paramName (bandSecondFreqIdx)
+                                                              : juce::String());
+                t->setProperty ("role", "highest_band_freq");
+                touched.add (juce::var (t));
+            }
+            bd->setProperty ("touched", juce::var (touched));
+            o->setProperty ("band_diagnostic", juce::var (bd));
+        }
         juce::Array<juce::var> xv;
         for (int i = 0; i < controlsExcluded.size(); ++i) xv.add (controlsExcluded[i]);
         o->setProperty ("controls_excluded", juce::var (xv));
@@ -3282,6 +3816,38 @@ private:
         auto v = juce::JSON::parse (f.loadFileAsString());
         if (v.getProperty ("fp", "").toString() != fp) return;
 
+        // A PARKED MANUAL-BAND SESSION HAS ROWS THE CHECKLIST DOES NOT BUILD.
+        // Every other row exists before restore runs, so restore only had to
+        // fill one in; band-member rows are synthesised by the mapper's count
+        // answer and exist nowhere else. Recreate them from the file FIRST,
+        // or parking a hand-entered EQ silently discards every band.
+        if (auto* fileRows = v.getProperty ("rows", juce::var()).getArray())
+        {
+            int at = -1;
+            for (int i = 0; i < rows.size(); ++i)
+                if (rows.getReference (i).kind == "bands") { at = i + 1; break; }
+            if (at < 0) at = rows.size();
+            for (auto& rv : *fileRows)
+            {
+                const int ord = (int) rv.getProperty ("band_ordinal", -1);
+                if (ord <= 0) continue;
+                const auto sem = rv.getProperty ("semantic", "").toString();
+                bool have = false;
+                for (const auto& r : rows)
+                    if (r.isBandMemberRow() && r.bandOrdinal == ord && r.semantic == sem)
+                        have = true;
+                if (have) continue;
+                AssignRow nr;
+                nr.kind = "band_member";
+                nr.semantic = sem;
+                nr.proposalSource = "none";
+                nr.bandOrdinal = ord;
+                nr.bandLabel = rv.getProperty ("band_label", juce::String (ord)).toString();
+                rows.insert (juce::jmin (at++, rows.size()), nr);
+                manualBands = true;
+            }
+        }
+
         auto restore = [] (juce::Array<AssignRow>& dst, const juce::var& src)
         {
             auto* arr = src.getArray();
@@ -3290,9 +3856,15 @@ private:
             {
                 const auto sem  = rv.getProperty ("semantic", "").toString();
                 const int  pidx = (int) rv.getProperty ("proposed_index", -1);
+                const int  ord  = (int) rv.getProperty ("band_ordinal", -1);
+                const auto key  = ord > 0 ? "band" + juce::String (ord) + ":" + sem : sem;
                 for (auto& r : dst)
                 {
-                    if (r.semantic != sem || r.proposedIndex != pidx) continue;
+                    // Band rows identify by band+semantic; everything else by
+                    // semantic and proposal, as before. Four bands all carry
+                    // freq_hz and they are four different questions.
+                    if (r.slotKey() != key) continue;
+                    if (ord <= 0 && r.proposedIndex != pidx) continue;
                     const auto st = rv.getProperty ("state", "").toString();
                     if (st == "confirmed")            r.state = AssignRow::State::confirmed;
                     else if (st == "not_present")     r.state = AssignRow::State::skipNotPresent;
@@ -3306,6 +3878,8 @@ private:
                     r.trust           = rv.getProperty ("trust", "").toString();
                     r.skipReason      = rv.getProperty ("skip_reason", "").toString();
                     r.resolvedAt      = rv.getProperty ("resolved_at", "").toString();
+                    r.freqSource      = rv.getProperty ("freq_source", "").toString();
+                    r.typedFreqHz     = (double) rv.getProperty ("typed_freq_hz", 0.0);
                     r.sweep.anchorsReversed = (bool) rv.getProperty ("anchors_reversed", false);
                     r.sweep.method    = rv.getProperty ("sweep_method", "").toString();
                     r.sweep.identityDisplay = (bool) rv.getProperty ("identity_display", false);

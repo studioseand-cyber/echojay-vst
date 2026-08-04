@@ -283,6 +283,34 @@ struct GroupSpec
     juce::Array<ParamMapping> params;
     double freqLo = 0.0, freqHi = 0.0;
 
+    /** THREE CLAIMS, RECORDED SEPARATELY (signed 4 Aug 2026). Merging any two
+        of these lets the weakest borrow the credibility of the strongest.
+
+        groupingSource -- WHO decided these indices form a band.
+          "inferred"  the name pattern proposed it, every member swept
+          "mapper"    a human said so. Stronger evidence for the GROUPING, and
+                      it says nothing whatever about what the members do.
+
+        orderingSource -- where the band ORDER came from. Always "derived":
+          band order is sorted from frequency magnitudes, never from the order
+          the mapper typed things in. Entry order becoming the claim is the
+          failure this field exists to make visible.
+
+        freqSource -- where the frequency NUMBERS came from.
+          "swept"             measured off the plugin by the sweeper
+          "typed_fixed"       transcribed from a fixed band's printed constant
+                              (a graphic EQ: 31, 63, 125...). There is no
+                              frequency parameter to sweep, and the number is a
+                              constant, not a reading.
+          "typed_parametric"  the mapper typed a MOVABLE control's value
+                              instead of sweeping it. Weakest: nothing measured
+                              it and it describes where a knob happened to sit.
+
+        Empty means unstated, which is what every map written before this field
+        existed says. Absent is not "swept".
+    */
+    juce::String groupingSource, orderingSource, freqSource;
+
     juce::var toVar() const;
 };
 
@@ -495,6 +523,12 @@ inline juce::var GroupSpec::toVar() const
     o->setProperty ("params", juce::var (p));
     juce::Array<juce::var> fr; fr.add (freqLo); fr.add (freqHi);
     o->setProperty ("freq_range", juce::var (fr));
+    // Emitted only when stated. A group written before these existed says
+    // nothing about them, and an absent field must keep reading as unstated
+    // rather than acquiring a default the writer never claimed.
+    if (groupingSource.isNotEmpty()) o->setProperty ("grouping_source", groupingSource);
+    if (orderingSource.isNotEmpty()) o->setProperty ("ordering_source", orderingSource);
+    if (freqSource.isNotEmpty())     o->setProperty ("freq_source", freqSource);
     return juce::var (o);
 }
 

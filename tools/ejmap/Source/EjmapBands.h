@@ -364,6 +364,13 @@ struct BandInference
             g.family  = family;
             g.n       = b.ordinal;
             g.primary = (b.ordinal == 1);
+            // The inferred path's three claims. Ordering here is derived from
+            // the name axis (prefixOrder's LF->LMF->MF->HMF->HF, or the digit
+            // run), which is still a derivation and not the mapper's say-so --
+            // and every member below is swept before it ships.
+            g.groupingSource = "inferred";
+            g.orderingSource = "derived";
+            g.freqSource     = "swept";
             for (const auto& m : b.members)
             {
                 if (! m.sweep.ok) continue;

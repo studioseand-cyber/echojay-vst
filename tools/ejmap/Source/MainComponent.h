@@ -6980,6 +6980,677 @@ public:
         g.fillAll (juce::Colour (0xff10141c));   // dark navy, house style
     }
 
+    /** EDITOR FIT: load one plugin, attach its editor, print the geometry
+        twice and quit. The second read is 3 s later because a bridged editor
+        "reaches its real size about 2.5 s" after createEditorIfNeeded
+        (PluginHost.h:65), so a single read at attach can report a size the
+        plugin has not settled on yet.
+
+        Built for the Eiosis AirEQ report (4 Aug 2026): the plugin GUI covered
+        the toolbar, list and wizard, leaving only the title bar. layoutEditor
+        positions and never sizes, so the hypothesis is an editor larger than
+        the region it was given -- which this measures instead of assuming.
+    */
+    int editorFitHoldSeconds = 0;
+    void selfTestEditorFit (const juce::String& identifier, int holdSeconds = 0)
+    {
+        editorFitHoldSeconds = holdSeconds;
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "EDITORFIT: unknown identifier " << identifier << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        ledger.beginLoad (loadedId, desc.name, desc.manufacturerName,
+                          desc.pluginFormatName, desc.version, "load", "createPluginInstance");
+        auto res = host.load (desc, watchdog);
+        { LedgerRecord rec; rec.pluginId = loadedId; rec.name = desc.name;
+          rec.outcome = res.outcome; rec.detail = res.detail; rec.paramCount = res.paramCount;
+          ledger.endLoad (rec); }
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "EDITORFIT: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        // The parameter list, printed. Wanted three times in two days and it is
+        // most of what --load-once --params was queued for: reading real names
+        // is the only way the EQ-naming question gets answered by measurement
+        // rather than by recalling the product.
+        if (auto* inst = host.getInstance())
+        {
+            auto& ps = inst->getParameters();
+            std::cout << "PARAMS: " << desc.name << " (" << ps.size() << ")" << std::endl;
+            for (int i = 0; i < ps.size(); ++i)
+                std::cout << "  [" << i << "] " << ps[i]->getName (64)
+                          << "  | label '" << ps[i]->getLabel() << "'"
+                          << " | text '" << ps[i]->getCurrentValueAsText() << "'" << std::endl;
+            std::cout.flush();
+        }
+
+        attachEditor();                       // prints the attach-time read
+        juce::Timer::callAfterDelay (3000, [this]
+        {
+            std::cout << "EDITORFIT: (settled read, 3 s after attach)" << std::endl;
+            reportEditorFit();
+
+            // A JUCE snapshot of the tool's own component tree. It renders
+            // what JUCE draws and NOT a hosted NSView, so comparing it with a
+            // screen grab separates the two candidate causes: if the snapshot
+            // shows toolbar and list intact while the screen shows them gone,
+            // the occlusion is in the native layer, not in JUCE's layout.
+            auto shot = createComponentSnapshot (getLocalBounds(), false);
+            auto out = ledger.getRoot().getChildFile ("screenshots")
+                             .getChildFile ("editorfit-juce.png");
+            out.getParentDirectory().createDirectory();
+            out.deleteFile();
+            juce::FileOutputStream fos (out);
+            juce::PNGImageFormat png;
+            if (fos.openedOk() && png.writeImageToStream (shot, fos))
+                std::cout << "EDITORFIT: JUCE-layer snapshot -> " << out.getFullPathName() << std::endl;
+
+            std::cout << "EDITORFIT: holding the window " << editorFitHoldSeconds
+                      << " s for an external screen grab" << std::endl;
+            std::cout.flush();
+            juce::Timer::callAfterDelay (editorFitHoldSeconds * 1000, [this] { quitNow(); });
+        });
+    }
+
+    /** MANUAL BAND ENTRY, the acceptance test (M5b, 4 Aug 2026).
+
+        API-550A is the subject the queue names, and the reason it is: its
+        parameters are "Low Freq", "Mid Freq", "High Freq" -- spelled out, so
+        prefixOrder()'s whole-token {LF, LMF, MF, HMF, HF} matches nothing,
+        morphSlot returns -1, and inference yields no bands at all. Read from
+        the loaded plugin, not recalled.
+
+        The test enters three bands by hand and submits. Nothing short of a
+        submitted three-group map counts as proof.
+
+        THE BANDS ARE ENTERED LOW-FIRST but the ordering claim is never taken
+        from that: accept sorts by the SWEPT frequencies and stamps n from the
+        result. The assertions check the derived order against the measured
+        midpoints, so entry order passing by luck would still fail here.
+    */
+    juce::Array<int> manualCapPlan;          // flattened [rowIndex, paramIndex] pairs
+    int manualCapAt = 0;
+
+    juce::String manualBandsMode { "accept" };
+    void selfTestManualBands (const juce::String& identifier, const juce::String& mode = "accept")
+    {
+        manualBandsMode = mode.isEmpty() ? "accept" : mode;
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "MBANDS: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        ledger.beginLoad (loadedId, desc.name, desc.manufacturerName,
+                          desc.pluginFormatName, desc.version, "load", "createPluginInstance");
+        auto res = host.load (desc, watchdog);
+        { LedgerRecord rec; rec.pluginId = loadedId; rec.name = desc.name;
+          rec.outcome = res.outcome; rec.detail = res.detail; rec.paramCount = res.paramCount;
+          ledger.endLoad (rec); }
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "MBANDS: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        listeners.attach (*inst);
+        cal = capture.calibrate (*inst, loadedId);
+        mask = capture.buildNoiseMask (*inst, cal, loadedId);
+        capture.resetCycleCounts();
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+        failures = 0;
+
+        {
+            auto sess = ledger.getRoot().getChildFile ("assign-" + currentFp + ".json");
+            if (sess.existsAsFile())
+            {
+                std::cout << "MBANDS: REFUSED -- a session file for this fp exists and would be\n"
+                          << "        restored over the state this test builds: "
+                          << sess.getFullPathName() << "\n        Use a fresh --ledger-root."
+                          << std::endl;
+                std::cout << "MBANDS: FAIL" << std::endl; quitNow(); return;
+            }
+        }
+
+        std::cout << "MBANDS: " << desc.name << " | fp " << currentFp.substring (0, 12) << "..."
+                  << std::endl;
+
+        startAssignmentForCategory ("eq");
+
+        int bandsRow = -1;
+        for (int i = 0; i < assignPanel.rows.size(); ++i)
+            if (assignPanel.rows.getReference (i).kind == "bands") bandsRow = i;
+        okM (bandsRow >= 0, "eq checklist carries the bands row");
+        assignPanel.selectRow (bandsRow);
+
+        okM (assignPanel.textRender().contains ("T - enter bands by hand"),
+             "the bands row OFFERS manual entry (it previously offered only SPACE and D)");
+
+        assignPanel.dispatchAction ("typed");
+        okM (assignPanel.isAskingText(), "T asks for the band count before any group exists");
+        assignPanel.answerEntry ("3");
+        okM (assignPanel.bandRowIndex (1, "freq_hz") >= 0
+               && assignPanel.bandRowIndex (3, "gain_db") >= 0,
+             "3 bands synthesised 12 rows: freq, gain, q and enable per band");
+
+        // The capture plan, by NAME: low, mid, high in that entry order, so a
+        // pass cannot come from the checklist happening to be sorted right.
+        auto byName = [this] (const juce::String& nm) { return paramIndexByName (nm); };
+        manualCapPlan.clearQuick();
+        const char* lows[]  = { "Low Freq",  "Low Gain"  };
+        const char* mids[]  = { "Mid Freq",  "Mid Gain"  };
+        const char* highs[] = { "High Freq", "High Gain" };
+        // REFUSE MODE ENTERS THEM BACKWARDS -- band 1 is the HIGH band. The
+        // frequencies then descend while the mapper's own numbering ascends,
+        // which is exactly the disagreement accept must stop on.
+        const char** setsAsc[]  = { lows, mids, highs };
+        const char** setsDesc[] = { highs, mids, lows };
+        const char*** sets = manualBandsMode == "refuse" ? setsDesc : setsAsc;
+        for (int b = 1; b <= 3; ++b)
+        {
+            manualCapPlan.add (assignPanel.bandRowIndex (b, "freq_hz"));
+            manualCapPlan.add (byName (sets[b - 1][0]));
+            manualCapPlan.add (assignPanel.bandRowIndex (b, "gain_db"));
+            manualCapPlan.add (byName (sets[b - 1][1]));
+        }
+        bool planOk = true;
+        for (int i = 0; i < manualCapPlan.size(); ++i) planOk = planOk && manualCapPlan[i] >= 0;
+        okM (planOk, "every band slot and its parameter resolved by name");
+        if (! planOk) { std::cout << "MBANDS: FAIL" << std::endl; quitNow(); return; }
+
+        manualCapAt = 0;
+        manualBandCaptureStep();
+    }
+
+    void okM (bool cond, const juce::String& what)
+    {
+        if (! cond) ++failures;
+        std::cout << "  " << (cond ? "ok   " : "FAIL ") << what << std::endl;
+        std::cout.flush();
+    }
+
+    /** One capture per step: arm the row, then move the parameter, exactly as
+        a hand does. The capture engine is the same one every other row uses.
+    */
+    void manualBandCaptureStep()
+    {
+        if (manualCapAt + 1 >= manualCapPlan.size())
+        { manualBandsFinish(); return; }
+
+        const int rowIdx = manualCapPlan[manualCapAt];
+        const int prm    = manualCapPlan[manualCapAt + 1];
+        manualCapAt += 2;
+
+        auto* inst = host.getInstance();
+        if (inst == nullptr) { manualBandsFinish(); return; }
+        assignPanel.selectRow (rowIdx);
+        inst->getParameters()[prm]->setValueNotifyingHost (0.25f);
+        juce::Thread::sleep (120);
+        assignPanel.dispatchAction ("wiggle");
+        juce::Timer::callAfterDelay (300, [this, prm]
+        {
+            auto* i2 = host.getInstance();
+            if (i2 != nullptr) i2->getParameters()[prm]->setValueNotifyingHost (0.70f);
+        });
+        juce::Timer::callAfterDelay (1400, [this] { manualBandCaptureStep(); });
+    }
+
+    void manualBandsFinish()
+    {
+        int confirmed = 0;
+        for (const auto& r : assignPanel.rows)
+            if (r.isBandMemberRow() && r.state == AssignRow::State::confirmed) ++confirmed;
+        okM (confirmed == 6, "six band members confirmed by touch ("
+                               + juce::String (confirmed) + " of 6)");
+
+        // Q and enable are D-able WITHOUT PENALTY: API-550A has neither.
+        for (int b = 1; b <= 3; ++b)
+            for (auto* sem : { "q", "enable" })
+            {
+                const int i = assignPanel.bandRowIndex (b, sem);
+                if (i >= 0) { assignPanel.selectRow (i); assignPanel.dispatchAction ("defer"); }
+            }
+
+        int bandsRow = -1;
+        for (int i = 0; i < assignPanel.rows.size(); ++i)
+            if (assignPanel.rows.getReference (i).kind == "bands") bandsRow = i;
+        assignPanel.selectRow (bandsRow);
+
+        if (manualBandsMode == "refuse")
+        { manualBandsRefusals (bandsRow); return; }
+
+        assignPanel.dispatchAction ("space");            // accept
+
+        const auto& groups = assignPanel.groupsForSubmit();
+        okM (groups.size() == 3, "three band groups built ("
+                                   + juce::String (groups.size()) + ")");
+
+        if (groups.size() == 3)
+        {
+            okM (groups[0].n == 1 && groups[1].n == 2 && groups[2].n == 3,
+                 "groups numbered 1..3");
+            okM (groups[0].freqLo < groups[1].freqLo && groups[1].freqLo < groups[2].freqLo,
+                 "ORDER IS DERIVED FROM THE SWEPT FREQUENCIES: "
+                   + juce::String (groups[0].freqLo, 0) + " < "
+                   + juce::String (groups[1].freqLo, 0) + " < "
+                   + juce::String (groups[2].freqLo, 0) + " Hz");
+            okM (groups[0].primary, "the lowest band is primary");
+            bool claims = true;
+            for (const auto& g : groups)
+                claims = claims && g.groupingSource == "mapper"
+                                && g.orderingSource == "derived"
+                                && g.freqSource == "swept";
+            okM (claims, "three claims recorded SEPARATELY: grouping=mapper, ordering=derived, "
+                         "freq=swept");
+            bool pairs = true;
+            for (const auto& g : groups)
+            {
+                bool f = false, gn = false;
+                for (const auto& pm : g.params)
+                { f = f || pm.semantic == "freq_hz"; gn = gn || pm.semantic == "gain_db"; }
+                pairs = pairs && f && gn;
+            }
+            okM (pairs, "every group carries the freq_hz + gain_db pair the consumer needs");
+        }
+
+        // The band diagnostic must be on disk even though inference never ran
+        // for these bands -- item 1 ships with this.
+        {
+            auto sess = ledger.getRoot().getChildFile ("assign-" + currentFp + ".json");
+            auto v = juce::JSON::parse (sess.loadFileAsString());
+            auto gs = v.getProperty ("accepted_groups", juce::var());
+            okM (gs.getArray() != nullptr && gs.getArray()->size() == 3,
+                 "the session file carries the three groups (a park restores them)");
+        }
+
+        assignPanel.dispatchAction ("submit");
+        okM (assignPanel.isSubmitEnabled(), "review allows the hand-entered map");
+        std::cout << "---- review ----\n" << assignPanel.bandTableText() << std::endl;
+        okM (assignPanel.confirmSubmitFromSummary(), "submit confirmed");
+
+        auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
+        okM (f.existsAsFile(), "map written to maps/<fp>.json");
+        auto v = juce::JSON::parse (f.loadFileAsString());
+        auto* ga = v.getProperty ("groups", juce::var()).getArray();
+        okM (ga != nullptr && ga->size() == 3,
+             "THE ACCEPTANCE TEST: the submitted map carries three band groups");
+        if (ga != nullptr && ga->size() == 3)
+        {
+            std::cout << "---- groups as written ----\n"
+                      << juce::JSON::toString (v.getProperty ("groups", juce::var()), false)
+                      << std::endl;
+            okM ((*ga)[0].getProperty ("grouping_source", "").toString() == "mapper",
+                 "the written map says the GROUPING was the mapper's");
+        }
+
+        std::cout << "MBANDS: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
+    /** THE GUARDS, TESTED BY ATTEMPTING THE THING THEY REFUSE. Asserting a
+        flag exists proves nothing; each of these drives the wizard into the
+        state and checks it stops.
+    */
+    void manualBandsRefusals (int bandsRow)
+    {
+        // 1. ORDER. Bands were entered high-first, so the mapper's numbering
+        //    and the swept frequencies disagree.
+        assignPanel.dispatchAction ("space");
+        okM (assignPanel.groupsForSubmit().isEmpty(),
+             "ORDER REFUSAL: nothing was accepted when the labels and the frequencies disagree");
+        okM (assignPanel.textRender().contains ("band order and the frequencies disagree"),
+             "the refusal SHOWS BOTH: what was entered and the order the frequencies give");
+        std::cout << "---- order refusal ----\n"
+                  << assignPanel.currentQuestionText() << "\n"
+                  << assignPanel.textRender().fromFirstOccurrenceOf ("notice", true, false)
+                  << std::endl;
+
+        // 2. UNIT SANITY. Point a frequency slot at a dB control -- the
+        //    commonest slip, picking the gain when you meant the freq.
+        //
+        //    Mid Gain has to be RELEASED first: band 2's gain row already
+        //    holds it, so a re-capture there raises the duplicate-index card
+        //    instead (which is the card doing its job, and it masked this
+        //    guard on the first run). W then D withdraws that claim -- the
+        //    same two keys that clear a duplicate anywhere else.
+        const int midGainRow = assignPanel.bandRowIndex (2, "gain_db");
+        assignPanel.selectRow (midGainRow);
+        assignPanel.dispatchAction ("wiggle");
+        assignPanel.dispatchAction ("defer");
+        okM (assignPanel.rows.getReference (midGainRow).state == AssignRow::State::skipDeferred,
+             "W then D releases band 2's gain claim, freeing the index for the next capture");
+
+        const int fr = assignPanel.bandRowIndex (1, "freq_hz");
+        const int gainIdx = paramIndexByName ("Mid Gain");
+        auto* inst = host.getInstance();
+        assignPanel.selectRow (fr);
+        assignPanel.dispatchAction ("wiggle");
+        inst->getParameters()[gainIdx]->setValueNotifyingHost (0.25f);
+        juce::Timer::callAfterDelay (300, [this, gainIdx]
+        {
+            auto* i2 = host.getInstance();
+            if (i2 != nullptr) i2->getParameters()[gainIdx]->setValueNotifyingHost (0.70f);
+        });
+        juce::Timer::callAfterDelay (1500, [this, bandsRow] { manualBandsRefusals2 (bandsRow); });
+    }
+
+    void manualBandsRefusals2 (int bandsRow)
+    {
+        assignPanel.selectRow (bandsRow);
+        assignPanel.dispatchAction ("space");
+        okM (assignPanel.groupsForSubmit().isEmpty()
+               && assignPanel.textRender().contains ("sweeps in 'db', not Hz"),
+             "UNIT REFUSAL: a frequency slot that sweeps in dB is refused, naming the index");
+
+        // 3. THE FIXED-FREQUENCY ANSWER, which the band card could not give at
+        //    all before: N on a frequency row means "this band has no
+        //    frequency CONTROL", and the number is then transcribed.
+        const int fr = assignPanel.bandRowIndex (1, "freq_hz");
+        assignPanel.selectRow (fr);
+        okM (! assignPanel.keyValid ("notpresent"),
+             "N is NOT offered on a confirmed frequency row: W withdraws first, as everywhere else");
+        assignPanel.dispatchAction ("wiggle");             // re-open, then answer N
+        okM (assignPanel.textRender().contains ("N - no frequency control (fixed band)"),
+             "the re-opened frequency row OFFERS the graphic-EQ answer");
+        assignPanel.dispatchAction ("notpresent");
+        okM (assignPanel.isAskingText(), "N asks what the band is FIXED at");
+        assignPanel.answerEntry ("250");
+        {
+            const auto& r = assignPanel.rows.getReference (fr);
+            okM (r.state == AssignRow::State::confirmed && r.freqSource == "typed_fixed"
+                   && std::abs (r.typedFreqHz - 250.0) < 0.01 && r.resolvedIndex < 0,
+                 "the fixed band confirms with NO index and freq_source typed_fixed");
+        }
+        okM (assignPanel.textRender().contains ("250.0 Hz fixed"),
+             "the row says on its face that the number is fixed, not measured");
+
+        std::cout << "MBANDS: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
+    /** THE DUPLICATE-INDEX ESCAPE, proven by attempting it (4 Aug 2026).
+
+        API-2500 (m)'s session holds TWO duplicate-index pairs -- [8] claimed
+        by makeup_db AND output_db, [3] claimed by release_ms AND release_ms --
+        and submit refuses on both. Today's build cannot create either: every
+        one of those rows was confirmed on 31 Jul between 11:53:01 and
+        11:54:42, and the capture-time conflict card landed at 12:28:31 the
+        same day (f22b15c). They are legacy state carried by a restored
+        session, which is the case confirmedHolderOf's own comment anticipates.
+
+        So the question is not how they formed but whether a mapper can get
+        OUT of them with the keys the wizard offers. This attempts it.
+
+        THE DUPLICATE STATE HERE IS CONSTRUCTED AND SAYS SO. Rows are set
+        confirmed onto one index directly, because no keypress sequence in
+        this build reaches that state. Everything else is real: the sweep
+        comes from the loaded plugin, and every step after the setup is a key
+        a human presses through dispatchAction.
+
+        Case B (same semantic twice, the [3] shape): W then D.
+        Case A (two semantics on one index, the [8] shape): W, re-touch, SPACE.
+    */
+    void selfTestDupEscape (const juce::String& identifier)
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "DUPTEST: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        ledger.beginLoad (loadedId, desc.name, desc.manufacturerName,
+                          desc.pluginFormatName, desc.version, "load", "createPluginInstance");
+        auto res = host.load (desc, watchdog);
+        { LedgerRecord rec; rec.pluginId = loadedId; rec.name = desc.name;
+          rec.outcome = res.outcome; rec.detail = res.detail; rec.paramCount = res.paramCount;
+          ledger.endLoad (rec); }
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "DUPTEST: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        listeners.attach (*inst);
+        cal = capture.calibrate (*inst, loadedId);
+        mask = capture.buildNoiseMask (*inst, cal, loadedId);
+        capture.resetCycleCounts();
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+
+        // Two write-responsive parameters, qualified by SWEEPING them rather
+        // than by a set/read pair around Thread::sleep. On a bridged AU the
+        // sleep blocks the message loop the XPC reply needs, so the read
+        // returns the pre-write value and a healthy parameter reads dead --
+        // the class recorded in M9_PAUSED.md, and measured here: the
+        // set/sleep/read qualifier the assign test uses qualified ZERO of
+        // API-2500's parameters. runSweep services the runloop (the sweeper
+        // has since M3), so this asks the question through the path that
+        // works on the plugin the case is about.
+        auto& params = inst->getParameters();
+        qualified.clearQuick();
+        juce::Array<SweepOutcome> qualifiedSweeps;
+        for (int i = 0; i < params.size() && qualified.size() < 2; ++i)
+        {
+            if (mask.indices.contains (i)) continue;
+            auto* pp = params[i];
+            if (pp->isDiscrete() || ! pp->isAutomatable()) continue;
+            auto s = assignPanel.hooks.sweepIndex ? assignPanel.hooks.sweepIndex (i) : SweepOutcome();
+            if (s.ok && s.anchors.size() >= 2 && ! s.nonNumeric)
+            { qualified.add (i); qualifiedSweeps.add (s); }
+        }
+        if (qualified.size() < 2)
+        { std::cout << "DUPTEST: too few sweepable params" << std::endl; quitNow(); return; }
+
+        // A RESTORED SESSION SILENTLY REWRITES THIS TEST'S PREMISE. The test
+        // constructs a specific duplicate; begin() restores assign-<fp>.json
+        // when one exists, so the second run in the same ledger root inherits
+        // the first run's confirmed rows and case B then refuses on case A's
+        // duplicate -- which reads as a code defect and is not one (observed,
+        // 4 Aug 2026). Refuse rather than delete: the file may be a real
+        // parked session, and this test must never be the thing that eats one.
+        {
+            auto sess = ledger.getRoot().getChildFile ("assign-" + currentFp + ".json");
+            if (sess.existsAsFile())
+            {
+                std::cout << "DUPTEST: REFUSED -- a session file already exists for this fp:\n"
+                          << "         " << sess.getFullPathName() << "\n"
+                          << "         It would be restored and would replace the state this test\n"
+                          << "         constructs. Run with a fresh --ledger-root, or move that file."
+                          << std::endl;
+                ++failures;
+                std::cout << "DUPTEST: FAIL" << std::endl;
+                quitNow(); return;
+            }
+        }
+
+        failures = 0;
+        std::cout << "DUPTEST: " << desc.name << " | fp " << currentFp.substring (0, 12)
+                  << "... | the duplicate state is CONSTRUCTED (no keypress sequence in this "
+                     "build reaches it); the sweeps and every key after it are real"
+                  << std::endl;
+
+        auto ok = [this] (bool cond, const juce::String& what)
+        {
+            if (! cond) ++failures;
+            std::cout << "  " << (cond ? "ok   " : "FAIL ") << what << std::endl;
+            std::cout.flush();
+        };
+
+        startAssignmentForCategory ("compressor");
+
+        auto rowFor = [this] (const juce::String& sem)
+        {
+            for (int i = 0; i < assignPanel.rows.size(); ++i)
+                if (assignPanel.rows.getReference (i).semantic == sem) return i;
+            return -1;
+        };
+
+        // The anchors these rows carry came off the loaded plugin during
+        // qualification: sweep.ok is an observation, not a fabrication.
+        const auto swA = qualifiedSweeps.getReference (0);
+        const auto swB = qualifiedSweeps.getReference (1);
+        ok (swA.ok && swB.ok, "both subject indices sweep confirmable (setup precondition)");
+        std::cout << "  subjects: [" << qualified[0] << "] "
+                  << assignPanel.hooks.paramName (qualified[0]) << "  and  ["
+                  << qualified[1] << "] " << assignPanel.hooks.paramName (qualified[1])
+                  << std::endl;
+
+        auto forceConfirm = [this] (int rowI, int index, const SweepOutcome& s,
+                                    const juce::String& staleReason)
+        {
+            auto& r = assignPanel.rows.getReference (rowI);
+            r.state = AssignRow::State::confirmed;
+            r.resolvedIndex = index;
+            r.sweep = s;
+            r.trust = "human-verified";
+            r.mode = "fast";
+            r.resolvedAt = juce::Time::getCurrentTime().toISO8601 (true);
+            r.skipReason = staleReason;
+        };
+
+        //----------------------------------------------------------------
+        // CASE B: one semantic twice on one index, the [3] release_ms shape,
+        // including the stale supersede reason the disk actually carries.
+        const int mixR = rowFor ("mix_pct"), inR = rowFor ("input_db");
+        ok (mixR >= 0 && inR >= 0, "compressor checklist has the two rows the case needs");
+        assignPanel.rows.getReference (mixR).semantic = "input_db";
+        assignPanel.rows.getReference (mixR).kind     = "input_db";
+        forceConfirm (inR,  qualified[1], swB, {});
+        forceConfirm (mixR, qualified[1], swB,
+                      "superseded: [" + juce::String (qualified[1]) + "] confirmed for input_db");
+
+        assignPanel.dispatchAction ("submit");
+        ok (! assignPanel.isSubmitEnabled()
+              && assignPanel.bandTableText().contains ("input_db AND input_db"),
+            "B: review refuses the same-semantic duplicate, and names it twice");
+        std::cout << "---- review, same-semantic duplicate ----\n"
+                  << assignPanel.bandTableText() << std::endl;
+        assignPanel.dispatchAction ("prev");           // back to the rows
+
+        // The escape, as keys: W re-opens the confirmed row, D defers it.
+        assignPanel.selectRow (mixR);
+        ok (assignPanel.textRender().contains ("W - re-open"),
+            "B: the confirmed row offers W - re-open (re-capture)");
+        assignPanel.dispatchAction ("wiggle");
+        ok (assignPanel.rows.getReference (mixR).state == AssignRow::State::armed
+              && assignPanel.rows.getReference (mixR).resolvedIndex == qualified[1]
+              && assignPanel.rows.getReference (mixR).sweep.anchors.size() >= 2,
+            "B: W un-confirms and the sweep evidence SURVIVES (verdict withdrawn, not the measurement)");
+        ok (assignPanel.rows.getReference (mixR).skipReason.isEmpty(),
+            "B: W also withdraws the previous outcome's REASON (the stale 'superseded:' text)");
+
+        // READ WHAT THE CONSUMER READS: the session file, not the row in
+        // memory. A withdrawal that never reaches disk leaves a parked plugin
+        // restoring a verdict the mapper had already taken back.
+        {
+            auto sess = ledger.getRoot().getChildFile ("assign-" + currentFp + ".json");
+            auto v = juce::JSON::parse (sess.loadFileAsString());
+            // BY STATE, NOT BY POSITION. The first attempt indexed the second
+            // input_db row and read 'confirmed' from the row that is SUPPOSED
+            // to be confirmed: mix_pct sorts before input_db in the dial set,
+            // so the re-opened row is the first of the two. A test that picks
+            // its subject by array position fails the moment the checklist
+            // order changes; ask the question the assertion actually means.
+            juce::StringArray statesOnDisk;
+            if (auto* arr = v.getProperty ("rows", juce::var()).getArray())
+                for (auto& rv : *arr)
+                    if (rv.getProperty ("semantic", "").toString() == "input_db")
+                        statesOnDisk.add (rv.getProperty ("state", "").toString());
+            ok (sess.existsAsFile() && statesOnDisk.contains ("armed"),
+                "B: the withdrawal is DURABLE -- the session file's input_db rows read ["
+                  + statesOnDisk.joinIntoString (", ") + "], one of them re-opened");
+        }
+        assignPanel.dispatchAction ("defer");
+        {
+            const auto& r = assignPanel.rows.getReference (mixR);
+            ok (r.state == AssignRow::State::skipDeferred,
+                "B: D resolves the re-opened row as deferred");
+            ok (r.skipReason == "deferred by mapper",
+                "B: the stale 'superseded:' reason is OVERWRITTEN by the new outcome, not carried");
+        }
+        assignPanel.dispatchAction ("submit");
+        ok (assignPanel.isSubmitEnabled(),
+            "B: W then D clears the same-semantic duplicate and submit is enabled");
+        assignPanel.dispatchAction ("prev");
+
+        //----------------------------------------------------------------
+        // CASE A: two semantics on one index, the [8] makeup/output shape.
+        const int mkR = rowFor ("makeup_db"), outR = rowFor ("output_db");
+        ok (mkR >= 0 && outR >= 0, "compressor checklist has makeup_db and output_db");
+        forceConfirm (mkR,  qualified[0], swA, {});
+        // The API-2500 shape exactly: the second row also carries a stale
+        // supersede reason from an outcome that was later overturned.
+        forceConfirm (outR, qualified[0], swA,
+                      "superseded: [" + juce::String (qualified[0]) + "] confirmed for output_db");
+        assignPanel.dispatchAction ("submit");
+        ok (! assignPanel.isSubmitEnabled()
+              && assignPanel.bandTableText().contains ("makeup_db AND output_db"),
+            "A: review refuses the shared index, naming both semantics");
+        assignPanel.dispatchAction ("prev");
+
+        assignPanel.selectRow (outR);
+        ok (! assignPanel.keyValid ("space"),
+            "A: SPACE is NOT offered on the confirmed row -- the insist is not reachable from here");
+        assignPanel.dispatchAction ("wiggle");          // re-open, then re-touch
+        inst->getParameters()[qualified[0]]->setValueNotifyingHost (0.20f);
+        juce::Timer::callAfterDelay (300, [this]
+        {
+            auto* i2 = host.getInstance();
+            if (i2 != nullptr) i2->getParameters()[qualified[0]]->setValueNotifyingHost (0.62f);
+        });
+        juce::Timer::callAfterDelay (1500, [this] { dupEscapePart2(); });
+    }
+
+    void dupEscapePart2()
+    {
+        auto ok = [this] (bool cond, const juce::String& what)
+        {
+            if (! cond) ++failures;
+            std::cout << "  " << (cond ? "ok   " : "FAIL ") << what << std::endl;
+            std::cout.flush();
+        };
+
+        int outR = -1;
+        for (int i = 0; i < assignPanel.rows.size(); ++i)
+            if (assignPanel.rows.getReference (i).semantic == "output_db") outR = i;
+
+        ok (outR >= 0 && assignPanel.rows.getReference (outR).conflictWith == "makeup_db",
+            "A: the re-capture raised the conflict card, naming the holder");
+        std::cout << "---- conflict card, reached from a confirmed row ----\n"
+                  << assignPanel.textRender() << std::endl;
+
+        ok (assignPanel.keyValid ("space"),
+            "A: SPACE is now valid -- the insist became reachable via W");
+        assignPanel.selectRow (outR);
+        assignPanel.dispatchAction ("space");
+        {
+            const auto& r = assignPanel.rows.getReference (outR);
+            ok (r.state == AssignRow::State::confirmed && r.sharedInsisted,
+                "A: SPACE insisted -- shared control confirmed and recorded as a decision");
+            ok (r.skipReason.isEmpty(),
+                "A: the re-confirmed row carries NO stale reason (the API-2500 defect, fixed at W)");
+        }
+        assignPanel.dispatchAction ("submit");
+        ok (assignPanel.isSubmitEnabled(),
+            "A: submit is enabled with the insisted pair (the exemption clears the refusal)");
+        std::cout << "---- review after the insist ----\n"
+                  << assignPanel.bandTableText() << std::endl;
+
+        std::cout << "DUPTEST: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
 private:
     //==========================================================================
     /** Re-entrancy guard.
@@ -8225,6 +8896,14 @@ private:
             // a semantic. Same class as the -1 duplicate refusal.
             if (r.isSurfaceRow())
                 continue;
+            // BAND MEMBERS ARE NOT FLAT PARAMS. A manually entered band's
+            // freq/gain belong to a GROUP, and writing them flat is the
+            // bx_digital failure shape the wizard already refuses to build by
+            // hand: a request would then split across a band and a stray flat
+            // control. The panel assembles them into groups at accept, and
+            // groupsForSubmit carries them.
+            if (r.isBandMemberRow())
+                continue;
             if (r.state == AssignRow::State::confirmed && r.sweep.anchors.size() >= 2)
             {
                 ParamMapping m;
@@ -9381,7 +10060,27 @@ private:
         {
             editorHolder.addAndMakeVisible (hostedEditor.get());
             layoutEditor();
+            reportEditorFit();
         }
+    }
+
+    /** Editor geometry, printed at attach. An editor wider or taller than the
+        region it was given is the condition behind "the plugin GUI covered the
+        whole tool" (Eiosis AirEQ, 4 Aug 2026), and it is not visible from the
+        source: layoutEditor() only positions, so the size is entirely the
+        plugin's. One line, so the next report of this comes with numbers.
+    */
+    void reportEditorFit()
+    {
+        if (hostedEditor == nullptr) return;
+        const auto e = hostedEditor->getBounds();
+        const auto h = editorHolder.getBounds();
+        const bool over = e.getWidth() > h.getWidth() || e.getHeight() > h.getHeight();
+        std::cout << "EDITORFIT: " << loadedName << " editor " << e.getWidth() << "x" << e.getHeight()
+                  << " | holder " << h.getWidth() << "x" << h.getHeight()
+                  << " | window " << getWidth() << "x" << getHeight()
+                  << " | " << (over ? "OVERFLOWS the holder" : "fits") << std::endl;
+        std::cout.flush();
     }
 
     void detachEditor()

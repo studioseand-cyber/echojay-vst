@@ -707,10 +707,22 @@ void testAgainstRealMaps()
                                                    .getProperty (sem, juce::var())
                                                    .getProperty ("index", -1);
                         auto slot = ejmap::subject::slotInGroup (v, pick.arrayIndex, sem);
-                        check (slot.ok() && slot.index == fixtureIdx,
-                               juce::String ("corpus: map-side ") + sem + " resolves to the same "
-                               "index as the fixture route (" + juce::String (fixtureIdx) + ") in "
-                               + entry.getFile().getFileName());
+                        // AGREEMENT, NOT PRESENCE. This asserts the two routes
+                        // reach the same place; it used to also demand that
+                        // they reach one at all, which quietly required every
+                        // band to carry a q. A band without q is legitimate
+                        // and common -- API-550A has none, several vintage EQs
+                        // fix or step it, and the manual-entry design records
+                        // q as optional by decision. The first real map with a
+                        // q-less group (Dangerous BAX EQ Master, submitted
+                        // 4 Aug 2026) failed a gate that had simply never met
+                        // one. Both-absent is agreement.
+                        check (slot.ok() == (fixtureIdx >= 0)
+                                 && (fixtureIdx < 0 || slot.index == fixtureIdx),
+                               juce::String ("corpus: map-side ") + sem + " agrees with the "
+                               "fixture route (" + (fixtureIdx < 0 ? juce::String ("absent in both")
+                                                                   : juce::String (fixtureIdx))
+                               + ") in " + entry.getFile().getFileName());
                     }
                     // and the ladder the suite would drive is expressible
                     auto fslot = ejmap::subject::slotInGroup (v, pick.arrayIndex, "freq_hz");
