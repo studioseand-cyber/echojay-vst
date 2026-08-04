@@ -1975,18 +1975,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainListPanel.masterKnob.setValue(processorRef.getChainHost().getMasterWet());
     addChildComponent(chainListPanel);
 
-    // THE RACK SELECTOR. A dropdown rather than a row of names: a session can
-    // carry kRegMaxSlots = 16 Links, a row would not fit the 32px header at
-    // any window width, and the product already selects channels through a
-    // menu (the banner dropdown that replaced the chip bar, for the same
-    // reason). It holds NO state of its own; its label is derived from
-    // chainViewUid() on every refresh, so it cannot disagree with the mixer.
-    chainRackBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
-    chainRackBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
-    chainRackBtn.setTooltip("Choose which Link's rack this tab shows. "
-                            "The Link mixer follows the same selection.");
-    chainRackBtn.onClick = [this] { showChainRackMenu(); };
-    addChildComponent(chainRackBtn);
+    // THE RACK SELECTOR lives on the panel (see ChainListPanel::rackBtn); the
+    // editor only supplies the menu. A dropdown rather than a row of names: a
+    // session can carry kRegMaxSlots = 16 Links and the product already
+    // selects channels through a menu. It holds NO state of its own; its
+    // label is derived from chainViewUid() on every refresh, so it cannot
+    // disagree with the mixer.
+    chainListPanel.onRackClick = [this] { showChainRackMenu(); };
 
     // Sidebar collapse toggle. Collapsing gives the main column the full tab
     // width. NOT Chain only any more: one flag for every chat-hosting
@@ -4059,7 +4054,10 @@ void EchoJayEditor::applyReviewModalState()
     // Rack (incl. hosted native editors — NSViews composite over lightweight
     // components, so they must be HIDDEN, not out-z-ordered).
     chainListPanel.setVisible(onChain && !modal);
-    chainRackBtn.setVisible(onChain && !modal);
+    // No line for the rack selector: it is a CHILD of chainListPanel, so it
+    // follows the panel's visibility with no second author. It used to be an
+    // editor child listed only here, which is why it never appeared -- this
+    // method runs on review-modal open/close, not on a tab switch.
     // Chain header chrome.
     const bool chrome = onChain && !modal && !compactMode && !visualOnlyMode;
     // chatCollapseBtn is NOT set here any more. It left the Chain header for
@@ -7155,7 +7153,7 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         // drawn as changed there is no optimistic state to roll back.
         if (pendingNote.isNotEmpty()) chainListPanel.statusText = pendingNote;
     }
-    chainRackBtn.setButtonText("RACK: " + v.name.toUpperCase());
+    chainListPanel.rackBtn.setButtonText("RACK: " + v.name.toUpperCase());
     repaint();
 }
 
@@ -7183,7 +7181,7 @@ void EchoJayEditor::showChainRackMenu()
         uids.push_back(e.info.uid);
     }
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(chainRackBtn),
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(chainListPanel.rackBtn),
         [safeThis, uids](int r)
         {
             if (safeThis == nullptr || r <= 0) return;
@@ -15591,8 +15589,6 @@ void EchoJayEditor::resized()
         int contentH = b.getHeight() - topH - abOff3;
         // Panel fills from below the header strip to the bottom
         chainListPanel.setBounds(0, topH + 32, mW, contentH - 32);
-        // The selector lives in the 32px header strip above the panel.
-        chainRackBtn.setBounds(12, topH + 4, 220, 24);
 
         // (The collapse chevron is authored UNCONDITIONALLY below, outside
         // this branch, for the same reason Save / Save As / Open are. See the

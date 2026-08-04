@@ -1546,6 +1546,23 @@ private:
         std::unique_ptr<ChainEditorWindow> popout;
         int popoutSlot = -1;
 
+        /** THE RACK SELECTOR. It lives on the PANEL, not on the editor, and
+            that is the fix for the bug that hid it: as a panel child its
+            visibility follows the panel's automatically, so there is ONE
+            authority instead of the editor's switchToTab branches and
+            applyReviewModalState having to agree. It sat invisible from
+            launch because only the second of those knew about it.
+
+            It also could not stay in the window header strip, which has no
+            room: the title takes 14..114, the saved-chain name field EXPANDS
+            to fill everything the Save/Save As/Open buttons leave, and those
+            are right-aligned from mW-186. Nothing was free. Here it sits at
+            the left end of the rack strip, labelling the blocks beside it,
+            mirroring the master MIX knob at the other end. */
+        juce::TextButton      rackBtn { "RACK" };
+        std::function<void()> onRackClick;
+        static constexpr int  kRackSelW = 150;   // reserved left of the strip
+
         // Card header row controls — act on the SELECTED slot
         juce::TextButton cardBypassBtn { "B" };
         juce::TextButton cardRemoveBtn { "X" };
@@ -1597,6 +1614,13 @@ private:
                 layoutInline();
                 attachNative(false);
             };
+
+            rackBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+            rackBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+            rackBtn.setTooltip("Choose which Link's rack this tab shows. "
+                               "The Link mixer follows the same selection.");
+            rackBtn.onClick = [this] { if (onRackClick) onRackClick(); };
+            addAndMakeVisible(rackBtn);
 
             addAndMakeVisible(stripView);
             stripView.setViewedComponent(&stripContent, false);
@@ -2250,8 +2274,14 @@ private:
             settingsBox.setBounds(sb.getX() + 8, sb.getY() + 18,
                                   sb.getWidth() - 16, sb.getHeight() - 24);
 
-            stripView.setBounds(0, getHeight() - kStripH,
-                                juce::jmax(50, getWidth() - kMasterW), kStripH);
+            // The selector takes the left end of the rack strip and the strip
+            // gives up exactly that width, so the two cannot overlap however
+            // narrow the window gets. Same shape as the master knob's
+            // reservation at the right end.
+            rackBtn.setBounds(8, getHeight() - kStripH + 8, kRackSelW - 16, 24);
+            stripView.setBounds(kRackSelW, getHeight() - kStripH,
+                                juce::jmax(50, getWidth() - kMasterW - kRackSelW),
+                                kStripH);
             masterKnob.setBounds(getWidth() - kMasterW + 9,
                                  getHeight() - kStripH + 6, 44, 54);
             updateCard();
@@ -3349,7 +3379,6 @@ private:
     void refreshChainPanelForView(bool force);
     juce::String chainViewSig_;    // change detector for the remote refresh
     void showChainRackMenu();
-    juce::TextButton chainRackBtn { "RACK" };
 
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row
