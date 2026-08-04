@@ -2302,6 +2302,18 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                                                          : CompareScope::Anyway);
                 return;
             }
+            // STEP 3b: the channel-switch chip is ALSO entirely client-side.
+            // Same reason as the compare pair above and one more: this chip
+            // sends no turn at all, so there is nothing for the model to
+            // contradict and nothing it can fabricate. The switch itself is
+            // navigation and is never billed; the request it carries over is
+            // billed as whatever it classifies as on the NEW channel, which
+            // is the same turn the user would have got by typing it there.
+            if (intent == "switch")
+            {
+                openChannelChooser((int) i);
+                return;
+            }
             // Answer format per CHAIN_AI_BUILD_SPEC: self-contained Q->A pair
             // that survives history trimming (blocks are stripped in storage).
             // sendChatMessage -> supersedePendingAsks marks + persists.
@@ -19654,11 +19666,20 @@ juce::String EchoJayEditor::askDataFromClassifyChips(const juce::String& questio
     {
         if (choices.size() >= kMaxAskChips) break;
         juce::String label, detail, intent;
+        juce::var candidates;
         if (auto* co = cv.getDynamicObject())
         {
             label  = co->getProperty("label").toString().trim();
             detail = co->getProperty("detail").toString().trim();
             intent = co->getProperty("intent").toString().trim();
+            // Ranked switch destinations ({instanceId, why}), carried VERBATIM.
+            // This function is the ingestion boundary: a field it does not
+            // copy is gone by the time anything can read it, which is how the
+            // chooser would have found an empty ranking and silently fallen
+            // back to its own ordering. Not interpreted here — the chooser
+            // validates ids against the live registry, because a Link can
+            // disappear between the classify call and the tap.
+            candidates = co->getProperty("candidates");
         }
         else
         {
@@ -19670,6 +19691,8 @@ juce::String EchoJayEditor::askDataFromClassifyChips(const juce::String& questio
         c->setProperty("label", label);
         if (detail.isNotEmpty()) c->setProperty("detail", detail);
         if (intent.isNotEmpty()) c->setProperty("intent", intent);
+        if (auto* ca = candidates.getArray(); ca != nullptr && ! ca->isEmpty())
+            c->setProperty("candidates", candidates);
         choices.add(juce::var(c));
     }
 
@@ -19743,6 +19766,166 @@ void EchoJayEditor::renderClassifierQuestion(const juce::String& question,
     // the message now) and reflows the viewport above it.
     resized();
     repaint();
+}
+
+// The newest thing the USER typed in this conversation, verbatim.
+//
+// chatMessages holds the raw typed text for a user turn (`um.content = msg`
+// — injections go to chatContents, not here), so this needs no stripping and
+// must not acquire any: the point of carrying the request over is that the
+// user does not retype it, and a "cleaned" version is a different request.
+juce::String EchoJayEditor::newestUserRequest() const
+{
+    for (int i = (int) chatMessages.size() - 1; i >= 0; --i)
+        if (chatMessages[(size_t) i].role == "user")
+            return chatMessages[(size_t) i].content;
+    return {};
+}
+
+// The channel chooser: pick a Link to move this request to.
+//
+// MEMBERSHIP FROM THE REGISTRY, ORDER FROM THE MODEL. getLinkDisplayList() is
+// the canonical list every Link surface must agree on, and it assigns the
+// "Untitled N" numbering over the FULL set — so an unnamed Link appears here
+// with the same label it has in the Monitor, rather than vanishing because the
+// classifier could not name it (the server drops nameless links from LINKS
+// entirely). The model supplies ranking only, and a ranking it cannot supply
+// costs the user nothing.
+//
+// OFFLINE LINKS ARE LISTED AND MARKED, never hidden. A channel chat for an
+// offline Link is legal — its rack sidecar persists and the conversation is
+// real — so hiding it would remove a destination the app supports.
+void EchoJayEditor::openChannelChooser(int chipIdx)
+{
+    // Candidates ride the chip, read at TAP time rather than cached at layout
+    // time: the shelf is rebuilt on every resize and the ranking is only
+    // needed once, here.
+    juce::StringArray rankedUids;
+    std::map<juce::String, juce::String> whyByUid;
+    if (askChipMsgIdx_ >= 0 && askChipMsgIdx_ < (int) chatMessages.size())
+    {
+        auto parsed = juce::JSON::parse(chatMessages[(size_t) askChipMsgIdx_].askData);
+        if (auto* root = parsed.getDynamicObject())
+            if (auto* choices = root->getProperty("choices").getArray())
+                if (chipIdx >= 0 && chipIdx < choices->size())
+                    if (auto* ch = (*choices)[chipIdx].getDynamicObject())
+                        if (auto* cands = ch->getProperty("candidates").getArray())
+                            for (const auto& cv : *cands)
+                                if (auto* co = cv.getDynamicObject())
+                                {
+                                    const auto id = co->getProperty("instanceId").toString().trim();
+                                    if (id.isEmpty() || rankedUids.contains(id)) continue;
+                                    rankedUids.add(id);
+                                    whyByUid[id] = co->getProperty("why").toString().trim();
+                                }
+    }
+
+    // Ordering is echojay::orderSwitchDestinations — shared with the fixture
+    // in test/channel_label_test.cpp rather than written inline here, because
+    // "the model's ranking is only an opinion" is a rule with four ways to get
+    // it subtly wrong (a hallucinated id, the current channel, a duplicate, an
+    // unrankable unnamed Link) and none of them are visible by reading a menu.
+    std::vector<std::string> registryUids;
+    std::map<juce::String, juce::String> nameByUid;
+    for (const auto& e : processorRef.getLinkDisplayList())
+    {
+        if (e.info.uid.isEmpty()) continue;
+        registryUids.push_back(e.info.uid.toStdString());
+        nameByUid[e.info.uid] = e.displayName;   // canonical label, incl. "Untitled N"
+    }
+    std::vector<std::string> ranked;
+    for (const auto& u : rankedUids) ranked.push_back(u.toStdString());
+
+    juce::StringArray ordered;
+    for (const auto& u : echojay::orderSwitchDestinations(
+             registryUids, ranked, effectiveChannelUid().toStdString()))
+        ordered.add(juce::String(u));
+
+    if (ordered.isEmpty())
+    {
+        EchoJay_NSLog("EJSwitch: chooser opened with no destination (no other Links)");
+        return;
+    }
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("MOVE THIS REQUEST TO");
+    for (int i = 0; i < ordered.size(); ++i)
+    {
+        const auto& uid = ordered[i];
+        juce::String row = nameByUid[uid];
+        if (auto it = whyByUid.find(uid); it != whyByUid.end() && it->second.isNotEmpty())
+            row += "  -  " + it->second;
+        if (! linkUidLive(uid)) row += "  (offline)";
+        menu.addItem(i + 1, row);
+    }
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(&askChipBtns[(size_t) chipIdx]),
+        [safeThis, ordered](int result)
+        {
+            if (safeThis == nullptr || result <= 0 || result > ordered.size()) return;
+            safeThis->switchChannelCarryingRequest(ordered[result - 1]);
+        });
+}
+
+// SWITCH FIRST, THEN SEED. The order is load-bearing twice over and it is
+// checked at runtime, not asserted in a comment.
+//
+// Both effectiveChannelUid() and priorAssistantForClassify() read the ACTIVE
+// CHAT. Seed before the switch lands and the seeded turn goes out with the OLD
+// channel and the OLD prior reply, which is not one bug but two in a single
+// turn: /api/classify sees the mismatched channel again and re-fires
+// channel_mismatch, and it sees its own previous question as PRIOR REPLY, so
+// the ASKED ALREADY rule — which exists to stop exactly that loop — misfires
+// on a question the user has already answered. The user would tap the chooser,
+// arrive, and be asked the same thing again with no way forward.
+//
+// jassert alone would not do: it compiles out of the Release build users run,
+// which makes it a comment with extra steps. The post-conditions are verified
+// live and a violation REFUSES TO SEED. Failing to carry the request costs one
+// retype on the right channel; carrying it wrongly costs the loop.
+void EchoJayEditor::switchChannelCarryingRequest(const juce::String& uid)
+{
+    if (uid.isEmpty()) return;
+
+    // Captured BEFORE the switch: openChannelByUid clears chatMessages on the
+    // pending path, and this reads from it.
+    const juce::String request = newestUserRequest();
+
+    supersedePendingAsks();          // marks + persists askAnswered
+    askShelfVisible_ = false;
+
+    openChannelByUid(uid);           // <-- THE SWITCH
+
+    const bool switched     = (effectiveChannelUid() == uid);
+    const bool freshHistory = priorAssistantForClassify().isEmpty();
+    jassert(switched && freshHistory);
+    if (! switched || ! freshHistory)
+    {
+        EchoJay_NSLog(("EJSwitch: REFUSING to seed - ordering violated (switched="
+                       + juce::String(switched ? 1 : 0) + " freshHistory="
+                       + juce::String(freshHistory ? 1 : 0) + ")").toRawUTF8());
+        resized(); repaint();
+        return;
+    }
+
+    if (request.isEmpty())
+    {
+        // Nothing to carry (the chip was tapped with no user turn behind it).
+        // Arriving on the right channel is still the useful half.
+        EchoJay_NSLog("EJSwitch: switched with no request to carry");
+        resized(); repaint();
+        return;
+    }
+
+    // Seeded as a normal send with NO staged turn type: the request is
+    // re-classified from scratch on the new channel, which is the whole point.
+    // channel_mismatch cannot fire again because CHANNEL now follows the
+    // conversation (materialContextName), and ASKED ALREADY cannot misfire
+    // because the prior reply is empty — both verified immediately above.
+    EchoJay_NSLog(("EJSwitch: switched to " + uid + ", carrying the request").toRawUTF8());
+    sendChatMessage(request, {}, {});
 }
 
 void EchoJayEditor::showChainPluginPicker()

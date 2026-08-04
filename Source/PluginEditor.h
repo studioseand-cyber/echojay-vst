@@ -2512,6 +2512,17 @@ private:
     // Newest assistant turn the user has actually seen, for the classifier's
     // PRIOR REPLY fact. Skips provisional bubbles.
     juce::String priorAssistantForClassify() const;
+    // ---- channel switch, carrying the request (chip intent "switch") ----
+    // The chooser lists every Link (membership from getLinkDisplayList so
+    // unnamed ones appear; offline ones marked, not hidden) with the
+    // classifier's ranked candidates first. Selecting one SWITCHES then
+    // SEEDS, in that order — see switchChannelCarryingRequest, where the
+    // ordering is verified at runtime rather than trusted.
+    void openChannelChooser(int chipIdx);
+    void switchChannelCarryingRequest(const juce::String& uid);
+    // The newest USER-typed text in this conversation, verbatim (chatMessages
+    // holds the pre-injection string for user turns, so no stripping).
+    juce::String newestUserRequest() const;
     // Provisional-bubble lifetime. findProvisionalIdx returns -1 when it has
     // already gone; dropProvisional is idempotent.
     int  findProvisionalIdx(int provisionalId) const;

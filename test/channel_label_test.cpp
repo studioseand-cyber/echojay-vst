@@ -59,6 +59,49 @@ int main()
     check (resolveMaterialContext ("", UID, MAIN) == MAIN,
            "MAIN CHAT ignores any label entirely");
 
+    // ---- switch-destination ordering ----
+    // Membership from the registry, order from the model, and the model's
+    // opinion validated rather than trusted.
+    std::printf ("orderSwitchDestinations\n");
+    const std::vector<std::string> reg { "uidA", "uidB", "uidC", "uidUntitled" };
+
+    {   // The ordinary case: ranked first, everyone else after, canonical order.
+        auto o = orderSwitchDestinations (reg, { "uidC" }, "uidA");
+        check (o == std::vector<std::string> ({ "uidC", "uidB", "uidUntitled" }),
+               "ranked first, the rest in registry order, current channel dropped");
+    }
+    {   // An unnamed Link is unrankable (the server drops nameless links from
+        // LINKS) but is still a destination. This is the case that would
+        // silently disappear if membership came from the model.
+        auto o = orderSwitchDestinations (reg, {}, "uidA");
+        check (o == std::vector<std::string> ({ "uidB", "uidC", "uidUntitled" }),
+               "no ranking at all -> full canonical list, nothing lost");
+    }
+    {   // A hallucinated id must not add a row for a Link that does not exist.
+        auto o = orderSwitchDestinations (reg, { "uidGHOST", "uidB" }, "uidA");
+        check (o == std::vector<std::string> ({ "uidB", "uidC", "uidUntitled" }),
+               "an id that is not in the registry is SKIPPED, never listed");
+    }
+    {   // Ranking the channel you are already on is not a destination.
+        auto o = orderSwitchDestinations (reg, { "uidA", "uidB" }, "uidA");
+        check (o == std::vector<std::string> ({ "uidB", "uidC", "uidUntitled" }),
+               "the current channel is dropped even when the model ranks it first");
+    }
+    {   // A duplicated id must not produce two rows for one Link.
+        auto o = orderSwitchDestinations (reg, { "uidB", "uidB" }, "");
+        check (o == std::vector<std::string> ({ "uidB", "uidA", "uidC", "uidUntitled" }),
+               "a repeated candidate appears once");
+    }
+    {   // Full ranking is honoured end to end.
+        auto o = orderSwitchDestinations (reg, { "uidUntitled", "uidC", "uidB", "uidA" }, "");
+        check (o == std::vector<std::string> ({ "uidUntitled", "uidC", "uidB", "uidA" }),
+               "a complete ranking is preserved exactly");
+    }
+    {   // Nothing to switch to.
+        auto o = orderSwitchDestinations ({ "uidA" }, { "uidA" }, "uidA");
+        check (o.empty(), "the only Link being the current one leaves no destination");
+    }
+
     std::printf (g_fail ? "\n%d FAILED\n" : "\nall passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

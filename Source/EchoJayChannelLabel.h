@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <string>
+#include <vector>
 
 // ============================================================================
 // Channel identity from a Link label — ONE predicate, two idioms.
@@ -58,6 +60,43 @@ inline std::string resolveMaterialContext (const std::string& chatLinkUid,
     if (chatLinkUid.empty())                             return mainDefault;
     if (! channelLabelUsable (chatLinkUid, linkLabel))   return {};
     return linkLabel;
+}
+
+// ----------------------------------------------------------------------------
+// Switch-destination ordering: MEMBERSHIP FROM THE REGISTRY, ORDER FROM THE
+// MODEL. The two are separate powers on purpose.
+//
+// registryUids is the canonical Link list (getLinkDisplayList order), which is
+// the ONLY thing that decides who appears. It includes Links the classifier
+// never saw: the server drops nameless links from LINKS entirely, so an
+// unnamed track is unrankable but still a perfectly good destination.
+//
+// rankedUids is the model's opinion, and it is only ever an opinion. Ids it
+// invents are skipped rather than trusted — a Link can also legitimately
+// vanish between the classify call and the tap — so a wholly wrong ranking
+// degrades to the canonical order and costs the user nothing.
+//
+// hereUid is dropped: switching to the channel you are on is a no-op wearing
+// a menu row.
+inline std::vector<std::string> orderSwitchDestinations (
+    const std::vector<std::string>& registryUids,
+    const std::vector<std::string>& rankedUids,
+    const std::string& hereUid)
+{
+    std::vector<std::string> out;
+    const auto eligible = [&] (const std::string& uid)
+    {
+        return ! uid.empty() && uid != hereUid
+            && std::find (registryUids.begin(), registryUids.end(), uid) != registryUids.end()
+            && std::find (out.begin(), out.end(), uid) == out.end();
+    };
+
+    for (const auto& uid : rankedUids)      // the model's order, validated
+        if (eligible (uid)) out.push_back (uid);
+    for (const auto& uid : registryUids)    // everyone else, canonical order
+        if (eligible (uid)) out.push_back (uid);
+
+    return out;
 }
 
 } // namespace echojay
