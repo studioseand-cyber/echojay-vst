@@ -2620,6 +2620,21 @@ public:
     */
     void updateQuestion()
     {
+        // A CARD WITH NO BACKING ROW MUST NOT DRAW AS IF IT HAS ONE. It kept
+        // the previous row's text after the rows were cleared -- "Record mode
+        // switch Analog?" with nothing behind it -- which asks the operator to
+        // answer a question about a row that does not exist, and every key then
+        // refuses because there is nothing to act on. An empty wizard should
+        // say it is empty.
+        if (rowCount() == 0)
+        {
+            question.setText ("No rows. The wizard has nothing to ask about: either the "
+                              "category produced no dial set for this plugin, or a restart "
+                              "cleared the rows without rebuilding them.",
+                              juce::dontSendNotification);
+            return;
+        }
+
         if (awaitingCategory)
         {
             question.setText ("No classifier verdict exists for this fp, so nothing may guess. "

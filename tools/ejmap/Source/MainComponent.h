@@ -8041,6 +8041,14 @@ private:
                                               juce::dontSendNotification); return; }
                 sessionFile.deleteFile();
                 assignPanel.resetAll();
+                // startAssignment() early-returns while `assigning` is true,
+                // and it IS true -- the wizard is open, which is the only way
+                // to reach Restart. So begin() never ran, the rows resetAll had
+                // just cleared were never rebuilt, and the wizard sat at 0/0.
+                // Clearing the flag sends the restart through the SAME entry
+                // path as opening the wizard, rather than a second path that
+                // would drift from it.
+                assigning = false;
                 status.setText ("Map restarted. The plugin is still loaded; the wizard is back "
                                 "at the start and your previous map, if any, is untouched.",
                                 juce::dontSendNotification);
