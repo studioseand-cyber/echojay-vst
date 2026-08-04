@@ -162,3 +162,14 @@ evidence that `attribution: "unknown"` does not quarantine. It was not: the row
 had been released by hand before the file was read. Nothing about the
 attribution/quarantine relationship was established, and nothing here should be
 built on that inference.
+
+### 3. Drawmer 1973 re-quarantined after release (4 Aug 2026)
+
+Released by hand, then quarantined again on a later launch. **Two crashes across two
+separate process launches** — the first determinism evidence gathered under real
+campaign conditions rather than from scan/load outcome ratios.
+
+This is what N=3 is meant to consume. Note it does NOT yet make Drawmer's AU
+deterministic-crashing: 2 of 2 with no successes is consistent both with "always
+crashes" and with a high crash rate. `--load-once --repeat 3` (proposed below /
+in session notes) is how that gets settled rather than argued.
