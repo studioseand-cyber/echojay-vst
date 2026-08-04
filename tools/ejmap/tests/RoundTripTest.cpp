@@ -38,6 +38,7 @@
 #include "EjmapSend.h"
 #include "EjmapProbeRoute.h"
 #include "EjmapMarks.h"
+#include "EjmapAssignment.h"
 
 // The shared sweep and parsers, compiled here so the drift gate proves both
 // binaries build the SAME code: ejextract compiles these headers to produce
@@ -1625,6 +1626,62 @@ void testMarks()
     dir.deleteRecursively();
 }
 
+/** THE UNIT-FAMILY RULE: a semantic's declared unit against the unit the SWEEP
+    measured on the display. Both cases, because a rule with only a true case is
+    not a rule.
+*/
+void testUnitFamilyRule()
+{
+    auto row = [] (const char* sem, const char* fam, int idx)
+    {
+        ejmap::AssignRow r;
+        r.semantic = sem; r.kind = sem;
+        r.state = ejmap::AssignRow::State::confirmed;
+        r.resolvedIndex = idx;
+        r.sweep.unitFamily = fam;
+        return r;
+    };
+
+    juce::Array<ejmap::AssignRow> ok;
+    ok.add (row ("attack_ms",  "ms", 1));
+    ok.add (row ("output_db",  "db", 2));
+    ok.add (row ("freq_hz",    "hz", 3));
+    check (ejmap::unitFamilyConflicts (ok).isEmpty(),
+           "unit rule: matching semantics and measured units raise nothing");
+
+    // The live defect: UAD SPL Transient Designer's Attack is dB of transient
+    // gain, mapped as attack_ms. The readback passed it because it compares
+    // numbers, not units.
+    juce::Array<ejmap::AssignRow> bad;
+    bad.add (row ("attack_ms", "db", 0));
+    const auto c = ejmap::unitFamilyConflicts (bad);
+    check (c.size() == 1 && c[0].contains ("attack_ms") && c[0].contains ("'ms'")
+             && c[0].contains ("'db'"),
+           "unit rule: a ms semantic on a dB control REFUSES, naming both units");
+
+    // The second live one: HG-2's Output is a 0..100% control mapped output_db.
+    juce::Array<ejmap::AssignRow> pct;
+    pct.add (row ("output_db", "pct", 12));
+    check (ejmap::unitFamilyConflicts (pct).size() == 1,
+           "unit rule: a dB semantic on a percentage control REFUSES");
+
+    // ABSENCE IS NOT A CONFLICT, on either side.
+    juce::Array<ejmap::AssignRow> quiet;
+    quiet.add (row ("drive",     "db", 4));   // semantic declares no unit
+    quiet.add (row ("output_db", "",   5));   // display declared no unit
+    check (ejmap::unitFamilyConflicts (quiet).isEmpty(),
+           "unit rule: an undeclared unit on either side claims nothing");
+
+    // Only confirmed, indexed, non-surface rows are judged.
+    juce::Array<ejmap::AssignRow> skipped;
+    auto s1 = row ("attack_ms", "db", 0); s1.state = ejmap::AssignRow::State::skipDeferred;
+    auto s2 = row ("attack_ms", "db", -1);
+    auto s3 = row ("attack_ms", "db", 0); s3.kind = "bands";
+    skipped.add (s1); skipped.add (s2); skipped.add (s3);
+    check (ejmap::unitFamilyConflicts (skipped).isEmpty(),
+           "unit rule: unresolved, index-less and surface rows are not judged");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -1648,6 +1705,7 @@ int main (int, char**)
     testSubjectLookups();
     testReadbackProbe();
     testMarks();
+    testUnitFamilyRule();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

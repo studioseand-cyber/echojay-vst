@@ -2913,7 +2913,9 @@ public:
         // submit path each had a private copy; the copies drifted (the
         // review's learned the surface-row exclusion, the submit's did not)
         // and the AMEK re-run refused twice. Never reimplement it here.
-        return duplicateIndexConflicts (rows);
+        auto out = duplicateIndexConflicts (rows);
+        out.addArray (unitFamilyConflicts (rows));
+        return out;
     }
 
     bool isSummaryShowing() const { return summaryShowing; }
@@ -4038,6 +4040,7 @@ private:
                     r.typedFreqHz     = (double) rv.getProperty ("typed_freq_hz", 0.0);
                     r.sweep.anchorsReversed = (bool) rv.getProperty ("anchors_reversed", false);
                     r.sweep.method    = rv.getProperty ("sweep_method", "").toString();
+                    r.sweep.unitFamily = rv.getProperty ("unit_family", "").toString();
                     r.sweep.identityDisplay = (bool) rv.getProperty ("identity_display", false);
                     r.sweep.ok = false;
                     r.sweep.anchors.clear();

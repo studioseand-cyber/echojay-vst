@@ -128,7 +128,14 @@ target_compile_definitions(ejmap-roundtrip-test PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_PLUGINHOST_AU=1
-    JUCE_PLUGINHOST_VST3=1)
+    JUCE_PLUGINHOST_VST3=1
+    # Matches the ejmap target. The gate now tests rules that live in
+    # EjmapAssignment.h, which pulls in EjmapSweeper.h, whose settle hook calls
+    # runDispatchLoopUntil -- gated behind this flag. Without it the TEST
+    # target fails to compile while the app still builds, so the gate silently
+    # runs a stale binary and reports a pass. Nothing here runs a modal loop;
+    # this only makes the header compilable.
+    JUCE_MODAL_LOOPS_PERMITTED=1)
 
 target_include_directories(ejmap-roundtrip-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Source

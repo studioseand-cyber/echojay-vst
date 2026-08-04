@@ -289,6 +289,13 @@ struct ParamMapping
     */
     juce::String typedReason;
 
+    /** The unit family the SWEEP measured on this control's display ("db",
+        "hz", "ms", "pct", "s"), empty when the display declared none. Recorded
+        so the unit-family rule can be checked from a map alone rather than
+        reconstructed from readback strings.
+    */
+    juce::String unitFamily;
+
     juce::var toVar() const;
 };
 
@@ -563,6 +570,7 @@ inline juce::var ParamMapping::toVar() const
     // parameter would read as "no reason given" rather than "not applicable".
     if (method == AnchorMethod::humanTyped && typedReason.isNotEmpty())
         o->setProperty ("typed_reason", typedReason);
+    if (unitFamily.isNotEmpty()) o->setProperty ("unit", unitFamily);
     o->setProperty ("ui_hint", uiHint.toVar());
     o->setProperty ("captured_by", toString (capturedBy));
     return juce::var (o);

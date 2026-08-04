@@ -410,6 +410,12 @@ struct AssignRow
         o->setProperty ("anchors", juce::var (anch));
         o->setProperty ("anchors_reversed", sweep.anchorsReversed);
         o->setProperty ("sweep_method", sweep.method);
+        // THE MEASURED UNIT, PERSISTED. Without this a restored session has no
+        // unit family, so the unit-family rule cannot fire on exactly the path
+        // that re-submits a parked map -- the rule would be present and
+        // unreachable. Found by attempting the refusal on a restored session
+        // and watching the map re-emit.
+        o->setProperty ("unit_family", sweep.unitFamily);
         o->setProperty ("identity_display", sweep.identityDisplay);
         return juce::var (o);
     }
@@ -432,6 +438,50 @@ struct AssignRow
     bands AND controls" on the same rows (AMEK re-run, twice). A rule that
     exists twice is two rules.
 */
+/** THE UNIT-FAMILY RULE. A semantic declares a unit by its own name --
+    attack_ms is milliseconds, output_db is decibels -- and the sweep MEASURED
+    what the control's display actually speaks. When those disagree, the
+    mapping is wrong however convincing the rest of the evidence looks.
+
+    THE READBACK CANNOT CATCH THIS, which is why the rule is separate. It
+    compares NUMBERS: on UAD SPL Transient Designer, attack_ms asked -1.125 and
+    the display read "-1.13 dB", and it recorded match=true. A correct-looking
+    verify passed a mapping that would interpolate "attack 30 ms" against a
+    table spanning -15..+15 dB and set +15 dB of transient gain. That is the
+    Mono Maker class again: the name was right and the behaviour was not what
+    the name implied.
+
+    Measured across the corpus before this landed (4 Aug 2026): 47 params
+    carried both a semantic unit and a readable display unit, and 2 of them
+    contradicted --
+
+      UAD SPL Transient Designer   attack_ms  -> display dB
+      Black Box Analog Design HG-2 output_db  -> display %  (range 0..100)
+
+    Both are real. The second was already on the server.
+
+    AN EMPTY FAMILY ON EITHER SIDE IS NOT A CONFLICT. A semantic with no unit
+    suffix (drive, sensitivity) claims nothing, and a display that declares no
+    unit was measured as declaring none -- the M5 unit_family finding is that
+    the unit comes from the DISPLAY, never from the name, so absence is a
+    measurement and not a gap to fill.
+*/
+inline juce::StringArray unitFamilyConflicts (const juce::Array<AssignRow>& rows)
+{
+    juce::StringArray out;
+    for (const auto& r : rows)
+    {
+        if (r.state != AssignRow::State::confirmed || r.isSurfaceRow()) continue;
+        if (r.resolvedIndex < 0) continue;
+        const auto want = echojay::semanticUnit (r.semantic);
+        const auto got  = r.sweep.unitFamily;
+        if (want.isEmpty() || got.isEmpty() || want == got) continue;
+        out.add (r.semantic + " expects '" + want + "' but [" + juce::String (r.resolvedIndex)
+                   + "] sweeps in '" + got + "' - the name and the behaviour disagree");
+    }
+    return out;
+}
+
 inline juce::StringArray duplicateIndexConflicts (const juce::Array<AssignRow>& rows)
 {
     juce::StringArray out;

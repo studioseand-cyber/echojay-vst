@@ -9236,7 +9236,10 @@ private:
         // copy was fixed to exclude surface rows: the AMEK re-submission died
         // twice on a rule that existed twice.
         {
-            const auto conflicts = duplicateIndexConflicts (rws);
+            auto conflicts = duplicateIndexConflicts (rws);
+            // The unit-family rule, from the same one implementation the review
+            // screen reads. A rule that exists twice is two rules.
+            conflicts.addArray (unitFamilyConflicts (rws));
             if (! conflicts.isEmpty())
             {
                 captureReadout.setText ("SUBMIT REFUSED: " + conflicts.joinIntoString ("; ")
@@ -9334,6 +9337,11 @@ private:
                           : r.sweep.method == "human-typed" ? AnchorMethod::humanTyped
                           : AnchorMethod::gettext;
                 m.typedReason = r.typedReason;
+                // THE MEASURED UNIT, CARRIED. This had to be reconstructed from
+                // readback display strings to audit the corpus, because the
+                // param entry never recorded what the sweep measured. Recording
+                // it makes the check answerable from a map alone.
+                m.unitFamily = r.sweep.unitFamily;
                 {
                     auto hb = byByIdx.find (r.resolvedIndex);
                     m.capturedBy = hb == byByIdx.end() ? CaptureSource::poll
