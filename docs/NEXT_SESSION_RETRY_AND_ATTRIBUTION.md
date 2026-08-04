@@ -111,3 +111,54 @@ against its sibling's 509 ms.
 - CLA-76 (m) is **released and not quarantined**; 4 ok / 1 crash on record.
 - `release-quarantine` works, so nothing is lost while this waits — it just
   needs a manual release when it bites.
+
+---
+
+## Two corrections from the Drawmer 1973 crash (4 Aug 2026)
+
+Both were found while diagnosing the campaign's first crash. Neither is optional:
+each one, left as-is, makes the retry rule vouch for something it has not measured.
+
+### 1. `prior_ok_in_ledger` MUST be stage-scoped
+
+Drawmer 1973 carries eight `"outcome": "ok"` rows in the ledger. Every one is
+`"stage": "scan"` with `"detail": "1 description(s)"`.
+
+**A scan describes a plugin without instantiating it.** Those eight say nothing
+whatever about whether it loads — and in fact Drawmer 1973's AudioUnit has never
+successfully loaded in ejmap, not once. Its only `load`-stage row is
+`crash_on_load`.
+
+An unscoped `prior_ok_in_ledger` would read "8 prior successes" and treat a
+plugin that has never loaded as a well-behaved one having a bad roll — exactly
+inverting the rule's purpose. It would then keep releasing it from quarantine
+and re-crashing on it, nightly, forever.
+
+**Rule: `prior_ok_in_ledger` counts prior successes AT THE SAME STAGE as the
+failure being judged.** A load failure is vouched for only by prior load
+successes. Same for `prior_ok_this_session`.
+
+### 2. A crash attaches to a BINARY, not a product
+
+The crash was `AudioUnit:Effects/aufx,0yow,SfTb`. The VST3 at
+`/Library/Audio/Plug-Ins/VST3/Drawmer 1973.vst3` is a **different binary** by the
+same vendor at the same version (Softube 2.5.62), and it has no crash history at
+all.
+
+Quarantine, retry counting, and the NON-DETERMINISTIC note must all key on
+`plugin_id` (the format-qualified id already used in ledger rows), never on the
+display name. Keying on "Drawmer 1973" would quarantine a working VST3 because
+its AU sibling died, and would pool two independent determinism populations into
+one meaningless rate.
+
+Corollary for the operator, and worth surfacing in the UI eventually: when one
+format crashes, **the other format is a legitimate next try**, not a retry of the
+same thing.
+
+### Method note
+
+The absence of a quarantine row for Drawmer was read, during this diagnosis, as
+evidence that `attribution: "unknown"` does not quarantine. It was not: the row
+had been released by hand before the file was read. Nothing about the
+attribution/quarantine relationship was established, and nothing here should be
+built on that inference.
