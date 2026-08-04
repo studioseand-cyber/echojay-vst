@@ -7037,6 +7037,25 @@ public:
         std::cout << "VIEWTREE before attach:\n" << ejmap::describeViewTree (*this) << std::flush;
         attachEditor();                       // prints the attach-time read
         std::cout << "VIEWTREE after attach:\n" << ejmap::describeViewTree (*this) << std::flush;
+
+        // UI_HINT'S COORDINATE BASIS, on both sides of the layer change. A
+        // hint is (x,y,w,h) inside the editor plus editor_w/editor_h, so what
+        // would break it is the editor moving relative to the screen or
+        // changing size. Reparenting or layer-backing a view is exactly the
+        // kind of change that could, and it would be SILENT: the map would
+        // still carry hints, they would just point at the wrong knob.
+        if (hostedEditor != nullptr)
+        {
+            const auto sb = hostedEditor->getScreenBounds();
+            const auto lb = hostedEditor->getBounds();
+            const auto hb = editorHolder.getScreenBounds();
+            std::cout << "UIHINT basis: editor screen " << sb.getX() << "," << sb.getY()
+                      << " " << sb.getWidth() << "x" << sb.getHeight()
+                      << " | editor local " << lb.getX() << "," << lb.getY()
+                      << " " << lb.getWidth() << "x" << lb.getHeight()
+                      << " | holder screen " << hb.getX() << "," << hb.getY()
+                      << " | scale " << topLevelScaleFactorForHint() << std::endl;
+        }
         juce::Timer::callAfterDelay (3000, [this]
         {
             std::cout << "EDITORFIT: (settled read, 3 s after attach)" << std::endl;
@@ -10067,6 +10086,13 @@ private:
         {
             editorHolder.addAndMakeVisible (hostedEditor.get());
             layoutEditor();
+
+            // The hosted view gets its own layer, so a nested JUCE peer cannot
+            // draw into the surface ejmap's own toolbar and list live in.
+            // Logged, never silent: this changes how every editor composites.
+            const auto layered = ejmap::layerBackHostedViews (*this);
+            std::cout << "LAYERBACK:\n" << layered << std::flush;
+
             reportEditorFit();
         }
     }
@@ -10077,6 +10103,13 @@ private:
         source: layoutEditor() only positions, so the size is entirely the
         plugin's. One line, so the next report of this comes with numbers.
     */
+    double topLevelScaleFactorForHint() const
+    {
+        if (auto* peer = getPeer())
+            return peer->getPlatformScaleFactor();
+        return 0.0;
+    }
+
     void reportEditorFit()
     {
         if (hostedEditor == nullptr) return;

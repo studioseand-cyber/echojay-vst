@@ -53,30 +53,42 @@ juce::String describeViewTree (juce::Component& topLevel)
     return out;
 }
 
-juce::String ensurePeerLayerBacked (juce::Component& topLevel)
+juce::String layerBackHostedViews (juce::Component& topLevel)
 {
     NSView* peer = peerViewOf (topLevel);
     if (peer == nil)
-        return "no peer yet: nothing done (the window must exist first)";
+        return "no peer yet: nothing done (the window must exist first)\n";
 
-    if ([peer wantsLayer])
-        return "peer already layer-backed: nothing done";
+    juce::String out;
+    int touched = 0;
+    for (NSView* sub in [peer subviews])
+    {
+        const auto cls = juce::String::fromUTF8 ([NSStringFromClass ([sub class]) UTF8String]);
+        if ([sub wantsLayer])
+        {
+            out << "  " << cls << ": already layer-backed, left alone\n";
+            continue;
+        }
+        [sub setWantsLayer: YES];
 
-    [peer setWantsLayer: YES];
-
-    // STATE THE OBSERVATION. setWantsLayer is a request; AppKit decides when
-    // the layer appears. Reporting "done" without reading it back would be the
-    // class this project keeps filing.
-    const bool now = [peer wantsLayer];
-    const bool hasLayer = ([peer layer] != nil);
-    return juce::String ("peer setWantsLayer:YES -> wantsLayer=")
-             + (now ? "YES" : "no") + ", layer=" + (hasLayer ? "yes" : "nil");
+        // STATE THE OBSERVATION, NOT THE INTENTION. setWantsLayer is a
+        // request; AppKit decides when the layer object appears. Reporting
+        // "done" without reading it back is the class this project keeps
+        // filing.
+        out << "  " << cls << ": setWantsLayer:YES -> wantsLayer="
+            << ([sub wantsLayer] ? "YES" : "no")
+            << ", layer=" << ([sub layer] != nil ? "yes" : "nil") << "\n";
+        ++touched;
+    }
+    if (touched == 0 && out.isEmpty())
+        out << "  (no hosted views under the peer: nothing to do)\n";
+    return out;
 }
 
 #else
 
 juce::String describeViewTree (juce::Component&)      { return {}; }
-juce::String ensurePeerLayerBacked (juce::Component&) { return "not macOS: nothing to do"; }
+juce::String layerBackHostedViews (juce::Component&)  { return "not macOS: nothing to do\n"; }
 
 #endif
 

@@ -173,3 +173,23 @@ This is what N=3 is meant to consume. Note it does NOT yet make Drawmer's AU
 deterministic-crashing: 2 of 2 with no successes is consistent both with "always
 crashes" and with a high crash rate. `--load-once --repeat 3` (proposed below /
 in session notes) is how that gets settled rather than argued.
+
+---
+
+## Subject added 4 Aug 2026: the Melda pair, UNRESOLVED not closed
+
+`MLoudnessAnalyzer` and `MConvolutionMB` (both VST3, MeldaProduction 14.16) each
+**crashed on load, 2 attempts of 2**, in separate processes with a fresh ledger root each
+time. Quarantine rows written, `reason: crash_on_load`.
+
+**This is recorded as unresolved, not as "always crashes".** 2-of-2 with no successes is
+consistent with a deterministic failure AND with a high crash rate -- the same reading the
+Drawmer note makes, and N=3 is not built. They are subjects for the retry rule, not
+evidence for it.
+
+**Why they matter beyond the crash:** these two share a VST3 uid (`80bb0df4`) at the same
+version, so they share the identity key `format|uid|version`. Whether they also share a
+FINGERPRINT depends on their parameter counts, and a parameter count needs a live instance
+-- which is exactly what cannot be obtained while they crash. So the last open
+wrong-product-serving risk is blocked behind a load failure, and `--load-once --repeat 3`
+(or the retry rule itself) is what unblocks it.

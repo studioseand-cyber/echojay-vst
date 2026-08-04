@@ -35,15 +35,30 @@ namespace ejmap
 */
 juce::String describeViewTree (juce::Component& topLevel);
 
-/** Makes the JUCE peer explicitly layer-backed, so a layer-backed plugin view
-    cannot promote the hierarchy out from under it. Returns what it did, for
-    the log: this must never be a silent mutation of how every editor
-    composites.
+/** Gives each view hosted directly under the peer its OWN layer.
 
-    NOT a clip. Clipping constrains an oversized editor to its region and was
-    the fix proposed while the symptom was believed to be overlap; the
-    screenshot refuted overlap, and clipping cannot repaint a black toolbar.
+    THE FLAG GOES ON THE CONTAINER, NOT THE PEER -- measured, not assumed. The
+    peer is already layer-backed (wantsLayer=YES, layer=yes) before any editor
+    is attached, so setting it there does nothing. What differs between a
+    plugin that breaks the window and one that does not is what arrives
+    UNDERNEATH:
+
+      API-550A (Waves, bridged)     AirEQ (breaks it)
+        AUv2ContainerView   no        AuViewClass...    no
+          NSRemoteView  layer=yes       JUCEView...  layer=nil
+
+    The bridged plugin composites out-of-process into its own layer and is
+    fine. AirEQ arrives as a NESTED JUCE peer view with no layer of its own,
+    so it draws into the peer's backing store -- the same surface ejmap's
+    toolbar and list are drawn into.
+
+    Giving the hosted container its own layer separates the two surfaces. It
+    is also the recipe this project already proved in the main plugin
+    (NativeClip.mm: wantsLayer on the CONTAINER).
+
+    Returns one line per view it touched, or a line saying it touched nothing.
+    This must never be a silent mutation of how every editor composites.
 */
-juce::String ensurePeerLayerBacked (juce::Component& topLevel);
+juce::String layerBackHostedViews (juce::Component& topLevel);
 
 } // namespace ejmap
