@@ -58,7 +58,8 @@ target_sources(ejmap PRIVATE
     Source/Main.cpp
     Source/PluginScanner.cpp
     Source/PluginHost.cpp
-    Source/EjmapSend.mm)
+    Source/EjmapSend.mm
+    Source/EjmapViewLayer.mm)
 
 target_compile_definitions(ejmap PRIVATE
     EJMAP_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../.."

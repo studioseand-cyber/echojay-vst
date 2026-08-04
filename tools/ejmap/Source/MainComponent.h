@@ -24,6 +24,7 @@
 #include "EjmapCurveView.h"
 #include "EjmapAssignPanel.h"
 #include "EchoJayParamMaps.h"   // fingerprintForDescription
+#include "EjmapViewLayer.h"
 #include "EjmapMouth.h"
 #include "EjmapProbe.h"
 #include "EjmapSubject.h"
@@ -7029,7 +7030,13 @@ public:
             std::cout.flush();
         }
 
+        // THE NATIVE HIERARCHY, BEFORE AND AFTER. The question is not whether
+        // the editor fits -- it did -- but whether attaching it leaves a
+        // layer-backed view under a peer that is not, which is what stops
+        // JUCE's drawing reaching the screen.
+        std::cout << "VIEWTREE before attach:\n" << ejmap::describeViewTree (*this) << std::flush;
         attachEditor();                       // prints the attach-time read
+        std::cout << "VIEWTREE after attach:\n" << ejmap::describeViewTree (*this) << std::flush;
         juce::Timer::callAfterDelay (3000, [this]
         {
             std::cout << "EDITORFIT: (settled read, 3 s after attach)" << std::endl;

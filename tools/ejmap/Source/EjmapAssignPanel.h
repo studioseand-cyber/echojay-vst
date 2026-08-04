@@ -3870,6 +3870,22 @@ private:
                     else if (st == "not_present")     r.state = AssignRow::State::skipNotPresent;
                     else if (st == "not_automatable") r.state = AssignRow::State::skipNotAutomatable;
                     else if (st == "deferred")        r.state = AssignRow::State::skipDeferred;
+                    // mode_material IS a resolution -- the control exists, is
+                    // discrete, and was recorded with its labels for Tier 2.
+                    // It was missing from this ladder, so every restore hit the
+                    // `break` below and silently dropped the row back to
+                    // unresolved. Measured 4 Aug 2026: three of eighteen maps
+                    // refused re-submission with "unresolved rows need the
+                    // wizard", and each had exactly one mode_material row --
+                    // API-2500 (s), Aphex Vintage Exciter (m), DPR-402 (m) --
+                    // while their siblings without one restored cleanly.
+                    //
+                    // It costs more than a re-submission: PARKING a plugin
+                    // whose knee was recorded as mode/position material and
+                    // coming back to it loses that finding, and the row then
+                    // claims to be unresolved rather than saying anything was
+                    // dropped.
+                    else if (st == "mode_material")   r.state = AssignRow::State::modeMaterial;
                     else break;
                     r.resolvedIndex   = (int) rv.getProperty ("resolved_index", -1);
                     r.proposalMismatch = (bool) rv.getProperty ("proposal_mismatch", false);
