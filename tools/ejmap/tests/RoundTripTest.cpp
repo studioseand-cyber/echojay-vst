@@ -37,6 +37,7 @@
 #include "EjmapTriage.h"
 #include "EjmapSend.h"
 #include "EjmapProbeRoute.h"
+#include "EjmapMarks.h"
 
 // The shared sweep and parsers, compiled here so the drift gate proves both
 // binaries build the SAME code: ejextract compiles these headers to produce
@@ -1569,6 +1570,61 @@ void testReadbackProbe()
            "probe: a dB parameter keeps the fraction-of-range tolerance");
 }
 
+/** THE TWO MARKS, and above all THE TWO KEY SHAPES.
+
+    An issue keys on the full identity because it is about a build; unmappable
+    keys on the product because a utility stays a utility across versions.
+    These assertions exist so that collapsing them into "just use the identity"
+    fails loudly rather than quietly changing what a mark means.
+*/
+void testMarks()
+{
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                 .getChildFile ("ejmap-marks-test");
+    dir.deleteRecursively();
+    dir.createDirectory();
+
+    juce::PluginDescription v1;
+    v1.pluginFormatName = "AudioUnit"; v1.uniqueId = 0x62434544; v1.version = "1.5.1";
+    juce::PluginDescription v2 = v1; v2.version = "2.0.0";      // same product, new build
+
+    check (ejmap::Marks::identityKey (v1).endsWith ("|1.5.1"),
+           "marks: the identity key carries the version");
+    check (! ejmap::Marks::productKey (v1).contains ("1.5.1"),
+           "marks: the product key does NOT carry the version");
+    check (ejmap::Marks::productKey (v1) == ejmap::Marks::productKey (v2),
+           "marks: two builds of one product share a product key");
+    check (ejmap::Marks::identityKey (v1) != ejmap::Marks::identityKey (v2),
+           "marks: two builds of one product do NOT share an identity key");
+
+    ejmap::Marks m;
+    check (m.toggleIssue (v1, "tester") && m.hasIssue (v1),
+           "marks: flagging an issue sets it");
+    check (m.toggleUnmappable (v1, "tester") && m.isUnmappable (v1),
+           "marks: marking unmappable sets it");
+
+    // The whole reason for two key shapes.
+    check (! m.hasIssue (v2),
+           "marks: an ISSUE does NOT carry to a new version (a new build may fix it)");
+    check (m.isUnmappable (v2),
+           "marks: UNMAPPABLE DOES carry to a new version (a utility stays a utility)");
+
+    m.save (dir);
+    auto back = ejmap::Marks::load (dir);
+    check (back.hasIssue (v1) && back.isUnmappable (v1),
+           "marks: both survive a save and load, so they survive a restart");
+    check (back.issues[ejmap::Marks::identityKey (v1)].by == "tester"
+             && back.issues[ejmap::Marks::identityKey (v1)].at.isNotEmpty(),
+           "marks: who and when are recorded and restored");
+
+    check (! back.toggleIssue (v1, "tester") && ! back.hasIssue (v1),
+           "marks: the same gesture clears it");
+    check (back.isUnmappable (v1),
+           "marks: clearing one mark leaves the other alone");
+
+    dir.deleteRecursively();
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -1591,6 +1647,7 @@ int main (int, char**)
     testAgainstRealMaps();
     testSubjectLookups();
     testReadbackProbe();
+    testMarks();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

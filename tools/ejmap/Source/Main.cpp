@@ -18,6 +18,7 @@
 // fail to compile rather than quietly claim a version it cannot know.
 #include "EjmapBuildInfo.h"
 #include "EjmapSupervisor.h"
+#include "EjmapMarks.h"
 
 #include <map>
 #include <csignal>
@@ -459,6 +460,33 @@ namespace
     int runHeadlessCli (int argc, char* argv[])
     {
         juce::String release, qId, qReason, qStage { "load" }, report;
+
+        // --issues
+        // Every flagged and every unmappable plugin, for handover. Headless and
+        // read-only, so it runs while a session is open.
+        for (int i = 1; i < argc; ++i)
+            if (juce::String (argv[i]) == "--issues")
+            {
+                auto root = ledgerRootFrom (argc, argv);
+                if (root == juce::File())
+                    root = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                             .getChildFile ("ejmap");
+                const auto m = ejmap::Marks::load (root);
+                std::cout << "FLAGGED (" << (int) m.issues.size() << ") -- keyed on the full "
+                          << "identity, because an issue is about a build" << std::endl;
+                for (const auto& kv : m.issues)
+                    std::cout << "  " << kv.first << "   by " << kv.second.by
+                              << " at " << kv.second.at << std::endl;
+                std::cout << "UNMAPPABLE (" << (int) m.unmappable.size() << ") -- keyed on the "
+                          << "product, because a utility stays a utility across versions"
+                          << std::endl;
+                for (const auto& kv : m.unmappable)
+                    std::cout << "  " << kv.first << "   by " << kv.second.by
+                              << " at " << kv.second.at << std::endl;
+                if (m.issues.empty() && m.unmappable.empty())
+                    std::cout << "  (nothing marked)" << std::endl;
+                return 0;
+            }
 
         // --registry-report [substring]
         // Every AU component the registry holds, resolved through the SAME

@@ -25,6 +25,7 @@
 #include "EjmapAssignPanel.h"
 #include "EchoJayParamMaps.h"   // fingerprintForDescription
 #include "EjmapViewLayer.h"
+#include "EjmapMarks.h"
 #include "EjmapMouth.h"
 #include "EjmapProbe.h"
 #include "EjmapSubject.h"
@@ -165,6 +166,7 @@ public:
 
         addChildComponent (assignPanel);
         wireAssignHooks();
+        marks = ejmap::Marks::load (ledger.getRoot());
         updateBacklogLabel();
         std::cout << "BACKLOG: " << backlogLine() << std::endl;
 
@@ -10612,11 +10614,22 @@ private:
             case Col3::no:
             default:                   cell (".", no); break;
         }
-        g.setColour (quarantined ? juce::Colours::orangered
-                                 : juce::Colour (0xff9fd8e0));
+        // THE TWO OPERATOR MARKS, OVERLAID. They recolour the NAME only, so the
+        // three columns still say what they said -- a plugin can be mapped,
+        // sent AND flagged at once, and that combination is the interesting
+        // one. Quarantine still wins the colour, because a row that cannot
+        // load should read that way first.
+        const bool flagged    = marks.hasIssue (sp.desc);
+        const bool unmappable = marks.isUnmappable (sp.desc);
+        g.setColour (quarantined  ? juce::Colours::orangered
+                   : flagged      ? juce::Colour (0xffe0a020)      // amber: come back to this
+                   : unmappable   ? juce::Colour (0xff5a6472)      // grey: considered, dismissed
+                                  : juce::Colour (0xff9fd8e0));
         g.setFont (13.0f);
         g.drawText (sp.desc.name + "   [" + sp.desc.pluginFormatName + "]"
-                      + (quarantined ? "  QUARANTINED - right-click to release" : ""),
+                      + (quarantined ? "  QUARANTINED - right-click to release" : "")
+                      + (flagged     ? "  FLAGGED" : "")
+                      + (unmappable  ? "  not a mixing processor" : ""),
                     bounds.reduced (6, 0), juce::Justification::centredLeft, true);
     }
 
@@ -10633,17 +10646,48 @@ private:
         if (! juce::isPositiveAndBelow (row, visibleRows.size())) return;
         const auto& sp = rows.getReference (visibleRows[row]);
         const auto id  = sp.pluginId();
-        if (! ledger.isQuarantined (id)) return;
+        const auto desc = sp.desc;
+        const bool quarantined = ledger.isQuarantined (id);
+        const bool flagged     = marks.hasIssue (desc);
+        const bool unmappable  = marks.isUnmappable (desc);
 
         juce::PopupMenu m;
         m.addSectionHeader (sp.desc.name);
-        m.addItem (1, "Release from quarantine");
-        m.showMenuAsync (juce::PopupMenu::Options(), [this, id, name = sp.desc.name] (int r)
+        if (quarantined) m.addItem (1, "Release from quarantine");
+        // The same gesture sets and clears. A separate "clear" item would be a
+        // second way to say the same thing, and the row's colour already says
+        // which way the toggle will go.
+        m.addItem (2, flagged    ? "Clear issue flag" : "Flag issue");
+        m.addItem (3, unmappable ? "Clear unmappable" : "Mark unmappable (not a mixing processor)");
+
+        m.showMenuAsync (juce::PopupMenu::Options(), [this, id, desc, name = sp.desc.name] (int r)
         {
-            if (r != 1) return;
-            ledger.releaseFromQuarantine (id);
-            status.setText (name + " released from quarantine. It can be loaded again.",
-                            juce::dontSendNotification);
+            if (r == 1)
+            {
+                ledger.releaseFromQuarantine (id);
+                status.setText (name + " released from quarantine. It can be loaded again.",
+                                juce::dontSendNotification);
+            }
+            else if (r == 2)
+            {
+                const bool now = marks.toggleIssue (desc, testerName());
+                marks.save (ledger.getRoot());
+                status.setText (name + (now ? " flagged: come back to this one."
+                                            : " issue flag cleared."),
+                                juce::dontSendNotification);
+            }
+            else if (r == 3)
+            {
+                const bool now = marks.toggleUnmappable (desc, testerName());
+                marks.save (ledger.getRoot());
+                // ADVISORY, NOT A LOCK: say so at the moment it is set, because
+                // a grey row otherwise reads as refused.
+                status.setText (name + (now ? " marked unmappable (advisory: it still loads, "
+                                              "and the mark carries across versions)."
+                                            : " unmappable mark cleared."),
+                                juce::dontSendNotification);
+            }
+            else return;
             applyFilter();
         });
     }
@@ -11358,6 +11402,7 @@ private:
     int          cacheDropped = 0, cacheErrors = 0;
     juce::Label      status;
     juce::Label      backlogLabel;
+    ejmap::Marks     marks;
     double scanProgress = 0.0;                       // declared before the bar that references it
     juce::ProgressBar progressBar { scanProgress };
     juce::Label       progressLabel;
