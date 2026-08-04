@@ -2383,19 +2383,42 @@ public:
 
         auto conflicts = duplicateConflicts();
 
-        // A confirmed controls/bands row whose payload is missing is a
-        // restore bug wearing a confirmation: refuse with the count, never
-        // submit an empty claim.
+        // A row claiming N>0 with nothing staged CONTRADICTS itself: refuse
+        // with the count, never submit an empty claim.
+        //
+        // STATE THE OBSERVATION, NEVER THE CAUSE. This block used to say
+        // "(session restore lost them)" -- a cause it had not checked. On
+        // Cenozoix Compressor (99 params, 0 nameable controls) the truth was
+        // agreement, not loss, and the asserted cause was believed: a ledger
+        // was backed up and the row re-swept twice on the strength of it. A
+        // message that states a diagnosis gets acted on; one that states what
+        // it saw can be checked. Every refusal here reports the claim and the
+        // count, and stops.
         for (const auto& r : rows)
         {
             if (r.state != AssignRow::State::confirmed) continue;
-            if (r.kind == "controls" && pendingControls.isEmpty())
+            // ONLY A CONTRADICTION IS A CONFLICT. An empty store alone is not:
+            // a plugin whose surface carries no nameable controls sweeps to
+            // `shipped == 0` and the row honestly claims "0 named control(s)".
+            // Refusing that refused a correct map forever with no way through,
+            // and blamed a restore bug it had not checked for -- measured on
+            // Cenozoix Compressor (99 params, 0 nameable), 4 Aug 2026.
+            //
+            // The claim's own leading count is the discriminator: claims N>0
+            // with nothing staged is cargo lost, claims 0 with nothing staged
+            // is agreement. Read from skipReason, which is built ~70 lines
+            // above from `shipped`; if that text changes, this must change with
+            // it.
+            if (r.kind == "controls" && pendingControls.isEmpty() && r.skipReason.getIntValue() > 0)
                 conflicts.add ("controls row claims '" + r.skipReason
-                                 + "' but 0 controls are staged (session restore lost them): "
-                                   "W re-opens the row to rebuild");
-            if (r.kind == "bands" && acceptedGroups.isEmpty())
+                                 + "' but 0 controls are staged. W re-opens the row to rebuild");
+            // BANDS: claim built at ~1664 from acceptedGroups.size(), the same
+            // store this reads -- verified, not assumed. Same leading-count
+            // discriminator, so the same rule: a claim of 0 with 0 staged is
+            // agreement, not a conflict.
+            if (r.kind == "bands" && acceptedGroups.isEmpty() && r.skipReason.getIntValue() > 0)
                 conflicts.add ("bands row claims '" + r.skipReason
-                                 + "' but 0 groups are staged: W re-opens the row");
+                                 + "' but 0 groups are staged. W re-opens the row");
         }
 
         juce::String t;
