@@ -203,3 +203,74 @@ cheaper fix and manual entry stays the exception. Building manual entry first wo
 building an exception path for the common case.
 
 **So: item 1 first for this reason, not merely because it is smaller.**
+
+---
+
+## 0. VINTAGE EQ BAND INFERENCE — DO THIS FIRST, AHEAD OF EVERYTHING ABOVE
+
+Raised 4 Aug 2026. Vintage EQs are a large and important part of the catalogue and
+deferring their bands is **not acceptable**. This supersedes the ordering in item 4's
+scope note: item 1 (`strideNote`) explains why ONE inference failed; this explains how
+they ALL fail, at once, and it is the one that unblocks the category.
+
+**Three steps, strictly in order. Do not skip to step 3.**
+
+### Step 1 — build `--load-once`
+
+```
+ejmap --load-once <plugin_id> [--params] [--repeat N] [--editor] [--render]
+```
+
+Load one plugin headless by the `plugin_id` already used in ledger rows
+(`AudioUnit:Effects/aufx,A5AM,ksWV` or a `.vst3` path), **print its full parameter list**
+(index, name, and label/unit if the plugin reports one), unload, exit. One JSON line per
+attempt.
+
+Wanted THREE times in two days: Drawmer 1973 could not be reproduced (`--probe-batch`
+needs a map, and the plugins worth diagnosing never got far enough to have one),
+API-550A's names could not be read, and now the corpus needs it. It unblocks this and
+every future diagnosis.
+
+`--repeat N` must use **separate child processes** — a second load in the same process
+inherits whatever the first corrupted, and determinism is what it would be measuring.
+
+The supervisor, child-process load, crash attribution and ledger write all already exist.
+This is argument parsing plus a loop over machinery that is there.
+
+### Step 2 — read the names from EVERY EQ, not a sample
+
+Enumerate every AU and VST3 component on the machine whose category resolves to `eq`
+(the scan cache already holds category and there are ~1,400 AU + ~860 VST3 descriptions),
+and dump each one's parameter names to a file.
+
+**A corpus, not a sample.** Two or three plugins cannot distinguish "one convention with
+a spelling variant" from "forty conventions", and those need different fixes.
+
+Expect crashes and hangs across a run this size — quarantine-and-continue, and record
+which plugins could not be read so the corpus states its own coverage rather than
+implying completeness.
+
+### Step 3 — derive the fix FROM THE CORPUS, and only then
+
+**REPORT THE NAMING SCHEMES FOUND AND HOW MANY PRODUCTS EACH COVERS, BEFORE PROPOSING
+ANYTHING.**
+
+- If "Low / Mid / High spelled out" covers 40 products, the synonym fold is obvious and
+  `prefixOrder()` widening is the right shape.
+- If it is forty different conventions, **a synonym list is the wrong shape** and
+  something else is needed — do not force it.
+
+> **DO NOT PROPOSE A SYNONYM LIST BEFORE THE CORPUS IS READ.**
+> Standing instruction from the user, and earned: *"every guess in this project has
+> collapsed when measured, usually smaller."* The current hypothesis — that vintage EQs
+> spell their names out — is RECOLLECTION of the products, not a reading of any parameter
+> list, and it must not be treated as a finding at any point before step 2 completes.
+
+### What is established (do not re-derive)
+
+`EjmapBands.h:100` — `prefixOrder()` is `{ "LF", "LMF", "MF", "HMF", "HF" }`, matched
+WHOLE-TOKEN via `prefixOrder().contains(toks[i], true)`. Two axes exist, `"digit"` and
+`"prefix"`; **numbering is not required**. `"LF Freq"` → `["LF","Freq"]` matches;
+`"Low Frequency"` → `["Low","Frequency"]` does not.
+
+`strideNote` already names the parameter it failed on — it simply is not persisted (item 1).
