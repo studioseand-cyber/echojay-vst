@@ -74,6 +74,15 @@ public:
         filterBox.setColour (juce::TextEditor::outlineColourId,    juce::Colour (0xff2a3540));
         filterBox.onTextChange = [this] { applyFilter(); };
 
+        addAndMakeVisible (colHeader);
+        colHeader.setJustificationType (juce::Justification::centredRight);
+        colHeader.setFont (juce::FontOptions (11.0f));
+        colHeader.setColour (juce::Label::textColourId, juce::Colour (0xff8a9aa0));
+        colHeader.setText ("map  sent  srv   ", juce::dontSendNotification);
+        colHeader.setTooltip ("map = a map on this machine | sent = this machine sent it and "
+                              "the server accepted | srv = the server has one "
+                              "(diff = different build, ? = not asked)");
+
         addAndMakeVisible (list);
         list.setModel (this);
         // M and ? are read here rather than by the ListBox, which owns the arrow
@@ -2984,6 +2993,15 @@ public:
                      + "     " + sp.desc.name);
             }
 
+            // Prove the log line itself: it is the artefact that makes every
+            // future column claim checkable, so it cannot be the one thing
+            // taken on trust.
+            rows.clearQuick();
+            for (const auto& sp : probe) rows.add (sp);
+            logColumns ("diagnostic",
+                        probe.isEmpty() ? juce::String()
+                                        : echojay::identityKeyForDescription (probe[0].desc));
+
             std::map<int, int> tally;
             for (const auto& sp : probe)
             {
@@ -3039,6 +3057,13 @@ public:
             loadMapStateCache();
             refreshLocalMapIdentities();
             refreshSentIdentities();
+            // A RESTORED SCAN IS STILL A LIST OF ROWS. fetchMapStates was wired
+            // to scan COMPLETION only, so restoring 1,821 plugins from cache
+            // gave a full list with no server state and every column-3 cell
+            // read "?" until a fresh scan was run.
+            if (! lastScan.plugins.isEmpty() && mapStateByIdentity.empty())
+                fetchMapStates (lastScan.plugins);
+            logColumns ("scan restored from cache");
             bool same = mapStateByIdentity.size() == before.size();
             for (const auto& kv : before)
                 if (mapStateByIdentity.count (kv.first) == 0
@@ -6938,6 +6963,11 @@ public:
         {
             filterBox.setBounds (left.removeFromTop (24));
             left.removeFromTop (4);
+            // HEADER over the three columns, aligned to the same right-hand
+            // block the rows use, so the cells can be identified without
+            // counting pixels.
+            auto hdr = left.removeFromTop (16);
+            colHeader.setBounds (hdr);
             list.setBounds (left);
         }
         r.removeFromLeft (8);
@@ -7280,6 +7310,7 @@ private:
         refreshLocalMapIdentities();
         refreshSentIdentities();
         fetchMapStates (lastScan.plugins);
+        logColumns ("scan complete");
 
         // Rebuilds the DISPLAYED set only. lastScan and rows keep the whole
         // result, so every census number below counts what was scanned, not
@@ -8400,7 +8431,19 @@ private:
         ledger.endLoad (rec);
 
         juce::String t;
-        t << "SUBMITTED " << f.getFileName() << ": " << p.params.size() << " params, "
+        // "SUBMITTED" collided with the "Submit to server" button next to it:
+        // one wrote a local file, the other sent to the server, and the same
+        // word for both made a finished map read as a completed send.
+        // THE MAP JUST CHANGED ON DISK, so the column that reads disk must be
+        // told. It was refreshed at scan, at cache load and after a send --
+        // none of which is "the wizard wrote a map", which is exactly when
+        // column 1 becomes true.
+        refreshLocalMapIdentities();
+        applyFilter();
+        logColumns ("map saved", echojay::identityKeyForDescription (loadedDesc));
+
+        t << "MAP SAVED (local only -- press Submit to server to send) "
+          << f.getFileName() << ": " << p.params.size() << " params, "
           << p.groups.size() << " groups, " << p.controls.size() << " controls, "
           << p.skips.size() << " skips, readback " << rbOk << "/" << rb;
         captureReadout.setText (t, juce::dontSendNotification);
@@ -8504,7 +8547,8 @@ private:
             refreshLocalMapIdentities();
             refreshSentIdentities();
             saveMapStateCache();
-            applyFilter();                       // the row repaints green now
+            applyFilter();
+            logColumns ("send accepted", key);                       // the row repaints green now
             std::cout << "MAP STATE: " << key << " marked submittedByYou from the 200 "
                                                  "(no refetch)" << std::endl;
         }
@@ -9375,17 +9419,20 @@ private:
         // x=6 -- tripling the cells is what made it obvious.
         const auto key = echojay::identityKeyForDescription (sp.desc);
         auto bounds = juce::Rectangle<int> (0, 0, w, h);
-        auto colArea = bounds.removeFromRight (3 * 18 + 10);
+        auto colArea = bounds.removeFromRight (3 * 22 + 10);
         g.setFont (13.0f);
 
         auto cell = [&] (const juce::String& glyph, juce::Colour c)
         {
-            auto box = colArea.removeFromLeft (18);
+            auto box = colArea.removeFromLeft (22);
             g.setColour (c);
             g.drawText (glyph, box, juce::Justification::centred);
         };
         const auto yes  = juce::Colour (0xff6fd08c);
-        const auto no   = juce::Colour (0xff4a5a5e);
+        // 0xff4a5a5e was invisible against the row: a deliberate "no" read as
+        // blank space, which is precisely what explicit glyphs were chosen to
+        // avoid. A "no" has to be legible or it is not a statement.
+        const auto no   = juce::Colour (0xff8a9aa0);
         const auto amber= juce::Colours::orange;
 
         // 1. mapped: a map on THIS machine. Local disk, never unknown.
@@ -9544,6 +9591,54 @@ private:
         and can never be unknown; only column 3 asks the network, which is why
         it alone carries a "?" and why it is a state rather than a tick. */
     enum class Col3 { no, yes, differentBuild, unknown };
+
+    /** THE COLUMNS AS TEXT, on every scan and after every state change.
+
+        This exists because the column had been changed four times and verified
+        zero times: every check available here is headless, and a rendering and
+        event-timing problem is invisible to all of them. A line that can be
+        pasted is worth more than another fix made on reasoning -- it is the
+        difference between "I believe this is right" and "here is what it says".
+
+        `focus` prints one identity in full, so a state change can be checked
+        against the row it was supposed to move.
+    */
+    void logColumns (const juce::String& reason, const juce::String& focus = {})
+    {
+        int mapped = 0, sent = 0, srvYes = 0, srvDiff = 0, srvNo = 0, srvUnk = 0;
+        for (const auto& sp : rows)
+        {
+            const auto k = echojay::identityKeyForDescription (sp.desc);
+            if (colMapped (k)) ++mapped;
+            if (colSent (k))   ++sent;
+            switch (colOnServer (k))
+            {
+                case Col3::yes:            ++srvYes;  break;
+                case Col3::differentBuild: ++srvDiff; break;
+                case Col3::unknown:        ++srvUnk;  break;
+                default:                   ++srvNo;   break;
+            }
+        }
+        std::cout << "COLUMNS [" << reason << "] rows " << rows.size()
+                  << " | mapped " << mapped << " | sent " << sent
+                  << " | onServer yes " << srvYes << " diff " << srvDiff
+                  << " no " << srvNo << " unknown " << srvUnk
+                  << " | localMaps " << (int) localMapIdentities.size()
+                  << " sentIds " << (int) sentIdentities.size()
+                  << " serverIds " << (int) mapStateByIdentity.size()
+                  << " | fetchFailure " << (mapStateFailure.isEmpty() ? "none"
+                                                                      : mapStateFailure)
+                  << std::endl;
+        if (focus.isNotEmpty())
+        {
+            const auto c3 = colOnServer (focus);
+            std::cout << "COLUMNS [" << reason << "] " << focus << " -> mapped "
+                      << (colMapped (focus) ? "YES" : "no") << ", sent "
+                      << (colSent (focus) ? "YES" : "no") << ", onServer "
+                      << (c3 == Col3::yes ? "YES" : c3 == Col3::differentBuild ? "DIFFERENT-BUILD"
+                          : c3 == Col3::unknown ? "UNKNOWN" : "no") << std::endl;
+        }
+    }
 
     bool colMapped (const juce::String& identityKey) const
     { return localMapIdentities.count (identityKey) > 0; }
@@ -10109,6 +10204,7 @@ private:
     juce::uint32      lastPumpMs = 0;
     juce::TextEditor filterBox;
     juce::ListBox    list;
+    juce::Label      colHeader;
     juce::Component  editorHolder;
     std::unique_ptr<juce::AudioProcessorEditor> hostedEditor;
     juce::Rectangle<int> lastEditorBounds;
