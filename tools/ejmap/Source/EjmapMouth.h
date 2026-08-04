@@ -467,8 +467,13 @@ struct Mouth
     /** queue.json: per-map upload state. The states are the whole truth of
         where a map is; "uploaded" deliberately does not exist yet.
     */
+    /** `identity` is stamped at send time so the queue can be joined back to a
+        plugin later. Without it, a map that was sent and whose local copy was
+        then deleted reads as NOT SENT -- the exact failure the sent column
+        exists to remove. */
     static void setQueueState (const juce::File& root, const juce::String& fp,
-                               const juce::String& state, const juce::String& reason)
+                               const juce::String& state, const juce::String& reason,
+                               const juce::String& identity = {})
     {
         auto f = root.getChildFile ("queue.json");
         auto v = juce::JSON::parse (f.existsAsFile() ? f.loadFileAsString() : "[]");
@@ -480,6 +485,7 @@ struct Mouth
                     out.add (e);
         auto* o = new juce::DynamicObject();
         o->setProperty ("fp", fp);
+        if (identity.isNotEmpty()) o->setProperty ("identity", identity);
         o->setProperty ("state", state);
         if (reason.isNotEmpty()) o->setProperty ("reason", reason);
         o->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));

@@ -2949,6 +2949,27 @@ public:
 
             say ("");
             say ("  status line: " + mapStateStatusLine());
+
+            // THE THREE COLUMNS, printed as the list draws them. Columns 1 and
+            // 2 read local disk; they must NOT go unknown because the network
+            // did, and that is what this shows rather than asserts.
+            refreshLocalMapIdentities();
+            refreshSentIdentities();
+            say ("");
+            say ("  map sent srv   plugin");
+            for (const auto& sp : probe)
+            {
+                const auto k = echojay::identityKeyForDescription (sp.desc);
+                auto c3 = colOnServer (k);
+                say (juce::String ("   ")
+                     + (colMapped (k) ? juce::String::fromUTF8 ("\u2713") : juce::String ("."))
+                     + "   " + (colSent (k) ? juce::String::fromUTF8 ("\u2713") : juce::String ("."))
+                     + "   " + (c3 == Col3::yes ? juce::String::fromUTF8 ("\u2713")
+                              : c3 == Col3::differentBuild ? juce::String::fromUTF8 ("\u25d0")
+                              : c3 == Col3::unknown ? juce::String ("?") : juce::String ("."))
+                     + "     " + sp.desc.name);
+            }
+
             std::map<int, int> tally;
             for (const auto& sp : probe)
             {
@@ -2997,6 +3018,7 @@ public:
             mapStateByIdentity.clear(); mapStateFetchedAt = juce::Time();
             loadMapStateCache();
             refreshLocalMapIdentities();
+            refreshSentIdentities();
             bool same = mapStateByIdentity.size() == before.size();
             for (const auto& kv : before)
                 if (mapStateByIdentity.count (kv.first) == 0
@@ -7235,6 +7257,7 @@ private:
         // proceeds -- a mapper with no network still gets a working tool, and
         // a "?" column is honest where a "not mapped" column would be a lie.
         refreshLocalMapIdentities();
+        refreshSentIdentities();
         fetchMapStates (lastScan.plugins);
 
         // Rebuilds the DISPLAYED set only. lastScan and rows keep the whole
@@ -8374,7 +8397,8 @@ private:
 
         const auto res = ejmap::sendBytesOverTls (bytes, hostPort);
         Mouth::setQueueState (ledger.getRoot(), currentFp, res.queueState(),
-                              res.sent ? "HTTP " + juce::String (res.status) : res.refusedReason);
+                              res.sent ? "HTTP " + juce::String (res.status) : res.refusedReason,
+                              echojay::identityKeyForDescription (loadedDesc));
         std::cout << "SEND: " << (res.sent ? "sent" : "refused") << " status " << res.status
                   << " -- " << (res.sent ? res.body.substring (0, 120) : res.refusedReason)
                   << std::endl;
@@ -8400,6 +8424,7 @@ private:
                                                    ? mapStateByIdentity[key].mapsForIdentity : 1);
             mapStateByIdentity[key] = row;
             refreshLocalMapIdentities();
+            refreshSentIdentities();
             saveMapStateCache();
             applyFilter();                       // the row repaints green now
             std::cout << "MAP STATE: " << key << " marked submittedByYou from the 200 "
@@ -9054,10 +9079,17 @@ private:
             // and unknown both mean "something needs a decision", so hiding
             // them would turn a filter into a silent drop -- a product with a
             // map for the wrong build would vanish and read as handled.
+            // M HIDES WHAT THE SERVER ALREADY HAS. The campaign question is
+            // what the system still needs, not what this machine has touched:
+            // a plugin mapped locally but not yet on the server is still work.
             if (hideMapped)
             {
-                const auto st = mapStateFor (rows.getReference (i)).state;
-                if (st == MapState::submittedByYou || st == MapState::submittedByOther)
+                // Column 3 only. A local map that is not on the server yet
+                // stays visible, because it is still work; and an unknown row
+                // is NOT hidden, because hiding on "don't know" is how a
+                // network failure quietly shrinks the worklist.
+                if (colOnServer (echojay::identityKeyForDescription (
+                        rows.getReference (i).desc)) == Col3::yes)
                     continue;
             }
             if (needle.isEmpty()
@@ -9224,16 +9256,47 @@ private:
         if (selected)
             g.fillAll (juce::Colour (0xff1d3a44));
 
-        // STATE COLUMN, left of the name so the eye lands on it while scanning
-        // 1,376 rows rather than reading to the end of each line. It recolours
-        // the GLYPH ONLY, never the row: quarantine already owns the row
-        // colour and a quarantined plugin should read as quarantined first.
-        const auto st = mapStateFor (sp);
+        // THREE COLUMNS, left of the name so the eye lands on them while
+        // scanning 1,376 rows. They recolour the GLYPHS ONLY, never the row:
+        // quarantine owns the row colour and a quarantined plugin should read
+        // as quarantined first.
+        //
+        // NO BLANK CELLS. A blank reads as "no" and would be indistinguishable
+        // from "not asked", so every cell carries an explicit glyph and "." is
+        // a deliberate no.
+        const auto key = echojay::identityKeyForDescription (sp.desc);
         auto bounds = juce::Rectangle<int> (0, 0, w, h);
-        auto col = bounds.removeFromLeft (22);
-        g.setColour (colourFor (st.state));
         g.setFont (13.0f);
-        g.drawText (glyphFor (st.state), col, juce::Justification::centred);
+
+        auto cell = [&] (const juce::String& glyph, juce::Colour c)
+        {
+            auto box = bounds.removeFromLeft (18);
+            g.setColour (c);
+            g.drawText (glyph, box, juce::Justification::centred);
+        };
+        const auto yes  = juce::Colour (0xff6fd08c);
+        const auto no   = juce::Colour (0xff4a5a5e);
+        const auto amber= juce::Colours::orange;
+
+        // 1. mapped: a map on THIS machine. Local disk, never unknown.
+        cell (colMapped (key) ? juce::String::fromUTF8 ("\u2713") : ".",
+              colMapped (key) ? yes : no);
+        // 2. sent: this machine sent it and the server said 200. Local queue,
+        //    never unknown -- and NOT the same question as column 3.
+        cell (colSent (key) ? juce::String::fromUTF8 ("\u2713") : ".",
+              colSent (key) ? yes : no);
+        // 3. on server: the only column that asks the network, so the only one
+        //    that can be "?".
+        switch (colOnServer (key))
+        {
+            case Col3::yes:            cell (juce::String::fromUTF8 ("\u2713"), yes); break;
+            case Col3::differentBuild: cell (juce::String::fromUTF8 ("\u25d0"),
+                                             juce::Colours::darkorange); break;
+            case Col3::unknown:        cell ("?", amber); break;
+            case Col3::no:
+            default:                   cell (".", no); break;
+        }
+        bounds.removeFromLeft (6);
 
         g.setColour (quarantined ? juce::Colours::orangered
                                  : juce::Colour (0xff9fd8e0));
@@ -9302,6 +9365,71 @@ private:
         per row per repaint and haveLocalMapFor walks the maps directory: at
         1,376 rows that is 1,376 directory scans a frame. */
     std::set<juce::String> localMapIdentities;
+
+    /** Identities this MACHINE has successfully sent, from queue.json. A
+        durable local fact, independent of the network and of the server's
+        current contents: it answers "did I send this", not "does the server
+        have it", and those differ whenever a mapper sent it, a send came from
+        another machine, or something was deleted server-side after a send. */
+    std::set<juce::String> sentIdentities;
+
+    void refreshSentIdentities()
+    {
+        sentIdentities.clear();
+        auto f = ledger.getRoot().getChildFile ("queue.json");
+        auto v = juce::JSON::parse (f.existsAsFile() ? f.loadFileAsString() : "[]");
+        auto* arr = v.getArray();
+        if (arr == nullptr) return;
+        for (const auto& e : *arr)
+        {
+            if (e.getProperty ("state", "").toString() != "sent") continue;
+            // The identity stamped at send time wins. Older rows predate that
+            // field, so fall back to the local map -- which is why the stamp
+            // exists: the fallback fails once the local map is gone.
+            auto id = e.getProperty ("identity", "").toString();
+            if (id.isEmpty())
+            {
+                const auto fp = e.getProperty ("fp", "").toString();
+                auto mf = ledger.getRoot().getChildFile ("maps").getChildFile (fp + ".json");
+                auto mid = juce::JSON::parse (mf.loadFileAsString())
+                               .getProperty ("identity", juce::var());
+                if (mid.isObject())
+                    id = mid.getProperty ("format", "").toString() + "|"
+                       + mid.getProperty ("uid", "").toString() + "|"
+                       + mid.getProperty ("version", "").toString();
+            }
+            if (id.isNotEmpty()) sentIdentities.insert (id);
+        }
+    }
+
+    /** THREE FACTS, NOT ONE STATE. A plugin can be mapped here AND on the
+        server at once; one glyph had to pick which to show, and picking is
+        what hid the thing the mapper needed. Columns 1 and 2 read local disk
+        and can never be unknown; only column 3 asks the network, which is why
+        it alone carries a "?" and why it is a state rather than a tick. */
+    enum class Col3 { no, yes, differentBuild, unknown };
+
+    bool colMapped (const juce::String& identityKey) const
+    { return localMapIdentities.count (identityKey) > 0; }
+
+    bool colSent (const juce::String& identityKey) const
+    { return sentIdentities.count (identityKey) > 0; }
+
+    Col3 colOnServer (const juce::String& identityKey) const
+    {
+        if (mapStateFailure.isNotEmpty()) return Col3::unknown;
+        auto it = mapStateByIdentity.find (identityKey);
+        if (it == mapStateByIdentity.end())
+            return mapStateByIdentity.empty() ? Col3::unknown : Col3::no;
+        switch (it->second.state)
+        {
+            case MapState::submittedByYou:
+            case MapState::submittedByOther: return Col3::yes;
+            case MapState::differentBuild:   return Col3::differentBuild;
+            case MapState::unknown:          return Col3::unknown;
+            default:                         return Col3::no;
+        }
+    }
 
     void refreshLocalMapIdentities()
     {
