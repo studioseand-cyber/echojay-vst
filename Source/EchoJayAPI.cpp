@@ -1397,6 +1397,19 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
     if (req.turnType.isNotEmpty())       body->setProperty("turnType", req.turnType);
     if (auto* linkArr = req.links.getArray())
         if (! linkArr->isEmpty()) body->setProperty("links", req.links);
+    // CLIENT VERSION, so the server can tell a plugin that HAS the channel
+    // chooser from one that does not. sendChat has always sent this; classify
+    // never did, and classify is where it decides copy.
+    //
+    // The mismatch question's guard (questionPromisesOffsiteBuild) cannot
+    // simply be switched off when the chooser lands: the backend reaches
+    // everyone on the next deploy and the plugin reaches users over months, so
+    // a global lift would offer "move over to Lead Vox" to an installed base
+    // that has no chooser to honour it — the unkeepable promise the guard was
+    // built to prevent, pointed the other way. With this field the lift is
+    // PER CLIENT: old clients keep the deterministic template, new ones get
+    // the offer and the ranked candidates.
+    body->setProperty("appVersion", juce::String(JucePlugin_VersionString));
 
     auto aliveFlag = alive;
     auto latch = armClassifyDeadline(kClassifyBudgetMs, [answer, aliveFlag]
