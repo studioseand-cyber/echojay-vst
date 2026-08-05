@@ -1800,6 +1800,69 @@ void testDialTimeUnitRule()
            "reverb_decay_s reading seconds is NOT a conflict (the s/ms family)");
 }
 
+/*  A CONTROLS-ONLY MAP IS FINISHED, NOT EMPTY.
+
+    Stage 1: the sweep finds everything and the proposer names it offline, so a
+    map with no Tier 1 params and a full control surface is the ORDINARY output
+    of a sweep rather than an abandoned attempt. The wire has to carry it
+    without losing the controls, and a map with neither params NOR controls has
+    to stay refusable -- the floor is that a map must say something.
+*/
+void testControlsOnlyPayload()
+{
+    using namespace ejmap;
+
+    MapPayload p;
+    p.fp = "controlsonly";
+    p.category = "amp_sim";
+    p.mode = Mode::fast;
+    p.identity.format = "AudioUnit";
+    p.identity.name = "Controls Only";
+    p.identity.paramCount = 3;
+
+    NamedControl c;
+    c.name = "Presence";
+    c.indices.add (4);
+    c.kind = "anchored";
+    c.rangeLo = 0.0; c.rangeHi = 10.0;
+    c.anchors.add ({ 0.0, 0.0 });
+    c.anchors.add ({ 1.0, 10.0 });
+    c.trust = Trust::setread;
+    p.controls.add (c);
+
+    SkipRecord sk ("threshold_db", SkipOutcome::deferred,
+                   "left for the proposer: unclaimed at submit");
+    p.skips.add (sk);
+
+    const auto v = p.toVar();
+    check (v.getProperty ("schema", "").toString() == kMapSchemaString,
+           "controls-only: the wire format is unchanged -- no bump needed for this");
+
+    auto params = v.getProperty ("params", juce::var());
+    const bool paramsEmpty = ! params.isObject()
+                           || params.getDynamicObject()->getProperties().size() == 0;
+    check (paramsEmpty, "controls-only: params is empty and that is legal");
+
+    auto controls = v.getProperty ("controls", juce::var());
+    check (controls.isObject()
+             && controls.getDynamicObject()->getProperties().size() == 1,
+           "controls-only: the control surface survives the round trip");
+    check ((int) controls.getProperty ("Presence", juce::var())
+             .getProperty ("index", -1) == 4,
+           "controls-only: the control keeps its index");
+
+    // The skip is a RECORDED FACT, and its reason is what separates a row left
+    // for the proposer from one a human looked at and gave up on. Both are
+    // `deferred` on the wire; only the reason distinguishes them, so the reason
+    // is load-bearing rather than decoration.
+    auto skips = v.getProperty ("skips", juce::var());
+    check (skips.isArray() && skips.getArray()->size() == 1,
+           "controls-only: an unclaimed row is recorded, never absent");
+    check (skips.getArray()->getReference (0).getProperty ("reason", "")
+             .toString().contains ("left for the proposer"),
+           "controls-only: the reason says it went to the proposer, not that it failed");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -1807,6 +1870,7 @@ int main (int, char**)
     testSchemaVersionPinned();
     testDuplicateSemanticRule();
     testDialTimeUnitRule();
+    testControlsOnlyPayload();
     testVerdictSemantics();
     testTrustOrdering();
     testSkipRequiresReason();

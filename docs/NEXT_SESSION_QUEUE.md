@@ -75,7 +75,25 @@ graphic-EQ questions are now answered from source.**
 
 ---
 
-## 1. Persist the band diagnostic
+## 1. Persist the band diagnostic — **DONE, verify only** (found already built 5 Aug 2026)
+
+`persistSession` writes a `band_diagnostic` block whenever an inference has been
+ATTEMPTED — `stride_note`, `axis`, `family`, `bands_inferred`, `stride_verified`
+and the touched members with their names. Live on disk: 3 of 44 sessions carry it,
+all `bands_inferred: 0` with a note naming `Ch1LoFreq` — the Manley case this item
+was raised about. So the three states ARE distinguishable today:
+
+| state | how it reads |
+|---|---|
+| never attempted | no `band_diagnostic` block |
+| attempted, found nothing | block present, `bands_inferred: 0`, note names the parameter |
+| found bands, mapper deferred | block present, `bands_inferred: N`, `accepted_groups: 0` |
+
+**The third has no live instance yet** and is the state that will dominate once the
+pipeline handles bands — it needs an app-level self-test, not a re-build.
+
+### Original item, kept for the reasoning
+
 
 **The defect, measured 4 Aug 2026 on API-550A (`aufx,A5AM,ksWV`):**
 

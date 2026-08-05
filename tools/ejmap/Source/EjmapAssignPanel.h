@@ -1457,18 +1457,35 @@ public:
     {
         int confirmed = 0;
         for (const auto& r : rows) confirmed += r.state == AssignRow::State::confirmed;
-        if (confirmed == 0) { say ("Nothing confirmed: refusing to submit an empty map."); return; }
 
-        // Unresolved rows become deferred AT submit, recorded: a map is a
-        // statement about every row, including the ones nobody finished.
+        // A CONTROLS-ONLY MAP IS FINISHED, NOT EMPTY.
+        //
+        // Zero confirmed Tier 1 rows used to refuse outright, which was right
+        // while every semantic came from the wizard: a map with no params and no
+        // controls says nothing. It is wrong now that the proposer reads
+        // `controls` offline -- a full control sweep with no Tier 1 touches is a
+        // complete statement about the plugin and the input stage 2 wants.
+        //
+        // The floor is that the map must SAY something: params or controls.
+        if (confirmed == 0 && pendingControls.isEmpty())
+        { say ("Nothing confirmed and no controls swept: refusing to submit an empty map."); return; }
+
+        // Unresolved rows are recorded AT submit -- a map is a statement about
+        // every row, including the ones nobody finished, and a skip is a
+        // recorded fact rather than an absence.
+        //
+        // The REASON separates the two things that used to read alike. "deferred
+        // by mapper" means a human looked and could not decide. This one means
+        // nobody claimed it and it is going to the proposer, which is the
+        // ordinary end of a controls-only sweep rather than a shortfall.
         for (auto& r : rows)
             if (! r.isResolved())
             {
                 r.state = AssignRow::State::skipDeferred;
-                r.skipReason = "unresolved at submit";
+                r.skipReason = "left for the proposer: unclaimed at submit";
                 r.mode = deepMode ? "deep" : "fast";
                 r.resolvedAt = juce::Time::getCurrentTime().toISO8601 (true);
-                recordResolution (r, "submit_defer");
+                recordResolution (r, "submit_to_propose");
             }
         persistSession();
         if (hooks.submit) hooks.submit (rows, category, deepMode ? "deep" : "fast");
@@ -3026,7 +3043,7 @@ public:
             t << "\n" << acceptedGroups.size() << " band group(s) will be written "
                  "(a 250 Hz-class request can only land inside them)\n";
         t << "\n" << modePos << " mode/position finding(s), " << skips << " skip(s) with reasons, "
-          << open << " unresolved row(s)" << (open > 0 ? " -> will be recorded as deferred" : "")
+          << open << " to propose" << (open > 0 ? " -> recorded, and stage 2 answers them offline" : "")
           << (ignoresOpen > 0 ? ", " + juce::String (ignoresOpen) + " unreviewed ignore(s)" : juce::String())
           << "\n";
 
@@ -3036,8 +3053,10 @@ public:
             for (const auto& c : conflicts) t << "  " << c << "\n";
             t << "Fix the above (W re-captures or re-opens, D defers), then review again.\n";
         }
+        else if (confirmed == 0 && pendingControls.isEmpty())
+            t << "\nSUBMIT REFUSED - nothing confirmed and no controls swept.\n";
         else if (confirmed == 0)
-            t << "\nSUBMIT REFUSED - nothing confirmed yet.\n";
+            t << "\nREADY - a controls-only map. Every Tier 1 row goes to the proposer.\n";
         else
             t << "\nReady: SUBMIT writes maps/" << fp.substring (0, 12) << "....json\n";
 
