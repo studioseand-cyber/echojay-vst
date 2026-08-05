@@ -57,6 +57,7 @@ public:
         juce::String bandTestId, bandTestMembers, bandTestImposter, catTestId, dupTestId;
         juce::String fitTestId; int fitHoldSeconds = 0;
         juce::String mbandsTestId, mbandsMode;
+        juce::String conlyTestId, conlyCat;
         bool sendPending = false, sendPendingDry = false;
         juce::String typedReasonId, parkTestId;
         juce::String applyMapId, applyMapPath, applyMapImposter;
@@ -114,6 +115,12 @@ public:
                 sendPending = true;
             else if (args[i] == "--send-pending-dry")
             { sendPending = true; sendPendingDry = true; }
+            else if (args[i] == "--selftest-controlsonly" && i + 1 < args.size())
+            {
+                conlyTestId = args[++i];
+                if (i + 1 < args.size() && ! args[i + 1].startsWith ("--"))
+                    conlyCat = args[++i];
+            }
             else if (args[i] == "--selftest-manualbands" && i + 1 < args.size())
             {
                 mbandsTestId = args[++i];
@@ -329,6 +336,12 @@ public:
         {
             auto* m = mainWindow->getMain(); auto d = sendPendingDry;
             juce::MessageManager::callAsync ([m, d] { m->sendPendingMaps (d); });
+        }
+        else if (conlyTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
+        {
+            auto id = conlyTestId; auto* m = mainWindow->getMain();
+            auto ct = conlyCat.isEmpty() ? juce::String ("compressor") : conlyCat;
+            juce::MessageManager::callAsync ([m, id, ct] { m->selfTestControlsOnly (id, ct); });
         }
         else if (mbandsTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {

@@ -1453,10 +1453,25 @@ public:
     }
 
     /** cmd+return. */
+    /** Rows that will become PARAMS. Not the controls row, not the bands row,
+        not a band member -- those become `controls` and `groups`. Counting all
+        confirmed rows conflated them, so a controls-only map looked like it had
+        a param and neither summary branch fired. One definition, both callers.
+    */
+    int confirmedParamRows() const
+    {
+        int n = 0;
+        for (const auto& r : rows)
+            if (r.state == AssignRow::State::confirmed
+                 && r.kind != "controls" && r.kind != "bands"
+                 && ! r.isBandMemberRow() && r.semantic.isNotEmpty())
+                ++n;
+        return n;
+    }
+
     void actionSubmit()
     {
-        int confirmed = 0;
-        for (const auto& r : rows) confirmed += r.state == AssignRow::State::confirmed;
+        const int confirmed = confirmedParamRows();
 
         // A CONTROLS-ONLY MAP IS FINISHED, NOT EMPTY.
         //
@@ -1467,8 +1482,8 @@ public:
         // complete statement about the plugin and the input stage 2 wants.
         //
         // The floor is that the map must SAY something: params or controls.
-        if (confirmed == 0 && pendingControls.isEmpty())
-        { say ("Nothing confirmed and no controls swept: refusing to submit an empty map."); return; }
+        if (confirmed == 0 && pendingControls.isEmpty() && acceptedGroups.isEmpty())
+        { say ("No params, no controls, no groups: refusing to submit an empty map."); return; }
 
         // Unresolved rows are recorded AT submit -- a map is a statement about
         // every row, including the ones nobody finished, and a skip is a
@@ -2974,10 +2989,11 @@ public:
 
     void openSummary()
     {
-        int confirmed = 0, modePos = 0, skips = 0, open = 0;
+        int modePos = 0, skips = 0, open = 0;
+        const int confirmed = confirmedParamRows();
         for (auto& r : rows)
         {
-            if (r.state == AssignRow::State::confirmed) ++confirmed;
+            if (r.state == AssignRow::State::confirmed) { /* counted by confirmedParamRows */ }
             else if (r.state == AssignRow::State::modeMaterial) ++modePos;
             else if (r.isSkipped()) ++skips;
             else ++open;
@@ -3053,15 +3069,20 @@ public:
             for (const auto& c : conflicts) t << "  " << c << "\n";
             t << "Fix the above (W re-captures or re-opens, D defers), then review again.\n";
         }
-        else if (confirmed == 0 && pendingControls.isEmpty())
-            t << "\nSUBMIT REFUSED - nothing confirmed and no controls swept.\n";
+        else if (confirmed == 0 && pendingControls.isEmpty() && acceptedGroups.isEmpty())
+            t << "\nSUBMIT REFUSED - no params, no controls, no groups.\n";
         else if (confirmed == 0)
             t << "\nREADY - a controls-only map. Every Tier 1 row goes to the proposer.\n";
         else
             t << "\nReady: SUBMIT writes maps/" << fp.substring (0, 12) << "....json\n";
 
         summaryText.setText (t, juce::dontSendNotification);
-        submitBtn.setEnabled (conflicts.isEmpty() && confirmed > 0);
+        // The SAME floor as actionSubmit, and it has to be the same or the
+        // button and the guard disagree: a map must say something -- params,
+        // controls, or groups -- and a controls-only map says plenty.
+        submitBtn.setEnabled (conflicts.isEmpty()
+                               && (confirmed > 0 || ! pendingControls.isEmpty()
+                                    || ! acceptedGroups.isEmpty()));
 
         summaryShowing = true;
         summaryText.setVisible (true);

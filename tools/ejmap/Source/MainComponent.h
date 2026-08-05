@@ -7533,6 +7533,131 @@ public:
         manualBandCaptureStep();
     }
 
+    /** --selftest-controlsonly <id>
+
+        THE ACCEPTANCE TEST FOR STAGE 1, and the thing 1,260 sweeps depend on:
+        sweep the controls, touch NO Tier 1 row, submit, and read the written map
+        back off disk.
+
+        A defect here costs every map made before it is noticed, so the
+        assertions are about the FILE, not about the panel's opinion of itself.
+    */
+    void selfTestControlsOnly (const juce::String& identifier,
+                               const juce::String& cat = "compressor")
+    {
+        auto desc = echojay::auregistry::describeFromRegistry (identifier);
+        if (desc.fileOrIdentifier.isEmpty())
+            for (const auto& r : rows)
+                if (r.desc.fileOrIdentifier == identifier || r.pluginId() == identifier)
+                { desc = r.desc; break; }
+        if (desc.fileOrIdentifier.isEmpty())
+        { std::cout << "CONLY: unknown identifier" << std::endl; quitNow(); return; }
+
+        ScannedPlugin sp; sp.desc = desc;
+        loadedName = desc.name; loadedId = sp.pluginId(); loadedDesc = desc;
+        ledger.beginLoad (loadedId, desc.name, desc.manufacturerName,
+                          desc.pluginFormatName, desc.version, "load", "createPluginInstance");
+        auto res = host.load (desc, watchdog);
+        { LedgerRecord rec; rec.pluginId = loadedId; rec.name = desc.name;
+          rec.outcome = res.outcome; rec.detail = res.detail; rec.paramCount = res.paramCount;
+          ledger.endLoad (rec); }
+        if (res.outcome != LoadOutcome::ok)
+        { std::cout << "CONLY: load failed: " << res.detail << std::endl; quitNow(); return; }
+
+        auto* inst = host.getInstance();
+        listeners.attach (*inst);
+        cal = capture.calibrate (*inst, loadedId);
+        mask = capture.buildNoiseMask (*inst, cal, loadedId);
+        capture.resetCycleCounts();
+        promotionsFlushed = 0;
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+        failures = 0;
+
+        startAssignment();                       // the normal human path
+        assignPanel.pickCategory (cat);
+        okM (! assignPanel.isAwaitingCategory() && assignPanel.rows.size() > 0,
+             "the wizard offered its Tier 1 checklist for " + cat);
+
+        // Sweep the controls, and NOTHING else. Every Tier 1 row is left where
+        // the wizard put it.
+        int controlsRow = -1;
+        for (int i = 0; i < assignPanel.rows.size(); ++i)
+            if (assignPanel.rows.getReference (i).kind == "controls") controlsRow = i;
+        okM (controlsRow >= 0, "the wizard offers a controls row");
+        if (controlsRow < 0) { std::cout << "CONLY: FAIL" << std::endl; quitNow(); return; }
+
+        assignPanel.selectRow (controlsRow);
+        assignPanel.dispatchAction ("space");     // enters the controls sweep
+        assignPanel.dispatchAction ("space");     // ships what it found
+        okM (assignPanel.controlsForSubmit().size() > 0,
+             "the controls sweep shipped "
+               + juce::String (assignPanel.controlsForSubmit().size())
+               + " named control(s)");
+
+        int confirmedT1 = 0;
+        for (const auto& r : assignPanel.rows)
+            if (r.state == AssignRow::State::confirmed && r.kind != "controls"
+                 && ! r.isBandMemberRow()) ++confirmedT1;
+        okM (confirmedT1 == 0, "no Tier 1 row was touched ("
+                                 + juce::String (confirmedT1) + " confirmed)");
+
+        assignPanel.dispatchAction ("submit");
+        std::cout << "---- review ----\n" << assignPanel.textRender() << std::endl;
+        okM (assignPanel.isSubmitEnabled(),
+             "REVIEW ALLOWS A CONTROLS-ONLY MAP (this refused outright before stage 1)");
+        okM (assignPanel.textRender().contains ("controls-only map"),
+             "the strip SAYS it is a controls-only map rather than calling it unfinished");
+        okM (! assignPanel.textRender().contains ("unresolved row"),
+             "and no longer calls the unclaimed rows unresolved");
+        okM (assignPanel.confirmSubmitFromSummary(), "submit confirmed");
+
+        // ---- the file, which is the only thing that matters ----
+        auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
+        okM (f.existsAsFile(), "map written to maps/<fp>.json");
+        auto v = juce::JSON::parse (f.loadFileAsString());
+
+        auto params = v.getProperty ("params", juce::var());
+        const int nParams = params.getDynamicObject() != nullptr
+                          ? params.getDynamicObject()->getProperties().size() : 0;
+        okM (nParams == 0, "THE ACCEPTANCE TEST: the written map carries params {} ("
+                             + juce::String (nParams) + ")");
+
+        auto controls = v.getProperty ("controls", juce::var());
+        const int nControls = controls.getDynamicObject() != nullptr
+                            ? controls.getDynamicObject()->getProperties().size() : 0;
+        okM (nControls > 0, "and a full control surface (" + juce::String (nControls)
+                              + " named control(s)) -- the input stage 2 reads");
+
+        // A skip is a recorded fact. The unclaimed rows must be IN the map, and
+        // their reason must say they went to the proposer rather than that a
+        // human gave up: that distinction is the whole of stage 1 on the wire.
+        auto* sk = v.getProperty ("skips", juce::var()).getArray();
+        int toPropose = 0, deferredByMapper = 0;
+        if (sk != nullptr)
+            for (const auto& e : *sk)
+            {
+                const auto why = e.getProperty ("reason", "").toString();
+                if (why.contains ("left for the proposer")) ++toPropose;
+                if (why.contains ("deferred by mapper"))    ++deferredByMapper;
+            }
+        okM (toPropose > 0, "the unclaimed rows are RECORDED, not absent ("
+                              + juce::String (toPropose) + " left for the proposer)");
+        okM (deferredByMapper == 0,
+             "and none of them is filed as a human giving up");
+
+        // Band diagnostic, case 1 of 3: inference never ran on this sweep, so
+        // the block must be ABSENT -- which is what makes a present block with
+        // zero bands mean something different (case 2).
+        auto sess = ledger.getRoot().getChildFile ("assign-" + currentFp + ".json");
+        auto sv = juce::JSON::parse (sess.loadFileAsString());
+        okM (! sv.hasProperty ("band_diagnostic"),
+             "BAND DIAGNOSTIC case 1: never attempted -> no block at all");
+
+        std::cout << "CONLY: " << (failures == 0 ? "PASS" : "FAIL") << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
     void okM (bool cond, const juce::String& what)
     {
         if (! cond) ++failures;
