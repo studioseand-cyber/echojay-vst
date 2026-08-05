@@ -1473,6 +1473,28 @@ public:
     {
         const int confirmed = confirmedParamRows();
 
+        // THE STAGED CONTROLS MUST BELONG TO THIS PLUGIN.
+        //
+        // Not a sweep-path rule: this is where SSL Fusion HF Compressor was
+        // submitted on 4 Aug carrying Dangerous BAX EQ Mix's six controls,
+        // mapped three seconds earlier -- correct human-verified params, an
+        // EQ's shelves in `controls`, and index 3 named "Output Trim" by one
+        // half of the map and "Low Shelf Level" by the other. It reached the
+        // server and was accepted with HTTP 200.
+        //
+        // The cause (tierPhase and pendingControls surviving resetAll) is
+        // fixed. This is the invariant, and it belongs HERE because the hand
+        // path is where those 40 maps came from and the next state flag
+        // somebody forgets to clear will not announce itself either.
+        if (! controlsAreForThisPlugin())
+        {
+            say ("REFUSING TO SUBMIT: the staged controls were swept from a different "
+                 "plugin (" + pendingControlsFp.substring (0, 12) + "..., this is "
+                 + fp.substring (0, 12) + "...). Nothing is written. Press W to re-open "
+                 "the controls row and sweep this plugin.");
+            return;
+        }
+
         // A CONTROLS-ONLY MAP IS FINISHED, NOT EMPTY.
         //
         // Zero confirmed Tier 1 rows used to refuse outright, which was right

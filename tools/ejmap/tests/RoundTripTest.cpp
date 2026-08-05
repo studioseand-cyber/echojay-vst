@@ -2409,6 +2409,12 @@ void testStaleControlsRefused()
            "an empty staging is not stale, it is empty: swept_nothing, not a refusal");
     check (staleFor ("", "fpB", 5),
            "controls with NO stamp are refused too -- absence is not proof of freshness");
+
+    // AND THE HAND PATH ENFORCES IT TOO. SSL Fusion HF Compressor was submitted
+    // BY HAND on 4 Aug carrying Dangerous BAX EQ Mix's controls, and reached the
+    // server. The sweep is not where the 40 maps came from.
+    check (staleFor ("bax-fp", "fusion-fp", 6),
+           "the HAND path refuses it as well -- that is where the live one happened");
 }
 
 void testMapperIdentity()
