@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""Stage 5 -- review what stage 2 could not settle.
+
+    python3 review.py                 # everything escalated, not yet decided
+    python3 review.py --only CLA-76
+    python3 review.py --summary       # counts only, decide nothing
+
+READING IS NOT TOUCHING. Accepting a proposal records that a human LOOKED, which
+is real and worth recording, and is NOT the same claim as having moved the
+control. Only a correction or a verify-by-touch produces human-verified trust.
+A list of confident claims invites blind acceptance, so acceptance is not allowed
+to launder llm-classified into human-verified.
+
+Rows are sorted by SEMANTIC, then category -- the throughput win is deciding
+twenty input_db-vs-drive calls in a row, not context-switching per plugin. And
+the evidence is printed above the claim, every time, because a claim read before
+its evidence is a claim you have already half-accepted.
+
+Decisions land in <root>/decisions/<fp>.json as they are made, so quitting
+mid-pile costs nothing. Corrections ALSO append to misclassified-<run>.jsonl --
+a correction is a dataset, not a burial.
+"""
+import argparse, datetime, json, os, sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from evidence import VOCAB, unit_family_conflict
+
+
+def load_pile(root, only):
+    prop_dir, dec_dir = os.path.join(root, "proposals"), os.path.join(root, "decisions")
+    if not os.path.isdir(prop_dir):
+        return [], {}
+    decided, pile = {}, []
+    for fn in sorted(os.listdir(prop_dir)):
+        if not fn.endswith(".json"):
+            continue
+        doc = json.load(open(os.path.join(prop_dir, fn)))
+        if only and only.lower() not in (doc.get("plugin") or "").lower():
+            continue
+        dpath = os.path.join(dec_dir, fn)
+        already = {}
+        if os.path.exists(dpath):
+            already = {d["index"]: d for d in json.load(open(dpath))["decisions"]}
+        decided[doc["fp"]] = already
+        for e in doc.get("escalations", []):
+            if e["index"] in already:
+                continue
+            pile.append({**e, "fp": doc["fp"], "plugin": doc["plugin"],
+                         "category": doc.get("category")})
+    return pile, decided
+
+
+def sort_key(row):
+    """By semantic, then category. Rows with no proposed semantic sort last --
+    they are the ones with nothing to react to, so they are the slowest."""
+    sems = sorted({a["semantic"] for a in row.get("arms", [])
+                   if a["semantic"] not in ("none", "__absent__")})
+    return (0 if sems else 1, sems[0] if sems else "", row.get("category") or "", row["plugin"])
+
+
+def show(row, n, total):
+    ev = row["evidence"]
+    rng = "null" if not ev.get("range") else f"{ev['range'][0]:g}..{ev['range'][1]:g}"
+    spn = "null" if not ev.get("span") else f"{ev['span'][0]:g}..{ev['span'][1]:g}"
+    print("\n" + "=" * 74)
+    print(f"{row['plugin']}   {row.get('category') or 'uncategorised'}"
+          f"{'':>4}[{n} of {total}]")
+    print()
+    print(f"  {row['name']!r}   index {ev['index']}")
+    print(f"    kind {ev['kind']}   range {rng}   span {spn}   "
+          f"unit {ev['unit'] or '(none declared)'}   anchors {ev['anchors']}")
+    print()
+    for a in row.get("arms", []):
+        sem = a["semantic"] if a["semantic"] != "__absent__" else "(no answer)"
+        print(f"    {a['model']:<18} {sem:<18} {a['confidence']}")
+    if not row.get("arms"):
+        print("    (no arm answered)")
+    print()
+    print(f"  ESCALATED: {row['why']}")
+
+
+def menu(row):
+    """The options offered are exactly the semantics an arm actually proposed,
+    plus the vocabulary behind a second keystroke. Offering all 23 up front
+    would make the common case slower to serve the rare one."""
+    offered = []
+    for a in row.get("arms", []):
+        if a["semantic"] not in ("none", "__absent__") and a["semantic"] not in offered:
+            offered.append(a["semantic"])
+    return offered
+
+
+def decide(row):
+    offered = menu(row)
+    print()
+    for i, s in enumerate(offered, 1):
+        print(f"    [{i}] {s}")
+    print("    [n] none / not a dial      [t] verify by touch (defer to the wizard)")
+    print("    [v] the full vocabulary    [d] defer      [q] save and quit")
+    while True:
+        try:
+            k = input("  > ").strip().lower()
+        except EOFError:
+            return None
+        if k == "q":
+            return None
+        if k == "d":
+            return {"outcome": "deferred"}
+        if k == "t":
+            return {"outcome": "verify_by_touch"}
+        if k == "n":
+            return {"outcome": "not_a_dial", "semantic": None,
+                    "semantic_source": "human-corrected", "trust": "human-verified"}
+        if k == "v":
+            for i, s in enumerate(VOCAB, 1):
+                print(f"    [{i:2d}] {s}")
+            offered = VOCAB
+            continue
+        if k.isdigit() and 1 <= int(k) <= len(offered):
+            chosen = offered[int(k) - 1]
+            conflict = unit_family_conflict(chosen, row["evidence"]["unit"])
+            if conflict:
+                # The gate refuses a human the same way it refuses a model.
+                print(f"  REFUSED -- {conflict}")
+                print("  Pick another, or [t] to verify it by touch first.")
+                continue
+            proposed = {a["semantic"] for a in row.get("arms", [])}
+            waved = len(proposed) == 1 and chosen in proposed
+            return {"outcome": "accepted" if waved else "corrected",
+                    "semantic": chosen,
+                    # reading is not touching
+                    "semantic_source": "human-confirmed" if waved else "human-corrected",
+                    "trust": "llm-classified" if waved else "human-verified"}
+        print("  ?")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--root", default=os.path.expanduser("~/Library/ejmap"))
+    ap.add_argument("--only", default=None)
+    ap.add_argument("--summary", action="store_true")
+    args = ap.parse_args()
+
+    pile, decided = load_pile(args.root, args.only)
+    if not pile:
+        print("nothing to review")
+        return
+    pile.sort(key=sort_key)
+
+    if args.summary:
+        import collections
+        why = collections.Counter(r["why"].split(":")[0] for r in pile)
+        print(f"{len(pile)} rows to review across "
+              f"{len({r['plugin'] for r in pile})} plugins\n")
+        for w, n in why.most_common():
+            print(f"  {n:4d}  {w}")
+        return
+
+    dec_dir = os.path.join(args.root, "decisions")
+    os.makedirs(dec_dir, exist_ok=True)
+    run_id = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    mis_path = os.path.join(args.root, f"misclassified-{run_id}.jsonl")
+
+    print(f"{len(pile)} rows to review. [q] saves and quits at any point.")
+    made = 0
+    for n, row in enumerate(pile, 1):
+        show(row, n, len(pile))
+        d = decide(row)
+        if d is None:
+            break
+        record = {"index": row["index"], "control_name": row["name"],
+                  "why_escalated": row["why"], "arms": row.get("arms", []),
+                  "at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+                  **d}
+
+        path = os.path.join(dec_dir, f"{row['fp']}.json")
+        doc = json.load(open(path)) if os.path.exists(path) else \
+            {"fp": row["fp"], "plugin": row["plugin"], "decisions": []}
+        doc["decisions"] = [x for x in doc["decisions"] if x["index"] != row["index"]]
+        doc["decisions"].append(record)
+        json.dump(doc, open(path, "w"), indent=1)
+        made += 1
+
+        # A correction is a dataset, not a burial (EjmapAssignment.h).
+        if d["outcome"] == "corrected":
+            with open(mis_path, "a") as f:
+                f.write(json.dumps({"fp": row["fp"], "plugin": row["plugin"],
+                                    "control": row["name"], "chose": d.get("semantic"),
+                                    "arms": row.get("arms", []),
+                                    "why_escalated": row["why"]}) + "\n")
+
+    print(f"\n{made} decided, {len(pile)-made} left.  -> {dec_dir}")
+    if os.path.exists(mis_path):
+        print(f"corrections recorded -> {mis_path}")
+
+
+if __name__ == "__main__":
+    main()
