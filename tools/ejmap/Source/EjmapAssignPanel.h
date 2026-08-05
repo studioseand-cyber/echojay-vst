@@ -2330,6 +2330,16 @@ public:
     juce::Array<ControlEntry> controlEntries;
     juce::Array<NamedControl> pendingControls;
 
+    /** WHICH PLUGIN THE STAGED CONTROLS WERE BUILT FOR.
+
+        The reset above fixes the cause; this makes the whole class impossible
+        to repeat. Staged controls carry the fingerprint they were swept from,
+        and a submit for a different fingerprint is refused rather than written.
+        An invariant beats a reset, because the next state flag someone forgets
+        will not announce itself either.
+    */
+    juce::String pendingControlsFp;
+
     /** Lockstep observations: unpicked/partner index -> canonical index, with
         the evidence source per record ("human_pick" | "write_verify"). Session
         cargo; submit stamps matching staged controls with lockstep_of.
@@ -2523,6 +2533,23 @@ public:
         controlEntries.clear();
         controlsExcluded.clear();
         controlsPhase = false;
+
+        // PER-PLUGIN STATE THAT WAS NOT RESET, and it wrote half a campaign's
+        // maps wrong. Measured 5 Aug 2026: `tierPhase` survived resetAll, so on
+        // the NEXT plugin the first SPACE landed in tierAccept() instead of the
+        // controls sweep, the sweep never ran, and submit shipped the PREVIOUS
+        // plugin's pendingControls under the new plugin's fingerprint. 14 of 28
+        // maps in a test sweep carried another plugin's control surface --
+        // valid-looking, gate-passing, and wrong. A Korg delay with an Ampeg's
+        // Ch64Bass on it.
+        //
+        // pendingControls and acceptedGroups are the payload; tierPhase is the
+        // state machine. All three belong to ONE plugin and all three are
+        // cleared here.
+        tierPhase = false;
+        pendingControls.clear();
+        pendingControlsFp.clear();
+        acceptedGroups.clear();
         controlsExpanded = false;
         controlsCursor = 0;
         controlsRowIndex = -1;
@@ -2554,6 +2581,10 @@ public:
     juce::SortedSet<int> controlsExcluded;   // human decisions, survive re-sweeps
 
     const juce::Array<NamedControl>& controlsForSubmit() const { return pendingControls; }
+
+    /** False when the staged controls were swept from a DIFFERENT plugin. */
+    bool controlsAreForThisPlugin() const
+    { return pendingControls.isEmpty() || pendingControlsFp == fp; }
 
     void actionControlsBegin()
     {
@@ -2850,6 +2881,7 @@ public:
             if (c.tier.isNotEmpty()) tierByName[c.name] = c.tier;
 
         pendingControls.clear();
+        pendingControlsFp = fp;              // stamped where they are built
         juce::StringArray dupDone;
         int shipped = 0, modeN = 0;
 

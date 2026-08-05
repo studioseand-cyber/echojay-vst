@@ -59,7 +59,7 @@ public:
         juce::String mbandsTestId, mbandsMode;
         juce::String conlyTestId, conlyCat;
         bool worklist = false, worklistNext = false;
-        bool sweep = false, sweepDry = false; int sweepLimit = 0;
+        bool sweep = false, sweepDry = false, sweepCaptures = false; int sweepLimit = 0;
         bool sendPending = false, sendPendingDry = false;
         juce::String typedReasonId, parkTestId;
         juce::String applyMapId, applyMapPath, applyMapImposter;
@@ -127,6 +127,8 @@ public:
                 sweepLimit = args[++i].getIntValue();
             else if (args[i] == "--dry-run")
                 sweepDry = true;
+            else if (args[i] == "--captures")
+                sweepCaptures = true;
             else if (args[i] == "--selftest-controlsonly" && i + 1 < args.size())
             {
                 conlyTestId = args[++i];
@@ -352,8 +354,8 @@ public:
         else if (sweep && mainWindow->getMain() != nullptr)
         {
             auto* m = mainWindow->getMain();
-            const int lim = sweepLimit; const bool dry = sweepDry;
-            juce::MessageManager::callAsync ([m, lim, dry] { m->runSweep (lim, dry); });
+            const int lim = sweepLimit; const bool dry = sweepDry, caps = sweepCaptures;
+            juce::MessageManager::callAsync ([m, lim, dry, caps] { m->runSweep (lim, dry, caps); });
         }
         else if (worklist && mainWindow->getMain() != nullptr)
         {

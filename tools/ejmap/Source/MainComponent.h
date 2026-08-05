@@ -72,6 +72,14 @@ public:
         // Sign in once. The button SAYS which state it is in, because "am I
         // signed in" is a question a mapper will otherwise answer by trying to
         // submit and being refused.
+        // OFF by default, and the label says what it costs. A plugin that
+        // shows a dialog blocks only when its editor opens.
+        addAndMakeVisible (sweepCapturesToggle);
+        sweepCapturesToggle.setButtonText ("captures");
+        sweepCapturesToggle.setTooltip ("Open each editor so the panel can be captured. "
+                                        "A plugin that shows a dialog on open will block the "
+                                        "sweep until the watchdog stops the process.");
+
         addAndMakeVisible (signInButton);
         signInButton.onClick = [this] { promptSignIn(); };
         refreshSignIn();
@@ -267,6 +275,11 @@ public:
 
         const int autoReleased = releaseStaleScanQuarantines();
         const auto restored = restoreScanCache();
+
+        // After the scan cache is restored, because the worklist is built from
+        // it. Deferred one tick so the window exists and the first plugin does
+        // not load inside the constructor.
+        juce::MessageManager::callAsync ([this] { resumeSweepIfInterrupted(); });
 
         juce::String opening;
 
@@ -6903,6 +6916,8 @@ public:
         top.removeFromLeft (6);
         sweepAllButton.setBounds (top.removeFromLeft (96));
         top.removeFromLeft (6);
+        sweepCapturesToggle.setBounds (top.removeFromLeft (86));
+        top.removeFromLeft (6);
         signInButton.setBounds (top.removeFromLeft (110));
         top.removeFromLeft (6);
         loadButton.setBounds (top.removeFromLeft (130));
@@ -7814,9 +7829,9 @@ public:
         The message names the class, so it says whether to plug something in or
         to investigate.
     */
-    void runSweep (int limit, bool dryRun)
+    void runSweep (int limit, bool dryRun, bool wantCaptures)
     {
-        if (! beginSweep (limit, dryRun))
+        if (! beginSweep (limit, dryRun, wantCaptures))
         { quitNow(); return; }
 
         // The CLI drives the same stepper the button drives from a Timer. One
@@ -7828,9 +7843,10 @@ public:
     }
 
     /** Sets the run up, or explains why it will not start. */
-    bool beginSweep (int limit, bool dryRun)
+    bool beginSweep (int limit, bool dryRun, bool wantCaptures = false)
     {
         sweep = {};
+        sweep.wantCaptures = wantCaptures;
         sweep.cats = loadCategories();
         if (sweep.cats.empty())
         {
@@ -7858,7 +7874,9 @@ public:
 
         sweepSay ("SWEEP over " + juce::String (sweep.work.size()) + " worklist row(s), "
                     + juce::String ((int) sweep.cats.size()) + " categorised product(s)"
-                    + (dryRun ? "   [DRY RUN: nothing is loaded or written]" : ""));
+                    + (dryRun ? "   [DRY RUN: nothing is loaded or written]" : "")
+                    + (wantCaptures ? "   [editors OPEN: captures on, modals can block]"
+                                    : "   [no editors: no captures, no modal can block]"));
         return true;
     }
 
@@ -7979,6 +7997,45 @@ public:
     };
     std::unique_ptr<SweepTimer> sweepTimer;
 
+    /** A CRASH MUST COST ONE PLUGIN, NOT THE RUN.
+
+        An overnight sweep that reopens after a crash and waits for a click is
+        not an overnight sweep. The supervisor already relaunches; what was
+        missing is that the child came back to an idle window.
+
+        The marker is written when a sweep STARTS and removed when it ends
+        normally or is stopped by hand -- so its presence on launch means "a
+        sweep was running and this process is not the one that started it".
+        A hand-stopped sweep does not come back, which is the point of Stop.
+    */
+    juce::File sweepActiveMarker() const
+    { return ledger.getRoot().getChildFile ("sweep-active.marker"); }
+
+    void resumeSweepIfInterrupted()
+    {
+        auto marker = sweepActiveMarker();
+        if (! marker.existsAsFile() || sweep.running)
+            return;
+
+        const bool wantCaptures = marker.loadFileAsString().trim() == "captures";
+        std::cout << "SWEEP: resuming after an interrupted run" << std::endl;
+        status.setText ("Resuming the sweep after a crash. Already-mapped plugins are "
+                        "not offered again.", juce::dontSendNotification);
+        sweepCapturesToggle.setToggleState (wantCaptures, juce::dontSendNotification);
+        startSweep (wantCaptures);
+    }
+
+    void startSweep (bool wantCaptures)
+    {
+        if (! beginSweep (0, false, wantCaptures))
+        { refreshSweepButton(); return; }
+
+        sweepActiveMarker().replaceWithText (wantCaptures ? "captures" : "plain");
+        sweepTimer = std::make_unique<SweepTimer> (*this);
+        sweepTimer->startTimer (20);
+        refreshSweepButton();
+    }
+
     void toggleSweepAll()
     {
         if (sweep.running)
@@ -7992,12 +8049,7 @@ public:
             return;
         }
 
-        if (! beginSweep (0, false))
-        { refreshSweepButton(); return; }
-
-        sweepTimer = std::make_unique<SweepTimer> (*this);
-        sweepTimer->startTimer (20);
-        refreshSweepButton();
+        startSweep (sweepCapturesToggle.getToggleState());
     }
 
     void refreshSignIn()
@@ -8067,6 +8119,11 @@ public:
     void endSweep()
     {
         sweep.running = false;
+
+        // The marker survives ONLY a death. A run that finished, tripped the
+        // breaker or was stopped by hand has said what it wanted to say, and
+        // coming back from any of those uninvited would be the tool arguing.
+        sweepActiveMarker().deleteFile();
         sweepSay (juce::String ("\nSWEEP ") + (sweep.stopped ? "STOPPED BY YOU" : "DONE") + "\n"
                     "  " + juce::String (sweep.mapped)       + " mapped\n"
                     "  " + juce::String (sweep.sweptNothing) + " loaded but swept nothing (flagged for review)\n"
@@ -8099,7 +8156,7 @@ private:
         juce::String current, breakerClass;
         int index = 0, done = 0, limit = 0, progressBase = 0;
         int mapped = 0, sweptNothing = 0, died = 0, skipped = 0, consecutive = 0;
-        bool running = false, dryRun = false;
+        bool running = false, dryRun = false, wantCaptures = false;
         bool stopRequested = false, stopped = false, tripped = false;
     };
     SweepRun sweep;
@@ -8247,7 +8304,7 @@ private:
                            int& nControls, juce::String& detail,
                            ejmap::CaptureResult& cap)
     {
-        host.unload();
+        releaseLoadedPlugin();
         assigning = false;
         assignPanel.resetAll();
 
@@ -8255,12 +8312,10 @@ private:
         ledger.beginLoad (loadedId, sp.desc.name, sp.desc.manufacturerName,
                           sp.desc.pluginFormatName, sp.desc.version, "load",
                           "createPluginInstance");
-        auto res = host.load (sp.desc, watchdog);
-        { LedgerRecord rec; rec.pluginId = loadedId; rec.name = sp.desc.name;
-          rec.vendor = sp.desc.manufacturerName; rec.format = sp.desc.pluginFormatName;
-          rec.version = sp.desc.version; rec.outcome = res.outcome;
-          rec.detail = res.detail; rec.paramCount = res.paramCount;
-          ledger.endLoad (rec); }
+        // NO ROW IS WRITTEN HERE. PluginHost::load plants its own stake and
+        // closes it with a complete record -- that is why the closer exists --
+        // and a caller that closes it too writes a second row for one event.
+        auto res = host.load (sp.desc, watchdog, sweep.wantCaptures);
 
         if (res.outcome != LoadOutcome::ok)
         {
@@ -8281,6 +8336,10 @@ private:
 
         auto* inst = host.getInstance();
 
+        // Only when captures were asked for: without an editor there is
+        // nothing to attach, and opening one is what lets a modal block.
+        if (sweep.wantCaptures)
+        {
         // THE EDITOR HAS TO BE ATTACHED OR THERE IS NOTHING TO CAPTURE.
         // Measured: without this the whole first sweep recorded
         // capture=unavailable, 0x0, on 30 of 30 plugins -- captureHostedEditor
@@ -8289,6 +8348,7 @@ private:
         // is a separate step the wizard path does and this one did not.
         attachEditor();
         resized();
+        }
 
         listeners.attach (*inst);
         cal  = capture.calibrate (*inst, loadedId);
@@ -8310,6 +8370,18 @@ private:
         assignPanel.dispatchAction ("space");    // sweep the surface
         assignPanel.dispatchAction ("space");    // ship what it found
         nControls = assignPanel.controlsForSubmit().size();
+
+        // ASSERT ON THE CONTENT, NOT ON COMPLETION. The two SPACEs are a script
+        // against a state machine, and a script that lands somewhere else still
+        // returns. Measured: half a test sweep submitted the PREVIOUS plugin's
+        // control surface under this plugin's fingerprint -- valid-looking,
+        // gate-passing, and wrong. The panel now stamps what it swept; this
+        // refuses anything that is not this plugin's.
+        if (! assignPanel.controlsAreForThisPlugin())
+        {
+            detail = "the staged controls were swept from a different plugin; nothing written";
+            return "stale_controls";
+        }
 
         if (nControls == 0)
         {
@@ -8348,7 +8420,8 @@ private:
         // map; capture-last makes it cost only the image. Its own deadline,
         // shorter than a load's, and a hang here NEVER quarantines: the plugin
         // maps perfectly well.
-        cap = captureAfterSubmit (sp);
+        if (sweep.wantCaptures)
+            cap = captureAfterSubmit (sp);
 
         detail.clear();
         return "mapped";
@@ -11340,10 +11413,7 @@ private:
         if (auto* d = juce::Desktop::getInstance().getComponent (0)) d->repaint();
         juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
 
-        capture.stop();          // before unload: teardown is what a read can race
-        listeners.detach();      // same rule: they hang off the instance's parameters
-        detachEditor();
-        host.unload();
+        releaseLoadedPlugin();
 
         // Capture identity is established HERE, in the load path, not later in
         // prepareCapture. A capture row that cannot be attributed to a plugin is
@@ -11438,6 +11508,33 @@ private:
                   << " | window " << getWidth() << "x" << getHeight()
                   << " | " << (over ? "OVERFLOWS the holder" : "fits") << std::endl;
         std::cout.flush();
+    }
+
+    /** THE ORDER IS THE RULE, and it lives in one function because it was
+        already written correctly once and then skipped.
+
+            capture.stop()      before unload: teardown is what a read can race
+            listeners.detach()  same rule: they hang off the instance's parameters
+            detachEditor()      the editor is owned by the instance being destroyed
+            host.unload()
+
+        Measured 5 Aug 2026: `sweepOne` called host.unload() FIRST, with the
+        capture thread still reading the instance's parameters, the listeners
+        still hung off them, and hostedEditor still holding an editor whose
+        processor was about to go. Three use-after-free hazards, all three
+        already documented at the load path, all three skipped -- and the
+        campaign died with SIGSEGV every 26 rows. It is a race, which is why it
+        survived a handful of plugins in testing before killing a real run.
+
+        A load path and a sweep path that tear down differently is two rules.
+        This is one.
+    */
+    void releaseLoadedPlugin()
+    {
+        capture.stop();
+        listeners.detach();
+        detachEditor();
+        host.unload();
     }
 
     void detachEditor()
@@ -12257,6 +12354,7 @@ private:
     juce::String crashedId;
 
     juce::TextButton sweepAllButton, signInButton;
+    juce::ToggleButton sweepCapturesToggle;
     juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton, uploadButton, restartButton;
     juce::ToggleButton deepToggle;
     AssignPanel assignPanel;

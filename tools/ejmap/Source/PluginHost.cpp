@@ -16,7 +16,8 @@ PluginHost::~PluginHost()
 }
 
 //==============================================================================
-PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Watchdog& watchdog)
+PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Watchdog& watchdog,
+                                        bool openEditor)
 {
     LoadResult result;
 
@@ -48,16 +49,34 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Wa
     struct StakeCloser
     {
         Watchdog& w; const juce::String& id; const LoadResult& r;
+        const juce::PluginDescription& d;
         ~StakeCloser()
         {
+            // THE ROW IS WRITTEN COMPLETE HERE, and it was not before.
+            //
+            // Measured 5 Aug 2026: 393 of 578 load rows in the live ledger have
+            // an EMPTY name, vendor, format and version -- every one written by
+            // this closer, which knew the id and nothing else. Callers papered
+            // over it by writing a SECOND row with the names filled in, which
+            // is why 124 near-simultaneous same-id same-outcome pairs exist.
+            //
+            // Two rows for one event is not cosmetic: the retry rule counts
+            // rows, and it is the thing standing between a campaign and a
+            // quarantine pile-up. The description is in scope; there was never
+            // a reason not to use it.
             LedgerRecord rec;
-            rec.pluginId = id;
-            rec.stage    = "load";
-            rec.outcome  = r.outcome;
-            rec.detail   = r.detail;
+            rec.pluginId   = id;
+            rec.stage      = "load";
+            rec.name       = d.name;
+            rec.vendor     = d.manufacturerName;
+            rec.format     = d.pluginFormatName;
+            rec.version    = d.version;
+            rec.outcome    = r.outcome;
+            rec.detail     = r.detail;
+            rec.paramCount = r.paramCount;
             w.getLedger().endLoad (rec);
         }
-    } stakeCloser { watchdog, stakeId, result };
+    } stakeCloser { watchdog, stakeId, result, desc };
 
     // Refuse to start a new load while the previous plugin's pump is still
     // rendering. Tearing down underneath it is what crashed on soothe2.
@@ -93,7 +112,14 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Wa
                           || lower.contains ("authoriz") || lower.contains ("activat")
                           || lower.contains ("demo") || lower.contains ("trial");
 
-        result.outcome = licence ? LoadOutcome::licenseRefused : LoadOutcome::timeout;
+        // NOTHING TIMED OUT. AVOX SYBIL returns "An OS error occurred during
+        // initialisation of the plug-in (4097)" in 125 ms and was recorded as a
+        // timeout, which costs the sweep's circuit breaker its meaning: ten of
+        // these would stop a run saying "loads are hanging" when nothing hung.
+        // The outcome now says what was observed -- the format refused to
+        // instantiate -- and the licence heuristic keeps its own outcome
+        // because the queue already treats a licence refusal differently.
+        result.outcome = licence ? LoadOutcome::licenseRefused : LoadOutcome::initFailed;
         result.detail  = error.isEmpty() ? "createPluginInstance returned null with no message" : error;
         return result;
     }
@@ -123,6 +149,18 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Wa
     // The editor is created and allowed to settle first, then the pump starts.
     // An editor that needs a callback to paint still gets one, a few hundred
     // milliseconds later.
+    // Stop here when the caller does not want an editor: everything below this
+    // line is editor creation and the editor-ready wait, and both are where a
+    // plugin's modal dialog blocks.
+    if (! openEditor)
+    {
+        result.outcome   = LoadOutcome::ok;
+        result.hasEditor = instance->hasEditor();
+        result.paramCount = instance->getParameters().size();
+        result.detail    = "loaded without opening the editor";
+        return result;
+    }
+
     if (! instance->hasEditor())
     {
         result.outcome  = LoadOutcome::noEditor;

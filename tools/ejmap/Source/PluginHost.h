@@ -66,7 +66,22 @@ public:
         remote view connects; the previous getWidth() <= 0 test passed a 1x1
         editor straight through as ok.
     */
-    LoadResult load (const juce::PluginDescription& desc, Watchdog& watchdog);
+    /** openEditor=false loads the plugin and STOPS BEFORE THE EDITOR.
+
+        A plugin that shows a dialog does it when its editor opens, and the
+        editor-ready wait pumps the message loop, so the alert appears and sits
+        there until the watchdog kills the process. Measured on this machine:
+        every UAD failure row reads "no return from editor-ready wait after
+        25.0s; process terminated by watchdog".
+
+        THE CONTROLS SWEEP NEVER NEEDS THE EDITOR -- it reads parameters. Only
+        the panel capture does. So an unattended sweep loads without one and
+        the whole class of load-time modals goes away, not UAD's specifically.
+        The capture becomes an opt-in second pass over plugins that do not
+        block, which is a smaller thing to lose than a night.
+    */
+    LoadResult load (const juce::PluginDescription& desc, Watchdog& watchdog,
+                     bool openEditor = true);
 
     /** Anything smaller in either axis is a placeholder, not an editor. 1x1 is
         what an unconnected NSRemoteView reports; measured on UAD Antares

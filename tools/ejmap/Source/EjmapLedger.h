@@ -98,6 +98,7 @@ struct LedgerRecord
         row because the NEXT launch is what counts these, and by then the run
         that could have been force-quit no longer exists to be asked. */
     bool unattended = false;
+    juce::String lastClosedId, lastClosedOutcome, lastClosedStage;
 
     /** Wall-clock milliseconds the load took, -1 when not recorded (every row
         written before 5 Aug 2026). The quarantine row carries the series so an
@@ -524,6 +525,30 @@ public:
             const auto began = juce::Time::fromISO8601 (stake);
             if (began != juce::Time())
                 r.loadMs = (int) (juce::Time::getCurrentTime() - began).inMilliseconds();
+        }
+
+        // ONE EVENT, ONE ROW. PluginHost::load plants its own stake and closes
+        // it, deliberately, so no caller can forget -- and callers that ALSO
+        // close it wrote a second row for the same load. 124 such pairs are on
+        // disk. The retry rule counts rows, so a duplicate is not cosmetic.
+        //
+        // The discriminator is the STAKE: a close arriving when no stake is
+        // open, naming the same plugin and the same outcome as the close that
+        // just happened, is the second half of one event. A genuine second load
+        // plants a new stake first, which clears this.
+        const bool stakeOpen = inflightFile.existsAsFile();
+        if (! stakeOpen
+             && r.pluginId.isNotEmpty()
+             && r.pluginId == lastClosedId
+             && toString (r.outcome) == lastClosedOutcome
+             && r.stage == lastClosedStage)
+            return;
+
+        if (stakeOpen)
+        {
+            lastClosedId      = r.pluginId;
+            lastClosedOutcome = toString (r.outcome);
+            lastClosedStage   = r.stage;
         }
 
         appendLocked (r);
@@ -1249,6 +1274,7 @@ private:
     }
 
     bool unattended = false;
+    juce::String lastClosedId, lastClosedOutcome, lastClosedStage;
     juce::File root, ledgerFile, inflightFile, quarantineFile, emergencyFile;
     juce::String runId;
     juce::StringArray quarantined;

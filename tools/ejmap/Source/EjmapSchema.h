@@ -86,7 +86,7 @@ enum class CaptureSource { poll, listener, both };
     only determinism evidence this project has, and a rename that silently
     dropped them would reset every retry count to zero.
 */
-enum class LoadOutcome { ok, diedDuringLoad, timeout, licenseRefused, noEditor, noParams, quarantined, noTypes, restarted };
+enum class LoadOutcome { ok, diedDuringLoad, timeout, initFailed, licenseRefused, noEditor, noParams, quarantined, noTypes, restarted };
 
 inline constexpr const char* kLegacyDeathOutcome = "crash_on_load";
 
@@ -141,6 +141,7 @@ inline juce::String toString (LoadOutcome o)
         case LoadOutcome::ok:             return "ok";
         case LoadOutcome::diedDuringLoad: return "died_during_load";
         case LoadOutcome::timeout:        return "timeout";
+        case LoadOutcome::initFailed:     return "init_failed";
         case LoadOutcome::licenseRefused: return "license_refused";
         case LoadOutcome::noEditor:       return "no_editor";
         case LoadOutcome::noParams:       return "no_params";

@@ -2224,6 +2224,51 @@ void testSweepRules()
     check (bucket (false, true) == "parked", "worklist: an unflagged session is parked work");
     check (bucket (true, false) == "flagged", "worklist: a flag with no session is still flagged");
 
+    // ---- 3b. ONE EVENT, ONE ROW ---------------------------------------------
+    // PluginHost::load plants its own stake and closes it with a complete
+    // record. A caller that also closes it wrote a SECOND row for one load:
+    // 124 such pairs are on disk, and 393 of 578 load rows have an empty name
+    // because the closer knew the id and nothing else. The retry rule counts
+    // rows, so a duplicate is not cosmetic.
+    {
+        auto r8 = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                      .getChildFile ("ejmap-dupe-test-" + juce::Uuid().toDashedString());
+        r8.createDirectory();
+        ejmap::Ledger l (r8);
+        const juce::String pid = "AudioUnit:Effects/aufx,TEST,test";
+
+        l.beginLoad (pid, "Test", "V", "AudioUnit", "1.0", "load", "PluginHost::load");
+        ejmap::LedgerRecord a; a.pluginId = pid; a.stage = "load"; a.name = "Test";
+        a.outcome = ejmap::LoadOutcome::initFailed; a.detail = "OS error 4097";
+        l.endLoad (a);                                   // the closer's row
+
+        ejmap::LedgerRecord b = a;                       // a caller closing it too
+        l.endLoad (b);
+
+        auto ev = l.retryEvidenceFor (pid, "load");
+        check (ev.attempts == 1,
+               "ledger: two closes of ONE stake write ONE row (got "
+                 + juce::String (ev.attempts) + ")");
+
+        // A genuine second load plants a new stake, which clears the guard.
+        l.beginLoad (pid, "Test", "V", "AudioUnit", "1.0", "load", "PluginHost::load");
+        l.endLoad (a);
+        check (l.retryEvidenceFor (pid, "load").attempts == 2,
+               "ledger: and a REAL second load is still two rows");
+        r8.deleteRecursively();
+    }
+
+    // ---- 3c. an init failure is not a timeout -------------------------------
+    // AVOX SYBIL returns "An OS error occurred during initialisation (4097)" in
+    // 125 ms and was recorded as a timeout. Nothing hung, and the breaker's
+    // advice for `timeout` is "loads are hanging" -- ten of those would stop a
+    // run with a diagnosis that is simply untrue.
+    check (ejmap::toString (ejmap::LoadOutcome::initFailed) == "init_failed",
+           "outcome: an instantiate failure says init_failed");
+    check (ejmap::toString (ejmap::LoadOutcome::initFailed)
+             != ejmap::toString (ejmap::LoadOutcome::timeout),
+           "outcome: and is NOT a timeout, so the breaker keeps its meaning");
+
     // ---- 4. capture state is named after what was OBSERVED ------------------
     // An earlier reading attributed an empty capture to out-of-process hosting,
     // because API-550A was both empty AND an NSRemoteView. Disproved 5 Aug: the
@@ -2333,6 +2378,39 @@ void testSweepRules()
     corpus and revoking it locks out everyone at once, and "who mapped this" is
     unanswerable because provenance comes from a name someone TYPES.
 */
+/** THE STALE-CONTROLS INVARIANT.
+
+    Half a test sweep submitted the PREVIOUS plugin's control surface under the
+    new plugin's fingerprint: a Korg delay carrying an Ampeg's Ch64Bass, an SPL
+    Transient Designer with 20 controls when it has 4 parameters. Valid-looking,
+    gate-passing, and wrong -- the worst shape a corpus can take.
+
+    The cause was `tierPhase` surviving resetAll, so the first SPACE landed in
+    tierAccept() instead of the controls sweep and the stale pendingControls
+    were never rebuilt. The reset is fixed; this is the invariant that makes the
+    class impossible, because the next state flag someone forgets to reset will
+    not announce itself either.
+*/
+void testStaleControlsRefused()
+{
+    // The rule, isolated: staged controls carry the fingerprint they were swept
+    // from, and a submit for any other fingerprint is refused.
+    auto staleFor = [] (const juce::String& stagedFp, const juce::String& currentFp,
+                        int staged)
+    {
+        return ! (staged == 0 || stagedFp == currentFp);
+    };
+
+    check (! staleFor ("fpA", "fpA", 22), "controls swept from THIS plugin are accepted");
+    check (staleFor ("fpA", "fpB", 22),
+           "CONTROLS SWEPT FROM ANOTHER PLUGIN ARE REFUSED -- this is the one that "
+           "wrote a Korg delay with an Ampeg's knobs");
+    check (! staleFor ("", "fpB", 0),
+           "an empty staging is not stale, it is empty: swept_nothing, not a refusal");
+    check (staleFor ("", "fpB", 5),
+           "controls with NO stamp are refused too -- absence is not proof of freshness");
+}
+
 void testMapperIdentity()
 {
     using ejmap::Mouth;
@@ -2443,6 +2521,7 @@ int main (int, char**)
     testRetryRule();
     testSweepRules();
     testMapperIdentity();
+    testStaleControlsRefused();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
