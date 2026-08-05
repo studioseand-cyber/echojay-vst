@@ -1171,3 +1171,53 @@ motivated stage 4. So the missing evidence is plausibly RECOVERABLE rather than
 absent, which would turn both partials complete. **Worth testing on 4K and Neve
 before building anything else for partial sets**: two captures, two vision calls,
 and the answer is measured rather than assumed.
+
+---
+
+## 20. AMP SIM TONE CONTROLS HAVE NO SEMANTIC — the second vocabulary gap
+
+Raised 5 Aug 2026 by the mapper working the review pile. **The second entry on the
+same list as item 18 (`attack_ms`), and the larger of the two.**
+
+Presence, Bass, Middle and Treble on a guitar or bass amp are tone shaping on
+**arbitrary 0-10 scales with no dB relationship**. `DialSets::forCategory
+("amp_sim")` offers `{drive, input_db, output_db, mix_pct}` — no home for any of
+them.
+
+**The evidence is a withdrawal, not an opinion.** 14 decisions were made
+answering `gain_db` across four amp sims, then withdrawn in a batch once the
+pattern was clear (`tools/propose/revert.py`, outcome `reverted`, originals kept
+under `superseded`). The reasoning that withdrew them:
+
+- the scales are arbitrary, so `gain_db` is a false unit claim — and once these
+  plugins record a swept `unit`, the unit-family rule will refuse it anyway
+- `gain_db` on an amp sim is **ambiguous with the amp's own gain and volume**,
+  which are separately mapped as `drive` on the same plugins
+
+**It is large, not marginal.** 5 of 40 mapped plugins are `amp_sim` (12.5%) and
+they carry **28 tone-shaped controls between them** — 4 or 5 each, and 11 on UAD
+Softube Vintage Amp Room. Every amp sim in the catalogue has three or four. At
+1,300 plugins this is the single biggest block of controls the dial set cannot
+name.
+
+**Options, none chosen** (and note the same three shapes as item 18):
+
+- **(a) New semantics** — `tone_bass`, `tone_mid`, `tone_treble`, `presence`,
+  dimensionless by design. Honest, names what the user actually asks for
+  ("more presence"), and costs a server map-builder change plus consumer support.
+- **(b) One parameterised semantic** — `tone` with a band qualifier. Runs into
+  item 17: `params` is keyed by semantic, so three tone controls collide.
+- **(c) Leave them Tier 2**, reachable by exact name. Free, and "turn up the
+  treble" then only works if the model knows the product's control names —
+  which is exactly the semantic-versus-named distinction the tier question is
+  about.
+
+**Do not decide (a) vs (c) without the tier answer.** If the map becomes one
+control surface where some entries carry a semantic and some do not, (c) stops
+being a demotion and becomes the ordinary case, and the question reduces to
+whether "treble" is worth a standard name. That analysis is owed and should come
+first.
+
+**Collecting continues.** Item 18 (`attack_ms` covering four things) and this are
+the first two; `release_ms` and `sensitivity` are suspected. The list is the
+input to a dial-set revision, not four separate patches.
