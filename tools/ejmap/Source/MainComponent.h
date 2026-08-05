@@ -69,6 +69,13 @@ public:
         sweepAllButton.setButtonText ("Sweep All");
         sweepAllButton.onClick = [this] { toggleSweepAll(); };
 
+        // Sign in once. The button SAYS which state it is in, because "am I
+        // signed in" is a question a mapper will otherwise answer by trying to
+        // submit and being refused.
+        addAndMakeVisible (signInButton);
+        signInButton.onClick = [this] { promptSignIn(); };
+        refreshSignIn();
+
         addAndMakeVisible (loadButton);
         loadButton.setButtonText ("Load selected");
         loadButton.setEnabled (false);
@@ -6896,6 +6903,8 @@ public:
         top.removeFromLeft (6);
         sweepAllButton.setBounds (top.removeFromLeft (96));
         top.removeFromLeft (6);
+        signInButton.setBounds (top.removeFromLeft (110));
+        top.removeFromLeft (6);
         loadButton.setBounds (top.removeFromLeft (130));
         top.removeFromLeft (6);
         signalToggle.setBounds (top.removeFromLeft (110));
@@ -7218,8 +7227,31 @@ public:
         have hidden those three refusals, which are the whole reason the
         per-map report is the requirement rather than a nicety.
     */
+    /** Signing in is what makes a submission attributable to a PERSON rather
+        than to a name someone typed. Checked at the send, not at the gate: the
+        gate validates the artefact, and a map is perfectly valid before anyone
+        signs in -- it just cannot leave. */
+    bool refuseUnlessSignedIn (const juce::String& what)
+    {
+        auto m = Mouth::resolveMapper (ledger.getRoot());
+        if (m.signedIn())
+            return false;
+
+        const auto why = m.refused
+            ? m.warning
+            : juce::String ("Not signed in. Paste the token you were issued and this "
+                            "machine can submit; until then maps are written locally and "
+                            "kept.");
+        std::cout << what << ": " << why << std::endl;
+        status.setText (why, juce::dontSendNotification);
+        return true;
+    }
+
     void sendPendingMaps (bool dryRun)
     {
+        if (! dryRun && refuseUnlessSignedIn ("send-pending"))
+            return;
+
         std::map<juce::String, juce::String> stateByFp;
         {
             auto qv = juce::JSON::parse (ledger.getRoot().getChildFile ("queue.json").loadFileAsString());
@@ -7966,6 +7998,39 @@ public:
         sweepTimer = std::make_unique<SweepTimer> (*this);
         sweepTimer->startTimer (20);
         refreshSweepButton();
+    }
+
+    void refreshSignIn()
+    {
+        auto m = Mouth::resolveMapper (ledger.getRoot());
+        signInButton.setButtonText (m.signedIn() ? "Signed in" : "Sign in…");
+        signInButton.setTooltip (m.describe());
+    }
+
+    void promptSignIn()
+    {
+        auto* w = new juce::AlertWindow ("Sign in",
+            "Paste the token you were issued. It is stored on this machine only, "
+            "readable by you alone, and it is never written into a map -- what "
+            "goes into a map is a short reference derived from it.",
+            juce::MessageBoxIconType::NoIcon);
+        w->addTextEditor ("token", {}, "Token");
+        w->addButton ("Sign in", 1);
+        w->addButton ("Cancel", 0);
+        w->enterModalState (true, juce::ModalCallbackFunction::create (
+            [this, w] (int r)
+            {
+                const auto tok = w->getTextEditorContents ("token");
+                delete w;
+                if (r != 1) return;
+
+                const auto err = Mouth::saveMapperToken (ledger.getRoot(), tok);
+                refreshSignIn();
+                status.setText (err.isEmpty()
+                                  ? "Signed in as " + Mouth::resolveMapper (ledger.getRoot()).ref
+                                  : err,
+                                juce::dontSendNotification);
+            }), false);
     }
 
     void refreshSweepButton()
@@ -10094,6 +10159,11 @@ private:
         p.provenance.extractorVersion = juce::String (echojay::ExtractorConfig().extractorVersion);
         p.provenance.machineId = machineIdString();
         p.provenance.testerId  = testerName();
+
+        // WHO, from the token they were issued, rather than the name they
+        // typed. Empty until they sign in, and the map is still valid without
+        // it -- it just cannot be sent (refuseUnlessSignedIn).
+        p.provenance.mapperRef = Mouth::resolveMapper (ledger.getRoot()).ref;
         p.provenance.pluginVersion = loadedDesc.version;
         p.provenance.hostOs = juce::SystemStats::getOperatingSystemName();
         p.provenance.at = juce::Time::getCurrentTime().toISO8601 (true);
@@ -12186,7 +12256,7 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
-    juce::TextButton sweepAllButton;
+    juce::TextButton sweepAllButton, signInButton;
     juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton, uploadButton, restartButton;
     juce::ToggleButton deepToggle;
     AssignPanel assignPanel;

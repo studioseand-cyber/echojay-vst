@@ -147,7 +147,8 @@ target_link_libraries(ejmap-roundtrip-test PRIVATE
     juce::juce_dsp
     juce::juce_core
     juce::juce_recommended_config_flags
-    juce::juce_recommended_warning_flags)
+    juce::juce_recommended_warning_flags
+    juce::juce_cryptography)
 
 # JUCE_PLUGINHOST_AU=1 above compiles the AU hosting path into
 # juce_audio_processors, which references AUGenericView. Same framework

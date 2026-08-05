@@ -42,6 +42,8 @@
 #include "EjmapLedger.h"
 #include "EjmapSupervisor.h"
 #include "EjmapViewLayer.h"
+#include "EjmapMouth.h"
+#include <sys/stat.h>
 
 // The shared sweep and parsers, compiled here so the drift gate proves both
 // binaries build the SAME code: ejextract compiles these headers to produce
@@ -51,6 +53,7 @@
 // M3 lift.
 #include "EchoJayParamExtractor.h"
 #include "EjmapMouth.h"
+#include <sys/stat.h>
 #include "EchoJayParamMaps.h"   // identityKeyForDescription
 #include "EjmapExposure.h"
 
@@ -2324,6 +2327,92 @@ void testSweepRules()
     root.deleteRecursively();
 }
 
+
+//==============================================================================
+/** PER-MAPPER IDENTITY. One shared ingest token means any leak writes to the
+    corpus and revoking it locks out everyone at once, and "who mapped this" is
+    unanswerable because provenance comes from a name someone TYPES.
+*/
+void testMapperIdentity()
+{
+    using ejmap::Mouth;
+    auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                    .getChildFile ("ejmap-mapper-test-" + juce::Uuid().toDashedString());
+    root.createDirectory();
+
+    check (! Mouth::resolveMapper (root).signedIn(),
+           "mapper: a fresh machine is not signed in");
+    check (Mouth::resolveMapper (root).ref.isEmpty(),
+           "mapper: and has no ref to put in a map");
+
+    const juce::String token = "ejm_live_9f3c2a7e5b104d68";
+    check (Mouth::saveMapperToken (root, token).isEmpty(), "mapper: the token saves");
+
+    auto m = Mouth::resolveMapper (root);
+    check (m.signedIn(), "mapper: and reads back through the path that will use it");
+    check (m.ref.length() == 12, "mapper: the ref is 12 hex of the token's SHA-256");
+    check (m.ref == Mouth::mapperRefFor (token), "mapper: derived only from the token");
+
+    // THE REF IS NOT THE TOKEN, and this is the property the whole design rests
+    // on. A map is stored, copied, resubmitted and read by other people; a
+    // credential inside one would leak by being useful.
+    check (! m.ref.containsIgnoreCase (token), "mapper: THE REF IS NOT THE TOKEN");
+    check (! token.containsIgnoreCase (m.ref), "mapper: nor a prefix of it");
+    check (Mouth::mapperRefFor (token) != Mouth::mapperRefFor (token + "x"),
+           "mapper: a different token gives a different ref");
+    check (Mouth::mapperRefFor ({}).isEmpty(), "mapper: no token, no ref");
+
+    // Two machines, one mapper: the ref has to be the same or provenance
+    // fragments by laptop.
+    auto root2 = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                     .getChildFile ("ejmap-mapper-test-" + juce::Uuid().toDashedString());
+    root2.createDirectory();
+    Mouth::saveMapperToken (root2, token);
+    check (Mouth::resolveMapper (root2).ref == m.ref,
+           "mapper: the SAME token on another machine gives the SAME ref");
+
+    // A FILE THE WHOLE MACHINE CAN READ IS NOT HOLDING A SECRET. Refused, not
+    // warned about -- the same rule the endpoint token already follows.
+    auto cfg = Mouth::configFile (root);
+    check (cfg.existsAsFile(), "mapper: the token lives in config.json");
+    // Directly, not through a shell: a path with a space in it made the child
+    // process silently do nothing, and the test then "passed" the loose-perms
+    // case by never loosening anything.
+    ::chmod (cfg.getFullPathName().toRawUTF8(), 0644);
+    auto loose = Mouth::resolveMapper (root);
+    check (! loose.signedIn(), "mapper: a group-readable token is REFUSED, not used");
+    check (loose.refused && loose.warning.contains ("chmod 600"),
+           "mapper: and the refusal says how to fix it");
+
+    // The gate: attributable or it does not leave, by EITHER route.
+    auto mapWith = [] (const juce::String& testerId, const juce::String& mapperRef)
+    {
+        auto* prov = new juce::DynamicObject();
+        prov->setProperty ("tester_id", testerId);
+        if (mapperRef.isNotEmpty()) prov->setProperty ("mapper_ref", mapperRef);
+        prov->setProperty ("machine_id", "m"); prov->setProperty ("ejmap_version", "0.1.0");
+        prov->setProperty ("apply_header_sha", "abc"); prov->setProperty ("at", "2026-08-05T00:00:00Z");
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("provenance", juce::var (prov));
+        return juce::var (o);
+    };
+    auto rejectsAttribution = [] (const ejmap::Mouth::Verdict& v)
+    {
+        for (const auto& r : v.rejections)
+            if (r.contains ("nothing attributes this map")) return true;
+        return false;
+    };
+    check (rejectsAttribution (Mouth::structuralGate (mapWith ({}, {}), {})),
+           "gate: a map with no tester and no mapper ref is NOT attributable");
+    check (! rejectsAttribution (Mouth::structuralGate (mapWith ({}, "0123456789ab"), {})),
+           "gate: a mapper ref alone attributes it");
+    check (! rejectsAttribution (Mouth::structuralGate (mapWith ("sean", {}), {})),
+           "gate: and a typed name still does, so the 40 maps that predate tokens "
+           "stay resubmittable");
+
+    root.deleteRecursively(); root2.deleteRecursively();
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -2353,6 +2442,7 @@ int main (int, char**)
     testUnitFamilyRule();
     testRetryRule();
     testSweepRules();
+    testMapperIdentity();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

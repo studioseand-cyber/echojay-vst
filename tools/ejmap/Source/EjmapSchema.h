@@ -477,6 +477,13 @@ struct PluginIdentity
 struct Provenance
 {
     juce::String testerId, machineId;
+
+    /** The MAPPER, derived from the token they were issued: the first 12 hex of
+        its SHA-256. Non-secret on purpose -- a map is stored, copied and read
+        by other people, so a credential inside one would leak by being useful.
+        The server issued the token, so it can resolve this back to a person;
+        nobody else can. */
+    juce::String mapperRef;
     juce::String ejmapVersion, extractorVersion;
     juce::String applyHeaderSha;            // pins which apply logic verified this
     juce::String pluginVersion, hostOs;
@@ -691,6 +698,7 @@ inline juce::var Provenance::toVar() const
 {
     auto* o = new juce::DynamicObject();
     o->setProperty ("tester_id", testerId);
+    if (mapperRef.isNotEmpty()) o->setProperty ("mapper_ref", mapperRef);
     o->setProperty ("machine_id", machineId);
     o->setProperty ("ejmap_version", ejmapVersion);
     o->setProperty ("extractor_version", extractorVersion);

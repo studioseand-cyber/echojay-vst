@@ -193,12 +193,19 @@ struct Mouth
 
         // Provenance: attributable or it does not leave.
         auto prov = map.getProperty ("provenance", juce::var());
+        // ATTRIBUTABLE OR IT DOES NOT LEAVE, and there are now two ways to be
+        // attributable. `mapper_ref` is derived from an issued token and is the
+        // one that will survive; `tester_id` is a name someone typed, which is
+        // a label rather than an identity and is kept so the 40 maps that
+        // predate tokens are still resubmittable.
+        const auto mapperRef = prov.getProperty ("mapper_ref", "").toString();
         const auto effectiveTester = testerName.isNotEmpty()
                                        ? testerName
                                        : prov.getProperty ("tester_id", "").toString();
-        if (effectiveTester.isEmpty())
-            rej ("no tester name: set one with --tester <name> (an explicit local "
-                 "name; the hostname is not provenance)");
+        if (mapperRef.isEmpty() && effectiveTester.isEmpty())
+            rej ("nothing attributes this map: sign in with the token you were issued "
+                 "(preferred), or set a local name with --tester <name>. The hostname "
+                 "is not provenance");
         for (auto* k : { "machine_id", "ejmap_version", "apply_header_sha", "at" })
             if (prov.getProperty (k, "").toString().isEmpty())
                 rej (juce::String ("provenance.") + k + " missing");
@@ -282,6 +289,137 @@ struct Mouth
     };
 
     static juce::File configFile (const juce::File& root) { return root.getChildFile ("config.json"); }
+
+    //==========================================================================
+    /** WHO IS SUBMITTING, as opposed to WHICH SERVER TO SUBMIT TO.
+
+        Today there is one shared ingest token and it sits in one person's
+        config.json. Shipping that to mappers means a leak lets anyone write to
+        the corpus, revoking it locks out everyone at once, and "who mapped
+        this" is unanswerable -- provenance currently comes from a name the
+        mapper TYPES, which is a label, not an identity.
+
+        A per-mapper token fixes all three: it is issued to one person, revoked
+        for one person, and it is what provenance is derived from.
+
+        THE RAW TOKEN NEVER ENTERS A MAP. A map is an artefact that gets stored,
+        copied, resubmitted and read by other people; a credential inside one
+        would leak by being useful. What goes in is `ref` -- the first 12 hex of
+        the token's SHA-256 -- which is stable, non-secret, and something the
+        server can resolve back to a person because it issued the token.
+
+        Same secrecy rule as the endpoint token, for the same reason: a file the
+        whole machine can read is not holding a secret, so it is REFUSED rather
+        than warned about.
+    */
+    struct MapperIdentity
+    {
+        juce::String token;                 // the credential. Never stored in a map
+        juce::String ref;                   // sha256(token)[0..12). Safe to record
+        juce::String from = "(none)";
+        juce::String warning;
+        bool refused = false;
+
+        bool signedIn() const { return token.isNotEmpty() && ! refused; }
+
+        juce::String describe() const
+        {
+            if (refused)       return "mapper   REFUSED\n  " + warning;
+            if (! signedIn())  return "mapper   NOT SIGNED IN -- paste the token you were "
+                                      "issued, and maps can be submitted";
+            return "mapper   " + ref + "  [from " + from + "]  (token not shown)";
+        }
+    };
+
+    /** Stable, non-secret, and derived only from the token, so two machines
+        signed in as the same mapper produce the same ref. */
+    static juce::String mapperRefFor (const juce::String& token)
+    {
+        if (token.isEmpty()) return {};
+        return juce::SHA256 (token.toRawUTF8(), (size_t) token.getNumBytesAsUTF8())
+                 .toHexString().substring (0, 12);
+    }
+
+    static MapperIdentity resolveMapper (const juce::File& root)
+    {
+        MapperIdentity m;
+        auto cfgFile = configFile (root);
+
+        const auto env = juce::SystemStats::getEnvironmentVariable ("EJMAP_MAPPER_TOKEN", "");
+        if (env.isNotEmpty())
+        {
+            m.token = env; m.from = "EJMAP_MAPPER_TOKEN";
+        }
+        else if (cfgFile.existsAsFile())
+        {
+            bool permsOk = true;
+            struct stat st {};
+            if (::stat (cfgFile.getFullPathName().toRawUTF8(), &st) == 0)
+                permsOk = (st.st_mode & (S_IRWXG | S_IRWXO)) == 0;
+
+            auto cfg = juce::JSON::parse (cfgFile.loadFileAsString());
+            const auto t = cfg.isObject() ? cfg.getProperty ("mapper_token", "").toString()
+                                          : juce::String();
+            if (t.isNotEmpty())
+            {
+                if (! permsOk)
+                {
+                    m.refused = true;
+                    m.warning = "REFUSED to read the mapper token from "
+                              + cfgFile.getFullPathName() + ": it is readable by group or "
+                                "other. A token the whole machine can read is not a secret.\n"
+                                "  Fix:  chmod 600 " + cfgFile.getFullPathName();
+                }
+                else { m.token = t; m.from = cfgFile.getFileName(); }
+            }
+        }
+
+        if (m.token.isNotEmpty() && ! headerValueSafe (m.token))
+        {
+            m.refused = true;
+            m.warning = "the mapper token is not printable ASCII, so it cannot ride an HTTP "
+                        "header. Paste it again.";
+            m.token.clear();
+        }
+        m.ref = mapperRefFor (m.token);
+        return m;
+    }
+
+    /** Writes the token and makes the file a secret IN THAT ORDER -- the chmod
+        follows the write, so the token is never briefly world-readable.
+
+        Returns empty on success, or the reason it did not. */
+    static juce::String saveMapperToken (const juce::File& root, const juce::String& token)
+    {
+        if (token.trim().isEmpty())
+            return "no token given";
+        if (! headerValueSafe (token.trim()))
+            return "that token is not printable ASCII; it cannot ride an HTTP header";
+
+        auto cfgFile = configFile (root);
+        auto cfg = cfgFile.existsAsFile() ? juce::JSON::parse (cfgFile.loadFileAsString())
+                                          : juce::var();
+        auto* o = cfg.getDynamicObject();
+        if (o == nullptr) { o = new juce::DynamicObject(); cfg = juce::var (o); }
+        o->setProperty ("mapper_token", token.trim());
+
+        if (! cfgFile.replaceWithText (juce::JSON::toString (cfg, false)))
+            return "could not write " + cfgFile.getFullPathName();
+
+        if (::chmod (cfgFile.getFullPathName().toRawUTF8(), S_IRUSR | S_IWUSR) != 0)
+            return "wrote the token but could not restrict " + cfgFile.getFullPathName()
+                 + " to this user. Fix:  chmod 600 " + cfgFile.getFullPathName();
+
+        // Read it back through the same path that will use it. A write that
+        // reports success and a read that refuses is the shape worth catching
+        // here rather than at the next send.
+        auto back = resolveMapper (root);
+        if (! back.signedIn())
+            return "wrote the token and could not read it back: " + back.warning;
+        return {};
+    }
+
+
 
     static Endpoint resolveEndpoint (const juce::File& root)
     {
@@ -383,7 +521,13 @@ struct Mouth
         // Resolved through ONE path -- env, then config, then placeholder --
         // so the header and the readout can never disagree about which token
         // is in play.
-        const auto token = resolveEndpoint (root).token;
+        // THE MAPPER'S TOKEN IF THERE IS ONE, the shared ingest token otherwise.
+        // The shared one is what has to go away -- one leak writes to the
+        // corpus and revoking it locks out everyone -- so the per-mapper token
+        // takes precedence the moment it exists, and the ref rides alongside so
+        // a server log can attribute a request without holding a credential.
+        const auto mapper = resolveMapper (root);
+        const auto token  = mapper.signedIn() ? mapper.token : resolveEndpoint (root).token;
 
         juce::String head;
         head << "POST " << pathQuery << " HTTP/1.1\r\n"
@@ -394,6 +538,7 @@ struct Mouth
              << "X-EJMap-Machine: " << machineId << "\r\n"
              << "X-EJMap-Tester: " << testerName << "\r\n"
              << "X-EJMap-Token: " << token << "\r\n"
+             << "X-EJMap-Mapper: " << (mapper.signedIn() ? mapper.ref : juce::String ("none")) << "\r\n"
              << "\r\n";
 
         auto dir = root.getChildFile ("upload");

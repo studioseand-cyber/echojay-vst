@@ -496,7 +496,8 @@ namespace
     int runHeadlessCli (int argc, char* argv[])
     {
         juce::String release, qId, qReason, qStage { "load" }, report;
-        juce::String evidenceId, evidenceStage { "load" };
+        juce::String evidenceId, evidenceStage { "load" }, signIn;
+        bool whoami = false;
         bool retest = false, apply = false;
 
         // --issues
@@ -605,7 +606,9 @@ namespace
         }
 
             const auto a = argAt (argc, argv, i);
-            if (a == "--release-quarantine" && i + 1 < argc) release = argAt (argc, argv, ++i);
+            if (a == "--sign-in" && i + 1 < argc) signIn = argAt (argc, argv, ++i);
+            else if (a == "--whoami") whoami = true;
+            else if (a == "--release-quarantine" && i + 1 < argc) release = argAt (argc, argv, ++i);
             else if (a == "--retry-evidence" && i + 1 < argc)
             {
                 evidenceId = argAt (argc, argv, ++i);
@@ -624,7 +627,7 @@ namespace
         }
 
         if (release.isEmpty() && qId.isEmpty() && report.isEmpty()
-             && evidenceId.isEmpty() && ! retest)
+             && evidenceId.isEmpty() && ! retest && signIn.isEmpty() && ! whoami)
             return -1;
 
         juce::ScopedJuceInitialiser_GUI juceInit;
@@ -645,6 +648,25 @@ namespace
                       << "  top image   : " << (facts.topImage.isEmpty() ? "?" : facts.topImage) << "\n"
                       << "  attribution : " << facts.attribution << std::endl;
             return facts.found ? 0 : 2;
+        }
+
+        // SIGN IN. One token, pasted once, stored 0600 -- and read back through
+        // the same path that will use it, because a write that reports success
+        // and a read that refuses is the shape worth catching here rather than
+        // at the next send.
+        if (signIn.isNotEmpty())
+        {
+            const auto err = ejmap::Mouth::saveMapperToken (root, signIn);
+            if (err.isNotEmpty())
+            { std::cerr << "sign-in: " << err << std::endl; return 4; }
+            std::cout << "sign-in: " << ejmap::Mouth::resolveMapper (root).describe() << std::endl;
+            return 0;
+        }
+
+        if (whoami)
+        {
+            std::cout << ejmap::Mouth::resolveMapper (root).describe() << std::endl;
+            return ejmap::Mouth::resolveMapper (root).signedIn() ? 0 : 3;
         }
 
         ejmap::Ledger l (root);
