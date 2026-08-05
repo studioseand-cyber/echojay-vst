@@ -340,6 +340,40 @@ deferring their bands is **not acceptable**. This supersedes the ordering in ite
 scope note: item 1 (`strideNote`) explains why ONE inference failed; this explains how
 they ALL fail, at once, and it is the one that unblocks the category.
 
+### STEP 2'S CORPUS NOW EXISTS — read it before doing step 2 again (5 Aug 2026)
+
+The offline proposer's first run over 597 controls produced the corpus reading this
+item was waiting for, as a by-product. **`docs/BAND_ROUTING_PROPOSAL.md` §2 has it in
+full.** In summary, across the 11 plugins whose band controls collided:
+
+**Five conventions, and they are systematic rather than arbitrary.**
+
+| convention | example | in `prefixOrder()` today? |
+|---|---|---|
+| ordered prefix, whole token | `LF Freq`, `HMF Q` | yes |
+| spelled-out ordered word | `Low Freq`, `Mid Gain` | no |
+| compound, no separators | `Ch1LoFreq`, `Ch1HiMidFreq` | no |
+| shelf-typed pair | `Low Shelf Frequency` / `High Shelf ...` | no |
+| digit run | `... Frequency 1` / `... 2` | yes, and see the trap below |
+
+A fold of `Low/Lo→LF, LoMid→LMF, HiMid→HMF, Hi→HF` reaches **7 of the 8 band-set
+plugins**. So the answer to "a synonym fold, or forty conventions?" is **a fold**.
+
+**AND THE DIGIT AXIS IS NOT SAFE ON ITS OWN.** Dangerous BAX EQ Master has a digit
+run — the strongest band signal there is — where the digit is an INSTANCE number,
+given away by its `Output Level 1` / `Output Level 2`. Same shape in DPR-402's
+`Freq L/M` vs `Freq R/S` and Manley's `Ch1` vs `Ch2`. Whatever step 3 builds must
+refuse these from the evidence; `tools/propose/bands.py` refuses all three and
+`test_bands.py` attempts each one as an acceptance test.
+
+**WIDENING `prefixOrder()` IS ITS OWN PIECE OF WORK, WITH ITS OWN BLAST RADIUS.**
+It changes the HAND PATH's inference — what `morphSlot` matches, what the wizard
+offers, what a stride verifies — and so it needs its own gate proving both
+directions on real names, not just the proposer's tests. The proposer deliberately
+carries its OWN local fold (`bands.FOLD`) and hands the matcher explicit members
+instead, precisely so that this decision stays here and is made on purpose. The
+evidence is now gathered; the decision is still open.
+
 **Three steps, strictly in order. Do not skip to step 3.**
 
 ### Step 1 — build `--load-once`
@@ -1024,3 +1058,45 @@ terms rather than as part of whichever feature next needs it.
 The scope is real, not cosmetic: SSE or chunked reads in `EchoJayAPI`, a partial-reply sink on
 the editor, and a decision about what happens to the typewriter when text arrives in chunks
 rather than all at once.
+
+---
+
+## 17. ONE SEMANTIC PER `params` KEY — a real shape the catalogue contains
+
+Raised 5 Aug 2026, out of the proposer's first run. **Not absorbed into band routing,
+because band routing cannot fix it.**
+
+`params` is a JSON object keyed by semantic, so a plugin can record exactly one
+`mix_pct`, one `release_ms`, one `output_db`. The catalogue contains plugins where
+that is genuinely too few:
+
+```
+UAD Vertigo VSM-3      'FETMix' / 'THDMix' / 'ZnBlMix'   three saturation stages
+UAD 4K Channel Strip   'CMP Release' / 'EXP Release'     compressor vs expander
+UAD Neve 88RS Legacy   'G/E REL' / 'L/C REL'             gate/exp vs lim/comp
+```
+
+These are not bands, not channels, and not a naming problem. They are different
+controls that each legitimately want the same semantic. 8 of the 78 duplicate-semantic
+rows in the first run are this shape, across 4 plugins.
+
+**Today the second write silently wins** — which is what `duplicateSemanticConflicts`
+(commit da31112) now refuses at both the review screen and the submit path, so the
+map can no longer be quietly wrong. The refusal is correct and it is not an answer:
+the mapper is now told they cannot record what the plugin actually has.
+
+**Options, none chosen:**
+
+- **(a) One is Tier 1, the rest stay Tier 2.** Costs nothing and works today —
+  `applySettings` already resolves an unmapped semantic by exact, case-sensitive
+  control name against `map.controls`. "Set CMP Release to 200 ms" would work;
+  "set release to 200 ms" would reach whichever one was promoted.
+- **(b) A disambiguated key** — `release_ms@cmp`. Touches the schema, the server
+  map-builder, the apply path and every consumer. Large.
+- **(c) A stage qualifier on the param entry**, leaving the key alone. Smaller than
+  (b), but the key still collides, so it does not actually solve the recording
+  problem.
+
+**(a) is the honest default and needs measuring first**: how often does a chat
+request name a stage ("compressor release") versus a bare semantic ("release")? That
+is answerable from the chat corpus and should be answered before anything is built.
