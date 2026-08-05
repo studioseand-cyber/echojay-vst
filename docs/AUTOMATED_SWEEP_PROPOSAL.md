@@ -1,6 +1,11 @@
 # Stage 0.5 (categorise) and the automated sweep — proposal
 
-Proposed 5 Aug 2026. **Nothing here is built.** Everything below that carries a
+> **BUILT 5 Aug 2026.** `tools/propose/categorise.py` (+ `test_categorise.py`,
+> 39 checks) and `ejmap --sweep` (+ 25 checks in the always-on gate). Stage 0.5
+> has been run over the whole catalogue. What the live runs changed is recorded
+> in §5 — including a correction to a number in §1.
+
+Proposed 5 Aug 2026, built the same day. Everything below that carries a
 number was measured today; the numbers are marked with how.
 
 ---
@@ -290,3 +295,78 @@ plugin, every quarantine, with the reason. One list, read once, after.
 3. **`none` gets its own state and is not unmappable.** This is the one I would
    push back on if you disagree: ~293 products, and the list is the argument for
    which dial set to add next.
+
+
+---
+
+## 5. What the live runs changed
+
+Five defects, all found on plugins 1–8 of supervised runs against scratch roots.
+This is the `--selftest` argument again: a defect found on plugin 400 costs 400
+maps.
+
+### 5.1 A flag must beat a session
+
+Cenozoix loads, sweeps 99 params, produces 0 usable controls, and is flagged.
+Because there was nothing to submit it also leaves an `assign-*.json` behind —
+so with `parked` tested before `hasIssue` it came back as **PARKED, at the front
+of the list**, and was swept again on every relaunch forever. The flag had been
+written correctly and was simply never reached.
+
+> **A flag is a decision; a session is a state. The decision is tested first.**
+
+### 5.2 Sweep progress must be cumulative
+
+The supervisor's total-restart ceiling is 10 and a 1,073-product sweep needs
+~50 relaunches, so the exemption is keyed on progress. But the counter was
+per-launch: 2 mapped → crash → 1 swept wrote **1**, so the count went *down* and
+every relaunch read as no progress.
+
+### 5.3 …and progress must clear `fastDeaths`, not just `consecutive`
+
+`kMaxFastDeaths` exists for "a crash before the window exists, where no load can
+ever happen to clear the first counter". A sweep child that maps a plugin in 8 s
+and then dies on the next has a sub-10 s lifetime and looks identical. A run with
+three maps already written stopped on *"the session is dying before it can be
+used"*.
+
+### 5.4 The `.jsonl` was not line-delimited
+
+`juce::JSON::toString`'s second argument is `allOnOneLine`, and passing `false`
+produced a file whose extension promises line-delimited JSON and whose contents
+are pretty-printed blocks.
+
+### 5.5 The unattributed hole bit, and a number in the retry commit was wrong
+
+**The correction first.** I reported "26 of 28 death rows found a crash report".
+That measured the wrong field: `crash_thread` is set *unconditionally* —
+`facts.threadName` or the literal `"(unnamed)"` — so its presence indicates
+nothing. The field that does indicate a found report is `attribution`, and it
+resolves to `plugin` or `host` on **3 of 28**. The newest ejmap crash report on
+this machine is dated **3 August**; nothing since has produced one.
+
+So the retry rule's "an unattributed death does not count toward the three" meant
+**almost nothing would ever quarantine**. Live: three Drawmer 1973 deaths in a
+supervised sweep all recorded `unattributed`, the count stayed at "attempt 0 of
+3", and the campaign re-crashed on it every relaunch until the supervisor's
+ceiling.
+
+**The fix keeps the rule's reason rather than the rule.** The discount exists for
+exactly one hazard: an operator force-quitting a slow load leaves evidence
+identical to a SIGSEGV. **A sweep has no operator.** So `--sweep` marks its
+inflight stakes `unattended`, the flag rides into the death row, and an
+unattributed death from an unattended run counts toward the three. Attended runs
+keep the discount unchanged, because there the hazard is real.
+
+Proved live: Drawmer is now quarantined with `corroborated: 0, unattended: 3`,
+and the sweep walks past it.
+
+### 5.6 An operational note, not a defect
+
+Repeated rapid loading put the UAD plugins into a state where every one hung in
+the editor-ready wait for 25 s. They had loaded in ~10 s minutes earlier. The
+tool behaved correctly throughout — watchdog fired, row recorded, quarantined on
+the second timeout, supervisor stopped after three launches with no successful
+load — but it is worth knowing that **UAD may need a break, or a daemon restart,
+during a long campaign.** The 10-consecutive-`timeout` breaker would name it as
+"loads are hanging" if it got that far.

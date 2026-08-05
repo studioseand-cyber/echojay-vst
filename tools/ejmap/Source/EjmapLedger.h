@@ -94,6 +94,11 @@ struct LedgerRecord
     */
     juce::String certainty;
 
+    /** True when the run that died had nobody at the keyboard. Carried into the
+        row because the NEXT launch is what counts these, and by then the run
+        that could have been force-quit no longer exists to be asked. */
+    bool unattended = false;
+
     /** Wall-clock milliseconds the load took, -1 when not recorded (every row
         written before 5 Aug 2026). The quarantine row carries the series so an
         operator can see whether the deaths were fast faults or slow ones, since
@@ -130,6 +135,7 @@ struct LedgerRecord
         if (crashTopImage.isNotEmpty()) o->setProperty ("crash_top_image", crashTopImage);
         if (attribution.isNotEmpty()) o->setProperty ("attribution", attribution);
         if (certainty.isNotEmpty())   o->setProperty ("certainty", certainty);
+        if (unattended)               o->setProperty ("unattended", true);
         if (loadMs >= 0)              o->setProperty ("load_ms", loadMs);
         if (recoveredByRunId.isNotEmpty())
             o->setProperty ("recovered_by_run", recoveredByRunId);
@@ -168,7 +174,13 @@ struct RetryEvidence
     int attempts = 0;               // same-stage rows for this BINARY
     int failures = 0;               // deaths among them
     int corroboratedFailures = 0;   // ...with a crash report found
-    int unattributedFailures = 0;   // ...without one. These do NOT count toward N
+    int unattributedFailures = 0;   // ...without one
+    int unattendedFailuresN = 0;    // ...of those, from a run with no operator
+
+    /** Unattributed deaths that no human could have caused. See
+        Ledger::setUnattended: the discount exists for the force-quit, and a
+        sweep has nobody to do the quitting. */
+    int unattendedFailures() const { return unattendedFailuresN; }
 
     juce::StringArray outcomes;     // in ledger order
     juce::Array<int>  loadMs;       // -1 where the row predates the field
@@ -219,6 +231,7 @@ struct RetryEvidence
         o->setProperty ("failures", failures);
         o->setProperty ("corroborated_failures", corroboratedFailures);
         o->setProperty ("unattributed_failures", unattributedFailures);
+        o->setProperty ("unattended_failures", unattendedFailuresN);
         o->setProperty ("prior_ok_in_ledger", priorOkInLedger);
         o->setProperty ("prior_ok_this_session", priorOkThisSession);
 
@@ -371,6 +384,11 @@ public:
             // asserting a cause and records what was observed instead.
             r.certainty = facts.found ? "corroborated" : "unattributed";
 
+            // Read from the STAKE, not from this process: the run that died is
+            // the one that could or could not have had a human at it.
+            const bool wasUnattended = (bool) v.getProperty ("unattended", false);
+            r.unattended = wasUnattended;
+
             // Same outcome, honest about which site produced it. A VST3 that
             // kills the process while the format is reading its factory did not
             // die "while the editor was opening", and saying so would send the
@@ -405,14 +423,23 @@ public:
             ev.outcomes.add (toString (r.outcome));
             ev.loadMs.add (r.loadMs);
             (facts.found ? ev.corroboratedFailures : ev.unattributedFailures) += 1;
+            if (! facts.found && wasUnattended) ev.unattendedFailuresN += 1;
 
-            const bool quarantineNow = ev.corroboratedFailures >= kRetryAttempts;
+            // An unattributed death counts when NOBODY COULD HAVE KILLED IT.
+            // The whole basis of the discount is the operator's force-quit, and
+            // an unattended run has no operator. Attended runs keep the
+            // discount, because there the hazard is real.
+            const int counted = ev.corroboratedFailures
+                              + (wasUnattended ? ev.unattendedFailures() : 0);
+            const bool quarantineNow = counted >= kRetryAttempts;
 
-            r.detail << " [attempt " << ev.corroboratedFailures << " of "
+            r.detail << " [attempt " << counted << " of "
                      << kRetryAttempts << " at stage " << r.stage;
             if (ev.unattributedFailures > 0)
                 r.detail << "; " << ev.unattributedFailures
-                         << " unattributed death(s) not counted";
+                         << " unattributed"
+                         << (wasUnattended ? " but unattended, so counted"
+                                           : " death(s) not counted");
             r.detail << (quarantineNow ? ": quarantined]" : ": not quarantined yet]");
 
             // Kept from the single-crash rule, weakened to a label rather than
@@ -470,6 +497,7 @@ public:
         o->setProperty ("stage", stage);
         o->setProperty ("site", site);
         o->setProperty ("at", nowIso());
+        o->setProperty ("unattended", unattended);
 
         writeThrough (inflightFile, juce::JSON::toString (juce::var (o), false));
     }
@@ -620,6 +648,23 @@ public:
                 out.add (entries[id]);
         return out;
     }
+
+    /** An unattended run: --sweep, or anything else with nobody at the keyboard.
+
+        THIS IS THE ONLY THING THAT MAKES THE UNATTRIBUTED DISCOUNT SAFE.
+        The discount exists for ONE reason -- an operator force-quitting a slow
+        load leaves evidence identical to a SIGSEGV -- and in a sweep there is
+        no operator. Three force-quits of the same plugin across three separate
+        launches, with nobody watching, is not a thing that happens.
+
+        MEASURED, and it is why this exists: three Drawmer 1973 deaths in a live
+        supervised sweep all recorded `unattributed`, so the count stayed at
+        "attempt 0 of 3" and the campaign re-crashed on it every relaunch until
+        the supervisor's ceiling. macOS wrote no crash report for any of them --
+        and none for anything since 3 August. Waiting for corroboration that
+        never arrives is not a safety property, it is a hang.
+    */
+    void setUnattended (bool b) { unattended = b; }
 
     /** TEST ONLY. Substitutes the crash-report lookup, which reads a directory
         this process does not own and cannot seed. Without it the retry rule is
@@ -979,8 +1024,13 @@ private:
                 // "unattributed" would retroactively forgive every recorded
                 // death on this machine.
                 const auto c = v.getProperty ("certainty", "").toString();
-                if (c == "unattributed") ++e.unattributedFailures;
-                else                     ++e.corroboratedFailures;
+                if (c == "unattributed")
+                {
+                    ++e.unattributedFailures;
+                    if ((bool) v.getProperty ("unattended", false))
+                        ++e.unattendedFailuresN;
+                }
+                else ++e.corroboratedFailures;
             }
             else if (outcome == "ok")
             {
@@ -1198,6 +1248,7 @@ private:
         return juce::Time::getCurrentTime().toISO8601 (true);
     }
 
+    bool unattended = false;
     juce::File root, ledgerFile, inflightFile, quarantineFile, emergencyFile;
     juce::String runId;
     juce::StringArray quarantined;

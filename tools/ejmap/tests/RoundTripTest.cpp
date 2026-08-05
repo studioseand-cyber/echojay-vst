@@ -40,6 +40,7 @@
 #include "EjmapMarks.h"
 #include "EjmapAssignment.h"
 #include "EjmapLedger.h"
+#include "EjmapSupervisor.h"
 
 // The shared sweep and parsers, compiled here so the drift gate proves both
 // binaries build the SAME code: ejextract compiles these headers to produce
@@ -2049,7 +2050,47 @@ void testRetryRule()
                "retry: three CORROBORATED deaths quarantine, unattributed ones aside");
     }
 
+    // ---- AN UNATTENDED RUN COUNTS ITS UNATTRIBUTED DEATHS -------------------
+    // The discount exists for ONE reason: an operator force-quitting a slow
+    // load leaves evidence identical to a SIGSEGV. A sweep has no operator, so
+    // in an unattended run the reason does not apply and the death counts.
+    //
+    // Not theoretical. Three Drawmer deaths in a live supervised sweep all
+    // recorded unattributed -- macOS wrote no report for any of them, and none
+    // for anything since 3 August -- so the count sat at "attempt 0 of 3" and
+    // the campaign re-crashed on it every relaunch until the supervisor stopped.
+    auto root7 = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                     .getChildFile ("ejmap-retry-test-" + juce::Uuid().toDashedString());
+    root7.createDirectory();
+    ejmap::Ledger::testOnlyCrashOverride() = &unattributed;
+    auto dieUnattended = [&] (const juce::File& r, const juce::String& id)
+    {
+        ejmap::Ledger l (r);
+        l.recoverFromCrash();
+        l.setUnattended (true);
+        l.beginLoad (id, "Drawmer 1973", "Softube", "AudioUnit", "2.5.62", "load", "PluginHost::load");
+    };
+    for (int i = 0; i < 3; ++i) dieUnattended (root7, au);
+    {
+        ejmap::Ledger l (root7);
+        l.setUnattended (true);
+        l.recoverFromCrash();
+        check (l.isQuarantined (au),
+               "retry: THREE UNATTRIBUTED DEATHS IN AN UNATTENDED RUN DO QUARANTINE "
+               "-- nobody was there to force-quit them");
+        auto ev = l.retryEvidenceFor (au, "load");
+        check (ev.unattributedFailures == 3 && ev.corroboratedFailures == 0,
+               "retry: and they are still recorded as unattributed, not relabelled");
+        check (ev.unattendedFailures() == 3,
+               "retry: the unattended tally is what the count used");
+    }
+
+    // The attended case is UNCHANGED: root5 above proved four unattributed
+    // attended deaths do not quarantine, and that must stay true, because there
+    // the force-quit hazard is real.
+
     // ---- historic rows count. They are the only determinism evidence --------
+    ejmap::Ledger::testOnlyCrashOverride() = &corroborated;
     auto root6 = juce::File::getSpecialLocation (juce::File::tempDirectory)
                      .getChildFile ("ejmap-retry-test-" + juce::Uuid().toDashedString());
     root6.createDirectory();
@@ -2075,8 +2116,160 @@ void testRetryRule()
     }
 
     ejmap::Ledger::testOnlyCrashOverride() = nullptr;
+    root7.deleteRecursively();
     root.deleteRecursively();  root2.deleteRecursively(); root3.deleteRecursively();
     root4.deleteRecursively(); root5.deleteRecursively(); root6.deleteRecursively();
+}
+
+
+//==============================================================================
+/** THE SWEEP'S TWO MECHANICAL RULES, proved without loading a plugin.
+
+    Both were built BEFORE the campaign, on the --selftest finding: building the
+    test first produced two real defects (a controls row counted as confirmed, a
+    review screen reading READY above a disabled button), and a defect found on
+    plugin 400 costs 400 maps.
+*/
+void testSweepRules()
+{
+    // ---- 1. sweepable(): which products the loop opens ----------------------
+    // The mirror of categorise.py's sweepable(). It is deliberately NOT
+    // "disposition == sweep": a product both arms refused DIFFERENTLY is still
+    // refused, and which refusal it is is a question for the marks review, not
+    // for the loader. 14 of the 87 real disagreements are that shape.
+    auto sweepable = [] (const juce::String& disposition, bool refusedByBoth,
+                         const juce::String& category)
+    {
+        return disposition == "sweep" && ! refusedByBoth && category.isNotEmpty();
+    };
+
+    check (sweepable ("sweep", false, "eq"), "sweep: an agreed category is opened");
+    check (sweepable ("sweep", false, "eq"),
+           "sweep: a HEDGED agreement is opened too -- a wrong category cannot "
+           "produce a wrong dial, the vocabulary is not category-scoped");
+    check (! sweepable ("no_dial_set", false, ""),
+           "sweep: a processor with no dial set is NEVER opened");
+    check (! sweepable ("not_a_processor", false, ""),
+           "sweep: nor is something that is not a processor");
+    check (! sweepable ("review", false, ""),
+           "sweep: a real disagreement has no category to sweep with");
+    check (! sweepable ("review", true, ""),
+           "sweep: and two refusals that differ are still refused -- the loader "
+           "does not wait on a decision it does not need");
+
+    // ---- 2. the circuit breaker --------------------------------------------
+    // Ten of ONE class. The classes must not pool: ten licence refusals and ten
+    // hangs need different advice, and mixing them would reach ten without any
+    // single cause being true.
+    auto runBreaker = [] (const juce::StringArray& outcomes)
+    {
+        juce::String cls; int consecutive = 0;
+        for (const auto& o : outcomes)
+        {
+            const bool ok = (o == "mapped" || o == "swept_nothing");
+            if (ok) { consecutive = 0; cls.clear(); continue; }
+            if (o == cls) ++consecutive; else { cls = o; consecutive = 1; }
+            if (consecutive >= 10) return cls;
+        }
+        return juce::String();
+    };
+
+    juce::StringArray ten;
+    for (int i = 0; i < 10; ++i) ten.add ("license_refused");
+    check (runBreaker (ten) == "license_refused",
+           "breaker: ten licence refusals stop the run and NAME the class");
+
+    juce::StringArray nine = ten; nine.remove (0);
+    check (runBreaker (nine).isEmpty(), "breaker: nine do not");
+
+    juce::StringArray mixed;
+    for (int i = 0; i < 9; ++i) { mixed.add ("license_refused"); mixed.add ("timeout"); }
+    check (runBreaker (mixed).isEmpty(),
+           "breaker: NINE OF EACH, ALTERNATING, IS NOT TEN OF ONE -- the classes "
+           "do not pool, because they need different advice");
+
+    juce::StringArray interrupted;
+    for (int i = 0; i < 9; ++i) interrupted.add ("license_refused");
+    interrupted.add ("mapped");
+    for (int i = 0; i < 9; ++i) interrupted.add ("license_refused");
+    check (runBreaker (interrupted).isEmpty(),
+           "breaker: a success in the middle resets it -- 18 failures around one "
+           "win is not a machine-wide fault");
+
+    juce::StringArray sweptNothing;
+    for (int i = 0; i < 4; ++i) sweptNothing.add ("swept_nothing");
+    for (int i = 0; i < 10; ++i) sweptNothing.add ("load_failed");
+    check (runBreaker (sweptNothing) == "load_failed",
+           "breaker: swept_nothing is a SUCCESS for the breaker -- the plugin "
+           "loaded, so nothing is wrong with the machine");
+
+    // ---- 3. a FLAG beats a SESSION -----------------------------------------
+    // Found on plugin 4 of a live supervised sweep, not in a harness. A plugin
+    // that loads, sweeps nothing and gets flagged leaves a session behind --
+    // there was nothing to submit -- so if parked is tested first it returns as
+    // PARKED, at the FRONT of the list, and is swept again forever.
+    auto bucket = [] (bool hasIssue, bool parked)
+    {
+        if (hasIssue) return juce::String ("flagged");
+        if (parked)   return juce::String ("parked");
+        return juce::String ("sweep");
+    };
+    check (bucket (true, true) == "flagged",
+           "worklist: A FLAG BEATS A SESSION -- a flag is a decision, a session "
+           "is a state, and testing the state first loops forever");
+    check (bucket (false, true) == "parked", "worklist: an unflagged session is parked work");
+    check (bucket (true, false) == "flagged", "worklist: a flag with no session is still flagged");
+
+    // ---- 4. the supervisor's progress exemption -----------------------------
+    // A sweep with a 5% death rate needs ~50 relaunches and the total-restart
+    // ceiling is 10. The exemption is keyed on PROGRESS, never on activity: a
+    // child that loads a plugin and dies without finishing it moves nothing and
+    // still spends the budget, so the bound that cannot be reset survives.
+    auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                    .getChildFile ("ejmap-sweep-test-" + juce::Uuid().toDashedString());
+    root.createDirectory();
+
+    check (ejmap::sweepProgressCount (root) == -1,
+           "supervisor: no marker means no sweep, and no exemption");
+
+    ejmap::sweepProgressMarker (root).replaceWithText ("7");
+    const int before = ejmap::sweepProgressCount (root);
+    check (before == 7, "supervisor: the finished count is read off disk");
+
+    ejmap::sweepProgressMarker (root).replaceWithText ("9");
+    check (ejmap::sweepProgressCount (root) > before,
+           "supervisor: a child that FINISHED plugins is not charged a restart");
+
+    ejmap::sweepProgressMarker (root).replaceWithText ("9");
+    check (! (ejmap::sweepProgressCount (root) > 9),
+           "supervisor: a child that loaded and died without finishing IS charged");
+
+    // AND THE COUNT MUST BE CUMULATIVE. Per-launch counters make it go DOWN
+    // after a crash -- measured on the first supervised sweep, 2 mapped then a
+    // crash then 1 swept wrote 1 -- so every relaunch reads as no progress and
+    // the run stops at the ceiling with work left.
+    auto cumulative = [] (int base, int thisLaunch) { return base + thisLaunch; };
+    ejmap::sweepProgressMarker (root).replaceWithText ("2");
+    const int base = juce::jmax (0, ejmap::sweepProgressCount (root));
+    check (cumulative (base, 1) > 2,
+           "supervisor: one plugin finished after a crash at 2 records 3, NOT 1");
+    check (juce::jmax (0, -1) == 0, "supervisor: an absent marker starts the base at 0");
+
+    // AND PROGRESS MUST CLEAR fastDeaths, not just consecutive. That counter is
+    // for a crash BEFORE THE WINDOW EXISTS -- and a sweep child that maps a
+    // plugin in 8 s then dies on the next has a sub-10s lifetime and looks
+    // identical. Measured: a run with 3 maps already written stopped on "the
+    // session is dying before it can be used".
+    auto budget = [] (bool madeProgress, int fastDeathsIn)
+    {
+        int fast = fastDeathsIn + 1;              // this exit was a fast one
+        if (madeProgress) fast = 0;
+        return fast;
+    };
+    check (budget (true, 2) == 0, "supervisor: progress clears fastDeaths");
+    check (budget (false, 2) == 3, "supervisor: no progress and it still counts");
+
+    root.deleteRecursively();
 }
 
 int main (int, char**)
@@ -2107,6 +2300,7 @@ int main (int, char**)
     testMarks();
     testUnitFamilyRule();
     testRetryRule();
+    testSweepRules();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

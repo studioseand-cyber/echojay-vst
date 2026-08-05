@@ -73,6 +73,31 @@ struct SupervisorLimits
     static constexpr int kMaxTotalRestarts = 10;
 };
 
+/** Written by --sweep after every plugin it FINISHES, holding the count.
+
+    The ceiling above is deliberately un-resettable, and the comment on it is
+    right: any rule that can be reset needs a bound that cannot. But a sweep of
+    1,073 products with a 5% death rate needs ~50 relaunches, so that ceiling
+    stops the campaign a fifth of the way in.
+
+    The hole the ceiling closes is "one successful LOAD then die, forever" --
+    activity that looks like progress. So the exemption is keyed on PROGRESS
+    instead: a relaunch is free only if the finished count went UP while the
+    child was alive. A child that loads a plugin and dies without finishing it
+    moves nothing, and still spends the budget. The bound that cannot be reset
+    survives; only work buys past it.
+*/
+inline juce::File sweepProgressMarker (const juce::File& root)
+{
+    return root.getChildFile ("sweep-progress.marker");
+}
+
+inline int sweepProgressCount (const juce::File& root)
+{
+    auto f = sweepProgressMarker (root);
+    return f.existsAsFile() ? f.loadFileAsString().trim().getIntValue() : -1;
+}
+
 /** Written by the child the first time a load succeeds. The supervisor deletes
     it before each spawn and checks for it after, which is what makes "no
     successful load between them" measurable rather than assumed.
@@ -113,6 +138,7 @@ inline int runSupervisor (int argc, char* argv[])
     for (;;)
     {
         marker.deleteFile();
+        const int progressBefore = sweepProgressCount (root);
 
         std::vector<juce::String> childArgs = base;
         childArgs.push_back ("--child");
@@ -173,9 +199,34 @@ inline int runSupervisor (int argc, char* argv[])
         if (hadLoad)
             consecutive = 0;
 
+        // Progress, not activity. See sweepProgressMarker.
+        const int progressAfter = sweepProgressCount (root);
+        const bool madeProgress = progressAfter > progressBefore && progressBefore >= 0;
+
         ++consecutive;
-        ++totalRestarts;
         fastDeaths = (elapsed < SupervisorLimits::kFastDeathMs) ? fastDeaths + 1 : 0;
+
+        if (madeProgress)
+        {
+            // BOTH counters, and fastDeaths is the one that matters here.
+            //
+            // Its purpose is stated above: a crash BEFORE THE WINDOW EXISTS,
+            // where no load can ever happen to clear the other counter. A sweep
+            // child that maps a plugin in 8 s and then dies on the next one has
+            // a sub-10s lifetime and reads as exactly that shape -- and it is
+            // the opposite: the child was used, and the proof is on disk.
+            //
+            // Measured: a run that had already written 3 maps stopped on "the
+            // session is dying before it can be used".
+            consecutive = 0;
+            fastDeaths  = 0;
+            std::cerr << "supervisor: the sweep finished "
+                      << (progressAfter - progressBefore)
+                      << " plugin(s) before this exit; the restart is not charged"
+                      << std::endl;
+        }
+        else
+            ++totalRestarts;
 
         std::cout << "supervisor: child died (" << lastCause << ") after " << elapsed
                   << "ms; consecutive=" << consecutive

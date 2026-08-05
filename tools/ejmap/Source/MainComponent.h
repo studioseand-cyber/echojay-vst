@@ -7675,7 +7675,27 @@ public:
         cheapest item on the list. Detected from assign-*.json's plugin_id, so
         it costs no plugin loads.
     */
-    void printWorklist (bool loadFirst)
+
+    /** The worklist, as ONE function, because --worklist prints it and --sweep
+        walks it and two copies of "what is worth opening" would drift. */
+    struct Worklist
+    {
+        juce::Array<ScannedPlugin> toFinish, toSweep, unqueried, flagged;
+        int nUnmappable = 0, nMapped = 0;
+
+        /** Parked first: the work is half done and finishing it is cheapest.
+            Then rows the server CONFIRMS are unmapped, then the unqueried,
+            which are probable rather than known. Flagged is never walked -- a
+            mapper who raised a flag wants to see it, not be handed it again. */
+        juce::Array<ScannedPlugin> ordered() const
+        {
+            juce::Array<ScannedPlugin> out;
+            out.addArray (toFinish); out.addArray (toSweep); out.addArray (unqueried);
+            return out;
+        }
+    };
+
+    Worklist collectWorklist()
     {
         // Parked: a session on disk. plugin_id is written by persistSession, so
         // this needs no fingerprint and therefore no load.
@@ -7688,21 +7708,28 @@ public:
             if (pid.isNotEmpty()) parked.insert (pid);
         }
 
-        juce::Array<ScannedPlugin> toSweep, toFinish, flagged, unqueried;
-        int nUnmappable = 0, nUnknown = 0, nMapped = 0;
-
+        Worklist w;
         for (const auto& sp : rows)
         {
-            if (marks.isUnmappable (sp.desc)) { ++nUnmappable; continue; }
+            if (marks.isUnmappable (sp.desc)) { ++w.nUnmappable; continue; }
 
             const auto st = mapStateFor (sp).state;
             const bool offerable = st == MapState::unmapped
                                 || st == MapState::differentBuild
                                 || st == MapState::unknown;
-            if (! offerable) { ++nMapped; continue; }
+            if (! offerable) { ++w.nMapped; continue; }
 
-            if (parked.count (sp.pluginId()) > 0) { toFinish.add (sp); continue; }
-            if (marks.hasIssue (sp.desc))         { flagged.add (sp);  continue; }
+            // THE FLAG IS CHECKED BEFORE THE SESSION, and the order is the
+            // whole rule. A flag is a DECISION; a session file is a STATE.
+            //
+            // Found on plugin 4 of a live supervised sweep: Cenozoix loads,
+            // sweeps 99 params, produces 0 usable controls, gets flagged --
+            // and leaves an assign-*.json behind because there was nothing to
+            // submit. With parked checked first it came back as PARKED, at the
+            // FRONT of the list, and was swept again on every relaunch forever.
+            // The flag had been written correctly and was simply never reached.
+            if (marks.hasIssue (sp.desc))         { w.flagged.add (sp);  continue; }
+            if (parked.count (sp.pluginId()) > 0) { w.toFinish.add (sp); continue; }
 
             // UNKNOWN IS A STATEMENT ABOUT THE SERVER, NOT ABOUT THIS MACHINE.
             //
@@ -7716,9 +7743,364 @@ public:
             // its own bucket, labelled, rather than either hidden (a worklist
             // that offers nothing on a fresh machine) or silently merged into
             // unmapped (a claim the evidence does not support).
-            if (st == MapState::unknown) { unqueried.add (sp); ++nUnknown; continue; }
-            toSweep.add (sp);
+            if (st == MapState::unknown) { w.unqueried.add (sp); continue; }
+            w.toSweep.add (sp);
         }
+        return w;
+    }
+
+    juce::Array<ScannedPlugin> buildWorklist() { return collectWorklist().ordered(); }
+
+    //==========================================================================
+    /** --sweep : walk the worklist and map the control surface of everything
+        unmapped, unattended.
+
+        THE FOUR STEPS ARE ALREADY MECHANICAL -- load, pick a category, sweep
+        the surface, submit -- and --selftest-controlsonly already does all four
+        end to end and writes a real map. This is that path with the assertions
+        removed and a worklist around it. Doing it 1,260 times by hand is the
+        wrong shape.
+
+        NOTHING STOPS AND ASKS except one thing, and the reason is measured: an
+        unbuildable control is ALREADY excluded per control and the map written
+        with the rest, and 282 of 882 params across the first 40 maps (32%)
+        already fail to sweep without it ever having been an interruption.
+        Everything records and continues.
+
+        The exception is TEN CONSECUTIVE FAILURES OF THE SAME CLASS. Ten licence
+        refusals is not ten plugins, it is one logged-out iLok -- and a run that
+        quietly records 400 of them overnight has written a fact about this
+        machine into the ledger as though it were a fact about the catalogue.
+        The message names the class, so it says whether to plug something in or
+        to investigate.
+    */
+    void runSweep (int limit, bool dryRun)
+    {
+        // NOBODY IS AT THE KEYBOARD. This is what lets the retry rule count an
+        // unattributed death: the discount exists for the operator's
+        // force-quit, and there is no operator.
+        ledger.setUnattended (true);
+
+        auto cats = loadCategories();
+        if (cats.empty())
+        {
+            std::cout << "SWEEP: no categories.json. Run tools/propose/categorise.py first --\n"
+                         "       without it the sweep would open every product including the\n"
+                         "       404 that have nothing to dial." << std::endl;
+            quitNow(); return;
+        }
+
+        auto work = buildWorklist();
+        std::cout << "SWEEP over " << work.size() << " worklist row(s), "
+                  << cats.size() << " categorised product(s)"
+                  << (dryRun ? "   [DRY RUN: nothing is loaded or written]" : "")
+                  << std::endl;
+
+        auto log = ledger.getRoot().getChildFile ("sweep-" + ledger.currentRunId() + ".jsonl");
+        int mapped = 0, sweptNothing = 0, died = 0, skipped = 0, done = 0;
+
+        // CUMULATIVE, not per-launch. The supervisor exempts a relaunch when
+        // the count went UP while the child was alive; per-launch counters make
+        // it go DOWN after a crash (2 mapped, crash, 1 swept -> 1), so every
+        // relaunch looked like no progress and the run stopped at the ceiling.
+        // Measured on the first supervised sweep: 2 -> 1.
+        const int progressBase = juce::jmax (0, ejmap::sweepProgressCount (ledger.getRoot()));
+        juce::String breakerClass; int consecutive = 0;
+
+        for (const auto& sp : work)
+        {
+            if (limit > 0 && done >= limit) break;
+
+            const auto key = categoryKeyFor (sp.desc);
+            auto it = cats.find (key);
+
+            juce::String outcome, detail, category;
+            if (it == cats.end())
+            {
+                outcome = "skipped_uncategorised";
+                detail  = "no entry in categories.json for " + key;
+            }
+            else if (! it->second.sweepable)
+            {
+                outcome = "skipped_" + it->second.disposition;
+                detail  = it->second.why.isNotEmpty() ? it->second.why : it->second.kind;
+            }
+            else if (ledger.isQuarantined (sp.pluginId()))
+            {
+                outcome = "skipped_quarantined";
+                detail  = "the retry rule has withdrawn this binary";
+            }
+            else
+            {
+                category = it->second.category;
+            }
+
+            if (outcome.isNotEmpty())
+            {
+                ++skipped;
+                appendSweepRow (log, sp, category, outcome, detail, 0);
+                continue;
+            }
+
+            ++done;
+            std::cout << "  [" << done << "] " << sp.desc.name << "  (" << category
+                      << (it->second.hedged ? ", hedged" : "") << ")" << std::flush;
+
+            if (dryRun)
+            { std::cout << "  would sweep" << std::endl; continue; }
+
+            int nControls = 0;
+            const auto res = sweepOne (sp, category, nControls, detail);
+            std::cout << "  " << res << (nControls > 0 ? "  " + juce::String (nControls)
+                                                         + " control(s)" : juce::String())
+                      << std::endl;
+
+            if (res == "mapped")            ++mapped;
+            else if (res == "swept_nothing") ++sweptNothing;
+            else                             ++died;
+
+            appendSweepRow (log, sp, category, res, detail, nControls);
+
+            // PROGRESS, NOT ACTIVITY. The supervisor's total-restart ceiling is
+            // deliberately un-resettable, and a sweep with a 5% death rate needs
+            // ~50 relaunches. Writing the finished count here lets the
+            // supervisor tell a run that is getting somewhere from one that
+            // loads a plugin and dies forever -- the exact hole the ceiling
+            // exists to close.
+            writeSweepProgress (progressBase + mapped + sweptNothing);
+
+            // THE ONE INTERRUPTION.
+            if (res == "mapped" || res == "swept_nothing")
+            { consecutive = 0; breakerClass.clear(); }
+            else
+            {
+                const auto cls = res;
+                if (cls == breakerClass) ++consecutive;
+                else { breakerClass = cls; consecutive = 1; }
+
+                if (consecutive >= kSweepBreaker)
+                {
+                    std::cout << "\nSWEEP STOPPED: " << consecutive << " consecutive '"
+                              << breakerClass << "' failures.\n"
+                              << "  Ten of one class is a fact about this MACHINE, not about\n"
+                              << "  ten plugins. Recording 400 of them overnight would put that\n"
+                              << "  fact in the ledger as though it were about the catalogue.\n"
+                              << "  '" << breakerClass << "' means: " << breakerAdvice (breakerClass)
+                              << std::endl;
+                    break;
+                }
+            }
+        }
+
+        std::cout << "\nSWEEP DONE\n"
+                  << "  " << mapped       << " mapped\n"
+                  << "  " << sweptNothing << " loaded but swept nothing (flagged for review)\n"
+                  << "  " << died         << " failed to load or died\n"
+                  << "  " << skipped      << " skipped (no category, no dial set, or quarantined)\n"
+                  << "  log: " << log.getFullPathName() << std::endl;
+        quitNow();
+    }
+
+private:
+    static constexpr int kSweepBreaker = 10;
+
+    struct SweepCategory
+    {
+        juce::String category, disposition, why, kind;
+        bool sweepable = false, hedged = false;
+    };
+
+    /** categories.json is keyed by base name + vendor, both lowered, with the
+        mono/stereo variant suffix stripped -- a (m)/(s) pair is ONE product and
+        the categoriser is not asked twice. Mirrors categorise.py's product_key,
+        and test_categorise.py pins the collapse on the Python side. */
+    static juce::String categoryKeyFor (const juce::PluginDescription& d)
+    {
+        auto n = d.name.trim();
+        static const std::regex variant (R"(\s*\((?:m|s|mono|stereo|\d+->\d+)\)\s*$)",
+                                         std::regex::icase);
+        n = juce::String (std::regex_replace (n.toStdString(), variant, ""));
+        return n.trim().toLowerCase() + "|" + d.manufacturerName.trim().toLowerCase();
+    }
+
+    std::map<juce::String, SweepCategory> loadCategories()
+    {
+        std::map<juce::String, SweepCategory> out;
+        auto f = ledger.getRoot().getChildFile ("categories.json");
+        if (! f.existsAsFile()) return out;
+        auto v = juce::JSON::parse (f.loadFileAsString()).getProperty ("products", juce::var());
+        if (auto* o = v.getDynamicObject())
+            for (const auto& kv : o->getProperties())
+            {
+                SweepCategory c;
+                c.category    = kv.value.getProperty ("category", "").toString();
+                c.disposition = kv.value.getProperty ("disposition", "").toString();
+                c.why         = kv.value.getProperty ("why", "").toString();
+                c.kind        = kv.value.getProperty ("kind", "").toString();
+                c.hedged      = kv.value.getProperty ("confidence", "").toString() == "hedged";
+                // ONE definition of sweepable, mirroring categorise.py's, and
+                // it is deliberately not "disposition == sweep": a product both
+                // arms refused DIFFERENTLY is still refused, and which refusal
+                // it is is a question for the marks review, not for the loader.
+                c.sweepable   = c.disposition == "sweep"
+                                 && ! (bool) kv.value.getProperty ("refused_by_both", false)
+                                 && c.category.isNotEmpty();
+                out[kv.name.toString()] = c;
+            }
+        return out;
+    }
+
+    static juce::String breakerAdvice (const juce::String& cls)
+    {
+        if (cls == "license_refused") return "an authorisation is missing. Check the iLok or "
+                                             "the vendor's licence manager before resuming.";
+        if (cls == "load_failed")     return "loads are failing outright. Investigate before resuming.";
+        if (cls == "timeout")         return "loads are hanging. Investigate before resuming.";
+        return "investigate before resuming.";
+    }
+
+    void writeSweepProgress (int finished)
+    {
+        ledger.getRoot().getChildFile ("sweep-progress.marker")
+              .replaceWithText (juce::String (finished));
+    }
+
+    void appendSweepRow (const juce::File& log, const ScannedPlugin& sp,
+                         const juce::String& cat, const juce::String& outcome,
+                         const juce::String& detail, int nControls)
+    {
+        // WRITTEN BEFORE THE NEXT LOAD STARTS. A crash costs the plugin in
+        // flight and nothing else, which is the same resume-by-presence
+        // discipline the proposer uses -- and the worklist recomputes from
+        // maps/ on relaunch, so there is no cursor to corrupt either.
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("run_id", ledger.currentRunId());
+        o->setProperty ("plugin_id", sp.pluginId());
+        o->setProperty ("name", sp.desc.name);
+        o->setProperty ("vendor", sp.desc.manufacturerName);
+        o->setProperty ("version", sp.desc.version);
+        o->setProperty ("category", cat);
+        o->setProperty ("outcome", outcome);
+        o->setProperty ("detail", detail);
+        o->setProperty ("controls", nControls);
+        o->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
+
+        juce::FileOutputStream out (log);
+        if (out.openedOk())
+        {
+            out.setPosition (log.getSize());
+            // ONE OBJECT PER LINE. juce::JSON::toString's second argument is
+            // allOnOneLine, and passing false made a .jsonl of pretty-printed
+            // blocks -- a file whose extension promises line-delimited JSON and
+            // whose contents are not. Every reader of it would have to be wrong
+            // in the same way to work.
+            out.writeText (juce::JSON::toString (juce::var (o), true) + "\n", false, false, nullptr);
+            out.flush();
+        }
+    }
+
+    /** One plugin, the four mechanical steps. Returns the outcome word the
+        breaker counts on. */
+    juce::String sweepOne (const ScannedPlugin& sp, const juce::String& cat,
+                           int& nControls, juce::String& detail)
+    {
+        host.unload();
+        assigning = false;
+        assignPanel.resetAll();
+
+        loadedName = sp.desc.name; loadedId = sp.pluginId(); loadedDesc = sp.desc;
+        ledger.beginLoad (loadedId, sp.desc.name, sp.desc.manufacturerName,
+                          sp.desc.pluginFormatName, sp.desc.version, "load",
+                          "createPluginInstance");
+        auto res = host.load (sp.desc, watchdog);
+        { LedgerRecord rec; rec.pluginId = loadedId; rec.name = sp.desc.name;
+          rec.vendor = sp.desc.manufacturerName; rec.format = sp.desc.pluginFormatName;
+          rec.version = sp.desc.version; rec.outcome = res.outcome;
+          rec.detail = res.detail; rec.paramCount = res.paramCount;
+          ledger.endLoad (rec); }
+
+        if (res.outcome != LoadOutcome::ok)
+        {
+            detail = res.detail;
+            // The BREAKER CLASS is the outcome, not a bucket: ten licence
+            // refusals and ten hangs need different advice and must not cancel
+            // each other out on the way to ten.
+            return res.outcome == LoadOutcome::licenseRefused ? "license_refused"
+                 : res.outcome == LoadOutcome::timeout        ? "timeout"
+                                                              : "load_failed";
+        }
+
+        // The supervisor's consecutive-death counter resets on a successful
+        // LOAD, not a successful launch, and it reads this marker. Without it a
+        // sweep that loads twenty plugins and then meets a crasher reports
+        // "no successful load between them" and stops at three.
+        loadOkMarker (ledger.getRoot()).replaceWithText ("ok");
+
+        auto* inst = host.getInstance();
+        listeners.attach (*inst);
+        cal  = capture.calibrate (*inst, loadedId);
+        mask = capture.buildNoiseMask (*inst, cal, loadedId);
+        capture.resetCycleCounts();
+        promotionsFlushed = 0;
+        currentFp = echojay::fingerprintForDescription (loadedDesc, cal.paramCount);
+
+        startAssignment();
+        assignPanel.pickCategory (cat);
+
+        int controlsRow = -1;
+        for (int i = 0; i < assignPanel.rows.size(); ++i)
+            if (assignPanel.rows.getReference (i).kind == "controls") controlsRow = i;
+        if (controlsRow < 0)
+        { detail = "the wizard offered no controls row"; return "no_controls_row"; }
+
+        assignPanel.selectRow (controlsRow);
+        assignPanel.dispatchAction ("space");    // sweep the surface
+        assignPanel.dispatchAction ("space");    // ship what it found
+        nControls = assignPanel.controlsForSubmit().size();
+
+        if (nControls == 0)
+        {
+            // MEASURED AT 2 OF 40 (Cenozoix 0 of 99 params, CLA-76 (m) 0 of 9).
+            // Submit correctly refuses an empty map, so this is a flag and a
+            // continue -- an issue is about a BUILD, which is exactly what "this
+            // version exposes nothing sweepable" is.
+            detail = "loaded and swept, and no control produced a usable table";
+            if (! marks.hasIssue (sp.desc))
+            {
+                // TOGGLE, not set: calling it on a row the mapper already
+                // flagged would CLEAR their flag. Guarding is the difference
+                // between raising a flag and silently lowering one.
+                marks.toggleIssue (sp.desc, "sweep");
+                marks.save (ledger.getRoot());
+            }
+            return "swept_nothing";
+        }
+
+        assignPanel.dispatchAction ("submit");
+        if (! assignPanel.isSubmitEnabled())
+        { detail = "review refused the map: " + assignPanel.textRender().substring (0, 160);
+          return "submit_refused"; }
+        if (! assignPanel.confirmSubmitFromSummary())
+        { detail = "submit did not confirm"; return "submit_refused"; }
+
+        auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
+        if (! f.existsAsFile())
+        { detail = "submit reported success and wrote no map"; return "submit_refused"; }
+
+        detail.clear();
+        return "mapped";
+    }
+
+public:
+
+    void printWorklist (bool loadFirst)
+    {
+        auto w = collectWorklist();
+        const auto& toFinish  = w.toFinish;
+        const auto& toSweep   = w.toSweep;
+        const auto& unqueried = w.unqueried;
+        const auto& flagged   = w.flagged;
+        const int nUnmappable = w.nUnmappable, nMapped = w.nMapped;
 
         auto line = [] (const ScannedPlugin& sp)
         {
