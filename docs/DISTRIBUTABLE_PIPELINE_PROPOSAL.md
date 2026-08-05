@@ -598,23 +598,39 @@ Step 1 is independent of everything else. Steps 3–5 are the product.
 
 ---
 
-## 11. What I need decided
+## 11. Decided 5 Aug 2026
 
-1. **Sign-in.** A token pasted once, or something with an account behind it? A
-   pasted token is a day's work and is enough for a handful of trusted mappers;
-   accounts are a different project.
-2. **Server-side proposal on ingest, or on demand?** On ingest is simpler and
-   means the answer is waiting when the mapper next opens the plugin. On demand
-   costs nothing for maps nobody revisits.
-3. **The census and privacy.** Confirm that sending a mapper's installed-plugin
-   list is something they are told about, and that keying the cache by product
-   rather than by person is the storage rule.
-4. **Offline Sweep All: refuse, or run blind?** I recommend refuse.
-5. **Do the two probes before anything else is designed**, and accept that the
-   answer may be "bridged plugins have a lower ceiling". Confirm that ceiling is
-   acceptable if both probes fail — swept, proposed from text, escalations to
-   the queue, no vision.
-6. **The Screen Recording permission**, if route 2 is the only one that works.
-   It is the most alarming permission macOS asks for and it would be asked of
-   every mapper. My view: not worth it for 31% of one stage, but it is your
-   product and your users.
+1. **Sign-in: a per-mapper token, pasted once.** Enough for five people, and the
+   only part of §4 that blocks distribution. Accounts when there is a reason for
+   accounts.
+2. **Proposal on ingest**, not on demand. The sweep's whole shape is walk away
+   and come back to answers; on demand means coming back to nothing.
+3. **The census: mappers are told it is sent, and storage is keyed by PRODUCT,
+   not by person.** See §11.1 — including what the server retains, because a
+   mapper asking "what do you do with the list of my plugins" should get an
+   answer that is already written down.
+4. **Offline Sweep All refuses**, with the reason on screen. A hidden override
+   for the owner.
+5. ~~The two probes~~ **DONE.** The WaveShell cause is architecture and the route
+   is dead anyway (§6.2). The ceiling is accepted: bridged plugins are swept,
+   proposed from text, and escalate to the queue. No vision.
+6. ~~Screen Recording~~ **DECLINED.** Not worth an alarming permission on every
+   mapper's machine and a macOS 14 floor, for 31% of a stage that only runs on
+   what text could not settle.
+
+### 11.1 What the server keeps, and what it does not
+
+This is the paragraph a mapper gets shown, so it is written before the endpoint
+is built rather than after someone asks.
+
+| | |
+|---|---|
+| **Sent** | plugin name, vendor, format, uid, version — for every installed plug-in |
+| **Not sent** | no parameters, no audio, no presets, no project data, no file paths beyond the plug-in's own identifier. Nothing is loaded to produce it |
+| **Retained, keyed by PRODUCT** | one row per `(name, vendor)`: its category, both arms' answers, the prompt hash, the date. **This is the cache and it is the point** — it is what makes the hundredth mapper's catalogue free, and it contains no reference to any person |
+| **Retained, keyed by MAPPER** | nothing from the census. The token identifies who submitted a *map*, because provenance on a corpus entry has to be answerable. It does not record what they own |
+| **Discarded** | the association between a mapper and the products in their census, once the unknown ones have been queued. The server needs *"CLA-76 is a compressor"* and never *"this person owns CLA-76"* |
+
+The last row is the rule the other rows follow from, and it is the right shape
+independently of privacy: a category cache keyed by person would answer the same
+question once per mapper instead of once ever.
