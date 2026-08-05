@@ -347,6 +347,66 @@ every racked control by name, with range and unit, by
 offered**, because they are not addressable by name and naming them would invite
 a request that can only be declined.
 
+
+### 2.9 `POST /api/params/withdraw` — a tombstone, not a delete
+
+**There is no way to remove a bad map today, and "it is up there and I cannot
+take it down" is not a state a corpus should have.** One instance is live: SSL
+Fusion HF Compressor, fp `dfe4e61a85e6…`, accepted 4 Aug with HTTP 200, carrying
+Dangerous BAX EQ Mix's six controls.
+
+```json
+POST /api/params/withdraw
+{"fp":"dfe4e61a85e6…",
+ "reason":"foreign_controls",
+ "detail":"controls belong to Dangerous BAX EQ Mix, mapped 3s earlier; index 3 is
+           'Output Trim' in params and 'Low Shelf Level' in controls"}
+```
+
+**A TOMBSTONE, and the reasoning is the client's own rule about absence.** A
+deleted map is indistinguishable from one that never existed, and the client
+already refuses to treat "unknown" as "unmapped" for exactly that reason. A
+mapper who finds a fingerprint missing should learn it was **withdrawn**, not
+wonder whether their submit failed.
+
+So a withdrawal:
+
+- **stops the map being served.** The dial path gets nothing for that fp — that
+  is the urgent half, because until it happens a client dialling by control name
+  gets another plugin's surface.
+- **keeps the map, the reason, who withdrew it and when.** A wrong map is
+  evidence about a defect; deleting it destroys the only artefact.
+- **is visible in the read path.** `GET /api/params/maps` gains a `withdrawn`
+  object beside `maps` and `identities`:
+
+  ```json
+  {"identities": {"AudioUnit|7a606966|1.1.3": []},
+   "withdrawn":  {"dfe4e61a85e6…": {"at":"…","by":"c221cccc958a",
+                                    "reason":"foreign_controls"}}}
+  ```
+
+  The identity maps to `[]` — **unmapped**, which is now true — and the
+  `withdrawn` entry says why the fingerprint a mapper remembers submitting is no
+  longer there. The client's existing empty-list handling already reads that as
+  unmapped, so nothing breaks before the client learns the new field.
+
+**Who may withdraw.** The submitter of that map, or the owner. Not any mapper —
+the same rule as §2.6: a mapper's answer settles their own map, not the corpus.
+An attempt on someone else's map is a 403, not a silent no-op.
+
+**Re-submission is allowed and is the normal ending.** A withdrawn fingerprint
+is re-mappable; a new submit for it supersedes the tombstone, and the record
+keeps both, so "this was wrong once and re-done" is answerable.
+
+**`reason` is a small enumeration, not free text** — `foreign_controls`,
+`wrong_identity`, `bad_anchors`, `superseded`, `other` — with `detail` free
+alongside. An enumeration is what makes "how often does this happen" a query
+instead of a reading exercise.
+
+**Not a correction endpoint.** There is deliberately no way to edit a stored
+map. A map whose controls were measured on another plugin has nothing in it to
+repair, and an edit path would invite exactly that repair.
+
 ---
 
 ## 3. Storage
@@ -361,6 +421,7 @@ a request that can only be declined.
 | marks: unmappable | **product** | `{by, at}` |
 | marks: issues | **identity** | `{by, at}` |
 | mappers | token hash | `ref`, name, issued, revoked |
+| withdrawals | **fp** | the tombstone: reason, detail, by, at, and the map as submitted |
 
 ### What is retained from a census, and what is not
 
@@ -391,8 +452,8 @@ the same question once per mapper instead of once ever.
 3. Stage 2 on ingest, plus `POST /api/params/capture`.
 4. `GET /api/params/queue` and `POST /api/params/decisions` — the return path.
 5. `POST /api/params/marks` and `unmappable` in the identities reply.
-6. `settings_structured` passthrough for control names (§2.8). Smallest of the
-   six and independent of the rest.
+7. `settings_structured` passthrough for control names (§2.8). Smallest of the
+   seven and independent of the rest.
 
 ---
 
