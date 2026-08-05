@@ -7924,6 +7924,7 @@ public:
         if (outcome.isNotEmpty())
         {
             ++sweep.skipped;
+            ++sweep.byOutcome[outcome];
             appendSweepRow (sweep.log, sp, category, outcome, detail, 0, {});
             return true;                       // skips cost nothing: keep going
         }
@@ -7944,6 +7945,7 @@ public:
                                                       + " control(s)" : juce::String())
                     + (cap.attempted ? "  capture " + cap.state() : juce::String()));
 
+        ++sweep.byOutcome[res];
         if (res == "mapped")             ++sweep.mapped;
         else if (res == "swept_nothing") ++sweep.sweptNothing;
         else                             ++sweep.died;
@@ -8124,12 +8126,57 @@ public:
         // breaker or was stopped by hand has said what it wanted to say, and
         // coming back from any of those uninvited would be the tool arguing.
         sweepActiveMarker().deleteFile();
-        sweepSay (juce::String ("\nSWEEP ") + (sweep.stopped ? "STOPPED BY YOU" : "DONE") + "\n"
-                    "  " + juce::String (sweep.mapped)       + " mapped\n"
-                    "  " + juce::String (sweep.sweptNothing) + " loaded but swept nothing (flagged for review)\n"
-                    "  " + juce::String (sweep.died)         + " failed to load or died\n"
-                    "  " + juce::String (sweep.skipped)      + " skipped (no category, no dial set, or quarantined)\n"
-                    "  log: " + sweep.log.getFullPathName());
+
+        // A SUMMARY THAT DISTINGUISHES A BAD NIGHT FROM A NORMAL ONE at a
+        // glance. "12 failed" says nothing: twelve licence refusals is an
+        // authorisation problem, twelve sweep_timeouts is a dialog on screen,
+        // and twelve deaths is a plugin set that needs a look. The classes are
+        // the whole information content.
+        const auto mins = (juce::Time::getCurrentTime() - sweep.startedAt).inMinutes();
+
+        juce::String t;
+        t << "\nSWEEP " << (sweep.stopped  ? "STOPPED BY YOU"
+                           : sweep.tripped ? "STOPPED BY THE CIRCUIT BREAKER"
+                                           : "DONE")
+          << "   " << juce::String (sweep.done) << " opened in "
+          << juce::String (mins, 1) << " min\n\n";
+
+        auto line = [&t] (const juce::String& label, int n, const juce::String& note = {})
+        {
+            if (n == 0 && note.isEmpty()) return;
+            t << "  " << juce::String (n).paddedLeft (' ', 5) << "  " << label
+              << (note.isNotEmpty() ? "   " + note : juce::String()) << "\n";
+        };
+
+        t << "  WORK DONE\n";
+        line ("mapped", sweep.byOutcome["mapped"]);
+        line ("swept nothing", sweep.byOutcome["swept_nothing"], "loaded fine, no usable control; flagged");
+        t << "\n  DID NOT FINISH\n";
+        line ("sweep_timeout", sweep.byOutcome["sweep_timeout"],
+              "loaded, then the sweep never returned. A dialog does this");
+        line ("init_failed", sweep.byOutcome["init_failed"], "the format refused to instantiate");
+        line ("license_refused", sweep.byOutcome["license_refused"], "authorisation");
+        line ("timeout", sweep.byOutcome["timeout"], "the LOAD hung");
+        line ("load_failed", sweep.byOutcome["load_failed"]);
+        line ("submit_refused", sweep.byOutcome["submit_refused"]);
+        line ("stale_controls", sweep.byOutcome["stale_controls"],
+              "REFUSED: staged controls were another plugin's");
+        line ("no_controls_row", sweep.byOutcome["no_controls_row"]);
+        t << "\n  NOT OFFERED\n";
+        line ("skipped: quarantined", sweep.byOutcome["skipped_quarantined"]);
+        line ("skipped: no dial set", sweep.byOutcome["skipped_no_dial_set"],
+              "a processor the 11 categories do not cover");
+        line ("skipped: not a processor", sweep.byOutcome["skipped_not_a_processor"]);
+        line ("skipped: category undecided", sweep.byOutcome["skipped_review"],
+              "the two arms disagreed");
+        line ("skipped: uncategorised", sweep.byOutcome["skipped_uncategorised"]);
+
+        if (sweep.tripped)
+            t << "\n  THE BREAKER FIRED on " << sweep.consecutive << " consecutive '"
+              << sweep.breakerClass << "'. " << breakerAdvice (sweep.breakerClass) << "\n";
+
+        t << "\n  log: " << sweep.log.getFullPathName();
+        sweepSay (t);
         sweepProgress();
     }
 
@@ -8195,6 +8242,12 @@ private:
         juce::String current, breakerClass;
         int index = 0, done = 0, limit = 0, progressBase = 0;
         int mapped = 0, sweptNothing = 0, died = 0, skipped = 0, consecutive = 0;
+
+        /** EVERY outcome by name, so the morning summary distinguishes a bad
+            night from a normal one without anyone opening the jsonl. `died` and
+            `skipped` are totals; these are the classes inside them. */
+        std::map<juce::String, int> byOutcome;
+        juce::Time startedAt = juce::Time::getCurrentTime();
         bool running = false, dryRun = false, wantCaptures = false;
         bool stopRequested = false, stopped = false, tripped = false;
     };
