@@ -41,6 +41,7 @@
 #include "EjmapAssignment.h"
 #include "EjmapLedger.h"
 #include "EjmapSupervisor.h"
+#include "EjmapViewLayer.h"
 
 // The shared sweep and parsers, compiled here so the drift gate proves both
 // binaries build the SAME code: ejextract compiles these headers to produce
@@ -2220,7 +2221,58 @@ void testSweepRules()
     check (bucket (false, true) == "parked", "worklist: an unflagged session is parked work");
     check (bucket (true, false) == "flagged", "worklist: a flag with no session is still flagged");
 
-    // ---- 4. the supervisor's progress exemption -----------------------------
+    // ---- 4. capture state is named after what was OBSERVED ------------------
+    // An earlier reading attributed an empty capture to out-of-process hosting,
+    // because API-550A was both empty AND an NSRemoteView. Disproved 5 Aug: the
+    // same vendor's VST3, loaded in-process with no NSRemoteView anywhere in
+    // the tree, captures at 0.0% too. A field called `unavailable_bridged`
+    // would have frozen the wrong cause into the corpus -- the crash_on_load
+    // mistake again.
+    {
+        ejmap::CaptureResult none;
+        check (none.state() == "unavailable", "capture: never attempted -> unavailable");
+
+        ejmap::CaptureResult blank; blank.attempted = true;
+        blank.width = 632; blank.height = 1194; blank.fraction = 0.0;
+        check (blank.state() == "empty",
+               "capture: A BLANK RECTANGLE IS 'empty' -- what was observed, not why");
+        check (blank.state() != "unavailable_bridged",
+               "capture: and NEVER named after a cause. A non-remote Waves panel "
+               "reads 0.0% too, so bridging is not it");
+
+        ejmap::CaptureResult ok; ok.attempted = true;
+        ok.width = 2044; ok.height = 1400; ok.fraction = 0.526;
+        check (ok.state() == "ok", "capture: AirEQ's 52.6% is a real panel");
+        check (ok.width > 0 && ok.height > 0 && ok.fraction > 0,
+               "capture: the fraction and the dimensions ride with it, so a later "
+               "answer has numbers to be tested against");
+    }
+
+    // ---- 5. which launches supervise themselves -----------------------------
+    // A mapper double-clicks an app and never types --supervise, so a GUI
+    // launch supervises by default and the flag becomes the way to say no.
+    auto selfSupervises = [] (const juce::StringArray& args)
+    {
+        for (const auto& a : args)
+            if (a == "--child" || a == "--no-supervise" || a.startsWith ("--selftest")
+                 || a == "--gate-m9")
+                return false;
+        return true;
+    };
+    check (selfSupervises ({}), "supervise: a bare double-click supervises itself");
+    check (selfSupervises ({"--sweep"}), "supervise: and a sweep certainly does");
+    check (! selfSupervises ({"--child"}),
+           "supervise: the supervised child does NOT, or it forks forever");
+    check (! selfSupervises ({"--selftest-segv"}),
+           "supervise: a diagnostic that CRASHES ON PURPOSE is never relaunched");
+    check (! selfSupervises ({"--selftest-controlsonly", "x"}),
+           "supervise: nor any other selftest");
+    check (! selfSupervises ({"--no-supervise"}),
+           "supervise: and there is an escape hatch for running under a debugger");
+    check (selfSupervises ({"--ledger-root", "/tmp/x", "--sweep", "--sweep-limit", "4"}),
+           "supervise: ordinary flags do not disable it");
+
+    // ---- 6. the supervisor's progress exemption -----------------------------
     // A sweep with a 5% death rate needs ~50 relaunches and the total-restart
     // ceiling is 10. The exemption is keyed on PROGRESS, never on activity: a
     // child that loads a plugin and dies without finishing it moves nothing and

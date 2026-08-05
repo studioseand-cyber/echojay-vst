@@ -87,18 +87,24 @@ juce::String layerBackHostedViews (juce::Component& topLevel)
 
 juce::String captureHostedEditor (juce::Component& topLevel, const juce::File& out)
 {
+    return captureHostedEditorResult (topLevel, out).note;
+}
+
+CaptureResult captureHostedEditorResult (juce::Component& topLevel, const juce::File& out)
+{
+    CaptureResult cr;
     NSView* peer = peerViewOf (topLevel);
-    if (peer == nil) return "no peer\n";
+    if (peer == nil) { cr.note = "no peer\n"; return cr; }
 
     NSView* editor = nil;
     for (NSView* sub in [peer subviews])
         if (NSWidth ([sub frame]) > 100 && NSHeight ([sub frame]) > 100)
             editor = sub;                       // the hosted container
-    if (editor == nil) return "no hosted view under the peer\n";
+    if (editor == nil) { cr.note = "no hosted view under the peer\n"; return cr; }
 
     const auto r = [editor bounds];
     NSBitmapImageRep* rep = [editor bitmapImageRepForCachingDisplayInRect: r];
-    if (rep == nil) return "bitmapImageRepForCachingDisplayInRect returned nil\n";
+    if (rep == nil) { cr.note = "bitmapImageRepForCachingDisplayInRect returned nil\n"; return cr; }
     [editor cacheDisplayInRect: r toBitmapImageRep: rep];
 
     // HOW MUCH OF IT IS ACTUALLY THERE. A bridged editor's pixels live in
@@ -121,16 +127,23 @@ juce::String captureHostedEditor (juce::Component& topLevel, const juce::File& o
     const bool wrote = png != nil
         && [png writeToFile: [NSString stringWithUTF8String: out.getFullPathName().toRawUTF8()] atomically: YES];
 
-    return juce::String ("captured ") + juce::String ((int) [rep pixelsWide]) + "x"
-             + juce::String ((int) [rep pixelsHigh])
-             + ", non-background " + juce::String (frac * 100.0, 1) + "%"
-             + ", png " + (wrote ? "written" : "FAILED") + "\n";
+    cr.attempted = true;
+    cr.wrote     = wrote;
+    cr.width     = (int) [rep pixelsWide];
+    cr.height    = (int) [rep pixelsHigh];
+    cr.fraction  = frac;
+    cr.note = juce::String ("captured ") + juce::String (cr.width) + "x"
+                + juce::String (cr.height)
+                + ", non-background " + juce::String (frac * 100.0, 1) + "%"
+                + ", png " + (wrote ? "written" : "FAILED") + "\n";
+    return cr;
 }
 
 #else
 
 juce::String describeViewTree (juce::Component&)      { return {}; }
 juce::String captureHostedEditor (juce::Component&, const juce::File&) { return {}; }
+CaptureResult captureHostedEditorResult (juce::Component&, const juce::File&) { return {}; }
 juce::String layerBackHostedViews (juce::Component&)  { return "not macOS: nothing to do\n"; }
 
 #endif

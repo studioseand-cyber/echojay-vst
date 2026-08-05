@@ -131,6 +131,23 @@ inline int runSupervisor (int argc, char* argv[])
         if (juce::String (argv[i]) != "--supervise")
             base.push_back (juce::String (argv[i]));
 
+    // A MAPPER IS NOT LOOKING AT A TERMINAL. Everything the supervisor says
+    // goes to a file beside the ledger, where it can be read after the fact
+    // rather than shouted at a window nobody opened.
+    auto logFile = root.getChildFile ("supervisor.log");
+    auto note = [&logFile] (const juce::String& line)
+    {
+        std::cerr << line << std::endl;
+        juce::FileOutputStream out (logFile);
+        if (out.openedOk())
+        {
+            out.setPosition (logFile.getSize());
+            out.writeText (juce::Time::getCurrentTime().toISO8601 (true) + "  " + line + "\n",
+                           false, false, nullptr);
+            out.flush();
+        }
+    };
+
     // A fresh supervisor launch is a fresh session. Restart budget starts full.
     int consecutive = 0, fastDeaths = 0, totalRestarts = 0;
     juce::String lastCause;
@@ -183,7 +200,7 @@ inline int runSupervisor (int argc, char* argv[])
 
         if (WIFEXITED (status) && WEXITSTATUS (status) == 0)
         {
-            std::cout << "supervisor: child exited cleanly" << std::endl;
+            note ("supervisor: child exited cleanly");
             return 0;
         }
 
@@ -220,50 +237,49 @@ inline int runSupervisor (int argc, char* argv[])
             // session is dying before it can be used".
             consecutive = 0;
             fastDeaths  = 0;
-            std::cerr << "supervisor: the sweep finished "
-                      << (progressAfter - progressBefore)
-                      << " plugin(s) before this exit; the restart is not charged"
-                      << std::endl;
+            note ("supervisor: the sweep finished "
+                    + juce::String (progressAfter - progressBefore)
+                    + " plugin(s) before this exit; the restart is not charged");
         }
         else
             ++totalRestarts;
 
-        std::cout << "supervisor: child died (" << lastCause << ") after " << elapsed
-                  << "ms; consecutive=" << consecutive
-                  << " fastDeaths=" << fastDeaths
-                  << " total=" << totalRestarts
-                  << " loadSucceeded=" << (hadLoad ? "yes" : "no") << std::endl;
+        note ("supervisor: child died (" + lastCause + ") after " + juce::String (elapsed)
+                + "ms; consecutive=" + juce::String (consecutive)
+                + " fastDeaths=" + juce::String (fastDeaths)
+                + " total=" + juce::String (totalRestarts)
+                + " loadSucceeded=" + (hadLoad ? "yes" : "no"));
 
         if (consecutive >= SupervisorLimits::kMaxConsecutive)
         {
-            std::cerr << "supervisor: STOPPING. " << consecutive
-                      << " abnormal exits in a row with no successful load between them ("
-                      << lastCause << "). Launch again manually once the cause is understood."
-                      << std::endl;
+            note ("supervisor: STOPPING. " + juce::String (consecutive)
+                + " abnormal exits in a row with no successful load between them ("
+                      + lastCause + "). Launch again manually once the cause is understood."
+                      + juce::String());
             return 1;
         }
 
         if (fastDeaths >= SupervisorLimits::kMaxFastDeaths)
         {
-            std::cerr << "supervisor: STOPPING. " << fastDeaths
-                      << " deaths inside " << SupervisorLimits::kFastDeathMs
-                      << "ms, so the session is dying before it can be used ("
-                      << lastCause << ")." << std::endl;
+            note ("supervisor: STOPPING. " + juce::String (fastDeaths)
+                    + " deaths inside " + juce::String (SupervisorLimits::kFastDeathMs)
+                    + "ms, so the session is dying before it can be used ("
+                    + lastCause + ").");
             return 1;
         }
 
         if (totalRestarts >= SupervisorLimits::kMaxTotalRestarts)
         {
-            std::cerr << "supervisor: STOPPING. " << totalRestarts
-                      << " restarts this session, which is the hard ceiling. Something is"
-                         " wrong with this machine's plugin set, not with one plugin."
-                      << std::endl;
+            note ("supervisor: STOPPING. " + juce::String (totalRestarts)
+                    + " restarts this session, which is the hard ceiling. Something is"
+                      " wrong with this machine's plugin set, not with one plugin.");
             return 1;
         }
 
-        std::cout << "supervisor: relaunching (consecutive " << consecutive << " of "
-                  << SupervisorLimits::kMaxConsecutive << ", total " << totalRestarts
-                  << " of " << SupervisorLimits::kMaxTotalRestarts << ")" << std::endl;
+        note ("supervisor: relaunching (consecutive " + juce::String (consecutive) + " of "
+                + juce::String (SupervisorLimits::kMaxConsecutive) + ", total "
+                + juce::String (totalRestarts) + " of "
+                + juce::String (SupervisorLimits::kMaxTotalRestarts) + ")");
     }
 }
 

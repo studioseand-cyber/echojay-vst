@@ -77,4 +77,37 @@ juce::String layerBackHostedViews (juce::Component& topLevel);
 */
 juce::String captureHostedEditor (juce::Component& topLevel, const juce::File& out);
 
+/** What a capture actually produced, as numbers rather than a sentence.
+
+    THE FIELD IS NAMED AFTER WHAT WAS OBSERVED, NEVER AFTER A CAUSE. An earlier
+    reading of this measurement attributed an empty capture to out-of-process
+    hosting, because API-550A was both empty and an NSRemoteView. It was
+    disproved on 5 Aug 2026: the same vendor's VST3, loaded in-process with no
+    NSRemoteView anywhere in the tree, captures at 0.0% too. A field called
+    `unavailable_bridged` would have frozen that wrong cause into the corpus --
+    the crash_on_load mistake again.
+
+    So: `empty` says the rectangle came back blank. WHY is an open question, and
+    the numbers here are what a later answer gets tested against.
+*/
+struct CaptureResult
+{
+    bool   attempted = false;
+    bool   wrote     = false;
+    int    width = 0, height = 0;
+    double fraction = 0.0;      // non-background, 0..1
+    juce::String note;          // the human line, for logs
+
+    /** "ok" | "empty" | "unavailable". Never a cause. */
+    juce::String state() const
+    {
+        if (! attempted)   return "unavailable";
+        if (fraction <= 0.0) return "empty";
+        return "ok";
+    }
+};
+
+/** Same capture, reported as numbers. */
+CaptureResult captureHostedEditorResult (juce::Component& topLevel, const juce::File& out);
+
 } // namespace ejmap

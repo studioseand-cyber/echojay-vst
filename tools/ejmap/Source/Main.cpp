@@ -751,11 +751,41 @@ namespace
     }
 }
 
+/** Whether THIS launch should supervise itself.
+
+    A mapper double-clicks an app. They will never type --supervise, and the
+    relaunch after a crash is the thing that has to be invisible -- so a GUI
+    launch supervises by default and the flag becomes the way to say NO.
+
+    THREE EXCLUSIONS, each for a reason:
+
+      --child          this IS the supervised process. Supervising it would
+                       fork forever.
+      --selftest-*     a diagnostic that CRASHES ON PURPOSE. Relaunching it
+                       would loop, and --selftest-segv exists precisely to die.
+      --no-supervise   the escape hatch, for debugging under a debugger, where
+                       a fork puts the crash in a process the debugger is not
+                       attached to.
+
+    Headless flags need no exclusion: runHeadlessCli returns first and this is
+    never reached.
+*/
+static bool shouldSelfSupervise (int argc, char* argv[])
+{
+    for (int i = 1; i < argc; ++i)
+    {
+        const juce::String a (argv[i]);
+        if (a == "--child" || a == "--no-supervise" || a.startsWith ("--selftest")
+             || a == "--gate-m9")
+            return false;
+    }
+    return true;
+}
+
 int main (int argc, char* argv[])
 {
     // The supervisor must run before any GUI exists, so it is handled here
-    // rather than in initialise(). A direct launch skips it entirely, which is
-    // what every headless flag relies on.
+    // rather than in initialise().
     for (int i = 1; i < argc; ++i)
         if (juce::String (argv[i]) == "--supervise")
             return ejmap::runSupervisor (argc, argv);
@@ -764,6 +794,12 @@ int main (int argc, char* argv[])
     const int cliResult = runHeadlessCli (argc, argv);
     if (cliResult >= 0)
         return cliResult;
+
+    // A GUI launch supervises itself. This sits AFTER the headless CLI and
+    // BEFORE the instance lock on purpose: the parent must not claim the lock,
+    // or the child it spawns would refuse to start against it.
+    if (shouldSelfSupervise (argc, argv))
+        return ejmap::runSupervisor (argc, argv);
 
     // A GUI launch that would have been bounced now SAYS SO and fails.
     {

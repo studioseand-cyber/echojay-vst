@@ -63,6 +63,12 @@ public:
         scanButton.setButtonText ("Scan");
         scanButton.onClick = [this] { runScan(); };
 
+        // Scan, then Sweep All. That is the whole flow, and the button sits in
+        // the order the mapper works in.
+        addAndMakeVisible (sweepAllButton);
+        sweepAllButton.setButtonText ("Sweep All");
+        sweepAllButton.onClick = [this] { toggleSweepAll(); };
+
         addAndMakeVisible (loadButton);
         loadButton.setButtonText ("Load selected");
         loadButton.setEnabled (false);
@@ -6888,6 +6894,8 @@ public:
         auto top = r.removeFromTop (28);
         scanButton.setBounds (top.removeFromLeft (90));
         top.removeFromLeft (6);
+        sweepAllButton.setBounds (top.removeFromLeft (96));
+        top.removeFromLeft (6);
         loadButton.setBounds (top.removeFromLeft (130));
         top.removeFromLeft (6);
         signalToggle.setBounds (top.removeFromLeft (110));
@@ -7776,139 +7784,271 @@ public:
     */
     void runSweep (int limit, bool dryRun)
     {
+        if (! beginSweep (limit, dryRun))
+        { quitNow(); return; }
+
+        // The CLI drives the same stepper the button drives from a Timer. One
+        // implementation, so a defect found in one is fixed in both.
+        while (sweepStep()) {}
+
+        endSweep();
+        quitNow();
+    }
+
+    /** Sets the run up, or explains why it will not start. */
+    bool beginSweep (int limit, bool dryRun)
+    {
+        sweep = {};
+        sweep.cats = loadCategories();
+        if (sweep.cats.empty())
+        {
+            sweepSay ("No categories yet. Connect once so your plugins can be categorised "
+                      "-- without it the sweep would open hundreds that have nothing to dial.");
+            return false;
+        }
+
         // NOBODY IS AT THE KEYBOARD. This is what lets the retry rule count an
         // unattributed death: the discount exists for the operator's
         // force-quit, and there is no operator.
         ledger.setUnattended (true);
 
-        auto cats = loadCategories();
-        if (cats.empty())
-        {
-            std::cout << "SWEEP: no categories.json. Run tools/propose/categorise.py first --\n"
-                         "       without it the sweep would open every product including the\n"
-                         "       404 that have nothing to dial." << std::endl;
-            quitNow(); return;
-        }
-
-        auto work = buildWorklist();
-        std::cout << "SWEEP over " << work.size() << " worklist row(s), "
-                  << cats.size() << " categorised product(s)"
-                  << (dryRun ? "   [DRY RUN: nothing is loaded or written]" : "")
-                  << std::endl;
-
-        auto log = ledger.getRoot().getChildFile ("sweep-" + ledger.currentRunId() + ".jsonl");
-        int mapped = 0, sweptNothing = 0, died = 0, skipped = 0, done = 0;
+        sweep.work    = buildWorklist();
+        sweep.limit   = limit;
+        sweep.dryRun  = dryRun;
+        sweep.running = true;
+        sweep.log     = ledger.getRoot().getChildFile ("sweep-" + ledger.currentRunId() + ".jsonl");
 
         // CUMULATIVE, not per-launch. The supervisor exempts a relaunch when
         // the count went UP while the child was alive; per-launch counters make
         // it go DOWN after a crash (2 mapped, crash, 1 swept -> 1), so every
         // relaunch looked like no progress and the run stopped at the ceiling.
-        // Measured on the first supervised sweep: 2 -> 1.
-        const int progressBase = juce::jmax (0, ejmap::sweepProgressCount (ledger.getRoot()));
-        juce::String breakerClass; int consecutive = 0;
+        sweep.progressBase = juce::jmax (0, ejmap::sweepProgressCount (ledger.getRoot()));
 
-        for (const auto& sp : work)
+        sweepSay ("SWEEP over " + juce::String (sweep.work.size()) + " worklist row(s), "
+                    + juce::String ((int) sweep.cats.size()) + " categorised product(s)"
+                    + (dryRun ? "   [DRY RUN: nothing is loaded or written]" : ""));
+        return true;
+    }
+
+    /** ONE plugin. Returns false when the run is over.
+
+        The unit of work is one plugin because that is the unit the crash path,
+        the worklist and the mapper's Stop all already agree on. Between two
+        calls the message loop is completely free: the window repaints and Stop
+        responds without depending on a plugin's own pumping.
+    */
+    bool sweepStep()
+    {
+        if (! sweep.running) return false;
+        if (sweep.stopRequested) { sweep.stopped = true; return false; }
+        if (sweep.index >= sweep.work.size()) return false;
+        if (sweep.limit > 0 && sweep.done >= sweep.limit) return false;
+
+        const auto sp = sweep.work.getReference (sweep.index++);
+        const auto key = categoryKeyFor (sp.desc);
+        auto it = sweep.cats.find (key);
+
+        juce::String outcome, detail, category;
+        bool hedged = false;
+        if (it == sweep.cats.end())
         {
-            if (limit > 0 && done >= limit) break;
-
-            const auto key = categoryKeyFor (sp.desc);
-            auto it = cats.find (key);
-
-            juce::String outcome, detail, category;
-            if (it == cats.end())
-            {
-                outcome = "skipped_uncategorised";
-                detail  = "no entry in categories.json for " + key;
-            }
-            else if (! it->second.sweepable)
-            {
-                outcome = "skipped_" + it->second.disposition;
-                detail  = it->second.why.isNotEmpty() ? it->second.why : it->second.kind;
-            }
-            else if (ledger.isQuarantined (sp.pluginId()))
-            {
-                outcome = "skipped_quarantined";
-                detail  = "the retry rule has withdrawn this binary";
-            }
-            else
-            {
-                category = it->second.category;
-            }
-
-            if (outcome.isNotEmpty())
-            {
-                ++skipped;
-                appendSweepRow (log, sp, category, outcome, detail, 0);
-                continue;
-            }
-
-            ++done;
-            std::cout << "  [" << done << "] " << sp.desc.name << "  (" << category
-                      << (it->second.hedged ? ", hedged" : "") << ")" << std::flush;
-
-            if (dryRun)
-            { std::cout << "  would sweep" << std::endl; continue; }
-
-            int nControls = 0;
-            const auto res = sweepOne (sp, category, nControls, detail);
-            std::cout << "  " << res << (nControls > 0 ? "  " + juce::String (nControls)
-                                                         + " control(s)" : juce::String())
-                      << std::endl;
-
-            if (res == "mapped")            ++mapped;
-            else if (res == "swept_nothing") ++sweptNothing;
-            else                             ++died;
-
-            appendSweepRow (log, sp, category, res, detail, nControls);
-
-            // PROGRESS, NOT ACTIVITY. The supervisor's total-restart ceiling is
-            // deliberately un-resettable, and a sweep with a 5% death rate needs
-            // ~50 relaunches. Writing the finished count here lets the
-            // supervisor tell a run that is getting somewhere from one that
-            // loads a plugin and dies forever -- the exact hole the ceiling
-            // exists to close.
-            writeSweepProgress (progressBase + mapped + sweptNothing);
-
-            // THE ONE INTERRUPTION.
-            if (res == "mapped" || res == "swept_nothing")
-            { consecutive = 0; breakerClass.clear(); }
-            else
-            {
-                const auto cls = res;
-                if (cls == breakerClass) ++consecutive;
-                else { breakerClass = cls; consecutive = 1; }
-
-                if (consecutive >= kSweepBreaker)
-                {
-                    std::cout << "\nSWEEP STOPPED: " << consecutive << " consecutive '"
-                              << breakerClass << "' failures.\n"
-                              << "  Ten of one class is a fact about this MACHINE, not about\n"
-                              << "  ten plugins. Recording 400 of them overnight would put that\n"
-                              << "  fact in the ledger as though it were about the catalogue.\n"
-                              << "  '" << breakerClass << "' means: " << breakerAdvice (breakerClass)
-                              << std::endl;
-                    break;
-                }
-            }
+            outcome = "skipped_uncategorised";
+            detail  = "no entry in categories.json for " + key;
+        }
+        else if (! it->second.sweepable)
+        {
+            outcome = "skipped_" + it->second.disposition;
+            detail  = it->second.why.isNotEmpty() ? it->second.why : it->second.kind;
+        }
+        else if (ledger.isQuarantined (sp.pluginId()))
+        {
+            outcome = "skipped_quarantined";
+            detail  = "the retry rule has withdrawn this binary";
+        }
+        else
+        {
+            category = it->second.category;
+            hedged   = it->second.hedged;
         }
 
-        std::cout << "\nSWEEP DONE\n"
-                  << "  " << mapped       << " mapped\n"
-                  << "  " << sweptNothing << " loaded but swept nothing (flagged for review)\n"
-                  << "  " << died         << " failed to load or died\n"
-                  << "  " << skipped      << " skipped (no category, no dial set, or quarantined)\n"
-                  << "  log: " << log.getFullPathName() << std::endl;
-        quitNow();
+        if (outcome.isNotEmpty())
+        {
+            ++sweep.skipped;
+            appendSweepRow (sweep.log, sp, category, outcome, detail, 0, {});
+            return true;                       // skips cost nothing: keep going
+        }
+
+        ++sweep.done;
+        sweep.current = sp.desc.name;
+        sweepProgress();
+        sweepSay ("  [" + juce::String (sweep.done) + "] " + sp.desc.name
+                    + "  (" + category + (hedged ? ", hedged" : "") + ")");
+
+        if (sweep.dryRun)
+        { sweepSay ("      would sweep"); return true; }
+
+        int nControls = 0;
+        ejmap::CaptureResult cap;
+        const auto res = sweepOne (sp, category, nControls, detail, cap);
+        sweepSay ("      " + res + (nControls > 0 ? "  " + juce::String (nControls)
+                                                      + " control(s)" : juce::String())
+                    + (cap.attempted ? "  capture " + cap.state() : juce::String()));
+
+        if (res == "mapped")             ++sweep.mapped;
+        else if (res == "swept_nothing") ++sweep.sweptNothing;
+        else                             ++sweep.died;
+
+        appendSweepRow (sweep.log, sp, category, res, detail, nControls, cap);
+        writeSweepProgress (sweep.progressBase + sweep.mapped + sweep.sweptNothing);
+
+        // THE ONE INTERRUPTION.
+        if (res == "mapped" || res == "swept_nothing")
+        { sweep.consecutive = 0; sweep.breakerClass.clear(); }
+        else
+        {
+            if (res == sweep.breakerClass) ++sweep.consecutive;
+            else { sweep.breakerClass = res; sweep.consecutive = 1; }
+
+            if (sweep.consecutive >= kSweepBreaker)
+            {
+                sweep.tripped = true;
+                sweepSay ("\nSWEEP STOPPED: " + juce::String (sweep.consecutive)
+                            + " consecutive '" + sweep.breakerClass + "' failures.\n"
+                              "  Ten of one class is a fact about this MACHINE, not about ten\n"
+                              "  plugins. Recording 400 of them overnight would put that fact in\n"
+                              "  the ledger as though it were about the catalogue.\n"
+                              "  '" + sweep.breakerClass + "' means: "
+                            + breakerAdvice (sweep.breakerClass));
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** THE BUTTON. One plugin per timer callback, so between two plugins the
+        message loop is completely free: the window repaints and Stop responds
+        without depending on a plugin's own pumping. Inside a plugin the sweeper
+        pumps already, but the GUARANTEE comes from the gap, not from the pump.
+    */
+    struct SweepTimer : public juce::Timer
+    {
+        explicit SweepTimer (MainComponent& o) : owner (o) {}
+        void timerCallback() override
+        {
+            if (! owner.sweepStep())
+            {
+                stopTimer();
+                owner.endSweep();
+                owner.refreshSweepButton();
+            }
+            else owner.refreshSweepButton();
+        }
+        MainComponent& owner;
+    };
+    std::unique_ptr<SweepTimer> sweepTimer;
+
+    void toggleSweepAll()
+    {
+        if (sweep.running)
+        {
+            // Stops BETWEEN plugins, never mid-sweep, so no half-written map
+            // can exist -- the same boundary the crash path already relies on.
+            sweep.stopRequested = true;
+            status.setText ("Finishing this plugin, then stopping.",
+                            juce::dontSendNotification);
+            refreshSweepButton();
+            return;
+        }
+
+        if (! beginSweep (0, false))
+        { refreshSweepButton(); return; }
+
+        sweepTimer = std::make_unique<SweepTimer> (*this);
+        sweepTimer->startTimer (20);
+        refreshSweepButton();
+    }
+
+    void refreshSweepButton()
+    {
+        sweepAllButton.setButtonText (sweep.running ? (sweep.stopRequested ? "Stopping…" : "Stop")
+                                                    : "Sweep All");
+        scanButton.setEnabled (! sweep.running);
+        loadButton.setEnabled (! sweep.running);
+        sweepProgress();
+        resized();
+    }
+
+    /** The existing progress strip, which already takes no layout space when
+        hidden. */
+    void sweepProgress()
+    {
+        const bool show = sweep.running;
+        progressBar.setVisible (show);
+        progressLabel.setVisible (show);
+        if (! show) { resized(); return; }
+
+        const int total = sweep.limit > 0 ? sweep.limit : sweep.work.size();
+        // The strip already has one value and one bar. A second variable would
+        // be a second source of truth for the same pixels.
+        scanProgress = total > 0 ? juce::jlimit (0.0, 1.0, (double) sweep.index / total) : 0.0;
+        progressLabel.setText (juce::String (sweep.done) + " / " + juce::String (total)
+                                 + (sweep.current.isNotEmpty() ? "   " + sweep.current : juce::String())
+                                 + "   ·   " + juce::String (sweep.mapped) + " mapped, "
+                                 + juce::String (sweep.sweptNothing + sweep.died) + " to review",
+                               juce::dontSendNotification);
+        resized();
+    }
+
+    void endSweep()
+    {
+        sweep.running = false;
+        sweepSay (juce::String ("\nSWEEP ") + (sweep.stopped ? "STOPPED BY YOU" : "DONE") + "\n"
+                    "  " + juce::String (sweep.mapped)       + " mapped\n"
+                    "  " + juce::String (sweep.sweptNothing) + " loaded but swept nothing (flagged for review)\n"
+                    "  " + juce::String (sweep.died)         + " failed to load or died\n"
+                    "  " + juce::String (sweep.skipped)      + " skipped (no category, no dial set, or quarantined)\n"
+                    "  log: " + sweep.log.getFullPathName());
+        sweepProgress();
     }
 
 private:
     static constexpr int kSweepBreaker = 10;
+
+    /** Shorter than a load's on purpose. A capture is worth some seconds and no
+        more; the map it belongs to is already written by the time this runs. */
+    static constexpr int kCaptureDeadlineMs = 20000;
 
     struct SweepCategory
     {
         juce::String category, disposition, why, kind;
         bool sweepable = false, hedged = false;
     };
+
+    /** Everything one sweep run needs, so the CLI loop and the GUI Timer drive
+        identical state rather than two copies that drift. */
+    struct SweepRun
+    {
+        std::map<juce::String, SweepCategory> cats;
+        juce::Array<ScannedPlugin> work;
+        juce::File   log;
+        juce::String current, breakerClass;
+        int index = 0, done = 0, limit = 0, progressBase = 0;
+        int mapped = 0, sweptNothing = 0, died = 0, skipped = 0, consecutive = 0;
+        bool running = false, dryRun = false;
+        bool stopRequested = false, stopped = false, tripped = false;
+    };
+    SweepRun sweep;
+
+    /** Every sweep line goes to stdout AND to the status strip, so the CLI and
+        the button report the same thing. */
+    void sweepSay (const juce::String& line)
+    {
+        std::cout << line << std::endl;
+        auto last = line.fromLastOccurrenceOf ("\n", false, false).trim();
+        if (last.isNotEmpty())
+            status.setText (last, juce::dontSendNotification);
+    }
+
 
     /** categories.json is keyed by base name + vendor, both lowered, with the
         mono/stereo variant suffix stripped -- a (m)/(s) pair is ONE product and
@@ -7959,6 +8099,29 @@ private:
         return "investigate before resuming.";
     }
 
+    /** The panel image, taken when the map is already safe on disk. */
+    ejmap::CaptureResult captureAfterSubmit (const ScannedPlugin& sp)
+    {
+        ejmap::CaptureResult cap;
+        auto dir = ledger.getRoot().getChildFile ("screenshots");
+        dir.createDirectory();
+        auto png = dir.getChildFile (currentFp + ".png");
+
+        {
+            Watchdog::Scope g (watchdog, "captureHostedEditor", sp.pluginId(), sp.desc.name,
+                               sp.desc.pluginFormatName, "capture", kCaptureDeadlineMs);
+            cap = ejmap::captureHostedEditorResult (*getTopLevelComponent(), png);
+        }
+
+        // An empty rectangle is not evidence and must not be filed as though it
+        // were. A blank PNG in the corpus looks like a panel nobody could read
+        // rather than a capture that produced nothing.
+        if (cap.state() != "ok")
+            png.deleteFile();
+
+        return cap;
+    }
+
     void writeSweepProgress (int finished)
     {
         ledger.getRoot().getChildFile ("sweep-progress.marker")
@@ -7967,7 +8130,8 @@ private:
 
     void appendSweepRow (const juce::File& log, const ScannedPlugin& sp,
                          const juce::String& cat, const juce::String& outcome,
-                         const juce::String& detail, int nControls)
+                         const juce::String& detail, int nControls,
+                         const ejmap::CaptureResult& cap)
     {
         // WRITTEN BEFORE THE NEXT LOAD STARTS. A crash costs the plugin in
         // flight and nothing else, which is the same resume-by-presence
@@ -7983,6 +8147,19 @@ private:
         o->setProperty ("outcome", outcome);
         o->setProperty ("detail", detail);
         o->setProperty ("controls", nControls);
+
+        // NAMED AFTER WHAT WAS OBSERVED, NEVER AFTER A CAUSE. "empty" says the
+        // rectangle came back blank; why is an open question. Calling it
+        // `unavailable_bridged` would have frozen a disproved cause into the
+        // corpus -- a Waves panel loaded IN-PROCESS, with no NSRemoteView
+        // anywhere in the view tree, captures at 0.0% too (5 Aug 2026).
+        if (cap.attempted || outcome == "mapped")
+        {
+            o->setProperty ("capture", cap.state());
+            o->setProperty ("capture_fraction", cap.fraction);
+            o->setProperty ("capture_w", cap.width);
+            o->setProperty ("capture_h", cap.height);
+        }
         o->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
 
         juce::FileOutputStream out (log);
@@ -8002,7 +8179,8 @@ private:
     /** One plugin, the four mechanical steps. Returns the outcome word the
         breaker counts on. */
     juce::String sweepOne (const ScannedPlugin& sp, const juce::String& cat,
-                           int& nControls, juce::String& detail)
+                           int& nControls, juce::String& detail,
+                           ejmap::CaptureResult& cap)
     {
         host.unload();
         assigning = false;
@@ -8037,6 +8215,16 @@ private:
         loadOkMarker (ledger.getRoot()).replaceWithText ("ok");
 
         auto* inst = host.getInstance();
+
+        // THE EDITOR HAS TO BE ATTACHED OR THERE IS NOTHING TO CAPTURE.
+        // Measured: without this the whole first sweep recorded
+        // capture=unavailable, 0x0, on 30 of 30 plugins -- captureHostedEditor
+        // looks for a hosted view under the peer and the sweep had never put
+        // one there. host.load creates the editor; releasing it into the holder
+        // is a separate step the wizard path does and this one did not.
+        attachEditor();
+        resized();
+
         listeners.attach (*inst);
         cal  = capture.calibrate (*inst, loadedId);
         mask = capture.buildNoiseMask (*inst, cal, loadedId);
@@ -8086,6 +8274,16 @@ private:
         auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
         if (! f.existsAsFile())
         { detail = "submit reported success and wrote no map"; return "submit_refused"; }
+
+        // CAPTURE AFTER SUBMIT, NEVER BEFORE.
+        //
+        // UAD Ampeg B15N hangs inside cacheDisplayInRect for 150+ seconds
+        // having loaded cleanly seconds earlier, and the watchdog's only move
+        // is to stop the process. Capture-first makes that hang cost a finished
+        // map; capture-last makes it cost only the image. Its own deadline,
+        // shorter than a load's, and a hang here NEVER quarantines: the plugin
+        // maps perfectly well.
+        cap = captureAfterSubmit (sp);
 
         detail.clear();
         return "mapped";
@@ -11988,6 +12186,7 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
+    juce::TextButton sweepAllButton;
     juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton, uploadButton, restartButton;
     juce::ToggleButton deepToggle;
     AssignPanel assignPanel;
