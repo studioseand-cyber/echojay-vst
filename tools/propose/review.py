@@ -24,7 +24,7 @@ import argparse, collections, datetime, glob, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from evidence import VOCAB, unit_family_conflict
-from bands import route
+from bands import route, tokenise, find_axis, classify_axis
 
 
 def _map_controls(root, fp):
@@ -60,10 +60,63 @@ def _band_set(root, doc):
 # watching them vanish from the pile.
 TERMINAL = {"accepted", "corrected", "not_a_dial", "verify_by_touch",
             "band_grouping_confirmed", "band_grouping_rejected",
-            "band_set_needs_manual_entry"}
+            "band_set_needs_manual_entry",
+            "cohort_channels", "cohort_bands", "cohort_distinct"}
+
+
+def cohorts(doc, map_params, taken):
+    """Escalated rows on one plugin that claim the SAME semantic.
+
+    THE COLLAPSE USED TO KEY ON A SUCCESSFUL GROUPING, so when route() refused --
+    a channel axis, no single axis, too few members -- every row fell through
+    individually with no memory between them. The mapper then answered fifteen
+    fragments of one question, and an audit found 22 of 46 duplicate-semantic
+    collisions were exactly that.
+
+    The detector was already there: gate 4 fires on these cohorts. This keys on
+    the cohort instead of on the grouping, so a set that cannot be GROUPED can
+    still be ANSWERED once.
+    """
+    by_sem = collections.defaultdict(list)
+    # SEED WITH WHAT THE MAP ALREADY HOLDS. PuigChild's 'Left Input' and
+    # Vertigo's 'OutGnL' are already params, so only their opposite channel is
+    # escalated -- and a cohort that only counts escalated rows sees one member
+    # and skips it, while the collision is real and lands on the map. Including
+    # the map's member makes the pair visible as a pair.
+    for sem, prm in (map_params or {}).items():
+        by_sem[sem].append({"name": prm.get("name"), "index": prm.get("index"),
+                            "evidence": {"index": prm.get("index"),
+                                         "range": None, "unit": prm.get("unit")},
+                            "in_map": True})
+    for e in doc.get("escalations", []):
+        if e["name"] in taken:
+            continue
+        sems = {a["semantic"] for a in e.get("arms", [])}
+        if len(sems) == 1:
+            sem = sems.pop()
+            if sem not in ("none", "__absent__"):
+                by_sem[sem].append(e)
+
+    out = []
+    for sem, rows in by_sem.items():
+        if len(rows) < 2 or not any(not r.get("in_map") for r in rows):
+            continue    # nothing escalated here: the map alone is not a question
+        names = [r["name"] for r in rows]
+        ax = find_axis(sorted(names))
+        kind = None
+        if ax:
+            pos, toks = ax
+            first = tokenise(sorted(names)[0])
+            kind = classify_axis(toks, first[:pos] + first[pos + 1:])
+        out.append({"semantic": sem, "rows": rows, "axis_kind": kind,
+                    "axis_tokens": (ax[1] if ax else None)})
+    return out
 
 
 def load_pile(root, only):
+    maps_by_fp = {}
+    for f in glob.glob(os.path.join(root, 'maps', '*.json')):
+        d = json.load(open(f)); maps_by_fp[d['fp']] = d
     prop_dir, dec_dir = os.path.join(root, "proposals"), os.path.join(root, "decisions")
     if not os.path.isdir(prop_dir):
         return [], {}
@@ -97,9 +150,26 @@ def load_pile(root, only):
                              "plugin": doc["plugin"], "category": doc.get("category"),
                              "grouping": grouped,
                              "covers": sorted(e["name"] for e in rows if e["name"] in in_bands)})
+        # Cohorts over whatever the band collapse did not take.
+        mp = (maps_by_fp.get(doc["fp"]) or {}).get("params") or {}
+        for co in cohorts(doc, mp, in_bands):
+            key = "cohort:" + co["semantic"] + ":" + ",".join(
+                str(r["evidence"]["index"]) for r in
+                sorted(co["rows"], key=lambda r: r["evidence"]["index"]))
+            if key in already:
+                for r in co["rows"]:
+                    in_bands.add(r["name"])
+                continue
+            pile.append({"kind": "cohort", "index": key, "fp": doc["fp"],
+                         "plugin": doc["plugin"], "category": doc.get("category"),
+                         "cohort": co,
+                         "covers": sorted(r["name"] for r in co["rows"])})
+            for r in co["rows"]:
+                in_bands.add(r["name"])
+
         for e in rows:
             if e["name"] in in_bands:
-                continue                      # answered by the band-set question
+                continue                      # answered by a set question
             pile.append({**e, "kind": "control", "fp": doc["fp"], "plugin": doc["plugin"],
                          "category": doc.get("category")})
     return pile, decided
@@ -109,10 +179,96 @@ def sort_key(row):
     """By semantic, then category. Band sets first -- each one clears a dozen
     rows, so they are the cheapest questions in the pile per row retired."""
     if row["kind"] == "band_set":
-        return (-1, "", row.get("category") or "", row["plugin"])
+        return (-2, "", row.get("category") or "", row["plugin"])
+    if row["kind"] == "cohort":
+        return (-1, row["cohort"]["semantic"], row.get("category") or "", row["plugin"])
     sems = sorted({a["semantic"] for a in row.get("arms", [])
                    if a["semantic"] not in ("none", "__absent__")})
     return (0 if sems else 1, sems[0] if sems else "", row.get("category") or "", row["plugin"])
+
+
+HINT = {
+    "channel": ("these look like ONE control across several channels",
+                "keep one, the rest addressable by name"),
+    "prefix":  ("these look like BANDS the grouping rules could not place",
+                "manual band entry takes a typed frequency and still orders by sweep"),
+    "digit":   ("these vary on a digit -- bands, channels or instances",
+                "the digit alone does not say which"),
+    None:      ("no single varying token: these may be genuinely different controls",
+                "queue item 17 -- params holds one per semantic"),
+}
+
+
+def show_cohort(row, n, total):
+    co = row["cohort"]
+    what, hint = HINT[co["axis_kind"]]
+    print("\n" + "=" * 74)
+    print(f"{row['plugin']}   {row.get('category') or 'uncategorised'}"
+          f"{'':>4}[{n} of {total}]")
+    print()
+    print(f"  {len(co['rows'])} CONTROLS ALL CLAIM {co['semantic']}  "
+          f"-- one question, not {len(co['rows'])}")
+    print(f"  {what}.")
+    if co["axis_tokens"]:
+        print(f"  they differ only in: {', '.join(co['axis_tokens'])}")
+    print(f"  {hint}.")
+    print()
+    for r in sorted(co["rows"], key=lambda r: r["evidence"]["index"]):
+        ev = r["evidence"]
+        rng = "-" if not ev.get("range") else f"{ev['range'][0]:g}..{ev['range'][1]:g}"
+        tag = "  (already in the map)" if r.get("in_map") else ""
+        print(f"    [{ev['index']:3d}] {r['name']:24s} {rng:>14s}  "
+              f"{ev['unit'] or ''}{tag}")
+    print()
+    print(f"  `params` is keyed by semantic, so only ONE of these can carry "
+          f"{co['semantic']}.")
+
+
+def decide_cohort(row):
+    co = row["cohort"]
+    keep = min(co["rows"], key=lambda r: (not r.get("in_map"), r["evidence"]["index"]))
+    print()
+    print(f"    [c] channels of one control -- {co['semantic']} goes to "
+          f"[{keep['evidence']['index']}] {keep['name']!r}, rest by name")
+    print(f"    [m] bands -- send the set to manual band entry")
+    print(f"    [x] genuinely different controls (queue 17) -- defer the set")
+    print(f"    [i] none of these, answer them one at a time")
+    print(f"    [d] defer            [q] save and quit")
+    while True:
+        try:
+            k = input("  > ").strip().lower()
+        except EOFError:
+            return None
+        if k == "q":
+            return None
+        if k == "d":
+            return {"outcome": "deferred"}
+        if k == "i":
+            return {"outcome": "cohort_answer_individually", "kind": "cohort",
+                    "semantic": None, "covers": row["covers"]}
+        if k in ("c", "m", "x"):
+            oc = {"c": "cohort_channels", "m": "cohort_bands",
+                  "x": "cohort_distinct"}[k]
+            out = {"outcome": oc, "kind": "cohort", "claimed_semantic": co["semantic"],
+                   "axis_kind": co["axis_kind"], "axis_tokens": co["axis_tokens"],
+                   "members": [{"index": r["evidence"]["index"], "name": r["name"],
+                                "in_map": bool(r.get("in_map"))}
+                               for r in sorted(co["rows"],
+                                               key=lambda r: r["evidence"]["index"])],
+                   "covers": row["covers"],
+                   "semantic_source": "human-corrected", "trust": "llm-classified"}
+            if k == "c":
+                # ONE carries the semantic; the rest stay name-addressed. The
+                # lowest index is the default because L/first-channel sorts
+                # first in every shape the corpus uses -- and it is SHOWN before
+                # it is taken, so a wrong guess is visible rather than silent.
+                out["semantic"] = co["semantic"]
+                out["carried_by"] = {"index": keep["evidence"]["index"],
+                                     "name": keep["name"]}
+                out["name_addressed"] = [m for m in out["members"]
+                                         if m["index"] != keep["evidence"]["index"]]
+            return out
+        print("  ?")
 
 
 def show_band_set(row, n, total):
@@ -426,11 +582,17 @@ def main():
     pile.sort(key=sort_key)
 
     if args.summary:
-        why = collections.Counter(
-            "BAND SET (stands in for many rows)" if r["kind"] == "band_set"
-            else r["why"].split(":")[0] for r in pile)
-        covered = sum(len(r["covers"]) for r in pile if r["kind"] == "band_set")
-        sets = sum(1 for r in pile if r["kind"] == "band_set")
+        def label(r):
+            if r["kind"] == "band_set":
+                return "BAND SET (stands in for many rows)"
+            if r["kind"] == "cohort":
+                k = r["cohort"]["axis_kind"] or "no shared axis"
+                return f"COHORT, {k} (stands in for {len(r['covers'])} rows)"
+            return (r.get("why") or "?").split(":")[0]
+        why = collections.Counter(label(r) for r in pile)
+        covered = sum(len(r["covers"]) for r in pile
+                      if r["kind"] in ("band_set", "cohort"))
+        sets = sum(1 for r in pile if r["kind"] in ("band_set", "cohort"))
         print(f"{len(pile)} questions across {len({r['plugin'] for r in pile})} plugins")
         if sets:
             print(f"  ({sets} of them are band sets, standing in for {covered} rows -- "
@@ -449,7 +611,10 @@ def main():
     made = 0
     claimed = collections.defaultdict(dict)
     for n, row in enumerate(pile, 1):
-        if row["kind"] == "band_set":
+        if row["kind"] == "cohort":
+            show_cohort(row, n, len(pile))
+            d = decide_cohort(row)
+        elif row["kind"] == "band_set":
             show_band_set(row, n, len(pile))
             d = decide_band_set(row)
         else:
@@ -473,8 +638,12 @@ def main():
 
         # A correction is a dataset, not a burial (EjmapAssignment.h).
         if d.get("semantic"):
-            claimed[row["fp"]][d["semantic"]] = (row["evidence"]["index"],
-                                                 row.get("name"), "this session")
+            # A cohort answer claims the semantic for ONE named member; a plain
+            # row claims it for itself.
+            holder = d.get("carried_by") or {"index": (row.get("evidence") or {}).get("index"),
+                                             "name": row.get("name")}
+            claimed[row["fp"]][d["semantic"]] = (holder.get("index"),
+                                                 holder.get("name"), "this session")
         if d["outcome"] == "corrected":
             with open(mis_path, "a") as f:
                 f.write(json.dumps({"fp": row["fp"], "plugin": row["plugin"],

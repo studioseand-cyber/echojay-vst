@@ -44,7 +44,23 @@ FOLD = {
     "HF": "HF", "HIGH": "HF", "HI": "HF",
 }
 
-CHANNEL_TOKENS = {"L", "R", "M", "S", "L/M", "R/S", "M/S", "MID/SIDE", "CH", "CHANNEL"}
+# CHANNEL IS A PROPERTY OF THE TOKEN SET, NOT OF A TOKEN.
+#
+# 'MID' is band vocabulary next to LOW and HIGH, and channel vocabulary next to
+# SIDE. Classifying token by token has to pick one and is wrong the other half
+# of the time, so the whole varying set is matched against known channel pairs.
+#
+# The three naming shapes the corpus actually uses, all of which must be caught
+# -- a rule that catches two of three is worse than one that catches none,
+# because it looks like it works:
+#     DPR-402      'Freq L/M'   vs 'Freq R/S'        slash pairs
+#     PuigChild    'Left Input' vs 'Right Input'     spelled out
+#     Vertigo      'OutGnL'     vs 'OutGnR'          single letter, compounded
+#     Manley       'Ch1HiBW'    vs 'Ch2HiBW'         a digit under a CH prefix
+CHANNEL_SETS = [
+    {"L", "R"}, {"LEFT", "RIGHT"}, {"MID", "SIDE"}, {"M", "S"},
+    {"L/M", "R/S"}, {"L/R"}, {"M/S"}, {"MID/SIDE"},
+]
 
 
 def tokenise(name):
@@ -105,15 +121,19 @@ def find_axis_subset(names):
     return best
 
 
-def classify_axis(tokens):
+def classify_axis(tokens, base=None):
     """'prefix' | 'digit' | 'channel' | None.
 
-    'channel' is a REASON, not a gate -- a channel marker is refused because it
-    is not band vocabulary, which classify_axis reports as None-by-another-name.
-    Naming it separately only makes the refusal message honest.
+    `base` is the invariant tokens around the axis, needed because a bare digit
+    is ambiguous: 'Ch1HiBW' vs 'Ch2HiBW' varies on a digit that is a CHANNEL,
+    and the only thing that says so is the CH sitting next to it.
     """
     up = [t.upper() for t in tokens]
-    if all(t in CHANNEL_TOKENS or re.fullmatch(r"CH\d*", t) for t in up):
+    if set(up) in CHANNEL_SETS:
+        return "channel"
+    if all(re.fullmatch(r"CH\d*", t) for t in up):
+        return "channel"
+    if base and all(t.isdigit() for t in up) and "CH" in [b.upper() for b in base]:
         return "channel"
     if all(t in FOLD for t in up) and len({FOLD[t] for t in up}) == len(up):
         return "prefix"
@@ -294,7 +314,8 @@ def route(controls, semantic_of):
         unassigned += [(n, "outside the largest axis-sharing set")
                        for n in names if n not in mapping.values()]
 
-        kind = classify_axis(list(mapping))
+        first = tokenise(names[0])
+        kind = classify_axis(list(mapping), first[:pos] + first[pos + 1:])
         if kind == "channel":
             return None, (f"the varying token {sorted(mapping)} is a channel marker, not a "
                           f"band index -- one band across two channels, not two bands")
