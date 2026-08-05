@@ -239,7 +239,12 @@ def order_bands(bands, controls_by_name, axis_kind):
                 f"The grouping stands; ordinals are for the matcher to settle.")
 
     keyed.sort(key=lambda x: x[0])
-    out = []
+    # Dropped bands are RETURNED with ordinal None, never swallowed. They were
+    # local to this function once, so route() could not learn which bands had
+    # vanished and the card reported "left out: 0" while two whole bands were
+    # missing -- the exact opacity the refusals do not have.
+    out = [{**b, "ordinal": None, "order_evidence": {"from": "unresolved", "why": w}}
+           for b, w in dropped]
     for ordinal, (key, b, freq_name) in enumerate(keyed, 1):
         fc = controls_by_name[freq_name]
         vals = [a[0] for a in fc.get("anchors") or [] if isinstance(a, list) and a]
@@ -275,6 +280,7 @@ def route(controls, semantic_of):
                       f"least two bands of at least two members")
 
     per_semantic, axis_kind, unassigned = {}, None, []
+    offered = set()
     for semantic in sorted(BAND_SEMANTICS):
         names = sorted(c["name"] for c in members if semantic_of[c["name"]] == semantic)
         if len(names) < 2:
@@ -305,6 +311,7 @@ def route(controls, semantic_of):
         elif kind != axis_kind:
             return None, (f"the {semantic} controls group on a {kind} axis but another "
                           f"semantic groups on a {axis_kind} axis")
+        offered |= set(mapping)
         per_semantic[semantic] = mapping
 
     if len(per_semantic) < 2:
@@ -334,12 +341,29 @@ def route(controls, semantic_of):
     if kept:
         for b in ordered:
             if b.get("ordinal") is None:
-                unassigned.append(
-                    (b["members"].get("freq_hz") or next(iter(b["members"].values())),
-                     b["order_evidence"].get("why", "no measured order")))
+                why = b["order_evidence"].get("why", "no measured order")
+                for n in b["members"].values():
+                    unassigned.append((n, f"band {b['label']!r}: {why}"))
         ordered = kept
 
+    # PARTIAL IS A FALSE CLAIM, NOT A PARTIAL ANSWER.
+    #
+    # UAD 4K Channel Strip and UAD Neve 88RS Legacy are four-band console EQs
+    # whose HF and HMF frequencies carry no declared hz unit, so only LF and LMF
+    # can be ordered. Proposing the two writes a map saying the plugin HAS two
+    # bands -- wrong about the device, and harder to spot later than no grouping
+    # at all, because a two-band EQ is a perfectly plausible thing to be.
+    #
+    # A band the evidence OFFERED and the rules could not place is evidence that
+    # something is unmeasured, not that it is absent. So the set is reported
+    # incomplete and the missing labels are named; a partial grouping must never
+    # be handed to the matcher as if it were the plugin's band set.
+    placed = {b["label"] for b in ordered}
+    missing = sorted({label_of(t) for t in offered} - placed)
     return {"grouping_source": "model-proposed", "axis": axis_kind,
+            "complete": not missing,
+            "bands_offered": len({label_of(t) for t in offered}),
+            "missing_bands": missing,
             "ordering": "swept" if any(b["ordinal"] for b in ordered) else "unresolved",
             "ordering_note": note,
             "bands": [{"ordinal": b["ordinal"], "label": b["label"],

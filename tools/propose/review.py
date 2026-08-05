@@ -54,6 +54,15 @@ def _band_set(root, doc):
     return got
 
 
+# Outcomes that SETTLE a row. "deferred" is deliberately not among them: defer
+# means "not now", and a deferred row that never returns is indistinguishable
+# from a decided one. Found 5 Aug 2026 by deferring two partial band sets and
+# watching them vanish from the pile.
+TERMINAL = {"accepted", "corrected", "not_a_dial", "verify_by_touch",
+            "band_grouping_confirmed", "band_grouping_rejected",
+            "band_set_needs_manual_entry"}
+
+
 def load_pile(root, only):
     prop_dir, dec_dir = os.path.join(root, "proposals"), os.path.join(root, "decisions")
     if not os.path.isdir(prop_dir):
@@ -68,7 +77,8 @@ def load_pile(root, only):
         dpath = os.path.join(dec_dir, fn)
         already = {}
         if os.path.exists(dpath):
-            already = {d["index"]: d for d in json.load(open(dpath))["decisions"]}
+            already = {d["index"]: d for d in json.load(open(dpath))["decisions"]
+                       if d.get("outcome") in TERMINAL}
         decided[doc["fp"]] = already
 
         grouped = _band_set(root, doc)
@@ -113,8 +123,16 @@ def show_band_set(row, n, total):
     print(f"{row['plugin']}   {row.get('category') or 'uncategorised'}"
           f"{'':>4}[{n} of {total}]")
     print()
-    print(f"  A BAND SET -- {len(g['bands'])} bands on a {g['axis']} axis, "
-          f"standing in for {len(row['covers'])} rows")
+    if g.get("complete", True):
+        print(f"  A BAND SET -- {len(g['bands'])} bands on a {g['axis']} axis, "
+              f"standing in for {len(row['covers'])} rows")
+    else:
+        print(f"  A PARTIAL BAND SET -- the evidence offers "
+              f"{g['bands_offered']} bands on a {g['axis']} axis and only "
+              f"{len(g['bands'])} could be placed.")
+        print(f"  MISSING: {', '.join(g['missing_bands'])}")
+        print(f"  Proposing {len(g['bands'])} would claim this plugin HAS "
+              f"{len(g['bands'])} bands, which is wrong about the device.")
     print()
     for b in g["bands"]:
         ordinal = f"#{b['ordinal']}" if b.get("ordinal") else " ?"
@@ -129,18 +147,29 @@ def show_band_set(row, n, total):
     else:
         print(f"  ordering: UNRESOLVED -- {g.get('ordering_note') or ev.get('why', '')}")
         print(f"            the grouping is the question here; ordinals are the matcher's")
-    if g.get("unassigned"):
-        print()
-        print("  left out of the grouping:")
-        for u in g["unassigned"][:6]:
+    left = g.get("unassigned") or []
+    print()
+    print(f"  band-semantic controls found: {len(row['covers']) + len(left)}   "
+          f"placed in the grouping: {sum(len(b['members']) for b in g['bands'])}   "
+          f"left out: {len(left)}")
+    if left:
+        for u in left:
             print(f"    [{u['index']}] {u['name']!r} -- {u['why']}")
 
 
 def decide_band_set(row):
     g = row["grouping"]
+    partial = not g.get("complete", True)
     print()
-    print("    [y] the grouping is right       [n] it is not -- send the rows back")
-    print("    [d] defer                       [q] save and quit")
+    if partial:
+        # There is no subset to accept. The bands that could not be placed are
+        # unmeasured, not absent, and manual band entry is the tool built for
+        # exactly that -- it takes a typed frequency and still orders by sweep.
+        print("    [m] send to manual band entry   [n] not a band set at all")
+        print("    [d] defer                       [q] save and quit")
+    else:
+        print("    [y] the grouping is right       [n] it is not -- send the rows back")
+        print("    [d] defer                       [q] save and quit")
     while True:
         try:
             k = input("  > ").strip().lower()
@@ -150,7 +179,20 @@ def decide_band_set(row):
             return None
         if k == "d":
             return {"outcome": "deferred"}
-        if k in ("y", "n"):
+        if partial and k == "m":
+            return {"outcome": "band_set_needs_manual_entry", "kind": "band_set",
+                    "axis": g["axis"], "ordering": g["ordering"],
+                    "bands_offered": g["bands_offered"],
+                    "missing_bands": g["missing_bands"],
+                    "bands": [{"label": b["label"], "ordinal": b.get("ordinal"),
+                               "members": b["members"]} for b in g["bands"]],
+                    "covers": row["covers"],
+                    "semantic_source": "human-corrected", "trust": "llm-classified"}
+        if partial and k == "y":
+            print("  There is no complete grouping to accept -- "
+                  f"{', '.join(g['missing_bands'])} could not be placed.")
+            continue
+        if not partial and k in ("y", "n"):
             # Confirming a grouping is READING, exactly like waving through a
             # flat proposal: it records that a human looked. It writes no map --
             # the grouping still has to reach EjmapBands and survive the stride
@@ -308,7 +350,9 @@ def main():
                                     "arms": row.get("arms", []),
                                     "why_escalated": row["why"]}) + "\n")
 
+    deferred = sum(1 for r in pile[:made] if False)  # placeholder, see below
     print(f"\n{made} decided, {len(pile)-made} left.  -> {dec_dir}")
+    print("   (deferred rows return next run -- defer means not now, not never)")
     if os.path.exists(mis_path):
         print(f"corrections recorded -> {mis_path}")
 
