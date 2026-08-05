@@ -49,9 +49,15 @@ static juce::String archsOfBundle (const juce::File& bundle)
     return p.readAllProcessOutput().trim();
 }
 
+int runModalProbe (const juce::String& identifier, int seconds);
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
+
+    if (argc >= 3 && juce::String (argv[1]) == "--modal")
+        return runModalProbe (juce::String (juce::CharPointer_UTF8 (argv[2])),
+                              argc >= 4 ? juce::String (argv[3]).getIntValue() : 20);
 
     if (argc < 2)
     {

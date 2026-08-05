@@ -238,11 +238,13 @@ endif()
 # pairing of the bundle's architectures with the running process's.
 
 juce_add_console_app(ejmap-arch-probe PRODUCT_NAME "ejmap-arch-probe")
-target_sources(ejmap-arch-probe PRIVATE tests/ArchProbe.cpp Source/EjmapViewLayer.mm)
+target_sources(ejmap-arch-probe PRIVATE tests/ArchProbe.cpp tests/ModalProbe.cpp Source/EjmapViewLayer.mm)
 target_compile_definitions(ejmap-arch-probe PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_PLUGINHOST_VST3=1
+    # The modal probe's subject is an AudioUnit: UAD ships AU only here.
+    JUCE_PLUGINHOST_AU=1
     # runDispatchLoopUntil is only declared with a modal loop available, and the
     # probe has to let a panel settle before judging it empty.
     JUCE_MODAL_LOOPS_PERMITTED=1)
@@ -251,5 +253,6 @@ target_link_libraries(ejmap-arch-probe PRIVATE
     juce::juce_core juce::juce_events juce::juce_gui_basics juce::juce_audio_processors
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 if(APPLE)
-    target_link_libraries(ejmap-arch-probe PRIVATE "-framework CoreAudioKit")
+    target_link_libraries(ejmap-arch-probe PRIVATE "-framework CoreAudioKit"
+                                                   "-framework ApplicationServices")
 endif()
