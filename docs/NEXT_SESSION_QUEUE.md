@@ -1012,7 +1012,20 @@ on. One plugin, parked; ADA (fixed) and Cenozoix (item 12) are the general cases
 
 ---
 
-## 14. WAITING ON THE DASHBOARD REPO — two items, one session
+## 14. WAITING ON THE DASHBOARD REPO — now THREE items, one session
+
+> **SPECIFIED 5 Aug 2026: `docs/SERVER_CONTRACT.md`.** The pipeline joined these
+> two, because all three share the same auth and the same storage keys and
+> splitting them would decide the same questions three times. Build against the
+> contract, not against a stub.
+>
+> **14a is smaller than written.** The item asks for a `settings_by_name` field.
+> It is not needed: `applySettings` has resolved an unmapped `settings_structured`
+> key by EXACT control name against `map.controls` since 31 July, so
+> `{"threshold_db": -18, "Sustain": 4}` already works in ONE object with Tier 1
+> taking precedence. This item was written on 4 August and did not account for
+> it. What the server needs is to PASS control names through, not a new field --
+> a second key space for one namespace would also need a merge rule.
 
 Both are half-built here and worthless until the server half lands. They are listed together
 so they can be done in one sitting rather than two.
