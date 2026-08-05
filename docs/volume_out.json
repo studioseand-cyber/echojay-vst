@@ -1,0 +1,1502 @@
+[
+ {
+  "name": "SSL Native X-Saturator v6",
+  "vendor": "SSL",
+  "format": "AudioUnit",
+  "declared": "Fx|Distortion",
+  "a": "saturation",
+  "a_conf": "high",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Moog Multimode Filter XL",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Filter",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "GW VoiceCentric (m->s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "channel_strip",
+  "a_conf": "low",
+  "b": "channel_strip",
+  "b_conf": "high"
+ },
+ {
+  "name": "X-FDBK (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "C1 comp-sc (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "MReverb",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Reverb",
+  "a": "reverb",
+  "a_conf": "high",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "CLA Vocals (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "channel_strip",
+  "a_conf": "high",
+  "b": "channel_strip",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD API 2500",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Dynamics",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "MetaFilter (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "B360 (6->4)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "Infiltrator",
+  "vendor": "Devious Machines",
+  "format": "AudioUnit",
+  "declared": "Fx|Filter",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "MannyM Distortion (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "saturation",
+  "a_conf": "high",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Sphere Mic Collection 180",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Microphone",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "C1 comp (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Summit Audio TLA-100A",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Dynamics",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "bx_delay2500",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "delay",
+  "a_conf": "high",
+  "b": "delay",
+  "b_conf": "high"
+ },
+ {
+  "name": "IR-L (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "reverb",
+  "a_conf": "high",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "NX Ambisonics (4->4)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "IR1 (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "reverb",
+  "a_conf": "high",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "MMorph",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "bx_panEQ",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "B360 (1->4)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "MXXX",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "EKramer VC (m->s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "channel_strip",
+  "a_conf": "high",
+  "b": "channel_strip",
+  "b_conf": "high"
+ },
+ {
+  "name": "Schoeps Mono Upmix 1to3",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "MAGICFLOWZL",
+  "vendor": "Studio DMI",
+  "format": "VST3",
+  "declared": "Fx|Tools",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "low"
+ },
+ {
+  "name": "UAD Harrison 32C",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|EQ",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "OVox (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "EMO-Generator (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "not_a_processor",
+  "a_conf": "high",
+  "b": "not_a_processor",
+  "b_conf": "high"
+ },
+ {
+  "name": "WLM Plus (6->6)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "not_a_processor",
+  "a_conf": "high",
+  "b": "not_a_processor",
+  "b_conf": "high"
+ },
+ {
+  "name": "Ampeg SVT3Pro",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "amp_sim",
+  "a_conf": "high",
+  "b": "amp_sim",
+  "b_conf": "high"
+ },
+ {
+  "name": "SuperTap 6-Taps (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "delay",
+  "a_conf": "high",
+  "b": "delay",
+  "b_conf": "high"
+ },
+ {
+  "name": "Eiosis AirEQ Premium",
+  "vendor": "Eiosis",
+  "format": "AudioUnit",
+  "declared": "Fx|EQ",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "MRhythmizer",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Time",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "H-EQ-Light (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "R360 (1->6)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "reverb",
+  "a_conf": "high",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "bx_shredspread",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "GEQ Classic (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "MChannelMatrix",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Tools",
+  "a": "not_a_processor",
+  "a_conf": "high",
+  "b": "not_a_processor",
+  "b_conf": "high"
+ },
+ {
+  "name": "ENGL E646 VS",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "amp_sim",
+  "a_conf": "high",
+  "b": "amp_sim",
+  "b_conf": "high"
+ },
+ {
+  "name": "MWaveShaperMB",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Distortion",
+  "a": "saturation",
+  "a_conf": "high",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "Submarine (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "MTransient",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Dynamics",
+  "a": "transient_shaper",
+  "a_conf": "high",
+  "b": "transient_shaper",
+  "b_conf": "high"
+ },
+ {
+  "name": "L2 (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "limiter",
+  "a_conf": "high",
+  "b": "limiter",
+  "b_conf": "high"
+ },
+ {
+  "name": "C4 (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "Pitchwheel",
+  "vendor": "QuikQuak",
+  "format": "AudioUnit",
+  "declared": "Fx|Pitch Shift",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "CLA-2A (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "VEQ4 (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Neve 1081",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|EQ",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "MSaturatorMB",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Distortion",
+  "a": "saturation",
+  "a_conf": "high",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Studer A800",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Distortion",
+  "a": "saturation",
+  "a_conf": "high",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "MWobbler",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Filter",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "B360 (2->4)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "Sie-Q",
+  "vendor": "Soundtoys",
+  "format": "VST3",
+  "declared": "Fx|Distortion|EQ",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "Lindell SBC",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "CLA MixHub Lite (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "channel_strip",
+  "a_conf": "high",
+  "b": "channel_strip",
+  "b_conf": "high"
+ },
+ {
+  "name": "MVibrato",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Modulation",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "bx_subfilter",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "low",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "GEQ Modern (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "elysia nvelope",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "transient_shaper",
+  "a_conf": "high",
+  "b": "transient_shaper",
+  "b_conf": "high"
+ },
+ {
+  "name": "kHs Ring Mod",
+  "vendor": "Kilohearts",
+  "format": "AudioUnit",
+  "declared": "Fx|Modulation",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "TDR SlickEQ M",
+  "vendor": "Tokyo Dawn Labs",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "REQ 2 (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "Solid Dynamics",
+  "vendor": "Native Instruments",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "L1 limiter (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "limiter",
+  "a_conf": "high",
+  "b": "limiter",
+  "b_conf": "high"
+ },
+ {
+  "name": "NX (m->s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "Chandler GAV19T",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "amp_sim",
+  "a_conf": "high",
+  "b": "amp_sim",
+  "b_conf": "high"
+ },
+ {
+  "name": "Abbey Road Studio 3 (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "REQ 4 (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "MFlanger",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Modulation",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "Bass XXL",
+  "vendor": "Denise Audio",
+  "format": "AudioUnit",
+  "declared": "Fx",
+  "a": "none",
+  "a_conf": "low",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "StandardCLIP",
+  "vendor": "SIR Audio Tools",
+  "format": "AudioUnit",
+  "declared": "Fx|Distortion|Dynamics|Mastering",
+  "a": "limiter",
+  "a_conf": "high",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "kHs Haas",
+  "vendor": "Kilohearts",
+  "format": "AudioUnit",
+  "declared": "Fx|Spatial",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "R360 (6->6)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "reverb",
+  "a_conf": "low",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "elysia karacter mix",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "saturation",
+  "a_conf": "high",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "C1 comp-sc (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "GTR Stomp 2 (m->s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Capitol Chambers",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Reverb",
+  "a": "reverb",
+  "a_conf": "high",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "Storch Filter",
+  "vendor": "Slate Digital",
+  "format": "AudioUnit",
+  "declared": "Fx|EQ",
+  "a": "eq",
+  "a_conf": "low",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "Kramer HLS (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "AMEK Mastering Compressor",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "bx_metal2",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "amp_sim",
+  "a_conf": "low",
+  "b": "amp_sim",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Precision Maximizer",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Mastering",
+  "a": "saturation",
+  "a_conf": "low",
+  "b": "limiter",
+  "b_conf": "high"
+ },
+ {
+  "name": "CLA Drums (m->s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "channel_strip",
+  "a_conf": "low",
+  "b": "channel_strip",
+  "b_conf": "high"
+ },
+ {
+  "name": "MStereoScope",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Stereo",
+  "a": "not_a_processor",
+  "a_conf": "high",
+  "b": "not_a_processor",
+  "b_conf": "high"
+ },
+ {
+  "name": "MTurboReverb",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Reverb",
+  "a": "reverb",
+  "a_conf": "high",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "Shadow Hills Mastering Compressor",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "bx_crispyscale",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "low",
+  "b": "not_a_processor",
+  "b_conf": "high"
+ },
+ {
+  "name": "Maserati ACG (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "channel_strip",
+  "a_conf": "low",
+  "b": "channel_strip",
+  "b_conf": "high"
+ },
+ {
+  "name": "Abbey Road Vinyl (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "saturation",
+  "a_conf": "low",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "CLA MixHub Lite (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "channel_strip",
+  "a_conf": "high",
+  "b": "channel_strip",
+  "b_conf": "high"
+ },
+ {
+  "name": "PRS Dallas (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "amp_sim",
+  "a_conf": "high",
+  "b": "amp_sim",
+  "b_conf": "high"
+ },
+ {
+  "name": "kHs Tape Stop",
+  "vendor": "Kilohearts",
+  "format": "AudioUnit",
+  "declared": "Fx",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "bx_XL V2",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "limiter",
+  "a_conf": "high",
+  "b": "limiter",
+  "b_conf": "high"
+ },
+ {
+  "name": "IR360 sound field (2->5)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "reverb",
+  "a_conf": "high",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "M360 Mixdown (6->6)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "not_a_processor",
+  "a_conf": "low",
+  "b": "not_a_processor",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Ocean Way Mic Collection 180",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Microphone",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "DeBreath (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Neve 33609SE",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Dynamics",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "SSLGChannel (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "channel_strip",
+  "a_conf": "high",
+  "b": "channel_strip",
+  "b_conf": "high"
+ },
+ {
+  "name": "THE OVEN",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "saturation",
+  "a_conf": "low",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "kHs Compressor",
+  "vendor": "Kilohearts",
+  "format": "AudioUnit",
+  "declared": "Fx|Dynamics",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "REDD37-51 (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "saturation",
+  "a_conf": "low",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "PAZ- Analyzer (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "not_a_processor",
+  "a_conf": "high",
+  "b": "not_a_processor",
+  "b_conf": "high"
+ },
+ {
+  "name": "Kramer Tape (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "saturation",
+  "a_conf": "high",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD bx_masterdesk Classic",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|EQ",
+  "a": "channel_strip",
+  "a_conf": "high",
+  "b": "channel_strip",
+  "b_conf": "high"
+ },
+ {
+  "name": "APB Moo X Mixer",
+  "vendor": "McDSP",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "saturation",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "low"
+ },
+ {
+  "name": "Maserati DRM (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "channel_strip",
+  "a_conf": "low",
+  "b": "channel_strip",
+  "b_conf": "high"
+ },
+ {
+  "name": "Inf EQ",
+  "vendor": "Slate Digital",
+  "format": "AudioUnit",
+  "declared": "Fx|EQ",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "Unfiltered Audio Byome",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "DynOne3",
+  "vendor": "Leapwing Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Dynamics",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "Kaleidoscopes (m->s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Pultec-Pro Legacy",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|EQ",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "EMO-Q4 (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "R360 (5->5)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "reverb",
+  "a_conf": "high",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "Q4 (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "Solid Bus Comp",
+  "vendor": "Native Instruments",
+  "format": "AudioUnit",
+  "declared": "Fx|Dynamics",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "WLM Plus (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "not_a_processor",
+  "a_conf": "high",
+  "b": "limiter",
+  "b_conf": "high"
+ },
+ {
+  "name": "WLM Meter (5->5)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "not_a_processor",
+  "a_conf": "high",
+  "b": "not_a_processor",
+  "b_conf": "high"
+ },
+ {
+  "name": "CLA Guitars (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "channel_strip",
+  "a_conf": "low",
+  "b": "amp_sim",
+  "b_conf": "low"
+ },
+ {
+  "name": "Insight 2",
+  "vendor": "iZotope",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "not_a_processor",
+  "a_conf": "high",
+  "b": "not_a_processor",
+  "b_conf": "high"
+ },
+ {
+  "name": "X-Crackle (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "MWobblerMB",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Filter",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "PS22 XSplit (m->s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Neve 1081SE",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|EQ",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "bx_yellowdrive",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "saturation",
+  "a_conf": "high",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "MChorusMB",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Modulation",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "PS22 XSplit (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "bx_bluechorus2",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "TrueVerb (m->s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "reverb",
+  "a_conf": "high",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "PSE (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "gate",
+  "a_conf": "high",
+  "b": "gate",
+  "b_conf": "high"
+ },
+ {
+  "name": "Murda Melodies",
+  "vendor": "Slate Digital",
+  "format": "AudioUnit",
+  "declared": "Fx",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Hemisphere Mic Collection",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Microphone",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "IRLive (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "reverb",
+  "a_conf": "high",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Galaxy Tape Echo",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Delay",
+  "a": "delay",
+  "a_conf": "high",
+  "b": "delay",
+  "b_conf": "high"
+ },
+ {
+  "name": "Scheps 73 (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Pultec EQP-1A",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|EQ",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Pultec EQP-1A Legacy",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|EQ",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "Reel ADT Live (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "high",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "AR TG Mastering (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "channel_strip",
+  "a_conf": "high",
+  "b": "channel_strip",
+  "b_conf": "high"
+ },
+ {
+  "name": "IDR360 (5->5)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "none",
+  "a_conf": "low",
+  "b": "none",
+  "b_conf": "high"
+ },
+ {
+  "name": "Abbey Road Plates (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "reverb",
+  "a_conf": "high",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "F6 (m)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "eq",
+  "a_conf": "high",
+  "b": "eq",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Precision Reflection Engine",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Reverb",
+  "a": "reverb",
+  "a_conf": "high",
+  "b": "reverb",
+  "b_conf": "high"
+ },
+ {
+  "name": "GW ToneCentric (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "saturation",
+  "a_conf": "low",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "MAnalyzer",
+  "vendor": "MeldaProduction",
+  "format": "AudioUnit",
+  "declared": "Fx|Tools",
+  "a": "not_a_processor",
+  "a_conf": "high",
+  "b": "not_a_processor",
+  "b_conf": "high"
+ },
+ {
+  "name": "UAD Fairchild 670",
+  "vendor": "Universal Audio",
+  "format": "AudioUnit",
+  "declared": "Fx|Dynamics",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "elysia karacter master",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "saturation",
+  "a_conf": "high",
+  "b": "saturation",
+  "b_conf": "high"
+ },
+ {
+  "name": "Maag MAGNUM-K",
+  "vendor": "Plugin Alliance",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "compressor",
+  "a_conf": "low",
+  "b": "compressor",
+  "b_conf": "high"
+ },
+ {
+  "name": "SSLComp (s)",
+  "vendor": "Waves",
+  "format": "AudioUnit",
+  "declared": "",
+  "a": "compressor",
+  "a_conf": "high",
+  "b": "compressor",
+  "b_conf": "high"
+ }
+]
