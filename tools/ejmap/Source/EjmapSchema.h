@@ -72,8 +72,23 @@ enum class CaptureSource { poll, listener, both };
     LoadOutcome is NOT part of the map payload. It appears only in the ledger and
     in PluginHost::LoadResult, so extending it does not touch the wire format and
     needs no kMapSchemaVersion bump.
+
+    diedDuringLoad IS NOT crash_on_load, and the rename is the point. A SIGKILL
+    and a SIGSEGV leave IDENTICAL evidence -- an inflight stake with no
+    completion -- so the old name asserted a cause the evidence does not carry.
+    An operator force-quitting a slow load produced rows saying the plugin
+    crashed. The row now says what was observed (the process died while this
+    plugin was loading) and carries a separate `certainty` field for whether a
+    crash report corroborates it.
+
+    Rows written before 5 Aug 2026 say "crash_on_load". kLegacyDeathOutcome is
+    that string, and every counter matches BOTH: 28 historic death rows are the
+    only determinism evidence this project has, and a rename that silently
+    dropped them would reset every retry count to zero.
 */
-enum class LoadOutcome { ok, crashOnLoad, timeout, licenseRefused, noEditor, noParams, quarantined, noTypes, restarted };
+enum class LoadOutcome { ok, diedDuringLoad, timeout, licenseRefused, noEditor, noParams, quarantined, noTypes, restarted };
+
+inline constexpr const char* kLegacyDeathOutcome = "crash_on_load";
 
 //==============================================================================
 inline juce::String toString (Mode m)
@@ -124,7 +139,7 @@ inline juce::String toString (LoadOutcome o)
     switch (o)
     {
         case LoadOutcome::ok:             return "ok";
-        case LoadOutcome::crashOnLoad:    return "crash_on_load";
+        case LoadOutcome::diedDuringLoad: return "died_during_load";
         case LoadOutcome::timeout:        return "timeout";
         case LoadOutcome::licenseRefused: return "license_refused";
         case LoadOutcome::noEditor:       return "no_editor";

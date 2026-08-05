@@ -78,6 +78,29 @@ struct LedgerRecord
     */
     juce::String crashThread, crashTopImage, attribution;
 
+    /** DEATH ROWS ONLY, and a different question from `attribution`.
+
+        `attribution` asks WHO faulted, by reading the stack. `certainty` asks
+        the prior question -- whether a fault happened at all:
+
+          "corroborated"  a crash report was found for this death
+          "unattributed"  none was, so this may be an operator force-quit of a
+                          slow load rather than a plugin fault
+
+        Absence is WEAK evidence: reports can be delayed or disabled. Measured
+        on this machine, 26 of 28 death rows found one, so the test does
+        discriminate here -- but it is recorded as an observation, not resolved
+        into a cause.
+    */
+    juce::String certainty;
+
+    /** Wall-clock milliseconds the load took, -1 when not recorded (every row
+        written before 5 Aug 2026). The quarantine row carries the series so an
+        operator can see whether the deaths were fast faults or slow ones, since
+        a slow load is what gets force-quit.
+    */
+    int loadMs = -1;
+
     /** The run that produced this row. Filled in by the Ledger; a caller does
         not get to choose it, except for a crash row, which is attributed to the
         run that DIED rather than the run that found the wreckage.
@@ -106,8 +129,104 @@ struct LedgerRecord
         if (crashThread.isNotEmpty())   o->setProperty ("crash_thread", crashThread);
         if (crashTopImage.isNotEmpty()) o->setProperty ("crash_top_image", crashTopImage);
         if (attribution.isNotEmpty()) o->setProperty ("attribution", attribution);
+        if (certainty.isNotEmpty())   o->setProperty ("certainty", certainty);
+        if (loadMs >= 0)              o->setProperty ("load_ms", loadMs);
         if (recoveredByRunId.isNotEmpty())
             o->setProperty ("recovered_by_run", recoveredByRunId);
+        return juce::var (o);
+    }
+};
+
+//==============================================================================
+/** How many corroborated deaths at one stage before a plugin is quarantined.
+
+    NOT CHOSEN -- computed from 7,055 ledger records over 917 plugins. Nine
+    plugins have both failed a load and succeeded at one, and that is the
+    population a single-crash rule loses. The worst observed failure rate among
+    them is 33.3% (Solid EQ, 1 of 3), so the probability of quarantining a
+    working plugin by bad luck is 33.3% at N=1, 11.1% at N=2, 3.7% at N=3 and
+    1.2% at N=4.
+
+    N=3 is the knee. N=4 buys 2.5 points and costs a third more load time on the
+    ~350 plugins that always fail. Three of the nine are M9's own signed test
+    subjects: today's rule would have quarantined the tool's own fixtures.
+*/
+inline constexpr int kRetryAttempts = 3;
+
+/** What the ledger knows about one plugin at one stage, read at the moment a
+    quarantine decision is made. Nothing here is newly recorded -- every number
+    is already on disk -- but nothing read it before, so the decision was made
+    blind.
+
+    It changes what the operator does: prior_ok 0 means do not bother, prior_ok
+    4 means retry.
+*/
+struct RetryEvidence
+{
+    juce::String pluginId, stage;
+
+    int attempts = 0;               // same-stage rows for this BINARY
+    int failures = 0;               // deaths among them
+    int corroboratedFailures = 0;   // ...with a crash report found
+    int unattributedFailures = 0;   // ...without one. These do NOT count toward N
+
+    juce::StringArray outcomes;     // in ledger order
+    juce::Array<int>  loadMs;       // -1 where the row predates the field
+
+    /** STAGE-SCOPED, and that is the whole point of the field.
+
+        Drawmer 1973 carries eight "ok" rows. Every one is stage "scan" with
+        detail "1 description(s)" -- and a SCAN DESCRIBES A PLUGIN WITHOUT
+        INSTANTIATING IT. Its AudioUnit has never once loaded successfully.
+
+        An unscoped count would read "8 prior successes", treat a plugin that
+        has never loaded as a well-behaved one having a bad roll, and keep
+        releasing it from quarantine to re-crash on it nightly forever. A load
+        failure is vouched for only by prior LOAD successes.
+    */
+    int priorOkInLedger = 0;
+
+    /** Of those, the ones in the run being judged. A crash row is recovered by
+        the NEXT launch, so "this session" means the session that died, matched
+        by run_id -- which is on disk, so it survives the process that had it.
+    */
+    int priorOkThisSession = 0;
+
+    bool nonDeterministic() const { return priorOkInLedger > 0; }
+
+    /** The note that goes in the quarantine row when prior successes exist. It
+        exists to stop an operator reading a quarantine as a verdict.
+    */
+    juce::String note() const
+    {
+        if (! nonDeterministic())
+            return {};
+
+        juce::String n;
+        n << "NON-DETERMINISTIC: this plugin has loaded successfully "
+          << priorOkInLedger << " time(s) before at stage " << stage;
+        if (priorOkThisSession > 0)
+            n << ", " << priorOkThisSession << " of them in this session";
+        n << ". A quarantine here is a single bad roll, not a verdict on the plugin.";
+        return n;
+    }
+
+    juce::var toVar() const
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("stage", stage);
+        o->setProperty ("attempts", attempts);
+        o->setProperty ("failures", failures);
+        o->setProperty ("corroborated_failures", corroboratedFailures);
+        o->setProperty ("unattributed_failures", unattributedFailures);
+        o->setProperty ("prior_ok_in_ledger", priorOkInLedger);
+        o->setProperty ("prior_ok_this_session", priorOkThisSession);
+
+        juce::Array<juce::var> outs, ms;
+        for (const auto& x : outcomes) outs.add (x);
+        for (auto x : loadMs)          ms.add (x);
+        o->setProperty ("outcomes", outs);
+        o->setProperty ("load_ms", ms);
         return juce::var (o);
     }
 };
@@ -135,6 +254,11 @@ struct QuarantineEntry
         already failed for 14 components on this machine.
     */
     juce::String auVersion;
+
+    /** What the ledger said at the moment this was written. Empty on entries
+        written before the retry rule, and on hand quarantines.
+    */
+    RetryEvidence evidence;
 
     bool isAudioUnit() const { return pluginId.startsWith ("AudioUnit:"); }
 };
@@ -214,7 +338,7 @@ public:
             r.format   = v.getProperty ("format", "").toString();
             r.version  = v.getProperty ("version", "").toString();
             r.stage    = v.getProperty ("stage", "load").toString();
-            r.outcome  = LoadOutcome::crashOnLoad;
+            r.outcome  = LoadOutcome::diedDuringLoad;
 
             // Attributed to the run that DIED, not the one reading the wreckage.
             r.runId            = v.getProperty ("run_id", kLegacyRunId).toString();
@@ -229,12 +353,23 @@ public:
             // deliberately manual to undo.
             //
             // The stack is on disk, so read it instead of guessing.
-            const auto facts = findCrashFacts (v.getProperty ("at", "").toString());
+            auto facts = findCrashFacts (v.getProperty ("at", "").toString());
+            if (auto* o = testOnlyCrashOverride())
+            {
+                facts.found       = o->found;
+                facts.attribution = o->attribution;
+            }
             r.crashThread   = facts.threadName.isNotEmpty() ? facts.threadName
                                                             : juce::String ("(unnamed)");
             r.crashTopImage = facts.topImage;
             r.attribution   = facts.found ? facts.attribution : juce::String ("unknown");
             const bool ours = r.attribution == "host";
+
+            // WHETHER A FAULT HAPPENED AT ALL, which is a prior question to
+            // whose fault it was. A SIGKILL and a SIGSEGV leave identical
+            // evidence here -- a stake with no completion -- so the row stops
+            // asserting a cause and records what was observed instead.
+            r.certainty = facts.found ? "corroborated" : "unattributed";
 
             // Same outcome, honest about which site produced it. A VST3 that
             // kills the process while the format is reading its factory did not
@@ -251,20 +386,57 @@ public:
                          << ", top image: " << (facts.topImage.isEmpty() ? "?" : facts.topImage)
                          << ", attributed to " << r.attribution << "]";
 
-            // Counted BEFORE this row is appended, or the row counts as its own
-            // predecessor and every first crash looks like a repeat.
-            const int priors = countPriorCrashesLocked (id);
+            // Read BEFORE this row is appended, or the row counts as its own
+            // predecessor and every first death looks like a repeat.
+            auto ev = retryEvidenceForLocked (id, r.stage, r.runId);
 
-            if (ours && priors == 0)
-                r.detail << " [not quarantined: the fault was on our own thread]";
+            // AN UNATTRIBUTED DEATH DOES NOT COUNT TOWARD THE THREE. One of
+            // them may be the operator losing patience with a slow load, and
+            // CLA-76 (m) takes 1.6 s against its sibling's 509 ms.
+            //
+            // The hole this leaves is real and bounded: a machine with crash
+            // reporting disabled would never quarantine anything. Measured
+            // here, 26 of 28 death rows found a report, so the discount applies
+            // to ~7% of them -- and a plugin dying unattributed over and over
+            // is NAMED in the row below rather than hidden, so it is visible
+            // without being acted on from evidence that cannot support it.
+            ev.attempts  += 1;
+            ev.failures  += 1;
+            ev.outcomes.add (toString (r.outcome));
+            ev.loadMs.add (r.loadMs);
+            (facts.found ? ev.corroboratedFailures : ev.unattributedFailures) += 1;
+
+            const bool quarantineNow = ev.corroboratedFailures >= kRetryAttempts;
+
+            r.detail << " [attempt " << ev.corroboratedFailures << " of "
+                     << kRetryAttempts << " at stage " << r.stage;
+            if (ev.unattributedFailures > 0)
+                r.detail << "; " << ev.unattributedFailures
+                         << " unattributed death(s) not counted";
+            r.detail << (quarantineNow ? ": quarantined]" : ": not quarantined yet]");
+
+            // Kept from the single-crash rule, weakened to a label rather than
+            // an exemption. The first real crash on this tool was OURS -- a
+            // SIGSEGV on the ejmap silent pump thread while loading soothe2 --
+            // and quarantining soothe2 for it would have been a false
+            // accusation in a record that is deliberately manual to undo. At
+            // N=3 the exemption is no longer needed to prevent that: three
+            // separate launches dying is a fact about loading this plugin in
+            // this tool whoever's fault it is, and the REASON says which so a
+            // release pass can find them.
+            if (ours)
+                r.detail << " [the faulting thread was ours, not the plugin's]";
+
+            if (ev.nonDeterministic())
+                r.detail << " [" << ev.note() << "]";
 
             r.at = nowIso();
             appendLocked (r);
 
-            // A plugin that has crashed here before is quarantined regardless of
-            // attribution: twice is a pattern, whoever's fault it is.
-            if (! ours || priors > 0)
-                quarantineLocked (id, ours ? "crash_on_load_repeat" : "crash_on_load", r.stage, r.version);
+            if (quarantineNow)
+                quarantineLocked (id, ours ? "died_during_load_host_fault"
+                                           : "died_during_load",
+                                  r.stage, r.version, &ev);
         }
 
         inflightFile.deleteFile();
@@ -307,6 +479,25 @@ public:
         const juce::ScopedLock sl (lock);
         r.at    = nowIso();
         r.runId = runId;
+
+        // TIMED FROM THE STAKE, not from a caller's stopwatch. beginLoad is
+        // written immediately before control passes to plugin code and this is
+        // the return, so the interval is exactly the thing a "was it a slow
+        // load?" question is asking about -- and it costs nothing at 20+ call
+        // sites, none of which had to be touched to get it.
+        //
+        // A death has no return, so its own row keeps -1. What the retry rule
+        // needs is the SERIES: whether the loads that did complete were slow
+        // is what says whether an unattributed death is plausibly a force-quit.
+        if (r.loadMs < 0 && inflightFile.existsAsFile())
+        {
+            const auto stake = juce::JSON::parse (inflightFile.loadFileAsString())
+                                   .getProperty ("at", "").toString();
+            const auto began = juce::Time::fromISO8601 (stake);
+            if (began != juce::Time())
+                r.loadMs = (int) (juce::Time::getCurrentTime() - began).inMilliseconds();
+        }
+
         appendLocked (r);
         inflightFile.deleteFile();
     }
@@ -398,6 +589,51 @@ public:
     }
 
     //==========================================================================
+    /** Everything the ledger knows about this BINARY at this stage.
+
+        Keyed on plugin_id, never on the display name. Drawmer 1973 ships an AU
+        and a VST3 that are DIFFERENT BINARIES by the same vendor at the same
+        version; the AU has never loaded and the VST3 has no failure history at
+        all. Keying on "Drawmer 1973" would quarantine a working VST3 because
+        its AU sibling died, and would pool two independent determinism
+        populations into one meaningless rate.
+    */
+    RetryEvidence retryEvidenceFor (const juce::String& pluginId,
+                                    const juce::String& stage,
+                                    const juce::String& sessionRunId = {}) const
+    {
+        const juce::ScopedLock sl (lock);
+        return retryEvidenceForLocked (pluginId, stage, sessionRunId);
+    }
+
+    /** Quarantine entries whose plugin has prior successes at the failing
+        stage. These are the nightly re-test population: release on binary
+        change alone leaves the nine non-deterministic plugins waiting on a
+        change that may never come.
+    */
+    juce::Array<QuarantineEntry> nonDeterministicQuarantine() const
+    {
+        const juce::ScopedLock sl (lock);
+        juce::Array<QuarantineEntry> out;
+        for (const auto& id : quarantined)
+            if (entries[id].evidence.nonDeterministic())
+                out.add (entries[id]);
+        return out;
+    }
+
+    /** TEST ONLY. Substitutes the crash-report lookup, which reads a directory
+        this process does not own and cannot seed. Without it the retry rule is
+        untestable: every simulated death would find no report, be recorded
+        unattributed, and never reach the threshold -- so the test would pass by
+        never quarantining anything, which is the failure it is meant to catch.
+    */
+    struct TestCrashOverride { bool found = false; juce::String attribution = "plugin"; };
+    static TestCrashOverride*& testOnlyCrashOverride()
+    {
+        static TestCrashOverride* p = nullptr;
+        return p;
+    }
+
     bool isQuarantined (const juce::String& pluginId) const
     {
         const juce::ScopedLock sl (lock);
@@ -699,9 +935,68 @@ private:
         emergencyFile.deleteFile();
     }
 
+    /** ONE PASS over the ledger for one binary at one stage.
+
+        Both death spellings match: rows written before 5 Aug 2026 say
+        "crash_on_load" and are the only determinism evidence this project has.
+        A rename that dropped them would reset every retry count to zero and
+        hand ~350 always-failing plugins three fresh attempts each.
+    */
+    RetryEvidence retryEvidenceForLocked (const juce::String& pluginId,
+                                          const juce::String& stage,
+                                          const juce::String& sessionRunId) const
+    {
+        RetryEvidence e;
+        e.pluginId = pluginId;
+        e.stage    = stage;
+
+        if (! ledgerFile.existsAsFile())
+            return e;
+
+        juce::StringArray lines;
+        lines.addLines (ledgerFile.loadFileAsString());
+        for (const auto& line : lines)
+        {
+            if (line.trim().isEmpty()) continue;
+            auto v = juce::JSON::parse (line);
+
+            if (v.getProperty ("plugin_id", "").toString() != pluginId)  continue;
+            if (v.getProperty ("stage", "load").toString() != stage)     continue;
+
+            const auto outcome = v.getProperty ("outcome", "").toString();
+            ++e.attempts;
+            e.outcomes.add (outcome);
+            e.loadMs.add (v.hasProperty ("load_ms") ? (int) v.getProperty ("load_ms", -1) : -1);
+
+            if (outcome == toString (LoadOutcome::diedDuringLoad)
+                 || outcome == kLegacyDeathOutcome)
+            {
+                ++e.failures;
+
+                // A row with no certainty predates the field. It is counted as
+                // corroborated, because it was written under the old rule where
+                // it would have quarantined outright -- reading silence as
+                // "unattributed" would retroactively forgive every recorded
+                // death on this machine.
+                const auto c = v.getProperty ("certainty", "").toString();
+                if (c == "unattributed") ++e.unattributedFailures;
+                else                     ++e.corroboratedFailures;
+            }
+            else if (outcome == "ok")
+            {
+                ++e.priorOkInLedger;
+                if (sessionRunId.isNotEmpty()
+                     && v.getProperty ("run_id", "").toString() == sessionRunId)
+                    ++e.priorOkThisSession;
+            }
+        }
+        return e;
+    }
+
     int countPriorCrashesLocked (const juce::String& pluginId) const
     {
-        return countPriorOutcomeLocked (pluginId, "crash_on_load");
+        return countPriorOutcomeLocked (pluginId, toString (LoadOutcome::diedDuringLoad))
+             + countPriorOutcomeLocked (pluginId, kLegacyDeathOutcome);
     }
 
     int countPriorOutcomeLocked (const juce::String& pluginId,
@@ -783,7 +1078,8 @@ private:
 
     void quarantineLocked (const juce::String& pluginId, const juce::String& reason,
                            const juce::String& stage = "load",
-                           const juce::String& pluginVersion = {})
+                           const juce::String& pluginVersion = {},
+                           const RetryEvidence* evidence = nullptr)
     {
         if (quarantined.contains (pluginId))
             return;
@@ -794,6 +1090,8 @@ private:
         e.stage     = stage;
         e.at        = nowIso();
         e.auVersion = pluginVersion;
+        if (evidence != nullptr)
+            e.evidence = *evidence;
 
         // A path gets a real stamp; an AU identifier gets the version string.
         if (! e.isAudioUnit())
@@ -838,6 +1136,24 @@ private:
                 e.stamp.size       = (juce::int64) (double) raw.getProperty ("stamp_size", 0);
                 e.stamp.valid      = (bool) raw.getProperty ("stamped", false);
 
+                // The evidence has to survive a relaunch or the nightly
+                // re-test cannot find the non-deterministic entries: they are
+                // selected by prior successes, which is what this carries.
+                if (auto ev = raw.getProperty ("evidence", juce::var()); ev.isObject())
+                {
+                    e.evidence.stage    = ev.getProperty ("stage", "load").toString();
+                    e.evidence.attempts = (int) ev.getProperty ("attempts", 0);
+                    e.evidence.failures = (int) ev.getProperty ("failures", 0);
+                    e.evidence.corroboratedFailures = (int) ev.getProperty ("corroborated_failures", 0);
+                    e.evidence.unattributedFailures = (int) ev.getProperty ("unattributed_failures", 0);
+                    e.evidence.priorOkInLedger      = (int) ev.getProperty ("prior_ok_in_ledger", 0);
+                    e.evidence.priorOkThisSession   = (int) ev.getProperty ("prior_ok_this_session", 0);
+                    if (auto* outs = ev.getProperty ("outcomes", juce::var()).getArray())
+                        for (const auto& o : *outs) e.evidence.outcomes.add (o.toString());
+                    if (auto* ms = ev.getProperty ("load_ms", juce::var()).getArray())
+                        for (const auto& m : *ms) e.evidence.loadMs.add ((int) m);
+                }
+
                 quarantined.add (id);
                 entries.set (id, e);
             }
@@ -865,6 +1181,12 @@ private:
             {
                 o->setProperty ("au_version", e.auVersion);
                 o->setProperty ("au_version_is_weak_signal", true);
+            }
+            if (e.evidence.attempts > 0)
+            {
+                o->setProperty ("evidence", e.evidence.toVar());
+                if (e.evidence.nonDeterministic())
+                    o->setProperty ("note", e.evidence.note());
             }
             out.add (juce::var (o));
         }

@@ -483,6 +483,8 @@ namespace
     int runHeadlessCli (int argc, char* argv[])
     {
         juce::String release, qId, qReason, qStage { "load" }, report;
+        juce::String evidenceId, evidenceStage { "load" };
+        bool retest = false, apply = false;
 
         // --issues
         // Every flagged and every unmappable plugin, for handover. Headless and
@@ -591,6 +593,14 @@ namespace
 
             const auto a = argAt (argc, argv, i);
             if (a == "--release-quarantine" && i + 1 < argc) release = argAt (argc, argv, ++i);
+            else if (a == "--retry-evidence" && i + 1 < argc)
+            {
+                evidenceId = argAt (argc, argv, ++i);
+                const auto nxt = argAt (argc, argv, i + 1);
+                if (nxt.isNotEmpty() && ! nxt.startsWith ("--")) evidenceStage = argAt (argc, argv, ++i);
+            }
+            else if (a == "--retest-nondeterministic") retest = true;
+            else if (a == "--apply") apply = true;
             else if (a == "--attribute-report" && i + 1 < argc) report = argAt (argc, argv, ++i);
             else if (a == "--quarantine" && i + 2 < argc)
             {
@@ -600,7 +610,8 @@ namespace
             }
         }
 
-        if (release.isEmpty() && qId.isEmpty() && report.isEmpty())
+        if (release.isEmpty() && qId.isEmpty() && report.isEmpty()
+             && evidenceId.isEmpty() && ! retest)
             return -1;
 
         juce::ScopedJuceInitialiser_GUI juceInit;
@@ -624,6 +635,57 @@ namespace
         }
 
         ejmap::Ledger l (root);
+
+        // WHY a plugin is or is not quarantined, read out of the ledger. The
+        // numbers were always there; nothing read them, so the decision was
+        // made blind and the operator could not see it either. prior_ok 0 means
+        // do not bother; prior_ok 4 means retry.
+        if (evidenceId.isNotEmpty())
+        {
+            const auto ev = l.retryEvidenceFor (evidenceId, evidenceStage);
+            std::cout << "retry-evidence: " << evidenceId << "  (stage " << evidenceStage << ")\n"
+                      << "  quarantined           : " << (l.isQuarantined (evidenceId) ? "yes" : "no") << "\n"
+                      << "  attempts at this stage: " << ev.attempts << "\n"
+                      << "  failures              : " << ev.failures
+                      << "  (" << ev.corroboratedFailures << " corroborated, "
+                      << ev.unattributedFailures << " unattributed and NOT counted)\n"
+                      << "  threshold             : " << ejmap::kRetryAttempts << "\n"
+                      << "  prior ok at this stage: " << ev.priorOkInLedger << "\n"
+                      << "  outcomes              : " << ev.outcomes.joinIntoString (", ") << std::endl;
+            if (ev.nonDeterministic())
+                std::cout << "  " << ev.note() << std::endl;
+            if (ev.attempts == 0)
+                std::cout << "  (no rows at this stage. A load failure is vouched for only by\n"
+                          << "   prior LOAD successes -- try --retry-evidence <id> scan)" << std::endl;
+            return 0;
+        }
+
+        // THE NIGHTLY RE-TEST. Release on binary change alone leaves the nine
+        // non-deterministic plugins waiting on a change that may never come:
+        // nothing about them is broken, they simply lost a roll. Dry run by
+        // default, the same discipline as every other batch tool here.
+        if (retest)
+        {
+            const auto rows = l.nonDeterministicQuarantine();
+            std::cout << "retest-nondeterministic: " << rows.size()
+                      << " quarantine(s) with prior successes at the failing stage" << std::endl;
+            for (const auto& e : rows)
+            {
+                std::cout << "  " << e.pluginId << "\n"
+                          << "      " << e.reason << " at " << e.at
+                          << ", " << e.evidence.corroboratedFailures << " corroborated failure(s), "
+                          << e.evidence.priorOkInLedger << " prior ok\n"
+                          << "      " << e.evidence.note() << std::endl;
+                if (apply)
+                {
+                    l.releaseFromQuarantine (e.pluginId);
+                    std::cout << "      -> released for re-test" << std::endl;
+                }
+            }
+            if (! apply && rows.size() > 0)
+                std::cout << "Dry run. Nothing changed. Add --apply to release these." << std::endl;
+            return 0;
+        }
 
         if (release.isNotEmpty())
         {

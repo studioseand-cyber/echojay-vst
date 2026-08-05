@@ -39,6 +39,7 @@
 #include "EjmapProbeRoute.h"
 #include "EjmapMarks.h"
 #include "EjmapAssignment.h"
+#include "EjmapLedger.h"
 
 // The shared sweep and parsers, compiled here so the drift gate proves both
 // binaries build the SAME code: ejextract compiles these headers to produce
@@ -1863,6 +1864,221 @@ void testControlsOnlyPayload()
            "controls-only: the reason says it went to the proposer, not that it failed");
 }
 
+
+//==============================================================================
+/** THE RETRY RULE. Three separate launches before a quarantine.
+
+    Two proofs the signed spec requires before it lands, and it requires them
+    because a half-tested retry is WORSE than the single-crash rule it replaces:
+    that rule is wrong but predictable, while a broken N=3 can fail to
+    quarantine something that genuinely crashes every time, and the operator
+    finds out by losing a session to it, repeatedly.
+
+    A LAUNCH IS A LEDGER INSTANCE. The rule's own requirement is that attempts
+    are independent process launches -- a process that has taken a SIGSEGV
+    inside plugin code is not a sound place to retry from -- so the counter is
+    persistent on disk and the relaunch is what makes attempts independent.
+    Constructing a fresh Ledger over the same root is exactly that: it reads
+    ledger.json and quarantine.json off disk with a new run id, holding nothing
+    over in memory.
+*/
+void testRetryRule()
+{
+    auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                    .getChildFile ("ejmap-retry-test-" + juce::Uuid().toDashedString());
+    root.createDirectory();
+
+    const juce::String au   = "AudioUnit:Effects/aufx,0yow,SfTb";
+    const juce::String vst3 = "/Library/Audio/Plug-Ins/VST3/Drawmer 1973.vst3";
+
+    // The crash-report lookup reads a directory this process does not own, so
+    // it is substituted. Without this every simulated death records as
+    // unattributed and NOTHING ever quarantines -- the test would pass by
+    // proving the opposite of what it claims.
+    ejmap::Ledger::TestCrashOverride corroborated { true, "plugin" };
+    ejmap::Ledger::TestCrashOverride unattributed { false, "unknown" };
+    ejmap::Ledger::testOnlyCrashOverride() = &corroborated;
+
+    // One launch: recover whatever the last one left, then stake and die.
+    auto dieOnLoad = [&] (const juce::String& id, const juce::String& stage)
+    {
+        ejmap::Ledger l (root);
+        l.recoverFromCrash();
+        l.beginLoad (id, "Drawmer 1973", "Softube", "AudioUnit", "2.5.62", stage, "createPluginInstance");
+        // no endLoad: the stake outlives the process, which is the crash.
+    };
+    auto quarantined = [&] (const juce::String& id)
+    {
+        ejmap::Ledger l (root);
+        l.recoverFromCrash();
+        return l.isQuarantined (id);
+    };
+
+    // ---- PROOF 1: three separate launches before quarantine -----------------
+    dieOnLoad (au, "load");
+    check (! quarantined (au), "retry: one death does not quarantine");
+    dieOnLoad (au, "load");
+    check (! quarantined (au), "retry: two deaths do not quarantine");
+    dieOnLoad (au, "load");
+    check (quarantined (au), "retry: THREE separate launches quarantine");
+
+    // ---- A crash attaches to a BINARY, not a product ------------------------
+    // The VST3 at the path above is a different binary by the same vendor at
+    // the same version, with no failure history at all. Keying on the display
+    // name would quarantine a working plugin because its sibling died.
+    check (! quarantined (vst3),
+           "retry: the VST3 sibling is a DIFFERENT binary and is not quarantined");
+    {
+        // The sibling shares name, vendor and version with the three dead rows
+        // above and differs only in plugin_id. Under name-keying it would
+        // arrive at its first load carrying three failures it never had.
+        ejmap::Ledger l (root);
+        check (l.retryEvidenceFor (vst3, "load").failures == 0,
+               "retry: and it inherits NONE of its sibling's failures");
+    }
+
+    // ---- PROOF 2: succeeding on attempt two is never quarantined ------------
+    auto root2 = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                     .getChildFile ("ejmap-retry-test-" + juce::Uuid().toDashedString());
+    root2.createDirectory();
+    const juce::String flaky = "AudioUnit:Effects/aufx,SEQ1,NIn2";   // Solid EQ: 1 of 3
+
+    auto dieIn = [&] (const juce::File& r, const juce::String& id, const juce::String& stage)
+    {
+        ejmap::Ledger l (r);
+        l.recoverFromCrash();
+        l.beginLoad (id, "Solid EQ", "Native Instruments", "AudioUnit", "1.4", stage, "createPluginInstance");
+    };
+    auto succeedIn = [&] (const juce::File& r, const juce::String& id, const juce::String& stage)
+    {
+        ejmap::Ledger l (r);
+        l.recoverFromCrash();
+        l.beginLoad (id, "Solid EQ", "Native Instruments", "AudioUnit", "1.4", stage, "createPluginInstance");
+        ejmap::LedgerRecord rec;
+        rec.pluginId = id; rec.name = "Solid EQ"; rec.format = "AudioUnit";
+        rec.stage = stage; rec.outcome = ejmap::LoadOutcome::ok;
+        l.endLoad (rec);
+    };
+
+    dieIn     (root2, flaky, "load");
+    succeedIn (root2, flaky, "load");
+    dieIn     (root2, flaky, "load");
+    dieIn     (root2, flaky, "load");     // a third death, but only after a success
+    {
+        ejmap::Ledger l (root2);
+        l.recoverFromCrash();
+        check (l.isQuarantined (flaky),
+               "retry: three deaths still quarantine even with a success between them");
+
+        auto ev = l.retryEvidenceFor (flaky, "load");
+        check (ev.priorOkInLedger == 1, "retry: the success is counted, not forgotten");
+        check (ev.nonDeterministic(), "retry: prior success makes it non-deterministic");
+        check (ev.note().contains ("single bad roll"),
+               "retry: the quarantine row says a quarantine here is not a verdict");
+        check (l.nonDeterministicQuarantine().size() == 1,
+               "retry: it is selectable for the nightly re-test");
+    }
+
+    // The stated proof: TWO deaths with a success between them, never quarantined.
+    auto root3 = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                     .getChildFile ("ejmap-retry-test-" + juce::Uuid().toDashedString());
+    root3.createDirectory();
+    dieIn     (root3, flaky, "load");
+    succeedIn (root3, flaky, "load");
+    {
+        ejmap::Ledger l (root3);
+        l.recoverFromCrash();
+        check (! l.isQuarantined (flaky),
+               "retry: A PLUGIN SUCCEEDING ON ATTEMPT TWO IS NEVER QUARANTINED");
+        auto ev = l.retryEvidenceFor (flaky, "load");
+        check (ev.loadMs.size() == 2, "retry: load_ms carries one entry per attempt");
+        check (ev.loadMs[1] >= 0, "retry: the completed load was timed, from the stake");
+    }
+
+    // ---- prior_ok_in_ledger is STAGE-SCOPED ---------------------------------
+    // Drawmer's exact shape: eight "ok" rows, every one at stage scan. A scan
+    // describes a plugin without instantiating it, so they say NOTHING about
+    // whether it loads -- and its AU has never once loaded successfully. An
+    // unscoped count reads "8 prior successes" and treats a plugin that has
+    // never loaded as a well-behaved one having a bad roll.
+    auto root4 = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                     .getChildFile ("ejmap-retry-test-" + juce::Uuid().toDashedString());
+    root4.createDirectory();
+    for (int i = 0; i < 8; ++i)
+        succeedIn (root4, au, "scan");
+    dieIn (root4, au, "load");
+    {
+        ejmap::Ledger l (root4);
+        l.recoverFromCrash();
+        auto atLoad = l.retryEvidenceFor (au, "load");
+        auto atScan = l.retryEvidenceFor (au, "scan");
+        check (atScan.priorOkInLedger == 8, "retry: the scan successes are real, at scan");
+        check (atLoad.priorOkInLedger == 0,
+               "retry: EIGHT SCAN SUCCESSES VOUCH FOR NOTHING AT LOAD");
+        check (! atLoad.nonDeterministic(),
+               "retry: a plugin that has never loaded is not 'having a bad roll'");
+        check (atLoad.failures == 1, "retry: the load death is counted at load");
+    }
+
+    // ---- an unattributed death does not count toward the three --------------
+    // One of them may be the operator losing patience with a slow load, and
+    // CLA-76 (m) takes 1.6 s against its sibling's 509 ms.
+    auto root5 = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                     .getChildFile ("ejmap-retry-test-" + juce::Uuid().toDashedString());
+    root5.createDirectory();
+    ejmap::Ledger::testOnlyCrashOverride() = &unattributed;
+    for (int i = 0; i < 4; ++i)
+        dieIn (root5, au, "load");
+    {
+        ejmap::Ledger l (root5);
+        l.recoverFromCrash();
+        check (! l.isQuarantined (au),
+               "retry: four UNATTRIBUTED deaths do not quarantine -- they may be force-quits");
+        auto ev = l.retryEvidenceFor (au, "load");
+        check (ev.unattributedFailures == 4 && ev.corroboratedFailures == 0,
+               "retry: they are recorded and visible, not silently dropped");
+    }
+    // ...but corroboration still gets there, from the same history.
+    ejmap::Ledger::testOnlyCrashOverride() = &corroborated;
+    for (int i = 0; i < 3; ++i)
+        dieIn (root5, au, "load");
+    {
+        ejmap::Ledger l (root5);
+        l.recoverFromCrash();
+        check (l.isQuarantined (au),
+               "retry: three CORROBORATED deaths quarantine, unattributed ones aside");
+    }
+
+    // ---- historic rows count. They are the only determinism evidence --------
+    auto root6 = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                     .getChildFile ("ejmap-retry-test-" + juce::Uuid().toDashedString());
+    root6.createDirectory();
+    auto historicRow = [&] (const juce::String& at)
+    {
+        return juce::String ("{\"plugin_id\":\"") + au
+             + "\",\"stage\":\"load\",\"outcome\":\"crash_on_load\",\"at\":\"" + at + "\"}\n";
+    };
+    root6.getChildFile ("ledger.json").replaceWithText (
+        historicRow ("2026-08-04T10:30:12") + historicRow ("2026-08-04T10:38:09"));
+    {
+        ejmap::Ledger l (root6);
+        auto ev = l.retryEvidenceFor (au, "load");
+        check (ev.corroboratedFailures == 2,
+               "retry: rows spelled crash_on_load still count -- the rename kept the history");
+    }
+    dieIn (root6, au, "load");
+    {
+        ejmap::Ledger l (root6);
+        l.recoverFromCrash();
+        check (l.isQuarantined (au),
+               "retry: two historic deaths plus one new one is three, not one");
+    }
+
+    ejmap::Ledger::testOnlyCrashOverride() = nullptr;
+    root.deleteRecursively();  root2.deleteRecursively(); root3.deleteRecursively();
+    root4.deleteRecursively(); root5.deleteRecursively(); root6.deleteRecursively();
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -1890,6 +2106,7 @@ int main (int, char**)
     testReadbackProbe();
     testMarks();
     testUnitFamilyRule();
+    testRetryRule();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

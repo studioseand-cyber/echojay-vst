@@ -58,6 +58,24 @@ quarantined the tool's fixtures.
   binary change alone leaves nine plugins waiting on a change that may never
   come.
 
+### BUILT 5 Aug 2026
+
+`EjmapLedger.h`: `RetryEvidence`, `retryEvidenceForLocked` (one pass, stage- and
+binary-scoped), `kRetryAttempts = 3`, the rewritten decision in
+`recoverFromCrash`, and `nonDeterministicQuarantine()` for the nightly re-test.
+`crash_on_load` is now `died_during_load` with a `certainty` field; both
+spellings count, because the 28 historic rows are the only determinism evidence
+this project has.
+
+Operator surface: `--retry-evidence <plugin_id> [stage]` reads the numbers out;
+`--retest-nondeterministic [--apply]` selects the release population, dry run by
+default.
+
+`load_ms` is timed **from the inflight stake** inside `endLoad`, not from a
+caller's stopwatch: beginLoad is written immediately before control passes to
+plugin code, so the interval is exactly what "was this a slow load?" is asking,
+and none of the 20+ call sites had to be touched.
+
 ### The proof, required before it lands
 
 1. Force a load failure and confirm **three separate launches** before quarantine.
@@ -66,6 +84,21 @@ quarantined the tool's fixtures.
 A quarantine change that ships unproven is worse than today's rule, which is
 wrong but predictable: a half-tested retry could fail to quarantine something
 that genuinely crashes every time.
+
+**Both proved, in `ejmap-roundtrip-test` (the always-on pre-commit gate), 477
+checks.** A launch is a fresh `Ledger` over the same root, which is exactly the
+requirement: it reads the counters off disk with a new run id and holds nothing
+in memory. Six more cases ride with them — the binary-keying, the stage-scoping,
+the unattributed discount, and that historic `crash_on_load` rows still count.
+
+Each rule was then **broken on purpose** and the gate caught it: `N=1` fails the
+two signed proofs; an unscoped `prior_ok` fails the stage case; keying on the
+display name fails ten checks.
+
+The crash-report lookup reads a directory the test process does not own, so it
+is substituted via `Ledger::testOnlyCrashOverride`. Without that seam every
+simulated death records as unattributed and nothing ever quarantines — the test
+would have passed by proving the opposite of what it claims.
 
 ### Where it lives
 
@@ -96,7 +129,18 @@ it probably means.
 
 ### The rule that joins the two items
 
-**An unattributed death does not count toward the three.** One of them may be
+**An unattributed death does not count toward the three.**  *(Built. The hole it
+leaves is real and stated: a machine with crash reporting disabled would never
+quarantine anything. Measured here, 26 of 28 death rows found a report, so the
+discount applies to ~7% of them — and the ledger row NAMES the uncounted deaths
+rather than hiding them, so a plugin dying unattributed over and over is visible
+without being acted on from evidence that cannot support it.*
+
+*One deviation from the text above: `certainty` uses the existing 10-minute
+report window, not 10 s. A load that legitimately takes minutes and then faults
+writes its report minutes after the stake, and a 10 s cutoff would file exactly
+those genuine crashes as unattributed — discounting the slow loads, which is the
+population the rule is trying to reason about.)* One of them may be
 the operator losing patience with a slow load, and CLA-76 (m) takes 1.6 s
 against its sibling's 509 ms.
 
@@ -120,6 +164,29 @@ Both were found while diagnosing the campaign's first crash. Neither is optional
 each one, left as-is, makes the retry rule vouch for something it has not measured.
 
 ### 1. `prior_ok_in_ledger` MUST be stage-scoped
+
+> **Measured 5 Aug 2026, and the diagnosis below is misattributed.** Drawmer's
+> nine `ok` rows are on `/Library/Audio/Plug-Ins/VST3/Drawmer 1973.vst3` — the
+> **sibling binary**, not the AU. The AU id carries exactly two rows, both load
+> deaths. So Drawmer is an instance of correction **2**, and correction 2 alone
+> already saves it; stage-scoping does nothing here.
+>
+> Stage-scoping is still load-bearing, on **4 plugins**, and the real instance is
+> better than the stated one:
+>
+> | plugin | dies at | ok at | irrelevant successes an unscoped rule would credit |
+> |---|---|---|---|
+> | **SSL X-Gate** | `probe_gate_load` ×11 | `load` ×23 | 23 |
+> | **bx_limiter True Peak** | `probe_gate_load` | `load` ×23 | 23 |
+> | API-2500 (s) | `load` | `submit`, `sweep` | 23 |
+> | CLA-76 (m) | `load` | `submit`, `sweep` | 25 |
+>
+> The top two are **M9's own signed subjects**. Unscoped, X-Gate reads as 23-time
+> non-deterministic, gets released nightly, and re-crashes the probe gate every
+> time — the exact loop the correction was written to prevent, reached by a
+> different route than the one recorded.
+>
+> The rule is unchanged and correct. Only its stated instance was wrong.
 
 Drawmer 1973 carries eight `"outcome": "ok"` rows in the ledger. Every one is
 `"stage": "scan"` with `"detail": "1 description(s)"`.
