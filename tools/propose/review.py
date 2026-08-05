@@ -20,10 +20,38 @@ Decisions land in <root>/decisions/<fp>.json as they are made, so quitting
 mid-pile costs nothing. Corrections ALSO append to misclassified-<run>.jsonl --
 a correction is a dataset, not a burial.
 """
-import argparse, datetime, json, os, sys
+import argparse, datetime, glob, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from evidence import VOCAB, unit_family_conflict
+from bands import route
+
+
+def _map_controls(root, fp):
+    for f in glob.glob(os.path.join(root, "maps", "*.json")):
+        d = json.load(open(f))
+        if d.get("fp") == fp:
+            return list((d.get("controls") or {}).values())
+    return []
+
+
+def _band_set(root, doc):
+    """The band grouping bands.py recognises for this plugin, or None.
+
+    Collapsing these is the whole point: a five-band EQ escalates fifteen
+    freq/gain/q rows that are ONE question -- 'is this grouping right?' -- and
+    answering it fifteen times is the wrong shape of work.
+    """
+    controls = _map_controls(root, doc["fp"])
+    if not controls:
+        return None
+    semantic_of = {p["control_name"]: p["kind"] for p in doc["params"]}
+    for e in doc.get("escalations", []):
+        sems = {a["semantic"] for a in e.get("arms", [])}
+        if len(sems) == 1:
+            semantic_of[e["name"]] = sems.pop()
+    got, _ = route(controls, semantic_of)
+    return got
 
 
 def load_pile(root, only):
@@ -42,20 +70,99 @@ def load_pile(root, only):
         if os.path.exists(dpath):
             already = {d["index"]: d for d in json.load(open(dpath))["decisions"]}
         decided[doc["fp"]] = already
-        for e in doc.get("escalations", []):
-            if e["index"] in already:
-                continue
-            pile.append({**e, "fp": doc["fp"], "plugin": doc["plugin"],
+
+        grouped = _band_set(root, doc)
+        in_bands = set()
+        if grouped:
+            for b in grouped["bands"]:
+                for m in b["members"].values():
+                    in_bands.add(m["name"])
+
+        rows = [e for e in doc.get("escalations", []) if e["index"] not in already]
+        if grouped and any(e["name"] in in_bands for e in rows):
+            key = "band_set:" + ",".join(
+                str(m["index"]) for b in grouped["bands"] for m in b["members"].values())
+            if key not in already:
+                pile.append({"kind": "band_set", "index": key, "fp": doc["fp"],
+                             "plugin": doc["plugin"], "category": doc.get("category"),
+                             "grouping": grouped,
+                             "covers": sorted(e["name"] for e in rows if e["name"] in in_bands)})
+        for e in rows:
+            if e["name"] in in_bands:
+                continue                      # answered by the band-set question
+            pile.append({**e, "kind": "control", "fp": doc["fp"], "plugin": doc["plugin"],
                          "category": doc.get("category")})
     return pile, decided
 
 
 def sort_key(row):
-    """By semantic, then category. Rows with no proposed semantic sort last --
-    they are the ones with nothing to react to, so they are the slowest."""
+    """By semantic, then category. Band sets first -- each one clears a dozen
+    rows, so they are the cheapest questions in the pile per row retired."""
+    if row["kind"] == "band_set":
+        return (-1, "", row.get("category") or "", row["plugin"])
     sems = sorted({a["semantic"] for a in row.get("arms", [])
                    if a["semantic"] not in ("none", "__absent__")})
     return (0 if sems else 1, sems[0] if sems else "", row.get("category") or "", row["plugin"])
+
+
+def show_band_set(row, n, total):
+    """One question standing in for a dozen rows, so it has to show enough to
+    answer honestly: every member, and where the ordering came from."""
+    g = row["grouping"]
+    print("\n" + "=" * 74)
+    print(f"{row['plugin']}   {row.get('category') or 'uncategorised'}"
+          f"{'':>4}[{n} of {total}]")
+    print()
+    print(f"  A BAND SET -- {len(g['bands'])} bands on a {g['axis']} axis, "
+          f"standing in for {len(row['covers'])} rows")
+    print()
+    for b in g["bands"]:
+        ordinal = f"#{b['ordinal']}" if b.get("ordinal") else " ?"
+        members = "  ".join(f"{sem}=[{m['index']}] {m['name']!r}"
+                            for sem, m in sorted(b["members"].items()))
+        print(f"    {ordinal} {b['label']:<5} {members}")
+    print()
+    ev = g["bands"][0].get("order_evidence") or {}
+    if g["ordering"] == "swept":
+        print(f"  ordering: from the SWEPT frequencies "
+              f"({', '.join(str(round(b['order_evidence']['sort_key'])) + ' Hz' for b in g['bands'])})")
+    else:
+        print(f"  ordering: UNRESOLVED -- {g.get('ordering_note') or ev.get('why', '')}")
+        print(f"            the grouping is the question here; ordinals are the matcher's")
+    if g.get("unassigned"):
+        print()
+        print("  left out of the grouping:")
+        for u in g["unassigned"][:6]:
+            print(f"    [{u['index']}] {u['name']!r} -- {u['why']}")
+
+
+def decide_band_set(row):
+    g = row["grouping"]
+    print()
+    print("    [y] the grouping is right       [n] it is not -- send the rows back")
+    print("    [d] defer                       [q] save and quit")
+    while True:
+        try:
+            k = input("  > ").strip().lower()
+        except EOFError:
+            return None
+        if k == "q":
+            return None
+        if k == "d":
+            return {"outcome": "deferred"}
+        if k in ("y", "n"):
+            # Confirming a grouping is READING, exactly like waving through a
+            # flat proposal: it records that a human looked. It writes no map --
+            # the grouping still has to reach EjmapBands and survive the stride
+            # against real captures before it becomes a group.
+            return {"outcome": "band_grouping_confirmed" if k == "y" else "band_grouping_rejected",
+                    "kind": "band_set", "axis": g["axis"], "ordering": g["ordering"],
+                    "bands": [{"label": b["label"], "ordinal": b.get("ordinal"),
+                               "members": b["members"]} for b in g["bands"]],
+                    "covers": row["covers"],
+                    "semantic_source": "human-confirmed" if k == "y" else "human-corrected",
+                    "trust": "llm-classified"}
+        print("  ?")
 
 
 def show(row, n, total):
@@ -149,9 +256,16 @@ def main():
 
     if args.summary:
         import collections
-        why = collections.Counter(r["why"].split(":")[0] for r in pile)
-        print(f"{len(pile)} rows to review across "
-              f"{len({r['plugin'] for r in pile})} plugins\n")
+        why = collections.Counter(
+            "BAND SET (stands in for many rows)" if r["kind"] == "band_set"
+            else r["why"].split(":")[0] for r in pile)
+        covered = sum(len(r["covers"]) for r in pile if r["kind"] == "band_set")
+        sets = sum(1 for r in pile if r["kind"] == "band_set")
+        print(f"{len(pile)} questions across {len({r['plugin'] for r in pile})} plugins")
+        if sets:
+            print(f"  ({sets} of them are band sets, standing in for {covered} rows -- "
+                  f"{covered - sets} fewer questions)")
+        print()
         for w, n in why.most_common():
             print(f"  {n:4d}  {w}")
         return
@@ -164,12 +278,17 @@ def main():
     print(f"{len(pile)} rows to review. [q] saves and quits at any point.")
     made = 0
     for n, row in enumerate(pile, 1):
-        show(row, n, len(pile))
-        d = decide(row)
+        if row["kind"] == "band_set":
+            show_band_set(row, n, len(pile))
+            d = decide_band_set(row)
+        else:
+            show(row, n, len(pile))
+            d = decide(row)
         if d is None:
             break
-        record = {"index": row["index"], "control_name": row["name"],
-                  "why_escalated": row["why"], "arms": row.get("arms", []),
+        record = {"index": row["index"],
+                  "control_name": row.get("name"),
+                  "why_escalated": row.get("why"), "arms": row.get("arms", []),
                   "at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
                   **d}
 

@@ -133,9 +133,11 @@ passes the same round-trip checks as a hand-built one or it does not ship.
    rather than seeding.
 4. **The three verdicts** wired, including the `misclassified` append.
 
-## 6. Before any of that — collapse band rows in stage 5
+## 6. Before any of that — collapse band rows in stage 5  ✅ BUILT 5 Aug 2026
 
-**This does not need the matcher and it addresses the pile today.**
+**This did not need the matcher and it addresses the pile today.**
+
+Measured: **304 questions → 270**, six band sets standing in for 40 rows.
 
 `review.py` can group its escalations by the band sets `bands.py` already
 recognises and present each as ONE row — *"5 bands, LF/LMF/MF/HMF/HF, members
@@ -148,5 +150,5 @@ survive the stride before it becomes a group. But it takes ~59 rows down to ~14
 questions in the interface the mapper is using now, and it is a few hours of
 Python rather than a C++ change.
 
-**Recommended first**, ahead of item 1, precisely because the pile is the live
-cost and this is the part of it that is already solved.
+Built first, ahead of `adopt()`, precisely because the pile is the live cost and
+this is the part of it that was already solved.

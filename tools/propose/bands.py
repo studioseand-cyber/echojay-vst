@@ -326,11 +326,18 @@ def route(controls, semantic_of):
     ordered, why, note = order_bands(bands, by_name, axis_kind)
     if ordered is None:
         return None, why
-    for b in ordered:
-        if b.get("ordinal") is None:
-            unassigned.append((b["members"].get("freq_hz") or next(iter(b["members"].values())),
-                               b["order_evidence"].get("why", "unordered")))
-    ordered = [b for b in ordered if b.get("ordinal") is not None] or ordered
+    # A band that could not be ordered is only "left out" when OTHER bands were
+    # ordered without it. When NOTHING could be ordered the whole set is simply
+    # unordered -- listing every member as left out while also showing it in the
+    # grouping is a contradiction the reviewer has to resolve for us.
+    kept = [b for b in ordered if b.get("ordinal") is not None]
+    if kept:
+        for b in ordered:
+            if b.get("ordinal") is None:
+                unassigned.append(
+                    (b["members"].get("freq_hz") or next(iter(b["members"].values())),
+                     b["order_evidence"].get("why", "no measured order")))
+        ordered = kept
 
     return {"grouping_source": "model-proposed", "axis": axis_kind,
             "ordering": "swept" if any(b["ordinal"] for b in ordered) else "unresolved",
