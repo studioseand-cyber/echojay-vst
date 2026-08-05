@@ -228,3 +228,27 @@ target_link_libraries(ejmap-watchdog-test PRIVATE
 if(APPLE)
     target_link_libraries(ejmap-watchdog-test PRIVATE "-framework CoreAudioKit")
 endif()
+
+#==============================================================================
+# Arch probe: why does the scan get no description from the Waves VST3 shells?
+#
+# A probe, not pipeline code. It answers one question with a number and is meant
+# to be run BOTH natively and under `arch -x86_64`, because the answer is the
+# pairing of the bundle's architectures with the running process's.
+
+juce_add_console_app(ejmap-arch-probe PRODUCT_NAME "ejmap-arch-probe")
+target_sources(ejmap-arch-probe PRIVATE tests/ArchProbe.cpp Source/EjmapViewLayer.mm)
+target_compile_definitions(ejmap-arch-probe PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_PLUGINHOST_VST3=1
+    # runDispatchLoopUntil is only declared with a modal loop available, and the
+    # probe has to let a panel settle before judging it empty.
+    JUCE_MODAL_LOOPS_PERMITTED=1)
+target_include_directories(ejmap-arch-probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+target_link_libraries(ejmap-arch-probe PRIVATE
+    juce::juce_core juce::juce_events juce::juce_gui_basics juce::juce_audio_processors
+    juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+if(APPLE)
+    target_link_libraries(ejmap-arch-probe PRIVATE "-framework CoreAudioKit")
+endif()

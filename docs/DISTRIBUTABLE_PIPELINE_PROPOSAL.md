@@ -274,7 +274,61 @@ worse than no PNG, because it looks like evidence.
 So the blind spot is essentially Waves, it is 31% of what the sweep will open,
 and the obvious fallback does not reach it.
 
-### 6.2 Route 1 — the VST3 sibling. Blocked by a scan gap, cause unmeasured
+### 6.2 Route 1 — the VST3 sibling. PROBED 5 Aug 2026: the cause is
+architecture, and the route is dead anyway
+
+> **Both halves measured with `ejmap-arch-probe` (`tests/ArchProbe.cpp`). The
+> first half answered the question that was asked. The second half killed the
+> route and corrected `67de0d5`'s attribution.**
+
+**Why the scan gets nothing.** Every Waves shell on this machine is
+**x86_64-only** — the VST3 shells and the AU shells alike, `WaveShell1-VST3 12.6`
+dated January 2021. This machine is an M1 Pro and ejmap runs arm64. A VST3 must
+be `dlopen`ed **in-process** and there is no bridge for it, so the load fails
+before any factory is reached:
+
+```
+native arm64 :   0 descriptions in     9 ms
+arch -x86_64 :  14 descriptions in 18,983 ms   (Abbey Road Studio 3, Nx …)
+```
+
+Not a scan gap, not licensing, not a JUCE limitation, not shell enumeration.
+**"Bridged" is not a Waves property — it is an x86_64-only plugin in an arm64
+host.** AU survives it by hosting out-of-process (the `NSRemoteView`); VST3
+cannot, so it vanishes from the scan entirely.
+
+**And the route is still dead**, because enumerating is only worth something if
+the editor then captures. Loaded under Rosetta, a Waves VST3 comes up
+**in-process** — no `NSRemoteView` anywhere in the tree:
+
+```
+- JUCEView_e713bae482ba613e            wantsLayer=YES  layer=yes
+  - JuceInnerNSView_62ddac1ed097846e   wantsLayer=no   layer=yes
+    - wvWavesV12_6_0_167_WavesView     wantsLayer=YES  layer=yes
+capture : captured 1680x1228, non-background 0.0%
+```
+
+Same 0.0%. Reproduced on a second shell (`WaveShell2-VST3 12.1`, CLA EchoSphere,
+782×1152, 0.0%).
+
+> **THE EMPTY CAPTURE WAS NEVER CAUSED BY BRIDGING.** `67de0d5` measured
+> API-550A at 0.0% *and* observed it was an `NSRemoteView`, and read the second
+> as the cause of the first. A Waves panel that is demonstrably **not** remote
+> reads 0.0% too. The cause is Waves' own rendering path — the shell ships a
+> `default.metallib`, so it draws on the GPU, and `cacheDisplayInRect` captures
+> the Core Graphics backing store, which for a GPU-drawn view is empty.
+>
+> The correlate is suggestive, not established: n=2. Eiosis AirEQ *links*
+> OpenGL and captures fine at 52.6%, so "links a GPU framework" is not the
+> predictor. What is established is the negative — hosting model is not the
+> cause — and that is what matters here.
+
+**So Rosetta buys nothing and costs something.** It would not fix capture, and
+Waves plugins already map fine through their bridged AU form, so it does not fix
+mapping either. It would drop `School EQ` (the one arm64-only component and the
+one arm64-only VST3 on this machine). **Do not run ejmap under Rosetta.**
+
+### 6.2b The old §6.2, superseded — a scan gap, cause unmeasured
 
 A bridged AU whose product also ships a VST3 can be captured through the VST3
 instead: same panel, in-process, no permission, no new API.
@@ -334,9 +388,18 @@ And it is not a bad answer.
 
 A bridged plugin gets: swept, proposed from text, accepted where the arms agree,
 and everything else queued for a human. That is a real ceiling and it should be
-**recorded in the map**, not left implicit — `capture: "unavailable_bridged"` —
-so a later reader knows the escalation rate on Waves is a property of the
-evidence, not of the plugins.
+**recorded in the map**, not left implicit — so a later reader knows the
+escalation rate on Waves is a property of the evidence, not of the plugins.
+
+> **Do not call the field `unavailable_bridged`.** §6.2 measured that bridging
+> is not the cause: a Waves panel captures empty whether it is remote or
+> in-process. Naming it after the wrong cause would freeze the wrong diagnosis
+> into the corpus, which is the `crash_on_load` mistake again — a field that
+> asserts a cause the evidence does not carry.
+>
+> Record what was observed: `capture: "empty"`, with the measured
+> non-background fraction and the pixel dimensions beside it. A later reader can
+> then ask *why* against real numbers instead of inheriting a guess.
 
 ### 6.5 The manual screenshot — keep it, for you, hidden
 
@@ -504,14 +567,18 @@ hand with a screenshot.
 
 **Two probes first, because both are cheap and both change what gets designed.**
 
-0a. **The WaveShell probe** (§6.2). Can JUCE enumerate the eight VST3 shells on
-    this machine? If yes, 210 products stop being bridged for mapping *and*
-    capture, and §6.3 never has to happen. One afternoon, answer is a number.
-0b. **The ScreenCaptureKit probe** (§6.3). Capture API-550A, report the
-    non-background fraction. Same shape as `67de0d5`. If it reads 0.0% the
-    bridged question is closed and route 3 is the answer.
+~~0a. The WaveShell probe~~ **DONE 5 Aug 2026.** The cause is architecture; the
+    route is dead anyway, because an in-process Waves VST3 still captures at
+    0.0%. See §6.2.
 
-Then:
+~~0b. The ScreenCaptureKit probe~~ **NOT RUN, deliberately.** Declined on cost —
+    a Screen Recording prompt on every mapper's machine and a macOS 14 floor
+    against an 11.0 target — and §6.2 strengthens the decision rather than
+    weakening it: SCK is now the *only* remaining route, since it is the only
+    one that reads what the window server composited rather than what a view
+    will redraw. Route 3 is the answer.
+
+So:
 
 1. **`Sweep All` button** — timer-driven loop, Stop, progress, self-supervision,
    and capture-after-submit. **No server work, and it changes your week.** Build
