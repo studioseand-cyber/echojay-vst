@@ -7658,6 +7658,121 @@ public:
         quitNow();
     }
 
+    /** --worklist [--next]
+
+        WHAT MAKES IT A WORKLIST RATHER THAN A LIST: it consults the marks.
+        `unmappable` is a decision about a PRODUCT and is skipped for good;
+        `issue` is a decision about a BUILD and is SURFACED rather than silently
+        retried, because a mapper who flagged it wants to see it again, not to
+        be handed it as though nothing happened.
+
+        UNKNOWN IS NOT UNMAPPED. mapStateFor is explicit that a row with no
+        server answer is unknown, and that calling it unmapped is how a mapper
+        re-maps a mapped product. Unknown rows are counted and NOT offered.
+
+        PARKED COMES FIRST. A plugin with a session file and no map is neither
+        unmapped nor finished: the work is half done and finishing it is the
+        cheapest item on the list. Detected from assign-*.json's plugin_id, so
+        it costs no plugin loads.
+    */
+    void printWorklist (bool loadFirst)
+    {
+        // Parked: a session on disk. plugin_id is written by persistSession, so
+        // this needs no fingerprint and therefore no load.
+        std::set<juce::String> parked;
+        for (const auto& f : ledger.getRoot().findChildFiles (juce::File::findFiles, false,
+                                                              "assign-*.json"))
+        {
+            auto v = juce::JSON::parse (f.loadFileAsString());
+            const auto pid = v.getProperty ("plugin_id", "").toString();
+            if (pid.isNotEmpty()) parked.insert (pid);
+        }
+
+        juce::Array<ScannedPlugin> toSweep, toFinish, flagged, unqueried;
+        int nUnmappable = 0, nUnknown = 0, nMapped = 0;
+
+        for (const auto& sp : rows)
+        {
+            if (marks.isUnmappable (sp.desc)) { ++nUnmappable; continue; }
+
+            const auto st = mapStateFor (sp).state;
+            const bool offerable = st == MapState::unmapped
+                                || st == MapState::differentBuild
+                                || st == MapState::unknown;
+            if (! offerable) { ++nMapped; continue; }
+
+            if (parked.count (sp.pluginId()) > 0) { toFinish.add (sp); continue; }
+            if (marks.hasIssue (sp.desc))         { flagged.add (sp);  continue; }
+
+            // UNKNOWN IS A STATEMENT ABOUT THE SERVER, NOT ABOUT THIS MACHINE.
+            //
+            // mapStateFor refuses to call an unqueried row "unmapped", and it is
+            // right: claiming that on no evidence is how a mapper re-maps a
+            // mapped product. But it checks localMapIdentities FIRST, so
+            // anything mapped HERE is already excluded -- and the residual risk
+            // is only of re-mapping something someone else submitted.
+            //
+            // For a sweep campaign an unqueried row is work. It is offered in
+            // its own bucket, labelled, rather than either hidden (a worklist
+            // that offers nothing on a fresh machine) or silently merged into
+            // unmapped (a claim the evidence does not support).
+            if (st == MapState::unknown) { unqueried.add (sp); ++nUnknown; continue; }
+            toSweep.add (sp);
+        }
+
+        auto line = [] (const ScannedPlugin& sp)
+        {
+            return sp.pluginId() + "\t" + sp.desc.name + "\t"
+                 + sp.desc.manufacturerName + "\t" + sp.desc.version;
+        };
+
+        std::cout << "WORKLIST over " << rows.size() << " scanned row(s)\n" << std::endl;
+        std::cout << "PARKED -- a session on disk and no map. Finish these first ("
+                  << toFinish.size() << ")" << std::endl;
+        for (const auto& sp : toFinish) std::cout << "  " << line (sp) << std::endl;
+
+        std::cout << "\nTO SWEEP -- not mapped, not unmappable, not flagged ("
+                  << toSweep.size() << ")" << std::endl;
+        for (const auto& sp : toSweep) std::cout << "  " << line (sp) << std::endl;
+
+        std::cout << "\nUNQUERIED -- no server answer, and no map on THIS machine. Work,\n"
+                     "             but the server may know something: refresh map-state to shrink this ("
+                  << unqueried.size() << ")" << std::endl;
+        for (const auto& sp : unqueried) std::cout << "  " << line (sp) << std::endl;
+
+        std::cout << "\nFLAGGED -- an issue on THIS build. Surfaced, not retried ("
+                  << flagged.size() << ")" << std::endl;
+        for (const auto& sp : flagged) std::cout << "  " << line (sp) << std::endl;
+
+        std::cout << "\nnot offered: " << nMapped << " already mapped, "
+                  << nUnmappable << " unmappable (a product decision, kept forward)"
+                  << std::endl;
+
+        // Parked first -- the work is half done. Then rows the server confirms
+        // are unmapped. Then the unqueried, which are probable rather than known.
+        const ScannedPlugin* first = ! toFinish.isEmpty()  ? &toFinish.getReference (0)
+                                   : ! toSweep.isEmpty()   ? &toSweep.getReference (0)
+                                   : ! unqueried.isEmpty() ? &unqueried.getReference (0)
+                                                           : nullptr;
+        if (first != nullptr)
+            std::cout << "\nNEXT\t" << line (*first) << std::endl;
+        else
+            std::cout << "\nNEXT\t(nothing to do)" << std::endl;
+
+        // --next SELECTS it, so the mapper presses one key instead of hunting
+        // the row. The list is the same filtered view they already work in.
+        if (loadFirst && first != nullptr)
+        {
+            for (int i = 0; i < rows.size(); ++i)
+                if (rows.getReference (i).pluginId() == first->pluginId())
+                { list.selectRow (i, false, true); break; }
+            std::cout << "selected in the list; the app stays open." << std::endl;
+        }
+
+        std::cout.flush();
+        if (! loadFirst) quitNow();
+    }
+
     void okM (bool cond, const juce::String& what)
     {
         if (! cond) ++failures;

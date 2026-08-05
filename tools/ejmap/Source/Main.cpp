@@ -58,6 +58,7 @@ public:
         juce::String fitTestId; int fitHoldSeconds = 0;
         juce::String mbandsTestId, mbandsMode;
         juce::String conlyTestId, conlyCat;
+        bool worklist = false, worklistNext = false;
         bool sendPending = false, sendPendingDry = false;
         juce::String typedReasonId, parkTestId;
         juce::String applyMapId, applyMapPath, applyMapImposter;
@@ -115,6 +116,10 @@ public:
                 sendPending = true;
             else if (args[i] == "--send-pending-dry")
             { sendPending = true; sendPendingDry = true; }
+            else if (args[i] == "--worklist")
+                worklist = true;
+            else if (args[i] == "--next")
+                worklistNext = true;
             else if (args[i] == "--selftest-controlsonly" && i + 1 < args.size())
             {
                 conlyTestId = args[++i];
@@ -336,6 +341,11 @@ public:
         {
             auto* m = mainWindow->getMain(); auto d = sendPendingDry;
             juce::MessageManager::callAsync ([m, d] { m->sendPendingMaps (d); });
+        }
+        else if (worklist && mainWindow->getMain() != nullptr)
+        {
+            auto* m = mainWindow->getMain(); const bool nx = worklistNext;
+            juce::MessageManager::callAsync ([m, nx] { m->printWorklist (nx); });
         }
         else if (conlyTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {
