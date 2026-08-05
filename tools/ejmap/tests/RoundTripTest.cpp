@@ -2415,6 +2415,23 @@ void testStaleControlsRefused()
     // server. The sweep is not where the 40 maps came from.
     check (staleFor ("bax-fp", "fusion-fp", 6),
            "the HAND path refuses it as well -- that is where the live one happened");
+
+    // AND A RESTORED SESSION IS NOT STALE. Found on the live overnight run at
+    // plugin 1: every parked plugin refused to submit, because the stamp was
+    // set where controls are BUILT and a restore does not build them. A session
+    // file is keyed by fingerprint -- assign-<fp>.json -- so its controls are
+    // its own by construction.
+    auto restored = [] (const juce::String& stampedInSession, const juce::String& sessionFp)
+    {
+        return stampedInSession.isNotEmpty() ? stampedInSession : sessionFp;
+    };
+    check (! staleFor (restored ("fpA", "fpA"), "fpA", 22),
+           "a session restored with its stamp is NOT stale");
+    check (! staleFor (restored ("", "fpA"), "fpA", 22),
+           "and one written BEFORE the stamp existed falls back to the session's own "
+           "fingerprint -- the file is named by it");
+    check (staleFor (restored ("fpB", "fpA"), "fpA", 22),
+           "but a stamp that disagrees with the session is still refused");
 }
 
 /** THE SWEEP-PHASE DEADLINE, and that it is not a load timeout. */
@@ -2458,6 +2475,29 @@ void testSweepDeadline()
     // SSL X-Gate dies at probe_gate_load and succeeds 23 times at load.
     check (juce::String ("sweep") != juce::String ("load"),
            "outcome: the sweep row is recorded at stage 'sweep', not 'load'");
+
+    // THE WIRING, NOT THE FORMULA. The previous version of this test checked
+    // that sweepDeadlineFor returned sensible numbers and passed -- while the
+    // Watchdog::Scope that was supposed to USE it had never been inserted. The
+    // live run then took eleven deaths with zero sweep_timeout rows, and the
+    // clean test was the reason nobody looked.
+    //
+    // A source check is crude and it is the only thing that would have caught
+    // this: the guard and the stake are single lines in one function and there
+    // is no seam to assert on from here.
+    {
+        auto src = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/MainComponent.h")
+                       .loadFileAsString();
+        auto body = src.fromFirstOccurrenceOf ("juce::String sweepOne (", false, false)
+                       .upToFirstOccurrenceOf ("\n    /** The panel image", false, false);
+        check (body.contains ("Watchdog::Scope guard (watchdog, \"controls sweep\""),
+               "WIRING: sweepOne actually ARMS the watchdog it was given a deadline for");
+        check (body.contains ("sweepDeadlineFor (cal.paramCount)"),
+               "WIRING: ...with the measured per-parameter deadline, not a constant");
+        check (body.contains ("\"sweep\", \"controls sweep\""),
+               "WIRING: and plants a STAKE, so a crash during the sweep names its plugin "
+               "instead of leaving eleven restarts saying (unknown)");
+    }
 }
 
 void testMapperIdentity()

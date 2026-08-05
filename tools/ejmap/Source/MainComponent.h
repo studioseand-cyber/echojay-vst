@@ -8462,8 +8462,45 @@ private:
         { detail = "the wizard offered no controls row"; return "no_controls_row"; }
 
         assignPanel.selectRow (controlsRow);
-        assignPanel.dispatchAction ("space");    // sweep the surface
-        assignPanel.dispatchAction ("space");    // ship what it found
+        {
+            // A STAKE *AND* A DEADLINE, and each catches what the other cannot.
+            //
+            // The watchdog catches a HANG: it fires, writes a row, stops the
+            // process. The stake catches a CRASH, which no deadline can see
+            // because the process is already gone.
+            //
+            // Measured on the live run: eleven deaths -- signals 5, 6, 10, 11 --
+            // and ZERO rows naming a plugin. Every restart said "(unknown)",
+            // because beginLoad's stake is closed by endLoad the moment the LOAD
+            // finishes, and the sweep then ran with nothing on disk saying what
+            // was in flight. The retry rule could not count what it could not
+            // see, so the same plugins came back every relaunch.
+            //
+            // Stage "sweep" on both, so a recovered row lands at the stage the
+            // failure belongs to and the stage-scoped retry rule counts sweep
+            // deaths against sweep successes rather than pooling them with load.
+            ledger.beginLoad (loadedId, sp.desc.name, sp.desc.manufacturerName,
+                              sp.desc.pluginFormatName, sp.desc.version,
+                              "sweep", "controls sweep");
+            Watchdog::Scope guard (watchdog, "controls sweep", sp.pluginId(), sp.desc.name,
+                                   sp.desc.pluginFormatName, "sweep",
+                                   sweepDeadlineFor (cal.paramCount));
+
+            assignPanel.dispatchAction ("space");    // sweep the surface
+            assignPanel.dispatchAction ("space");    // ship what it found
+
+            LedgerRecord done;
+            done.pluginId = loadedId;  done.name    = sp.desc.name;
+            done.vendor   = sp.desc.manufacturerName;
+            done.format   = sp.desc.pluginFormatName;
+            done.version  = sp.desc.version;
+            done.stage    = "sweep";
+            done.outcome  = LoadOutcome::ok;
+            done.detail   = "controls sweep returned, "
+                              + juce::String (assignPanel.controlsForSubmit().size())
+                              + " staged";
+            ledger.endLoad (done);
+        }
         nControls = assignPanel.controlsForSubmit().size();
 
         // ASSERT ON THE CONTENT, NOT ON COMPLETION. The two SPACEs are a script

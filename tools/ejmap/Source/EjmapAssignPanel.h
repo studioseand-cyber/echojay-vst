@@ -3923,6 +3923,9 @@ private:
         juce::Array<juce::var> cv;
         for (const auto& c : pendingControls) cv.add (c.toVar());
         o->setProperty ("pending_controls", juce::var (cv));
+        // The stamp travels WITH them. Without it a restored session's controls
+        // look foreign to controlsAreForThisPlugin and the map is refused.
+        o->setProperty ("pending_controls_fp", pendingControlsFp);
         {
             auto* lo = new juce::DynamicObject();
             for (auto& kv : lockstepObserved)
@@ -4165,8 +4168,24 @@ private:
                     = kv.value.getProperty ("by", "human_pick").toString();
             }
         if (auto* ca = v.getProperty ("pending_controls", juce::var()).getArray())
+        {
             for (auto& cvr : *ca)
                 pendingControls.add (namedControlFromVar (cvr));
+
+            // RESTORING CONTROLS WITHOUT THEIR STAMP MAKES THEM LOOK STOLEN.
+            //
+            // Found on the live overnight run at plugin 1: every parked plugin
+            // came back stale_controls and refused to submit. The controls were
+            // its own -- a session file IS keyed by fingerprint, assign-<fp>.json
+            // -- but the stamp was set only where controls are BUILT, and a
+            // restore does not build them.
+            //
+            // Sessions written before the field existed carry no stamp, so the
+            // fallback is the session's own fingerprint. That is not a guess:
+            // the file is named by it and `fp` was set from it moments ago.
+            const auto stamped = v.getProperty ("pending_controls_fp", "").toString();
+            pendingControlsFp = stamped.isNotEmpty() ? stamped : fp;
+        }
         controlsExcluded.clear();
         if (auto* xa = v.getProperty ("controls_excluded", juce::var()).getArray())
             for (auto& xi : *xa) controlsExcluded.add ((int) xi);
