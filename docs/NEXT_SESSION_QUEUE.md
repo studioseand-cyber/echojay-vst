@@ -1273,3 +1273,40 @@ every other gate landed this week.
 
 **Prerequisite: a corpus that can support the design.** That means stage 1, then
 the catalogue sweep.
+
+---
+
+## 22. A COHORT CAN HAVE TWO AXES — mixed band/channel sets
+
+Raised 5 Aug 2026, when the cohort collapse landed. **Deliberately unsolved**, and
+kept out of the cohort work rather than absorbed into it.
+
+UAD Manley Massive Passive has seven controls claiming `q`:
+
+```
+Ch1LoBW  Ch1LoMidBW  Ch1HiMidBW  Ch1HiBW      <- band axis, channel 1
+Ch2LoMidBW  Ch2HiMidBW  Ch2HiBW               <- the same bands, channel 2
+```
+
+They vary on **two** axes at once — a band axis (`Lo/LoMid/HiMid/Hi`) and a
+channel axis (`Ch1/Ch2`). `find_axis` demands exactly one varying token position,
+so it finds none, and the cohort is presented as "no shared axis".
+
+**That is honest and it is the right behaviour today**: one question with no
+channel hint beats a hint that guesses which axis it is. But it is not the
+answer.
+
+**The answer is probably that a cohort may carry two axes and the card says which
+is which** — "4 bands across 2 channels; the bands are the grouping, the channels
+are the duplication". That needs:
+
+- `find_axis` generalised to find an ordered LIST of varying positions rather
+  than refusing when there is more than one
+- each position classified independently (band / channel / instance) with the
+  existing set-based rule
+- a disposition that can say "group on the band axis, dedupe on the channel
+  axis" in one answer
+
+**Do not attempt it before the catalogue sweep.** One plugin is not enough to
+know whether two axes is the common mixed shape or whether three (channel x band
+x instance) appears too, and the corpus that answers that does not exist yet.
