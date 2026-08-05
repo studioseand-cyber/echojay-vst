@@ -64,8 +64,9 @@ acc, esc, dec = merge([ev("Gain")], [A("Gain", "none", "high")], [A("Gain", "non
 check(not acc and not esc and len(dec) == 1,
       "a CONFIDENT agreed 'none' is a decline, not a row for the human")
 acc, esc, dec = merge([ev("Gain")], [A("Gain", "none", "low")], [A("Gain", "none", "high")])
-check(not acc and not dec and "not confidently" in esc[0]["why"],
-      "a hedged 'none' still escalates (the spiff `decay` shape)")
+check(not acc and not esc and len(dec) == 1 and dec[0]["confident"] is False,
+      "a HEDGED agreed 'none' also declines, flagged not-confident (57/57 in the pile)")
+check("hedged" in dec[0]["why"], "and the record says an arm hedged, so it can be re-opened")
 
 acc, esc, dec = merge([ev("Attack", "db")], [A("Attack", "attack_ms", "high")],
                  [A("Attack", "attack_ms", "high")])

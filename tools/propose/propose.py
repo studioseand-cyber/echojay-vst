@@ -116,16 +116,22 @@ def merge(rows, a_ans, b_ans):
         elif a_sem != b_sem:
             escalated.append({**row, "why": "arms disagree"})
         elif a_sem == "none":
-            # A CONFIDENT, AGREED "none" is an answer, not an escalation. Most of
-            # a plugin's controls are bypasses, in/out switches and band
-            # selectors, and putting every one of them in front of a human is how
-            # a review pile becomes 530 rows of "this is a bypass". Where either
-            # arm hedged, it still escalates -- the one both-agree-"none" error in
-            # the hold-out (spiff `decay`, truly release_ms) was low/low.
-            if a_conf == "high" and b_conf == "high":
-                declined.append({**row, "why": "both arms confidently say no semantic applies"})
-            else:
-                escalated.append({**row, "why": "both arms say none, but not confidently"})
+            # BOTH ARMS SAYING "none" IS AN ANSWER, confident or not.
+            #
+            # Measured over the first full review pile: of 57 rows escalated as
+            # "both say none, but not confidently", the mapper answered none on
+            # 57 of 57. A category with a 100% outcome is not a question, it is
+            # a queue tax -- 21% of that pile.
+            #
+            # They are DECLINES, not discards: recorded with both arms and their
+            # confidences, so they stay in the none corpus that the vocabulary
+            # work reads, and so a later pass can re-open the hedged ones alone
+            # if the sample ever disagrees.
+            declined.append({**row,
+                             "why": ("both arms say no semantic applies"
+                                     + ("" if (a_conf == "high" and b_conf == "high")
+                                        else ", though at least one hedged")),
+                             "confident": a_conf == "high" and b_conf == "high"})
         elif a_sem not in VOCAB:
             escalated.append({**row, "why": f"'{a_sem}' is not in the vocabulary"})
         elif a_conf != "high" or b_conf != "high":

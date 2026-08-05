@@ -239,13 +239,33 @@ def menu(row):
     return offered
 
 
+def resolve_typed(text):
+    """A typed semantic: exact, or an unambiguous prefix. None if neither.
+
+    Typing beats counting to 23. It also means the full vocabulary is reachable
+    without discovering [v] first -- which mattered, because the card prints no
+    numbered options exactly when no model proposed anything, and that is
+    precisely when the reviewer is the one who knows the answer.
+    """
+    t = text.strip().lower()
+    if t in VOCAB:
+        return t
+    hits = [v for v in VOCAB if v.startswith(t)]
+    return hits[0] if len(hits) == 1 else None
+
+
 def decide(row):
     offered = menu(row)
     print()
     for i, s in enumerate(offered, 1):
         print(f"    [{i}] {s}")
+    if not offered:
+        print("    neither model proposed a semantic for this control.")
+        print("    You can still name one -- type it (e.g. 'output_db', or 'out'),")
+        print("    or [v] to list the vocabulary.")
     print("    [n] none / not a dial      [t] verify by touch (defer to the wizard)")
     print("    [v] the full vocabulary    [d] defer      [q] save and quit")
+    print("    or type a semantic name directly")
     while True:
         try:
             k = input("  > ").strip().lower()
@@ -258,29 +278,56 @@ def decide(row):
         if k == "t":
             return {"outcome": "verify_by_touch"}
         if k == "n":
-            return {"outcome": "not_a_dial", "semantic": None,
-                    "semantic_source": "human-corrected", "trust": "human-verified"}
+            # A "none" IS A DATASET, so capture what it should have been while
+            # the reviewer is looking at it. Free text on purpose: the whole
+            # point is that the right answer is not in the vocabulary yet, so a
+            # menu cannot ask the question.
+            try:
+                wanted = input("    what would you have called it? "
+                               "(enter to skip) > ").strip()
+            except EOFError:
+                wanted = ""
+            out = {"outcome": "not_a_dial", "semantic": None,
+                   "semantic_source": "human-corrected", "trust": "human-verified"}
+            if wanted:
+                out["wanted_semantic"] = wanted
+            return out
         if k == "v":
             for i, s in enumerate(VOCAB, 1):
                 print(f"    [{i:2d}] {s}")
             offered = VOCAB
             continue
+
+        chosen = None
         if k.isdigit() and 1 <= int(k) <= len(offered):
             chosen = offered[int(k) - 1]
-            conflict = unit_family_conflict(chosen, row["evidence"]["unit"])
-            if conflict:
-                # The gate refuses a human the same way it refuses a model.
-                print(f"  REFUSED -- {conflict}")
-                print("  Pick another, or [t] to verify it by touch first.")
+        elif k:
+            chosen = resolve_typed(k)
+            if chosen is None and not k.isdigit():
+                near = [v for v in VOCAB if v.startswith(k)]
+                if near:
+                    print(f"  ambiguous -- did you mean: {', '.join(near)}")
+                else:
+                    print(f"  {k!r} is not in the vocabulary. [v] lists it; [n] records "
+                          f"'none' and asks what you would have called it.")
                 continue
-            proposed = {a["semantic"] for a in row.get("arms", [])}
-            waved = len(proposed) == 1 and chosen in proposed
-            return {"outcome": "accepted" if waved else "corrected",
-                    "semantic": chosen,
-                    # reading is not touching
-                    "semantic_source": "human-confirmed" if waved else "human-corrected",
-                    "trust": "llm-classified" if waved else "human-verified"}
-        print("  ?")
+        if chosen is None:
+            print("  ?")
+            continue
+
+        conflict = unit_family_conflict(chosen, row["evidence"]["unit"])
+        if conflict:
+            # The gate refuses a human the same way it refuses a model.
+            print(f"  REFUSED -- {conflict}")
+            print("  Pick another, or [t] to verify it by touch first.")
+            continue
+        proposed = {a["semantic"] for a in row.get("arms", [])}
+        waved = len(proposed) == 1 and chosen in proposed
+        return {"outcome": "accepted" if waved else "corrected",
+                "semantic": chosen,
+                # reading is not touching
+                "semantic_source": "human-confirmed" if waved else "human-corrected",
+                "trust": "llm-classified" if waved else "human-verified"}
 
 
 def main():
