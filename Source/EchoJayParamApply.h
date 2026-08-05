@@ -190,6 +190,61 @@ inline bool parseDisplayForUnit (const juce::String& text, const juce::String& u
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// UNIT FAMILY AGREEMENT -- one definition, three call sites.
+//
+// A semantic DECLARES a unit by its suffix; a display MEASURES one by printing
+// it. When both speak and they disagree, the name and the behaviour disagree,
+// and that is refused wherever it is noticed: at map time
+// (ejmap::unitFamilyConflicts, review screen and submit path) and now at DIAL
+// time (typedReadbackMatch below).
+//
+// AN EMPTY FAMILY ON EITHER SIDE AGREES WITH EVERYTHING. A semantic with no
+// suffix (drive, sensitivity) claims nothing, and a display that printed no
+// unit was MEASURED as printing none -- absence is a measurement, not a gap.
+//
+// ms AND s ARE ONE FAMILY. reverb_decay_s declares "s" while the sweeper folds
+// every time display into "ms" (it votes on "ms" / " s" / trailing s), so a
+// plain equality test reports a reverb decay reading "4.00 s" as a conflict.
+// Latent rather than live only because no time param in the corpus carries a
+// recorded unit yet -- every one predates the field.
+inline bool unitFamiliesAgree (const juce::String& a, const juce::String& b)
+{
+    if (a.isEmpty() || b.isEmpty() || a == b) return true;
+    const auto time = [] (const juce::String& u) { return u == "ms" || u == "s"; };
+    return time (a) && time (b);
+}
+
+// The unit a display DECLARES, from one settled reading. Distinct from the
+// sweeper's derivation, which votes across 21 sweep points because a stray "Hz"
+// in one transient text must not make a family; here there is a single settled
+// readback and a display either prints a unit or it does not.
+inline juce::String displayUnitFamily (const juce::String& text)
+{
+    auto t = text.trim().toLowerCase();
+    if (t.isEmpty()) return {};
+    if (t.contains (":1") || t.contains (": 1")) return "ratio";
+
+    int i = 0;
+    while (i < t.length() && ! (t[i] >= '0' && t[i] <= '9')) ++i;
+    while (i < t.length() && ((t[i] >= '0' && t[i] <= '9') || t[i] == '.' || t[i] == ',')) ++i;
+    juce::String ut;
+    const juce::juce_wchar micro = (juce::juce_wchar) 0xb5;
+    for (int j = i; j < t.length(); ++j)
+    {
+        const auto c = t[j];
+        if ((c >= 'a' && c <= 'z') || c == '%' || c == micro) ut << c;
+        else if (ut.isEmpty() && (c == ' ' || c == '\t')) continue;
+        else break;
+    }
+    if (ut == "db")                                    return "db";
+    if (ut == "hz" || ut == "khz")                     return "hz";
+    if (ut == "ms" || ut == "us" || ut == juce::String::charToString (micro) + "s") return "ms";
+    if (ut == "s" || ut == "sec" || ut == "secs")      return "s";
+    if (ut == "%" || ut == "pct")                      return "pct";
+    return {};
+}
+
 // Compare a landed display against the requested value. Tolerance comes from
 // the map's own resolution, nothing looser: half the anchor gap bracketing
 // the target (actual interpolation resolution) with a 2%-of-span floor for
@@ -202,6 +257,21 @@ inline int typedReadbackMatch (const juce::String& semantic, float target,
                                const juce::Array<juce::Array<float>>& anchors)
 {
     const auto unit = semanticUnit (semantic);
+
+    // THE UNIT THE DISPLAY DECLARES OUTRANKS THE NUMBER IT SHOWS.
+    //
+    // parseDisplayForUnit extracts the display's unit token and then discards
+    // it unless it is a compatible conversion (ms<->s, hz<->kHz); everything
+    // else falls through to "take the number, return true". That is why the
+    // live defect passed: attack_ms asked -1.125, the display read "-1.13 dB",
+    // the numbers agreed, and it recorded a match while a transient-gain
+    // control in decibels was being dialled as milliseconds.
+    //
+    // A contradicting declared unit is a MISMATCH, not a near-miss: -1 reverts
+    // the write and tells the user, which is the honest outcome for a dial that
+    // landed on a control the map has mis-named.
+    if (! unitFamiliesAgree (unit, displayUnitFamily (landedText))) return -1;
+
     float landed = 0.0f;
     bool negInf = false;
     if (! parseDisplayForUnit (landedText, unit, landed, negInf)) return 0;

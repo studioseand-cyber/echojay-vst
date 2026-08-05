@@ -1743,12 +1743,70 @@ void testDuplicateSemanticRule()
            "dup semantic: two semantics on one index is the OTHER rule's job");
 }
 
+/*  THE UNIT A DISPLAY DECLARES, AT DIAL TIME.
+
+    The live defect this exists for: UAD SPL Transient Designer's Attack is dB
+    of transient gain, mapped attack_ms. The dial asked -1.125, the display read
+    "-1.13 dB", the NUMBERS agreed, and the read-back recorded a match -- because
+    parseDisplayForUnit extracts the display's unit token and then throws it
+    away unless it is a compatible conversion.
+
+    Now a contradicting declared unit is a mismatch, which reverts the write and
+    tells the user. Proven in both directions, and proven silent where either
+    side declares nothing.
+*/
+void testDialTimeUnitRule()
+{
+    using namespace echojay;
+
+    check (displayUnitFamily ("-1.13 dB")   == "db",  "display: -1.13 dB -> db");
+    check (displayUnitFamily ("4.00 s")     == "s",   "display: 4.00 s -> s");
+    check (displayUnitFamily ("150 ms")     == "ms",  "display: 150 ms -> ms");
+    check (displayUnitFamily ("8000 Hz")    == "hz",  "display: 8000 Hz -> hz");
+    check (displayUnitFamily ("12k")        == "",    "a bare k declares nothing on its own");
+    check (displayUnitFamily ("100.0 %")    == "pct", "display: 100.0 % -> pct");
+    check (displayUnitFamily ("3.00 : 1")   == "ratio", "display: 3.00 : 1 -> ratio");
+    check (displayUnitFamily ("4.3")        == "",    "a bare number declares NOTHING");
+    check (displayUnitFamily ("12 steps")   == "",    "an unrecognised suffix declares nothing");
+
+    check (unitFamiliesAgree ("ms", "s"),  "ms and s are ONE time family");
+    check (unitFamiliesAgree ("s", "ms"),  "...in both directions");
+    check (unitFamiliesAgree ("", "db"),   "a semantic with no claim agrees with anything");
+    check (unitFamiliesAgree ("db", ""),   "a display with no declaration agrees with anything");
+    check (! unitFamiliesAgree ("ms", "db"), "ms and db do NOT agree");
+    check (! unitFamiliesAgree ("db", "pct"), "db and pct do NOT agree");
+
+    // A table spanning the Transient Designer's real +/-15, so the numeric
+    // comparison would PASS if the unit were ignored.
+    juce::Array<juce::Array<float>> table;
+    for (int i = 0; i <= 20; ++i)
+    {
+        juce::Array<float> row;
+        row.add (-15.0f + (float) i * 1.5f);
+        row.add ((float) i / 20.0f);
+        table.add (row);
+    }
+
+    check (typedReadbackMatch ("attack_ms", -1.125f, "-1.13 dB", table) == -1,
+           "THE LIVE DEFECT: attack_ms landing on a dB display is a MISMATCH, "
+           "even though the numbers agree");
+    check (typedReadbackMatch ("attack_ms", -1.125f, "-1.13", table) == 1,
+           "the same landing with NO declared unit still matches -- absence claims nothing");
+    check (typedReadbackMatch ("drive", -1.125f, "-1.13 dB", table) == 1,
+           "a semantic with no unit claim is not judged by the display's");
+    check (typedReadbackMatch ("gain_db", -1.125f, "-1.13 dB", table) == 1,
+           "agreeing units still match");
+    check (typedReadbackMatch ("reverb_decay_s", 3.0f, "3.00 s", table) == 1,
+           "reverb_decay_s reading seconds is NOT a conflict (the s/ms family)");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
     testSchemaVersionPinned();
     testDuplicateSemanticRule();
+    testDialTimeUnitRule();
     testVerdictSemantics();
     testTrustOrdering();
     testSkipRequiresReason();

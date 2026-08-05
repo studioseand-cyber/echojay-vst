@@ -1100,3 +1100,74 @@ the mapper is now told they cannot record what the plugin actually has.
 **(a) is the honest default and needs measuring first**: how often does a chat
 request name a stage ("compressor release") versus a bare semantic ("release")? That
 is answerable from the chat corpus and should be answered before anything is built.
+
+---
+
+## 18. THE `attack_ms` VOCABULARY IS STRAINING — a dial-set question, not a classification one
+
+Raised 5 Aug 2026 by the mapper working the review pile. **Collecting cases, not
+yet deciding.**
+
+`attack_ms` is being asked to cover four different things and only one of them is
+a time:
+
+```
+UAD SPL Transient Designer  'Attack'       dB of transient gain, sweeps -15..+15 dB
+FG-X 2                      'Comp Attack'  an arbitrary 0-10 scale, no unit
+ValhallaVintageVerb         'Attack'       reverb onset SHAPE, not a time constant
+(the intended meaning)                     milliseconds to full gain reduction
+```
+
+**This is why the Transient Designer row was wrong in the truth set, and why no
+classifier could have got it right**: there is no correct answer in the
+vocabulary, so refusing was the only honest outcome. The unit-family rule catches
+the dB case because it contradicts a measured unit; it cannot catch FG-X 2's
+unitless 0-10 scale or Valhalla's shape control, because neither declares
+anything to contradict.
+
+**It is a dial-set question.** `DialSets::forCategory` decides what a category is
+asked about, and a transient shaper's "attack" is not a compressor's. Options,
+none chosen:
+
+- **(a) Per-category meaning.** `attack_ms` under `transient_shaper` means
+  something different from `attack_ms` under `compressor`. Cheap, and dishonest:
+  the key still says `_ms`, and the unit-family rule would then have to be
+  category-aware to stop refusing it.
+- **(b) New semantics.** `attack_amount` (dimensionless), `attack_shape`.
+  Honest, and every one costs a server map-builder change plus consumer support.
+- **(c) Refuse the category.** A transient shaper's attack is simply not
+  addressable until there is a semantic for it, and the control stays Tier 2,
+  reachable by exact name. Free, and narrows what "set the attack" can do.
+
+**Do not decide on three cases.** The mapper is collecting more while working the
+pile; the same question is likely live for `release_ms` (FG-X 2 has a matching
+`Comp Release`) and for `sensitivity`.
+
+---
+
+## 19. PARTIAL BAND SETS ARE A CHANNEL-STRIP PATTERN, and the panel may recover them
+
+Raised 5 Aug 2026 from the first band-routing run. Both partial band sets in the
+corpus are **channel strips**; all four complete ones are **dedicated EQs**:
+
+```
+PARTIAL   UAD 4K Channel Strip        4 bands offered, 2 placed (HF, HMF missing)
+PARTIAL   UAD Neve 88RS Legacy        4 bands offered, 2 placed (HF, HMF missing)
+complete  API-550A (m), API-550A (s), AMEK EQ 200, Dangerous BAX EQ Mix
+```
+
+Both fail the same way: **on a channel strip the EQ section's HF and HMF
+frequency displays declare no unit**, so no ordinal can be measured and the set
+is refused as partial (correctly -- proposing the two would claim the plugin has
+two bands). The LF and LMF frequencies on the same plugins DO declare hz.
+
+**Stated as a pattern rather than two cases, because it predicts the catalogue**:
+channel strips are a large category, and this says their EQ sections will
+routinely arrive half-orderable.
+
+**And it points straight at the screenshot stage.** Those panels print the
+frequencies the display omits -- the same shape as the Maag EQ4 case that
+motivated stage 4. So the missing evidence is plausibly RECOVERABLE rather than
+absent, which would turn both partials complete. **Worth testing on 4K and Neve
+before building anything else for partial sets**: two captures, two vision calls,
+and the answer is measured rather than assumed.

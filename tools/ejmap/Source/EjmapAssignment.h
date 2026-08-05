@@ -475,7 +475,7 @@ inline juce::StringArray unitFamilyConflicts (const juce::Array<AssignRow>& rows
         if (r.resolvedIndex < 0) continue;
         const auto want = echojay::semanticUnit (r.semantic);
         const auto got  = r.sweep.unitFamily;
-        if (want.isEmpty() || got.isEmpty() || want == got) continue;
+        if (echojay::unitFamiliesAgree (want, got)) continue;
         out.add (r.semantic + " expects '" + want + "' but [" + juce::String (r.resolvedIndex)
                    + "] sweeps in '" + got + "' - the name and the behaviour disagree");
     }
