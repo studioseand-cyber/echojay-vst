@@ -114,6 +114,40 @@ if [ "$BRANCH" = "feat/ejmap" ] || echo "$STAGED" | grep -qE '^tools/(ejmap|ejex
   fi
 fi
 
+# --- suite 3: the corpus audit ----------------------------------------------
+#
+# NOT A CODE TEST. It checks the MAPS on this machine for a control surface that
+# belongs to a different plugin -- the defect that put SSL Fusion HF Compressor
+# on the server carrying Dangerous BAX EQ Mix's six controls, submitted by hand,
+# accepted with HTTP 200, and found only because two control counts matched.
+#
+# It runs on every ejmap commit because a corpus is not checked by suspicion. A
+# map can be written wrong by a defect that does not exist yet, and the audit
+# costs a second.
+#
+# ABSENT CORPUS IS OUT OF SCOPE, NOT A PASS. A clone with no ~/Library/ejmap has
+# nothing to audit and says so; a corpus that exists is always audited.
+if echo "$STAGED" | grep -qE '^tools/(ejmap|propose)/' || [ "$BRANCH" = "feat/ejmap" ]; then
+  AUDIT="$REPO/tools/propose/audit_maps.py"
+  CORPUS="$HOME/Library/ejmap/maps"
+  if [ ! -f "$AUDIT" ]; then
+    :
+  elif [ ! -d "$CORPUS" ]; then
+    echo "  audit_maps: no corpus at $CORPUS on this machine -- out of scope, not a pass"
+  else
+    RAN="$RAN audit_maps"
+    echo "  running audit_maps..."
+    aout=$(python3 "$AUDIT" 2>&1)
+    if [ $? -ne 0 ]; then
+      echo "GATE FAIL: audit_maps -- a map carries another plugin's control surface"
+      echo "$aout" | sed -n '/CHECK 0/,$p' | head -30
+      FAILED=1
+    else
+      echo "  ok  audit_maps: $(echo "$aout" | grep -E '^[0-9]+ map' | head -1), $(echo "$aout" | grep 'check 0 saw' | tr -s ' ')"
+    fi
+  fi
+fi
+
 if [ -z "$RAN" ]; then
   echo "  no suite in scope for these files (touches neither shared code nor tools/ejmap)"
 fi
