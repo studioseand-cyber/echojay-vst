@@ -9246,6 +9246,7 @@ private:
             // The unit-family rule, from the same one implementation the review
             // screen reads. A rule that exists twice is two rules.
             conflicts.addArray (unitFamilyConflicts (rws));
+            conflicts.addArray (duplicateSemanticConflicts (rws));
             if (! conflicts.isEmpty())
             {
                 captureReadout.setText ("SUBMIT REFUSED: " + conflicts.joinIntoString ("; ")

@@ -1682,11 +1682,73 @@ void testUnitFamilyRule()
            "unit rule: unresolved, index-less and surface rows are not judged");
 }
 
+/*  ONE SEMANTIC ON TWO INDICES: the silent half of the duplicate rule.
+
+    duplicateIndexConflicts is loud -- two semantics on one index produces a map
+    with two keys pointing at one control. This is the reverse and it is silent:
+    `params` is keyed by semantic, so the second write wins and the first
+    control disappears with nothing recorded. Proven in both directions, and
+    proven not to fire on the cases it must not judge.
+*/
+void testDuplicateSemanticRule()
+{
+    auto row = [] (const char* sem, int idx)
+    {
+        ejmap::AssignRow r;
+        r.semantic = sem; r.kind = sem;
+        r.state = ejmap::AssignRow::State::confirmed;
+        r.resolvedIndex = idx;
+        return r;
+    };
+
+    juce::Array<ejmap::AssignRow> ok;
+    ok.add (row ("output_db", 34));
+    ok.add (row ("makeup_db", 40));
+    check (ejmap::duplicateSemanticConflicts (ok).isEmpty(),
+           "dup semantic: distinct semantics on distinct indices raise nothing");
+
+    juce::Array<ejmap::AssignRow> clash;
+    clash.add (row ("output_db", 34));
+    clash.add (row ("output_db", 40));
+    const auto c = ejmap::duplicateSemanticConflicts (clash);
+    check (c.size() == 1 && c[0].contains ("output_db") && c[0].contains ("[34]")
+             && c[0].contains ("[40]"),
+           "dup semantic: one semantic on two indices REFUSES, naming both");
+
+    // sharedInsisted is a statement about an INDEX shared by two semantics. It
+    // must not launder the reverse, which has no legitimate form.
+    juce::Array<ejmap::AssignRow> insisted;
+    auto i1 = row ("output_db", 34); i1.sharedInsisted = true;
+    auto i2 = row ("output_db", 40); i2.sharedInsisted = true;
+    insisted.add (i1); insisted.add (i2);
+    check (ejmap::duplicateSemanticConflicts (insisted).size() == 1,
+           "dup semantic: sharedInsisted does NOT exempt one semantic on two indices");
+
+    // Only confirmed, indexed, non-surface rows are judged -- same scope as the
+    // rules it sits beside.
+    juce::Array<ejmap::AssignRow> skipped;
+    auto s1 = row ("output_db", 34); s1.state = ejmap::AssignRow::State::skipDeferred;
+    auto s2 = row ("output_db", 40);
+    auto s3 = row ("output_db", 41); s3.kind = "bands";
+    skipped.add (s1); skipped.add (s2); skipped.add (s3);
+    check (ejmap::duplicateSemanticConflicts (skipped).isEmpty(),
+           "dup semantic: unresolved, index-less and surface rows are not judged");
+
+    // And the index rule still owns its own direction.
+    juce::Array<ejmap::AssignRow> byIndex;
+    byIndex.add (row ("output_db", 34));
+    byIndex.add (row ("makeup_db", 34));
+    check (ejmap::duplicateSemanticConflicts (byIndex).isEmpty()
+             && ejmap::duplicateIndexConflicts (byIndex).size() == 1,
+           "dup semantic: two semantics on one index is the OTHER rule's job");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
     testSchemaVersionPinned();
+    testDuplicateSemanticRule();
     testVerdictSemantics();
     testTrustOrdering();
     testSkipRequiresReason();

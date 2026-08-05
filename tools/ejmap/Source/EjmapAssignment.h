@@ -497,4 +497,45 @@ inline juce::StringArray duplicateIndexConflicts (const juce::Array<AssignRow>& 
     return out;
 }
 
+/** The REVERSE of duplicateIndexConflicts, and it fails far more quietly.
+
+    duplicateIndexConflicts catches one INDEX claimed by two semantics, which
+    is loud: the map would carry two keys pointing at one control and the
+    mapper is asked which they meant.
+
+    This catches one SEMANTIC claimed by two INDICES, which says nothing at
+    all. `params` is a JSON OBJECT KEYED BY SEMANTIC, so two rows claiming
+    output_db cannot both be written -- the second write silently wins and the
+    first control vanishes from the map with no record that it was ever
+    assigned. Nothing downstream can detect it either, because the map that
+    results is perfectly well formed.
+
+    Found 5 Aug 2026 while building the offline proposer, whose fourth gate is
+    this same rule (tools/propose/propose.py, asserted by test_propose.py).
+    A model proposing output_db for two different gains is the obvious way to
+    hit it, but the hand path has always been able to: confirm output_db on
+    [34], change your mind, confirm it on [40], and [34] is gone.
+
+    NOT exempted by sharedInsisted. That flag says a mapper deliberately let two
+    semantics share ONE control, which is a statement about an index. It says
+    nothing about one semantic spread over two, and there is no legitimate form
+    of that -- a lockstep pair is still recorded as the one row that was
+    confirmed.
+*/
+inline juce::StringArray duplicateSemanticConflicts (const juce::Array<AssignRow>& rows)
+{
+    juce::StringArray out;
+    std::map<juce::String, juce::StringArray> bySemantic;
+    for (const auto& r : rows)
+        if (r.state == AssignRow::State::confirmed && ! r.isSurfaceRow()
+             && r.resolvedIndex >= 0 && r.semantic.isNotEmpty())
+            bySemantic[r.semantic].add ("[" + juce::String (r.resolvedIndex) + "]");
+    for (auto& kv : bySemantic)
+        if (kv.second.size() > 1)
+            out.add (kv.first + " claimed by " + juce::String (kv.second.size())
+                       + " controls: " + kv.second.joinIntoString (" AND ")
+                       + " - params is keyed by semantic, so only the last would survive");
+    return out;
+}
+
 } // namespace ejmap

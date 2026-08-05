@@ -2915,6 +2915,7 @@ public:
         // and the AMEK re-run refused twice. Never reimplement it here.
         auto out = duplicateIndexConflicts (rows);
         out.addArray (unitFamilyConflicts (rows));
+        out.addArray (duplicateSemanticConflicts (rows));
         return out;
     }
 
