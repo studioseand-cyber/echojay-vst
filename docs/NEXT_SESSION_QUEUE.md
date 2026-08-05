@@ -1221,3 +1221,55 @@ first.
 **Collecting continues.** Item 18 (`attack_ms` covering four things) and this are
 the first two; `release_ms` and `sensitivity` are suspected. The list is the
 input to a dial-set revision, not four separate patches.
+
+---
+
+## 21. ONE CONTROL SURFACE — the dict shape is what makes the collision silent
+
+Reasoning recorded 5 Aug 2026 while fresh. **Agreed as right and agreed to wait**
+until after stage 1 and the catalogue sweep: it touches the server map-builder
+and every consumer, and 40 maps weighted 11 compressor / 7 EQ is not a corpus to
+design a schema against.
+
+### What the boundary actually is
+
+Measured: **122 of 125 param indices do not appear in `controls` at all.**
+`params` and `controls` are DISJOINT. So the tier boundary is not "what the
+wizard asked about" -- it is **addressed-by-semantic against addressed-by-name**,
+which is the distinction that survives the mapping flow:
+
+| | `params` | `controls` |
+|---|---|---|
+| key | the semantic | the exact name |
+| uniqueness | one per map (a dict key) | one per name (duplicates refused) |
+| serves | "set the threshold to -20" | "Sustain: 4" |
+
+Load-bearing: `applySettings` (two lookups because two key spaces),
+`Exposure::build` (reads `controls` and `groups`, NEVER `params` -- the twelve
+exposed are the named surface), and dialability (counts usable params).
+
+Vestigial: the exposure `tier` field (`"primary"|"hidden"`, human-set, **0 of 600
+controls carry it**, and not Tier 1/2 at all), and the dial set as a wizard
+checklist -- which survives only as the per-category semantic vocabulary.
+
+### Why one surface is right
+
+**THE DICT SHAPE IS NOT A SAFETY PROPERTY. IT IS THE CAUSE.** Two controls
+claiming `output_db` cannot be REPRESENTED, so one wins and nothing records that
+the other existed. `duplicateSemanticConflicts` (da31112) is a patch over a
+representational hole, and the audit of the first review pile found **46
+collisions across 27 of 40 plugins, 13 of which would have overwritten an
+existing param**.
+
+One surface -- entries carrying name, index, kind, anchors, unit, trust and an
+OPTIONAL semantic -- makes that collision representable and therefore
+**refusable rather than silent**. Uniqueness becomes a validated invariant
+instead of an impossibility enforced at the wrong layer. Exposure could then see
+everything and sort on semantic-presence rather than a field nobody sets.
+
+It does NOT solve item 17 by itself: three controls wanting `mix_pct` still need
+a qualifier. It turns a silent loss into a refusal, which is the same move as
+every other gate landed this week.
+
+**Prerequisite: a corpus that can support the design.** That means stage 1, then
+the catalogue sweep.

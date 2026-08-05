@@ -20,7 +20,7 @@ Decisions land in <root>/decisions/<fp>.json as they are made, so quitting
 mid-pile costs nothing. Corrections ALSO append to misclassified-<run>.jsonl --
 a correction is a dataset, not a burial.
 """
-import argparse, datetime, glob, json, os, sys
+import argparse, collections, datetime, glob, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from evidence import VOCAB, unit_family_conflict
@@ -239,6 +239,37 @@ def menu(row):
     return offered
 
 
+def claims_for(root, fp, decided_here):
+    """Every semantic already claimed on this plugin, and by what.
+
+    THE SAME RULE THE WIZARD HAS. duplicateSemanticConflicts refuses one semantic
+    on two indices at the review screen and the submit path, because `params` is
+    keyed by semantic and the second write silently wins. The review tool was the
+    one path that did not run it: 143 choices across 40 plugins with nothing
+    watching, and an audit found 46 collisions of which 13 would have overwritten
+    an existing param.
+    """
+    out = {}
+    for f in glob.glob(os.path.join(root, "maps", "*.json")):
+        d = json.load(open(f))
+        if d.get("fp") != fp:
+            continue
+        for sem, prm in (d.get("params") or {}).items():
+            out[sem] = (prm.get("index"), prm.get("name"), "the map")
+        break
+    for f in glob.glob(os.path.join(root, "decisions", "*.json")):
+        d = json.load(open(f))
+        if d.get("fp") != fp:
+            continue
+        for x in d["decisions"]:
+            if x.get("outcome") in ("accepted", "corrected") and x.get("semantic"):
+                out[x["semantic"]] = (x.get("index"), x.get("control_name"), "an earlier answer")
+        break
+    for sem, v in decided_here.items():
+        out[sem] = v
+    return out
+
+
 def resolve_typed(text):
     """A typed semantic: exact, or an unambiguous prefix. None if neither.
 
@@ -254,7 +285,8 @@ def resolve_typed(text):
     return hits[0] if len(hits) == 1 else None
 
 
-def decide(row):
+def decide(row, claimed=None):
+    claimed = claimed or {}
     offered = menu(row)
     print()
     for i, s in enumerate(offered, 1):
@@ -321,6 +353,16 @@ def decide(row):
             print(f"  REFUSED -- {conflict}")
             print("  Pick another, or [t] to verify it by touch first.")
             continue
+        held = claimed.get(chosen)
+        if held and held[0] != row["evidence"]["index"]:
+            idx, nm, src = held
+            print(f"  REFUSED -- {chosen} is already claimed on this plugin by "
+                  f"[{idx}] {nm!r} ({src}).")
+            print(f"  `params` is keyed by semantic, so writing it twice loses one "
+                  f"of them silently.")
+            print(f"  If these are bands or channels of one control, [d] defer the "
+                  f"set and send it to manual entry.")
+            continue
         proposed = {a["semantic"] for a in row.get("arms", [])}
         waved = len(proposed) == 1 and chosen in proposed
         return {"outcome": "accepted" if waved else "corrected",
@@ -330,12 +372,52 @@ def decide(row):
                 "trust": "llm-classified" if waved else "human-verified"}
 
 
+def audit_duplicates(root, only):
+    """The gate, run over decisions ALREADY made. Repeatable, so a pile worked
+    before the gate existed can still be checked."""
+    maps = {}
+    for f in glob.glob(os.path.join(root, "maps", "*.json")):
+        d = json.load(open(f)); maps[d["fp"]] = d
+    total = collisions = overwrites = 0
+    for f in sorted(glob.glob(os.path.join(root, "decisions", "*.json"))):
+        doc = json.load(open(f))
+        if only and only.lower() not in doc["plugin"].lower():
+            continue
+        m = maps.get(doc["fp"], {})
+        existing = {sem: (p.get("index"), p.get("name"))
+                    for sem, p in (m.get("params") or {}).items()}
+        picked = collections.defaultdict(list)
+        for x in doc["decisions"]:
+            if x.get("outcome") in ("accepted", "corrected") and x.get("semantic"):
+                total += 1
+                picked[x["semantic"]].append((x.get("index"), x.get("control_name")))
+        for sem, rows in sorted(picked.items()):
+            hits_map = sem in existing and existing[sem][0] not in [i for i, _ in rows]
+            if len(rows) > 1 or hits_map:
+                collisions += 1
+                overwrites += 1 if hits_map else 0
+                print(f"\n  {doc['plugin'][:36]:36s} [{m.get('category')}] {sem}")
+                for i, n in rows:
+                    print(f"      decision  [{i}] {n!r}")
+                if hits_map:
+                    print(f"      MAP       [{existing[sem][0]}] {existing[sem][1]!r} "
+                          f"<- this would be overwritten")
+    print(f"\n{total} semantic choices, {collisions} collision(s), "
+          f"{overwrites} of which would overwrite an existing map param")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=os.path.expanduser("~/Library/ejmap"))
     ap.add_argument("--only", default=None)
     ap.add_argument("--summary", action="store_true")
+    ap.add_argument("--audit-duplicates", action="store_true",
+                    help="report semantics claimed twice on one plugin, and stop")
     args = ap.parse_args()
+
+    if args.audit_duplicates:
+        audit_duplicates(args.root, args.only)
+        return
 
     pile, decided = load_pile(args.root, args.only)
     if not pile:
@@ -344,7 +426,6 @@ def main():
     pile.sort(key=sort_key)
 
     if args.summary:
-        import collections
         why = collections.Counter(
             "BAND SET (stands in for many rows)" if r["kind"] == "band_set"
             else r["why"].split(":")[0] for r in pile)
@@ -366,13 +447,14 @@ def main():
 
     print(f"{len(pile)} rows to review. [q] saves and quits at any point.")
     made = 0
+    claimed = collections.defaultdict(dict)
     for n, row in enumerate(pile, 1):
         if row["kind"] == "band_set":
             show_band_set(row, n, len(pile))
             d = decide_band_set(row)
         else:
             show(row, n, len(pile))
-            d = decide(row)
+            d = decide(row, claims_for(args.root, row['fp'], claimed[row['fp']]))
         if d is None:
             break
         record = {"index": row["index"],
@@ -390,6 +472,9 @@ def main():
         made += 1
 
         # A correction is a dataset, not a burial (EjmapAssignment.h).
+        if d.get("semantic"):
+            claimed[row["fp"]][d["semantic"]] = (row["evidence"]["index"],
+                                                 row.get("name"), "this session")
         if d["outcome"] == "corrected":
             with open(mis_path, "a") as f:
                 f.write(json.dumps({"fp": row["fp"], "plugin": row["plugin"],
