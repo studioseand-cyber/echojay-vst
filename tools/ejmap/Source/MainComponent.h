@@ -8140,6 +8140,45 @@ private:
         more; the map it belongs to is already written by the time this runs. */
     static constexpr int kCaptureDeadlineMs = 20000;
 
+    /** THE CONTROLS PHASE HAD NO DEADLINE, and that is the worst of the three
+        failure shapes: the sweep row is written AFTER the plugin finishes, so a
+        plugin that never finishes writes NOTHING. A load that hangs leaves a
+        row; this left an operator to work out from a progress counter that a
+        run had stopped four hours ago.
+
+        FROM MEASUREMENT, not a guess. 191 automated plugin-runs across 14
+        scratch roots, load-row to load-row, with the two watchdog-killed cases
+        and the one alert excluded:
+
+            median  2.2s     p90  6.4s     p95 12.1s
+            worst REAL sweep 14.1s, at 99 parameters (Cenozoix, 8 runs, 12.1-14.1s)
+
+        So the cost scales with the parameter count -- ~0.14 s/param at the
+        worst observed -- and a fixed deadline would either kill a 200-parameter
+        plugin for being large or give a 4-parameter one an hour to hang in.
+
+        The budget is a floor plus a per-parameter allowance, at roughly ten
+        times the worst measured rate, because the sample is 191 runs on one
+        machine and the thing being bounded is a hang rather than slowness:
+
+            60s + 1s per parameter        Cenozoix (99) -> 159s  vs 14.1s seen
+                                          a 4-param box -> 64s   vs  2.2s seen
+            capped at 600s                a 2,000-param monster does not get 34 min
+
+        A legitimately slow plugin is not killed for being slow. A plugin
+        waiting on a dialog nobody will click is stopped, recorded, and the
+        campaign continues.
+    */
+    static constexpr int kSweepBaseMs        = 60000;
+    static constexpr int kSweepPerParamMs    = 1000;
+    static constexpr int kSweepDeadlineCapMs = 600000;
+
+    static int sweepDeadlineFor (int paramCount)
+    {
+        return juce::jmin (kSweepDeadlineCapMs,
+                           kSweepBaseMs + kSweepPerParamMs * juce::jmax (0, paramCount));
+    }
+
     struct SweepCategory
     {
         juce::String category, disposition, why, kind;
@@ -8216,6 +8255,9 @@ private:
     {
         if (cls == "license_refused") return "an authorisation is missing. Check the iLok or "
                                              "the vendor's licence manager before resuming.";
+        if (cls == "sweep_timeout")   return "plugins are LOADING and then not finishing their "
+                                             "control sweep. A vendor dialog waiting for a click "
+                                             "does this. Look at the screen before resuming.";
         if (cls == "load_failed")     return "loads are failing outright. Investigate before resuming.";
         if (cls == "timeout")         return "loads are hanging. Investigate before resuming.";
         return "investigate before resuming.";

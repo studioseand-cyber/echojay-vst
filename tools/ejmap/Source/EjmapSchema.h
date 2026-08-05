@@ -86,7 +86,7 @@ enum class CaptureSource { poll, listener, both };
     only determinism evidence this project has, and a rename that silently
     dropped them would reset every retry count to zero.
 */
-enum class LoadOutcome { ok, diedDuringLoad, timeout, initFailed, licenseRefused, noEditor, noParams, quarantined, noTypes, restarted };
+enum class LoadOutcome { ok, diedDuringLoad, timeout, sweepTimeout, initFailed, licenseRefused, noEditor, noParams, quarantined, noTypes, restarted };
 
 inline constexpr const char* kLegacyDeathOutcome = "crash_on_load";
 
@@ -141,6 +141,13 @@ inline juce::String toString (LoadOutcome o)
         case LoadOutcome::ok:             return "ok";
         case LoadOutcome::diedDuringLoad: return "died_during_load";
         case LoadOutcome::timeout:        return "timeout";
+        // A HANG WHILE SWEEPING IS NOT A HANG WHILE LOADING. The plugin loaded
+        // -- in 68 ms, on the run that produced this outcome -- and then the
+        // control sweep never returned. They mean different things to an
+        // operator, they get different advice, and the retry rule counts them
+        // separately because it is stage-scoped. Recording both as "timeout"
+        // is the init_failed mistake with a different name.
+        case LoadOutcome::sweepTimeout:   return "sweep_timeout";
         case LoadOutcome::initFailed:     return "init_failed";
         case LoadOutcome::licenseRefused: return "license_refused";
         case LoadOutcome::noEditor:       return "no_editor";

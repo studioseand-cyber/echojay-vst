@@ -199,6 +199,9 @@ private:
         r.name     = name;
         r.format   = format;
         r.stage    = stage;
+        // The stage decides what the row SAYS happened. A sweep-stage expiry is
+        // not a load timeout: the plugin had already loaded.
+        r.outcome  = stage == "sweep" ? LoadOutcome::sweepTimeout : LoadOutcome::timeout;
         // Report the deadline in a unit that survives it: integer seconds turned
         // an 800 ms deadline into "after 0s".
         const auto howLong = ms >= 1000 ? juce::String (ms / 1000.0, 1) + "s"

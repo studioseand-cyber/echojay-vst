@@ -2417,6 +2417,49 @@ void testStaleControlsRefused()
            "the HAND path refuses it as well -- that is where the live one happened");
 }
 
+/** THE SWEEP-PHASE DEADLINE, and that it is not a load timeout. */
+void testSweepDeadline()
+{
+    // The formula, mirrored. 60s floor + 1s per parameter, capped at 600s.
+    auto deadline = [] (int params)
+    {
+        return juce::jmin (600000, 60000 + 1000 * juce::jmax (0, params));
+    };
+
+    // FROM MEASUREMENT: 191 automated plugin-runs, median 2.2s, p95 12.1s, and
+    // the worst REAL sweep 14.1s at 99 parameters. The deadline has to clear
+    // that comfortably or it kills a plugin for being large.
+    check (deadline (99) > 14100 * 10,
+           "sweep deadline: ten times the worst measured sweep (14.1s at 99 params)");
+    check (deadline (4) >= 60000,
+           "sweep deadline: a tiny plugin still gets the floor, not 4 seconds");
+    check (deadline (99) > deadline (4),
+           "sweep deadline: SCALES with the parameter count -- a fixed number would "
+           "kill a 200-param plugin for being large or give a 4-param one an hour to hang");
+    check (deadline (2000) == 600000,
+           "sweep deadline: and is capped, so nothing gets 34 minutes");
+    check (deadline (0) == 60000, "sweep deadline: an unknown parameter count gets the floor");
+
+    // A HANG WHILE SWEEPING IS NOT A HANG WHILE LOADING. The plugin loaded --
+    // in 68 ms, on the run that produced this. They mean different things, they
+    // get different advice, and the retry rule is stage-scoped so it counts
+    // them separately. Recording both as "timeout" is the init_failed mistake
+    // with a different name.
+    check (ejmap::toString (ejmap::LoadOutcome::sweepTimeout) == "sweep_timeout",
+           "outcome: a sweep-phase expiry says sweep_timeout");
+    check (ejmap::toString (ejmap::LoadOutcome::sweepTimeout)
+             != ejmap::toString (ejmap::LoadOutcome::timeout),
+           "outcome: and is NOT a load timeout");
+    check (ejmap::toString (ejmap::LoadOutcome::sweepTimeout)
+             != ejmap::toString (ejmap::LoadOutcome::initFailed),
+           "outcome: nor an init failure -- three distinct things, three names");
+
+    // The stage is what the retry rule scopes on, and the two must not pool:
+    // SSL X-Gate dies at probe_gate_load and succeeds 23 times at load.
+    check (juce::String ("sweep") != juce::String ("load"),
+           "outcome: the sweep row is recorded at stage 'sweep', not 'load'");
+}
+
 void testMapperIdentity()
 {
     using ejmap::Mouth;
@@ -2528,6 +2571,7 @@ int main (int, char**)
     testSweepRules();
     testMapperIdentity();
     testStaleControlsRefused();
+    testSweepDeadline();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
