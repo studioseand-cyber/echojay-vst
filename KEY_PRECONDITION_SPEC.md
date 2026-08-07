@@ -142,3 +142,75 @@ Be honest about this in the teaching, because it sets expectations:
   says so rather than silently using it.
 - Ask twice in a row with still no key: it builds without the stage and explains — it does not
   repeat the question.
+
+---
+
+# 5. PASSIVE DETECTION — know the key before anyone asks
+
+The best version of this feature is one nobody ever triggers. If the key is already known by
+the time a chain is requested, Tier 1 has nothing to do and Tier 2 almost never fires.
+
+Two places the key should be derived automatically, without a Key Detector device being added
+by anyone:
+
+## 5.1 Link metering (the common path)
+
+A Link already runs an FFT every analysis cycle for its band/loudness work. Chroma
+accumulation on top of that is incremental, so **Link should detect key passively as part of
+metering** and publish it in `LinkMeterFrame` exactly as specced. Consequences:
+
+- A Link on the mix bus means the key is **always already known**. No device to add, no
+  ANALYSE to press, no question to ask.
+- The Key Detector device stops being the mechanism and becomes the **visible, explicit** one:
+  the full UI, the note wheel, the on-demand committed pass, and the option to analyse a
+  specific chain's signal. Useful, but no longer the only way to know.
+- Tier 1 of §2.1 collapses in the common case to "read the fact that is already there".
+
+**Keep it cheap — this is the design constraint.** Gate on: transport rolling, signal present
+above a floor, and a low duty cycle (an 8 s committed pass every ~30 s is ample; nobody needs
+the key re-derived four times a second). Skip entirely when the input is silent. The added CPU
+should be invisible next to what metering already costs.
+
+## 5.2 Captures (the BEST input)
+
+A capture is stored audio with no realtime constraint, which makes it the highest-quality key
+source in the product: more material, no dropout risk, and the full HPSS + Viterbi treatment
+can run over the whole thing rather than a rolling window. **Run a key pass over a capture when
+it is made** and store the result with it.
+
+- A capture of the mix or the instrumental gives the most reliable key reading available.
+- Store `key`, `confidence`, `detected_tuning_hz` and the source alongside the capture, so it
+  travels with the material rather than being re-derived.
+- The offline pass may be slower and better than the live one — that is the point of doing it
+  offline. Use a longer window and finer resolution than realtime allows.
+
+## 5.3 Which reading wins
+
+More sources means a precedence rule. In order:
+
+1. A **capture of the music/mix** — offline, highest quality, but check its age and whether it
+   is still the material being worked on.
+2. A **bus Link's** passive reading — live and current.
+3. A **channel Link's** reading — a single stem; usable, but say which stem it came from.
+4. A **Key Detector device** in the current chain — only trustworthy if this chain IS the music.
+
+Never prefer a reading taken from the channel EchoJay is on when that channel is the vocal.
+A vocal is monophonic, sliding and often pitch-corrected: the worst possible key source, and
+worse than having no key at all, because it is confidently wrong.
+
+## 5.4 Staleness and re-detection
+
+- Carry `age` on every reading; the feed already does.
+- Do not silently re-detect mid-request. If a stored reading is old, use it and say so —
+  "F# minor, measured 12 minutes ago" — rather than stalling a chain build to re-analyse.
+- Re-detect on the events that actually invalidate a key: a new capture, transport jumping to
+  a different section after a long gap, or the user pressing RE-ANALYSE. Not on a timer.
+- The §2.2 narrowness still applies: none of this fires for chains that do not need the key.
+
+## 5.5 What this does to the precondition
+
+With passive detection in place, the flow for "build me a melodic vocal chain with autotune"
+becomes, in the overwhelmingly common case: the key is already known from the bus Link, the
+chain is built in key, and the reply mentions the key as a fact rather than a step. The Tier 2
+ask survives only for the genuine cold case — no Link anywhere, no capture — which is exactly
+when asking is warranted, because there is genuinely nothing else EchoJay could have done.
