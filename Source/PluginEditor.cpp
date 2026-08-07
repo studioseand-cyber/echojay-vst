@@ -12008,7 +12008,12 @@ void EchoJayEditor::paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> are
 void EchoJayEditor::paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area)
 {
     using DwellGlow = echojay::viz::DwellGlow;
-    drawPanel(g, area, "KEY", C::purple);
+    // §6.2: below ~80 px the panel renders as ONE horizontal line (the
+    // AI-panel-open narrow layout) — values side by side, no wheel, ~90 px
+    // returned to the spectrum. Source attribution and the low-confidence
+    // label survive the compaction: they are correctness, not decoration.
+    const bool compact = area.getHeight() < 80;
+    drawPanel(g, area, compact ? juce::String() : juce::String("KEY"), C::purple);
     keyPanelBounds_ = area;
 
     const auto& srcs = keySources_;
@@ -12026,10 +12031,10 @@ void EchoJayEditor::paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area)
         return juce::String((int)(ms / 60000u)) + " min";
     };
 
-    // RE-ANALYSE chip in the header (the spectrum-toggle idiom) — only when
-    // there is a source to re-analyse.
+    // RE-ANALYSE chip in the header (the spectrum-toggle idiom) — when there
+    // is a source to re-analyse, or this channel can self-detect (§6.1).
     keyReanalyseRect_ = {};
-    if (p != nullptr || ! srcs.all.empty())
+    if (p != nullptr || ! srcs.all.empty() || processorRef.selfKeyRoleIsMusic())
     {
         const juce::uint32 now = juce::Time::getMillisecondCounter();
         const bool pending = keyReanalyseSentMs_ != 0
@@ -12037,12 +12042,118 @@ void EchoJayEditor::paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area)
                           && (p == nullptr || p->ageMs > 3000u);
         const char* label = pending ? "LISTENING\xe2\x80\xa6" : "RE-ANALYSE";
         const int chipW = 74;
-        keyReanalyseRect_ = { area.getRight() - 14 - chipW, area.getY() + 7, chipW, 16 };
+        const int chipY = compact ? area.getCentreY() - 8 : area.getY() + 7;
+        keyReanalyseRect_ = { area.getRight() - 14 - chipW, chipY, chipW, 16 };
         const bool hov = keyReanalyseRect_.contains(getMouseXYRelative());
         g.setColour(pending ? C::amber : (hov ? C::text : C::text2));
         g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
         g.drawText(juce::String::fromUTF8(label), keyReanalyseRect_,
                    juce::Justification::centredRight);
+    }
+
+    // The source line, computed once for both forms (§1.2: unmissable).
+    juce::String srcText;
+    juce::Colour srcCol = C::blue2;
+    if (p != nullptr)
+    {
+        switch (p->kind)
+        {
+            case KeySourceReading::Kind::Capture:
+                srcText = juce::String::fromUTF8("from capture \xe2\x80\x9c") + p->name
+                        + juce::String::fromUTF8("\xe2\x80\x9d (") + p->detail + ")";
+                break;
+            case KeySourceReading::Kind::BusLink:
+                srcText = juce::String::fromUTF8("from \xe2\x80\x9c") + p->name
+                        + juce::String::fromUTF8("\xe2\x80\x9d (bus)");
+                break;
+            case KeySourceReading::Kind::SelfBus:
+                srcText = "from this channel (bus)";   // §6.1 acceptance wording
+                break;
+            case KeySourceReading::Kind::ChannelLink:
+                srcText = juce::String::fromUTF8("from \xe2\x80\x9c") + p->name
+                        + juce::String::fromUTF8("\xe2\x80\x9d (channel \xe2\x80\x94 one stem)");
+                srcCol = C::amber;
+                break;
+            case KeySourceReading::Kind::LocalChain:
+                srcText = "from this chain";
+                srcCol = C::amber;
+                break;
+        }
+    }
+
+    // ---- §6.2 compact form: everything on one line ------------------------
+    if (compact)
+    {
+        const int cy = area.getCentreY();
+        int x = area.getX() + 14;
+        const int rightLimit = keyReanalyseRect_.isEmpty()
+                                 ? area.getRight() - 14
+                                 : keyReanalyseRect_.getX() - 10;
+        auto seg = [&] (const juce::String& text, float size, bool bold,
+                        juce::Colour col, int gapAfter)
+        {
+            if (text.isEmpty() || x >= rightLimit) return;
+            juce::Font f(juce::FontOptions(size, bold ? juce::Font::bold
+                                                      : juce::Font::plain));
+            const int wSeg = juce::GlyphArrangement::getStringWidthInt(f, text);
+            g.setFont(f);
+            g.setColour(col);
+            g.drawText(text, x, cy - 8, juce::jmin(wSeg, rightLimit - x), 16,
+                       juce::Justification::centredLeft);
+            x += wSeg + gapAfter;
+        };
+
+        seg("KEY", 11.0f, true, C::purple, 16);
+
+        if (p == nullptr)
+        {
+            juce::String msg;
+            if (! srcs.all.empty())
+                msg = juce::String::fromUTF8("not detected \xe2\x80\x94 a Key "
+                      "Detector on this VOCAL reads ")
+                    + [&]{ char b[24]; echojay::KeyEngine::keyName(
+                              srcs.all.front().root, srcs.all.front().minor,
+                              b, (int) sizeof(b)); return juce::String(b); }()
+                    + "; never trust a vocal for key. Put a Link on the "
+                      "instrumental or mix bus.";
+            else if (processorRef.selfKeyRoleIsMusic())
+                msg = juce::String::fromUTF8("not detected \xe2\x80\x94 EchoJay "
+                      "is on the music bus and detects the key automatically; "
+                      "press play and it appears within ~30 s.");
+            else
+                msg = juce::String::fromUTF8("not detected \xe2\x80\x94 put an "
+                      "EchoJay Link on your instrumental or mix bus and "
+                      "EchoJay will analyse the track's key for you.");
+            g.setColour(C::text2);
+            g.setFont(juce::Font(juce::FontOptions(10.0f)));
+            g.drawFittedText(msg, x, cy - 8, juce::jmax(1, rightLimit - x), 16,
+                             juce::Justification::centredLeft, 1);
+            return;
+        }
+
+        const bool lowC = p->conf < 0.5f;
+        const float dimC = lowC ? 0.55f : 1.0f;
+        char nm[24];
+        echojay::KeyEngine::keyName(p->root, p->minor, nm, (int) sizeof(nm));
+        seg(juce::String(nm), 13.0f, true, juce::Colours::white.withAlpha(dimC), 12);
+        seg("conf " + juce::String(p->conf, 2), 10.0f, true,
+            DwellGlow::heatColour(p->conf).withAlpha(dimC), 14);
+        if (lowC)
+            seg(juce::String::fromUTF8("low confidence \xe2\x80\x94 treat as "
+                "unknown"), 9.0f, true, C::amber, 14);
+        seg(srcText, 10.0f, true, srcCol.withAlpha(dimC), 14);
+        auto ageStrC = [] (juce::uint32 ms)
+        {
+            if (ms < 120000u) return juce::String((int)(ms / 1000u)) + " s";
+            return juce::String((int)(ms / 60000u)) + " min";
+        };
+        seg("age " + ageStrC(p->ageMs), 9.0f, false, C::text3, 14);
+        if (p->tuningHz > 0.0f)
+            seg(juce::String(p->tuningHz, 1) + " Hz ("
+                  + (p->tuningCents >= 0 ? "+" : "")
+                  + juce::String(p->tuningCents, 1) + " c)",
+                10.0f, false, C::text.withAlpha(dimC), 0);
+        return;
     }
 
     int x = area.getX() + 14, y = area.getY() + 28, w = area.getWidth() - 28;
@@ -12062,9 +12173,16 @@ void EchoJayEditor::paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area)
         if (! srcs.all.empty())
             msg = "A Key Detector in this chain reads "
                 + keyText(srcs.all.front().root, srcs.all.front().minor)
-                + " — but this channel is a vocal, the one source never to "
-                  "trust for key. Put an EchoJay Link on your instrumental "
-                  "or mix bus and EchoJay will analyse the track's key for you.";
+                + juce::String::fromUTF8(" \xe2\x80\x94 but this channel is a "
+                  "vocal, the one source never to trust for key. Put an "
+                  "EchoJay Link on your instrumental or mix bus and EchoJay "
+                  "will analyse the track's key for you.");
+        else if (processorRef.selfKeyRoleIsMusic())
+            // §6.1: this channel IS the music — nothing to add, just play.
+            msg = juce::String::fromUTF8(
+                  "EchoJay is on the music bus and detects the key "
+                  "automatically \xe2\x80\x94 press play and the key appears "
+                  "within about 30 seconds.");
         else
             msg = juce::String::fromUTF8(
                   "Put an EchoJay Link on your instrumental or mix bus \xe2\x80\x94 "
@@ -12094,30 +12212,9 @@ void EchoJayEditor::paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area)
 
     // ---- §1.2: the SOURCE, unmissable, directly under the key -------------
     {
-        juce::String src;
-        juce::Colour col = C::blue2;
-        switch (p->kind)
-        {
-            case KeySourceReading::Kind::Capture:
-                src = juce::String::fromUTF8("from capture \xe2\x80\x9c") + p->name
-                    + juce::String::fromUTF8("\xe2\x80\x9d (") + p->detail + ")";
-                break;
-            case KeySourceReading::Kind::BusLink:
-                src = juce::String::fromUTF8("from \xe2\x80\x9c") + p->name
-                    + juce::String::fromUTF8("\xe2\x80\x9d (bus)");
-                break;
-            case KeySourceReading::Kind::ChannelLink:
-                src = juce::String::fromUTF8("from \xe2\x80\x9c") + p->name
-                    + juce::String::fromUTF8("\xe2\x80\x9d (channel \xe2\x80\x94 one stem)");
-                col = C::amber;
-                break;
-            case KeySourceReading::Kind::LocalChain:
-                src = "from this chain";
-                col = C::amber;
-                break;
-        }
+        juce::String src = srcText;
         src << "   age " << ageStr(p->ageMs);
-        g.setColour(col.withAlpha(dim));
+        g.setColour(srcCol.withAlpha(dim));
         g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
         g.drawFittedText(src, x, y, w, 13, juce::Justification::centredLeft, 1);
         y += 17;
@@ -12236,19 +12333,41 @@ void EchoJayEditor::triggerKeyReanalyse()
     keySources_ = collectKeySources();
     keySourcesDiv_ = 0;
 
+    // Re-arm the PRIMARY when it is a live source; a capture (static) or a
+    // poisoned reading falls through to the best live source instead.
     const KeySourceReading* target = nullptr;
+    if (const auto* p = keySources_.primary();
+        p != nullptr && p->kind != KeySourceReading::Kind::Capture && ! p->poisoned)
+        target = p;
     auto pick = [&] (KeySourceReading::Kind kind)
     {
         if (target != nullptr) return;
         for (const auto& s : keySources_.all)
             if (s.kind == kind) { target = &s; return; }
     };
+    pick(KeySourceReading::Kind::SelfBus);
     pick(KeySourceReading::Kind::BusLink);
     pick(KeySourceReading::Kind::ChannelLink);
     pick(KeySourceReading::Kind::LocalChain);
-    // No live source at all (capture-only): nothing to re-analyse — the
-    // paint's pending state times out and the panel keeps its reading.
-    if (target == nullptr && keySources_.all.empty()) return;
+    // No source yet, but this channel can self-detect (§6.1): arm the self
+    // engine — the "no reading, on the mix bus, force a pass" case.
+    if (target == nullptr && keySources_.all.empty())
+    {
+        if (processorRef.selfKeyRoleIsMusic())
+        {
+            processorRef.armSelfKeyAnalysis();
+            keyReanalyseSentMs_ = juce::Time::getMillisecondCounter();
+        }
+        return;
+    }
+
+    if (target != nullptr && target->kind == KeySourceReading::Kind::SelfBus)
+    {
+        // §6.1: this plugin's own passive engine — arm directly.
+        processorRef.armSelfKeyAnalysis();
+        keyReanalyseSentMs_ = juce::Time::getMillisecondCounter();
+        return;
+    }
 
     if (target != nullptr && target->uid.isNotEmpty())
     {
@@ -14067,7 +14186,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
             paintTonalBalancePanel(g, { pad + levelsW + secGap + stereoW + secGap, y,
                                         tonalW, levStereoH }, md);
             y += levStereoH + secGap;
-            const int keyH = 96;      // facts only; the wheel bails at this height
+            // §6.2: the compact form is ONE line, ~56 px — values laid out
+            // horizontally, no wheel — so the spectrum keeps its height.
+            const int keyH = 56;
             if (bounds.getHeight() - y - 120 > keyH)
             {
                 paintKeyPanel(g, { pad, y, contentW, keyH });
@@ -19506,8 +19627,37 @@ EchoJayEditor::KeySources EchoJayEditor::collectKeySources()
         }
     }
 
-    // ---- 2./3. Link-published readings (§9): bus first, then channel ------
+    // ---- 2./3. Bus-grade readings, then channel ---------------------------
+    // Bus grade is Link frames with placement==bus PLUS this plugin's own
+    // passive reading when its declared role IS a music bus (§6.1) — same
+    // engine, same duty cycle, and the channel is by declaration the music.
     std::vector<KeySourceReading> busLinks, chanLinks;
+    if (processorRef.selfKeyRoleIsMusic())
+    {
+        const auto r = processorRef.getSelfKeyEngine().getReading();
+        if (r.valid)
+        {
+            KeySourceReading k;
+            k.kind   = KeySourceReading::Kind::SelfBus;
+            k.name   = "this channel";
+            k.detail = channelTypeNames[(int) processorRef.getChannelType()];
+            k.root = r.root; k.minor = r.minor; k.conf = r.confidence;
+            k.tuningHz = r.tuningHz; k.tuningCents = r.tuningCents;
+            k.rootHz = r.rootHz;
+            const auto stamp = processorRef.selfKeyChangeMs();
+            k.ageMs = stamp != 0 ? nowMs - stamp : 0;
+            k.committed = r.committed;
+            k.analysedSeconds = r.analysedSeconds;
+            k.hasChroma = true; k.chroma = r.chroma;
+            if (r.numAlternates > 0)
+            {
+                k.altRoot  = r.alternates[0].root;
+                k.altMinor = r.alternates[0].minor;
+                k.altScore = r.alternates[0].score;
+            }
+            busLinks.push_back (std::move (k));
+        }
+    }
     for (const auto& e : processorRef.getLinkDisplayList())
     {
         const auto& li = e.info;
@@ -19599,7 +19749,8 @@ EchoJayEditor::KeySources EchoJayEditor::collectKeySources()
         && out.all[(size_t) out.primaryIdx].ageMs > kCaptureKeyFreshMs)
     {
         for (int i = 0; i < (int) out.all.size(); ++i)
-            if (out.all[(size_t) i].kind == KeySourceReading::Kind::BusLink)
+            if (out.all[(size_t) i].kind == KeySourceReading::Kind::BusLink
+             || out.all[(size_t) i].kind == KeySourceReading::Kind::SelfBus)
             { out.primaryIdx = i; break; }
     }
 
@@ -19652,9 +19803,12 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
                 return "capture \"" + s.name + "\" (offline, from " + s.detail + ")";
             case KeySourceReading::Kind::BusLink:
                 return "\"" + s.name + "\" (bus Link, uid " + s.uid + ")";
+            case KeySourceReading::Kind::SelfBus:
+                return "this channel (declared " + s.detail
+                     + " - EchoJay is ON the music bus; bus-grade reading)";
             case KeySourceReading::Kind::ChannelLink:
                 return "\"" + s.name + "\" (" + placeStr (s.placement)
-                     + " Link — a single stem, uid " + s.uid + ")";
+                     + " Link - a single stem, uid " + s.uid + ")";
             case KeySourceReading::Kind::LocalChain: break;
         }
         return juce::String ("this chain's own Key Detector")
@@ -19676,7 +19830,7 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
         const auto& s = sources.all.front();
         c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 UNUSABLE]:\n")
           << "A Key Detector in this chain reads " << keyText (s.root, s.minor)
-          << " (" << juce::String (s.conf, 2) << ") — but this channel is a "
+          << " (" << juce::String (s.conf, 2) << ") - but this channel is a "
              "VOCAL. A vocal is monophonic, sliding and often pitch-corrected: "
              "the worst possible key source. TREAT THE TRACK'S KEY AS UNKNOWN; "
              "do not build moves on this reading. To know the real key, a Link "
@@ -19695,6 +19849,11 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
         case KeySourceReading::Kind::BusLink:
             c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 measured by "
                  "EchoJay on another channel; the KEY OF THE MUSIC]:\n");
+            break;
+        case KeySourceReading::Kind::SelfBus:
+            c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 measured by "
+                 "EchoJay from THIS channel, whose declared role is the music "
+                 "bus; the KEY OF THE MUSIC]:\n");
             break;
         case KeySourceReading::Kind::ChannelLink:
             c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 measured by "
@@ -19726,7 +19885,7 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
         if (s.poisoned)
         {
             c << "IGNORED: " << srcLabel (s) << " reads " << keyText (s.root, s.minor)
-              << " (" << juce::String (s.conf, 2) << ") — measured from the "
+              << " (" << juce::String (s.conf, 2) << ") - measured from the "
                  "VOCAL this chain sits on; never use a vocal-derived key.\n";
             continue;
         }

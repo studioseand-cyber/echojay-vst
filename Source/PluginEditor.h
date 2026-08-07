@@ -402,20 +402,24 @@ private:
     bool tonalSmoothInit_ = false;
 
     // ---- Detected key: the shared source collector -----------------------
-    // ONE precedence walk (KEY_PRECONDITION_SPEC.md §5.3) consumed by both
-    // the [DETECTED KEY] feed block and the Meters KEY panel, so the two can
-    // never rank sources differently:
+    // ONE precedence walk (KEY_PRECONDITION_SPEC.md §5.3, restated by §6.1)
+    // consumed by both the [DETECTED KEY] feed block and the Meters KEY
+    // panel, so the two can never rank sources differently:
     //   1. the newest CAPTURE of the music/mix carrying an offline reading,
-    //   2. a BUS Link's passive reading (live and current),
+    //   2. a BUS-grade passive reading — a bus Link, or THIS plugin's own
+    //      channel when its declared role IS a music bus (§6.1: EchoJay on
+    //      the mix bus is exactly the right source; no Link required),
     //   3. a CHANNEL Link's reading (one stem — usable, named as such),
-    //   4. a Key Detector in the local chain — only trustworthy when this
-    //      channel IS the music; POISONED (never primary, warned) when this
-    //      channel is a vocal, because a confident vocal-derived key is
-    //      worse than no key at all.
+    //   4. a Key Detector in the local chain — trustworthy only when this
+    //      channel is the music; POISONED (never primary, warned) when it
+    //      is a vocal, because a confident vocal-derived key is worse than
+    //      no key at all.
+    // The disqualifier is NOT "the channel EchoJay is on" — it is "a channel
+    // that is not the music", judged by DECLARED ROLE, never by proximity.
     // A stale capture yields to a live bus reading (kCaptureKeyFreshMs).
     struct KeySourceReading
     {
-        enum class Kind { Capture, BusLink, ChannelLink, LocalChain };
+        enum class Kind { Capture, BusLink, SelfBus, ChannelLink, LocalChain };
         Kind  kind = Kind::LocalChain;
         juce::String name, uid;        // uid: Link instance uid (Links only)
         juce::String detail;           // capture: which channel the offline
