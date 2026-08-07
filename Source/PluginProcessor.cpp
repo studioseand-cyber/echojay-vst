@@ -3,6 +3,7 @@
 #include "NativeClip.h"   // EchoJay_NSLog (memdiag)
 #include "EchoJayWorkspace.h"   // runRoundTripSelfTest (C1/C3 verify)
 #include "EedTempoClock.h"      // publishHostTempo (built-in tempo-synced devices)
+#include "EedKeyEngine.h"       // offline key pass over captures (§5.2)
 #include <cmath>
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,9 @@ struct EchoJayProcessor::LinkCaptureChannel
     juce::String name;
     juce::String uid;      // stable identity; live name resolved at compose
     int          slotIdx;
+    int          placement = 0;   // Link's declared placement at capture start
+                                  // (0 unset, 1 bus, 2 insert, 3 send) — the
+                                  // key pass prefers a BUS channel (§5.2/5.3)
 
     // Drain buffers (pre-allocated at construction to avoid audio-thread allocs)
     std::vector<float> tmpBufL;
@@ -1030,9 +1034,15 @@ void EchoJayProcessor::startCapture()
         {
             if (activeLinkSlots[i].map != nullptr && activeLinkSlots[i].displayName.isNotEmpty())
             {
-                linkCaptureChannels.push_back(
-                    std::make_unique<LinkCaptureChannel>(
-                        activeLinkSlots[i].displayName, activeLinkSlots[i].uid, i, sr, bs));
+                auto lcc = std::make_unique<LinkCaptureChannel>(
+                    activeLinkSlots[i].displayName, activeLinkSlots[i].uid, i, sr, bs);
+                // Stamp the Link's declared placement from the registry cache
+                // (refreshed by the editor timer) — the offline key pass
+                // prefers a bus channel over everything else (§5.2).
+                for (const auto& si : linkSlotInfos)
+                    if (si.uid.isNotEmpty() && si.uid == lcc->uid)
+                        { lcc->placement = si.placement; break; }
+                linkCaptureChannels.push_back(std::move(lcc));
             }
         }
     }
@@ -1227,18 +1237,106 @@ void EchoJayProcessor::stopCapture()
     // Move link channels into save thread (captureState = Complete, audio thread done)
     auto movedLinkChannels = std::move(linkCaptureChannels);
 
+    // ── Offline key pass source (KEY_PRECONDITION_SPEC.md §5.2/§5.3) ──────
+    // Decide WHICH recorded channel the key pass may read, before the save
+    // thread owns the buffers. The rule is strict because a wrong source is
+    // worse than none: a BUS Link channel is the music; the host channel
+    // qualifies only when this channel is declared a mix/instrumental bus.
+    // A vocal (or any unknown stem) is never analysed for key — monophonic,
+    // sliding, often pitch-corrected: confidently wrong.
+    int keySrcIdx = -2;                 // -2 none, -1 host, >=0 link channel
+    juce::String keySrcName;
+    int keySrcPlacement = 0;
+    for (size_t i = 0; i < movedLinkChannels.size(); ++i)
+        if (movedLinkChannels[i]->placement == 1
+            && movedLinkChannels[i]->waveformRecorder.getRecordedSampleCount() > 0)
+        {
+            keySrcIdx = (int) i;
+            keySrcName = movedLinkChannels[i]->name;
+            keySrcPlacement = 1;
+            break;
+        }
+    if (keySrcIdx == -2
+        && (channelType == ChannelType::FullMix
+            || channelType == ChannelType::MasterBus
+            || channelType == ChannelType::MusicBus
+            || channelType == ChannelType::InstrumentBus))
+    {
+        keySrcIdx = -1;
+        keySrcName = snap.getChannelDisplayName();
+        keySrcPlacement = 0;
+    }
+
     struct SaveThread : public juce::Thread
     {
         SaveThread(WaveformRecorder* rec, juce::File dir, juce::String name,
                    int idx, std::mutex* mtx, std::vector<CaptureSnapshot>* snaps,
                    std::vector<std::unique_ptr<LinkCaptureChannel>> lcs,
-                   std::function<void()>* onDone)
+                   std::function<void()>* onDone,
+                   int keySrc, juce::String keyName, int keyPlace)
             : juce::Thread("EchoJay WAV Save"), recorder(rec), captureDir(dir),
               passName(name), snapIdx(idx), mutex(mtx), snapshots(snaps),
-              linkChannels(std::move(lcs)), onDoneCb(onDone) {}
+              linkChannels(std::move(lcs)), onDoneCb(onDone),
+              keySrcIdx(keySrc), keySrcName(std::move(keyName)),
+              keySrcPlacement(keyPlace) {}
 
         void run() override
         {
+            // ── Offline key pass (§5.2) — BEFORE any releaseAudioBuffer.
+            // The offline path is allowed to be slower and better than the
+            // live one: up to three 30 s windows, HPSS on, best confidence
+            // wins (~0.5 s of background time for a long capture). Result is
+            // written into the snapshot under the mutex; an invalid reading
+            // leaves keyValid=false, which the feed reports as absence.
+            if (keySrcIdx >= -1)
+            {
+                WaveformRecorder* srcRec =
+                    keySrcIdx < 0 ? recorder
+                                  : &linkChannels[(size_t) keySrcIdx]->waveformRecorder;
+                const auto* buf = srcRec->getRecordedBuffer();
+                const int   n   = srcRec->getRecordedSampleCount();
+                if (buf != nullptr && n > (int) (2.0 * srcRec->getRecordedSampleRate()))
+                {
+                    echojay::KeyEngine eng;
+                    eng.prepare(srcRec->getRecordedSampleRate(), 512);
+                    const auto kr = eng.analyseBufferOffline(
+                        buf->getReadPointer(0),
+                        buf->getNumChannels() > 1 ? buf->getReadPointer(1) : nullptr,
+                        std::min(n, buf->getNumSamples()));
+                    if (kr.valid)
+                    {
+                        std::lock_guard<std::mutex> lock(*mutex);
+                        if (snapIdx >= 0 && snapIdx < (int)snapshots->size())
+                        {
+                            auto& s = (*snapshots)[(size_t)snapIdx];
+                            s.keyValid       = true;
+                            s.keyRoot        = kr.root;
+                            s.keyMinor       = kr.minor;
+                            s.keyConfidence  = kr.confidence;
+                            s.keyTuningHz    = kr.tuningHz;
+                            s.keyTuningCents = kr.tuningCents;
+                            s.keyChroma      = kr.chroma;
+                            if (kr.numAlternates > 0)
+                            {
+                                s.keyAltRoot  = kr.alternates[0].root;
+                                s.keyAltMinor = kr.alternates[0].minor;
+                                s.keyAltScore = kr.alternates[0].score;
+                            }
+                            s.keySourceName      = keySrcName;
+                            s.keySourcePlacement = keySrcPlacement;
+                        }
+                        char nm[24];
+                        echojay::KeyEngine::keyName(kr.root, kr.minor, nm, sizeof(nm));
+                        EchoJay_NSLog(("EJCapture: offline key pass -> "
+                                       + juce::String(nm) + " conf "
+                                       + juce::String(kr.confidence, 2)
+                                       + " from \"" + keySrcName + "\"").toRawUTF8());
+                    }
+                    else
+                        EchoJay_NSLog("EJCapture: offline key pass found nothing tonal");
+                }
+            }
+
             // Host WAV
             recorder->saveToWAV(captureDir, passName);
             auto hostPath = recorder->getLastSavedPath();
@@ -1304,10 +1402,14 @@ void EchoJayProcessor::stopCapture()
         std::vector<CaptureSnapshot>* snapshots;
         std::vector<std::unique_ptr<LinkCaptureChannel>> linkChannels;
         std::function<void()>* onDoneCb;
+        int keySrcIdx;
+        juce::String keySrcName;
+        int keySrcPlacement;
     };
 
     saveThread = std::make_unique<SaveThread>(recorderPtr, captureDir, passName, snapIdx, mutexPtr, snapsPtr,
-                                               std::move(movedLinkChannels), &onCaptureSaveComplete);
+                                               std::move(movedLinkChannels), &onCaptureSaveComplete,
+                                               keySrcIdx, keySrcName, keySrcPlacement);
     saveThread->startThread();
 
 #if ECHOJAY_MEMDIAG
@@ -2152,7 +2254,29 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
             for (int i = 0; i < (int)s.waveformThumbnail.size(); i += 2)
                 wfArr.add(s.waveformThumbnail[(size_t)i]);
             obj->setProperty("waveform", wfArr);
-            
+
+            // Detected key (§5.2) — written only when a pass succeeded, so a
+            // restore of an older save simply has no key (keyValid=false).
+            if (s.keyValid)
+            {
+                auto k = std::make_unique<juce::DynamicObject>();
+                k->setProperty("root",       s.keyRoot);
+                k->setProperty("minor",      s.keyMinor);
+                k->setProperty("confidence", s.keyConfidence);
+                k->setProperty("tuningHz",   s.keyTuningHz);
+                k->setProperty("tuningCents", s.keyTuningCents);
+                juce::Array<juce::var> chromaArr;
+                for (int i = 0; i < 12; ++i)
+                    chromaArr.add(s.keyChroma[(size_t)i]);
+                k->setProperty("chroma",     chromaArr);
+                k->setProperty("altRoot",    s.keyAltRoot);
+                k->setProperty("altMinor",   s.keyAltMinor);
+                k->setProperty("altScore",   s.keyAltScore);
+                k->setProperty("sourceName", s.keySourceName);
+                k->setProperty("sourcePlacement", s.keySourcePlacement);
+                obj->setProperty("detectedKey", juce::var(k.release()));
+            }
+
             snapsArr.add(juce::var(obj.release()));
         }
     state->setProperty("snapshots", snapsArr);
@@ -2358,7 +2482,27 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                     if (auto* wfArr = so->getProperty("waveform").getArray())
                         for (auto& v : *wfArr)
                             s.waveformThumbnail.push_back((float)(double)v);
-                    
+
+                    // Detected key (§5.2) — absent on older saves
+                    if (auto* ko = so->getProperty("detectedKey").getDynamicObject())
+                    {
+                        s.keyValid       = true;
+                        s.keyRoot        = (int)ko->getProperty("root");
+                        s.keyMinor       = (bool)ko->getProperty("minor");
+                        s.keyConfidence  = (float)(double)ko->getProperty("confidence");
+                        s.keyTuningHz    = (float)(double)ko->getProperty("tuningHz");
+                        s.keyTuningCents = (float)(double)ko->getProperty("tuningCents");
+                        if (auto* ca = ko->getProperty("chroma").getArray())
+                            for (int i = 0; i < std::min(12, (int)ca->size()); ++i)
+                                s.keyChroma[(size_t)i] = (float)(double)(*ca)[i];
+                        s.keyAltRoot     = ko->hasProperty("altRoot")
+                                             ? (int)ko->getProperty("altRoot") : -1;
+                        s.keyAltMinor    = (bool)ko->getProperty("altMinor");
+                        s.keyAltScore    = (float)(double)ko->getProperty("altScore");
+                        s.keySourceName  = ko->getProperty("sourceName").toString();
+                        s.keySourcePlacement = (int)ko->getProperty("sourcePlacement");
+                    }
+
                     snapshots.push_back(s);
                 }
             }

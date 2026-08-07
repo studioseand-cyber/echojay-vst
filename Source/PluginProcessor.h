@@ -105,7 +105,30 @@ struct CaptureSnapshot {
     std::array<float, 64> peakSpectrum = {};
     std::array<float, 64> avgSpectrum  = {};
     bool hasDualSpectrum = false; // false on snapshots restored from older save files
-    
+
+    // Detected key (KEY_PRECONDITION_SPEC.md §5.2): an OFFLINE pass run by the
+    // save thread when the capture is made — longer window, HPSS + Viterbi
+    // over up to three windows of the stored audio, the highest-quality key
+    // source in the product. Stored with the capture so it travels with the
+    // material instead of being re-derived. keyValid=false means the pass was
+    // not run (no trustworthy source — see the source rule in stopCapture) or
+    // found nothing tonal; that absence is itself the honest answer. Age is
+    // derived from `timestamp`. keySourceName says WHICH channel was read
+    // ("Music Bus" / "Mix Bus"); keySourcePlacement 1 = a bus Link channel,
+    // 0 = the host channel.
+    bool  keyValid        = false;
+    int   keyRoot         = 0;      // 0..11 C..B
+    bool  keyMinor        = false;
+    float keyConfidence   = 0.0f;   // 0..1
+    float keyTuningHz     = 0.0f;   // detected reference pitch
+    float keyTuningCents  = 0.0f;   // same offset in cents from A=440
+    std::array<float, 12> keyChroma {};   // for the Meters wheel
+    int   keyAltRoot      = -1;     // best alternate (-1 = none)
+    bool  keyAltMinor     = false;
+    float keyAltScore     = 0.0f;
+    juce::String keySourceName;
+    int   keySourcePlacement = 0;
+
     juce::String getChannelDisplayName() const {
         if (channelType == ChannelType::Other && customChannelName.isNotEmpty())
             return customChannelName;
