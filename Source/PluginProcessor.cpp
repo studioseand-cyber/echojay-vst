@@ -882,7 +882,9 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // declared role is a music bus: on a vocal or unknown role the engine
     // never even hears the channel, which is the 5.3 rule enforced at the
     // source (the disqualifier is "not the music", judged by declared role).
-    if (isMusicBusRole(channelType))
+    // §7 exception: a user PIN of "this channel" overrides the role gate —
+    // an explicit choice beats the inference (the role may be mis-declared).
+    if (isMusicBusRole(channelType) || selfKeyForced_.load(std::memory_order_relaxed))
         selfKeyEngine_.pushBlock(left, right, buffer.getNumSamples());
 
     // Feed capture engine if capturing
@@ -1069,7 +1071,9 @@ void EchoJayProcessor::scheduleSelfKeyPass()
     }
     selfKeyStallTicks_ = 0;
 
-    if (! isMusicBusRole(channelType)) return;   // not the music: never arm
+    if (! isMusicBusRole(channelType)
+        && ! selfKeyForced_.load(std::memory_order_relaxed))
+        return;                                  // not the music, not pinned
     if (! playing) return;
     if (meterEngine.getMeterData().momentary < kSelfKeyFloorLufs) return;
 
@@ -1089,6 +1093,18 @@ void EchoJayProcessor::armSelfKeyAnalysis()
     selfKeyEngine_.startAnalysis();
     selfKeyWorker_.notify();
     EchoJay_NSLog("EJKey: self RE-ANALYSE armed");
+}
+
+void EchoJayProcessor::setKeySourcePin(const juce::String& pinId,
+                                       const juce::String& label)
+{
+    keySourcePin_      = pinId;
+    keySourcePinLabel_ = label;
+    selfKeyForced_.store(pinId == "self", std::memory_order_relaxed);
+    markStateDirty();
+    EchoJay_NSLog(("EJKey: source pin -> "
+                   + (pinId.isEmpty() ? juce::String("Auto")
+                                      : pinId + " (\"" + label + "\")")).toRawUTF8());
 }
 
 // ============ Capture System ============
@@ -2283,6 +2299,9 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     state->setProperty("projectPromptDismissed", projectPromptDismissed);
     state->setProperty("channelType", (int)channelType);
     state->setProperty("customChannelName", customChannelName);
+    // §7: key source pin — per instance, survives a session reload
+    state->setProperty("keySourcePin", keySourcePin_);
+    state->setProperty("keySourcePinLabel", keySourcePinLabel_);
     state->setProperty("channelTypePromptDismissed", channelTypePromptDismissed);
     state->setProperty("passCounter", passCounter);
     state->setProperty("projectName", projectName);
@@ -2469,6 +2488,13 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             genre = obj->getProperty("genre").toString();
             if (genre.isEmpty()) genre = "hip-hop";
             channelType = static_cast<ChannelType>((int)obj->getProperty("channelType"));
+            // §7: restore the key source pin (absent on older saves = Auto)
+            if (obj->hasProperty("keySourcePin"))
+            {
+                keySourcePin_      = obj->getProperty("keySourcePin").toString();
+                keySourcePinLabel_ = obj->getProperty("keySourcePinLabel").toString();
+                selfKeyForced_.store(keySourcePin_ == "self", std::memory_order_relaxed);
+            }
             if (obj->hasProperty("customChannelName"))
                 customChannelName = obj->getProperty("customChannelName").toString();
             // Restore dismissed — if field exists use it, otherwise derive from channel type

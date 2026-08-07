@@ -191,6 +191,19 @@ public:
     // RE-ANALYSE on the self reading: arm a committed pass NOW.
     void armSelfKeyAnalysis();
 
+    // ---- Key source pin (KEY_PRECONDITION_SPEC.md §7) --------------------
+    // "" = Auto (precedence decides, today's behaviour). Otherwise a stable
+    // id: "self" | "chain" | "capture" | "link:<uid>". The label is the
+    // display name AT PIN TIME, kept so a pinned source that later
+    // disappears can be NAMED in the "gone — showing Auto" message instead
+    // of silently swapped. Persisted per instance. Pinning "self" force-runs
+    // the self engine even on a non-music role (§7.2: an explicit choice
+    // beats the declared-role inference — the likeliest reason to pin a
+    // "vocal" channel is that the role is mis-declared).
+    juce::String getKeySourcePin()      const { return keySourcePin_; }
+    juce::String getKeySourcePinLabel() const { return keySourcePinLabel_; }
+    void setKeySourcePin(const juce::String& pinId, const juce::String& label);
+
     MeterEngine& getMeterEngine()   { return meterEngine; }
     MeterEngine& getABMeterEngine() { return abMeterEngine; }
     MeterEngine& getCompareMeter(int slot) { return (slot == 0) ? cmpMeter[0] : cmpMeter[1]; }
@@ -690,6 +703,11 @@ private:
     static constexpr uint32_t kSelfKeyLongGapMs   = 120000;
     std::atomic<double> transportTimeS_ { 0.0 };   // audio thread -> scheduler
     std::atomic<bool>   selfKeyJump_    { false };
+    // §7: pin == "self" forces the self tap/scheduler past the role gate.
+    // Atomic mirror because the audio thread reads it every block.
+    std::atomic<bool>   selfKeyForced_  { false };
+    juce::String keySourcePin_;                    // message thread; persisted
+    juce::String keySourcePinLabel_;
     uint32_t lastSelfKeyArmMs_     = 0;            // message thread only
     uint32_t selfKeyLastPlayingMs_ = 0;
     bool     selfKeyWasPlaying_    = false;

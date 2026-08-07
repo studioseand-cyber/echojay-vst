@@ -434,12 +434,29 @@ private:
         std::array<float, 12> chroma {};
         int   altRoot = -1; bool altMinor = false; float altScore = 0.0f;
         bool  poisoned = false;        // vocal-channel local reading: never use
+        // §7 source selector: sources that EXIST but have no reading yet
+        // still appear in the menu (hasReading=false, skipped by precedence);
+        // unusableReason non-empty = greyed in the menu WITH the why, still
+        // pinnable. pinId is the stable identity the pin persists.
+        bool  hasReading = true;
+        juce::String pinId;            // "self" | "chain" | "capture" | "link:<uid>"
+        juce::String unusableReason;
     };
     struct KeySources
     {
-        std::vector<KeySourceReading> all;   // precedence order
+        std::vector<KeySourceReading> all;   // precedence order (menu order)
         int  primaryIdx = -1;                // -1 = nothing usable
         bool disagree   = false;             // usable sources name different keys
+        // §7: autoIdx is what precedence picks IGNORING the pin (so the menu
+        // can always show what Auto resolves to); primaryIdx is after the
+        // pin is applied. A pin that resolves to a source with a reading
+        // sets userSelected; a pin whose source is gone sets pinMissing —
+        // stated, never silently replaced.
+        int  autoIdx      = -1;
+        int  pinnedIdx    = -1;
+        bool userSelected = false;
+        bool pinMissing   = false;
+        juce::String pinMissingLabel;
         const KeySourceReading* primary() const
         { return primaryIdx >= 0 ? &all[(size_t) primaryIdx] : nullptr; }
     };
@@ -460,6 +477,11 @@ private:
     // chip says "listening" until the reading's age drops (or 15 s pass).
     juce::uint32 keyReanalyseSentMs_ = 0;
     void triggerKeyReanalyse();
+    // §7 source selector: one PopupMenu built from keySources_ (never a
+    // second enumeration), opened from the SOURCE chip in both panel forms.
+    juce::Rectangle<int> keySourceMenuRect_;
+    void showKeySourceMenu();
+    static juce::String keySourceShortLabel(const KeySourceReading& s);
     int visualOnlyWidth = 900;
     int visualOnlyHeight = 580;
     // Opaque holder around particleVisual. macOS positions JUCE's OpenGL overlay
