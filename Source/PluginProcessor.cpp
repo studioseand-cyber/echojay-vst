@@ -356,6 +356,18 @@ EchoJayProcessor::EchoJayProcessor()
             EchoJay_NSLog(("EJPrompt: adopted session genre pre-UI \"" + sg + "\"").toRawUTF8());
         }
     }
+
+    // Self key detection (§6.1): when THIS channel's declared role is a
+    // music bus, the plugin detects its own key on the Link's §5.1 duty
+    // cycle — committed passes only, live chroma off (the Meters wheel
+    // eases from the reading's chroma). Worker always runs (idle = one
+    // 250 ms wakeup); the tap is only fed while the role qualifies, and
+    // the 1 Hz timer only arms passes then too.
+    selfKeyEngine_.setContinuous(false);
+    selfKeyEngine_.setWindowSeconds(kSelfKeyWindowS);
+    selfKeyEngine_.setLiveChromaEnabled(false);
+    selfKeyWorker_.startThread();
+    startTimer(1000);
 }
 
 
@@ -402,6 +414,7 @@ void ejDashLog(const juce::String& msg)
 EchoJayProcessor::~EchoJayProcessor()
 {
     ejTeardownLog("~EchoJayProcessor enter");
+    stopTimer();   // §6.1 scheduler — no arm can fire into teardown
 
     // Deregister from the SHARED poller first, so no tick can notify into
     // members being torn down below. The poller itself keeps running for any
@@ -464,6 +477,7 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         juce::Decibels::decibelsToGain(busGainDb_.load(std::memory_order_relaxed)));
     meterEngine.prepare(sampleRate, samplesPerBlock);
     captureEngine.prepare(sampleRate, samplesPerBlock);
+    selfKeyEngine_.prepare(sampleRate, samplesPerBlock);   // §6.1 self key tap
     abMeterEngine.prepare(sampleRate, samplesPerBlock);
     cmpMeter[0].prepare(sampleRate, samplesPerBlock);
     cmpMeter[1].prepare(sampleRate, samplesPerBlock);
@@ -496,6 +510,18 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         {
             bool playing = pos->getIsPlaying();
             transportPlaying.store(playing);
+
+            // Self key scheduler (§6.1/§5.4): a position landing far from
+            // where the last block left off is a section jump — the next
+            // passive pass becomes due immediately.
+            if (auto t = pos->getTimeInSeconds())
+            {
+                const double prev = transportTimeS_.load(std::memory_order_relaxed);
+                if (playing && wasTransportPlaying
+                    && std::abs(*t - prev) > kSelfKeyJumpSeconds)
+                    selfKeyJump_.store(true, std::memory_order_relaxed);
+                transportTimeS_.store(*t, std::memory_order_relaxed);
+            }
 
             // Publish the host tempo for built-in devices that sync to it (the
             // Time cluster's delay). They live inside ChainHost's graph, which
@@ -852,6 +878,13 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
     meterEngine.processBlock(left, right, buffer.getNumSamples());
 
+    // Self key tap (§6.1) — same tap point as the meters. Fed ONLY while the
+    // declared role is a music bus: on a vocal or unknown role the engine
+    // never even hears the channel, which is the 5.3 rule enforced at the
+    // source (the disqualifier is "not the music", judged by declared role).
+    if (isMusicBusRole(channelType))
+        selfKeyEngine_.pushBlock(left, right, buffer.getNumSamples());
+
     // Feed capture engine if capturing
     if (captureState.load() == CaptureState::Capturing)
     {
@@ -992,6 +1025,70 @@ void EchoJayProcessor::setChannelTypePromptDismissed(bool dismissed)
 {
     channelTypePromptDismissed = dismissed;
     markStateDirty();
+}
+
+// ============ Self key detection (§6.1) ============
+// The Link's §5.1 scheduler on the main plugin's own channel, gated on the
+// DECLARED ROLE being a music bus. Message thread, 1 Hz.
+void EchoJayProcessor::timerCallback()
+{
+    scheduleSelfKeyPass();
+}
+
+void EchoJayProcessor::scheduleSelfKeyPass()
+{
+    const uint32_t now     = juce::Time::getMillisecondCounter();
+    const bool     playing = transportPlaying.load(std::memory_order_relaxed);
+
+    // §5.4 invalidation: section jump, or play again after a long stop.
+    bool invalidated = false;
+    if (selfKeyJump_.exchange(false, std::memory_order_relaxed))
+        invalidated = true;
+    if (playing && ! selfKeyWasPlaying_
+        && selfKeyLastPlayingMs_ != 0
+        && now - selfKeyLastPlayingMs_ > kSelfKeyLongGapMs)
+        invalidated = true;
+    if (playing) selfKeyLastPlayingMs_ = now;
+    selfKeyWasPlaying_ = playing;
+    if (invalidated) lastSelfKeyArmMs_ = 0;
+
+    if (selfKeyEngine_.isCollecting())
+    {
+        // Transport stopped under a pass: cancel after a few seconds so the
+        // window never spans two play stretches (previous reading is kept).
+        if (! playing)
+        {
+            if (++selfKeyStallTicks_ >= 5)
+            {
+                selfKeyStallTicks_ = 0;
+                selfKeyEngine_.cancelAnalysis();
+            }
+        }
+        else selfKeyStallTicks_ = 0;
+        return;
+    }
+    selfKeyStallTicks_ = 0;
+
+    if (! isMusicBusRole(channelType)) return;   // not the music: never arm
+    if (! playing) return;
+    if (meterEngine.getMeterData().momentary < kSelfKeyFloorLufs) return;
+
+    const bool due = lastSelfKeyArmMs_ == 0
+                  || now - lastSelfKeyArmMs_ >= kSelfKeyIntervalMs;
+    if (! due) return;
+
+    lastSelfKeyArmMs_ = now;
+    selfKeyEngine_.startAnalysis();
+    selfKeyWorker_.notify();
+    EchoJay_NSLog("EJKey: self passive pass armed (music-bus role)");
+}
+
+void EchoJayProcessor::armSelfKeyAnalysis()
+{
+    lastSelfKeyArmMs_ = juce::Time::getMillisecondCounter();
+    selfKeyEngine_.startAnalysis();
+    selfKeyWorker_.notify();
+    EchoJay_NSLog("EJKey: self RE-ANALYSE armed");
 }
 
 // ============ Capture System ============
