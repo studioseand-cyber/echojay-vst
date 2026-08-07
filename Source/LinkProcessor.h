@@ -2,6 +2,8 @@
 #include <JuceHeader.h>
 #include "ChainHost.h"
 #include "MeterEngine.h"
+#include "EedKeyEngine.h"   // detected key -> LinkMeterFrame (KEY_DETECTOR_SPEC §9)
+#include "EedKeyWorker.h"
 #include "LinkShm.h"     // LinkMeterFrame (frozen-engine publish guard member)
 #include <atomic>
 #include <functional>
@@ -316,6 +318,15 @@ private:
     MeterEngine meterEngine_;
     int meterFramesPublished_ = 0;    // frame diagnostics counter
     LinkMeterFrame lastPublishedFrame_;   // frozen-engine guard (see publish)
+    // Detected key (KEY_DETECTOR_SPEC.md §9): the Link is where key detection
+    // matters most — a Link on the instrumental/mix bus knows the key of the
+    // MUSIC, which a main plugin building a vocal chain cannot hear. Fed on
+    // the audio thread beside the meter tap (Active only), analysed on the
+    // worker thread in continuous mode, published in the frame's key group.
+    // Declared engine-then-worker so the worker (which references the engine)
+    // is destroyed FIRST.
+    echojay::KeyEngine keyEngine_;
+    EedKeyWorker       keyWorker_ { keyEngine_ };
     // Audio liveness: processBlock bumps this; the publisher marks frames
     // audioStale when it stops advancing for ~1s (Logic idles silent
     // channels — the engine freezes but heartbeats/timers keep running)

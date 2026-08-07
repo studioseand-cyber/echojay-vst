@@ -2458,6 +2458,10 @@ private:
     // Build the LINK LEVELS context + proposal format/grounding instructions
     // for a chat turn; empty when there are no live Links to reason about.
     juce::String buildLinkLevelsContext();
+    // [DETECTED KEY] block (KEY_DETECTOR_SPEC.md §4/§9): Link-published key
+    // readings (bus preferred) + the local chain's Key Detector. Empty when
+    // no source has a reading.
+    juce::String buildDetectedKeyContext();
     // Resolve a proposal's linkId (name or uid) to a sendable address.
     juce::String resolveLinkProposalAddr(const juce::String& linkId) const;
     void applyGainProposal(const GainCardZone& z);

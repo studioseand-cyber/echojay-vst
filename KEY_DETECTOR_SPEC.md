@@ -1,160 +1,80 @@
-# EchoJay Key Detector — device #21, and the first READER
-
-The whole built-in suite so far is **writers**: the AI sets params, the device processes
-audio. The Key Detector is the first **reader** — its value is not that the model dials it,
-but that it tells the model something the model cannot otherwise know: what key the music
-is in. That closes a loop the suite has been missing.
-
-It is the same trick as the EQ's `tame_resonances` action, generalised: the AI names an
-*intent* in musical terms and the plugin supplies the *numbers*.
 
 ---
 
-## 1. What it is
+# 9. CROSS-CHANNEL — the key must come from the MUSIC, not the vocal
 
-`EchoJay Key Detector`, category **Analysis** (a new category — it processes no audio).
-Audio passes through bit-identically; it only observes.
+The problem: "build a melodic rapper's vocal chain" puts the chain on the **vocal**, but the
+key lives in the **music**. A key detector that only analyses its own chain's signal reads
+the vocal — a monophonic, sliding, often pitch-corrected source — which is the worst possible
+input for key detection and, worse, is not the thing whose key matters.
 
-- Detects the musical key (24 candidates: 12 roots x major/minor) with a confidence value.
-- Displays the pitch-class profile as a chromagram / note wheel, the detected key, the
-  confidence, and the top few alternates.
-- Publishes the result so the AI feed can carry it (§4) — the point of the device.
+**This needs no new system. EchoJay Link already is the cross-channel mechanism.**
 
-## 2. DSP (JUCE-free, g++-tested) — built for accuracy, not for a quick chromagram
+## 9.1 The existing pattern (do not reinvent it)
 
-Reference point: Antares Auto-Key is the accuracy bar. Its internals are proprietary and are
-NOT to be reverse-engineered or copied — but the published techniques that produce that class
-of accuracy are well documented, and two of them explain why it outperforms naive detectors:
-**it establishes reference pitch before key**, and it **analyses a committed passage rather
-than guessing continuously**. Both are adopted below on their own merits.
+- A **Link** instance sits on another channel/bus and measures it, publishing a
+  `LinkMeterFrame` over shared memory (`LinkShm.h`): LUFS, RMS, peak, crest, correlation,
+  width, `bandRel[6]`.
+- The main plugin reads every registered Link's frame (`readLinkMeterFrame`) and already
+  assembles them into an AI-feed block — `[LINK LEVELS — internal context ...]`
+  (`PluginEditor.cpp` ~16664) — with each channel's display name, `uid` and **`placement`**
+  (1 = bus, 2 = channel, 0 = unset).
 
-A plain FFT chromagram is the thing to avoid: it is what makes most detectors flicker and
-fail on dense mixes. The pipeline, in descending order of impact on accuracy:
+Key is exactly the same shape of fact as loudness: a per-channel measurement, made where the
+audio is, read where the decision is.
 
-1. **Tuning estimation FIRST.** Find spectral peaks, measure their deviation from equal
-   temperament in cents, histogram it, take the mode → the track's actual reference pitch.
-   A track sitting 30 cents sharp smears across pitch-class bins and quietly wrecks every
-   downstream step. Report it (`detected_tuning_hz`) as a first-class output, not just an
-   input — it is useful in its own right, and it is why this class of detector wins.
-2. **Constant-Q transform, not linear FFT.** Log-spaced bins aligned to semitones (typically
-   36 bins/octave, i.e. 3 per semitone, ~A1-A7). This is the single biggest quality jump:
-   linear FFT bins are far too coarse in the bass and wastefully fine up top, so pitch
-   information is smeared exactly where the root lives.
-3. **Harmonic/percussive separation.** Median-filter the spectrogram along time (suppresses
-   broadband transients) and along frequency (suppresses sustained tones) to split the two;
-   keep the harmonic part for analysis. This is what rescues dense, drum-heavy mixes — the
-   material where naive detectors confidently report nonsense.
-4. **Spectral whitening + harmonic summation.** Flatten the spectral envelope so timbre stops
-   dominating, then fold each pitch class's harmonics back onto its fundamental (harmonic
-   product / weighted sum over octaves) so a bass note and its overtones reinforce one class
-   instead of lighting up several.
-5. **Segment-level chroma, then temporal smoothing.** Build a chroma vector per short segment
-   (~0.5-1 s), then smooth the SEQUENCE with a Viterbi/HMM pass over key candidates with a
-   self-transition bias — rather than correlating one big averaged profile. This is what stops
-   relative-major/minor flip-flopping and lets a genuine modulation register as a change.
-6. **Key profiles.** Correlate against the 24 candidates using a profile set validated on
-   popular music — Temperley's revision or Shaath's, which outperform raw
-   Krumhansl-Schmuckler on modern material. Cite whichever is used in a comment. Confidence =
-   winning correlation normalised against the runner-up, so "C major 0.9 / A minor 0.88"
-   reports as LOW confidence, which is honest.
-7. **Hysteresis + `hold`.** Require a margin over the incumbent before switching. `hold`
-   freezes the reading outright.
+## 9.2 The design
 
-**ANALYSE-on-demand, not a permanently twitching readout.** The primary interaction is:
-press ANALYSE (or the AI triggers it), the device listens to the next N seconds of playback,
-commits a result, and holds it until re-run. That is both more accurate (a committed passage
-beats an instantaneous guess) and more usable. A continuous mode stays available for those
-who want it, but the committed reading is what the AI feed reports.
+**Key detection runs in TWO places, sharing one engine (`EedKeyEngine`):**
 
-**Tests:** synthesised C-major triad + scale reads C major; A-minor material reads A minor and
-specifically NOT C major (the classic relative-key failure); a signal detuned 30 cents is still
-identified correctly AND its tuning reported within a few cents; a drum loop and white noise
-report LOW confidence rather than a confident wrong answer; a mix with strong percussion still
-resolves once HPSS is on (assert it beats the no-HPSS path on the same input); audio passes
-through bit-identically at every setting.
+1. **In Link (the important one).** Link gains key detection over its existing analysis path
+   and publishes the result in its frame. So a Link on the instrumental/mix bus knows the key,
+   and the main plugin on the vocal can read it. This is what makes "build a vocal chain in
+   the track's key" work at all.
+2. **As the chain device** (`EchoJay Key Detector`, §1-§8). Still worth having: analyses
+   whatever flows through the chain it is in, for when that IS the music, and it is where the
+   full UI (note wheel, alternates, ANALYSE) lives.
 
-## 3. Dialable params (`ParamSchema`, as every device)
-
-| id | unit | range / choices | default | notes |
-|---|---|---|---|---|
-| `analyse` | on/off | | off | START a committed analysis pass — the primary control; the AI can trigger a re-analysis |
-| `window_s` | s | 1-30 | 10 | how much audio a committed pass listens to |
-| `continuous` | on/off | | off | keep updating instead of committing once |
-| `sensitivity` | % | 0-100 | 50 | how readily it switches key (hysteresis / transition bias) |
-| `tuning_hz` | Hz | 415-465 | 440 | reference pitch HINT; `auto_tuning` overrides it |
-| `auto_tuning` | on/off | | on | detect the track's reference pitch instead of assuming it (§2.1) |
-| `mode_lock` | choice | `auto` \| `major` \| `minor` | `auto` | constrain the search when the user knows |
-| `hold` | on/off | | off | freeze the current reading |
-| `hpss` | on/off | | on | harmonic/percussive separation — leave on for mixes, off saves CPU on solo tonal sources |
-| `low_hz` / `high_hz` | Hz | 20-500 / 1k-12k | 80 / 5000 | analysis band |
-
-Plus `reset` (clear the accumulation). `analyse` being dialable is what lets the model say
-"listen again and tell me the key" — an AI-triggered analysis, the same shape as the EQ's
-`tame_resonances` action.
-
-**Read-only outputs** (not params — reported, never set): `detected_key`,
-`confidence`, `detected_tuning_hz`, `root_hz`, and the top alternates.
-
-## 4. The read path — the new capability
-
-The detected key must reach the model. Follow the existing `[CURRENT CHAIN]` precedent in
-`EchoJayAPI` (assembled in `PluginEditor.cpp` alongside the other injections):
+**Frame additions** (append to `LinkMeterFrame`, never reorder — it is a shared-memory ABI;
+bump the layout/version guard the header already uses):
 
 ```
-[DETECTED KEY — from EchoJay Key Detector in the chain; measured from the live signal]:
-key: F# minor   confidence: 0.82
-detected_tuning: 441.3 Hz (+5 cents from A=440)
-root_hz: 92.50 (F#2)   alternates: A major (0.71), C# minor (0.64)
-analysed: 10.0 s of playback, committed
+int16_t keyRoot        = -1;      // 0..11 pitch class, -1 = none
+uint8_t keyIsMinor     = 0;
+float   keyConfidence  = 0.0f;    // 0..1
+float   keyTuningHz    = 0.0f;    // detected reference pitch, 0 = unknown
+uint32_t keyAgeMs      = 0;       // how stale the reading is
 ```
 
-Rules that keep it honest:
-- Emitted **only** when a Key Detector is in the chain and has a reading.
-- Always carries **confidence**. The prompt teaching must say: below ~0.5, treat the key as
-  unknown and do not build moves on it. A confident wrong key is worse than no key.
-- Include `root_hz` so the model can act without doing note maths, and alternates so it can
-  see when the call was close (relative major/minor especially).
+**Feed block.** Extend the `[DETECTED KEY]` block (§4) to name its source, and prefer a bus
+reading over a channel reading when several exist:
 
-**Backend teaching** (add to `BUILTIN_DEVICES_BACKEND_SPEC.md`): what the block means, the
-confidence rule, and when to use it — see §5.
+```
+[DETECTED KEY — measured by EchoJay on another channel; the KEY OF THE MUSIC]:
+key: F# minor   confidence: 0.86   detected_tuning: 441.3 Hz
+root_hz: 92.50 (F#2)   alternates: A major (0.72)
+source: "Music Bus" (bus, uid m3k2)   age: 4 s
+```
 
-## 5. What it unlocks (why it is worth building)
+Rules:
+- Prefer `placement == bus` sources; a bus reading is the mix, a channel reading is one part.
+- If several Links report different keys, list the bus one and note the disagreement rather
+  than silently picking — disagreement is itself information (a modulation, or a bad read).
+- Carry `age`: a reading from 3 minutes ago on a different section is not current.
+- The confidence rule from §4 still governs: below ~0.5, treat as unknown.
 
-The EQ already accepts `note:"G5"` and resolves it via `EqNote.h`'s `parseNoteToFreq`. A
-known key plus note-addressable bands makes musical intent directly expressible:
+## 9.3 Why this ordering matters for the build
 
-- "notch the ringing at the root" → the model knows the root, sends `note:"F#2"`.
-- "cut the boxiness but keep it off the root" → it can avoid the fundamental deliberately.
-- "put a dynamic bell on the third" → arithmetic the model can now actually do.
-- Delay/reverb choices informed by key and, later, tempo.
-- It makes the EQ's `tame_resonances` smarter to interpret: a resonance sitting on the root
-  is the instrument; one sitting between scale degrees is more likely a room mode.
+Build the **engine first**, then wire it into Link and the chain device — the engine is the
+hard part and it is shared. Do not fork two implementations.
 
-## 6. UI
+If Link work is being done in parallel by another session, the frame addition is the one
+shared line: coordinate it, keep it append-only, and let the key engine land independently.
 
-`DeviceEditorBase` as every device. A **note wheel / chromagram** (12 segments, brightness
-by pitch-class weight — reuse the dwell-glow treatment from `Source/viz/DwellGlow` so it
-matches the family), the detected key large and legible, a confidence meter, and the top
-alternates listed small. `HOLD` and `RESET` buttons. Dial row for the params.
+## 9.4 Acceptance, revised
 
-## 7. Build notes
-
-- Self-registering like every device — one `BuiltinDeviceRegistrar` line in its own `.cpp`,
-  no shared-file edits beyond CMake. New category "Analysis"; add it to the registry's
-  `kCategoryOrder` (this IS a shared-line edit — the only one).
-- Audio path must be **bit-identical** — prove it in the registry test the way every depth
-  pass did (defaults vs explicit-neutral through `processBlock`, zero delta).
-- Latency: **zero**. It observes; it never delays.
-- CPU: analysis is a few FFTs per second, not per block. Keep it off the audio thread beyond
-  filling the ring.
-- Device count assertion in `tools/builtin_registry_test.cpp` goes 20 → 21.
-
-## 8. Acceptance
-
-- Play tonal material in a known key: the wheel lights the right classes, the key reads
-  correctly, confidence is high. Play a drum loop: confidence collapses rather than
-  reporting a confident wrong key.
-- `[DETECTED KEY]` appears in the feed only with the device in the chain.
-- End to end: with a Key Detector in the chain on material in F# minor, "notch the ringing
-  at the root" produces an EQ band at F#'s frequency — the model using an observation the
-  plugin made, which is the whole point of the device.
+With a Link on the instrumental bus and an EchoJay chain being built on the vocal:
+"build a melodic rapper's vocal chain" → the model receives `[DETECTED KEY]` sourced from the
+**music bus**, not the vocal, and can act on it (tune a delay, avoid notching the root, place
+a bell off the third). Removing the Link removes the block entirely rather than falling back
+to reading the vocal.
