@@ -503,6 +503,26 @@ public:
         writeThrough (inflightFile, juce::JSON::toString (juce::var (o), false));
     }
 
+    /** Append a row WITHOUT closing the stake.
+
+        endLoad deletes inflight.json, and a protocol that closes per unit of
+        work leaves a HOLE between units. Measured: the per-index sweep closed
+        after each parameter, so a crash between index 45's close and index
+        46's open had NO stake -- recoverFromCrash returned empty, no death row
+        was written, the retry rule had nothing to count, and bx_rooMS was
+        re-offered by the worklist on six consecutive relaunches.
+
+        Rows that are EVIDENCE rather than stake boundaries use this. The stake
+        is opened once by the caller and closed once when the work is done.
+    */
+    void appendRow (LedgerRecord r)
+    {
+        const juce::ScopedLock sl (lock);
+        r.at    = nowIso();
+        r.runId = runId;
+        appendLocked (r);
+    }
+
     void endLoad (LedgerRecord r)
     {
         const juce::ScopedLock sl (lock);

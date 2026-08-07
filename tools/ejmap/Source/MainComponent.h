@@ -279,6 +279,10 @@ public:
         // After the scan cache is restored, because the worklist is built from
         // it. Deferred one tick so the window exists and the first plugin does
         // not load inside the constructor.
+        // BEFORE the worklist is built and before any resume: an attempt file
+        // left behind names the plugin that killed the last process.
+        reapUnfinishedAttempt();
+
         juce::MessageManager::callAsync ([this] { resumeSweepIfInterrupted(); });
 
         juce::String opening;
@@ -7982,6 +7986,21 @@ public:
             return true;                       // skips cost nothing: keep going
         }
 
+        // AN ATTEMPT RECORD THE SWEEP OWNS, written BEFORE the plugin is
+        // opened and cleared the moment an outcome is known.
+        //
+        // The ledger stake is the right mechanism and it FAILED here: a hole
+        // between two index closes meant six bx_rooMS deaths wrote no row, so
+        // the retry rule counted nothing and the worklist re-offered it every
+        // relaunch. The gap is fixed -- but "a plugin that dies every time
+        // comes off the worklist" must not depend on every stake in the system
+        // being hole-free, because the next hole will be somewhere else.
+        //
+        // This does not care WHERE the death was or whether anything was
+        // staked. It says: this run was about to open X and never said what
+        // happened. Three of those is a plugin that kills the process.
+        noteAttemptStarted (sp);
+
         ++sweep.done;
         sweep.current = sp.desc.name;
         sweepProgress();
@@ -8024,6 +8043,7 @@ public:
             flagForReview (sp, res + ": " + detail);
 
         appendSweepRow (sweep.log, sp, category, res, detail, nControls, cap);
+        noteAttemptFinished();
         writeSweepProgress (sweep.progressBase + sweep.mapped + sweep.sweptNothing);
 
         // THE ONE INTERRUPTION.
@@ -8288,6 +8308,11 @@ public:
 private:
     static constexpr int kSweepBreaker = 10;
 
+    /** Unfinished attempts before a plugin is quarantined. THREE, matching
+        kRetryAttempts: the same evidence standard as a corroborated death,
+        for the same reason -- one is a bad roll, three is the plugin. */
+    static constexpr int kUnfinishedAttemptLimit = 3;
+
     /** Shorter than a load's on purpose. A capture is worth some seconds and no
         more; the map it belongs to is already written by the time this runs. */
     static constexpr int kCaptureDeadlineMs = 20000;
@@ -8419,6 +8444,85 @@ private:
         if (cls == "load_failed")     return "loads are failing outright. Investigate before resuming.";
         if (cls == "timeout")         return "loads are hanging. Investigate before resuming.";
         return "investigate before resuming.";
+    }
+
+    juce::File attemptFile() const
+    { return ledger.getRoot().getChildFile ("sweep-attempt.json"); }
+
+    /** Counts attempts that never reported an outcome, per plugin, across
+        process lifetimes. Written before the open, deleted after the outcome:
+        if it survives, the process died with that plugin in hand. */
+    void noteAttemptStarted (const ScannedPlugin& sp)
+    {
+        auto tally = juce::JSON::parse (attemptTallyFile().loadFileAsString());
+        auto* o = tally.getDynamicObject();
+        if (o == nullptr) { o = new juce::DynamicObject(); tally = juce::var (o); }
+
+        auto* a = new juce::DynamicObject();
+        a->setProperty ("plugin_id", sp.pluginId());
+        a->setProperty ("name", sp.desc.name);
+        a->setProperty ("identity", echojay::identityKeyForDescription (sp.desc));
+        a->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
+        attemptFile().replaceWithText (juce::JSON::toString (juce::var (a), true));
+    }
+
+    void noteAttemptFinished()
+    {
+        attemptFile().deleteFile();
+    }
+
+    juce::File attemptTallyFile() const
+    { return ledger.getRoot().getChildFile ("sweep-unfinished.json"); }
+
+    /** THE PLUGIN THAT KILLED THE LAST RUN. Called at startup, before the
+        worklist is built: an attempt file left behind names it, and the tally
+        remembers how often. */
+    void reapUnfinishedAttempt()
+    {
+        auto f = attemptFile();
+        if (! f.existsAsFile())
+            return;
+
+        auto a = juce::JSON::parse (f.loadFileAsString());
+        const auto pid      = a.getProperty ("plugin_id", "").toString();
+        const auto name     = a.getProperty ("name", "").toString();
+        const auto identity = a.getProperty ("identity", "").toString();
+        f.deleteFile();
+        if (pid.isEmpty())
+            return;
+
+        auto tally = juce::JSON::parse (attemptTallyFile().loadFileAsString());
+        auto* o = tally.getDynamicObject();
+        if (o == nullptr) { o = new juce::DynamicObject(); tally = juce::var (o); }
+        const int n = (int) o->getProperty (juce::Identifier (pid.replaceCharacters ("/,:.", "____"))) + 1;
+        o->setProperty (juce::Identifier (pid.replaceCharacters ("/,:.", "____")), n);
+        attemptTallyFile().replaceWithText (juce::JSON::toString (tally, true));
+
+        // A row so the ledger says what happened even when no stake did.
+        LedgerRecord r;
+        r.pluginId = pid; r.name = name; r.stage = "sweep";
+        r.outcome  = LoadOutcome::diedDuringLoad;
+        r.certainty = "unattributed";
+        r.unattended = true;
+        r.detail = "the sweep was opening this plugin and the process did not report an "
+                   "outcome; unfinished attempt " + juce::String (n) + " of "
+                   + juce::String (kUnfinishedAttemptLimit)
+                   + " (no ledger stake was open, so this is the sweep's own record)";
+        ledger.appendRow (r);
+
+        std::cout << "SWEEP: " << name << " killed the previous run (unfinished attempt "
+                  << n << " of " << kUnfinishedAttemptLimit << ")" << std::endl;
+
+        if (n >= kUnfinishedAttemptLimit)
+        {
+            ledger.quarantine (pid, "kills the process during the sweep: "
+                                    + juce::String (n) + " unfinished attempts, no outcome "
+                                    "reported from any of them", "sweep", {});
+            std::cout << "SWEEP: " << name << " QUARANTINED -- " << n
+                      << " attempts, no outcome from any. It comes off the worklist."
+                      << std::endl;
+        }
+        juce::ignoreUnused (identity);
     }
 
     /** Raise an issue so the worklist stops offering this build, and say why.
@@ -11196,7 +11300,12 @@ private:
         rec.detail   = "idx " + juce::String (index) + ": "
                      + (sw.ok ? "anchors" : (sw.flat ? "text liar" : "refused"))
                      + " (" + sw.method + ") " + sw.reason.substring (0, 140);
-        ledger.endLoad (rec);
+
+        // APPEND, DO NOT CLOSE. This row is evidence about one parameter, not
+        // the end of the crash window: the next index's beginSweepInflight
+        // re-stakes immediately, and closing here left an unstaked gap between
+        // them that swallowed six consecutive bx_rooMS deaths.
+        ledger.appendRow (rec);
     }
 
     /** The sweep row. Points travel with the anchors because anchor values

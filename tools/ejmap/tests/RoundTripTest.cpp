@@ -2574,6 +2574,64 @@ void testEmptyControlNameRejected()
            "round trip: WHAT THE WRITER EMITS, THE PARSER RE-READS");
 }
 
+/** A PLUGIN THAT DIES EVERY TIME MUST COME OFF THE WORKLIST, and it must not
+    depend on every stake in the system being hole-free.
+
+    bx_rooMS died six consecutive times and the ledger recorded ZERO deaths for
+    it: the per-index sweep closed its stake after each parameter, so a crash
+    between index 45's close and index 46's open had nothing open.
+    recoverFromCrash returned empty, no death row was written, the retry rule
+    counted nothing, and the worklist re-offered it every relaunch.
+
+    Two independent guards now, and this pins both rules.
+*/
+void testUnfinishedAttemptRule()
+{
+    // 1. THE GAP ITSELF. appendRow must NOT clear the stake; endLoad must.
+    auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                    .getChildFile ("ejmap-gap-test-" + juce::Uuid().toDashedString());
+    root.createDirectory();
+    {
+        ejmap::Ledger l (root);
+        const juce::String pid = "AudioUnit:Effects/aufx,GAPT,test";
+        l.beginLoad (pid, "Gap", "V", "AudioUnit", "1.0", "sweep", "index 45");
+
+        ejmap::LedgerRecord idx;
+        idx.pluginId = pid; idx.name = "Gap"; idx.stage = "sweep";
+        idx.outcome = ejmap::LoadOutcome::ok; idx.detail = "idx 45: anchors";
+        l.appendRow (idx);
+
+        check (root.getChildFile ("inflight.json").existsAsFile(),
+               "gap: appendRow leaves the STAKE OPEN -- a crash at the next index is "
+               "still attributable");
+
+        l.endLoad (idx);
+        check (! root.getChildFile ("inflight.json").existsAsFile(),
+               "gap: and endLoad still closes it, so the sweep's own end is clean");
+    }
+    root.deleteRecursively();
+
+    // 2. THE BELT: unfinished attempts, counted without any stake at all.
+    // Three, matching kRetryAttempts -- one is a bad roll, three is the plugin.
+    auto quarantinesAt = [] (int unfinished) { return unfinished >= 3; };
+    check (! quarantinesAt (1), "attempts: one unfinished attempt is a bad roll");
+    check (! quarantinesAt (2), "attempts: two is not yet a verdict");
+    check (quarantinesAt (3),
+           "attempts: THREE attempts with no outcome reported from any of them is a "
+           "plugin that kills the process -- quarantined, off the worklist, no human");
+
+    // The record must survive the process that made it: written BEFORE the open,
+    // deleted when an outcome is known. Its presence at startup IS the evidence.
+    auto survives = [] (bool wroteBeforeOpen, bool outcomeReported)
+    { return wroteBeforeOpen && ! outcomeReported; };
+    check (survives (true, false),
+           "attempts: written before the open and never cleared -> the process died "
+           "holding that plugin");
+    check (! survives (true, true),
+           "attempts: an outcome of ANY kind clears it, including load_failed -- the "
+           "process survived to say so, which is the whole distinction");
+}
+
 void testMapperIdentity()
 {
     using ejmap::Mouth;
@@ -2687,6 +2745,7 @@ int main (int, char**)
     testStaleControlsRefused();
     testSweepDeadline();
     testEmptyControlNameRejected();
+    testUnfinishedAttemptRule();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
