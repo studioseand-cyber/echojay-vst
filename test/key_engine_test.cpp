@@ -188,12 +188,15 @@ static std::vector<float> drumLoop (double seconds)
     return buf;
 }
 
-// Percussion the way a real kit is pitched: ringing toms on chromatic
-// out-of-key pitches (F#3, C#4) plus snare bursts. The toms are transient
-// (0.15 s — inside HPSS's time-median window) but PITCHED, so without HPSS
-// they pollute the chroma with F#/C# against the C-major bed; with HPSS they
-// are recognised as percussive and suppressed. This is the input on which the
-// separation has to earn its place.
+// Percussion the way a real kit is pitched: hard, LOUD hits on chromatic
+// out-of-key pitches (F#3, C#4, G#3) plus bright noise bursts, four to the
+// second. Each hit is genuinely transient (~60 ms — well inside HPSS's
+// time-median window) but pitched, so without HPSS the chroma drowns in
+// F#/C#/G# against a much quieter C-major bed; with HPSS the hits are
+// recognised as percussive and suppressed. This is the input the separation
+// has to earn its CPU on — calibrated (see the HPSS section below) so the
+// no-HPSS path actually FAILS the confidence rule rather than merely
+// scoring a little lower.
 static std::vector<float> pitchedPercLoop (double seconds)
 {
     std::vector<float> buf ((size_t) (seconds * kFs), 0.0f);
@@ -205,30 +208,30 @@ static std::vector<float> pitchedPercLoop (double seconds)
     {
         const int start = (int) (t * kFs);
 
-        // tom: F#3 or C#4, 150 ms, a few partials
-        const double f0 = (which & 1) ? midiHz (61) : midiHz (54);
-        for (int h = 1; h <= 3; ++h)
+        // tom: F#3 / C#4 / G#3 in rotation, 60 ms, a few partials
+        const double f0 = (which % 3 == 0) ? midiHz (54)
+                        : (which % 3 == 1) ? midiHz (61) : midiHz (56);
+        for (int h = 1; h <= 4; ++h)
         {
             const double w = 2.0 * 3.14159265358979323846 * f0 * h / kFs;
-            for (int i = 0; i < (int) (0.15 * kFs); ++i)
+            for (int i = 0; i < (int) (0.06 * kFs); ++i)
             {
                 const int idx = start + i;
                 if (idx >= (int) buf.size()) break;
                 const double tt = (double) i / kFs;
-                buf[(size_t) idx] += (float) (std::sin (w * i) * std::exp (-tt / 0.045))
-                                     * (0.7f / (float) h);
+                buf[(size_t) idx] += (float) (std::sin (w * i) * std::exp (-tt / 0.02))
+                                     * (1.1f / (float) h);
             }
         }
 
-        // snare-ish noise burst on every other hit
-        if ((which & 1) == 0)
-            for (int i = 0; i < (int) (0.1 * kFs); ++i)
-            {
-                const int idx = start + i;
-                if (idx >= (int) buf.size()) break;
-                buf[(size_t) idx] += nz.next()
-                                     * (float) std::exp (-(double) i / kFs / 0.03) * 0.4f;
-            }
+        // bright noise burst on every hit
+        for (int i = 0; i < (int) (0.06 * kFs); ++i)
+        {
+            const int idx = start + i;
+            if (idx >= (int) buf.size()) break;
+            buf[(size_t) idx] += nz.next()
+                                 * (float) std::exp (-(double) i / kFs / 0.015) * 0.9f;
+        }
     }
     return buf;
 }
@@ -293,7 +296,7 @@ int main()
         check (r.valid, "a committed pass produced a reading");
         check (r.committed, "and it is marked committed");
         check (r.root == 0 && ! r.minor, "the key is C major");
-        check (r.confidence > 0.5f, "confidence is HIGH (> 0.5)");
+        check (r.confidence > 0.75f, "confidence is HIGH (> 0.75)");
         check (std::fabs (r.tuningCents) < 6.0f, "tuning reads as concert pitch (within 6 c)");
         check (std::fabs (r.rootHz / 65.41f - std::round (r.rootHz / 65.41f)) < 0.1f
                  || std::fabs (1200.0 * std::log2 (r.rootHz / 65.41)) < 1210.0,
@@ -311,7 +314,16 @@ int main()
         check (r.valid, "a reading was produced");
         check (r.root == 9 && r.minor, "the key is A minor");
         check (! (r.root == 0 && ! r.minor), "specifically NOT C major (the relative-key trap)");
-        check (r.confidence > 0.3f, "with usable confidence");
+        // The relative pair gets its calibrated treatment: C major is the
+        // runner-up here BY DESIGN (same seven notes), and that must not drag
+        // a correct tonic call under the ~0.5 rule — it shows up as the named
+        // first alternate instead.
+        check (r.confidence > 0.75f, "confidence clears the consumption rule COMFORTABLY (> 0.75)");
+        bool relNamed = false;
+        for (int i = 0; i < r.numAlternates; ++i)
+            if (r.alternates[(size_t) i].root == 0 && ! r.alternates[(size_t) i].minor)
+                relNamed = true;
+        check (relNamed, "and the relative (C major) is among the named alternates");
         const double oct = std::log2 (r.rootHz / 27.50);
         check (std::fabs (oct - std::round (oct)) < 0.05, "root_hz sits on an A octave");
     }
@@ -322,7 +334,7 @@ int main()
         std::printf ("       -> %s\n", keyStr (r).c_str());
         check (r.valid, "a reading was produced");
         check (r.root == 0 && ! r.minor, "the detuned material still reads C major");
-        check (r.confidence > 0.5f, "still confident");
+        check (r.confidence > 0.75f, "still confident (> 0.75)");
         check (std::fabs (r.tuningCents - 30.0f) < 6.0f,
                "detected tuning within 6 c of the actual +30 c");
         // 440 * 2^(30/1200) = 447.69 Hz
@@ -333,7 +345,7 @@ int main()
     {
         const auto r = runCommitted (drumLoop (9.0), 8.0f, true);
         std::printf ("       -> %s\n", keyStr (r).c_str());
-        check (r.confidence < 0.4f, "drum-loop confidence collapses (< 0.4)");
+        check (r.confidence < 0.2f, "drum-loop confidence collapses (< 0.2)");
     }
 
     std::printf ("== white noise reports LOW confidence ==\n");
@@ -343,24 +355,52 @@ int main()
         for (auto& v : buf) v = nz.next() * 0.4f;
         const auto r = runCommitted (buf, 8.0f, true);
         std::printf ("       -> %s\n", keyStr (r).c_str());
-        check (r.confidence < 0.4f, "white-noise confidence collapses (< 0.4)");
+        check (r.confidence < 0.2f, "white-noise confidence collapses (< 0.2)");
     }
 
-    std::printf ("== HPSS measurably beats no-HPSS on a percussive mix ==\n");
+    // The calibration is pinned in BOTH directions against the ONE number the
+    // consumers use (the feed block, the backend teaching and spec §4 all say
+    // "below ~0.5 treat as unknown"): a regression that drags every correct
+    // answer under the rule fails here, and so does one that lets noise over
+    // it. The margins (0.75 / 0.2) are deliberately wide of 0.5 so the pins
+    // catch drift long before the rule actually misbehaves.
+    std::printf ("== CALIBRATION: correct readings sit ABOVE the 0.5 rule, junk BELOW ==\n");
     {
+        constexpr float kRule = 0.5f;
+        const auto cMaj = runCommitted (cMajorSong (9.0), 8.0f, true);
+        const auto aMin = runCommitted (aMinorSong (9.0), 8.0f, true);
+        const auto drums = runCommitted (drumLoop (9.0), 8.0f, true);
+        check (cMaj.confidence > kRule && aMin.confidence > kRule,
+               "correct majors AND minors are USABLE under the rule ("
+               + std::to_string (cMaj.confidence).substr (0, 4) + " / "
+               + std::to_string (aMin.confidence).substr (0, 4) + " > 0.5)");
+        check (drums.confidence < kRule,
+               "and percussion is discarded by the same rule");
+    }
+
+    std::printf ("== HPSS: no-HPSS FAILS the confidence rule; HPSS passes it ==\n");
+    {
+        // A quiet C-major bed under loud, dense pitched percussion — the mix
+        // where a chromagram without separation has no chance. The point is
+        // not a small score difference: on the SAME input, the no-HPSS path
+        // must land where the ~0.5 rule DISCARDS it, and the HPSS path must
+        // land where the rule keeps it, correct. That is HPSS earning its CPU.
         auto mix = cMajorSong (9.0);
         {
             const auto perc = pitchedPercLoop (9.0);
             for (size_t i = 0; i < mix.size() && i < perc.size(); ++i)
-                mix[i] = mix[i] * 0.5f + perc[i] * 0.9f;
+                mix[i] = mix[i] * 0.3f + perc[i];
         }
         const auto on  = runCommitted (mix, 8.0f, true);
         const auto off = runCommitted (mix, 8.0f, false);
         std::printf ("       -> HPSS on : %s\n", keyStr (on).c_str());
         std::printf ("       -> HPSS off: %s\n", keyStr (off).c_str());
-        check (on.root == 0 && ! on.minor, "with HPSS the mix still resolves to C major");
-        check (on.confidence > off.confidence + 0.02f,
-               "and HPSS confidence MEASURABLY beats the no-HPSS path (same input)");
+        check (on.root == 0 && ! on.minor, "with HPSS the mix resolves to C major");
+        check (on.confidence > 0.5f, "and clears the confidence rule");
+        check (off.confidence < 0.5f,
+               "without HPSS the same input FAILS the rule (reads as unknown)");
+        check (on.confidence > off.confidence + 0.2f,
+               "the separation is worth a wide margin, not a rounding error");
     }
 
     std::printf ("== mode_lock constrains the search ==\n");

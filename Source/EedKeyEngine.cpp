@@ -80,10 +80,46 @@ namespace
     inline float hysteresisFor (float sensPct)
     { return 0.01f + (1.0f - sensPct / 100.0f) * 0.08f; }
 
-    // Confidence: winner correlation, scaled by how decisively it beats the
-    // runner-up. margin/(margin+knee) ≈ 0.33 at a 2-point margin and ≈ 0.9 at
-    // a 36-point one, so "C major 0.90 / A minor 0.88" honestly reads LOW.
-    constexpr float kMarginKnee = 0.04f;
+    // ---- confidence calibration --------------------------------------------
+    // Calibrated against the rule that CONSUMES it (spec §4: below ~0.5 the
+    // key is unknown): a correct, unambiguous reading must land comfortably
+    // above 0.5, an untonal or genuinely ambiguous one comfortably below.
+    // A raw winner-vs-runner-up margin fails that on purpose-built material:
+    // the runner-up is usually the winner's RELATIVE major/minor, which
+    // shares all seven scale degrees, so the margin stays small precisely
+    // when the answer is right. Four factors instead, each answering a
+    // different question:
+    //
+    //   S — is the winning profile a real fit at all? (absolute correlation,
+    //       ramped: Pearson against a Temperley profile tops out well short
+    //       of 1.0 on genuine multi-voice chroma, so raw s1 would punish
+    //       every correct answer.)
+    //   A — is the PITCH SET clearly this one? (margin to the best candidate
+    //       that is NOT the winner's relative.)
+    //   R — is the TONIC settled within the agreed pitch set? (margin to the
+    //       relative itself, floored at kRelFloor: when the top two are
+    //       relatives the notes are agreed and only the tonic is in
+    //       question, so that gap is capped at costing 1-kRelFloor, and the
+    //       relative is named in the alternates instead of dragging the
+    //       whole reading under the threshold.)
+    //   T — was there tonal material to read? (chroma flatness gate, below.)
+    //
+    // conf = S * A * R * T. Measured on the calibration battery in
+    // test/key_engine_test.cpp: correct unambiguous majors/minors 0.75+,
+    // drums and white noise ~0.00 — both sides pinned by tests.
+    constexpr float kMarginKnee   = 0.03f;
+    constexpr float kStrengthLo   = 0.15f;   // s1 at or below this: no faith
+    constexpr float kStrengthSpan = 0.35f;   // s1 of 0.5+ counts as full fit
+    constexpr float kRelFloor     = 0.85f;   // relative-tonic doubt costs <= 15%
+
+    // The relative major/minor partner of key k (root + (minor ? 12 : 0)):
+    // A minor <-> C major, i.e. minor -> root+3 major, major -> root+9 minor.
+    inline int relativeKeyOf (int k)
+    {
+        const int  root  = k % 12;
+        const bool minor = k >= 12;
+        return minor ? (root + 3) % 12 : ((root + 9) % 12) + 12;
+    }
 
     // Segment chroma is peak-normalised and mildly sharpened before the
     // profile correlations. The diatonic SET is shared between a key and its
@@ -108,7 +144,7 @@ namespace
             sum    += v;
         }
         const double flat = std::exp (logSum / 12.0) / (sum / 12.0);
-        const double t = (1.0 - flat) * 1.8;
+        const double t = (1.0 - flat) * 2.0;
         return (float) (t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t));
     }
 
@@ -692,13 +728,22 @@ KeyEngine::PassResult KeyEngine::analyseWindow (int n, bool hpssOn)
     for (int k = 1; k < 24; ++k)
         if (occupancy[(std::size_t) k] > occupancy[(std::size_t) winner]) winner = k;
 
-    // ---- confidence: winner against runner-up, gated by tonality -----------
-    const float s1 = (float) agg[(std::size_t) winner];
-    float s2 = -2.0f;
-    for (int k = 0; k < 24; ++k)
-        if (k != winner && (float) agg[(std::size_t) k] > s2) s2 = (float) agg[(std::size_t) k];
+    // ---- confidence: S * A * R * T (see the calibration note up top) -------
+    const float s1  = (float) agg[(std::size_t) winner];
+    const int   rel = relativeKeyOf (winner);
 
-    const float margin = s1 - s2;
+    float bestNonRel = -2.0f, bestRel = (float) agg[(std::size_t) rel];
+    for (int k = 0; k < 24; ++k)
+        if (k != winner && k != rel && (float) agg[(std::size_t) k] > bestNonRel)
+            bestNonRel = (float) agg[(std::size_t) k];
+
+    const float mNonRel = s1 - bestNonRel;
+    const float mRel    = s1 - bestRel;
+
+    const float S = clamp01 ((s1 - kStrengthLo) / kStrengthSpan);
+    const float A = mNonRel > 0.0f ? mNonRel / (mNonRel + kMarginKnee) : 0.0f;
+    const float R = kRelFloor + (1.0f - kRelFloor)
+                      * (mRel > 0.0f ? mRel / (mRel + kMarginKnee) : 0.0f);
 
     // Aggregate chroma, normalised for display and for the tonality gate.
     std::array<float, 12> chromaAvg {};
@@ -712,8 +757,7 @@ KeyEngine::PassResult KeyEngine::analyseWindow (int n, bool hpssOn)
 
     r.ok     = true;
     r.key    = winner;
-    r.conf   = clamp01 (s1) * (margin > 0.0f ? margin / (margin + kMarginKnee) : 0.0f)
-                            * tonalityOf (chromaAvg);
+    r.conf   = S * A * R * tonalityOf (chromaAvg);
     r.chroma = chromaAvg;
 
     // ---- the root's fundamental, in the octave the signal actually used ----
