@@ -10,6 +10,9 @@ in a clean context, `gpt-5.5`), neither shown the other's answer or the truth.
 
 - **Agreement predicts correctness.** Both agree + both confident: 75/125 accepted,
   **74/75 = 98.7%** correct, against 94.4% for one arm unconditional.
+
+> **Qualified 7 Aug 2026:** measured against hand answers that are PARTLY MODEL-SOURCED -- the user has since said some of the 266 review decisions came from pasting cards into a third model, so the standard is not fully independent of what it scores; the direction holds because the errors were adjudicated by the unit-family rule over measured evidence, not by either party's opinion.
+
 - **End to end 97.8%** — 90 written correct, 2 wrong, 92 written, 27 to review.
 - **Unit-absence costs coverage, not accuracy.** Accuracy is flat across the split;
   auto-accept rate drops 83.7% → 44.7%. Stage 3 buys coverage back, not correctness.

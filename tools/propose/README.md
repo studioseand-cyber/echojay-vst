@@ -70,6 +70,9 @@ it was fixed.
 ## effort
 
 The hold-out measured 98.7% auto-accept precision at **effort high**, so that is
+
+> **Qualified 7 Aug 2026:** measured against hand answers that are PARTLY MODEL-SOURCED -- the user has since said some of the 266 review decisions came from pasting cards into a third model, so the standard is not fully independent of what it scores; the direction holds because the errors were adjudicated by the unit-family rule over measured evidence, not by either party's opinion.
+
 the default and anything else is a different configuration. It is a flag rather
 than a constant because `high` is periodically 529-Overloaded for capacity
 reasons, and the value is **recorded on every row it produced** — in `run.effort`
@@ -81,6 +84,9 @@ Measured on the same 125 confirmed params (`--audit`):
 | effort | auto-accepted | of those, matching the human |
 |---|---|---|
 | high | 75/125 = 60.0% | 74/75 = 98.7% |
+
+> **Qualified 7 Aug 2026:** measured against hand answers that are PARTLY MODEL-SOURCED -- the user has since said some of the 266 review decisions came from pasting cards into a third model, so the standard is not fully independent of what it scores; the direction holds because the errors were adjudicated by the unit-family rule over measured evidence, not by either party's opinion.
+
 | medium | 70/125 = 56.0% | 70/70 = 100% |
 
 One run each; 70/70 does not establish a better error rate than 74/75.

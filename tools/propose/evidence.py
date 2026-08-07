@@ -2,6 +2,11 @@
 
 THE EVIDENCE SHAPE IS FROZEN ON PURPOSE. It is exactly what the 4 Aug hold-out
 measured 98.7% auto-accept precision against: name, kind, declared range,
+QUALIFIED 7 Aug 2026: the hand answers this is measured against are
+PARTLY MODEL-SOURCED -- some of the 266 review decisions came from
+pasting cards into a third model, so the standard is not fully
+independent of what it scores. The DIRECTION holds: both errors were
+adjudicated by the unit-family rule over measured evidence.
 MEASURED display unit, anchor count, and the span the sweep observed. Nothing
 else -- notably not a mode control's labels, which would probably help identify
 `position` and which the hold-out did not have. Widening the evidence invalidates

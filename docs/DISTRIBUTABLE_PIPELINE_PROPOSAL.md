@@ -384,6 +384,9 @@ And it is not a bad answer.
 
 > **Vision is stage 4 — it runs only on what stages 2–3 could not settle.** The
 > hold-out measured text-only two-arm agreement at 98.7% auto-accept precision
+
+> **Qualified 7 Aug 2026:** measured against hand answers that are PARTLY MODEL-SOURCED -- the user has since said some of the 266 review decisions came from pasting cards into a third model, so the standard is not fully independent of what it scores; the direction holds because the errors were adjudicated by the unit-family rule over measured evidence, not by either party's opinion.
+
 > over 598 controls. Bridged plugins lose the *tie-breaker*, not the pipeline.
 
 A bridged plugin gets: swept, proposed from text, accepted where the arms agree,

@@ -245,9 +245,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=os.path.expanduser("~/Library/ejmap"))
     ap.add_argument("--only", default=None, help="substring match on plugin name")
+    # A named SET of map files, so a stratified slice is reproducible and
+    # reviewable rather than a substring guess. The file is a JSON array of
+    # paths, which is what the slice builder writes.
+    ap.add_argument("--maps-from", default=None,
+                    help="JSON array of map file paths; proposes exactly those")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--workers", type=int, default=3)
     # The hold-out measured 98.7% auto-accept precision at effort HIGH, so that
+    # QUALIFIED 7 Aug 2026: the hand answers this is measured against
+    # are PARTLY MODEL-SOURCED -- some of the 266 review decisions came
+    # from pasting cards into a third model, so the standard is not fully
+    # independent of what it scores. The DIRECTION holds: both errors were
+    # adjudicated by the unit-family rule over measured evidence.
     # is the default and anything else is a different configuration. It is a
     # flag rather than a constant because high is periodically 529-Overloaded
     # for capacity reasons, and it is recorded on every row it produces so a
@@ -266,8 +276,20 @@ def main():
     out_dir = os.path.join(args.root, "proposals")
     os.makedirs(out_dir, exist_ok=True)
 
-    paths = sorted(os.path.join(maps_dir, f)
-                   for f in os.listdir(maps_dir) if f.endswith(".json"))
+    if args.maps_from:
+        # A NAMED SET, so a stratified slice is reproducible and reviewable
+        # rather than a substring guess. Missing entries are an error, not a
+        # silent shortfall: a slice that quietly proposed 140 of 150 would
+        # report rates for a population nobody chose.
+        paths = json.load(open(os.path.expanduser(args.maps_from)))
+        missing = [p for p in paths if not os.path.exists(p)]
+        if missing:
+            sys.exit(f"--maps-from lists {len(missing)} path(s) that do not exist, "
+                     f"first: {missing[0]}")
+        paths = sorted(paths)
+    else:
+        paths = sorted(os.path.join(maps_dir, f)
+                       for f in os.listdir(maps_dir) if f.endswith(".json"))
     todo = []
     for p in paths:
         d = json.load(open(p))
