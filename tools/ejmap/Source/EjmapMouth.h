@@ -191,6 +191,18 @@ struct Mouth
                      "the map was never write-back verified");
         }
 
+        // AN EMPTY CONTROL KEY makes the whole file unreadable to juce::JSON --
+        // the writer emits it, the parser refuses it ("Invalid property name").
+        // A map nobody can parse is worse than a missing one, because it also
+        // un-registers itself from localMapIdentities and the plugin re-sweeps
+        // forever. Rejected at the mouth like everything else: loudly, with
+        // the indices, before it can leave.
+        if (auto* co = map.getProperty ("controls", juce::var()).getDynamicObject())
+            for (const auto& kv : co->getProperties())
+                if (kv.name.toString().trim().isEmpty())
+                    rej ("controls contains an EMPTY name -- not addressable, and an "
+                         "empty JSON key is unreadable by juce::JSON");
+
         // Provenance: attributable or it does not leave.
         auto prov = map.getProperty ("provenance", juce::var());
         // ATTRIBUTABLE OR IT DOES NOT LEAVE, and there are now two ways to be

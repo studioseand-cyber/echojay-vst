@@ -2907,9 +2907,20 @@ public:
         juce::StringArray dupDone;
         int shipped = 0, modeN = 0;
 
+        int unnamed = 0;
         for (const auto& e : controlEntries)
         {
             if (e.excluded || e.unbuildable) continue;
+
+            // AN EMPTY NAME CANNOT BE A TIER 2 CONTROL. The tier's whole offer
+            // is exact-name addressing, and "" is not a name anyone can ask
+            // for. Worse: juce::JSON WRITES an empty property key and its own
+            // parser then REFUSES to read it back ("Invalid property name"),
+            // so a map carrying one is unreadable by every JUCE client
+            // including this one -- which un-registers it from
+            // localMapIdentities and re-sweeps the plugin every launch.
+            // Found live: bx_XL V2 exposes parameters 58-60+ with empty names.
+            if (e.name.trim().isEmpty()) { ++unnamed; continue; }
 
             if (e.duplicate)
             {
@@ -2954,6 +2965,11 @@ public:
             pendingControls.add (c);
             ++shipped;
         }
+
+        if (unnamed > 0)
+            say (juce::String (unnamed) + " control(s) had EMPTY names and were not "
+                 "staged: not addressable by name, and an empty JSON key is one juce "
+                 "writes but cannot re-read.");
 
         auto& row = rowAt (controlsRowIndex);
         row.state = AssignRow::State::confirmed;

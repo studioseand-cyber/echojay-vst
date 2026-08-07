@@ -2513,6 +2513,56 @@ void testSweepDeadline()
     }
 }
 
+/** juce::JSON writes things its own parser refuses. An empty property key is
+    one: JSON::toString emits `"": {...}` and JSON::parse answers "Invalid
+    property name". A map carrying one is unreadable by every JUCE client
+    INCLUDING ITS OWN WRITER -- it un-registers from localMapIdentities and the
+    plugin re-sweeps every launch. Found live on bx_XL V2, whose parameters
+    58-60+ have empty names.
+*/
+void testEmptyControlNameRejected()
+{
+    using ejmap::Mouth;
+
+    // The mouth refuses it, with the reason.
+    auto mk = [] (const char* key)
+    {
+        auto* ctrl = new juce::DynamicObject();
+        ctrl->setProperty ("name", "x");
+        auto* controls = new juce::DynamicObject();
+        controls->setProperty (juce::Identifier (juce::String (key).isEmpty()
+                                                   ? juce::String (" ") : juce::String (key)),
+                               juce::var (ctrl));
+        // an actually-empty identifier asserts in debug, so the empty case is
+        // exercised through the whitespace-only spelling, which the gate must
+        // treat the same: trim() decides, not length()
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("controls", juce::var (controls));
+        return juce::var (o);
+    };
+    auto rejectsEmpty = [] (const ejmap::Mouth::Verdict& v)
+    {
+        for (const auto& r : v.rejections)
+            if (r.contains ("EMPTY name")) return true;
+        return false;
+    };
+    check (rejectsEmpty (Mouth::structuralGate (mk (" "), "t")),
+           "mouth: a whitespace-only control key is refused, with the reason");
+    check (! rejectsEmpty (Mouth::structuralGate (mk ("Sustain"), "t")),
+           "mouth: a real control name is not caught by that check");
+
+    // And the write/read asymmetry itself, pinned so the NEXT one of these is
+    // found by the gate and not by a campaign: what the payload writer emits,
+    // the parser must re-read.
+    ejmap::MapPayload p;
+    p.fp = "f"; p.identity.name = "X"; p.identity.format = "AudioUnit";
+    ejmap::NamedControl c; c.name = "Sustain"; c.indices.add (1);
+    p.controls.add (c);
+    juce::var back;
+    check (juce::JSON::parse (p.toJson(), back).wasOk(),
+           "round trip: WHAT THE WRITER EMITS, THE PARSER RE-READS");
+}
+
 void testMapperIdentity()
 {
     using ejmap::Mouth;
@@ -2625,6 +2675,7 @@ int main (int, char**)
     testMapperIdentity();
     testStaleControlsRefused();
     testSweepDeadline();
+    testEmptyControlNameRejected();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

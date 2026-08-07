@@ -52,28 +52,81 @@ def main():
         print("REFUSING: no snapshot captures -- an audit against nothing is not an audit")
         return 2
 
-    # ---- 1. the audit, in an assembled root --------------------------------
-    with tempfile.TemporaryDirectory() as tmp:
-        os.mkdir(os.path.join(tmp, "maps"))
-        for f in batch:
-            shutil.copy(f, os.path.join(tmp, "maps"))
-        for f in snap:
-            shutil.copy(f, tmp)
-        sc = os.path.join(args.root, "scan-cache.xml")
-        if os.path.exists(sc):
-            shutil.copy(sc, tmp)
+    # ---- the two audits, SPLIT ---------------------------------------------
+    # Audit 1 is the independent record: a snapshot that predates the run, so a
+    # run whose leak poisons its own evidence cannot poison it. Its limit is
+    # coverage -- it has never seen a plugin nobody hand-mapped, and for those
+    # it cannot tell a twin from a leak.
+    #
+    # Audit 2 is the run's own per-index sweep records, which ARE valid for the
+    # leak class: recordSweep writes what was actually measured at each index
+    # under that plugin's own id, so a leaked surface diverges from it. Its
+    # limit is narrower and stated: it cannot catch a defect that forges the
+    # sweep record itself, which no known defect does.
+    #
+    # THE RECONCILIATION is the number the morning wants: implicated by audit 1
+    # and cleared by audit 2 = TWIN-SHAPED. Implicated by audit 2 = LEAK.
+    def run_audit(label, capture_files):
+        print("\n" + "#" * 74)
+        print(f"# AUDIT: {label}")
+        print("#" * 74)
+        with tempfile.TemporaryDirectory() as tmp:
+            os.mkdir(os.path.join(tmp, "maps"))
+            for f in batch:
+                shutil.copy(f, os.path.join(tmp, "maps"))
+            for f in capture_files:
+                shutil.copy(f, tmp)
+            sc = os.path.join(args.root, "scan-cache.xml")
+            if os.path.exists(sc):
+                shutil.copy(sc, tmp)
+            return subprocess.run(
+                [sys.executable,
+                 os.path.join(os.path.dirname(os.path.abspath(__file__)), "audit_maps.py"),
+                 "--root", tmp]).returncode
 
-        rc = subprocess.run(
-            [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                          "audit_maps.py"), "--root", tmp]).returncode
+    rc1 = run_audit("INDEPENDENT -- pre-launch snapshot", snap)
+    live = glob.glob(os.path.join(args.root, "captures-*.jsonl"))
+    rc2 = run_audit("SAME-RUN per-index records (valid for the leak class)", live)
+
+    print("\n" + "=" * 74)
+    print("RECONCILIATION -- the at-a-glance line")
+    print("=" * 74)
+    if rc2 != 0:
+        print("\n  AUDIT 2 IMPLICATES MAPS: treat those as LEAKS. Withdraw and re-map.")
+    elif rc1 != 0:
+        print("\n  audit 1 implicated maps and audit 2 cleared every one of them:")
+        print("  TWIN-SHAPED, not leaks -- products sharing a surface that the")
+        print("  independent record has simply never seen. Nothing to withdraw.")
+    else:
+        print("\n  both audits clean.")
+    rc = rc2
 
     # ---- 2. the spot check, for eyes ----------------------------------------
     print("\n" + "=" * 74)
     print(f"SPOT CHECK -- {min(args.sample, len(batch))} random map(s). READ the names "
           "against what the plugin IS.")
     print("=" * 74)
+    # WEIGHTED TOWARD PLUGINS WITH NO INDEPENDENT RECORD, because those are
+    # the ones neither audit can fully clear: audit 1 has never seen them and
+    # audit 2's evidence rides in the same run. Eyes are the third check, so
+    # they go where the other two are weakest.
+    import audit_maps as am
+    obs, _ = am.observed_names(os.path.expanduser(args.captures))
+    ids = am.plugin_ids_by_identity(args.root)
+    def has_independent_record(f):
+        i = json.load(open(f))["identity"]
+        key = f"{i.get('format')}|{(i.get('uid') or '').lower()}|{i.get('version')}"
+        return bool(obs.get(ids.get(key) or "", {}))
+    unseen = [f for f in batch if not has_independent_record(f)]
+    seen   = [f for f in batch if f not in unseen]
     rng = random.Random(args.seed)
-    for f in sorted(rng.sample(batch, min(args.sample, len(batch)))):
+    n = min(args.sample, len(batch))
+    take = rng.sample(unseen, min(n, len(unseen)))
+    if len(take) < n:
+        take += rng.sample(seen, n - len(take))
+    print(f"  ({len(unseen)} of {len(batch)} batch maps have NO independent record; "
+          f"{sum(1 for f in take if f in unseen)} of the {len(take)} sampled are from those)")
+    for f in sorted(take):
         d = json.load(open(f))
         i = d["identity"]
         controls = sorted((d.get("controls") or {}).keys())

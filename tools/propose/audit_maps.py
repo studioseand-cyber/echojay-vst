@@ -281,11 +281,30 @@ def main():
         print("\n  none")
 
     print("\n" + "=" * 74)
+    print("CHECK 4 -- a control key juce::JSON cannot re-read  (PROOF)")
+    print("=" * 74)
+    bad4 = []
+    for f, d in maps:
+        empt = [k for k in (d.get("controls") or {}) if not k.strip()]
+        if empt:
+            bad4.append(d)
+            print(f"\n  {d['identity']['name']}   fp {d['fp'][:12]}   "
+                  f"{len(empt)} empty control key(s)")
+            print("      juce writes an empty property key and its own parser refuses to")
+            print("      read it back, so every JUCE client -- including the one that")
+            print("      wrote it -- sees an unparseable file. Python reads it, which is")
+            print("      why THIS audit can see it and the round-trip gate only says")
+            print("      'map parses: FAIL' with no reason.")
+    if not bad4:
+        print("\n  none")
+
+    print("\n" + "=" * 74)
     print("VERDICT")
     print("=" * 74)
     names = sorted({d["identity"]["name"] for _f, d, _b in suspect}
                    | {d["identity"]["name"] for ds in flagged for d in ds}
-                   | {d["identity"]["name"] for d, _w in bad0})
+                   | {d["identity"]["name"] for d, _w in bad0}
+                   | {d["identity"]["name"] for d in bad4})
     if names:
         print(f"\n  {len(names)} map(s) implicated:")
         for n in names:

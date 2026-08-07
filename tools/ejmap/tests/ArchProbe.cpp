@@ -55,6 +55,23 @@ int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
+    // PARSE ORACLE. A map in the live corpus parses under Python and fails
+    // under juce::JSON -- deterministically, on freshly written bytes -- and
+    // nothing in the toolbox could say WHERE. This prints juce's own error,
+    // which carries the position.
+    if (argc >= 3 && juce::String (argv[1]) == "--parse-json")
+    {
+        const juce::String path { juce::CharPointer_UTF8 (argv[2]) };
+        const juce::File f { path };
+        const auto text = f.loadFileAsString();
+        std::cout << "bytes " << (int) f.getSize() << "  chars " << text.length() << "\n";
+        juce::var out;
+        const auto r = juce::JSON::parse (text, out);
+        std::cout << (r.wasOk() ? juce::String ("PARSE OK")
+                                : "PARSE FAILED: " + r.getErrorMessage()) << std::endl;
+        return r.wasOk() ? 0 : 1;
+    }
+
     if (argc >= 3 && juce::String (argv[1]) == "--modal")
         return runModalProbe (juce::String (juce::CharPointer_UTF8 (argv[2])),
                               argc >= 4 ? juce::String (argv[3]).getIntValue() : 20);
