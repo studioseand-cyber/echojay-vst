@@ -10,6 +10,8 @@
 #include "EchoJayAPI.h"
 #include "DashPoll.h"
 #include "LinkShm.h"
+#include "EedKeyEngine.h"   // self-detection on music-bus roles (§6.1)
+#include "EedKeyWorker.h"
 
 // Temporary diagnostic: append a timestamped line to the EchoJay teardown log
 // file (Release-safe; DBG is compiled out of Release). Used to trace the
@@ -105,7 +107,30 @@ struct CaptureSnapshot {
     std::array<float, 64> peakSpectrum = {};
     std::array<float, 64> avgSpectrum  = {};
     bool hasDualSpectrum = false; // false on snapshots restored from older save files
-    
+
+    // Detected key (KEY_PRECONDITION_SPEC.md §5.2): an OFFLINE pass run by the
+    // save thread when the capture is made — longer window, HPSS + Viterbi
+    // over up to three windows of the stored audio, the highest-quality key
+    // source in the product. Stored with the capture so it travels with the
+    // material instead of being re-derived. keyValid=false means the pass was
+    // not run (no trustworthy source — see the source rule in stopCapture) or
+    // found nothing tonal; that absence is itself the honest answer. Age is
+    // derived from `timestamp`. keySourceName says WHICH channel was read
+    // ("Music Bus" / "Mix Bus"); keySourcePlacement 1 = a bus Link channel,
+    // 0 = the host channel.
+    bool  keyValid        = false;
+    int   keyRoot         = 0;      // 0..11 C..B
+    bool  keyMinor        = false;
+    float keyConfidence   = 0.0f;   // 0..1
+    float keyTuningHz     = 0.0f;   // detected reference pitch
+    float keyTuningCents  = 0.0f;   // same offset in cents from A=440
+    std::array<float, 12> keyChroma {};   // for the Meters wheel
+    int   keyAltRoot      = -1;     // best alternate (-1 = none)
+    bool  keyAltMinor     = false;
+    float keyAltScore     = 0.0f;
+    juce::String keySourceName;
+    int   keySourcePlacement = 0;
+
     juce::String getChannelDisplayName() const {
         if (channelType == ChannelType::Other && customChannelName.isNotEmpty())
             return customChannelName;
@@ -113,7 +138,8 @@ struct CaptureSnapshot {
     }
 };
 
-class EchoJayProcessor : public juce::AudioProcessor
+class EchoJayProcessor : public juce::AudioProcessor,
+                         private juce::Timer   // §6.1 self-key scheduler (1 Hz)
 {
 public:
     EchoJayProcessor();
@@ -144,6 +170,39 @@ public:
     // (Logic, stopped transport) nothing can sound — the editor reads this
     // to keep the transport UI honest instead of pretending to play.
     uint32_t getAudioBlockCount() const { return audioBlocksProcessed_.load(std::memory_order_relaxed); }
+
+    // ---- Self key detection (KEY_PRECONDITION_SPEC.md §6.1) --------------
+    // When THIS plugin's declared channel role IS the music (Mix Bus /
+    // Master / Music / Instrument Bus), it detects its own channel's key
+    // passively — same engine, same duty cycle and gating as a Link (§5.1),
+    // and the reading ranks as a BUS reading. The 5.3 rule restated: the
+    // disqualifier was never "the channel EchoJay is on", it is "a channel
+    // that is not the music", judged by DECLARED ROLE — so a vocal or
+    // unknown role never self-detects as a primary source.
+    static bool isMusicBusRole(ChannelType t)
+    {
+        return t == ChannelType::FullMix || t == ChannelType::MasterBus
+            || t == ChannelType::MusicBus || t == ChannelType::InstrumentBus;
+    }
+    bool selfKeyRoleIsMusic() const { return isMusicBusRole(channelType); }
+    echojay::KeyEngine& getSelfKeyEngine() { return selfKeyEngine_; }
+    // Millisecond stamp of the last published change (0 = never) — the age.
+    juce::uint32 selfKeyChangeMs() const { return selfKeyWorker_.lastChangeMs(); }
+    // RE-ANALYSE on the self reading: arm a committed pass NOW.
+    void armSelfKeyAnalysis();
+
+    // ---- Key source pin (KEY_PRECONDITION_SPEC.md §7) --------------------
+    // "" = Auto (precedence decides, today's behaviour). Otherwise a stable
+    // id: "self" | "chain" | "capture" | "link:<uid>". The label is the
+    // display name AT PIN TIME, kept so a pinned source that later
+    // disappears can be NAMED in the "gone — showing Auto" message instead
+    // of silently swapped. Persisted per instance. Pinning "self" force-runs
+    // the self engine even on a non-music role (§7.2: an explicit choice
+    // beats the declared-role inference — the likeliest reason to pin a
+    // "vocal" channel is that the role is mis-declared).
+    juce::String getKeySourcePin()      const { return keySourcePin_; }
+    juce::String getKeySourcePinLabel() const { return keySourcePinLabel_; }
+    void setKeySourcePin(const juce::String& pinId, const juce::String& label);
 
     MeterEngine& getMeterEngine()   { return meterEngine; }
     MeterEngine& getABMeterEngine() { return abMeterEngine; }
@@ -626,6 +685,35 @@ private:
     bool wasTransportPlaying = false;
     int silenceCounter = 0;
     bool wasReceivingAudio = false;
+
+    // ---- Self key detection internals (§6.1) -----------------------------
+    // The Link's §5.1 scheduler, verbatim semantics: one committed 8 s pass
+    // every ~30 s, armed only while the transport rolls and the channel is
+    // above the signal floor; §5.4 invalidation (section jump / long gap /
+    // RE-ANALYSE) makes the next pass due immediately. Runs ONLY while the
+    // declared role is a music bus — the tap is not even fed otherwise.
+    // Engine before worker (the worker references the engine; destroyed
+    // first).
+    echojay::KeyEngine selfKeyEngine_;
+    EedKeyWorker       selfKeyWorker_ { selfKeyEngine_ };
+    static constexpr float    kSelfKeyWindowS     = 8.0f;
+    static constexpr uint32_t kSelfKeyIntervalMs  = 30000;
+    static constexpr float    kSelfKeyFloorLufs   = -55.0f;
+    static constexpr double   kSelfKeyJumpSeconds = 30.0;
+    static constexpr uint32_t kSelfKeyLongGapMs   = 120000;
+    std::atomic<double> transportTimeS_ { 0.0 };   // audio thread -> scheduler
+    std::atomic<bool>   selfKeyJump_    { false };
+    // §7: pin == "self" forces the self tap/scheduler past the role gate.
+    // Atomic mirror because the audio thread reads it every block.
+    std::atomic<bool>   selfKeyForced_  { false };
+    juce::String keySourcePin_;                    // message thread; persisted
+    juce::String keySourcePinLabel_;
+    uint32_t lastSelfKeyArmMs_     = 0;            // message thread only
+    uint32_t selfKeyLastPlayingMs_ = 0;
+    bool     selfKeyWasPlaying_    = false;
+    int      selfKeyStallTicks_    = 0;
+    void timerCallback() override;                 // 1 Hz: the scheduler
+    void scheduleSelfKeyPass();
 
     // Background WAV save thread — destructor waits for it to finish
     std::unique_ptr<juce::Thread> saveThread;

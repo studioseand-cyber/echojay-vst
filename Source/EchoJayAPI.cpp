@@ -988,12 +988,12 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
 
     // Per-turn injection blocks (plugin lists + chain rules) only matter on
     // the CURRENT message — strip them from history turns before sizing.
+    // The marker list lives in historyStripMarkers() (ONE list, shared with
+    // the chain-guidance self-test's coverage check).
     auto strippedContent = [&contents](int i) -> juce::String
     {
         auto c = contents[i];
-        for (auto* marker : { "\n\n[AVAILABLE PLUGINS", "\n\n[USER'S FULL PLUGIN LIST",
-                              "\n\n[AVAILABLE BUILTINS",
-                              "\n\n[CURRENT CHAIN", "\n\n[TARGET CHANNEL" })
+        for (const auto& marker : historyStripMarkers())
         {
             int cut = c.indexOf(marker);
             if (cut >= 0) c = c.substring(0, cut);
@@ -2083,6 +2083,20 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
 // actually needs it. This keeps the everyday prompt cheap and cache-stable
 // while giving the AI the user's entire library exactly on the turns where
 // plugin specifics matter — no cap, nothing hidden.
+
+const juce::StringArray& EchoJayAPI::historyStripMarkers()
+{
+    // "[TARGET CHANNEL" also covers "[TARGET CHANNEL OFFLINE" (prefix match).
+    // "[THIS CHANNEL" is the main plugin's conduct declaration (7 Aug 2026)
+    // — it always rides AFTER a plugin marker today, but it is listed in its
+    // own right so a future reordering cannot leak it into history.
+    static const juce::StringArray markers {
+        "\n\n[AVAILABLE PLUGINS", "\n\n[USER'S FULL PLUGIN LIST",
+        "\n\n[AVAILABLE BUILTINS",
+        "\n\n[CURRENT CHAIN", "\n\n[TARGET CHANNEL", "\n\n[THIS CHANNEL"
+    };
+    return markers;
+}
 
 bool EchoJayAPI::messageNeedsPlugins(const juce::String& userMessage)
 {

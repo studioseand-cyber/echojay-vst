@@ -38,6 +38,7 @@
 #include "EedExpanderProcessor.h"
 #include "EedGainProcessor.h"
 #include "EedGateProcessor.h"
+#include "EedKeyDetectorProcessor.h"
 #include "EedLimiterProcessor.h"
 #include "EedPhaseInvertProcessor.h"
 #include "EedPhaserProcessor.h"
@@ -53,10 +54,11 @@
 #include <cmath>
 #include <memory>
 
-// EQ + Gain + Phase Invert (Wave 0) + the six Dynamics faces (Wave 1). A count
+// EQ + Gain + Phase Invert (Wave 0) + the six Dynamics faces (Wave 1) + the
+// rest of the suite + the Key Detector (the first Analysis reader). A count
 // rather than a >= so that a device silently failing to register is a FAILURE
 // and not a test that quietly still passes.
-static constexpr int kExpectedDevices = 20;
+static constexpr int kExpectedDevices = 21;
 
 static int g_fail = 0;
 
@@ -124,6 +126,9 @@ int main()
     check (registry.findByName ("EchoJay De-Esser")          != nullptr, "EchoJay De-Esser registered");
     check (registry.findByName ("EchoJay 4-Band Compressor") != nullptr, "EchoJay 4-Band Compressor registered");
 
+    // The first Analysis reader (KEY_DETECTOR_SPEC.md).
+    check (registry.findByName ("EchoJay Key Detector")      != nullptr, "EchoJay Key Detector registered");
+
     check (registry.all().size() == kExpectedDevices,
            "exactly " + juce::String (kExpectedDevices) + " devices registered (got "
            + juce::String ((int) registry.all().size()) + ")");
@@ -157,8 +162,12 @@ int main()
         check (names.indexOf ("EchoJay 4-Band Compressor") < names.indexOf ("EchoJay Compressor"),
                "within Dynamics, alphabetical: 4-Band before Compressor");
 
-        check (registry.categories().joinIntoString (",") == "EQ,Dynamics,Utility,Stereo,Modulation,Harmonic,Time",
+        check (registry.categories().joinIntoString (",") == "EQ,Dynamics,Utility,Stereo,Modulation,Harmonic,Time,Analysis",
                "categories in canonical order: " + registry.categories().joinIntoString (","));
+
+        // Analysis is the last category, so the reader sorts after every writer.
+        check (names.indexOf ("EchoJay Reverb") < names.indexOf ("EchoJay Key Detector"),
+               "the whole Time group precedes the Analysis group");
 
         // Within Modulation, alphabetical: Auto Pan, Chorus, Phaser, Tremolo.
         check (names.indexOf ("EchoJay Auto Pan") < names.indexOf ("EchoJay Chorus")
@@ -3897,6 +3906,166 @@ int main()
 
         check (near (mb->crossoverHz (1), 1200.0, 1.0),
                "after one block, the splitter has realised crossover2");
+    }
+
+    // =======================================================================
+    // THE KEY DETECTOR (KEY_DETECTOR_SPEC.md) — the suite's first READER. The
+    // engine's accuracy claims live in test/key_engine_test.cpp; what is
+    // checked here is the device: dialability (by name AND index), the
+    // momentary analyse/reset actions, state round-trip, and the headline
+    // guarantee that it NEVER touches audio.
+    // =======================================================================
+    std::printf ("== KEY DETECTOR: every param dials exactly ==\n");
+    {
+        auto proc = makeByName ("EchoJay Key Detector");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* kd     = dynamic_cast<EedKeyDetectorProcessor*> (proc.get());
+        check (device != nullptr && kd != nullptr, "key detector constructs");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (
+            paramsMove ({ { "window_s", 12.0 }, { "sensitivity", 80.0 },
+                          { "tuning_hz", 452.5 }, { "auto_tuning", false },
+                          { "low_hz", 60.0 }, { "high_hz", 8000.0 },
+                          { "continuous", true }, { "hpss", false },
+                          { "hold", true } }), &applied, &skipped);
+        check (applied == 9 && skipped == 0, "9 params applied, 0 skipped");
+        check (near (device->getParamValue ("window_s"), 12.0),   "window_s EXACTLY 12");
+        check (near (device->getParamValue ("sensitivity"), 80.0),"sensitivity EXACTLY 80");
+        check (near (device->getParamValue ("tuning_hz"), 452.5), "tuning_hz EXACTLY 452.5");
+        check (near (device->getParamValue ("auto_tuning"), 0.0), "auto_tuning off");
+        check (near (device->getParamValue ("low_hz"), 60.0),     "low_hz EXACTLY 60");
+        check (near (device->getParamValue ("high_hz"), 8000.0),  "high_hz EXACTLY 8000");
+        check (near (device->getParamValue ("continuous"), 1.0),  "continuous on");
+        check (near (device->getParamValue ("hpss"), 0.0),        "hpss off");
+        check (near (device->getParamValue ("hold"), 1.0),        "hold on");
+
+        // Clamps.
+        device->applyStructured (paramsMove ({ { "window_s", 900.0 }, { "tuning_hz", 300.0 } }));
+        check (near (device->getParamValue ("window_s"), 30.0),  "900 s clamps to 30");
+        check (near (device->getParamValue ("tuning_hz"), 415.0),"300 Hz clamps to 415");
+    }
+
+    std::printf ("== KEY DETECTOR: mode_lock dials by NAME and by index ==\n");
+    {
+        auto proc = makeByName ("EchoJay Key Detector");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("mode_lock"), 0.0), "a fresh detector is on auto");
+
+        const auto s = device->applyStructured (paramsMove ({ { "mode_lock", "minor" } }));
+        check (near (device->getParamValue ("mode_lock"), 2.0), "mode_lock = \"minor\" lands on index 2");
+        check (s.contains ("minor"), "and reads back BY NAME: " + s);
+
+        device->applyStructured (paramsMove ({ { "mode_lock", "MAJOR" } }));
+        check (near (device->getParamValue ("mode_lock"), 1.0), "matching is case-insensitive");
+
+        device->applyStructured (paramsMove ({ { "mode_lock", 0 } }));
+        check (near (device->getParamValue ("mode_lock"), 0.0), "a numeric index works too");
+
+        int a2 = 0, s2 = 0;
+        device->applyStructured (paramsMove ({ { "mode_lock", "dorian" } }), &a2, &s2);
+        check (s2 == 1, "an unknown mode is SKIPPED, not guessed at");
+
+        const auto* d = registry.findByName ("EchoJay Key Detector");
+        const auto* spec = d != nullptr ? d->schema.find ("mode_lock") : nullptr;
+        check (spec != nullptr
+                 && juce::String (echojay::ParamSchema::describeLine (*spec))
+                        .contains ("auto|major|minor"),
+               "mode_lock choices are ADVERTISED by name");
+    }
+
+    std::printf ("== KEY DETECTOR: analyse is the AI's trigger, reset clears ==\n");
+    {
+        auto proc = makeByName ("EchoJay Key Detector");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        auto* kd     = dynamic_cast<EedKeyDetectorProcessor*> (proc.get());
+
+        check (near (device->getParamValue ("analyse"), 0.0), "idle before the trigger");
+
+        int applied = 0, skipped = 0;
+        device->applyStructured (paramsMove ({ { "analyse", true } }), &applied, &skipped);
+        check (applied == 1 && skipped == 0, "analyse:1 is an accepted move");
+        check (kd->engine().isCollecting(), "and the engine is now COLLECTING");
+        check (near (device->getParamValue ("analyse"), 1.0), "analyse reads 1 while listening");
+
+        device->applyStructured (paramsMove ({ { "reset", true } }));
+        check (! kd->engine().isCollecting(), "reset cancels the pass");
+        check (near (device->getParamValue ("reset"), 0.0),
+               "and reset always reads 0 - a restored state cannot phantom-fire it");
+    }
+
+    std::printf ("== KEY DETECTOR: params round-trip through state ==\n");
+    {
+        auto a = makeByName ("EchoJay Key Detector");
+        auto* da = dynamic_cast<EedDeviceProcessor*> (a.get());
+        da->applyStructured (paramsMove ({ { "window_s", 15.0 }, { "mode_lock", "major" },
+                                           { "hpss", false }, { "high_hz", 9000.0 } }));
+        juce::MemoryBlock blob;
+        da->getStateInformation (blob);
+
+        auto b = makeByName ("EchoJay Key Detector");
+        auto* db = dynamic_cast<EedDeviceProcessor*> (b.get());
+        db->setStateInformation (blob.getData(), (int) blob.getSize());
+
+        check (near (db->getParamValue ("window_s"), 15.0), "window_s restored");
+        check (near (db->getParamValue ("mode_lock"), 1.0), "mode_lock restored (major)");
+        check (near (db->getParamValue ("hpss"), 0.0),      "hpss restored");
+        check (near (db->getParamValue ("high_hz"), 9000.0),"high_hz restored");
+    }
+
+    std::printf ("== KEY DETECTOR: audio is BIT-IDENTICAL at every setting ==\n");
+    {
+        // The reader's headline guarantee, proven the way the depth passes
+        // proved neutrality — through processBlock, zero delta — but stronger:
+        // the output is compared against the INPUT, with analysis armed,
+        // continuous on and every band/mode moved off its default. There is
+        // no neutral setting because there is no setting that touches audio.
+        auto proc = makeByName ("EchoJay Key Detector");
+        auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
+        device->applyStructured (
+            paramsMove ({ { "analyse", true }, { "continuous", true },
+                          { "window_s", 2.0 }, { "sensitivity", 90.0 },
+                          { "mode_lock", "minor" }, { "tuning_hz", 452.0 },
+                          { "auto_tuning", false }, { "hpss", false },
+                          { "low_hz", 40.0 }, { "high_hz", 10000.0 } }));
+
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc->prepareToPlay (48000.0, 512);
+        check (proc->getLatencySamples() == 0, "reports ZERO latency, as advertised");
+        check (proc->getTailLengthSeconds() == 0.0, "and no tail - it only observes");
+
+        juce::AudioBuffer<float> buf (2, 512), ref (2, 512);
+        juce::MidiBuffer midi;
+        float worst = 0.0f;
+        for (int blk = 0; blk < 200; ++blk)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = 0.4f * std::sin (0.037f * (float) (blk * 512 + i))
+                                  + ((blk * 512 + i) % 977 == 0 ? 0.5f : 0.0f);
+                    buf.setSample (ch, i, v);
+                    ref.setSample (ch, i, v);
+                }
+            proc->processBlock (buf, midi);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i)
+                    worst = juce::jmax (worst, std::abs (buf.getSample (ch, i)
+                                                       - ref.getSample (ch, i)));
+        }
+        check (worst == 0.0f, "output == input, bit for bit, analysis armed and "
+               "everything dialled (worst delta " + juce::String (worst, 9) + ")");
+
+        // Mono survives too (auditionable standalone).
+        proc->setPlayConfigDetails (1, 1, 44100.0, 256);
+        proc->prepareToPlay (44100.0, 256);
+        juce::AudioBuffer<float> mono (1, 256);
+        mono.clear();
+        mono.setSample (0, 10, 0.75f);
+        proc->processBlock (mono, midi);
+        check (mono.getSample (0, 10) == 0.75f && mono.getSample (0, 11) == 0.0f,
+               "mono passes through untouched");
     }
 
     // -----------------------------------------------------------------------
