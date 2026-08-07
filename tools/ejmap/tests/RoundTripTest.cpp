@@ -2207,6 +2207,17 @@ void testSweepRules()
            "breaker: swept_nothing is a SUCCESS for the breaker -- the plugin "
            "loaded, so nothing is wrong with the machine");
 
+    // init_failed IS ITS OWN CLASS. AVOX SYBIL refuses to initialise every
+    // time (4097); the Waves -10875 stream clears with a fresh process. Pooling
+    // them under load_failed would let two persistent refusers plus eight
+    // transient ones trip a restart that cannot help the two -- and, worse,
+    // let the curable stream be misread as ten broken plugins.
+    juce::StringArray mixedInit;
+    for (int i = 0; i < 5; ++i) { mixedInit.add ("init_failed"); mixedInit.add ("load_failed"); }
+    check (runBreaker (mixedInit).isEmpty(),
+           "breaker: five init_failed alternating with five load_failed is not "
+           "ten of EITHER -- the classes stay separate");
+
     // ---- 3. a FLAG beats a SESSION -----------------------------------------
     // Found on plugin 4 of a live supervised sweep, not in a harness. A plugin
     // that loads, sweeps nothing and gets flagged leaves a session behind --

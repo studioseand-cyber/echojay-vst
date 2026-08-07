@@ -8025,6 +8025,38 @@ public:
             if (res == sweep.breakerClass) ++sweep.consecutive;
             else { sweep.breakerClass = res; sweep.consecutive = 1; }
 
+            if (sweep.consecutive >= kSweepBreaker
+                 && sweep.breakerClass == "load_failed")
+            {
+                // MEASURED, NOT GUESSED: on the first full campaign, ten
+                // consecutive Waves AUs failed with -10875 after ~90 loads in
+                // one child -- and the SAME plugins mapped cleanly in a fresh
+                // process minutes later. The state is cumulative and
+                // per-process, so the remedy is the restart the supervisor
+                // already provides, not a stopped campaign at 11pm.
+                //
+                // BOUNDED BY THE EXISTING BUDGET: sweep-active.marker survives
+                // (only endSweep deletes it), so the relaunch resumes; a child
+                // that makes progress is not charged a restart; one that trips
+                // again with NO progress is, and three of those stop the
+                // supervisor for good. A machine-level fault still halts --
+                // it just takes three provably fruitless restarts to prove it
+                // is one, instead of one ambiguous streak.
+                //
+                // license_refused, timeout and sweep_timeout keep the full
+                // stop: an unplugged iLok or a dialog on screen does not clear
+                // with a fresh process, and pretending it might would loop.
+                sweepSay ("\nSWEEP: " + juce::String (sweep.consecutive)
+                            + " consecutive load_failed. Measured remedy is a fresh "
+                              "process (Waves -10875 clears on restart); restarting "
+                              "the child to resume. The supervisor's budget bounds "
+                              "this if it is wrong.");
+                writeSweepProgress (sweep.progressBase + sweep.mapped + sweep.sweptNothing);
+                std::cout.flush();
+                std::_Exit (86);   // abnormal on purpose: the supervisor relaunches,
+                                   // the marker resumes the sweep
+            }
+
             if (sweep.consecutive >= kSweepBreaker)
             {
                 sweep.tripped = true;
@@ -8517,6 +8549,7 @@ private:
             // each other out on the way to ten.
             return res.outcome == LoadOutcome::licenseRefused ? "license_refused"
                  : res.outcome == LoadOutcome::timeout        ? "timeout"
+                 : res.outcome == LoadOutcome::initFailed     ? "init_failed"
                                                               : "load_failed";
         }
 
