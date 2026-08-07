@@ -202,11 +202,19 @@ static std::vector<float> pitchedPercLoop (double seconds)
     std::vector<float> buf ((size_t) (seconds * kFs), 0.0f);
     Noise nz;
 
+    // Hits are JITTERED (deterministically) off the 0.25 s grid. A perfectly
+    // periodic pattern can land its hits exactly on the analysis segment
+    // boundaries, where the CQT windows' Hann taper nulls them — a measure-
+    // zero lucky alignment that made the no-HPSS path look far better than
+    // it is. Real percussion is never sample-metronomic; neither is this.
+    Noise jitter; jitter.s = 424242u;
+
     const double step = 0.25;
     int which = 0;
-    for (double t = 0.0; t < seconds; t += step, ++which)
+    for (double t = 0.13; t < seconds; t += step, ++which)
     {
-        const int start = (int) (t * kFs);
+        const int start = (int) ((t + 0.06 * (double) jitter.next()) * kFs);
+        if (start < 0) continue;
 
         // tom: F#3 / C#4 / G#3 in rotation, 60 ms, a few partials
         const double f0 = (which % 3 == 0) ? midiHz (54)
@@ -452,6 +460,84 @@ int main()
         // Nothing further arrives: the reading holds.
         feed (e, drumLoop (3.0));
         check (e.getReading().root == 9, "the reading HOLDS until re-armed");
+    }
+
+    std::printf ("== RESET takes effect NOW: no dead zone, no stale watermark ==\n");
+    {
+        // THE live-testing bug: reset zeroed the sample counter but left the
+        // live-chroma high-water mark (and the armed/continuous marks) at
+        // their old values, so the display went dead until the counter had
+        // regrown past them — a minute of apparent death for a minute of
+        // prior playback, then "recovering on its own". Pinned: after a long
+        // session and a reset, the reading clears IMMEDIATELY and the live
+        // chroma revives within a couple of seconds of new audio.
+        KeyEngine e;
+        e.prepare (kFs, 512);
+        e.setWindowSeconds (8.0f);
+        e.startAnalysis();
+        feed (e, cMajorSong (30.0));                 // a long prior session
+        check (e.getReading().valid, "a long session produced a reading");
+
+        e.clearAccumulation();
+        check (! e.getReading().valid, "RESET clears the reading IMMEDIATELY");
+        {
+            float c[12]; e.getLiveChroma (c);
+            float sum = 0; for (float v : c) sum += v;
+            check (sum == 0.0f, "and the wheel clears with it");
+        }
+
+        feed (e, aMinorSong (3.0));                  // a NEW song, briefly
+        {
+            float c[12]; e.getLiveChroma (c);
+            float mx = 0; for (float v : c) mx = std::max (mx, v);
+            check (mx > 0.5f, "the live chroma REVIVES within seconds of new "
+                              "audio (the dead-zone regression)");
+        }
+    }
+
+    std::printf ("== an explicit ANALYSE preempts the continuous schedule ==\n");
+    {
+        KeyEngine e;
+        e.prepare (kFs, 512);
+        e.setContinuous (true);
+        e.setWindowSeconds (4.0f);
+        feed (e, cMajorSong (6.0));                  // continuous is mid-flight
+        e.startAnalysis();                           // the user: "listen again"
+        check (e.isCollecting(), "armed immediately, no waiting for a schedule");
+        feed (e, aMinorSong (6.0));
+        const auto r = e.getReading();
+        check (r.valid && r.committed, "the explicit pass ran and COMMITTED");
+        check (r.root == 9 && r.minor,
+               "on the post-arm audio (A minor), not the old song");
+    }
+
+    std::printf ("== gated states are REPORTED, never a silent idle ==\n");
+    {
+        KeyEngine e;
+        e.prepare (kFs, 512);
+        e.setWindowSeconds (4.0f);
+        e.startAnalysis();
+        e.update();
+        auto a = e.getActivity();
+        check (a.collecting && a.waitingForSignal,
+               "armed with no audio at all: collecting + waiting-for-signal");
+
+        // Silence arrives (transport rolling, channel silent): still gated,
+        // and the window must NOT fill itself with nothing.
+        std::vector<float> silence ((size_t) (3.0 * kFs), 0.0f);
+        feed (e, silence);
+        a = e.getActivity();
+        check (a.collecting && a.waitingForSignal,
+               "3 s of silence: still armed, still saying WAITING");
+        check (a.progress == 0.0f, "and the window has not started counting");
+
+        // Real audio arrives: the gate lifts and the window runs from HERE.
+        feed (e, aMinorSong (5.0));
+        const auto r = e.getReading();
+        check (r.valid && r.root == 9 && r.minor,
+               "the pass completes on the signal alone (A minor) - silence "
+               "never consumed the window");
+        check (! e.getActivity().waitingForSignal, "and the waiting flag is down");
     }
 
     std::printf ("\n%s (%d failures)\n", g_fail ? "FAILURES" : "ALL PASS", g_fail);

@@ -69,12 +69,21 @@ namespace
     constexpr float kMinorProfile[12] = { 5.0f, 2.0f, 3.5f, 4.5f, 2.0f, 4.0f,
                                           2.0f, 4.5f, 3.5f, 2.0f, 1.5f, 4.0f };
 
-    // Viterbi emission scale and the sensitivity→switch-penalty map. The
-    // penalty is in emission units: at sensitivity 0 a key change must be
-    // worth ~8 correlation-scaled units to register, at 100 only ~1.
+    // Viterbi emission scale and the sensitivity→switch-penalty map.
+    //
+    // The penalty must sit at KEY timescale, not harmonic-rhythm timescale:
+    // a V chord holds a ~0.4 correlation advantage over the tonic key for a
+    // bar or two (≈ 4-5 half-second segments ≈ 8-10 emission units), and if
+    // the penalty is below that the path obediently "modulates" to the
+    // dominant for every V bar — chord tracking wearing a key tracker's
+    // badge. At the default penalty of 12 a bounded chord excursion can
+    // never pay for a switch, while a genuine modulation — the SUSTAINED
+    // advantage of the rest of the passage — pays for it within a few
+    // seconds. Sensitivity keeps its meaning: high = follows changes
+    // sooner, low = stickier.
     constexpr float kEmissionScale = 5.0f;
     inline float switchPenaltyFor (float sensPct)
-    { return 1.0f + (1.0f - sensPct / 100.0f) * 7.0f; }
+    { return 4.0f + (1.0f - sensPct / 100.0f) * 16.0f; }
 
     // Continuous-mode hysteresis on the aggregate correlation, same idea.
     inline float hysteresisFor (float sensPct)
@@ -225,20 +234,33 @@ void KeyEngine::prepare (double sampleRate, int /*maxBlockSize*/)
     reset();
 }
 
+void KeyEngine::resetCounters()
+{
+    // Consumer thread only. The whole family moves together — see the header.
+    histCount_        = 0;
+    armedAt_          = 0;
+    lastContinuousAt_ = 0;
+    lastLiveAt_       = 0;
+    signalSeen_       = false;
+}
+
 void KeyEngine::reset()
 {
     ring_.fill (0.0f);
     ringWrite_.store (0, std::memory_order_release);
     ringRead_  = 0;
-    histCount_ = 0;
     std::fill (history_.begin(), history_.end(), 0.0f);
+    resetCounters();
     aa1_.resetState();
     aa2_.resetState();
     decimPhase_ = 0;
 
     collecting_.store (false);
-    armedAt_ = 0;
-    lastContinuousAt_ = 0;
+    armRequest_.store (false);
+    clearRequest_.store (false);
+    waitingForSignal_.store (false);
+    lastPassEmpty_.store (false);
+    passesCompleted_.store (0);
 
     std::lock_guard<std::mutex> lock (readingMutex_);
     reading_ = KeyReading {};
@@ -298,12 +320,27 @@ void KeyEngine::drainRing()
 
 int KeyEngine::copyRecent (std::vector<float>& dest, int n) const
 {
-    if (n <= 0 || histCount_ == 0) return 0;
-    if ((uint64_t) n > histCount_)          n = (int) histCount_;
+    return copyEnding (dest, histCount_, n);
+}
+
+int KeyEngine::copyEnding (std::vector<float>& dest, uint64_t endAbs, int n) const
+{
+    // n samples in chronological order ending at absolute count endAbs. The
+    // committed pass uses this to analyse EXACTLY the promised window
+    // [armedAt, armedAt + window] — analysing "the newest window at whatever
+    // moment the worker happened to run" slides the passage by the drain
+    // cadence, which is enough to flip a marginal call.
+    if (endAbs > histCount_) endAbs = histCount_;
+    if (n <= 0 || endAbs == 0) return 0;
+    if ((uint64_t) n > endAbs)              n = (int) endAbs;
     if (n > kRingSize)                      n = kRingSize;
 
+    // The ring only still holds the newest kRingSize samples.
+    if (histCount_ - (endAbs - (uint64_t) n) > (uint64_t) kRingSize)
+        return 0;
+
     dest.resize ((std::size_t) n);
-    const uint64_t start = histCount_ - (uint64_t) n;
+    const uint64_t start = endAbs - (uint64_t) n;
     for (int i = 0; i < n; ++i)
         dest[(std::size_t) i] =
             history_[(std::size_t) ((start + (uint64_t) i) & (uint64_t) kRingMask)];
@@ -605,11 +642,11 @@ void KeyEngine::foldChroma (const std::array<float, 36>& wrapped, float offSub,
 // ---------------------------------------------------------------------------
 // The full pass.
 // ---------------------------------------------------------------------------
-KeyEngine::PassResult KeyEngine::analyseWindow (int n, bool hpssOn)
+KeyEngine::PassResult KeyEngine::analyseWindow (int n, bool hpssOn, uint64_t endAbs)
 {
     PassResult r;
 
-    const int got = copyRecent (work_, n);
+    const int got = copyEnding (work_, endAbs, n);
     if (got < (int) (0.5 * fsA_)) return r;
 
     // Silence gate — a key detected in silence would be a key detected in the
@@ -708,9 +745,16 @@ KeyEngine::PassResult KeyEngine::analyseWindow (int n, bool hpssOn)
         }
     }
 
-    // Backtrack; the answer is the MODAL state of the path — the key the
-    // window actually lived in, robust to a modulation at either edge.
-    std::array<int, 24> occupancy {};
+    // Backtrack; the answer is the key that carried the most EVIDENCE along
+    // the smoothed path — the sum of each state's own correlations over the
+    // segments the path assigned to it. NOT the modal (most-occupied) state:
+    // on a window whose first half is percussion-tilted garbage, the optimal
+    // path can idle in a wrong key for 8 weak segments before switching to
+    // the right one for 7 strong ones, and a segment head-count then crowns
+    // the wrong key 8-to-7 while the right one holds twice the correlation.
+    // Weighting occupancy by the correlations makes garbage segments count
+    // for what they are worth.
+    std::array<float, 24> pathScore {};
     {
         int k = 0;
         float best = dp[(std::size_t) (nSeg - 1)][0];
@@ -720,13 +764,14 @@ KeyEngine::PassResult KeyEngine::analyseWindow (int n, bool hpssOn)
 
         for (int s = nSeg - 1; s >= 0; --s)
         {
-            ++occupancy[(std::size_t) k];
+            pathScore[(std::size_t) k] += std::max (0.0f, segCorr[(std::size_t) s][(std::size_t) k]);
             k = bp[(std::size_t) s][(std::size_t) k];
         }
     }
     int winner = 0;
     for (int k = 1; k < 24; ++k)
-        if (occupancy[(std::size_t) k] > occupancy[(std::size_t) winner]) winner = k;
+        if (pathScore[(std::size_t) k] > pathScore[(std::size_t) winner]) winner = k;
+
 
     // ---- confidence: S * A * R * T (see the calibration note up top) -------
     const float s1  = (float) agg[(std::size_t) winner];
@@ -785,21 +830,35 @@ KeyEngine::PassResult KeyEngine::analyseWindow (int n, bool hpssOn)
 // ---------------------------------------------------------------------------
 // state machine
 // ---------------------------------------------------------------------------
+// The triggers deliberately touch NO consumer-side counter: they used to call
+// drainRing()/histCount_ surgery straight from the message thread while the
+// worker could be mid-update() — a data race — and clearAccumulation() zeroed
+// histCount_ while leaving the high-water marks (armedAt_, lastLiveAt_,
+// lastContinuousAt_) at their old values, which froze the live chroma until
+// the counter had regrown past them: the device read as DEAD for as long as
+// the previous source had played, then "recovered on its own". Requests are
+// now applied atomically at the top of update(), on the one thread that owns
+// the counters, and the counters only ever reset as a family.
 void KeyEngine::startAnalysis()
 {
-    drainRing();
-    armedAt_ = histCount_;
-    collecting_.store (true);
+    armRingPos_.store (ringWrite_.load (std::memory_order_acquire));
+    armRequest_.store (true);
+    collecting_.store (true);          // visible NOW — the UI says "listening"
+    waitingForSignal_.store (true);    // honest until real audio is heard
+    lastPassEmpty_.store (false);
 }
 
 void KeyEngine::cancelAnalysis()
 {
+    armRequest_.store (false);
     collecting_.store (false);
+    waitingForSignal_.store (false);
 }
 
 float KeyEngine::collectionProgress() const
 {
     if (! collecting_.load()) return 0.0f;
+    if (armRequest_.load())   return 0.0f;   // armed, not yet applied: nothing gathered
     const double winN = (double) windowS_.load() * fsA_;
     if (winN <= 0.0) return 0.0f;
     return clamp01 ((float) ((double) (histCount_ - armedAt_) / winN));
@@ -807,15 +866,32 @@ float KeyEngine::collectionProgress() const
 
 void KeyEngine::clearAccumulation()
 {
-    drainRing();
-    ringRead_  = ringWrite_.load (std::memory_order_acquire);
-    histCount_ = 0;
+    // The reading clears IMMEDIATELY — a key from the previous source shown
+    // as current is worse than no key. The counter surgery is deferred to
+    // update() (consumer thread).
+    armRequest_.store (false);
     collecting_.store (false);
+    waitingForSignal_.store (false);
+    lastPassEmpty_.store (false);
+    clearRequest_.store (true);
 
     std::lock_guard<std::mutex> lock (readingMutex_);
     reading_ = KeyReading {};
     liveChroma_.fill (0.0f);
     haveLiveChroma_ = false;
+}
+
+KeyActivity KeyEngine::getActivity() const
+{
+    KeyActivity a;
+    a.collecting       = collecting_.load();
+    a.waitingForSignal = a.collecting && waitingForSignal_.load();
+    a.windowSeconds    = windowS_.load();
+    a.progress         = collectionProgress();
+    a.gatheredSeconds  = a.progress * a.windowSeconds;
+    a.lastPassEmpty    = lastPassEmpty_.load();
+    a.passesCompleted  = passesCompleted_.load();
+    return a;
 }
 
 void KeyEngine::publish (const PassResult& r, bool committed, float seconds)
@@ -856,19 +932,75 @@ void KeyEngine::publish (const PassResult& r, bool committed, float seconds)
 
 bool KeyEngine::update()
 {
+    // ---- apply pending triggers first (this thread owns the counters) ------
+    if (clearRequest_.exchange (false))
+    {
+        ringRead_ = ringWrite_.load (std::memory_order_acquire);
+        resetCounters();
+    }
+
     drainRing();
+
+    if (armRequest_.exchange (false))
+    {
+        // Map the captured tap position into history coordinates (they share
+        // the decimated-sample clock; a clear offsets them), so the window
+        // starts at the sample the trigger arrived on.
+        const uint64_t off = ringRead_ - histCount_;
+        const uint64_t pos = armRingPos_.load();
+        armedAt_    = pos > off ? std::min (pos - off, histCount_) : 0;
+        signalSeen_ = false;
+    }
 
     bool changed = false;
     const double winN = (double) windowS_.load() * fsA_;
 
     if (collecting_.load())
     {
-        if ((double) (histCount_ - armedAt_) >= winN)
+        // The window counts PLAYBACK, not wall clock: until real signal has
+        // been heard, the start keeps sliding forward so a stopped transport
+        // or a silent channel reads as "waiting for signal" instead of a
+        // pass that quietly fills its window with nothing and reports
+        // nothing. Once signal starts, gaps inside the passage count — they
+        // are part of the music.
+        if (! signalSeen_)
         {
+            const uint64_t gathered = histCount_ - armedAt_;
+            if (gathered > 0)
+            {
+                const int n = (int) std::min (gathered, (uint64_t) (0.5 * fsA_));
+                double sumSq = 0.0;
+                if (copyRecent (work_, n) == n)
+                    for (float v : work_) sumSq += (double) v * (double) v;
+                if (n > 0 && std::sqrt (sumSq / (double) n) >= kSilenceRms)
+                    signalSeen_ = true;
+                else
+                    armedAt_ = histCount_;          // silence: window not started
+            }
+            waitingForSignal_.store (! signalSeen_);
+        }
+
+        if (signalSeen_ && (double) (histCount_ - armedAt_) >= winN)
+        {
+            // EXACTLY the promised window: [armedAt, armedAt + window_s] —
+            // not "the newest window_s at whatever moment this thread ran".
             const int n = (int) winN;
-            const auto r = analyseWindow (n, hpss_.load());
+            const auto r = analyseWindow (n, hpss_.load(), armedAt_ + (uint64_t) n);
             collecting_.store (false);
-            if (! hold_.load())
+            waitingForSignal_.store (false);
+            passesCompleted_.fetch_add (1);
+            lastPassEmpty_.store (! r.ok);
+
+            // The committed result is the fresh baseline: continuous mode
+            // (if on) waits for genuinely NEW audio before refreshing,
+            // instead of instantly re-running on the same passage and
+            // relabelling the reading "continuous".
+            lastContinuousAt_ = histCount_;
+
+            // An empty pass (nothing tonal in the window) KEEPS the previous
+            // reading and raises the flag instead — wiping a good reading
+            // with silence would punish the user for a mis-timed ANALYSE.
+            if (r.ok && ! hold_.load())
             {
                 publish (r, true, (float) ((double) n / fsA_));
                 changed = true;
@@ -883,7 +1015,7 @@ bool KeyEngine::update()
         {
             lastContinuousAt_ = histCount_;
             const int n = (int) std::min ((double) histCount_, winN);
-            const auto r = analyseWindow (n, hpss_.load());
+            const auto r = analyseWindow (n, hpss_.load(), histCount_);
 
             if (r.ok)
             {

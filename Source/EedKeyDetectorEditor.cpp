@@ -253,12 +253,26 @@ void EedKeyDetectorEditor::paintWheel (juce::Graphics& g, juce::Rectangle<float>
                     juce::Justification::centred);
     }
 
-    // The detected key, large, in the middle; confidence right under it.
+    // The detected key, large, in the middle; the engine's actual state when
+    // there is no key yet. A user must never be unable to tell "working on
+    // it" from "broken", so every state names itself.
     {
         const juce::Rectangle<float> hub (rIn * 1.35f, rIn * 1.1f);
         auto box = hub.withCentre (centre);
 
-        if (proc_.engine().isCollecting())
+        const auto activity = proc_.engine().getActivity();
+
+        if (activity.collecting && activity.waitingForSignal)
+        {
+            g.setColour (C::blue2);
+            g.setFont (uiFont (11.0f, true));
+            g.drawText ("ARMED", box.removeFromTop (box.getHeight() * 0.55f),
+                        juce::Justification::centredBottom);
+            g.setColour (C::text3);
+            g.setFont (uiFont (9.0f));
+            g.drawText ("waiting for signal", box, juce::Justification::centredTop);
+        }
+        else if (activity.collecting)
         {
             g.setColour (C::blue2);
             g.setFont (uiFont (11.0f, true));
@@ -266,8 +280,8 @@ void EedKeyDetectorEditor::paintWheel (juce::Graphics& g, juce::Rectangle<float>
                         juce::Justification::centredBottom);
             g.setColour (C::text3);
             g.setFont (uiFont (9.0f));
-            g.drawText (juce::String (juce::roundToInt (
-                            proc_.engine().collectionProgress() * 100.0f)) + "%",
+            g.drawText (juce::String (activity.gatheredSeconds, 1) + " / "
+                          + juce::String (activity.windowSeconds, 0) + " s",
                         box, juce::Justification::centredTop);
         }
         else if (reading.valid)
@@ -280,8 +294,19 @@ void EedKeyDetectorEditor::paintWheel (juce::Graphics& g, juce::Rectangle<float>
                         juce::Justification::centredBottom);
             g.setColour (DwellGlow::heatColour (reading.confidence));
             g.setFont (uiFont (10.0f, true));
-            g.drawText (juce::String (reading.confidence, 2),
+            g.drawText (juce::String (reading.confidence, 2)
+                          + (reading.confidence < 0.5f ? " LOW" : ""),
                         box, juce::Justification::centredTop);
+        }
+        else if (activity.lastPassEmpty)
+        {
+            g.setColour (C::amber);
+            g.setFont (uiFont (10.0f, true));
+            g.drawText ("nothing tonal", box.removeFromTop (box.getHeight() * 0.55f),
+                        juce::Justification::centredBottom);
+            g.setColour (C::text3);
+            g.setFont (uiFont (9.0f));
+            g.drawText ("play audio, re-run", box, juce::Justification::centredTop);
         }
         else
         {
@@ -336,8 +361,27 @@ void EedKeyDetectorEditor::paintReadout (juce::Graphics& g, juce::Rectangle<int>
         if (echojay::describeFreqAsNote (reading.rootHz, note, (int) sizeof (note)))
             line ("ROOT", juce::String (reading.rootHz, 2) + " Hz ("
                             + juce::String (note) + ")");
-        line ("ANALYSED", juce::String (reading.analysedSeconds, 1) + " s"
-                            + (reading.committed ? ", committed" : ", continuous"));
+
+        // Age keeps a held reading honest: a key committed three minutes ago
+        // on a different section must not look freshly measured.
+        juce::String analysed = juce::String (reading.analysedSeconds, 1) + " s"
+                              + (reading.committed ? ", committed" : ", continuous");
+        if (const auto stamp = proc_.readingChangeMs(); stamp != 0)
+        {
+            const auto ageS = (juce::Time::getMillisecondCounter() - stamp) / 1000u;
+            if (ageS >= 5) analysed << ", " << juce::String (ageS) << " s ago";
+        }
+        line ("ANALYSED", analysed);
+
+        if (reading.confidence < 0.5f && r.getHeight() >= 13)
+        {
+            auto row = r.removeFromTop (14);
+            g.setColour (C::amber);
+            g.setFont (uiFont (9.0f, true));
+            g.drawText ("LOW CONFIDENCE - treat the key as unknown", row,
+                        juce::Justification::centredLeft);
+            g.setFont (uiFont (10.0f));
+        }
 
         if (reading.numAlternates > 0 && r.getHeight() >= 26)
         {
@@ -359,8 +403,16 @@ void EedKeyDetectorEditor::paintReadout (juce::Graphics& g, juce::Rectangle<int>
     }
     else
     {
-        g.setColour (C::text3);
-        line ("STATUS", proc_.engine().isCollecting() ? "listening..." : "no reading yet");
+        const auto activity = proc_.engine().getActivity();
+        if (activity.collecting && activity.waitingForSignal)
+            line ("STATUS", "armed - waiting for playback / signal");
+        else if (activity.collecting)
+            line ("STATUS", "analysing " + juce::String (activity.gatheredSeconds, 1)
+                              + " / " + juce::String (activity.windowSeconds, 0) + " s");
+        else if (activity.lastPassEmpty)
+            line ("STATUS", "last pass heard nothing tonal - play audio, re-run");
+        else
+            line ("STATUS", "no reading yet - press ANALYSE while playing");
     }
 }
 
@@ -398,7 +450,10 @@ void EedKeyDetectorEditor::syncFromProcessor()
     tuningKnob_.setDimmed (proc_.getParamValue (
                                EedKeyDetectorProcessor::kAutoTuning) >= 0.5);
 
-    analyseBtn_.setButtonText (proc_.engine().isCollecting() ? "LISTENING" : "ANALYSE");
+    const auto activity = proc_.engine().getActivity();
+    analyseBtn_.setButtonText (activity.collecting
+                                 ? (activity.waitingForSignal ? "ARMED" : "LISTENING")
+                                 : "ANALYSE");
 }
 
 void EedKeyDetectorEditor::timerCallback()
@@ -427,6 +482,27 @@ void EedKeyDetectorEditor::timerCallback()
         moving = moving || std::abs (d) > 1.0e-3f;
     }
 
-    if (moving || proc_.engine().isCollecting())
+    // Repaint on chroma motion, on progress, and on any STATE change — a
+    // pass completing, a reading clearing, the waiting flag flipping. The
+    // status key quantises everything the hub/readout text depends on, so a
+    // state that changed always paints and a quiet idle never does.
+    const auto activity = proc_.engine().getActivity();
+    const auto reading  = proc_.engine().getReading();
+    juce::int64 statusKey =
+          (juce::int64) activity.passesCompleted
+        | ((juce::int64) (activity.collecting ? 1 : 0)       << 20)
+        | ((juce::int64) (activity.waitingForSignal ? 1 : 0) << 21)
+        | ((juce::int64) (activity.lastPassEmpty ? 1 : 0)    << 22)
+        | ((juce::int64) (reading.valid ? 1 : 0)             << 23)
+        | ((juce::int64) juce::roundToInt (activity.progress * 100.0f) << 24)
+        | ((juce::int64) juce::roundToInt (reading.confidence * 100.0f) << 32);
+    if (const auto stamp = proc_.readingChangeMs(); stamp != 0 && reading.valid)
+        statusKey |= (juce::int64) ((juce::Time::getMillisecondCounter() - stamp)
+                                    / 5000u) << 40;   // age line ticks every 5 s
+
+    const bool statusChanged = statusKey != lastStatusKey_;
+    lastStatusKey_ = statusKey;
+
+    if (moving || activity.collecting || statusChanged)
         repaint (wheelBounds_.getUnion (readoutBounds_));
 }

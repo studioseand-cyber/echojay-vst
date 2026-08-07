@@ -53,6 +53,7 @@ private:
     // DwellGlow::tick, per pitch class instead of per dB bin.
     std::array<float, 12> chromaShown_ {};
     double lastTickMs_ = 0.0;
+    juce::int64 lastStatusKey_ = -1;   // repaint-on-state-change (timerCallback)
 
     bool suppressCallbacks_ = false;
 
