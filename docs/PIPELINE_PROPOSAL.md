@@ -303,3 +303,40 @@ Ordered so you can use it before all of it exists.
 **1 and 2 are the usable slice.** After them you can map with the existing wizard, run the
 proposer, and review — the catalogue campaign works, just without vision or the worklist.
 Everything after that reduces the review pile rather than enabling the flow.
+
+---
+
+## The confidence gate manufactured 34% of its own review pile (7 Aug 2026)
+
+The accept gate required BOTH ARMS CONFIDENT; everything else escalated. The
+single-arm-unconfident family was **34% of escalations** -- ~7,100 controls at
+corpus scale -- and it fed the pile projections, the cost estimates and the
+argument about whether the pile was workable at all.
+
+Scoring the gate's DISCARDS against the 125 hold-out truth rows:
+
+| | |
+|---|---|
+| both confident | 74/75 = **98.7%** |
+| one arm hedged | 42/43 = **97.7%** |
+
+Indistinguishable. The gate was discarding 36% of agreements for one percentage
+point inside the noise. **With the threshold corrected the family went to ONE
+control**, the pile fell from ~17,500 to ~6,700 questions, and the accept rate
+nearly doubled -- with no new information, no new model call, and applied
+retroactively by `regate.py` to work already paid for.
+
+**Why nothing measured it for weeks.** The escalation carried a reason -- "an
+arm declined to be confident" -- which reads as a statement about the models'
+knowledge. It was a statement about where a threshold sat. Every downstream
+number inherited it, and none of them was wrong *given* the gate; all of them
+were wrong *about* it.
+
+**What surfaced it** was not analysis of the pile but scoring the filter's
+discards against ground truth: *would the things I am rejecting have been
+right?* rather than *how big is the pile?* That cost ~$2 against data already
+on disk.
+
+**The rule this leaves:** a threshold that routes work to a human queue must
+have its discards scored, not only its accepts. Record confidence rather than
+gating on it, so the decision stays re-derivable from stored evidence.
