@@ -9,6 +9,7 @@
 #include "EqNote.h"                  // describeFreqAsNote — root_hz note names in the feed
                                     // include, so only THIS TU pays its 8.4MB
 #include <cmath>
+#include <cstdio>         // std::fprintf — runChainGuidanceSelfTest reporting
 #include <unistd.h>       // getuid — launchctl gui/<uid> target (consent prompt)
 
 // Compare combo IDs: captures are 1..N, references start at this STABLE base.
@@ -18783,6 +18784,119 @@ LinkShm::RackSidecar EchoJayEditor::readLinkRackSidecar(const juce::String& uid)
     return LinkShm::readRackSidecar(dir, uid);
 }
 
+// ---- Conversation-conduct declarations (see PluginEditor.h for the wording
+// constraint). ONE conduct tail, two identity clauses: the live gap this
+// factoring closed (7 Aug 2026) was the rule riding ONLY Link-targeted turns,
+// so on the main plugin the model asked which channel to work on and
+// volunteered capture status — both already forbidden by the text.
+juce::String EchoJayEditor::chainConductRule(const juce::String& identityClause)
+{
+    return identityClause
+         + " Do NOT ask which channel or track to work on. Answer the "
+           "question the user actually asked; do NOT volunteer capture, "
+           "meter, or measurement status unless they ask about the "
+           "sound, the mix, or the numbers - availability is context "
+           "for your own reasoning, not a status report to deliver.";
+}
+
+juce::String EchoJayEditor::targetChannelDeclaration(const juce::String& channelPhrase)
+{
+    return juce::String::fromUTF8("\n\n[TARGET CHANNEL \xe2\x80\x94 ")
+         + chainConductRule("this conversation IS " + channelPhrase
+             + ". The user already chose this channel; every chain you "
+               "build or edit in this conversation is for THIS channel.")
+         + "]";
+}
+
+juce::String EchoJayEditor::mainChannelDeclaration()
+{
+    return juce::String::fromUTF8("\n\n[THIS CHANNEL \xe2\x80\x94 ")
+         + chainConductRule("this conversation IS this EchoJay plugin's own "
+               "channel - the track it is loaded on. The user already chose "
+               "this channel; every chain you build or edit in this "
+               "conversation is for THIS plugin's own rack.")
+         + "]";
+}
+
+// Console-harness self-test (tools/chainguidance_test): proves, on the real
+// shipping builders, (1) both surfaces end in the ONE byte-identical conduct
+// tail, (2) the operative sentences are in the bytes, (3) both blocks open
+// with a history-strip marker EchoJayAPI actually strips, and (4) the text
+// obeys the DOCUMENTED classifier constraint — no EDIT_REQUEST_RE verb
+// families, no chain-request verb within 30 chars before "chain". The lint
+// encodes the recorded patterns (CHAIN_AI_BUILD_SPEC + the header comment);
+// it cannot read the server's source, so a reworded block passing here must
+// still be checked against the live regexes.
+bool EchoJayEditor::runChainGuidanceSelfTest()
+{
+    bool ok = true;
+    auto fail = [&ok](const juce::String& why)
+    {
+        std::fprintf(stderr, "chain-guidance self-test FAIL: %s\n", why.toRawUTF8());
+        ok = false;
+    };
+
+    const juce::String tail = chainConductRule({});
+    const juce::String targetDecl = targetChannelDeclaration("the user's \"Lead Vox\" Link channel");
+    const juce::String mainDecl   = mainChannelDeclaration();
+
+    struct Surface { const char* name; const juce::String& block; };
+    const Surface surfaces[] = { { "TARGET CHANNEL", targetDecl }, { "THIS CHANNEL", mainDecl } };
+
+    for (const auto& s : surfaces)
+    {
+        if (! s.block.endsWith(tail + "]"))
+            fail(juce::String(s.name) + ": block does not end with the shared conduct tail");
+        for (auto* sentence : { "Do NOT ask which channel or track to work on",
+                                "do NOT volunteer capture, meter, or measurement status" })
+            if (! s.block.contains(sentence))
+                fail(juce::String(s.name) + ": missing operative sentence: " + sentence);
+    }
+
+    // History-strip contract: both blocks open with a marker sendChat strips
+    // from history turns — read from the ONE list the strip actually uses.
+    for (const auto& s : surfaces)
+    {
+        bool stripped = false;
+        for (const auto& m : EchoJayAPI::historyStripMarkers())
+            if (s.block.startsWith(m)) { stripped = true; break; }
+        if (! stripped)
+            fail(juce::String(s.name) + ": block does not open with a history-strip marker");
+    }
+
+    // Classifier lint. Substring families the documented EDIT_REQUEST_RE
+    // arms key on — none may appear anywhere in either block.
+    for (const auto& s : surfaces)
+    {
+        const juce::String low = s.block.toLowerCase();
+        for (auto* verb : { "remove", "swap", "instead of", "take out", "take off",
+                            "get rid of", "reorder", "re-order", "rearrange",
+                            "bypass", "insert", "replace", "delete", "move " })
+            if (low.contains(verb))
+                fail(juce::String(s.name) + ": contains EDIT_REQUEST_RE verb \"" + verb + "\"");
+
+        // CHAIN_REQUEST_RE: no chain-request verb in the 30 chars before any
+        // "chain" (checked over a wider 40-char window to absorb verb length
+        // — conservative on purpose; a false positive here is a cheap
+        // rewording, a false negative is a misrouted turn).
+        for (int p = low.indexOf("chain"); p >= 0; p = low.indexOf(p + 1, "chain"))
+        {
+            const juce::String window = low.substring(juce::jmax(0, p - 40), p);
+            for (auto* verb : { "build", "make", "create", "design", "suggest",
+                                "recommend", "give", "generate", "set up",
+                                "put together", "construct", "assemble" })
+                if (window.contains(verb))
+                    fail(juce::String(s.name) + ": chain-request verb \"" + verb
+                         + "\" within 40 chars before \"chain\" at offset "
+                         + juce::String(p));
+        }
+    }
+
+    if (ok)
+        std::fprintf(stderr, "chain-guidance self-test OK\n");
+    return ok;
+}
+
 juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg,
                                                     bool alwaysAttach,
                                                     bool* hadChainFeedOut,
@@ -18865,20 +18979,12 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         // "what channel is this" carried no feed and no chain cue, so the
         // model had no idea which channel it was in). If the conversation
         // has a linkUid, the model is told, on EVERY turn. Feed-less turns
-        // append this with no preceding marker, so the wording is
-        // deliberately safe against the server's typed-portion classifiers
-        // (no EDIT_REQUEST_RE verbs; no verb followed by "chain" within 30
-        // chars for CHAIN_REQUEST_RE). Only the RACK block keeps the ride
-        // condition.
-        out += juce::String::fromUTF8("\n\n[TARGET CHANNEL \xe2\x80\x94 ")
-             + "this conversation IS " + channelPhrase
-             + ". The user already chose this channel; every chain you "
-               "build or edit in this conversation is for THIS channel. "
-               "Do NOT ask which channel or track to work on. Answer the "
-               "question the user actually asked; do NOT volunteer capture, "
-               "meter, or measurement status unless they ask about the "
-               "sound, the mix, or the numbers - availability is context "
-               "for your own reasoning, not a status report to deliver.]";
+        // append this with no preceding marker, so the wording must stay
+        // safe against the server's typed-portion classifiers — the
+        // constraint and the shared conduct tail live on the builder (see
+        // targetChannelDeclaration / chainConductRule in PluginEditor.h).
+        // Only the RACK block keeps the ride condition.
+        out += targetChannelDeclaration(channelPhrase);
         if (hadFeed || relevant)
         {
             auto rack = readLinkRackSidecar(targetLinkUid);
@@ -18961,13 +19067,29 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
                    "channel's own audio. Never describe these measurements as "
                    "this channel's sound; they are the full capture.]";
     }
-    else if (chainHost.getNumSlots() > 0 && (hadFeed || relevant))
+    else if (hadFeed || relevant)
     {
-        // ── STATE 1: NO TARGET — the main plugin's own rack ──
-        out += EchoJayAPI::buildCurrentChainInjection(chainHost);
-        EchoJay_NSLog(("EJChat: CURRENT CHAIN injection attached -- "
-                       + juce::String(chainHost.getNumSlots()) + " slots, rev "
-                       + juce::String(chainHost.getChainRevision())).toRawUTF8());
+        // ── STATE 1: NO TARGET — the main plugin's own channel and rack ──
+        // The SAME conduct rule the [TARGET CHANNEL] declaration carries,
+        // via the shared builders (chainConductRule — one tail, two identity
+        // clauses, so the surfaces cannot drift). Live gap this closed
+        // (7 Aug 2026): the rule rode ONLY Link-targeted turns, so a
+        // build-a-chain ask on the main plugin was answered with "which
+        // channel?" plus an unsolicited capture-status report. Rides
+        // EXACTLY the turns the chain guidance rides — hadFeed || relevant,
+        // the two arms that attached the feed above — and no others, so a
+        // server-CUT plugin marker always precedes it (the typed-portion
+        // classifiers never see it) and the history strip removes it with
+        // the feed. NOT gated on getNumSlots(): an empty rack is still this
+        // plugin's own channel; only the RACK block keeps the slots test.
+        out += mainChannelDeclaration();
+        if (chainHost.getNumSlots() > 0)
+        {
+            out += EchoJayAPI::buildCurrentChainInjection(chainHost);
+            EchoJay_NSLog(("EJChat: CURRENT CHAIN injection attached -- "
+                           + juce::String(chainHost.getNumSlots()) + " slots, rev "
+                           + juce::String(chainHost.getChainRevision())).toRawUTF8());
+        }
     }
 
     // [DETECTED KEY] (KEY_DETECTOR_SPEC.md §4/§9): the READ path. Rides on

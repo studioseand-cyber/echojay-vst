@@ -87,6 +87,29 @@ private:
                                          bool captureOwnAttribution = false,
                                          bool compareAttribution = false);
 
+    // The conversation-conduct rule ("don't ask which channel; don't
+    // volunteer capture/meter status") shared VERBATIM by both chat
+    // surfaces: the [TARGET CHANNEL] declaration (Link-targeted chats) and
+    // the [THIS CHANNEL] declaration (the main plugin's own chat). Each
+    // block builder supplies ONLY its channel-identity clause; the conduct
+    // tail lives once in chainConductRule, so the two surfaces cannot
+    // drift. Pure statics so the self-test binary reads the exact bytes the
+    // compose path appends (tools/chainguidance_test).
+    // WORDING CONSTRAINT, for the tail AND every identity clause: the text
+    // must stay safe against the server's typed-portion classifiers — no
+    // EDIT_REQUEST_RE verb families (remove/swap/take out/get rid of/
+    // reorder/move/bypass/insert/replace...), and no chain-request verb
+    // followed by "chain" within 30 chars (CHAIN_REQUEST_RE): "chain"
+    // always PRECEDES its verbs here ("every chain you build or edit").
+    // The server's regex source is not in this repo; the self-test lints
+    // the documented constraint, but reworded text must still be checked
+    // against the live patterns, not assumed safe.
+    static juce::String chainConductRule(const juce::String& identityClause);
+    static juce::String targetChannelDeclaration(const juce::String& channelPhrase);
+    static juce::String mainChannelDeclaration();
+    static bool runChainGuidanceSelfTest();
+    friend struct EchoJayChainGuidanceTestAccess;
+
     // prevReview is non-null when this is not the first capture in the chat.
     void requestAIFeedback(const CaptureSnapshot& snap,
                            const juce::String& chatId,

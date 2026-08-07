@@ -330,6 +330,15 @@ public:
     // including, since a false positive just sends a list that goes unused.
     static bool messageNeedsPlugins(const juce::String& userMessage);
 
+    // The injection markers sendChat cuts from HISTORY turns before sizing
+    // and sending (everything from the first marker to end of message goes;
+    // only the newest turn keeps its live injection). ONE list, exposed so
+    // the chain-guidance self-test can prove every declaration block the
+    // editor composes opens with a marker this strip actually removes
+    // (tools/chainguidance_test) — a block missing from this list would ride
+    // out on every later history turn.
+    static const juce::StringArray& historyStripMarkers();
+
     // Builds the per-turn plugin block to append to a user message when
     // messageNeedsPlugins() is true. Given the full list string from the
     // scanner, wraps it with framing the AI understands. Returns empty if the
