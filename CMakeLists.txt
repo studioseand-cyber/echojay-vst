@@ -228,6 +228,13 @@ target_sources(EchoJay PRIVATE
     Source/EedHarmonicAnalysis.h
     Source/EedHarmonicCore.cpp
     Source/EedHarmonicCore.h
+    Source/EedKeyDetectorEditor.cpp
+    Source/EedKeyDetectorEditor.h
+    Source/EedKeyDetectorProcessor.cpp
+    Source/EedKeyDetectorProcessor.h
+    Source/EedKeyEngine.cpp
+    Source/EedKeyEngine.h
+    Source/EedKeyWorker.h
     Source/EedLfoCore.h
     Source/EedModEditorBase.cpp
     Source/EedModEditorBase.h
@@ -532,6 +539,13 @@ target_sources(EchoJayLink PRIVATE
     Source/EedHarmonicAnalysis.h
     Source/EedHarmonicCore.cpp
     Source/EedHarmonicCore.h
+    Source/EedKeyDetectorEditor.cpp
+    Source/EedKeyDetectorEditor.h
+    Source/EedKeyDetectorProcessor.cpp
+    Source/EedKeyDetectorProcessor.h
+    Source/EedKeyEngine.cpp
+    Source/EedKeyEngine.h
+    Source/EedKeyWorker.h
     Source/EedLfoCore.h
     Source/EedModEditorBase.cpp
     Source/EedModEditorBase.h
@@ -735,6 +749,9 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EedGainProcessor.cpp
     Source/EedHarmonicAnalysis.cpp
     Source/EedHarmonicCore.cpp
+    Source/EedKeyDetectorEditor.cpp
+    Source/EedKeyDetectorProcessor.cpp
+    Source/EedKeyEngine.cpp
     Source/EedModEditorBase.cpp
     Source/EedCompressorEditor.cpp
     Source/EedCompressorProcessor.cpp

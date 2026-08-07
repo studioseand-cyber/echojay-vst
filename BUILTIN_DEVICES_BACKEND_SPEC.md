@@ -269,3 +269,58 @@ Then the depth-pass battery — each should place the right device AND dial the 
 A full-chain prompt — "make this vocal sit in the mix" — should place several EchoJay
 devices and dial each precisely (e.g. EQ → De-Esser → Compressor → Reverb), with modes
 chosen sensibly rather than left at default.
+
+## The Key Detector — the suite's first READER (KEY_DETECTOR_SPEC.md)
+
+Every device above is a writer: the model dials, the device processes. The
+**EchoJay Key Detector** (category `Analysis`) is the first reader — audio
+passes through bit-identically; its output is a `[DETECTED KEY]` block in the
+feed. What the backend must teach:
+
+**What the block means.** When present, the client MEASURED the key from live
+audio. Two source shapes, distinguished by the block's own header line:
+
+- `[DETECTED KEY — measured by EchoJay on another channel; the KEY OF THE MUSIC]`
+  — an EchoJay Link on another channel (ideally the instrumental/mix **bus**)
+  detected it. This is the reading to build a vocal chain against: it is the
+  key of the music, not of the vocal the chain sits on. It names its source
+  channel and carries `age`.
+- `[DETECTED KEY — from EchoJay Key Detector in the chain; measured from the
+  live signal]` — a Key Detector device in the current chain heard whatever
+  flows through THAT chain.
+
+Fields: `key`, `confidence` (0..1), `detected_tuning` (Hz, with cents from
+A=440), `root_hz` (the root's fundamental — use it directly, no pitch maths),
+`alternates` (runner-up keys with their scores), `analysed`/`age`.
+
+**The confidence rule (hard rule, teach it verbatim).** Below ~0.5, treat the
+key as UNKNOWN and do not build moves on it — a confident wrong key is worse
+than no key. Close relative-major/minor calls deliberately report low.
+
+**When to use it.**
+- "notch the ringing at the root" → send the EQ `note` for the root (or
+  `freq_hz: root_hz`) — the block already did the maths.
+- "cut the boxiness but keep it off the root" → place the band AWAY from
+  `root_hz` and its octaves.
+- Musical delay/reverb choices, and interpreting `tame_resonances`: a
+  resonance ON the root is the instrument; one between scale degrees is more
+  likely a room mode.
+- The user asks "what key is this?" → answer from the block (with confidence
+  and tuning), NOT from guesswork. If no block is present, say a Key Detector
+  (or a Link on the music) is needed — never guess a key.
+
+**Re-measuring.** `analyse` is a dialable param: a move of
+`settings_structured.params = {"analyse": 1}` on the Key Detector makes it
+listen to the next `window_s` seconds of playback, commit, and hold — the
+model can ask the plugin to listen again ("re-check the key after this
+modulation"). `reset: 1` clears the held reading.
+
+**Placement guidance to teach.** If the user wants the key of the TRACK while
+working on a vocal/bus chain, prefer a Link on the instrumental or mix bus
+(its reading arrives automatically); a Key Detector placed in a vocal chain
+reads the vocal, which is the worst-case input for key detection and usually
+not the question being asked.
+
+Acceptance addition: with a Key Detector in the chain on F# minor material,
+"notch the ringing at the root" → an EQ notch at ~92.5 Hz (F#2) or `note:"F#2"`
+— the model acting on an observation the plugin made.

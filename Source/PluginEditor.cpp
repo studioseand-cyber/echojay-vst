@@ -5,6 +5,8 @@
 #include "EchoJayEventLog.h"   // events.jsonl + machine_id (dial_miss telemetry)
 #include "EchoJayParamApply.h" // kDialSignalsEnabled + dial predicate (shared)
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
+#include "EedKeyDetectorProcessor.h" // [DETECTED KEY] read path (KEY_DETECTOR_SPEC §4/§9)
+#include "EqNote.h"                  // describeFreqAsNote — root_hz note names in the feed
                                     // include, so only THIS TU pays its 8.4MB
 #include <cmath>
 #include <unistd.h>       // getuid — launchctl gui/<uid> target (consent prompt)
@@ -18967,8 +18969,204 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
                        + juce::String(chainHost.getNumSlots()) + " slots, rev "
                        + juce::String(chainHost.getChainRevision())).toRawUTF8());
     }
+
+    // [DETECTED KEY] (KEY_DETECTOR_SPEC.md §4/§9): the READ path. Rides on
+    // every compose site (this is the ONE injection helper), whenever any
+    // source actually has a reading — a Key Detector in the local chain, or a
+    // Link publishing key fields from another channel. Absent otherwise: no
+    // block is the honest state, never an empty one.
+    {
+        const juce::String keyBlock = buildDetectedKeyContext();
+        if (keyBlock.isNotEmpty())
+        {
+            out += keyBlock;
+            EchoJay_NSLog("EJChat: DETECTED KEY injection attached");
+        }
+    }
     if (hadChainFeedOut != nullptr) *hadChainFeedOut = hadFeed;
     return out;
+}
+
+// The [DETECTED KEY] block (KEY_DETECTOR_SPEC.md §4, extended by §9).
+// Sources, in trust order:
+//   1. Links publishing key fields — a Link on the instrumental/mix BUS knows
+//      the key of the MUSIC, which is what a vocal chain actually needs.
+//      placement==bus is preferred over channel; several sources disagreeing
+//      is REPORTED, not silently resolved.
+//   2. A Key Detector device in the local chain — whatever flows through THIS
+//      chain, named as such so the model never mistakes a vocal's reading for
+//      the track's.
+// Every reading carries confidence, and the block teaches the rule that keeps
+// it honest: below ~0.5, treat the key as unknown.
+juce::String EchoJayEditor::buildDetectedKeyContext()
+{
+    struct KeySource
+    {
+        juce::String name, uid;
+        int   placement = 0;              // 0 unset, 1 bus, 2 channel, 3 send
+        int   root = 0; bool minor = false;
+        float conf = 0.0f, tuningHz = 440.0f;
+        juce::uint32 ageMs = 0;
+    };
+
+    auto keyText = [] (int root, bool minor)
+    {
+        char b[24];
+        echojay::KeyEngine::keyName (root, minor, b, (int) sizeof (b));
+        return juce::String (b);
+    };
+    auto rootHzText = [] (float rootHz)
+    {
+        char note[16];
+        juce::String s (rootHz, 2);
+        if (echojay::describeFreqAsNote (rootHz, note, (int) sizeof (note)))
+            s << " (" << note << ")";
+        return s;
+    };
+    auto tuningText = [] (float hz)
+    {
+        const float cents = 1200.0f * std::log2 (hz / 440.0f);
+        return juce::String (hz, 1) + " Hz ("
+             + (cents >= 0 ? "+" : "") + juce::String (cents, 1)
+             + " cents from A=440)";
+    };
+
+    // ---- Link-published readings (§9) ------------------------------------
+    std::vector<KeySource> links;
+    for (const auto& e : processorRef.getLinkDisplayList())
+    {
+        const auto& li = e.info;
+        LinkMeterFrame f;
+        if (li.regIdx < 0 || ! processorRef.readLinkMeterFrame(li.regIdx, f))
+            continue;
+        if (! frameHasKey(f)) continue;
+
+        KeySource s;
+        s.name = e.displayName;   s.uid = li.uid;
+        s.placement = li.placement;
+        s.root = (int) f.keyRoot; s.minor = f.keyIsMinor != 0;
+        s.conf = f.keyConfidence; s.tuningHz = f.keyTuningHz > 0.0f ? f.keyTuningHz : 440.0f;
+        s.ageMs = f.keyAgeMs;
+        links.push_back(std::move(s));
+    }
+
+    // ---- the local chain's own Key Detector (§4) --------------------------
+    bool haveLocal = false;
+    echojay::KeyReading local;
+    juce::uint32 localAgeMs = 0;
+    {
+        auto& ch = processorRef.getChainHost();
+        for (int i = 0; i < ch.getNumSlots(); ++i)
+            if (auto* kd = dynamic_cast<EedKeyDetectorProcessor*>(ch.getSlotProcessor(i)))
+            {
+                const auto r = kd->engine().getReading();
+                if (r.valid)
+                {
+                    haveLocal = true;
+                    local = r;
+                    const auto stamp = kd->readingChangeMs();
+                    localAgeMs = stamp != 0
+                        ? juce::Time::getMillisecondCounter() - stamp : 0;
+                    break;               // one detector speaks for the chain
+                }
+            }
+    }
+
+    if (links.empty() && ! haveLocal) return {};
+
+    // Primary Link source: bus beats channel/unset; confidence breaks ties.
+    const KeySource* primary = nullptr;
+    for (const auto& s : links)
+    {
+        if (primary == nullptr) { primary = &s; continue; }
+        const bool sBus = s.placement == 1, pBus = primary->placement == 1;
+        if (sBus != pBus) { if (sBus) primary = &s; continue; }
+        if (s.conf > primary->conf) primary = &s;
+    }
+
+    auto placeStr = [] (int p) { return p == 1 ? "bus" : p == 2 ? "channel"
+                                      : p == 3 ? "send return" : "unset"; };
+    auto ageStr = [] (juce::uint32 ms)
+    { return juce::String ((int) (ms / 1000u)) + " s"; };
+
+    juce::String c;
+    if (primary != nullptr)
+    {
+        // Frame carries root+tuning, not the analysed octave — report the
+        // root in octave 2, the octave the feed's note maths examples use.
+        const float rootHz = primary->tuningHz
+            * std::pow (2.0f, (float) (36 + primary->root - 69) / 12.0f);
+
+        c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 measured by "
+             "EchoJay on another channel; the KEY OF THE MUSIC]:\n")
+          << "key: " << keyText (primary->root, primary->minor)
+          << "   confidence: " << juce::String (primary->conf, 2)
+          << "   detected_tuning: " << tuningText (primary->tuningHz) << "\n"
+          << "root_hz: " << rootHzText (rootHz) << "\n"
+          << "source: \"" << primary->name << "\" (" << placeStr (primary->placement)
+          << ", uid " << primary->uid << ")   age: " << ageStr (primary->ageMs) << "\n";
+
+        for (const auto& s : links)
+            if (&s != primary)
+                c << "also measured: \"" << s.name << "\" (" << placeStr (s.placement)
+                  << "): " << keyText (s.root, s.minor)
+                  << " (" << juce::String (s.conf, 2)
+                  << ", age " << ageStr (s.ageMs) << ")\n";
+
+        if (haveLocal)
+            c << "this chain's own Key Detector: " << keyText (local.root, local.minor)
+              << " (" << juce::String (local.confidence, 2)
+              << ", tuning " << juce::String (local.tuningHz, 1) << " Hz"
+              << ", root_hz " << rootHzText (local.rootHz)
+              << ", analysed " << juce::String (local.analysedSeconds, 1)
+              << (local.committed ? " s committed" : " s continuous")
+              << ", age " << ageStr (localAgeMs) << ")\n";
+
+        // Disagreement is information, never silently resolved (§9).
+        {
+            bool disagree = false;
+            for (const auto& s : links)
+                if (s.root != primary->root || s.minor != primary->minor) disagree = true;
+            if (haveLocal && (local.root != primary->root || local.minor != primary->minor))
+                disagree = true;
+            if (disagree)
+                c << "NOTE: the sources above DISAGREE. Prefer the bus reading "
+                     "(it hears the mix; a channel hears one part), say the "
+                     "readings differ if it matters to the answer, and treat a "
+                     "disagreement as a possible modulation or a bad read.\n";
+        }
+    }
+    else
+    {
+        // §4: the chain's own detector, the only source.
+        c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 from EchoJay "
+             "Key Detector in the chain; measured from the live signal]:\n")
+          << "key: " << keyText (local.root, local.minor)
+          << "   confidence: " << juce::String (local.confidence, 2) << "\n"
+          << "detected_tuning: " << tuningText (local.tuningHz) << "\n"
+          << "root_hz: " << rootHzText (local.rootHz);
+        if (local.numAlternates > 0)
+        {
+            c << "   alternates: ";
+            for (int i = 0; i < local.numAlternates; ++i)
+            {
+                if (i > 0) c << ", ";
+                const auto& a = local.alternates[(size_t) i];
+                c << keyText (a.root, a.minor) << " ("
+                  << juce::String (a.score, 2) << ")";
+            }
+        }
+        c << "\nanalysed: " << juce::String (local.analysedSeconds, 1)
+          << " s of playback, " << (local.committed ? "committed" : "continuous")
+          << "   age: " << ageStr (localAgeMs) << "\n";
+    }
+
+    c << "RULES: below ~0.5 confidence treat the key as UNKNOWN and do not "
+         "build moves on it - a confident wrong key is worse than no key. "
+         "Use root_hz (or note names against detected_tuning) directly in EQ "
+         "moves instead of doing pitch maths. To re-measure, dial the Key "
+         "Detector's analyse:1 while audio plays.]";
+    return c;
 }
 
 // DEV ONLY. See the header. Applies a hand-written eq_bands JSON straight to

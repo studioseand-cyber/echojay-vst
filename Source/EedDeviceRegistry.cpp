@@ -15,7 +15,8 @@
 namespace
 {
     const char* const kCategoryOrder[] = {
-        "EQ", "Dynamics", "Utility", "Stereo", "Modulation", "Harmonic", "Time"
+        "EQ", "Dynamics", "Utility", "Stereo", "Modulation", "Harmonic", "Time",
+        "Analysis"
     };
 }
 

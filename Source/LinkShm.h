@@ -178,7 +178,20 @@ struct alignas(64) LinkMeterFrame
     // reads as ABSENT VALUES through the ordinary value gates before the
     // mask is ever consulted.
     uint32_t fieldsMask = 0;
-    uint8_t _pad[128 - 4 - 11 * 4 - 6 * 4 - 4 - 8 - 8 - 8 - 4];   // -> 128 (2 cache lines)
+    // Detected key (KEY_DETECTOR_SPEC.md §9): the Link runs EedKeyEngine on
+    // its channel and publishes the committed reading, so a main plugin on a
+    // VOCAL can know the key of the MUSIC. Appended in pad space — prior
+    // offsets unchanged (static_asserts below). keyRoot's -1 default matters:
+    // an old writer memcpys its whole zero pad on every publish, and a zero
+    // here would read as "C" — which is why every consumer must go through
+    // frameHasKey() (mask bit AND a real root), never the raw fields.
+    int16_t  keyRoot       = -1;      // 0..11 pitch class (C..B), -1 = none
+    uint8_t  keyIsMinor    = 0;       // 0 = major, 1 = minor
+    uint8_t  _keyPad       = 0;
+    float    keyConfidence = 0.0f;    // 0..1, margin-normalised
+    float    keyTuningHz   = 0.0f;    // detected reference pitch, 0 = unknown
+    uint32_t keyAgeMs      = 0;       // reading age at publish time
+    uint8_t _pad[128 - 4 - 11 * 4 - 6 * 4 - 4 - 8 - 8 - 8 - 4 - 16];   // -> 128 (2 cache lines)
 };
 static_assert(sizeof(LinkMeterFrame) == 128, "LinkMeterFrame must be 128 bytes");
 // Layout freeze: the cross-version story above is only true while these hold.
@@ -186,15 +199,30 @@ static_assert(offsetof(LinkMeterFrame, audioStale) == 88,
               "pre-0.8.5 field moved: old readers would misread every frame");
 static_assert(offsetof(LinkMeterFrame, peakFastL)  == 92,  "peakFast offset");
 static_assert(offsetof(LinkMeterFrame, fieldsMask) == 100, "fieldsMask offset");
+static_assert(offsetof(LinkMeterFrame, keyRoot)       == 104, "key group offset");
+static_assert(offsetof(LinkMeterFrame, keyConfidence) == 108, "key group offset");
+static_assert(offsetof(LinkMeterFrame, keyAgeMs)      == 116, "key group offset");
 
 /// fieldsMask bits. A bit promises ONLY that the writer populates the
 /// field group; values still carry their own absent conventions (-100).
 static constexpr uint32_t kFrameHasFastPeak = 1u << 0;
+static constexpr uint32_t kFrameHasKey      = 1u << 1;
 
 /// THE gate every fast-peak consumer goes through. Pure, testable.
 inline bool frameHasFastPeak(const LinkMeterFrame& f)
 {
     return (f.fieldsMask & kFrameHasFastPeak) != 0;
+}
+
+/// THE gate every detected-key consumer goes through. The mask bit promises a
+/// key-capable writer; the root range rejects both the "no reading yet"
+/// sentinel (-1) and an old writer's zeroed pad served through a recycled
+/// slot's stale mask (belt and braces — claimSlot blanks the frame anyway).
+inline bool frameHasKey(const LinkMeterFrame& f)
+{
+    return (f.fieldsMask & kFrameHasKey) != 0
+        && f.keyRoot >= 0 && f.keyRoot < 12
+        && f.keyConfidence > 0.0f;
 }
 
 static constexpr size_t kRegSize =

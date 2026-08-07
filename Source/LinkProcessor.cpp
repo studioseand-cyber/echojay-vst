@@ -31,6 +31,13 @@ LinkProcessor::LinkProcessor()
                       // 10Hz was ~1.3 dB per sample); polls every 3rd tick
                       // (~100ms, the old cadence), heartbeat every 30th (1s)
 
+    // Key detection (KEY_DETECTOR_SPEC.md §9): continuous — a Link has no
+    // ANALYSE button; its job is to always know its channel's key so the
+    // main plugin can read it. The worker idles at a 250 ms wakeup when no
+    // audio is flowing.
+    keyEngine_.setContinuous(true);
+    keyWorker_.startThread();
+
     // Mirror hosted chain latency into the host on EVERY chain change —
     // Link sits on parallel and phase-critical tracks, so this must track
     // build/add/remove/bypass exactly.
@@ -295,16 +302,45 @@ void LinkProcessor::publishMeterFrame()
         for (size_t i = 0; i < 6; ++i)
             f.bandRel[i] = md.macroBandDb[i] > -119.0f ? md.macroBandDb[i] - mean : 0.0f;
     }
+    // Detected key (KEY_DETECTOR_SPEC.md §9): the worker's continuous reading,
+    // published in the appended key group. Gated by kFrameHasKey so an old
+    // reader ignores it and a new reader never mistakes an old writer's
+    // zeroed pad for C major.
+    {
+        const auto kr = keyEngine_.getReading();
+        if (kr.valid)
+        {
+            f.keyRoot       = (int16_t) kr.root;
+            f.keyIsMinor    = kr.minor ? 1 : 0;
+            f.keyConfidence = kr.confidence;
+            f.keyTuningHz   = kr.tuningHz;
+            const juce::uint32 stamp = keyWorker_.lastChangeMs();
+            f.keyAgeMs = stamp != 0 ? juce::Time::getMillisecondCounter() - stamp : 0;
+        }
+        f.fieldsMask |= kFrameHasKey;
+    }
+
     // Frozen-engine guard: when the transport stops, the host stops calling
     // processBlock, the engine's values freeze, and stamping them would keep
     // the strip "fresh" scrolling a constant plateau forever — fake motion.
     // Real audio NEVER produces two byte-identical frames (LUFS jitters), so
     // an identical payload means frozen: skip the publish, seq stops
     // advancing, and the receiver's staleness path freezes+dims the strip.
-    if (std::memcmp(reinterpret_cast<const uint8_t*>(&f) + sizeof(uint32_t),
-                    reinterpret_cast<const uint8_t*>(&lastPublishedFrame_) + sizeof(uint32_t),
-                    sizeof(LinkMeterFrame) - sizeof(uint32_t)) == 0)
-        return;
+    //
+    // keyAgeMs is EXCLUDED from the comparison (equalised before the memcmp):
+    // it advances on every tick by construction, and letting it count as
+    // "motion" would defeat this guard entirely — every frame would differ,
+    // seq would never stop, and the receiver could no longer tell a frozen
+    // engine from a live one. A stalled Link's published key age freezes with
+    // the rest of the frame; the receiver's seq-staleness already covers it.
+    {
+        LinkMeterFrame cmp = f;
+        cmp.keyAgeMs = lastPublishedFrame_.keyAgeMs;
+        if (std::memcmp(reinterpret_cast<const uint8_t*>(&cmp) + sizeof(uint32_t),
+                        reinterpret_cast<const uint8_t*>(&lastPublishedFrame_) + sizeof(uint32_t),
+                        sizeof(LinkMeterFrame) - sizeof(uint32_t)) == 0)
+            return;
+    }
     lastPublishedFrame_ = f;
     LinkShm::publishMeterFrame(regMap, regSlotIdx, f);
     // Frame diagnostics: first 3 frames after (re)activation, then 1 per 10s
@@ -671,6 +707,8 @@ void LinkProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     hostNumChannels = 2;
     const int block = samplesPerBlock > 0 ? samplesPerBlock : 512;
     meterEngine_.prepare(sampleRate, block);
+    keyEngine_.prepare(sampleRate, block);   // resets its tap; continuous mode
+                                             // re-accumulates from here
 
     // Chain hosting supports mono AND stereo. The hosted graph is stereo, so a
     // mono track is up-mixed (L duplicated to L+R) before the chain and folded
@@ -789,6 +827,9 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
         const float* L = buffer.getReadPointer(0);
         const float* R = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : L;
         meterEngine_.processBlock(L, R, buffer.getNumSamples());
+        // Key tap, same gate and tap point: lock-free ring write, analysis
+        // happens on the worker thread (KEY_DETECTOR_SPEC.md §9).
+        keyEngine_.pushBlock(L, R, buffer.getNumSamples());
     }
 
     // Write into ring buffer if active — non-blocking tryEnter
