@@ -159,6 +159,14 @@ public:
     void  setHighHz (float hz)            { highHz_.store (clampf (hz, kMinHighHz, kMaxHighHz)); }
     float getHighHz() const               { return highHz_.load(); }
 
+    // The display-only live chroma (a ~1 s salience pass up to 4x/s) exists
+    // for editors that animate a wheel. A headless host (the Link's passive
+    // detection) turns it off: nobody sees it, and its cost would dwarf the
+    // duty-cycled committed passes it rides along with. Default ON so the
+    // Key Detector device is unchanged.
+    void  setLiveChromaEnabled (bool b)   { liveChromaOn_.store (b); }
+    bool  getLiveChromaEnabled() const    { return liveChromaOn_.load(); }
+
     // Arm a committed pass: the NEXT windowSeconds of PLAYBACK are gathered
     // (silence before the signal starts does not count), analysed once, and
     // the result holds until re-armed (or reset).
@@ -188,6 +196,21 @@ public:
     // from ONE background/message thread, a few times a second. Returns true
     // when the published reading changed.
     bool  update();
+
+    // ---- offline (captures) ------------------------------------------------
+    // One-shot pass over a stored buffer — KEY_PRECONDITION_SPEC.md §5.2. The
+    // offline path is allowed to be slower and better than the live one: it
+    // uses the LONGEST window the engine supports (30 s) and, when the buffer
+    // is longer than one window, analyses up to three disjoint windows
+    // (start / middle / end) and keeps the most confident, so an intro that
+    // fades in does not decide the whole capture's key.
+    //
+    // Runs the IDENTICAL committed pipeline (arm -> gather -> analyse), so the
+    // calibration pinned by key_engine_test.cpp applies verbatim. Blocking and
+    // NOT realtime-safe: call on a dedicated offline instance (background
+    // thread), never on an engine whose tap is live. r may be null (mono).
+    // Returns an invalid reading when nothing tonal was found.
+    KeyReading analyseBufferOffline (const float* l, const float* r, int n);
 
     // ---- results ----------------------------------------------------------
     KeyReading getReading() const;
@@ -287,6 +310,7 @@ private:
     std::atomic<bool>  hpss_        { true };
     std::atomic<float> lowHz_       { kDefLowHz };
     std::atomic<float> highHz_      { kDefHighHz };
+    std::atomic<bool>  liveChromaOn_ { true };
 
     std::atomic<bool>  collecting_  { false };
 

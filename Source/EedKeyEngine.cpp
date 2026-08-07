@@ -1037,6 +1037,7 @@ bool KeyEngine::update()
     }
 
     // ---- display-only live chroma ------------------------------------------
+    if (liveChromaOn_.load())
     {
         static_assert (kLiveSpanS <= 2.0, "live span must stay cheap");
         const int liveN = (int) (kLiveSpanS * fsA_);
@@ -1080,6 +1081,84 @@ bool KeyEngine::update()
     }
 
     return changed;
+}
+
+// ---------------------------------------------------------------------------
+// offline (captures) — see the header. The whole committed machinery is
+// reused per window: arm, push, update. Nothing here analyses; it only
+// schedules the same pass the ANALYSE button runs.
+// ---------------------------------------------------------------------------
+KeyReading KeyEngine::analyseBufferOffline (const float* l, const float* r, int n)
+{
+    KeyReading best;
+    if (l == nullptr || n <= 0 || fs_ <= 0.0) return best;
+
+    const double totalS = (double) n / fs_;
+    const float  winS   = clampf ((float) totalS - 0.5f, kMinWindowS, kMaxWindowS);
+    const int    winN   = (int) ((double) winS * fs_);
+    if (winN <= 0) return best;
+
+    // A window START must leave more than winN raw samples of material after
+    // it: decimation rounding shaves a few samples off the pushed count, and
+    // a window fed EXACTLY its own length can end one decimated sample short
+    // and never complete. The margin also absorbs a quiet first beat.
+    const int seg = std::min (n, winN + (int) (0.4 * fs_));
+
+    // Up to three disjoint-start windows: start, middle, end. Shorter
+    // buffers collapse to fewer (under two windows long: start + end; one
+    // window long: a single pass).
+    int starts[3];
+    int nWin = 0;
+    if (n <= seg + (int) (0.1 * fs_))
+        starts[nWin++] = n - seg;
+    else if (n <= 2 * seg)
+    {
+        starts[nWin++] = 0;
+        starts[nWin++] = n - seg;
+    }
+    else
+    {
+        starts[nWin++] = 0;
+        starts[nWin++] = (n - seg) / 2;
+        starts[nWin++] = n - seg;
+    }
+
+    const float prevWindow     = windowS_.load();
+    const bool  prevContinuous = continuous_.load();
+    const bool  prevLive       = liveChromaOn_.load();
+    setWindowSeconds (winS);
+    setContinuous (false);
+    setLiveChromaEnabled (false);      // nobody is watching an offline pass
+
+    for (int w = 0; w < nWin; ++w)
+    {
+        reset();                       // fresh tap + counters per window
+        startAnalysis();
+        // Feed in modest chunks so one call never outruns the ring; the
+        // consumer side drains inside update(). Feeding continues to the END
+        // of the buffer, not just one window: leading silence slides the
+        // committed window's start (playback semantics), so the material
+        // that fills it may sit later than starts[w].
+        const int chunk = 1 << 14;
+        int off = starts[w];
+        while (off < n && isCollecting())
+        {
+            const int m = std::min (chunk, n - off);
+            pushBlock (l + off, r != nullptr ? r + off : nullptr, m);
+            update();
+            off += m;
+        }
+        update();                      // completes the pass at the window edge
+
+        const KeyReading kr = getReading();
+        if (kr.valid && (! best.valid || kr.confidence > best.confidence))
+            best = kr;
+    }
+
+    setWindowSeconds (prevWindow);
+    setContinuous (prevContinuous);
+    setLiveChromaEnabled (prevLive);
+    return best;
 }
 
 KeyReading KeyEngine::getReading() const

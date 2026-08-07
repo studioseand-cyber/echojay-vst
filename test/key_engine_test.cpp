@@ -540,6 +540,70 @@ int main()
         check (! e.getActivity().waitingForSignal, "and the waiting flag is down");
     }
 
+    std::printf ("== the offline pass (captures) matches the committed pipeline ==\n");
+    {
+        // KEY_PRECONDITION_SPEC.md §5.2: a capture is analysed offline with
+        // the SAME pipeline the committed pass runs — same key, same
+        // confidence discipline. Both directions pinned: musical material
+        // reads correctly and confidently; noise stays LOW.
+        KeyEngine e;
+        e.prepare (kFs, 512);
+        const auto song = cMajorSong (12.0);
+        const auto r = e.analyseBufferOffline (song.data(), nullptr, (int) song.size());
+        check (r.valid && r.root == 0 && ! r.minor,
+               "offline pass over a C-major capture reads C major");
+        check (r.confidence >= 0.5f, "confidently");
+        check (r.committed, "and reports as a committed reading");
+
+        // The engine is reusable afterwards (window/continuous restored).
+        check (e.getWindowSeconds() == KeyEngine::kDefWindowS,
+               "window setting restored after the offline pass");
+    }
+    {
+        // A long capture: multiple windows, best confidence wins. The middle
+        // and end of this buffer are A minor; a noisy start must not decide it.
+        KeyEngine e;
+        e.prepare (kFs, 512);
+        std::vector<float> noise ((size_t) (8.0 * kFs));
+        { Noise nz; for (auto& v : noise) v = nz.next() * 0.4f; }
+        auto song = aMinorSong (35.0);
+        std::vector<float> buf;
+        buf.reserve (noise.size() + song.size());
+        buf.insert (buf.end(), noise.begin(), noise.end());
+        buf.insert (buf.end(), song.begin(),  song.end());
+        const auto r = e.analyseBufferOffline (buf.data(), nullptr, (int) buf.size());
+        check (r.valid && r.root == 9 && r.minor,
+               "a long capture with a noise intro still reads A minor");
+        check (r.confidence >= 0.5f, "confidently");
+    }
+    {
+        // Nothing tonal: the offline pass must say so, not guess.
+        KeyEngine e;
+        e.prepare (kFs, 512);
+        std::vector<float> n ((size_t) (12.0 * kFs));
+        { Noise nz; for (auto& v : n) v = nz.next() * 0.4f; }
+        const auto r = e.analyseBufferOffline (n.data(), nullptr, (int) n.size());
+        check (! r.valid || r.confidence < 0.4f,
+               "an offline pass over noise reports LOW/none, never a confident key");
+    }
+
+    std::printf ("== the live-chroma switch starves the display, not the detector ==\n");
+    {
+        KeyEngine e;
+        e.prepare (kFs, 512);
+        e.setLiveChromaEnabled (false);        // the Link's headless setting
+        e.setWindowSeconds (4.0f);
+        e.startAnalysis();
+        feed (e, cMajorSong (5.0));
+        const auto r = e.getReading();
+        check (r.valid && r.root == 0 && ! r.minor,
+               "committed pass unaffected with live chroma off");
+        float c[12]; e.getLiveChroma (c);
+        // With the display path off, getLiveChroma falls back to the
+        // committed reading's chroma — still a truthful picture.
+        check (c[0] > 0.5f, "getLiveChroma falls back to the reading's chroma");
+    }
+
     std::printf ("\n%s (%d failures)\n", g_fail ? "FAILURES" : "ALL PASS", g_fail);
     return g_fail ? 1 : 0;
 }
