@@ -304,3 +304,60 @@ That returns ~90 px to the spectrum. Rules:
 **Rejected alternative** (recorded so it is not re-proposed): wrapping the middle row into a 2x2
 grid keeps the wheel and gives every panel comfortable width, but doubles the middle section's
 height — the opposite of the goal. Only revisit if the wheel is judged essential at all widths.
+
+---
+
+# 7. SOURCE SELECTOR — let the user aim the analyser
+
+Precedence (5.3) picks a source automatically and is right most of the time. But it cannot
+always be right: several Links may exist and it picked a stem rather than the mix; a channel's
+role may be mis-declared; the user may simply know better. Give them the wheel.
+
+## 7.1 The control
+
+A **source dropdown in the KEY panel**, in both the wide and compact forms (compact: a short
+label that opens the same menu — it is one control, not a second feature).
+
+```
+SOURCE   [ Auto — "Music Bus" (bus) ▾ ]
+```
+
+Menu contents, built from the SAME collector that feeds precedence — never a second enumeration
+that could disagree:
+
+- **Auto** (default, first) — shows which source it currently resolves to, so Auto is never
+  opaque: `Auto — "Music Bus" (bus)`.
+- Then every available source, each named with what it is and how fresh: capture / this channel /
+  each Link by display name, with placement (bus | channel) and age.
+- Sources that exist but are unusable still appear, **greyed with the reason** ("vocal role —
+  not the music"), rather than being hidden. A user hunting for a channel that is not in the list
+  has no way to know why.
+
+## 7.2 Behaviour
+
+- **Auto is the default** and keeps today's precedence exactly. Nothing changes for anyone who
+  never opens the menu.
+- **Pinning overrides precedence**, including the 5.3 poisoning rule — an explicit choice beats
+  an inferred one, because the most likely reason to pin a "vocal" channel is that the role is
+  mis-declared and the user knows it. Keep the confidence labelling and the source attribution
+  exactly as strict; do not suppress warnings just because it was chosen.
+- **A pinned source that disappears is stated, not silently replaced.** If the pinned Link is
+  removed or goes stale, the panel says so ("pinned source \"Gtr Bus\" is gone — showing Auto")
+  rather than quietly swapping underneath the user. Silent fallback is how someone ends up
+  trusting a reading from somewhere they did not choose.
+- **Persist the pin in state**, per plugin instance, so it survives a session reload.
+
+## 7.3 The feed
+
+`[DETECTED KEY]` must say when the source was **user-selected** rather than auto-resolved, e.g.
+`source: "Gtr Bus" (channel - one stem, USER-SELECTED)`. Two reasons: the model should weight a
+deliberate choice differently from an inference, and if a user pins something odd, the reason the
+AI behaved oddly is then visible in the feed rather than mysterious.
+
+## 7.4 Acceptance
+
+- Default Auto behaves exactly as before; the menu shows what Auto resolved to.
+- With two Links, pinning the non-default one changes both the panel and the feed.
+- An unusable source is listed greyed with its reason, and can still be pinned deliberately.
+- Removing a pinned source produces an explicit message, never a silent swap.
+- The pin survives closing and reopening the session.
