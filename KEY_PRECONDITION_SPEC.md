@@ -248,3 +248,59 @@ becomes, in the overwhelmingly common case: the key is already known from the bu
 chain is built in key, and the reply mentions the key as a fact rather than a step. The Tier 2
 ask survives only for the genuine cold case — no Link anywhere, no capture — which is exactly
 when asking is warranted, because there is genuinely nothing else EchoJay could have done.
+
+
+---
+
+# 6. TWO FIXES FROM LIVE TESTING
+
+## 6.1 The main plugin must self-detect when IT is on a music bus
+
+**Bug found live:** EchoJay was loaded on the mix bus, with its channel-role selector reading
+"Mix Bus" — and it still reported no key until a Link was added to another channel. It should
+have detected its own channel.
+
+The precedence rule in 5.3 ("never prefer a reading taken from the channel EchoJay is on") was
+written for the EchoJay-on-a-vocal case and over-generalised. When EchoJay IS on the mix bus,
+that channel is precisely the right source.
+
+**The plugin already knows its own role** — the channel-role selector in the header (Mix Bus /
+Master / channel types). Key off it:
+
+- Role is **Mix Bus / Master / a music bus** → the main plugin detects its OWN channel passively,
+  on the same scheduler and gating as a Link (5.1), and that reading ranks as a **bus reading**
+  in the precedence order. No Link required, nothing for the user to add.
+- Role is a **vocal / instrument / unknown channel** → do not self-detect as a primary source
+  (the 5.3 poisoning rule still applies); fall back to Link or capture sources.
+
+Restate 5.3's rule accordingly: the disqualifier is not "the channel EchoJay is on", it is
+"a channel that is not the music" — determined by declared role, not by proximity.
+
+Acceptance: EchoJay alone on the mix bus, no Link anywhere, music playing → Meters shows the key
+within one duty cycle, sourced as "this channel (bus)".
+
+## 6.2 Compact the KEY panel when the AI panel is open
+
+**Problem found live:** with the AI panel hidden, KEY sits well as a fourth column in the middle
+row. With the AI panel open the layout is narrower, KEY degrades to a FULL-WIDTH strip roughly
+150 px tall whose content occupies the left third — a large band of empty space that pushes the
+spectrum/spectrogram down and makes it too small.
+
+**Fix: make the narrow form genuinely compact — one line, ~56 px.** Everything fits:
+
+```
+KEY   C minor   conf 0.09   from "music bus" (channel - one stem)   age 3s   441.0 Hz (+4.1c)   [RE-ANALYSE]
+```
+
+That returns ~90 px to the spectrum. Rules:
+- Lay the values out horizontally on a single line; do not stack them.
+- The note wheel is the only thing that does not fit. Drop it in the compact form, or reduce it
+  to a small inline glyph at the right — it is a nice-to-have here and the full wheel lives in
+  the device editor regardless.
+- Everything else is preserved, including the prominent source attribution (1.2) and the
+  low-confidence label — those are correctness, not decoration, and must survive the compaction.
+- The empty and low-confidence states also collapse to one line.
+
+**Rejected alternative** (recorded so it is not re-proposed): wrapping the middle row into a 2x2
+grid keeps the wheel and gives every panel comfortable width, but doubles the middle section's
+height — the opposite of the goal. Only revisit if the wheel is judged essential at all widths.
