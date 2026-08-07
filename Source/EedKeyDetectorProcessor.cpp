@@ -80,11 +80,14 @@ bool EedKeyDetectorProcessor::setParamValue (const juce::String& id, double valu
     {
         if (value >= 0.5) engine_.startAnalysis();
         else              engine_.cancelAnalysis();
+        worker_.notify();   // preempt the 250 ms tick: a manual trigger that
+                            // waits for a timer reads as a broken device
         return true;
     }
     if (id == kReset)
     {
         if (value >= 0.5) engine_.clearAccumulation();
+        worker_.notify();
         return true;
     }
     if (id == kWindowS)     { engine_.setWindowSeconds ((float) value); return true; }

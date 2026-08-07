@@ -90,6 +90,28 @@ struct KeyReading
 };
 
 // ---------------------------------------------------------------------------
+// What the engine is DOING right now — the UI's honesty contract. A user must
+// always be able to tell "working on it" from "broken": an armed pass with no
+// audio arriving says so, a running pass shows its progress, and a pass that
+// completed over nothing tonal is reported rather than silently ignored.
+// ---------------------------------------------------------------------------
+struct KeyActivity
+{
+    bool  collecting       = false;  // a committed pass is armed/gathering
+    bool  waitingForSignal = false;  // armed, but no (or silent) audio is
+                                     // arriving — stopped transport or a
+                                     // silent channel; the window only starts
+                                     // counting once signal appears
+    float progress         = 0.0f;   // 0..1 of the committed window
+    float gatheredSeconds  = 0.0f;
+    float windowSeconds    = 0.0f;
+    bool  lastPassEmpty    = false;  // the most recent completed pass found
+                                     // nothing tonal (silence / noise floor);
+                                     // the previous reading was KEPT
+    uint32_t passesCompleted = 0;
+};
+
+// ---------------------------------------------------------------------------
 class KeyEngine
 {
 public:
@@ -137,15 +159,29 @@ public:
     void  setHighHz (float hz)            { highHz_.store (clampf (hz, kMinHighHz, kMaxHighHz)); }
     float getHighHz() const               { return highHz_.load(); }
 
-    // Arm a committed pass: the NEXT windowSeconds of playback are gathered,
-    // analysed once, and the result holds until re-armed (or reset).
+    // Arm a committed pass: the NEXT windowSeconds of PLAYBACK are gathered
+    // (silence before the signal starts does not count), analysed once, and
+    // the result holds until re-armed (or reset).
+    //
+    // TRIGGER SEMANTICS. These are safe from any thread: they set request
+    // flags plus the immediately-visible state (collecting_, the cleared
+    // reading) and the consumer-side counter surgery happens at the TOP of
+    // the next update() — the only thread allowed to touch that state. A
+    // host that wants the trigger to take effect NOW (it should — a manual
+    // trigger that waits for a timer reads as a broken device) kicks its
+    // worker thread (EedKeyWorker::notify()) right after calling these.
     void  startAnalysis();
     void  cancelAnalysis();
     bool  isCollecting() const            { return collecting_.load(); }
     float collectionProgress() const;     // 0..1 while collecting
 
-    // Clear gathered audio and the held reading (the `reset` param).
+    // Clear gathered audio and the held reading (the `reset` param). The
+    // reading clears IMMEDIATELY (a stale key displayed as current is worse
+    // than none); the accumulation clears on the next update().
     void  clearAccumulation();
+
+    // What is happening right now, for the UI. Cheap; any thread.
+    KeyActivity getActivity() const;
 
     // Drain the tap and advance the state machine; runs the actual analysis
     // when a committed pass completes (or on the continuous cadence). Call
@@ -208,6 +244,7 @@ private:
 
     void drainRing();
     int  copyRecent (std::vector<float>& dest, int n) const;   // newest n, chronological
+    int  copyEnding (std::vector<float>& dest, uint64_t endAbs, int n) const;
 
     // ---- the analysis passes ----------------------------------------------
     struct PassResult
@@ -222,9 +259,10 @@ private:
         std::array<float, 24> score {};
     };
 
-    // The full pipeline over the newest n samples. hpssOn is a parameter (not
-    // read from the atomic) so tests can A/B the separation on one input.
-    PassResult analyseWindow (int n, bool hpssOn);
+    // The full pipeline over n samples ending at endAbs. hpssOn is a
+    // parameter (not read from the atomic) so tests can A/B the separation
+    // on one input.
+    PassResult analyseWindow (int n, bool hpssOn, uint64_t endAbs);
 
     // Stages, split for testability and reuse.
     void hpssSeparate (std::vector<float>& x) const;            // in place
@@ -251,9 +289,31 @@ private:
     std::atomic<float> highHz_      { kDefHighHz };
 
     std::atomic<bool>  collecting_  { false };
+
+    // Trigger requests (any thread -> consumed at the top of update()).
+    std::atomic<bool>  armRequest_   { false };
+    std::atomic<bool>  clearRequest_ { false };
+    // The tap position captured AT the arm request, so the window starts at
+    // the sample ANALYSE was pressed on — not wherever the worker's next
+    // drain happened to leave the counters.
+    std::atomic<uint64_t> armRingPos_ { 0 };
+
+    // Activity flags published by update() for getActivity().
+    std::atomic<bool>     waitingForSignal_ { false };
+    std::atomic<bool>     lastPassEmpty_    { false };
+    std::atomic<uint32_t> passesCompleted_  { 0 };
+
+    // CONSUMER-THREAD-ONLY counters. These four move together: every one is
+    // relative to histCount_, so zeroing histCount_ without the rest leaves a
+    // stale high-water mark the counter has to regrow past — which is exactly
+    // the "dead for a minute after RESET" bug. resetCounters() is the only
+    // way any of them is cleared.
     uint64_t armedAt_ = 0;                      // histCount_ when armed
     uint64_t lastContinuousAt_ = 0;
     uint64_t lastLiveAt_ = 0;                   // last live-chroma refresh
+    bool     signalSeen_ = false;               // this pass has heard signal
+
+    void resetCounters();
 
     double fs_  = 48000.0;
     double fsA_ = 16000.0;
