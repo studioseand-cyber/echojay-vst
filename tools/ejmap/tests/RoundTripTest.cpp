@@ -2631,28 +2631,23 @@ void testUnfinishedAttemptRule()
            "attempts: an outcome of ANY kind clears it, including load_failed -- the "
            "process survived to say so, which is the whole distinction");
 
-    // 3. AN ID IS NOT A PROPERTY NAME. juce::Identifier permits only
-    // [A-Za-z0-9_-:#@$%], and a VST3 plugin_id is a BUNDLE PATH with spaces.
-    // Keying the tally by Identifier meant getProperty returned void for every
-    // VST3, the count read 0, and "attempt 1 of 3" printed forever. UAD
-    // Lexicon 480L hung twice three hours apart and reported 1 of 3 both
-    // times -- silently, because 1-of-3 reads like progress.
-    //
-    // The quarantine file already documents this exact trap and solved it the
-    // same way: an ARRAY of objects, not keys.
-    auto tallyable = [] (const juce::String& id)
-    {
-        // what the array form stores and finds again, verbatim
-        return id;
-    };
-    const juce::String vst3 = "/Library/Audio/Plug-Ins/VST3/Universal Audio/"
-                              "Reverb and Room/UAD Lexicon 480L.vst3";
-    check (tallyable (vst3) == vst3,
-           "attempts: a VST3 BUNDLE PATH -- spaces and all -- is stored and found "
-           "verbatim, so the count actually increments");
-    check (! juce::Identifier::isValidIdentifier (vst3),
-           "attempts: ...and juce::Identifier would REFUSE that string, which is why "
-           "keying by it silently never counted");
+    // 3. THE TALLY IS KEYED BY BINARY, NOT BY DISPLAY NAME -- which is what
+    // the "Lexicon 480L reported 1 of 3 twice" observation actually meant.
+    // Both events were real and both counts were right: the AU
+    // (AudioUnit:Effects/aufx,paau,!UAD) died at 12:21 and the VST3 BUNDLE
+    // died at 15:14. Two binaries, one display name, one count each.
+    const juce::String lexAU   = "AudioUnit:Effects/aufx,paau,!UAD";
+    const juce::String lexVST3 = "/Library/Audio/Plug-Ins/VST3/Universal Audio/"
+                                 "Reverb and Room/UAD Lexicon 480L.vst3";
+    check (lexAU != lexVST3,
+           "attempts: two binaries sharing the display name 'UAD Lexicon 480L' are "
+           "DIFFERENT subjects -- one count each is correct, not a stuck counter");
+
+    // And the array form is kept because an invalid Identifier ASSERTS IN
+    // DEBUG, not because the release behaviour was broken: it round-trips.
+    check (! juce::Identifier::isValidIdentifier (lexVST3),
+           "attempts: a bundle path is not a valid Identifier -- a debug assertion "
+           "waiting to fire, which is reason enough for the array form");
 }
 
 void testMapperIdentity()

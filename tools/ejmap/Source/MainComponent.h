@@ -8491,23 +8491,27 @@ private:
         if (pid.isEmpty())
             return;
 
-        // AN ARRAY, NOT PROPERTY KEYS. juce::Identifier permits only
-        // [A-Za-z0-9_-:#@$%] and a VST3 plugin_id is a BUNDLE PATH -- spaces
-        // and all. The first version replaced "/,:." and left the spaces, so
-        // for every VST3 the key was invalid, getProperty returned void, the
-        // count read 0 and the tally never incremented.
+        // AN ARRAY, NOT PROPERTY KEYS -- and the reason is NOT the one first
+        // given here. The original note claimed the Identifier form was
+        // broken, citing "UAD Lexicon 480L reported 1 of 3 twice". MEASURED
+        // afterwards, both halves of that were wrong:
         //
-        // Measured on the campaign that followed: UAD Lexicon 480L
-        // (/Library/Audio/Plug-Ins/VST3/Universal Audio/Reverb and Room/...)
-        // hung the sweep twice, three hours apart, and BOTH times reported
-        // "unfinished attempt 1 of 3". It would never have reached three, so
-        // the guard that exists to take a reliably-fatal plugin off the
-        // worklist would have looped on it forever -- silently, since 1-of-3
-        // reads like progress.
+        //   1. juce::Identifier::isValidIdentifier says INVALID for spaces,
+        //      commas, slashes and dots -- but setProperty/getProperty WORK
+        //      anyway and the JSON round-trips: {"Input Att ": 1} reads back
+        //      as 1. The corpus is full of spaced control names doing exactly
+        //      that. The counter was never broken.
+        //   2. The two "Lexicon 480L" deaths were TWO DIFFERENT BINARIES --
+        //      AudioUnit:Effects/aufx,paau,!UAD at 12:21 and the VST3 bundle
+        //      at 15:14. Each was counted once, CORRECTLY. Two plugins sharing
+        //      a display name, which is the same name-versus-binary trap the
+        //      retry rule already keys on plugin_id to avoid.
         //
-        // Same defect class the quarantine file already documents: an id is
-        // not a property name, and the fix there was an array of objects. Same
-        // fix here, for the same reason.
+        // The array form is kept on its own merits: quarantine.json's comment
+        // records that an invalid Identifier ASSERTS IN DEBUG, and a tally
+        // that only works in release is a debug session waiting to happen.
+        // But it fixed no live defect, and saying it did would leave a false
+        // cause in the record.
         auto tally = juce::JSON::parse (attemptTallyFile().loadFileAsString());
         juce::Array<juce::var> out;
         int n = 1;

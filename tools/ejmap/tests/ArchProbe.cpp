@@ -59,6 +59,33 @@ int main (int argc, char** argv)
     // under juce::JSON -- deterministically, on freshly written bytes -- and
     // nothing in the toolbox could say WHERE. This prints juce's own error,
     // which carries the position.
+    // WHICH CHARACTERS juce::Identifier ACTUALLY REJECTS. The commit that
+    // fixed the tally said "spaces and all"; a plugin id also carries '/' and
+    // ',', and the corpus is full of control names with spaces that DO round
+    // trip. Measure rather than assert.
+    if (argc >= 2 && juce::String (argv[1]) == "--identifier-check")
+    {
+        const char* cases[] = { "Input Att ", "Comp Attack", "Dyn:SC HF Gain", "plain",
+            "/Library/Audio/Plug-Ins/VST3/Universal Audio/Reverb and Room/UAD Lexicon 480L.vst3",
+            "AudioUnit:Effects/aufx,SILM,ksWV", "with space", "with,comma",
+            "with/slash", "with.dot", "Eq:HF Bell On/Off" };
+        for (auto* c : cases)
+            std::cout << (juce::Identifier::isValidIdentifier (c) ? "  valid   " : "  INVALID ")
+                      << "\"" << c << "\"" << std::endl;
+
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("Input Att ", 1);
+        o->setProperty ("Eq:HF Bell On/Off", 2);
+        const auto json = juce::JSON::toString (juce::var (o), true);
+        juce::var back;
+        const auto r = juce::JSON::parse (json, back);
+        std::cout << "\njson: " << json
+                  << "\nround trip: " << (r.wasOk() ? "OK" : "FAILED")
+                  << "   readback of \"Input Att \" = "
+                  << back.getProperty ("Input Att ", "MISSING").toString() << std::endl;
+        return 0;
+    }
+
     if (argc >= 3 && juce::String (argv[1]) == "--parse-json")
     {
         const juce::String path { juce::CharPointer_UTF8 (argv[2]) };
