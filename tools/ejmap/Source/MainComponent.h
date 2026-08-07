@@ -8491,12 +8491,39 @@ private:
         if (pid.isEmpty())
             return;
 
+        // AN ARRAY, NOT PROPERTY KEYS. juce::Identifier permits only
+        // [A-Za-z0-9_-:#@$%] and a VST3 plugin_id is a BUNDLE PATH -- spaces
+        // and all. The first version replaced "/,:." and left the spaces, so
+        // for every VST3 the key was invalid, getProperty returned void, the
+        // count read 0 and the tally never incremented.
+        //
+        // Measured on the campaign that followed: UAD Lexicon 480L
+        // (/Library/Audio/Plug-Ins/VST3/Universal Audio/Reverb and Room/...)
+        // hung the sweep twice, three hours apart, and BOTH times reported
+        // "unfinished attempt 1 of 3". It would never have reached three, so
+        // the guard that exists to take a reliably-fatal plugin off the
+        // worklist would have looped on it forever -- silently, since 1-of-3
+        // reads like progress.
+        //
+        // Same defect class the quarantine file already documents: an id is
+        // not a property name, and the fix there was an array of objects. Same
+        // fix here, for the same reason.
         auto tally = juce::JSON::parse (attemptTallyFile().loadFileAsString());
-        auto* o = tally.getDynamicObject();
-        if (o == nullptr) { o = new juce::DynamicObject(); tally = juce::var (o); }
-        const int n = (int) o->getProperty (juce::Identifier (pid.replaceCharacters ("/,:.", "____"))) + 1;
-        o->setProperty (juce::Identifier (pid.replaceCharacters ("/,:.", "____")), n);
-        attemptTallyFile().replaceWithText (juce::JSON::toString (tally, true));
+        juce::Array<juce::var> out;
+        int n = 1;
+        if (auto* arr = tally.getArray())
+            for (const auto& e : *arr)
+            {
+                if (e.getProperty ("plugin_id", "").toString() == pid)
+                { n = (int) e.getProperty ("count", 0) + 1; continue; }
+                out.add (e);
+            }
+        auto* row = new juce::DynamicObject();
+        row->setProperty ("plugin_id", pid);
+        row->setProperty ("name", name);
+        row->setProperty ("count", n);
+        out.add (juce::var (row));
+        attemptTallyFile().replaceWithText (juce::JSON::toString (juce::var (out), true));
 
         // A row so the ledger says what happened even when no stake did.
         LedgerRecord r;

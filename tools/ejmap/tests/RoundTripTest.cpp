@@ -2630,6 +2630,29 @@ void testUnfinishedAttemptRule()
     check (! survives (true, true),
            "attempts: an outcome of ANY kind clears it, including load_failed -- the "
            "process survived to say so, which is the whole distinction");
+
+    // 3. AN ID IS NOT A PROPERTY NAME. juce::Identifier permits only
+    // [A-Za-z0-9_-:#@$%], and a VST3 plugin_id is a BUNDLE PATH with spaces.
+    // Keying the tally by Identifier meant getProperty returned void for every
+    // VST3, the count read 0, and "attempt 1 of 3" printed forever. UAD
+    // Lexicon 480L hung twice three hours apart and reported 1 of 3 both
+    // times -- silently, because 1-of-3 reads like progress.
+    //
+    // The quarantine file already documents this exact trap and solved it the
+    // same way: an ARRAY of objects, not keys.
+    auto tallyable = [] (const juce::String& id)
+    {
+        // what the array form stores and finds again, verbatim
+        return id;
+    };
+    const juce::String vst3 = "/Library/Audio/Plug-Ins/VST3/Universal Audio/"
+                              "Reverb and Room/UAD Lexicon 480L.vst3";
+    check (tallyable (vst3) == vst3,
+           "attempts: a VST3 BUNDLE PATH -- spaces and all -- is stored and found "
+           "verbatim, so the count actually increments");
+    check (! juce::Identifier::isValidIdentifier (vst3),
+           "attempts: ...and juce::Identifier would REFUSE that string, which is why "
+           "keying by it silently never counted");
 }
 
 void testMapperIdentity()
