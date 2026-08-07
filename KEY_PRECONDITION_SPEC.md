@@ -47,6 +47,40 @@ KEY        not detected
 value visible and labelled `low confidence — treat as unknown`. Never hide it, never present
 it as fact. A user can see 0.31 and decide for themselves; the AI is told to discount it.
 
+### 1.1 WHERE it goes — a fourth panel in the middle row
+
+Meters is laid out as: a full-width LOUDNESS strip; a middle row of LEVELS | STEREO IMAGE |
+TONAL BALANCE; then a full-width SPECTRUM/SPECTROGRAM.
+
+**KEY becomes a fourth panel in that middle row.** Its content is shaped exactly like STEREO
+IMAGE — a square visualisation (the note wheel, where the goniometer sits) plus a short stack of
+numbers beside it — so it reads as part of the family rather than bolted on. Four columns at
+typical window width is ~360 px each, which the goniometer panel already demonstrates works.
+
+Fallback if four columns prove too tight at small sizes: a compact KEY block in the top LOUDNESS
+strip (key, confidence, tuning as three more stats). This loses the wheel, so prefer the middle
+row and only degrade to the strip when width genuinely forces it.
+
+### 1.2 THE SOURCE MUST BE UNMISSABLE — this panel is not about this channel
+
+Every other panel in Meters measures the audio on the channel EchoJay is loaded on. **The KEY
+panel usually will not.** In the common case it shows a reading taken from a Link on the MIX BUS
+while the user is sitting on a vocal channel.
+
+If that is not immediately obvious, the panel is actively misleading: a user sees "F# minor" on
+their vocal's meters and reasonably concludes it was measured from the vocal — which is the one
+source the spec says never to trust for key (5.3).
+
+So the source is NOT small print. Requirements:
+- The source line sits directly under the key, at readable weight — e.g. **"from Music Bus
+  (bus)"** — not tucked in a corner.
+- It is visually distinguished from the other panels' implicit "this channel" framing, so the
+  difference is legible at a glance rather than on inspection.
+- When the reading DID come from this channel's own chain (a Key Detector in this rack), say that
+  too — "from this chain" — so the two cases are never ambiguous.
+- When the only available reading came from a channel rather than a bus, name the stem and treat
+  it as weaker (5.3).
+
 **Why Meters and not just the device:** the key is a property of the session, not of one slot.
 Meters is where a user looks to find out what is true about the audio, and it is where they
 will look when the AI says it needs the key.
