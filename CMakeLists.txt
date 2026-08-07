@@ -7,7 +7,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 # 2.25.0: the built-in device suite (feat/surgical-eq) merges into the dashboard
 # mainline. Minor bump, not a patch — 20 self-registering devices, the viz
 # library and the ParamSchema dialability contract all arrive at once.
-project(EchoJay VERSION 2.25.18)
+project(EchoJay VERSION 2.25.19)
 
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/
