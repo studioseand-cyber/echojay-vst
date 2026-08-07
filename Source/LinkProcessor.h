@@ -327,6 +327,48 @@ private:
     // is destroyed FIRST.
     echojay::KeyEngine keyEngine_;
     EedKeyWorker       keyWorker_ { keyEngine_ };
+
+    // ---- Passive-detection scheduler (KEY_PRECONDITION_SPEC.md §5.1) -----
+    // The engine used to run in continuous mode (a fresh pass every ~2 s of
+    // audio, forever). Passive detection replaces that with a DUTY CYCLE:
+    // one committed 8 s pass roughly every 30 s, armed only while the
+    // transport is rolling AND the channel is above a signal floor, skipped
+    // entirely on silence. The key of a track does not change four times a
+    // second; this keeps the added CPU invisible next to the metering the
+    // Link already pays for. Re-detection outside the cycle happens on real
+    // invalidation events only (§5.4): a transport jump to a different
+    // section, a long stop-gap, or a remote RE-ANALYSE command.
+    static constexpr float    kKeyPassWindowS     = 8.0f;
+    static constexpr uint32_t kKeyPassIntervalMs  = 30000;
+    // Momentary-LUFS floor for "signal present". Well below programme level
+    // but above bleed/noise: a pass armed on -60 LUFS room tone would spend
+    // its window measuring the noise floor's key.
+    static constexpr float    kKeySignalFloorLufs = -55.0f;
+    // A transport position landing this far from where the last block left
+    // off is a section jump (a loop wrap of a few bars stays under it).
+    static constexpr double   kKeyJumpSeconds     = 30.0;
+    // A stop this long, then play again, counts as "came back later" —
+    // possibly a different section — so the next pass is due immediately.
+    static constexpr uint32_t kKeyLongGapMs       = 120000;
+
+    // Audio thread -> scheduler: transport state read from the playhead.
+    std::atomic<bool>   transportPlaying_ { false };
+    std::atomic<double> transportTimeS_   { 0.0 };
+    std::atomic<bool>   keySectionJump_   { false };
+    // Scheduler state (message thread only).
+    uint32_t lastKeyPassArmMs_ = 0;
+    uint32_t lastPlayingMs_    = 0;
+    bool     keyWasPlaying_    = false;
+    int      keyStallTicks_    = 0;
+    void schedulePassiveKeyPass();
+
+    // Remote RE-ANALYSE: key-cmd-<instanceId>.json {v:1, seq}, acked as
+    // key-ack-<instanceId>.json {v:1, seq, status}. Arms a committed pass on
+    // THIS engine (the passive reading) — the Meters tab's RE-ANALYSE button
+    // for a Link-sourced key. Additive protocol: old Links never poll it,
+    // old senders never write it.
+    int  lastAppliedKeySeq_ = 0;
+    void pollKeyCommand();
     // Audio liveness: processBlock bumps this; the publisher marks frames
     // audioStale when it stops advancing for ~1s (Logic idles silent
     // channels — the engine freezes but heartbeats/timers keep running)

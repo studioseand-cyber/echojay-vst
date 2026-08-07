@@ -2,6 +2,7 @@
 #include "LinkEditor.h"
 #include "LinkShm.h"
 #include "NativeClip.h"   // EchoJay_NSLog — chain-build diagnostics
+#include "EedKeyDetectorProcessor.h"   // hosted-detector frame preference (Tier 1)
 
 // Item-1 (Active persistence) diagnosis logging — on by default until the
 // flip point is confirmed in the field; EJLinkState: lines in the monitor.
@@ -31,11 +32,15 @@ LinkProcessor::LinkProcessor()
                       // 10Hz was ~1.3 dB per sample); polls every 3rd tick
                       // (~100ms, the old cadence), heartbeat every 30th (1s)
 
-    // Key detection (KEY_DETECTOR_SPEC.md §9): continuous — a Link has no
-    // ANALYSE button; its job is to always know its channel's key so the
-    // main plugin can read it. The worker idles at a 250 ms wakeup when no
-    // audio is flowing.
-    keyEngine_.setContinuous(true);
+    // Key detection (KEY_DETECTOR_SPEC.md §9, KEY_PRECONDITION_SPEC.md §5.1):
+    // PASSIVE, duty-cycled — a committed 8 s pass roughly every 30 s, armed
+    // by schedulePassiveKeyPass() only while the transport rolls and signal
+    // is present. Not continuous mode: the key does not change four times a
+    // second, and this Link has no wheel to animate (live chroma off). The
+    // worker idles at a 250 ms wakeup between passes.
+    keyEngine_.setContinuous(false);
+    keyEngine_.setWindowSeconds(kKeyPassWindowS);
+    keyEngine_.setLiveChromaEnabled(false);
     keyWorker_.startThread();
 
     // Mirror hosted chain latency into the host on EVERY chain change —
@@ -119,9 +124,14 @@ void LinkProcessor::timerCallback()
     {
         pollChainCommand();
         pollControlCommand();
+        pollKeyCommand();
         pollSessionProjectName();
         publishRackSidecar();   // Phase R: revision-gated, usually a no-op
     }
+    // Passive key detection duty cycle — once per second is plenty for a
+    // scheduler whose shortest interval is 30 s.
+    if (heartbeatDivider_ % 30 == 0)
+        schedulePassiveKeyPass();
     publishMeterFrame();
 }
 
@@ -302,19 +312,35 @@ void LinkProcessor::publishMeterFrame()
         for (size_t i = 0; i < 6; ++i)
             f.bandRel[i] = md.macroBandDb[i] > -119.0f ? md.macroBandDb[i] - mean : 0.0f;
     }
-    // Detected key (KEY_DETECTOR_SPEC.md §9): the worker's continuous reading,
+    // Detected key (KEY_DETECTOR_SPEC.md §9): the passive duty-cycled reading,
     // published in the appended key group. Gated by kFrameHasKey so an old
     // reader ignores it and a new reader never mistakes an old writer's
     // zeroed pad for C major.
+    //
+    // When this Link's chain HOSTS an EchoJay Key Detector (the Tier 1 path:
+    // the main plugin added it and triggered ANALYSE), the device's reading
+    // is preferred — it is the explicit, committed mechanism, and preferring
+    // it is what carries a Tier 1 result back to the main plugin without any
+    // second transport. The passive reading remains the fallback.
     {
-        const auto kr = keyEngine_.getReading();
+        auto kr = keyEngine_.getReading();
+        juce::uint32 stamp = keyWorker_.lastChangeMs();
+        for (int i = 0; i < chainHost.getNumSlots(); ++i)
+            if (auto* kd = dynamic_cast<EedKeyDetectorProcessor*>(chainHost.getSlotProcessor(i)))
+            {
+                if (const auto dr = kd->engine().getReading(); dr.valid)
+                {
+                    kr    = dr;
+                    stamp = kd->readingChangeMs();
+                }
+                break;   // one detector speaks for the chain
+            }
         if (kr.valid)
         {
             f.keyRoot       = (int16_t) kr.root;
             f.keyIsMinor    = kr.minor ? 1 : 0;
             f.keyConfidence = kr.confidence;
             f.keyTuningHz   = kr.tuningHz;
-            const juce::uint32 stamp = keyWorker_.lastChangeMs();
             f.keyAgeMs = stamp != 0 ? juce::Time::getMillisecondCounter() - stamp : 0;
         }
         f.fieldsMask |= kFrameHasKey;
@@ -461,6 +487,111 @@ void LinkProcessor::pollControlCommand()
     ack->setProperty("gainDb",    (double)gainDb_.load(std::memory_order_relaxed));
     ack->setProperty("placement", placement_.load(std::memory_order_relaxed));
     juce::File(resolvedDir + "ctrl-ack-" + id + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(ack), true));
+}
+
+// ---------------------------------------------------------------------------
+// Passive key detection (KEY_PRECONDITION_SPEC.md §5.1) — the duty cycle.
+// Message thread, ~1 Hz. Arms a committed pass when one is due and the gates
+// pass; the actual analysis runs on the key worker thread.
+// ---------------------------------------------------------------------------
+void LinkProcessor::schedulePassiveKeyPass()
+{
+    const uint32_t now     = juce::Time::getMillisecondCounter();
+    const bool     playing = transportPlaying_.load(std::memory_order_relaxed);
+
+    // Invalidation events (§5.4) make the next pass due immediately —
+    // computed every tick so a jump during a pass is not lost.
+    bool invalidated = false;
+    if (keySectionJump_.exchange(false, std::memory_order_relaxed))
+        invalidated = true;
+    if (playing && ! keyWasPlaying_
+        && lastPlayingMs_ != 0 && now - lastPlayingMs_ > kKeyLongGapMs)
+        invalidated = true;                        // came back after a long stop
+    if (playing) lastPlayingMs_ = now;
+    keyWasPlaying_ = playing;
+    if (invalidated) lastKeyPassArmMs_ = 0;        // due now (still gated below)
+
+    if (keyEngine_.isCollecting())
+    {
+        // A pass whose transport stopped under it would eventually fill its
+        // window with a silent tail (or a different section) — cancel after
+        // a few seconds stopped and let the cycle re-arm on the next play.
+        // The engine keeps the previous reading; nothing is lost.
+        if (! playing)
+        {
+            if (++keyStallTicks_ >= 5)
+            {
+                keyStallTicks_ = 0;
+                keyEngine_.cancelAnalysis();
+                EchoJay_NSLog("EJLinkKey: pass cancelled (transport stopped)");
+            }
+        }
+        else keyStallTicks_ = 0;
+        return;
+    }
+    keyStallTicks_ = 0;
+
+    // The gates: Active (the tap is only fed while Active), rolling, signal.
+    if (! linkOn.load(std::memory_order_acquire)) return;
+    if (! playing) return;
+    if (meterEngine_.getMeterData().momentary < kKeySignalFloorLufs) return;
+
+    const bool due = lastKeyPassArmMs_ == 0
+                  || now - lastKeyPassArmMs_ >= kKeyPassIntervalMs;
+    if (! due) return;
+
+    lastKeyPassArmMs_ = now;
+    keyEngine_.startAnalysis();
+    keyWorker_.notify();
+    EchoJay_NSLog(("EJLinkKey: passive pass armed (" + juce::String(kKeyPassWindowS, 0)
+                   + " s window)").toRawUTF8());
+}
+
+// ---------------------------------------------------------------------------
+// Remote RE-ANALYSE — key-cmd-<instanceId>.json {v:1, seq}. The Meters tab's
+// RE-ANALYSE button, when its key source is this Link's passive reading.
+// Same transport conventions as ctrl-cmd: seq-gated, deleted on consume,
+// acked. The pass is armed unconditionally (the engine's own waiting-for-
+// signal state stays honest if nothing is playing yet).
+// ---------------------------------------------------------------------------
+void LinkProcessor::pollKeyCommand()
+{
+    auto id = chainInstanceId();
+    if (id.isEmpty()) return;
+    if (resolvedDir.isEmpty())
+    {
+        int err = 0;
+        resolvedDir = LinkShm::resolveDir(err);
+        if (resolvedDir.isEmpty()) return;
+    }
+
+    juce::File cmdFile(resolvedDir + "key-cmd-" + id + ".json");
+    if (!cmdFile.existsAsFile()) return;
+
+    auto v = juce::JSON::parse(cmdFile.loadFileAsString());
+    auto* obj = v.getDynamicObject();
+    if (obj == nullptr) { cmdFile.deleteFile(); return; }
+
+    int ver = (int)obj->getProperty("v");
+    int seq = (int)obj->getProperty("seq");
+    if (ver != 1 || seq == lastAppliedKeySeq_ || seq == 0)
+        return;
+
+    lastAppliedKeySeq_ = seq;
+    cmdFile.deleteFile();   // consumed
+
+    lastKeyPassArmMs_ = juce::Time::getMillisecondCounter();
+    keyEngine_.startAnalysis();
+    keyWorker_.notify();
+    EchoJay_NSLog(("EJLinkKey: remote RE-ANALYSE (seq " + juce::String(seq)
+                   + ")").toRawUTF8());
+
+    auto* ack = new juce::DynamicObject();
+    ack->setProperty("v",      1);
+    ack->setProperty("seq",    seq);
+    ack->setProperty("status", "armed");
+    juce::File(resolvedDir + "key-ack-" + id + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(ack), true));
 }
 
@@ -758,6 +889,27 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
 {
     juce::ScopedNoDenormals noDenormals;
     audioBlockCounter_.fetch_add(1, std::memory_order_relaxed);   // audio liveness
+
+    // Transport state for the passive key scheduler (§5.1): the rolling flag
+    // gates arming, and a position landing far from where the last block left
+    // off flags a section jump (§5.4 invalidation). One playhead query per
+    // block, relaxed stores — the scheduler reads at 1 Hz.
+    if (auto* ph = getPlayHead())
+    {
+        if (auto pos = ph->getPosition())
+        {
+            const bool playingNow = pos->getIsPlaying();
+            if (auto t = pos->getTimeInSeconds())
+            {
+                const double prev = transportTimeS_.load(std::memory_order_relaxed);
+                if (playingNow && transportPlaying_.load(std::memory_order_relaxed)
+                    && std::abs(*t - prev) > kKeyJumpSeconds)
+                    keySectionJump_.store(true, std::memory_order_relaxed);
+                transportTimeS_.store(*t, std::memory_order_relaxed);
+            }
+            transportPlaying_.store(playingNow, std::memory_order_relaxed);
+        }
+    }
     // Pass-through: silence extra output channels
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear(ch, 0, buffer.getNumSamples());
