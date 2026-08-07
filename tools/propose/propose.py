@@ -83,7 +83,9 @@ def merge(rows, a_ans, b_ans):
 
     Four gates, each of which can only ever REFUSE:
       1. both arms named the same semantic
-      2. both arms were confident
+      2. (was: both arms were confident -- DROPPED 7 Aug 2026, measured at
+         97.7% hedged against 98.7% confident; the confidence is recorded
+         on the row instead of gating it)
       3. the semantic's unit family does not contradict the measured unit
       4. no other control on this plugin was accepted for the same semantic
 
@@ -134,14 +136,32 @@ def merge(rows, a_ans, b_ans):
                              "confident": a_conf == "high" and b_conf == "high"})
         elif a_sem not in VOCAB:
             escalated.append({**row, "why": f"'{a_sem}' is not in the vocabulary"})
-        elif a_conf != "high" or b_conf != "high":
-            escalated.append({**row, "why": "an arm declined to be confident"})
         else:
+            # A HEDGED AGREEMENT IS STILL AN AGREEMENT. Measured 7 Aug 2026
+            # against the 125 hold-out truth rows:
+            #
+            #     both confident   74/75 = 98.7%
+            #     one arm hedged   42/43 = 97.7%
+            #
+            # Indistinguishable at these sample sizes. The old gate discarded
+            # 43 of 118 agreements -- 36%, ~7,100 controls at corpus scale --
+            # to buy one percentage point that is inside the noise.
+            #
+            # The single hedged error was UAD Precision Limiter "Output":
+            # both arms said ceiling_db, the hand answer was output_db. On a
+            # limiter those are arguably the same knob, and NOTHING mechanical
+            # separates them -- both are _db, so the unit family passes either.
+            # A residual, not something the confidence gate was catching.
+            #
+            # The confidence is RECORDED rather than acted on, so the accept
+            # set stays sortable and this decision stays re-derivable from the
+            # arms without re-running anything.
+            hedged = not (a_conf == "high" and b_conf == "high")
             conflict = unit_family_conflict(a_sem, ev["unit"])
             if conflict:
                 escalated.append({**row, "why": f"unit family: {conflict}"})
             else:
-                accepted.append({**row, "semantic": a_sem})
+                accepted.append({**row, "semantic": a_sem, "hedged": hedged})
 
     # gate 4, once the per-row gates have run
     seen = {}
