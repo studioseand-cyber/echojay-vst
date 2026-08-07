@@ -1012,6 +1012,34 @@ on. One plugin, parked; ADA (fixed) and Cenozoix (item 12) are the general cases
 
 ---
 
+## 13a. AFTER THE CAMPAIGN: bx_rooMS index 45, a text liar that kills the process
+
+Not urgent, and deliberately not chased mid-campaign. Recorded because the
+evidence is unusually clean and will not be this clean later.
+
+The last ledger row before ALL SIX consecutive restarts on 7 Aug was identical:
+
+    bx_rooMS  idx 45: text liar (gettext) flat via gettext; set-then-read
+                      readback-verify fa...
+
+Same plugin, same parameter, every time. The plugin LOADS fine (7 ok rows) and
+sweeps 44 parameters fine; index 45 is the one that takes the process down, and
+it does so while the sweeper is falling back from a flat gettext read to the
+set-then-read path. So the suspicion is that the crash is in the FALLBACK, not
+in the parameter -- which would make it a bug in our sweeper reachable by any
+text liar, not a quirk of one Brainworx plugin.
+
+Worth one focused look with --no-supervise --sweep --sweep-limit 1 once the
+campaign is done: what parameter 45 is, and whether set-then-read on a flat
+control is the actual killer. If it is, the same crash is waiting on every
+text liar in the catalogue.
+
+The plugin is off the worklist meanwhile: three unfinished attempts quarantine
+it without anyone watching, which is the general guard and the part that
+mattered.
+
+---
+
 ## 13b. KNOWN, BOUNDED, UNEXPLAINED: SIGABRT in JUCE's quit path
 
 `docs/KNOWN_UNEXPLAINED_ABORT.md`. NOT closed, NOT fixed, deliberately left.
