@@ -1012,6 +1012,25 @@ on. One plugin, parked; ADA (fixed) and Cenozoix (item 12) are the general cases
 
 ---
 
+## 12b. THE SHIPPING ORDER, agreed 7 Aug 2026
+
+1. full stage-2 run over the 1,108 lands
+2. the NONE CLUSTERS -- the vocabulary answer the 40-map pilot could not support
+3. THE DASHBOARD SESSION, one sitting, in this order: per-mapper auth (everything
+   authenticates against it), categorise (largest win), stage 2 + capture on
+   ingest, the return path, marks + withdraw, settings_structured passthrough
+4. the dial-report endpoint and the halt mechanism -- `docs/HALT_DESIGN.md` --
+   because that is what makes shipping model-proposed semantics safe
+5. the client-side queue UI, once the endpoints are real
+
+THE REVIEW PILE IS NOT DRAINED FIRST, by decision. ~12,850 questions is not a
+session; the field orders them better than we can, since a wrong dial surfaces
+on the controls people actually dial. Everything unreviewed stays
+NAME-ADDRESSABLE, which is why leaving it costs a generic phrasing rather than a
+control.
+
+---
+
 ## 13a. AFTER THE CAMPAIGN: bx_rooMS index 45, a text liar that kills the process
 
 Not urgent, and deliberately not chased mid-campaign. Recorded because the

@@ -348,6 +348,36 @@ offered**, because they are not addressable by name and naming them would invite
 a request that can only be declined.
 
 
+### 2.8b `POST /api/params/dial-report` — how a wrong semantic gets caught
+
+**This is what makes shipping model-proposed semantics safe.** ~12,850
+escalations are left unreviewed by choice; that is affordable only because a
+wrong one gets stopped by the people using it.
+
+```json
+POST /api/params/dial-report
+{"fp":"…","semantic":"attack_ms","index":7,
+ "asked":-1.125,"landed_text":"-1.13 dB",
+ "readback_mismatch":true,"display_verified":false,
+ "kind":"automatic-mismatch|user-wrong-knob"}
+```
+
+Every field already exists in `ApplyResult`. The client already POSTs to
+`/api/chat`, `/api/data` and `/api/login`, so this is one more call on an
+existing transport.
+
+**The detection is already built and already reverts the write.**
+`typedReadbackMatch` (`EchoJayParamApply.h:273`) returns −1 when the landed
+display's unit family contradicts the semantic's. What is missing is only that
+the verdict never leaves the machine: it surfaces as "needs hand-dialing" on
+the card (`ChainHost.cpp:1804`) and stops there.
+
+**What a report does is `docs/HALT_DESIGN.md`**, and it is deliberately not
+symmetric: an automatic mismatch halts that semantic on ONE report because it
+is a measurement the client already acted on; a user report on a verified write
+QUEUES and needs corroboration because it is an account nobody can check.
+Never the map, never a tombstone.
+
 ### 2.9 `POST /api/params/withdraw` — a tombstone, not a delete
 
 **There is no way to remove a bad map today, and "it is up there and I cannot
@@ -402,6 +432,12 @@ keeps both, so "this was wrong once and re-done" is answerable.
 `wrong_identity`, `bad_anchors`, `superseded`, `other` — with `detail` free
 alongside. An enumeration is what makes "how often does this happen" a query
 instead of a reading exercise.
+
+**Withdrawal is not a halt.** A withdrawal is for a map whose CONTROLS WERE
+MEASURED ON ANOTHER PLUGIN -- nothing in it is evidence about its own plugin. A
+wrong SEMANTIC is the opposite: the anchors, ranges and indices are all real
+measurements and only one row's label is wrong, so it is halted per-semantic
+and stays name-addressable. See `docs/HALT_DESIGN.md`.
 
 **Not a correction endpoint.** There is deliberately no way to edit a stored
 map. A map whose controls were measured on another plugin has nothing in it to
