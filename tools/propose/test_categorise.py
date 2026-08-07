@@ -160,5 +160,26 @@ with tempfile.TemporaryDirectory() as tmp:
     check(ps[product_key("Orphan", "Acme")]["declared"] == "",
           "a product with no sibling inherits nothing, and claims nothing")
 
+# --------------------------------------------------------------------------
+# CHECK 2's SIGNATURE INCLUDES THE INDEX, and that is what separates a sibling
+# from a leak. Sibilance (s) and Sibilance-Live (m) share five control names,
+# ranges and anchor counts exactly -- same processor, two builds -- but (s) has
+# a Lookahead at index 0, so its five sit at 1-5 and (m)'s at 0-4. A LEAK copies
+# the donor's indices verbatim; a sibling's are its own.
+from audit_maps import control_signature
+
+def mk(pairs):
+    return {"controls": {n: {"index": i, "range": [0, 1], "unit": None, "anchors": [1, 2]}
+                         for n, i in pairs}}
+
+names = ["Detection", "Threshold", "Range", "Mode", "Monitor"]
+sib_m = mk(list(zip(names, range(0, 5))))
+sib_s = mk(list(zip(names, range(1, 6))))
+check(control_signature(sib_m) != control_signature(sib_s),
+      "audit: SIBLINGS with the same names at DIFFERENT indices are distinguishable")
+check(control_signature(sib_m) == control_signature(mk(list(zip(names, range(0, 5))))),
+      "audit: ...while a true copy -- indices included -- still matches, which is "
+      "what a leak looks like")
+
 print(f"{checks} checks, {fails} failures")
 sys.exit(1 if fails else 0)

@@ -615,9 +615,18 @@ public:
 
         if (quitRequested)
         {
-            std::cout << "quitNow: ALREADY QUITTING -- ignored. A second "
-                         "JUCEApplication::quit() aborts the process inside AppKit."
-                      << std::endl;
+            // THIS LINE HAS NEVER APPEARED, and its absence is evidence: see
+            // docs/KNOWN_UNEXPLAINED_ABORT.md. If it ever does, the abort
+            // recorded there stops being unexplained and becomes a one-line
+            // fix -- so it goes to BOTH streams and the status strip, because
+            // a campaign's stdout is not always the thing anyone reads.
+            const juce::String line ("quitNow: ALREADY QUITTING -- ignored. A second "
+                                     "JUCEApplication::quit() aborts inside AppKit. "
+                                     "THIS IS THE LINE docs/KNOWN_UNEXPLAINED_ABORT.md "
+                                     "is waiting for.");
+            std::cout << line << std::endl;
+            std::cerr << line << std::endl;
+            status.setText (line, juce::dontSendNotification);
             return;
         }
         quitRequested = true;

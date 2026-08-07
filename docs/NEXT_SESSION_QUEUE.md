@@ -1012,6 +1012,26 @@ on. One plugin, parked; ADA (fixed) and Cenozoix (item 12) are the general cases
 
 ---
 
+## 13b. KNOWN, BOUNDED, UNEXPLAINED: SIGABRT in JUCE's quit path
+
+`docs/KNOWN_UNEXPLAINED_ABORT.md`. NOT closed, NOT fixed, deliberately left.
+
+Signature: `NSInternalInconsistencyException`, "Periodic events are already
+being generated", thrown from JUCE's own unbalanced `startPeriodicEvents` in
+`shutdownNSApp`. Fires AFTER the work is finished, so it destroys nothing.
+Costs one process restart; the supervisor's progress exemption absorbs it (152
+plugins banked, restart not charged, sweep resumed itself).
+
+Two mitigations are in the tree and NEITHER prevented the last recurrence. Two
+observed facts do not reconcile -- the resume marker is deleted before the throw
+yet the sweep resumed after it -- and that contradiction is where anyone picking
+this up should start.
+
+The one line that would close it, `quitNow: ALREADY QUITTING`, is wired to
+stdout, stderr and the status strip. It has never appeared.
+
+---
+
 ## 14. WAITING ON THE DASHBOARD REPO — now THREE items, one session
 
 > **SPECIFIED 5 Aug 2026: `docs/SERVER_CONTRACT.md`.** The pipeline joined these

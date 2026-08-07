@@ -123,10 +123,21 @@ def index_disagreements(d):
 
 
 def control_signature(d):
-    """Names AND measurements. Two plugins cannot measure the same anchors."""
+    """Names, measurements AND INDICES. Two plugins cannot measure the same
+    anchors -- but two SIBLING plugins genuinely can, and the index is what
+    separates a sibling from a leak.
+
+    Measured: Sibilance (s) and Sibilance-Live (m) share five control names,
+    ranges and anchor counts exactly, because they are the same processor in
+    two builds. But (s) carries a Lookahead at index 0 that (m) does not, so
+    its five sit at 1-5 while (m)'s sit at 0-4. A leaked surface copies the
+    donor's indices verbatim; a sibling's are its own. Including the index in
+    the signature is what tells them apart, and it costs nothing: a real leak
+    is byte-identical, indices included.
+    """
     sig = []
     for name, c in sorted((d.get("controls") or {}).items()):
-        sig.append((name, tuple(c.get("range") or ()), c.get("unit"),
+        sig.append((name, c.get("index"), tuple(c.get("range") or ()), c.get("unit"),
                     len(c.get("anchors") or [])))
     return tuple(sig)
 
