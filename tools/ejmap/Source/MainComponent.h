@@ -582,11 +582,55 @@ public:
         this is the same lesson applied before rather than after.
     */
     bool batchMode = false;
+    /** QUIT ONCE. Calling it twice ABORTS THE PROCESS, and the abort happens
+        after all the work is done.
+
+        JUCE's MessageManager::stopDispatchLoop ends in shutdownNSApp:
+
+            [NSApp stop: nil];
+            [NSEvent startPeriodicEventsAfterDelay: 0 withPeriod: 0.1];
+
+        The periodic events are a trick to make nextEventMatchingMask return so
+        the stop takes effect. THEY ARE NEVER STOPPED, and AppKit throws
+        NSInternalInconsistencyException ("Periodic events are already being
+        generated") on a second start. stopDispatchLoop sets quitMessagePosted
+        but does not READ it, so there is no guard on JUCE's side -- it is the
+        only caller of startPeriodicEvents in the whole framework and it is
+        unbalanced by design.
+
+        Measured on the live campaign: eleven deaths in three minutes, signals
+        5, 6, 10 and 11, every one AFTER the map was written and after the sweep
+        summary printed. An uncaught ObjC exception aborts, and which signal it
+        aborts with varies -- which is why it looked like eleven different
+        plugin faults and left no row: the work was already finished and the
+        row already written.
+
+        The counter is not paranoia. It says, in the log, that a second quit was
+        attempted and from where, so the caller can be found rather than
+        guarded against forever.
+    */
     void quitNow()
     {
         if (batchMode) return;                 // the loop owns the lifetime
+
+        if (quitRequested)
+        {
+            std::cout << "quitNow: ALREADY QUITTING -- ignored. A second "
+                         "JUCEApplication::quit() aborts the process inside AppKit."
+                      << std::endl;
+            return;
+        }
+        quitRequested = true;
+
+        // Make JUCE's unbalanced startPeriodicEvents legal. See
+        // ejmap::stopPeriodicEventsIfAny -- this covers a first start made by
+        // anyone, which matters because who made it is not established.
+        ejmap::stopPeriodicEventsIfAny();
+
         juce::JUCEApplication::getInstance()->quit();
     }
+
+    bool quitRequested = false;
 
     //==========================================================================
     // BATCH PROBE RUNNER (feature 3). Collected verdicts, one row per
@@ -7950,6 +7994,26 @@ public:
         else if (res == "swept_nothing") ++sweep.sweptNothing;
         else                             ++sweep.died;
 
+        // A FLAG IS WHAT MAKES "CONTINUE" ACTUALLY CONTINUE.
+        //
+        // An outcome that needs a human is terminal for an unattended run, and
+        // without a flag the plugin stays on the worklist -- parked rows go
+        // FIRST, so the sweep spends its first plugin on the same one every
+        // relaunch and never reaches the rest. Measured on the live root: C1
+        // comp (s) has a parked session claiming index 7 as BOTH threshold_db
+        // and knee_db, review refuses it (correctly), and four runs out of four
+        // opened it, refused it, and got no further.
+        //
+        // swept_nothing already did this. These are the same shape.
+        // stale_controls is IN this list for the same reason it exists at all:
+        // the refusal leaves the parked session on disk, so without a flag the
+        // plugin stays first on the worklist and the refusal repeats forever.
+        // Measured: the planted pre-laundering API-560 session was refused
+        // correctly, wrote no map -- and raised no flag, which is the C1 comp
+        // loop with a different reason attached.
+        if (res == "submit_refused" || res == "no_controls_row" || res == "stale_controls")
+            flagForReview (sp, res + ": " + detail);
+
         appendSweepRow (sweep.log, sp, category, res, detail, nControls, cap);
         writeSweepProgress (sweep.progressBase + sweep.mapped + sweep.sweptNothing);
 
@@ -8314,6 +8378,20 @@ private:
         if (cls == "load_failed")     return "loads are failing outright. Investigate before resuming.";
         if (cls == "timeout")         return "loads are hanging. Investigate before resuming.";
         return "investigate before resuming.";
+    }
+
+    /** Raise an issue so the worklist stops offering this build, and say why.
+
+        TOGGLE, not set: calling it on a row the mapper already flagged would
+        CLEAR their flag. Guarding is the difference between raising a flag and
+        silently lowering one. */
+    void flagForReview (const ScannedPlugin& sp, const juce::String& why)
+    {
+        if (marks.hasIssue (sp.desc))
+            return;
+        marks.toggleIssue (sp.desc, "sweep");
+        marks.save (ledger.getRoot());
+        sweepSay ("      flagged for review: " + why.substring (0, 110));
     }
 
     /** The panel image, taken when the map is already safe on disk. */

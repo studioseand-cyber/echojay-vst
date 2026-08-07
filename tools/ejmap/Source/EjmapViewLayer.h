@@ -61,6 +61,32 @@ juce::String describeViewTree (juce::Component& topLevel);
 */
 juce::String layerBackHostedViews (juce::Component& topLevel);
 
+/** Stop AppKit's periodic-event generation, if anything started it.
+
+    JUCE ends every quit in shutdownNSApp:
+
+        [NSApp stop: nil];
+        [NSEvent startPeriodicEventsAfterDelay: 0 withPeriod: 0.1];
+
+    The periodic events are a trick to make nextEventMatchingMask return so the
+    stop takes effect, and THEY ARE NEVER STOPPED. It is the only call to that
+    API in the whole framework, and AppKit throws
+    NSInternalInconsistencyException -- "Periodic events are already being
+    generated" -- if a start arrives while some are running. An uncaught ObjC
+    exception aborts the process, after all the work is done and the row is
+    already written.
+
+    Calling stop first makes JUCE's start legal whoever made the first start:
+    a second quit, a plugin, or AppKit tracking. Stopping when none are running
+    is a no-op.
+
+    NOT A DIAGNOSIS OF THE FIRST CALLER. That is still unestablished -- ten
+    single-plugin runs on a clone of the live root did not reproduce the abort.
+    The mechanism is read from JUCE's source and named by the exception; who
+    started the first set is not.
+*/
+void stopPeriodicEventsIfAny();
+
 /** DIAGNOSTIC: capture the hosted editor's own NSView to a PNG, in-process.
 
     Not the window and not the screen: the VIEW. createComponentSnapshot draws

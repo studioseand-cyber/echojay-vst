@@ -4180,11 +4180,26 @@ private:
             // -- but the stamp was set only where controls are BUILT, and a
             // restore does not build them.
             //
-            // Sessions written before the field existed carry no stamp, so the
-            // fallback is the session's own fingerprint. That is not a guess:
-            // the file is named by it and `fp` was set from it moments ago.
-            const auto stamped = v.getProperty ("pending_controls_fp", "").toString();
-            pendingControlsFp = stamped.isNotEmpty() ? stamped : fp;
+            // NO FALLBACK. An earlier version of this line read
+            //
+            //     pendingControlsFp = stamped.isNotEmpty() ? stamped : fp;
+            //
+            // justified as "a session file is keyed by fingerprint, so its
+            // controls are its own by construction". That is an ARGUMENT, not
+            // a measurement, and it is false: assign-bc7ef28d....json is
+            // API-560 (m)'s session and holds ADA STD-1 Stereo Tapped Delay's
+            // 22 controls, parked there by a binary that predates the stamp.
+            // The fallback LAUNDERED them -- stamped foreign controls with
+            // this plugin's fingerprint, persistSession then wrote that stamp
+            // back into the session as if measured, and a map shipped with
+            // 'Tap Assign 4' at index 14 on a 14-parameter plugin. Caught by
+            // the corpus audit in the commit gate, not by any test.
+            //
+            // An unstamped session is UNSTAMPED. Its controls cannot be shown
+            // to belong here, so they are not claimed to: submit refuses,
+            // the sweep flags it, and a re-sweep costs one sweep and asserts
+            // nothing.
+            pendingControlsFp = v.getProperty ("pending_controls_fp", "").toString();
         }
         controlsExcluded.clear();
         if (auto* xa = v.getProperty ("controls_excluded", juce::var()).getArray())

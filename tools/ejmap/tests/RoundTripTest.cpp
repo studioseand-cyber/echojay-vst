@@ -2421,15 +2421,21 @@ void testStaleControlsRefused()
     // set where controls are BUILT and a restore does not build them. A session
     // file is keyed by fingerprint -- assign-<fp>.json -- so its controls are
     // its own by construction.
-    auto restored = [] (const juce::String& stampedInSession, const juce::String& sessionFp)
+    auto restored = [] (const juce::String& stampedInSession, const juce::String&)
     {
-        return stampedInSession.isNotEmpty() ? stampedInSession : sessionFp;
+        return stampedInSession;    // NO fallback -- see the comment below
     };
     check (! staleFor (restored ("fpA", "fpA"), "fpA", 22),
            "a session restored with its stamp is NOT stale");
-    check (! staleFor (restored ("", "fpA"), "fpA", 22),
-           "and one written BEFORE the stamp existed falls back to the session's own "
-           "fingerprint -- the file is named by it");
+    // NO FALLBACK, and the fallback that stood here wrote a bad map. "A
+    // session file is keyed by fingerprint, so its controls are its own by
+    // construction" was an ARGUMENT: assign-bc7ef28d....json is API-560 (m)'s
+    // session and holds ADA STD-1's 22 controls, parked by a binary that
+    // predates the stamp. Adopting them stamped foreign controls as native and
+    // shipped 'Tap Assign 4' at index 14 on a 14-parameter plugin.
+    check (staleFor (restored ("", "fpA"), "fpA", 22),
+           "an UNSTAMPED session is unstamped -- its controls are refused, not "
+           "adopted; the cost is one re-sweep and the claim is nothing");
     check (staleFor (restored ("fpB", "fpA"), "fpA", 22),
            "but a stamp that disagrees with the session is still refused");
 }

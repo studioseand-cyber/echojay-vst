@@ -85,6 +85,11 @@ juce::String layerBackHostedViews (juce::Component& topLevel)
     return out;
 }
 
+void stopPeriodicEventsIfAny()
+{
+    [NSEvent stopPeriodicEvents];
+}
+
 juce::String captureHostedEditor (juce::Component& topLevel, const juce::File& out)
 {
     return captureHostedEditorResult (topLevel, out).note;
@@ -144,6 +149,7 @@ CaptureResult captureHostedEditorResult (juce::Component& topLevel, const juce::
 juce::String describeViewTree (juce::Component&)      { return {}; }
 juce::String captureHostedEditor (juce::Component&, const juce::File&) { return {}; }
 CaptureResult captureHostedEditorResult (juce::Component&, const juce::File&) { return {}; }
+void stopPeriodicEventsIfAny() {}
 juce::String layerBackHostedViews (juce::Component&)  { return "not macOS: nothing to do\n"; }
 
 #endif
