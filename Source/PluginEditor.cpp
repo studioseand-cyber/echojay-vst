@@ -6,6 +6,7 @@
 #include "EchoJayParamApply.h" // kDialSignalsEnabled + dial predicate (shared)
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
 #include "EedKeyDetectorProcessor.h" // [DETECTED KEY] read path (KEY_DETECTOR_SPEC §4/§9)
+#include "viz/DwellGlow.h"           // KEY panel note wheel — the family's heat ramp
 #include "EqNote.h"                  // describeFreqAsNote — root_hz note names in the feed
                                     // include, so only THIS TU pays its 8.4MB
 #include <cmath>
@@ -11994,6 +11995,292 @@ void EchoJayEditor::paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> are
     g.restoreState(); // end goniometer clip
 }
 
+// KEY — the fourth middle-row panel (KEY_PRECONDITION_SPEC.md §1). Shaped
+// like STEREO IMAGE: a short stack of facts above a square visualisation
+// (the note wheel, DwellGlow's picture language). Three explicit states:
+// reading present; LOW confidence (greyed, visible, labelled — never hidden,
+// never presented as fact); nothing detected — which is ACTIONABLE text, not
+// a blank readout. Data comes from the keySources_ cache (2 Hz timer).
+//
+// §1.2: every other panel measures THIS channel; this one usually does not.
+// The source line sits directly under the key at readable weight so "F#
+// minor from the Music Bus" can never be misread as a fact about the vocal.
+void EchoJayEditor::paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area)
+{
+    using DwellGlow = echojay::viz::DwellGlow;
+    drawPanel(g, area, "KEY", C::purple);
+    keyPanelBounds_ = area;
+
+    const auto& srcs = keySources_;
+    const auto* p = srcs.primary();
+
+    auto keyText = [] (int root, bool minor)
+    {
+        char b[24];
+        echojay::KeyEngine::keyName(root, minor, b, (int) sizeof(b));
+        return juce::String(b);
+    };
+    auto ageStr = [] (juce::uint32 ms)
+    {
+        if (ms < 120000u) return juce::String((int)(ms / 1000u)) + " s";
+        return juce::String((int)(ms / 60000u)) + " min";
+    };
+
+    // RE-ANALYSE chip in the header (the spectrum-toggle idiom) — only when
+    // there is a source to re-analyse.
+    keyReanalyseRect_ = {};
+    if (p != nullptr || ! srcs.all.empty())
+    {
+        const juce::uint32 now = juce::Time::getMillisecondCounter();
+        const bool pending = keyReanalyseSentMs_ != 0
+                          && now - keyReanalyseSentMs_ < 15000u
+                          && (p == nullptr || p->ageMs > 3000u);
+        const char* label = pending ? "LISTENING\xe2\x80\xa6" : "RE-ANALYSE";
+        const int chipW = 74;
+        keyReanalyseRect_ = { area.getRight() - 14 - chipW, area.getY() + 7, chipW, 16 };
+        const bool hov = keyReanalyseRect_.contains(getMouseXYRelative());
+        g.setColour(pending ? C::amber : (hov ? C::text : C::text2));
+        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        g.drawText(juce::String::fromUTF8(label), keyReanalyseRect_,
+                   juce::Justification::centredRight);
+    }
+
+    int x = area.getX() + 14, y = area.getY() + 28, w = area.getWidth() - 28;
+
+    // ---- state 3: nothing detected — actionable, never blank --------------
+    if (p == nullptr)
+    {
+        // A poisoned-only reading (detector on the vocal) shows what it saw
+        // and why it must not be trusted; otherwise the Tier 2 ask.
+        g.setColour(C::text);
+        g.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
+        g.drawText("not detected", x, y, w, 18, juce::Justification::centredLeft);
+        y += 24;
+        g.setColour(C::text2);
+        g.setFont(juce::Font(juce::FontOptions(10.0f)));
+        juce::String msg;
+        if (! srcs.all.empty())
+            msg = "A Key Detector in this chain reads "
+                + keyText(srcs.all.front().root, srcs.all.front().minor)
+                + " — but this channel is a vocal, the one source never to "
+                  "trust for key. Put an EchoJay Link on your instrumental "
+                  "or mix bus and EchoJay will analyse the track's key for you.";
+        else
+            msg = juce::String::fromUTF8(
+                  "Put an EchoJay Link on your instrumental or mix bus \xe2\x80\x94 "
+                  "EchoJay will add a Key Detector to it and analyse the "
+                  "track's key for you. Captures of the mix are analysed "
+                  "automatically.");
+        g.drawFittedText(msg, x, y, w, area.getBottom() - y - 12,
+                         juce::Justification::topLeft, 8);
+        return;
+    }
+
+    const bool low = p->conf < 0.5f;
+    const float dim = low ? 0.55f : 1.0f;   // greyed, still visible
+
+    // ---- the key + confidence ---------------------------------------------
+    {
+        g.setColour(juce::Colours::white.withAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
+        const juce::String name = keyText(p->root, p->minor);
+        g.drawText(name, x, y - 3, w - 60, 20, juce::Justification::centredLeft);
+        g.setColour(DwellGlow::heatColour(p->conf).withAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.drawText("conf " + juce::String(p->conf, 2), x, y - 2, w, 16,
+                   juce::Justification::centredRight);
+        y += 20;
+    }
+
+    // ---- §1.2: the SOURCE, unmissable, directly under the key -------------
+    {
+        juce::String src;
+        juce::Colour col = C::blue2;
+        switch (p->kind)
+        {
+            case KeySourceReading::Kind::Capture:
+                src = juce::String::fromUTF8("from capture \xe2\x80\x9c") + p->name
+                    + juce::String::fromUTF8("\xe2\x80\x9d (") + p->detail + ")";
+                break;
+            case KeySourceReading::Kind::BusLink:
+                src = juce::String::fromUTF8("from \xe2\x80\x9c") + p->name
+                    + juce::String::fromUTF8("\xe2\x80\x9d (bus)");
+                break;
+            case KeySourceReading::Kind::ChannelLink:
+                src = juce::String::fromUTF8("from \xe2\x80\x9c") + p->name
+                    + juce::String::fromUTF8("\xe2\x80\x9d (channel \xe2\x80\x94 one stem)");
+                col = C::amber;
+                break;
+            case KeySourceReading::Kind::LocalChain:
+                src = "from this chain";
+                col = C::amber;
+                break;
+        }
+        src << "   age " << ageStr(p->ageMs);
+        g.setColour(col.withAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        g.drawFittedText(src, x, y, w, 13, juce::Justification::centredLeft, 1);
+        y += 17;
+    }
+
+    // ---- low-confidence rule: visible, labelled, discounted ---------------
+    if (low)
+    {
+        g.setColour(C::amber);
+        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        g.drawFittedText(juce::String::fromUTF8(
+            "low confidence \xe2\x80\x94 treat as unknown"), x, y, w, 12,
+            juce::Justification::centredLeft, 1);
+        y += 15;
+    }
+
+    // ---- tuning + alternate rows ------------------------------------------
+    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+    auto row = [&] (const juce::String& label, const juce::String& value)
+    {
+        if (y + 13 > area.getBottom()) return;
+        g.setColour(C::text3);
+        g.drawText(label, x, y, 52, 13, juce::Justification::centredLeft);
+        g.setColour(C::text.withAlpha(dim));
+        g.drawText(value, x + 54, y, w - 54, 13, juce::Justification::centredLeft);
+        y += 15;
+    };
+    if (p->tuningHz > 0.0f)
+        row("TUNING", juce::String(p->tuningHz, 1) + " Hz ("
+                    + (p->tuningCents >= 0 ? "+" : "")
+                    + juce::String(p->tuningCents, 1) + " c)");
+    if (p->altRoot >= 0)
+        row("ALT", keyText(p->altRoot, p->altMinor)
+                 + " (" + juce::String(p->altScore, 2) + ")");
+
+    // ---- the note wheel — DwellGlow's picture language, smaller -----------
+    y += 4;
+    const int maxWheelH = area.getBottom() - y - 6;
+    const int side = std::min(w, maxWheelH);
+    if (side < 46) return;                       // graceful bail when short
+    const juce::Rectangle<float> wheelArea((float)(x + (w - side) / 2), (float)y,
+                                           (float)side, (float)side);
+    const auto centre = wheelArea.getCentre();
+    const float rOut = side * 0.5f - 8.0f;       // room for note names outside
+    if (rOut < 16.0f) return;
+    const float rIn = rOut * 0.62f;
+
+    constexpr float kSegFloor = 0.09f;           // the device wheel's floor
+    constexpr float kTwoPi = juce::MathConstants<float>::twoPi;
+    const float segAngle = kTwoPi / 12.0f;
+
+    for (int cIdx = 0; cIdx < 12; ++cIdx)
+    {
+        const float a0 = -juce::MathConstants<float>::halfPi
+                       + (float) cIdx * segAngle - segAngle * 0.5f + 0.015f;
+        const float a1 = a0 + segAngle - 0.03f;
+
+        juce::Path seg;
+        seg.addArc(centre.x - rOut, centre.y - rOut, rOut * 2, rOut * 2,
+                   a0 + juce::MathConstants<float>::halfPi,
+                   a1 + juce::MathConstants<float>::halfPi, true);
+        seg.addArc(centre.x - rIn, centre.y - rIn, rIn * 2, rIn * 2,
+                   a1 + juce::MathConstants<float>::halfPi,
+                   a0 + juce::MathConstants<float>::halfPi, false);
+        seg.closeSubPath();
+
+        // The dwell glow's floor-then-shape and colour ramp, verbatim — one
+        // picture language for the family (same maths as the device wheel).
+        float v = keyChromaShown_[(size_t) cIdx];
+        v = (v - kSegFloor) / (1.0f - kSegFloor);
+        v = v > 0.0f ? v * v : 0.0f;
+
+        if (v > 0.004f)
+            g.setColour(DwellGlow::heatColour(v).withAlpha(
+                juce::jlimit(0.0f, 1.0f, (0.15f + 0.85f * v) * dim)));
+        else
+            g.setColour(C::bg3);
+        g.fillPath(seg);
+
+        g.setColour(C::blue.withAlpha(DwellGlow::kColdAlpha * 0.5f * dim));
+        g.strokePath(seg, juce::PathStrokeType(1.0f));
+
+        const float mid  = (a0 + a1) * 0.5f;
+        const float rTxt = rOut + 6.0f;
+        const bool isRoot = cIdx == p->root;
+        g.setColour(isRoot ? juce::Colours::white.withAlpha(dim)
+                           : C::text3.withAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(isRoot ? 9.0f : 8.0f,
+                              isRoot ? juce::Font::bold : juce::Font::plain)));
+        g.drawText(echojay::KeyEngine::pitchClassName(cIdx),
+                   juce::Rectangle<float>(20, 10).withCentre(
+                       { centre.x + rTxt * std::cos(mid),
+                         centre.y + rTxt * std::sin(mid) }),
+                   juce::Justification::centred);
+    }
+
+    // Hub: the key again, small — the wheel stays readable at panel size.
+    {
+        g.setColour(juce::Colours::white.withAlpha(dim));
+        g.setFont(juce::Font(juce::FontOptions(
+            juce::jmin(12.0f, rIn * 0.4f), juce::Font::bold)));
+        g.drawText(keyText(p->root, p->minor),
+                   juce::Rectangle<float>(rIn * 1.6f, 14.0f).withCentre(centre),
+                   juce::Justification::centred);
+    }
+}
+
+// RE-ANALYSE (KEY panel): a fresh committed pass on the LIVE source — one of
+// the three real re-detection events (§5.4). A capture is static, so when
+// the shown reading came from one, the trigger falls through to the best
+// live source (bus Link, then channel Link, then the local detector).
+// Link sources are armed over the additive key-cmd file the Link polls;
+// the local detector through its ordinary analyse param.
+void EchoJayEditor::triggerKeyReanalyse()
+{
+    keySources_ = collectKeySources();
+    keySourcesDiv_ = 0;
+
+    const KeySourceReading* target = nullptr;
+    auto pick = [&] (KeySourceReading::Kind kind)
+    {
+        if (target != nullptr) return;
+        for (const auto& s : keySources_.all)
+            if (s.kind == kind) { target = &s; return; }
+    };
+    pick(KeySourceReading::Kind::BusLink);
+    pick(KeySourceReading::Kind::ChannelLink);
+    pick(KeySourceReading::Kind::LocalChain);
+    // No live source at all (capture-only): nothing to re-analyse — the
+    // paint's pending state times out and the panel keeps its reading.
+    if (target == nullptr && keySources_.all.empty()) return;
+
+    if (target != nullptr && target->uid.isNotEmpty())
+    {
+        int err = 0;
+        juce::String dir = LinkShm::resolveDir(err);
+        if (dir.isEmpty()) return;
+        auto* cmd = new juce::DynamicObject();
+        cmd->setProperty("v",   1);
+        cmd->setProperty("seq", (int) (juce::Time::currentTimeMillis() / 1000));
+        juce::File(dir + "key-ack-" + target->uid + ".json").deleteFile();
+        juce::File(dir + "key-cmd-" + target->uid + ".json")
+            .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+        keyReanalyseSentMs_ = juce::Time::getMillisecondCounter();
+        EchoJay_NSLog(("EJKey: RE-ANALYSE sent to Link \"" + target->name
+                       + "\" (uid " + target->uid + ")").toRawUTF8());
+    }
+    else
+    {
+        // Local chain detector (also the fallback when only a poisoned vocal
+        // reading exists — harmless, and the user asked).
+        auto& ch = processorRef.getChainHost();
+        for (int i = 0; i < ch.getNumSlots(); ++i)
+            if (auto* kd = dynamic_cast<EedKeyDetectorProcessor*>(ch.getSlotProcessor(i)))
+            {
+                kd->setParamValue(EedKeyDetectorProcessor::kAnalyse, 1.0);
+                keyReanalyseSentMs_ = juce::Time::getMillisecondCounter();
+                EchoJay_NSLog("EJKey: RE-ANALYSE armed on this chain's Key Detector");
+                break;
+            }
+    }
+}
+
 // TONAL BALANCE — six deviation bars (macro-band rel, pink-referenced) plus
 // the BAND DYNAMICS group (per-band crest). Display only; simple fills at
 // the existing meter UI rate.
@@ -13746,18 +14033,47 @@ void EchoJayEditor::paint(juce::Graphics& g)
         paintLoudnessPanel(g, loudnessPanelBounds, md);
         y += loudH + secGap;
 
-        // Three-across row: LEVELS | STEREO IMAGE | TONAL BALANCE
-        int levelsW = (contentW - secGap * 2) * 38 / 100;
-        int stereoW = (contentW - secGap * 2) * 28 / 100;
-        int tonalW  = contentW - levelsW - stereoW - secGap * 2;
+        // Middle row (KEY_PRECONDITION_SPEC.md §1.1): LEVELS | STEREO IMAGE |
+        // KEY | TONAL BALANCE. KEY is shaped like STEREO IMAGE (facts + a
+        // square wheel) so it reads as family. Below ~820 px four columns
+        // stop being readable, so the row keeps its original three and KEY
+        // degrades to a compact full-width strip under it — degraded, never
+        // hidden (the specced fallback).
         int remainH = bounds.getHeight() - y - 160;
         int levStereoH = std::min(300, hasWaveform ? (remainH * 45 / 100) : (remainH * 50 / 100));
         levStereoH = std::max(210, levStereoH);
-        paintLevelsPanel(g, { pad, y, levelsW, levStereoH }, md);
-        paintStereoPanel(g, { pad + levelsW + secGap, y, stereoW, levStereoH }, md);
-        paintTonalBalancePanel(g, { pad + levelsW + secGap + stereoW + secGap, y,
-                                    tonalW, levStereoH }, md);
-        y += levStereoH + secGap;
+        const bool fourCols = contentW >= 820;
+        if (fourCols)
+        {
+            int levelsW = (contentW - secGap * 3) * 30 / 100;
+            int stereoW = (contentW - secGap * 3) * 23 / 100;
+            int keyW    = (contentW - secGap * 3) * 23 / 100;
+            int tonalW  = contentW - levelsW - stereoW - keyW - secGap * 3;
+            paintLevelsPanel(g, { pad, y, levelsW, levStereoH }, md);
+            paintStereoPanel(g, { pad + levelsW + secGap, y, stereoW, levStereoH }, md);
+            paintKeyPanel(g,    { pad + levelsW + secGap + stereoW + secGap, y,
+                                  keyW, levStereoH });
+            paintTonalBalancePanel(g, { pad + levelsW + stereoW + keyW + secGap * 3, y,
+                                        tonalW, levStereoH }, md);
+            y += levStereoH + secGap;
+        }
+        else
+        {
+            int levelsW = (contentW - secGap * 2) * 38 / 100;
+            int stereoW = (contentW - secGap * 2) * 28 / 100;
+            int tonalW  = contentW - levelsW - stereoW - secGap * 2;
+            paintLevelsPanel(g, { pad, y, levelsW, levStereoH }, md);
+            paintStereoPanel(g, { pad + levelsW + secGap, y, stereoW, levStereoH }, md);
+            paintTonalBalancePanel(g, { pad + levelsW + secGap + stereoW + secGap, y,
+                                        tonalW, levStereoH }, md);
+            y += levStereoH + secGap;
+            const int keyH = 96;      // facts only; the wheel bails at this height
+            if (bounds.getHeight() - y - 120 > keyH)
+            {
+                paintKeyPanel(g, { pad, y, contentW, keyH });
+                y += keyH + secGap;
+            }
+        }
 
         int specH = std::max(80, bounds.getHeight() - y - pad - 20 - abBarOffset);
         paintSpectrumPanel(g, { pad, y, contentW, specH }, md);
@@ -16399,6 +16715,36 @@ void EchoJayEditor::timerCallback()
             refreshChannelBannerCache();
             resized();
         }
+    }
+
+    // KEY panel (Meters): refresh the source cache at 2 Hz (collectKeySources
+    // copies snapshots under a mutex — too heavy for every paint) and ease
+    // the wheel's chroma at the DwellGlow time constant so the picture moves
+    // with the same hand as the device's.
+    if (currentView == View::Meters && !visualMode && currentScreen == Screen::Main)
+    {
+        if (++keySourcesDiv_ >= 10)
+        {
+            keySourcesDiv_ = 0;
+            keySources_ = collectKeySources();
+        }
+        float target[12] = {};
+        if (const auto* p = keySources_.primary())
+        {
+            if (p->hasChroma)
+                for (int i = 0; i < 12; ++i) target[i] = p->chroma[(size_t) i];
+            else
+            {
+                // A frame source carries no chroma: light the root (and its
+                // fifth, faintly) by confidence — still the glow's language,
+                // honest about how much detail this source actually has.
+                target[p->root]            = juce::jlimit(0.0f, 1.0f, p->conf);
+                target[(p->root + 7) % 12] = juce::jlimit(0.0f, 1.0f, p->conf * 0.4f);
+            }
+        }
+        const float k = 1.0f - std::exp(-0.05f / 0.12f);   // 20 Hz vs 120 ms tau
+        for (int i = 0; i < 12; ++i)
+            keyChromaShown_[(size_t) i] += (target[i] - keyChromaShown_[(size_t) i]) * k;
     }
 
     // Loading screen timeout — if network calls take too long, show main anyway
@@ -19120,17 +19466,154 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
 //      the track's.
 // Every reading carries confidence, and the block teaches the rule that keeps
 // it honest: below ~0.5, treat the key as unknown.
+EchoJayEditor::KeySources EchoJayEditor::collectKeySources()
+{
+    KeySources out;
+    const juce::uint32 nowMs   = juce::Time::getMillisecondCounter();
+    const juce::int64  nowWall = juce::Time::currentTimeMillis();
+
+    // Root in octave 2, the octave the feed's note-maths examples use, for
+    // sources that carry tuning but not the analysed octave.
+    auto rootHzOct2 = [] (float tuningHz, int root)
+    { return tuningHz * std::pow (2.0f, (float) (36 + root - 69) / 12.0f); };
+
+    // ---- 1. the newest capture with an offline reading (§5.2) -------------
+    {
+        const auto snaps = processorRef.getSnapshots();
+        for (int i = (int) snaps.size() - 1; i >= 0; --i)
+        {
+            const auto& s = snaps[(size_t) i];
+            if (! s.keyValid) continue;
+            KeySourceReading k;
+            k.kind   = KeySourceReading::Kind::Capture;
+            k.name   = s.name;
+            k.detail = s.keySourceName
+                     + (s.keySourcePlacement == 1 ? " (bus Link)" : " (this channel)");
+            k.root = s.keyRoot; k.minor = s.keyMinor; k.conf = s.keyConfidence;
+            k.tuningHz    = s.keyTuningHz > 0.0f ? s.keyTuningHz : 440.0f;
+            k.tuningCents = s.keyTuningCents;
+            k.rootHz      = rootHzOct2 (k.tuningHz, k.root);
+            k.ageMs = s.timestamp > 0 && nowWall > s.timestamp
+                        ? (juce::uint32) juce::jmin<juce::int64> (nowWall - s.timestamp,
+                                                                  0x7fffffff)
+                        : 0;
+            k.committed = true;
+            k.analysedSeconds = s.durationSeconds;
+            k.hasChroma = true; k.chroma = s.keyChroma;
+            k.altRoot = s.keyAltRoot; k.altMinor = s.keyAltMinor; k.altScore = s.keyAltScore;
+            out.all.push_back (std::move (k));
+            break;                       // newest keyed capture only
+        }
+    }
+
+    // ---- 2./3. Link-published readings (§9): bus first, then channel ------
+    std::vector<KeySourceReading> busLinks, chanLinks;
+    for (const auto& e : processorRef.getLinkDisplayList())
+    {
+        const auto& li = e.info;
+        LinkMeterFrame f;
+        if (li.regIdx < 0 || ! processorRef.readLinkMeterFrame(li.regIdx, f))
+            continue;
+        if (! frameHasKey(f)) continue;
+
+        KeySourceReading k;
+        k.name = e.displayName;   k.uid = li.uid;
+        k.placement = li.placement;
+        k.kind = li.placement == 1 ? KeySourceReading::Kind::BusLink
+                                   : KeySourceReading::Kind::ChannelLink;
+        k.root = (int) f.keyRoot; k.minor = f.keyIsMinor != 0;
+        k.conf = f.keyConfidence;
+        k.tuningHz    = f.keyTuningHz > 0.0f ? f.keyTuningHz : 440.0f;
+        k.tuningCents = 1200.0f * std::log2 (k.tuningHz / 440.0f);
+        k.rootHz      = rootHzOct2 (k.tuningHz, k.root);
+        k.ageMs = f.keyAgeMs;
+        k.committed = true;              // the passive pass is a committed pass
+        (k.kind == KeySourceReading::Kind::BusLink ? busLinks : chanLinks)
+            .push_back (std::move (k));
+    }
+    auto byConf = [] (const KeySourceReading& a, const KeySourceReading& b)
+    { return a.conf > b.conf; };
+    std::sort (busLinks.begin(),  busLinks.end(),  byConf);
+    // Channel-grade: declared channel (2) beats send return (3) beats unset.
+    std::sort (chanLinks.begin(), chanLinks.end(),
+               [] (const KeySourceReading& a, const KeySourceReading& b)
+               {
+                   auto rank = [] (int p) { return p == 2 ? 0 : p == 3 ? 1 : 2; };
+                   if (rank (a.placement) != rank (b.placement))
+                       return rank (a.placement) < rank (b.placement);
+                   return a.conf > b.conf;
+               });
+    for (auto& k : busLinks)  out.all.push_back (std::move (k));
+    for (auto& k : chanLinks) out.all.push_back (std::move (k));
+
+    // ---- 4. the local chain's own Key Detector (§4) -----------------------
+    {
+        const auto ct = processorRef.getChannelType();
+        const bool vocal = ct == ChannelType::LeadVocal
+                        || ct == ChannelType::BackingVocal
+                        || ct == ChannelType::Adlibs
+                        || ct == ChannelType::VocalBus;
+        auto& ch = processorRef.getChainHost();
+        for (int i = 0; i < ch.getNumSlots(); ++i)
+            if (auto* kd = dynamic_cast<EedKeyDetectorProcessor*>(ch.getSlotProcessor(i)))
+            {
+                const auto r = kd->engine().getReading();
+                if (r.valid)
+                {
+                    KeySourceReading k;
+                    k.kind = KeySourceReading::Kind::LocalChain;
+                    k.name = "this chain";
+                    k.detail = processorRef.getChannelType() == ChannelType::Other
+                                   ? juce::String() : channelTypeNames[(int) ct];
+                    k.root = r.root; k.minor = r.minor; k.conf = r.confidence;
+                    k.tuningHz = r.tuningHz; k.tuningCents = r.tuningCents;
+                    k.rootHz = r.rootHz;
+                    const auto stamp = kd->readingChangeMs();
+                    k.ageMs = stamp != 0 ? nowMs - stamp : 0;
+                    k.committed = r.committed;
+                    k.analysedSeconds = r.analysedSeconds;
+                    k.hasChroma = true; k.chroma = r.chroma;
+                    if (r.numAlternates > 0)
+                    {
+                        k.altRoot  = r.alternates[0].root;
+                        k.altMinor = r.alternates[0].minor;
+                        k.altScore = r.alternates[0].score;
+                    }
+                    // §5.3: NEVER prefer a reading taken from the channel
+                    // EchoJay is on when that channel is the vocal.
+                    k.poisoned = vocal;
+                    out.all.push_back (std::move (k));
+                }
+                break;                   // one detector speaks for the chain
+            }
+    }
+
+    if (out.all.empty()) return out;
+
+    // ---- primary: first non-poisoned in precedence order, except that a
+    // STALE capture yields to a live bus Link reading (§5.3 point 1).
+    for (int i = 0; i < (int) out.all.size(); ++i)
+        if (! out.all[(size_t) i].poisoned) { out.primaryIdx = i; break; }
+    if (out.primaryIdx >= 0
+        && out.all[(size_t) out.primaryIdx].kind == KeySourceReading::Kind::Capture
+        && out.all[(size_t) out.primaryIdx].ageMs > kCaptureKeyFreshMs)
+    {
+        for (int i = 0; i < (int) out.all.size(); ++i)
+            if (out.all[(size_t) i].kind == KeySourceReading::Kind::BusLink)
+            { out.primaryIdx = i; break; }
+    }
+
+    // Disagreement among USABLE sources is information (§9).
+    if (const auto* p = out.primary())
+        for (const auto& s : out.all)
+            if (! s.poisoned && (s.root != p->root || s.minor != p->minor))
+                out.disagree = true;
+
+    return out;
+}
+
 juce::String EchoJayEditor::buildDetectedKeyContext()
 {
-    struct KeySource
-    {
-        juce::String name, uid;
-        int   placement = 0;              // 0 unset, 1 bus, 2 channel, 3 send
-        int   root = 0; bool minor = false;
-        float conf = 0.0f, tuningHz = 440.0f;
-        juce::uint32 ageMs = 0;
-    };
-
     auto keyText = [] (int root, bool minor)
     {
         char b[24];
@@ -19152,143 +19635,249 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
              + (cents >= 0 ? "+" : "") + juce::String (cents, 1)
              + " cents from A=440)";
     };
-
-    // ---- Link-published readings (§9) ------------------------------------
-    std::vector<KeySource> links;
-    for (const auto& e : processorRef.getLinkDisplayList())
-    {
-        const auto& li = e.info;
-        LinkMeterFrame f;
-        if (li.regIdx < 0 || ! processorRef.readLinkMeterFrame(li.regIdx, f))
-            continue;
-        if (! frameHasKey(f)) continue;
-
-        KeySource s;
-        s.name = e.displayName;   s.uid = li.uid;
-        s.placement = li.placement;
-        s.root = (int) f.keyRoot; s.minor = f.keyIsMinor != 0;
-        s.conf = f.keyConfidence; s.tuningHz = f.keyTuningHz > 0.0f ? f.keyTuningHz : 440.0f;
-        s.ageMs = f.keyAgeMs;
-        links.push_back(std::move(s));
-    }
-
-    // ---- the local chain's own Key Detector (§4) --------------------------
-    bool haveLocal = false;
-    echojay::KeyReading local;
-    juce::uint32 localAgeMs = 0;
-    {
-        auto& ch = processorRef.getChainHost();
-        for (int i = 0; i < ch.getNumSlots(); ++i)
-            if (auto* kd = dynamic_cast<EedKeyDetectorProcessor*>(ch.getSlotProcessor(i)))
-            {
-                const auto r = kd->engine().getReading();
-                if (r.valid)
-                {
-                    haveLocal = true;
-                    local = r;
-                    const auto stamp = kd->readingChangeMs();
-                    localAgeMs = stamp != 0
-                        ? juce::Time::getMillisecondCounter() - stamp : 0;
-                    break;               // one detector speaks for the chain
-                }
-            }
-    }
-
-    if (links.empty() && ! haveLocal) return {};
-
-    // Primary Link source: bus beats channel/unset; confidence breaks ties.
-    const KeySource* primary = nullptr;
-    for (const auto& s : links)
-    {
-        if (primary == nullptr) { primary = &s; continue; }
-        const bool sBus = s.placement == 1, pBus = primary->placement == 1;
-        if (sBus != pBus) { if (sBus) primary = &s; continue; }
-        if (s.conf > primary->conf) primary = &s;
-    }
-
     auto placeStr = [] (int p) { return p == 1 ? "bus" : p == 2 ? "channel"
                                       : p == 3 ? "send return" : "unset"; };
+    // §5.4: an old reading is USED and its age SAID — minutes read better
+    // than four-digit second counts.
     auto ageStr = [] (juce::uint32 ms)
-    { return juce::String ((int) (ms / 1000u)) + " s"; };
+    {
+        if (ms < 120000u) return juce::String ((int) (ms / 1000u)) + " s";
+        return juce::String ((int) (ms / 60000u)) + " min";
+    };
+    auto srcLabel = [&] (const KeySourceReading& s) -> juce::String
+    {
+        switch (s.kind)
+        {
+            case KeySourceReading::Kind::Capture:
+                return "capture \"" + s.name + "\" (offline, from " + s.detail + ")";
+            case KeySourceReading::Kind::BusLink:
+                return "\"" + s.name + "\" (bus Link, uid " + s.uid + ")";
+            case KeySourceReading::Kind::ChannelLink:
+                return "\"" + s.name + "\" (" + placeStr (s.placement)
+                     + " Link — a single stem, uid " + s.uid + ")";
+            case KeySourceReading::Kind::LocalChain: break;
+        }
+        return juce::String ("this chain's own Key Detector")
+             + (s.detail.isNotEmpty() ? " (channel: " + s.detail + ")" : "");
+    };
+
+    const auto sources = collectKeySources();
+    if (sources.all.empty()) return {};
 
     juce::String c;
-    if (primary != nullptr)
+    const auto* p = sources.primary();
+
+    if (p == nullptr)
     {
-        // Frame carries root+tuning, not the analysed octave — report the
-        // root in octave 2, the octave the feed's note maths examples use.
-        const float rootHz = primary->tuningHz
-            * std::pow (2.0f, (float) (36 + primary->root - 69) / 12.0f);
-
-        c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 measured by "
-             "EchoJay on another channel; the KEY OF THE MUSIC]:\n")
-          << "key: " << keyText (primary->root, primary->minor)
-          << "   confidence: " << juce::String (primary->conf, 2)
-          << "   detected_tuning: " << tuningText (primary->tuningHz) << "\n"
-          << "root_hz: " << rootHzText (rootHz) << "\n"
-          << "source: \"" << primary->name << "\" (" << placeStr (primary->placement)
-          << ", uid " << primary->uid << ")   age: " << ageStr (primary->ageMs) << "\n";
-
-        for (const auto& s : links)
-            if (&s != primary)
-                c << "also measured: \"" << s.name << "\" (" << placeStr (s.placement)
-                  << "): " << keyText (s.root, s.minor)
-                  << " (" << juce::String (s.conf, 2)
-                  << ", age " << ageStr (s.ageMs) << ")\n";
-
-        if (haveLocal)
-            c << "this chain's own Key Detector: " << keyText (local.root, local.minor)
-              << " (" << juce::String (local.confidence, 2)
-              << ", tuning " << juce::String (local.tuningHz, 1) << " Hz"
-              << ", root_hz " << rootHzText (local.rootHz)
-              << ", analysed " << juce::String (local.analysedSeconds, 1)
-              << (local.committed ? " s committed" : " s continuous")
-              << ", age " << ageStr (localAgeMs) << ")\n";
-
-        // Disagreement is information, never silently resolved (§9).
-        {
-            bool disagree = false;
-            for (const auto& s : links)
-                if (s.root != primary->root || s.minor != primary->minor) disagree = true;
-            if (haveLocal && (local.root != primary->root || local.minor != primary->minor))
-                disagree = true;
-            if (disagree)
-                c << "NOTE: the sources above DISAGREE. Prefer the bus reading "
-                     "(it hears the mix; a channel hears one part), say the "
-                     "readings differ if it matters to the answer, and treat a "
-                     "disagreement as a possible modulation or a bad read.\n";
-        }
+        // Every reading is poisoned: a Key Detector sitting on the VOCAL.
+        // Presence-with-poison beats silent absence — the model must know
+        // why the visible reading cannot be used, and still treat the key
+        // as unknown (so a Tier 2 ask remains correct).
+        const auto& s = sources.all.front();
+        c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 UNUSABLE]:\n")
+          << "A Key Detector in this chain reads " << keyText (s.root, s.minor)
+          << " (" << juce::String (s.conf, 2) << ") — but this channel is a "
+             "VOCAL. A vocal is monophonic, sliding and often pitch-corrected: "
+             "the worst possible key source. TREAT THE TRACK'S KEY AS UNKNOWN; "
+             "do not build moves on this reading. To know the real key, a Link "
+             "on the instrumental or mix bus (or a capture of the mix) is "
+             "needed.]";
+        return c;
     }
-    else
+
+    // ---- the winning source, named ----------------------------------------
+    switch (p->kind)
     {
-        // §4: the chain's own detector, the only source.
-        c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 from EchoJay "
-             "Key Detector in the chain; measured from the live signal]:\n")
-          << "key: " << keyText (local.root, local.minor)
-          << "   confidence: " << juce::String (local.confidence, 2) << "\n"
-          << "detected_tuning: " << tuningText (local.tuningHz) << "\n"
-          << "root_hz: " << rootHzText (local.rootHz);
-        if (local.numAlternates > 0)
-        {
-            c << "   alternates: ";
-            for (int i = 0; i < local.numAlternates; ++i)
-            {
-                if (i > 0) c << ", ";
-                const auto& a = local.alternates[(size_t) i];
-                c << keyText (a.root, a.minor) << " ("
-                  << juce::String (a.score, 2) << ")";
-            }
-        }
-        c << "\nanalysed: " << juce::String (local.analysedSeconds, 1)
-          << " s of playback, " << (local.committed ? "committed" : "continuous")
-          << "   age: " << ageStr (localAgeMs) << "\n";
+        case KeySourceReading::Kind::Capture:
+            c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 from a "
+                 "stored CAPTURE, analysed offline; the KEY OF THE MUSIC]:\n");
+            break;
+        case KeySourceReading::Kind::BusLink:
+            c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 measured by "
+                 "EchoJay on another channel; the KEY OF THE MUSIC]:\n");
+            break;
+        case KeySourceReading::Kind::ChannelLink:
+            c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 measured by "
+                 "EchoJay from a SINGLE STEM on another channel \xe2\x80\x94 "
+                 "weaker than a mix reading]:\n");
+            break;
+        case KeySourceReading::Kind::LocalChain:
+            c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 from EchoJay "
+                 "Key Detector in the chain; measured from the live signal]:\n");
+            break;
     }
+
+    c << "key: " << keyText (p->root, p->minor)
+      << "   confidence: " << juce::String (p->conf, 2)
+      << "   detected_tuning: " << tuningText (p->tuningHz) << "\n"
+      << "root_hz: " << rootHzText (p->rootHz) << "\n"
+      << "source: " << srcLabel (*p) << "   age: " << ageStr (p->ageMs) << "\n";
+    if (p->altRoot >= 0)
+        c << "alternate: " << keyText (p->altRoot, p->altMinor)
+          << " (" << juce::String (p->altScore, 2) << ")\n";
+    if (p->kind == KeySourceReading::Kind::LocalChain)
+        c << "analysed: " << juce::String (p->analysedSeconds, 1)
+          << " s of playback, " << (p->committed ? "committed" : "continuous") << "\n";
+
+    // ---- the other sources, each named and aged ----------------------------
+    for (const auto& s : sources.all)
+    {
+        if (&s == p) continue;
+        if (s.poisoned)
+        {
+            c << "IGNORED: " << srcLabel (s) << " reads " << keyText (s.root, s.minor)
+              << " (" << juce::String (s.conf, 2) << ") — measured from the "
+                 "VOCAL this chain sits on; never use a vocal-derived key.\n";
+            continue;
+        }
+        c << "also measured: " << srcLabel (s) << ": " << keyText (s.root, s.minor)
+          << " (" << juce::String (s.conf, 2)
+          << ", age " << ageStr (s.ageMs) << ")\n";
+    }
+
+    if (sources.disagree)
+        c << "NOTE: the sources above DISAGREE. Prefer the order capture of "
+             "the mix > bus Link > channel Link > this chain, say the readings "
+             "differ if it matters to the answer, and treat a disagreement as "
+             "a possible modulation or a bad read.\n";
 
     c << "RULES: below ~0.5 confidence treat the key as UNKNOWN and do not "
          "build moves on it - a confident wrong key is worse than no key. "
          "Use root_hz (or note names against detected_tuning) directly in EQ "
-         "moves instead of doing pitch maths. To re-measure, dial the Key "
-         "Detector's analyse:1 while audio plays.]";
+         "moves instead of doing pitch maths. To re-measure, use RE-ANALYSE "
+         "in Meters -> KEY, or dial a Key Detector's analyse:1 while audio "
+         "plays.]";
     return c;
+}
+
+// §2.2 — when the key matters AT ALL, deliberately narrow. EQ, compression,
+// de-essing, saturation, reverb do not care about the key; unnecessary work
+// is only slightly better than an unnecessary question. Matches only the
+// explicitly musical asks; ambiguous intent matches nothing (fail safe).
+bool EchoJayEditor::messageNeedsKey(const juce::String& msg)
+{
+    const auto m = msg.toLowerCase();
+    static const char* kNeedles[] = {
+        "autotune", "auto-tune", "auto tune",
+        "pitch correct", "pitch-correct", "pitch correction",
+        "melodyne", "waves tune",
+        "harmoniser", "harmonizer", "harmonies", "harmony",
+        "in key", "in the key", "the track's key", "key of the track",
+        "key of the song", "what key",
+        "tuned delay", "tuned to the track", "resonator",
+        "melodic"
+    };
+    for (const char* n : kNeedles)
+        if (m.contains(n)) return true;
+    return false;
+}
+
+// TIER 1 (§2.1): do it, do not ask — see the header comment.
+juce::String EchoJayEditor::maybeRunKeyPrecondition(const juce::String& typedMsg)
+{
+    if (! messageNeedsKey(typedMsg)) return {};
+
+    // A usable reading (any confidence) already rides the feed as
+    // [DETECTED KEY]; Tier 1 only fires into a genuine void. A low-confidence
+    // reading still counts as "measured" — re-measuring is RE-ANALYSE's job,
+    // not something to spring on every send.
+    const auto srcs = collectKeySources();
+    if (srcs.primary() != nullptr) return {};
+
+    // A committed pass takes ~10 s of playback: one firing per minute is
+    // plenty, and a second send while one is in flight must not double up.
+    const juce::uint32 now = juce::Time::getMillisecondCounter();
+    if (keyTier1SentMs_ != 0 && now - keyTier1SentMs_ < 60000u) return {};
+
+    // The one thing only the user can do is PLACE a Link; everything after
+    // that is EchoJay's job. No bus Link -> nothing to do here (the Tier 2
+    // ask is the server classifier's).
+    juce::String busUid, busName;
+    for (const auto& si : processorRef.getLinkSlotInfos())
+        if (si.placement == 1 && si.connected && si.uid.isNotEmpty())
+        { busUid = si.uid; busName = si.name; break; }
+    if (busUid.isEmpty()) return {};
+
+    // IDEMPOTENT: the Link's published rack decides add vs re-arm. A rack
+    // that already hosts a Key Detector NEVER gets a second one. An UNKNOWN
+    // rack (no/invalid sidecar — an old Link, or one still starting up)
+    // fires nothing: idempotency cannot be verified, and a blind add could
+    // double up. Rare by construction; the sidecar publishes within ~1 s.
+    const auto rack = readLinkRackSidecar(busUid);
+    if (! rack.valid) return {};
+    int detectorSlot = -1;
+    juce::StringArray baseSlots;
+    for (int i = 0; i < (int) rack.slots.size(); ++i)
+    {
+        baseSlots.add(rack.slots[(size_t) i].name);
+        if (rack.slots[(size_t) i].name.containsIgnoreCase("Key Detector"))
+            detectorSlot = i;
+    }
+
+    auto* analyseParams = new juce::DynamicObject();
+    {
+        auto* params = new juce::DynamicObject();
+        params->setProperty("analyse", 1);
+        analyseParams->setProperty("params", juce::var(params));
+    }
+    auto* op = new juce::DynamicObject();
+    if (detectorSlot >= 0)
+    {
+        op->setProperty("op",   "set");
+        op->setProperty("slot", detectorSlot + 1);          // edit JSON is 1-based
+        op->setProperty("settings_structured", juce::var(analyseParams));
+    }
+    else
+    {
+        op->setProperty("op",   "add");
+        op->setProperty("name", "EchoJay Key Detector");
+        op->setProperty("settings",
+            "Committed key analysis for the session (added automatically by "
+            "EchoJay to measure the track's key from this bus).");
+        op->setProperty("settings_structured", juce::var(analyseParams));
+    }
+    juce::Array<juce::var> ops; ops.add(juce::var(op));
+    auto* payload = new juce::DynamicObject();
+    payload->setProperty("edit", ops);
+    payload->setProperty("baseSlots", [&baseSlots]
+    {
+        juce::Array<juce::var> a;
+        for (const auto& s : baseSlots) a.add(s);
+        return a;
+    }());
+
+    const int seq = sendChainEditToLink(busUid,
+                        juce::JSON::toString(juce::var(payload), true));
+    if (seq < 0) return {};
+
+    keyTier1SentMs_ = now;
+    keyTier1LastUid_ = busUid;
+    EchoJay_NSLog(("EJKey: TIER 1 fired -> "
+                   + juce::String(detectorSlot >= 0 ? "re-armed ANALYSE on existing"
+                                                    : "added")
+                   + " Key Detector, Link \"" + busName + "\" (uid " + busUid
+                   + ", seq " + juce::String(seq) + ")").toRawUTF8());
+
+    // The feed note: the model announces the action as DONE (reversible,
+    // inaudible, zero-latency — §2.4 says act, then say; never ask).
+    juce::String note;
+    note << juce::String::fromUTF8("\n\n[KEY PRECONDITION \xe2\x80\x94 ACTION "
+            "ALREADY TAKEN BY ECHOJAY THIS TURN]:\n")
+         << "No usable key reading existed, and an EchoJay Link is on the bus \""
+         << busName << "\". EchoJay has "
+         << (detectorSlot >= 0
+               ? juce::String("re-armed the Key Detector already in that Link's chain")
+               : juce::String("added an EchoJay Key Detector to that Link's chain "
+                              "(zero latency, bit-identical passthrough)"))
+         << " and triggered a committed ANALYSE. The reading arrives while "
+            "audio plays and will appear in [DETECTED KEY] next turn and in "
+            "Meters -> Key.\n"
+            "Tell the user this happened (do not ask permission - it is "
+            "inaudible and reversible). If this build needs the key RIGHT "
+            "NOW, build everything else and say the key-dependent setting "
+            "will follow once the analysis lands (or ask them to press play "
+            "if the transport is stopped).]";
+    return note;
 }
 
 // DEV ONLY. See the header. Applies a hand-written eq_bands JSON straight to
@@ -19537,6 +20126,18 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // stage label below.
     bool hadChainFeed = false;
     userContent += standardChainInjections(msg, false, &hadChainFeed, turnTargetUid);
+
+    // TIER 1 key precondition (KEY_PRECONDITION_SPEC.md §2.1): if this
+    // message genuinely needs the key, none exists, and a bus Link does,
+    // EchoJay adds a Key Detector to that Link and analyses NOW — then the
+    // feed note tells the model to announce the done action. Fires rarely by
+    // design: passive detection (§5.1) usually means the key is already in
+    // [DETECTED KEY] above.
+    if (juce::String keyNote = maybeRunKeyPrecondition(msg); keyNote.isNotEmpty())
+    {
+        userContent += keyNote;
+        EchoJay_NSLog("EJChat: KEY PRECONDITION note attached (Tier 1 fired)");
+    }
 
     // LINK LEVELS context: grounds relative level statements and enables
     // measurement-backed gain proposals. Rides on the chat turn (does NOT
@@ -23504,6 +24105,9 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         { spectrogramMode_ = true;  saveSpectrogramMode(); repaint(); return; }
         if (spectrogramMode_ && spectrumToggleRect_.contains(pos))
         { spectrogramMode_ = false; saveSpectrogramMode(); repaint(); return; }
+        // KEY panel RE-ANALYSE (rect cached during paint, empty when no source)
+        if (!keyReanalyseRect_.isEmpty() && keyReanalyseRect_.contains(pos))
+        { triggerKeyReanalyse(); repaint(); return; }
     }
 
     // Tab bar click. CONSUMES tabRects_ via tabIndexAt, MEASURES NOTHING.

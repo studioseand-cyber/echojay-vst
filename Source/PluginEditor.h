@@ -150,6 +150,7 @@ private:
     void paintStereoPanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md);
     void paintSpectrumPanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md);
     void paintTonalBalancePanel(juce::Graphics& g, juce::Rectangle<int> area, const MeterData& md);
+    void paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area);
     void paintCapturesPanel(juce::Graphics& g, juce::Rectangle<int> area);
     void paintWaveformPanel(juce::Graphics& g, juce::Rectangle<int> area);
     
@@ -399,6 +400,62 @@ private:
     // TONAL BALANCE display smoothing (rel values per macro band)
     std::array<float, 6> tonalSmooth_ {};
     bool tonalSmoothInit_ = false;
+
+    // ---- Detected key: the shared source collector -----------------------
+    // ONE precedence walk (KEY_PRECONDITION_SPEC.md §5.3) consumed by both
+    // the [DETECTED KEY] feed block and the Meters KEY panel, so the two can
+    // never rank sources differently:
+    //   1. the newest CAPTURE of the music/mix carrying an offline reading,
+    //   2. a BUS Link's passive reading (live and current),
+    //   3. a CHANNEL Link's reading (one stem — usable, named as such),
+    //   4. a Key Detector in the local chain — only trustworthy when this
+    //      channel IS the music; POISONED (never primary, warned) when this
+    //      channel is a vocal, because a confident vocal-derived key is
+    //      worse than no key at all.
+    // A stale capture yields to a live bus reading (kCaptureKeyFreshMs).
+    struct KeySourceReading
+    {
+        enum class Kind { Capture, BusLink, ChannelLink, LocalChain };
+        Kind  kind = Kind::LocalChain;
+        juce::String name, uid;        // uid: Link instance uid (Links only)
+        juce::String detail;           // capture: which channel the offline
+                                       // pass read ("Music Bus (bus Link)")
+        int   placement = 0;           // registry value (Links only)
+        int   root = 0; bool minor = false;
+        float conf = 0.0f, tuningHz = 440.0f, tuningCents = 0.0f, rootHz = 0.0f;
+        juce::uint32 ageMs = 0;
+        bool  committed = false;
+        float analysedSeconds = 0.0f;
+        bool  hasChroma = false;
+        std::array<float, 12> chroma {};
+        int   altRoot = -1; bool altMinor = false; float altScore = 0.0f;
+        bool  poisoned = false;        // vocal-channel local reading: never use
+    };
+    struct KeySources
+    {
+        std::vector<KeySourceReading> all;   // precedence order
+        int  primaryIdx = -1;                // -1 = nothing usable
+        bool disagree   = false;             // usable sources name different keys
+        const KeySourceReading* primary() const
+        { return primaryIdx >= 0 ? &all[(size_t) primaryIdx] : nullptr; }
+    };
+    static constexpr juce::uint32 kCaptureKeyFreshMs = 15 * 60 * 1000;
+    KeySources collectKeySources();
+
+    // ---- KEY panel (Meters middle row, KEY_PRECONDITION_SPEC.md §1) ------
+    // Sources are collected at 2 Hz on the editor timer (collectKeySources
+    // copies snapshots under a mutex — too heavy for 20 Hz paint); paint
+    // reads this cache. keyChromaShown_ eases toward the primary source's
+    // chroma at the DwellGlow time constant so the wheel moves with the same
+    // hand as the device's.
+    KeySources keySources_;
+    int keySourcesDiv_ = 0;
+    std::array<float, 12> keyChromaShown_ {};
+    juce::Rectangle<int> keyPanelBounds_, keyReanalyseRect_;
+    // RE-ANALYSE feedback: the remote pass has no visible activity, so the
+    // chip says "listening" until the reading's age drops (or 15 s pass).
+    juce::uint32 keyReanalyseSentMs_ = 0;
+    void triggerKeyReanalyse();
     int visualOnlyWidth = 900;
     int visualOnlyHeight = 580;
     // Opaque holder around particleVisual. macOS positions JUCE's OpenGL overlay
@@ -2481,10 +2538,24 @@ private:
     // Build the LINK LEVELS context + proposal format/grounding instructions
     // for a chat turn; empty when there are no live Links to reason about.
     juce::String buildLinkLevelsContext();
-    // [DETECTED KEY] block (KEY_DETECTOR_SPEC.md §4/§9): Link-published key
-    // readings (bus preferred) + the local chain's Key Detector. Empty when
-    // no source has a reading.
+    // [DETECTED KEY] block (KEY_DETECTOR_SPEC.md §4/§9, precedence §5.3):
+    // built from collectKeySources(); names which source won (and which stem,
+    // for a channel reading). Empty when no source has a reading.
     juce::String buildDetectedKeyContext();
+    // ---- TIER 1 key precondition (KEY_PRECONDITION_SPEC.md §2.1) ---------
+    // When a typed message genuinely needs the key (§2.2, narrow), no usable
+    // reading exists, but a bus Link DOES: add an EchoJay Key Detector to
+    // that Link's chain over the existing chain command path and trigger a
+    // committed ANALYSE — a deliberate, logged, IDEMPOTENT client step (the
+    // Link's rack sidecar is checked; a Link that already has a detector
+    // gets analyse re-armed, never a second detector). Returns a feed note
+    // describing what was done, "" when nothing fired. Ambiguous intent
+    // fires nothing (fail safe). The Tier 2 ask (no Link anywhere) is the
+    // server classifier's — not composed here.
+    static bool messageNeedsKey(const juce::String& msg);
+    juce::String maybeRunKeyPrecondition(const juce::String& typedMsg);
+    juce::String keyTier1LastUid_;     // last Link acted on (dedupe/logging)
+    juce::uint32 keyTier1SentMs_ = 0;  // don't re-fire within a minute
     // Resolve a proposal's linkId (name or uid) to a sendable address.
     juce::String resolveLinkProposalAddr(const juce::String& linkId) const;
     void applyGainProposal(const GainCardZone& z);
