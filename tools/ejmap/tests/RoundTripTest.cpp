@@ -2500,9 +2500,16 @@ void testSweepDeadline()
                "WIRING: sweepOne actually ARMS the watchdog it was given a deadline for");
         check (body.contains ("sweepDeadlineFor (cal.paramCount)"),
                "WIRING: ...with the measured per-parameter deadline, not a constant");
-        check (body.contains ("\"sweep\", \"controls sweep\""),
-               "WIRING: and plants a STAKE, so a crash during the sweep names its plugin "
-               "instead of leaving eleven restarts saying (unknown)");
+        check (body.contains ("\"sweep\", \"sweep phase (calibrate/mask/assign/submit)\""),
+               "WIRING: and plants a STAKE over the WHOLE post-load block. The narrow "
+               "stake around the two dispatches missed a real death -- signal:5 between "
+               "elysia's banner and its outcome, no inflight, restart said (unknown) -- "
+               "because calibrate, the noise mask, the session restore and submit were "
+               "all unstaked");
+        check (body.contains ("SweepStakeCloser"),
+               "WIRING: the stake is closed by a CLOSER at every exit -- seven returns "
+               "follow it, and a per-return endLoad is the shape that grows an eighth "
+               "with no close");
     }
 }
 

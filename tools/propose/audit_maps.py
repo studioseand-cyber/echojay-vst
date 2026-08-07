@@ -220,21 +220,50 @@ def main():
     print("\n" + "=" * 74)
     print("CHECK 2 -- two DIFFERENT products with an identical control surface")
     print("=" * 74)
+
+    # A map is CLEARED BY THE PROOF when check 0 covered every one of its
+    # controls against the live record and none was wrong. A weaker heuristic
+    # must not override a passing proof: UAD's 1176SE/1176LN Legacy and
+    # Precision Delay Mod/Mod L are different products that GENUINELY share a
+    # surface -- same names, ranges and anchor counts -- and check 0 verified
+    # each map's controls against what its own plugin reported. Flagging those
+    # as leaks would train the reader to dismiss this check.
+    def cleared_by_proof(d):
+        i = d["identity"]
+        key = f"{i.get('format')}|{(i.get('uid') or '').lower()}|{i.get('version')}"
+        seen = obs.get(ids.get(key) or "", {})
+        controls = d.get("controls") or {}
+        if not controls or not seen:
+            return False
+        for name, c in controls.items():
+            idx = c.get("index")
+            if idx is None or idx not in seen or name not in seen[idx]:
+                return False
+        return True
+
     by_sig = collections.defaultdict(list)
     for f, d in maps:
         if d.get("controls"):
             by_sig[control_signature(d)].append(d)
-    flagged = []
+    flagged, twins = [], []
     for sig, ds in by_sig.items():
         products = {product_of(d) for d in ds}
         if len(ds) > 1 and len(products) > 1:
+            if all(cleared_by_proof(d) for d in ds):
+                twins.append(ds)
+                continue
             flagged.append(ds)
             print(f"\n  {len(sig)} control(s), identical names AND ranges AND anchor counts:")
             for d in ds:
                 print(f"      {d['identity']['name'][:38]:38s} fp {d['fp'][:12]} "
                       f"{d['provenance'].get('at','?')[:19]}")
+    for ds in twins:
+        print(f"\n  identical surface, CLEARED BY THE PROOF (every control of every "
+              f"member verified against its own plugin's live record):")
+        for d in ds:
+            print(f"      {d['identity']['name'][:38]:38s} fp {d['fp'][:12]}  (true twin)")
     if not flagged:
-        print("\n  none")
+        print("\n  none implicated")
 
     print("\n" + "=" * 74)
     print("CHECK 3 -- a control index past the plugin's parameter count  (PROOF)")

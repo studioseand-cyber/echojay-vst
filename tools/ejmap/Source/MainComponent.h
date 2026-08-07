@@ -8477,7 +8477,26 @@ private:
                            int& nControls, juce::String& detail,
                            ejmap::CaptureResult& cap)
     {
-        releaseLoadedPlugin();
+        // THE TEARDOWN IS A CRASH WINDOW AND IT BELONGS TO THE PREVIOUS PLUGIN.
+        // On the first 100-plugin campaign the child died (signal:5) between
+        // printing plugin 2's banner and its load -- inside the teardown of
+        // plugin 1's instance -- and recovery found no stake, so the restart
+        // said "(unknown)". loadedId still names the previous plugin here,
+        // which is exactly the attribution a death in ITS dtor deserves.
+        if (loadedId.isNotEmpty() && host.getInstance() != nullptr)
+        {
+            ledger.beginLoad (loadedId, loadedName, {}, {}, {},
+                              "sweep", "teardown before next plugin");
+            releaseLoadedPlugin();
+            LedgerRecord td;
+            td.pluginId = loadedId; td.name = loadedName;
+            td.stage = "sweep"; td.outcome = LoadOutcome::ok;
+            td.detail = "teardown clean";
+            ledger.endLoad (td);
+        }
+        else
+            releaseLoadedPlugin();
+
         assigning = false;
         assignPanel.resetAll();
 
@@ -8509,6 +8528,51 @@ private:
 
         auto* inst = host.getInstance();
 
+        // ONE STAKE OVER THE WHOLE POST-LOAD BLOCK. The narrow stake around the
+        // two SPACE dispatches missed a real death: on the first 100-plugin
+        // campaign the child took signal:5 somewhere between "[2] elysia alpha
+        // mix" printing and its outcome printing, recovery found no inflight
+        // stake, and the restart row said "(unknown)" -- the exact blindness
+        // the stake exists to prevent. Calibration, the noise mask, the session
+        // restore and submit all execute plugin-adjacent code; every one of
+        // them was unstaked.
+        //
+        // Planted HERE, the moment the load stake closes, and closed at every
+        // exit by the closer below. Stage "sweep" so the stage-scoped retry
+        // rule counts it against sweep attempts.
+        ledger.beginLoad (loadedId, sp.desc.name, sp.desc.manufacturerName,
+                          sp.desc.pluginFormatName, sp.desc.version,
+                          "sweep", "sweep phase (calibrate/mask/assign/submit)");
+
+        // Closes the stake with the outcome at EVERY exit -- seven returns
+        // follow, and a per-return endLoad is the shape that grows an eighth
+        // return with no close. Same pattern as PluginHost's StakeCloser.
+        struct SweepStakeCloser
+        {
+            Ledger& ledger; const ScannedPlugin& sp; const juce::String& id;
+            juce::String outcome { "died_before_returning" };
+            ~SweepStakeCloser()
+            {
+                LedgerRecord done;
+                done.pluginId = id;  done.name = sp.desc.name;
+                done.vendor   = sp.desc.manufacturerName;
+                done.format   = sp.desc.pluginFormatName;
+                done.version  = sp.desc.version;
+                done.stage    = "sweep";
+                done.outcome  = LoadOutcome::ok;
+                done.detail   = "sweep phase returned: " + outcome;
+                // On the mapped path the idx machinery has already consumed
+                // the stake and set lastClosed=(id, ok, sweep), so THIS row is
+                // dropped by the duplicate guard -- measured, and correct: the
+                // stake is already closed and the guard exists to stop two
+                // rows for one event. What this closer guarantees is the
+                // EARLY-RETURN paths (stale_controls, swept_nothing, refusals),
+                // where no idx stake ever ran and the wide stake would
+                // otherwise be left open to misattribute a later death.
+                ledger.endLoad (done);
+            }
+        } stakeCloser { ledger, sp, loadedId };
+
         // Only when captures were asked for: without an editor there is
         // nothing to attach, and opening one is what lets a modal block.
         if (sweep.wantCaptures)
@@ -8537,47 +8601,21 @@ private:
         for (int i = 0; i < assignPanel.rows.size(); ++i)
             if (assignPanel.rows.getReference (i).kind == "controls") controlsRow = i;
         if (controlsRow < 0)
-        { detail = "the wizard offered no controls row"; return "no_controls_row"; }
+        { detail = "the wizard offered no controls row"; return stakeCloser.outcome = "no_controls_row", stakeCloser.outcome; }
 
         assignPanel.selectRow (controlsRow);
         {
-            // A STAKE *AND* A DEADLINE, and each catches what the other cannot.
-            //
-            // The watchdog catches a HANG: it fires, writes a row, stops the
-            // process. The stake catches a CRASH, which no deadline can see
-            // because the process is already gone.
-            //
-            // Measured on the live run: eleven deaths -- signals 5, 6, 10, 11 --
-            // and ZERO rows naming a plugin. Every restart said "(unknown)",
-            // because beginLoad's stake is closed by endLoad the moment the LOAD
-            // finishes, and the sweep then ran with nothing on disk saying what
-            // was in flight. The retry rule could not count what it could not
-            // see, so the same plugins came back every relaunch.
-            //
-            // Stage "sweep" on both, so a recovered row lands at the stage the
-            // failure belongs to and the stage-scoped retry rule counts sweep
-            // deaths against sweep successes rather than pooling them with load.
-            ledger.beginLoad (loadedId, sp.desc.name, sp.desc.manufacturerName,
-                              sp.desc.pluginFormatName, sp.desc.version,
-                              "sweep", "controls sweep");
+            // The DEADLINE stays narrow -- it is sized from the measured cost
+            // of the two dispatches. The STAKE is now the wide one planted
+            // above; a second beginLoad here would overwrite it and its
+            // endLoad would close it halfway through the block, which is how
+            // the elysia death fell into a gap.
             Watchdog::Scope guard (watchdog, "controls sweep", sp.pluginId(), sp.desc.name,
                                    sp.desc.pluginFormatName, "sweep",
                                    sweepDeadlineFor (cal.paramCount));
 
             assignPanel.dispatchAction ("space");    // sweep the surface
             assignPanel.dispatchAction ("space");    // ship what it found
-
-            LedgerRecord done;
-            done.pluginId = loadedId;  done.name    = sp.desc.name;
-            done.vendor   = sp.desc.manufacturerName;
-            done.format   = sp.desc.pluginFormatName;
-            done.version  = sp.desc.version;
-            done.stage    = "sweep";
-            done.outcome  = LoadOutcome::ok;
-            done.detail   = "controls sweep returned, "
-                              + juce::String (assignPanel.controlsForSubmit().size())
-                              + " staged";
-            ledger.endLoad (done);
         }
         nControls = assignPanel.controlsForSubmit().size();
 
@@ -8590,7 +8628,7 @@ private:
         if (! assignPanel.controlsAreForThisPlugin())
         {
             detail = "the staged controls were swept from a different plugin; nothing written";
-            return "stale_controls";
+            return stakeCloser.outcome = "stale_controls", stakeCloser.outcome;
         }
 
         if (nControls == 0)
@@ -8608,19 +8646,26 @@ private:
                 marks.toggleIssue (sp.desc, "sweep");
                 marks.save (ledger.getRoot());
             }
-            return "swept_nothing";
+            return stakeCloser.outcome = "swept_nothing", stakeCloser.outcome;
         }
 
+        // Submit runs plugin-adjacent code too (state capture into the map),
+        // and after the last idx close it was unstaked. The MAP SAVED row goes
+        // through endLoad and closes whichever stake is current, so this one
+        // needs no explicit close on success; the closer above covers refusal.
+        ledger.beginLoad (loadedId, sp.desc.name, sp.desc.manufacturerName,
+                          sp.desc.pluginFormatName, sp.desc.version,
+                          "sweep", "submit");
         assignPanel.dispatchAction ("submit");
         if (! assignPanel.isSubmitEnabled())
         { detail = "review refused the map: " + assignPanel.textRender().substring (0, 160);
-          return "submit_refused"; }
+          return stakeCloser.outcome = "submit_refused", stakeCloser.outcome; }
         if (! assignPanel.confirmSubmitFromSummary())
-        { detail = "submit did not confirm"; return "submit_refused"; }
+        { detail = "submit did not confirm"; return stakeCloser.outcome = "submit_refused", stakeCloser.outcome; }
 
         auto f = ledger.getRoot().getChildFile ("maps").getChildFile (currentFp + ".json");
         if (! f.existsAsFile())
-        { detail = "submit reported success and wrote no map"; return "submit_refused"; }
+        { detail = "submit reported success and wrote no map"; return stakeCloser.outcome = "submit_refused", stakeCloser.outcome; }
 
         // CAPTURE AFTER SUBMIT, NEVER BEFORE.
         //
@@ -8634,7 +8679,7 @@ private:
             cap = captureAfterSubmit (sp);
 
         detail.clear();
-        return "mapped";
+        return stakeCloser.outcome = "mapped", stakeCloser.outcome;
     }
 
 public:
