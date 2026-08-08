@@ -49,36 +49,59 @@ namespace ejmap
 //==============================================================================
 struct DialSets
 {
+    /** TWELVE WORDS WERE ADDED 8 Aug 2026 from the 1,095-map corpus, and every
+        placement below is MEASURED rather than guessed: a semantic joins a
+        category when >= 5 of that category's plugins carry a control for it, or
+        when >= a third of the category's maps do (which is what puts range_db
+        and hold_ms on `gate`, a category with only 8 maps but where both are
+        the canonical control). docs/VOCABULARY_ADDITIONS.md holds the counts.
+
+        THE COUNTS ARE NOT THE YIELD. Most of the twelve recur per band or per
+        channel, and `params` is keyed by semantic, so a plugin records exactly
+        one no matter how many it has. 1,235 controls carry these words; at most
+        ~503 can become Tier 1 rows. See queue item 17.
+    */
     static juce::StringArray forCategory (const juce::String& cat)
     {
         auto c = cat.trim().toLowerCase();
         if (c == "compressor" || c == "comp")
             return { "threshold_db", "ratio", "attack_ms", "release_ms",
-                     "makeup_db", "knee_db", "mix_pct", "input_db", "output_db" };
+                     "makeup_db", "knee_db", "mix_pct", "input_db", "output_db",
+                     "range_db", "hold_ms", "tone", "slope_db_oct" };
         if (c == "limiter")
             return { "threshold_db", "ceiling_db", "release_ms", "input_db",
                      "output_db", "mix_pct" };
         if (c == "eq")
             return { "freq_hz", "gain_db", "q", "low_cut_freq_hz",
-                     "high_cut_freq_hz", "output_db" };
+                     "high_cut_freq_hz", "output_db",
+                     "range_db", "width_pct", "slope_db_oct" };
         if (c == "de-esser" || c == "deesser")
-            return { "threshold_db", "sensitivity", "freq_hz", "mix_pct", "output_db" };
+            return { "threshold_db", "sensitivity", "freq_hz", "mix_pct", "output_db",
+                     "range_db" };
         if (c == "delay")
             return { "delay_time_ms", "feedback_pct", "mix_pct",
-                     "low_cut_freq_hz", "high_cut_freq_hz", "output_db" };
+                     "low_cut_freq_hz", "high_cut_freq_hz", "output_db",
+                     "range_db", "depth_pct", "width_pct", "mod_rate_hz",
+                     "tempo_bpm", "pan" };
         if (c == "reverb")
             return { "reverb_decay_s", "predelay_ms", "mix_pct", "wet_pct",
-                     "low_cut_freq_hz", "high_cut_freq_hz", "output_db" };
+                     "low_cut_freq_hz", "high_cut_freq_hz", "output_db",
+                     "range_db", "depth_pct", "reverb_size", "width_pct",
+                     "mod_rate_hz", "tone", "balance", "density", "tempo_bpm" };
         if (c == "saturation" || c == "sat")
-            return { "drive", "mix_pct", "input_db", "output_db" };
+            return { "drive", "mix_pct", "input_db", "output_db",
+                     "width_pct", "mod_rate_hz", "tone", "slope_db_oct" };
         if (c == "gate")
-            return { "threshold_db", "attack_ms", "release_ms", "ratio", "output_db" };
+            return { "threshold_db", "attack_ms", "release_ms", "ratio", "output_db",
+                     "range_db", "hold_ms" };
         if (c == "transient_shaper" || c == "transient")
             return { "sensitivity", "attack_ms", "release_ms", "output_db", "mix_pct" };
         if (c == "channel_strip")
-            return { "input_db", "output_db", "threshold_db", "ratio", "freq_hz", "gain_db" };
+            return { "input_db", "output_db", "threshold_db", "ratio", "freq_hz", "gain_db",
+                     "range_db", "depth_pct", "width_pct", "balance", "hold_ms" };
         if (c == "amp_sim")
-            return { "drive", "input_db", "output_db", "mix_pct" };
+            return { "drive", "input_db", "output_db", "mix_pct",
+                     "range_db" };
         return { "mix_pct", "output_db" };          // unknown category: minimal set
     }
 
@@ -99,7 +122,14 @@ struct DialSets
                                         "makeup", "knee", "mix", "gain", "freq",
                                         "output", "input", "drive", "ceiling",
                                         "sens", "decay", "predelay", "feedback",
-                                        "cut", "wet", "dry", "time" };
+                                        "cut", "wet", "dry", "time",
+                                        // the 8 Aug additions. This filter keeps
+                                        // things OUT of a bulk skip, so a word
+                                        // that is now dialable MUST appear here
+                                        // or the floor would skip its control.
+                                        "range", "depth", "size", "width", "rate",
+                                        "tone", "slope", "balance", "hold",
+                                        "density", "tempo", "pan" };
         const auto n = paramName.toLowerCase();
         for (auto* t : tokens)
             if (n.contains (t))

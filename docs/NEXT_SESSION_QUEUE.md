@@ -1199,6 +1199,25 @@ the mapper is now told they cannot record what the plugin actually has.
 request name a stage ("compressor release") versus a bare semantic ("release")? That
 is answerable from the chat corpus and should be answered before anything is built.
 
+**UPDATED 8 Aug 2026 — this item now caps the vocabulary work, and the cap is
+large.** The twelve additions of `docs/VOCABULARY_ADDITIONS.md` land on 1,235
+controls, but item 17 means at most **~503** can become Tier 1 rows: one per
+plugin per semantic, regardless of how many controls carry the word. The cap is
+very uneven and is now measured per semantic:
+
+```
+slope_db_oct   91% of its plugins have MORE THAN ONE      <- item 17 eats 83% of its count
+pan            86%
+reverb_size    76%
+hold_ms        58%      balance 50%      range_db 44%
+width_pct      41%      depth_pct 37%    tone 27%    mod_rate_hz 23%
+density         0%      tempo_bpm 0%                       <- free of this item entirely
+```
+
+Whoever decides between (a), (b) and (c) should read that table first: it is the
+first real measurement of how much (a) actually costs, and it did not exist
+before the 1,095-map corpus.
+
 ---
 
 ## 18. THE `attack_ms` VOCABULARY IS STRAINING — a dial-set question, not a classification one

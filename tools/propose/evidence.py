@@ -22,6 +22,20 @@ VOCAB = [
     "freq_hz", "gain_db", "q", "low_cut_freq_hz", "high_cut_freq_hz",
     "sensitivity", "drive", "delay_time_ms", "feedback_pct",
     "reverb_decay_s", "predelay_ms", "position",
+
+    # Added 8 Aug 2026 from the 1,095-map corpus -- 1,235 controls that both
+    # arms called `none` because there was no word for them. Breadth was the
+    # test: every one appears on 21+ plugins. `speed` passed breadth (34
+    # plugins) and was HELD BACK because it is two semantics wearing one word,
+    # a tape percentage and a detector time constant, which no unit check can
+    # separate. docs/VOCABULARY_ADDITIONS.md carries the counts and the cap.
+    #
+    # THE SUFFIX IS A CLAIM, not a label: unitFamilyConflicts checks it. So
+    # slope_db_oct and tempo_bpm deliberately end in families semanticUnit does
+    # NOT know, and therefore claim nothing -- inventing dB-per-octave as a unit
+    # family would change the rule the hold-out was measured against.
+    "range_db", "depth_pct", "reverb_size", "width_pct", "mod_rate_hz",
+    "tone", "balance", "slope_db_oct", "hold_ms", "density", "tempo_bpm", "pan",
 ]
 
 

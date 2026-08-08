@@ -1,7 +1,20 @@
 # Twelve additions to the dial vocabulary
 
-Written 8 Aug 2026, from the 1,095-proposal corpus. **A schema change, proposed
-with the measurement that justifies it and the measurement that limits it.**
+Written 8 Aug 2026, from the 1,095-proposal corpus. **Approved and landed the
+same day** — `VOCAB` in `evidence.py` and `DialSets` in `EjmapAssignment.h`, held
+in step by an assertion in `test_propose.py` rather than by intent.
+
+> ## THE NUMBER TO QUOTE IS ~500, NOT 1,235
+>
+> 1,235 controls carry these twelve words. **At most ~503 of them can become
+> dialable**, because `params` is keyed by semantic and most of the twelve recur
+> per band or per channel — a plugin with six crossover slopes records one
+> `slope_db_oct`. The other ~730 stay reachable only by exact control name,
+> which is what they are today.
+>
+> Anyone reading "1,235 controls covered" over-values this change by **2.5x**.
+> The cap is queue item 17 and it is per-semantic: `density` and `tempo_bpm`
+> lose nothing, `slope_db_oct` loses 83%. §3 has the table.
 
 The 40-map pilot could not support this question and said so. The corpus can:
 23,052 controls that both arms called `none` are not 23,052 failures, and the
@@ -156,12 +169,44 @@ whose accepted set already holds one. Same invariant as chunking, same reason.
 
 ## 5. Order of work
 
-1. Add the twelve to `VOCAB` (`evidence.py`) **and** to the C++ `DialSets`
-   (`EjmapAssignment.h`) — a word the mapper cannot pick in the app is not in
-   the vocabulary, it is only in the proposer.
-2. `test_propose.py`: assert the two lists agree, the way `semanticUnit` is
-   already asserted against the header rather than trusted.
-3. Build the re-ask-declines mode with gate 4 merged against existing accepts.
-4. Run A (~$76).
+1. ~~Add the twelve to `VOCAB` (`evidence.py`) **and** to the C++ `DialSets`
+   (`EjmapAssignment.h`)~~ — **done 8 Aug.** A word the mapper cannot pick in the
+   app is not in the vocabulary, it is only in the proposer. Category placement
+   is measured, not guessed: a semantic joins a category when ≥5 of its plugins
+   carry one, or ≥⅓ of the category's maps do (which is what puts `range_db` and
+   `hold_ms` on `gate`, only 8 maps but both canonical there).
+2. ~~`test_propose.py`: assert the two lists agree~~ — **done.** Read out of the
+   header and compared, the way `semanticUnit` already is. A rule that exists
+   twice is two rules. `nameSuggestsDialSet` also gained the twelve tokens: it
+   is a *withholding* filter, so a dialable word missing from it would let the
+   I-bulk floor skip the very control the vocabulary can now name.
+3. ~~Re-ask-declines mode with gate 4 merged against existing accepts~~ —
+   **done**, `propose.py --redo-declines`. Three invariants tested: only the
+   declines are asked; a new claimant cannot take a semantic the proposal
+   already holds (and the incumbent is *not* withdrawn — it was decided by a run
+   this one is not re-opening); a failed re-ask leaves the file byte-identical.
+4. Run A (~$76). ← **next**
 5. Only then decide item 17 — the yield table above is the input to that
    decision, and it did not exist before this corpus.
+
+---
+
+## 6. A number that is now unknown, and worth measuring
+
+The eleven giants were proposed in **chunks**, so their arms judged each control
+with only ~200 siblings in view instead of the whole surface. The 98.7%
+auto-accept precision was measured on whole-plugin prompts. **It does not cover a
+chunked row, and there are 8,407 of them** — 16% of the corpus, concentrated in
+exactly the plugins with the most controls.
+
+This is a known unknown, not a suspected defect: nothing says the number is
+worse, only that it was not measured under these conditions. The measurement is
+cheap and already has a harness — `propose.py --audit` re-derives semantics a
+human already confirmed and scores against them. Running it over a chunked
+population with `--chunk 200` against the same hold-out would give the chunked
+figure directly. It needs hold-out rows on a giant, which the 266 may not
+contain; if not, the cheaper version is to re-propose a handful of *medium*
+plugins both ways and compare the two answers to each other.
+
+`run.chunking` marks every affected proposal, so the population is queryable
+whenever someone wants to pay for the answer.

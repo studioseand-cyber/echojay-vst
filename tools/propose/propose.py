@@ -261,13 +261,12 @@ def proposal_document(map_doc, accepted, escalated, declined, run_id, errors, ef
     }
 
 
-def run_one(map_path, out_dir, clients, audit, run_id, effort, chunk=CHUNK):
-    map_doc = json.load(open(map_path))
-    rows = candidates(map_doc, audit=audit)
-    name = map_doc["identity"]["name"]
-    if not rows:
-        return name, 0, 0, "nothing to propose"
+def ask_in_chunks(map_doc, rows, clients, effort, chunk):
+    """Both arms over `rows`, split into requests of at most `chunk` controls.
 
+    Returns (a_ans, b_ans, errors, n_parts) or (None, None, errors, note) --
+    ONE failure anywhere means the caller must write nothing at all.
+    """
     # The rows arrive in index order, so a split keeps a band's controls next to
     # each other rather than scattering `Band 3 Detector -> LP` away from its
     # siblings. Chunking is a transport concern; it must not reorder evidence.
@@ -292,10 +291,23 @@ def run_one(map_path, out_dir, clients, audit, run_id, effort, chunk=CHUNK):
             # chunk failure abandons the WHOLE plugin, unwritten, for the next
             # run -- the chunks already paid for are the price of that safety.
             where = "" if len(parts) == 1 else f" (chunk {n}/{len(parts)})"
-            return name, 0, 0, (f"ARM FAILED{where}, whole plugin left for the "
-                                f"next run: {errors[0][:60]}")
+            return None, None, errors, (f"ARM FAILED{where}, whole plugin left "
+                                        f"for the next run: {errors[0][:60]}")
         a_ans += a
         b_ans += b
+    return a_ans, b_ans, errors, len(parts)
+
+
+def run_one(map_path, out_dir, clients, audit, run_id, effort, chunk=CHUNK):
+    map_doc = json.load(open(map_path))
+    rows = candidates(map_doc, audit=audit)
+    name = map_doc["identity"]["name"]
+    if not rows:
+        return name, 0, 0, "nothing to propose"
+
+    a_ans, b_ans, errors, parts = ask_in_chunks(map_doc, rows, clients, effort, chunk)
+    if a_ans is None:
+        return name, 0, 0, parts                       # parts carries the note
 
     # ONE merge over ALL rows and BOTH arms' concatenated answers, never one per
     # chunk. Gate 4 lives at the end of merge(), so this is what makes two
@@ -316,11 +328,96 @@ def run_one(map_path, out_dir, clients, audit, run_id, effort, chunk=CHUNK):
         return name, len(accepted), len(escalated), f"audit {hit}/{len(accepted)} match human"
 
     doc = proposal_document(map_doc, accepted, escalated, declined, run_id, errors,
-                            effort, chunking=(len(parts), chunk) if len(parts) > 1 else None)
+                            effort, chunking=(parts, chunk) if parts > 1 else None)
     json.dump(doc, open(os.path.join(out_dir, f"{map_doc['fp']}.json"), "w"), indent=1)
     return name, len(accepted), len(escalated), (
         f"{len(declined)} declined"
-        + (f", asked in {len(parts)} chunks" if len(parts) > 1 else ""))
+        + (f", asked in {parts} chunks" if parts > 1 else ""))
+
+
+def run_reask(map_path, out_dir, clients, run_id, effort, chunk=CHUNK):
+    """Re-ask ONLY the controls a previous run declined, and fold the answers
+    into the proposal that already exists.
+
+    THIS IS WHAT A VOCABULARY CHANGE NEEDS, and it is not a re-derivation.
+    regate.py re-decides from the stored arms without paying again, which is how
+    the hedged agreements were recovered for nothing. It cannot work here: the
+    arms never had the new words in their prompt, so there is no stored answer
+    to re-read. The words have to be asked.
+
+    The population is the DECLINES and nothing else:
+      * an accepted row is a decision this run is not re-litigating;
+      * an escalated row is already in front of a human;
+      * a declined row is exactly the population whose answer a new word can
+        change, and it is 22,995 controls rather than 43,194.
+
+    Selecting maps by whether a control's NAME already contains one of the new
+    words would halve the bill again and is refused on purpose: that is a filter
+    whose discards nobody measures, and a control called `Spread` is precisely
+    the `width_pct` it would drop.
+    """
+    map_doc = json.load(open(map_path))
+    name = map_doc["identity"]["name"]
+    out_path = os.path.join(out_dir, f"{map_doc['fp']}.json")
+    if not os.path.exists(out_path):
+        return name, 0, 0, "no proposal to re-ask -- propose it first"
+    prior = json.load(open(out_path))
+
+    want = {d.get("index") for d in (prior.get("declines") or [])}
+    if not want:
+        return name, 0, 0, "no declines"
+    rows = [r for r in candidates(map_doc) if r["index"] in want]
+    if not rows:
+        return name, 0, 0, "declines no longer match any control"
+
+    a_ans, b_ans, errors, parts = ask_in_chunks(map_doc, rows, clients, effort, chunk)
+    if a_ans is None:
+        # The EXISTING proposal is left exactly as it was. A re-ask that fails
+        # must not degrade what is already on disk.
+        return name, 0, 0, parts
+
+    accepted, escalated, declined = merge(rows, a_ans, b_ans)
+
+    # GATE 4 ACROSS THE WHOLE PROPOSAL, not just across this re-ask. merge()
+    # only saw the declined rows, so it cannot know the plugin already has an
+    # accepted `range_db`. Without this, the re-ask would write a second one
+    # into a dict that holds one, and the second write would win silently --
+    # the exact failure gate 4 exists to prevent, arriving by a new route.
+    #
+    # Only the NEW claimant escalates. The incumbent was decided by a run this
+    # one is not re-opening, and withdrawing it here would quietly revoke an
+    # answer nobody asked about.
+    held = {p.get("kind"): p.get("control_name") for p in (prior.get("params") or [])}
+    keep = []
+    for r in accepted:
+        if r["semantic"] in held:
+            escalated.append({**{k: v for k, v in r.items() if k != "semantic"},
+                              "why": f"{r['semantic']} is already held by "
+                                     f"{held[r['semantic']]!r} on this plugin"})
+        else:
+            keep.append(r)
+    accepted = keep
+
+    fresh = proposal_document(map_doc, accepted, escalated, declined, run_id, errors,
+                              effort, chunking=(parts, chunk) if parts > 1 else None)
+
+    # The carried-over rows keep their original provenance untouched; only the
+    # new ones are stamped, so ABSENCE of `proposed_in` means the first run --
+    # the same convention as an absent `chunking` meaning whole-surface.
+    for p in fresh["params"]:
+        p["proposed_in"] = run_id
+    doc = dict(fresh)
+    doc["params"] = (prior.get("params") or []) + fresh["params"]
+    doc["escalations"] = (prior.get("escalations") or []) + fresh["escalations"]
+    doc["declines"] = fresh["declines"]        # recomputed over the same population
+    doc["run"] = {**fresh["run"],
+                  "reask": {"of": "declines", "asked": len(rows),
+                            "vocabulary": len(VOCAB)},
+                  "supersedes": prior.get("run")}
+    json.dump(doc, open(out_path, "w"), indent=1)
+    return name, len(accepted), len(escalated), (
+        f"re-asked {len(rows)}, {len(declined)} still declined"
+        + (f", in {parts} chunks" if parts > 1 else ""))
 
 
 def main():
@@ -352,7 +449,15 @@ def main():
     ap.add_argument("--force", action="store_true", help="redo maps already proposed")
     ap.add_argument("--audit", action="store_true",
                     help="re-derive already-confirmed params and score against them")
+    ap.add_argument("--redo-declines", action="store_true",
+                    help="re-ask ONLY the controls a previous run declined, and "
+                         "fold the answers into the existing proposal; what a "
+                         "vocabulary addition needs, since regate cannot re-read "
+                         "an answer the arms were never asked for")
     args = ap.parse_args()
+    if args.redo_declines and (args.audit or args.force):
+        sys.exit("--redo-declines cannot be combined with --audit or --force: "
+                 "one folds into an existing proposal, the others replace it")
 
     import anthropic, openai
     clients = {"anthropic": anthropic.Anthropic(), "openai": openai.OpenAI()}
@@ -380,25 +485,41 @@ def main():
         d = json.load(open(p))
         if args.only and args.only.lower() not in d["identity"]["name"].lower():
             continue
-        if not args.audit and not args.force \
-           and os.path.exists(os.path.join(out_dir, f"{d['fp']}.json")):
+        prop = os.path.join(out_dir, f"{d['fp']}.json")
+        if args.redo_declines:
+            # The INVERSE population: only maps that have a proposal, and only
+            # those with something left to re-ask.
+            if not os.path.exists(prop):
+                continue
+            try:
+                if not (json.load(open(prop)).get("declines") or []):
+                    continue
+            except Exception:                                   # noqa: BLE001
+                continue
+            todo.append(p)
+            continue
+        if not args.audit and not args.force and os.path.exists(prop):
             continue
         todo.append(p)
     if args.limit:
         todo = todo[:args.limit]
 
     run_id = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-    print(f"{len(paths)} maps, {len(todo)} to propose  "
-          f"[{OPUS} @ effort {args.effort} + {GPT}, prompt {SYSTEM_SHA}]"
+    print(f"{len(paths)} maps, {len(todo)} to "
+          f"{'RE-ASK (declines only)' if args.redo_declines else 'propose'}  "
+          f"[{OPUS} @ effort {args.effort} + {GPT}, prompt {SYSTEM_SHA}, "
+          f"vocab {len(VOCAB)}]"
           + ("  AUDIT MODE -- writes nothing" if args.audit else ""))
     if not todo:
         return
 
     t0, acc, esc = time.time(), 0, 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futures = {ex.submit(run_one, p, out_dir, clients, args.audit, run_id,
-                             args.effort, args.chunk): p
-                   for p in todo}
+        futures = ({ex.submit(run_reask, p, out_dir, clients, run_id,
+                              args.effort, args.chunk): p for p in todo}
+                   if args.redo_declines else
+                   {ex.submit(run_one, p, out_dir, clients, args.audit, run_id,
+                              args.effort, args.chunk): p for p in todo})
         for fut in concurrent.futures.as_completed(futures):
             try:
                 name, a, e, note = fut.result()

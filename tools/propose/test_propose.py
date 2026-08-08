@@ -6,7 +6,7 @@
 import json, os, re, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from evidence import semantic_unit, unit_family_conflict, candidates, control_evidence
+from evidence import semantic_unit, unit_family_conflict, candidates, control_evidence, VOCAB
 from propose import merge
 
 CPP = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -34,6 +34,32 @@ for suffix, family in suffixes:
     check(semantic_unit("x" + suffix) == family, f"suffix {suffix} -> {family}")
 check(len(suffixes) == 5, f"C++ declares {len(suffixes)} suffix rules, python mirrors 5")
 check(semantic_unit("drive") == "", "drive makes no unit claim")
+
+print("\nthe vocabulary, against the C++ dial sets it is the union of")
+
+# A word the proposer knows and the app cannot offer is not in the vocabulary,
+# it is only in the proposer -- and the mapper would be shown a control the
+# model can name and they cannot. Asserted, not trusted, the same way
+# semanticUnit is: read DialSets::forCategory out of the header and compare.
+ASSIGN = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                      "..", "ejmap", "Source", "EjmapAssignment.h")
+asrc = open(ASSIGN).read()
+fc = re.search(r"static juce::StringArray forCategory[^{]*\{(.*?)\n    \}", asrc, re.S).group(1)
+cpp_vocab = set(re.findall(r'"(\w+)"', fc)) - set(re.findall(r'c == "([\w-]+)"', fc))
+py_vocab = set(VOCAB) - {"position"}      # position is corpus-side, not a dial set
+check(cpp_vocab == py_vocab,
+      f"python VOCAB and the C++ dial sets are the same {len(py_vocab)} words"
+      + (f"  [py-only {sorted(py_vocab - cpp_vocab)}  cpp-only {sorted(cpp_vocab - py_vocab)}]"
+         if cpp_vocab != py_vocab else ""))
+
+# The withholding filter must know every dialable word, or the I-bulk floor
+# skips a control the vocabulary can now name. Direction matters: matching too
+# much is safe here, too little is not.
+tok = re.search(r"static const char\* tokens\[\] = \{(.*?)\};", asrc, re.S).group(1)
+tokens = re.findall(r'"(\w+)"', tok)
+for w in ("range", "depth", "size", "width", "rate", "tone", "slope",
+          "balance", "hold", "density", "tempo", "pan"):
+    check(any(t in w for t in tokens), f"nameSuggestsDialSet can see {w!r}")
 
 print("\nunit family, the rule's own behaviour")
 check(unit_family_conflict("attack_ms", "db") is not None,
@@ -199,6 +225,78 @@ note, files, out = _run(doc, chunk=0, answers=ans)
 check(len(_chunks_asked[0]) == 4, "chunk=0 asks for the whole plugin in one request")
 check("chunking" not in out["run"],
       "an unchunked proposal carries no chunking field -- absence means whole-surface")
+
+print("\nre-asking declines -- folds in, never degrades")
+
+
+def _reask(prior, chunk=0, fail_on=None, answers=None, doc=None):
+    tmp = tempfile.mkdtemp()
+    try:
+        mp = os.path.join(tmp, "m.json")
+        json.dump(doc, open(mp, "w"))
+        out = os.path.join(tmp, "out")
+        os.mkdir(out)
+        json.dump(prior, open(os.path.join(out, doc["fp"] + ".json"), "w"))
+        old = (P.ask_opus, P.ask_gpt, P.time.sleep)
+        _chunks_asked.clear()
+        P.ask_opus = _fake_arm(answers, fail_on)
+        P.ask_gpt = lambda c, u: _fake_arm(answers)(c, u)
+        P.time.sleep = lambda *_: None
+        try:
+            note = P.run_reask(mp, out, {"anthropic": None, "openai": None},
+                               "RUN2", "high", chunk)
+        finally:
+            P.ask_opus, P.ask_gpt, P.time.sleep = old
+        return note, json.load(open(os.path.join(out, doc["fp"] + ".json")))
+    finally:
+        shutil.rmtree(tmp)
+
+
+doc = _map_of([("A", "db"), ("B", "hz"), ("C", "db"), ("D", "")])
+PRIOR = {"schema": "propose/1", "fp": "TESTFP", "plugin": "Giant",
+         "run": {"run_id": "RUN1"},
+         "params": [{"index": 0, "kind": "gain_db", "control_name": "A"}],
+         "escalations": [{"index": 1, "name": "B", "why": "arms disagree"}],
+         "declines": [{"index": 2, "control_name": "C"},
+                      {"index": 3, "control_name": "D"}]}
+
+# 1. ONLY the declines are asked. An accepted row is a decision this run is not
+#    re-litigating; an escalated row is already in front of a human.
+note, out = _reask(PRIOR, answers={"C": {"semantic": "range_db", "confidence": "high"},
+                                   "D": {"semantic": "density", "confidence": "high"}},
+                   doc=doc)
+check(sorted(_chunks_asked[0]) == ["C", "D"],
+      "only the DECLINED controls are re-asked, not the accepts or escalations")
+check(len(out["params"]) == 3 and out["params"][0]["control_name"] == "A",
+      "the prior accepted row is carried through untouched")
+check([p.get("proposed_in") for p in out["params"]] == [None, "RUN2", "RUN2"],
+      "only the NEW rows are stamped -- absence means the original run")
+check(len(out["escalations"]) == 1 and out["declines"] == [],
+      "prior escalations survive; the declines are recomputed over the same population")
+check(out["run"]["supersedes"]["run_id"] == "RUN1", "the superseded run is recorded")
+
+# 2. GATE 4 AGAINST THE INCUMBENT. merge() only saw the declined rows, so it
+#    cannot know the plugin already holds an accepted gain_db. Without the extra
+#    pass the second write would win silently.
+note, out = _reask(PRIOR, answers={"C": {"semantic": "gain_db", "confidence": "high"},
+                                   "D": {"semantic": "density", "confidence": "high"}},
+                   doc=doc)
+check(len(out["params"]) == 2 and all(p["kind"] != "gain_db" or p["control_name"] == "A"
+                                      for p in out["params"]),
+      "a re-asked control cannot take a semantic the proposal already holds")
+held = [e for e in out["escalations"] if "already held by 'A'" in e.get("why", "")]
+check(len(held) == 1, "the NEW claimant escalates, naming the incumbent")
+check(any(p["control_name"] == "A" for p in out["params"]),
+      "and the incumbent is NOT withdrawn -- it was decided by a run this one "
+      "is not re-opening")
+
+# 3. A FAILED RE-ASK LEAVES THE EXISTING PROPOSAL EXACTLY AS IT WAS.
+note, out = _reask(PRIOR, fail_on="C",
+                   answers={"C": {"semantic": "range_db", "confidence": "high"},
+                            "D": {"semantic": "density", "confidence": "high"}},
+                   doc=doc)
+check(out == PRIOR, "a failed re-ask does not degrade what is already on disk")
+check("left for the next run" in note[3], "and says so")
 
 print("\nevidence shape is frozen")
 c = control_evidence({"name": "n", "index": 0, "kind": "anchored", "range": [0, 1],
