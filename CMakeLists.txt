@@ -802,3 +802,17 @@ target_link_libraries(EchoJayBuiltinRegistryTest PRIVATE
     juce::juce_recommended_config_flags)
 
 set_target_properties(EchoJayBuiltinRegistryTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
+# ============ Streaming parser test runner (spec step 3) ============
+# Console app, juce_core only — runs the read-back suite that holds the
+# incremental block parser byte-identical to the whole-reply strip
+# (EJReplyBlocks). Never part of a plugin or release build.
+option(ECHOJAY_BUILD_STREAM_TESTS "Build EJStreamTests, the streaming parser read-back runner" OFF)
+if(ECHOJAY_BUILD_STREAM_TESTS)
+    juce_add_console_app(EJStreamTests PRODUCT_NAME "EJStreamTests")
+    target_sources(EJStreamTests PRIVATE Tests/test_stream_block_parser.cpp)
+    target_compile_features(EJStreamTests PRIVATE cxx_std_17)
+    target_link_libraries(EJStreamTests PRIVATE
+        juce::juce_core
+        juce::juce_recommended_config_flags)
+endif()
