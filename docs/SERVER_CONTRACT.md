@@ -86,6 +86,28 @@ An identity mapping to `[]` means **unmapped**. An identity **absent** from
 `identities` means **unknown**, and the client is careful about the difference —
 it will not claim "unmapped" on no evidence. Keep that distinction.
 
+> ### CONTRACT CHANGE, not a server fix: the comma delimiter collides with real data
+>
+> Measured against production on 8 Aug 2026. `identities=` is comma-separated,
+> and **OTT's version string is literally `1,3,7,0`** — so the identity
+> `VST3|7c12157|1,3,7,0` arrived as four keys (`VST3|7c12157|1`, `3`, `7`, `0`)
+> and 1,108 questions came back as 1,111 answers with one genuine absence.
+>
+> **The failure is silent and lands on the distinction directly above.** The
+> client sees OTT as *unknown* rather than *unmapped*, so it correctly refuses
+> to claim anything, and the plugin never resolves. One identity of 1,108 today;
+> version strings may legally contain commas, so it is a latent defect, not a
+> one-off.
+>
+> **Both ends need the same decision**, which is why this is a contract change:
+> the client batches identities with the same separator. Either pick a delimiter
+> that cannot appear in `format|uid|version` (newline, or `;`), or percent-encode
+> each identity before joining. A server-side fix alone leaves the client
+> emitting a request the server can only guess at.
+>
+> Whatever is chosen must be applied to ingest and lookup together — they share
+> the encoding.
+
 `provenance.tester_id` is currently **not returned**, and the client compensates
 locally with a comment saying so. Returning `mapper_ref` here is the fix and the
 client is already written to prefer it.
