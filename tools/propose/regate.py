@@ -14,7 +14,7 @@ WHAT IT WILL NOT DO. It never invents an answer the arms did not give, and it
 never touches a row a HUMAN has decided -- a decision file entry outranks any
 gate, because the gate is a machine and the human looked.
 """
-import argparse, collections, glob, json, os, shutil, sys
+import argparse, collections, datetime, glob, json, os, shutil, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from evidence import unit_family_conflict
@@ -116,10 +116,20 @@ def main():
         print("\nDry run. Nothing written. Add --apply.")
         return 0
 
-    backup = os.path.join(args.root, "proposals-backup-regate")
-    if not os.path.exists(backup):
-        shutil.copytree(os.path.join(args.root, "proposals"), backup, symlinks=True)
-        print(f"backed up -> {backup}")
+    # TIMESTAMPED, AND ALWAYS TAKEN. This used to be a fixed name guarded by
+    # `if not os.path.exists(backup)`, which meant the second --apply silently
+    # kept the FIRST run's snapshot: on 8 Aug that snapshot held 183 files while
+    # the corpus held 1,106, and it printed nothing to say so. A backup whose
+    # presence is checked instead of its contents is not a backup, it is a
+    # directory with a reassuring name.
+    backup = os.path.join(args.root, "proposals-backup-regate-"
+                          + datetime.datetime.now().strftime("%Y%m%dT%H%M%S"))
+    # copytree FOLLOWS a symlinked source (verified: distinct inodes out), which
+    # matters because ~/Library/ejmap/proposals is one. Shell `cp -R` does not,
+    # and produced a second symlink to the live corpus on 8 Aug.
+    shutil.copytree(os.path.join(args.root, "proposals"), backup, symlinks=True)
+    n = len([f for f in os.listdir(backup) if f.endswith(".json")])
+    print(f"backed up {n} file(s) -> {backup}")
     for f, d in docs:
         json.dump(d, open(f, "w"), indent=1)
     print(f"rewrote {len(docs)} proposal file(s)")

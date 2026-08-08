@@ -153,12 +153,37 @@ $142 full-run projection over 43,194):
 | C — full `--force` over those 327 maps | 327 maps | 23,979 | ~$79 | also revisits their escalations and accepts |
 | D — full `--force`, whole corpus | 1,095 maps | 43,194 | ~$142 | everything |
 
-**A is the recommendation.** B is cheaper and B is the trap: selecting maps by
-whether a control's *name* already contains one of the twelve tokens is a filter
-whose discards nobody measures, and a control called `Spread` is exactly the
-`width_pct` such a filter drops. The corpus has already paid once for a threshold
-that manufactured a third of its own review pile; $33 is not worth re-learning
-that.
+**A was chosen and ran on 8 Aug.** B was cheaper and B was the trap: selecting
+maps by whether a control's *name* already contains one of the twelve tokens is a
+filter whose discards nobody measures.
+
+### The argument is now a measurement
+
+Of the **542 new semantics the re-ask accepted, 140 — 26% — sit on controls
+whose name contains none of the twelve words.** Option B would have discarded
+every one of them, and nothing in its output would have said so:
+
+```
+C1 comp-gate (m)      'Floor'        -> range_db
+elysia karacter mix   'Color'        -> tone
+SSL Native X-Sat v6   'Shape'        -> tone
+UAD RealVerb-Pro      'Diffusion'    -> density
+VerbSuite Classics    'Chorus Level' -> depth_pct
+SSL X-Delay           'Modulation'   -> depth_pct
+SSL X-Delay           'Diffusion'    -> density
+SSL X-Delay           'Internal BPM' -> tempo_bpm
+PRS V9 (m)            'Speed'        -> mod_rate_hz
+Unfiltered Audio ID   'Jitter'       -> depth_pct
+UAD Tonelux Tilt      '12dB per Oct' -> slope_db_oct
+```
+
+`Spread -> width_pct` was the hypothetical used to argue against B. `Floor ->
+range_db` and `Diffusion -> density` are the instances. The saving would have
+been $33; the cost would have been a quarter of the yield, invisibly.
+
+This is the second time a filter's discards turned out to be the whole question
+here — the first was the confidence gate, which manufactured 34% of the review
+pile. Score the discards, not the accepts.
 
 A needs a small mode in `propose.py` that does not exist: **re-ask only the
 declined controls of a map, and merge the answers against the accepted params
