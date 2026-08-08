@@ -1709,6 +1709,20 @@ private:
         int          sessionSlot    = -1;
         juce::TextButton applyBtn { "APPLY & RELEASE" };
         std::function<void()> onApplyRelease;
+        // THE AFFORDANCE (stage 1 follow-up): a remote slot is edited by
+        // selecting it and pressing EDIT, not by the selection click itself.
+        // A click selects quietly, like everywhere else in the product; the
+        // button starts the session, so a stray click on a block can never
+        // engage a lease. It replaces the old resting boundary message,
+        // which explained a wall that solo editing removed.
+        juce::TextButton editBtn { "EDIT THIS PLUGIN" };
+        std::function<void(int)> onEditRequest;
+        // Sticky status: rebuild() used to stomp statusText with the resting
+        // message on every remote rebuild, which erased the edit flow's own
+        // messages ("Reading settings...", refusals, timeouts) and made any
+        // failure invisible. Now rebuild only replaces text IT wrote: a flow
+        // message survives until the flow itself replaces it.
+        juce::String restingHint_;
         /** Remote slot tapped: the editor asks that Link to raise its own.
             Slot index is the panel's (rack) index. */
         std::function<void(int)> onRemoteEditorRequest;
@@ -1744,6 +1758,14 @@ private:
                 layoutInline();
                 attachNative(false);
             };
+
+            editBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff0e7490));
+            editBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            editBtn.setTooltip("Open this plugin here and hear the channel solo, "
+                               "live, while you adjust it");
+            editBtn.onClick = [this]
+            { if (selectedIdx >= 0 && onEditRequest) onEditRequest(selectedIdx); };
+            addChildComponent(editBtn);
 
             applyBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1d4ed8));
             applyBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
@@ -2144,14 +2166,15 @@ private:
             if (remote)
             {
                 // A live session's own slot DOES show inline: the editor is
-                // the local EDITING COPY (onCreateEditor returns it), so the
-                // architectural boundary does not apply to it. Every other
-                // remote slot asks to begin a session.
+                // the local EDITING COPY (onCreateEditor returns it). Every
+                // OTHER remote slot click just SELECTS -- the EDIT button
+                // starts the session. The click used to auto-begin one,
+                // which coupled selection to a lease and gave the flow no
+                // visible starting point.
                 if (!(editingSession && i == sessionSlot))
                 {
-                    if (onRemoteEditorRequest) onRemoteEditorRequest(i);
                     popBtn.setVisible(false);
-                    resized();
+                    resized();   // editBtn visibility follows the selection
                     repaint();
                     return;
                 }
@@ -2288,10 +2311,20 @@ private:
             // Bring the inline editor in line with the selection
             if (remote || selectedIdx < 0)
                 closeAllEditors();
-            // ONE boundary message, shared with the remote-open's
-            // window-closed outcome: they are the same fact.
-            if (remote)
-                statusText = kRemoteEditorBoundary.replace("%LINK%", remoteName);
+            // The RESTING HINT names the affordance. Sticky: it only ever
+            // replaces text this same line wrote (or emptiness), so the edit
+            // flow's own messages -- refusals, sizes, timeouts, all the real
+            // walls with their real reasons -- survive rebuilds and stay
+            // readable until the flow itself moves on.
+            if (remote && !editingSession)
+            {
+                const juce::String hint =
+                    "Select a plugin, then EDIT THIS PLUGIN to adjust it here. "
+                    "You will hear " + remoteName + " solo, live, while you edit.";
+                if (statusText.isEmpty() || statusText == restingHint_)
+                    statusText = hint;
+                restingHint_ = hint;
+            }
             else if ((inlineSlot != selectedIdx || inlineEditor == nullptr)
                      && !(popout != nullptr && popoutSlot == selectedIdx))
                 showInline(selectedIdx);
@@ -2430,6 +2463,8 @@ private:
             popBtn.setBounds(getWidth() - kCardMargin - 26, 6, 26, 22);
             applyBtn.setBounds(getWidth() - kCardMargin - 156, 6, 156, 22);
             applyBtn.setVisible(editingSession);
+            editBtn.setBounds(getWidth() - kCardMargin - 156, 6, 156, 22);
+            editBtn.setVisible(remote && !editingSession && selectedIdx >= 0);
 
             // Settings text sits inside its card, below the tiny caps label
             auto sb = settingsBoxRect();

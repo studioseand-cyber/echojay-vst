@@ -2014,6 +2014,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         beginRemoteEditSession(uid, slotIdx);
     };
     chainListPanel.onApplyRelease = [this] { commitAndReleaseEditSession(); };
+    chainListPanel.onEditRequest = [this](int slotIdx)
+    {
+        const juce::String uid = chainViewUid();
+        if (uid.isEmpty()) return;
+        beginRemoteEditSession(uid, slotIdx);
+    };
 
     // Sidebar collapse toggle. Collapsing gives the main column the full tab
     // width. NOT Chain only any more: one flag for every chat-hosting
