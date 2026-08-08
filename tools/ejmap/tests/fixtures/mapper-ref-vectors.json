@@ -1,0 +1,25 @@
+{
+ "_": "mapper_ref = lower-case hex of SHA256(token as UTF-8 bytes), first 12 chars. ASSERTED BY BOTH ENDS: tools/ejmap/tests/RoundTripTest.cpp and the saas scripts/test-mapper-auth.mjs. An empty token has no ref.",
+ "vectors": [
+  {
+   "token": "sean-studio-token",
+   "ref": "1f0e22b603e3"
+  },
+  {
+   "token": "db973a254ea5c03828224916b0a9689d58f1611ff334e20d81a09d92a6c258a5",
+   "ref": "9f3d65f50f7b"
+  },
+  {
+   "token": "tökén-wíth-ümlauts",
+   "ref": "fa9abcccc442"
+  },
+  {
+   "token": "AAAA",
+   "ref": "63c1dd951ffe"
+  },
+  {
+   "token": "",
+   "ref": ""
+  }
+ ]
+}

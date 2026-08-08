@@ -2679,6 +2679,33 @@ void testMapperIdentity()
            "mapper: a different token gives a different ref");
     check (Mouth::mapperRefFor ({}).isEmpty(), "mapper: no token, no ref");
 
+    // THE SERVER MUST DERIVE THE SAME REF, and until 8 Aug 2026 nothing here
+    // checked WHAT this function computes -- only that `ref` came out of it.
+    // Every assertion above would still pass if the derivation changed to
+    // upper-case hex, or 16 characters, or SHA-1, and the server would then
+    // disagree SILENTLY: maps would carry a ref no mapper record matches, and
+    // attribution would rot with nothing failing.
+    //
+    // These are literal vectors, asserted by BOTH ENDS -- here, and by
+    // scripts/test-mapper-auth.mjs in the dashboard repo, which reads the same
+    // fixture file. Pinning a value is the only version of this test that can
+    // fail when the two ends drift apart.
+    //
+    // The three ways SHA-256 implementations disagree, one vector each:
+    //   case      "AAAA" -> lower-case hex, never upper
+    //   length    exactly 12 characters, not 16
+    //   encoding  a non-ASCII token pins UTF-8 bytes rather than UTF-16
+    struct RefVector { const char* token; const char* ref; };
+    const RefVector refVectors[] = {
+        { "sean-studio-token",                                              "1f0e22b603e3" },
+        { "db973a254ea5c03828224916b0a9689d58f1611ff334e20d81a09d92a6c258a5", "9f3d65f50f7b" },
+        { "t\xc3\xb6k\xc3\xa9n-w\xc3\xadth-\xc3\xbcmlauts",                 "fa9abcccc442" },
+        { "AAAA",                                                           "63c1dd951ffe" },
+    };
+    for (const auto& v : refVectors)
+        check (Mouth::mapperRefFor (juce::String::fromUTF8 (v.token)) == juce::String (v.ref),
+               juce::String ("mapper ref vector: ") + v.token + " -> " + v.ref);
+
     // Two machines, one mapper: the ref has to be the same or provenance
     // fragments by laptop.
     auto root2 = juce::File::getSpecialLocation (juce::File::tempDirectory)
