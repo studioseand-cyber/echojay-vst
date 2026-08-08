@@ -78,6 +78,22 @@ juce::String shortDate (const juce::String& iso)
     if (t.toMilliseconds() <= 0) return {};
     return juce::String (t.getDayOfMonth()) + " " + t.formatted ("%b");
 }
+
+/** V0: "just now" / "12m ago" / "3h ago" / "5d ago". SAME thresholds as the
+    web renderer's relTime (public/js/dashboard.js) so the two surfaces never
+    disagree about how old a row is. Empty when the stamp is unusable. */
+juce::String relTime (const juce::String& iso)
+{
+    if (iso.isEmpty()) return {};
+    const auto t = juce::Time::fromISO8601 (iso);
+    if (t.toMilliseconds() <= 0) return {};
+    const auto s = juce::jmax ((juce::int64) 0,
+        (juce::Time::currentTimeMillis() - t.toMilliseconds()) / 1000);
+    if (s < 90)     return "just now";
+    if (s < 5400)   return juce::String ((s + 30) / 60) + "m ago";
+    if (s < 129600) return juce::String ((s + 1800) / 3600) + "h ago";
+    return juce::String ((s + 43200) / 86400) + "d ago";
+}
 } // namespace
 
 DashPayload DashPayload::parse (const juce::var& json)
@@ -139,9 +155,10 @@ DashPayload DashPayload::parse (const juce::var& json)
         for (const auto& v : *arr)
         {
             DashChat c;
-            c.id      = str (v, "id");
-            c.title   = str (v, "title");
-            c.snippet = str (v, "snippet");
+            c.id        = str (v, "id");
+            c.title     = str (v, "title");
+            c.snippet   = str (v, "snippet");
+            c.updatedAt = str (v, "updatedAt");
             if (c.id.isNotEmpty()) p.recentChats.push_back (std::move (c));
         }
 
@@ -156,6 +173,10 @@ DashPayload DashPayload::parse (const juce::var& json)
             c.source          = str (v, "source");
             c.shareSlug       = str (v, "shareSlug");
             c.shareVisibility = str (v, "shareVisibility");
+            c.summary         = str (v, "summary");
+            c.notes           = str (v, "notes");
+            c.artSeed         = str (v, "artSeed");
+            c.updatedAt       = str (v, "updatedAt");
             if (c.id.isNotEmpty()) p.chains.push_back (std::move (c));
         }
 
@@ -281,7 +302,6 @@ namespace
 constexpr int kPad         = 20;
 constexpr int kGap         = 14;
 constexpr int kHeaderH     = 22;
-constexpr int kUsageH      = 54;
 constexpr int kContinueH   = 58;
 constexpr int kHeadingH    = 16;
 constexpr int kRowH        = 38;
@@ -292,6 +312,18 @@ constexpr int kAnnounceH   = 66;
 constexpr int kDirectH     = 44;
 constexpr int kTwoColMin   = 720;   // content width at which the lists split
 constexpr int kMaxRows     = 5;     // surface=plugin already caps at 5; belt to that brace
+
+// V0 projects rail: fixed tile edge (the tiles no longer shrink to fit),
+// horizontal scroll takes the strain instead. kStackRoom is the headroom the
+// decorative stack layers protrude into above each tile.
+constexpr int kTileEdge    = 128;
+constexpr int kTileGap     = 14;
+constexpr int kStackRoom   = 10;
+
+// V0 chain rows: taller than a chat row because they carry an art thumb and
+// up to three lines. The notes line adds height only when there are notes.
+constexpr int kChainRowH      = 50;
+constexpr int kChainRowNotesH = 64;
 }
 
 int DashboardView::layout (int width)
@@ -301,9 +333,8 @@ int DashboardView::layout (int width)
     // last one, which is the shape of three of the four overlap bugs this
     // file's rules come from.
     headerRect_ = statusRect_ = {};
-    usageRect_ = usageBarRect_ = usageResetRect_ = upgradeChipRect_ = {};
     continueRect_ = {};
-    projectsHeadingRect_ = projectsEmptyRect_ = {};
+    projectsHeadingRect_ = projectsEmptyRect_ = projectsClipRect_ = {};
     chatsHeadingRect_ = chatsEmptyRect_ = {};
     chainsHeadingRect_ = chainsEmptyRect_ = {};
     onboardingRect_ = onboardingHeadingRect_ = {};
@@ -347,28 +378,9 @@ int DashboardView::layout (int width)
         return contentH_;
     }
 
-    // ---- usage ------------------------------------------------------------
-    {
-        usageRect_ = { x, y, w, kUsageH };
-        auto inner = usageRect_.reduced (14, 0);
-
-        // The one right-anchored group on this strip, in one place: the
-        // upgrade chip (Free only) then the reset date, then whatever is left
-        // is the bar. Two blocks anchoring to the same edge is what put `Aa`
-        // on top of the CHAINS switch.
-        const bool showUpgrade = payload_.usage.upgradeUrl.isNotEmpty()
-                              && payload_.usage.tierLabel.equalsIgnoreCase ("Free");
-        if (showUpgrade)
-        {
-            upgradeChipRect_ = inner.removeFromRight (74).withSizeKeepingCentre (74, 22);
-            inner.removeFromRight (10);
-        }
-        usageResetRect_ = inner.removeFromRight (juce::jmin (150, inner.getWidth() / 3));
-        usageBarRect_   = { inner.getX(), usageRect_.getY() + 34, juce::jmax (10, inner.getWidth()), 6 };
-
-        addUrlZone (upgradeChipRect_, dashSiteRoot() + "/upgrade");
-        y += kUsageH + kGap;
-    }
+    // The usage strip that was authored here is GONE (V0, 8 Aug 2026):
+    // Settings is the usage surface. The parse keeps reading the block
+    // because its presence is what validates a dashboard document.
 
     // ---- continue ---------------------------------------------------------
     if (payload_.continueCard.present)
@@ -378,7 +390,7 @@ int DashboardView::layout (int width)
         y += kContinueH + kGap;
     }
 
-    // ---- projects ---------------------------------------------------------
+    // ---- projects: a horizontal rail of stacked cards (V0) ----------------
     {
         projectsHeadingRect_ = { x, y, w, kHeadingH };
         y += kHeadingH + 6;
@@ -387,15 +399,26 @@ int DashboardView::layout (int width)
         if (n == 0)
         {
             projectsEmptyRect_ = { x, y, w, 18 };
+            railMaxScroll_ = railScrollX_ = 0;
             y += 18 + kGap;
         }
         else
         {
-            const int tileGap = 12;
-            const int edge = juce::jlimit (56, 112, (w - tileGap * (n - 1)) / n);
+            // Fixed edge, scrolled sideways when the rail outgrows the width.
+            // The offset is re-clamped on EVERY pass so a resize cannot leave
+            // the rail scrolled past its own end, and the rects are authored
+            // at their scrolled positions so paint and any future hit test
+            // stay in agreement (the geometry rules at the top of the file).
+            const int railW = n * (kTileEdge + kTileGap) - kTileGap;
+            railMaxScroll_  = juce::jmax (0, railW - w);
+            railScrollX_    = juce::jlimit (0, railMaxScroll_, railScrollX_);
+
+            const int stripH = kStackRoom + kTileEdge + kTileCaption;
+            projectsClipRect_ = { x, y, w, stripH };
             for (int i = 0; i < n; ++i)
-                projectTileRects_.push_back ({ x + i * (edge + tileGap), y, edge, edge });
-            y += edge + kTileCaption + kGap;
+                projectTileRects_.push_back ({ x + i * (kTileEdge + kTileGap) - railScrollX_,
+                                               y + kStackRoom, kTileEdge, kTileEdge });
+            y += stripH + kGap;
         }
     }
 
@@ -447,7 +470,11 @@ int DashboardView::layout (int width)
             for (int i = 0; i < nChains; ++i)
             {
                 const auto& c = payload_.chains[(size_t) i];
-                juce::Rectangle<int> r { rightX, yR, colW, kRowH };
+                // V0 rows are taller than chat rows: art thumb plus name,
+                // notes (when present) and the derived summary. Height is
+                // authored HERE, per row, so paint measures nothing.
+                const int rh = c.notes.isNotEmpty() ? kChainRowNotesH : kChainRowH;
+                juce::Rectangle<int> r { rightX, yR, colW, rh };
                 chainRowRects_.push_back (r);
 
                 // The share chip is the ONLY thing on this surface that opens
@@ -455,7 +482,8 @@ int DashboardView::layout (int width)
                 // page that works with no auth at all.
                 juce::Rectangle<int> chip;
                 if (c.shareSlug.isNotEmpty())
-                    chip = r.reduced (8, 9).removeFromRight (58);
+                    chip = juce::Rectangle<int> (r.getRight() - 8 - 58,
+                                                 r.getY() + 8, 58, 20);
                 chainShareChipRects_.push_back (chip);
 
                 // Zone order matters: the chip is added FIRST so a click
@@ -463,7 +491,7 @@ int DashboardView::layout (int width)
                 addUrlZone (chip, dashSiteRoot() + "/c/" + c.shareSlug);
                 DashLink l; l.surface = "chain"; l.id = c.id;
                 addZone (r, l);
-                yR += kRowH + kRowGap;
+                yR += rh + kRowGap;
             }
             yR -= kRowGap;
         }
@@ -585,6 +613,22 @@ void DashboardView::drawTile (juce::Graphics& g, const DashProject& p,
 {
     const int edge = square.getWidth();
 
+    // V0 stack: two tinted edges peeking above the ONE tile, coloured from
+    // the seed's hue anchor. A decorative offset of the same card, never a
+    // second image: a project has one artwork. derive() returns a stable
+    // fallback for a malformed seed, so this cannot take down a paint pass.
+    {
+        const auto pr = ProjectArt::derive (p.artSeed);
+        const auto backT  = ProjectArt::hslToColour ((float) pr.hueAnchor, 0.35f, 0.21f);
+        const auto frontT = ProjectArt::hslToColour ((float) pr.hueAnchor, 0.40f, 0.30f);
+        g.setColour (backT);
+        g.fillRoundedRectangle ((float) (square.getX() + 16), (float) (square.getY() - 9),
+                                (float) (edge - 32), 14.0f, 6.0f);
+        g.setColour (frontT);
+        g.fillRoundedRectangle ((float) (square.getX() + 8), (float) (square.getY() - 5),
+                                (float) (edge - 16), 14.0f, 7.0f);
+    }
+
     // An uploaded image draws INSTEAD of the procedural art, cover cropped so
     // an album cover is never letterboxed or squashed. Until it arrives (and
     // forever, if the fetch failed) the seed art draws, which is why art.seed
@@ -621,11 +665,19 @@ void DashboardView::drawTile (juce::Graphics& g, const DashProject& p,
     g.drawText (p.name, square.getX(), square.getBottom() + 6, edge, 15,
                 juce::Justification::topLeft, true);
 
+    // All three counts, nonzero only, "empty" when none: canonical caption
+    // (spec section 15), matching the web's bits.join behaviour exactly.
     juce::String counts;
-    counts << p.chats << " chat" << (p.chats == 1 ? "" : "s");
+    const auto dot = juce::String::fromUTF8 ("  \xc2\xb7  ");
+    if (p.chats > 0)
+        counts << p.chats << " chat" << (p.chats == 1 ? "" : "s");
+    if (p.captures > 0)
+        counts << (counts.isEmpty() ? "" : dot) << p.captures
+               << " capture" << (p.captures == 1 ? "" : "s");
     if (p.chains > 0)
-        counts << juce::String::fromUTF8 ("  \xc2\xb7  ") << p.chains
+        counts << (counts.isEmpty() ? "" : dot) << p.chains
                << " chain" << (p.chains == 1 ? "" : "s");
+    if (counts.isEmpty()) counts = "empty";
     g.setColour (C::text3);
     g.setFont (juce::Font (juce::FontOptions (9.5f)));
     g.drawText (counts, square.getX(), square.getBottom() + 21, edge, 12,
@@ -676,59 +728,7 @@ void DashboardView::paint (juce::Graphics& g)
     const auto hotRect = (hoverZone_ >= 0 && hoverZone_ < (int) zones_.size())
                        ? zones_[(size_t) hoverZone_].rect : juce::Rectangle<int>();
 
-    // ---- usage ------------------------------------------------------------
-    if (! usageRect_.isEmpty())
-    {
-        card (g, usageRect_);
-        const auto& u = payload_.usage;
-
-        g.setColour (C::text2);
-        g.setFont (juce::Font (juce::FontOptions (11.0f, juce::Font::bold)));
-        g.drawText (u.tierLabel.isNotEmpty() ? u.tierLabel : juce::String ("Plan"),
-                    usageRect_.getX() + 14, usageRect_.getY() + 8, 140, 16,
-                    juce::Justification::centredLeft);
-
-        juce::String amount;
-        if (u.unitsTotal > 0)
-            amount << u.unitsUsed << " of " << u.unitsTotal << "  " << u.pct << "%";
-        else
-            amount << u.unitsUsed << " used";
-        g.setColour (C::text3);
-        g.setFont (juce::Font (juce::FontOptions (10.0f)));
-        g.drawText (amount, usageRect_.getX() + 160, usageRect_.getY() + 8,
-                    juce::jmax (10, usageBarRect_.getRight() - usageRect_.getX() - 160), 16,
-                    juce::Justification::centredLeft, true);
-
-        g.setColour (C::bg4);
-        g.fillRoundedRectangle (usageBarRect_.toFloat(), 3.0f);
-        const int fillW = usageBarRect_.getWidth() * u.pct / 100;
-        if (fillW > 0)
-        {
-            g.setColour (u.pct >= 90 ? juce::Colour (0xffff6d5a) : C::blue2);
-            g.fillRoundedRectangle (usageBarRect_.withWidth (juce::jmax (3, fillW)).toFloat(), 3.0f);
-        }
-
-        const auto reset = shortDate (u.resetsAt);
-        if (reset.isNotEmpty())
-        {
-            g.setColour (C::text3);
-            g.setFont (juce::Font (juce::FontOptions (10.0f)));
-            g.drawText ("Resets " + reset, usageResetRect_,
-                        juce::Justification::centredRight, true);
-        }
-
-        if (! upgradeChipRect_.isEmpty())
-        {
-            const bool hot = upgradeChipRect_ == hotRect;
-            g.setColour (juce::Colour (0xff0d2b33));
-            g.fillRoundedRectangle (upgradeChipRect_.toFloat(), 5.0f);
-            g.setColour (juce::Colour (0xff22d3ee).withAlpha (hot ? 0.7f : 0.35f));
-            g.drawRoundedRectangle (upgradeChipRect_.toFloat().reduced (0.5f), 5.0f, 1.0f);
-            g.setColour (C::blue2);
-            g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
-            g.drawText ("Upgrade", upgradeChipRect_, juce::Justification::centred);
-        }
-    }
+    // The usage strip is gone (V0): Settings is the usage surface.
 
     // ---- continue ---------------------------------------------------------
     if (! continueRect_.isEmpty())
@@ -749,8 +749,16 @@ void DashboardView::paint (juce::Graphics& g)
     heading (g, projectsHeadingRect_, "PROJECTS");
     muted (g, projectsEmptyRect_,
            "No projects yet. Name one in the header and it appears here.");
-    for (int i = 0; i < (int) projectTileRects_.size(); ++i)
-        drawTile (g, payload_.projects[(size_t) i], projectTileRects_[(size_t) i]);
+    if (! projectTileRects_.empty())
+    {
+        // The rail clips to its strip so a scrolled tile can never bleed
+        // into the page padding or the section above (the stack layers
+        // protrude upward INSIDE the strip's headroom, not outside it).
+        juce::Graphics::ScopedSaveState save (g);
+        g.reduceClipRegion (projectsClipRect_);
+        for (int i = 0; i < (int) projectTileRects_.size(); ++i)
+            drawTile (g, payload_.projects[(size_t) i], projectTileRects_[(size_t) i]);
+    }
 
     // ---- recent chats -----------------------------------------------------
     heading (g, chatsHeadingRect_, "RECENT CHATS");
@@ -760,10 +768,22 @@ void DashboardView::paint (juce::Graphics& g)
         const auto r = chatRowRects_[(size_t) i];
         const auto& c = payload_.recentChats[(size_t) i];
         card (g, r, r == hotRect);
+
+        // The relative timestamp is canonical on rows (spec section 15); the
+        // title gives up the width the stamp needs and no more.
+        const auto when = relTime (c.updatedAt);
+        const int whenW = when.isEmpty() ? 0 : 52;
+        if (whenW > 0)
+        {
+            g.setColour (C::text3);
+            g.setFont (juce::Font (juce::FontOptions (9.5f)));
+            g.drawText (when, r.getRight() - 10 - whenW, r.getY() + 5, whenW, 14,
+                        juce::Justification::centredRight, true);
+        }
         g.setColour (C::text);
         g.setFont (juce::Font (juce::FontOptions (12.0f)));
         g.drawText (c.title.isNotEmpty() ? c.title : juce::String ("Untitled chat"),
-                    r.getX() + 10, r.getY() + 5, r.getWidth() - 20, 14,
+                    r.getX() + 10, r.getY() + 5, r.getWidth() - 20 - whenW, 14,
                     juce::Justification::centredLeft, true);
         g.setColour (C::text3);
         g.setFont (juce::Font (juce::FontOptions (10.0f)));
@@ -771,7 +791,13 @@ void DashboardView::paint (juce::Graphics& g)
                     juce::Justification::centredLeft, true);
     }
 
-    // ---- chains -----------------------------------------------------------
+    // ---- chains (V0 rows) -------------------------------------------------
+    //
+    // Art thumb left (SAME ProjectArt pipeline, seeded from the chain id),
+    // name with the relative timestamp, the owner's share notes when present,
+    // then the server-derived summary: the plugin list is what an engineer
+    // actually reads. A pre-V0 payload has none of the new fields and falls
+    // back to the old "N slots · score" sub-line with no thumb.
     heading (g, chainsHeadingRect_, "CHAINS");
     muted (g, chainsEmptyRect_, "No saved chains yet.");
     for (int i = 0; i < (int) chainRowRects_.size(); ++i)
@@ -781,22 +807,56 @@ void DashboardView::paint (juce::Graphics& g)
         const auto& c = payload_.chains[(size_t) i];
         card (g, r, r == hotRect);
 
-        const int textW = juce::jmax (20, (chip.isEmpty() ? r.getRight() : chip.getX())
-                                           - r.getX() - 20);
+        int textX = r.getX() + 10;
+        if (c.artSeed.isNotEmpty())
+        {
+            const auto img = ProjectArt::getCached (c.artSeed, 34);
+            if (img.isValid())
+                g.drawImageAt (img, r.getX() + 8, r.getY() + 8);
+            textX = r.getX() + 8 + 34 + 10;
+        }
+
+        const int textRight = chip.isEmpty() ? r.getRight() - 10 : chip.getX() - 8;
+        const int textW = juce::jmax (20, textRight - textX);
+
+        const auto when = relTime (c.updatedAt);
+        const int whenW = when.isEmpty() ? 0 : 52;
+        if (whenW > 0)
+        {
+            g.setColour (C::text3);
+            g.setFont (juce::Font (juce::FontOptions (9.5f)));
+            g.drawText (when, textRight - whenW, r.getY() + 7, whenW, 14,
+                        juce::Justification::centredRight, true);
+        }
         g.setColour (C::text);
         g.setFont (juce::Font (juce::FontOptions (12.0f)));
-        g.drawText (c.name, r.getX() + 10, r.getY() + 5, textW, 14,
+        g.drawText (c.name, textX, r.getY() + 7, textW - whenW, 14,
                     juce::Justification::centredLeft, true);
 
-        juce::String sub;
-        sub << c.slotCount << " slot" << (c.slotCount == 1 ? "" : "s");
-        if (c.qualityScore >= 0)
-            sub << juce::String::fromUTF8 ("  \xc2\xb7  ") << c.qualityScore;
+        int lineY = r.getY() + 23;
+        if (c.notes.isNotEmpty())
+        {
+            g.setColour (C::text2);
+            g.setFont (juce::Font (juce::FontOptions (10.5f)));
+            g.drawText (c.notes, textX, lineY, textW, 13,
+                        juce::Justification::centredLeft, true);
+            lineY += 14;
+        }
+
+        juce::String sub = c.summary;
+        if (sub.isEmpty())
+        {
+            // Pre-V0 payload: the old sub-line, so an outdated server never
+            // renders an empty row.
+            sub << c.slotCount << " slot" << (c.slotCount == 1 ? "" : "s");
+            if (c.qualityScore >= 0)
+                sub << juce::String::fromUTF8 ("  \xc2\xb7  ") << c.qualityScore;
+        }
         if (c.source == "import")
             sub << juce::String::fromUTF8 ("  \xc2\xb7  imported");
         g.setColour (C::text3);
         g.setFont (juce::Font (juce::FontOptions (10.0f)));
-        g.drawText (sub, r.getX() + 10, r.getY() + 20, textW, 13,
+        g.drawText (sub, textX, lineY, textW, 13,
                     juce::Justification::centredLeft, true);
 
         if (! chip.isEmpty())
@@ -964,6 +1024,34 @@ void DashboardView::mouseExit (const juce::MouseEvent&)
         setMouseCursor (juce::MouseCursor::NormalCursor);
         repaint();
     }
+}
+
+void DashboardView::mouseWheelMove (const juce::MouseEvent& e,
+                                    const juce::MouseWheelDetails& wheel)
+{
+    // Horizontal intent over the rail scrolls the rail: a sideways wheel or
+    // trackpad swipe, or shift plus a vertical wheel (the convention every
+    // DAW horizontal scroller follows). Everything else, including a plain
+    // vertical wheel over the rail, passes to the owning Viewport so the
+    // page keeps scrolling; a rail that eats vertical scroll is a wall.
+    if (railMaxScroll_ > 0 && projectsClipRect_.contains (e.getPosition()))
+    {
+        float d = wheel.deltaX;
+        if (d == 0.0f && e.mods.isShiftDown()) d = wheel.deltaY;
+        if (d != 0.0f)
+        {
+            const int step = (int) (-d * 240.0f);
+            const int next = juce::jlimit (0, railMaxScroll_, railScrollX_ + step);
+            if (next != railScrollX_)
+            {
+                railScrollX_ = next;
+                layout (getWidth());
+                repaint();
+            }
+            return;
+        }
+    }
+    juce::Component::mouseWheelMove (e, wheel);
 }
 
 } // namespace echojay

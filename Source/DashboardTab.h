@@ -92,6 +92,7 @@ struct DashProject
 struct DashChat
 {
     juce::String id, title, snippet;
+    juce::String updatedAt;   // V0: the relative timestamp is canonical on rows
 };
 
 struct DashChain
@@ -99,6 +100,13 @@ struct DashChain
     juce::String id, name, shareSlug, shareVisibility, source;
     int slotCount = 0;
     int qualityScore = -1;   // -1 = null server side
+    /** V0 row content. summary is derived SERVER side (plugin names in slot
+        order) so both renderers show the same string; notes is the owner's
+        words from the live share, empty when unshared; artSeed is derived
+        from the chain id and feeds the SAME ProjectArt pipeline as project
+        tiles. All empty on a pre-V0 payload, and the renderer falls back to
+        the old sub-line, so the parse stays additive. */
+    juce::String summary, notes, artSeed, updatedAt;
 };
 
 struct DashOnboardingStep
@@ -175,6 +183,11 @@ public:
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseMove (const juce::MouseEvent& e) override;
     void mouseExit (const juce::MouseEvent& e) override;
+    /** V0: horizontal wheel (or shift plus wheel) over the projects rail
+        scrolls it; anything else passes to the owning Viewport unchanged, so
+        vertical scrolling never breaks. */
+    void mouseWheelMove (const juce::MouseEvent& e,
+                         const juce::MouseWheelDetails& wheel) override;
 
     /** A deep link the user asked to follow. The owner interprets it. */
     std::function<void (const DashLink&)> onNavigate;
@@ -206,11 +219,22 @@ private:
     };
 
     // ---- rects, ALL authored by layout(), ALL cleared at its top ------------
+    // The usage strip that lived between the header and the continue card was
+    // REMOVED in V0 (8 Aug 2026): Settings is the usage surface, see the
+    // ACCOUNT card in PluginEditor.cpp. The payload still carries usage for
+    // older builds; this view no longer draws it.
     juce::Rectangle<int> headerRect_, statusRect_;
-    juce::Rectangle<int> usageRect_, usageBarRect_, usageResetRect_, upgradeChipRect_;
     juce::Rectangle<int> continueRect_;
     juce::Rectangle<int> projectsHeadingRect_, projectsEmptyRect_;
     std::vector<juce::Rectangle<int>> projectTileRects_;   // art square only
+    /** V0: the projects render as a horizontal RAIL. The clip rect is the
+        strip the tiles scroll inside (paint clips to it, the wheel handler
+        hit tests it), and the offset is the one piece of scroll state.
+        layout() re-clamps it every pass so a width change cannot leave the
+        rail over-scrolled. */
+    juce::Rectangle<int> projectsClipRect_;
+    int railScrollX_ = 0;
+    int railMaxScroll_ = 0;
     juce::Rectangle<int> chatsHeadingRect_, chatsEmptyRect_;
     std::vector<juce::Rectangle<int>> chatRowRects_;
     juce::Rectangle<int> chainsHeadingRect_, chainsEmptyRect_;
