@@ -60,13 +60,50 @@ struct alignas(64) LinkShmHeader
     uint8_t  _pad0[44];
 
     alignas(64) uint32_t writeIdx;
-    uint8_t  _pad1[60];
+    // ---- Position stamp (stage 0 of remote editing, 8 Aug 2026) -----------
+    // {stampWriteIdx, stampHostPos} pairs a ring frame index with the host
+    // sample position of the frame that will be written AT that index, so a
+    // consumer can compute its exact timeline margin per block instead of
+    // inferring it from backlog. Published by the producer under a seqlock
+    // (stampSeq odd while writing, even when stable), CARVED FROM _pad1 so
+    // sizeof and every existing offset are unchanged and the asserts below
+    // prove it.
+    //
+    // ABSENCE IS DISTINGUISHABLE FROM ZERO, and it has to be, because a
+    // hostSamplePos of 0 is a legitimate value at the start of a timeline.
+    // An old-writer Link leaves this region zeroed, so stampSeq == 0. A new
+    // writer's FIRST publish takes stampSeq 0 -> 1 -> 2, and it only ever
+    // climbs, so stampSeq >= 2 (and even) is the only state in which the
+    // fields carry data. stampSeq == 0 means NO DATA -- an old Link, or a
+    // new Link whose host never supplied a playhead position -- and
+    // ringStampRead returns false rather than fabricating a position. These
+    // fields sit on the writeIdx cache line ON PURPOSE: only the producer
+    // writes either.
+    uint32_t stampSeq;         // 68  seqlock; 0 = never published (absent)
+    uint32_t stampWriteIdx;    // 72  ring index the stamp pairs with
+    uint32_t _stampPad;        // 76  keeps stampHostPos 8-aligned
+    int64_t  stampHostPos;     // 80  host sample position of frame stampWriteIdx
+    uint8_t  _pad1[40];        // 88..127
 
     alignas(64) uint32_t readIdx;
     uint8_t  _pad2[60];
 };
 static_assert(sizeof(LinkShmHeader) == 192, "");
 static_assert(kLinkHdrSize == sizeof(LinkShmHeader), "");
+// The layout freeze, field by field. The stamp was carved from pad space and
+// these prove no existing offset moved; kLinkVersion stays 1 because the
+// change is additive (and version is never exact-checked, but the sidecar's
+// v-field lesson stands: additive means additive).
+static_assert(offsetof(LinkShmHeader, magic)          ==   0, "");
+static_assert(offsetof(LinkShmHeader, version)        ==   4, "");
+static_assert(offsetof(LinkShmHeader, sampleRate)     ==   8, "");
+static_assert(offsetof(LinkShmHeader, numChannels)    ==  12, "");
+static_assert(offsetof(LinkShmHeader, capacityFrames) ==  16, "");
+static_assert(offsetof(LinkShmHeader, writeIdx)       ==  64, "");
+static_assert(offsetof(LinkShmHeader, stampSeq)       ==  68, "");
+static_assert(offsetof(LinkShmHeader, stampWriteIdx)  ==  72, "");
+static_assert(offsetof(LinkShmHeader, stampHostPos)   ==  80, "");
+static_assert(offsetof(LinkShmHeader, readIdx)        == 128, "");
 
 // =============================================================================
 //  Registry structs  (layout unchanged)
@@ -495,6 +532,88 @@ inline uint32_t ringConsume(void* map, float* outL, float* outR, int numFrames)
     }
     storeRelease(&hdr->readIdx, r + n);
     return n;
+}
+
+// =============================================================================
+//  Stage 0 of remote editing: seek + position stamps (8 Aug 2026)
+//
+//  ringConsume above is UNTOUCHED, deliberately: capture is its consumer and
+//  capture wants every sample, not the latest ones. Seeking is a separate
+//  call a consumer opts into per use, never a property of the ring. Nothing
+//  in production calls ringSeekForward this pass; stage 1's alignment FIFO
+//  will. The two modes coexist on the single-reader ring only in the sense
+//  that they cannot run at once: readIdx is one cursor, so a seeking
+//  consumer and a capture on the same Link are mutually exclusive. That
+//  exclusion is stage 1's problem to enforce (it introduces the second
+//  consumer); stage 0 introduces no caller, so today there is nothing to
+//  exclude.
+// =============================================================================
+
+/// Jump readIdx FORWARD so at most `targetBacklog` frames remain unread,
+/// dropping the oldest. Returns how many frames were dropped (0 when already
+/// at or under target).
+///
+/// POLICY: seek-to-target, with seek-to-latest as the target==0 special
+/// case. A real-time consumer wants a small cushion so producer/consumer
+/// scheduling jitter does not starve it into a gap every other block, and
+/// only the consumer knows its cushion, so the target is a parameter rather
+/// than a policy baked in here. The seek only ever moves FORWARD (backward
+/// would re-read frames the producer may already be overwriting) and never
+/// past writeIdx.
+inline uint32_t ringSeekForward(void* map, uint32_t targetBacklog)
+{
+    auto*          hdr = ringHeader(map);
+    const uint32_t r   = loadRelaxed(&hdr->readIdx);
+    const uint32_t w   = loadAcquire(&hdr->writeIdx);
+    const uint32_t backlog = w - r;
+    if (backlog <= targetBacklog) return 0;
+    const uint32_t drop = backlog - targetBacklog;
+    storeRelease(&hdr->readIdx, r + drop);
+    return drop;
+}
+
+/// Producer: pair ring index `writeIdxAtBlockStart` with the host sample
+/// position of the frame about to be written there. Call ONCE per block,
+/// BEFORE ringProduce, and only when the host actually supplied a position:
+/// no position, no stamp, and stampSeq == 0 keeps meaning "no data" to every
+/// reader. Audio thread; two relaxed stores and two release stores, no
+/// locks, same discipline as the meter frame seqlock.
+///
+/// After a partial produce (ring full drops frames) the linear mapping
+/// below is wrong until the NEXT stamp re-pairs it, one block later. A
+/// consumer that needs drop-awareness compares consecutive stamps.
+inline void ringStampPublish(void* map, uint32_t writeIdxAtBlockStart, int64_t hostPos)
+{
+    auto* hdr = ringHeader(map);
+    const uint32_t s = loadRelaxed(&hdr->stampSeq) & ~1u;   // last stable seq
+    storeRelease(&hdr->stampSeq, s + 1);                    // odd: writing
+    hdr->stampWriteIdx = writeIdxAtBlockStart;
+    hdr->stampHostPos  = hostPos;
+    storeRelease(&hdr->stampSeq, s + 2);                    // even: stable
+}
+
+/// Consumer: read the newest stamp. Returns false for NO DATA -- an old
+/// Link that never wrote one (region zeroed, seq 0), a new Link whose host
+/// gave no position (never published, seq 0), or a torn read that stayed
+/// torn. On true, the host position of any unread frame index f is
+///     stampHostPos + (int32_t)(f - stampWriteIdx)
+/// (signed diff so uint32 wrap is handled). A returned stampHostPos of 0 is
+/// a REAL position at the timeline start, which is exactly why absence is
+/// carried by the seq and never by the value.
+inline bool ringStampRead(void* map, uint32_t& stampWriteIdxOut, int64_t& hostPosOut)
+{
+    auto* hdr = ringHeader(map);
+    for (int attempt = 0; attempt < 4; ++attempt)
+    {
+        const uint32_t s1 = loadAcquire(&hdr->stampSeq);
+        if (s1 == 0u) return false;            // never published: absent
+        if (s1 & 1u) continue;                 // mid-write, retry
+        const uint32_t w  = hdr->stampWriteIdx;
+        const int64_t  p  = hdr->stampHostPos;
+        const uint32_t s2 = loadAcquire(&hdr->stampSeq);
+        if (s1 == s2) { stampWriteIdxOut = w; hostPosOut = p; return true; }
+    }
+    return false;                              // stayed torn: no data
 }
 
 /// Open (create) a ring producer file in `dir`.

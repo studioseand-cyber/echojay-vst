@@ -176,7 +176,7 @@ fi
 #     reverts the version bump, exactly as a build failure does, so a red test
 #     leaves the previously installed component in place rather than a
 #     half-trusted new one.
-for T in tabstrip_test art_parity_test dashboard_test linkmixer_test paramapply_test; do
+for T in tabstrip_test art_parity_test dashboard_test linkmixer_test paramapply_test ringseek_test; do
   RUNNER="$REPO/tools/$T/build_and_run.sh"
   if [ ! -x "$RUNNER" ]; then
     echo "  SKIP  $T (not in this worktree)"

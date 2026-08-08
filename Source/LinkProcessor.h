@@ -113,6 +113,10 @@ public:
     // until a session genre exists (Link has no genre default or UI).
     juce::String genre;
     std::atomic<bool> didWrite  { false };  // set by audio thread on first successful produce
+    // Stage 0 position stamps: audio thread arms, timer logs once (NSLog is
+    // not an audio-thread call). stampArmedLogged_ is message-thread only.
+    std::atomic<bool> stampsArmed_ { false };
+    bool stampArmedLogged_ = false;
 
     /// Call from editor after any change to linkOn or linkName (message thread).
     void updateShmState();

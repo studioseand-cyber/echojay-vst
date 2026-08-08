@@ -133,6 +133,15 @@ void LinkProcessor::timerCallback()
     if (heartbeatDivider_ % 30 == 0)
         schedulePassiveKeyPass();
     publishMeterFrame();
+
+    // One-shot arming note for the position stamps (stage 0), off the audio
+    // thread. Doubles as the behavioural marker: a Link on a host that
+    // supplies playhead positions logs this exactly once per instance.
+    if (!stampArmedLogged_ && stampsArmed_.load(std::memory_order_relaxed))
+    {
+        stampArmedLogged_ = true;
+        EchoJay_NSLog("EJLinkRing: position stamps armed");
+    }
 }
 
 void LinkProcessor::publishRackSidecar()
@@ -920,10 +929,17 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
     // gates arming, and a position landing far from where the last block left
     // off flags a section jump (§5.4 invalidation). One playhead query per
     // block, relaxed stores — the scheduler reads at 1 Hz.
+    // Host sample position for the ring's position stamp (stage 0 of remote
+    // editing). Captured from the SAME single per-block playhead query the
+    // key scheduler uses; -1 = the host gave no position this block, and no
+    // stamp is published, so absence stays absence (see LinkShm.h).
+    int64_t stampHostPos = -1;
     if (auto* ph = getPlayHead())
     {
         if (auto pos = ph->getPosition())
         {
+            if (auto ts = pos->getTimeInSamples())
+                stampHostPos = *ts;
             const bool playingNow = pos->getIsPlaying();
             if (auto t = pos->getTimeInSeconds())
             {
@@ -1023,6 +1039,19 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
                 const float* L = buffer.getNumChannels() >= 1 ? buffer.getReadPointer(0) : nullptr;
                 const float* R = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : L;
                 const float* chPtrs[2] = { L, R };
+                // The stamp pairs THIS block's first frame with the ring
+                // index it is about to land on, published BEFORE the produce
+                // so a reader can never see frames whose stamp has not been
+                // written yet. No host position this block = no stamp.
+                if (stampHostPos >= 0)
+                {
+                    LinkShm::ringStampPublish(shmMap,
+                        LinkShm::loadRelaxed(&LinkShm::ringHeader(shmMap)->writeIdx),
+                        stampHostPos);
+                    // Log from the TIMER, not here: NSLog allocates and can
+                    // block, and this is the audio thread. One relaxed store.
+                    stampsArmed_.store(true, std::memory_order_relaxed);
+                }
                 LinkShm::ringProduce(shmMap, chPtrs, 2, buffer.getNumSamples());
                 didWrite.store(true, std::memory_order_relaxed);
             }
