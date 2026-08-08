@@ -105,8 +105,16 @@ it will not claim "unmapped" on no evidence. Keep that distinction.
 > each identity before joining. A server-side fix alone leaves the client
 > emitting a request the server can only guess at.
 >
-> Whatever is chosen must be applied to ingest and lookup together — they share
-> the encoding.
+> **RESOLVED 8 Aug 2026: newline.** The server splits on `\n` when the query
+> contains one and on `,` otherwise, so a client built before this keeps
+> working — it simply cannot ask about an identity containing a comma. The
+> ejmap client now joins with `\n` (`MainComponent.h`, the `identities=` fetch).
+>
+> A tool talking to a server that predates the fix gets no error, because a
+> newline-joined batch splits on commas into one unmatched key and answers `[]`
+> to everything — indistinguishable from "all unmapped". `upload_corpus.py`
+> therefore DETECTS the encoding rather than assuming it: ask with newline, and
+> if the reply echoes none of the keys asked for, ask again with comma.
 
 `provenance.tester_id` is currently **not returned**, and the client compensates
 locally with a comment saying so. Returning `mapper_ref` here is the fix and the
@@ -222,6 +230,35 @@ Unchanged on the wire. Two additions to what the server does:
    looks at it.
 
 Idempotent on `fp` + body hash (§0.2).
+
+### 2.2b `POST /api/params/proposals` — stage 2 output, UPLOADED
+
+**Added 8 Aug 2026, and it replaces the plan in §2.4 for the existing corpus.**
+Stage 2 was to run server-side on ingest. It has already run over all 1,108
+maps — two arms, $142, three days — so the corpus's proposals are *artefacts to
+be transferred*, not work to be repeated. Re-deriving them would pay twice and
+return different answers, because the arms are stochastic.
+
+Sends one `proposals/<fp>.json` per request, authenticated like ingest. One fp
+per request rather than a batch: it makes the retry unit the same as the
+failure unit.
+
+**Stored whole, served slim.** The stored object keeps `escalations`,
+`declines`, both arms per row and the evidence each gate read — the review
+queue needs all of it and it cannot be reconstructed. Clients read only
+`category` and `params[{index,kind,confidence,reason,channel}]`, which is
+0.73 MB against 26.4 MB across the corpus. They arrive on
+`GET /api/params/maps?...&proposals=1`, off by default because the plain reply
+is on the scan path.
+
+- `409 no_map_for_fp` — the map must be stored first. A proposal is fetched by
+  an fp that came from a map lookup, so an orphan is never read and never
+  noticed.
+- An fp with no proposal is **absent** from the reply, never `null`: "no
+  proposal" and "a proposal with no accepted params" are different answers.
+
+§2.4 stands for maps swept on a machine that has no local stage 2 — the next
+mapper's, which will have no API keys.
 
 ### 2.3 `POST /api/params/capture` — the panel image
 

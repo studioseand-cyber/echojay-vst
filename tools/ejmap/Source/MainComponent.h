@@ -12566,7 +12566,21 @@ private:
             if (batch.isEmpty()) break;              // one identity longer than the cap
             ++batches;
 
-            juce::URL url = juce::URL (endpoint).withParameter ("identities", batch.joinIntoString (","));
+            // NEWLINE, NOT COMMA, and this is a contract change rather than a
+            // preference. OTT ships version "1,3,7,0", so the identity
+            // VST3|7c12157|1,3,7,0 used to arrive at the server as FOUR keys.
+            // The server answers [] for a key it has never seen, which is also
+            // how it says "unmapped" -- so the fragments looked like real
+            // answers and the true identity looked ABSENT. That is precisely
+            // the unknown/unmapped distinction this fetch exists to preserve,
+            // destroyed silently by a delimiter that occurs in the data.
+            //
+            // Measured against production on 8 Aug 2026: 1,108 identities
+            // asked, 1,111 answered, one genuinely missing. A newline cannot
+            // appear in format|uid|version. The server accepts both, so an
+            // older client keeps working; it just cannot ask about the
+            // identities that contain a comma.
+            juce::URL url = juce::URL (endpoint).withParameter ("identities", batch.joinIntoString ("\n"));
             juce::String text;
             int status = 0;
             {
