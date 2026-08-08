@@ -2513,6 +2513,30 @@ private:
                           int provisionalId,
                           const juce::StringArray& roles,
                           const juce::StringArray& contents);
+    // The reply pipeline factored VERBATIM out of fireChatMainCall's
+    // completion lambda (spec step 4): extraction, salvage, gated name-scan,
+    // feed check, provisional replace/drop, the four stores, workspace sync.
+    // Shared by the one-shot callback and the streaming done/error handlers
+    // so the two paths CANNOT diverge on what persists. Callers own the
+    // SafePointer null check; this runs on the message thread only.
+    void handleChatReply(const juce::String& reply, bool success,
+                         const juce::String& activeChatId,
+                         const juce::String& turnTargetUid,
+                         const juce::String& turnTargetName,
+                         int provisionalId);
+    // Streaming variant of fireChatMainCall (spec step 4, Feature A). NO
+    // CALL SITE until step 5 selects turn types onto it. Deltas render into
+    // one provisional bubble (chatMessages only); the chain block resolves
+    // at once with its Build button; done.reply persists through
+    // handleChatReply; chainBlock truncated/missing renders as a FAILED
+    // build, never a chatty reply. See the .cpp header comment.
+    void fireChatStreamCall(const juce::String& sysPrompt,
+                            const juce::String& activeChatId,
+                            const juce::String& turnTargetUid,
+                            const juce::String& turnTargetName,
+                            int provisionalId,
+                            const juce::StringArray& roles,
+                            const juce::StringArray& contents);
     // Render the classifier's question as the whole turn: no main call.
     // channel_mismatch, rendered entirely client-side: the sentence and both
     // chips are built here, never by the model. See the .cpp.
@@ -2553,6 +2577,13 @@ private:
     int  findProvisionalIdx(int provisionalId) const;
     void dropProvisional(int provisionalId);
     int  nextProvisionalId_ = 1;   // 0 means "not provisional"
+    // The one in-flight chat stream, when a turn is streaming (spec step 4).
+    // chatLoading already serialises sends, so at most one exists. The
+    // destructor cancels it: cancel() unblocks the worker's read, closes the
+    // socket as the loop abandons, and suppresses every queued callback on
+    // both sides of the callAsync hop (spec 2.2) — no delta can land in a
+    // half-destroyed editor.
+    std::shared_ptr<ChatStreamHandle> activeChatStream_;
     // Resolve a proposal's linkId (name or uid) to a sendable address.
     juce::String resolveLinkProposalAddr(const juce::String& linkId) const;
     void applyGainProposal(const GainCardZone& z);

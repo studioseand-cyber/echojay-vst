@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
 #include "EchoJayVisualiserTexture.h"  // shared SPECTRUM/SPECTROGRAM texture
@@ -2442,6 +2443,17 @@ EchoJayEditor::~EchoJayEditor() {
     // the editor-side half of the contract; the processor never holds a
     // pointer to us other than through this std::function.
     processorRef.onDashUnreadChanged = nullptr;
+
+    // Step-4 teardown: a live chat stream must not outlive its UI. This is
+    // spec 2.2's third hazard closed at the owner: the socket and worker
+    // die via the handle's cancel (the read unblocks and the loop abandons,
+    // which closes the stream), and every queued delta callback no-ops via
+    // the cancelled check on both sides of the callAsync hop.
+    if (activeChatStream_ != nullptr)
+    {
+        activeChatStream_->cancel();
+        activeChatStream_ = nullptr;
+    }
 
     // Codec preview must never outlive its UI (25 Jul 2026): if the editor
     // closes while codec mode is engaged, the processor would keep replacing
@@ -19410,6 +19422,236 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     });
 }
 
+// The one-shot reply pipeline, factored VERBATIM out of fireChatMainCall's
+// completion lambda (spec step 4) so the streaming path's done frame
+// persists through the IDENTICAL code: same extraction, same salvage and
+// name-scan gating, same feed check, same provisional replace/drop, same
+// four-store writes, same workspace sync. The only mechanical edit was
+// dropping the lambda's `safeThis->` prefix; callers own the SafePointer
+// null check.
+void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
+                                    const juce::String& activeChatId,
+                                    const juce::String& turnTargetUid,
+                                    const juce::String& turnTargetName,
+                                    int provisionalId)
+{
+    chatLoading = false;
+    clearStageStatus();   // 1d: model wait over
+
+    juce::String visibleReply = reply;
+    juce::String chainJson;
+    juce::String gainJson;
+    juce::String askJson;
+    juce::String editJson;
+    // Always try to extract chain + gain + ask blocks; the model may
+    // or may not have included any. Gain proposals are measurement-
+    // backed APPLY cards (never auto-applied); ask blocks render as
+    // tappable choice chips (Phase 1b).
+    bool hadChainOpener = false;   // reply carried <<<ECHOJAY_CHAIN>>> (even truncated)
+    if (success)
+    {
+        hadChainOpener = EchoJayAPI::extractChainBlock(visibleReply, chainJson);
+        if (EchoJayAPI::extractGainBlock(visibleReply, gainJson))
+            EchoJay_NSLog("EJChat: gain proposal block received");
+        if (EchoJayAPI::extractAskBlock(visibleReply, askJson))
+            EchoJay_NSLog("EJChat: ASK block received");
+        if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
+            EchoJay_NSLog("EJChat: CHAIN_EDIT block received");
+    }
+
+    // If extractChainBlock returned partial/truncated JSON, try bracket-depth salvage
+    // before falling through to the name-scan fallback.
+    if (!chainJson.isEmpty() && success)
+    {
+        auto parsed = juce::JSON::parse(chainJson);
+        if (!parsed.isObject())
+        {
+            juce::String salvaged = EchoJayAPI::salvagePartialChain(chainJson);
+            if (salvaged.isNotEmpty())
+                DBG("EchoJay chain salvage: recovered partial block");
+            chainJson = salvaged; // empty if nothing recoverable → falls to name-scan
+        }
+    }
+
+    // Client-side fallback: if the model described a chain in prose but omitted the
+    // machine block (or it couldn't be salvaged), reconstruct from mention-order scanning.
+    // Triggers when ≥2 recommendable plugin names appear in the reply in order.
+    //
+    // GATED (1b live-bug fix): only on turns where a chain was actually
+    // intended — the reply had a chain-block opener (truncation
+    // salvage) or the SERVER resolved this turn as chain_generate.
+    // Ungated, this synthesised Build buttons from ANY prose naming
+    // 2+ plugins: "what's in my chain?" listed the rack -> button;
+    // a chain_edit turn's slot instructions named slots -> a button
+    // whose Build would REBUILD the whole rack (the destructive trap
+    // CHAIN_EDIT_INTERIM_NOTE closes server-side, re-opened locally).
+    // Status lifecycle (26 Jul 2026, second pass): NO label is set
+    // here. A chain_generate reply is a PROPOSAL sitting idle until
+    // the user presses Build - re-asserting "Working on your chain"
+    // from resolvedTurnType claimed work that was not happening
+    // (same class of bug as the load-gated "Done" line: UI
+    // asserting action from a classification, not observed state).
+    // The clearStageStatus() above is the correct reply-arrival
+    // state; the chain label belongs to the REAL load+dial window
+    // (Build press through result bubble) only.
+    const bool chainTurnIntended = hadChainOpener
+        || api.getLastResolvedTurnType() == "chain_generate";
+    if (chainJson.isEmpty() && success && !chainTurnIntended)
+        EchoJay_NSLog((juce::String("EJChat: name-scan fallback SKIPPED (turn is ")
+                      + (api.getLastResolvedTurnType().isNotEmpty()
+                           ? api.getLastResolvedTurnType()
+                           : juce::String("unknown, no opener")) + ")").toRawUTF8());
+    if (chainJson.isEmpty() && success && chainTurnIntended)
+    {
+        juce::StringArray recommNames = processorRef.getChainHost().getRecommendableNames();
+        struct Mention { juce::String name; int pos; };
+        std::vector<Mention> mentions;
+        juce::String lowerReply = visibleReply.toLowerCase();
+        for (auto& n : recommNames)
+        {
+            int p = lowerReply.indexOf(n.toLowerCase());
+            if (p >= 0)
+                mentions.push_back({ n, p });
+        }
+        if ((int)mentions.size() >= 2)
+        {
+            std::sort(mentions.begin(), mentions.end(),
+                      [](const Mention& a, const Mention& b) { return a.pos < b.pos; });
+            juce::String arr;
+            for (int i = 0; i < (int)mentions.size(); ++i)
+            {
+                if (i > 0) arr += ",";
+                arr += "{\"name\":\"" + mentions[i].name + "\",\"role\":\"from reply\"}";
+            }
+            chainJson = "{\"chain\":[" + arr + "],\"explanation\":\"Chain extracted from reply text\"}";
+            DBG("EchoJay chain fallback: synthesised block from " + juce::String(mentions.size()) + " mentions");
+        }
+    }
+
+    // Feed-conformance check: every chain-block name must be in the
+    // recommendable feed (the AVAILABLE PLUGINS list we injected).
+    // An out-of-feed name means the model drew from another source
+    // (profile plugin library, chat history, its own knowledge) —
+    // log loudly so contaminated context is diagnosable per request.
+    if (success && chainJson.isNotEmpty())
+    {
+        auto pv = juce::JSON::parse(chainJson);
+        if (auto* po = pv.getDynamicObject())
+            if (auto* carr = po->getProperty("chain").getArray())
+            {
+                juce::StringArray feed =
+                    processorRef.getChainHost().getRecommendableNames();
+                int total = 0, inFeed = 0;
+                for (auto& ev : *carr)
+                    if (auto* eo = ev.getDynamicObject())
+                    {
+                        auto n = eo->getProperty("name").toString().trim();
+                        if (n.isEmpty()) continue;
+                        ++total;
+                        bool ok = false;
+                        for (auto& f : feed)
+                            if (ChainHost::namesMatchLoose(n, f)) { ok = true; break; }
+                        if (ok) ++inFeed;
+                        else EchoJay_NSLog(("EJChat: chain name OUT OF FEED: \""
+                                            + n + "\"").toRawUTF8());
+                    }
+                EchoJay_NSLog(("EJChat: chain block feed check -- "
+                               + juce::String(inFeed) + "/" + juce::String(total)
+                               + " names in recommendable feed").toRawUTF8());
+            }
+    }
+
+    if (success) {
+        ChatMsg cm;
+        cm.role      = "assistant";
+        cm.content   = visibleReply;
+        cm.chainData = chainJson;   // empty if model didn't return a chain block
+        cm.gainData  = gainJson;    // empty if no gain proposal block
+        cm.askData   = askJson;     // empty if no ask block
+        cm.editData  = editJson;    // empty if no chain-edit block
+        // Staleness anchor: the rack revision the model's baseSlots
+        // describe. -1 after reload (in-memory counter, see header).
+        // Targeted turns (Phase R) anchor to the LINK's sidecar
+        // revision — a different rack's counter, never the local one.
+        if (editJson.isNotEmpty())
+        {
+            if (turnTargetUid.isNotEmpty())
+            {
+                cm.editTargetUid  = turnTargetUid;
+                cm.editTargetName = turnTargetName;
+                auto rack = readLinkRackSidecar(turnTargetUid);
+                cm.editBaseRevision = rack.valid ? rack.revision : -1;
+            }
+            else
+                cm.editBaseRevision = processorRef.getChainHost().getChainRevision();
+        }
+        // DROP PATH 1 of 2: the real reply REPLACES the provisional
+        // in place, never push-then-push — the user must never see
+        // two assistant turns for one send. The provisional's slot
+        // is found by IDENTITY, so a second send landing first
+        // cannot make this overwrite the wrong message.
+        const int pIdx = findProvisionalIdx(provisionalId);
+        if (pIdx >= 0) chatMessages[(size_t) pIdx] = cm;
+        else           chatMessages.push_back(cm);
+        // The REAL turn goes to all four stores; the provisional
+        // went to one. These three lines are why the provisional
+        // never touched them.
+        processorRef.chatHistory.push_back({"assistant", visibleReply});
+        processorRef.chatRoles.add("assistant");
+        processorRef.chatContents.add(visibleReply);
+    } else {
+        // DROP PATH 2 of 2: every failure, INCLUDING the
+        // limit-reached copy, which arrives here as an ordinary
+        // failed send. Drop first, then push, or the turn ends with
+        // a preamble promising work above a message saying it never
+        // happened.
+        dropProvisional(provisionalId);
+        chatMessages.push_back({"assistant", reply});
+        processorRef.chatHistory.push_back({"assistant", reply});
+    }
+
+    // Mirror assistant turn to workspace and persist (visibleReply has block stripped; chain + gain + ask stored separately)
+    workspace.appendMessageToChat(activeChatId, "assistant", visibleReply,
+                                            {}, chainJson, gainJson, askJson, editJson,
+                                            {}, {}, {},
+                                            editJson.isNotEmpty() ? turnTargetUid  : juce::String(),
+                                            editJson.isNotEmpty() ? turnTargetName : juce::String());
+    // Ask arrived: run the layout pass so the docked shelf appears
+    // and the message viewport reflows above it (message is now in
+    // chatMessages, so findNewestUnansweredAsk sees it)
+    if (askJson.isNotEmpty())
+        resized();
+    if (sidebarModel)
+    {
+        sidebarModel->refreshRows(
+            workspace.getChats(),
+            workspace.getAlbums(),
+            workspace.getReviews(),
+            workspace.getPinnedProjects(), collapsedAlbums,
+            currentChatId);
+        chatSidebar.updateContent();
+    }
+    workspace.requestMutationSync();
+    repaint();
+}
+
+// Step-5 selection flag: chain builds stream when this file exists.
+// Same file convention as dev_mode (and the same directory), so flipping it
+// is a terminal touch/rm, no UI and no rebuild:
+//   ON:   touch  <userAppData>/EchoJay/stream_chains
+//   OFF:  rm     <userAppData>/EchoJay/stream_chains     (the default)
+// Read PER SEND, deliberately not once per process like dev_mode: the whole
+// point of the flag is flipping it mid-session once ordinary turns have
+// proven the extraction, and one stat per send is free. While the server's
+// step-6 metering is pending, /api/chat-stream is dev-gated — a non-dev
+// account with this flag on gets an honest failed turn (403), not a silent
+// fallback, so the flag stays a dev lever until step 6 removes the gate.
+static bool streamChainBuildsEnabled()
+{
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+               .getChildFile("EchoJay").getChildFile("stream_chains").existsAsFile();
+}
+
 // The main /api/chat send. Lifted out of sendChatMessage unchanged so the
 // classifier can run in front of it; the reply handling below is the same
 // code it always was, plus the provisional-bubble replacement.
@@ -19421,213 +19663,194 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
                                      const juce::StringArray& roles,
                                      const juce::StringArray& contents)
 {
+    // ---- Step-5 selection: chain builds stream, everything else one-shot ----
+    // ONE choke point, because every typed send and chip tap funnels here
+    // (spec 2.3): when the flag is on and the staged state says this send is
+    // a chain build, the streaming variant takes the turn. Everything else —
+    // and everything while the flag is off, the default — is byte-for-byte
+    // the path that has always run. The staged per-turn state is untouched
+    // by the check (read-only) and is consumed by whichever variant fires.
+    if (streamChainBuildsEnabled() && api.nextTurnIsChainBuild())
+    {
+        EchoJay_NSLog("EJStream: selection routed chain build to /api/chat-stream");
+        fireChatStreamCall(sysPrompt, activeChatId, turnTargetUid, turnTargetName,
+                           provisionalId, roles, contents);
+        return;
+    }
+
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
             if (safeThis == nullptr)
                 return;
-            safeThis->chatLoading = false;
-            safeThis->clearStageStatus();   // 1d: model wait over
-
-            juce::String visibleReply = reply;
-            juce::String chainJson;
-            juce::String gainJson;
-            juce::String askJson;
-            juce::String editJson;
-            // Always try to extract chain + gain + ask blocks; the model may
-            // or may not have included any. Gain proposals are measurement-
-            // backed APPLY cards (never auto-applied); ask blocks render as
-            // tappable choice chips (Phase 1b).
-            bool hadChainOpener = false;   // reply carried <<<ECHOJAY_CHAIN>>> (even truncated)
-            if (success)
-            {
-                hadChainOpener = EchoJayAPI::extractChainBlock(visibleReply, chainJson);
-                if (EchoJayAPI::extractGainBlock(visibleReply, gainJson))
-                    EchoJay_NSLog("EJChat: gain proposal block received");
-                if (EchoJayAPI::extractAskBlock(visibleReply, askJson))
-                    EchoJay_NSLog("EJChat: ASK block received");
-                if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
-                    EchoJay_NSLog("EJChat: CHAIN_EDIT block received");
-            }
-
-            // If extractChainBlock returned partial/truncated JSON, try bracket-depth salvage
-            // before falling through to the name-scan fallback.
-            if (!chainJson.isEmpty() && success)
-            {
-                auto parsed = juce::JSON::parse(chainJson);
-                if (!parsed.isObject())
-                {
-                    juce::String salvaged = EchoJayAPI::salvagePartialChain(chainJson);
-                    if (salvaged.isNotEmpty())
-                        DBG("EchoJay chain salvage: recovered partial block");
-                    chainJson = salvaged; // empty if nothing recoverable → falls to name-scan
-                }
-            }
-
-            // Client-side fallback: if the model described a chain in prose but omitted the
-            // machine block (or it couldn't be salvaged), reconstruct from mention-order scanning.
-            // Triggers when ≥2 recommendable plugin names appear in the reply in order.
-            //
-            // GATED (1b live-bug fix): only on turns where a chain was actually
-            // intended — the reply had a chain-block opener (truncation
-            // salvage) or the SERVER resolved this turn as chain_generate.
-            // Ungated, this synthesised Build buttons from ANY prose naming
-            // 2+ plugins: "what's in my chain?" listed the rack -> button;
-            // a chain_edit turn's slot instructions named slots -> a button
-            // whose Build would REBUILD the whole rack (the destructive trap
-            // CHAIN_EDIT_INTERIM_NOTE closes server-side, re-opened locally).
-            // Status lifecycle (26 Jul 2026, second pass): NO label is set
-            // here. A chain_generate reply is a PROPOSAL sitting idle until
-            // the user presses Build - re-asserting "Working on your chain"
-            // from resolvedTurnType claimed work that was not happening
-            // (same class of bug as the load-gated "Done" line: UI
-            // asserting action from a classification, not observed state).
-            // The clearStageStatus() above is the correct reply-arrival
-            // state; the chain label belongs to the REAL load+dial window
-            // (Build press through result bubble) only.
-            const bool chainTurnIntended = hadChainOpener
-                || safeThis->api.getLastResolvedTurnType() == "chain_generate";
-            if (chainJson.isEmpty() && success && !chainTurnIntended)
-                EchoJay_NSLog((juce::String("EJChat: name-scan fallback SKIPPED (turn is ")
-                              + (safeThis->api.getLastResolvedTurnType().isNotEmpty()
-                                   ? safeThis->api.getLastResolvedTurnType()
-                                   : juce::String("unknown, no opener")) + ")").toRawUTF8());
-            if (chainJson.isEmpty() && success && chainTurnIntended)
-            {
-                juce::StringArray recommNames = safeThis->processorRef.getChainHost().getRecommendableNames();
-                struct Mention { juce::String name; int pos; };
-                std::vector<Mention> mentions;
-                juce::String lowerReply = visibleReply.toLowerCase();
-                for (auto& n : recommNames)
-                {
-                    int p = lowerReply.indexOf(n.toLowerCase());
-                    if (p >= 0)
-                        mentions.push_back({ n, p });
-                }
-                if ((int)mentions.size() >= 2)
-                {
-                    std::sort(mentions.begin(), mentions.end(),
-                              [](const Mention& a, const Mention& b) { return a.pos < b.pos; });
-                    juce::String arr;
-                    for (int i = 0; i < (int)mentions.size(); ++i)
-                    {
-                        if (i > 0) arr += ",";
-                        arr += "{\"name\":\"" + mentions[i].name + "\",\"role\":\"from reply\"}";
-                    }
-                    chainJson = "{\"chain\":[" + arr + "],\"explanation\":\"Chain extracted from reply text\"}";
-                    DBG("EchoJay chain fallback: synthesised block from " + juce::String(mentions.size()) + " mentions");
-                }
-            }
-
-            // Feed-conformance check: every chain-block name must be in the
-            // recommendable feed (the AVAILABLE PLUGINS list we injected).
-            // An out-of-feed name means the model drew from another source
-            // (profile plugin library, chat history, its own knowledge) —
-            // log loudly so contaminated context is diagnosable per request.
-            if (success && chainJson.isNotEmpty())
-            {
-                auto pv = juce::JSON::parse(chainJson);
-                if (auto* po = pv.getDynamicObject())
-                    if (auto* carr = po->getProperty("chain").getArray())
-                    {
-                        juce::StringArray feed =
-                            safeThis->processorRef.getChainHost().getRecommendableNames();
-                        int total = 0, inFeed = 0;
-                        for (auto& ev : *carr)
-                            if (auto* eo = ev.getDynamicObject())
-                            {
-                                auto n = eo->getProperty("name").toString().trim();
-                                if (n.isEmpty()) continue;
-                                ++total;
-                                bool ok = false;
-                                for (auto& f : feed)
-                                    if (ChainHost::namesMatchLoose(n, f)) { ok = true; break; }
-                                if (ok) ++inFeed;
-                                else EchoJay_NSLog(("EJChat: chain name OUT OF FEED: \""
-                                                    + n + "\"").toRawUTF8());
-                            }
-                        EchoJay_NSLog(("EJChat: chain block feed check -- "
-                                       + juce::String(inFeed) + "/" + juce::String(total)
-                                       + " names in recommendable feed").toRawUTF8());
-                    }
-            }
-
-            if (success) {
-                ChatMsg cm;
-                cm.role      = "assistant";
-                cm.content   = visibleReply;
-                cm.chainData = chainJson;   // empty if model didn't return a chain block
-                cm.gainData  = gainJson;    // empty if no gain proposal block
-                cm.askData   = askJson;     // empty if no ask block
-                cm.editData  = editJson;    // empty if no chain-edit block
-                // Staleness anchor: the rack revision the model's baseSlots
-                // describe. -1 after reload (in-memory counter, see header).
-                // Targeted turns (Phase R) anchor to the LINK's sidecar
-                // revision — a different rack's counter, never the local one.
-                if (editJson.isNotEmpty())
-                {
-                    if (turnTargetUid.isNotEmpty())
-                    {
-                        cm.editTargetUid  = turnTargetUid;
-                        cm.editTargetName = turnTargetName;
-                        auto rack = safeThis->readLinkRackSidecar(turnTargetUid);
-                        cm.editBaseRevision = rack.valid ? rack.revision : -1;
-                    }
-                    else
-                        cm.editBaseRevision = safeThis->processorRef.getChainHost().getChainRevision();
-                }
-                // DROP PATH 1 of 2: the real reply REPLACES the provisional
-                // in place, never push-then-push — the user must never see
-                // two assistant turns for one send. The provisional's slot
-                // is found by IDENTITY, so a second send landing first
-                // cannot make this overwrite the wrong message.
-                const int pIdx = safeThis->findProvisionalIdx(provisionalId);
-                if (pIdx >= 0) safeThis->chatMessages[(size_t) pIdx] = cm;
-                else           safeThis->chatMessages.push_back(cm);
-                // The REAL turn goes to all four stores; the provisional
-                // went to one. These three lines are why the provisional
-                // never touched them.
-                safeThis->processorRef.chatHistory.push_back({"assistant", visibleReply});
-                safeThis->processorRef.chatRoles.add("assistant");
-                safeThis->processorRef.chatContents.add(visibleReply);
-            } else {
-                // DROP PATH 2 of 2: every failure, INCLUDING the
-                // limit-reached copy, which arrives here as an ordinary
-                // failed send. Drop first, then push, or the turn ends with
-                // a preamble promising work above a message saying it never
-                // happened.
-                safeThis->dropProvisional(provisionalId);
-                safeThis->chatMessages.push_back({"assistant", reply});
-                safeThis->processorRef.chatHistory.push_back({"assistant", reply});
-            }
-
-            // Mirror assistant turn to workspace and persist (visibleReply has block stripped; chain + gain + ask stored separately)
-            safeThis->workspace.appendMessageToChat(activeChatId, "assistant", visibleReply,
-                                                    {}, chainJson, gainJson, askJson, editJson,
-                                                    {}, {}, {},
-                                                    editJson.isNotEmpty() ? turnTargetUid  : juce::String(),
-                                                    editJson.isNotEmpty() ? turnTargetName : juce::String());
-            // Ask arrived: run the layout pass so the docked shelf appears
-            // and the message viewport reflows above it (message is now in
-            // chatMessages, so findNewestUnansweredAsk sees it)
-            if (askJson.isNotEmpty())
-                safeThis->resized();
-            if (safeThis->sidebarModel)
-            {
-                safeThis->sidebarModel->refreshRows(
-                    safeThis->workspace.getChats(),
-                    safeThis->workspace.getAlbums(),
-                    safeThis->workspace.getReviews(),
-                    safeThis->workspace.getPinnedProjects(), safeThis->collapsedAlbums,
-                    safeThis->currentChatId);
-                safeThis->chatSidebar.updateContent();
-            }
-            safeThis->workspace.requestMutationSync();
-            safeThis->repaint();
+            safeThis->handleChatReply(reply, success, activeChatId,
+                                      turnTargetUid, turnTargetName, provisionalId);
         });
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+//  Streaming variant of fireChatMainCall (spec step 4 — Feature A rendering)
+// ---------------------------------------------------------------------------
+// NO CALL SITE YET, deliberately: step 5 (selection) decides which turn
+// types route here, and nothing routes here until then.
+//
+// The provisional-bubble drop discipline, extended to EVERY partial state:
+//
+//   - deltas update ONE provisional bubble in chatMessages — found by
+//     IDENTITY on every event (the vector can shift under async work) —
+//     and touch no other store. Streaming text reaches chatMessages only.
+//   - the chain block resolves AT ONCE when the parser completes it: the
+//     bubble gets chainData and the chain card + Build button render with
+//     it. Still provisional — a stream that dies after the block drops the
+//     card and the button with the bubble. (gain/ask/edit cards resolve a
+//     breath later, at done: they are interactive state the authoritative
+//     pipeline stamps — edit base revisions, the ask shelf — and blocks
+//     are the reply tail, so the gap is imperceptible; chain, the one the
+//     spec's ordering names, is the one that resolves live.)
+//   - done is the ONLY persistence event: done.reply runs handleChatReply,
+//     the identical pipeline the one-shot path uses, replacing the
+//     provisional by identity and writing all four stores.
+//   - done.chainBlock 'truncated'/'missing' is a FAILED BUILD: the
+//     provisional — prose included — drops, and an explicit failure bubble
+//     takes its place. A turn that looks fine and did not do the work must
+//     never read as a chatty reply.
+//   - an error frame / dead stream lands in handleChatReply's failure
+//     branch: provisional dropped, honest failure copy, nothing persisted
+//     beyond what the one-shot failure path has always written.
+//   - nothing waits on thinking: the transport forwards no thinking frames
+//     (Feature A) and rendering keys on text deltas and done alone, so a
+//     Feature-B turn with zero thinking blocks behaves identically.
+void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
+                                       const juce::String& activeChatId,
+                                       const juce::String& turnTargetUid,
+                                       const juce::String& turnTargetName,
+                                       int provisionalId,
+                                       const juce::StringArray& roles,
+                                       const juce::StringArray& contents)
+{
+    struct StreamTurn
+    {
+        EJStreamBlockParser parser;
+        juce::String prose;       // accumulated displayable prose (provisional)
+        juce::String chainJson;   // set the moment the chain block completes
+        int provisionalId = 0;    // the bubble's identity; created on first content
+        bool sawFirstContent = false;
+    };
+    auto st = std::make_shared<StreamTurn>();
+    st->provisionalId = provisionalId;
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+
+    // Paint the current provisional state into the bubble. Runs only on the
+    // message thread (streamChat's callbacks land there) and re-finds the
+    // bubble by identity every time. Creates it on first content when the
+    // classifier put up no preamble bubble; when it did, the preamble
+    // becomes the first frame of the stream (spec section 5) — replaced in
+    // place, one bubble per turn, never push-then-push.
+    auto* stp = st.get();   // parser callbacks fire synchronously inside
+                            // appendDelta/finish, while `st` is alive; a
+                            // shared_ptr here would be a st->parser->st cycle
+    auto paintBubble = [safeThis, stp]()
+    {
+        auto* ed = safeThis.getComponent();
+        if (ed == nullptr) return;
+        if (! stp->sawFirstContent)
+        {
+            stp->sawFirstContent = true;
+            ed->clearStageStatus();   // streamed content replaces the shimmer
+        }
+        int pIdx = ed->findProvisionalIdx (stp->provisionalId);
+        if (pIdx < 0)
+        {
+            ChatMsg pm;
+            pm.role          = "assistant";
+            pm.provisionalId = ed->nextProvisionalId_++;
+            stp->provisionalId = pm.provisionalId;
+            ed->chatMessages.push_back (std::move (pm));
+            pIdx = (int) ed->chatMessages.size() - 1;
+        }
+        auto& m     = ed->chatMessages[(size_t) pIdx];
+        m.content   = stp->prose;
+        m.chainData = stp->chainJson;
+        ed->resized();
+        ed->repaint();
+    };
+
+    st->parser.onProse = [paintBubble, stp] (const juce::String& s)
+    {
+        stp->prose += s;
+        paintBubble();
+    };
+    st->parser.onBlock = [paintBubble, stp] (const EJStreamBlockParser::BlockEvent& ev)
+    {
+        if (ev.type == "chain")
+        {
+            stp->chainJson = ev.payload;   // complete by construction (rule 1)
+            paintBubble();                 // the card + Build resolve at once
+        }
+        // gain / ask / edit: resolved at done by handleChatReply — see the
+        // header comment for why they wait a breath.
+    };
+
+    EchoJayAPI::ChatStreamEvents ev;
+    ev.onTextDelta = [safeThis, st] (const juce::String& t)
+    {
+        if (safeThis == nullptr) return;
+        st->parser.appendDelta (t);
+    };
+    ev.onDone = [safeThis, st, activeChatId, turnTargetUid, turnTargetName] (const juce::var& done)
+    {
+        if (safeThis == nullptr) return;
+        auto* ed = safeThis.getComponent();
+        ed->activeChatStream_ = nullptr;
+        st->parser.finish();   // flush withheld prose; the authoritative
+                               // replace below supersedes it either way
+
+        const auto reply      = done.getProperty ("reply", juce::var()).toString();
+        const auto chainBlock = done.getProperty ("chainBlock", juce::var()).toString();
+
+        if (chainBlock == "truncated" || chainBlock == "missing")
+        {
+            // The failed-build guard (spec 3.1 / section 6): the server says
+            // this chain turn was told to build and delivered no complete
+            // block. Rendering the prose as a normal reply would be exactly
+            // the fabricated-work shape — looks fine, did nothing. Drop the
+            // whole provisional (prose, card if any) and say what happened.
+            // Same store discipline as the one-shot failure path.
+            EchoJay_NSLog (("EJStream: FAILED BUILD chainBlock=" + chainBlock).toRawUTF8());
+            ed->chatLoading = false;
+            ed->clearStageStatus();
+            ed->dropProvisional (st->provisionalId);
+            const juce::String msg = chainBlock == "truncated"
+                ? "That build didn't finish — the reply was cut off before the chain completed, so there's nothing safe to build. Ask again and I'll rebuild it fresh."
+                : "That turn should have delivered a buildable chain but didn't produce one. Nothing was built — ask again to retry.";
+            ed->chatMessages.push_back ({ "assistant", msg });
+            ed->processorRef.chatHistory.push_back ({ "assistant", msg });
+            ed->resized();
+            ed->repaint();
+            return;
+        }
+
+        // The authoritative path: done.reply through the IDENTICAL one-shot
+        // pipeline. Every provisional state above is superseded here — this
+        // is the only line that persists anything.
+        ed->handleChatReply (reply, true, activeChatId,
+                             turnTargetUid, turnTargetName, st->provisionalId);
+    };
+    ev.onError = [safeThis, st, activeChatId, turnTargetUid, turnTargetName] (const juce::String& err, int)
+    {
+        if (safeThis == nullptr) return;
+        safeThis->activeChatStream_ = nullptr;
+        // DROP PATH 2, exactly as the one-shot path: the provisional — and
+        // with it every delta the user watched — drops before the failure
+        // copy renders. A stream that dies mid-flight leaves nothing.
+        safeThis->handleChatReply (err, false, activeChatId,
+                                   turnTargetUid, turnTargetName, st->provisionalId);
+    };
+
+    activeChatStream_ = api.streamChat (roles, contents, sysPrompt, std::move (ev));
+}
+
 //  Provisional-bubble lifetime
 // ---------------------------------------------------------------------------
 //
