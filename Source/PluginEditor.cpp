@@ -7178,6 +7178,20 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
             : (pb.isRemove ? "Removing slot " : "Bypassing slot ")
               + juce::String(pb.slotIdx + 1) + "...";
     }
+    // COMPLETION (fix 3): pending cleared AND the slot visible in the cache
+    // means done, said in words. Only claimed once the cache actually shows
+    // the plugin -- the block list and this line now read the same source,
+    // so they cannot disagree. Ages out after 6s, after which the author
+    // retires its own text below and the resting hint returns.
+    if (pendingNote.isEmpty()
+        && lastAddDone_.ms != 0
+        && lastAddDone_.uid == chainViewUid()
+        && juce::Time::getMillisecondCounter() - lastAddDone_.ms < 6000)
+    {
+        for (const auto& si : v.slots)
+            if (si.name.trim() == lastAddDone_.name.trim())
+            { pendingNote = "Added " + lastAddDone_.name + " to " + v.name + "."; break; }
+    }
 
     juce::String sig;
     sig << chainViewUid() << "|" << v.revision << "|" << (int) v.valid
@@ -7209,12 +7223,24 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     {
         chainSelectedSlot_ = juce::jlimit(-1, (int) v.slots.size() - 1, chainSelectedSlot_);
         chainListPanel.rebuild(v.slots, chainSelectedSlot_);
-        // rebuild() sets its own remote note; an in-flight or refused edit is
-        // more urgent, so it overwrites afterwards. A refusal by the
-        // baseSlots guard arrives here as its stated reason ("the chain
-        // changed before this could apply"), and because nothing was ever
-        // drawn as changed there is no optimistic state to roll back.
-        if (pendingNote.isNotEmpty()) chainListPanel.statusText = pendingNote;
+        // rebuild() sets its own remote note; an in-flight, refused or
+        // just-completed edit is more urgent, so it overwrites afterwards.
+        // The author REMEMBERS what it wrote (lastAddLine_) so that when the
+        // derived state goes empty -- completion aged out, failure swept --
+        // it retires its own stale text rather than leaving the line saying
+        // something that is no longer true. It never retires anyone else's
+        // text: the edit-session flow's messages are not its to clear.
+        if (pendingNote.isNotEmpty())
+        {
+            chainListPanel.statusText = pendingNote;
+            lastAddLine_ = pendingNote;
+        }
+        else if (lastAddLine_.isNotEmpty()
+                 && chainListPanel.statusText == lastAddLine_)
+        {
+            chainListPanel.statusText = chainListPanel.restingHint_;
+            lastAddLine_.clear();
+        }
     }
     chainListPanel.rackBtn.setButtonText("RACK: " + v.name.toUpperCase());
     repaint();
@@ -7849,6 +7875,12 @@ void EchoJayEditor::pollLinkBlockAck(const juce::String& uid, int seq, int attem
                         EchoJay_NSLog(("EJBlockAck[" + juce::String(seq)
                             + "] main: ok - pending cleared, cache refresh "
                             "forced").toRawUTF8());
+                        if (entry->isAdd)
+                        {
+                            // Fix 3: hand the completion to the one author.
+                            safeThis->lastAddDone_ = { uid, entry->addName,
+                                juce::Time::getMillisecondCounter() };
+                        }
                         pend.erase(entry);
                         safeThis->refreshLinkRackCache(true);
                     }
@@ -22255,10 +22287,11 @@ void EchoJayEditor::showChainPluginPicker()
             const juce::String rackUid = safeThis->chainViewUid();
             if (rackUid.isNotEmpty())
             {
-                const juce::String want = plugins[result - 1].name;
-                safeThis->chainListPanel.statusText = "Adding " + want + "...";
-                safeThis->chainListPanel.repaint();
-                safeThis->sendRackAdd(rackUid, want);
+                // NO direct status write here (fix 3): the line is DERIVED
+                // by refreshChainPanelForView from the pending list and the
+                // sidecar cache, one author. Writing "Adding..." from a
+                // second place is how the line got orphaned mid-sentence.
+                safeThis->sendRackAdd(rackUid, plugins[result - 1].name);
                 return;
             }
             auto& ch2 = safeThis->processorRef.getChainHost();

@@ -3641,6 +3641,15 @@ private:
     ChainRackView chainRackView() const;
     void refreshChainPanelForView(bool force);
     juce::String chainViewSig_;    // change detector for the remote refresh
+    // Fix 3: the add's COMPLETION memory. The ok arm of pollLinkBlockAck
+    // records the finished add here (then erases the pending); the derived
+    // status line writes "Added ..." only once the sidecar cache actually
+    // shows the slot, and the record ages out after a few seconds like the
+    // chain-save status does. One author reads it: refreshChainPanelForView.
+    struct AddDone { juce::String uid, name; uint32_t ms = 0; };
+    AddDone      lastAddDone_;
+    juce::String lastAddLine_;     // the author's own last write, so it can
+                                   // retire text that stopped being true
     void showChainRackMenu();
 
     std::map<juce::String, LinkStripState> linkStripStates_;
