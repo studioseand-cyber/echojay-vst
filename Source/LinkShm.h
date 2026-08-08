@@ -954,6 +954,31 @@ inline juce::String leasePath(const juce::String& dir, const juce::String& uid)
     return dir + "lease-" + uid + ".json";
 }
 
+// =============================================================================
+//  State blob codec (stage 1) -- ONE pairing, one author.
+//
+//  The pull shipped encoding with juce::Base64::toBase64 (RFC 4648) and
+//  decoding with juce::MemoryBlock::fromBase64Encoding, which is NOT RFC
+//  base64: it is MemoryBlock's own alphabet, and it returns false on RFC
+//  input. Every third-party pull therefore failed at the decode with the
+//  bytes intact on the wire, and the commit direction carried the same
+//  mismatch. Both sides now call THESE two functions and nothing else, so
+//  the pairing cannot drift again; ringseek_test round-trips both
+//  directions against them and proves the old decoder refuses the same
+//  input.
+// =============================================================================
+inline juce::String stateToB64(const juce::MemoryBlock& mb)
+{
+    return juce::Base64::toBase64(mb.getData(), mb.getSize());
+}
+inline bool stateFromB64(const juce::String& b64, juce::MemoryBlock& out)
+{
+    juce::MemoryOutputStream mo;
+    if (!juce::Base64::convertFromBase64(mo, b64)) return false;
+    out.replaceAll(mo.getData(), mo.getDataSize());
+    return true;
+}
+
 /// The Link-side lease decision, PURE so the self-test can hold it without a
 /// host or a filesystem. Feed it what the poll found (empty fileId = no
 /// file); it tells the caller what to do and tracks the one piece of memory

@@ -7510,16 +7510,19 @@ void EchoJayEditor::editProceedWithState(const juce::String& uid, int slot0,
 
         juce::MemoryBlock mb;
         // PHASE 1 BYTE ACCOUNTING, point 4 of four: bytes after decode, or
-        // the exact failure site. fromBase64Encoding is MemoryBlock's OWN
-        // encoding, NOT RFC base64; a false return here with a non-empty
-        // input is the codec refusing the alphabet, not a truncated wire.
-        const bool decodeOk = mb.fromBase64Encoding(b64);
+        // the exact failure site with the decoder named. The decoder is
+        // Base64::convertFromBase64 via LinkShm::stateFromB64, the SAME
+        // helper the Link encodes for -- the pairing has one author now.
+        // (The original defect: this site decoded with MemoryBlock::
+        // fromBase64Encoding, which is not RFC base64 and refused every
+        // pull with the bytes intact on the wire.)
+        const bool decodeOk = LinkShm::stateFromB64(b64, mb);
         EchoJay_NSLog(("EJPull main: decode in=" + juce::String(b64.length())
                        + " b64 chars -> "
                        + (decodeOk ? juce::String((juce::int64) mb.getSize())
-                                       + " bytes (fromBase64Encoding true)"
-                                   : juce::String("FAILED (fromBase64Encoding "
-                                       "returned false)"))).toRawUTF8());
+                                       + " bytes (Base64::convertFromBase64 true)"
+                                   : juce::String("FAILED (Base64::convertFromBase64, out="
+                                       "0 bytes)"))).toRawUTF8());
         if (!decodeOk || mb.getSize() == 0)
         { say("The settings did not survive the trip (decode failed)."); return; }
         bool threw = false;

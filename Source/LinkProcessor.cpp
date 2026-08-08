@@ -606,7 +606,7 @@ void LinkProcessor::pollControlCommand()
                         + juce::File::descriptionOfSizeInBytes((juce::int64) ChainHost::kApiStateMaxSlotBytes)
                         + " limit, too large to carry";
             else
-                pulledB64 = juce::Base64::toBase64(mb.getData(), mb.getSize());
+                pulledB64 = LinkShm::stateToB64(mb);
             // PHASE 1 BYTE ACCOUNTING (instrumentation, correlation id = seq).
             // Points 1 and 2 of four: raw size out of getStateInformation,
             // and bytes handed to the transport after encoding. The transport
@@ -648,8 +648,15 @@ void LinkProcessor::pollControlCommand()
         else if (auto* proc = chainHost.getSlotProcessor(slot0))
         {
             juce::MemoryBlock mb;
-            if (mb.fromBase64Encoding(obj->getProperty("commitState").toString())
-                && mb.getSize() > 0)
+            const juce::String cIn = obj->getProperty("commitState").toString();
+            const bool cOk = LinkShm::stateFromB64(cIn, mb);
+            if (!cOk || mb.getSize() == 0)
+                EchoJay_NSLog(("EJCommit[" + juce::String(seq)
+                    + "] link: decode FAILED (Base64::convertFromBase64, in="
+                    + juce::String(cIn.length()) + " b64 chars, out="
+                    + juce::String((juce::int64) mb.getSize())
+                    + " bytes)").toRawUTF8());
+            if (cOk && mb.getSize() > 0)
             {
                 try
                 {

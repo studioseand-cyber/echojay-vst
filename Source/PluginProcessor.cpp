@@ -1288,7 +1288,7 @@ juce::String EchoJayProcessor::editCaptureStateB64()
     if (editInst_ == nullptr) return {};
     juce::MemoryBlock mb;
     try { editInst_->getStateInformation(mb); } catch (...) { return {}; }
-    return juce::Base64::toBase64(mb.getData(), mb.getSize());
+    return LinkShm::stateToB64(mb);   // ONE codec pairing, see LinkShm.h
 }
 
 juce::AudioProcessorEditor* EchoJayProcessor::editCreateEditor()

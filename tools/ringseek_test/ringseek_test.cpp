@@ -213,12 +213,56 @@ static void testLeaseGate()
     checkEq (g2.poll ("X", 1, 9000.0), G::None, "a stale file never engages");
 }
 
+static void testStateCodec()
+{
+    // Stage 1's state blob codec, both directions, through the SAME helpers
+    // both product sites call (LinkShm::stateToB64 / stateFromB64). The blob
+    // covers all 256 byte values so the RFC alphabet's '+' and '/' are
+    // guaranteed to appear -- the characters the OLD decoder refused.
+    std::printf ("state codec: pull and commit round-trips, old decoder refused\n");
+
+    juce::MemoryBlock blob;
+    for (int i = 0; i < 4096; ++i)
+    { const juce::uint8 b = (juce::uint8) ((i * 37 + 11) & 0xFF); blob.append (&b, 1); }
+
+    // PULL direction: Link encodes, main decodes.
+    const juce::String wire = LinkShm::stateToB64 (blob);
+    juce::MemoryBlock back;
+    check (LinkShm::stateFromB64 (wire, back), "pull: decode returns true");
+    checkEq ((long long) back.getSize(), (long long) blob.getSize(),
+             "pull: byte count survives");
+    check (back == blob, "pull: bytes are IDENTICAL, not merely counted");
+
+    // COMMIT direction: main encodes (editCaptureStateB64's path), Link
+    // decodes. Same helpers by construction, but the direction is asserted
+    // separately so a future split of the helpers cannot half-pass.
+    const juce::String wire2 = LinkShm::stateToB64 (back);
+    juce::MemoryBlock back2;
+    check (LinkShm::stateFromB64 (wire2, back2), "commit: decode returns true");
+    check (back2 == blob, "commit: bytes are IDENTICAL");
+
+    // THE REGRESSION THAT SHIPPED, pinned: MemoryBlock::fromBase64Encoding
+    // is NOT RFC base64 and must refuse this wire. If this check ever
+    // starts failing, JUCE changed the alphabet and the pairing needs
+    // re-verifying, not celebrating.
+    juce::MemoryBlock wrong;
+    check (! wrong.fromBase64Encoding (wire) || wrong != blob,
+           "the OLD decoder (fromBase64Encoding) does not accept the wire");
+
+    // Empty in, empty out, no false success.
+    juce::MemoryBlock empty;
+    check (LinkShm::stateFromB64 (LinkShm::stateToB64 (juce::MemoryBlock()), empty)
+           && empty.getSize() == 0,
+           "an empty blob round-trips to empty, honestly");
+}
+
 int main()
 {
     testCapturePattern();
     testBacklogAndSeek();
     testStamps();
     testLeaseGate();
+    testStateCodec();
     std::printf (failures == 0 ? "ringseek_test: PASS\n"
                                : "ringseek_test: FAIL (%d)\n", failures);
     return failures == 0 ? 0 : 1;
