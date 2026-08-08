@@ -1525,6 +1525,12 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
     {
         mapsRequested_.add(fp);
         pendingMapFps_.addIfNotAlreadyThere(fp);
+        // The other half of the NO MAP line: this is the only place a
+        // single-fp fetch is asked for, and it is reached ONLY once structured
+        // settings have arrived. A slot that is racked but never dialled
+        // therefore fetches nothing, which is correct and was not obvious.
+        EchoJay_NSLog(("EJDial: slot " + juce::String(i) + " (\"" + slots_[(size_t)i].desc.name
+                       + "\") FETCHING map for fp=" + fp.substring(0, 12)).toRawUTF8());
         onNeedParamMaps(juce::StringArray(fp));
     }
     // The applyStructuredIfReady above ran BEFORE the fetch kicked, so a
@@ -1718,16 +1724,62 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return;
     auto& s = slots_[(size_t)slotIndex];
     if (s.structuredApplied) return;
-    if (s.structuredSettings.isVoid() || s.structuredSettings.getDynamicObject() == nullptr) return;
-    if (s.fp.isEmpty()) { s.dialStatus = DialStatus::pending; return; } // fp arrives at load
+
+    // THE THREE SILENT RETURNS BELOW USED TO BE EXACTLY THAT: silent. On 8 Aug
+    // 2026 a mapper racked SSL Blitzer, asked for a faster attack, got prose
+    // advice instead of a dial, and NOTHING in two hours of unified log said
+    // which of these fired. The map was on the server, its fingerprint
+    // recomputed exactly, and it carried the attack_ms the request needed --
+    // so every candidate downstream was already excluded, and the failure
+    // still could not be named. An hour went into inferring what one line
+    // would have said.
+    //
+    // "the model never asked", "the slot never learned its fingerprint" and
+    // "the map is not here" are three DIFFERENT failures with three different
+    // owners -- the prompt, the host, the corpus -- and they looked identical
+    // from outside.
+    if (s.structuredSettings.isVoid() || s.structuredSettings.getDynamicObject() == nullptr)
+    {
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                       + "\") NO SETTINGS -- nothing was asked of the map. The turn "
+                         "proposed no settings_structured for this slot.").toRawUTF8());
+        return;
+    }
+    if (s.fp.isEmpty())
+    {
+        // Settings arrived for a slot with no fingerprint. Nothing can be
+        // looked up, and the fp is computed at load -- so this says the LOAD
+        // did not complete, not that the corpus is missing anything.
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                       + "\") NO FINGERPRINT -- settings present but the slot never "
+                         "learned its fp at load; no lookup is possible")
+                          .toRawUTF8());
+        s.dialStatus = DialStatus::pending;
+        return;
+    }
     auto it = paramMaps_.find(s.fp);
     if (it == paramMaps_.end())
     {
         // Apply-time honesty: never a silent skip any more. Outcome is
         // "pending" while a fetch is in flight, "noMap" once the fetch has
-        // answered (or was never possible). The result bubble reads this.
-        s.dialStatus = pendingMapFps_.contains(s.fp) ? DialStatus::pending
-                                                     : DialStatus::noMap;
+        // answered (or was never possible).
+        //
+        // NAMES THE FP AND WHETHER A FETCH WAS EVER ASKED FOR, because those
+        // separate the two failures that otherwise read the same: a fetch
+        // requested and unanswered is a transport or corpus problem; a fetch
+        // never requested is a wiring one -- onNeedParamMaps is installed by
+        // the EDITOR and nulled when it closes, so a dial attempted with the
+        // window shut can never fetch anything.
+        const bool inFlight   = pendingMapFps_.contains(s.fp);
+        const bool everAsked  = mapsRequested_.contains(s.fp);
+        s.dialStatus = inFlight ? DialStatus::pending : DialStatus::noMap;
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                       + "\") NO MAP for fp=" + s.fp.substring(0, 12)
+                       + "  fetch_requested=" + (everAsked ? "y" : "n")
+                       + "  in_flight=" + (inFlight ? "y" : "n")
+                       + "  fetch_wired=" + (onNeedParamMaps ? "y" : "n")
+                       + "  cached_maps=" + juce::String((int) paramMaps_.size())
+                       + " -> " + (inFlight ? "pending" : "noMap")).toRawUTF8());
         return;
     }
 
