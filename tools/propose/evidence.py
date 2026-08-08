@@ -71,6 +71,50 @@ def unit_family_conflict(semantic, measured_unit):
             f"- the name and the behaviour disagree")
 
 
+def unappliable_conflict(semantic, ev):
+    """Can this semantic actually be WRITTEN to this control? Accept-path only.
+
+    `interpolateAnchors` (EchoJayParamApply.h:357) opens with
+    `if (anchors.isEmpty()) return 0.0f;` -- so a semantic with no anchor table
+    lands at normalized ZERO whatever value is asked for. Not a wrong value: the
+    same wrong value every time, silently, with the write reported as applied.
+
+    `position` is exempt and must stay exempt. It is set by STEP INDEX, not by
+    interpolation, so an empty anchor table is its normal condition -- 17 of the
+    23 zero-anchor accepts in the 8 Aug corpus are `position` on a mode control
+    and every one of them is correct.
+
+    TWO CLAUSES, RECORDED SEPARATELY, because they are different kinds of claim:
+
+      unappliable   0 anchors + a non-position semantic. PROVABLE from the C++:
+                    the write cannot express the value. 5 rows corpus-wide, all
+                    real -- UAD Neve 31102/31102SE `HiQ` -> q (a high-Q SWITCH),
+                    and Quantum's two Vibrato controls.
+      stepped       a `mode`-kind control + a non-position semantic. A judgement,
+                    not a proof. It adds ZERO rows beyond the first clause today
+                    (all 3 mode-kind offenders have empty tables), so it is a
+                    guard rather than a filter -- if it ever fires on a control
+                    with a real anchor table, score its discards before trusting
+                    it.
+
+    THE BROAD VERSION OF THIS RULE WAS MEASURED AND REJECTED: "<=3 anchors + a
+    continuous semantic" flags 58 accepts (1.39%) and most are CORRECT -- a
+    3-position frequency selector really is a frequency, a 3-step Ratio switch
+    really is a ratio. Scoring its discards killed it, the same way scoring the
+    confidence gate's discards killed that one. Few anchors is an interpolation
+    PRECISION concern; no anchors is a wrongness one.
+    """
+    if semantic == "position":
+        return None
+    if (ev.get("anchors") or 0) == 0:
+        return ("unappliable: no anchor table, so interpolateAnchors returns 0.0 "
+                "for every value asked -- this control cannot be dialled at all")
+    if ev.get("kind") == "mode":
+        return ("stepped: a mode control carrying a continuous semantic; "
+                "position is the semantic for a stepped selector")
+    return None
+
+
 def control_evidence(ctrl):
     """One control, reduced to the frozen evidence shape."""
     anchors = ctrl.get("anchors") or []

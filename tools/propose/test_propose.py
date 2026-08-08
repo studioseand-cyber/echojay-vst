@@ -6,7 +6,8 @@
 import json, os, re, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from evidence import semantic_unit, unit_family_conflict, candidates, control_evidence, VOCAB
+from evidence import (semantic_unit, unit_family_conflict, unappliable_conflict,
+                      candidates, control_evidence, VOCAB)
 from propose import merge
 
 CPP = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -70,6 +71,32 @@ check(unit_family_conflict("output_db", "db") is None, "matching units raise not
 check(unit_family_conflict("drive", "db") is None, "a semantic with no claim raises nothing")
 check(unit_family_conflict("output_db", "") is None, "an undeclared display raises nothing")
 check(unit_family_conflict("output_db", None) is None, "a null display raises nothing")
+
+print("\ncan the write LAND -- the accept-path rule, narrow on purpose")
+
+# The defect: interpolateAnchors returns 0.0f on an empty table, so a semantic
+# with no anchors lands at normalized zero for EVERY value asked. Five rows in
+# the 8 Aug corpus, all real -- UAD Neve 31102 `HiQ` -> q on a high-Q switch.
+A = lambda n, s, c: {"name": n, "semantic": s, "confidence": c}
+ev0 = lambda **k: {"name": "n", "index": 1, "kind": "anchored", "range": None,
+                   "unit": "", "anchors": 21, "span": [0, 1], **k}
+check(unappliable_conflict("q", ev0(anchors=0)) is not None,
+      "a continuous semantic with NO anchor table refuses -- it would dial 0.0")
+check(unappliable_conflict("position", ev0(anchors=0, kind="mode")) is None,
+      "`position` with no anchors is EXEMPT -- it is set by step index, and 17 "
+      "of the 23 zero-anchor accepts are exactly this and all correct")
+check(unappliable_conflict("q", ev0(kind="mode", anchors=0)) is not None,
+      "a mode control carrying a continuous semantic refuses")
+check(unappliable_conflict("gain_db", ev0()) is None,
+      "an ordinary anchored control passes")
+check(unappliable_conflict("gain_db", ev0(anchors=3)) is None,
+      "3 anchors PASSES -- the broad rule was measured (58 accepts, 1.39%) and "
+      "rejected: a 3-position frequency selector really is a frequency")
+
+acc, esc, dec = merge([{**ev0(anchors=0), "name": "HiQ", "kind": "mode"}],
+                      [A("HiQ", "q", "high")], [A("HiQ", "q", "high")])
+check(not acc and "unappliable" in esc[0]["why"],
+      "and the gate refuses it in merge, after both arms confidently agreed")
 
 print("\nthe merge -- every gate refuses, and only refuses")
 ev = lambda n, u="": {"name": n, "index": 1, "kind": "anchored", "range": None,

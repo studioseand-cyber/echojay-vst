@@ -41,7 +41,8 @@ with the whole surface in view.
 import argparse, concurrent.futures, datetime, json, os, random, re, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from evidence import candidates, format_for_prompt, unit_family_conflict, VOCAB
+from evidence import (candidates, format_for_prompt, unappliable_conflict,
+                      unit_family_conflict, VOCAB)
 from prompt import SYSTEM, SYSTEM_SHA
 
 OPUS = "claude-opus-5"
@@ -188,8 +189,16 @@ def merge(rows, a_ans, b_ans):
             # arms without re-running anything.
             hedged = not (a_conf == "high" and b_conf == "high")
             conflict = unit_family_conflict(a_sem, ev["unit"])
+            # GATE 3b, added 8 Aug 2026. The unit-family rule asks whether the
+            # name and the behaviour agree. This one asks a cruder question the
+            # corpus showed nobody was asking: can the write LAND? A semantic on
+            # a control with no anchor table is applied by interpolating an
+            # empty table, which returns 0.0 for every value.
+            unappliable = unappliable_conflict(a_sem, ev)
             if conflict:
                 escalated.append({**row, "why": f"unit family: {conflict}"})
+            elif unappliable:
+                escalated.append({**row, "why": f"unappliable: {unappliable}"})
             else:
                 accepted.append({**row, "semantic": a_sem, "hedged": hedged})
 

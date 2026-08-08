@@ -17,7 +17,7 @@ gate, because the gate is a machine and the human looked.
 import argparse, collections, datetime, glob, json, os, shutil, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from evidence import unit_family_conflict
+from evidence import unappliable_conflict, unit_family_conflict
 
 
 def regate_one(doc):
@@ -50,6 +50,16 @@ def regate_one(doc):
         conflict = unit_family_conflict(sems[0], ev.get("unit"))
         if conflict:
             escalated.append({**r, "why": f"unit family: {conflict}"})
+            continue
+
+        # Gate 3b, added 8 Aug 2026. Re-derivable like every other gate here:
+        # `kind` and `anchors` are in the stored evidence, so the five accepted
+        # rows that cannot be written at all come out of the accept set without
+        # re-asking either arm. That is the whole point of recording evidence
+        # rather than just verdicts.
+        unappliable = unappliable_conflict(sems[0], ev)
+        if unappliable:
+            escalated.append({**r, "why": f"unappliable: {unappliable}"})
             continue
 
         hedged = not all(c == "high" for c in confs)
