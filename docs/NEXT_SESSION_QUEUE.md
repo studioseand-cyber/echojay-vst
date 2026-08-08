@@ -1124,6 +1124,44 @@ uploads unchanged.
 
 ---
 
+## 14c. WITHDRAWING A HUMAN MAP THAT HAS NO REPLACEMENT — the gap Fusion exposed
+
+Raised 8 Aug 2026, after SSL Fusion HF Compressor was found **still live in
+production** three days after being withdrawn locally. That one was fixed by
+**supersession** — the campaign had re-swept it under the same fingerprint, so a
+newer submission replaced it, which is the mechanism the server's own guard
+names. The gap it exposed is the case where no replacement exists.
+
+`scripts/params-delete-stale-maps.mjs` refuses `origin: "human"` deliberately:
+delete the map while meta keeps `origin: "human"` and `reconcile` skips it
+forever, so the plugin becomes **permanently mapless** — worse than a bad map.
+That guard is correct and must not be relaxed. What is missing is a different
+operation beside it.
+
+**A withdrawal must touch more than the map key.** An fp is referenced from:
+
+```
+plugin:<fp>:map            the served object
+plugin:<fp>:meta           status / origin / ejmap block
+index:identity-fps         HASH identity -> [fp]      <- lookup still resolves without this
+index:mapped-names         auto-dial advertises the plugin
+index:mapped-controls      name-addressing surface
+index:mapped-skips
+```
+
+Deleting only the first leaves `index:identity-fps` pointing at a missing map,
+which is a different bug from the one being fixed.
+
+**It must also leave a reason.** The local `WHY.txt` convention is the right
+shape: what was wrong, how it was proved, and what a later reader should do.
+A hole with no explanation reads as data loss.
+
+**Build it with the halt work (§HALT_DESIGN)** — a halt is per-`(fp, semantic)`
+and a withdrawal is per-`fp`, but they share the storage surface and the
+"record why" requirement, and deciding those twice would produce two answers.
+
+---
+
 ## 15. NO FUZZY MATCHING UNTIL THERE IS A FEEDBACK PATH
 
 Recorded because it will be proposed again the first time a model names a control slightly
