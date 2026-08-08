@@ -74,10 +74,21 @@ def unit_family_conflict(semantic, measured_unit):
 def unappliable_conflict(semantic, ev):
     """Can this semantic actually be WRITTEN to this control? Accept-path only.
 
-    `interpolateAnchors` (EchoJayParamApply.h:357) opens with
-    `if (anchors.isEmpty()) return 0.0f;` -- so a semantic with no anchor table
-    lands at normalized ZERO whatever value is asked for. Not a wrong value: the
-    same wrong value every time, silently, with the write reported as applied.
+    CORRECTED 8 Aug 2026. An earlier version of this docstring said such a
+    semantic "lands at normalized zero whatever value is asked". IT DOES NOT.
+    `applyOne` refuses first -- `if (anchors.isEmpty()) { r.note = "no anchors
+    in map"; return r; }` (EchoJayParamApply.h:541) -- and BOTH tiers route
+    through applyOne, so the name path is covered too. The claim came from
+    reading `interpolateAnchors` returning 0.0f on an empty table without
+    checking whether it is ever reached with one.
+
+    THE REAL DEFECT IS NARROWER AND STILL WORTH GATING: a semantic accepted on
+    a control that can never be written is a DEAD Tier 1 slot. It occupies the
+    one entry `params` allows for that key, it tells the model the control is
+    dialable, and every attempt returns "no anchors in map". The user sees a
+    dial that does nothing rather than a dial that lies -- better, but still
+    worth refusing at accept time, and the slot it wastes cannot be reused
+    while it sits there.
 
     `position` is exempt and must stay exempt. It is set by STEP INDEX, not by
     interpolation, so an empty anchor table is its normal condition -- 17 of the
@@ -107,8 +118,8 @@ def unappliable_conflict(semantic, ev):
     if semantic == "position":
         return None
     if (ev.get("anchors") or 0) == 0:
-        return ("unappliable: no anchor table, so interpolateAnchors returns 0.0 "
-                "for every value asked -- this control cannot be dialled at all")
+        return ("unappliable: no anchor table, so applyOne refuses every write "
+                "with 'no anchors in map' -- a dead Tier 1 slot, not a dial")
     if ev.get("kind") == "mode":
         return ("stepped: a mode control carrying a continuous semantic; "
                 "position is the semantic for a stepped selector")

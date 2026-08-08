@@ -384,6 +384,37 @@ void testRoundTripThroughApplySettings()
         { "mix_pct",      "25",     0.25f },
     };
 
+    // A CONTROL WITH NO ANCHOR TABLE MUST BE REFUSED, NOT WRITTEN. Guarded
+    // since forever at applyOne's `if (anchors.isEmpty())`, and asserted by
+    // nothing until 8 Aug 2026 -- one edit from regressing silently, and the
+    // silence is the problem: interpolateAnchors returns 0.0f on an empty
+    // table, so a lost guard means every value asked lands at minimum with the
+    // write reported as done.
+    //
+    // 42 of the corpus's 51,606 controls have this shape and every one is
+    // reachable BY NAME through Tier 2, which routes into the same applyOne.
+    // Both doors, one guard, and now one test.
+    {
+        auto* dead = new juce::DynamicObject();
+        dead->setProperty ("index", 0);
+        dead->setProperty ("kind", "anchored");
+        dead->setProperty ("name", "Dead");
+        dead->setProperty ("anchors", juce::var (juce::Array<juce::var>{}));
+        auto* ctrls = new juce::DynamicObject();
+        ctrls->setProperty ("Dead", juce::var (dead));
+        auto* deadMap = new juce::DynamicObject();
+        deadMap->setProperty ("controls", juce::var (ctrls));
+        deadMap->setProperty ("params", juce::var (new juce::DynamicObject()));
+        auto* ask = new juce::DynamicObject();
+        ask->setProperty ("Dead", "5");
+        auto dr = echojay::applySettings (plugin, juce::var (deadMap), juce::var (ask));
+        check (dr.size() == 1 && ! dr.getReference (0).applied,
+               "empty anchor table: refused, not written");
+        check (dr.size() == 1 && dr.getReference (0).note.contains ("no anchors"),
+               "empty anchor table: and the refusal says why ("
+                 + (dr.isEmpty() ? juce::String() : dr.getReference (0).note) + ")");
+    }
+
     for (const auto& ev : evidence)
     {
         auto* settings = new juce::DynamicObject();
