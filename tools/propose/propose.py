@@ -335,6 +335,28 @@ def run_one(map_path, out_dir, clients, audit, run_id, effort, chunk=CHUNK):
         + (f", asked in {parts} chunks" if parts > 1 else ""))
 
 
+def needs_reask(prop_doc, vocab_size, force=False):
+    """Should this proposal be re-asked? A PREDICATE, so it can be tested.
+
+    RESUME-BY-PRESENCE DOES NOT WORK FOR A RE-ASK, and assuming it does costs
+    the entire run again. For `propose`, the proposal file NOT existing is what
+    "not done" means. For a re-ask the file exists BEFORE the work starts, and a
+    re-asked map still has declines -- the ones that stayed `none` -- so the two
+    obvious signals both say "do it" on a map that is already done.
+
+    The signal is `run.reask.vocabulary`: the size of the vocabulary the map was
+    last asked with. Equal means done; larger means new words exist and the same
+    declines deserve re-opening. That makes the NEXT vocabulary addition resume
+    correctly for free, instead of needing someone to remember this.
+    """
+    if not (prop_doc.get("declines") or []):
+        return False
+    if force:
+        return True
+    prior = (prop_doc.get("run") or {}).get("reask") or {}
+    return prior.get("vocabulary") != vocab_size
+
+
 def run_reask(map_path, out_dir, clients, run_id, effort, chunk=CHUNK):
     """Re-ask ONLY the controls a previous run declined, and fold the answers
     into the proposal that already exists.
@@ -459,6 +481,10 @@ def main():
                          "fold the answers into the existing proposal; what a "
                          "vocabulary addition needs, since regate cannot re-read "
                          "an answer the arms were never asked for")
+    ap.add_argument("--force-reask", action="store_true",
+                    help="re-ask maps already re-asked at THIS vocabulary size; "
+                         "without it they are skipped, because a re-asked map "
+                         "still has declines and would otherwise be re-paid for")
     args = ap.parse_args()
     if args.redo_declines and (args.audit or args.force):
         sys.exit("--redo-declines cannot be combined with --audit or --force: "
@@ -497,9 +523,10 @@ def main():
             if not os.path.exists(prop):
                 continue
             try:
-                if not (json.load(open(prop)).get("declines") or []):
-                    continue
+                pd = json.load(open(prop))
             except Exception:                                   # noqa: BLE001
+                continue
+            if not needs_reask(pd, len(VOCAB), args.force_reask):
                 continue
             todo.append(p)
             continue

@@ -290,7 +290,24 @@ check(any(p["control_name"] == "A" for p in out["params"]),
       "and the incumbent is NOT withdrawn -- it was decided by a run this one "
       "is not re-opening")
 
-# 3. A FAILED RE-ASK LEAVES THE EXISTING PROPOSAL EXACTLY AS IT WAS.
+# 3. RESUME. The trap the 8 Aug run walked past: a re-asked map STILL HAS
+#    DECLINES, and its proposal file existed before the work started, so both
+#    of the signals that make `propose` resumable say "do it" on a map that is
+#    done. Selecting on those would have re-paid for 1,067 of 1,074 maps.
+done = {"declines": [{"index": 2}], "run": {"reask": {"vocabulary": 35}}}
+check(P.needs_reask({"declines": [{"index": 2}], "run": {}}, 35) is True,
+      "a proposal never re-asked is selected")
+check(P.needs_reask(done, 35) is False,
+      "a proposal already re-asked AT THIS VOCABULARY is skipped, even though "
+      "it still has declines and its file exists")
+check(P.needs_reask(done, 47) is True,
+      "and is re-opened when the vocabulary GROWS -- the next addition resumes "
+      "correctly without anyone remembering this")
+check(P.needs_reask(done, 35, force=True) is True, "--force-reask overrides")
+check(P.needs_reask({"declines": [], "run": {}}, 35) is False,
+      "a proposal with nothing declined is never selected")
+
+# 4. A FAILED RE-ASK LEAVES THE EXISTING PROPOSAL EXACTLY AS IT WAS.
 note, out = _reask(PRIOR, fail_on="C",
                    answers={"C": {"semantic": "range_db", "confidence": "high"},
                             "D": {"semantic": "density", "confidence": "high"}},
