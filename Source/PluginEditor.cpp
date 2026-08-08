@@ -7445,6 +7445,19 @@ void EchoJayEditor::pollEditPullAck(const juce::String& uid, int slot0,
                     if (!(bool) o->getProperty("pulledState"))
                     { say("Cannot edit this plugin: "
                           + o->getProperty("slotStateErr").toString()); return; }
+                    // PHASE 1 BYTE ACCOUNTING, point 3 of four: bytes
+                    // received at the main BEFORE decode, plus the ack
+                    // file's on-disk size for the wire number.
+                    {
+                        const juce::String b64in =
+                            o->getProperty("slotState").toString();
+                        EchoJay_NSLog(("EJPull[" + juce::String(seq)
+                            + "] main: ack file "
+                            + juce::String((juce::int64) ack.getSize())
+                            + " bytes on disk; slotState="
+                            + juce::String(b64in.length())
+                            + " b64 chars received").toRawUTF8());
+                    }
                     safeThis->editProceedWithState(uid, slot0,
                         o->getProperty("slotState").toString());
                     return;
@@ -7496,7 +7509,18 @@ void EchoJayEditor::editProceedWithState(const juce::String& uid, int slot0,
         { say("Could not open an editing copy of " + pName + ": " + loadErr); return; }
 
         juce::MemoryBlock mb;
-        if (!mb.fromBase64Encoding(b64) || mb.getSize() == 0)
+        // PHASE 1 BYTE ACCOUNTING, point 4 of four: bytes after decode, or
+        // the exact failure site. fromBase64Encoding is MemoryBlock's OWN
+        // encoding, NOT RFC base64; a false return here with a non-empty
+        // input is the codec refusing the alphabet, not a truncated wire.
+        const bool decodeOk = mb.fromBase64Encoding(b64);
+        EchoJay_NSLog(("EJPull main: decode in=" + juce::String(b64.length())
+                       + " b64 chars -> "
+                       + (decodeOk ? juce::String((juce::int64) mb.getSize())
+                                       + " bytes (fromBase64Encoding true)"
+                                   : juce::String("FAILED (fromBase64Encoding "
+                                       "returned false)"))).toRawUTF8());
+        if (!decodeOk || mb.getSize() == 0)
         { say("The settings did not survive the trip (decode failed)."); return; }
         bool threw = false;
         try { inst->setStateInformation(mb.getData(), (int) mb.getSize()); }
@@ -7776,6 +7800,9 @@ void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& plu
     p.sentMs = juce::Time::getMillisecondCounter();
     linkBlockPending_.push_back(p);
     repaint();
+    EchoJay_NSLog(("EJAdd[" + juce::String(seq) + "] main: sent add \""
+                   + pluginName + "\" via chain-cmd; waiting on chain-ack, "
+                   "20 x 250ms timeout").toRawUTF8());
     pollLinkBlockAck(uid, seq, 20);
 }
 
@@ -7813,6 +7840,12 @@ void EchoJayEditor::pollLinkBlockAck(const juce::String& uid, int seq, int attem
                         // sidecar inside the apply completion, so a forced
                         // cache pass shows the REAL new rack, and only then
                         // does the pending style clear.
+                        // PHASE 1b instrumentation: the pending clears HERE;
+                        // note that nothing on this path writes a completion
+                        // into chainListPanel.statusText.
+                        EchoJay_NSLog(("EJBlockAck[" + juce::String(seq)
+                            + "] main: ok - pending cleared, cache refresh "
+                            "forced").toRawUTF8());
                         pend.erase(entry);
                         safeThis->refreshLinkRackCache(true);
                     }

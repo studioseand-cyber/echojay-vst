@@ -607,6 +607,21 @@ void LinkProcessor::pollControlCommand()
                         + " limit, too large to carry";
             else
                 pulledB64 = juce::Base64::toBase64(mb.getData(), mb.getSize());
+            // PHASE 1 BYTE ACCOUNTING (instrumentation, correlation id = seq).
+            // Points 1 and 2 of four: raw size out of getStateInformation,
+            // and bytes handed to the transport after encoding. The transport
+            // is ONE ctrl-ack JSON file, NOT chunked, no framing beyond JSON
+            // string quoting; its only cap is the raw-size gate above
+            // (ChainHost::kApiStateMaxSlotBytes, enforced BEFORE encoding).
+            EchoJay_NSLog(("EJPull[" + juce::String(seq) + "] link: raw="
+                           + juce::String((juce::int64) mb.getSize())
+                           + " bytes from getStateInformation; encoded="
+                           + juce::String(pulledB64.length())
+                           + " b64 chars; cap="
+                           + juce::String(ChainHost::kApiStateMaxSlotBytes)
+                           + " raw bytes; transport=single ctrl-ack JSON, unchunked"
+                           + (pullErr.isNotEmpty() ? "; REFUSED: " + pullErr
+                                                   : juce::String())).toRawUTF8());
         }
     }
 
@@ -687,8 +702,14 @@ void LinkProcessor::pollControlCommand()
         ack->setProperty("committedSlot", commitOk);
         if (!commitOk) ack->setProperty("commitErr", commitErr);
     }
-    juce::File(resolvedDir + "ctrl-ack-" + id + ".json")
-        .replaceWithText(juce::JSON::toString(juce::var(ack), true));
+    {
+        juce::File af(resolvedDir + "ctrl-ack-" + id + ".json");
+        af.replaceWithText(juce::JSON::toString(juce::var(ack), true));
+        if (pullAttempted)
+            EchoJay_NSLog(("EJPull[" + juce::String(seq) + "] link: ack file "
+                           + juce::String((juce::int64) af.getSize())
+                           + " bytes on disk").toRawUTF8());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1878,6 +1899,9 @@ void LinkProcessor::writeChainAck(int seq, const juce::String& status,
                                   const juce::StringArray& results,
                                   const juce::var& detail)
 {
+    // PHASE 1b instrumentation: every chain ack says what it answered.
+    EchoJay_NSLog(("EJChainAck[" + juce::String(seq) + "] link: status="
+                   + status).toRawUTF8());
     if (resolvedDir.isEmpty()) return;
     auto id = chainInstanceId();
     if (id.isEmpty()) return;
