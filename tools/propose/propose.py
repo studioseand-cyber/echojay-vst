@@ -10,10 +10,33 @@ for review.
 RESUMABLE BY FILE LAYOUT, not by a mechanism: one proposal file per fingerprint,
 and its presence means done. A crash costs the plugin in flight.
 
+A PLUGIN TOO BIG FOR ONE ANSWER IS ASKED IN CHUNKS. The 7 Aug corpus run lost 11
+plugins -- Repeater at 2,104 controls, Saturn 2 at 951, six MeldaProduction
+multiband units -- to one failure: the arm's JSON ran past max_tokens and was
+truncated mid-string. That is a cap, not a model error, and the fix is to ask in
+pieces. Two properties make the pieces safe, and both are tested:
+
+  * THE DECISION IS STILL MADE OVER THE WHOLE PLUGIN. Chunking splits the
+    QUESTION, never the judgement: every chunk's answers are concatenated and
+    merge() runs ONCE over all rows. Gate 4 -- no two controls may claim one
+    semantic -- therefore still sees both halves of a boundary, which is the
+    whole reason it cannot be applied per chunk.
+  * A FAILED CHUNK LEAVES THE PLUGIN UNWRITTEN, exactly as a failed arm does.
+    A proposal file's presence means "done", so a partial file that looked
+    complete would be permanently wrong and invisible. Nothing is written until
+    every chunk has answered.
+
+What chunking DOES change, stated rather than buried: an arm sees fewer of the
+plugin's other controls when it judges one. The 98.7% hold-out was measured on
+whole-plugin prompts, so it does not cover a chunked row, and the proposal
+records `run.chunking` so a chunked answer can never be mistaken for one made
+with the whole surface in view.
+
     python3 propose.py                     # every unproposed map
     python3 propose.py --only CLA-76       # substring match on the name
     python3 propose.py --audit             # re-derive human answers, score them
     python3 propose.py --force             # redo maps already proposed
+    python3 propose.py --chunk 200         # controls per request (0 = never split)
 """
 import argparse, concurrent.futures, datetime, json, os, random, re, sys, time
 
@@ -25,6 +48,13 @@ OPUS = "claude-opus-5"
 GPT = "gpt-5.5"
 TOOL_VERSION = "propose/1"
 AUDIT = []
+
+# Controls per request. Both arms cap output at 16,000 tokens, and the eleven
+# plugins that failed on 7 Aug were emitting roughly 33 tokens of JSON per
+# control -- MReverbMB truncated at 495 controls, exactly at char 32,768. 200
+# leaves better than a 2x margin at that measured rate, and the margin matters
+# more than the round-trip count: a chunk that truncates costs the whole plugin.
+CHUNK = 200
 
 
 # --------------------------------------------------------------------------
@@ -181,7 +211,8 @@ def merge(rows, a_ans, b_ans):
 
 # --------------------------------------------------------------------------
 
-def proposal_document(map_doc, accepted, escalated, declined, run_id, errors, effort):
+def proposal_document(map_doc, accepted, escalated, declined, run_id, errors, effort,
+                      chunking=None):
     """The EXISTING proposals/<fp>.json shape, extended.
 
     `category` and `params[{index,kind,confidence,reason}]` are what
@@ -214,6 +245,13 @@ def proposal_document(map_doc, accepted, escalated, declined, run_id, errors, ef
             "prompt_sha": SYSTEM_SHA,
             "effort": effort,
             "tool": TOOL_VERSION,
+            # ABSENT means the arms saw the whole plugin at once, which is what
+            # the 98.7% hold-out measured. Present means they judged each
+            # control with only its chunk of siblings in view -- a narrower
+            # evidence base than the number was measured on, recorded so nobody
+            # has to infer it from the control count later.
+            **({"chunking": {"chunks": chunking[0], "controls_per_chunk": chunking[1]}}
+               if chunking else {}),
         },
         "params": params,
         "escalations": escalated,
@@ -223,25 +261,46 @@ def proposal_document(map_doc, accepted, escalated, declined, run_id, errors, ef
     }
 
 
-def run_one(map_path, out_dir, clients, audit, run_id, effort):
+def run_one(map_path, out_dir, clients, audit, run_id, effort, chunk=CHUNK):
     map_doc = json.load(open(map_path))
     rows = candidates(map_doc, audit=audit)
     name = map_doc["identity"]["name"]
     if not rows:
         return name, 0, 0, "nothing to propose"
 
-    user = format_for_prompt(map_doc, rows)
-    (a_ans, a_err) = with_retry(ask_opus, clients["anthropic"], user, effort)
-    (b_ans, b_err) = with_retry(ask_gpt, clients["openai"], user)
-    errors = [e for e in (a_err, b_err) if e]
-    if a_ans is None or b_ans is None:
-        # ONE ANSWER IS NOT AN AGREEMENT, so nothing can be accepted here. Write
-        # NO file: presence of a proposal file is what "already done" means, so
-        # recording a transient 529 as a result would permanently poison this
-        # plugin until someone noticed and passed --force. Leave it for the next
-        # run instead.
-        return name, 0, 0, f"ARM FAILED, left for the next run: {errors[0][:60]}"
+    # The rows arrive in index order, so a split keeps a band's controls next to
+    # each other rather than scattering `Band 3 Detector -> LP` away from its
+    # siblings. Chunking is a transport concern; it must not reorder evidence.
+    parts = ([rows] if not chunk or len(rows) <= chunk
+             else [rows[i:i + chunk] for i in range(0, len(rows), chunk)])
 
+    a_ans, b_ans, errors = [], [], []
+    for n, part in enumerate(parts, 1):
+        user = format_for_prompt(map_doc, part)
+        (a, a_err) = with_retry(ask_opus, clients["anthropic"], user, effort)
+        (b, b_err) = with_retry(ask_gpt, clients["openai"], user)
+        errors += [e for e in (a_err, b_err) if e]
+        if a is None or b is None:
+            # ONE ANSWER IS NOT AN AGREEMENT, so nothing can be accepted here.
+            # Write NO file: presence of a proposal file is what "already done"
+            # means, so recording a transient 529 as a result would permanently
+            # poison this plugin until someone noticed and passed --force.
+            #
+            # THE SAME IS TRUE OF ONE CHUNK OF A PLUGIN, and more dangerously:
+            # a proposal missing 200 of 2,104 controls has nothing on its face
+            # that says so. It would read as a complete answer forever. So a
+            # chunk failure abandons the WHOLE plugin, unwritten, for the next
+            # run -- the chunks already paid for are the price of that safety.
+            where = "" if len(parts) == 1 else f" (chunk {n}/{len(parts)})"
+            return name, 0, 0, (f"ARM FAILED{where}, whole plugin left for the "
+                                f"next run: {errors[0][:60]}")
+        a_ans += a
+        b_ans += b
+
+    # ONE merge over ALL rows and BOTH arms' concatenated answers, never one per
+    # chunk. Gate 4 lives at the end of merge(), so this is what makes two
+    # controls claiming `gain_db` on opposite sides of a chunk boundary still
+    # escalate instead of both being accepted into a dict that holds one.
     accepted, escalated, declined = merge(rows, a_ans, b_ans)
 
     if audit:
@@ -256,9 +315,12 @@ def run_one(map_path, out_dir, clients, audit, run_id, effort):
                                 for r in accepted if truth.get(r["name"]) != r["semantic"]]})
         return name, len(accepted), len(escalated), f"audit {hit}/{len(accepted)} match human"
 
-    doc = proposal_document(map_doc, accepted, escalated, declined, run_id, errors, effort)
+    doc = proposal_document(map_doc, accepted, escalated, declined, run_id, errors,
+                            effort, chunking=(len(parts), chunk) if len(parts) > 1 else None)
     json.dump(doc, open(os.path.join(out_dir, f"{map_doc['fp']}.json"), "w"), indent=1)
-    return name, len(accepted), len(escalated), f"{len(declined)} declined"
+    return name, len(accepted), len(escalated), (
+        f"{len(declined)} declined"
+        + (f", asked in {len(parts)} chunks" if len(parts) > 1 else ""))
 
 
 def main():
@@ -272,6 +334,9 @@ def main():
                     help="JSON array of map file paths; proposes exactly those")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--workers", type=int, default=3)
+    ap.add_argument("--chunk", type=int, default=CHUNK,
+                    help="controls per request; 0 asks for the whole plugin at "
+                         "once, which truncates past ~500 controls")
     # The hold-out measured 98.7% auto-accept precision at effort HIGH, so that
     # QUALIFIED 7 Aug 2026: the hand answers this is measured against
     # are PARTLY MODEL-SOURCED -- some of the 266 review decisions came
@@ -331,7 +396,8 @@ def main():
 
     t0, acc, esc = time.time(), 0, 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futures = {ex.submit(run_one, p, out_dir, clients, args.audit, run_id, args.effort): p
+        futures = {ex.submit(run_one, p, out_dir, clients, args.audit, run_id,
+                             args.effort, args.chunk): p
                    for p in todo}
         for fut in concurrent.futures.as_completed(futures):
             try:
