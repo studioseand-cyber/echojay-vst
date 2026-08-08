@@ -907,6 +907,11 @@ struct RackSidecarSlot {
     juce::String name, format, settings;
     bool  bypassed = false;
     float wet = 1.0f;
+    // Stage 1 remote editing: TRUE while this slot is externally controlled
+    // (leased to the main plugin, bypassed here, edited there). Additive at
+    // v:1 exactly like the curve: the key is written only when true, an old
+    // reader never asks for it, and absent means not controlled.
+    bool  controlled = false;
     // kEqCurvePoints integer deci-dB samples on the eqCurveFreqs grid.
     // EMPTY MEANS NO CURVE WAS PUBLISHED: this slot is not the built-in EQ,
     // or the writer predates the field. Empty is NOT a flat response and must
@@ -927,6 +932,72 @@ inline juce::String rackSidecarPath(const juce::String& dir, const juce::String&
 {
     return dir + "rack-" + uid + ".json";
 }
+
+// =============================================================================
+//  Edit lease (stage 1 of remote editing) -- lease-<uid>.json
+//
+//  THE FILE IS THE LEASE. The main plugin writes {v:1, leaseId, slot, tMs}
+//  every kLeaseRenewMs while it holds control of one of a Link's slots and
+//  DELETES it on release; the Link polls at its ~100ms tick and derives the
+//  lease state from what it finds. Heartbeat-and-expiry, never a release
+//  message, because a crash sends nothing: a main plugin that dies simply
+//  stops renewing, tMs goes stale, and the Link restores itself at
+//  kLeaseExpireMs. tMs is the writer's wallclock (both plugins share one
+//  machine and one clock), not file mtime, so filesystem timestamp
+//  granularity is not in the protocol.
+// =============================================================================
+static constexpr double kLeaseRenewMs  = 1000.0;
+static constexpr double kLeaseExpireMs = 3000.0;
+
+inline juce::String leasePath(const juce::String& dir, const juce::String& uid)
+{
+    return dir + "lease-" + uid + ".json";
+}
+
+/// The Link-side lease decision, PURE so the self-test can hold it without a
+/// host or a filesystem. Feed it what the poll found (empty fileId = no
+/// file); it tells the caller what to do and tracks the one piece of memory
+/// that matters: a lease that EXPIRED must not re-engage when its writer
+/// thaws and resumes renewing. The Link restored itself and owns the audio
+/// again (the Link wins); the dead id is remembered and only a NEW leaseId
+/// -- a deliberate new session -- can engage.
+struct LeaseGate
+{
+    enum Action {
+        None,      // no lease, nothing to do
+        Engage,    // take control: save bypass state, bypass slot, publish controlled
+        Hold,      // lease alive, keep holding
+        Expire,    // renewals stopped: restore, publish, REMEMBER the dead id
+        Release,   // file deleted: restore, publish (clean end, nothing remembered)
+    };
+
+    juce::String activeId;     // empty = not engaged
+    int          activeSlot1 = 0;   // 1-based, valid while engaged
+    juce::String deadId;       // last EXPIRED id; never engages again
+
+    Action poll(const juce::String& fileId, int fileSlot1, double ageMs)
+    {
+        const bool fresh = fileId.isNotEmpty() && ageMs < kLeaseExpireMs;
+        if (activeId.isEmpty())
+        {
+            // A stale file engages nothing: its writer is already gone.
+            if (!fresh || fileId == deadId) return None;
+            activeId = fileId; activeSlot1 = fileSlot1;
+            return Engage;
+        }
+        if (fileId.isEmpty())
+        { activeId.clear(); activeSlot1 = 0; return Release; }
+        if (fileId == activeId && fresh) return Hold;
+        // Renewals stopped (stale), or a DIFFERENT id appeared (a new main
+        // session started without a clean release, e.g. after a crash and
+        // relaunch): either way THIS lease is over. Restore first; a new id
+        // engages on the next poll, through the empty-activeId arm above,
+        // so the restore and the engage can never interleave.
+        deadId = activeId;
+        activeId.clear(); activeSlot1 = 0;
+        return Expire;
+    }
+};
 
 inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
 {
@@ -961,6 +1032,8 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
             for (auto d : s.curveDeciDb) pts.add ((int) d);
             so->setProperty("eqMagDb", pts);
         }
+        if (s.controlled)
+            so->setProperty("controlled", true);
         slots.add(juce::var(so));
     }
     obj->setProperty("slots", slots);
@@ -1005,6 +1078,8 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                             s.curveDeciDb.push_back ((int16_t) juce::jlimit (
                                 -kEqCurveClampDeciDb, kEqCurveClampDeciDb, (int) pv));
                     }
+                s.controlled = so->hasProperty("controlled")
+                                 && (bool) so->getProperty("controlled");
                 if (s.name.isNotEmpty()) rc.slots.push_back(std::move(s));
             }
     rc.valid = rc.uid == uid && rc.revision >= 0;

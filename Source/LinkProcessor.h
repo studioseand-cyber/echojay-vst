@@ -101,6 +101,10 @@ public:
                      PlacementSend = 3 };
     std::atomic<int> placement_ { PlacementUnset };
     int  getPlacement() const { return placement_.load(std::memory_order_relaxed); }
+    /// Stage 1 remote editing: which rack slot is externally controlled
+    /// (leased to the main plugin), -1 = none. Editor reads it on rebuild.
+    int controlledSlot0() const
+        { return leaseActive_.load(std::memory_order_relaxed) ? leaseSlot0_ : -1; }
     void setPlacement(int p);   // message thread: store, mirror, dirty-mark, notify
 
     // Session project name (no UI here): adopted from the shared
@@ -447,6 +451,17 @@ private:
     std::vector<int16_t> lastPublishedCurve_;
     double lastCurveChangeMs_ = 0.0;
     void publishRackSidecar();
+    // ---- Edit lease (stage 1 remote editing) ------------------------------
+    // The pure gate decides; this class acts. leaseActive_ is the ONE field
+    // the audio thread reads (it forces ring production); everything else is
+    // message-thread state. leasePriorBypass_ is what the restore restores:
+    // the bypass the USER had before the lease, not blanket false.
+    void pollEditLease();
+    LinkShm::LeaseGate leaseGate_;
+    std::atomic<bool>  leaseActive_ { false };
+    int                leaseSlot0_       = -1;
+    bool               leasePriorBypass_ = false;
+
     juce::String effectiveFilePart() const;
     juce::String chainInstanceId() const;
     void pollChainCommand();

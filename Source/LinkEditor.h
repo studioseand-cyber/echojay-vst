@@ -596,6 +596,24 @@ public:
                 bl->onWetEnd = [this] { proc.commitChainWetChange(); };
                 bl->prevBtn.setEnabled(i > 0);
                 bl->nextBtn.setEnabled(i < (int)model.size() - 1);
+                // Stage 1: a slot under an edit lease is CONTROLLED from the
+                // main plugin. Its controls go dead here (the lease owns the
+                // bypass, and structure is refused rack-wide while held) and
+                // the tooltip says where control lives. The lease actions
+                // call notifyChainModel, so this rebuild runs on every
+                // engage and release.
+                if (model[(size_t)i].hostIdx >= 0
+                    && model[(size_t)i].hostIdx == proc.controlledSlot0())
+                {
+                    const juce::String why =
+                        "Being edited from the main EchoJay plugin - "
+                        "controls return when it releases";
+                    for (auto* b : { &bl->bypassBtn, &bl->removeBtn,
+                                     &bl->prevBtn, &bl->nextBtn })
+                    { b->setEnabled(false); b->setTooltip(why); }
+                    bl->wetKnob.setVisible(false);
+                    bl->setAlpha(0.55f);
+                }
                 stripContent.addAndMakeVisible(*bl);
                 blocks.push_back(std::move(bl));
             }

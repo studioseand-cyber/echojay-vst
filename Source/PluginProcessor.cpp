@@ -413,6 +413,31 @@ void ejDashLog(const juce::String& msg)
 
 EchoJayProcessor::~EchoJayProcessor()
 {
+    // Stage 1 SOLO: the plugin is leaving the track with a session open.
+    // Best-effort commit (fire and forget -- no ack can be awaited in a
+    // destructor), then a normal end: the lease file is deleted so the Link
+    // restores IMMEDIATELY rather than at the 3s expiry.
+    if (editActive())
+    {
+        const juce::String b64 = editCaptureStateB64();
+        int lerr = 0;
+        const juce::String dir = LinkShm::resolveDir(lerr);
+        if (b64.isNotEmpty() && dir.isNotEmpty())
+        {
+            auto* cmd = new juce::DynamicObject();
+            cmd->setProperty("v",           1);
+            cmd->setProperty("seq",         (int) (juce::Time::currentTimeMillis() / 1000));
+            cmd->setProperty("commitSlot",  editSession_.slot0 + 1);
+            cmd->setProperty("commitState", b64);
+            // No baseSlots: a dying host cannot re-read the rack, and the
+            // Link treats a missing array as a size mismatch and refuses --
+            // which is the SAFE direction. The state is at worst not saved;
+            // it is never applied to the wrong slot.
+            juce::File(dir + "ctrl-cmd-" + editSession_.uid + ".json")
+                .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+        }
+        editEnd(false);
+    }
     ejTeardownLog("~EchoJayProcessor enter");
     stopTimer();   // §6.1 scheduler — no arm can fire into teardown
 
@@ -799,6 +824,51 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             if (!ls.lock.tryEnter()) continue;
             if (ls.map != nullptr)
             {
+                // Stage 1 SOLO: the edited Link's ring belongs to the edit
+                // session, not the drain. Consume into the edit scratch, run
+                // it through the editing copy, and leave the result for the
+                // end-of-block overwrite. Capture cannot also be running
+                // (mutual exclusion at both start sites), so stealing the
+                // slot from the drain corrupts nothing.
+                if (li == editSession_.ringSlot.load(std::memory_order_relaxed)
+                    && editSession_.audioOn.load(std::memory_order_acquire))
+                {
+                    if (editLock_.tryEnter())
+                    {
+                        if (editInst_ != nullptr)
+                        {
+                            const int want = buffer.getNumSamples();
+                            // Bounded latency: a backlog past the trip point
+                            // re-seeks to the cushion. This is the stage-0
+                            // seek earning its keep; without it every missed
+                            // block would ratchet the audition later forever.
+                            auto* hdr = LinkShm::ringHeader(ls.map);
+                            if (LinkShm::loadAcquire(&hdr->writeIdx)
+                                  - LinkShm::loadRelaxed(&hdr->readIdx) > kEditReseekTrip)
+                                LinkShm::ringSeekForward(ls.map, kEditCushionFrames);
+                            // editBuf_ is PREALLOCATED at editBegin (8192
+                            // frames); a host block larger than that skips
+                            // the solo for the block rather than allocating
+                            // on the audio thread.
+                            if (editBuf_.getNumSamples() < want)
+                            { editLock_.exit(); ls.lock.exit(); continue; }
+                            const uint32_t n = LinkShm::ringConsume(ls.map,
+                                                  editBuf_.getWritePointer(0),
+                                                  editBuf_.getWritePointer(1), want);
+                            ls.framesRead.fetch_add((int64_t) n, std::memory_order_relaxed);
+                            // Underrun = silence for the missing tail, never
+                            // stale samples.
+                            for (int ch = 0; ch < 2; ++ch)
+                                if ((int) n < want)
+                                    editBuf_.clear(ch, (int) n, want - (int) n);
+                            juce::MidiBuffer noMidi;
+                            editInst_->processBlock(editBuf_, noMidi);
+                        }
+                        editLock_.exit();
+                    }
+                    ls.lock.exit();
+                    continue;
+                }
                 LinkCaptureChannel* lcc = gotLccLock ? lccBySlot[li] : nullptr;
                 if (lcc != nullptr)
                 {
@@ -988,6 +1058,41 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             }
         }
     }
+
+    // ===== Stage 1 SOLO: the last word on the buffer =====================
+    // While a remote edit session runs, the mix is REPLACED by the edited
+    // channel: ring audio processed through the editing copy (filled in the
+    // drain loop above). Ramped both ways (~30ms) so engage and release
+    // never click, exactly the Compare crossfade's idiom. A tryEnter miss
+    // leaves the mix untouched for one block, which errs toward the mix --
+    // the safe direction.
+    {
+        const bool on = editSession_.audioOn.load(std::memory_order_acquire);
+        editSoloMix_.setTargetValue(on ? 1.0f : 0.0f);
+        if (on || editSoloMix_.getCurrentValue() > 0.0001f)
+        {
+            if (editLock_.tryEnter())
+            {
+                const int nS = buffer.getNumSamples();
+                const bool have = editInst_ != nullptr
+                               && editBuf_.getNumSamples() >= nS;
+                for (int i = 0; i < nS; ++i)
+                {
+                    const float g = editSoloMix_.getNextValue();
+                    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                    {
+                        const float solo = have
+                            ? editBuf_.getSample(std::min(ch, 1), i) : 0.0f;
+                        float* out = buffer.getWritePointer(ch);
+                        out[i] = out[i] * (1.0f - g) + solo * g;
+                    }
+                }
+                editLock_.exit();
+            }
+        }
+        else
+            editSoloMix_.skip(buffer.getNumSamples());
+    }
 }
 
 // ============ Channel Type Detection ============
@@ -1109,6 +1214,132 @@ void EchoJayProcessor::setKeySourcePin(const juce::String& pinId,
 
 // ============ Capture System ============
 
+// =============================================================================
+//  Stage 1 remote editing: session lifecycle (message thread)
+// =============================================================================
+struct EchoJayProcessor::EditLeaseTimer : juce::Timer
+{
+    EchoJayProcessor& p;
+    explicit EditLeaseTimer(EchoJayProcessor& proc) : p(proc) {}
+    void timerCallback() override { p.renewEditLease(); }
+};
+
+void EchoJayProcessor::editBegin(const juce::String& uid, int slot0,
+                                 const juce::String& name, const juce::String& fmt,
+                                 std::unique_ptr<juce::AudioPluginInstance> inst,
+                                 const juce::String& leaseId)
+{
+    if (inst == nullptr) return;
+    // Prepared BEFORE it is installed: the audio thread must never meet a
+    // plugin that has not seen prepareToPlay.
+    inst->prepareToPlay(hostSampleRate_ > 0 ? hostSampleRate_ : 44100.0,
+                        hostSamplesPerBlock_ > 0 ? hostSamplesPerBlock_ : 512);
+    editBuf_.setSize(2, 8192);          // audio-thread capacity, allocated HERE
+    editSession_.uid        = uid;
+    editSession_.slot0      = slot0;
+    editSession_.leaseId    = leaseId;
+    editSession_.pluginName = name;
+    editSession_.pluginFormat = fmt;
+    editSession_.beganMs    = juce::Time::getMillisecondCounter();
+
+    // Which ring slot carries this Link.
+    int ringSlot = -1;
+    for (int i = 0; i < kMaxLinkSlots; ++i)
+        if (activeLinkSlots[i].map != nullptr && activeLinkSlots[i].uid == uid)
+            { ringSlot = i; break; }
+    if (ringSlot >= 0)
+    {
+        const juce::SpinLock::ScopedLockType sl(activeLinkSlots[ringSlot].lock);
+        if (activeLinkSlots[ringSlot].map != nullptr)
+            LinkShm::ringSeekForward(activeLinkSlots[ringSlot].map, kEditCushionFrames);
+    }
+    editSession_.ringSlot.store(ringSlot, std::memory_order_relaxed);
+
+    {
+        const juce::SpinLock::ScopedLockType sl(editLock_);
+        editInst_ = std::move(inst);
+    }
+    editSession_.audioOn.store(true, std::memory_order_release);
+
+    renewEditLease();                   // the file appears NOW, not in 1s
+    if (editLeaseTimer_ == nullptr)
+        editLeaseTimer_ = std::make_unique<EditLeaseTimer>(*this);
+    editLeaseTimer_->startTimer((int) LinkShm::kLeaseRenewMs);
+}
+
+void EchoJayProcessor::renewEditLease()
+{
+    if (!editActive()) return;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return;
+    auto* o = new juce::DynamicObject();
+    o->setProperty("v",       1);
+    o->setProperty("leaseId", editSession_.leaseId);
+    o->setProperty("slot",    editSession_.slot0 + 1);   // 1-based on the wire
+    o->setProperty("tMs",     juce::Time::currentTimeMillis());
+    juce::File(LinkShm::leasePath(dir, editSession_.uid))
+        .replaceWithText(juce::JSON::toString(juce::var(o), true));
+}
+
+juce::String EchoJayProcessor::editCaptureStateB64()
+{
+    const juce::SpinLock::ScopedLockType sl(editLock_);
+    if (editInst_ == nullptr) return {};
+    juce::MemoryBlock mb;
+    try { editInst_->getStateInformation(mb); } catch (...) { return {}; }
+    return juce::Base64::toBase64(mb.getData(), mb.getSize());
+}
+
+juce::AudioProcessorEditor* EchoJayProcessor::editCreateEditor()
+{
+    const juce::SpinLock::ScopedLockType sl(editLock_);
+    if (editInst_ == nullptr) return nullptr;
+    try { return editInst_->createEditor(); } catch (...) { return nullptr; }
+}
+
+void EchoJayProcessor::editEnd(bool keepState)
+{
+    if (!editActive()) return;
+    if (keepState)
+    {
+        // The lease died under us (the Link won and restored itself). The
+        // user's edits must not die with it: capture them so a reopen can
+        // seed from here instead of pulling the Link's now-reverted state.
+        editSession_.keptStateB64 = editCaptureStateB64();
+        editSession_.keptUid      = editSession_.uid;
+        editSession_.keptSlot0    = editSession_.slot0;
+    }
+    if (editLeaseTimer_) editLeaseTimer_->stopTimer();
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isNotEmpty())
+        juce::File(LinkShm::leasePath(dir, editSession_.uid)).deleteFile();
+
+    // Ramp out first, destroy a beat later: the audio thread may be inside
+    // the instance right now, and AU views tear timers down in dealloc (the
+    // AMEK lesson). audioOn drops the target to 0; the instance leaves the
+    // audio path under the lock; destruction happens after the ramp is over.
+    editSession_.audioOn.store(false, std::memory_order_release);
+    editSession_.uid.clear();
+    editSession_.slot0 = -1;
+    editSession_.ringSlot.store(-1, std::memory_order_relaxed);
+
+    // Shared_ptr shim so the deferred lambda owns the instance without this
+    // processor holding a dangling unique_ptr meanwhile.
+    std::shared_ptr<juce::AudioPluginInstance> dying;
+    {
+        const juce::SpinLock::ScopedLockType sl(editLock_);
+        dying = std::shared_ptr<juce::AudioPluginInstance>(std::move(editInst_));
+    }
+    if (dying != nullptr)
+        juce::Timer::callAfterDelay(120, [dying]() mutable
+        {
+            if (dying) { try { dying->releaseResources(); } catch (...) {} }
+            dying.reset();
+        });
+}
+
 void EchoJayProcessor::startCapture()
 {
     captureEngine.reset();
@@ -1135,6 +1366,15 @@ void EchoJayProcessor::startCapture()
     capMaxMomentary.store(-100.0f);
     capMaxShortTerm.store(-100.0f);
     
+    // CAPTURE EXCLUSION (stage 1): capture drains every Link ring and an
+    // edit session owns one of them with seeks; both on one single-reader
+    // ring would corrupt the capture. Whoever is FIRST wins; the second is
+    // refused with a message naming the first (the editor states it).
+    if (editActive())
+    {
+        captureState.store(CaptureState::Idle);
+        return;
+    }
     captureState.store(CaptureState::Capturing);
 
     // Snapshot active Link slots for multi-channel capture

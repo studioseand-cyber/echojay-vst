@@ -182,11 +182,43 @@ static void testStamps()
     std::free (map);
 }
 
+static void testLeaseGate()
+{
+    // Stage 1's lease decision, pure. The one behaviour that must never
+    // regress: an EXPIRED lease id can never re-engage. The main plugin that
+    // froze for four seconds and thawed still renews the old id; the Link
+    // already restored itself and owns the audio again (the Link wins), so
+    // that id is dead and only a NEW session may engage.
+    std::printf ("lease gate: engage, hold, expire, the dead id, release\n");
+    using G = LinkShm::LeaseGate;
+    G g;
+
+    checkEq (g.poll ({}, 0, 1.0e12), G::None, "no file, no lease, nothing to do");
+    checkEq (g.poll ("A", 2, 100.0), G::Engage, "a fresh lease engages");
+    checkEq (g.activeSlot1, 2, "the engaged slot is carried");
+    checkEq (g.poll ("A", 2, 900.0), G::Hold, "renewals hold");
+    checkEq (g.poll ("A", 2, 3500.0), G::Expire, "stale renewals expire");
+    checkEq (g.poll ("A", 2, 100.0), G::None,
+             "THE DEAD ID NEVER RE-ENGAGES, even fresh again");
+    checkEq (g.poll ("B", 3, 100.0), G::Engage, "a new session id engages");
+    checkEq (g.poll ({}, 0, 1.0e12), G::Release, "a deleted file releases cleanly");
+    checkEq (g.poll ("B", 3, 100.0), G::Engage,
+             "a RELEASED id may engage again (only expiry kills an id)");
+    // A different id appearing while engaged = the old session died without
+    // cleanup and a new one started: restore FIRST, engage on the next poll.
+    checkEq (g.poll ("C", 1, 100.0), G::Expire, "a superseding id expires the old lease");
+    checkEq (g.poll ("C", 1, 100.0), G::Engage, "and engages on the NEXT poll");
+    // A stale file engages nothing: its writer is already gone.
+    G g2;
+    checkEq (g2.poll ("X", 1, 9000.0), G::None, "a stale file never engages");
+}
+
 int main()
 {
     testCapturePattern();
     testBacklogAndSeek();
     testStamps();
+    testLeaseGate();
     std::printf (failures == 0 ? "ringseek_test: PASS\n"
                                : "ringseek_test: FAIL (%d)\n", failures);
     return failures == 0 ? 0 : 1;

@@ -1701,6 +1701,14 @@ private:
             A control that does nothing when pressed is worse than one that
             says why it cannot. */
         bool         remote = false;
+        // Stage 1: a remote edit session is live for sessionSlot. The slot's
+        // click falls through to showInline (the editor comes from
+        // onCreateEditor, which returns the EDITING COPY's editor), and the
+        // APPLY & RELEASE button shows.
+        bool         editingSession = false;
+        int          sessionSlot    = -1;
+        juce::TextButton applyBtn { "APPLY & RELEASE" };
+        std::function<void()> onApplyRelease;
         /** Remote slot tapped: the editor asks that Link to raise its own.
             Slot index is the panel's (rack) index. */
         std::function<void(int)> onRemoteEditorRequest;
@@ -1736,6 +1744,13 @@ private:
                 layoutInline();
                 attachNative(false);
             };
+
+            applyBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1d4ed8));
+            applyBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            applyBtn.setTooltip("Send the edited settings back to the Link and "
+                                "restore the channel");
+            applyBtn.onClick = [this] { if (onApplyRelease) onApplyRelease(); };
+            addChildComponent(applyBtn);
 
             rackBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
             rackBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
@@ -2128,11 +2143,18 @@ private:
             // real instance in the real signal path and hears it immediately.
             if (remote)
             {
-                if (onRemoteEditorRequest) onRemoteEditorRequest(i);
-                popBtn.setVisible(false);
-                resized();
-                repaint();
-                return;
+                // A live session's own slot DOES show inline: the editor is
+                // the local EDITING COPY (onCreateEditor returns it), so the
+                // architectural boundary does not apply to it. Every other
+                // remote slot asks to begin a session.
+                if (!(editingSession && i == sessionSlot))
+                {
+                    if (onRemoteEditorRequest) onRemoteEditorRequest(i);
+                    popBtn.setVisible(false);
+                    resized();
+                    repaint();
+                    return;
+                }
             }
             if (inlineSlot != i || inlineEditor == nullptr)
                 showInline(i);
@@ -2406,6 +2428,8 @@ private:
             cardBypassBtn.setBounds(kCardMargin, 6, 24, 22);
             cardRemoveBtn.setBounds(kCardMargin + 26, 6, 24, 22);
             popBtn.setBounds(getWidth() - kCardMargin - 26, 6, 26, 22);
+            applyBtn.setBounds(getWidth() - kCardMargin - 156, 6, 156, 22);
+            applyBtn.setVisible(editingSession);
 
             // Settings text sits inside its card, below the tiny caps label
             auto sb = settingsBoxRect();
@@ -3532,6 +3556,13 @@ private:
         resolveLinkDisplayName, the same accessor every other surface uses. */
     static const juce::String kRemoteEditorBoundary;
     void sendOpenSlotEditor(const juce::String& uid, int slotIdx);
+    // ---- Stage 1 SOLO editing ------------------------------------------
+    void beginRemoteEditSession(const juce::String& uid, int slot0);
+    void pollEditPullAck(const juce::String& uid, int slot0, int seq, int attemptsLeft);
+    void editProceedWithState(const juce::String& uid, int slot0, const juce::String& b64);
+    void commitAndReleaseEditSession();
+    void pollEditCommitAck(const juce::String& uid, int seq, int attemptsLeft);
+    void editSessionUiTeardown(const juce::String& note);
     void pollOpenSlotAck(const juce::String& uid, int seq, int attemptsLeft,
                          const juce::String& linkName);
     void pollLinkBlockAck(const juce::String& uid, int seq, int attemptsLeft);

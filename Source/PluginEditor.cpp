@@ -932,6 +932,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             captureWasSilent = false;
             // Item 1: stamp the name + channel scope at PRESS (single source,
             // recreate-safe) so the snapshot matches the review.
+            // Capture exclusion, editor side: the processor refuses too
+            // (startCapture returns to Idle), but a silent refusal reads as
+            // a broken button, so the reason is stated here.
+            if (processorRef.editActive())
+            {
+                chainListPanel.statusText =
+                    "Capture and remote editing cannot share a Link's audio "
+                    "stream. Apply & Release the edit first.";
+                chainListPanel.repaint();
+                return;
+            }
             processorRef.setNextCapture(computeNextCaptureName(), effectiveChannelUid());
             processorRef.startCapture();
         }
@@ -1893,11 +1904,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addChildComponent(chainRecommendLabel);
 
     chainListPanel.onCreateEditor = [this](int i) -> juce::AudioProcessorEditor* {
-        // GENUINELY IMPOSSIBLE for a remote rack, not deferred: that plugin
-        // instance lives in the Link's process slot and no protocol addition
-        // can render its view here. The panel closes its editors on entering
-        // remote mode and says so; this returns nullptr as a backstop.
-        if (chainViewUid().isNotEmpty()) return nullptr;
+        // A remote rack cannot render the LINK'S instance here (it lives in
+        // that process slot) -- but a live edit session's slot has a LOCAL
+        // editing copy, and its editor is the whole point of stage 1.
+        if (chainViewUid().isNotEmpty())
+        {
+            if (processorRef.editActive()
+                && processorRef.editSession_.uid == chainViewUid()
+                && processorRef.editSession_.slot0 == i)
+                return processorRef.editCreateEditor();
+            return nullptr;
+        }
         return processorRef.getChainHost().createEditorForSlot(i);
     };
     chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
@@ -1990,8 +2007,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     {
         const juce::String uid = chainViewUid();
         if (uid.isEmpty()) return;      // local racks open inline, unchanged
-        sendOpenSlotEditor(uid, slotIdx);
+        // Stage 1: a remote slot click opens a SOLO edit session here (the
+        // editing copy, the lease, the ring). sendOpenSlotEditor remains the
+        // fallback surface for older Links, reached through the pull ack's
+        // version signal rather than tried first.
+        beginRemoteEditSession(uid, slotIdx);
     };
+    chainListPanel.onApplyRelease = [this] { commitAndReleaseEditSession(); };
 
     // Sidebar collapse toggle. Collapsing gives the main column the full tab
     // width. NOT Chain only any more: one flag for every chat-hosting
@@ -7157,6 +7179,13 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     if (!force && sig == chainViewSig_) return;
     chainViewSig_ = sig;
 
+    // RACK SWITCH with a session open: settings travel back first (the
+    // design's contract), then the view moves on. commitAndRelease keeps
+    // the session if the Link refuses, so a stale rack cannot eat edits.
+    if (processorRef.editActive()
+        && processorRef.editSession_.uid != chainViewUid())
+        commitAndReleaseEditSession();
+
     chainListPanel.remote        = v.remote;
     chainListPanel.remoteName    = v.name;
     chainListPanel.remoteOffline = v.offline;
@@ -7323,6 +7352,270 @@ void EchoJayEditor::sendRackEdit(const juce::String& uid, int slotIdx, bool isRe
 const juce::String EchoJayEditor::kRemoteEditorBoundary =
     "This plugin runs inside %LINK%, so its editor opens in that window. "
     "Open the %LINK% Link to edit it.";
+
+// =============================================================================
+//  Stage 1 remote editing: SOLO session flow (message thread throughout)
+// =============================================================================
+void EchoJayEditor::beginRemoteEditSession(const juce::String& uid, int slot0)
+{
+    auto say = [this](const juce::String& t)
+    { chainListPanel.statusText = t; chainListPanel.repaint(); };
+
+    // ORDER OF GUARDS: cheapest and most user-fixable first, and the SIZE
+    // check is deliberately not here at all -- the state pull IS the size
+    // check, and it fails in the ack BEFORE any lease, bypass or instance
+    // exists. Nothing to unwind on refusal.
+    if (processorRef.editActive())
+    { say("Finish the current edit first (Apply & Release)."); return; }
+    if (processorRef.getCaptureState() == CaptureState::Capturing)
+    { say("A capture is running. Editing and capturing cannot share a Link's "
+          "audio stream - stop the capture first."); return; }
+
+    bool connected = false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) { connected = e.info.connected; break; }
+    const juce::String name = processorRef.resolveLinkDisplayName(uid);
+    if (!connected)
+    { say(name + " is offline - its plugins cannot be edited right now."); return; }
+
+    // A kept state from a lapsed session on THIS exact slot seeds directly:
+    // pulling would fetch the Link's reverted settings and silently discard
+    // the user's edits, which is the loss the kept blob exists to prevent.
+    if (processorRef.editSession_.keptUid == uid
+        && processorRef.editSession_.keptSlot0 == slot0
+        && processorRef.editSession_.keptStateB64.isNotEmpty())
+    {
+        say("Resuming your edits from the lapsed session...");
+        editProceedWithState(uid, slot0, processorRef.editSession_.keptStateB64);
+        return;
+    }
+
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty())
+    { say("Cannot reach " + name + ": the shared Link folder is unavailable."); return; }
+    int seq = (int) (juce::Time::currentTimeMillis() / 1000);
+    for (auto& pnd : linkCtrlPending_)
+        if (pnd.addr == uid && pnd.seq >= seq) seq = pnd.seq + 1;
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",             1);
+    cmd->setProperty("seq",           seq);
+    cmd->setProperty("pullSlotState", slot0 + 1);
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    say("Reading settings from " + name + "...");
+    pollEditPullAck(uid, slot0, seq, 20);
+}
+
+void EchoJayEditor::pollEditPullAck(const juce::String& uid, int slot0,
+                                    int seq, int attemptsLeft)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay(250, [safeThis, uid, slot0, seq, attemptsLeft]
+    {
+        if (safeThis == nullptr) return;
+        auto say = [&](const juce::String& t)
+        { safeThis->chainListPanel.statusText = t; safeThis->chainListPanel.repaint(); };
+        int err = 0;
+        juce::String dir = LinkShm::resolveDir(err);
+        juce::File ack(dir + "ctrl-ack-" + uid + ".json");
+        if (dir.isNotEmpty() && ack.existsAsFile())
+        {
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+                if ((int) o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();
+                    const juce::String linkName =
+                        safeThis->processorRef.resolveLinkDisplayName(uid);
+                    // Absence of the echo IS the version signal (the
+                    // openedSlot contract): an old Link acked normally but
+                    // never saw the request.
+                    if (!o->hasProperty("pulledState"))
+                    { say(linkName + " is running an older EchoJay Link that cannot "
+                          "hand its plugins over for editing. Update it, or open "
+                          "its window directly."); return; }
+                    if (!(bool) o->getProperty("pulledState"))
+                    { say("Cannot edit this plugin: "
+                          + o->getProperty("slotStateErr").toString()); return; }
+                    safeThis->editProceedWithState(uid, slot0,
+                        o->getProperty("slotState").toString());
+                    return;
+                }
+        }
+        if (attemptsLeft > 1)
+        { safeThis->pollEditPullAck(uid, slot0, seq, attemptsLeft - 1); return; }
+        say("No response from "
+            + safeThis->processorRef.resolveLinkDisplayName(uid)
+            + ". Nothing was opened.");
+    });
+}
+
+void EchoJayEditor::editProceedWithState(const juce::String& uid, int slot0,
+                                         const juce::String& b64)
+{
+    auto say = [this](const juce::String& t)
+    { chainListPanel.statusText = t; chainListPanel.repaint(); };
+
+    // Identity comes from the SIDECAR (name + format), the same read the
+    // panel renders from. SAME FORMAT on purpose: preferInlineHostableDesc's
+    // AU-to-VST3 swap exists for inline windows, but state is not portable
+    // across formats for many plugins, so the editing copy must be the
+    // format the Link actually runs.
+    auto it = processorRef.linkRackCache.find(uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid
+        || slot0 < 0 || slot0 >= (int) it->second.rack.slots.size())
+    { say("The rack changed before the editor could open."); return; }
+    const juce::String pName = it->second.rack.slots[(size_t) slot0].name;
+    const juce::String pFmt  = it->second.rack.slots[(size_t) slot0].format;
+
+    auto desc = processorRef.getChainHost().resolveByName(pName, pFmt);
+    if (desc.name.isEmpty())
+        desc = processorRef.getChainHost().resolveByName(pName, {});
+    if (desc.name.isEmpty())
+    { say("\"" + pName + "\" is not in this machine's plugin list, so no "
+          "editing copy can be made."); return; }
+
+    say("Opening " + pName + "...");
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    processorRef.getChainHost().asyncCreatePlugin(desc,
+        [safeThis, uid, slot0, pName, pFmt, b64]
+        (std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& loadErr)
+    {
+        if (safeThis == nullptr) return;
+        auto say = [&](const juce::String& t)
+        { safeThis->chainListPanel.statusText = t; safeThis->chainListPanel.repaint(); };
+        if (inst == nullptr)
+        { say("Could not open an editing copy of " + pName + ": " + loadErr); return; }
+
+        juce::MemoryBlock mb;
+        if (!mb.fromBase64Encoding(b64) || mb.getSize() == 0)
+        { say("The settings did not survive the trip (decode failed)."); return; }
+        bool threw = false;
+        try { inst->setStateInformation(mb.getData(), (int) mb.getSize()); }
+        catch (...) { threw = true; }
+        if (threw)
+        { say(pName + " refused its own settings - cannot edit safely."); return; }
+
+        auto& proc = safeThis->processorRef;
+        const juce::String leaseId =
+            uid + "-" + juce::String(juce::Time::currentTimeMillis());
+        proc.editBegin(uid, slot0, pName, pFmt, std::move(inst), leaseId);
+        // The kept blob is consumed the moment a session exists again.
+        proc.editSession_.keptStateB64.clear();
+        proc.editSession_.keptUid.clear();
+        proc.editSession_.keptSlot0 = -1;
+
+        safeThis->chainListPanel.editingSession = true;
+        safeThis->chainListPanel.sessionSlot    = slot0;
+        safeThis->chainSelectedSlot_            = slot0;
+        safeThis->refreshChainPanelForView(true);
+        safeThis->chainListPanel.selectSlot(slot0);
+        say("Editing " + pName + " on "
+            + proc.resolveLinkDisplayName(uid)
+            + " - SOLO. You are hearing that channel only, live. "
+            "Apply & Release sends the settings back.");
+    });
+}
+
+void EchoJayEditor::commitAndReleaseEditSession()
+{
+    if (!processorRef.editActive()) return;
+    auto say = [this](const juce::String& t)
+    { chainListPanel.statusText = t; chainListPanel.repaint(); };
+
+    const juce::String uid   = processorRef.editSession_.uid;
+    const int          slot0 = processorRef.editSession_.slot0;
+    const juce::String b64   = processorRef.editCaptureStateB64();
+    if (b64.isEmpty())
+    { say("Could not read the edited settings - still editing, nothing sent."); return; }
+
+    auto it = processorRef.linkRackCache.find(uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid)
+    { say("Cannot see that Link's rack right now - still editing, nothing sent."); return; }
+    juce::Array<juce::var> baseSlots;
+    for (const auto& rs : it->second.rack.slots)
+        baseSlots.add(rs.name);
+
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty())
+    { say("Shared Link folder unavailable - still editing, nothing sent."); return; }
+    int seq = (int) (juce::Time::currentTimeMillis() / 1000);
+    for (auto& pnd : linkCtrlPending_)
+        if (pnd.addr == uid && pnd.seq >= seq) seq = pnd.seq + 1;
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",           1);
+    cmd->setProperty("seq",         seq);
+    cmd->setProperty("commitSlot",  slot0 + 1);
+    cmd->setProperty("commitState", b64);
+    cmd->setProperty("baseSlots",   baseSlots);
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    say("Applying to " + processorRef.resolveLinkDisplayName(uid) + "...");
+    pollEditCommitAck(uid, seq, 20);
+}
+
+void EchoJayEditor::pollEditCommitAck(const juce::String& uid, int seq, int attemptsLeft)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay(250, [safeThis, uid, seq, attemptsLeft]
+    {
+        if (safeThis == nullptr) return;
+        auto say = [&](const juce::String& t)
+        { safeThis->chainListPanel.statusText = t; safeThis->chainListPanel.repaint(); };
+        int err = 0;
+        juce::String dir = LinkShm::resolveDir(err);
+        juce::File ack(dir + "ctrl-ack-" + uid + ".json");
+        if (dir.isNotEmpty() && ack.existsAsFile())
+        {
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+                if ((int) o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();
+                    const juce::String linkName =
+                        safeThis->processorRef.resolveLinkDisplayName(uid);
+                    if (o->hasProperty("committedSlot")
+                        && (bool) o->getProperty("committedSlot"))
+                    {
+                        // Applied. NOW the session ends and the channel
+                        // returns to the mix; the setStateInformation click
+                        // on the Link's live instance happened once, at the
+                        // moment the user chose.
+                        safeThis->processorRef.editEnd(false);
+                        safeThis->editSessionUiTeardown(
+                            "Applied to " + linkName + ". The channel is back "
+                            "in the mix. (If you heard a tick, that was the "
+                            "plugin adopting its new settings - one-off.)");
+                        return;
+                    }
+                    // Refused (stale rack or plugin trouble): the session
+                    // STAYS OPEN. The edits live in the editing copy and are
+                    // not discarded because someone moved a slot.
+                    say("Not applied: "
+                        + o->getProperty("commitErr").toString()
+                        + " Still editing - your changes are safe here.");
+                    return;
+                }
+        }
+        if (attemptsLeft > 1)
+        { safeThis->pollEditCommitAck(uid, seq, attemptsLeft - 1); return; }
+        say("No response from the Link. Still editing - nothing was lost.");
+    });
+}
+
+void EchoJayEditor::editSessionUiTeardown(const juce::String& note)
+{
+    chainListPanel.editingSession = false;
+    chainListPanel.sessionSlot    = -1;
+    chainListPanel.closeAllEditors();
+    refreshChainPanelForView(true);
+    chainListPanel.statusText = note;
+    chainListPanel.repaint();
+}
 
 void EchoJayEditor::sendOpenSlotEditor(const juce::String& uid, int slotIdx)
 {
@@ -18293,6 +18586,39 @@ void EchoJayEditor::timerCallback()
     {
         if (chainViewUid().isNotEmpty()) refreshLinkRackCache(false);
         refreshChainPanelForView(false);
+    }
+
+    // -------------------------------------------------------------------------
+    //  Stage 1 SOLO: the lease-death watch, on EVERY tab. The Link wins on
+    //  expiry (it owns the audio): it restores itself and drops the
+    //  controlled flag from its sidecar. Seeing that while still holding the
+    //  lease means control lapsed under us -- capture the edits, tear down,
+    //  say so. Three-second grace covers engage + sidecar publish + the 1Hz
+    //  cache before absence can mean death.
+    // -------------------------------------------------------------------------
+    if (processorRef.editActive())
+    {
+        refreshLinkRackCache(false);   // self-throttled to ~1Hz
+        const auto& es = processorRef.editSession_;
+        if (juce::Time::getMillisecondCounter() - es.beganMs > 3000)
+        {
+            bool linkGone = true;
+            for (const auto& e : processorRef.getLinkDisplayList())
+                if (e.info.uid == es.uid) { linkGone = false; break; }
+            bool controlled = false;
+            auto itc = processorRef.linkRackCache.find(es.uid);
+            if (!linkGone && itc != processorRef.linkRackCache.end() && itc->second.valid
+                && es.slot0 >= 0 && es.slot0 < (int) itc->second.rack.slots.size())
+                controlled = itc->second.rack.slots[(size_t) es.slot0].controlled;
+            if (linkGone || !controlled)
+            {
+                const juce::String who = processorRef.resolveLinkDisplayName(es.uid);
+                processorRef.editEnd(true);   // keep the edits
+                editSessionUiTeardown(
+                    "Control of " + who + " lapsed - the channel is live again. "
+                    "Your edits are kept: reopen the slot to continue from them.");
+            }
+        }
     }
 
     // -------------------------------------------------------------------------

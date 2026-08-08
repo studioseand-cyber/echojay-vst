@@ -123,6 +123,7 @@ void LinkProcessor::timerCallback()
     if (heartbeatDivider_ % 3 == 0)
     {
         pollChainCommand();
+        pollEditLease();
         pollControlCommand();
         pollKeyCommand();
         pollSessionProjectName();
@@ -238,6 +239,13 @@ void LinkProcessor::publishRackSidecar()
             rc.slots.push_back({ s.name, s.format,
                                  s.settings.substring(0, 200),   // bound file size
                                  s.bypassed, s.wet,
+                                 // Stage 1: the leased slot says so, so the
+                                 // main plugin can see its lease landed (and
+                                 // see it die: controlled vanishing while it
+                                 // still holds the lease is the teardown
+                                 // signal).
+                                 leaseActive_.load(std::memory_order_relaxed)
+                                     && i == leaseSlot0_,
                                  // The curve rides on the EQ's OWN slot, so a
                                  // reader never has to guess which entry it
                                  // describes. Every other slot leaves it empty.
@@ -431,6 +439,81 @@ void LinkProcessor::pollSessionProjectName()
 // toggle (same updateShmState path, same dirty-marking so it persists),
 // then the ack confirms the applied state.
 // ---------------------------------------------------------------------------
+void LinkProcessor::pollEditLease()
+{
+    // ~100ms cadence, message thread. The FILE is the lease (see LinkShm.h):
+    // parse what is there, let the pure LeaseGate decide, act on the verdict.
+    if (instanceUid_.isEmpty() || resolvedDir.isEmpty()) return;
+
+    juce::String fileId;
+    int          fileSlot1 = 0;
+    double       ageMs     = 1.0e12;   // absent reads as infinitely stale
+    juce::File f(LinkShm::leasePath(resolvedDir, instanceUid_));
+    if (f.existsAsFile())
+    {
+        auto v = juce::JSON::parse(f.loadFileAsString());
+        if (auto* o = v.getDynamicObject())
+        {
+            fileId    = o->getProperty("leaseId").toString();
+            fileSlot1 = (int) o->getProperty("slot");
+            ageMs     = (double) juce::Time::currentTimeMillis()
+                          - (double) (juce::int64) o->getProperty("tMs");
+        }
+    }
+    else
+    {
+        // No file. If we are not engaged either, this is the overwhelmingly
+        // common case and the gate call below is a no-op; skip the work.
+        if (!leaseActive_.load(std::memory_order_relaxed)) return;
+    }
+
+    switch (leaseGate_.poll(fileId, fileSlot1, ageMs))
+    {
+        case LinkShm::LeaseGate::Engage:
+        {
+            const int slot0 = leaseGate_.activeSlot1 - 1;
+            if (slot0 < 0 || slot0 >= chainHost.getNumSlots())
+            {
+                // A lease naming a slot this rack does not have engages
+                // NOTHING: force the gate back to idle so a later valid
+                // lease can engage, and remember nothing.
+                leaseGate_.activeId.clear(); leaseGate_.activeSlot1 = 0;
+                break;
+            }
+            leaseSlot0_       = slot0;
+            leasePriorBypass_ = chainHost.getSlotInfo(slot0).bypassed;
+            // Bypass the slot for the lease's duration: the ring taps
+            // post-rack, so without this the editing copy would receive
+            // audio ALREADY processed by this instance and process it again
+            // in series. setSlotBypassed bumps chainRevision, so the sidecar
+            // republishes with the controlled flag riding along.
+            chainHost.setSlotBypassed(slot0, true);
+            leaseActive_.store(true, std::memory_order_relaxed);
+            notifyChainModel();   // the open editor dims + disables the slot
+            EchoJay_NSLog(("EJLease: engaged slot "
+                           + juce::String(slot0 + 1)).toRawUTF8());
+            break;
+        }
+        case LinkShm::LeaseGate::Expire:
+        case LinkShm::LeaseGate::Release:
+        {
+            // ONE restore path for every ending -- clean release, expiry
+            // after a crash, a new id superseding a dead session. Restore
+            // the bypass the user actually had, drop the flags, republish.
+            leaseActive_.store(false, std::memory_order_relaxed);
+            if (leaseSlot0_ >= 0 && leaseSlot0_ < chainHost.getNumSlots())
+                chainHost.setSlotBypassed(leaseSlot0_, leasePriorBypass_);
+            leaseSlot0_ = -1;
+            notifyChainModel();
+            EchoJay_NSLog("EJLease: released/expired - slot restored");
+            break;
+        }
+        case LinkShm::LeaseGate::Hold:
+        case LinkShm::LeaseGate::None:
+            break;
+    }
+}
+
 void LinkProcessor::pollControlCommand()
 {
     auto id = chainInstanceId();
@@ -496,6 +579,75 @@ void LinkProcessor::pollControlCommand()
     // The instance opened is THIS Link's own, in the signal path, so the user
     // hears their edits immediately. Nothing is transferred and the audio is
     // untouched: this moves a window to the front, nothing more.
+    // ---- Slot state pull (stage 1 remote editing) --------------------------
+    // The pull IS the size measurement: over the cap or a throwing plugin
+    // fails HERE, in the ack, before the main plugin engages any lease,
+    // bypass or editing instance. Nothing to unwind on refusal.
+    bool pullAttempted = false;
+    juce::String pulledB64, pullErr;
+    if (obj->hasProperty("pullSlotState"))
+    {
+        pullAttempted = true;
+        const int slot0 = (int) obj->getProperty("pullSlotState") - 1;
+        auto* proc = chainHost.getSlotProcessor(slot0);
+        if (proc == nullptr)
+            pullErr = "slot " + juce::String(slot0 + 1) + " has no plugin";
+        else
+        {
+            juce::MemoryBlock mb;
+            bool threw = false;
+            try { proc->getStateInformation(mb); } catch (...) { threw = true; }
+            if (threw)
+                pullErr = "this plugin refused to hand over its settings";
+            else if ((int) mb.getSize() > ChainHost::kApiStateMaxSlotBytes)
+                pullErr = "this plugin's settings are "
+                        + juce::File::descriptionOfSizeInBytes((juce::int64) mb.getSize())
+                        + ", over the "
+                        + juce::File::descriptionOfSizeInBytes((juce::int64) ChainHost::kApiStateMaxSlotBytes)
+                        + " limit, too large to carry";
+            else
+                pulledB64 = juce::Base64::toBase64(mb.getData(), mb.getSize());
+        }
+    }
+
+    // ---- Commit (stage 1): the edited state comes home ---------------------
+    // Guarded by baseSlots exactly like structural edits: the rack the main
+    // plugin was looking at must still be THIS rack, or the state could land
+    // on the wrong plugin. Stale = refused with a reason, never applied.
+    bool commitAttempted = false, commitOk = false;
+    juce::String commitErr;
+    if (obj->hasProperty("commitSlot"))
+    {
+        commitAttempted = true;
+        const int slot0 = (int) obj->getProperty("commitSlot") - 1;
+        juce::StringArray base;
+        if (auto* bs = obj->getProperty("baseSlots").getArray())
+            for (auto& bv : *bs) base.add(bv.toString().trim());
+        const auto infos = chainHost.getAllSlotInfos();
+        bool stale = ((int) infos.size() != base.size());
+        if (!stale)
+            for (int i = 0; i < (int) infos.size(); ++i)
+                if (infos[(size_t) i].name.trim() != base[i]) { stale = true; break; }
+        if (stale)
+            commitErr = "the rack changed while you were editing - nothing was applied";
+        else if (auto* proc = chainHost.getSlotProcessor(slot0))
+        {
+            juce::MemoryBlock mb;
+            if (mb.fromBase64Encoding(obj->getProperty("commitState").toString())
+                && mb.getSize() > 0)
+            {
+                try
+                {
+                    proc->setStateInformation(mb.getData(), (int) mb.getSize());
+                    commitOk = true;
+                }
+                catch (...) { commitErr = "this plugin refused the settings"; }
+            }
+            else commitErr = "settings did not survive the trip (decode failed)";
+        }
+        else commitErr = "slot " + juce::String(slot0 + 1) + " has no plugin";
+    }
+
     bool openAttempted = false, openSucceeded = false;
     if (obj->hasProperty("openSlot"))
     {
@@ -521,6 +673,20 @@ void LinkProcessor::pollControlCommand()
     // gain acks stay byte-identical to what old readers expect.
     if (openAttempted)
         ack->setProperty("openedSlot", openSucceeded);
+    // Same absence-is-the-version-signal contract as openedSlot: these keys
+    // exist only when the command asked, so an old Link's ack simply lacks
+    // them and the main plugin reports "too old" instead of claiming success.
+    if (pullAttempted)
+    {
+        ack->setProperty("pulledState", pullErr.isEmpty());
+        if (pullErr.isEmpty()) ack->setProperty("slotState", pulledB64);
+        else                   ack->setProperty("slotStateErr", pullErr);
+    }
+    if (commitAttempted)
+    {
+        ack->setProperty("committedSlot", commitOk);
+        if (!commitOk) ack->setProperty("commitErr", commitErr);
+    }
     juce::File(resolvedDir + "ctrl-ack-" + id + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(ack), true));
 }
@@ -1026,8 +1192,15 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
         keyEngine_.pushBlock(L, R, buffer.getNumSamples());
     }
 
-    // Write into ring buffer if active — non-blocking tryEnter
-    if (linkOn.load(std::memory_order_acquire))
+    // Write into ring buffer if active -- non-blocking tryEnter. ALSO while
+    // an edit lease is held: linkOn gates the ring, and an inactive Link
+    // publishes nothing, but the whole point of the lease is that the main
+    // plugin is monitoring this channel through its editing copy. Forcing
+    // production here (rather than refusing to open editors on inactive
+    // Links) keeps the feature available exactly when someone is mid-mix
+    // with Links toggled off. Meters stay gated on linkOn alone.
+    if (linkOn.load(std::memory_order_acquire)
+        || leaseActive_.load(std::memory_order_relaxed))
     {
         if (shmLock.tryEnter())
         {
@@ -1629,6 +1802,14 @@ void LinkProcessor::pollChainCommand()
     {
         if (!obj->hasProperty("editOps"))
         { writeChainAck(seq, "failed", { "v2 command without editOps" }, {}); return; }
+        // A leased rack refuses STRUCTURE. The lease saved one slot's bypass
+        // state and will restore it BY INDEX; an edit that removes or moves
+        // slots underneath it would make that restore hit the wrong plugin.
+        // Refused with a reason, never queued.
+        if (leaseActive_.load(std::memory_order_relaxed))
+        { writeChainAck(seq, "failed",
+              { "this rack is being edited from the main plugin - try again after release" },
+              {}); return; }
 
         juce::StringArray baseSlots;
         if (auto* bs = obj->getProperty("baseSlots").getArray())
