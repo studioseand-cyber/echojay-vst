@@ -54,9 +54,24 @@ report() {
 
     # Find the build tree that produced this exact binary.
     local found=""
-    local wt bin
+    local wt bin d
     while IFS= read -r wt; do
         [[ -n "$wt" ]] || continue
+
+        # EVERY build tree in the worktree, discovered — not a hardcoded pair.
+        # This repo builds into build/, build-release/ AND build-dev/ (the
+        # -DECHOJAY_DEV_TRANSPORT=ON build, which is the one actually being
+        # tested). Naming only two of the three made an install from the third
+        # report "NOT FOUND in any worktree build tree ... treat it as unknown
+        # code" — the tool's own blind spot, printed in the voice of a verdict
+        # about the binary. That is the exact failure this script exists to
+        # prevent, so it must not be able to reintroduce it: discover the trees.
+        local trees=()
+        for d in "$wt"/build*; do
+            [[ -d "$d" ]] && trees+=("$d")
+        done
+        [[ ${#trees[@]} -gt 0 ]] || continue
+
         while IFS= read -r bin; do
             [[ -n "$bin" ]] || continue
             if [[ "$(uuid_of "$bin")" == "$uuid" ]]; then
@@ -68,7 +83,7 @@ report() {
         #   build/EchoJay_artefacts/<config>/AU/<bundle>/Contents/MacOS/<bin>
         # is already 7, and a shallower cap silently finds nothing — which reads
         # exactly like "installed from a build that no longer exists".
-        done < <(find "$wt/build" "$wt/build-release" -maxdepth 8 \
+        done < <(find "${trees[@]}" -maxdepth 8 \
                       -path "*MacOS/$binname" -type f 2>/dev/null)
     done < <(worktrees)
 
