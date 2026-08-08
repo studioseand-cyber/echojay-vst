@@ -387,7 +387,12 @@ def run_reask(map_path, out_dir, clients, run_id, effort, chunk=CHUNK):
     # Only the NEW claimant escalates. The incumbent was decided by a run this
     # one is not re-opening, and withdrawing it here would quietly revoke an
     # answer nobody asked about.
-    held = {p.get("kind"): p.get("control_name") for p in (prior.get("params") or [])}
+    # Older proposals, and rows that came from the hand path, do not all carry a
+    # control_name. The GATE keys on `kind`, which is always there; only the
+    # message needs the fallback, and a message that reads "already held by
+    # None" would look like a bug in the gate rather than a gap in the record.
+    held = {p.get("kind"): (p.get("control_name") or f"index {p.get('index')}")
+            for p in (prior.get("params") or [])}
     keep = []
     for r in accepted:
         if r["semantic"] in held:
