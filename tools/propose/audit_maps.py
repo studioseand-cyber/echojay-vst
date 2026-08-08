@@ -310,12 +310,56 @@ def main():
         print("\n  none")
 
     print("\n" + "=" * 74)
+    print("CHECK 5 -- a semantic the map both PROVIDES and SKIPS  (PROOF)")
+    print("=" * 74)
+    # Added 8 Aug 2026. `params` and `skips` are written by different paths and
+    # nothing compared them, which is how a graft nearly shipped a map that
+    # supplied threshold_db and, four lines down, deferred it to the proposer.
+    #
+    # A SUPERSEDED SKIP IS NOT A CONTRADICTION, and this is the whole subtlety.
+    # When a mapper skips a semantic and later confirms a control for it, the
+    # skip is KEPT with reason "superseded: [3] confirmed for input_db" -- that
+    # is an audit trail doing its job, and it names the index so the claim is
+    # checkable. It only counts as a contradiction when the skip is UNRESOLVED:
+    # `not_present` (the plugin has no such control) or a bare deferral, next to
+    # a params entry that supplies exactly that semantic.
+    #
+    # Matching on the outcome token alone would flag all four benign rows in the
+    # corpus and none of the real shape. Match the SET, and keep the negative
+    # test below so nobody simplifies it back.
+    bad5, benign5 = [], 0
+    for f, d in maps:
+        params = d.get("params") or {}
+        for s in (d.get("skips") or []):
+            sem = s.get("semantic")
+            if sem not in params:
+                continue
+            reason = (s.get("reason") or "")
+            idx = (params[sem] or {}).get("index")
+            superseded = ("superseded" in reason
+                          and idx is not None and f"[{idx}]" in reason)
+            if superseded:
+                benign5 += 1
+                continue
+            bad5.append((d, sem, s.get("outcome"), reason))
+            print(f"\n  {d['identity']['name']}   fp {d['fp'][:12]}")
+            print(f"      {sem}: params gives index {idx}, skips says "
+                  f"{s.get('outcome')!r} -- {reason[:60]}")
+            print("      One map, two answers. A consumer reading skips will not dial a")
+            print("      semantic the params block supplies.")
+    if not bad5:
+        print("\n  none")
+    print(f"\n  {benign5} superseded skip(s) passed: the skip names the index the params")
+    print("  entry uses, which is a resolved record rather than a disagreement.")
+
+    print("\n" + "=" * 74)
     print("VERDICT")
     print("=" * 74)
     names = sorted({d["identity"]["name"] for _f, d, _b in suspect}
                    | {d["identity"]["name"] for ds in flagged for d in ds}
                    | {d["identity"]["name"] for d, _w in bad0}
-                   | {d["identity"]["name"] for d in bad4})
+                   | {d["identity"]["name"] for d in bad4}
+                   | {d["identity"]["name"] for d, _s, _o, _r in bad5})
     if names:
         print(f"\n  {len(names)} map(s) implicated:")
         for n in names:
@@ -335,6 +379,8 @@ def main():
                                       f"{(d['identity'].get('uid') or '').lower()}|"
                                       f"{d['identity'].get('version')}", ""), {})]
     print(f"    {len(unseen)} map(s) are visible to check 2 alone")
+    print(f"    check 5 saw {sum(1 for _f, d in maps if d.get('skips'))} of {len(maps)} "
+          f"(needs a skips block; 3 maps predate it)")
     return 1 if names else 0
 
 
