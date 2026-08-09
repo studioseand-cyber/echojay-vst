@@ -10560,6 +10560,34 @@ private:
             host.resumePumpAfterMutation();
             return t;
         };
+        assignPanel.hooks.spotCheckSettled = [this] (int idx, double norm, int settleMs) -> juce::String
+        {
+            auto* inst = host.getInstance();
+            if (inst == nullptr || ! juce::isPositiveAndBelow (idx, inst->getParameters().size()))
+                return {};
+            auto* p = inst->getParameters()[idx];
+            host.pausePumpForMutation();
+            const float before = p->getValue();
+            p->setValue ((float) norm);
+            // The plain spotCheck's loop confirms STABILITY, not freshness: a
+            // display that updates on its own timer serves the OLD text twice
+            // inside the first 30 ms and satisfies "two identical reads"
+            // before the new text exists. The settled variant waits the
+            // timer out FIRST, then applies the same stability condition.
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (settleMs);
+            juce::String t, prev;
+            for (int tries = 0; tries < 20; ++tries)
+            {
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (15);
+                t = p->getCurrentValueAsText();
+                if (t == prev && tries > 0) break;
+                prev = t;
+            }
+            p->setValue (before);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (settleMs);
+            host.resumePumpAfterMutation();
+            return t;
+        };
         assignPanel.hooks.startTyped = [this] (int idx)
         {
             lastSweptIndex = idx;

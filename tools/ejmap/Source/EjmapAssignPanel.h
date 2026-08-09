@@ -49,6 +49,7 @@ public:
         std::function<juce::Array<int>()>              maskIndices;    // masked = not a control
         std::function<juce::var()>                     loadBreadcrumbs;// tier2-candidates rows, deduped
         std::function<juce::String (int, double)>      spotCheck;      // set norm, read display, restore
+        std::function<juce::String (int, double, int)> spotCheckSettled; // same, waiting N ms between set and read
         std::function<SweepOutcome (int)>              sweepIndexSetread; // the honest retry
         std::function<void (const juce::String&)>      status;         // one-line readout
         std::function<void (const juce::var&)>         writeRow;       // captures jsonl writer
@@ -2756,6 +2757,7 @@ public:
         // re-sweep. Mode labels are ALWAYS re-read by setting, because a
         // label map that dials the wrong position is worse than none.
         say ("Verifying by set-then-read...");
+        int settleRecovered = 0;
         for (auto& e : controlEntries)
         {
             if (e.excluded || e.unbuildable) continue;
@@ -2778,12 +2780,40 @@ public:
                                + "  (labels re-read by setting: getText lied)";
                     e.labelTexts = vTexts;
                     e.labelNorms = vNorms;
+                    continue;
                 }
-                else
+
+                // THE SETTLE RETRY, run only after an immediate read collapsed.
+                // A collapse has two causes wearing one face: the plugin
+                // ignores setValue (theirs), or its display updates on a timer
+                // and the immediate read caught the OLD text every time
+                // (ours -- the bridged-readback class from earlier this week).
+                // One more pass with 200 ms between set and read splits them,
+                // and the note names which side each landed on so the corpus
+                // measures the split rather than anyone estimating it.
+                if (hooks.spotCheckSettled)
                 {
-                    e.unbuildable = true;
-                    e.note = "labels collapse under set-then-read: not a dialable switch";
+                    juce::StringArray sTexts;
+                    juce::Array<double> sNorms;
+                    for (int i = 0; i < e.labelNorms.size(); ++i)
+                    {
+                        const auto t = hooks.spotCheckSettled (e.index, e.labelNorms[i], 200);
+                        if (t.isNotEmpty() && ! sTexts.contains (t))
+                        { sTexts.add (t); sNorms.add (e.labelNorms[i]); }
+                    }
+                    if (sTexts.size() >= 2)
+                    {
+                        e.labelTexts = sTexts;
+                        e.labelNorms = sNorms;
+                        e.note = "mode: " + sTexts.joinIntoString (" / ").substring (0, 44)
+                               + "  (labels appeared only after a 200 ms settle)";
+                        ++settleRecovered;
+                        continue;
+                    }
                 }
+                e.unbuildable = true;
+                e.note = "labels collapse under set-then-read (held through 200 ms settle): "
+                         "not a dialable switch";
                 continue;
             }
 
@@ -2826,6 +2856,12 @@ public:
                 }
             }
         }
+
+        // The settle split, said at the moment it is known: these switches
+        // are the display-timer class (ours), not setValue-ignorers (theirs).
+        if (settleRecovered > 0)
+            say (juce::String (settleRecovered)
+                 + " switch(es) yielded labels only after a 200 ms settle (display-timer class)");
 
         controlsPhase = true;
         rowAt (controlsRowIndex).state = AssignRow::State::captured;

@@ -79,6 +79,14 @@ struct SweepOutcome
     int  rejectedPoints  = 0;         // parsed points outside the dominant run
     int  unparsedPoints  = 0;         // texts with no leading float
 
+    /** > 0 when the strict rule refused and the STEPPED path accepted: the
+        count of raw points folded into plateau-midpoint anchors. Zero on
+        every strictly-monotonic sweep -- the stepped path never runs when
+        the strict rule passes, so this is also the witness that says WHICH
+        rule accepted the table.
+    */
+    int  steppedCollapse = 0;
+
     /** Every parsed value equals its own normalized position (within 0.005,
         over >= 5 anchors). CANDIDATE flag, not a verdict: measured on
         ValhallaVintageVerb AU, where Decay -- really 0.2 s to 70 s -- swept
@@ -113,6 +121,63 @@ struct SweepOutcome
     juce::String reason;
     int durationMs = 0;
 };
+
+/** THE STEPPED-CONTROL ACCEPTANCE, tried only after dominantMonotonicTable
+    refuses. A free function so the drift gate tests the real rule.
+
+    What the strict rule protects against: meters, LFOs, random-walk and
+    mirror displays -- curves whose anchor table would dial to nonsense while
+    claiming success. Strictness is HOW it catches them: noise rarely repeats
+    and never holds a line, so demanding every step ascend kills it. But a
+    STEPPED control (ratio switch, crossover type, 6-position mix) fails the
+    same test for the opposite reason: its display holds each value across a
+    run of norms, and every plateau breaks the strict run. Measured 9 Aug
+    2026: 402 declines at N=2..9 distinct values plus most of the 180
+    spot-check refusals were this class -- ratios, band types, comp mixes --
+    refused for being deterministic in steps.
+
+    The rule here: collapse each run of ADJACENT equal values to one anchor
+    at the plateau's midpoint norm (the middle of a step is the norm least
+    likely to land on a neighbouring step), then accept only if at least one
+    plateau existed AND the collapsed curve is FULLY monotonic -- 100%,
+    deliberately stricter than the 60% dominant rule. A genuine stepped
+    control has no reason to break monotonicity even once after collapse; a
+    slow LFO (A,A,B,B,A,A) still alternates after collapse (A,B,A) and is
+    refused, a fast one never collapses at all, and a mirror/pan shape has no
+    adjacent equals to collapse. The emitted table is strictly monotonic by
+    construction, so applyOne and every deployed client consume it exactly
+    like any other anchor table.
+*/
+inline echojay::EffectiveAnchors steppedCollapseTable (const juce::Array<juce::Array<float>>& raw)
+{
+    echojay::EffectiveAnchors out;
+    juce::Array<juce::Array<float>> c;
+    int i = 0;
+    while (i < raw.size())
+    {
+        int j = i;
+        // Exact equality on purpose: identical display texts parse to
+        // identical floats, and a tolerance here would merge real neighbour
+        // steps on finely-stepped controls.
+        while (j + 1 < raw.size() && raw[j + 1][0] == raw[i][0]) ++j;
+        juce::Array<float> a;
+        a.add (raw[i][0]);
+        a.add (raw[(i + j) / 2][1]);   // midpoint norm of the plateau
+        c.add (a);
+        i = j + 1;
+    }
+    bool ok = c.size() >= 2 && c.size() < raw.size();
+    for (int k = 1; ok && k < c.size(); ++k)
+    {
+        const bool asc = c[1][0] > c[0][0];
+        ok = asc ? c[k][0] > c[k - 1][0]
+                 : c[k][0] < c[k - 1][0];
+    }
+    if (! ok) return out;
+    out.table = c;
+    out.ok = true;
+    return out;
+}
 
 /** THE DISPLAY SETTLE, in one place.
 
@@ -285,12 +350,24 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
     auto eff = echojay::dominantMonotonicTable (raw);
     if (! eff.ok)
     {
-        out.rejectedPoints = raw.size();
-        out.reason = "sanitizer refused: no strictly-monotonic run covers 60% of "
-                   + juce::String (raw.size()) + " parsed points (mirror or garbage "
-                     "shape). Refused, not guessed at.";
-        out.durationMs = (int) (juce::Time::getMillisecondCounter() - t0);
-        return out;
+        // The stepped path (steppedCollapseTable above), tried ONLY after the
+        // strict rule refuses -- a table the strict rule accepts never sees it.
+        auto stepped = steppedCollapseTable (raw);
+        if (stepped.ok)
+        {
+            eff.table = stepped.table;
+            eff.ok = true;
+            out.steppedCollapse = raw.size() - stepped.table.size();
+        }
+        else
+        {
+            out.rejectedPoints = raw.size();
+            out.reason = "sanitizer refused: no strictly-monotonic run covers 60% of "
+                       + juce::String (raw.size()) + " parsed points (mirror or garbage "
+                         "shape, and no clean step collapse). Refused, not guessed at.";
+            out.durationMs = (int) (juce::Time::getMillisecondCounter() - t0);
+            return out;
+        }
     }
 
     out.anchors        = eff.table;
@@ -322,6 +399,9 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
     out.ok = true;
     out.reason = juce::String (out.anchors.size()) + " anchors ("
                + out.method + (out.anchorsReversed ? ", descending" : ", ascending")
+               + (out.steppedCollapse > 0
+                    ? ", stepped: " + juce::String (out.steppedCollapse) + " plateau point(s) collapsed"
+                    : juce::String())
                + (out.rejectedPoints > 0
                     ? ", " + juce::String (out.rejectedPoints) + " point(s) outside the dominant run"
                     : juce::String())

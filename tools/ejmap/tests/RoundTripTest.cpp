@@ -2214,6 +2214,91 @@ void testRetryRule()
     review screen reading READY above a disabled button), and a defect found on
     plugin 400 costs 400 maps.
 */
+//==============================================================================
+// The stepped-sanitizer pin (9 Aug 2026): steppedCollapseTable runs only after
+// dominantMonotonicTable refuses, and must accept exactly the deterministic
+// stepped shapes while every shape the strict rule exists to keep out -- the
+// meters, LFOs and mirrors -- still refuses. Loosening a guard is how defects
+// get in; this test is the difference between relaxing and hoping.
+void testSteppedSanitizer()
+{
+    using Table = juce::Array<juce::Array<float>>;
+    auto row = [] (float v, float n) { juce::Array<float> a; a.add (v); a.add (n); return a; };
+
+    // A 3-step ratio (1,2,4) over 9 sweep points: the strict rule refuses it
+    // (longest strict run is 3 of 9), the stepped rule accepts it, and the
+    // emitted table is strictly monotonic with plateau-midpoint norms.
+    {
+        Table raw;
+        for (int i = 0; i < 3; ++i) raw.add (row (1.0f, 0.0f + 0.1f * (float) i));
+        for (int i = 0; i < 3; ++i) raw.add (row (2.0f, 0.4f + 0.1f * (float) i));
+        for (int i = 0; i < 3; ++i) raw.add (row (4.0f, 0.8f + 0.1f * (float) i));
+        check (! echojay::dominantMonotonicTable (raw).ok,
+               "stepped: the strict rule refuses a 3-step plateau curve (this is the 672-row class)");
+        auto st = ejmap::steppedCollapseTable (raw);
+        check (st.ok && st.table.size() == 3, "stepped: collapse accepts it as 3 step anchors");
+        check (st.table[0][0] < st.table[1][0] && st.table[1][0] < st.table[2][0],
+               "stepped: the emitted table is strictly monotonic -- deployed clients consume it unchanged");
+        check (std::abs (st.table[1][1] - 0.5f) < 1.0e-4f,
+               "stepped: each anchor sits at its plateau's MIDPOINT norm");
+        check (std::abs (echojay::interpolateAnchors (st.table, 2.0f) - 0.5f) < 1.0e-4f,
+               "stepped: dialling '2' through the real apply path lands mid-step");
+    }
+
+    // Descending steps are as real as ascending ones.
+    {
+        Table raw;
+        for (int i = 0; i < 3; ++i) raw.add (row (20.0f, 0.0f + 0.1f * (float) i));
+        for (int i = 0; i < 3; ++i) raw.add (row (10.0f, 0.5f + 0.1f * (float) i));
+        auto st = ejmap::steppedCollapseTable (raw);
+        check (st.ok && st.table.size() == 2 && st.table[0][0] > st.table[1][0],
+               "stepped: a descending step curve is accepted, direction preserved");
+    }
+
+    // What the strict rule was protecting against must STILL refuse.
+    {
+        Table lfo;   // slow square LFO: A,A,B,B,A,A -> collapses to A,B,A -> broken monotonic
+        for (int i = 0; i < 2; ++i) lfo.add (row (1.0f, 0.0f + 0.1f * (float) i));
+        for (int i = 0; i < 2; ++i) lfo.add (row (5.0f, 0.3f + 0.1f * (float) i));
+        for (int i = 0; i < 2; ++i) lfo.add (row (1.0f, 0.6f + 0.1f * (float) i));
+        check (! ejmap::steppedCollapseTable (lfo).ok,
+               "stepped: a slow LFO still refuses -- collapse leaves A,B,A and monotonicity must be TOTAL");
+
+        Table fast;  // fast alternation: no adjacent equals, nothing collapses
+        fast.add (row (1.0f, 0.0f)); fast.add (row (5.0f, 0.25f));
+        fast.add (row (1.0f, 0.5f)); fast.add (row (5.0f, 0.75f));
+        check (! ejmap::steppedCollapseTable (fast).ok,
+               "stepped: a fast alternation still refuses -- no plateau means no step evidence");
+
+        Table pan;   // mirror: 50,25,0,25,50 -- the magnitude-parsed pan shape
+        pan.add (row (50.0f, 0.0f)); pan.add (row (25.0f, 0.25f)); pan.add (row (0.0f, 0.5f));
+        pan.add (row (25.0f, 0.75f)); pan.add (row (50.0f, 1.0f));
+        check (! ejmap::steppedCollapseTable (pan).ok,
+               "stepped: a mirror/pan shape still refuses -- adjacent values never repeat, and a V "
+               "table would dial one magnitude to two positions");
+
+        Table noise; // random walk, all distinct: nothing collapses
+        const float ns[] = { 3.0f, 7.0f, 2.0f, 9.0f, 5.0f, 8.0f };
+        for (int i = 0; i < 6; ++i) noise.add (row (ns[i], (float) i / 5.0f));
+        check (! ejmap::steppedCollapseTable (noise).ok,
+               "stepped: a random-walk display still refuses");
+
+        Table flat;  // one distinct value everywhere: collapses to a single anchor
+        for (int i = 0; i < 5; ++i) flat.add (row (4.0f, (float) i / 4.0f));
+        check (! ejmap::steppedCollapseTable (flat).ok,
+               "stepped: a flat table still refuses -- one anchor is not a curve (the N=1 class stays declined)");
+    }
+
+    // A curve the strict rule already accepts must never reach the stepped
+    // path with a different answer waiting: same inputs, strict wins first.
+    {
+        Table clean;
+        for (int i = 0; i < 5; ++i) clean.add (row ((float) i * 10.0f, (float) i / 4.0f));
+        check (echojay::dominantMonotonicTable (clean).ok,
+               "stepped: a strictly-monotonic sweep is accepted by the strict rule, stepped path never consulted");
+    }
+}
+
 void testSweepRules()
 {
     // ---- 1. sweepable(): which products the loop opens ----------------------
@@ -2866,6 +2951,7 @@ int main (int, char**)
     testMarks();
     testUnitFamilyRule();
     testRetryRule();
+    testSteppedSanitizer();
     testSweepRules();
     testMapperIdentity();
     testStaleControlsRefused();
