@@ -2,6 +2,13 @@
 
 Filed 9 Aug 2026, from the XTComp ratio investigation.
 
+**LANDED 9 Aug 2026** — schema 2.4, tool commit f685bc9 (`declines` on the
+payload, reasons authored at each decision site, tri-state by key presence,
+session cargo + fp stamp) and server commit 8b61d2a in echojay-saas-dialable
+(`plugin:<fp>:declines` beside evidence, outside the rev hash, never served;
+counts.declines null/0/N in the ingest response). What follows is the filing
+as written; deviations from it are noted in the commits.
+
 The question "why is X unmapped on this plugin?" is UNANSWERABLE from the
 server today. XTComp: identity.param_count 27, mapped 17 — ten parameters
 absent from a fast-mode sweep, and the plugin's real per-channel ratio
