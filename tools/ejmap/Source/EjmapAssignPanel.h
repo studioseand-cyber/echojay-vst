@@ -61,6 +61,16 @@ public:
 
     bool deepMode = false;
 
+    /** A targeted re-sweep must SWEEP, not resume. With this set the checklist
+        build never restores assign-<fp>.json, so the controls row starts
+        unresolved and SPACE actually sweeps. Measured live, 9 Aug 2026: the
+        first targeted run restored 153 completed campaign sessions, both
+        SPACEs no-opped against their confirmed rows, and submit re-shipped
+        every 7 Aug surface under a fresh stamp with zero declines -- a run
+        that read as 153 mapped and did nothing it existed to do.
+    */
+    bool freshSession = false;
+
     AssignPanel()
     {
         addAndMakeVisible (progress);
@@ -321,7 +331,7 @@ public:
         }
 
         sortRows();
-        restoreSession();
+        if (! freshSession) restoreSession();
         syncCategoryBox();
         selected = firstUnresolved();
         list.selectRow (selected);

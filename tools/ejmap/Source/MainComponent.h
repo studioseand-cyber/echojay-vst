@@ -8763,6 +8763,8 @@ private:
 
         assigning = false;
         assignPanel.resetAll();
+        // Re-sweep = redo the work; a restored session IS the old work.
+        assignPanel.freshSession = ! resweepTargets.isEmpty();
 
         loadedName = sp.desc.name; loadedId = sp.pluginId(); loadedDesc = sp.desc;
         ledger.beginLoad (loadedId, sp.desc.name, sp.desc.manufacturerName,
@@ -8894,6 +8896,19 @@ private:
         {
             detail = "the staged controls were swept from a different plugin; nothing written";
             return stakeCloser.outcome = "stale_controls", stakeCloser.outcome;
+        }
+
+        // ASSERT THE SWEEP HAPPENED, not just that controls exist to ship.
+        // declinesRecorded is set only by an accept in THIS session, so it is
+        // the witness that the surface was swept today rather than restored.
+        // Belt over freshSession: if any other path hands the script staged
+        // controls, this refuses to stamp week-old work as tonight's run.
+        // Scoped to re-sweeps: the campaign's parked-resume flow legitimately
+        // ships restored cargo and must keep doing so.
+        if (! resweepTargets.isEmpty() && ! assignPanel.declinesRecordedForThisPlugin())
+        {
+            detail = "the surface was not swept this session; refusing to re-ship a restored session as a re-sweep";
+            return stakeCloser.outcome = "restored_not_swept", stakeCloser.outcome;
         }
 
         if (nControls == 0)
