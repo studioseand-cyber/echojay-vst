@@ -60,6 +60,7 @@ public:
         juce::String conlyTestId, conlyCat;
         bool worklist = false, worklistNext = false;
         bool sweep = false, sweepDry = false, sweepCaptures = false; int sweepLimit = 0;
+        juce::String resweepTargetsPath;
         bool sendPending = false, sendPendingDry = false;
         juce::String typedReasonId, parkTestId;
         juce::String applyMapId, applyMapPath, applyMapImposter;
@@ -125,6 +126,8 @@ public:
                 sweep = true;
             else if (args[i] == "--sweep-limit" && i + 1 < args.size())
                 sweepLimit = args[++i].getIntValue();
+            else if (args[i] == "--resweep-targets" && i + 1 < args.size())
+                resweepTargetsPath = args[++i];
             else if (args[i] == "--dry-run")
                 sweepDry = true;
             else if (args[i] == "--captures")
@@ -355,7 +358,13 @@ public:
         {
             auto* m = mainWindow->getMain();
             const int lim = sweepLimit; const bool dry = sweepDry, caps = sweepCaptures;
-            juce::MessageManager::callAsync ([m, lim, dry, caps] { m->runSweep (lim, dry, caps); });
+            const auto rt = resweepTargetsPath;
+            juce::MessageManager::callAsync ([m, lim, dry, caps, rt]
+            {
+                if (rt.isNotEmpty() && ! m->setResweepTargets (rt))
+                { std::cout << "SWEEP: --resweep-targets file not readable or empty: " << rt << std::endl; juce::JUCEApplication::quit(); return; }
+                m->runSweep (lim, dry, caps);
+            });
         }
         else if (worklist && mainWindow->getMain() != nullptr)
         {

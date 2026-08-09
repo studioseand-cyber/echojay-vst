@@ -7324,13 +7324,15 @@ public:
         if (! dryRun && refuseUnlessSignedIn ("send-pending"))
             return;
 
-        std::map<juce::String, juce::String> stateByFp;
+        struct QRow { juce::String state, at; };
+        std::map<juce::String, QRow> stateByFp;
         {
             auto qv = juce::JSON::parse (ledger.getRoot().getChildFile ("queue.json").loadFileAsString());
             if (auto* arr = qv.getArray())
                 for (auto& e : *arr)
                     stateByFp[e.getProperty ("fp", "").toString()]
-                        = e.getProperty ("state", "").toString();
+                        = { e.getProperty ("state", "").toString(),
+                            e.getProperty ("at", "").toString() };
         }
 
         juce::Array<juce::File> pending;
@@ -7341,7 +7343,23 @@ public:
             auto it = stateByFp.find (fp);
             // Already sent stays sent; already REJECTED is re-offered, because
             // a rejection can be fixed and the operator asked for it to go.
-            if (it != stateByFp.end() && it->second == "sent") continue;
+            //
+            // "SENT" IS A STATEMENT ABOUT THE BYTES THAT WERE SENT, not about
+            // the fingerprint forever. A re-sweep rewrites maps/<fp>.json with
+            // a newer provenance.at; skipping it on the old row's say-so would
+            // strand every re-swept map on this machine while the queue
+            // reports the run complete (the resume-by-presence class). A map
+            // stamped AFTER the sent row went down is pending again.
+            if (it != stateByFp.end() && it->second.state == "sent")
+            {
+                const auto mapAt = juce::JSON::parse (entry.getFile().loadFileAsString())
+                                       .getProperty ("provenance", juce::var())
+                                       .getProperty ("at", "").toString();
+                const auto sentAt = it->second.at;
+                const bool newerThanSent = mapAt.isNotEmpty() && sentAt.isNotEmpty()
+                    && juce::Time::fromISO8601 (mapAt) > juce::Time::fromISO8601 (sentAt);
+                if (! newerThanSent) continue;
+            }
             pending.add (entry.getFile());
         }
 
@@ -7414,7 +7432,31 @@ public:
             Mouth::setQueueState (ledger.getRoot(), fp, res.queueState(),
                                   res.sent ? "HTTP " + juce::String (res.status) : res.refusedReason,
                                   identityKey);
-            if (res.sent) { ++sent; printLine ("sent", "HTTP " + juce::String (res.status)); }
+            if (res.sent)
+            {
+                ++sent;
+                // ASSERT ON THE CONTENT, NOT THE TRANSFER. The response counts
+                // what the server actually stored, and a 200 from a server
+                // built before declines existed is identical by status line.
+                // Three states, three different alarms: a count is the run
+                // working; "none in payload" means THIS map was written by a
+                // pre-2.4 binary or its surface was never swept; an
+                // unacknowledged key means the SERVER predates the 2.4 ingest
+                // and is dropping every decline it is being sent.
+                juce::String dNote;
+                if (! res.body.contains ("\"declines\""))
+                    dNote = "declines NOT ACKNOWLEDGED by server";
+                else
+                {
+                    auto dv = juce::JSON::parse (res.body)
+                                  .getProperty ("counts", juce::var())
+                                  .getProperty ("declines", juce::var());
+                    dNote = (dv.isInt() || dv.isInt64() || dv.isDouble())
+                              ? "declines " + juce::String ((int) dv)
+                              : "declines none in payload (pre-2.4 map?)";
+                }
+                printLine ("sent", "HTTP " + juce::String (res.status) + "  " + dNote);
+            }
             else          { ++refused; printLine ("refused", res.refusedReason.substring (0, 90)); }
         }
 
@@ -7788,6 +7830,28 @@ public:
         it costs no plugin loads.
     */
 
+    /** A targeted RE-sweep population: lowercase plugin names, one per line in
+        the file, '#' comments allowed. Non-empty changes ONE rule in
+        collectWorklist -- a mapped row on the list is offered anyway -- and
+        every other meaning holds: unmappable, flags, quarantine, parked. The
+        normal campaign rule ("mapped is done") is exactly wrong for this
+        population; its whole point is rows that mapped once already.
+    */
+    juce::StringArray resweepTargets;
+
+    bool setResweepTargets (const juce::String& path)
+    {
+        resweepTargets.clear();
+        auto f = juce::File::getCurrentWorkingDirectory().getChildFile (path);
+        if (! f.existsAsFile()) return false;
+        for (auto& line : juce::StringArray::fromLines (f.loadFileAsString()))
+        {
+            auto t = line.upToFirstOccurrenceOf ("#", false, false).trim();
+            if (t.isNotEmpty()) resweepTargets.add (t.toLowerCase());
+        }
+        return ! resweepTargets.isEmpty();
+    }
+
     /** The worklist, as ONE function, because --worklist prints it and --sweep
         walks it and two copies of "what is worth opening" would drift. */
     struct Worklist
@@ -7821,12 +7885,18 @@ public:
         }
 
         Worklist w;
+        const bool targeting = ! resweepTargets.isEmpty();
         for (const auto& sp : rows)
         {
             if (marks.isUnmappable (sp.desc)) { ++w.nUnmappable; continue; }
 
+            const bool targeted = targeting
+                && resweepTargets.contains (sp.desc.name.trim().toLowerCase());
+            if (targeting && ! targeted) { ++w.nMapped; continue; }
+
             const auto st = mapStateFor (sp).state;
-            const bool offerable = st == MapState::unmapped
+            const bool offerable = targeted
+                                || st == MapState::unmapped
                                 || st == MapState::differentBuild
                                 || st == MapState::unknown;
             if (! offerable) { ++w.nMapped; continue; }
@@ -7934,6 +8004,24 @@ public:
                     + (dryRun ? "   [DRY RUN: nothing is loaded or written]" : "")
                     + (wantCaptures ? "   [editors OPEN: captures on, modals can block]"
                                     : "   [no editors: no captures, no modal can block]"));
+
+        // COVERAGE BEFORE THE RUN, not discovered in the morning: a target
+        // name that matches no scanned row would otherwise just be absent
+        // from a log nobody reads for absences.
+        if (! resweepTargets.isEmpty())
+        {
+            juce::StringArray matched;
+            for (const auto& sp : sweep.work)
+                matched.addIfNotAlreadyThere (sp.desc.name.trim().toLowerCase());
+            juce::StringArray missing;
+            for (const auto& t : resweepTargets)
+                if (! matched.contains (t)) missing.add (t);
+            sweepSay ("RESWEEP: " + juce::String (resweepTargets.size()) + " target name(s), "
+                        + juce::String (sweep.work.size()) + " worklist row(s) matched (AU/VST3 siblings count separately)"
+                        + (missing.isEmpty() ? juce::String ("; every target matched")
+                                             : "; NO SCANNED MATCH for " + juce::String (missing.size())
+                                                 + ": " + missing.joinIntoString (", ")));
+        }
         return true;
     }
 

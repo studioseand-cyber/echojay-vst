@@ -1,0 +1,118 @@
+# Targeted deep re-sweep, 9 Aug 2026 - built by scope-resweep.mjs from index:mapped-controls
+# One scanned plugin name per line, case-insensitive; AU/VST3 siblings both match by design.
+# Excluded: the 19 monsters (89.6% of the arithmetic gap); also dropped small-delta rows whose NAME collides with a monster: khs 3-band eq, khs delay
+
+# ---- Stratum A: every map at delta 11-30 (51 name(s)) ----
+mturbocompmb   # delta 26
+uad manley massive passive   # delta 24
+quantum   # delta 24
+eiosis aireq premium 5.1   # delta 24
+uad manley massive passive mst   # delta 24
+bx_xl v2   # delta 24
+maag magnum-k   # CAUTION stored map has 10 Tier 1 param(s): controls-only resubmit will 409 (would_drop_params)
+mlimitermb   # delta 22
+tomo audiolabs lisa   # CAUTION stored map has 20 Tier 1 param(s): controls-only resubmit will 409 (would_drop_params)
+ar tg mastering (s)   # delta 22
+amek eq 200   # CAUTION stored map has 17 Tier 1 param(s): controls-only resubmit will 409 (would_drop_params)
+mbitfunmb   # delta 20
+lindell channelx   # delta 19
+uad realverb-pro   # delta 17
+solid dynamics   # delta 17
+supertap 6-taps (m->s)   # delta 17
+mdistortionmb   # delta 16
+uad precision equalizer   # delta 16
+msaturatormb   # delta 16
+auto-tune vocal eq   # delta 16
+bx_clipper   # CAUTION stored map has 6 Tier 1 param(s): controls-only resubmit will 409 (would_drop_params)
+mdynamicsmb   # delta 16
+mdynamicsmblarge   # delta 16
+h-eq (m)   # delta 16
+supertap 6-taps (m)   # delta 15
+bx_delay2500   # delta 15
+h-eq (s)   # delta 15
+mturboreverbmb   # delta 14
+bx_digital v3   # delta 14
+solid eq   # delta 14
+mwaveshaper   # delta 14
+mwavefoldermb   # delta 14
+ar tg mastering (m)   # delta 13
+h-eq-light (s)   # delta 13
+h-eq-light (m)   # delta 13
+knif audio soma   # delta 13
+harris doyle natalus dsceq   # delta 13
+supertap 6-taps (s)   # delta 13
+ssl x-delay   # delta 12
+bx_console amek 200   # delta 12
+uad bx_digital v3   # delta 12
+bx_dyneq v2   # delta 12
+lindell 354e   # delta 12
+c6-sidechain (s)   # delta 11
+uad dreamverb   # delta 11
+mautoequalizerlp   # delta 11
+h-reverb long (6->6)   # delta 11
+mautoequalizer   # delta 11
+uad neve 2254 e dual   # delta 11
+f6 (s)   # delta 11
+h-reverb (6->6)   # delta 11
+
+# ---- Stratum B: top 60 small-delta products by expected yield ----
+uad ocean way studios   # yield 3.30, delta 9, missing mix/decay/predelay
+solid bus comp   # yield 3.05, delta 10, missing attack/release/threshold
+gtr amp (m->s)   # yield 2.97, delta 5, missing freq/mix/tight
+gtr amp 2cab (m)   # yield 2.97, delta 5, missing freq/mix/tight
+prs archon (m->s)   # yield 2.96, delta 7, missing freq/tight/smooth
+jjp-drums (s)   # yield 2.84, delta 6, missing output/release/freq
+uad neve 33609 c   # yield 2.81, delta 10, missing attack/release/threshold
+uad neve 33609se   # yield 2.81, delta 10, missing attack/release/threshold
+sslgchannel (s)   # yield 2.64, delta 6, missing input/attack/freq
+jjp-vocals (m->s)   # yield 2.60, delta 5, missing output/release/freq
+jjp-bass (m)   # yield 2.60, delta 5, missing output/release/freq
+virtual mix rack   # yield 2.55, delta 4, missing output/input/attack
+lindell 254e   # yield 2.54, delta 5, missing attack/release/threshold
+uad engl savage 120   # yield 2.51, delta 4, missing output/input/treble
+uad fairchild 670 legacy   # yield 2.49, delta 7, missing attack/release/mix
+empirical labs mike-e comp   # yield 2.48, delta 5, missing attack/release/threshold
+uad akg bx 20   # yield 2.41, delta 4, missing output/decay/freq
+vocal reverb   # yield 2.37, delta 7, missing output/freq/density
+lustrous plates   # yield 2.34, delta 5, missing mix/size/input
+jjp-strings-keys (s)   # yield 2.30, delta 4, missing output/attack/release
+supertap 2-taps (m->s)   # yield 2.24, delta 10, missing mix/input/decay
+kiive xtcomp   # yield 2.23, delta 10, missing threshold/mix/freq
+abbey road chambers (s)   # yield 2.22, delta 8, missing predelay/size/density
+jjp-cymb-perc (s)   # yield 2.21, delta 4, missing output/release/freq
+uad fairchild 670   # yield 2.20, delta 6, missing attack/release/freq
+uad fender 55 tweed deluxe   # yield 2.15, delta 3, missing output/freq/input
+rchannel (m->s)   # yield 2.10, delta 7, missing input/mix/compress
+uad lexicon 480l   # yield 2.01, delta 10, missing freq/input/density
+uad emt 140   # yield 2.01, delta 4, missing predelay/decay/size
+uad cs-1   # yield 1.95, delta 9, missing input/compress/phase
+reel adt2v live (m->s)   # yield 1.93, delta 5, missing mix/depth/decay
+uad ams rmx16 expanded   # yield 1.93, delta 5, missing freq/size/input
+uad ams rmx16   # yield 1.93, delta 5, missing freq/size/input
+sslchannel (s)   # yield 1.92, delta 4, missing input/freq/mix
+neold v76u73   # yield 1.92, delta 3, missing attack/release/threshold
+ar tg mastering live (m)   # yield 1.89, delta 9, missing attack/threshold/compress
+bx_console n   # yield 1.89, delta 8, missing input/compress/meter switch
+lindell 7x-500   # yield 1.88, delta 6, missing threshold/freq/power
+j37 (s)   # yield 1.87, delta 7, missing input/mix/freq
+bx_console amek 9099   # yield 1.86, delta 10, missing input/compress/meter switch
+bx_console ssl 9000 j   # yield 1.86, delta 10, missing input/compress/meter switch
+bx_console ssl 4000 e   # yield 1.86, delta 8, missing input/compress/meter switch
+bx_console focusrite sc   # yield 1.86, delta 10, missing input/compress/meter switch
+bx_console ssl 4000 g   # yield 1.86, delta 8, missing input/compress/meter switch
+abbey road rs124 (s)   # yield 1.85, delta 4, missing attack/threshold/freq
+uad bx_saturator v2   # yield 1.83, delta 7, missing input/mix/freq
+prs v9 (m)   # yield 1.81, delta 3, missing freq/tight/smooth
+prs dallas (m)   # yield 1.81, delta 3, missing freq/tight/smooth
+c6-sidechain (m)   # yield 1.80, delta 8, missing mix/input/power
+sslcomp (s)   # yield 1.80, delta 3, missing attack/release/mix
+ott   # yield 1.80, delta 3, missing attack/release/mix
+cla-76 (m)   # yield 1.71, delta 4, missing threshold/mix/freq
+mannym delay (s)   # yield 1.71, delta 6, missing depth/decay/feedback
+linmb (s)   # yield 1.69, delta 5, missing mix/input/freq
+uad precision reflection engine   # yield 1.67, delta 3, missing predelay/decay/freq
+saphira (m)   # yield 1.64, delta 5, missing input/mix/power
+mo-tt   # yield 1.60, delta 6, missing mix/power/ratio
+uad roland re-201   # yield 1.60, delta 3, missing output/decay/feedback
+bx_opto   # yield 1.58, delta 2, missing output/attack/release
+kramer tape (s)   # yield 1.56, delta 4, missing input/mix/freq
