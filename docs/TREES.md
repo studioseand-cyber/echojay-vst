@@ -44,9 +44,17 @@ lacks:
 
 - **only on `feat/plugin-dashboard`**: the `set` edit op (`4801ee8`), remote
   editing, the EQ curve publish, everything since 3 Aug.
-- **only on `feat/ejmap`**: `ChainHost::rackedControlSurface()` — the client
-  half of the CONTROLS injection, which is why `CONTROLS_MIN_PLUGIN_VERSION`
-  cannot simply be lowered: the shipping client never sends a control surface.
+- **only on `feat/ejmap`**: `ChainHost::rackedControlSurface()` — a client-side
+  injection builder that formats the LOCAL cached maps' controls (a sender).
+  **CORRECTED 9 Aug 2026: this is NOT what Tier 2 dialing needs.** The earlier
+  wording here ("the client half of the CONTROLS injection, why
+  CONTROLS_MIN_PLUGIN_VERSION cannot simply be lowered") conflated two
+  features: the controls exposure the model reads comes from the SERVER
+  registry (`index:mapped-controls`), and the client half Tier 2 dialing
+  actually needs is the `map.controls` READER in applySettings — which ships
+  on `feat/plugin-dashboard` since `781bff8`. That conflation is what kept
+  the CONTROLS gate shut on a bad reason on 8 Aug. The gate's real floor is
+  the first release carrying the reader, not anything on `feat/ejmap`.
 
 So "merge the newer one" is not a safe reflex in either direction. Check what
 each side has before assuming which is ahead.
@@ -102,7 +110,11 @@ every shipped version — pending release of the client half:
 
 ```
 BANDS_MIN_PLUGIN_VERSION    = '2.99.0'   client half PRESENT at 2.25.23
-CONTROLS_MIN_PLUGIN_VERSION = '2.99.0'   client half ABSENT — lives on feat/ejmap
+CONTROLS_MIN_PLUGIN_VERSION = '2.99.0'   client half (map.controls READER) PRESENT
+                                         on this branch since 781bff8 — see the
+                                         9 Aug correction above; the old "ABSENT,
+                                         lives on feat/ejmap" claim was the
+                                         sender, a different feature
 SET_OP_MIN_PLUGIN_VERSION   = '2.99.0'   client half PRESENT at 2.25.23
 ```
 
