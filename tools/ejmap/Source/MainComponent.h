@@ -10941,6 +10941,17 @@ private:
         for (const auto& c : stampedControls)
             p.controls.add (c);
 
+        // Declines attach only under this plugin's own stamp -- an empty
+        // recorded list is a positive claim ("surface swept, everything
+        // shipped") and the ADA/API-560 laundering precedent applies to
+        // claims as much as to cargo. Unrecorded stays unrecorded: absent
+        // `declines` in the payload means the surface was never swept.
+        if (assignPanel.declinesRecordedForThisPlugin())
+        {
+            p.declines = assignPanel.declinesForSubmit();
+            p.declinesRecorded = true;
+        }
+
         if (p.hasUnresolvedContradiction())
         {
             captureReadout.setText ("SUBMIT REFUSED: unresolved probe contradiction.",
@@ -10967,7 +10978,11 @@ private:
                    + juce::String (p.params.size()) + " params, "
                    + juce::String (p.groups.size()) + " groups, "
                    + juce::String (p.controls.size()) + " controls, "
-                   + juce::String (p.skips.size()) + " skips, readback "
+                   + juce::String (p.skips.size()) + " skips, "
+                   // "unrecorded" and "0" are different facts and the line
+                   // says which, same rule as the zero-counts above.
+                   + (p.declinesRecorded ? juce::String (p.declines.size()) + " declines"
+                                         : juce::String ("declines unrecorded")) + ", readback "
                    + juce::String (rbOk) + "/" + juce::String (rb);
         ledger.endLoad (rec);
 
@@ -10988,7 +11003,10 @@ private:
         t << "MAP SAVED (local only -- press Submit to server to send) "
           << f.getFileName() << ": " << p.params.size() << " params, "
           << p.groups.size() << " groups, " << p.controls.size() << " controls, "
-          << p.skips.size() << " skips, readback " << rbOk << "/" << rb;
+          << p.skips.size() << " skips, "
+          << (p.declinesRecorded ? juce::String (p.declines.size()) + " declines"
+                                 : juce::String ("declines unrecorded"))
+          << ", readback " << rbOk << "/" << rb;
         captureReadout.setText (t, juce::dontSendNotification);
         std::cout << "ASSIGN: " << t << std::endl;
 

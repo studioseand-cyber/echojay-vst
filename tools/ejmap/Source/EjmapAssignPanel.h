@@ -2571,6 +2571,10 @@ public:
         tierPhase = false;
         pendingControls.clear();
         pendingControlsFp.clear();
+        maskedDeclines.clear();
+        pendingDeclines.clear();
+        pendingDeclinesFp.clear();
+        pendingDeclinesRecorded = false;
         acceptedGroups.clear();
         controlsExpanded = false;
         controlsCursor = 0;
@@ -2602,11 +2606,32 @@ public:
     int  controlsSkippedClaimed = 0, controlsSkippedMasked = 0;
     juce::SortedSet<int> controlsExcluded;   // human decisions, survive re-sweeps
 
+    /** Every parameter the surface sweep reached and did not stage. Reasons
+        are authored at the decision sites -- the mask's continue, the mapper's
+        X, the sweep note written at the moment it refused -- never here.
+        maskedDeclines is rebuilt each sweep (those params get no ControlEntry
+        to harvest from); pendingDeclines is assembled at accept, the same
+        moment and stamp discipline as pendingControls.
+    */
+    juce::Array<DeclineRecord> maskedDeclines;
+    juce::Array<DeclineRecord> pendingDeclines;
+    juce::String pendingDeclinesFp;
+    bool pendingDeclinesRecorded = false;
+
     const juce::Array<NamedControl>& controlsForSubmit() const { return pendingControls; }
 
     /** False when the staged controls were swept from a DIFFERENT plugin. */
     bool controlsAreForThisPlugin() const
     { return pendingControls.isEmpty() || pendingControlsFp == fp; }
+
+    const juce::Array<DeclineRecord>& declinesForSubmit() const { return pendingDeclines; }
+
+    /** Unlike controlsAreForThisPlugin, empty does NOT pass: an empty recorded
+        list is a positive claim ("swept, everything shipped") and may only be
+        made under this plugin's own stamp.
+    */
+    bool declinesRecordedForThisPlugin() const
+    { return pendingDeclinesRecorded && pendingDeclinesFp == fp; }
 
     void actionControlsBegin()
     {
@@ -2615,6 +2640,7 @@ public:
         controlsExpanded = false;
         controlsCursor = 0;
         controlsSkippedClaimed = controlsSkippedMasked = 0;
+        maskedDeclines.clear();
 
         // What is already spoken for: Tier 1 rows, group members, the mask.
         juce::SortedSet<int> claimed;
@@ -2663,7 +2689,16 @@ public:
         {
             if (crumbIdx.contains (i)) continue;
             if (claimed.contains (i))  { ++controlsSkippedClaimed; continue; }
-            if (masked.contains (i))   { ++controlsSkippedMasked; continue; }
+            if (masked.contains (i))
+            {
+                // The decision happens HERE -- a masked param never gets a
+                // ControlEntry, so the accept harvest cannot see it. Recorded
+                // now or recorded nowhere.
+                ++controlsSkippedMasked;
+                maskedDeclines.add ({ i, hooks.paramName ? hooks.paramName (i) : juce::String(),
+                                      "noise-masked: self-changing during capture, never swept" });
+                continue;
+            }
             if ((i & 31) == 0) say ("Sweeping the surface: " + juce::String (i) + "/" + juce::String (n));
 
             ControlEntry e;
@@ -2904,13 +2939,34 @@ public:
 
         pendingControls.clear();
         pendingControlsFp = fp;              // stamped where they are built
+        // Declines ride the same stamp discipline as the controls: built here,
+        // stamped here, refused as foreign anywhere else. This loop TRANSPORTS
+        // reasons, it does not author them -- excluded carries the mapper's X,
+        // unbuildable carries the note the sweep or typed flow wrote at the
+        // moment it refused, and the masked rows were recorded at the sweep's
+        // own continue. A summary step that wrote its own reasons could only
+        // describe what survived to be summarised.
+        pendingDeclines.clear();
+        pendingDeclines.addArray (maskedDeclines);
+        pendingDeclinesFp = fp;
+        pendingDeclinesRecorded = true;
         juce::StringArray dupDone;
         int shipped = 0, modeN = 0;
 
         int unnamed = 0;
         for (const auto& e : controlEntries)
         {
-            if (e.excluded || e.unbuildable) continue;
+            if (e.excluded)
+            {
+                pendingDeclines.add ({ e.index, e.name, "excluded by mapper" });
+                continue;
+            }
+            if (e.unbuildable)
+            {
+                pendingDeclines.add ({ e.index, e.name,
+                                       e.note.isNotEmpty() ? e.note : "unbuildable" });
+                continue;
+            }
 
             // AN EMPTY NAME CANNOT BE A TIER 2 CONTROL. The tier's whole offer
             // is exact-name addressing, and "" is not a name anyone can ask
@@ -2920,7 +2976,14 @@ public:
             // including this one -- which un-registers it from
             // localMapIdentities and re-sweeps the plugin every launch.
             // Found live: bx_XL V2 exposes parameters 58-60+ with empty names.
-            if (e.name.trim().isEmpty()) { ++unnamed; continue; }
+            if (e.name.trim().isEmpty())
+            {
+                ++unnamed;
+                pendingDeclines.add ({ e.index, juce::String(),
+                                       "empty parameter name: not addressable, and juce "
+                                       "JSON writes an empty key it cannot re-read" });
+                continue;
+            }
 
             if (e.duplicate)
             {
@@ -2978,7 +3041,8 @@ public:
         row.resolvedAt = juce::Time::getCurrentTime().toISO8601 (true);
         row.skipReason = juce::String (shipped) + " named control(s) ("
                        + juce::String (modeN) + " mode, "
-                       + juce::String (dupDone.size()) + " duplicate name(s) recorded unresolvable)";
+                       + juce::String (dupDone.size()) + " duplicate name(s) recorded unresolvable, "
+                       + juce::String (pendingDeclines.size()) + " declined with reasons)";
         recordResolution (row, "controls_accept");
 
         controlsPhase = false;
@@ -3942,6 +4006,17 @@ private:
         // The stamp travels WITH them. Without it a restored session's controls
         // look foreign to controlsAreForThisPlugin and the map is refused.
         o->setProperty ("pending_controls_fp", pendingControlsFp);
+        // Declines are cargo too, same rule. The recorded flag rides as key
+        // PRESENCE: an absent block means the surface was never swept, a
+        // present empty one means swept and everything shipped -- different
+        // facts (the band-diagnostic pattern above).
+        if (pendingDeclinesRecorded)
+        {
+            juce::Array<juce::var> dv;
+            for (const auto& d : pendingDeclines) dv.add (d.toVar());
+            o->setProperty ("pending_declines", juce::var (dv));
+            o->setProperty ("pending_declines_fp", pendingDeclinesFp);
+        }
         {
             auto* lo = new juce::DynamicObject();
             for (auto& kv : lockstepObserved)
@@ -4216,6 +4291,28 @@ private:
             // the sweep flags it, and a re-sweep costs one sweep and asserts
             // nothing.
             pendingControlsFp = v.getProperty ("pending_controls_fp", "").toString();
+        }
+        if (! v.getProperty ("pending_declines", juce::var()).isVoid())
+        {
+            pendingDeclines.clear();
+            if (auto* da = v.getProperty ("pending_declines", juce::var()).getArray())
+                for (auto& dvr : *da)
+                {
+                    // Field assignment, not the 3-arg constructor: the ctor
+                    // asserts reason.isNotEmpty(), which is an authorship rule.
+                    // A session file is DATA and a damaged row should restore
+                    // as damaged, not assert.
+                    DeclineRecord d;
+                    d.index  = (int) dvr.getProperty ("index", -1);
+                    d.name   = dvr.getProperty ("name", "").toString();
+                    d.reason = dvr.getProperty ("reason", "").toString();
+                    pendingDeclines.add (d);
+                }
+            // Same stamp rule as the controls above: NO FALLBACK. Unstamped
+            // declines cannot be shown to belong here, so they are not
+            // claimed to.
+            pendingDeclinesFp = v.getProperty ("pending_declines_fp", "").toString();
+            pendingDeclinesRecorded = true;
         }
         controlsExcluded.clear();
         if (auto* xa = v.getProperty ("controls_excluded", juce::var()).getArray())

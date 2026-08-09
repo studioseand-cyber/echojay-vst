@@ -80,10 +80,10 @@ void testSchemaVersionPinned()
     // is in EjmapSchema.h, which this file includes: drift stops this target at
     // the compiler, before these run. These stay as the runtime restatement, so
     // a binary that somehow linked against a different constant still says so.
-    check (ejmap::kMapSchemaVersion == 23, "kMapSchemaVersion is 23");
+    check (ejmap::kMapSchemaVersion == 24, "kMapSchemaVersion is 24");
     check (&ejmap::kMapSchemaVersion == &echojay::kMapSchemaVersion,
            "ejmap and echojay name the same object, not two copies");
-    check (juce::String (ejmap::kMapSchemaString) == "2.3", "kMapSchemaString is 2.3");
+    check (juce::String (ejmap::kMapSchemaString) == "2.4", "kMapSchemaString is 2.4");
 }
 
 void testVerdictSemantics()
@@ -560,6 +560,55 @@ void testGroupsRouteAroundMonoMaker()
                "Mono Maker untouched at 8 kHz");
         check (juce::approximatelyEqual (valueOf (4), lfBefore),
                "LF untouched at 8 kHz");
+    }
+}
+
+//==============================================================================
+// The declines pin (schema 2.4): the `declines` key is TRI-STATE by presence.
+// Absent = the controls surface was never swept by a recording binary;
+// present-and-empty = swept, everything shipped; rows = the reasons, authored
+// at each decision site. The writer must not collapse the first two states --
+// they are different facts (the accepted_groups:0 band-diagnostic lesson).
+void testDeclinesEmission()
+{
+    using namespace ejmap;
+
+    MapPayload p;
+    p.fp = "declinespin"; p.category = "compressor";
+    p.identity.format = "Fake"; p.identity.name = "DeclineFake"; p.identity.paramCount = 4;
+
+    // Unrecorded: no key, even though the array member exists.
+    {
+        auto v = juce::JSON::parse (p.toJson());
+        check (v.getProperty ("declines", juce::var()).isVoid(),
+               "declines: unrecorded surface emits NO key");
+    }
+
+    // Recorded and empty: the key appears, and it is an empty array.
+    p.declinesRecorded = true;
+    {
+        auto v = juce::JSON::parse (p.toJson());
+        auto d = v.getProperty ("declines", juce::var());
+        check (d.isArray() && d.getArray()->isEmpty(),
+               "declines: recorded-but-empty emits an EMPTY array, not absence");
+    }
+
+    // Rows survive the JSON round trip with index, name and reason intact.
+    p.declines.add ({ 2, "Ratio", "flat both ways - unbuildable (T types anchors)" });
+    p.declines.add ({ 3, juce::String(), "empty parameter name: not addressable" });
+    {
+        auto v = juce::JSON::parse (p.toJson());
+        auto d = v.getProperty ("declines", juce::var());
+        check (d.isArray() && d.getArray()->size() == 2, "declines: both rows emitted");
+        auto r0 = (*d.getArray())[0];
+        check ((int) r0.getProperty ("index", -1) == 2
+                 && r0.getProperty ("name", "").toString() == "Ratio"
+                 && r0.getProperty ("reason", "").toString().startsWith ("flat both ways"),
+               "declines: index, name and decision-site reason survive the round trip");
+        auto r1 = (*d.getArray())[1];
+        check (r1.getProperty ("name", "").toString().isEmpty()
+                 && r1.getProperty ("reason", "").toString().contains ("empty parameter name"),
+               "declines: an unnamed parameter still carries its index and reason");
     }
 }
 
@@ -2804,6 +2853,7 @@ int main (int, char**)
     testSharedParsers();
     testPayloadFeedsApply();
     testGroupsRouteAroundMonoMaker();
+    testDeclinesEmission();
     testNamedControlsResolve();
     testRoundTripThroughApplySettings();
     testDryRunBytes();

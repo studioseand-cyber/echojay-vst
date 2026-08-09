@@ -58,9 +58,18 @@ struct Mouth
         Verdict v;
         auto rej = [&v] (const juce::String& r) { v.rejections.add (r); };
 
-        if (map.getProperty ("schema", "").toString() != kMapSchemaString)
-            rej ("schema is '" + map.getProperty ("schema", "").toString()
-                   + "', binary speaks '" + juce::String (kMapSchemaString) + "'");
+        // 2.3 stays readable: the 2.3 -> 2.4 bump ADDED `declines` and changed
+        // nothing this gate checks. The campaign's local artifacts are 2.3,
+        // and a gate that refused them would force a re-sweep of maps that
+        // are already right (kLegacyDeathOutcome precedent: a rename that
+        // silently dropped the history would reset it to zero).
+        {
+            const auto sch = map.getProperty ("schema", "").toString();
+            if (sch != kMapSchemaString && sch != "2.3")
+                rej ("schema is '" + sch
+                       + "', binary speaks '" + juce::String (kMapSchemaString)
+                       + "' (and still reads '2.3')");
+        }
         if (map.getProperty ("fp", "").toString().length() < 16)
             rej ("fp missing or malformed");
 

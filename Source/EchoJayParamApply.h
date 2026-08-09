@@ -53,6 +53,15 @@ namespace echojay
 // editors resize about 2.5 s after creation while resizable GUIs resize
 // mid-session. No maps exist yet, so this costs nothing today and would cost a
 // migration after the first corpus.
+//
+// 2.3 -> 2.4: the map may carry `declines`, one row per parameter the controls
+// surface REACHED and did not ship, each with the reason recorded at the
+// moment that decision was made (noise-masked, mapper-excluded, unbuildable
+// with the sweep's own note, empty name). The key's presence is its meaning:
+// absent = the controls surface was never swept by a recording binary;
+// present-and-empty = swept, every candidate shipped. The 1,108-map campaign
+// could not answer "why is parameter 14 not in this map" (XTComp's Ratio,
+// 8 Aug 2026); this field exists so a re-swept corpus can.
 // ---------------------------------------------------------------------------
 namespace schemaDetail
 {
@@ -68,8 +77,8 @@ namespace schemaDetail
     }
 }
 
-inline constexpr int         kMapSchemaVersion = 23;      // 2.3
-inline constexpr const char* kMapSchemaString  = "2.3";
+inline constexpr int         kMapSchemaVersion = 24;      // 2.4
+inline constexpr const char* kMapSchemaString  = "2.4";
 
 static_assert (schemaDetail::schemaStringMatches (kMapSchemaString, kMapSchemaVersion),
                "kMapSchemaVersion and kMapSchemaString disagree. Bump both together, "

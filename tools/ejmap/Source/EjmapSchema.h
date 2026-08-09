@@ -38,8 +38,8 @@ using echojay::kMapSchemaString;
 // field set. If the shared constant moves, this fails and the writer gets read
 // before it ships maps EchoJay would parse differently. Bumping the wire format
 // means changing this pin deliberately, in the same commit as the writer.
-static_assert (kMapSchemaVersion == 23,
-               "EjmapSchema.h's payload writer targets schema 2.2. The shared "
+static_assert (kMapSchemaVersion == 24,
+               "EjmapSchema.h's payload writer targets schema 2.4. The shared "
                "kMapSchemaVersion in Source/EchoJayParamApply.h has moved: update "
                "the writer, then this pin.");
 
@@ -447,6 +447,36 @@ struct SkipRecord
     juce::var toVar() const;
 };
 
+/** One parameter the controls surface REACHED and did not ship, with the
+    reason recorded at the moment that decision was made -- the noise-mask
+    continue, the mapper's X, the sweep's own unbuildable note, the empty-name
+    rule. The accept step only TRANSPORTS these; it never authors a reason,
+    because a summary step can only describe what survived to be summarised
+    (the settingsDropped lesson: a counter at the failure site cannot count
+    what did not fail).
+
+    Index-keyed, not semantic-keyed: SkipRecord answers "why is there no
+    threshold_db", this answers "why is parameter 14 not in the map" -- the
+    question XTComp's Ratio made unanswerable on 8 Aug 2026.
+*/
+struct DeclineRecord
+{
+    int index = -1;
+    juce::String name;                      // as the plugin reported it; may be empty
+    juce::String reason;                    // required, asserted on construction
+
+    DeclineRecord() = default;
+    DeclineRecord (int i, juce::String n, juce::String r)
+        : index (i), name (std::move (n)), reason (std::move (r))
+    {
+        // Same rule as SkipRecord: a decline with no reason is the
+        // silent-drop class wearing a hat.
+        jassert (reason.isNotEmpty());
+    }
+
+    juce::var toVar() const;
+};
+
 struct ProbeResult
 {
     juce::String semantic;
@@ -528,6 +558,15 @@ struct MapPayload
     juce::Array<NamedControl>  controls;    // Tier 2, named
     juce::Array<GroupSpec>     groups;
     juce::Array<SkipRecord>    skips;
+
+    /** Every parameter the controls surface reached and did not ship.
+        declinesRecorded gates emission: the `declines` key appears in the JSON
+        only when the controls phase actually ran, so absent means "surface
+        never swept" and present-and-empty means "swept, everything shipped" --
+        two different facts (the accepted_groups:0 lesson, band diagnostic).
+    */
+    juce::Array<DeclineRecord> declines;
+    bool declinesRecorded = false;
     Evidence   evidence;
     Provenance provenance;
 
@@ -669,6 +708,15 @@ inline juce::var SkipRecord::toVar() const
     return juce::var (o);
 }
 
+inline juce::var DeclineRecord::toVar() const
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("index", index);
+    o->setProperty ("name", name);
+    o->setProperty ("reason", reason);
+    return juce::var (o);
+}
+
 inline juce::var ProbeResult::toVar() const
 {
     auto* o = new juce::DynamicObject();
@@ -771,6 +819,13 @@ inline juce::var MapPayload::toVar() const
     juce::Array<juce::var> sk;
     for (const auto& s : skips) sk.add (s.toVar());
     o->setProperty ("skips", juce::var (sk));
+
+    if (declinesRecorded)
+    {
+        juce::Array<juce::var> dv;
+        for (const auto& d : declines) dv.add (d.toVar());
+        o->setProperty ("declines", juce::var (dv));
+    }
 
     o->setProperty ("evidence", evidence.toVar());
     o->setProperty ("provenance", provenance.toVar());
