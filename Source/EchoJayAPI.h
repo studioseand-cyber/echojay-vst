@@ -187,6 +187,15 @@ public:
     void setNextChatTurnType(const juce::String& t, int busCount = 0)
     { nextChatTurnType_ = t; nextChatBusCount_ = busCount; }
 
+    // Per-fp exact controls exposure (9 Aug 2026): name->fp JSON object
+    // staged from ChainHost::buildMapFpsJson, consumed at body build like
+    // the meters blob. Tells the server WHICH BINARY each plugin name is,
+    // so it serves that fingerprint's own controls entry instead of the
+    // AU/VST3 sibling intersection. "{}"/empty stages nothing; a server
+    // without the field ignores it.
+    void setNextChatMapFps(const juce::String& jsonObject)
+    { nextChatMapFps_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
+
     // THE ONLY WAY meter/band data reaches /api/chat: the explicit-capture
     // flag is set here (Capture button flow) and cleared after EVERY send —
     // including the limit-failure path, so a blocked capture can never leak
@@ -223,6 +232,7 @@ public:
     void clearStagedTurn()
     {
         nextChatMeters_.clear();
+        nextChatMapFps_.clear();
         nextChatTurnType_.clear();
         nextChatBusCount_ = 0;
         nextChatIsExplicitCapture_ = false;
@@ -803,6 +813,7 @@ private:
                         std::function<void(bool, const juce::String&)> onComplete);
     juce::String deviceId;
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
+    juce::String nextChatMapFps_;   // staged by setNextChatMapFps(); "" = none
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
     juce::StringArray nextDialFlags_; // see setNextDialFlags(); cleared per send
     juce::String nextClassifyIntent_, nextClassifyToken_; // setNextClassifyBinding()

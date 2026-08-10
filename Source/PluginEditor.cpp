@@ -15544,7 +15544,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
         as.setLineSpacing(chatMsgFontSize * 0.35f);
         juce::TextLayout layout;
         layout.createLayout(as, (float)(maxBubbleW - 20));
-        int textH = (int)layout.getHeight() + 20;
+        // A message with NOTHING to say reserves no text height (9 Aug
+        // 2026: card-only edit turns) - MUST match the measure pass.
+        int textH = displayedText(msg).isEmpty() ? 0 : (int)layout.getHeight() + 20;
 
         // Extra height for waveform card
         int waveCardH = 0;
@@ -15935,9 +15937,16 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 int bubbleX = avX + avatarSize + 6;
                 int bubbleW = chatW - avatarSize - 20;
                 int bubbleH = tH - chainAreaH - gainAreaH - editAreaH - altAreaH - figureAreaH;
-                g.setColour(C::bg3);
-                g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)bubbleH, 10.0f);
-                layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(bubbleH - 20) });
+                // No prose, no bubble (9 Aug 2026): a card-only edit turn
+                // must not render an empty background above its card. The
+                // cards position off drawY + bubbleH, so a zero bubble
+                // keeps them flush at the top of the message area.
+                if (bubbleH > 0)
+                {
+                    g.setColour(C::bg3);
+                    g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)bubbleH, 10.0f);
+                    layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(bubbleH - 20) });
+                }
 
                 // Build card: structured slot lines (ops-card visual
                 // language: 11.5f, 16px lines, cyan names, dim settings),
@@ -17654,7 +17663,8 @@ int EchoJayEditor::measureChatContentHeight()
             as.setLineSpacing(chatMsgFontSize2 * 0.35f); // MUST match paint pass
             juce::TextLayout layout;
             layout.createLayout(as, (float)(maxBW - 20));
-            int textH = (int)layout.getHeight() + 20;
+            // Empty shown text reserves no height - MUST match paint pass.
+            int textH = displayedText(msg).isEmpty() ? 0 : (int)layout.getHeight() + 20;
             int waveCardH = (msg.hasWaveform && !msg.waveform.empty()) ? 36 : 0;
             int chainAreaH2 = (msg.role == "assistant") ? chainCardHeight(msg) : 0;   // SAME helper as paint
             int figAreaH2   = (msg.role == "assistant") ? figureCardHeight(msg) : 0;  // SAME helper as paint
@@ -19056,14 +19066,11 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     juce::String bubble;
     if (partialParts.empty() && zeroParts.isEmpty())
     {
-        // Clean full dial (or nothing carried structured settings): the
-        // model's own result line is honest here.
-        auto rv = juce::JSON::parse(chainJson);
-        if (auto* ro = rv.getDynamicObject())
-            bubble = ro->getProperty("result").toString().trim();
-        if (bubble.isEmpty())
-            bubble = "Chain built - " + juce::String(n)
-                   + (n == 1 ? " plugin loaded." : " plugins loaded.");
+        // Clean full build+dial: the FACTUAL line, never the model's result
+        // (9 Aug 2026, same rule as the edit composer - a filter the model
+        // can phrase around is not a floor, and the composer knows).
+        bubble = "Chain built - " + juce::String(n)
+               + (n == 1 ? " plugin loaded." : " plugins loaded.");
     }
     else
     {
@@ -19089,6 +19096,260 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     }
     clearStageStatus();   // the bubble replaces the load/dial-window label
     appendLocalResultBubble(bubble);
+}
+
+// ---- Apply-time honesty for edits (item 3, 9 Aug 2026) ---------------------
+// The edit twin of finishChainBubbleWhenDialSettled. The old site relayed the
+// model's "result" line as soon as every OP applied, gated only on whether
+// ops CARRIED settings - so an edit whose applySettings wrote nothing (the
+// 8 Aug Blitzer turn: unusableMap) still read "Done - Attack and Ratio
+// updated". The model is not a reliable narrator of what landed and does not
+// need to be: the verdict here is dialStatus/dialAppliedCount, computed by
+// the same code that did the writing.
+//
+// Scope: only slots THIS edit touched, matched by op name (set ops resolve
+// through baseSlots). An untouched slot keeps the dial status of whatever
+// built it, and reporting those would claim work this edit never did. Two
+// same-named slots are indistinguishable at this level - a name-level
+// approximation, accepted.
+void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson,
+                                                    int attemptsLeft)
+{
+    auto& ch = processorRef.getChainHost();
+    if (!ch.dialStateSettled() && attemptsLeft > 0)
+    {
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        juce::Timer::callAfterDelay(250, [safeThis, editJson, attemptsLeft]() {
+            if (safeThis != nullptr)
+                safeThis->finishEditBubbleWhenDialSettled(editJson, attemptsLeft - 1);
+        });
+        return;
+    }
+
+    auto ev = juce::JSON::parse(editJson);
+    auto* eo = ev.getDynamicObject();
+    if (eo == nullptr) return;
+
+    juce::StringArray baseSlots;
+    if (auto* bs = eo->getProperty("baseSlots").getArray())
+        for (auto& b : *bs) baseSlots.add(b.toString().trim());
+    // touched = ops that asked for a dial; undialled = ops that changed or
+    // placed a plugin with NO structured settings. A prose-only SET op is
+    // undialled too (9 Aug 2026, third "Done" in three days): its sequencer
+    // "applied 1 change" is card text only - the apply pipeline never ran -
+    // and classifying it as neither touched nor undialled let the model's
+    // "Done - ratio and attack updated" relay over a dial that never
+    // happened. Nothing prose-only ever rides the model's success line.
+    juce::StringArray touchedNames, undialledNames, proseOnlySetNames, serverDropped;
+    if (auto* ops = eo->getProperty("edit").getArray())
+        for (auto& opv : *ops)
+        {
+            const auto opName = opv.getProperty("op", juce::var()).toString();
+            auto plug = opv.getProperty("name", juce::var()).toString().trim();
+            if (opName == "set" && plug.isEmpty())
+            {
+                const int slot1 = (int) opv.getProperty("slot", juce::var());
+                if (slot1 >= 1 && slot1 <= baseSlots.size())
+                    plug = baseSlots[slot1 - 1];
+            }
+            if (plug.isEmpty()) continue;
+            const bool carries = !opv.getProperty("settings_structured", juce::var()).isVoid();
+            if ((opName == "add" || opName == "replace" || opName == "set") && carries)
+                touchedNames.addIfNotAlreadyThere(plug);
+            if ((opName == "add" || opName == "replace") && !carries)
+                undialledNames.addIfNotAlreadyThere(plug);
+            if (opName == "set" && !carries)
+                proseOnlySetNames.addIfNotAlreadyThere(plug);
+            // Server-refused controls that rode the block back (ops that
+            // went through Apply; receipt-consumed ops report their own).
+            if (auto* dc = opv.getProperty("dropped_controls", juce::var()).getArray())
+                for (auto& dv : *dc)
+                    if (auto* dobj = dv.getDynamicObject())
+                    {
+                        serverDropped.add(dobj->getProperty("name").toString()
+                            + " on " + plug + " (" + dobj->getProperty("reason").toString() + ")");
+                        logDialMiss(plug, juce::String(), "refine_dropped",
+                                    { dobj->getProperty("name").toString() });
+                    }
+        }
+
+    juce::StringArray appliedNames, zeroParts;
+    struct PartialPart { juce::String name; juce::StringArray manual; };
+    std::vector<PartialPart> partialParts;
+    for (const auto& di : ch.getDialInfos())
+    {
+        if (!touchedNames.contains(di.name)) continue;
+        switch (di.status)
+        {
+            case ChainHost::DialStatus::applied:
+                appliedNames.add(di.name);
+                break;
+            case ChainHost::DialStatus::partial:
+                partialParts.push_back({ di.name, di.manual });
+                logDialMiss(di.name, di.fp, "partial", di.manual);
+                if (!di.readbackMiss.isEmpty())
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                break;
+            case ChainHost::DialStatus::noMap:
+                zeroParts.add(di.name);
+                logDialMiss(di.name, di.fp, "no_map", di.manual);
+                break;
+            case ChainHost::DialStatus::unusableMap:
+                zeroParts.add(di.name);
+                logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+                if (!di.readbackMiss.isEmpty())
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                break;
+            case ChainHost::DialStatus::pending:
+                // Fetch never answered inside the cap: NEVER fall through
+                // to the model's success line - conservative wording, and a
+                // late apply (if it lands) updates the slot card anyway.
+                zeroParts.add(di.name);
+                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual);
+                break;
+            case ChainHost::DialStatus::none:
+                // Touched and carried settings, yet nothing structured
+                // reached the slot: not clean, not explained - never let it
+                // ride the model's success line.
+                zeroParts.add(di.name);
+                break;
+        }
+    }
+
+    juce::String bubble;
+    if (partialParts.empty() && zeroParts.isEmpty() && proseOnlySetNames.isEmpty())
+    {
+        // Clean dial: SILENCE (9 Aug 2026, Sean's rule). The model's result
+        // line is NEVER relayed any more - a filter the model can evade by
+        // phrasing gently is not a floor, and bubble-presence had become a
+        // function of the model's word choice. The card already says what
+        // was written; bubbles exist only for partials, zeros, suggestions
+        // and server-refused names below.
+    }
+    else
+    {
+        // The retired card already says "Applied N changes"; the bubble
+        // carries only what the card does not - the dial outcome, positive
+        // first, same wording as the build path.
+        if (!appliedNames.isEmpty())
+            bubble = "Settings applied to " + appliedNames.joinIntoString(", ") + ".";
+        for (const auto& p : partialParts)
+        {
+            const bool one = p.manual.size() == 1;
+            bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+            bubble += "Settings applied to " + p.name + ", except "
+                    + p.manual.joinIntoString(" and ")
+                    + (one ? " which needs hand-dialing - values on its card."
+                           : " which need hand-dialing - values on its card.");
+        }
+        if (!zeroParts.isEmpty())
+        {
+            const bool one = zeroParts.size() == 1;
+            bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+            bubble += zeroParts.joinIntoString(" and ")
+                    + (one ? " needs hand-dialing - use the values on its card."
+                           : " need hand-dialing - use the values on their cards.");
+        }
+    }
+    if (!undialledNames.isEmpty())
+    {
+        const bool one = undialledNames.size() == 1;
+        bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+        bubble += undialledNames.joinIntoString(", ")
+                + (one ? " is in - dial it in by hand with the values on its card."
+                       : " are in - dial them in by hand with the values on their cards.");
+        for (auto& an : undialledNames)
+            logDialMiss(an, juce::String(), "edit_add_no_dial", {});
+    }
+    if (!proseOnlySetNames.isEmpty())
+    {
+        // The set op updated the CARD, not the plugin: say so, factually.
+        const bool one = proseOnlySetNames.size() == 1;
+        bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+        bubble += "Nothing was written to " + proseOnlySetNames.joinIntoString(", ")
+                + " - dial in the values on " + (one ? juce::String("its card by hand.")
+                                                     : juce::String("their cards by hand."));
+        for (auto& an : proseOnlySetNames)
+            logDialMiss(an, juce::String(), "edit_set_no_dial", {});
+    }
+    if (!serverDropped.isEmpty())
+    {
+        bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+        bubble += serverDropped.joinIntoString("; ")
+                + (serverDropped.size() == 1 ? " couldn't be set by name - dial it by hand."
+                                             : " couldn't be set by name - dial them by hand.");
+    }
+    if (bubble.isNotEmpty())
+        appendLocalResultBubble(bubble);
+}
+
+juce::String EchoJayEditor::consumeSuggestionSetsAtReceipt(const juce::String& editJson,
+                                                           bool& allConsumed,
+                                                           juce::StringArray& consumedNames)
+{
+    allConsumed = false;
+    consumedNames.clear();
+    auto v = juce::JSON::parse(editJson);
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return editJson;
+    auto* ops = o->getProperty("edit").getArray();
+    if (ops == nullptr || ops->isEmpty()) return editJson;
+    juce::StringArray baseSlots;
+    if (auto* bs = o->getProperty("baseSlots").getArray())
+        for (auto& b : *bs) baseSlots.add(b.toString().trim());
+
+    auto& ch = processorRef.getChainHost();
+    const auto infos = ch.getAllSlotInfos();
+    juce::Array<juce::var> kept;
+    for (auto& opv : *ops)
+    {
+        auto* eo = opv.getDynamicObject();
+        const bool suggestionOnly = eo != nullptr
+            && eo->getProperty("op").toString() == "set"
+            && eo->getProperty("settings_structured").isVoid()
+            && eo->getProperty("settings").toString().isNotEmpty();
+        if (!suggestionOnly) { kept.add(opv); continue; }
+        const int slot1 = (int) eo->getProperty("slot");
+        const int idx = slot1 - 1;
+        const juce::String expect = (slot1 >= 1 && slot1 <= baseSlots.size())
+                                      ? baseSlots[idx] : juce::String();
+        if (idx < 0 || idx >= (int) infos.size() || expect.isEmpty()
+            || !ChainHost::namesMatchLoose(expect, infos[(size_t) idx].name))
+        {
+            kept.add(opv);   // stale or odd: the Apply path's guards own it
+            continue;
+        }
+        ch.setSlotSettings(idx, eo->getProperty("settings").toString());
+        consumedNames.addIfNotAlreadyThere(infos[(size_t) idx].name);
+        // Server-refused controls RIDE THE BLOCK BACK (9 Aug 2026): an op
+        // consumed here never reaches the Apply-path composer, so its
+        // dropped_controls must be surfaced now - a drop that only exists
+        // in telemetry is invisible to the person it happened to.
+        if (auto* dc = eo->getProperty("dropped_controls").getArray())
+        {
+            juce::StringArray lines;
+            for (auto& dv : *dc)
+                if (auto* dobj = dv.getDynamicObject())
+                    lines.add(dobj->getProperty("name").toString()
+                              + " (" + dobj->getProperty("reason").toString() + ")");
+            if (!lines.isEmpty())
+            {
+                appendLocalResultBubble(lines.joinIntoString(", ")
+                    + (lines.size() == 1 ? " couldn't be set by name on "
+                                         : " couldn't be set by name on ")
+                    + infos[(size_t) idx].name
+                    + " - the values are on its card to dial by hand.");
+                for (auto& dv : *dc)
+                    if (auto* dobj = dv.getDynamicObject())
+                        logDialMiss(infos[(size_t) idx].name, juce::String(),
+                                    "refine_dropped", { dobj->getProperty("name").toString() });
+            }
+        }
+    }
+    if (consumedNames.isEmpty()) return editJson;
+    allConsumed = kept.isEmpty();
+    o->setProperty("edit", kept);
+    return juce::JSON::toString(v);
 }
 
 void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
@@ -19438,8 +19699,16 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
             auto& cm2 = safeThis->chatMessages[(size_t)msgIdx];
 
             juce::String summary;
+            bool allSuggest = !aborted && applied == total && results.size() > 0;
+            for (const auto& rl : results)
+                if (!rl.startsWith("suggested settings for ")) { allSuggest = false; break; }
             if (aborted)
                 summary = "Not applied: " + results.joinIntoString("; ");
+            else if (allSuggest)
+                // Every op was a prose-only set: nothing was written, and
+                // "Applied 1 change" reads as a dial count (9 Aug 2026, the
+                // third of three surfaces contradicting the honest bubble).
+                summary = "Suggested settings added to the card - nothing written automatically";
             else if (applied == total)
                 summary = "Applied " + juce::String(applied)
                         + (applied == 1 ? " change" : " changes");
@@ -19482,54 +19751,18 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
 
             // Result stage (1d, dedup decision): the retired card keeps the
             // factual summary; a result bubble appears ONLY when it says
-            // something the card does not — a clean full apply with a
-            // model-provided "result" line. Failures/partials/aborts:
-            // card summary only, no bubble.
+            // something the card does not. Item 3 (9 Aug 2026): the model's
+            // "result" line is relayed only once dial state SETTLES as a
+            // clean full apply - the 26 Jul gate checked whether ops CARRIED
+            // settings, not whether they LANDED, so an edit whose
+            // applySettings wrote nothing (8 Aug Blitzer, unusableMap) still
+            // read "Done - Attack and Ratio updated". The layer that knows
+            // is downstream of the layer that speaks; the composer reads
+            // dialStatus from the code that did the writing.
+            // Failures/partials/aborts of the OPS themselves: card summary
+            // only, no bubble, unchanged.
             if (!aborted && applied == total)
-            {
-                auto ev = juce::JSON::parse(cm2.editData);
-                if (auto* eo = ev.getDynamicObject())
-                {
-                    // Apply-time honesty (26 Jul 2026, revised): edit ops CAN
-                    // now write parameters — settings_structured rides an
-                    // add/replace and ChainHost applies it once the slot
-                    // loads, exactly as the build path does. So the old
-                    // blanket "dial it in by hand" is no longer true for
-                    // every added slot, and claiming it for one that was just
-                    // dialled exactly would be the same overclaim in reverse.
-                    //
-                    // The distinction is per-op: a slot that carried
-                    // structured settings was dialled and the model's own
-                    // result line stands; one that did not still needs hand
-                    // dialling and still measures a delivery gap.
-                    juce::StringArray undialledNames;
-                    if (auto* ops = eo->getProperty("edit").getArray())
-                        for (auto& opv : *ops)
-                        {
-                            const auto opName = opv.getProperty("op", juce::var()).toString();
-                            const auto plug   = opv.getProperty("name", juce::var()).toString().trim();
-                            if ((opName == "add" || opName == "replace") && plug.isNotEmpty()
-                                && opv.getProperty("settings_structured", juce::var()).isVoid())
-                                undialledNames.addIfNotAlreadyThere(plug);
-                        }
-                    auto modelResult = eo->getProperty("result").toString().trim();
-                    if (undialledNames.isEmpty())
-                    {
-                        if (modelResult.isNotEmpty())
-                            safeThis->appendLocalResultBubble(modelResult);
-                    }
-                    else
-                    {
-                        const bool one = undialledNames.size() == 1;
-                        safeThis->appendLocalResultBubble(
-                            undialledNames.joinIntoString(", ")
-                            + (one ? " is in - dial it in by hand with the values on its card."
-                                   : " are in - dial them in by hand with the values on their cards."));
-                        for (auto& an : undialledNames)
-                            safeThis->logDialMiss(an, juce::String(), "edit_add_no_dial", {});
-                    }
-                }
-            }
+                safeThis->finishEditBubbleWhenDialSettled(cm2.editData, 8);
             safeThis->repaint();
         },
         [safeThis](const juce::String& label)
@@ -21469,6 +21702,10 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         turnTypeOverride.isNotEmpty() ? turnTypeOverride
                                       : (hadChainFeed ? "chain_generate" : "chat");
     api.setNextChatTurnType(stagedTurnType);
+    // Per-fp exact controls exposure: say which binary each name is (rack
+    // slots + scanned identities) so the server serves that fingerprint's
+    // own controls entry rather than the AU/VST3 sibling intersection.
+    api.setNextChatMapFps(processorRef.getChainHost().buildMapFpsJson());
     // 1d model-wait stage: generic-safe label only (the one-shot transport
     // has no sub-stages to report; a specific claim could desync).
     // 26 Jul 2026: ALWAYS "Thinking" here. hadChainFeed is true on
@@ -21661,6 +21898,20 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
                     EchoJay_NSLog("EJChat: ASK block received");
                 if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
                     EchoJay_NSLog("EJChat: CHAIN_EDIT block received");
+
+                // Empty-ops edit block = no block (9 Aug 2026, belt - the
+                // server strips these too): the prose IS the turn, and a
+                // contentless card must never suppress it. The XTComp
+                // full-compliance turn (honest decline + "edit":[]) rendered
+                // as an empty bubble because block-present implied
+                // card-worth-showing.
+                if (editJson.isNotEmpty())
+                {
+                    auto evEB = juce::JSON::parse(editJson);
+                    auto* eoEB = evEB.getDynamicObject();
+                    const juce::Array<juce::var>* eaEB = (eoEB != nullptr) ? eoEB->getProperty("edit").getArray() : nullptr;
+                    if (eaEB == nullptr || eaEB->isEmpty()) editJson.clear();
+                }
             }
 
             // If extractChainBlock returned partial/truncated JSON, try bracket-depth salvage
@@ -21787,7 +22038,31 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
                         cm.editBaseRevision = rack.valid ? rack.revision : -1;
                     }
                     else
+                    {
+                        // LOCAL rack: prose-only set ops are card
+                        // suggestions and land AT RECEIPT - Apply exists to
+                        // confirm rack changes, and a suggestion changes
+                        // nothing. All-suggestion cards retire immediately
+                        // (op lines + result, no button); mixed batches
+                        // keep Apply for the real ops only.
+                        bool allConsumed = false;
+                        juce::StringArray consumed;
+                        const auto remaining = safeThis->consumeSuggestionSetsAtReceipt(editJson, allConsumed, consumed);
+                        if (!consumed.isEmpty())
+                        {
+                            if (allConsumed)
+                            {
+                                cm.editApplied = true;   // keeps original editData: op lines stay visible
+                                cm.editResult  = "Suggested settings added to the card - nothing written automatically";
+                            }
+                            else
+                                cm.editData = remaining;
+                            auto& chS = safeThis->processorRef.getChainHost();
+                            safeThis->chainListPanel.rebuild(chS.getAllSlotInfos(),
+                                                            safeThis->chainSelectedSlot_);
+                        }
                         cm.editBaseRevision = safeThis->processorRef.getChainHost().getChainRevision();
+                    }
                 }
                 // DROP PATH 1 of 2: the real reply REPLACES the provisional
                 // in place, never push-then-push — the user must never see
@@ -25292,6 +25567,20 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                     EchoJay_NSLog("EJChat: ASK block received (capture turn)");
                 if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
                     EchoJay_NSLog("EJChat: CHAIN_EDIT block received (capture turn)");
+
+                // Empty-ops edit block = no block (9 Aug 2026, belt - the
+                // server strips these too): the prose IS the turn, and a
+                // contentless card must never suppress it. The XTComp
+                // full-compliance turn (honest decline + "edit":[]) rendered
+                // as an empty bubble because block-present implied
+                // card-worth-showing.
+                if (editJson.isNotEmpty())
+                {
+                    auto evEB = juce::JSON::parse(editJson);
+                    auto* eoEB = evEB.getDynamicObject();
+                    const juce::Array<juce::var>* eaEB = (eoEB != nullptr) ? eoEB->getProperty("edit").getArray() : nullptr;
+                    if (eaEB == nullptr || eaEB->isEmpty()) editJson.clear();
+                }
                 if (chainJson.isNotEmpty())
                     EchoJay_NSLog("EJChat: CHAIN block received (capture turn)");
             }
@@ -25315,7 +25604,27 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                     cm.editBaseRevision = rack.valid ? rack.revision : -1;
                 }
                 else
+                {
+                    // Same receipt-time suggestion consumption as the chat
+                    // path: local rack, prose-only sets need no Apply.
+                    bool allConsumed = false;
+                    juce::StringArray consumed;
+                    const auto remaining = safeThis2->consumeSuggestionSetsAtReceipt(editJson, allConsumed, consumed);
+                    if (!consumed.isEmpty())
+                    {
+                        if (allConsumed)
+                        {
+                            cm.editApplied = true;
+                            cm.editResult  = "Suggested settings added to the card - nothing written automatically";
+                        }
+                        else
+                            cm.editData = remaining;
+                        auto& chS2 = safeThis2->processorRef.getChainHost();
+                        safeThis2->chainListPanel.rebuild(chS2.getAllSlotInfos(),
+                                                          safeThis2->chainSelectedSlot_);
+                    }
                     cm.editBaseRevision = safeThis2->processorRef.getChainHost().getChainRevision();
+                }
             }
             safeThis2->chatMessages.push_back(cm);
             safeThis2->processorRef.chatHistory.push_back({"assistant", visibleReply});

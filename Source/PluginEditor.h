@@ -1166,8 +1166,25 @@ private:
     std::vector<ChatMsg> chatMessages;
     // THE shared display source: both text-layout passes (measure + paint)
     // MUST get their string from here so heights and pixels cannot disagree.
+    //
+    // Edit turns show the CARD ONLY (9 Aug 2026): the preamble is written
+    // before the outcome exists, so it can only ever be a prediction
+    // rendered as a statement - "Dialling Ratio to 4" sat above three
+    // surfaces saying nothing was written. Instruction is a ceiling, never
+    // a floor: four rounds of it were each absorbed at the surface and none
+    // guaranteed. The card is the one place proposal grammar is TRUE,
+    // because it has an Apply button and speaks before the outcome by
+    // design. Keyed on editData non-empty, so blockless replies (declines,
+    // advice, ASK) keep their prose untouched. PLUGIN DISPLAY ONLY: the
+    // model still writes the preamble (protocol unchanged, other clients
+    // unaffected); the web app renders its own and is a separate, later
+    // decision.
     static const juce::String& displayedText(const ChatMsg& m)
-    { return m.displayText.isNotEmpty() ? m.displayText : m.content; }
+    {
+        static const juce::String kCardOnly;
+        if (m.role == "assistant" && m.editData.isNotEmpty()) return kCardOnly;
+        return m.displayText.isNotEmpty() ? m.displayText : m.content;
+    }
     bool chatLoading = false;
 
     // ---- Staged replies (Phase 1d): working-state stage row -----------------
@@ -1199,6 +1216,23 @@ private:
     // factual wording naming the hand-dial slots and controls. On timeout
     // the conservative wording is used, never the model line.
     void finishChainBubbleWhenDialSettled(const juce::String& chainJson, int attemptsLeft);
+    // The edit twin (item 3, 9 Aug 2026): same settle-then-compose contract,
+    // scoped to the slots the edit's ops actually touched.
+    void finishEditBubbleWhenDialSettled(const juce::String& editJson, int attemptsLeft);
+    // Receipt-time consumption of suggestion-only set ops (9 Aug 2026):
+    // Apply exists to confirm a CHANGE to the rack; a prose-only set
+    // changes nothing (it writes the slot card's suggested-settings text),
+    // so offering Apply for one asks the user to confirm an action that
+    // does not exist. LOCAL rack only - Link-targeted cards keep their
+    // remote round-trip. Executes the prose-only sets immediately under a
+    // guard (slot in range AND baseSlots name matches the live slot; a
+    // failed guard leaves the op for the normal Apply path and its
+    // staleness machinery). Returns the edit JSON with consumed ops
+    // removed; allConsumed = the edit array emptied. Mixed batches
+    // compose: real ops keep the card and its Apply, suggestions land now.
+    juce::String consumeSuggestionSetsAtReceipt(const juce::String& editJson,
+                                                bool& allConsumed,
+                                                juce::StringArray& consumedNames);
     // Non-clean-load paths keep their factual bubbles but still log
     // dial_miss events once dial state settles.
     void logDialMissesWhenSettled(int attemptsLeft);

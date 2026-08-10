@@ -51,7 +51,12 @@ inline juce::String identityKeyForDescription (const juce::PluginDescription& de
 //   mix_pct 25 -> "mix 25%", reverb_decay_s 2 -> "reverb decay 2s".
 inline juce::String formatSemanticSetting (const juce::String& key, const juce::var& value)
 {
-    const juce::String v = value.toString();
+    // Display rounding (9 Aug 2026): values that crossed a float32 render
+    // as "0.050000000745058" - the card's sibling of the prompt-range fix.
+    // Display only; the applied value is untouched.
+    const juce::String v = value.isDouble()
+        ? juce::String ((double) value, 4).trimCharactersAtEnd ("0").trimCharactersAtEnd (".")
+        : value.toString();
     if (key == "ratio")       return "ratio " + v;
     if (key.endsWith ("_db"))  return key.dropLastCharacters (3).replaceCharacter ('_', ' ') + " " + v + "dB";
     if (key.endsWith ("_ms"))  return key.dropLastCharacters (3).replaceCharacter ('_', ' ') + " " + v + "ms";

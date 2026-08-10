@@ -1134,6 +1134,14 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
         nextChatBusCount_ = 0;
         nextChatIsExplicitCapture_ = false;   // cleared after EVERY send
     }
+    // mapFps: which binary each plugin name is (per-fp exact controls
+    // exposure). Already a JSON object from ChainHost::buildMapFpsJson;
+    // consumed and cleared per send like the meters blob.
+    if (nextChatMapFps_.isNotEmpty())
+    {
+        body += ",\"mapFps\":" + nextChatMapFps_;
+        nextChatMapFps_.clear();
+    }
     if (metersBlob.isNotEmpty())
     {
         // Raw passthrough — the blob is already a JSON object; splicing it in

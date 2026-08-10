@@ -73,6 +73,16 @@ public:
     // Display names of resolved entries (for AI prompt injection).
     juce::StringArray getRecommendableNames() const;
 
+    // name -> fingerprint for the chat body's mapFps field (per-fp exact
+    // controls exposure, 9 Aug 2026). Rack slots first - a loaded slot's fp
+    // IS the binary the user holds - then recommendable entries resolved
+    // through the persistent identity index (scan-path fingerprint pass).
+    // A name carried twice with DISAGREEING fps is omitted entirely: the
+    // server's sibling merge is the honest serve for an ambiguous name. A
+    // name with no known fp is simply absent, same fallback. Returns "{}"
+    // when nothing is known.
+    juce::String buildMapFpsJson(int maxEntries = 64) const;
+
     // ---- Apply-time honesty (26 Jul 2026) ----
     // Per-slot auto-dial outcome. The result bubble may only relay the
     // model's "result" line when every slot that carried structuredSettings
@@ -146,6 +156,11 @@ public:
         bool on    = false;     // bypass state
         juce::String name;      // add/replace: name from AVAILABLE PLUGINS
         juce::String settings;  // prose settings for the slot tile (display)
+        // Server-decided no-such-control verdict riding the op (9 Aug
+        // 2026): term the user asked for + provenance tier (deferred /
+        // unmapped / complete). The card composes the REASON a suggestion
+        // is hand-dial-only from this, never from the model's prose.
+        juce::String noSuchTerm, noSuchTier;
         // add/replace: the machine-readable settings_structured that rides the
         // op, applied once the new slot has loaded. Same payload and same
         // consumer as the build path, so an EQ added by an EDIT turn is dialled
