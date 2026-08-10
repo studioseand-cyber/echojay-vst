@@ -7,6 +7,7 @@
 #include "EchoJayParamApply.h" // kDialSignalsEnabled + dial predicate (shared)
 #include "EchoJayChannelLabel.h" // channelLabelUsable — ONE uid-passthrough test
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
+#include "EedDeviceRegistry.h"   // built-in editing copies (fix 2)
 #include "EedKeyDetectorProcessor.h" // [DETECTED KEY] read path (KEY_DETECTOR_SPEC §4/§9)
 #include "viz/DwellGlow.h"           // KEY panel note wheel — the family's heat ramp
 #include "EqNote.h"                  // describeFreqAsNote — root_hz note names in the feed
@@ -7536,9 +7537,14 @@ void EchoJayEditor::editProceedWithState(const juce::String& uid, int slot0,
 
     say("Opening " + pName + "...");
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    processorRef.getChainHost().asyncCreatePlugin(desc,
+
+    // ONE seed-and-begin, two creation routes. The lambda below is the only
+    // place a pulled blob is decoded, seeded and handed to editBegin; the
+    // fork above it only decides HOW the instance is made. Duplicating the
+    // sequence per route is how the two would drift.
+    auto seedAndBegin =
         [safeThis, uid, slot0, pName, pFmt, b64]
-        (std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& loadErr)
+        (std::unique_ptr<juce::AudioProcessor> inst, const juce::String& loadErr)
     {
         if (safeThis == nullptr) return;
         auto say = [&](const juce::String& t)
@@ -7587,6 +7593,48 @@ void EchoJayEditor::editProceedWithState(const juce::String& uid, int slot0,
             + proc.resolveLinkDisplayName(uid)
             + " - SOLO. You are hearing that channel only, live. "
             "Apply & Release sends the settings back.");
+    };
+
+    // THE FORK, mirroring loadPluginAsync rather than inventing a second
+    // policy: a built-in is constructed straight from the registry factory,
+    // no format manager and no scan, because its echojay:builtin:* identifier
+    // is not a scanned format and createPluginInstanceAsync can only answer
+    // "No compatible plug-in format exists" -- which is exactly what every
+    // internal device did until now. Everything else goes to the format
+    // manager as before.
+    //
+    // resolveByName already returned the right description either way: it
+    // resolves built-ins BEFORE and regardless of the format filter, so the
+    // sidecar's format string cannot mis-route this.
+    if (ChainHost::isBuiltinDescription(desc))
+    {
+        // findForDescription is the SAME resolver loadBuiltinNow uses
+        // (identifier, then uid, then name), so a description rebuilt from a
+        // sidecar resolves exactly as one rebuilt from restore XML does.
+        const auto* device = BuiltinDeviceRegistry::instance().findForDescription(desc);
+        if (device == nullptr || !device->create)
+        {
+            say("\"" + pName + "\" is a built-in device this build does not "
+                "carry, so no editing copy can be made.");
+            return;
+        }
+        // Synchronous by nature; seedAndBegin does not care which route made
+        // the instance. A null return is reported as a failure rather than
+        // passing a null pointer into the shared path.
+        std::unique_ptr<juce::AudioProcessor> inst = device->create();
+        if (inst == nullptr)
+        { say(pName + " failed to construct an editing copy."); return; }
+        seedAndBegin(std::move(inst), {});
+        return;
+    }
+
+    processorRef.getChainHost().asyncCreatePlugin(desc,
+        [seedAndBegin](std::unique_ptr<juce::AudioPluginInstance> inst,
+                       const juce::String& loadErr)
+    {
+        // unique_ptr<AudioPluginInstance> converts to unique_ptr<AudioProcessor>
+        // implicitly (public derivation), so the shared path takes both.
+        seedAndBegin(std::move(inst), loadErr);
     });
 }
 

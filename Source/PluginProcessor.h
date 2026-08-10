@@ -347,7 +347,14 @@ public:
     };
     EditSession editSession_;
     juce::SpinLock editLock_;
-    std::unique_ptr<juce::AudioPluginInstance> editInst_;   // under editLock_
+    // AudioProcessor, NOT AudioPluginInstance, and the widening is what lets a
+    // BUILT-IN device be edited: the registry factory hands back a plain
+    // AudioProcessor (an EedDeviceProcessor), never an AudioPluginInstance,
+    // so the narrower type excluded every internal device by construction.
+    // Nothing the edit path calls needs the derived type: prepareToPlay,
+    // processBlock, get/setStateInformation, createEditor and
+    // releaseResources are all declared on AudioProcessor.
+    std::unique_ptr<juce::AudioProcessor> editInst_;        // under editLock_
     juce::AudioBuffer<float> editBuf_;                      // audio scratch
     juce::LinearSmoothedValue<float> editSoloMix_;          // 0 mix .. 1 solo
     // Ring cushion policy for the solo consumer. Engage seeks to the target;
@@ -363,7 +370,7 @@ public:
     /// Install a prepared instance and start the lease (message thread).
     void editBegin(const juce::String& uid, int slot0,
                    const juce::String& name, const juce::String& fmt,
-                   std::unique_ptr<juce::AudioPluginInstance> inst,
+                   std::unique_ptr<juce::AudioProcessor> inst,
                    const juce::String& leaseId);
     /// Tear down. keepState captures the instance's state into keptStateB64
     /// first (the lease-died path: nothing the user did is lost).

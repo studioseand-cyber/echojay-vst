@@ -1226,7 +1226,7 @@ struct EchoJayProcessor::EditLeaseTimer : juce::Timer
 
 void EchoJayProcessor::editBegin(const juce::String& uid, int slot0,
                                  const juce::String& name, const juce::String& fmt,
-                                 std::unique_ptr<juce::AudioPluginInstance> inst,
+                                 std::unique_ptr<juce::AudioProcessor> inst,
                                  const juce::String& leaseId)
 {
     if (inst == nullptr) return;
@@ -1327,10 +1327,10 @@ void EchoJayProcessor::editEnd(bool keepState)
 
     // Shared_ptr shim so the deferred lambda owns the instance without this
     // processor holding a dangling unique_ptr meanwhile.
-    std::shared_ptr<juce::AudioPluginInstance> dying;
+    std::shared_ptr<juce::AudioProcessor> dying;
     {
         const juce::SpinLock::ScopedLockType sl(editLock_);
-        dying = std::shared_ptr<juce::AudioPluginInstance>(std::move(editInst_));
+        dying = std::shared_ptr<juce::AudioProcessor>(std::move(editInst_));
     }
     if (dying != nullptr)
         juce::Timer::callAfterDelay(120, [dying]() mutable
