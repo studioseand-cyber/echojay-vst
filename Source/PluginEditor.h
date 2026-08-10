@@ -1082,6 +1082,17 @@ private:
         float durationSeconds = 0;
         float lufs = -100;
         juce::String chainData;   // non-empty when AI returned a <<<ECHOJAY_CHAIN>>> block
+        // STAGED CHAIN (spec section 4): true while chainData holds slots
+        // reported by onSlot and the block has NOT closed. The card renders
+        // its rows; the Build button does NOT appear until onBlock replaces
+        // this with the complete payload and clears the flag. A stream that
+        // dies here leaves rows and no button, which is the honest state.
+        //
+        // NOT PERSISTED, and not an oversight: WsMessage has no counterpart,
+        // same as provisionalId and clientAskKind. A reloaded chat can only
+        // ever hold a finished chain, so there is nothing for a persisted
+        // copy to say.
+        bool chainProvisional = false;
         juce::String gainData;    // non-empty when AI returned a <<<ECHOJAY_GAIN>>> block
         juce::String askData;     // non-empty when AI returned an <<<ECHOJAY_ASK>>> block
         bool askAnswered = false; // chip tapped — chips render disabled/hidden
@@ -2626,6 +2637,9 @@ private:
     int  editCardHeight(const ChatMsg& msg) const;
     // Build card (1d follow-up): structured slot lines + Build button —
     // the ops card's visual language applied to CHAIN blocks
+    // Caption line height under a slot row. ONE constant, consumed by the
+    // height helper and the paint loop, so they cannot drift apart.
+    static constexpr int kWhyH = 13;
     int  chainCardHeight(const ChatMsg& msg) const;
     // AI Compare figure card: single height source + renderer (paint-only, no
     // buttons). figuresData is client-built at compose time and persisted, so

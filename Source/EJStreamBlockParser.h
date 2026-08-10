@@ -62,6 +62,24 @@ public:
     std::function<void(const juce::String& prose)> onProse;
     std::function<void(const BlockEvent&)> onBlock;
 
+    // ---- Slot-level reporting (STAGED_CHAIN_SPEC section 4) --------------
+    // Fires when a CHAIN slot's JSON object has closed and parsed cleanly,
+    // in wire order, index 0-based. A slot that does not parse is never
+    // reported; nor is anything before its closing brace.
+    //
+    // RULE 1 IS UNCHANGED AND THIS DOES NOT WEAKEN IT. onBlock still fires
+    // exactly once, on <<<END_CHAIN>>>, with the complete payload, and it
+    // remains the ONLY thing applyChainEdits and the Build button ever see.
+    // onSlot is a rendering signal and nothing else: a stream that dies
+    // after three slots has fired onSlot three times and onBlock zero
+    // times, which is precisely the honest state — rows on screen, no
+    // button, nothing safe to build.
+    //
+    // Chain slots only. gain/ask/chain_edit payloads are not decomposed:
+    // they carry no per-slot rendering and inventing one would be a second
+    // parser to keep in sync with a schema that has no need of it.
+    std::function<void(int index, const juce::String& slotJson)> onSlot;
+
     void appendDelta (const juce::String& text)
     {
         jassert (! finished);   // a finished parser is done; make a new one
@@ -107,6 +125,54 @@ private:
     int inBlock = -1;               // index into markers, -1 = prose mode
     bool finished = false;
     juce::String truncatedType_, truncatedPayload_;
+    int slotScanFrom_ = 0;          // blockBuf index already scanned for slots
+    int slotsReported_ = 0;         // next onSlot index
+
+    // Walk blockBuf from slotScanFrom_ and report every COMPLETE top-level
+    // object inside the "chain" array. Brace-depth with string/escape
+    // awareness, because a settings string may legally contain braces or
+    // quotes and a naive scan would close a slot early — reporting a
+    // partial, which is the one thing this must never do.
+    //
+    // Anything not yet closed is left for a later pump: the scan cursor
+    // only ever advances past a slot that was fully formed and parsed.
+    void scanClosedSlots()
+    {
+        const int arrAt = blockBuf.indexOf ("\"chain\"");
+        if (arrAt < 0) return;
+        const int openBracket = blockBuf.indexOf (arrAt, "[");
+        if (openBracket < 0) return;
+        if (slotScanFrom_ < openBracket + 1) slotScanFrom_ = openBracket + 1;
+
+        int i = slotScanFrom_, depth = 0, objStart = -1;
+        bool inStr = false, esc = false;
+        const int n = blockBuf.length();
+        for (; i < n; ++i)
+        {
+            const juce::juce_wchar c = blockBuf[i];
+            if (esc) { esc = false; continue; }
+            if (inStr) { if (c == '\\') esc = true; else if (c == '"') inStr = false; continue; }
+            if (c == '"') { inStr = true; continue; }
+            if (c == '{') { if (depth == 0) objStart = i; ++depth; continue; }
+            if (c == '}')
+            {
+                if (depth > 0 && --depth == 0 && objStart >= 0)
+                {
+                    const auto slot = blockBuf.substring (objStart, i + 1);
+                    // Parse-gate: a slot that does not parse is not reported,
+                    // and the cursor still advances so it is not retried.
+                    if (juce::JSON::parse (slot).isObject() && onSlot)
+                        onSlot (slotsReported_, slot);
+                    ++slotsReported_;
+                    slotScanFrom_ = i + 1;
+                    objStart = -1;
+                }
+                continue;
+            }
+            // The chain array's own closing bracket at depth 0 ends the scan.
+            if (c == ']' && depth == 0) { slotScanFrom_ = i; return; }
+        }
+    }
 
     void emitProse (const juce::String& s)
     {
@@ -122,6 +188,12 @@ private:
             {
                 blockBuf += pending;
                 pending.clear();
+
+                // Report any chain slot that has CLOSED since the last pump.
+                // Runs before the close-marker check so slots are reported
+                // as they land rather than in a burst at the end.
+                if (juce::String (markers[inBlock].type) == "chain")
+                    scanClosedSlots();
 
                 const int q = blockBuf.indexOf (markers[inBlock].close);
                 if (q < 0)

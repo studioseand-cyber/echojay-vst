@@ -15568,8 +15568,13 @@ void EchoJayEditor::paint(juce::Graphics& g)
         // Build card: slot lines + "Build this chain" button — height from
         // chainCardHeight(), the SAME helper the measure pass consumes
         static constexpr int kChainBtnH = 26;
-        bool hasChainBtn = !isUser && msg.chainData.isNotEmpty()
+        // STAGED CHAIN (spec section 4): the CARD and the BUTTON are now
+        // separate gates. Rows render as slots land; the button waits for
+        // onBlock. Before this they shared one flag, so gating the button
+        // would have hidden the rows too - the opposite of the feature.
+        bool hasChainCard = !isUser && msg.chainData.isNotEmpty()
                         && !msg.chainBuildSuppressed;   // item 6: cross-scope guard
+        bool hasChainBtn = hasChainCard && !msg.chainProvisional;
         int chainAreaH = isUser ? 0 : chainCardHeight(msg);
         // AI Compare figure card — appended LAST in the card stack, so bubbleH
         // stays textH+waveCardH and no other card's Y shifts. SAME helper as the
@@ -15964,7 +15969,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 // language: 11.5f, 16px lines, cyan names, dim settings),
                 // then the Build button below them
                 int chainLinesH = 0;
-                if (hasChainBtn)
+                if (hasChainCard)
                 {
                     auto cv = juce::JSON::parse(msg.chainData);
                     if (auto* co = cv.getDynamicObject())
@@ -15996,8 +16001,23 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                                juce::Justification::centredLeft, true);
                                 }
                                 ly += 16;
+                                // "why": one dim caption under its slot,
+                                // indented under the name. Absent why draws
+                                // nothing and costs no height (spec 3).
+                                const auto why = so->getProperty("why").toString().trim();
+                                if (why.isNotEmpty())
+                                {
+                                    g.setColour(C::text3);
+                                    g.setFont(juce::Font(juce::FontOptions(10.5f)));
+                                    g.drawText(why, lx + 12, ly, bubbleW - 32, kWhyH - 1,
+                                               juce::Justification::centredLeft, true);
+                                    g.setFont(juce::Font(juce::FontOptions(11.5f)));
+                                    ly += kWhyH;
+                                }
                             }
-                            chainLinesH = carr->size() * 16 + 4;
+                            // Measured from the SAME advances the loop made,
+                            // never recomputed from a second formula.
+                            chainLinesH = (ly - (drawY + bubbleH + 4)) + 4;
                         }
                 }
 
@@ -19431,12 +19451,26 @@ int EchoJayEditor::chainCardHeight(const ChatMsg& msg) const
 {
     if (msg.role != "assistant" || msg.chainData.isEmpty()) return 0;
     static constexpr int kBtnH = 26;
-    int lines = 0;
+    int lines = 0, captions = 0;
     auto v = juce::JSON::parse(msg.chainData);
     if (auto* o = v.getDynamicObject())
         if (auto* arr = o->getProperty("chain").getArray())
+        {
             lines = arr->size();
-    return lines * 16 + (lines > 0 ? 4 : 0) + kBtnH + 8;
+            // A "why" caption adds a second, dimmer line under its slot.
+            // Counted HERE and advanced by the SAME per-slot amounts in the
+            // paint loop (16 per row, kWhyH per caption) — this helper is the
+            // one height source and paint measures nothing.
+            for (auto& e : *arr)
+                if (auto* so = e.getDynamicObject())
+                    if (so->getProperty("why").toString().trim().isNotEmpty())
+                        ++captions;
+        }
+    // No Build button while the block is still open (spec section 4): the
+    // rows are on screen, the button is not, and the card must not reserve
+    // space for a button that is not being drawn.
+    return lines * 16 + captions * kWhyH + (lines > 0 ? 4 : 0)
+         + (msg.chainProvisional ? 0 : kBtnH) + 8;
 }
 
 // The SINGLE height source for the AI Compare figure card. Both the measure
@@ -22236,6 +22270,12 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         // (what the stage row displays). See onThinkingDelta.
         juce::String reasoningTail;
         juce::String shownUnit;
+        // STAGED CHAIN (spec section 4): slots reported by onSlot, rendered
+        // as they land. chainProvisional stays true until onBlock replaces
+        // the payload with the complete one, so the Build button cannot
+        // appear on a chain that has not closed.
+        juce::StringArray slotJsons;
+        bool chainProvisional = false;
     };
     auto st = std::make_shared<StreamTurn>();
     st->provisionalId = provisionalId;
@@ -22272,6 +22312,7 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         auto& m     = ed->chatMessages[(size_t) pIdx];
         m.content   = stp->prose;
         m.chainData = stp->chainJson;
+        m.chainProvisional = stp->chainProvisional;
         ed->resized();
         ed->repaint();
     };
@@ -22281,12 +22322,25 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         stp->prose += s;
         paintBubble();
     };
+    // Slots land one at a time and render as rows immediately. The payload
+    // assembled here is PROVISIONAL and deliberately minimal: it carries the
+    // slots and nothing else, because it exists only to be drawn. Nothing
+    // reads it but the card renderer — applyChainEdits and the Build button
+    // see only what onBlock delivers.
+    st->parser.onSlot = [paintBubble, stp] (int, const juce::String& slotJson)
+    {
+        stp->slotJsons.add (slotJson);
+        stp->chainJson = "{\"chain\":[" + stp->slotJsons.joinIntoString (",") + "]}";
+        stp->chainProvisional = true;
+        paintBubble();
+    };
     st->parser.onBlock = [paintBubble, stp] (const EJStreamBlockParser::BlockEvent& ev)
     {
         if (ev.type == "chain")
         {
             stp->chainJson = ev.payload;   // complete by construction (rule 1)
-            paintBubble();                 // the card + Build resolve at once
+            stp->chainProvisional = false; // and only NOW may Build appear
+            paintBubble();
         }
         // gain / ask / edit: resolved at done by handleChatReply — see the
         // header comment for why they wait a breath.
