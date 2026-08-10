@@ -2220,6 +2220,350 @@ void testRetryRule()
 // stepped shapes while every shape the strict rule exists to keep out -- the
 // meters, LFOs and mirrors -- still refuses. Loosening a guard is how defects
 // get in; this test is the difference between relaxing and hoping.
+/** RECORDED IS COUNTED.
+    ==============================================================================
+
+    Written and RUN BEFORE the fix, on 10 Aug 2026, because the diagnosis it
+    encodes was reasoned from a source read and a source read is a hypothesis.
+    If this passed on the unfixed code the diagnosis was wrong and the fix would
+    have been aimed at nothing.
+
+    THE SUBJECT IS REAL. `bloom` (AudioUnit:Effects/aufx,BlmA,OekS) carries
+    EIGHTEEN init_failed rows in the live ledger, 7 Aug 10:38 to 7 Aug 15:15,
+    plus a death -- and was still being offered by the worklist on 10 Aug
+    11:56. Every one of those rows is on disk. None of them was ever counted,
+    because the retry arithmetic lives in the crash-recovery branch and an
+    ordinary failed load never goes near it: it plants a stake and closes it
+    through endLoad, which appends the row and decides nothing.
+
+    So the ledger held nineteen pieces of evidence about one plugin and the
+    quarantine rule consulted none of them. That is what this asserts against.
+
+    Nothing here simulates a crash. There is no TestCrashOverride, no orphaned
+    stake, no watchdog: just ten ordinary failed loads, each in its own Ledger
+    over the same root, which is what ten separate launches look like from
+    disk.
+*/
+void testRecordedIsCounted()
+{
+    auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                    .getChildFile ("ejmap-counted-test-" + juce::Uuid().toDashedString());
+    root.createDirectory();
+
+    const juce::String pid = "AudioUnit:Effects/aufx,BlmA,OekS";   // bloom
+
+    // ONE ORDINARY FAILED LOAD, through the path every real one takes: a stake
+    // written before control passes to plugin code, then a close carrying the
+    // outcome. A fresh Ledger each time, so every count is read off disk.
+    auto failOnce = [&] (ejmap::LoadOutcome o)
+    {
+        ejmap::Ledger l (root);
+        l.setUnattended (true);
+        l.beginLoad (pid, "bloom", "oeksound", "AudioUnit", "1.0.4",
+                     "load", "PluginHost::load");
+
+        ejmap::LedgerRecord r;
+        r.pluginId = pid; r.name = "bloom"; r.vendor = "oeksound";
+        r.format = "AudioUnit"; r.version = "1.0.4"; r.stage = "load";
+        r.outcome = o;
+        r.detail  = "An OS error occurred during initialisation of the plug-in (-1)";
+        l.endLoad (r);
+    };
+    auto quarantined = [&]
+    {
+        ejmap::Ledger l (root);
+        return l.isQuarantined (pid);
+    };
+
+    failOnce (ejmap::LoadOutcome::initFailed);
+    check (! quarantined(),
+           "counted: one recorded load failure is a bad roll, not a verdict");
+
+    failOnce (ejmap::LoadOutcome::initFailed);
+    check (! quarantined(),
+           "counted: TWO recorded load failures do not quarantine");
+
+    failOnce (ejmap::LoadOutcome::initFailed);
+    check (quarantined(),
+           "counted: THREE RECORDED LOAD FAILURES QUARANTINE -- a row that was "
+           "written is a row that counts");
+
+    failOnce (ejmap::LoadOutcome::initFailed);
+    check (quarantined(),
+           "counted: and it stays quarantined at row 4 -- quarantine is manual to undo");
+
+    for (int i = 5; i <= 10; ++i)
+        failOnce (ejmap::LoadOutcome::initFailed);
+
+    check (quarantined(),
+           "counted: ten failures do not un-quarantine it either");
+
+    // EVERY ROW IS ON DISK EITHER WAY. The defect was never that the evidence
+    // was missing -- bloom's eighteen rows prove it was there -- so the test
+    // pins that the fix did not achieve its result by writing fewer rows.
+    {
+        juce::StringArray lines;
+        lines.addLines (root.getChildFile ("ledger.json").loadFileAsString());
+        int n = 0;
+        for (const auto& line : lines)
+            if (line.contains (pid)) ++n;
+        check (n == 10,
+               "counted: all ten failures are still RECORDED, not swallowed by the "
+               "decision -- recorded and counted are the same event, not a trade");
+    }
+
+    root.deleteRecursively();
+
+    //==========================================================================
+    // THE COUNT SPANS THE FAILURE FAMILY, not one outcome string.
+    //
+    // This is the half of the diagnosis that is easiest to build wrong. The
+    // rule it replaced counted rows matching a single literal ("timeout"), so
+    // a plugin that hung once and then failed to instantiate twice reached no
+    // threshold at all -- three recorded failures, three separate launches,
+    // and every counter reading one. Weiss Deess is the live instance: five
+    // timeouts and three init_failed rows, unquarantined.
+    //
+    // The outcomes below are deliberately all DIFFERENT, and deliberately
+    // ordered so that no single one of them reaches its own bar.
+    auto mixedRoot = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                         .getChildFile ("ejmap-mixed-test-" + juce::Uuid().toDashedString());
+    mixedRoot.createDirectory();
+    {
+        const juce::String weiss = "AudioUnit:Effects/aufx,fndm,SfTb";   // Weiss Deess
+
+        auto failWith = [&] (ejmap::LoadOutcome o, const juce::String& stage)
+        {
+            ejmap::Ledger l (mixedRoot);
+            l.beginLoad (weiss, "Weiss Deess", "Softube", "AudioUnit", "2.5.62",
+                         stage, "PluginHost::load");
+            ejmap::LedgerRecord r;
+            r.pluginId = weiss; r.name = "Weiss Deess"; r.format = "AudioUnit";
+            r.stage = stage; r.outcome = o; r.detail = "recorded";
+            l.endLoad (r);
+        };
+        auto isQ = [&] { ejmap::Ledger l (mixedRoot); return l.isQuarantined (weiss); };
+
+        failWith (ejmap::LoadOutcome::timeout, "load");
+        check (! isQ(), "spans: one hang is a bad roll");
+        failWith (ejmap::LoadOutcome::initFailed, "load");
+        check (! isQ(), "spans: a hang and an init failure is two, and two is not three");
+        failWith (ejmap::LoadOutcome::noParams, "load");
+        check (isQ(),
+               "spans: THREE FAILURES SPELLED THREE DIFFERENT WAYS REACH THE THRESHOLD "
+               "-- the count is over the failure family, not over one outcome string");
+    }
+    mixedRoot.deleteRecursively();
+
+    //==========================================================================
+    // AND THE EXCLUSIONS, EACH TESTED BY ATTEMPTING THE THING IT REFUSES.
+    //
+    // These matter more than the positive cases. "Count every failure" is one
+    // careless edit away from quarantining 300 VST3 bundles for declaring no
+    // audio-effect types, or a vendor's whole catalogue because an iLok was
+    // unplugged -- and quarantine is manual to undo, so a wrong withdrawal is
+    // silent and permanent until a human notices a plugin missing.
+    auto excludeRoot = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                           .getChildFile ("ejmap-exclude-test-" + juce::Uuid().toDashedString());
+    excludeRoot.createDirectory();
+    {
+        auto tenOf = [&] (const juce::String& id, ejmap::LoadOutcome o,
+                          const juce::String& stage)
+        {
+            for (int i = 0; i < 10; ++i)
+            {
+                ejmap::Ledger l (excludeRoot);
+                l.beginLoad (id, "Subject", "V", "VST3", "1.0", stage, "probe");
+                ejmap::LedgerRecord r;
+                r.pluginId = id; r.name = "Subject"; r.format = "VST3";
+                r.stage = stage; r.outcome = o; r.detail = "recorded";
+                l.endLoad (r);
+            }
+            ejmap::Ledger l (excludeRoot);
+            return l.isQuarantined (id);
+        };
+
+        check (! tenOf ("/Library/Audio/Plug-Ins/VST3/Mini V3.vst3",
+                        ejmap::LoadOutcome::noTypes, "scan"),
+               "excluded: TEN no_types SCANS DO NOT QUARANTINE -- a bundle with no "
+               "audio-effect types is a fact about the file, re-read every scan, and "
+               "4,249 such rows are on the live ledger");
+
+        check (! tenOf ("AudioUnit:Effects/aufx,LICN,test",
+                        ejmap::LoadOutcome::licenseRefused, "load"),
+               "excluded: TEN LICENCE REFUSALS DO NOT QUARANTINE -- an unplugged iLok "
+               "is a fact about the machine, and this would withdraw a vendor's whole "
+               "catalogue overnight");
+
+        check (! tenOf ("AudioUnit:Effects/aufx,NOED,test",
+                        ejmap::LoadOutcome::noEditor, "load"),
+               "excluded: TEN no_editor ROWS DO NOT QUARANTINE -- the plugin loaded, "
+               "and the sweep runs headless and maps it fine");
+
+        check (! tenOf ("AudioUnit:Effects/aufx,GOOD,test",
+                        ejmap::LoadOutcome::ok, "load"),
+               "excluded: and a plugin that keeps working is never withdrawn");
+    }
+    excludeRoot.deleteRecursively();
+
+    //==========================================================================
+    // THE TWO ASYMMETRIC THRESHOLDS SURVIVED THE MOVE.
+    //
+    // They were measured, they are not N=3, and a funnel that quietly
+    // regularised them would cost a 4.5-minute rescan per scan hang and two
+    // extra watchdog deadlines per load hang. Both are asserted here because
+    // "we unified the rule" is exactly how a measured exception gets lost.
+    auto hangRoot = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                        .getChildFile ("ejmap-hang-test-" + juce::Uuid().toDashedString());
+    hangRoot.createDirectory();
+    {
+        auto hang = [&] (const juce::String& id, const juce::String& stage)
+        {
+            ejmap::Ledger l (hangRoot);
+            l.beginLoad (id, "Hang", "V", "VST3", "1.0", stage, "findAllTypesForFile");
+            ejmap::LedgerRecord r;
+            r.pluginId = id; r.name = "Hang"; r.format = "VST3";
+            r.stage = stage; r.outcome = ejmap::LoadOutcome::timeout;
+            r.detail = "deadline expired";
+            l.endLoad (r);
+        };
+        auto isQ = [&] (const juce::String& id)
+        { ejmap::Ledger l (hangRoot); return l.isQuarantined (id); };
+
+        const juce::String scanHang = "/Library/Audio/Plug-Ins/VST3/TDR SlickEQ M.vst3";
+        hang (scanHang, "scan");
+        check (isQ (scanHang),
+               "thresholds: A SCAN HANG QUARANTINES ON THE FIRST TIMEOUT -- it blocks "
+               "every bundle behind it, and sparing it costs a full rescan every time");
+
+        const juce::String loadHang = "AudioUnit:Effects/aufx,LOTS,Cyma";  // Cymatics Lotus
+        hang (loadHang, "load");
+        check (! isQ (loadHang),
+               "thresholds: a LOAD hang gets one retry -- Cymatics Lotus instantiates "
+               "in 407 ms and was quarantined by a deadline that was simply too tight");
+        hang (loadHang, "load");
+        check (isQ (loadHang),
+               "thresholds: and the second one withdraws it. A hang costs a whole "
+               "deadline, so it gets one retry, not two");
+    }
+    hangRoot.deleteRecursively();
+}
+
+/** THE COST OF COUNTING, AT THE SIZE THE LEDGER ACTUALLY IS.
+
+    The live ledger on the mapping machine is 144,911 rows / 54 MB, and it only
+    grows. A decision that reads the whole file is affordable once per launch
+    and ruinous once per row, so the number is measured here rather than
+    assumed -- and it is measured at full size, because a 100-row fixture would
+    have said everything was fine.
+
+    Not a threshold anyone should tune: it is a REGRESSION GUARD. It exists so
+    that the next person who makes the decision read the file again finds out
+    from a gate rather than from a night that did not finish.
+*/
+void testCountingCost()
+{
+    auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                    .getChildFile ("ejmap-cost-test-" + juce::Uuid().toDashedString());
+    root.createDirectory();
+
+    // A ledger the size of the real one. Written raw, in one stream, because
+    // 145,000 individual appends would be measuring the wrong thing.
+    const int kRows = 144911;
+    const juce::String subject = "AudioUnit:Effects/aufx,COST,test";
+    {
+        juce::FileOutputStream out (root.getChildFile ("ledger.json"));
+        juce::String buf;
+        for (int i = 0; i < kRows; ++i)
+        {
+            buf << "{\"run_id\":\"20260810T120000-abcd\",\"plugin_id\":\""
+                << (i % 900 == 0 ? subject : "AudioUnit:Effects/aufx,f" + juce::String (i % 900).paddedLeft ('0', 3) + ",test")
+                << "\",\"stage\":\"load\",\"name\":\"Filler " << i
+                << "\",\"vendor\":\"V\",\"format\":\"AudioUnit\",\"version\":\"1.0\","
+                   "\"outcome\":\"ok\",\"detail\":\"idx 17: anchors 0.00->-60.0 dB, "
+                   "1.00->+12.0 dB, monotonic over 9 samples, unit family db, "
+                   "readback verified by set-then-read; 24 parameters swept, 18 usable\","
+                   "\"at\":\"2026-08-10T12:00:00.000Z\",\"param_count\":24,\"load_ms\":2214}\n";
+            if (buf.length() > 1 << 16) { out.writeText (buf, false, false, nullptr); buf.clear(); }
+        }
+        out.writeText (buf, false, false, nullptr);
+        out.flush();
+    }
+
+    const auto bytes = root.getChildFile ("ledger.json").getSize();
+    check (bytes > 50 * 1024 * 1024,
+           "cost: the fixture is the size of the real ledger (54 MB), not a toy -- "
+           "a 100-row fixture would have said everything was fine");
+
+    ejmap::Ledger l (root);
+
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    auto ev = l.retryEvidenceFor (subject, "load");
+    const auto onePassMs = juce::Time::getMillisecondCounterHiRes() - t0;
+
+    check (ev.attempts > 0, "cost: the pass actually read the subject's rows");
+
+    // TEN FAILED LOADS, through the real path, with that ledger underneath.
+    // This is the number that decides whether counting can live in the append.
+    const auto t1 = juce::Time::getMillisecondCounterHiRes();
+    for (int i = 0; i < 10; ++i)
+    {
+        l.beginLoad (subject, "Cost", "V", "AudioUnit", "1.0", "load", "PluginHost::load");
+        ejmap::LedgerRecord r;
+        r.pluginId = subject; r.name = "Cost"; r.format = "AudioUnit";
+        r.stage = "load"; r.outcome = ejmap::LoadOutcome::initFailed;
+        r.detail = "An OS error occurred during initialisation of the plug-in (-1)";
+        l.endLoad (r);
+    }
+    const auto tenFailuresMs = juce::Time::getMillisecondCounterHiRes() - t1;
+
+    // A HUNDRED SUCCESSFUL LOADS. The common case by two orders of magnitude:
+    // 140,468 of the live ledger's rows are `ok`, so if a success pays the
+    // cost of a decision it does not need, the sweep pays it 1,300 times a
+    // night.
+    const auto t2 = juce::Time::getMillisecondCounterHiRes();
+    for (int i = 0; i < 100; ++i)
+    {
+        l.beginLoad (subject, "Cost", "V", "AudioUnit", "1.0", "scan", "probe");
+        ejmap::LedgerRecord r;
+        r.pluginId = subject; r.name = "Cost"; r.format = "AudioUnit";
+        r.stage = "scan"; r.outcome = ejmap::LoadOutcome::ok;
+        r.detail = "1 description(s)";
+        l.endLoad (r);
+    }
+    const auto hundredOkMs = juce::Time::getMillisecondCounterHiRes() - t2;
+
+    // Reported as TOTALS with the passes named, not as a per-row average: the
+    // ten failures do not each cost a tenth of that number. The first pays for
+    // the tally, one more pays for the quarantine evidence, and the other
+    // eight are free -- an average would hide exactly the property being
+    // asserted.
+    std::cout << "COST at " << kRows << " rows / " << (bytes / (1024 * 1024)) << " MB:"
+              << "  one full pass " << juce::String (onePassMs, 1) << " ms"
+              << " | 10 failed loads " << juce::String (tenFailuresMs, 1) << " ms total"
+              << " (~" << juce::String (tenFailuresMs / juce::jmax (1.0, onePassMs), 1)
+              << " passes, not 10)"
+              << " | 100 ok rows " << juce::String (hundredOkMs, 1) << " ms total"
+              << " (" << juce::String (hundredOkMs / 100.0, 2) << " ms each, no pass)"
+              << std::endl;
+
+    // A SUCCESS MUST NOT PAY FOR A DECISION IT DOES NOT NEED. One full pass is
+    // the unit of ruin here; a hundred of them would be 100x this fixture's
+    // read. The bound is deliberately generous -- it is catching an order of
+    // magnitude, not a regression of milliseconds.
+    check (hundredOkMs < onePassMs * 2.0,
+           "cost: ONE HUNDRED `ok` ROWS COST LESS THAN TWO FULL PASSES -- a "
+           "successful load does not re-read the ledger");
+
+    // And a failure, which DOES need the decision, pays for the file at most
+    // once per launch rather than once per row.
+    check (tenFailuresMs < onePassMs * 3.0,
+           "cost: TEN FAILURES COST LESS THAN THREE FULL PASSES -- the count is "
+           "read from the file once, then carried");
+
+    root.deleteRecursively();
+}
+
 void testSteppedSanitizer()
 {
     using Table = juce::Array<juce::Array<float>>;
@@ -2301,6 +2645,27 @@ void testSteppedSanitizer()
 
 void testSweepRules()
 {
+    // NOTE ON WHAT IS *NOT* TESTED HERE, added 10 Aug 2026 with the skip
+    // cascade extraction.
+    //
+    // "SWEEP WOULD OPEN" said 1,460 for a run that could open 40, because the
+    // banner counted worklist rows and applied none of the sweep's own
+    // filters. The fix makes the projection and the run call ONE function,
+    // MainComponent::decideSweep, and the obvious next move is a test here
+    // that asserts the cascade's behaviour.
+    //
+    // Deliberately not done: this file cannot instantiate MainComponent, so
+    // such a test would re-implement the cascade in a lambda -- a THIRD
+    // implementation, guarding two others by agreeing with neither. That is
+    // the defect being fixed, wearing a test's clothes.
+    //
+    // The guard is at RUN TIME instead, and it is a better one: endSweep
+    // reconciles the forecast against what the run actually did and says so on
+    // screen, every run, against the real catalogue. It earned itself
+    // immediately -- it caught a genuine error in its own first version, where
+    // a DRY RUN reported "forecast 2, actual 0" because a dry run opens a
+    // plugin without recording an outcome for it.
+
     // ---- 1. sweepable(): which products the loop opens ----------------------
     // The mirror of categorise.py's sweepable(). It is deliberately NOT
     // "disposition == sweep": a product both arms refused DIFFERENTLY is still
@@ -2951,6 +3316,8 @@ int main (int, char**)
     testMarks();
     testUnitFamilyRule();
     testRetryRule();
+    testRecordedIsCounted();
+    testCountingCost();
     testSteppedSanitizer();
     testSweepRules();
     testMapperIdentity();

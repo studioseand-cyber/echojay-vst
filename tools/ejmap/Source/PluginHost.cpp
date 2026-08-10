@@ -107,6 +107,13 @@ PluginHost::LoadResult PluginHost::load (const juce::PluginDescription& desc, Wa
         // Distinguish a licence refusal from a generic failure. ejextract already
         // carries this outcome and the queue treats it differently: a licence
         // refusal is not the tester's fault and should not quarantine.
+        //
+        // THE OTHER END OF THAT RULE IS ejmap::isCountedFailureOutcome
+        // (EjmapLedger.h), which deliberately leaves license_refused OUT of the
+        // failures the retry rule counts, and says at length why. The two must
+        // move together: naming a distinct outcome here buys nothing if the
+        // counter treats it as an ordinary failure, and an unplugged iLok would
+        // then withdraw a whole vendor's catalogue in one unattended night.
         const auto lower = error.toLowerCase();
         const bool licence = lower.contains ("licen") || lower.contains ("authoris")
                           || lower.contains ("authoriz") || lower.contains ("activat")

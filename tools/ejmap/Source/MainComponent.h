@@ -8042,17 +8042,31 @@ public:
         // relaunch looked like no progress and the run stopped at the ceiling.
         sweep.progressBase = juce::jmax (0, ejmap::sweepProgressCount (ledger.getRoot()));
 
+        // WHAT THIS RUN WILL OPEN, from the run's own cascade rather than from
+        // the length of the worklist. Kept on the run record so the end-of-run
+        // summary can reconcile the forecast against what happened: a
+        // difference is a real event (a plugin quarantined mid-run, a
+        // categories.json written while the run was walking) and it is worth a
+        // line, where a silent difference is how a number stops meaning
+        // anything.
         {
             const auto wl = collectWorklist();
-            sweepSay ("SWEEP will open " + juce::String (sweep.work.size()) + " plugin(s): "
-                        + juce::String (wl.toSweep.size()) + " unmapped, "
+            sweep.forecast = forecastSweep (sweep.cats);
+            sweepSay ("SWEEP will open " + juce::String (sweep.forecast.wouldOpen)
+                        + " of " + juce::String (sweep.forecast.worklistRows)
+                        + " worklist row(s): " + juce::String (wl.toSweep.size()) + " unmapped, "
                         + juce::String (wl.toFinish.size()) + " parked, "
-                        + juce::String (wl.unqueried.size()) + " unqueried; skipping "
-                        + juce::String (wl.nMapped) + " already mapped, "
-                        + juce::String (wl.nUnmappable) + " unmappable, "
-                        + juce::String (wl.flagged.size()) + " flagged");
+                        + juce::String (wl.unqueried.size()) + " unqueried"
+                        + (sweep.forecast.totalSkipped() > 0
+                             ? "; declining " + juce::String (sweep.forecast.totalSkipped())
+                                 + " on the way past (" + sweep.forecast.describeSkips() + ")"
+                             : juce::String())
+                        + ". Not on the worklist: " + juce::String (wl.nMapped)
+                        + " already mapped, " + juce::String (wl.nUnmappable)
+                        + " unmappable, " + juce::String (wl.flagged.size()) + " flagged");
         }
-        sweepSay ("SWEEP over " + juce::String (sweep.work.size()) + " worklist row(s), "
+        sweepSay ("SWEEP run " + ledger.currentRunId() + " over "
+                    + juce::String (sweep.work.size()) + " worklist row(s), "
                     + juce::String ((int) sweep.cats.size()) + " categorised product(s)"
                     + (dryRun ? "   [DRY RUN: nothing is loaded or written]" : "")
                     + (wantCaptures ? "   [editors OPEN: captures on, modals can block]"
@@ -8078,6 +8092,132 @@ public:
         return true;
     }
 
+    /** One product's categorisation, as categories.json records it. Declared
+        here rather than beside SweepRun because the cascade below is the first
+        thing that needs it, and the cascade is what everything else defers to.
+    */
+    struct SweepCategory
+    {
+        juce::String category, disposition, why, kind;
+        bool sweepable = false, hedged = false;
+    };
+
+    /** WHAT THE SWEEP WILL DO WITH ONE PLUGIN, decided in one place.
+
+        THE AUTHORITY, and it has to be, because the number a mapper reads
+        before pressing Sweep All is the number this produces. It was 1,460 for
+        a run that could open 40, because the banner counted WORKLIST ROWS and
+        the worklist knows nothing about categories: a row is on it if the
+        server says the plugin is unmapped, and the sweep then declines to open
+        it for three further reasons the banner never applied.
+
+        A forecast that re-implements the cascade is not a forecast, it is a
+        second cascade that agrees for a while. So the projection and the run
+        call THIS, and the only way for them to disagree is for the world to
+        change between the two -- which is a real thing that happens and is
+        reported as such, rather than a defect in arithmetic.
+
+        The ORDER is load-bearing and is the run's order, unchanged:
+
+          1. category lookup   no entry in categories.json -> nothing decides
+                               what to ask this plugin about
+          2. sweepable         an entry that refuses, or that both arms refused
+                               differently, is still a refusal
+          3. quarantine        the retry rule has withdrawn this binary
+
+        Quarantine is checked LAST on purpose: an uncategorised plugin that is
+        also quarantined is reported as uncategorised, because that is the
+        first reason it would not have been opened and the operator's next
+        action follows from the first reason, not the last.
+    */
+    struct SweepDecision
+    {
+        juce::String outcome;      // empty means the sweep opens this plugin
+        juce::String detail, category;
+        bool hedged = false;
+
+        bool willOpen() const { return outcome.isEmpty(); }
+    };
+
+    SweepDecision decideSweep (const ScannedPlugin& sp,
+                               const std::map<juce::String, SweepCategory>& cats) const
+    {
+        SweepDecision d;
+        const auto key = categoryKeyFor (sp.desc);
+        auto it = cats.find (key);
+
+        if (it == cats.end())
+        {
+            d.outcome = "skipped_uncategorised";
+            d.detail  = "no entry in categories.json for " + key;
+        }
+        else if (! it->second.sweepable)
+        {
+            d.outcome = "skipped_" + it->second.disposition;
+            d.detail  = it->second.why.isNotEmpty() ? it->second.why : it->second.kind;
+        }
+        else if (ledger.isQuarantined (sp.pluginId()))
+        {
+            d.outcome = "skipped_quarantined";
+            d.detail  = "the retry rule has withdrawn this binary";
+        }
+        else
+        {
+            d.category = it->second.category;
+            d.hedged   = it->second.hedged;
+        }
+        return d;
+    }
+
+    /** WHAT A RUN STARTED NOW WOULD ACTUALLY OPEN, and what it would decline
+        and why -- the worklist put through the run's own cascade.
+
+        Reads disk, asserts nothing, opens no plugin. It is the answer to the
+        one question worth asking before pressing Sweep All, and it is the
+        question the old banner was not answering.
+    */
+    struct SweepForecast
+    {
+        int worklistRows = 0;
+        int wouldOpen    = 0;
+        std::map<juce::String, int> skipped;   // by the run's own outcome names
+
+        int totalSkipped() const
+        {
+            int n = 0;
+            for (const auto& kv : skipped) n += kv.second;
+            return n;
+        }
+
+        /** Named for what it is: the skip classes, in the run's vocabulary,
+            joined for one line of screen. */
+        juce::String describeSkips() const
+        {
+            juce::StringArray parts;
+            for (const auto& kv : skipped)
+                if (kv.second > 0)
+                    parts.add (juce::String (kv.second) + " "
+                                 + kv.first.fromFirstOccurrenceOf ("skipped_", false, false)
+                                       .replaceCharacter ('_', ' '));
+            return parts.isEmpty() ? juce::String ("nothing") : parts.joinIntoString (", ");
+        }
+    };
+
+    SweepForecast forecastSweep (const std::map<juce::String, SweepCategory>& cats) const
+    {
+        SweepForecast f;
+        for (const auto& sp : collectWorklist().ordered())
+        {
+            ++f.worklistRows;
+            const auto d = decideSweep (sp, cats);
+            if (d.willOpen()) ++f.wouldOpen;
+            else              ++f.skipped[d.outcome];
+        }
+        return f;
+    }
+
+    SweepForecast forecastSweep() const { return forecastSweep (loadCategories()); }
+
     /** ONE plugin. Returns false when the run is over.
 
         The unit of work is one plugin because that is the unit the crash path,
@@ -8093,31 +8233,12 @@ public:
         if (sweep.limit > 0 && sweep.done >= sweep.limit) return false;
 
         const auto sp = sweep.work.getReference (sweep.index++);
-        const auto key = categoryKeyFor (sp.desc);
-        auto it = sweep.cats.find (key);
 
-        juce::String outcome, detail, category;
-        bool hedged = false;
-        if (it == sweep.cats.end())
-        {
-            outcome = "skipped_uncategorised";
-            detail  = "no entry in categories.json for " + key;
-        }
-        else if (! it->second.sweepable)
-        {
-            outcome = "skipped_" + it->second.disposition;
-            detail  = it->second.why.isNotEmpty() ? it->second.why : it->second.kind;
-        }
-        else if (ledger.isQuarantined (sp.pluginId()))
-        {
-            outcome = "skipped_quarantined";
-            detail  = "the retry rule has withdrawn this binary";
-        }
-        else
-        {
-            category = it->second.category;
-            hedged   = it->second.hedged;
-        }
+        const auto decision = decideSweep (sp, sweep.cats);
+        const auto outcome  = decision.outcome;
+        const auto category = decision.category;
+        const bool hedged   = decision.hedged;
+        auto detail         = decision.detail;
 
         if (outcome.isNotEmpty())
         {
@@ -8441,9 +8562,161 @@ public:
             t << "\n  THE BREAKER FIRED on " << sweep.consecutive << " consecutive '"
               << sweep.breakerClass << "'. " << breakerAdvice (sweep.breakerClass) << "\n";
 
+        // THE FORECAST, RECONCILED. A projection nobody checks afterwards is a
+        // number nobody can trust the next time it is printed -- and this one
+        // is printed on the main screen, before the button that costs a night.
+        //
+        // A difference is not automatically a defect. The cascade is evaluated
+        // twice against a world that moves between them: a plugin quarantined
+        // by a failure mid-run was forecast as openable and is then skipped,
+        // and that is the retry rule working. Naming the gap is what
+        // distinguishes those from a forecast that was simply wrong.
+        {
+            // FROM THE RUN'S OWN TWO COUNTERS, not re-derived from byOutcome.
+            // The first version of this line summed the outcome classes, and
+            // a DRY RUN records no outcome for a plugin it opens -- so it
+            // reported "forecast 2, actual 0" on a run that did exactly what
+            // was forecast. sweep.done counts what was opened (a skip returns
+            // before it) and sweep.skipped counts what was declined, which is
+            // the same pair the cascade decides between.
+            const int opened  = sweep.done;
+            const int skipped = sweep.skipped;
+
+            t << "\n  THE FORECAST, CHECKED\n";
+            t << "     forecast " << sweep.forecast.wouldOpen << " to open, "
+              << sweep.forecast.totalSkipped() << " to decline"
+              << "  |  actual " << opened << " opened, " << skipped << " declined";
+
+            const bool ranOut = sweep.stopped || sweep.tripped
+                             || (sweep.limit > 0 && sweep.done >= sweep.limit);
+            if (ranOut)
+                t << "   (the run did not reach the end of the worklist, so a "
+                     "shortfall here is expected)";
+            else if (opened != sweep.forecast.wouldOpen || skipped != sweep.forecast.totalSkipped())
+                t << "\n     THE RUN AND THE FORECAST DISAGREE. Both used the same "
+                     "cascade, so something changed underneath it while the run "
+                     "walked: a binary quarantined by its own failures, or a "
+                     "categories.json written mid-run. Worth one look at the log.";
+            else
+                t << "   (agree)";
+            t << "\n";
+        }
+
+        t << "\n  THIS RUN ONLY: " << ledger.currentRunId()
+          << ". A supervised campaign is many runs, and summing them counts the "
+             "same declined plugin once per relaunch -- `--sweep-report` reads "
+             "every run's log and rolls up by plugin instead.\n";
         t << "\n  log: " << sweep.log.getFullPathName();
         sweepSay (t);
         sweepProgress();
+    }
+
+    /** THE CAMPAIGN, AS OPPOSED TO THE LAST CHILD PROCESS.
+        ======================================================================
+
+        A supervised sweep is many runs -- 51 of them on this machine's ledger
+        so far -- and every summary before this one described the run that
+        happened to go last. Reading the per-run logs and ADDING them is worse
+        than useless: the six relaunches of 7 Aug 12:01-12:12 each declined the
+        same 321 rows and mapped nothing, so a sum reports 1,926 skips that
+        were 321 plugins seen six times.
+
+        So this reports two numbers that are different on purpose: ROWS (what
+        the runs did) and DISTINCT PLUGINS (what the catalogue actually
+        contains). Their ratio is the re-skip factor, and it is the thing that
+        says whether a large skip count is a large problem or a small problem
+        counted repeatedly.
+
+        Reads the logs, opens nothing, asserts nothing.
+    */
+    void reportSweepRuns (bool perRun) const
+    {
+        auto logs = ledger.getRoot().findChildFiles (juce::File::findFiles, false, "sweep-*.jsonl");
+        logs.sort();
+
+        std::map<juce::String, int> rowsByOutcome;
+        std::map<juce::String, std::set<juce::String>> pluginsByOutcome;
+        int totalRows = 0;
+
+        std::cout << "SWEEP REPORT over " << logs.size() << " run log(s) in "
+                  << ledger.getRoot().getFullPathName() << std::endl;
+
+        if (perRun)
+            std::cout << "\n  PER RUN (each line is one process; a relaunch is a new run)\n";
+
+        for (const auto& f : logs)
+        {
+            std::map<juce::String, int> runOutcomes;
+            int runRows = 0;
+
+            for (const auto& line : juce::StringArray::fromLines (f.loadFileAsString()))
+            {
+                if (line.trim().isEmpty()) continue;
+                auto v = juce::JSON::parse (line);
+                const auto outcome = v.getProperty ("outcome", "?").toString();
+                const auto pid     = v.getProperty ("plugin_id", "").toString();
+
+                ++runRows; ++totalRows;
+                ++runOutcomes[outcome];
+                ++rowsByOutcome[outcome];
+                if (pid.isNotEmpty())
+                    pluginsByOutcome[outcome].insert (pid);
+            }
+
+            if (perRun && runRows > 0)
+            {
+                juce::StringArray parts;
+                for (const auto& kv : runOutcomes)
+                    parts.add (kv.first + " " + juce::String (kv.second));
+                std::cout << "  " << f.getFileNameWithoutExtension()
+                                       .fromFirstOccurrenceOf ("sweep-", false, false)
+                          << "  " << juce::String (runRows).paddedLeft (' ', 5) << " rows   "
+                          << parts.joinIntoString (", ") << std::endl;
+            }
+        }
+
+        std::cout << "\n  ROLLED UP BY OUTCOME -- rows are what the runs DID, plugins are\n"
+                     "  what the CATALOGUE contains. A ratio above 1 is the same plugin\n"
+                     "  handled again on a later run, not more work.\n\n"
+                  << "     " << juce::String ("outcome").paddedRight (' ', 26)
+                  << juce::String ("rows").paddedLeft (' ', 7)
+                  << juce::String ("plugins").paddedLeft (' ', 9)
+                  << juce::String ("re-seen").paddedLeft (' ', 9) << std::endl;
+
+        for (const auto& kv : rowsByOutcome)
+        {
+            const int plugins = (int) pluginsByOutcome[kv.first].size();
+            std::cout << "     " << kv.first.paddedRight (' ', 26)
+                      << juce::String (kv.second).paddedLeft (' ', 7)
+                      << juce::String (plugins).paddedLeft (' ', 9)
+                      << juce::String (plugins > 0
+                                         ? juce::String (kv.second / (double) plugins, 1) + "x"
+                                         : juce::String ("-")).paddedLeft (' ', 9)
+                      << std::endl;
+        }
+
+        std::cout << "\n  " << totalRows << " rows across " << logs.size() << " run(s)."
+                  << std::endl;
+
+        // THE QUESTION THIS WAS BUILT TO ANSWER, asked explicitly rather than
+        // left for the reader to spot in the table: a large uncategorised
+        // count is either a lot of products nobody has categorised, or a few
+        // seen many times, and those need opposite responses.
+        const auto unc = pluginsByOutcome["skipped_uncategorised"];
+        const int  uncRows = rowsByOutcome["skipped_uncategorised"];
+        std::cout << "\n  UNCATEGORISED: " << uncRows << " row(s) over "
+                  << (int) unc.size() << " distinct plugin(s).";
+        if (unc.empty())
+            std::cout << " None on this machine -- every worklist row had a category "
+                         "entry when it was reached.";
+        else if (uncRows > (int) unc.size())
+            std::cout << " So they are " << (int) unc.size()
+                      << " real gaps, re-skipped across relaunches -- press Categorise, "
+                         "not a bigger number of them.";
+        else
+            std::cout << " Every one a distinct product, seen once. These are real "
+                         "gaps and the count is the count.";
+        std::cout << std::endl;
     }
 
 private:
@@ -8497,12 +8770,6 @@ private:
                            kSweepBaseMs + kSweepPerParamMs * juce::jmax (0, paramCount));
     }
 
-    struct SweepCategory
-    {
-        juce::String category, disposition, why, kind;
-        bool sweepable = false, hedged = false;
-    };
-
     /** Everything one sweep run needs, so the CLI loop and the GUI Timer drive
         identical state rather than two copies that drift. */
     struct SweepRun
@@ -8518,6 +8785,12 @@ private:
             night from a normal one without anyone opening the jsonl. `died` and
             `skipped` are totals; these are the classes inside them. */
         std::map<juce::String, int> byOutcome;
+
+        /** What the cascade said this run would do, taken before the first
+            plugin was opened. Kept so the summary can reconcile: a forecast
+            nobody checks is a number nobody can trust. */
+        SweepForecast forecast;
+
         juce::Time startedAt = juce::Time::getCurrentTime();
         bool running = false, dryRun = false, wantCaptures = false;
         bool stopRequested = false, stopped = false, tripped = false;
@@ -8548,7 +8821,7 @@ private:
         return n.trim().toLowerCase() + "|" + d.manufacturerName.trim().toLowerCase();
     }
 
-    std::map<juce::String, SweepCategory> loadCategories()
+    std::map<juce::String, SweepCategory> loadCategories() const
     {
         std::map<juce::String, SweepCategory> out;
         auto f = ledger.getRoot().getChildFile ("categories.json");
@@ -9854,11 +10127,29 @@ private:
         if (pendingCats > 0)
             m << "  |  " << pendingCats << " product(s) NEED CATEGORISING (press Categorise; "
               << "the sweep skips what has no category)";
+
+        // THE NUMBER ANSWERS THE QUESTION IT IS READ AS ANSWERING.
+        //
+        // This line said 1,460 for a run that could open 40. It counted
+        // worklist rows -- everything the server confirms is unmapped -- and
+        // applied none of the sweep's own filters, so a mapper reading "SWEEP
+        // WOULD OPEN 1460" and pressing the button got a run that declined
+        // 1,420 of them without opening one. The worklist answers "what is
+        // unmapped?"; the button is asked "what will happen tonight?", and
+        // those are different questions with a factor of thirty between them.
+        //
+        // Both numbers are kept, because the gap between them is itself worth
+        // seeing: it is how much of the catalogue is waiting on a category
+        // rather than on a night's work.
         const auto w = collectWorklist();
-        m << "  |  SWEEP WOULD OPEN " << w.ordered().size()
-          << " (" << w.toSweep.size() << " unmapped, " << w.toFinish.size() << " parked, "
-          << w.unqueried.size() << " unqueried)"
-          << ", skipping " << w.nMapped << " already mapped, "
+        const auto f = forecastSweep();
+        m << "  |  SWEEP WOULD OPEN " << f.wouldOpen << " of " << f.worklistRows
+          << " worklist row(s) (" << w.toSweep.size() << " unmapped, "
+          << w.toFinish.size() << " parked, " << w.unqueried.size() << " unqueried)";
+        if (f.totalSkipped() > 0)
+            m << "; the sweep itself declines " << f.totalSkipped()
+              << " (" << f.describeSkips() << ")";
+        m << ". Not on the worklist at all: " << w.nMapped << " already mapped, "
           << w.nUnmappable << " unmappable, " << w.flagged.size() << " flagged";
         return m;
     }

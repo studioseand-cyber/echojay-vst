@@ -118,6 +118,14 @@ struct LedgerRecord
     */
     juce::String recoveredByRunId;
 
+    /** What a quarantine caused by THIS row should say, when the caller knows
+        something the funnel cannot derive -- the watchdog's own description of
+        which deadline expired, for instance. NOT serialised: it is an input to
+        the decision, not a fact about the load. Empty means the funnel writes
+        the reason from the outcome.
+    */
+    juce::String quarantineReason;
+
     juce::var toVar() const
     {
         auto* o = new juce::DynamicObject();
@@ -160,6 +168,115 @@ struct LedgerRecord
 */
 inline constexpr int kRetryAttempts = 3;
 
+/** DOES THIS RECORDED OUTCOME MEAN AN ATTEMPT ON THIS BINARY FAILED?
+
+    Measured 10 Aug 2026 against the live ledger, 144,911 rows. The retry
+    arithmetic had been reading ONE outcome at a time -- deaths in the crash
+    branch, the literal string "timeout" in the watchdog branch -- so a plugin
+    whose failures were spelled differently never accumulated. `bloom` carries
+    EIGHTEEN init_failed rows and a death and was never counted once.
+
+    The list is a decision per outcome, not a default, and the exclusions are
+    the load-bearing half:
+
+      no_types        4,249 rows, every one at stage scan. A bundle declaring
+                      no audio-effect types is a fact about the FILE, re-read
+                      identically on every scan; nothing was attempted. Counting
+                      it would quarantine ~300 bundles, and PluginScanner then
+                      stops describing them at all.
+      license_refused SEE THE PARAGRAPH BELOW. Its absence from this list is a
+                      decision, not an oversight, and it stays excluded.
+      no_editor       the plugin LOADED. Only the editor is missing, and the
+                      sweep runs headless by default and maps it fine; this
+                      outcome is not even reachable unless captures are on.
+      restarted       a supervisor event at stage "session". Not an attempt.
+      quarantined     the CONSEQUENCE, not the evidence. Counting it would let
+                      a quarantine confirm itself on every subsequent skip.
+
+    `no_params` DOES count: there is nothing on the plugin to map, it is
+    deterministic (SPL HawkEye, three rows across three campaigns), and every
+    campaign pays a load to rediscover it.
+
+    ---------------------------------------------------------------------------
+    WHY `license_refused` IS NOT IN THE LIST ABOVE
+    ---------------------------------------------------------------------------
+    Written out at length, and pinned by a test that attempts it
+    (`testRecordedIsCounted`, "TEN LICENCE REFUSALS DO NOT QUARANTINE"),
+    because an exclusion is invisible: the next person to read this function
+    sees a list of failures with an obvious member missing and adds it back in
+    good faith. That edit is one line and it is very expensive.
+
+    A LICENCE REFUSAL IS A STATE OF THE MACHINE, NOT A FACT ABOUT THE PLUGIN.
+    Everything else on the counted list is a property of the binary that will
+    be true again tomorrow. This one is a property of what is plugged into a
+    USB port, and it flips back the moment the iLok is present.
+
+    Counting it would do the thing this whole change exists to stop, with the
+    sign reversed. The defect being fixed is a plugin failing forever because
+    no evidence was ever counted; counting authorisation would withdraw a
+    vendor's ENTIRE catalogue -- dozens of binaries, every one of them
+    perfectly good -- from a single unplugged dongle, in one unattended night,
+    with nobody watching. Quarantine is deliberately manual to undo, so the
+    catalogue stays withdrawn until a human notices plugins missing and
+    releases them one at a time. That is the UAD shape, and it is exactly what
+    Mac 2 spent a night doing for a different reason.
+
+    Nor is anything lost by excluding it. A licence refusal fails FAST and does
+    not kill the process, so it costs one attempt per campaign rather than
+    looping -- and ten consecutive refusals already trip the sweep's circuit
+    breaker with advice that names the cause ("an authorisation is missing.
+    Check the iLok"). The systemic case is caught by the mechanism built for
+    it; the retry rule is for binaries that fail on their own account.
+
+    This is not a new decision. PluginHost.cpp already carries it at the site
+    where the outcome is chosen: "a licence refusal is not the tester's fault
+    and should not quarantine". Recorded here as well so the two ends of the
+    same rule cannot drift apart, and so this list reads as a decision rather
+    than as an omission.
+*/
+inline bool isCountedFailureOutcome (const juce::String& outcome)
+{
+    return outcome == toString (LoadOutcome::diedDuringLoad)
+        || outcome == kLegacyDeathOutcome
+        || outcome == toString (LoadOutcome::timeout)
+        || outcome == toString (LoadOutcome::sweepTimeout)
+        || outcome == toString (LoadOutcome::initFailed)
+        || outcome == toString (LoadOutcome::noParams);
+}
+
+/** Both spellings. Rows written before 5 Aug 2026 say "crash_on_load" and are
+    the only determinism evidence this project has.
+*/
+inline bool isDeathOutcome (const juce::String& outcome)
+{
+    return outcome == toString (LoadOutcome::diedDuringLoad)
+        || outcome == kLegacyDeathOutcome;
+}
+
+/** How many counted failures withdraw this binary, given the failure being
+    recorded NOW. The count always spans every failure at the stage; only the
+    bar it is measured against varies, and both variances are measured ones
+    kept from the rules this funnel replaced.
+
+      scan + timeout   ONE. A scan hang blocks every bundle behind it, so the
+                       next scan walks into the same file and the loop never
+                       converges: TDR SlickEQ M and Solid Dynamics each cost a
+                       full 4.5-minute rescan for exactly this.
+      any other hang   TWO. A hang costs a whole watchdog deadline, so it gets
+                       one retry rather than two -- which is what Cymatics
+                       Lotus needed (it instantiates in 407 ms and was
+                       quarantined by a deadline that was simply too tight).
+      everything else  kRetryAttempts. One is a bad roll, three is the plugin.
+*/
+inline int quarantineThresholdFor (const juce::String& stage, const juce::String& outcome)
+{
+    const bool hang = outcome == toString (LoadOutcome::timeout)
+                   || outcome == toString (LoadOutcome::sweepTimeout);
+    if (! hang)          return kRetryAttempts;
+    if (stage == "scan") return 1;
+    return 2;
+}
+
 /** What the ledger knows about one plugin at one stage, read at the moment a
     quarantine decision is made. Nothing here is newly recorded -- every number
     is already on disk -- but nothing read it before, so the decision was made
@@ -177,6 +294,17 @@ struct RetryEvidence
     int corroboratedFailures = 0;   // ...with a crash report found
     int unattributedFailures = 0;   // ...without one
     int unattendedFailuresN = 0;    // ...of those, from a run with no operator
+
+    /** Recorded failures that are NOT deaths -- init_failed, timeout,
+        sweep_timeout, no_params. The process survived to report each one, so
+        none of them carries the force-quit ambiguity a death does and none is
+        ever discounted.
+
+        This field is why `bloom` is now counted. Its eighteen init_failed rows
+        were on disk the whole time and every counter in this struct was
+        looking at deaths.
+    */
+    int otherFailures = 0;
 
     /** Unattributed deaths that no human could have caused. See
         Ledger::setUnattended: the discount exists for the force-quit, and a
@@ -207,6 +335,18 @@ struct RetryEvidence
 
     bool nonDeterministic() const { return priorOkInLedger > 0; }
 
+    /** What the quarantine rule actually measures. `wasUnattended` is a
+        property of the failure being judged, not of the history: the
+        unattributed discount exists for the operator's force-quit, and a run
+        with nobody at the keyboard has no operator to do the quitting.
+    */
+    int countedFailures (bool wasUnattended) const
+    {
+        return corroboratedFailures
+             + (wasUnattended ? unattendedFailuresN : 0)
+             + otherFailures;
+    }
+
     /** The note that goes in the quarantine row when prior successes exist. It
         exists to stop an operator reading a quarantine as a verdict.
     */
@@ -233,6 +373,7 @@ struct RetryEvidence
         o->setProperty ("corroborated_failures", corroboratedFailures);
         o->setProperty ("unattributed_failures", unattributedFailures);
         o->setProperty ("unattended_failures", unattendedFailuresN);
+        o->setProperty ("other_failures", otherFailures);
         o->setProperty ("prior_ok_in_ledger", priorOkInLedger);
         o->setProperty ("prior_ok_this_session", priorOkThisSession);
 
@@ -405,44 +546,6 @@ public:
                          << ", top image: " << (facts.topImage.isEmpty() ? "?" : facts.topImage)
                          << ", attributed to " << r.attribution << "]";
 
-            // Read BEFORE this row is appended, or the row counts as its own
-            // predecessor and every first death looks like a repeat.
-            auto ev = retryEvidenceForLocked (id, r.stage, r.runId);
-
-            // AN UNATTRIBUTED DEATH DOES NOT COUNT TOWARD THE THREE. One of
-            // them may be the operator losing patience with a slow load, and
-            // CLA-76 (m) takes 1.6 s against its sibling's 509 ms.
-            //
-            // The hole this leaves is real and bounded: a machine with crash
-            // reporting disabled would never quarantine anything. Measured
-            // here, 26 of 28 death rows found a report, so the discount applies
-            // to ~7% of them -- and a plugin dying unattributed over and over
-            // is NAMED in the row below rather than hidden, so it is visible
-            // without being acted on from evidence that cannot support it.
-            ev.attempts  += 1;
-            ev.failures  += 1;
-            ev.outcomes.add (toString (r.outcome));
-            ev.loadMs.add (r.loadMs);
-            (facts.found ? ev.corroboratedFailures : ev.unattributedFailures) += 1;
-            if (! facts.found && wasUnattended) ev.unattendedFailuresN += 1;
-
-            // An unattributed death counts when NOBODY COULD HAVE KILLED IT.
-            // The whole basis of the discount is the operator's force-quit, and
-            // an unattended run has no operator. Attended runs keep the
-            // discount, because there the hazard is real.
-            const int counted = ev.corroboratedFailures
-                              + (wasUnattended ? ev.unattendedFailures() : 0);
-            const bool quarantineNow = counted >= kRetryAttempts;
-
-            r.detail << " [attempt " << counted << " of "
-                     << kRetryAttempts << " at stage " << r.stage;
-            if (ev.unattributedFailures > 0)
-                r.detail << "; " << ev.unattributedFailures
-                         << " unattributed"
-                         << (wasUnattended ? " but unattended, so counted"
-                                           : " death(s) not counted");
-            r.detail << (quarantineNow ? ": quarantined]" : ": not quarantined yet]");
-
             // Kept from the single-crash rule, weakened to a label rather than
             // an exemption. The first real crash on this tool was OURS -- a
             // SIGSEGV on the ejmap silent pump thread while loading soothe2 --
@@ -455,16 +558,15 @@ public:
             if (ours)
                 r.detail << " [the faulting thread was ours, not the plugin's]";
 
-            if (ev.nonDeterministic())
-                r.detail << " [" << ev.note() << "]";
-
+            // THE COUNT AND THE DECISION USED TO BE HERE, and being here was
+            // the defect: this branch sees only a death recovered from an
+            // orphaned stake, which is 13 of the live ledger's 144,911 rows.
+            // Both now live in appendLocked, where every row goes, so an
+            // ordinary failed load counts exactly as a crash does. The
+            // unattributed discount, the attempt line and the two reason
+            // strings all moved with them, unchanged.
             r.at = nowIso();
             appendLocked (r);
-
-            if (quarantineNow)
-                quarantineLocked (id, ours ? "died_during_load_host_fault"
-                                           : "died_during_load",
-                                  r.stage, r.version, &ev);
         }
 
         inflightFile.deleteFile();
@@ -608,33 +710,23 @@ public:
 
         if (got)
         {
-            // THE RETRY IS FOR LOADS ONLY, and the two cases have opposite costs.
+            // THE COUNT AND THE DECISION MOVED TO appendLocked, and the two
+            // asymmetric thresholds moved with them into
+            // quarantineThresholdFor: a scan hang still quarantines on the
+            // FIRST timeout because it blocks every bundle behind it, and a
+            // hang anywhere else still gets exactly one retry.
             //
-            // A wrong LOAD quarantine silently drops a mappable plugin from the
-            // queue, and release is manual: the cost lands on one plugin, out of
-            // sight. So a first load timeout is recorded and retried, which is
-            // what Cymatics Lotus needed (it instantiates in 407 ms and was
-            // quarantined by a deadline that was too tight).
+            // What changed, and it is the point of the move: the count is no
+            // longer countPriorOutcomeLocked over the single string "timeout".
+            // A plugin that hangs once and then fails to instantiate twice was
+            // invisible to that count and reached no threshold at all; now
+            // every recorded failure at the stage counts toward the same bar.
             //
-            // A SCAN hang blocks everything behind it. Sparing it means the next
-            // scan walks into the same bundle, hangs again, and the loop never
-            // converges: TDR SlickEQ M and Solid Dynamics each cost a full 4.5
-            // minute rescan for exactly this reason. Scan probes quarantine on
-            // the first timeout.
-            const bool isScanProbe = (r.stage == "scan");
-            const int  priors      = countPriorOutcomeLocked (r.pluginId, "timeout");
-            const bool quarantineNow = isScanProbe || priors > 0;
-
-            if (! quarantineNow)
-                r.detail << " [not quarantined: first LOAD timeout here, it gets one retry]";
-            else if (isScanProbe && priors == 0)
-                r.detail << " [quarantined on first timeout: a scan hang blocks every "
-                            "bundle behind it]";
-
+            // The watchdog's own description of which deadline expired is
+            // something the funnel cannot derive, so it rides on the record.
+            r.quarantineReason = quarantineReason;
             appendLocked (r);
 
-            if (r.pluginId.isNotEmpty() && quarantineNow)
-                quarantineLocked (r.pluginId, quarantineReason, r.stage, r.version);
             inflightFile.deleteFile();
             lock.exit();
             return;
@@ -727,7 +819,7 @@ public:
     bool isQuarantined (const juce::String& pluginId) const
     {
         const juce::ScopedLock sl (lock);
-        return quarantined.contains (pluginId);
+        return isQuarantinedLocked (pluginId);
     }
 
     void quarantine (const juce::String& pluginId, const juce::String& reason,
@@ -1023,6 +1115,11 @@ private:
         out.flush();
 
         emergencyFile.deleteFile();
+
+        // These rows went straight into the file without passing the funnel --
+        // they had to, the lock was unavailable when they were written -- so a
+        // tally already built from disk would not know about them.
+        failureTallyLoaded = false;
     }
 
     /** ONE PASS over the ledger for one binary at one stage.
@@ -1077,6 +1174,15 @@ private:
                 }
                 else ++e.corroboratedFailures;
             }
+            else if (isCountedFailureOutcome (outcome))
+            {
+                // NOT A DEATH, AND STILL A FAILED ATTEMPT. The process
+                // survived to report it, which is why it carries no
+                // force-quit ambiguity and is never discounted -- and why
+                // eighteen of them went uncounted for three days while every
+                // counter here was looking only at deaths.
+                ++e.otherFailures;
+            }
             else if (outcome == "ok")
             {
                 ++e.priorOkInLedger;
@@ -1088,31 +1194,12 @@ private:
         return e;
     }
 
-    int countPriorCrashesLocked (const juce::String& pluginId) const
-    {
-        return countPriorOutcomeLocked (pluginId, toString (LoadOutcome::diedDuringLoad))
-             + countPriorOutcomeLocked (pluginId, kLegacyDeathOutcome);
-    }
-
-    int countPriorOutcomeLocked (const juce::String& pluginId,
-                                 const juce::String& outcome) const
-    {
-        int n = 0;
-        if (! ledgerFile.existsAsFile())
-            return 0;
-
-        juce::StringArray lines;
-        lines.addLines (ledgerFile.loadFileAsString());
-        for (const auto& line : lines)
-        {
-            if (line.trim().isEmpty()) continue;
-            auto v = juce::JSON::parse (line);
-            if (v.getProperty ("plugin_id", "").toString() == pluginId
-                 && v.getProperty ("outcome", "").toString() == outcome)
-                ++n;
-        }
-        return n;
-    }
+    // countPriorOutcomeLocked and countPriorCrashesLocked are DELETED, not
+    // merely unused. Both counted rows matching ONE outcome string, and that
+    // shape is the defect: the watchdog asked for "timeout" and got a count
+    // that ignored a plugin's init_failed rows entirely. Leaving them here
+    // would leave the next caller a tool that answers a narrower question than
+    // the one it will be asked. ensureFailureTallyLocked spans the family.
 
     /** A row with no run_id predates run identity. It becomes one synthetic
         legacy run rather than being folded into the current one, which would
@@ -1145,11 +1232,130 @@ private:
         return s;
     }
 
+    /** RECORDED IS COUNTED, AND THEY ARE THE SAME EVENT BY CONSTRUCTION.
+        ======================================================================
+
+        Every ledger row in the system passes through here -- endLoad,
+        appendRow, recoverFromCrash and recordWatchdogExpiry are the only
+        writers and all four call this. So this is where a failure is counted
+        and where the withdrawal is decided, and there is no longer anywhere a
+        row can be written from that forgets to do it.
+
+        THE DEFECT THIS REPLACES, measured 10 Aug 2026 on the live ledger:
+        the arithmetic lived in the crash-recovery branch, which only ever sees
+        a death recovered from an orphaned stake -- 13 rows out of 144,911. An
+        ordinary failed load plants a stake and closes it through endLoad,
+        which appended the row and decided nothing. `bloom` accumulated
+        eighteen init_failed rows over three days and was still being offered
+        by the worklist; Drawmer and the UAD pair looped a second machine all
+        night for the same reason. The evidence was never missing. It was
+        written to a file that the decision did not read.
+
+        WHY HERE AND NOT AT THE FOUR CALL SITES: four sites is four chances to
+        forget, and the history of this class of bug in this project is a path
+        that was added later and did not know it had to count. A funnel cannot
+        be forgotten by a path that does not exist yet.
+
+        The cost is real and was measured before this was written: one pass
+        over the ledger is 615 ms at 144,911 rows, so it is paid once per
+        launch (the tally below) and once more per quarantine (the full
+        evidence), never per row. A successful load reads nothing.
+    */
+    void appendLocked (LedgerRecord r)
+    {
+        const auto outcome = toString (r.outcome);
+
+        bool quarantineNow = false;
+        int  counted = 0, threshold = 0;
+
+        if (r.pluginId.isNotEmpty() && isCountedFailureOutcome (outcome))
+        {
+            ensureFailureTallyLocked();
+            auto& t = failureTally[tallyKey (r.pluginId, r.stage)];
+
+            // THE ROW BEING WRITTEN IS PART OF ITS OWN COUNT. It is the
+            // failure being judged, so leaving it out would mean every
+            // threshold was reached one attempt late.
+            if (isDeathOutcome (outcome))
+            {
+                // A row with no certainty predates the field and counts as
+                // corroborated: it was written under the old rule, where it
+                // would have quarantined outright.
+                if (r.certainty == "unattributed")
+                {
+                    ++t.unattributedDeaths;
+                    if (r.unattended) ++t.unattendedDeaths;
+                }
+                else ++t.corroboratedDeaths;
+            }
+            else ++t.otherFailures;
+
+            counted   = t.corroboratedDeaths
+                      + (r.unattended ? t.unattendedDeaths : 0)
+                      + t.otherFailures;
+            threshold = quarantineThresholdFor (r.stage, outcome);
+
+            const bool already = isQuarantinedLocked (r.pluginId);
+            quarantineNow = counted >= threshold && ! already;
+
+            r.detail << " [attempt " << counted << " of " << threshold
+                     << " at stage " << r.stage;
+            if (t.unattributedDeaths > 0)
+                r.detail << "; " << t.unattributedDeaths << " unattributed death(s) "
+                         << (r.unattended ? "counted, nobody was at the keyboard"
+                                          : "not counted");
+            r.detail << (already        ? ": already quarantined]"
+                       : quarantineNow  ? ": quarantined]"
+                                        : ": not quarantined yet]");
+        }
+
+        writeRowLocked (r);
+
+        if (quarantineNow)
+        {
+            // THE FULL EVIDENCE, read at the moment of withdrawal and only
+            // then. It costs one pass over the ledger; a quarantine happens
+            // tens of times in the life of a machine, so the price is paid
+            // where it buys something -- the operator's answer to "should I
+            // release this?" -- rather than on every row.
+            //
+            // Read AFTER the row is written, so the evidence includes the
+            // failure that caused the withdrawal rather than describing the
+            // state just before it.
+            auto ev = retryEvidenceForLocked (r.pluginId, r.stage, r.runId);
+            quarantineLocked (r.pluginId, quarantineReasonFor (r, counted, threshold),
+                              r.stage, r.version, &ev);
+        }
+    }
+
+    /** What the quarantine entry says. A caller that knows something the
+        funnel cannot derive -- the watchdog knows WHICH deadline expired --
+        supplies it on the record; otherwise the reason is written from what
+        was observed.
+    */
+    static juce::String quarantineReasonFor (const LedgerRecord& r, int counted, int threshold)
+    {
+        if (r.quarantineReason.isNotEmpty())
+            return r.quarantineReason;
+
+        const auto outcome = toString (r.outcome);
+
+        // Kept verbatim from the rule this replaced, because release passes
+        // and the nightly re-test select on these two strings.
+        if (isDeathOutcome (outcome))
+            return r.attribution == "host" ? "died_during_load_host_fault"
+                                           : "died_during_load";
+
+        return outcome + " x" + juce::String (counted) + " at stage " + r.stage
+             + " (threshold " + juce::String (threshold) + "): "
+               "every one of them is a recorded row in the ledger";
+    }
+
     /** Write and flush. juce::File::appendText leaves the bytes in the stream's
         buffer, which is exactly the wrong place for them when the next thing
         that happens is _exit.
     */
-    void appendLocked (const LedgerRecord& r)
+    void writeRowLocked (const LedgerRecord& r)
     {
         juce::FileOutputStream out (ledgerFile);
         if (out.openedOk())
@@ -1157,6 +1363,65 @@ private:
             out.setPosition (ledgerFile.getSize());
             out.writeText (juce::JSON::toString (r.toVar(), true) + "\n", false, false, nullptr);
             out.flush();
+        }
+    }
+
+    /** Counted failures per (binary, stage), read off disk ONCE per launch and
+        carried in memory after that.
+
+        The decision has to see every previous launch, so it has to come from
+        the file; but at 144,911 rows a pass is 615 ms, and doing that per row
+        would cost a day per sweep. appendLocked is the only writer and it
+        holds the lock, so an in-memory tally seeded from disk and incremented
+        as rows are written is exactly as correct as re-reading, and it is read
+        lazily -- a launch with no failures never touches the file at all.
+    */
+    struct FailureTally
+    {
+        int corroboratedDeaths = 0, unattributedDeaths = 0, unattendedDeaths = 0;
+        int otherFailures = 0;
+    };
+
+    static juce::String tallyKey (const juce::String& pluginId, const juce::String& stage)
+    {
+        return pluginId + "\n" + stage;      // \n cannot occur in either
+    }
+
+    void ensureFailureTallyLocked() const
+    {
+        if (failureTallyLoaded)
+            return;
+
+        failureTallyLoaded = true;           // set first: an unreadable ledger
+        failureTally.clear();                // is an empty history, not a retry
+
+        if (! ledgerFile.existsAsFile())
+            return;
+
+        juce::StringArray lines;
+        lines.addLines (ledgerFile.loadFileAsString());
+        for (const auto& line : lines)
+        {
+            if (line.trim().isEmpty()) continue;
+            auto v = juce::JSON::parse (line);
+
+            const auto outcome = v.getProperty ("outcome", "").toString();
+            if (! isCountedFailureOutcome (outcome)) continue;
+
+            const auto pid = v.getProperty ("plugin_id", "").toString();
+            if (pid.isEmpty()) continue;
+
+            auto& t = failureTally[tallyKey (pid, v.getProperty ("stage", "load").toString())];
+            if (isDeathOutcome (outcome))
+            {
+                if (v.getProperty ("certainty", "").toString() == "unattributed")
+                {
+                    ++t.unattributedDeaths;
+                    if ((bool) v.getProperty ("unattended", false)) ++t.unattendedDeaths;
+                }
+                else ++t.corroboratedDeaths;
+            }
+            else ++t.otherFailures;
         }
     }
 
@@ -1169,6 +1434,24 @@ private:
             out.writeText (text, false, false, nullptr);
             out.flush();
         }
+    }
+
+    /** The lock-held read, for callers that already hold it -- which now
+        includes appendLocked, since the decision to withdraw a plugin has to
+        know whether it has already been withdrawn.
+
+        A note on the reason this exists, because the reason first given for it
+        was wrong: juce::CriticalSection is a RECURSIVE pthread mutex (see
+        juce_SharedCode_posix.h, PTHREAD_MUTEX_RECURSIVE), so calling the
+        public isQuarantined from inside a lock-held path would NOT have
+        deadlocked. It is still the right shape -- a locked path should not
+        re-enter the lock, and the day someone swaps this for a SpinLock the
+        re-entrant call becomes a hang with no other warning -- but it is
+        hygiene, not a fix for a hazard that was there.
+    */
+    bool isQuarantinedLocked (const juce::String& pluginId) const
+    {
+        return quarantined.contains (pluginId);
     }
 
     void quarantineLocked (const juce::String& pluginId, const juce::String& reason,
@@ -1300,6 +1583,8 @@ private:
     juce::StringArray quarantined;
     mutable juce::HashMap<juce::String, QuarantineEntry> entries;
     juce::HashMap<juce::String, int> counts;
+    mutable std::map<juce::String, FailureTally> failureTally;
+    mutable bool failureTallyLoaded = false;
     mutable juce::CriticalSection lock;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Ledger)

@@ -59,6 +59,7 @@ public:
         juce::String mbandsTestId, mbandsMode;
         juce::String conlyTestId, conlyCat;
         bool worklist = false, worklistNext = false, categoriseOnly = false;
+        bool sweepReport = false, sweepReportPerRun = false;
         bool sweep = false, sweepDry = false, sweepCaptures = false; int sweepLimit = 0;
         juce::String resweepTargetsPath;
         bool sendPending = false, sendPendingDry = false;
@@ -120,6 +121,10 @@ public:
             { sendPending = true; sendPendingDry = true; }
             else if (args[i] == "--worklist")
                 worklist = true;
+            else if (args[i] == "--sweep-report")
+                sweepReport = true;
+            else if (args[i] == "--all")
+                sweepReportPerRun = true;
             else if (args[i] == "--categorise")
                 categoriseOnly = true;
             else if (args[i] == "--next")
@@ -381,6 +386,18 @@ public:
         {
             auto* m = mainWindow->getMain(); const bool nx = worklistNext;
             juce::MessageManager::callAsync ([m, nx] { m->printWorklist (nx); });
+        }
+        else if (sweepReport && mainWindow->getMain() != nullptr)
+        {
+            // Reads the run logs and quits. Opens no plugin, needs no scan and
+            // no server: a report about runs that already happened must not
+            // depend on anything that could fail today.
+            auto* m = mainWindow->getMain(); const bool per = sweepReportPerRun;
+            juce::MessageManager::callAsync ([m, per]
+            {
+                m->reportSweepRuns (per);
+                juce::JUCEApplication::quit();
+            });
         }
         else if (conlyTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
         {
@@ -700,13 +717,32 @@ namespace
         if (evidenceId.isNotEmpty())
         {
             const auto ev = l.retryEvidenceFor (evidenceId, evidenceStage);
+
+            // THE NON-DEATH FAILURES ARE PRINTED, and their absence here used
+            // to be the whole defect wearing an operator surface: this screen
+            // showed `bloom` as "failures 1" while eighteen init_failed rows
+            // for it sat in the ledger, so the one place built to explain a
+            // quarantine decision agreed with the decision by leaving out the
+            // same evidence.
+            //
+            // Both counts are shown separately rather than summed, because
+            // they are answers to different questions -- a death is a fact
+            // about hosting the plugin, an init_failed is a fact about
+            // instantiating it -- and only the death count is ever discounted.
             std::cout << "retry-evidence: " << evidenceId << "  (stage " << evidenceStage << ")\n"
                       << "  quarantined           : " << (l.isQuarantined (evidenceId) ? "yes" : "no") << "\n"
                       << "  attempts at this stage: " << ev.attempts << "\n"
-                      << "  failures              : " << ev.failures
+                      << "  deaths                : " << ev.failures
                       << "  (" << ev.corroboratedFailures << " corroborated, "
-                      << ev.unattributedFailures << " unattributed and NOT counted)\n"
-                      << "  threshold             : " << ejmap::kRetryAttempts << "\n"
+                      << ev.unattributedFailures << " unattributed -- counted only when the "
+                                                    "run was unattended)\n"
+                      << "  other failures        : " << ev.otherFailures
+                      << "  (init_failed, timeout, sweep_timeout, no_params: the process "
+                         "survived to report each, so none is ever discounted)\n"
+                      << "  counted, unattended   : " << ev.countedFailures (true) << "\n"
+                      << "  counted, attended     : " << ev.countedFailures (false) << "\n"
+                      << "  threshold             : " << ejmap::kRetryAttempts
+                      << "  (a hang is 2, or 1 at stage scan)\n"
                       << "  prior ok at this stage: " << ev.priorOkInLedger << "\n"
                       << "  outcomes              : " << ev.outcomes.joinIntoString (", ") << std::endl;
             if (ev.nonDeterministic())
