@@ -639,9 +639,9 @@ enabled degree, in against out:
 | natural, forced to C minor | 81.9 ¢ | 46.4 ¢ |
 
 Measured at the rendered **audio** instead, the hard character reads 7.5 ¢ mean
-deviation rather than 0. That gap is the **shifter's** own accuracy on real
-material, not the corrector's — which is precisely why the two are measured
-separately.
+deviation rather than 0. **That mean is misleading and the first reading of it
+here was wrong** — see §9.1. It is a long tail, and the tail is the detector
+measuring, not the shifter landing.
 
 | render | mean dev | within 5 ¢ |
 |---|---|---|
@@ -649,6 +649,65 @@ separately.
 | **hard tuned** | **7.5 ¢** | **60.6%** |
 | **natural** | **11.8 ¢** | 34.5% |
 | wrong key (C minor forced) | 29.7 ¢ | 4.9% |
+
+(`natural` also carries a **+3.2 ¢ systematic bias** against hard tune's +0.3 ¢.
+Small, but it is the retune envelope trailing a moving pitch rather than noise,
+and worth remembering if transparent mode ever reads faintly sharp.)
+
+### 9.1 The 7.5 ¢ is a TAIL, not a spread — and mostly measurement
+
+A mean cannot answer "is hard tune locked", because the same detector whose
+error floor §0 records is the instrument doing the measuring. The distribution
+separates them.
+
+**Measurement floor first.** The same detector on signals that are exactly on
+pitch by construction:
+
+| control | p50 | p95 |
+|---|---|---|
+| synthetic saw at 220.000 Hz (A3 exactly) | 0.3 ¢ | 0.3 ¢ |
+| + noise at realistic breathy SNR | 0.4 ¢ | 0.7 ¢ |
+| + heavier noise | 0.6 ¢ | 1.6 ¢ |
+
+On clean material the detector is essentially exact, so anything large is either
+the shifter or the detector struggling with real material.
+
+**The renders, all voiced frames:**
+
+| | mean | p50 | p75 | p90 | p95 | p99 |
+|---|---|---|---|---|---|---|
+| dry | 13.0 ¢ | 8.3 | 18.6 | 34.4 | 41.8 | 48.6 |
+| **hard tuned** | 7.5 ¢ | **3.6** | **8.4** | 20.1 | 32.1 | 46.0 |
+| natural | 11.8 ¢ | 8.2 | 16.3 | 29.4 | 37.1 | 47.7 |
+
+**The median is 3.6 ¢, not 7.** The mean is dragged by a tail.
+
+**And the tail is confidence-dependent, which settles it.** Hard tuned,
+restricted by the detector's own confidence:
+
+| frames | p50 | p75 | p90 | p95 |
+|---|---|---|---|---|
+| conf ≥ 0.95 | **2.5 ¢** | **4.9 ¢** | 8.3 | 11.7 |
+| conf ≥ 0.90 | 2.9 | 5.7 | 11.4 | 17.8 |
+| conf ≥ 0.80 | 3.4 | 7.6 | 17.6 | 30.0 |
+| all voiced | 3.6 | 8.4 | 20.1 | 32.1 |
+
+As confidence rises the **tail collapses** (p95 32.1 → 11.7 ¢) while the
+**median barely moves** (3.6 → 2.5 ¢). That is the signature of measurement
+error concentrated in exactly the frames §5 established the detector is
+unreliable on — not of a shifter landing consistently off.
+
+**Verdict: hard tune is locked.** Half of all frames sit within 3.6 ¢ and three
+quarters within 8.4 ¢; on frames the detector is confident about, half are
+within 2.5 ¢ and three quarters within 4.9 ¢. Systematic bias is +0.3 to +0.8 ¢.
+
+**What is honestly still the shifter:** p99 stays at 25.8 ¢ even at conf ≥ 0.95,
+so about one frame in a hundred genuinely lands a quarter-semitone out. That is
+a real residual, not measurement, and small enough not to break the locked
+character — but it is the number to watch if hard tune ever sounds loose.
+
+The earlier attribution of the whole 7.5 ¢ to "the shifter's accuracy" was
+wrong: most of it was the instrument, not the thing being measured.
 
 `natural` sitting close to the dry signal is the point of it, not a failure:
 transparent correction should tidy pitch without flattening the performance.
