@@ -17,7 +17,83 @@ project(EchoJay VERSION 2.26.0)
 
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/
-set(JUCE_PATH "${CMAKE_SOURCE_DIR}/../JUCE" CACHE PATH "Path to JUCE framework")
+#
+# WHY THIS IS RESOLVED RATHER THAN HARDCODED (10 Aug 2026). The default was
+# "${CMAKE_SOURCE_DIR}/../JUCE" — JUCE as a sibling of the source tree. That
+# is true of the main worktree and of the ej-* worktrees beside it, and false
+# of every worktree under WORKTREES/, where ../JUCE does not exist and the
+# configure dies at add_subdirectory with a path error that names JUCE but not
+# the reason. There is one JUCE checkout on this machine; where a worktree
+# happens to sit is not information about where it lives.
+#
+# A worktree DOES know where the main worktree is: `git rev-parse
+# --git-common-dir` resolves to the shared .git for every worktree of the same
+# repo, so its parent is the main tree and JUCE's sibling relationship holds
+# there no matter how far away the worktree was created. That is the fix, and
+# it covers any WORKTREES/ folder added later without editing this file again.
+#
+# Resolution order, first hit wins:
+#   1. -DJUCE_PATH= on the command line, or an existing cache entry
+#      (so already-configured build trees keep whatever they resolved to).
+#   2. $ENV{JUCE_PATH}.
+#   3. The sibling of this source tree            — main worktree, ej-* siblings.
+#   4. The sibling of this repo's MAIN worktree   — every other worktree.
+# A candidate counts only if it actually contains JUCE, so a stale or empty
+# directory falls through to the next one instead of being handed to
+# add_subdirectory. If none match, this aborts here, naming what it tried —
+# the check exists so the failure is legible, not so it can be skipped.
+if(NOT DEFINED JUCE_PATH AND DEFINED ENV{JUCE_PATH})
+    set(JUCE_PATH "$ENV{JUCE_PATH}" CACHE PATH "Path to JUCE framework")
+endif()
+
+if(NOT DEFINED JUCE_PATH)
+    set(_ej_juce_candidates "${CMAKE_SOURCE_DIR}/../JUCE")
+
+    # --git-common-dir prints an absolute path from a linked worktree and a
+    # bare relative ".git" from the main one; BASE_DIR normalises both.
+    execute_process(
+        COMMAND git rev-parse --git-common-dir
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        OUTPUT_VARIABLE _ej_git_common
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE _ej_git_rc)
+    if(_ej_git_rc EQUAL 0 AND _ej_git_common)
+        get_filename_component(_ej_git_common "${_ej_git_common}" ABSOLUTE
+                               BASE_DIR "${CMAKE_SOURCE_DIR}")
+        get_filename_component(_ej_main_worktree "${_ej_git_common}" DIRECTORY)
+        list(APPEND _ej_juce_candidates "${_ej_main_worktree}/../JUCE")
+    endif()
+
+    foreach(_ej_candidate IN LISTS _ej_juce_candidates)
+        get_filename_component(_ej_candidate "${_ej_candidate}" ABSOLUTE)
+        # juce_core.h, not the directory: a JUCE checkout is identified by its
+        # modules, and an empty or half-deleted JUCE/ folder is not one.
+        if(EXISTS "${_ej_candidate}/modules/juce_core/juce_core.h")
+            set(JUCE_PATH "${_ej_candidate}" CACHE PATH "Path to JUCE framework")
+            message(STATUS "JUCE resolved to ${JUCE_PATH}")
+            break()
+        endif()
+    endforeach()
+endif()
+
+if(NOT JUCE_PATH OR NOT EXISTS "${JUCE_PATH}/modules/juce_core/juce_core.h")
+    # Two shapes of failure, and they want different words: an explicit path
+    # that is wrong, versus nothing found by search. Printing the candidate
+    # list for the first would be misleading — no search happened.
+    if(JUCE_PATH)
+        message(FATAL_ERROR
+            "JUCE_PATH is set to '${JUCE_PATH}' but that is not a JUCE "
+            "checkout (no modules/juce_core/juce_core.h). Fix the path, or "
+            "delete the JUCE_PATH cache entry to let this file resolve it.")
+    else()
+        string(REPLACE ";" "\n    " _ej_tried "${_ej_juce_candidates}")
+        message(FATAL_ERROR
+            "JUCE not found. Tried:\n    ${_ej_tried}\n"
+            "Pass -DJUCE_PATH=/path/to/JUCE or set the JUCE_PATH environment "
+            "variable. Download JUCE from https://juce.com/download/")
+    endif()
+endif()
 
 # Path to AAX SDK — download from developer.avid.com
 set(AAX_SDK_PATH "$ENV{HOME}/AAX_SDK" CACHE PATH "Path to AAX SDK")
