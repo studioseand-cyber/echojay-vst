@@ -7,7 +7,8 @@
 #include "EchoJayParamApply.h" // kDialSignalsEnabled + dial predicate (shared)
 #include "EchoJayChannelLabel.h" // channelLabelUsable — ONE uid-passthrough test
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
-#include "EedKeyDetectorProcessor.h" // [DETECTED KEY] read path (KEY_DETECTOR_SPEC §4/§9)
+#include "EedKeyDetectorProcessor.h"
+#include "EedKeyFeed.h"   // publish the resolved key for EchoJay Pitch (spec §6) // [DETECTED KEY] read path (KEY_DETECTOR_SPEC §4/§9)
 #include "viz/DwellGlow.h"           // KEY panel note wheel — the family's heat ramp
 #include "EqNote.h"                  // describeFreqAsNote — root_hz note names in the feed
                                     // include, so only THIS TU pays its 8.4MB
@@ -17736,13 +17737,38 @@ void EchoJayEditor::timerCallback()
     // copies snapshots under a mutex — too heavy for every paint) and ease
     // the wheel's chroma at the DwellGlow time constant so the picture moves
     // with the same hand as the device's.
+    // Collected at 2 Hz REGARDLESS OF VIEW, because the key is no longer only
+    // a thing the Meters panel draws: EchoJay Pitch reads it through KeyFeed to
+    // follow the song's key, and a corrector that only tracks while the user
+    // happens to be looking at Meters would be a genuinely baffling bug.
+    if (++keySourcesDiv_ >= 10)
+    {
+        keySourcesDiv_ = 0;
+        keySources_ = collectKeySources();
+
+        // Publish the ALREADY-RESOLVED primary. The precedence walk stays in
+        // collectKeySources() and is never re-implemented downstream, so the
+        // device, the [DETECTED KEY] feed block and the Meters panel can never
+        // rank sources differently.
+        echojay::DetectedKeyFact fact;
+        if (const auto* p = keySources_.primary())
+        {
+            fact.valid      = true;
+            fact.root       = p->root;
+            fact.minor      = p->minor;
+            fact.confidence = p->conf;
+            fact.tuningHz   = p->tuningHz > 0.0f ? p->tuningHz : 440.0f;
+            fact.ageMs      = p->ageMs;
+            fact.fromBus    = p->kind == KeySourceReading::Kind::BusLink
+                           || p->kind == KeySourceReading::Kind::SelfBus;
+            const auto nm = p->name.isNotEmpty() ? p->name : juce::String ("EchoJay");
+            nm.copyToUTF8 (fact.sourceName, (int) sizeof (fact.sourceName));
+        }
+        echojay::KeyFeed::instance().publish (fact);
+    }
+
     if (currentView == View::Meters && !visualMode && currentScreen == Screen::Main)
     {
-        if (++keySourcesDiv_ >= 10)
-        {
-            keySourcesDiv_ = 0;
-            keySources_ = collectKeySources();
-        }
         float target[12] = {};
         if (const auto* p = keySources_.primary())
         {
@@ -21308,7 +21334,12 @@ bool EchoJayEditor::messageNeedsKey(const juce::String& msg)
         "in key", "in the key", "the track's key", "key of the track",
         "key of the song", "what key",
         "tuned delay", "tuned to the track", "resonator",
-        "melodic"
+        "melodic",
+        // Naming the device, or plainly asking for tuning, needs the key for
+        // exactly the same reason. Extending the ONE list rather than adding a
+        // second prompt - KEY_PRECONDITION_SPEC.md owns this interaction.
+        "echojay pitch", "tune the vocal", "tune this vocal", "tune my vocal",
+        "tune the vox", "pitch the vocal"
     };
     for (const char* n : kNeedles)
         if (m.contains(n)) return true;

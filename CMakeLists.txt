@@ -234,6 +234,7 @@ target_sources(EchoJay PRIVATE
     Source/EedKeyDetectorProcessor.h
     Source/EedKeyEngine.cpp
     Source/EedKeyEngine.h
+    Source/EedKeyFeed.h
     Source/EedKeyWorker.h
     Source/EedLfoCore.h
     Source/EedModEditorBase.cpp
@@ -552,6 +553,7 @@ target_sources(EchoJayLink PRIVATE
     Source/EedKeyDetectorProcessor.h
     Source/EedKeyEngine.cpp
     Source/EedKeyEngine.h
+    Source/EedKeyFeed.h
     Source/EedKeyWorker.h
     Source/EedLfoCore.h
     Source/EedModEditorBase.cpp

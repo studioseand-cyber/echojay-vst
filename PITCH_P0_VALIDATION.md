@@ -717,3 +717,76 @@ makes correction measure *worse* than doing nothing, because partial correction
 toward foreign degrees lands between semitones. Until the key auto-map exists,
 **chromatic is the honest default** — it still tunes and it cannot force a note
 that is wrong for the song.
+
+---
+
+## 10. P4 — the key auto-map
+
+### 10.1 The precedence walk is not re-implemented
+
+`PluginEditor::collectKeySources()` already ranks key sources once — newest
+capture, then a bus Link, then this plugin when its declared role IS a music
+bus, then a channel Link, then the local chain (poisoned on a vocal channel) —
+and both the `[DETECTED KEY]` feed block and the Meters KEY panel read it.
+
+The device does **not** repeat that walk. The editor publishes its already-
+resolved primary into `EedKeyFeed`, and the device reads it. Two rankings that
+can disagree is the exact bug the shared collector was written to prevent.
+
+One change was needed on the publisher side: source collection had been gated
+on the Meters view being visible. A corrector that only tracks the key while
+the user happens to be looking at Meters would be a genuinely baffling bug, so
+the 2 Hz collection now runs regardless of view and the Meters branch just
+consumes the cache.
+
+### 10.2 The confidence gate falls to chromatic, never to the last key
+
+Below 0.50 the key is **not applied** and the scale falls back to chromatic.
+Not to the previous key: a stale key is applied with total confidence and can
+force a note that is wrong for the song, where chromatic still tunes every note
+and cannot. The number that justifies this is §9's — correcting to a wrong key
+pushed a take from 13.0 ¢ off the nearest note to **29.7 ¢**, i.e. worse than
+not correcting at all.
+
+The fallback is **shown**, in amber, naming the confidence that was rejected.
+A user who cannot see that the key was refused reads chromatic correction as
+the device misbehaving.
+
+### 10.3 Three defects the P4 tests caught
+
+**Constructed defaults disagreed with advertised defaults.** `correct`
+advertised on but constructed off; `correction_mode` advertised natural but
+displayed custom; and `scale` advertised chromatic but constructed **major** —
+so a freshly inserted device came up forcing C major, which is precisely the
+guess §9 and the advertisement forbid. A state restore would have hidden it
+forever after, since restore writes the schema defaults; only the first
+instance was wrong. There is now a test that walks every ParamSpec and compares
+its default against a freshly constructed device.
+
+**The scale cross-fade froze during silence.** It advanced only on voiced
+frames, and a key change most often lands in the gap between phrases — exactly
+where it would sit stuck. It now advances unconditionally.
+
+**`getSampleRate()` can be zero.** The corrector's time step was
+`1000 * n / getSampleRate()`, but that rate is set by the *host* via
+`setRateAndBufferSizeDetails`, not by `prepareToPlay`. Any path that prepares
+directly leaves it zero, making the time step infinite and silently completing
+every millisecond constant in the corrector on its first block. It now uses the
+rate the device was actually prepared with.
+
+### 10.4 Live key changes
+
+A modulation cross-fades the scale over 300 ms rather than switching on a
+sample, because a hard scale switch under a sustained note is audible. The fade
+blends the resulting **targets**, not the degree masks — a half-enabled degree
+is meaningless, whereas a target travelling from where the old scale put the
+note to where the new one does is the audible behaviour actually wanted.
+
+### 10.5 What is reused rather than rebuilt
+
+The two-tier precondition of `KEY_PRECONDITION_SPEC.md` already fires on
+"autotune", "pitch correction" and similar. Its needle list gained the phrases
+that name this device or plainly ask for tuning. No second prompt was written:
+Tier 1 still adds a Key Detector to an existing bus Link itself, and Tier 2 —
+the only thing a user must do, placing a Link — remains the server
+classifier's.

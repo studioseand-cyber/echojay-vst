@@ -88,6 +88,12 @@ public:
     // Slow smoothing used for TARGET SELECTION only.
     static constexpr float kVibratoSmoothMs = 140.0f;
 
+    // A live key change - a modulation, or a new song under a running
+    // instance - must not switch on a sample. Spec §6: cross-fade the scale
+    // over a few hundred ms, because a hard switch under a sustained note is
+    // audible as a step in the correction.
+    static constexpr float kScaleXfadeMs = 300.0f;
+
     struct Degree
     {
         bool  enabled   = true;
@@ -145,6 +151,21 @@ public:
         for (int i = 0; i < 12; ++i) degEnabled_[(size_t) i].store (enabled);
     }
 
+    // Snapshot the CURRENT degree set as the outgoing one and start a
+    // cross-fade. Call this immediately BEFORE writing a new scale; the
+    // targets then glide from the old set to the new one instead of stepping.
+    void beginScaleCrossfade() noexcept
+    {
+        for (int i = 0; i < 12; ++i)
+        {
+            prevEnabled_[(size_t) i].store (degEnabled_[(size_t) i].load());
+            prevBias_[(size_t) i].store (degBias_[(size_t) i].load());
+        }
+        xfade_.store (0.0f);
+    }
+    bool  scaleCrossfading() const noexcept { return xfade_.load() < 1.0f; }
+    float scaleCrossfadeProgress() const noexcept { return xfade_.load(); }
+
     // ---- the stage ---------------------------------------------------------
     // Call once per detector hop. Returns the f0 the shifter should aim at, or
     // 0 when the frame must be left alone.
@@ -158,6 +179,14 @@ public:
     {
         stepMs_ = dtMs > 0.0f ? dtMs : hopMs_;
         const float ref = referenceHz_.load();
+
+        // Advance any scale cross-fade FIRST, and unconditionally. A key change
+        // most often lands in a gap between phrases, and a fade that only moves
+        // on voiced frames would sit frozen through exactly that gap.
+        {
+            const float x = xfade_.load();
+            if (x < 1.0f) xfade_.store (std::min (1.0f, x + stepMs_ / kScaleXfadeMs));
+        }
 
         if (! voiced || f0Hz <= 0.0f)
         {
@@ -281,6 +310,20 @@ public:
     // Public so a test can pin the decision independently of the envelope.
     float nearestDegreeCents (float cents) const noexcept
     {
+        const float x = xfade_.load();
+        const float now = nearestIn (cents, false);
+        if (x >= 1.0f) return now;
+
+        // Blend the TARGETS, not the masks: a half-enabled degree is
+        // meaningless, whereas a target that travels from where the old scale
+        // put the note to where the new one does is exactly the audible
+        // behaviour wanted.
+        const float was = nearestIn (cents, true);
+        return was + (now - was) * x;
+    }
+
+    float nearestIn (float cents, bool previous) const noexcept
+    {
         const int root = keyRoot_.load();
 
         // Work relative to the root so degree indices are semitones above it.
@@ -296,9 +339,12 @@ public:
         for (int oct = -1; oct <= 1; ++oct)
             for (int s = 0; s < 12; ++s)
             {
-                if (! degEnabled_[(size_t) s].load()) continue;
-                const float d = 100.0f * (float) s + degBias_[(size_t) s].load()
-                              + 1200.0f * (float) oct;
+                const bool  en = previous ? prevEnabled_[(size_t) s].load()
+                                          : degEnabled_[(size_t) s].load();
+                if (! en) continue;
+                const float bias = previous ? prevBias_[(size_t) s].load()
+                                            : degBias_[(size_t) s].load();
+                const float d = 100.0f * (float) s + bias + 1200.0f * (float) oct;
                 const float dist = std::fabs (d - within);
                 if (dist < bestDist) { bestDist = dist; bestCents = d; any = true; }
             }
@@ -329,6 +375,9 @@ private:
 
     std::array<std::atomic<bool>, 12>  degEnabled_ {};
     std::array<std::atomic<float>, 12> degBias_ {};
+    std::array<std::atomic<bool>, 12>  prevEnabled_ {};
+    std::array<std::atomic<float>, 12> prevBias_ {};
+    std::atomic<float> xfade_ { 1.0f };      // 1 = settled on the current set
 
     bool  haveNote_ = false, haveSlow_ = false, havePending_ = false;
     float curCents_ = 0.0f, targetCents_ = 0.0f, noteRefCents_ = 0.0f;
@@ -343,7 +392,12 @@ public:
     // for the song.
     void initDegrees() noexcept
     {
-        for (int i = 0; i < 12; ++i) { degEnabled_[(size_t) i].store (true); degBias_[(size_t) i].store (0.0f); }
+        for (int i = 0; i < 12; ++i)
+        {
+            degEnabled_[(size_t) i].store (true);  degBias_[(size_t) i].store (0.0f);
+            prevEnabled_[(size_t) i].store (true); prevBias_[(size_t) i].store (0.0f);
+        }
+        xfade_.store (1.0f);
     }
 };
 

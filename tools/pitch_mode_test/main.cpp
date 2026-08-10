@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "EedPitchProcessor.h"
 #include "EedDeviceRegistry.h"
+#include "EedKeyFeed.h"
 #include <cstdio>
 static int g_fail = 0;
 static void check (bool c, const juce::String& w)
@@ -21,6 +22,29 @@ int main()
 {
     EedPitchProcessor p;
     p.prepareToPlay (48000.0, 512);
+
+    std::printf ("== a FRESHLY CONSTRUCTED device matches its advertised defaults ==\n");
+    {
+        // The advertisement is a promise about what adding this device does.
+        // A member initialiser that disagrees with its ParamSpec breaks that
+        // promise silently, and only on the FIRST instance - a state restore
+        // hides it forever after.
+        EedPitchProcessor fresh;
+        fresh.prepareToPlay (48000.0, 512);
+        int mismatches = 0;
+        for (const auto& sp : EedPitchProcessor::schema().params())
+        {
+            if (sp.id == "reset_stats") continue;          // momentary, always 0
+            const double got = fresh.getParamValue (juce::String (sp.id));
+            if (std::abs (got - sp.def) > 1.0e-4)
+            {
+                ++mismatches;
+                std::printf ("      %s: constructed %.3f, advertised %.3f\n",
+                             sp.id.c_str(), got, sp.def);
+            }
+        }
+        check (mismatches == 0, "every param constructs at its advertised default");
+    }
 
     std::printf ("== correction_mode WRITES the visible params ==\n");
     {
@@ -111,6 +135,111 @@ int main()
         check (skipped >= 1 && applied == 0, "keyless entry reported as skipped");
     }
 
+    std::printf ("== P4: key_source auto FOLLOWS the detected key ==\n");
+    {
+        auto pump = [&] (int blocks)
+        {
+            juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+            for (int i = 0; i < blocks; ++i) { b.clear(); p.processBlock (b, m); }
+        };
+        auto publish = [] (int root, bool minor, float conf, float tuning, const char* src)
+        {
+            echojay::DetectedKeyFact f;
+            f.valid = true; f.root = root; f.minor = minor;
+            f.confidence = conf; f.tuningHz = tuning; f.fromBus = true;
+            std::strncpy (f.sourceName, src, sizeof (f.sourceName) - 1);
+            echojay::KeyFeed::instance().publish (f);
+        };
+
+        p.applyStructured (params ({ { "key_source", "auto" },
+                                     { "reference_source", "auto" } }));
+
+        // F# minor, confidently, from a bus source.
+        publish (6, true, 0.86f, 441.3f, "Music Bus");
+        pump (4);
+        check (p.getParamValue ("key_root") == 6.0, "key_root followed to F#");
+        const auto* sp = EedPitchProcessor::schema().find ("scale");
+        check (sp->choiceLabel (p.getParamValue ("scale")) == "minor", "scale followed to minor");
+        check (std::abs (p.getParamValue ("reference_hz") - 441.3) < 0.1,
+               "reference_hz followed the detected tuning, not dragged to 440");
+
+        const auto st = p.autoKeyState();
+        check (st.applied && st.sourceName == "Music Bus",
+               "the state names its source for the UI: " + st.sourceName);
+    }
+
+    std::printf ("== below the gate it falls to CHROMATIC, not to the last key ==\n");
+    {
+        auto pump = [&] (int blocks)
+        {
+            juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+            for (int i = 0; i < blocks; ++i) { b.clear(); p.processBlock (b, m); }
+        };
+        // A stale key applied with total confidence is worse than none: the
+        // fallback must be chromatic, and the PREVIOUS key must not survive.
+        echojay::DetectedKeyFact f;
+        f.valid = true; f.root = 6; f.minor = true; f.confidence = 0.31f;
+        f.tuningHz = 441.3f;
+        std::strncpy (f.sourceName, "Music Bus", 10);
+        echojay::KeyFeed::instance().publish (f);
+        pump (4);
+
+        const auto* sp = EedPitchProcessor::schema().find ("scale");
+        check (sp->choiceLabel (p.getParamValue ("scale")) == "chromatic",
+               "a 0.31-confidence key falls back to chromatic");
+        for (int s2 = 0; s2 < 12; ++s2)
+            if (! p.corrector().degreeEnabled (s2))
+            { check (false, "chromatic must allow every degree"); break; }
+        const auto st = p.autoKeyState();
+        check (st.fellBack && ! st.applied, "the state reports the fallback so the UI can show it");
+    }
+
+    std::printf ("== no source at all is also chromatic, not a guess ==\n");
+    {
+        echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact{});
+        juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+        for (int i = 0; i < 4; ++i) { b.clear(); p.processBlock (b, m); }
+        const auto* sp = EedPitchProcessor::schema().find ("scale");
+        check (sp->choiceLabel (p.getParamValue ("scale")) == "chromatic",
+               "no key detected -> chromatic");
+    }
+
+    std::printf ("== setting key or scale BY HAND takes over from auto ==\n");
+    {
+        p.applyStructured (params ({ { "key_source", "auto" } }));
+        p.applyStructured (params ({ { "scale", "dorian" } }));
+        const auto* ks = EedPitchProcessor::schema().find ("key_source");
+        check (ks->choiceLabel (p.getParamValue ("key_source")) == "manual",
+               "a hand-set scale flips key_source to manual");
+        // ...and auto must not overwrite it on the next block.
+        echojay::DetectedKeyFact f;
+        f.valid = true; f.root = 6; f.minor = true; f.confidence = 0.9f;
+        echojay::KeyFeed::instance().publish (f);
+        juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+        for (int i = 0; i < 4; ++i) { b.clear(); p.processBlock (b, m); }
+        const auto* sp = EedPitchProcessor::schema().find ("scale");
+        check (sp->choiceLabel (p.getParamValue ("scale")) == "dorian",
+               "the hand-set scale survives the next detected key");
+    }
+
+    std::printf ("== a live key change CROSS-FADES rather than switching on a sample ==\n");
+    {
+        p.applyStructured (params ({ { "key_source", "auto" } }));
+        echojay::DetectedKeyFact f;
+        f.valid = true; f.root = 0; f.minor = false; f.confidence = 0.9f;
+        echojay::KeyFeed::instance().publish (f);
+        juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+        for (int i = 0; i < 40; ++i) { b.clear(); p.processBlock (b, m); }
+        check (! p.corrector().scaleCrossfading(), "settled after the first key");
+
+        f.root = 6; f.minor = true;
+        echojay::KeyFeed::instance().publish (f);
+        b.clear(); p.processBlock (b, m);
+        check (p.corrector().scaleCrossfading(),
+               "a modulation starts a cross-fade instead of stepping");
+        check (p.corrector().scaleCrossfadeProgress() < 0.9f, "...and it is genuinely gradual");
+    }
+
     std::printf ("== the P3-P4 safety rule is stated where the model reads it ==\n");
     {
         // Until the key auto-map exists the model will be putting this in vocal
@@ -119,11 +248,11 @@ int main()
         const auto& sc = *EedPitchProcessor::schema().find ("scale");
         const juce::String d (sc.description);
         check (sc.def == 9.0, "scale DEFAULTS to chromatic");
-        check (d.containsIgnoreCase ("chromatic unless"), "text says default to chromatic unless told the key");
+        check (d.containsIgnoreCase ("NEVER GUESS A KEY"), "text forbids guessing a key outright");
         check (d.contains ("13") && d.contains ("29"),
                "text carries the measured cost of guessing (13 -> 29 cents)");
-        check (d.containsIgnoreCase ("does not detect the key"),
-               "text says plainly that the device cannot detect the key yet");
+        check (d.containsIgnoreCase ("chromatic is the answer"),
+               "text names chromatic as the answer when the key is unknown");
     }
 
     std::printf ("== the two acceptance briefs are discriminable from the text ==\n");

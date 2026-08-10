@@ -224,6 +224,10 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
     content.reduce (juce::jmin (kPad, content.getWidth() / 4),
                     juce::jmin (6, content.getHeight() / 4));
 
+    // The key ATTRIBUTION line, directly under the readout: where the key
+    // came from is what makes a wrong key diagnosable.
+    keyAttrBounds_ = content.removeFromBottom (juce::jmin (16, content.getHeight() / 5));
+
     // The latency MODE gets its own band, full width, because it is a
     // workflow decision rather than a tweak.
     {
@@ -283,6 +287,7 @@ void EedPitchEditor::paintContent (juce::Graphics& g)
     if (! numbersPanel_.isEmpty()) paintNumbers    (g, numbersPanel_, r);
     if (! guardPanel_.isEmpty())   paintGuardPanel (g, guardPanel_, r);
     if (! latencyBounds_.isEmpty()) paintLatencyMode (g, latencyBounds_);
+    if (! keyAttrBounds_.isEmpty()) paintKeyAttribution (g, keyAttrBounds_);
 
     g.setOpacity (1.0f);
 }
@@ -393,6 +398,45 @@ void EedPitchEditor::paintGuardPanel (juce::Graphics& g, juce::Rectangle<int> ar
     g.setFont (uiFont (9.0f));
     g.drawText (juce::String (r.voicedHops) + " / " + juce::String (r.totalHops) + " hops voiced",
                 area.removeFromTop (rowH), juce::Justification::centredLeft);
+}
+
+void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int> area)
+{
+    const auto st = proc_.autoKeyState();
+    if (! st.active)
+    {
+        g.setColour (C::text3);
+        g.setFont (uiFont (9.0f));
+        g.drawText ("key set by hand", area, juce::Justification::centredLeft);
+        return;
+    }
+
+    if (st.applied)
+    {
+        static const char* kNames[12] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+        // GREYED, because in auto these are not the user's values to edit -
+        // they are a reading, and showing them as live controls would invite
+        // an edit that the next block silently overwrites.
+        g.setColour (C::text3);
+        g.setFont (uiFont (9.0f));
+        juce::String line;
+        line << "auto: " << kNames[st.root % 12] << (st.minor ? " minor" : " major")
+             << "  " << juce::String (st.tuningHz, 1) << " Hz"
+             << "  conf " << juce::String (st.conf, 2);
+        if (st.sourceName.isNotEmpty()) line << "   from \"" << st.sourceName << "\"";
+        g.drawText (line, area, juce::Justification::centredLeft);
+        return;
+    }
+
+    // The fallback is SHOWN, never silent. A user who cannot see that the key
+    // was rejected will read chromatic correction as the device misbehaving.
+    g.setColour (C::amber);
+    g.setFont (uiFont (9.0f, true));
+    g.drawText (st.conf > 0.0f
+                    ? "auto: key confidence " + juce::String (st.conf, 2)
+                        + " too low - using CHROMATIC"
+                    : juce::String ("auto: no key detected - using CHROMATIC"),
+                area, juce::Justification::centredLeft);
 }
 
 void EedPitchEditor::paintLatencyMode (juce::Graphics& g, juce::Rectangle<int> area)

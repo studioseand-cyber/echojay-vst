@@ -71,6 +71,23 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "does not chatter",
           true },
 
+        { EedPitchProcessor::kKeySource, "", 0.0, 1.0, 0.0,
+          "where the key comes from. auto FOLLOWS THE DETECTED KEY of the "
+          "music - EchoJay measures it on the mix or instrumental bus and this "
+          "device tracks it, including a mid-song modulation, so you do not "
+          "have to know or state the key. manual uses key_root and scale as "
+          "set. In auto, a reading that is not confident enough falls back to "
+          "CHROMATIC rather than to a guess or to a stale key, and the UI "
+          "names which source the key came from",
+          false, { "auto", "manual" } },
+
+        { EedPitchProcessor::kRefSource, "", 0.0, 1.0, 0.0,
+          "where concert pitch comes from. auto follows the TUNING EchoJay "
+          "detected in the music, so a track cut at 441.3 Hz is corrected to "
+          "441.3 rather than dragged to 440 and left sitting subtly wrong "
+          "against everything else. manual uses reference_hz as set",
+          false, { "auto", "manual" } },
+
         { EedPitchProcessor::kKeyRoot, "", 0.0, 11.0, 0.0,
           "the root the scale is built on. IGNORED while scale is chromatic, "
           "which is the default - so setting this alone changes nothing. Only "
@@ -80,16 +97,16 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" } },
 
         { EedPitchProcessor::kScale, "", 0.0, 10.0, 9.0,
-          "which notes correction is allowed to choose. DEFAULT TO CHROMATIC "
-          "UNLESS THE USER STATES A KEY: this device does not detect the key "
-          "yet, and forcing a scale the song is not actually in is measurably "
-          "WORSE THAN NOT CORRECTING AT ALL - a take left 13 cents from the "
-          "nearest note on average was pushed to 29 cents by correcting it to "
-          "a wrong key, because partial correction toward foreign notes lands "
-          "between semitones. Chromatic still tunes every note and cannot "
-          "force a wrong one. Set a named scale only when the user names the "
-          "key, or when they ask for the tighter, more obviously-tuned sound "
-          "and have told you what key the song is in",
+          "which notes correction is allowed to choose. With key_source auto "
+          "this FOLLOWS THE DETECTED KEY - leave it alone and it tracks the "
+          "song. Setting it by hand switches key_source to manual, and then: "
+          "NEVER GUESS A KEY. Forcing a scale the song is not actually in is "
+          "measurably WORSE THAN NOT CORRECTING AT ALL - a take left 13 cents "
+          "from the nearest note on average was pushed to 29 cents by "
+          "correcting it to a wrong key, because partial correction toward "
+          "foreign notes lands between semitones. If no key is detected and "
+          "the user has not named one, chromatic is the answer: it still tunes "
+          "every note and cannot force a wrong one",
           false,
           { "major", "minor", "harmonic_minor", "dorian", "mixolydian",
             "major_pentatonic", "minor_pentatonic", "blues", "whole_tone",
@@ -204,6 +221,15 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         refreshLatency();
         return true;
     }
+    if (id == kKeySource)
+    {
+        // manual = 1, auto = 0 (choices order). Switching back to auto must
+        // re-apply on the next block, so the memo is cleared.
+        keyAuto_.store (value < 0.5);
+        lastAutoRoot_ = -1; lastAutoFellBack_ = false;
+        return true;
+    }
+    if (id == kRefSource)   { refAuto_.store (value < 0.5); lastAutoTuning_ = 0.0f; return true; }
     if (id == kMode)        { applyMode ((int) std::lround (value)); return true; }
     if (id == kMix)         { psola_.setMixPercent ((float) value);  return true; }
     if (id == kOutputDb)    { psola_.setOutputDb ((float) value);    return true; }
@@ -213,9 +239,16 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
     if (id == kRetuneMs)    { correct_.setRetuneMs ((float) value); toCustomMode(); return true; }
     if (id == kFlex)        { correct_.setFlex ((float) value);     toCustomMode(); return true; }
     if (id == kHumanize)    { correct_.setHumanize ((float) value); toCustomMode(); return true; }
-    if (id == kKeyRoot)     { correct_.setKeyRoot ((int) std::lround (value)); return true; }
-    if (id == kScale)       { applyScale ((int) std::lround (value)); return true; }
-    if (id == kReferenceHz) { correct_.setReferenceHz ((float) value); return true; }
+    if (id == kKeyRoot)
+    {
+        // Setting the key by hand IS choosing manual - otherwise the next
+        // block silently overwrites it and the control looks broken.
+        correct_.setKeyRoot ((int) std::lround (value));
+        keyAuto_.store (false);
+        return true;
+    }
+    if (id == kScale)       { applyScale ((int) std::lround (value)); keyAuto_.store (false); return true; }
+    if (id == kReferenceHz) { correct_.setReferenceHz ((float) value); refAuto_.store (false); return true; }
     if (id == kTranspose)   { correct_.setTranspose ((float) value);   return true; }
     if (id == kIgnoreVib)   { correct_.setIgnoreVibrato (value >= 0.5); toCustomMode(); return true; }
     if (id == kResetStats)
@@ -237,6 +270,8 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kFormantMode) return (double) psola_.getFormantMode();
     if (id == kLowLatency)  return psola_.getLookaheadPeriods() <= kLookaheadTracking + 0.01f
                                  ? 1.0 : 0.0;
+    if (id == kKeySource)   return keyAuto_.load() ? 0.0 : 1.0;
+    if (id == kRefSource)   return refAuto_.load() ? 0.0 : 1.0;
     if (id == kMode)        return (double) modeIndex_.load();
     if (id == kMix)         return (double) psola_.getMixPercent();
     if (id == kOutputDb)    return (double) psola_.getOutputDb();
@@ -384,6 +419,84 @@ juce::String EedPitchProcessor::applyStructured (const juce::var& structured,
 }
 
 // ---------------------------------------------------------------------------
+// the key auto-map (spec §6) — why this device belongs in EchoJay
+// ---------------------------------------------------------------------------
+// The precedence walk that decides WHICH source wins lives once, in
+// PluginEditor::collectKeySources(), and is shared with the [DETECTED KEY] feed
+// block and the Meters panel. This reads its published result. Re-implementing
+// the walk here would give the suite two rankings that can disagree, which is
+// the exact bug the shared collector exists to prevent.
+void EedPitchProcessor::refreshAutoKey()
+{
+    const bool keyAuto = keyAuto_.load();
+    const bool refAuto = refAuto_.load();
+    if (! keyAuto && ! refAuto)
+    {
+        const juce::ScopedLock sl (autoLock_);
+        autoState_.active = false;
+        return;
+    }
+
+    const echojay::DetectedKeyFact f = echojay::KeyFeed::instance().get();
+
+    // THE CONFIDENCE GATE. Below it, fall back to CHROMATIC - never to the
+    // last known key. A stale key is applied with total confidence and can
+    // force a note that is wrong for the song; chromatic still tunes every
+    // note and cannot. Measured: correcting to a wrong key pushed a take from
+    // 13 cents off the nearest note to 29, i.e. worse than not correcting.
+    const bool usable = f.usable();
+
+    if (keyAuto)
+    {
+        const int  root  = usable ? f.root  : 0;
+        const bool minor = usable ? f.minor : false;
+
+        if (! usable)
+        {
+            if (! lastAutoFellBack_)
+            {
+                correct_.beginScaleCrossfade();
+                applyScale (kScaleChromatic);
+                lastAutoFellBack_ = true;
+                lastAutoRoot_ = -1;
+            }
+        }
+        else if (root != lastAutoRoot_ || minor != lastAutoMinor_ || lastAutoFellBack_)
+        {
+            // A live key change - a modulation, or a new song under a running
+            // instance - cross-fades rather than switching on a sample.
+            correct_.beginScaleCrossfade();
+            correct_.setKeyRoot (root);
+            applyScale (minor ? kScaleMinor : kScaleMajor);
+            lastAutoRoot_ = root; lastAutoMinor_ = minor; lastAutoFellBack_ = false;
+        }
+    }
+
+    if (refAuto && usable && f.tuningHz > 0.0f
+        && std::abs (f.tuningHz - lastAutoTuning_) > 0.05f)
+    {
+        correct_.setReferenceHz (f.tuningHz);
+        lastAutoTuning_ = f.tuningHz;
+    }
+
+    const juce::ScopedLock sl (autoLock_);
+    autoState_.active     = keyAuto;
+    autoState_.applied    = keyAuto && usable;
+    autoState_.fellBack   = keyAuto && ! usable;
+    autoState_.root       = usable ? f.root : 0;
+    autoState_.minor      = usable && f.minor;
+    autoState_.conf       = f.confidence;
+    autoState_.tuningHz   = f.tuningHz;
+    autoState_.sourceName = juce::String (juce::CharPointer_ASCII (f.sourceName));
+}
+
+EedPitchProcessor::AutoKeyState EedPitchProcessor::autoKeyState() const
+{
+    const juce::ScopedLock sl (autoLock_);
+    return autoState_;
+}
+
+// ---------------------------------------------------------------------------
 // scales
 // ---------------------------------------------------------------------------
 // Semitone masks relative to key_root. Order MIRRORS the schema's choices list.
@@ -492,6 +605,7 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     }
 
     refreshLatency();
+    refreshAutoKey();
 
     const int n = buffer.getNumSamples();
 
@@ -511,8 +625,12 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     {
         // This runs once per BLOCK, not once per detector hop, so it must be
         // told how much time the call represents.
+        // sampleRate_, not getSampleRate(): the latter is set by the HOST via
+        // setRateAndBufferSizeDetails, so it can be 0 in any path that calls
+        // prepareToPlay directly - and 1000*n/0 is infinity, which silently
+        // completes every time constant in the corrector on its first block.
         target = correct_.process (r.f0Hz, r.voiced,
-                                   1000.0f * (float) n / (float) getSampleRate());
+                                   1000.0f * (float) n / (float) sampleRate_);
         psola_.setTargetHz (target);
     }
 

@@ -19,6 +19,7 @@
 #include "EedPitchEngine.h"
 #include "EedPsolaEngine.h"
 #include "EedPitchCorrect.h"
+#include "EedKeyFeed.h"
 
 class EedPitchProcessor : public EedDeviceProcessor
 {
@@ -58,6 +59,24 @@ public:
     static constexpr const char* kMode         = "correction_mode";
     static constexpr const char* kMix          = "mix";
     static constexpr const char* kOutputDb     = "output_db";
+    static constexpr const char* kKeySource    = "key_source";
+    static constexpr const char* kRefSource    = "reference_source";
+
+    // What the auto-map resolved to, for the editor's attribution line. A
+    // wrong reading is only diagnosable when the user can see where it came
+    // from, so the source name travels with the value.
+    struct AutoKeyState
+    {
+        bool         active   = false;   // key_source is auto
+        bool         applied  = false;   // a key was actually taken
+        bool         fellBack = false;   // gated -> chromatic
+        int          root     = 0;
+        bool         minor    = false;
+        float        conf     = 0.0f;
+        float        tuningHz = 440.0f;
+        juce::String sourceName;
+    };
+    AutoKeyState autoKeyState() const;
 
     // correction_mode indices. `custom` is LAST and is what the display falls
     // to the moment any of the params a mode writes is moved by hand.
@@ -66,6 +85,8 @@ public:
     // Index of `custom` in the scale choices - a DISPLAY state reached by
     // editing a degree, never a mask to write.
     static constexpr int kScaleCustom = 10;
+    // Indices into the scale choices, used by the auto-map.
+    static constexpr int kScaleMajor = 0, kScaleMinor = 1, kScaleChromatic = 9;
 
     // The pitch_scale array move (spec §5.1). MERGE semantics keyed on
     // `semitone`: an omitted degree keeps its current state.
@@ -104,13 +125,32 @@ private:
     echojay::PitchEngine engine_;
     echojay::PsolaEngine  psola_;
     echojay::PitchCorrect correct_;
-    std::atomic<bool>     correctOn_ { false };
-    std::atomic<int>      scaleIndex_ { 0 };
+    // These three MUST match their schema defaults. They did not: correct
+    // advertised on but constructed off, correction_mode advertised natural
+    // but displayed custom, and scale advertised chromatic but constructed
+    // MAJOR - so a freshly added device came up forcing C major, which is
+    // exactly the guess the advertisement forbids.
+    std::atomic<bool>     correctOn_ { true };
+    std::atomic<int>      scaleIndex_ { 9 };   // chromatic
 
     // Writing a named scale rewrites all twelve degrees. Touching one degree
     // afterwards would move `scale` to custom - the same visible-state rule the
     // spec sets for correction_mode.
     void applyScale (int index);
+
+    // Reads the shared feed and moves key_root/scale/reference_hz when the
+    // relevant source is auto. Called per block; only acts on an actual
+    // change, so a steady key costs one atomic read.
+    void refreshAutoKey();
+
+    std::atomic<bool> keyAuto_ { true };
+    std::atomic<bool> refAuto_ { true };
+    int   lastAutoRoot_  = -1;
+    bool  lastAutoMinor_ = false;
+    bool  lastAutoFellBack_ = false;
+    float lastAutoTuning_ = 0.0f;
+    mutable juce::CriticalSection autoLock_;
+    AutoKeyState autoState_;
 
     // Writes the six visible params a mode stands for, and reports what it
     // moved - a mode that changes behaviour without moving knobs is undialable
@@ -132,7 +172,7 @@ private:
     juce::String pendingModeSummary_, pendingScaleSummary_;
 
     bool applyingMode_ = false;
-    std::atomic<int> modeIndex_ { kCustom };
+    std::atomic<int> modeIndex_ { kNatural };
     double               sampleRate_ = 48000.0;
     int                  latencyVoiceType_ = -1;
 

@@ -47,7 +47,8 @@ private:
     // low_latency is a WORKFLOW choice (tracking vs mixing), so it reads as a
     // mode rather than a checkbox, and carries the number it costs.
     juce::TextButton latencyBtn_;
-    juce::Rectangle<int> latencyBounds_;
+    juce::Rectangle<int> latencyBounds_, keyAttrBounds_;
+    void paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int> area);
     void paintLatencyMode (juce::Graphics& g, juce::Rectangle<int> area);
     void refreshLatencyButton();
     int  currentLatencyMs (bool lowLatency) const;
