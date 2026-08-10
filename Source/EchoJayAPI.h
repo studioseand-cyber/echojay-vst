@@ -347,7 +347,31 @@ public:
     // Call 2 stays at 2800: it was measured on 4 Aug at median 2590 ms
     // (769 in / 68-71 out) and has the tighter spread, so it keeps the
     // tighter budget. Do not raise it in sympathy.
-    static constexpr int kClassifyBudgetMs         = 4500;
+    //
+    // LOWERED 4500 -> 3200 on 8 Aug 2026. Every number above describes
+    // SONNET; the classify route moved to gpt-4.1 (server prompt v21) and
+    // both ends re-set from the 8-hour sampler window through the shipped
+    // transport, abort lifted (480 rows, 96 per shape): call 1's slowest
+    // shape maxed at 2062 ms, medians 811-859, p95s 1198-1510; call 2
+    // maxed at 1758 ms. The server ceiling moved 4000 -> 2500 on the same
+    // window (clears the slowest real completion by ~440 ms).
+    //
+    // 3200 = server ceiling 2500 + measured pre-model overhead 174-384 ms
+    // + ~300 ms round trip, with margin. The constraint that MATTERS is
+    // staying ABOVE the server ceiling plus its surroundings: when the
+    // server aborts at 2500 its staged-label fallback must reach this
+    // client, rather than the client quitting first on a call that was
+    // about to answer. The floor assertion encoding both constraints
+    // lives in the saas repo (scripts/test-web-split-call.mjs), derived
+    // from this window; it is what caught 2200 and 2800.
+    //
+    // The window's one failure in 480 was a HANG, not a slow answer (a
+    // stalled in-flight call that only resolved on process resume, ~35
+    // minutes of wall clock) - the reason the abort exists at all, and
+    // the reason the ceiling is margin-over-max rather than a completion
+    // percentile. From this side a hang and a slow call are identical;
+    // production watches the split via intentFallback = 'timeout'.
+    static constexpr int kClassifyBudgetMs         = 3200;
     static constexpr int kClassifyQuestionBudgetMs = 2800;
 
     /** Call 1. Calls back EXACTLY ONCE on the message thread.
