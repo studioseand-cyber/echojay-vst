@@ -19041,6 +19041,12 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     std::vector<PartialPart> partialParts;
     for (const auto& di : ch.getDialInfos())
     {
+        // Written-but-display-stale (bridged report-only) is recorded
+        // queryably whatever the slot status: the write was kept on norm
+        // proof and the display disagreement must not vanish into the
+        // applied count.
+        if (!di.unconfirmed.isEmpty())
+            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
@@ -19191,6 +19197,8 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
     for (const auto& di : ch.getDialInfos())
     {
         if (!touchedNames.contains(di.name)) continue;
+        if (!di.unconfirmed.isEmpty())   // bridged report-only: same record as the build path
+            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:

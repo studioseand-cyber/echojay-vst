@@ -102,6 +102,8 @@ public:
         DialStatus        status = DialStatus::none;
         juce::StringArray manual;      // human labels of unwritten controls
         juce::StringArray readbackMiss; // subset of manual: wrote wrong, reverted
+        juce::StringArray unconfirmed; // written and KEPT on norm proof; display
+                                       // read was stale (bridged AU, report-only)
         int               appliedCount = 0;
     };
     std::vector<SlotDialInfo> getDialInfos() const;
@@ -272,7 +274,7 @@ public:
     // structured settings plus the plugin's map.
     struct ApplyReport { juce::String semantic; bool applied; float normalized; juce::String note;
                          juce::String landedText; bool displayVerified = false; bool readbackMismatch = false;
-                         juce::var requestedValue; };
+                         bool staleDisplayKept = false; juce::var requestedValue; };
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);
@@ -660,6 +662,7 @@ private:
         DialStatus                           dialStatus = DialStatus::none;
         juce::StringArray                    dialManual;                // unwritten control labels
         juce::StringArray                    dialReadbackMiss;          // wrote wrong, reverted
+        juce::StringArray                    dialUnconfirmed;           // written, display stale (bridged)
         int                                  dialAppliedCount = 0;
         // Hosted settings cache (see setStateCacheEnabled). The blob and its
         // bookkeeping are read under stateCacheMutex_; everything else on
