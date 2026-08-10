@@ -22276,6 +22276,13 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         // appear on a chain that has not closed.
         juce::StringArray slotJsons;
         bool chainProvisional = false;
+        // Rendering-side half of the stream observable (10 Aug 2026). The
+        // transport logs what it RECEIVED; these count what actually reached
+        // a repaint. Comparing the two on one turn is what distinguishes
+        // "no deltas" from "deltas discarded" -- the question three tests
+        // could not answer, because each half was silent about the other.
+        int deltasIn = 0, proseEvents = 0, slotEvents = 0, paints = 0;
+        juce::uint32 tFirstPaint = 0;
     };
     auto st = std::make_shared<StreamTurn>();
     st->provisionalId = provisionalId;
@@ -22294,6 +22301,8 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
     {
         auto* ed = safeThis.getComponent();
         if (ed == nullptr) return;
+        ++stp->paints;
+        if (stp->tFirstPaint == 0) stp->tFirstPaint = juce::Time::getMillisecondCounter();
         if (! stp->sawFirstContent)
         {
             stp->sawFirstContent = true;
@@ -22319,6 +22328,7 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
 
     st->parser.onProse = [paintBubble, stp] (const juce::String& s)
     {
+        ++stp->proseEvents;
         stp->prose += s;
         paintBubble();
     };
@@ -22329,6 +22339,7 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
     // see only what onBlock delivers.
     st->parser.onSlot = [paintBubble, stp] (int, const juce::String& slotJson)
     {
+        ++stp->slotEvents;
         stp->slotJsons.add (slotJson);
         stp->chainJson = "{\"chain\":[" + stp->slotJsons.joinIntoString (",") + "]}";
         stp->chainProvisional = true;
@@ -22350,6 +22361,7 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
     ev.onTextDelta = [safeThis, st] (const juce::String& t)
     {
         if (safeThis == nullptr) return;
+        ++st->deltasIn;
         st->parser.appendDelta (t);
     };
     // ---- Feature B: the reasoning ticker (spec section 4, Shape A) --------
@@ -22442,6 +22454,24 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         ed->activeChatStream_ = nullptr;
         st->parser.finish();   // flush withheld prose; the authoritative
                                // replace below supersedes it either way
+
+        // The rendering half of the stream observable. Read TOGETHER with the
+        // transport's `EJStream: reads=...` line for the same turn:
+        //   deltas=0                      -> nothing arrived: transport/server
+        //   deltas>0, paints=0            -> arrived and were discarded
+        //   deltas>0, paints>0, firstPaint
+        //     close to the turn total     -> arrived in a lump at the end,
+        //                                    i.e. buffered somewhere upstream
+        //   paints spread through the turn-> progressive, working as designed
+        // firstPaint is what the user actually experienced: the moment
+        // anything at all stopped being a spinner.
+        EchoJay_NSLog (("EJStream: render deltas=" + juce::String (st->deltasIn)
+                        + " prose=" + juce::String (st->proseEvents)
+                        + " slots=" + juce::String (st->slotEvents)
+                        + " paints=" + juce::String (st->paints)
+                        + " firstPaint=" + juce::String (st->tFirstPaint
+                              ? (int) (juce::Time::getMillisecondCounter() - st->tFirstPaint) : -1)
+                        + "ms-before-done").toRawUTF8());
 
         const auto reply      = done.getProperty ("reply", juce::var()).toString();
         const auto chainBlock = done.getProperty ("chainBlock", juce::var()).toString();
