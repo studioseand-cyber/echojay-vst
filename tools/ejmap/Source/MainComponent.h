@@ -7982,6 +7982,37 @@ public:
             return false;
         }
 
+        // THE UNKNOWN-ROWS GUARD (10 Aug 2026, second-machine prep). On a
+        // machine where the identity fetch failed or never ran, EVERY row
+        // reads unknown, unknown rows are deliberately offered as work, and
+        // Sweep All would re-sweep an entire already-mapped catalogue with
+        // nothing on screen saying so -- a wasted night that reads as a
+        // productive one. A sweep starts only on a server ANSWER. A
+        // successful answer of zero maps still passes: failure is a
+        // statement about the transport, never about the count.
+        if (mapStateFetchedAt == juce::Time() && ! rows.isEmpty())
+        {
+            // Self-healing, not just refusing: the fetch is synchronous and
+            // the scanned rows are in hand, so a sweep started before any
+            // fetch ran (the CLI path) asks now rather than telling the
+            // operator to.
+            sweepSay ("Asking the server which plugins are already mapped...");
+            fetchMapStates (rows);
+        }
+        if (mapStateFailure.isNotEmpty())
+        {
+            sweepSay ("SWEEP REFUSED: the server map-state fetch failed ("
+                        + mapStateFailure + "). Every plugin would read unknown and the "
+                        "sweep would redo work the server already has. Re-scan to retry.");
+            return false;
+        }
+        if (mapStateFetchedAt == juce::Time())
+        {
+            sweepSay ("SWEEP REFUSED: the server has not been asked which plugins are "
+                      "already mapped (no map-state fetch has run yet). Scan first.");
+            return false;
+        }
+
         // NOBODY IS AT THE KEYBOARD. This is what lets the retry rule count an
         // unattributed death: the discount exists for the operator's
         // force-quit, and there is no operator.
@@ -12698,7 +12729,21 @@ private:
         // batches returned no response at all, while 3 worked. So batches are
         // bounded by LENGTH as well as count, and by length first, because a
         // long version string moves the boundary and a count cannot see that.
-        const int kMaxIdentities = 500;          // the endpoint's own cap
+        // BOUNDED BY THE RESPONSE, NOT THE REQUEST (10 Aug 2026). The cap
+        // used to be about URL length, and that reasoning was incomplete:
+        // /api/params/maps answers with every matched map's FULL BODY, and
+        // this fetch reads only `identities` and `probed` -- it throws the
+        // map bodies away. Measured against production with real identities:
+        // 10 -> 3.0 s / 322 KB, 25 -> 6.6 s / 524 KB, 50 -> 12.8 s / 932 KB.
+        // A 107-identity batch therefore took ~25 s against a 15 s timeout
+        // and every fetch on this machine failed as "no response", which
+        // made EVERY plugin read unknown -- the exact state that would have
+        // re-swept an entire mapped catalogue overnight.
+        //
+        // 25 keeps a batch near 6-7 s with real maps in the answer. The
+        // right fix is server-side (an identities-only response); until
+        // that ships this is bounded by what the wire actually costs.
+        const int kMaxIdentities = 25;
         const int kMaxQueryChars = 3000;         // stays well inside the edge's limit
         for (int i = 0; i < identities.size(); )
         {
@@ -12715,6 +12760,20 @@ private:
             if (batch.isEmpty()) break;              // one identity longer than the cap
             ++batches;
 
+            // A MINUTES-LONG STEP MUST SAY SO. 1,800 identities at 25 per
+            // request is ~70 requests; without this the window is frozen and
+            // indistinguishable from a hang (and on the CLI, silent).
+            {
+                const int totalBatches = (identities.size() + kMaxIdentities - 1) / kMaxIdentities;
+                auto line = "Asking the server which plugins are already mapped: batch "
+                          + juce::String (batches) + "/" + juce::String (totalBatches)
+                          + "  (" + juce::String (i) + "/" + juce::String (identities.size())
+                          + " identities)";
+                status.setText (line, juce::dontSendNotification);
+                std::cout << line << std::endl;
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
+            }
+
             // NEWLINE, NOT COMMA, and this is a contract change rather than a
             // preference. OTT ships version "1,3,7,0", so the identity
             // VST3|7c12157|1,3,7,0 used to arrive at the server as FOUR keys.
@@ -12729,21 +12788,39 @@ private:
             // appear in format|uid|version. The server accepts both, so an
             // older client keeps working; it just cannot ask about the
             // identities that contain a comma.
-            juce::URL url = juce::URL (endpoint).withParameter ("identities", batch.joinIntoString ("\n"));
+            // lean=1 asks for EXISTENCE, not bodies: this fetch reads only
+            // `identities` and `probed`. A deployment that predates the flag
+            // ignores it and answers in full, so the client is correct
+            // against both -- just slower against the old one.
+            juce::URL url = juce::URL (endpoint)
+                                .withParameter ("identities", batch.joinIntoString ("\n"))
+                                .withParameter ("lean", "1");
             juce::String text;
             int status = 0;
             {
+                // 60 s, not 15: the answer carries map bodies and a slow
+                // link or a cold start must not be recorded as "no response".
                 auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
-                                .withConnectionTimeoutMs (15000)
+                                .withConnectionTimeoutMs (60000)
                                 .withStatusCode (&status);
                 std::unique_ptr<juce::InputStream> in (url.createInputStream (opts));
                 if (in != nullptr) text = in->readEntireStreamAsString();
             }
             if (text.isEmpty() || status < 200 || status >= 300)
             {
-                mapStateFailure = status != 0
+                // WHICH batch, and how big. "no response" alone cannot
+                // distinguish an unreachable endpoint from one batch of many
+                // being refused for its size or contents, and the difference
+                // is the whole diagnosis (10 Aug 2026).
+                const auto where = " (batch " + juce::String (batches) + ", "
+                                 + juce::String (batch.size()) + " identities, "
+                                 + juce::String (url.toString (true).length()) + " url chars)";
+                mapStateFailure = (status != 0
                     ? "HTTP " + juce::String (status) + " from " + endpoint
-                    : "no response from " + endpoint;
+                    : "no response from " + endpoint) + where;
+                std::cout << "MAP STATE FAIL: " << mapStateFailure
+                          << "\n  first identity in the failing batch: "
+                          << (batch.isEmpty() ? juce::String ("(none)") : batch[0]) << std::endl;
                 // EVERY identity goes unknown, including ones an earlier batch
                 // resolved: a column that is fresh for the first 300 rows and
                 // stale for the rest is worse than one that says it does not
