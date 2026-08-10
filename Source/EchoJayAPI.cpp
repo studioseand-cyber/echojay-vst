@@ -1,8 +1,12 @@
 #include "EchoJayAPI.h"
+#include "EJStreamFraming.h" // SSE byte-to-frame splitter (spec step 2)
+#include "EJReplyBlocks.h"   // the whole-reply block strip (moved verbatim, spec step 3)
 #include "ChainHost.h"    // buildCurrentChainInjection reads the live rack
 #include "LinkShm.h"      // RackSidecar — targeted [CURRENT CHAIN] (Phase R)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
 #include "EqPresets.h"    // the EQ teaching block lists presets from the table
+#include "EchoJayChannelLabel.h" // kChannelChooserCapability — the classify flag
+                                 // is declared beside the chooser it describes
 
 // Defined later in this file (used by both /api/me parse sites)
 static void parseUsagePool(juce::DynamicObject* root, UserInfo& info);
@@ -135,7 +139,8 @@ EchoJayAPI::~EchoJayAPI()
 // ============ Generic POST helper ============
 
 void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
-                           std::function<void(const juce::var& json, int statusCode)> onComplete)
+                           std::function<void(const juce::var& json, int statusCode)> onComplete,
+                           int maxAttempts, int connectTimeoutMs)
 {
     auto endpoint = apiEndpoint;
     auto token = authToken;
@@ -152,7 +157,6 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
         // stall before first byte). These never reach the server, so retrying
         // is safe. Real HTTP responses (200/4xx/5xx) are NOT retried here —
         // the caller's status-code logic handles those.
-        constexpr int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; ++attempt)
         {
             // Bail immediately if the plugin has been removed. Without this the
@@ -174,7 +178,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
             statusCode = 0;
             auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
                                .withExtraHeaders(headers)
-                               .withConnectionTimeoutMs(60000)
+                               .withConnectionTimeoutMs(connectTimeoutMs)
                                .withStatusCode(&statusCode);
 
             auto stream = url.createInputStream(options);
@@ -481,7 +485,11 @@ void EchoJayAPI::login(const juce::String& email, const juce::String& password,
             if (obj && obj->hasProperty("token"))
             {
                 authToken = obj->getProperty("token").toString();
-                
+                // The classifier gate is per ACCOUNT (allowlisted uid), and
+                // the account just changed. Un-latch so a signed-in user is
+                // never stuck with the previous account's answer.
+                classifierOff_.store(false);
+
                 // Try to parse user info from login response (may or may not have it)
                 userInfo.email = obj->getProperty("email").toString();
                 
@@ -631,6 +639,7 @@ void EchoJayAPI::pollDeviceCode(const juce::String& deviceCode, int intervalMs, 
             if (statusCode == 200 && st == "authorised" && obj != nullptr && obj->hasProperty("token"))
             {
                 authToken = obj->getProperty("token").toString();
+                classifierOff_.store(false);   // account changed; see login()
 
                 // Same payload shape as /api/login: parse identically so the
                 // post-pairing state matches a password login exactly
@@ -685,6 +694,7 @@ void EchoJayAPI::logout()
 {
     authToken = "";
     userInfo = UserInfo();
+    classifierOff_.store(false);   // see the note on the login path
     saveSettings();
 }
 
@@ -909,49 +919,16 @@ void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
 
 // ============ Chat ============
 
-void EchoJayAPI::sendChat(const juce::StringArray& roles,
-                           const juce::StringArray& contents,
-                           const juce::String& systemPrompt,
-                           std::function<void(const juce::String& reply, bool success)> onComplete,
-                           const juce::String& meterJsonBlob)
+// ============ Chat request body (shared by sendChat + streamChat) ============
+// Moved VERBATIM out of sendChat (spec step 2) so the streaming variant
+// sends the identical request bytes. CONSUMES the staged per-turn state
+// (nextChat*, dial flags, classifier binding) exactly as the inline code
+// did — call once per send, after the limit gate. See the header note.
+juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
+                                              const juce::StringArray& contents,
+                                              const juce::String& systemPrompt,
+                                              const juce::String& meterJsonBlob)
 {
-    // FREE V2: the gate is LANE-AWARE — the staged turnType decides whether
-    // this send draws the daily chat pool or the monthly premium pool, so a
-    // spent premium pool never blocks plain chat and vice versa.
-    const juce::String gateTurnType = nextChatTurnType_;
-    if (!canSendTurn(gateTurnType))
-    {
-        // AUTH CACHE REFRESH — local cache says we're over limit, but the user may have
-        // upgraded tier or credits since the last server sync. Refresh from /api/me first,
-        // and only show "limit reached" if the server ALSO agrees we're at the limit.
-        // This is the self-healing path for users who upgrade mid-session.
-        auto aliveFlag = alive;
-        refreshUserInfo([this, roles, contents, systemPrompt, onComplete, aliveFlag, meterJsonBlob, gateTurnType](bool refreshSuccess)
-        {
-            if (!aliveFlag->load()) return;
-
-            if (refreshSuccess && canSendTurn(gateTurnType))
-            {
-                // Refresh revealed we actually CAN send (tier upgraded, credits added, new day, etc).
-                // Retry the send as if the limit error never happened.
-                sendChat(roles, contents, systemPrompt, onComplete, meterJsonBlob);
-                return;
-            }
-
-            // Server confirms we're at the limit (or refresh failed — fall back to cached state).
-            // Drop ALL staged per-turn state: a blocked capture's payload
-            // must not leak onto the next plain chat send.
-            if (nextChatMeters_.isNotEmpty() || nextChatIsExplicitCapture_)
-                EchoJay_NSLog("EJChat: staged capture payload dropped (limit reached)");
-            nextChatMeters_.clear();
-            nextChatTurnType_.clear();
-            nextChatBusCount_ = 0;
-            nextChatIsExplicitCapture_ = false;
-            onComplete(getLimitReachedMessage(gateTurnType), false);
-        });
-        return;
-    }
-    
     // Build messages JSON
     // Limit history to the last N messages to prevent stale captures from old
     // sessions confusing the AI. Captures persist in plugin state across DAW
@@ -1067,6 +1044,15 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
         body += ",\"dialFlags\":" + juce::JSON::toString(juce::var(arr), true);
         nextDialFlags_.clear();
     }
+    // Classifier binding (split call). Absent on any turn the classifier
+    // did not answer for, which is every turn when it is gated off — and
+    // the server then classifies for itself exactly as it does today.
+    if (nextClassifyIntent_.isNotEmpty())
+        body += ",\"classifyIntent\":" + juce::JSON::toString(nextClassifyIntent_);
+    if (nextClassifyToken_.isNotEmpty())
+        body += ",\"classifyToken\":" + juce::JSON::toString(nextClassifyToken_);
+    nextClassifyIntent_.clear();
+    nextClassifyToken_.clear();
 
     // Meter/band payload: EXPLICIT CAPTURE ONLY. Anything staged (or passed
     // via the legacy parameter) without the flag is discarded loudly — a
@@ -1111,6 +1097,14 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
         nextChatBusCount_ = 0;
         nextChatIsExplicitCapture_ = false;   // cleared after EVERY send
     }
+    // mapFps: which binary each plugin name is (per-fp exact controls
+    // exposure). Already a JSON object from ChainHost::buildMapFpsJson;
+    // consumed and cleared per send like the meters blob.
+    if (nextChatMapFps_.isNotEmpty())
+    {
+        body += ",\"mapFps\":" + nextChatMapFps_;
+        nextChatMapFps_.clear();
+    }
     if (metersBlob.isNotEmpty())
     {
         // Raw passthrough — the blob is already a JSON object; splicing it in
@@ -1139,6 +1133,63 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
                            + " (" + juce::String((int) body.getNumBytesAsUTF8()) + "b total)").toRawUTF8());
         }
     }
+
+    return body;
+}
+
+void EchoJayAPI::sendChat(const juce::StringArray& roles,
+                           const juce::StringArray& contents,
+                           const juce::String& systemPrompt,
+                           std::function<void(const juce::String& reply, bool success)> onComplete,
+                           const juce::String& meterJsonBlob)
+{
+    // FREE V2: the gate is LANE-AWARE — the staged turnType decides whether
+    // this send draws the daily chat pool or the monthly premium pool, so a
+    // spent premium pool never blocks plain chat and vice versa.
+    const juce::String gateTurnType = nextChatTurnType_;
+    if (!canSendTurn(gateTurnType))
+    {
+        // AUTH CACHE REFRESH — local cache says we're over limit, but the user may have
+        // upgraded tier or credits since the last server sync. Refresh from /api/me first,
+        // and only show "limit reached" if the server ALSO agrees we're at the limit.
+        // This is the self-healing path for users who upgrade mid-session.
+        auto aliveFlag = alive;
+        refreshUserInfo([this, roles, contents, systemPrompt, onComplete, aliveFlag, meterJsonBlob, gateTurnType](bool refreshSuccess)
+        {
+            if (!aliveFlag->load()) return;
+
+            if (refreshSuccess && canSendTurn(gateTurnType))
+            {
+                // Refresh revealed we actually CAN send (tier upgraded, credits added, new day, etc).
+                // Retry the send as if the limit error never happened.
+                sendChat(roles, contents, systemPrompt, onComplete, meterJsonBlob);
+                return;
+            }
+
+            // Server confirms we're at the limit (or refresh failed — fall back to cached state).
+            // Drop ALL staged per-turn state: a blocked capture's payload
+            // must not leak onto the next plain chat send.
+            if (nextChatMeters_.isNotEmpty() || nextChatIsExplicitCapture_)
+                EchoJay_NSLog("EJChat: staged capture payload dropped (limit reached)");
+            nextChatMeters_.clear();
+            nextChatTurnType_.clear();
+            nextChatBusCount_ = 0;
+            nextChatIsExplicitCapture_ = false;
+            // The classifier binding dies with the turn it was minted for:
+            // the token is bound to THIS message's typed portion, so letting
+            // it ride the next send would assert an intent for text it was
+            // never issued against.
+            nextClassifyIntent_.clear();
+            nextClassifyToken_.clear();
+            onComplete(getLimitReachedMessage(gateTurnType), false);
+        });
+        return;
+    }
+    
+    // Body build moved VERBATIM to buildChatRequestBody (spec step 2) so
+    // the streaming variant sends the identical request. Staged per-turn
+    // state is consumed in there, exactly as it was inline here.
+    juce::String body = buildChatRequestBody(roles, contents, systemPrompt, meterJsonBlob);
 
     postJSON("/api/chat", body, [this, onComplete](const juce::var& json, int statusCode)
     {
@@ -1262,6 +1313,558 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
         }
         onComplete(error, false);
     });
+}
+
+// ===========================================================================
+// Classifier — the split call
+// ===========================================================================
+//
+// Two endpoints, and the client never guesses which it needs:
+//
+//   POST /api/classify           call 1. Always. Returns the intent, the
+//                                preamble, the token, and — for
+//                                channel_mismatch and ambiguous — the
+//                                short-circuit question and its chips.
+//   POST /api/classify-question  call 2. ONLY when call 1 answered
+//                                questionFollows=true and left the question
+//                                empty. needs_scoping defers its wording
+//                                here because generating a question is ~102
+//                                output tokens against a classification's
+//                                ~28, and output generation is what costs
+//                                time. Only the turns that ask one pay.
+//
+// EVERY failure — offline, 4xx, 5xx, unparseable, gated off, past budget —
+// answers usable=false, which means BEHAVE EXACTLY AS TODAY. A classifier
+// that can fail a send is worse than no classifier.
+//
+// -------- quota: RECORDED, not inferred --------------------------------
+//
+// DECISION (Sean, 3 Aug 2026): the classify call is NOT pre-gated, and a
+// short-circuited turn is NOT billed.
+//
+// Written down because it is a decision, not a fact anyone can read off the
+// code — the next person here will find classify() sitting in front of
+// canSendTurn() and reasonably wonder whether that is an oversight. It is
+// not. It matches the server, where no charging code executes on this path:
+// /api/classify logs its own cost line with weight 0 and tier 'system', so
+// it never touches a user's pool, and a turn that short-circuits never
+// reaches /api/chat, which is the only place a turn is charged.
+//
+// So classify() deliberately does NOT consult canSendMessage/canSendTurn.
+// The gates stay exactly where they are, in front of the MAIN call, and a
+// user at their limit still gets the limit copy from the send path rather
+// than a silent nothing from here.
+//
+// -------- the deadline latch, and why there are no retries -----------------
+//
+// juce::URL has no cancellation, so a classify request cannot be aborted the
+// way the web client aborts its fetch. What we can do is stop WAITING for
+// it: a Timer armed at the budget races the response, whichever lands first
+// answers the caller, and the loser is discarded. The request itself keeps
+// running to completion on its worker thread and its result is dropped on
+// the floor — the discarded path returns before it can reach the caller, so
+// it renders nothing, replaces nothing, and touches no UI. That is the whole
+// contract of the latch, and it is why the check is the FIRST line of both
+// paths rather than somewhere inside them.
+//
+// Both halves run on the message thread (postJSON marshals its completion
+// through callAsync; callAfterDelay is a message-thread timer), so the
+// exchange is uncontended. It is an atomic anyway so the one-shot invariant
+// is enforced by the code rather than promised by this comment.
+//
+// NO RETRIES. postJSON's default is 3 attempts with 1s then 2s of backoff,
+// which is right for a send that must not be lost and WRONG here in a way
+// that compounds: a hung classify would outlive its 3.8s budget by minutes,
+// holding a socket and a detached thread for a result nobody is waiting for
+// any more. A classification is cheap to lose — the fallback IS the current
+// behaviour — and a stalled preamble is not cheap, so this asks once and
+// takes the answer or the fallback. maxAttempts=1, and the connection
+// timeout comes down to the budget for the same reason.
+
+std::atomic<bool> EchoJayAPI::classifierOff_ { false };
+
+namespace
+{
+    // Arms the deadline half of the latch and hands back the latch itself so
+    // the response half can race it with the same exchange().
+    std::shared_ptr<std::atomic<bool>>
+    armClassifyDeadline(int budgetMs, std::function<void()> onExpired)
+    {
+        auto latch = std::make_shared<std::atomic<bool>>(false);
+        juce::Timer::callAfterDelay(budgetMs, [latch, onExpired]
+        {
+            if (latch->exchange(true)) return;   // the response already answered
+            onExpired();
+        });
+        return latch;
+    }
+}
+
+// ============ Streaming chat (spec step 2 — Feature A transport) ============
+
+void ChatStreamHandle::cancel()
+{
+    cancelled.store (true);
+    const std::lock_guard<std::mutex> sl (streamLock);
+    if (active != nullptr)
+        active->cancel();   // unblocks a read sitting on a quiet socket
+}
+
+void ChatStreamHandle::attach (juce::WebInputStream* s)
+{
+    const std::lock_guard<std::mutex> sl (streamLock);
+    active = s;
+    // cancel() that landed before the stream existed still applies: the
+    // read loop would notice the flag eventually, but a connect in progress
+    // would block until timeout without this.
+    if (cancelled.load() && s != nullptr)
+        s->cancel();
+}
+
+void ChatStreamHandle::detach()
+{
+    const std::lock_guard<std::mutex> sl (streamLock);
+    active = nullptr;
+}
+
+std::shared_ptr<ChatStreamHandle> EchoJayAPI::streamChat(const juce::StringArray& roles,
+                                                         const juce::StringArray& contents,
+                                                         const juce::String& systemPrompt,
+                                                         ChatStreamEvents events,
+                                                         const juce::String& meterJsonBlob)
+{
+    auto handle = std::make_shared<ChatStreamHandle>();
+    streamChatInternal (handle, roles, contents, systemPrompt, std::move (events), meterJsonBlob, false);
+    return handle;
+}
+
+// The gate + build half. Mirrors sendChat's limit gate INCLUDING the
+// refresh-then-retry self-heal, with one structural difference: the retry
+// re-enters HERE with the caller's original handle, so a cancel() issued
+// while the refresh round-trip was in flight still kills the send.
+void EchoJayAPI::streamChatInternal(std::shared_ptr<ChatStreamHandle> handle,
+                                    const juce::StringArray& roles,
+                                    const juce::StringArray& contents,
+                                    const juce::String& systemPrompt,
+                                    ChatStreamEvents events,
+                                    const juce::String& meterJsonBlob,
+                                    bool isRetryAfterRefresh)
+{
+    const juce::String gateTurnType = nextChatTurnType_;
+    if (! canSendTurn (gateTurnType))
+    {
+        if (isRetryAfterRefresh)
+        {
+            // Refresh already ran and the server agrees we are blocked. Drop
+            // ALL staged per-turn state — same discipline as sendChat: a
+            // blocked capture's payload must not leak onto the next send.
+            if (nextChatMeters_.isNotEmpty() || nextChatIsExplicitCapture_)
+                EchoJay_NSLog ("EJStream: staged capture payload dropped (limit reached)");
+            clearStagedTurn();
+            if (events.onError)
+                events.onError (getLimitReachedMessage (gateTurnType), 429);
+            return;
+        }
+        auto aliveFlag = alive;
+        auto ev = std::make_shared<ChatStreamEvents> (std::move (events));
+        refreshUserInfo ([this, roles, contents, systemPrompt, ev, aliveFlag, meterJsonBlob, handle] (bool)
+        {
+            // refreshUserInfo calls back on the message thread through its
+            // own guarded path; re-check both teardown levers regardless.
+            if (! aliveFlag->load() || handle->isCancelled()) return;
+            streamChatInternal (handle, roles, contents, systemPrompt, std::move (*ev), meterJsonBlob, true);
+        });
+        return;
+    }
+
+    startChatStream (handle, buildChatRequestBody (roles, contents, systemPrompt, meterJsonBlob), std::move (events));
+}
+
+// The socket half. Worker-thread read loop with the postJSON teardown
+// discipline extended to every delta (spec 2.2):
+//   - alive AND handle->cancelled checked between chunks; abandoning
+//     returns from the loop, which destroys the worker-owned stream —
+//     abandon CLOSES the socket, it never leaks it
+//   - a blocked read is unblocked by ChatStreamHandle::cancel() calling
+//     WebInputStream::cancel() from the cancelling thread
+//   - every dispatch to the message thread checks both flags BEFORE posting
+//     the callAsync and AGAIN inside it, so a callback can never fire into
+//     a torn-down editor or a host pumping its queue after removal
+void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
+                                 const juce::String& body,
+                                 ChatStreamEvents eventsIn)
+{
+    auto endpoint = apiEndpoint;
+    auto token = authToken;
+    auto aliveFlag = alive;
+    auto ev = std::make_shared<ChatStreamEvents> (std::move (eventsIn));
+
+    juce::Thread::launch ([this, endpoint, token, aliveFlag, handle, body, ev]()
+    {
+        // The per-delta guard: both teardown levers, checked on both sides
+        // of the queue hop. `this` is only touched inside dispatched
+        // lambdas, where aliveFlag has already vouched for it (postJSON's
+        // contract: alive flips false in the destructor, before members go).
+        auto dispatch = [aliveFlag, handle] (std::function<void()> fn)
+        {
+            if (! aliveFlag->load() || handle->isCancelled()) return;
+            juce::MessageManager::callAsync ([aliveFlag, handle, fn]
+            {
+                if (! aliveFlag->load() || handle->isCancelled()) return;
+                fn();
+            });
+        };
+
+        // Connection-phase retry only (postJSON's rule): these attempts
+        // never reached the server. Anything after the stream opens is
+        // never retried — a silent restart would replay deltas the caller
+        // already rendered.
+        constexpr int kMaxAttempts = 3;
+        constexpr int kConnectTimeoutMs = 60000;   // connect phase ONLY — JUCE's
+        // withConnectionTimeout does not bound the read loop, so the open
+        // stream can outlive 60s without tripping it (spec section 6's
+        // timeout question, resolved: the 60s figure was always connect-only).
+
+        for (int attempt = 1; attempt <= kMaxAttempts; ++attempt)
+        {
+            if (! aliveFlag->load() || handle->isCancelled()) return;
+
+            juce::URL url (transportEndpoint (endpoint) + "/api/chat-stream");
+            url = url.withPOSTData (body);
+
+            juce::String headers = "Content-Type: application/json\r\n";
+            if (token.isNotEmpty())
+                headers += "Authorization: Bearer " + token + "\r\n";
+            headers += transportHeaders();   // empty in a release build
+
+            juce::WebInputStream ws (url, true);
+            ws.withExtraHeaders (headers).withConnectionTimeout (kConnectTimeoutMs);
+
+            handle->attach (&ws);
+            const bool connected = ws.connect (nullptr);
+            const int statusCode = connected ? ws.getStatusCode() : 0;
+
+            if (! connected || statusCode == 0)
+            {
+                handle->detach();
+                if (! aliveFlag->load() || handle->isCancelled()) return;
+                DBG ("[EchoJay] streamChat connection failed (attempt " << attempt
+                     << "/" << kMaxAttempts << ")");
+                if (attempt < kMaxAttempts)
+                {
+                    juce::Thread::sleep (attempt * 1000);   // 1s, then 2s backoff
+                    if (! aliveFlag->load() || handle->isCancelled()) return;
+                    continue;
+                }
+                dispatch ([ev] { if (ev->onError) ev->onError ("Connection failed. Please check your internet connection.", 0); });
+                return;
+            }
+
+            if (statusCode != 200)
+            {
+                // Pre-stream failure: plain JSON error body (spec 3.1), small
+                // by construction — read it whole, exactly like postJSON.
+                juce::MemoryBlock mb;
+                ws.readIntoMemoryBlock (mb);
+                handle->detach();
+                if (! aliveFlag->load() || handle->isCancelled()) return;
+                auto json = juce::JSON::parse (juce::String::fromUTF8 ((const char*) mb.getData(), (int) mb.getSize()));
+                juce::String msg = "Something went wrong. Please try again.";
+                if (auto* o = json.getDynamicObject())
+                    if (o->hasProperty ("error"))
+                        msg = o->getProperty ("error").toString();
+                dispatch ([ev, msg, statusCode] { if (ev->onError) ev->onError (msg, statusCode); });
+                return;   // a real HTTP answer is not retried
+            }
+
+            // 200: the SSE stream is open. From here on, never retry.
+            EJStreamFraming framing;
+            char buf[8192];
+            bool gotDone = false, gotErrorFrame = false;
+            juce::var doneFrame;
+            juce::String errorFrameMsg;
+
+            while (! ws.isExhausted())
+            {
+                // The alive check between chunks (spec 2.2): abandon rather
+                // than finish. Returning destroys ws -> the socket closes.
+                if (! aliveFlag->load() || handle->isCancelled())
+                {
+                    handle->detach();
+                    ejTeardownLog ("[stream] abandoned mid-read (teardown/cancel)");
+                    return;
+                }
+
+                const int n = ws.read (buf, (int) sizeof (buf));
+                if (n <= 0)
+                    break;   // EOF or error — settled below by gotDone
+
+                for (auto& payload : framing.appendChunk (buf, n))
+                {
+                    auto frame = juce::JSON::parse (juce::String::fromUTF8 (payload.c_str(), (int) payload.size()));
+                    auto* obj = frame.getDynamicObject();
+                    if (obj == nullptr)
+                        continue;   // malformed frame: skip, the done reply is authoritative
+
+                    const auto type = obj->getProperty ("type").toString();
+
+                    if (type == "delta")
+                    {
+                        // Feature A: text only. Thinking deltas (Feature B,
+                        // off) and future block types are ignored, per the
+                        // contract's forward-compatibility rule.
+                        if (obj->getProperty ("block").toString() == "text")
+                        {
+                            auto text = obj->getProperty ("text").toString();
+                            dispatch ([ev, text] { if (ev->onTextDelta) ev->onTextDelta (text); });
+                        }
+                    }
+                    else if (type == "done")
+                    {
+                        gotDone = true;
+                        doneFrame = frame;
+                    }
+                    else if (type == "error")
+                    {
+                        gotErrorFrame = true;
+                        errorFrameMsg = obj->getProperty ("error").toString();
+                    }
+                    // start / block_start / block_stop / unknown: ignored.
+                }
+
+                if (gotDone || gotErrorFrame)
+                    break;
+            }
+
+            handle->detach();
+            if (! aliveFlag->load() || handle->isCancelled()) return;
+
+            if (gotErrorFrame)
+            {
+                // In-band server-side interruption (spec 3.1): no done frame
+                // means nothing happened; the caller drops every delta.
+                dispatch ([ev, errorFrameMsg] {
+                    if (ev->onError) ev->onError (errorFrameMsg.isNotEmpty() ? errorFrameMsg
+                                                                             : juce::String ("AI service error"), 200);
+                });
+                return;
+            }
+
+            if (! gotDone)
+            {
+                // The connection died mid-stream with no error frame — same
+                // contract shape: no done, deliver nothing, caller drops all.
+                DBG ("[EchoJay] streamChat ended without done frame");
+                dispatch ([ev] { if (ev->onError) ev->onError ("Connection lost. Please try again.", 0); });
+                return;
+            }
+
+            // done is the authoritative record (spec 3.1). Mirror sendChat's
+            // member bookkeeping on the message thread (aliveFlag vouches
+            // for `this` inside the guarded lambda). Account-usage counters
+            // are deliberately NOT touched: metering is build-order step 6,
+            // and the stream's done frame carries token usage, not the
+            // account usage object /api/chat returns.
+            dispatch ([this, ev, doneFrame]
+            {
+                if (auto* obj = doneFrame.getDynamicObject())
+                {
+                    auto mn = obj->getProperty ("modelName").toString().trim();
+                    if (mn.isNotEmpty()) lastChatModelName_ = mn;
+                    lastResolvedTurnType_ = obj->getProperty ("resolvedTurnType").toString().trim();
+                    EchoJay_NSLog (("EJStream: done resolvedTurnType=" + lastResolvedTurnType_
+                                    + " chainBlock=" + obj->getProperty ("chainBlock").toString()
+                                    + " stopReason=" + obj->getProperty ("stopReason").toString()).toRawUTF8());
+                }
+                if (ev->onDone) ev->onDone (doneFrame);
+            });
+            return;
+        }
+    });
+}
+
+void EchoJayAPI::classify(const ClassifyRequest& req,
+                          std::function<void(const ClassifyResult&)> onComplete)
+{
+    JUCE_ASSERT_MESSAGE_THREAD   // arms a Timer
+
+    auto answer = std::make_shared<std::function<void(const ClassifyResult&)>>(std::move(onComplete));
+    auto fallThrough = [answer] { if (*answer) (*answer)(ClassifyResult{}); };
+
+    // ONE callback path for the caller: even the cases we can answer without
+    // touching the network answer ASYNCHRONOUSLY, so the splice never has to
+    // handle "sometimes this calls back before it returns".
+    if (classifierOff_.load() || ! isLoggedIn() || req.message.trim().isEmpty())
+    {
+        juce::MessageManager::callAsync(fallThrough);
+        return;
+    }
+
+    // THE FULL COMPOSED MESSAGE, unstripped — see the contract note on
+    // ClassifyRequest. The server strips it for both calls itself.
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+    body->setProperty("message", req.message);
+    if (req.channel.isNotEmpty())        body->setProperty("channel", req.channel);
+    if (req.genre.isNotEmpty())          body->setProperty("genre", req.genre);
+    if (req.priorAssistant.isNotEmpty()) body->setProperty("priorAssistant", req.priorAssistant);
+    if (req.turnType.isNotEmpty())       body->setProperty("turnType", req.turnType);
+    if (req.answers.isNotEmpty())        body->setProperty("answers", req.answers);
+    if (auto* linkArr = req.links.getArray())
+        if (! linkArr->isEmpty()) body->setProperty("links", req.links);
+    // Client version — telemetry and the existing chat-side gates. sendChat has
+    // always sent this; classify never did.
+    body->setProperty("appVersion", juce::String(JucePlugin_VersionString));
+
+    // CAPABILITY, NOT VERSION — this is what the mismatch copy is gated on.
+    //
+    // The guard (questionPromisesOffsiteBuild) is not lifted when the chooser
+    // lands; it is KEYED on this flag and kept forever for clients without it.
+    // The backend reaches everyone on the next deploy and the plugin reaches
+    // users over months, so a global lift would offer "move over to Lead Vox"
+    // to an installed base with no chooser behind it — the unkeepable promise
+    // the guard exists to prevent, pointed the other way.
+    //
+    // WHY NOT appVersion, established by content on 4 Aug 2026: the ONLY
+    // binary containing the chooser reported v2.25.10, and the binary actually
+    // INSTALLED reported v2.25.14 with no chooser in it. A ">= 2.25.10" floor
+    // would have been wrong on the one real client. reinstall-v2.sh bumps
+    // unconditionally per worktree, so the number is an install count on one
+    // branch. See kChannelChooserCapability for how to re-verify by content
+    // rather than trusting this comment.
+    body->setProperty(echojay::kChannelChooserCapability, true);
+
+    auto aliveFlag = alive;
+    auto latch = armClassifyDeadline(kClassifyBudgetMs, [answer, aliveFlag]
+    {
+        if (! aliveFlag->load()) return;
+        EchoJay_NSLog("EJClassify: budget expired -- falling through");
+        if (*answer) (*answer)(ClassifyResult{});
+    });
+
+    postJSON("/api/classify", juce::JSON::toString(juce::var(body.get())),
+             [answer, latch, aliveFlag](const juce::var& json, int statusCode)
+    {
+        if (latch->exchange(true)) return;   // the deadline already answered
+        if (! aliveFlag->load()) return;
+
+        auto* obj = json.getDynamicObject();
+        if (statusCode != 200 || obj == nullptr)
+        {
+            // NOTE 401 DELIBERATELY DOES NOT CLEAR authToken, unlike
+            // sendChat's 401 handling. This is a side call the user did not
+            // ask for; an auth blip on it must never log anybody out.
+            // 429 is classify_rate_limited (40/min per account) and gets the
+            // same answer as everything else here: fall through.
+            EchoJay_NSLog(("EJClassify: fell through (status "
+                           + juce::String(statusCode) + ")").toRawUTF8());
+            if (*answer) (*answer)(ClassifyResult{});
+            return;
+        }
+
+        ClassifyResult r;
+        r.mode = obj->getProperty("mode").toString().trim();
+        if (r.mode == "off")
+        {
+            classifierOff_.store(true);
+            EchoJay_NSLog("EJClassify: mode=off -- latched for the session");
+            if (*answer) (*answer)(ClassifyResult{});
+            return;
+        }
+
+        // usable = "the server answered", nothing more. What to DO with the
+        // answer is read from the explicit fields below, never from this.
+        r.usable          = true;
+        r.intent          = obj->getProperty("intent").toString().trim();
+        r.precondition    = obj->getProperty("precondition").toString().trim();
+        r.preamble        = obj->getProperty("preamble").toString().trim();
+        r.question        = obj->getProperty("question").toString().trim();
+        r.token           = obj->getProperty("token").toString().trim();
+        r.fallback        = obj->getProperty("fallback").toString().trim();
+        // EXPLICIT SERVER BOOLEANS. A build turn can return a stray question
+        // with shortCircuit=false and the server drops it; inferring the
+        // short-circuit from "question is non-empty" would render it anyway
+        // and swallow the turn.
+        r.shortCircuit    = (bool) obj->getProperty("shortCircuit");
+        r.questionFollows = (bool) obj->getProperty("questionFollows");
+        r.chips           = obj->getProperty("chips");
+
+        EchoJay_NSLog(("EJClassify: intent=" + (r.intent.isNotEmpty() ? r.intent : juce::String("(none)"))
+                       + " precondition=" + (r.precondition.isNotEmpty() ? r.precondition : juce::String("(none)"))
+                       + " shortCircuit=" + (r.shortCircuit ? "yes" : "no")
+                       + " questionFollows=" + (r.questionFollows ? "yes" : "no")
+                       + " preamble=" + (r.preamble.isNotEmpty() ? "yes" : "no")
+                       + " token=" + (r.token.isNotEmpty() ? "yes" : "no")
+                       + " mode=" + r.mode
+                       + (r.fallback.isNotEmpty() ? " fallback=" + r.fallback : juce::String())).toRawUTF8());
+
+        if (*answer) (*answer)(r);
+    }, /*maxAttempts*/ 1, /*connectTimeoutMs*/ kClassifyBudgetMs);
+}
+
+void EchoJayAPI::classifyQuestion(const juce::String& message,
+                                  const juce::String& channel,
+                                  const juce::String& genre,
+                                  std::function<void(const juce::String& question)> onComplete)
+{
+    JUCE_ASSERT_MESSAGE_THREAD   // arms a Timer
+
+    auto answer = std::make_shared<std::function<void(const juce::String&)>>(std::move(onComplete));
+    auto fallThrough = [answer] { if (*answer) (*answer)({}); };
+
+    if (classifierOff_.load() || ! isLoggedIn() || message.trim().isEmpty())
+    {
+        juce::MessageManager::callAsync(fallThrough);
+        return;
+    }
+
+    // Same unstripped message as call 1, for the same reason: this endpoint
+    // runs the same userTypedPortion() over it.
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+    body->setProperty("message", message);
+    if (channel.isNotEmpty()) body->setProperty("channel", channel);
+    if (genre.isNotEmpty())   body->setProperty("genre", genre);
+
+    auto aliveFlag = alive;
+    // Its OWN budget, not call 1's. This call generates ~102 output tokens
+    // to call 1's ~28 but has the TIGHTER measured spread (max 1964 ms
+    // against 3167), so inheriting call 1's number would leave a hung
+    // question sitting for over a second longer than it can ever need.
+    auto latch = armClassifyDeadline(kClassifyQuestionBudgetMs, [answer, aliveFlag]
+    {
+        if (! aliveFlag->load()) return;
+        EchoJay_NSLog("EJClassify: question budget expired -- falling through");
+        if (*answer) (*answer)({});
+    });
+
+    postJSON("/api/classify-question", juce::JSON::toString(juce::var(body.get())),
+             [answer, latch, aliveFlag](const juce::var& json, int statusCode)
+    {
+        if (latch->exchange(true)) return;
+        if (! aliveFlag->load()) return;
+
+        auto* obj = json.getDynamicObject();
+        if (statusCode != 200 || obj == nullptr)
+        {
+            EchoJay_NSLog(("EJClassify: question fell through (status "
+                           + juce::String(statusCode) + ")").toRawUTF8());
+            if (*answer) (*answer)({});
+            return;
+        }
+        if (obj->getProperty("mode").toString().trim() == "off")
+        {
+            classifierOff_.store(true);
+            if (*answer) (*answer)({});
+            return;
+        }
+        // Every server-side failure here already returns question:null with
+        // a 200 rather than an error status, so an empty question is the
+        // ordinary "ask nothing, build normally" answer — not a fault.
+        const juce::String q = obj->getProperty("question").toString().trim();
+        const juce::String fb = obj->getProperty("fallback").toString().trim();
+        EchoJay_NSLog(("EJClassify: question " + juce::String(q.isNotEmpty() ? "received" : "declined")
+                       + (fb.isNotEmpty() ? " fallback=" + fb : juce::String())).toRawUTF8());
+        if (*answer) (*answer)(q);
+    }, /*maxAttempts*/ 1, /*connectTimeoutMs*/ kClassifyQuestionBudgetMs);
 }
 
 // ============ Remote Config ============
@@ -1563,7 +2166,20 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     // the material and would ask "is this a vocal, a bus, a synth?" even
     // though the user had set Mix Bus. It now states the full-mix material;
     // only the element-specific FOCUS stays gated to non-bus material.
-    if (channelType == "Mix Bus" || channelType == "Master Bus")
+    if (channelType.isEmpty())
+    {
+        // UNKNOWN CHANNEL — no block at all, deliberately (3 Aug 2026).
+        // materialContextName returns empty for a channel chat whose Link
+        // vanished or was never named; before it guarded that, the raw uid
+        // arrived here and rendered as CHANNEL TYPE: "a1b2c3d4e5f6", which the
+        // model then reasoned about as if it were a kind of material.
+        //
+        // Omitting is the honest shape AND an already-handled one: the bus
+        // branch below emits no CHANNEL TYPE line either, and the server's
+        // cache-prefix extractor tolerates a prompt with no channel block for
+        // exactly that reason. An empty quoted string would be neither.
+    }
+    else if (channelType == "Mix Bus" || channelType == "Master Bus")
     {
         prompt += "MATERIAL: the FULL MIX (" + channelType + "). Review it as a "
                   "complete mix, not a single element.\n\n";
@@ -2036,87 +2652,23 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
     return block;
 }
 
+// The four block extractors moved VERBATIM to EJReplyBlocks.h (8 Aug 2026,
+// spec step 3) so the incremental stream parser's read-back test runs the
+// REAL strip rather than a copy that could drift — the buildChatRequestBody
+// pattern again. These delegates keep every call site untouched.
 bool EchoJayAPI::extractChainBlock(juce::String& replyInOut, juce::String& chainJsonOut)
 {
-    const juce::String kOpen  = "<<<ECHOJAY_CHAIN>>>";
-    const juce::String kClose = "<<<END_CHAIN>>>";
-
-    int start = replyInOut.indexOf(kOpen);
-    if (start < 0) return false;
-
-    int jsonStart = start + (int)kOpen.length();
-    int end = replyInOut.indexOf(start, kClose);
-
-    if (end >= 0)
-    {
-        // Complete block — extract JSON and strip entire block including delimiters
-        chainJsonOut = replyInOut.substring(jsonStart, end).trim();
-        replyInOut   = replyInOut.substring(0, start).trimEnd()
-                     + replyInOut.substring(end + (int)kClose.length());
-    }
-    else
-    {
-        // Truncated: opening delimiter found but no closing tag.
-        // ALWAYS strip everything from <<<ECHOJAY_CHAIN>>> to end of reply so
-        // raw JSON never leaks into the visible chat message.
-        chainJsonOut = replyInOut.substring(jsonStart).trim();
-        replyInOut   = replyInOut.substring(0, start).trimEnd();
-    }
-    return true;
+    return EJReplyBlocks::extractChainBlock(replyInOut, chainJsonOut);
 }
 
 bool EchoJayAPI::extractGainBlock(juce::String& replyInOut, juce::String& gainJsonOut)
 {
-    const juce::String kOpen  = "<<<ECHOJAY_GAIN>>>";
-    const juce::String kClose = "<<<END_GAIN>>>";
-
-    int start = replyInOut.indexOf(kOpen);
-    if (start < 0) return false;
-
-    int jsonStart = start + (int)kOpen.length();
-    int end = replyInOut.indexOf(start, kClose);
-
-    if (end >= 0)
-    {
-        gainJsonOut = replyInOut.substring(jsonStart, end).trim();
-        replyInOut  = replyInOut.substring(0, start).trimEnd()
-                    + replyInOut.substring(end + (int)kClose.length());
-    }
-    else
-    {
-        gainJsonOut = replyInOut.substring(jsonStart).trim();
-        replyInOut  = replyInOut.substring(0, start).trimEnd();
-    }
-    return true;
+    return EJReplyBlocks::extractGainBlock(replyInOut, gainJsonOut);
 }
 
-// CHAIN_EDIT ops block (CHAIN_AI_BUILD_SPEC Phase 1c). Same tolerant
-// truncation semantics as the other extractors. Delimiters: keep in sync
-// with api/_blocks.js BLOCK_TYPES.chain_edit (canonical) and
-// extractChainEditBlockWeb in public/app.html.
 bool EchoJayAPI::extractChainEditBlock(juce::String& replyInOut, juce::String& editJsonOut)
 {
-    const juce::String kOpen  = "<<<ECHOJAY_CHAIN_EDIT>>>";
-    const juce::String kClose = "<<<END_CHAIN_EDIT>>>";
-
-    int start = replyInOut.indexOf(kOpen);
-    if (start < 0) return false;
-
-    int jsonStart = start + (int)kOpen.length();
-    int end = replyInOut.indexOf(start, kClose);
-
-    if (end >= 0)
-    {
-        editJsonOut = replyInOut.substring(jsonStart, end).trim();
-        replyInOut  = replyInOut.substring(0, start).trimEnd()
-                    + replyInOut.substring(end + (int)kClose.length());
-    }
-    else
-    {
-        editJsonOut = replyInOut.substring(jsonStart).trim();
-        replyInOut  = replyInOut.substring(0, start).trimEnd();
-    }
-    return true;
+    return EJReplyBlocks::extractChainEditBlock(replyInOut, editJsonOut);
 }
 
 // ASK question/choices block (CHAIN_AI_BUILD_SPEC Phase 1b). Same tolerant
@@ -2125,31 +2677,8 @@ bool EchoJayAPI::extractChainEditBlock(juce::String& replyInOut, juce::String& e
 // extractAskBlockWeb in public/app.html.
 bool EchoJayAPI::extractAskBlock(juce::String& replyInOut, juce::String& askJsonOut)
 {
-    const juce::String kOpen  = "<<<ECHOJAY_ASK>>>";
-    const juce::String kClose = "<<<END_ASK>>>";
-
-    int start = replyInOut.indexOf(kOpen);
-    if (start < 0) return false;
-
-    int jsonStart = start + (int)kOpen.length();
-    int end = replyInOut.indexOf(start, kClose);
-
-    if (end >= 0)
-    {
-        askJsonOut = replyInOut.substring(jsonStart, end).trim();
-        replyInOut = replyInOut.substring(0, start).trimEnd()
-                   + replyInOut.substring(end + (int)kClose.length());
-    }
-    else
-    {
-        // Truncated: strip from the opening delimiter so raw JSON never
-        // shows in chat; the (partial) payload may still parse.
-        askJsonOut = replyInOut.substring(jsonStart).trim();
-        replyInOut = replyInOut.substring(0, start).trimEnd();
-    }
-    return true;
+    return EJReplyBlocks::extractAskBlock(replyInOut, askJsonOut);
 }
-
 juce::String EchoJayAPI::salvagePartialChain(const juce::String& partial)
 {
     // Find the chain array opening

@@ -1,3 +1,4 @@
+#include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
@@ -997,6 +998,11 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
         // raw var — setSlotStructuredSettings ignores a void/non-object, so ops
         // without it behave exactly as before.
         op.structuredSettings = eo->getProperty("settings_structured");
+        if (auto* nsObj = eo->getProperty("no_such").getDynamicObject())
+        {
+            op.noSuchTerm = nsObj->getProperty("term").toString();
+            op.noSuchTier = nsObj->getProperty("tier").toString();
+        }
         if (op.op.isNotEmpty()) out.push_back(std::move(op));
     }
     return out;
@@ -1011,19 +1017,51 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
         return (i >= 0 && i < baseSlots.size())
             ? baseSlots[i] : ("slot " + juce::String(i + 1));
     };
+    // What a dial will ACTUALLY write, rendered from the STRUCTURED payload
+    // (9 Aug 2026): the card showed the op's PROSE ("ratio 4") while the
+    // payload dialled XT Mode 1 - Apply is consent, and it was consenting
+    // to a different action than the one performed. Controls print by
+    // exact name and value, flat semantics as key value, bands as a count.
+    auto structuredSummary = [](const juce::var& ss) -> juce::String {
+        auto* o = ss.getDynamicObject();
+        if (o == nullptr) return {};
+        // Display rounding: float32-crossed values must not print as
+        // "0.050000000745058" on the consent card.
+        auto fmtVal = [](const juce::var& v) -> juce::String {
+            return v.isDouble()
+                ? juce::String ((double) v, 4).trimCharactersAtEnd ("0").trimCharactersAtEnd (".")
+                : v.toString();
+        };
+        juce::StringArray parts;
+        if (auto* co = o->getProperty("controls").getDynamicObject())
+            for (const auto& kv : co->getProperties())
+                parts.add(kv.name.toString() + " " + fmtVal(kv.value));
+        for (const auto& kv : o->getProperties())
+        {
+            const auto k = kv.name.toString();
+            if (k == "controls" || k == "bands" || k == "dropped_controls") continue;
+            parts.add(k + " " + fmtVal(kv.value));
+        }
+        if (auto* ba = o->getProperty("bands").getArray())
+            parts.add(juce::String(ba->size()) + (ba->size() == 1 ? " band move" : " band moves"));
+        return parts.joinIntoString(", ");
+    };
+    const juce::String payload = structuredSummary(op.structuredSettings);
     if (op.op == "add")
         return juce::String::fromUTF8("+ add ") + op.name
              + (op.after <= -1 ? juce::String(" first")
                 : op.after >= baseSlots.size()
                     ? juce::String(" at the end of the chain")
                     : " after slot " + juce::String(op.after + 1)
-                      + " (" + slotName(op.after) + ")");
+                      + " (" + slotName(op.after) + ")")
+             + (payload.isNotEmpty() ? " - sets " + payload : juce::String());
     if (op.op == "remove")
         return juce::String::fromUTF8("\xe2\x88\x92 remove ") + slotName(op.slot)
              + " (slot " + juce::String(op.slot + 1) + ")";
     if (op.op == "replace")
         return juce::String::fromUTF8("\xe2\x87\x84 replace ") + slotName(op.slot)
-             + " (slot " + juce::String(op.slot + 1) + ") with " + op.name;
+             + " (slot " + juce::String(op.slot + 1) + ") with " + op.name
+             + (payload.isNotEmpty() ? " - sets " + payload : juce::String());
     if (op.op == "move")
         return juce::String::fromUTF8("\xe2\x86\x95 move ") + slotName(op.slot)
              + " (slot " + juce::String(op.slot + 1) + ") to position " + juce::String(op.to + 1);
@@ -1031,9 +1069,34 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
         return juce::String(op.on ? "\xe2\x8f\xbb bypass " : "\xe2\x8f\xbb un-bypass ")
              + slotName(op.slot) + " (slot " + juce::String(op.slot + 1) + ")";
     if (op.op == "set")
-        return juce::String::fromUTF8("\xe2\x9a\x99 dial ") + slotName(op.slot)
-             + " (slot " + juce::String(op.slot + 1) + ")"
-             + (op.settings.isNotEmpty() ? ": " + op.settings : juce::String());
+    {
+        // A set op without structured settings dials NOTHING - it puts the
+        // prose values on the card for hand-dialing. Its line must say so
+        // (9 Aug 2026: "dial X: ratio 4" over a write that never happened
+        // was one of three surfaces contradicting the honest bubble).
+        // A DIAL line renders the STRUCTURED payload, never the prose: the
+        // payload is what Apply will write.
+        const bool dials = op.structuredSettings.getDynamicObject() != nullptr;
+        const juce::String detail = dials ? payload : op.settings;
+        // The WHY rides the line (9 Aug 2026): three of five honest turns
+        // said "dial by hand" with no reason, which reads as arbitrary.
+        // The reason is the server's tiered decision on the op, composed
+        // here like every other honest surface - the model's prose is
+        // optional garnish on top.
+        juce::String why;
+        if (!dials && op.noSuchTerm.isNotEmpty())
+        {
+            if (op.noSuchTier == "deferred")
+                why = " - \"" + op.noSuchTerm + "\" is not yet mapped: set it by hand on the plugin";
+            else if (op.noSuchTier == "complete")
+                why = " - \"" + op.noSuchTerm + "\" is not exposed for remote control: set it on the plugin face";
+            else
+                why = " - \"" + op.noSuchTerm + "\" is not in this plugin's map: set it by hand";
+        }
+        return juce::String::fromUTF8(dials ? "\xe2\x9a\x99 dial " : "\xe2\x9c\x8e suggest for ")
+             + slotName(op.slot) + " (slot " + juce::String(op.slot + 1) + ")"
+             + (detail.isNotEmpty() ? ": " + detail : juce::String()) + why;
+    }
     return "? unknown op: " + op.op;
 }
 
@@ -1291,11 +1354,14 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         const int cur = curOf(op.slot);
         if (cur < 0) return failAndStop("set failed: slot no longer present");
         const juce::String nm = slots_[(size_t)cur].desc.name;
+        const bool dials = op.structuredSettings.getDynamicObject() != nullptr;
         if (op.settings.isNotEmpty())
             setSlotSettings(cur, op.settings);
-        if (op.structuredSettings.getDynamicObject() != nullptr)
+        if (dials)
             setSlotStructuredSettings(cur, op.structuredSettings);
-        finishOpAndContinue("dialled " + nm);
+        // The result line is what every downstream summary reads: a
+        // prose-only set "dialled" nothing and must not say it did.
+        finishOpAndContinue((dials ? "dialled " : "suggested settings for ") + nm);
         return;
     }
     if (op.op == "add" || op.op == "replace")
@@ -1474,11 +1540,22 @@ ChainHost::applyStructuredSettings (int slotIndex,
     auto* instance = dynamic_cast<juce::AudioPluginInstance*> (proc);
     if (instance == nullptr) return out;
 
-    auto results = echojay::applySettings (*instance, map, structuredSettings);
+    // Bridged-AU report-only (10 Aug 2026, DEFECT_BRIDGED_READBACK option
+    // a): on an instance whose serving binary was MEASURED bridged, the
+    // in-stack display read is pre-write, so display verification demotes
+    // to norm round-trip instead of reverting correct work. Unknown or
+    // unreadable components read native (EchoJayBridgedAU.h).
+    const bool staleDisplayReads = echojay::auComponentIsBridged (slot.desc);
+    if (staleDisplayReads)
+        EchoJay_NSLog(("EJDial: \"" + slot.desc.name
+                       + "\" is a bridged AU (no arm64 slice); display readback "
+                         "demoted to norm round-trip, mismatches reported not reverted").toRawUTF8());
+
+    auto results = echojay::applySettings (*instance, map, structuredSettings, staleDisplayReads);
     for (auto& r : results)
         out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
                          r.landedText, r.displayVerified, r.readbackMismatch,
-                         r.requestedValue });
+                         r.staleDisplayKept, r.requestedValue });
 
     return out;
 }
@@ -1915,7 +1992,39 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return;
     auto& s = slots_[(size_t)slotIndex];
     if (s.structuredApplied) return;
-    if (s.structuredSettings.isVoid()) return;
+
+    // THE SILENT RETURNS IN THIS FUNCTION NOW SAY WHICH ONE FIRED (8 Aug 2026).
+    // A mapper racked SSL Blitzer, asked for a faster attack, got prose advice,
+    // and two hours of unified log said nothing about why. The map was on the
+    // server, its fingerprint recomputed exactly, and it held the attack_ms the
+    // request needed -- everything downstream was already excluded and the
+    // failure still could not be named.
+    //
+    // Four different failures with four different owners, previously identical
+    // from outside: the model was never OFFERED the option, the model chose not
+    // to, the slot has no fingerprint, the map is not here.
+    if (s.structuredSettings.isVoid())
+    {
+        // THE MOST VALUABLE OF THESE LINES, because "chose not to" and "was
+        // never offered" look the same and the difference is a release gate,
+        // not a prompt. The server withholds the set op, the controls block and
+        // bands from any client below a minimum version, reading the
+        // appVersion this binary declares (EchoJayAPI.cpp: JucePlugin_Version-
+        // String). A gated client is never taught that `set` exists, so the
+        // model reaches for `replace` -- which is the exact defect the set op
+        // was added to fix, still in force because the gate has not moved.
+        //
+        // The client cannot know the server's threshold, so it prints the
+        // version the gate is judging. That is the number to compare against
+        // *_MIN_PLUGIN_VERSION in api/chat.js when this line appears.
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                       + "\") NO SETTINGS -- nothing was asked of the map."
+                         "  appVersion=" + juce::String(JucePlugin_VersionString)
+                       + "  (if this is below the server's *_MIN_PLUGIN_VERSION the model "
+                         "was never offered the set op, and `replace` is all it had)")
+                          .toRawUTF8());
+        return;
+    }
 
     // ---- Built-in devices: the exact path --------------------------------
     // This is the entire reason built-ins exist. A move becomes a direct typed
@@ -1958,16 +2067,46 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
         return;
     }
 
-    if (s.structuredSettings.getDynamicObject() == nullptr) return;
-    if (s.fp.isEmpty()) { s.dialStatus = DialStatus::pending; return; } // fp arrives at load
+    if (s.structuredSettings.getDynamicObject() == nullptr)
+    {
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                       + "\") SETTINGS NOT AN OBJECT -- present but unusable")
+                          .toRawUTF8());
+        return;
+    }
+    if (s.fp.isEmpty())
+    {
+        // Settings arrived for a slot with no fingerprint. The fp is computed
+        // at load, so this says the LOAD did not complete -- not that the
+        // corpus is missing anything.
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                       + "\") NO FINGERPRINT -- settings present but the slot never learned "
+                         "its fp at load; no lookup is possible").toRawUTF8());
+        s.dialStatus = DialStatus::pending;
+        return;
+    }
     auto it = paramMaps_.find(s.fp);
     if (it == paramMaps_.end())
     {
         // Apply-time honesty: never a silent skip any more. Outcome is
         // "pending" while a fetch is in flight, "noMap" once the fetch has
         // answered (or was never possible). The result bubble reads this.
-        s.dialStatus = pendingMapFps_.contains(s.fp) ? DialStatus::pending
-                                                     : DialStatus::noMap;
+        //
+        // NAMES THE FP AND WHETHER A FETCH WAS EVER ASKED FOR: requested-and-
+        // unanswered is a transport or corpus problem, never-requested is a
+        // wiring one. onNeedParamMaps is installed by the EDITOR and nulled
+        // when it closes, so a dial attempted with the window shut reads
+        // fetch_wired=n rather than as a missing map.
+        const bool inFlight  = pendingMapFps_.contains(s.fp);
+        const bool everAsked = mapsRequested_.contains(s.fp);
+        s.dialStatus = inFlight ? DialStatus::pending : DialStatus::noMap;
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                       + "\") NO MAP for fp=" + s.fp.substring(0, 12)
+                       + "  fetch_requested=" + (everAsked ? "y" : "n")
+                       + "  in_flight=" + (inFlight ? "y" : "n")
+                       + "  fetch_wired=" + (onNeedParamMaps ? "y" : "n")
+                       + "  cached_maps=" + juce::String((int) paramMaps_.size())
+                       + " -> " + (inFlight ? "pending" : "noMap")).toRawUTF8());
         return;
     }
 
@@ -2021,6 +2160,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     juce::StringArray appliedSummary;
     s.dialManual.clear();
     s.dialReadbackMiss.clear();
+    s.dialUnconfirmed.clear();
     for (auto& r : report)
     {
         EchoJay_NSLog(("EJParamApply:   " + r.semantic + ": "
@@ -2036,11 +2176,26 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
             // and the card printed bare repeated labels ("freq Hz, gain dB,
             // freq Hz, gain dB") - no values, no record of what happened.
             auto line = echojay::formatSemanticSetting(r.semantic, r.requestedValue);
-            // Read-back caveat travels to the card: a setread/unparseable
-            // write proves addressability, not correctness, and must never
-            // present the same as a display-verified write.
-            if (!r.displayVerified) line += " (unverified)";
+            // A successful write shows NOTHING extra (9 Aug 2026, Sean's
+            // call): silence is the signal that it worked, like everything
+            // else in the app. The old "(unverified)" suffix surfaced an
+            // INTERNAL proof-class distinction (norm round-trip vs display
+            // comparison) as user-facing doubt, on every setread map -
+            // i.e. the entire campaign corpus, forever. The distinction is
+            // not lost: r.note carries it in the EJParamApply log line,
+            // and the verification class is static per control
+            // (method/trust on the map entry). The dangerous case - the
+            // display DISAGREEING - was never silent and still is not: it
+            // reverts, lands in dialManual/dialReadbackMiss, and uploads a
+            // readback_mismatch dial_miss.
             appliedSummary.add(line);
+            // The bridged report-only case is NOT the silent class: the
+            // display DISAGREED and the write was kept anyway, on a measured
+            // fact about the instance. The 9 Aug silence rule reasoned "the
+            // display disagreeing was never silent - it reverts"; with the
+            // revert gone, the caveat must surface instead.
+            if (r.staleDisplayKept)
+                s.dialUnconfirmed.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
         }
         else
         {
@@ -2068,7 +2223,12 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     // "Applied automatically" + a compact summary of what was set;
     // slots with nothing applied keep the prose guidance unchanged.
     if (!appliedSummary.isEmpty())
+    {
         s.settings = "Applied automatically\n" + appliedSummary.joinIntoString(", ");
+        if (!s.dialUnconfirmed.isEmpty())
+            s.settings += "\n" + s.dialUnconfirmed.joinIntoString(", ")
+                        + ": written - display could not be confirmed on this bridged plugin";
+    }
 }
 
 void ChainHost::loadParamMapsFromDisk()
@@ -2811,6 +2971,38 @@ juce::StringArray ChainHost::getRecommendableNames() const
     return names;
 }
 
+juce::String ChainHost::buildMapFpsJson(int maxEntries) const
+{
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    juce::StringArray conflicted;
+    auto put = [&o, &conflicted](const juce::String& name, const juce::String& fp)
+    {
+        if (name.isEmpty() || fp.isEmpty()) return;
+        const auto existing = o->getProperty(name).toString();
+        if (existing.isEmpty())      o->setProperty(name, fp);
+        else if (existing != fp)     conflicted.addIfNotAlreadyThere(name);
+    };
+    // Rack first: a loaded slot's fp is the exact binary. Recommendable
+    // entries never touch a name the rack already claimed - the identity
+    // index may legitimately know the OTHER format of a racked plugin, and
+    // that is not a conflict, the rack is simply more exact.
+    for (const auto& s : slots_)
+        put(s.desc.name, s.fp);
+    for (const auto& e : recommendable_)
+    {
+        if (o->getProperties().size() >= maxEntries) break;
+        if (o->getProperty(e.displayName).toString().isNotEmpty()) continue;   // rack wins
+        if (conflicted.contains(e.displayName)) continue;
+        auto it = identityToFp_.find(echojay::identityKeyForDescription(e.desc));
+        if (it != identityToFp_.end()) put(e.displayName, it->second);
+    }
+    // An ambiguous name (two fps claimed) is omitted entirely; the server's
+    // sibling merge is the honest serve for it.
+    for (const auto& n : conflicted) o->removeProperty(n);
+    if (o->getProperties().size() == 0) return "{}";
+    return juce::JSON::toString(juce::var(o.get()), true);
+}
+
 std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
 {
     std::vector<SlotDialInfo> out;
@@ -2823,6 +3015,7 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.status       = s.dialStatus;
         di.manual       = s.dialManual;
         di.readbackMiss = s.dialReadbackMiss;
+        di.unconfirmed  = s.dialUnconfirmed;
         di.appliedCount = s.dialAppliedCount;
         out.push_back(std::move(di));
     }

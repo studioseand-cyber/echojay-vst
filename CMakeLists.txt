@@ -7,7 +7,13 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 # 2.25.0: the built-in device suite (feat/surgical-eq) merges into the dashboard
 # mainline. Minor bump, not a patch — 20 self-registering devices, the viz
 # library and the ParamSchema dialability contract all arrive at once.
-project(EchoJay VERSION 2.25.10)
+#
+# 2.26.0: the dial-path beta. Per-fp exact controls exposure, the honest
+# surfaces (card-only edit turns, receipt-time suggestions, reason-on-card),
+# stepped-anchor readback (XTComp-pinned), and bridged-AU report-only.
+# The server's three dial gates (SET_OP/BANDS/CONTROLS_MIN) pin to this
+# version at deploy; the 2.99.99 gate-test bump died uncommitted, as designed.
+project(EchoJay VERSION 2.26.0)
 
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/
@@ -819,3 +825,17 @@ target_link_libraries(EchoJayBuiltinRegistryTest PRIVATE
     juce::juce_recommended_config_flags)
 
 set_target_properties(EchoJayBuiltinRegistryTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
+# ============ Streaming parser test runner (spec step 3) ============
+# Console app, juce_core only — runs the read-back suite that holds the
+# incremental block parser byte-identical to the whole-reply strip
+# (EJReplyBlocks). Never part of a plugin or release build.
+option(ECHOJAY_BUILD_STREAM_TESTS "Build EJStreamTests, the streaming parser read-back runner" OFF)
+if(ECHOJAY_BUILD_STREAM_TESTS)
+    juce_add_console_app(EJStreamTests PRODUCT_NAME "EJStreamTests")
+    target_sources(EJStreamTests PRIVATE Tests/test_stream_block_parser.cpp)
+    target_compile_features(EJStreamTests PRIVATE cxx_std_17)
+    target_link_libraries(EJStreamTests PRIVATE
+        juce::juce_core
+        juce::juce_recommended_config_flags)
+endif()

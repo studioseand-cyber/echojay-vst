@@ -101,6 +101,10 @@ public:
                      PlacementSend = 3 };
     std::atomic<int> placement_ { PlacementUnset };
     int  getPlacement() const { return placement_.load(std::memory_order_relaxed); }
+    /// Stage 1 remote editing: which rack slot is externally controlled
+    /// (leased to the main plugin), -1 = none. Editor reads it on rebuild.
+    int controlledSlot0() const
+        { return leaseActive_.load(std::memory_order_relaxed) ? leaseSlot0_ : -1; }
     void setPlacement(int p);   // message thread: store, mirror, dirty-mark, notify
 
     // Session project name (no UI here): adopted from the shared
@@ -113,6 +117,10 @@ public:
     // until a session genre exists (Link has no genre default or UI).
     juce::String genre;
     std::atomic<bool> didWrite  { false };  // set by audio thread on first successful produce
+    // Stage 0 position stamps: audio thread arms, timer logs once (NSLog is
+    // not an audio-thread call). stampArmedLogged_ is message-thread only.
+    std::atomic<bool> stampsArmed_ { false };
+    bool stampArmedLogged_ = false;
 
     /// Call from editor after any change to linkOn or linkName (message thread).
     void updateShmState();
@@ -122,6 +130,20 @@ public:
     /// sync its toggle — a stale ON toggle writing itself back into the
     /// processor is a re-activation path.
     std::function<void()> onLinkStateChanged;
+    /** STAGE 1 REMOTE EDITOR. The main plugin asks this Link to open one of
+        its OWN hosted editors, in its OWN window. Nothing is transferred and
+        nothing about the audio changes: the instance being edited is the one
+        already in the signal path, so the user hears every change instantly,
+        which is the whole reason this beats moving state or moving audio.
+
+        Set by LinkEditor while it exists. NULL IS THE ANSWER, not a failure:
+        no editor means the Link's window is closed, and only a window can
+        show a window. The caller reports that honestly rather than silently
+        doing nothing.
+
+        Takes a 0-based rack index, returns true only if an editor was
+        actually brought up. Message thread. */
+    std::function<bool(int)> onOpenSlotEditor;
 
     // ========================================================================
     // Chain hosting (phase 1) — chains arrive from the main plugin.
@@ -429,6 +451,17 @@ private:
     std::vector<int16_t> lastPublishedCurve_;
     double lastCurveChangeMs_ = 0.0;
     void publishRackSidecar();
+    // ---- Edit lease (stage 1 remote editing) ------------------------------
+    // The pure gate decides; this class acts. leaseActive_ is the ONE field
+    // the audio thread reads (it forces ring production); everything else is
+    // message-thread state. leasePriorBypass_ is what the restore restores:
+    // the bypass the USER had before the lease, not blanket false.
+    void pollEditLease();
+    LinkShm::LeaseGate leaseGate_;
+    std::atomic<bool>  leaseActive_ { false };
+    int                leaseSlot0_       = -1;
+    bool               leasePriorBypass_ = false;
+
     juce::String effectiveFilePart() const;
     juce::String chainInstanceId() const;
     void pollChainCommand();

@@ -4,6 +4,7 @@
 #include <memory>
 #include <atomic>
 #include <map>
+#include <mutex>
 
 class ChainHost;   // buildCurrentChainInjection reads the live rack
 namespace LinkShm { struct RackSidecar; }   // Phase R: targeted-injection overload
@@ -93,6 +94,42 @@ struct UserSettings {
     static UserSettings fromJSON(const juce::var& json);
 };
 
+// ===========================================================================
+// Cancellation handle for one /api/chat-stream request (spec step 2).
+//
+// The stream holds three things the editor can vanish under: an open socket,
+// a detached worker thread, and pending callAsyncs (spec section 2.2). The
+// handle is the abandon lever for the first two; the per-delta callAsync
+// guard covers the third. cancel() is safe from any thread and does two
+// things: flips the cancelled flag the read loop checks between chunks, and
+// calls WebInputStream::cancel() on the live stream — which UNBLOCKS a read
+// that is sitting on a quiet socket. Without that second half, "check a
+// flag between chunks" is not enough: a stalled read on a closed editor is
+// a thread that never exits. Closing happens on the worker (the stream is
+// worker-owned and destroyed when the read loop returns); cancel just makes
+// sure the loop gets control back to do it.
+//
+// The attach/detach pair brackets the stream's lifetime under the same lock
+// cancel takes, so cancel either reaches a live stream or a nullptr — never
+// a destroyed one. A cancel that lands before attach still works: attach
+// re-checks the flag and cancels the fresh stream immediately.
+// ===========================================================================
+class ChatStreamHandle
+{
+public:
+    void cancel();
+    bool isCancelled() const noexcept { return cancelled.load(); }
+
+private:
+    friend class EchoJayAPI;
+    void attach (juce::WebInputStream* s);
+    void detach();
+
+    std::atomic<bool> cancelled { false };
+    std::mutex streamLock;
+    juce::WebInputStream* active = nullptr;   // worker-owned; guarded by streamLock
+};
+
 class EchoJayAPI
 {
 public:
@@ -174,6 +211,57 @@ public:
                   std::function<void(const juce::String& reply, bool success)> onComplete,
                   const juce::String& meterJsonBlob = juce::String());
 
+    // ============ Streaming chat (spec step 2 — Feature A transport) ============
+    //
+    // The streaming VARIANT of sendChat, not a replacement (spec 2.3): same
+    // limit gate, same staged-state consumption, same request body byte for
+    // byte (both build through buildChatRequestBody), but the reply arrives
+    // as SSE frames from /api/chat-stream instead of one JSON body.
+    //
+    // Feature A contract (spec 3.1): only TEXT deltas are forwarded —
+    // thinking frames are absent on the wire with thinking off, and ignored
+    // here if Feature B ever turns them on. start/block_start/block_stop
+    // and unknown frame types are ignored (forward compatibility).
+    //
+    // Callbacks — ALL on the message thread, ALL behind the teardown guard
+    // (alive flag AND handle->cancelled checked both before posting and
+    // inside the posted lambda, the postJSON discipline extended to every
+    // delta):
+    //   onTextDelta(text)      zero or more times, in wire order. PROVISIONAL
+    //                          rendering only — never persisted (spec 3.1).
+    //   onDone(doneFrame)      at most once, last. The frame's `reply` is the
+    //                          assembled, scrubbed, AUTHORITATIVE string; it
+    //                          replaces every accumulated delta. Also carries
+    //                          stopReason, usage, costUsd, chainBlock.
+    //   onError(msg, status)   terminal instead of onDone. A stream that dies
+    //                          mid-flight lands here: NO onDone means the
+    //                          caller drops all partial state (spec section
+    //                          5/6 — only a finished reply is ever persisted).
+    //   After cancel(), NOTHING fires. A cancelled stream delivers no result.
+    //
+    // Retry policy — postJSON's, adapted to a stream: connection-phase
+    // failures (connect refused / timed out, nothing reached the server)
+    // retry up to 3 attempts with 1s/2s backoff, alive+cancel checked before
+    // and after each sleep. A real HTTP status is answered, not retried. And
+    // once the SSE stream has opened, NEVER retried: a half-delivered stream
+    // that silently restarted would replay deltas the caller already
+    // rendered.
+    //
+    // Returns the cancellation handle. The caller owning UI (the editor)
+    // MUST cancel() it in its teardown path; the handle outliving the
+    // stream is fine (cancel on a finished stream is a no-op).
+    struct ChatStreamEvents
+    {
+        std::function<void(const juce::String& textDelta)> onTextDelta;
+        std::function<void(const juce::var& doneFrame)> onDone;
+        std::function<void(const juce::String& error, int statusCode)> onError;
+    };
+    std::shared_ptr<ChatStreamHandle> streamChat(const juce::StringArray& roles,
+                                                 const juce::StringArray& contents,
+                                                 const juce::String& systemPrompt,
+                                                 ChatStreamEvents events,
+                                                 const juce::String& meterJsonBlob = juce::String());
+
     // Stage the meter blob for the NEXT sendChat call (consumed when the
     // request body is built, so it also survives the limit-refresh retry).
     // Alternative to passing meterJsonBlob directly.
@@ -186,6 +274,27 @@ public:
     // limit-retry keeps it).
     void setNextChatTurnType(const juce::String& t, int busCount = 0)
     { nextChatTurnType_ = t; nextChatBusCount_ = busCount; }
+
+    // Per-fp exact controls exposure (9 Aug 2026): name->fp JSON object
+    // staged from ChainHost::buildMapFpsJson, consumed at body build like
+    // the meters blob. Tells the server WHICH BINARY each plugin name is,
+    // so it serves that fingerprint's own controls entry instead of the
+    // AU/VST3 sibling intersection. "{}"/empty stages nothing; a server
+    // without the field ignores it.
+    void setNextChatMapFps(const juce::String& jsonObject)
+    { nextChatMapFps_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
+
+    // Step-5 selection signal (STREAMING_REASONING_SPEC section 7): does
+    // the staged state say the NEXT send is a chain build? True when the
+    // classifier bound intent "chain_generate", or the client staged that
+    // turnType label. READ-ONLY — consumption stays at body build, and the
+    // server still reclassifies for itself (a turn it downgrades to chat
+    // simply streams a chat reply, which is harmless).
+    bool nextTurnIsChainBuild() const
+    {
+        return nextClassifyIntent_ == "chain_generate"
+            || nextChatTurnType_  == "chain_generate";
+    }
 
     // THE ONLY WAY meter/band data reaches /api/chat: the explicit-capture
     // flag is set here (Capture button flow) and cleared after EVERY send —
@@ -223,10 +332,172 @@ public:
     void clearStagedTurn()
     {
         nextChatMeters_.clear();
+        nextChatMapFps_.clear();
         nextChatTurnType_.clear();
         nextChatBusCount_ = 0;
         nextChatIsExplicitCapture_ = false;
+        nextClassifyIntent_.clear();
+        nextClassifyToken_.clear();
     }
+
+    // ============ Classifier (split call) ============
+    //
+    // POST /api/classify runs BEFORE the main /api/chat call. The client
+    // renders the returned preamble as a provisional bubble, then fires the
+    // main call carrying the intent and its token — turning classifier
+    // latency into a time-to-first-content improvement rather than an
+    // addition. Some turns short-circuit: the question IS the turn and no
+    // main call fires at all.
+    //
+    // EVERY failure path answers `usable=false`, which means BEHAVE EXACTLY
+    // AS TODAY. Nothing here may block, delay or fail a send.
+    //
+    // THE MESSAGE IS THE FULL COMPOSED CONTENT, injections and all — the
+    // same string that goes out as messages[last].content. Do NOT pre-strip
+    // to the typed portion:
+    //   - the server runs userTypedPortion() itself on BOTH calls, so hash
+    //     parity (and therefore token verification in chat.js) is
+    //     server-to-server by construction. A client-side strip would have
+    //     to be byte-identical to the server's, which is exactly the
+    //     equivalence the server contract tells clients not to attempt.
+    //   - hasCurrentChain is derived server-side from the "[CURRENT CHAIN"
+    //     marker in this string. Pre-stripping makes it permanently false.
+    struct ClassifyRequest
+    {
+        juce::String message;          // FULL composed content (required)
+        juce::String channel;          // CHANNEL TYPE / material name; server caps at 40
+        juce::String genre;            // server caps at 40
+        juce::String priorAssistant;   // previous assistant turn; server tail-caps at 400
+        juce::String turnType;         // staged label ("chat", "chain_generate", ...)
+        juce::var    links;            // array of {"name":...}; server caps at 24
+        // Which client-rendered ASK this turn ANSWERS ("channel_mismatch").
+        // Set ONLY on a tap-originated turn. A repeated build request and an
+        // answer to the mismatch question are byte-identical, so the server
+        // cannot tell them apart from the text; this states it as a fact and
+        // suppresses the precondition deterministically. Empty on a typed
+        // turn, which is what lets the mismatch fire again.
+        juce::String answers;
+    };
+
+    // Mirrors the server's response one field per field. `usable` is the
+    // client's own flag: false means the call failed, timed out, was gated
+    // off, or returned nothing actionable — fall through.
+    struct ClassifyResult
+    {
+        bool usable = false;
+        juce::String intent;          // chat | chain_generate | chain_edit | ambiguous
+        juce::String precondition;    // channel_mismatch | needs_scoping | (empty)
+        juce::String preamble;        // provisional-bubble copy; empty on a short-circuit
+        juce::String question;        // non-empty only when shortCircuit
+        juce::String token;           // signed intent binding for the main call
+        juce::String mode;            // off | shadow | live
+        juce::String fallback;        // server's reason string, diagnostics only
+        // EXPLICIT SERVER FLAGS, never inferred from field presence. A build
+        // turn can carry a stray question and still be shortCircuit=false;
+        // reading "there is a question, so it must be a short-circuit" is the
+        // bug the server's explicit boolean exists to prevent.
+        bool shortCircuit    = false;
+        bool questionFollows = false; // a SECOND call owns the wording
+        juce::var chips;              // [{label, detail?, intent?}] or void
+    };
+
+    // ---- abort budgets ----------------------------------------------------
+    //
+    // PROVISIONAL. These are the web client's numbers, and the web client set
+    // them from a measurement window taken on 3 Aug 2026 (deployed endpoint,
+    // n=18 across four turn types, laptop network):
+    //
+    //   pre-model overhead   165-248 ms typical, 331 ms cold
+    //   call 1 total         min 1682 / med 1922 / max 3167 ms
+    //   call 2 total         min 1559 / med 1783 / max 1964 ms  (n=13)
+    //   network RTT          ~250-300 ms on top of those totals
+    //
+    // 3800 clears call 1's observed max plus network; 2800 does the same for
+    // call 2, which has the tighter spread and so gets the tighter budget.
+    // Two earlier web values (2200, then 2800 for call 1) both failed by
+    // sitting INSIDE the normal range — which presents as a flaky classifier
+    // rather than as a number that is too small.
+    //
+    // MEASURED, 4 Aug 2026 — call 1 raised 3800 -> 4500, from real durations
+    // rather than the censored ones above. Every earlier mismatch reading was
+    // cut off at the server's own ceiling with inTok/outTok/intent all null,
+    // so the true cost was unknown. With that ceiling lifted to 8000 as
+    // instrumentation, six runs on the same laptop, model and facts
+    // (channel="Mix Bus", seven links, staged=chain_generate):
+    //
+    //   mismatch turn (the slowest shape)  median 2886 ms, max 3044 ms
+    //                                      6130 in / 188-198 out
+    //   plain chat turn                    1993 ms, 35 out
+    //   needs_scoping (question split out) median 1962 ms, 43 out
+    //
+    // Output volume is the whole cost: ~194 tokens against 35 is 5.6x, and
+    // generation is serial. The server ceiling moved 3000 -> 4000 on the same
+    // measurement (max 3044, so ~950 ms headroom).
+    //
+    // 4500 HERE BECAUSE THIS BUDGET SPANS MORE THAN THE SERVER'S. The server
+    // ceiling is an AbortController around the model call ALONE; this covers
+    // the whole round trip — network out, auth, getUser, mode resolution, the
+    // rate limiter, the model call, the response, network back. On the worst
+    // observed turn that is 3044 model + ~200-330 pre-model + ~300 network
+    // ≈ 3650, which 3800 cleared by ~150 ms — inside the noise. 4500 sits
+    // ~850 ms above it and ~500 ms above the server's own ceiling, so the
+    // server's fallback reaches the client instead of the client giving up
+    // first on a call that was about to answer.
+    //
+    // Call 2 stays at 2800: it was measured on 4 Aug at median 2590 ms
+    // (769 in / 68-71 out) and has the tighter spread, so it keeps the
+    // tighter budget. Do not raise it in sympathy.
+    //
+    // LOWERED 4500 -> 3200 on 8 Aug 2026. Every number above describes
+    // SONNET; the classify route moved to gpt-4.1 (server prompt v21) and
+    // both ends re-set from the 8-hour sampler window through the shipped
+    // transport, abort lifted (480 rows, 96 per shape): call 1's slowest
+    // shape maxed at 2062 ms, medians 811-859, p95s 1198-1510; call 2
+    // maxed at 1758 ms. The server ceiling moved 4000 -> 2500 on the same
+    // window (clears the slowest real completion by ~440 ms).
+    //
+    // 3200 = server ceiling 2500 + measured pre-model overhead 174-384 ms
+    // + ~300 ms round trip, with margin. The constraint that MATTERS is
+    // staying ABOVE the server ceiling plus its surroundings: when the
+    // server aborts at 2500 its staged-label fallback must reach this
+    // client, rather than the client quitting first on a call that was
+    // about to answer. The floor assertion encoding both constraints
+    // lives in the saas repo (scripts/test-web-split-call.mjs), derived
+    // from this window; it is what caught 2200 and 2800.
+    //
+    // The window's one failure in 480 was a HANG, not a slow answer (a
+    // stalled in-flight call that only resolved on process resume, ~35
+    // minutes of wall clock) - the reason the abort exists at all, and
+    // the reason the ceiling is margin-over-max rather than a completion
+    // percentile. From this side a hang and a slow call are identical;
+    // production watches the split via intentFallback = 'timeout'.
+    static constexpr int kClassifyBudgetMs         = 3200;
+    static constexpr int kClassifyQuestionBudgetMs = 2800;
+
+    /** Call 1. Calls back EXACTLY ONCE on the message thread.
+
+        Must be called FROM the message thread (it arms a Timer).
+
+        NO RETRIES, deliberately — see the deadline latch in the .cpp.
+    */
+    void classify(const ClassifyRequest& req,
+                  std::function<void(const ClassifyResult&)> onComplete);
+
+    /** Call 2, the scoping question's wording. Fire ONLY when call 1
+        answered questionFollows=true AND left the question empty.
+
+        Never key this off the precondition. Which preconditions defer their
+        question is a server decision; a client that maps
+        needs_scoping -> "ask the second endpoint" breaks silently the day a
+        second precondition splits.
+
+        Calls back once on the message thread with the question, or empty —
+        and empty means fall through to the ordinary send.
+    */
+    void classifyQuestion(const juce::String& message,
+                          const juce::String& channel,
+                          const juce::String& genre,
+                          std::function<void(const juce::String& question)> onComplete);
 
     // usage-v2 accessors. Percent works against BOTH server states.
     float getUsagePercent() const
@@ -276,6 +547,18 @@ public:
     // for any behaviour that depends on what the turn actually was (e.g.
     // gating the prose name-scan chain fallback).
     juce::String getLastResolvedTurnType() const { return lastResolvedTurnType_; }
+
+    // The classifier binding for the NEXT sendChat: the intent call 1
+    // resolved and the signed token that brands it. Staged like the meters
+    // blob and the turnType, consumed at body build (so the limit-refresh
+    // retry keeps it) and cleared after every send.
+    //
+    // The server accepts an ASSERTED intent only with a valid token and
+    // re-classifies otherwise, so sending them is safe when absent and safe
+    // when stale. chat.js verifies the token and logs the outcome; until
+    // cutover it acts on nothing.
+    void setNextClassifyBinding(const juce::String& intent, const juce::String& token)
+    { nextClassifyIntent_ = intent; nextClassifyToken_ = token; }
 
     // 2.4 dialFlags (26 Jul 2026, DARK): names from the AVAILABLE PLUGINS
     // feed whose LOCAL map passes the dial-signals threshold. Staged per
@@ -654,8 +937,10 @@ private:
                         std::function<void(bool, const juce::String&)> onComplete);
     juce::String deviceId;
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
+    juce::String nextChatMapFps_;   // staged by setNextChatMapFps(); "" = none
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
     juce::StringArray nextDialFlags_; // see setNextDialFlags(); cleared per send
+    juce::String nextClassifyIntent_, nextClassifyToken_; // setNextClassifyBinding()
     int          nextChatBusCount_ = 0;
     bool         nextChatIsExplicitCapture_ = false;   // see stageCapturePayload
     UserInfo userInfo;
@@ -666,9 +951,47 @@ private:
     // know the object is gone and skip any member access.
     std::shared_ptr<std::atomic<bool>> alive { std::make_shared<std::atomic<bool>>(true) };
     
-    // Helper: make a POST request with auth header
+    // Helper: make a POST request with auth header.
+    //
+    // maxAttempts / connectTimeoutMs default to the values every caller has
+    // always used, so existing call sites are unchanged. They exist for the
+    // classifier, which must NOT retry: see classify() in the .cpp.
     void postJSON(const juce::String& endpoint, const juce::String& body,
-                  std::function<void(const juce::var& json, int statusCode)> onComplete);
+                  std::function<void(const juce::var& json, int statusCode)> onComplete,
+                  int maxAttempts = 3, int connectTimeoutMs = 60000);
+
+    // The /api/chat request body, byte for byte what sendChat has always
+    // sent — factored out (spec step 2) so sendChat and streamChat cannot
+    // drift. CONSUMES the staged per-turn state (nextChat*, dial flags,
+    // classifier binding) exactly as the inline code did; call it once per
+    // send, after the limit gate.
+    juce::String buildChatRequestBody(const juce::StringArray& roles,
+                                      const juce::StringArray& contents,
+                                      const juce::String& systemPrompt,
+                                      const juce::String& meterJsonBlob);
+
+    // streamChat's internals: the gate+build half (shared with the
+    // limit-refresh retry, which must reuse the SAME handle so a cancel
+    // issued during the refresh still lands), and the worker that owns the
+    // socket and the read loop.
+    void streamChatInternal(std::shared_ptr<ChatStreamHandle> handle,
+                            const juce::StringArray& roles,
+                            const juce::StringArray& contents,
+                            const juce::String& systemPrompt,
+                            ChatStreamEvents events,
+                            const juce::String& meterJsonBlob,
+                            bool isRetryAfterRefresh);
+    void startChatStream(std::shared_ptr<ChatStreamHandle> handle,
+                         const juce::String& body,
+                         ChatStreamEvents events);
+
+    // Classifier gate, latched for the process. Once the server has answered
+    // mode:"off" there is nothing to re-ask: the allowlist is keyed on the
+    // account's uid and cannot change without a reload, so a gated-off user
+    // must not pay an authenticated round trip on every send. STATIC because
+    // every plugin instance in the host shares one account; reset on
+    // login/logout, where the account genuinely can change.
+    static std::atomic<bool> classifierOff_;
 
     // Development transport (Session B). Both are the identity/empty case in
     // a release build: the implementations are wrapped in

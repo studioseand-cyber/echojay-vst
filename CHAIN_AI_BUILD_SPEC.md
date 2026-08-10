@@ -624,10 +624,36 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   whether that content is trustworthy.
 
 ## Standing engineering rules (from prior work)
-- Build via ~/reinstall-v2.sh (kills AU host, bumps version, rebuilds, installs
-  atomically). It now derives REPO from `git rev-parse --show-toplevel` and
-  configures the build tree if `$BUILD/CMakeCache.txt` is missing, so it builds
-  whichever worktree you run it from and survives a `rm -rf build`.
+- ANY STEP THAT CAN SILENTLY DO NOTHING MUST ASSERT IT DID SOMETHING (3 Aug
+  2026, three instances in one day). The family, all the same shape — a tool
+  reports SUCCESS for work it did not do, and nothing points at the cause:
+  - an assertion whose needle stopped matching, so it SKIPPED rather than
+    failed and went dark while still reading green;
+  - a gate that exited on its first failure, hiding three suites that were
+    never run at all;
+  - `sed -i` reporting success when it replaced nothing — for THIRTEEN
+    versions, which is how build-installer.sh and package-dmg.sh sat at
+    2.24.2 while CMakeLists.txt reached 2.25.10.
+  None of these broke anything at the time. That is the point: the damage is
+  deferred to a release, a debug session or an afternoon spent re-testing a
+  fix that was never installed, and by then the cause is invisible. So a
+  search that finds nothing, a substitution that replaces nothing, and a
+  suite that runs nothing must all be LOUD, and must be distinguishable from
+  the same step succeeding. Prefer failing the run over reporting green.
+  Where "not present" is legitimate (an older branch without a file), make it
+  a stated SKIP naming the thing — never silence.
+- Build via ~/reinstall-v2.sh, which since 3 Aug 2026 is a THIN SHIM: it
+  resolves the worktree with `git rev-parse --show-toplevel` and execs that
+  worktree's tracked `tools/reinstall-v2.sh`. The real script is in the repo,
+  per branch, under the pre-commit gate and bisectable — it lived in $HOME
+  until two edits in one afternoon went live for five worktrees with no
+  history and no review, the second of which could abort a build that
+  previously succeeded. Behaviour goes in the tracked copy; keep the shim
+  thin. It derives REPO the same way and configures the build tree if
+  `$BUILD/CMakeCache.txt` is missing, so it builds whichever worktree you run
+  it from and survives a `rm -rf build`. Its version-bump assertions are
+  covered by `tools/reinstall_v2_test/build_and_run.sh`, which the pre-commit
+  gate runs BEFORE its unbuilt-tree skip because it needs no build.
 - BINARY VERIFICATION IS A CONTENT CHECK, NOT A VERSION OR TIMESTAMP (28 Jul
   2026, learned the hard way). The old rule "version on screen = proof of fresh
   binary" is WRONG and cost a full afternoon: an installed component read
@@ -696,3 +722,39 @@ between two release-stores. That is also why RAISING the publish rate above
 10 Hz would be cheap if it is ever wanted; the only real constraint there is
 dataMutex, which processBlock also takes, so a faster publish means more
 contention with each Link's audio thread.
+
+## QUEUED: the audio ring has no resync (4 Aug 2026)
+
+NOT A BUG TODAY, and that is exactly why it is written down: capture tolerates
+it because nothing notices, so it will surface later wearing someone else's
+clothes.
+
+LinkShm::ringConsume advances readIdx by AT MOST numFrames per call:
+
+    const uint32_t n = std::min((uint32_t)numFrames, w - r);
+
+Nothing anywhere skips readIdx forward. I checked every reference to it; the
+only other writer is the producer-side init. So the ring has no catch-up path
+of any kind.
+
+Consumes ARE skipped. PluginProcessor's per-slot drain does
+`if (!ls.lock.tryEnter()) continue;`, and any cycle in which the main plugin
+does not run is a cycle the Link still produced into. Every skip therefore adds
+one block of backlog PERMANENTLY, and backlog is monotonic: it only ever grows,
+up to the kLinkRingFrames ceiling (65536 frames, about 1.49 s at 44.1k) where
+ringProduce begins dropping frames instead.
+
+For capture this is invisible: you still get every sample, just later, into a
+file nobody is timing. For anything LIVE it is unbounded one-way drift. It also
+means the delay between a Link and its own meters can creep apart over a long
+session, which is the shape of bug that gets reported as "the meters lag" or
+"capture is out of sync with the project" long after the cause.
+
+THE FIX when it is wanted: a bounded backlog. If (w - r) exceeds a target,
+jump readIdx forward to w - target rather than draining one block at a time.
+That is a few lines, but it changes capture's sample continuity guarantee, so
+it needs its own pass and its own thought about what capture promises.
+
+Raised while investigating audio-monitoring for the remote editor (that design
+was not built; stage 1 asks the Link to open its own editor instead, where the
+ring is not in the path at all).

@@ -1127,12 +1127,64 @@ private:
         // as the figure card; persisted on the message so a reloaded chat
         // redraws it identically (the prose no longer restates the numbers).
         juce::String figuresData;
+        // Split call: non-zero on the PROVISIONAL bubble rendered from the
+        // classifier's preamble. A rendering artefact, never history.
+        //
+        // FOUR STORES, ONE DESTINATION. A provisional bubble reaches
+        // chatMessages and nothing else:
+        //   chatMessages              <- here, and only here
+        //   processorRef.chatHistory  <- no: replayed on editor recreate
+        //   chatRoles / chatContents  <- no: this IS the API history, and a
+        //                                phantom assistant turn there would
+        //                                ride out inside the next send's
+        //                                12-message trim
+        //   workspace (/api/data)     <- no: round-trips to the server and
+        //                                comes back on reload
+        // WsMessage has no counterpart to this field, deliberately: there is
+        // nothing to serialise it into, so the persistence side cannot carry
+        // a provisional even by accident.
+        //
+        // An ID rather than a bool because the drop/replace sites are
+        // reached asynchronously and a captured INDEX can drift — a second
+        // send landing first shifts the vector under the first send's
+        // callback. Identity survives that; an index does not.
+        int provisionalId = 0;
+        // Which client-rendered ASK this message IS, when the client built it
+        // rather than the model ("channel_mismatch"). Empty for every other
+        // message, including model-authored ASK blocks.
+        //
+        // NOT PERSISTED, AND NOT AN OVERSIGHT. WsMessage has no counterpart
+        // and must not grow one. The only reader is the switch guard, which
+        // runs IN-SESSION immediately after a chip tap to answer "is the
+        // newest assistant turn the mismatch question I just rendered?" — a
+        // question that only has meaning between rendering it and acting on
+        // it. Same lifetime and same reasoning as provisionalId above. A
+        // reloaded chat has no tap in flight, so there is nothing for a
+        // persisted copy to answer.
+        juce::String clientAskKind;
     };
     std::vector<ChatMsg> chatMessages;
     // THE shared display source: both text-layout passes (measure + paint)
     // MUST get their string from here so heights and pixels cannot disagree.
+    //
+    // Edit turns show the CARD ONLY (9 Aug 2026): the preamble is written
+    // before the outcome exists, so it can only ever be a prediction
+    // rendered as a statement - "Dialling Ratio to 4" sat above three
+    // surfaces saying nothing was written. Instruction is a ceiling, never
+    // a floor: four rounds of it were each absorbed at the surface and none
+    // guaranteed. The card is the one place proposal grammar is TRUE,
+    // because it has an Apply button and speaks before the outcome by
+    // design. Keyed on editData non-empty, so blockless replies (declines,
+    // advice, ASK) keep their prose untouched. PLUGIN DISPLAY ONLY: the
+    // model still writes the preamble (protocol unchanged, other clients
+    // unaffected); the web app renders its own and is a separate, later
+    // decision.
     static const juce::String& displayedText(const ChatMsg& m)
-    { return m.displayText.isNotEmpty() ? m.displayText : m.content; }
+    {
+        static const juce::String kCardOnly;
+        if (m.role == "assistant" && m.editData.isNotEmpty()) return kCardOnly;
+        return m.displayText.isNotEmpty() ? m.displayText : m.content;
+    }
     bool chatLoading = false;
 
     // ---- Staged replies (Phase 1d): working-state stage row -----------------
@@ -1164,6 +1216,23 @@ private:
     // factual wording naming the hand-dial slots and controls. On timeout
     // the conservative wording is used, never the model line.
     void finishChainBubbleWhenDialSettled(const juce::String& chainJson, int attemptsLeft);
+    // The edit twin (item 3, 9 Aug 2026): same settle-then-compose contract,
+    // scoped to the slots the edit's ops actually touched.
+    void finishEditBubbleWhenDialSettled(const juce::String& editJson, int attemptsLeft);
+    // Receipt-time consumption of suggestion-only set ops (9 Aug 2026):
+    // Apply exists to confirm a CHANGE to the rack; a prose-only set
+    // changes nothing (it writes the slot card's suggested-settings text),
+    // so offering Apply for one asks the user to confirm an action that
+    // does not exist. LOCAL rack only - Link-targeted cards keep their
+    // remote round-trip. Executes the prose-only sets immediately under a
+    // guard (slot in range AND baseSlots name matches the live slot; a
+    // failed guard leaves the op for the normal Apply path and its
+    // staleness machinery). Returns the edit JSON with consumed ops
+    // removed; allConsumed = the edit array emptied. Mixed batches
+    // compose: real ops keep the card and its Apply, suggestions land now.
+    juce::String consumeSuggestionSetsAtReceipt(const juce::String& editJson,
+                                                bool& allConsumed,
+                                                juce::StringArray& consumedNames);
     // Non-clean-load paths keep their factual bubbles but still log
     // dial_miss events once dial state settles.
     void logDialMissesWhenSettled(int attemptsLeft);
@@ -1630,6 +1699,23 @@ private:
         std::unique_ptr<ChainEditorWindow> popout;
         int popoutSlot = -1;
 
+        /** THE RACK SELECTOR. It lives on the PANEL, not on the editor, and
+            that is the fix for the bug that hid it: as a panel child its
+            visibility follows the panel's automatically, so there is ONE
+            authority instead of the editor's switchToTab branches and
+            applyReviewModalState having to agree. It sat invisible from
+            launch because only the second of those knew about it.
+
+            It also could not stay in the window header strip, which has no
+            room: the title takes 14..114, the saved-chain name field EXPANDS
+            to fill everything the Save/Save As/Open buttons leave, and those
+            are right-aligned from mW-186. Nothing was free. Here it sits at
+            the left end of the rack strip, labelling the blocks beside it,
+            mirroring the master MIX knob at the other end. */
+        juce::TextButton      rackBtn { "RACK" };
+        std::function<void()> onRackClick;
+        static constexpr int  kRackSelW = 150;   // reserved left of the strip
+
         // Card header row controls — act on the SELECTED slot
         juce::TextButton cardBypassBtn { "B" };
         juce::TextButton cardRemoveBtn { "X" };
@@ -1641,6 +1727,41 @@ private:
 
         juce::String statusText;
 
+        /** REMOTE MODE: the panel is showing another Link's rack, read from
+            its sidecar rather than from the local ChainHost. Stage 1 carries
+            read, bypass, remove and add; move, per-slot wet, master wet and
+            the inline editor have no op over the command protocol yet, so
+            they are DISABLED WITH A REASON rather than left present and dead.
+            A control that does nothing when pressed is worse than one that
+            says why it cannot. */
+        bool         remote = false;
+        // Stage 1: a remote edit session is live for sessionSlot. The slot's
+        // click falls through to showInline (the editor comes from
+        // onCreateEditor, which returns the EDITING COPY's editor), and the
+        // APPLY & RELEASE button shows.
+        bool         editingSession = false;
+        int          sessionSlot    = -1;
+        juce::TextButton applyBtn { "APPLY & RELEASE" };
+        std::function<void()> onApplyRelease;
+        // THE AFFORDANCE (stage 1 follow-up): a remote slot is edited by
+        // selecting it and pressing EDIT, not by the selection click itself.
+        // A click selects quietly, like everywhere else in the product; the
+        // button starts the session, so a stray click on a block can never
+        // engage a lease. It replaces the old resting boundary message,
+        // which explained a wall that solo editing removed.
+        juce::TextButton editBtn { "EDIT THIS PLUGIN" };
+        std::function<void(int)> onEditRequest;
+        // Sticky status: rebuild() used to stomp statusText with the resting
+        // message on every remote rebuild, which erased the edit flow's own
+        // messages ("Reading settings...", refusals, timeouts) and made any
+        // failure invisible. Now rebuild only replaces text IT wrote: a flow
+        // message survives until the flow itself replaces it.
+        juce::String restingHint_;
+        /** Remote slot tapped: the editor asks that Link to raise its own.
+            Slot index is the panel's (rack) index. */
+        std::function<void(int)> onRemoteEditorRequest;
+        juce::String remoteName;     // the Link's display name, for the note
+        bool         remoteOffline = false;
         std::function<void(int)>        onSelectSlot;
         std::function<void(int)>        onRemoveSlot;
         std::function<void(int)>        onBypassSlot;
@@ -1671,6 +1792,28 @@ private:
                 layoutInline();
                 attachNative(false);
             };
+
+            editBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff0e7490));
+            editBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            editBtn.setTooltip("Open this plugin here and hear the channel solo, "
+                               "live, while you adjust it");
+            editBtn.onClick = [this]
+            { if (selectedIdx >= 0 && onEditRequest) onEditRequest(selectedIdx); };
+            addChildComponent(editBtn);
+
+            applyBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1d4ed8));
+            applyBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            applyBtn.setTooltip("Send the edited settings back to the Link and "
+                                "restore the channel");
+            applyBtn.onClick = [this] { if (onApplyRelease) onApplyRelease(); };
+            addChildComponent(applyBtn);
+
+            rackBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+            rackBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+            rackBtn.setTooltip("Choose which Link's rack this tab shows. "
+                               "The Link mixer follows the same selection.");
+            rackBtn.onClick = [this] { if (onRackClick) onRackClick(); };
+            addAndMakeVisible(rackBtn);
 
             addAndMakeVisible(stripView);
             stripView.setViewedComponent(&stripContent, false);
@@ -2047,6 +2190,29 @@ private:
             if (onSelectSlot) onSelectSlot(i);
             for (auto& bl : blocks)
             { bl->selected = (bl->slotIdx == i); bl->repaint(); }
+            // A REMOTE slot never tries to open an editor here. That instance
+            // lives in the Link's process and cannot render in this window,
+            // which is architectural and permanent, not a failure -- routing
+            // it through showInline produced "Failed: could not open editor",
+            // a fault message for a boundary. Instead we ASK THE LINK to open
+            // its own, which is the one arrangement where the user edits the
+            // real instance in the real signal path and hears it immediately.
+            if (remote)
+            {
+                // A live session's own slot DOES show inline: the editor is
+                // the local EDITING COPY (onCreateEditor returns it). Every
+                // OTHER remote slot click just SELECTS -- the EDIT button
+                // starts the session. The click used to auto-begin one,
+                // which coupled selection to a lease and gave the flow no
+                // visible starting point.
+                if (!(editingSession && i == sessionSlot))
+                {
+                    popBtn.setVisible(false);
+                    resized();   // editBtn visibility follows the selection
+                    repaint();
+                    return;
+                }
+            }
             if (inlineSlot != i || inlineEditor == nullptr)
                 showInline(i);
             popBtn.setVisible(selectedIdx >= 0);
@@ -2139,19 +2305,60 @@ private:
                 bl->onRemove = [this, ci] { if (onRemoveSlot) onRemoveSlot(ci); };
                 bl->onMove   = [this, ci](int dir) { if (onMoveSlot) onMoveSlot(ci, dir); };
                 bl->wetKnob.setValue(slotInfos[(size_t)i].wet);
-                bl->wetKnob.setVisible(!slotInfos[(size_t)i].bypassed);
+                // STAGE 1 SCOPE, stated per control rather than by hiding a
+                // whole row: wet and move have no op over the command
+                // protocol, so on a remote rack they are disabled and their
+                // tooltip says why. Bypass and remove stay live because those
+                // ops exist and the mixer already sends them.
+                bl->wetKnob.setVisible(!remote && !slotInfos[(size_t)i].bypassed);
                 bl->onWet    = [this, ci](float v) { if (onSlotWet) onSlotWet(ci, v); };
-                bl->prevBtn.setEnabled(i > 0);
-                bl->nextBtn.setEnabled(i < (int)slotInfos.size() - 1);
+                bl->prevBtn.setEnabled(!remote && i > 0);
+                bl->nextBtn.setEnabled(!remote && i < (int)slotInfos.size() - 1);
+                if (remote)
+                {
+                    const juce::String why = "Reordering another Link's rack is not in this "
+                                             "version. Open " + remoteName + " to reorder.";
+                    bl->prevBtn.setTooltip(why);
+                    bl->nextBtn.setTooltip(why);
+                }
+                if (remoteOffline)
+                {
+                    const juce::String off = remoteName + " is offline. This rack is the last "
+                                             "thing it published; edits are refused.";
+                    bl->bypassBtn.setEnabled(false);
+                    bl->removeBtn.setEnabled(false);
+                    bl->bypassBtn.setTooltip(off);
+                    bl->removeBtn.setTooltip(off);
+                }
                 stripContent.addAndMakeVisible(*bl);
                 blocks.push_back(std::move(bl));
             }
             layoutStrip();
-            popBtn.setVisible(selectedIdx >= 0);
+            // MASTER WET is whole-rack and has no remote op either.
+            masterKnob.setVisible(!remote);
+            // THE INLINE EDITOR IS THE ONE GENUINELY IMPOSSIBLE ITEM, not a
+            // deferred one: the plugin instance lives in the Link's process
+            // slot, so no protocol addition can render it here. Every editor
+            // is closed on entering remote mode and the pop-out is hidden.
+            popBtn.setVisible(!remote && selectedIdx >= 0);
 
             // Bring the inline editor in line with the selection
-            if (selectedIdx < 0)
+            if (remote || selectedIdx < 0)
                 closeAllEditors();
+            // The RESTING HINT names the affordance. Sticky: it only ever
+            // replaces text this same line wrote (or emptiness), so the edit
+            // flow's own messages -- refusals, sizes, timeouts, all the real
+            // walls with their real reasons -- survive rebuilds and stay
+            // readable until the flow itself moves on.
+            if (remote && !editingSession)
+            {
+                const juce::String hint =
+                    "Select a plugin, then EDIT THIS PLUGIN to adjust it here. "
+                    "You will hear " + remoteName + " solo, live, while you edit.";
+                if (statusText.isEmpty() || statusText == restingHint_)
+                    statusText = hint;
+                restingHint_ = hint;
+            }
             else if ((inlineSlot != selectedIdx || inlineEditor == nullptr)
                      && !(popout != nullptr && popoutSlot == selectedIdx))
                 showInline(selectedIdx);
@@ -2288,14 +2495,24 @@ private:
             cardBypassBtn.setBounds(kCardMargin, 6, 24, 22);
             cardRemoveBtn.setBounds(kCardMargin + 26, 6, 24, 22);
             popBtn.setBounds(getWidth() - kCardMargin - 26, 6, 26, 22);
+            applyBtn.setBounds(getWidth() - kCardMargin - 156, 6, 156, 22);
+            applyBtn.setVisible(editingSession);
+            editBtn.setBounds(getWidth() - kCardMargin - 156, 6, 156, 22);
+            editBtn.setVisible(remote && !editingSession && selectedIdx >= 0);
 
             // Settings text sits inside its card, below the tiny caps label
             auto sb = settingsBoxRect();
             settingsBox.setBounds(sb.getX() + 8, sb.getY() + 18,
                                   sb.getWidth() - 16, sb.getHeight() - 24);
 
-            stripView.setBounds(0, getHeight() - kStripH,
-                                juce::jmax(50, getWidth() - kMasterW), kStripH);
+            // The selector takes the left end of the rack strip and the strip
+            // gives up exactly that width, so the two cannot overlap however
+            // narrow the window gets. Same shape as the master knob's
+            // reservation at the right end.
+            rackBtn.setBounds(8, getHeight() - kStripH + 8, kRackSelW - 16, 24);
+            stripView.setBounds(kRackSelW, getHeight() - kStripH,
+                                juce::jmax(50, getWidth() - kMasterW - kRackSelW),
+                                kStripH);
             masterKnob.setBounds(getWidth() - kMasterW + 9,
                                  getHeight() - kStripH + 6, 44, 54);
             updateCard();
@@ -2564,6 +2781,90 @@ private:
     // Build the LINK LEVELS context + proposal format/grounding instructions
     // for a chat turn; empty when there are no live Links to reason about.
     juce::String buildLinkLevelsContext();
+    // The SAME Links, structured, for /api/classify — see the .cpp.
+    juce::var buildClassifyLinks() const;
+
+    // ---- split call (classifier) ----
+    // The main /api/chat send, deferred so /api/classify can run in front of
+    // it. provisionalId is 0 when no provisional bubble was rendered.
+    // roles/contents are a SNAPSHOT taken at compose time, not the live
+    // arrays. Before the split, sendChat built its body synchronously at the
+    // call site, so the history was fixed the moment the user pressed send.
+    // The classifier puts up to 3.8s between those two points, and a second
+    // send landing inside that window would otherwise fold its user turn
+    // into THIS turn's body. juce::String is refcounted, so the copy is a
+    // handful of refcount bumps rather than the payload.
+    void fireChatMainCall(const juce::String& sysPrompt,
+                          const juce::String& activeChatId,
+                          const juce::String& turnTargetUid,
+                          const juce::String& turnTargetName,
+                          int provisionalId,
+                          const juce::StringArray& roles,
+                          const juce::StringArray& contents);
+    // The reply pipeline factored VERBATIM out of fireChatMainCall's
+    // completion lambda (spec step 4): extraction, salvage, gated name-scan,
+    // feed check, provisional replace/drop, the four stores, workspace sync.
+    // Shared by the one-shot callback and the streaming done/error handlers
+    // so the two paths CANNOT diverge on what persists. Callers own the
+    // SafePointer null check; this runs on the message thread only.
+    void handleChatReply(const juce::String& reply, bool success,
+                         const juce::String& activeChatId,
+                         const juce::String& turnTargetUid,
+                         const juce::String& turnTargetName,
+                         int provisionalId);
+    // Streaming variant of fireChatMainCall (spec step 4, Feature A). NO
+    // CALL SITE until step 5 selects turn types onto it. Deltas render into
+    // one provisional bubble (chatMessages only); the chain block resolves
+    // at once with its Build button; done.reply persists through
+    // handleChatReply; chainBlock truncated/missing renders as a FAILED
+    // build, never a chatty reply. See the .cpp header comment.
+    void fireChatStreamCall(const juce::String& sysPrompt,
+                            const juce::String& activeChatId,
+                            const juce::String& turnTargetUid,
+                            const juce::String& turnTargetName,
+                            int provisionalId,
+                            const juce::StringArray& roles,
+                            const juce::StringArray& contents);
+    // Render the classifier's question as the whole turn: no main call.
+    // channel_mismatch, rendered entirely client-side: the sentence and both
+    // chips are built here, never by the model. See the .cpp.
+    void renderChannelMismatch(const juce::String& channelName,
+                               const juce::String& activeChatId);
+    void renderClassifierQuestion(const juce::String& question,
+                                  const juce::var& chips,
+                                  const juce::String& activeChatId,
+                                  const juce::String& askKind = {});
+    // Is the newest assistant turn the client-rendered ASK of this kind?
+    // The switch guard's real question, asked exactly rather than
+    // approximated by "is there any prior reply at all".
+    bool newestAssistantIsClientAsk(const juce::String& kind) const;
+    // Staged for the NEXT classify call: which client ASK this turn ANSWERS.
+    // Set by a chip tap, consumed and cleared when the request is built.
+    juce::String nextClassifyAnswers_;
+    // chips -> the ASK shelf's askData, or empty when there is no shelf to
+    // draw. needs_scoping nulls its chips ON PURPOSE (prose, no shelf), so
+    // empty in must mean empty out.
+    static juce::String askDataFromClassifyChips(const juce::String& question,
+                                                 const juce::var& chips);
+    // Newest assistant turn the user has actually seen, for the classifier's
+    // PRIOR REPLY fact. Skips provisional bubbles.
+    juce::String priorAssistantForClassify() const;
+    // ---- channel switch, carrying the request (chip intent "switch") ----
+    // The chooser lists every Link (membership from getLinkDisplayList so
+    // unnamed ones appear; offline ones marked, not hidden) with the
+    // classifier's ranked candidates first. Selecting one SWITCHES then
+    // SEEDS, in that order — see switchChannelCarryingRequest, where the
+    // ordering is verified at runtime rather than trusted.
+    void openChannelChooser(int chipIdx);
+    void switchChannelCarryingRequest(const juce::String& uid);
+    // The newest USER-typed text in this conversation, verbatim (chatMessages
+    // holds the pre-injection string for user turns, so no stripping).
+    juce::String newestUserRequest() const;
+    // Provisional-bubble lifetime. findProvisionalIdx returns -1 when it has
+    // already gone; dropProvisional is idempotent.
+    int  findProvisionalIdx(int provisionalId) const;
+    void dropProvisional(int provisionalId);
+    int  nextProvisionalId_ = 1;   // 0 means "not provisional"
     // [DETECTED KEY] block (KEY_DETECTOR_SPEC.md §4/§9, precedence §5.3):
     // built from collectKeySources(); names which source won (and which stem,
     // for a channel reading). Empty when no source has a reading.
@@ -2582,6 +2883,13 @@ private:
     juce::String maybeRunKeyPrecondition(const juce::String& typedMsg);
     juce::String keyTier1LastUid_;     // last Link acted on (dedupe/logging)
     juce::uint32 keyTier1SentMs_ = 0;  // don't re-fire within a minute
+    // The one in-flight chat stream, when a turn is streaming (spec step 4).
+    // chatLoading already serialises sends, so at most one exists. The
+    // destructor cancels it: cancel() unblocks the worker's read, closes the
+    // socket as the loop abandons, and suppresses every queued callback on
+    // both sides of the callAsync hop (spec 2.2) — no delta can land in a
+    // half-destroyed editor.
+    std::shared_ptr<ChatStreamHandle> activeChatStream_;
     // Resolve a proposal's linkId (name or uid) to a sendable address.
     juce::String resolveLinkProposalAddr(const juce::String& linkId) const;
     void applyGainProposal(const GainCardZone& z);
@@ -3313,6 +3621,8 @@ private:
         int  seq      = 0;
         int  slotIdx  = -1;        // 0-based rack slot
         bool isRemove = false;
+        bool isAdd    = false;     // stage 1 Chain tab: add-by-name in flight
+        juce::String addName;      // the requested plugin, for the failure text
         bool targetOn = false;     // bypass target state
         bool failed   = false;     // failed / stale / timed out
         juce::String reason;       // tooltip text for the failed state
@@ -3320,7 +3630,92 @@ private:
     };
     std::vector<LinkBlockPending> linkBlockPending_;
     void sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove);
+    /** THE op-send path, extracted from sendBlockEdit so the Chain tab's
+        remote rack editing and the mixer's per-strip B/X are ONE sender with
+        one pending model. sendBlockEdit is now a thin wrapper that resolves a
+        StripGeom to a uid and calls this. A second sender would have meant a
+        second staleness story, and baseSlots is the whole safety argument. */
+    void sendRackEdit(const juce::String& uid, int slotIdx, bool isRemove);
+    /** Stage 1's add. Same transport, same pending model, same baseSlots
+        guard; the op adds BY NAME, which is why it can fail on a Link whose
+        loadable plugin set differs from this one's. */
+    void sendRackAdd(const juce::String& uid, const juce::String& pluginName);
+    /** STAGE 1 REMOTE EDITOR. Ask a Link to raise its own editor for a rack
+        slot. The instance stays where it is, in its own signal path, so the
+        user hears every change instantly; this moves a window, not state and
+        not audio. One additive ctrl field, additive exactly like gainDb and
+        placement were. */
+    /** THE BOUNDARY MESSAGE, and there is exactly one of it. A hosted
+        plugin's editor lives in the process that instantiated it, so a Link's
+        plugin cannot render in this window. That is architectural and
+        permanent, not a fault, and "Failed: could not open editor" described
+        it as a failure. This is also the window-closed answer for the remote
+        open, because they are the SAME boundary: the editor exists over
+        there, and only that window can show it. One message, not two
+        explanations of one fact. %LINK% is the channel name from
+        resolveLinkDisplayName, the same accessor every other surface uses. */
+    static const juce::String kRemoteEditorBoundary;
+    void sendOpenSlotEditor(const juce::String& uid, int slotIdx);
+    // ---- Stage 1 SOLO editing ------------------------------------------
+    void beginRemoteEditSession(const juce::String& uid, int slot0);
+    void pollEditPullAck(const juce::String& uid, int slot0, int seq, int attemptsLeft);
+    void editProceedWithState(const juce::String& uid, int slot0, const juce::String& b64);
+    void commitAndReleaseEditSession();
+    void pollEditCommitAck(const juce::String& uid, int seq, int attemptsLeft);
+    void editSessionUiTeardown(const juce::String& note);
+    void pollOpenSlotAck(const juce::String& uid, int seq, int attemptsLeft,
+                         const juce::String& linkName);
     void pollLinkBlockAck(const juce::String& uid, int seq, int attemptsLeft);
+
+    // ---- Chain tab: which rack is being viewed ---------------------------
+    /** THE rack the Chain tab shows. NOT new state: it is the mixer's own
+        channel selection, read through effectiveChannelUid(), so the two
+        surfaces cannot disagree and nothing extra has to survive a Logic
+        editor recreate (that selection already does, on the processor).
+        Empty means the LOCAL rack, exactly as an empty channel uid means the
+        main context everywhere else. */
+    juce::String chainViewUid() const { return effectiveChannelUid(); }
+    /** Slots for whichever rack chainViewUid() names, in the panel's own
+        type. Local reads ChainHost directly; remote converts the sidecar,
+        whose RackSidecarSlot carries the same five fields SlotInfo does.
+        `valid` distinguishes "this rack is empty" from "no sidecar", which
+        the panel must render differently. */
+    struct ChainRackView {
+        std::vector<ChainHost::SlotInfo> slots;
+        bool valid   = false;      // false = no readable sidecar
+        bool remote  = false;
+        bool offline = false;
+        juce::String name;         // display name of the rack's owner
+        int  revision = -1;
+    };
+    /** THE conversion, named and static so the self-test can pin it. Both
+        types carry the same five fields, but SlotInfo is a plain aggregate:
+        if anyone ever reorders its members, an inline brace-initialiser would
+        keep compiling and silently put the format string in the settings
+        field. This is the one place that mapping is written down. */
+    static ChainHost::SlotInfo slotInfoFromSidecar(const LinkShm::RackSidecarSlot& rs)
+    {
+        ChainHost::SlotInfo si;
+        si.name     = rs.name;
+        si.bypassed = rs.bypassed;
+        si.settings = rs.settings;
+        si.format   = rs.format;
+        si.wet      = rs.wet;
+        return si;
+    }
+    ChainRackView chainRackView() const;
+    void refreshChainPanelForView(bool force);
+    juce::String chainViewSig_;    // change detector for the remote refresh
+    // Fix 3: the add's COMPLETION memory. The ok arm of pollLinkBlockAck
+    // records the finished add here (then erases the pending); the derived
+    // status line writes "Added ..." only once the sidecar cache actually
+    // shows the slot, and the record ages out after a few seconds like the
+    // chain-save status does. One author reads it: refreshChainPanelForView.
+    struct AddDone { juce::String uid, name; uint32_t ms = 0; };
+    AddDone      lastAddDone_;
+    juce::String lastAddLine_;     // the author's own last write, so it can
+                                   // retire text that stopped being true
+    void showChainRackMenu();
 
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row

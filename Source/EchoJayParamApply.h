@@ -54,6 +54,18 @@ struct ApplyResult
     juce::String landedText;
     bool         displayVerified  = false; // display text compared and matched
     bool         readbackMismatch = false; // landed wrong; value restored
+
+    /** Bridged-AU report-only outcome (10 Aug 2026): verification DISAGREED
+        or could not run, but every in-stack read on this instance is
+        structurally pre-write (DEFECT_BRIDGED_READBACK; measured 10 Aug:
+        display text AND getValue() both stale on API-2500), so the write
+        was KEPT instead of reverted -- a revert here can only undo correct
+        work. Nothing in-stack can verify OR falsify on the bridge; the card
+        carries that caveat and the settle machinery downstream owns the
+        truth. Distinct from displayVerified=false alone (the setread class,
+        where verification ran and passed by norm).
+    */
+    bool         staleDisplayKept = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -370,7 +382,8 @@ inline juce::Array<juce::Array<float>> anchorsFromVar (const juce::var& entry)
 inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
                              const juce::String& semantic,
                              const juce::var& mapEntry,
-                             const juce::var& value)
+                             const juce::var& value,
+                             bool staleDisplayReads = false)
 {
     ApplyResult r; r.semantic = semantic;
     r.requestedValue = value;
@@ -421,6 +434,16 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
             r.normalized = norm;
             r.note = "position set (display unverifiable)";
         }
+        else if (staleDisplayReads)
+        {
+            // Same measured fact as the setread path: in-stack value reads
+            // are pre-write on the bridge.
+            r.applied = true;
+            r.normalized = norm;
+            r.staleDisplayKept = true;
+            r.note = "position written; readback cannot be confirmed in-stack "
+                     "on this bridged plugin";
+        }
         else
         {
             revert();
@@ -456,6 +479,24 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
             r.normalized = labelNorm;
             r.displayVerified = true;
             r.note = "applied, reads \"" + r.landedText + "\"";
+        }
+        else if (staleDisplayReads)
+        {
+            // BRIDGED INSTANCE, report-only (10 Aug 2026, option a of
+            // DEFECT_BRIDGED_READBACK): every in-stack read is PRE-write on
+            // the bridge. The filing assumed the norm cache updates
+            // synchronously; MEASURED 10 Aug on API-2500 through this very
+            // path, it does not - getValue() right after the write returned
+            // the pre-write norm too. So nothing in this stack frame can
+            // verify OR falsify the write; reverting on a read that is
+            // stale by construction undoes correct work deterministically
+            // (the filing, 3 of 3). Keep the write, say what is known, and
+            // leave verification to the settle machinery downstream.
+            r.applied = true;
+            r.normalized = labelNorm;
+            r.staleDisplayKept = true;
+            r.note = "written \"" + matched + "\"; readback cannot be confirmed "
+                     "in-stack on this bridged plugin";
         }
         else
         {
@@ -510,6 +551,17 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
             r.applied = true;
             r.note = "applied (display unverifiable on this plugin)";
         }
+        else if (staleDisplayReads)
+        {
+            // The filing called setread entries immune ("the norm cache
+            // updates synchronously"); MEASURED 10 Aug on API-2500: the
+            // in-stack getValue() is pre-write on the bridge too. Same
+            // report-only rule as the display paths.
+            r.applied = true;
+            r.staleDisplayKept = true;
+            r.note = "written; readback cannot be confirmed in-stack on this "
+                     "bridged plugin";
+        }
         else
         {
             revert();
@@ -538,6 +590,16 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         // caveat carried, same presentation class as setread.
         r.applied = true;
         r.note = "applied (read-back unparseable: \"" + r.landedText.trim() + "\")";
+    }
+    else if (staleDisplayReads)
+    {
+        // Same bridged report-only rule as the mode path above: every
+        // in-stack read (display AND norm, measured) is pre-write on the
+        // bridge, so a revert here can only undo correct work.
+        r.applied = true;
+        r.staleDisplayKept = true;
+        r.note = "written; readback cannot be confirmed in-stack on this "
+                 "bridged plugin";
     }
     else
     {
@@ -727,7 +789,8 @@ inline BandReach bandReachRange (const juce::var& group)
 // requested per-band control. Always reports (declines when no band is free),
 // so the caller never has to synthesise feedback.
 inline void applyBands (juce::AudioPluginInstance& plugin, const juce::var& map,
-                        const juce::var& bandsVar, juce::Array<ApplyResult>& results)
+                        const juce::var& bandsVar, juce::Array<ApplyResult>& results,
+                        bool staleDisplayReads = false)
 {
     auto* bands = bandsVar.getArray();
     if (bands == nullptr) return;
@@ -849,7 +912,7 @@ inline void applyBands (juce::AudioPluginInstance& plugin, const juce::var& map,
                     ApplyResult r; r.semantic = bk; r.note = tag + "band has no " + bk + " control";
                     results.add (r); continue;
                 }
-                auto res = applyOne (plugin, bk, e, kv.value);
+                auto res = applyOne (plugin, bk, e, kv.value, staleDisplayReads);
                 res.note = tag + res.note;
                 results.add (res);
             }
@@ -867,7 +930,8 @@ inline void applyBands (juce::AudioPluginInstance& plugin, const juce::var& map,
 // ---------------------------------------------------------------------------
 inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin,
                                                const juce::var& map,
-                                               const juce::var& settings)
+                                               const juce::var& settings,
+                                               bool staleDisplayReads = false)
 {
     juce::Array<ApplyResult> results;
     auto mapParams = map.getProperty ("params", juce::var());
@@ -912,7 +976,7 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
             results.add (r);
             continue;
         }
-        results.add (applyOne (plugin, semantic, mapEntry, kv.value));
+        results.add (applyOne (plugin, semantic, mapEntry, kv.value, staleDisplayReads));
     }
 
     auto bandsVar = settings.getProperty ("bands", juce::var());
@@ -928,12 +992,12 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
         if (auto* bs = bandsVar.getArray())
             for (auto& b : *bs) all.add (b);
         if (synthBand != nullptr) all.add (juce::var (synthBand.get()));
-        applyBands (plugin, map, juce::var (all), results);
+        applyBands (plugin, map, juce::var (all), results, staleDisplayReads);
     }
     else if (synthBand != nullptr)
     {
         juce::Array<juce::var> one; one.add (juce::var (synthBand.get()));
-        applyBands (plugin, map, juce::var (one), results);
+        applyBands (plugin, map, juce::var (one), results, staleDisplayReads);
     }
 
     // Named Tier 2 controls (1 Aug 2026, first reader): settings.controls is
@@ -971,7 +1035,7 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
                 results.add (r);
                 continue;
             }
-            results.add (applyOne (plugin, name, entry, kv.value));
+            results.add (applyOne (plugin, name, entry, kv.value, staleDisplayReads));
         }
     }
     else if (! controlsReq.isVoid())

@@ -317,6 +317,63 @@ public:
     juce::String computePassName() const;
 
     CaptureState getCaptureState() const { return captureState.load(); }
+
+    // =====================================================================
+    // Stage 1 remote editing: the SOLO session.
+    //
+    // ON THE PROCESSOR, every part of it, because Logic recreates the editor
+    // on every Link-window switch: an editor-held session (or lease) would
+    // release mid-edit every couple of minutes. The editor initiates and
+    // reports; the processor owns the instance, the lease renewals and the
+    // audio path.
+    //
+    // AUDIO CONTRACT: processBlock takes editLock_ with tryEnter ONLY (a
+    // miss = the mix passes through unchanged for one block); the message
+    // thread takes it blocking, briefly, to swap the instance in or out.
+    // The instance is prepared BEFORE it is installed and destroyed a
+    // deferred beat AFTER it is removed, so the audio thread never sees a
+    // half-ready plugin and never runs one being torn down.
+    // =====================================================================
+    struct EditSession {
+        juce::String uid;              // the Link (message thread)
+        int          slot0 = -1;       // its rack slot (message thread)
+        juce::String leaseId;          // this session's identity
+        juce::String pluginName, pluginFormat;
+        juce::String keptStateB64;     // preserved on teardown: edits not lost
+        juce::String keptUid; int keptSlot0 = -1;   // what the kept state is FOR
+        uint32_t     beganMs = 0;      // grace window for lease-death watch
+        std::atomic<int>  ringSlot { -1 };   // activeLinkSlots index, -1 = none
+        std::atomic<bool> audioOn  { false };
+    };
+    EditSession editSession_;
+    juce::SpinLock editLock_;
+    std::unique_ptr<juce::AudioPluginInstance> editInst_;   // under editLock_
+    juce::AudioBuffer<float> editBuf_;                      // audio scratch
+    juce::LinearSmoothedValue<float> editSoloMix_;          // 0 mix .. 1 solo
+    // Ring cushion policy for the solo consumer. Engage seeks to the target;
+    // per block, a backlog past the trip re-seeks to the target. 1024 frames
+    // is ~23ms at 44.1k: enough cushion that scheduling jitter does not
+    // starve a block, small enough that the audition feels live. Solo aligns
+    // against nothing (nothing else is audible), so this bounds LATENCY, not
+    // alignment; stage 2's stamps do alignment.
+    static constexpr uint32_t kEditCushionFrames = 1024;
+    static constexpr uint32_t kEditReseekTrip    = 8192;
+
+    bool editActive() const { return editSession_.slot0 >= 0; }
+    /// Install a prepared instance and start the lease (message thread).
+    void editBegin(const juce::String& uid, int slot0,
+                   const juce::String& name, const juce::String& fmt,
+                   std::unique_ptr<juce::AudioPluginInstance> inst,
+                   const juce::String& leaseId);
+    /// Tear down. keepState captures the instance's state into keptStateB64
+    /// first (the lease-died path: nothing the user did is lost).
+    void editEnd(bool keepState);
+    /// Current edited state as base64, for the commit (message thread).
+    juce::String editCaptureStateB64();
+    juce::AudioProcessorEditor* editCreateEditor();
+    void renewEditLease();          // the 1s writer
+    struct EditLeaseTimer;
+    std::unique_ptr<EditLeaseTimer> editLeaseTimer_;
     void startCapture();
     void stopCapture();
     void resetCapture();
@@ -664,6 +721,7 @@ private:
 
     // Capture
     std::atomic<CaptureState> captureState { CaptureState::Idle };
+
     juce::int64 captureStartTime = 0;
     int captureSampleCount = 0;
     mutable std::mutex snapshotMutex;
@@ -816,6 +874,7 @@ private:
         // Non-copyable due to SpinLock — managed in-place via std::array
     };
     std::array<ActiveLinkSlot, kMaxLinkSlots> activeLinkSlots;
+
 
     void connectLinkAudioSlot   (int i, const juce::String& key, const juce::String& displayName,
                                  float sr, const juce::String& uid);

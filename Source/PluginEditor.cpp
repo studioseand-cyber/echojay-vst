@@ -1,9 +1,11 @@
 #include "PluginEditor.h"
+#include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
 #include "EchoJayVisualiserTexture.h"  // shared SPECTRUM/SPECTROGRAM texture
 #include "EchoJayEventLog.h"   // events.jsonl + machine_id (dial_miss telemetry)
 #include "EchoJayParamApply.h" // kDialSignalsEnabled + dial predicate (shared)
+#include "EchoJayChannelLabel.h" // channelLabelUsable — ONE uid-passthrough test
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
 #include "EedKeyDetectorProcessor.h" // [DETECTED KEY] read path (KEY_DETECTOR_SPEC §4/§9)
 #include "viz/DwellGlow.h"           // KEY panel note wheel — the family's heat ramp
@@ -931,6 +933,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             captureWasSilent = false;
             // Item 1: stamp the name + channel scope at PRESS (single source,
             // recreate-safe) so the snapshot matches the review.
+            // Capture exclusion, editor side: the processor refuses too
+            // (startCapture returns to Idle), but a silent refusal reads as
+            // a broken button, so the reason is stated here.
+            if (processorRef.editActive())
+            {
+                chainListPanel.statusText =
+                    "Capture and remote editing cannot share a Link's audio "
+                    "stream. Apply & Release the edit first.";
+                chainListPanel.repaint();
+                return;
+            }
             processorRef.setNextCapture(computeNextCaptureName(), effectiveChannelUid());
             processorRef.startCapture();
         }
@@ -1892,10 +1905,26 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addChildComponent(chainRecommendLabel);
 
     chainListPanel.onCreateEditor = [this](int i) -> juce::AudioProcessorEditor* {
+        // A remote rack cannot render the LINK'S instance here (it lives in
+        // that process slot) -- but a live edit session's slot has a LOCAL
+        // editing copy, and its editor is the whole point of stage 1.
+        if (chainViewUid().isNotEmpty())
+        {
+            if (processorRef.editActive()
+                && processorRef.editSession_.uid == chainViewUid()
+                && processorRef.editSession_.slot0 == i)
+                return processorRef.editCreateEditor();
+            return nullptr;
+        }
         return processorRef.getChainHost().createEditorForSlot(i);
     };
     chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
     chainListPanel.onRemoveSlot = [this](int i) {
+        // Same fork, same reason. The local body keeps its 80ms deferred
+        // destroy (the AMEK EQ 250 segfault); a remote remove needs none of
+        // that, because nothing in this process is being destroyed.
+        const juce::String uid = chainViewUid();
+        if (uid.isNotEmpty()) { sendRackEdit(uid, i, true); return; }
         auto& ch = processorRef.getChainHost();
         if (i < 0 || i >= ch.getNumSlots() || chainRemovePending_) return;
         // Close/remap open editors FIRST, then destroy the processor a
@@ -1920,6 +1949,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         });
     };
     chainListPanel.onBypassSlot = [this](int i) {
+        // THE FORK, and it is the only one: a REMOTE rack sends the op and
+        // waits for the ack and the republished sidecar; the LOCAL rack runs
+        // the original synchronous body below, untouched. The two never share
+        // a line after this test, which is why the local path cannot pick up
+        // remote behaviour.
+        const juce::String uid = chainViewUid();
+        if (uid.isNotEmpty()) { sendRackEdit(uid, i, false); return; }
         auto& ch = processorRef.getChainHost();
         if (i < 0 || i >= ch.getNumSlots()) return;
         ch.setSlotBypassed(i, !ch.getSlotInfo(i).bypassed);
@@ -1927,6 +1963,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         repaint();
     };
     chainListPanel.onMoveSlot = [this](int i, int dir) {
+        // Stage 2: the move op exists but is not wired this pass. Disabled in
+        // the panel; guarded here so a remote view can never reorder the
+        // LOCAL rack by mistake.
+        if (chainViewUid().isNotEmpty()) return;
         auto& ch = processorRef.getChainHost();
         int j = i + dir;
         if (i < 0 || i >= ch.getNumSlots() || j < 0 || j >= ch.getNumSlots()) return;
@@ -1944,13 +1984,43 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // audio thread) — no rebuild, safe at knob-drag rate. Persisted via the
     // chain slots XML on the next host state save.
     chainListPanel.onSlotWet = [this](int i, float v) {
+        // Stage 2. There is no wet op, so a remote rack must not silently
+        // write the LOCAL one; the knob is hidden in remote mode and this
+        // guard is the second lock on the same door.
+        if (chainViewUid().isNotEmpty()) return;
         processorRef.getChainHost().setSlotWet(i, v);
     };
     chainListPanel.onMasterWet = [this](float v) {
+        if (chainViewUid().isNotEmpty()) return;
         processorRef.getChainHost().setMasterWet(v);
     };
     chainListPanel.masterKnob.setValue(processorRef.getChainHost().getMasterWet());
     addChildComponent(chainListPanel);
+
+    // THE RACK SELECTOR lives on the panel (see ChainListPanel::rackBtn); the
+    // editor only supplies the menu. A dropdown rather than a row of names: a
+    // session can carry kRegMaxSlots = 16 Links and the product already
+    // selects channels through a menu. It holds NO state of its own; its
+    // label is derived from chainViewUid() on every refresh, so it cannot
+    // disagree with the mixer.
+    chainListPanel.onRackClick = [this] { showChainRackMenu(); };
+    chainListPanel.onRemoteEditorRequest = [this](int slotIdx)
+    {
+        const juce::String uid = chainViewUid();
+        if (uid.isEmpty()) return;      // local racks open inline, unchanged
+        // Stage 1: a remote slot click opens a SOLO edit session here (the
+        // editing copy, the lease, the ring). sendOpenSlotEditor remains the
+        // fallback surface for older Links, reached through the pull ack's
+        // version signal rather than tried first.
+        beginRemoteEditSession(uid, slotIdx);
+    };
+    chainListPanel.onApplyRelease = [this] { commitAndReleaseEditSession(); };
+    chainListPanel.onEditRequest = [this](int slotIdx)
+    {
+        const juce::String uid = chainViewUid();
+        if (uid.isEmpty()) return;
+        beginRemoteEditSession(uid, slotIdx);
+    };
 
     // Sidebar collapse toggle. Collapsing gives the main column the full tab
     // width. NOT Chain only any more: one flag for every chat-hosting
@@ -2305,14 +2375,61 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                                                          : CompareScope::Anyway);
                 return;
             }
+            // STEP 3b: the channel-switch chip is ALSO entirely client-side.
+            // Same reason as the compare pair above and one more: this chip
+            // sends no turn at all, so there is nothing for the model to
+            // contradict and nothing it can fabricate. The switch itself is
+            // navigation and is never billed; the request it carries over is
+            // billed as whatever it classifies as on the NEW channel, which
+            // is the same turn the user would have got by typing it there.
+            if (intent == "switch")
+            {
+                openChannelChooser((int) i);
+                return;
+            }
+            // A TAP IS AN ANSWER; a typed message is a new request. The two are
+            // byte-identical on the wire otherwise ("build me a vocal chain"
+            // either way), so the server cannot tell them apart and stopped
+            // asking after the first mismatch. Stated as a fact here instead.
+            if (askChipMsgIdx_ >= 0 && askChipMsgIdx_ < (int) chatMessages.size())
+                nextClassifyAnswers_ = chatMessages[(size_t) askChipMsgIdx_].clientAskKind;
             // Answer format per CHAIN_AI_BUILD_SPEC: self-contained Q->A pair
             // that survives history trimming (blocks are stripped in storage).
             // sendChatMessage -> supersedePendingAsks marks + persists.
             // intent -> staged turnType (3-pre): "edit" chips act on the
             // existing rack; server trust-but-validates as always
+            //
+            // TWO PRODUCERS reach this line: the ASK block in a reply, and
+            // /api/classify's short-circuit chips. The classifier sends the
+            // SAME "build"/"edit" vocabulary, so it needs no branch of its
+            // own — and it must NOT get one above, because unlike the
+            // compare-scope pair its chips DO send a turn.
+            //
+            // NO INTENT MEANS "chat", EXPLICITLY (3 Aug 2026, live defect).
+            // This used to fall through to an empty string, which let
+            // sendChatMessage decide from hadChainFeed — and hadChainFeed is
+            // true on effectively every send, so the fall-through was
+            // "always build" wearing a conditional. Tapping the
+            // channel_mismatch chip "I'll switch over" therefore staged
+            // chain_generate and built a chain on the channel the user had
+            // just declined. The classifier had returned intent=chat for
+            // that tap and was correct; nothing routes on its verdict until
+            // cutover, so the staged label won.
+            //
+            // Absence of an intent is a POSITIVE signal, not missing
+            // information: build and edit are stated when meant, so a chip
+            // without one is deliberately not a build. Staging "chat" is
+            // also the conservative direction on BILLING — chain_generate
+            // draws the premium lane (monthly pool + credits), chat draws
+            // the daily one, and the old behaviour spent a premium action on
+            // a turn where the user declined to build.
+            //
+            // Safe as a floor rather than a ceiling: the server runs
+            // classifyChainIntent over the text and upgrades a genuine build
+            // request back to chain_generate, so a real ask still routes.
             const juce::String tt = intent == "edit" ? "chain_edit"
                                   : intent == "build" ? "chain_generate"
-                                  : juce::String();
+                                  : juce::String("chat");
             sendChatMessage(askChipLabels[(size_t)i]
                             + " (answering: \"" + askChipQuestion_ + "\")",
                             askChipLabels[(size_t)i], tt);   // bubble shows the label only
@@ -2398,6 +2515,17 @@ EchoJayEditor::~EchoJayEditor() {
     // the editor-side half of the contract; the processor never holds a
     // pointer to us other than through this std::function.
     processorRef.onDashUnreadChanged = nullptr;
+
+    // Step-4 teardown: a live chat stream must not outlive its UI. This is
+    // spec 2.2's third hazard closed at the owner: the socket and worker
+    // die via the handle's cancel (the read unblocks and the loop abandons,
+    // which closes the stream), and every queued delta callback no-ops via
+    // the cancelled check on both sides of the callAsync hop.
+    if (activeChatStream_ != nullptr)
+    {
+        activeChatStream_->cancel();
+        activeChatStream_ = nullptr;
+    }
 
     // Codec preview must never outlive its UI (25 Jul 2026): if the editor
     // closes while codec mode is engaged, the processor would keep replacing
@@ -3994,6 +4122,10 @@ void EchoJayEditor::applyReviewModalState()
     // Rack (incl. hosted native editors — NSViews composite over lightweight
     // components, so they must be HIDDEN, not out-z-ordered).
     chainListPanel.setVisible(onChain && !modal);
+    // No line for the rack selector: it is a CHILD of chainListPanel, so it
+    // follows the panel's visibility with no second author. It used to be an
+    // editor child listed only here, which is why it never appeared -- this
+    // method runs on review-modal open/close, not on a tab switch.
     // Chain header chrome.
     const bool chrome = onChain && !modal && !compactMode && !visualOnlyMode;
     // chatCollapseBtn is NOT set here any more. It left the Chain header for
@@ -6996,7 +7128,194 @@ void EchoJayEditor::blockCtrlRects(juce::Rectangle<int> block,
     bOut = r.removeFromRight(kBlockCtrlW);
 }
 
+EchoJayEditor::ChainRackView EchoJayEditor::chainRackView() const
+{
+    ChainRackView v;
+    const juce::String uid = chainViewUid();
+    if (uid.isEmpty())
+    {
+        // THE LOCAL PATH, byte for byte what the Chain tab did before this
+        // pass: straight off the host's own ChainHost, synchronous, valid by
+        // construction. Nothing about the remote path can reach it.
+        v.slots  = processorRef.getChainHost().getAllSlotInfos();
+        v.valid  = true;
+        v.remote = false;
+        v.name   = "this instance";
+        return v;
+    }
+
+    v.remote = true;
+    // Name and connectivity come from the SAME display list the mixer reads,
+    // so a Link is called one thing on both surfaces.
+    bool have = false, connected = false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) { have = true; connected = e.info.connected; break; }
+    v.name    = have ? processorRef.resolveLinkDisplayName(uid)
+                     : juce::String("this Link");
+    v.offline = have && !connected;
+
+    auto it = processorRef.linkRackCache.find(uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid)
+        return v;                       // valid stays false: NO DATA, not empty
+
+    v.valid    = true;
+    v.revision = it->second.rack.revision;
+    // The five fields line up one for one, which is what makes this a
+    // conversion rather than a translation. SlotInfo order is
+    // {name, bypassed, settings, format, wet}.
+    for (const auto& rs : it->second.rack.slots)
+        v.slots.push_back(slotInfoFromSidecar(rs));
+    return v;
+}
+
+void EchoJayEditor::refreshChainPanelForView(bool force)
+{
+    const auto v = chainRackView();
+    // A cheap signature so a 20Hz tick does not rebuild the panel (and tear
+    // down its child components) sixty times a second for nothing. Revision
+    // covers structure; validity and offline cover the honesty states.
+    //
+    // THE ROUND TRIP, shown rather than hidden. During the ~1.3s between a
+    // press and the republished sidecar the panel keeps showing CACHE state
+    // (the old truth) and says what is in flight; it never renders the
+    // requested state early. A slot must not read bypassed before the Link
+    // has bypassed it, which is the same rule the mixer's blocks follow.
+    juce::String pendingNote;
+    for (const auto& pb : linkBlockPending_)
+    {
+        if (pb.uid != chainViewUid()) continue;
+        if (pb.failed) { pendingNote = pb.reason; break; }   // failures win
+        pendingNote = pb.isAdd
+            ? "Adding " + pb.addName + " to " + v.name + "..."
+            : (pb.isRemove ? "Removing slot " : "Bypassing slot ")
+              + juce::String(pb.slotIdx + 1) + "...";
+    }
+    // COMPLETION (fix 3): pending cleared AND the slot visible in the cache
+    // means done, said in words. Only claimed once the cache actually shows
+    // the plugin -- the block list and this line now read the same source,
+    // so they cannot disagree. Ages out after 6s, after which the author
+    // retires its own text below and the resting hint returns.
+    if (pendingNote.isEmpty()
+        && lastAddDone_.ms != 0
+        && lastAddDone_.uid == chainViewUid()
+        && juce::Time::getMillisecondCounter() - lastAddDone_.ms < 6000)
+    {
+        for (const auto& si : v.slots)
+            if (si.name.trim() == lastAddDone_.name.trim())
+            { pendingNote = "Added " + lastAddDone_.name + " to " + v.name + "."; break; }
+    }
+
+    juce::String sig;
+    sig << chainViewUid() << "|" << v.revision << "|" << (int) v.valid
+        << (int) v.offline << "|" << (int) v.slots.size() << "|" << pendingNote;
+    if (!force && sig == chainViewSig_) return;
+    chainViewSig_ = sig;
+
+    // RACK SWITCH with a session open: settings travel back first (the
+    // design's contract), then the view moves on. commitAndRelease keeps
+    // the session if the Link refuses, so a stale rack cannot eat edits.
+    if (processorRef.editActive()
+        && processorRef.editSession_.uid != chainViewUid())
+        commitAndReleaseEditSession();
+
+    chainListPanel.remote        = v.remote;
+    chainListPanel.remoteName    = v.name;
+    chainListPanel.remoteOffline = v.offline;
+    if (v.remote && !v.valid)
+    {
+        // NO DATA, said in words, and NOT an empty rack. The panel is given
+        // no slots and the reason is stated; an empty strip alone would read
+        // as "this Link has no plugins", which is a different claim.
+        chainListPanel.statusText =
+            v.name + " has not published its rack yet. Nothing is shown because "
+            "there is nothing to read, which is not the same as an empty rack.";
+        chainListPanel.rebuild({}, -1);
+    }
+    else
+    {
+        chainSelectedSlot_ = juce::jlimit(-1, (int) v.slots.size() - 1, chainSelectedSlot_);
+        chainListPanel.rebuild(v.slots, chainSelectedSlot_);
+        // rebuild() sets its own remote note; an in-flight, refused or
+        // just-completed edit is more urgent, so it overwrites afterwards.
+        // The author REMEMBERS what it wrote (lastAddLine_) so that when the
+        // derived state goes empty -- completion aged out, failure swept --
+        // it retires its own stale text rather than leaving the line saying
+        // something that is no longer true. It never retires anyone else's
+        // text: the edit-session flow's messages are not its to clear.
+        if (pendingNote.isNotEmpty())
+        {
+            chainListPanel.statusText = pendingNote;
+            lastAddLine_ = pendingNote;
+        }
+        else if (lastAddLine_.isNotEmpty()
+                 && chainListPanel.statusText == lastAddLine_)
+        {
+            chainListPanel.statusText = chainListPanel.restingHint_;
+            lastAddLine_.clear();
+        }
+    }
+    chainListPanel.rackBtn.setButtonText("RACK: " + v.name.toUpperCase());
+    repaint();
+}
+
+void EchoJayEditor::showChainRackMenu()
+{
+    // ONE SELECTION, ONE AUTHORITY. This menu does not store anything: it
+    // calls the SAME two functions the Link mixer's strip tap calls, so the
+    // Chain tab and the mixer are reading and writing one fact
+    // (effectiveChannelUid) and cannot drift apart. Legacy Links carry no
+    // uid, so they are simply not listed and the Chain tab can never be
+    // pointed at one; the mixer refuses them with a coral flash for the same
+    // reason.
+    juce::PopupMenu m;
+    const juce::String cur = chainViewUid();
+    m.addItem(1, "Mix Bus (this instance)", true, cur.isEmpty());
+    m.addSeparator();
+    int id = 2;
+    std::vector<juce::String> uids;
+    for (const auto& e : processorRef.getLinkDisplayList())
+    {
+        if (e.info.uid.isEmpty()) continue;            // legacy: never listed
+        juce::String label = processorRef.resolveLinkDisplayName(e.info.uid);
+        if (!e.info.connected) label += "  (offline)";
+        m.addItem(id++, label, true, e.info.uid == cur);
+        uids.push_back(e.info.uid);
+    }
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(chainListPanel.rackBtn),
+        [safeThis, uids](int r)
+        {
+            if (safeThis == nullptr || r <= 0) return;
+            if (r == 1)
+            {
+                // The mixer's bus arm, guard included.
+                if (safeThis->effectiveChannelUid().isNotEmpty())
+                    safeThis->resetToMainContext();
+            }
+            else
+            {
+                const size_t i = (size_t) (r - 2);
+                if (i < uids.size() && uids[i] != safeThis->effectiveChannelUid())
+                    safeThis->openChannelByUid(uids[i]);
+            }
+            safeThis->refreshChainPanelForView(true);
+        });
+}
+
 void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove)
+{
+    // A THIN WRAPPER since the Chain tab gained remote editing: this resolves
+    // a StripGeom to a uid and nothing else. The sending, the baseSlots
+    // guard and the pending model all live in sendRackEdit, because two
+    // senders would have meant two staleness stories and baseSlots is the
+    // entire safety argument.
+    if (sg.isBus) return;                       // the bus routes locally
+    EchoJayProcessor::LinkDisplayEntry en;
+    if (!findLinkEntryByAddr(sg.addr, en) || en.info.uid.isEmpty()) return;
+    sendRackEdit(en.info.uid, slotIdx, isRemove);
+}
+
+void EchoJayEditor::sendRackEdit(const juce::String& uid, int slotIdx, bool isRemove)
 {
     // IDENTITY, NOT INDEX: the op carries the slot number PLUS baseSlots,
     // the full name list of the rack THE USER IS LOOKING AT (the cache).
@@ -7005,34 +7324,39 @@ void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemov
     // with ack "stale" on any mismatch. A press against a stale cache can
     // therefore never mutate the wrong plugin; it comes back refused with
     // a stated reason.
-    if (sg.isBus) return;                       // the bus routes locally
-    EchoJayProcessor::LinkDisplayEntry en;
-    if (!findLinkEntryByAddr(sg.addr, en) || en.info.uid.isEmpty()) return;
+    if (uid.isEmpty()) return;                  // local racks never come here
 
     // ONE edit in flight per Link: seq is epoch-seconds (the existing
     // sender's scheme), so two sends inside a second would collide on ack
     // correlation. A press while one is pending is ignored, not queued.
     for (const auto& pnd : linkBlockPending_)
-        if (pnd.uid == en.info.uid && !pnd.failed) return;
+        if (pnd.uid == uid && !pnd.failed) return;
+
+    bool connected = false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) { connected = e.info.connected; break; }
 
     auto fail = [&](const juce::String& why)
     {
         LinkBlockPending p2;
-        p2.uid = en.info.uid; p2.slotIdx = slotIdx; p2.isRemove = isRemove;
+        p2.uid = uid; p2.slotIdx = slotIdx; p2.isRemove = isRemove;
         p2.failed = true; p2.reason = why;
         p2.sentMs = juce::Time::getMillisecondCounter();
         linkBlockPending_.push_back(p2);
         linkMixerView_.repaint();
+        repaint();
     };
 
-    if (!en.info.connected)
+    if (!connected)
     {
         // Same refusal applyChainEditToLink states: never send into a void.
+        // This is also the offline rule the Chain tab needs: refused, with a
+        // reason, never queued for later.
         fail("Not applied: this Link is not connected right now - nothing was changed.");
         return;
     }
 
-    auto it = processorRef.linkRackCache.find(en.info.uid);
+    auto it = processorRef.linkRackCache.find(uid);
     if (it == processorRef.linkRackCache.end() || !it->second.valid
         || slotIdx < 0 || slotIdx >= (int)it->second.rack.slots.size())
         return;                                  // no honest base to send
@@ -7052,7 +7376,7 @@ void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemov
     payload->setProperty("edit", ops);
     payload->setProperty("baseSlots", baseSlots);
 
-    const int seq = sendChainEditToLink(en.info.uid,
+    const int seq = sendChainEditToLink(uid,
                         juce::JSON::toString(juce::var(payload), true));
     if (seq < 0)
     {
@@ -7060,12 +7384,467 @@ void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemov
         return;
     }
     LinkBlockPending p;
-    p.uid = en.info.uid; p.seq = seq; p.slotIdx = slotIdx;
+    p.uid = uid; p.seq = seq; p.slotIdx = slotIdx;
     p.isRemove = isRemove; p.targetOn = targetOn;
     p.sentMs = juce::Time::getMillisecondCounter();
     linkBlockPending_.push_back(p);
     linkMixerView_.repaint();
-    pollLinkBlockAck(en.info.uid, seq, 20);
+    repaint();
+    pollLinkBlockAck(uid, seq, 20);
+}
+
+const juce::String EchoJayEditor::kRemoteEditorBoundary =
+    "This plugin runs inside %LINK%, so its editor opens in that window. "
+    "Open the %LINK% Link to edit it.";
+
+// =============================================================================
+//  Stage 1 remote editing: SOLO session flow (message thread throughout)
+// =============================================================================
+void EchoJayEditor::beginRemoteEditSession(const juce::String& uid, int slot0)
+{
+    auto say = [this](const juce::String& t)
+    { chainListPanel.statusText = t; chainListPanel.repaint(); };
+
+    // ORDER OF GUARDS: cheapest and most user-fixable first, and the SIZE
+    // check is deliberately not here at all -- the state pull IS the size
+    // check, and it fails in the ack BEFORE any lease, bypass or instance
+    // exists. Nothing to unwind on refusal.
+    if (processorRef.editActive())
+    { say("Finish the current edit first (Apply & Release)."); return; }
+    if (processorRef.getCaptureState() == CaptureState::Capturing)
+    { say("A capture is running. Editing and capturing cannot share a Link's "
+          "audio stream - stop the capture first."); return; }
+
+    bool connected = false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) { connected = e.info.connected; break; }
+    const juce::String name = processorRef.resolveLinkDisplayName(uid);
+    if (!connected)
+    { say(name + " is offline - its plugins cannot be edited right now."); return; }
+
+    // A kept state from a lapsed session on THIS exact slot seeds directly:
+    // pulling would fetch the Link's reverted settings and silently discard
+    // the user's edits, which is the loss the kept blob exists to prevent.
+    if (processorRef.editSession_.keptUid == uid
+        && processorRef.editSession_.keptSlot0 == slot0
+        && processorRef.editSession_.keptStateB64.isNotEmpty())
+    {
+        say("Resuming your edits from the lapsed session...");
+        editProceedWithState(uid, slot0, processorRef.editSession_.keptStateB64);
+        return;
+    }
+
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty())
+    { say("Cannot reach " + name + ": the shared Link folder is unavailable."); return; }
+    int seq = (int) (juce::Time::currentTimeMillis() / 1000);
+    for (auto& pnd : linkCtrlPending_)
+        if (pnd.addr == uid && pnd.seq >= seq) seq = pnd.seq + 1;
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",             1);
+    cmd->setProperty("seq",           seq);
+    cmd->setProperty("pullSlotState", slot0 + 1);
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    say("Reading settings from " + name + "...");
+    pollEditPullAck(uid, slot0, seq, 20);
+}
+
+void EchoJayEditor::pollEditPullAck(const juce::String& uid, int slot0,
+                                    int seq, int attemptsLeft)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay(250, [safeThis, uid, slot0, seq, attemptsLeft]
+    {
+        if (safeThis == nullptr) return;
+        auto say = [&](const juce::String& t)
+        { safeThis->chainListPanel.statusText = t; safeThis->chainListPanel.repaint(); };
+        int err = 0;
+        juce::String dir = LinkShm::resolveDir(err);
+        juce::File ack(dir + "ctrl-ack-" + uid + ".json");
+        if (dir.isNotEmpty() && ack.existsAsFile())
+        {
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+                if ((int) o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();
+                    const juce::String linkName =
+                        safeThis->processorRef.resolveLinkDisplayName(uid);
+                    // Absence of the echo IS the version signal (the
+                    // openedSlot contract): an old Link acked normally but
+                    // never saw the request.
+                    if (!o->hasProperty("pulledState"))
+                    { say(linkName + " is running an older EchoJay Link that cannot "
+                          "hand its plugins over for editing. Update it, or open "
+                          "its window directly."); return; }
+                    if (!(bool) o->getProperty("pulledState"))
+                    { say("Cannot edit this plugin: "
+                          + o->getProperty("slotStateErr").toString()); return; }
+                    // PHASE 1 BYTE ACCOUNTING, point 3 of four: bytes
+                    // received at the main BEFORE decode, plus the ack
+                    // file's on-disk size for the wire number.
+                    {
+                        const juce::String b64in =
+                            o->getProperty("slotState").toString();
+                        EchoJay_NSLog(("EJPull[" + juce::String(seq)
+                            + "] main: ack file "
+                            + juce::String((juce::int64) ack.getSize())
+                            + " bytes on disk; slotState="
+                            + juce::String(b64in.length())
+                            + " b64 chars received").toRawUTF8());
+                    }
+                    safeThis->editProceedWithState(uid, slot0,
+                        o->getProperty("slotState").toString());
+                    return;
+                }
+        }
+        if (attemptsLeft > 1)
+        { safeThis->pollEditPullAck(uid, slot0, seq, attemptsLeft - 1); return; }
+        say("No response from "
+            + safeThis->processorRef.resolveLinkDisplayName(uid)
+            + ". Nothing was opened.");
+    });
+}
+
+void EchoJayEditor::editProceedWithState(const juce::String& uid, int slot0,
+                                         const juce::String& b64)
+{
+    auto say = [this](const juce::String& t)
+    { chainListPanel.statusText = t; chainListPanel.repaint(); };
+
+    // Identity comes from the SIDECAR (name + format), the same read the
+    // panel renders from. SAME FORMAT on purpose: preferInlineHostableDesc's
+    // AU-to-VST3 swap exists for inline windows, but state is not portable
+    // across formats for many plugins, so the editing copy must be the
+    // format the Link actually runs.
+    auto it = processorRef.linkRackCache.find(uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid
+        || slot0 < 0 || slot0 >= (int) it->second.rack.slots.size())
+    { say("The rack changed before the editor could open."); return; }
+    const juce::String pName = it->second.rack.slots[(size_t) slot0].name;
+    const juce::String pFmt  = it->second.rack.slots[(size_t) slot0].format;
+
+    auto desc = processorRef.getChainHost().resolveByName(pName, pFmt);
+    if (desc.name.isEmpty())
+        desc = processorRef.getChainHost().resolveByName(pName, {});
+    if (desc.name.isEmpty())
+    { say("\"" + pName + "\" is not in this machine's plugin list, so no "
+          "editing copy can be made."); return; }
+
+    say("Opening " + pName + "...");
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    processorRef.getChainHost().asyncCreatePlugin(desc,
+        [safeThis, uid, slot0, pName, pFmt, b64]
+        (std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& loadErr)
+    {
+        if (safeThis == nullptr) return;
+        auto say = [&](const juce::String& t)
+        { safeThis->chainListPanel.statusText = t; safeThis->chainListPanel.repaint(); };
+        if (inst == nullptr)
+        { say("Could not open an editing copy of " + pName + ": " + loadErr); return; }
+
+        juce::MemoryBlock mb;
+        // PHASE 1 BYTE ACCOUNTING, point 4 of four: bytes after decode, or
+        // the exact failure site with the decoder named. The decoder is
+        // Base64::convertFromBase64 via LinkShm::stateFromB64, the SAME
+        // helper the Link encodes for -- the pairing has one author now.
+        // (The original defect: this site decoded with MemoryBlock::
+        // fromBase64Encoding, which is not RFC base64 and refused every
+        // pull with the bytes intact on the wire.)
+        const bool decodeOk = LinkShm::stateFromB64(b64, mb);
+        EchoJay_NSLog(("EJPull main: decode in=" + juce::String(b64.length())
+                       + " b64 chars -> "
+                       + (decodeOk ? juce::String((juce::int64) mb.getSize())
+                                       + " bytes (Base64::convertFromBase64 true)"
+                                   : juce::String("FAILED (Base64::convertFromBase64, out="
+                                       "0 bytes)"))).toRawUTF8());
+        if (!decodeOk || mb.getSize() == 0)
+        { say("The settings did not survive the trip (decode failed)."); return; }
+        bool threw = false;
+        try { inst->setStateInformation(mb.getData(), (int) mb.getSize()); }
+        catch (...) { threw = true; }
+        if (threw)
+        { say(pName + " refused its own settings - cannot edit safely."); return; }
+
+        auto& proc = safeThis->processorRef;
+        const juce::String leaseId =
+            uid + "-" + juce::String(juce::Time::currentTimeMillis());
+        proc.editBegin(uid, slot0, pName, pFmt, std::move(inst), leaseId);
+        // The kept blob is consumed the moment a session exists again.
+        proc.editSession_.keptStateB64.clear();
+        proc.editSession_.keptUid.clear();
+        proc.editSession_.keptSlot0 = -1;
+
+        safeThis->chainListPanel.editingSession = true;
+        safeThis->chainListPanel.sessionSlot    = slot0;
+        safeThis->chainSelectedSlot_            = slot0;
+        safeThis->refreshChainPanelForView(true);
+        safeThis->chainListPanel.selectSlot(slot0);
+        say("Editing " + pName + " on "
+            + proc.resolveLinkDisplayName(uid)
+            + " - SOLO. You are hearing that channel only, live. "
+            "Apply & Release sends the settings back.");
+    });
+}
+
+void EchoJayEditor::commitAndReleaseEditSession()
+{
+    if (!processorRef.editActive()) return;
+    auto say = [this](const juce::String& t)
+    { chainListPanel.statusText = t; chainListPanel.repaint(); };
+
+    const juce::String uid   = processorRef.editSession_.uid;
+    const int          slot0 = processorRef.editSession_.slot0;
+    const juce::String b64   = processorRef.editCaptureStateB64();
+    if (b64.isEmpty())
+    { say("Could not read the edited settings - still editing, nothing sent."); return; }
+
+    auto it = processorRef.linkRackCache.find(uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid)
+    { say("Cannot see that Link's rack right now - still editing, nothing sent."); return; }
+    juce::Array<juce::var> baseSlots;
+    for (const auto& rs : it->second.rack.slots)
+        baseSlots.add(rs.name);
+
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty())
+    { say("Shared Link folder unavailable - still editing, nothing sent."); return; }
+    int seq = (int) (juce::Time::currentTimeMillis() / 1000);
+    for (auto& pnd : linkCtrlPending_)
+        if (pnd.addr == uid && pnd.seq >= seq) seq = pnd.seq + 1;
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",           1);
+    cmd->setProperty("seq",         seq);
+    cmd->setProperty("commitSlot",  slot0 + 1);
+    cmd->setProperty("commitState", b64);
+    cmd->setProperty("baseSlots",   baseSlots);
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    say("Applying to " + processorRef.resolveLinkDisplayName(uid) + "...");
+    pollEditCommitAck(uid, seq, 20);
+}
+
+void EchoJayEditor::pollEditCommitAck(const juce::String& uid, int seq, int attemptsLeft)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay(250, [safeThis, uid, seq, attemptsLeft]
+    {
+        if (safeThis == nullptr) return;
+        auto say = [&](const juce::String& t)
+        { safeThis->chainListPanel.statusText = t; safeThis->chainListPanel.repaint(); };
+        int err = 0;
+        juce::String dir = LinkShm::resolveDir(err);
+        juce::File ack(dir + "ctrl-ack-" + uid + ".json");
+        if (dir.isNotEmpty() && ack.existsAsFile())
+        {
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+                if ((int) o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();
+                    const juce::String linkName =
+                        safeThis->processorRef.resolveLinkDisplayName(uid);
+                    if (o->hasProperty("committedSlot")
+                        && (bool) o->getProperty("committedSlot"))
+                    {
+                        // Applied. NOW the session ends and the channel
+                        // returns to the mix; the setStateInformation click
+                        // on the Link's live instance happened once, at the
+                        // moment the user chose.
+                        safeThis->processorRef.editEnd(false);
+                        safeThis->editSessionUiTeardown(
+                            "Applied to " + linkName + ". The channel is back "
+                            "in the mix. (If you heard a tick, that was the "
+                            "plugin adopting its new settings - one-off.)");
+                        return;
+                    }
+                    // Refused (stale rack or plugin trouble): the session
+                    // STAYS OPEN. The edits live in the editing copy and are
+                    // not discarded because someone moved a slot.
+                    say("Not applied: "
+                        + o->getProperty("commitErr").toString()
+                        + " Still editing - your changes are safe here.");
+                    return;
+                }
+        }
+        if (attemptsLeft > 1)
+        { safeThis->pollEditCommitAck(uid, seq, attemptsLeft - 1); return; }
+        say("No response from the Link. Still editing - nothing was lost.");
+    });
+}
+
+void EchoJayEditor::editSessionUiTeardown(const juce::String& note)
+{
+    chainListPanel.editingSession = false;
+    chainListPanel.sessionSlot    = -1;
+    chainListPanel.closeAllEditors();
+    refreshChainPanelForView(true);
+    chainListPanel.statusText = note;
+    chainListPanel.repaint();
+}
+
+void EchoJayEditor::sendOpenSlotEditor(const juce::String& uid, int slotIdx)
+{
+    if (uid.isEmpty() || slotIdx < 0) return;
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    const juce::String name = processorRef.resolveLinkDisplayName(uid);
+    if (dir.isEmpty())
+    {
+        chainListPanel.statusText = "Cannot reach " + name
+            + " right now: the shared Link folder is unavailable.";
+        chainListPanel.repaint();
+        return;
+    }
+
+    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    for (auto& p : linkCtrlPending_)
+        if (p.addr == uid && p.seq >= seq) seq = p.seq + 1;
+
+    // openSlot ONLY: no active, no gainDb, no placement, so this can never
+    // disturb anything else about the Link. Every field is applied by
+    // presence on that side, which is what makes a single-purpose command
+    // safe to send. 1-based on the wire like every other slot reference.
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",        1);
+    cmd->setProperty("seq",      seq);
+    cmd->setProperty("openSlot", slotIdx + 1);
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();   // stale ack
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+
+    chainListPanel.statusText = "Asking " + name + " to open this plugin...";
+    chainListPanel.repaint();
+    pollOpenSlotAck(uid, seq, 20, name);
+}
+
+void EchoJayEditor::pollOpenSlotAck(const juce::String& uid, int seq,
+                                    int attemptsLeft, const juce::String& linkName)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::Timer::callAfterDelay(250, [safeThis, uid, seq, attemptsLeft, linkName]
+    {
+        if (safeThis == nullptr) return;
+        int err = 0;
+        juce::String dir = LinkShm::resolveDir(err);
+        juce::File ack(dir + "ctrl-ack-" + uid + ".json");
+        if (dir.isNotEmpty() && ack.existsAsFile())
+        {
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            if (auto* o = v.getDynamicObject())
+                if ((int)o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();
+                    // THREE OUTCOMES, and the third is why the ack echoes at
+                    // all. An OLD Link ignores openSlot and still writes a
+                    // perfectly normal ack, so a missing key is the version
+                    // signal: without it this could not tell "opened" from
+                    // "too old" and would have to claim success.
+                    if (!o->hasProperty("openedSlot"))
+                        safeThis->chainListPanel.statusText =
+                            linkName + " is running an older EchoJay Link that cannot "
+                            "open its editors from here. Update it, or open its "
+                            "window directly.";
+                    else if ((bool) o->getProperty("openedSlot"))
+                        safeThis->chainListPanel.statusText =
+                            "Opened in " + linkName + ". Your edits are live there.";
+                    else
+                        safeThis->chainListPanel.statusText =
+                            kRemoteEditorBoundary.replace("%LINK%", linkName);
+                    safeThis->chainListPanel.repaint();
+                    return;
+                }
+        }
+        if (attemptsLeft > 1)
+        { safeThis->pollOpenSlotAck(uid, seq, attemptsLeft - 1, linkName); return; }
+        safeThis->chainListPanel.statusText =
+            "No response from " + linkName + ". Nothing was opened.";
+        safeThis->chainListPanel.repaint();
+    });
+}
+
+void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& pluginName)
+{
+    // ADD BY NAME, which is the op's own contract, and the reason this can
+    // fail in a way remove and bypass cannot: the Link resolves the name
+    // against ITS loadable plugin list, which is a different machine-scan
+    // from this instance's. A plugin sitting in this picker may simply not
+    // exist over there. ChainHost answers that with
+    // "<name> not in the loadable plugin list" and the whole batch is
+    // refused; that string is carried back in perPluginResults and shown
+    // verbatim, so the failure says WHY rather than doing nothing.
+    if (uid.isEmpty() || pluginName.isEmpty()) return;
+    for (const auto& pnd : linkBlockPending_)
+        if (pnd.uid == uid && !pnd.failed) return;
+
+    bool connected = false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) { connected = e.info.connected; break; }
+
+    auto fail = [&](const juce::String& why)
+    {
+        LinkBlockPending p2;
+        p2.uid = uid; p2.slotIdx = -1; p2.isAdd = true; p2.addName = pluginName;
+        p2.failed = true; p2.reason = why;
+        p2.sentMs = juce::Time::getMillisecondCounter();
+        linkBlockPending_.push_back(p2);
+        repaint();
+    };
+    if (!connected)
+    {
+        fail("Not added: this Link is not connected right now - nothing was changed.");
+        return;
+    }
+
+    auto it = processorRef.linkRackCache.find(uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid) return;
+
+    juce::Array<juce::var> baseSlots;
+    for (const auto& rs : it->second.rack.slots)
+        baseSlots.add(rs.name);
+
+    auto* op = new juce::DynamicObject();
+    op->setProperty("op",   "add");
+    op->setProperty("name", pluginName);
+    // APPEND. "after" IS 1-BASED IN THE JSON, exactly like "slot" and "to":
+    // parseChainEditOps subtracts one at the single conversion point, and
+    // "after": 0 is the documented way to say insert FIRST. So appending
+    // after N slots is "after": N, not N-1.
+    //
+    // Sending N-1 was an off-by-one that landed every add SECOND TO LAST:
+    // N-1 parsed to an internal N-2, and the sequencer inserts at
+    // map[after] + 1 = N-1. It looked correct only on an empty rack, where
+    // there is one position; a one-slot rack clamped to -1 and inserted
+    // FIRST, which read as a different bug entirely.
+    op->setProperty("after", (int)it->second.rack.slots.size());
+
+    auto* payload = new juce::DynamicObject();
+    juce::Array<juce::var> ops; ops.add(juce::var(op));
+    payload->setProperty("edit", ops);
+    payload->setProperty("baseSlots", baseSlots);
+
+    const int seq = sendChainEditToLink(uid,
+                        juce::JSON::toString(juce::var(payload), true));
+    if (seq < 0)
+    {
+        fail("Not added: shared Link directory unavailable - nothing was changed.");
+        return;
+    }
+    LinkBlockPending p;
+    p.uid = uid; p.seq = seq; p.slotIdx = -1;
+    p.isAdd = true; p.addName = pluginName;
+    p.sentMs = juce::Time::getMillisecondCounter();
+    linkBlockPending_.push_back(p);
+    repaint();
+    EchoJay_NSLog(("EJAdd[" + juce::String(seq) + "] main: sent add \""
+                   + pluginName + "\" via chain-cmd; waiting on chain-ack, "
+                   "20 x 250ms timeout").toRawUTF8());
+    pollLinkBlockAck(uid, seq, 20);
 }
 
 void EchoJayEditor::pollLinkBlockAck(const juce::String& uid, int seq, int attemptsLeft)
@@ -7102,6 +7881,18 @@ void EchoJayEditor::pollLinkBlockAck(const juce::String& uid, int seq, int attem
                         // sidecar inside the apply completion, so a forced
                         // cache pass shows the REAL new rack, and only then
                         // does the pending style clear.
+                        // PHASE 1b instrumentation: the pending clears HERE;
+                        // note that nothing on this path writes a completion
+                        // into chainListPanel.statusText.
+                        EchoJay_NSLog(("EJBlockAck[" + juce::String(seq)
+                            + "] main: ok - pending cleared, cache refresh "
+                            "forced").toRawUTF8());
+                        if (entry->isAdd)
+                        {
+                            // Fix 3: hand the completion to the one author.
+                            safeThis->lastAddDone_ = { uid, entry->addName,
+                                juce::Time::getMillisecondCounter() };
+                        }
                         pend.erase(entry);
                         safeThis->refreshLinkRackCache(true);
                     }
@@ -9068,6 +9859,7 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
     if (currentView == View::Settings) hideSettingsView();
     // Close any hosted plugin editor (inline or pop-out) when leaving Chain tab
     if (t != Tab::Chain) chainListPanel.closeAllEditors();
+    else                 refreshChainPanelForView(true);   // enter: adopt the current rack at once
     // Note: the first addChildComponent(chainListPanel) is in the constructor
 
     // (Link tab has no persistent child components — all painted)
@@ -14764,7 +15556,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
         as.setLineSpacing(chatMsgFontSize * 0.35f);
         juce::TextLayout layout;
         layout.createLayout(as, (float)(maxBubbleW - 20));
-        int textH = (int)layout.getHeight() + 20;
+        // A message with NOTHING to say reserves no text height (9 Aug
+        // 2026: card-only edit turns) - MUST match the measure pass.
+        int textH = displayedText(msg).isEmpty() ? 0 : (int)layout.getHeight() + 20;
 
         // Extra height for waveform card
         int waveCardH = 0;
@@ -15155,9 +15949,16 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 int bubbleX = avX + avatarSize + 6;
                 int bubbleW = chatW - avatarSize - 20;
                 int bubbleH = tH - chainAreaH - gainAreaH - editAreaH - altAreaH - figureAreaH;
-                g.setColour(C::bg3);
-                g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)bubbleH, 10.0f);
-                layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(bubbleH - 20) });
+                // No prose, no bubble (9 Aug 2026): a card-only edit turn
+                // must not render an empty background above its card. The
+                // cards position off drawY + bubbleH, so a zero bubble
+                // keeps them flush at the top of the message area.
+                if (bubbleH > 0)
+                {
+                    g.setColour(C::bg3);
+                    g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)bubbleH, 10.0f);
+                    layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(bubbleH - 20) });
+                }
 
                 // Build card: structured slot lines (ops-card visual
                 // language: 11.5f, 16px lines, cyan names, dim settings),
@@ -16874,7 +17675,8 @@ int EchoJayEditor::measureChatContentHeight()
             as.setLineSpacing(chatMsgFontSize2 * 0.35f); // MUST match paint pass
             juce::TextLayout layout;
             layout.createLayout(as, (float)(maxBW - 20));
-            int textH = (int)layout.getHeight() + 20;
+            // Empty shown text reserves no height - MUST match paint pass.
+            int textH = displayedText(msg).isEmpty() ? 0 : (int)layout.getHeight() + 20;
             int waveCardH = (msg.hasWaveform && !msg.waveform.empty()) ? 36 : 0;
             int chainAreaH2 = (msg.role == "assistant") ? chainCardHeight(msg) : 0;   // SAME helper as paint
             int figAreaH2   = (msg.role == "assistant") ? figureCardHeight(msg) : 0;  // SAME helper as paint
@@ -17868,6 +18670,54 @@ void EchoJayEditor::timerCallback()
     }
 
     // -------------------------------------------------------------------------
+    //  CHAIN TAB: keep the panel in step with whichever rack is selected.
+    //  A remote rack changes underneath us (its own edits, the AI's, another
+    //  surface's), so this polls the sidecar cache and rebuilds ONLY when the
+    //  signature moves. Without the signature test a 20Hz tick would tear
+    //  down and rebuild the panel's child components sixty times a second.
+    //  The LOCAL rack costs nothing here: its signature only moves when its
+    //  slot count does, and every local mutation already rebuilds inline.
+    // -------------------------------------------------------------------------
+    if (currentTab == Tab::Chain && chainListPanel.isVisible())
+    {
+        if (chainViewUid().isNotEmpty()) refreshLinkRackCache(false);
+        refreshChainPanelForView(false);
+    }
+
+    // -------------------------------------------------------------------------
+    //  Stage 1 SOLO: the lease-death watch, on EVERY tab. The Link wins on
+    //  expiry (it owns the audio): it restores itself and drops the
+    //  controlled flag from its sidecar. Seeing that while still holding the
+    //  lease means control lapsed under us -- capture the edits, tear down,
+    //  say so. Three-second grace covers engage + sidecar publish + the 1Hz
+    //  cache before absence can mean death.
+    // -------------------------------------------------------------------------
+    if (processorRef.editActive())
+    {
+        refreshLinkRackCache(false);   // self-throttled to ~1Hz
+        const auto& es = processorRef.editSession_;
+        if (juce::Time::getMillisecondCounter() - es.beganMs > 3000)
+        {
+            bool linkGone = true;
+            for (const auto& e : processorRef.getLinkDisplayList())
+                if (e.info.uid == es.uid) { linkGone = false; break; }
+            bool controlled = false;
+            auto itc = processorRef.linkRackCache.find(es.uid);
+            if (!linkGone && itc != processorRef.linkRackCache.end() && itc->second.valid
+                && es.slot0 >= 0 && es.slot0 < (int) itc->second.rack.slots.size())
+                controlled = itc->second.rack.slots[(size_t) es.slot0].controlled;
+            if (linkGone || !controlled)
+            {
+                const juce::String who = processorRef.resolveLinkDisplayName(es.uid);
+                processorRef.editEnd(true);   // keep the edits
+                editSessionUiTeardown(
+                    "Control of " + who + " lapsed - the channel is live again. "
+                    "Your edits are kept: reopen the slot to continue from them.");
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
     //  Link registry refresh every 10 ticks (~500 ms at 20 fps)
     // -------------------------------------------------------------------------
     linkRefreshTick++;
@@ -18191,6 +19041,12 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     std::vector<PartialPart> partialParts;
     for (const auto& di : ch.getDialInfos())
     {
+        // Written-but-display-stale (bridged report-only) is recorded
+        // queryably whatever the slot status: the write was kept on norm
+        // proof and the display disagreement must not vanish into the
+        // applied count.
+        if (!di.unconfirmed.isEmpty())
+            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
@@ -18228,14 +19084,11 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     juce::String bubble;
     if (partialParts.empty() && zeroParts.isEmpty())
     {
-        // Clean full dial (or nothing carried structured settings): the
-        // model's own result line is honest here.
-        auto rv = juce::JSON::parse(chainJson);
-        if (auto* ro = rv.getDynamicObject())
-            bubble = ro->getProperty("result").toString().trim();
-        if (bubble.isEmpty())
-            bubble = "Chain built - " + juce::String(n)
-                   + (n == 1 ? " plugin loaded." : " plugins loaded.");
+        // Clean full build+dial: the FACTUAL line, never the model's result
+        // (9 Aug 2026, same rule as the edit composer - a filter the model
+        // can phrase around is not a floor, and the composer knows).
+        bubble = "Chain built - " + juce::String(n)
+               + (n == 1 ? " plugin loaded." : " plugins loaded.");
     }
     else
     {
@@ -18261,6 +19114,262 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     }
     clearStageStatus();   // the bubble replaces the load/dial-window label
     appendLocalResultBubble(bubble);
+}
+
+// ---- Apply-time honesty for edits (item 3, 9 Aug 2026) ---------------------
+// The edit twin of finishChainBubbleWhenDialSettled. The old site relayed the
+// model's "result" line as soon as every OP applied, gated only on whether
+// ops CARRIED settings - so an edit whose applySettings wrote nothing (the
+// 8 Aug Blitzer turn: unusableMap) still read "Done - Attack and Ratio
+// updated". The model is not a reliable narrator of what landed and does not
+// need to be: the verdict here is dialStatus/dialAppliedCount, computed by
+// the same code that did the writing.
+//
+// Scope: only slots THIS edit touched, matched by op name (set ops resolve
+// through baseSlots). An untouched slot keeps the dial status of whatever
+// built it, and reporting those would claim work this edit never did. Two
+// same-named slots are indistinguishable at this level - a name-level
+// approximation, accepted.
+void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson,
+                                                    int attemptsLeft)
+{
+    auto& ch = processorRef.getChainHost();
+    if (!ch.dialStateSettled() && attemptsLeft > 0)
+    {
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        juce::Timer::callAfterDelay(250, [safeThis, editJson, attemptsLeft]() {
+            if (safeThis != nullptr)
+                safeThis->finishEditBubbleWhenDialSettled(editJson, attemptsLeft - 1);
+        });
+        return;
+    }
+
+    auto ev = juce::JSON::parse(editJson);
+    auto* eo = ev.getDynamicObject();
+    if (eo == nullptr) return;
+
+    juce::StringArray baseSlots;
+    if (auto* bs = eo->getProperty("baseSlots").getArray())
+        for (auto& b : *bs) baseSlots.add(b.toString().trim());
+    // touched = ops that asked for a dial; undialled = ops that changed or
+    // placed a plugin with NO structured settings. A prose-only SET op is
+    // undialled too (9 Aug 2026, third "Done" in three days): its sequencer
+    // "applied 1 change" is card text only - the apply pipeline never ran -
+    // and classifying it as neither touched nor undialled let the model's
+    // "Done - ratio and attack updated" relay over a dial that never
+    // happened. Nothing prose-only ever rides the model's success line.
+    juce::StringArray touchedNames, undialledNames, proseOnlySetNames, serverDropped;
+    if (auto* ops = eo->getProperty("edit").getArray())
+        for (auto& opv : *ops)
+        {
+            const auto opName = opv.getProperty("op", juce::var()).toString();
+            auto plug = opv.getProperty("name", juce::var()).toString().trim();
+            if (opName == "set" && plug.isEmpty())
+            {
+                const int slot1 = (int) opv.getProperty("slot", juce::var());
+                if (slot1 >= 1 && slot1 <= baseSlots.size())
+                    plug = baseSlots[slot1 - 1];
+            }
+            if (plug.isEmpty()) continue;
+            const bool carries = !opv.getProperty("settings_structured", juce::var()).isVoid();
+            if ((opName == "add" || opName == "replace" || opName == "set") && carries)
+                touchedNames.addIfNotAlreadyThere(plug);
+            if ((opName == "add" || opName == "replace") && !carries)
+                undialledNames.addIfNotAlreadyThere(plug);
+            if (opName == "set" && !carries)
+                proseOnlySetNames.addIfNotAlreadyThere(plug);
+            // Server-refused controls that rode the block back (ops that
+            // went through Apply; receipt-consumed ops report their own).
+            if (auto* dc = opv.getProperty("dropped_controls", juce::var()).getArray())
+                for (auto& dv : *dc)
+                    if (auto* dobj = dv.getDynamicObject())
+                    {
+                        serverDropped.add(dobj->getProperty("name").toString()
+                            + " on " + plug + " (" + dobj->getProperty("reason").toString() + ")");
+                        logDialMiss(plug, juce::String(), "refine_dropped",
+                                    { dobj->getProperty("name").toString() });
+                    }
+        }
+
+    juce::StringArray appliedNames, zeroParts;
+    struct PartialPart { juce::String name; juce::StringArray manual; };
+    std::vector<PartialPart> partialParts;
+    for (const auto& di : ch.getDialInfos())
+    {
+        if (!touchedNames.contains(di.name)) continue;
+        if (!di.unconfirmed.isEmpty())   // bridged report-only: same record as the build path
+            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed);
+        switch (di.status)
+        {
+            case ChainHost::DialStatus::applied:
+                appliedNames.add(di.name);
+                break;
+            case ChainHost::DialStatus::partial:
+                partialParts.push_back({ di.name, di.manual });
+                logDialMiss(di.name, di.fp, "partial", di.manual);
+                if (!di.readbackMiss.isEmpty())
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                break;
+            case ChainHost::DialStatus::noMap:
+                zeroParts.add(di.name);
+                logDialMiss(di.name, di.fp, "no_map", di.manual);
+                break;
+            case ChainHost::DialStatus::unusableMap:
+                zeroParts.add(di.name);
+                logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+                if (!di.readbackMiss.isEmpty())
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                break;
+            case ChainHost::DialStatus::pending:
+                // Fetch never answered inside the cap: NEVER fall through
+                // to the model's success line - conservative wording, and a
+                // late apply (if it lands) updates the slot card anyway.
+                zeroParts.add(di.name);
+                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual);
+                break;
+            case ChainHost::DialStatus::none:
+                // Touched and carried settings, yet nothing structured
+                // reached the slot: not clean, not explained - never let it
+                // ride the model's success line.
+                zeroParts.add(di.name);
+                break;
+        }
+    }
+
+    juce::String bubble;
+    if (partialParts.empty() && zeroParts.isEmpty() && proseOnlySetNames.isEmpty())
+    {
+        // Clean dial: SILENCE (9 Aug 2026, Sean's rule). The model's result
+        // line is NEVER relayed any more - a filter the model can evade by
+        // phrasing gently is not a floor, and bubble-presence had become a
+        // function of the model's word choice. The card already says what
+        // was written; bubbles exist only for partials, zeros, suggestions
+        // and server-refused names below.
+    }
+    else
+    {
+        // The retired card already says "Applied N changes"; the bubble
+        // carries only what the card does not - the dial outcome, positive
+        // first, same wording as the build path.
+        if (!appliedNames.isEmpty())
+            bubble = "Settings applied to " + appliedNames.joinIntoString(", ") + ".";
+        for (const auto& p : partialParts)
+        {
+            const bool one = p.manual.size() == 1;
+            bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+            bubble += "Settings applied to " + p.name + ", except "
+                    + p.manual.joinIntoString(" and ")
+                    + (one ? " which needs hand-dialing - values on its card."
+                           : " which need hand-dialing - values on its card.");
+        }
+        if (!zeroParts.isEmpty())
+        {
+            const bool one = zeroParts.size() == 1;
+            bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+            bubble += zeroParts.joinIntoString(" and ")
+                    + (one ? " needs hand-dialing - use the values on its card."
+                           : " need hand-dialing - use the values on their cards.");
+        }
+    }
+    if (!undialledNames.isEmpty())
+    {
+        const bool one = undialledNames.size() == 1;
+        bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+        bubble += undialledNames.joinIntoString(", ")
+                + (one ? " is in - dial it in by hand with the values on its card."
+                       : " are in - dial them in by hand with the values on their cards.");
+        for (auto& an : undialledNames)
+            logDialMiss(an, juce::String(), "edit_add_no_dial", {});
+    }
+    if (!proseOnlySetNames.isEmpty())
+    {
+        // The set op updated the CARD, not the plugin: say so, factually.
+        const bool one = proseOnlySetNames.size() == 1;
+        bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+        bubble += "Nothing was written to " + proseOnlySetNames.joinIntoString(", ")
+                + " - dial in the values on " + (one ? juce::String("its card by hand.")
+                                                     : juce::String("their cards by hand."));
+        for (auto& an : proseOnlySetNames)
+            logDialMiss(an, juce::String(), "edit_set_no_dial", {});
+    }
+    if (!serverDropped.isEmpty())
+    {
+        bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+        bubble += serverDropped.joinIntoString("; ")
+                + (serverDropped.size() == 1 ? " couldn't be set by name - dial it by hand."
+                                             : " couldn't be set by name - dial them by hand.");
+    }
+    if (bubble.isNotEmpty())
+        appendLocalResultBubble(bubble);
+}
+
+juce::String EchoJayEditor::consumeSuggestionSetsAtReceipt(const juce::String& editJson,
+                                                           bool& allConsumed,
+                                                           juce::StringArray& consumedNames)
+{
+    allConsumed = false;
+    consumedNames.clear();
+    auto v = juce::JSON::parse(editJson);
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return editJson;
+    auto* ops = o->getProperty("edit").getArray();
+    if (ops == nullptr || ops->isEmpty()) return editJson;
+    juce::StringArray baseSlots;
+    if (auto* bs = o->getProperty("baseSlots").getArray())
+        for (auto& b : *bs) baseSlots.add(b.toString().trim());
+
+    auto& ch = processorRef.getChainHost();
+    const auto infos = ch.getAllSlotInfos();
+    juce::Array<juce::var> kept;
+    for (auto& opv : *ops)
+    {
+        auto* eo = opv.getDynamicObject();
+        const bool suggestionOnly = eo != nullptr
+            && eo->getProperty("op").toString() == "set"
+            && eo->getProperty("settings_structured").isVoid()
+            && eo->getProperty("settings").toString().isNotEmpty();
+        if (!suggestionOnly) { kept.add(opv); continue; }
+        const int slot1 = (int) eo->getProperty("slot");
+        const int idx = slot1 - 1;
+        const juce::String expect = (slot1 >= 1 && slot1 <= baseSlots.size())
+                                      ? baseSlots[idx] : juce::String();
+        if (idx < 0 || idx >= (int) infos.size() || expect.isEmpty()
+            || !ChainHost::namesMatchLoose(expect, infos[(size_t) idx].name))
+        {
+            kept.add(opv);   // stale or odd: the Apply path's guards own it
+            continue;
+        }
+        ch.setSlotSettings(idx, eo->getProperty("settings").toString());
+        consumedNames.addIfNotAlreadyThere(infos[(size_t) idx].name);
+        // Server-refused controls RIDE THE BLOCK BACK (9 Aug 2026): an op
+        // consumed here never reaches the Apply-path composer, so its
+        // dropped_controls must be surfaced now - a drop that only exists
+        // in telemetry is invisible to the person it happened to.
+        if (auto* dc = eo->getProperty("dropped_controls").getArray())
+        {
+            juce::StringArray lines;
+            for (auto& dv : *dc)
+                if (auto* dobj = dv.getDynamicObject())
+                    lines.add(dobj->getProperty("name").toString()
+                              + " (" + dobj->getProperty("reason").toString() + ")");
+            if (!lines.isEmpty())
+            {
+                appendLocalResultBubble(lines.joinIntoString(", ")
+                    + (lines.size() == 1 ? " couldn't be set by name on "
+                                         : " couldn't be set by name on ")
+                    + infos[(size_t) idx].name
+                    + " - the values are on its card to dial by hand.");
+                for (auto& dv : *dc)
+                    if (auto* dobj = dv.getDynamicObject())
+                        logDialMiss(infos[(size_t) idx].name, juce::String(),
+                                    "refine_dropped", { dobj->getProperty("name").toString() });
+            }
+        }
+    }
+    if (consumedNames.isEmpty()) return editJson;
+    allConsumed = kept.isEmpty();
+    o->setProperty("edit", kept);
+    return juce::JSON::toString(v);
 }
 
 void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
@@ -18610,8 +19719,16 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
             auto& cm2 = safeThis->chatMessages[(size_t)msgIdx];
 
             juce::String summary;
+            bool allSuggest = !aborted && applied == total && results.size() > 0;
+            for (const auto& rl : results)
+                if (!rl.startsWith("suggested settings for ")) { allSuggest = false; break; }
             if (aborted)
                 summary = "Not applied: " + results.joinIntoString("; ");
+            else if (allSuggest)
+                // Every op was a prose-only set: nothing was written, and
+                // "Applied 1 change" reads as a dial count (9 Aug 2026, the
+                // third of three surfaces contradicting the honest bubble).
+                summary = "Suggested settings added to the card - nothing written automatically";
             else if (applied == total)
                 summary = "Applied " + juce::String(applied)
                         + (applied == 1 ? " change" : " changes");
@@ -18654,54 +19771,18 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
 
             // Result stage (1d, dedup decision): the retired card keeps the
             // factual summary; a result bubble appears ONLY when it says
-            // something the card does not — a clean full apply with a
-            // model-provided "result" line. Failures/partials/aborts:
-            // card summary only, no bubble.
+            // something the card does not. Item 3 (9 Aug 2026): the model's
+            // "result" line is relayed only once dial state SETTLES as a
+            // clean full apply - the 26 Jul gate checked whether ops CARRIED
+            // settings, not whether they LANDED, so an edit whose
+            // applySettings wrote nothing (8 Aug Blitzer, unusableMap) still
+            // read "Done - Attack and Ratio updated". The layer that knows
+            // is downstream of the layer that speaks; the composer reads
+            // dialStatus from the code that did the writing.
+            // Failures/partials/aborts of the OPS themselves: card summary
+            // only, no bubble, unchanged.
             if (!aborted && applied == total)
-            {
-                auto ev = juce::JSON::parse(cm2.editData);
-                if (auto* eo = ev.getDynamicObject())
-                {
-                    // Apply-time honesty (26 Jul 2026, revised): edit ops CAN
-                    // now write parameters — settings_structured rides an
-                    // add/replace and ChainHost applies it once the slot
-                    // loads, exactly as the build path does. So the old
-                    // blanket "dial it in by hand" is no longer true for
-                    // every added slot, and claiming it for one that was just
-                    // dialled exactly would be the same overclaim in reverse.
-                    //
-                    // The distinction is per-op: a slot that carried
-                    // structured settings was dialled and the model's own
-                    // result line stands; one that did not still needs hand
-                    // dialling and still measures a delivery gap.
-                    juce::StringArray undialledNames;
-                    if (auto* ops = eo->getProperty("edit").getArray())
-                        for (auto& opv : *ops)
-                        {
-                            const auto opName = opv.getProperty("op", juce::var()).toString();
-                            const auto plug   = opv.getProperty("name", juce::var()).toString().trim();
-                            if ((opName == "add" || opName == "replace") && plug.isNotEmpty()
-                                && opv.getProperty("settings_structured", juce::var()).isVoid())
-                                undialledNames.addIfNotAlreadyThere(plug);
-                        }
-                    auto modelResult = eo->getProperty("result").toString().trim();
-                    if (undialledNames.isEmpty())
-                    {
-                        if (modelResult.isNotEmpty())
-                            safeThis->appendLocalResultBubble(modelResult);
-                    }
-                    else
-                    {
-                        const bool one = undialledNames.size() == 1;
-                        safeThis->appendLocalResultBubble(
-                            undialledNames.joinIntoString(", ")
-                            + (one ? " is in - dial it in by hand with the values on its card."
-                                   : " are in - dial them in by hand with the values on their cards."));
-                        for (auto& an : undialledNames)
-                            safeThis->logDialMiss(an, juce::String(), "edit_add_no_dial", {});
-                    }
-                }
-            }
+                safeThis->finishEditBubbleWhenDialSettled(cm2.editData, 8);
             safeThis->repaint();
         },
         [safeThis](const juce::String& label)
@@ -19092,9 +20173,24 @@ juce::String EchoJayEditor::computeNextCaptureName() const
 
 juce::String EchoJayEditor::materialContextName(const juce::String& mainDefault) const
 {
-    if (auto uid = effectiveChannelUid(); uid.isNotEmpty())
-        return channelDisplayLabel(uid);   // the channel IS the material
-    return mainDefault;
+    // MUST STAY IN STEP WITH the [TARGET CHANNEL] composer's guard (search
+    // channelLabelUsable) — both reject channelDisplayLabel's uid passthrough,
+    // and they share the PREDICATE precisely so they cannot drift. They
+    // deliberately differ in what they substitute: prose wants a phrase, a
+    // field wants emptiness. See EchoJayChannelLabel.h.
+    //
+    // EMPTY MEANS UNKNOWN, and it is a real third answer. It must not fall
+    // back to mainDefault: this conversation is NOT on the processor's own
+    // channel, and saying so would make the model's CHANNEL disagree with the
+    // conversation it is having. Downstream, empty is expressed as absence —
+    // the classify body omits the field (so the prompt's "if CHANNEL is
+    // unknown, never guess" fail-safe engages), and buildSystemPrompt omits
+    // the CHANNEL TYPE block rather than emitting an empty quoted string.
+    const auto uid = effectiveChannelUid();
+    if (uid.isEmpty()) return mainDefault;          // main chat
+    const auto label = channelDisplayLabel(uid);    // the channel IS the material
+    return echojay::channelLabelUsable(uid.toStdString(), label.toStdString())
+             ? label : juce::String();
 }
 
 juce::String EchoJayEditor::mainContextLabel() const
@@ -19525,10 +20621,19 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         // Channel identity, resolved ONCE for both channel states, with
         // neutral degradation: never a raw uid interpolated into prose,
         // never an empty quoted string.
+        //
+        // MUST STAY IN STEP WITH materialContextName, which feeds CHANNEL to
+        // /api/classify and CHANNEL TYPE to the system prompt. This site
+        // guarded the uid passthrough from the start; that one did not, so the
+        // same unnamed Link produced careful prose here and a 12-character hex
+        // string there. The PREDICATE is now shared (EchoJayChannelLabel.h) so
+        // the two cannot drift again — only the substitution differs, because
+        // prose wants a phrase and a field wants emptiness.
         const juce::String label = channelDisplayLabel(targetLinkUid);
-        const juce::String channelPhrase = (label.isEmpty() || label == targetLinkUid)
-            ? juce::String("one of the user's Link channels")
-            : "the user's \"" + label + "\" Link channel";
+        const juce::String channelPhrase =
+            echojay::channelLabelUsable(targetLinkUid.toStdString(), label.toStdString())
+                ? "the user's \"" + label + "\" Link channel"
+                : juce::String("one of the user's Link channels");
 
         if (linkUidLive(targetLinkUid))
         {
@@ -20599,17 +21704,28 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     processorRef.chatContents.add(userContent);
     bumpMonthlyStat("chats");   // THIS MONTH card (local counter)
 
+    // Channel and genre, once: the SAME two values that go into the system
+    // prompt also go to the classifier, so CHANNEL there and CHANNEL TYPE
+    // here can never describe different material.
+    const juce::String channelName = materialContextName(processorRef.getEffectiveChannelName());
+    const juce::String genreName   = processorRef.getGenre();
+
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
-        materialContextName(processorRef.getEffectiveChannelName()), processorRef.getGenre(),
+        channelName, genreName,
         processorRef.getPluginScanner().getPluginSummary());
 
     // usage-v2: no meter blob on plain chat turns (see above). turnType is
     // chain_generate when the chain-feed injection rode along (the model is
     // being asked for a chain), plain chat otherwise. A gain proposal rides
     // on whatever turn produced it — never its own turnType.
-    api.setNextChatTurnType(
+    const juce::String stagedTurnType =
         turnTypeOverride.isNotEmpty() ? turnTypeOverride
-                                      : (hadChainFeed ? "chain_generate" : "chat"));
+                                      : (hadChainFeed ? "chain_generate" : "chat");
+    api.setNextChatTurnType(stagedTurnType);
+    // Per-fp exact controls exposure: say which binary each name is (rack
+    // slots + scanned identities) so the server serves that fingerprint's
+    // own controls entry rather than the AU/VST3 sibling intersection.
+    api.setNextChatMapFps(processorRef.getChainHost().buildMapFpsJson());
     // 1d model-wait stage: generic-safe label only (the one-shot transport
     // has no sub-stages to report; a specific claim could desync).
     // 26 Jul 2026: ALWAYS "Thinking" here. hadChainFeed is true on
@@ -20620,194 +21736,1023 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     setStageStatus(juce::String::fromUTF8("Thinking\xe2\x80\xa6"));
 
     juce::String activeChatId = currentChatId; // capture before async
+    // The history AS COMPOSED. See fireChatMainCall's declaration for why
+    // this is a snapshot and not the live arrays.
+    const juce::StringArray rolesSnap    = processorRef.chatRoles;
+    const juce::StringArray contentsSnap = processorRef.chatContents;
+
+    // ===================== SPLIT CALL: /api/classify =====================
+    //
+    // HERE, and the position is the whole design:
+    //
+    //  - AFTER scanHoldStartMs_ = 0, so the scan-window hold cannot re-enter
+    //    this function and fire a classify per 400ms poll.
+    //  - AFTER userContent is fully composed and pushed to chatRoles /
+    //    chatContents, so the message carries its injections. The server
+    //    derives hasCurrentChain from the [CURRENT CHAIN] marker in that
+    //    string and runs userTypedPortion() over it for both calls — which
+    //    is why what goes out is the FULL composed content, unstripped.
+    //  - OUTSIDE EchoJayAPI::sendChat, which re-enters ITSELF on the
+    //    limit-refresh retry. A classify fired in there would go twice.
+    //
+    // The quota decision (recorded in EchoJayAPI.cpp): this call is NOT
+    // pre-gated, and a short-circuited turn is not billed. The send gate
+    // above still stands in front of the MAIN call.
+    EchoJayAPI::ClassifyRequest creq;
+    creq.message        = userContent;          // full, unstripped
+    creq.channel        = channelName;
+    creq.genre          = genreName;
+    creq.priorAssistant = priorAssistantForClassify();
+    creq.turnType       = stagedTurnType;
+    creq.links          = buildClassifyLinks();
+    // Consumed here and cleared: it describes THIS turn only, and a stale
+    // value would suppress the mismatch on an unrelated later send.
+    creq.answers        = nextClassifyAnswers_;
+    nextClassifyAnswers_.clear();
+
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
-        [safeThis, activeChatId, turnTargetUid, turnTargetName](const juce::String& reply, bool success) {
-            if (safeThis == nullptr)
-                return;
-            safeThis->chatLoading = false;
-            safeThis->clearStageStatus();   // 1d: model wait over
+    api.classify(creq, [safeThis, activeChatId, turnTargetUid, turnTargetName,
+                        sysPrompt, channelName, genreName, userContent,
+                        rolesSnap, contentsSnap]
+                       (const EchoJayAPI::ClassifyResult& c)
+    {
+        if (safeThis == nullptr) return;
 
-            juce::String visibleReply = reply;
-            juce::String chainJson;
-            juce::String gainJson;
-            juce::String askJson;
-            juce::String editJson;
-            // Always try to extract chain + gain + ask blocks; the model may
-            // or may not have included any. Gain proposals are measurement-
-            // backed APPLY cards (never auto-applied); ask blocks render as
-            // tappable choice chips (Phase 1b).
-            bool hadChainOpener = false;   // reply carried <<<ECHOJAY_CHAIN>>> (even truncated)
-            if (success)
-            {
-                hadChainOpener = EchoJayAPI::extractChainBlock(visibleReply, chainJson);
-                if (EchoJayAPI::extractGainBlock(visibleReply, gainJson))
-                    EchoJay_NSLog("EJChat: gain proposal block received");
-                if (EchoJayAPI::extractAskBlock(visibleReply, askJson))
-                    EchoJay_NSLog("EJChat: ASK block received");
-                if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
-                    EchoJay_NSLog("EJChat: CHAIN_EDIT block received");
-            }
+        // Nothing usable: the turn proceeds EXACTLY as it did before the
+        // classifier existed. This is the common path while the account is
+        // gated off, and it must stay the cheap one.
+        if (! c.usable)
+        {
+            safeThis->fireChatMainCall(sysPrompt, activeChatId,
+                                       turnTargetUid, turnTargetName, 0,
+                                       rolesSnap, contentsSnap);
+            return;
+        }
 
-            // If extractChainBlock returned partial/truncated JSON, try bracket-depth salvage
-            // before falling through to the name-scan fallback.
-            if (!chainJson.isEmpty() && success)
+        // ---- call 2: the scoping question's wording -------------------
+        // Fired ONLY on the server's flag, never on a client-side reading
+        // of the precondition. Which preconditions defer their question is
+        // the server's decision; encoding needs_scoping here would break
+        // silently the day a second one splits.
+        if (c.questionFollows && c.question.isEmpty())
+        {
+            safeThis->api.classifyQuestion(userContent, channelName, genreName,
+                [safeThis, activeChatId, turnTargetUid, turnTargetName, sysPrompt,
+                 rolesSnap, contentsSnap, c]
+                (const juce::String& q)
             {
-                auto parsed = juce::JSON::parse(chainJson);
-                if (!parsed.isObject())
+                if (safeThis == nullptr) return;
+                if (q.isNotEmpty())
                 {
-                    juce::String salvaged = EchoJayAPI::salvagePartialChain(chainJson);
-                    if (salvaged.isNotEmpty())
-                        DBG("EchoJay chain salvage: recovered partial block");
-                    chainJson = salvaged; // empty if nothing recoverable → falls to name-scan
+                    // needs_scoping is PROSE: the server nulls its chips on
+                    // purpose, and call 2 returns no chips at all.
+                    safeThis->renderClassifierQuestion(q, juce::var(), activeChatId);
+                    return;
                 }
-            }
+                // The server declined to ask, or we ran past the budget.
+                // Fall through to the ordinary send — which is exactly the
+                // pre-classifier behaviour, never a dead turn. The binding
+                // still rides: call 1 succeeded, only the wording failed.
+                safeThis->api.setNextClassifyBinding(c.intent, c.token);
+                safeThis->fireChatMainCall(sysPrompt, activeChatId,
+                                           turnTargetUid, turnTargetName, 0,
+                                           rolesSnap, contentsSnap);
+            });
+            return;
+        }
 
-            // Client-side fallback: if the model described a chain in prose but omitted the
-            // machine block (or it couldn't be salvaged), reconstruct from mention-order scanning.
-            // Triggers when ≥2 recommendable plugin names appear in the reply in order.
-            //
-            // GATED (1b live-bug fix): only on turns where a chain was actually
-            // intended — the reply had a chain-block opener (truncation
-            // salvage) or the SERVER resolved this turn as chain_generate.
-            // Ungated, this synthesised Build buttons from ANY prose naming
-            // 2+ plugins: "what's in my chain?" listed the rack -> button;
-            // a chain_edit turn's slot instructions named slots -> a button
-            // whose Build would REBUILD the whole rack (the destructive trap
-            // CHAIN_EDIT_INTERIM_NOTE closes server-side, re-opened locally).
-            // Status lifecycle (26 Jul 2026, second pass): NO label is set
-            // here. A chain_generate reply is a PROPOSAL sitting idle until
-            // the user presses Build - re-asserting "Working on your chain"
-            // from resolvedTurnType claimed work that was not happening
-            // (same class of bug as the load-gated "Done" line: UI
-            // asserting action from a classification, not observed state).
-            // The clearStageStatus() above is the correct reply-arrival
-            // state; the chain label belongs to the REAL load+dial window
-            // (Build press through result bubble) only.
-            const bool chainTurnIntended = hadChainOpener
-                || safeThis->api.getLastResolvedTurnType() == "chain_generate";
-            if (chainJson.isEmpty() && success && !chainTurnIntended)
-                EchoJay_NSLog((juce::String("EJChat: name-scan fallback SKIPPED (turn is ")
-                              + (safeThis->api.getLastResolvedTurnType().isNotEmpty()
-                                   ? safeThis->api.getLastResolvedTurnType()
-                                   : juce::String("unknown, no opener")) + ")").toRawUTF8());
-            if (chainJson.isEmpty() && success && chainTurnIntended)
+        // ---- the short-circuit: the classify call IS the turn ----------
+        // Read from the EXPLICIT boolean plus a question. A build turn can
+        // carry a stray question with shortCircuit=false and the server
+        // drops it; inferring the short-circuit from "a question is
+        // present" would render it and swallow the turn.
+        if (c.shortCircuit && c.question.isNotEmpty())
+        {
+            safeThis->renderClassifierQuestion(c.question, c.chips, activeChatId);
+            return;
+        }
+
+        // ---- channel_mismatch: LABEL ONLY, the client owns the copy -----
+        // Since prompt v13 the server sends intent and precondition and
+        // stops. The question and both chips are built HERE, locally, the
+        // same way presentCompareScopeAsk builds its ASK — no model, no
+        // second call, no latency. That is the whole point: writing this
+        // question cost ~100 output tokens on the one turn generated inline
+        // while the user waits, and it took the mismatch shape from 4,498 ms
+        // to 2,235 ms to stop.
+        //
+        // Keyed on the PRECONDITION, not on an empty question, and it sits
+        // AFTER the branch above so a server that still sends copy (an older
+        // deployment, or the flagless template path) keeps winning. That
+        // ordering is what makes the two halves deployable independently in
+        // either order.
+        if (c.shortCircuit && c.precondition == "channel_mismatch")
+        {
+            safeThis->renderChannelMismatch(channelName, activeChatId);
+            return;
+        }
+
+        // ---- the provisional bubble ------------------------------------
+        // chatMessages and NOTHING ELSE. See ChatMsg::provisionalId for the
+        // four stores and why only one of them is written here.
+        int provisionalId = 0;
+        if (c.preamble.isNotEmpty())
+        {
+            ChatMsg pm;
+            pm.role          = "assistant";
+            pm.content       = c.preamble;
+            pm.provisionalId = safeThis->nextProvisionalId_++;
+            provisionalId    = pm.provisionalId;
+            safeThis->chatMessages.push_back(std::move(pm));
+            // Deliberately NOT: chatHistory, chatRoles/chatContents, or
+            // workspace.appendMessageToChat. Not an omission — see the
+            // header comment.
+            safeThis->resized();
+            safeThis->repaint();
+        }
+
+        // The binding rides the main call. Absent when the classifier had
+        // no intent, which the server handles by classifying for itself.
+        safeThis->api.setNextClassifyBinding(c.intent, c.token);
+        safeThis->fireChatMainCall(sysPrompt, activeChatId,
+                                   turnTargetUid, turnTargetName, provisionalId,
+                                   rolesSnap, contentsSnap);
+    });
+}
+
+// The one-shot reply pipeline, factored VERBATIM out of fireChatMainCall's
+// completion lambda (spec step 4) so the streaming path's done frame
+// persists through the IDENTICAL code: same extraction, same salvage and
+// name-scan gating, same feed check, same provisional replace/drop, same
+// four-store writes, same workspace sync. The only mechanical edit was
+// dropping the lambda's `safeThis->` prefix; callers own the SafePointer
+// null check.
+void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
+                                    const juce::String& activeChatId,
+                                    const juce::String& turnTargetUid,
+                                    const juce::String& turnTargetName,
+                                    int provisionalId)
+{
+    chatLoading = false;
+    clearStageStatus();   // 1d: model wait over
+
+    juce::String visibleReply = reply;
+    juce::String chainJson;
+    juce::String gainJson;
+    juce::String askJson;
+    juce::String editJson;
+    // Always try to extract chain + gain + ask blocks; the model may
+    // or may not have included any. Gain proposals are measurement-
+    // backed APPLY cards (never auto-applied); ask blocks render as
+    // tappable choice chips (Phase 1b).
+    bool hadChainOpener = false;   // reply carried <<<ECHOJAY_CHAIN>>> (even truncated)
+    if (success)
+    {
+        hadChainOpener = EchoJayAPI::extractChainBlock(visibleReply, chainJson);
+        if (EchoJayAPI::extractGainBlock(visibleReply, gainJson))
+            EchoJay_NSLog("EJChat: gain proposal block received");
+        if (EchoJayAPI::extractAskBlock(visibleReply, askJson))
+            EchoJay_NSLog("EJChat: ASK block received");
+        if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
+            EchoJay_NSLog("EJChat: CHAIN_EDIT block received");
+
+        // Empty-ops edit block = no block (9 Aug 2026, belt - the
+        // server strips these too): the prose IS the turn, and a
+        // contentless card must never suppress it. The XTComp
+        // full-compliance turn (honest decline + "edit":[]) rendered
+        // as an empty bubble because block-present implied
+        // card-worth-showing.
+        if (editJson.isNotEmpty())
+        {
+            auto evEB = juce::JSON::parse(editJson);
+            auto* eoEB = evEB.getDynamicObject();
+            const juce::Array<juce::var>* eaEB = (eoEB != nullptr) ? eoEB->getProperty("edit").getArray() : nullptr;
+            if (eaEB == nullptr || eaEB->isEmpty()) editJson.clear();
+        }
+    }
+
+    // If extractChainBlock returned partial/truncated JSON, try bracket-depth salvage
+    // before falling through to the name-scan fallback.
+    if (!chainJson.isEmpty() && success)
+    {
+        auto parsed = juce::JSON::parse(chainJson);
+        if (!parsed.isObject())
+        {
+            juce::String salvaged = EchoJayAPI::salvagePartialChain(chainJson);
+            if (salvaged.isNotEmpty())
+                DBG("EchoJay chain salvage: recovered partial block");
+            chainJson = salvaged; // empty if nothing recoverable → falls to name-scan
+        }
+    }
+
+    // Client-side fallback: if the model described a chain in prose but omitted the
+    // machine block (or it couldn't be salvaged), reconstruct from mention-order scanning.
+    // Triggers when ≥2 recommendable plugin names appear in the reply in order.
+    //
+    // GATED (1b live-bug fix): only on turns where a chain was actually
+    // intended — the reply had a chain-block opener (truncation
+    // salvage) or the SERVER resolved this turn as chain_generate.
+    // Ungated, this synthesised Build buttons from ANY prose naming
+    // 2+ plugins: "what's in my chain?" listed the rack -> button;
+    // a chain_edit turn's slot instructions named slots -> a button
+    // whose Build would REBUILD the whole rack (the destructive trap
+    // CHAIN_EDIT_INTERIM_NOTE closes server-side, re-opened locally).
+    // Status lifecycle (26 Jul 2026, second pass): NO label is set
+    // here. A chain_generate reply is a PROPOSAL sitting idle until
+    // the user presses Build - re-asserting "Working on your chain"
+    // from resolvedTurnType claimed work that was not happening
+    // (same class of bug as the load-gated "Done" line: UI
+    // asserting action from a classification, not observed state).
+    // The clearStageStatus() above is the correct reply-arrival
+    // state; the chain label belongs to the REAL load+dial window
+    // (Build press through result bubble) only.
+    const bool chainTurnIntended = hadChainOpener
+        || api.getLastResolvedTurnType() == "chain_generate";
+    if (chainJson.isEmpty() && success && !chainTurnIntended)
+        EchoJay_NSLog((juce::String("EJChat: name-scan fallback SKIPPED (turn is ")
+                      + (api.getLastResolvedTurnType().isNotEmpty()
+                           ? api.getLastResolvedTurnType()
+                           : juce::String("unknown, no opener")) + ")").toRawUTF8());
+    if (chainJson.isEmpty() && success && chainTurnIntended)
+    {
+        juce::StringArray recommNames = processorRef.getChainHost().getRecommendableNames();
+        struct Mention { juce::String name; int pos; };
+        std::vector<Mention> mentions;
+        juce::String lowerReply = visibleReply.toLowerCase();
+        for (auto& n : recommNames)
+        {
+            int p = lowerReply.indexOf(n.toLowerCase());
+            if (p >= 0)
+                mentions.push_back({ n, p });
+        }
+        if ((int)mentions.size() >= 2)
+        {
+            std::sort(mentions.begin(), mentions.end(),
+                      [](const Mention& a, const Mention& b) { return a.pos < b.pos; });
+            juce::String arr;
+            for (int i = 0; i < (int)mentions.size(); ++i)
             {
-                juce::StringArray recommNames = safeThis->processorRef.getChainHost().getRecommendableNames();
-                struct Mention { juce::String name; int pos; };
-                std::vector<Mention> mentions;
-                juce::String lowerReply = visibleReply.toLowerCase();
-                for (auto& n : recommNames)
-                {
-                    int p = lowerReply.indexOf(n.toLowerCase());
-                    if (p >= 0)
-                        mentions.push_back({ n, p });
-                }
-                if ((int)mentions.size() >= 2)
-                {
-                    std::sort(mentions.begin(), mentions.end(),
-                              [](const Mention& a, const Mention& b) { return a.pos < b.pos; });
-                    juce::String arr;
-                    for (int i = 0; i < (int)mentions.size(); ++i)
+                if (i > 0) arr += ",";
+                arr += "{\"name\":\"" + mentions[i].name + "\",\"role\":\"from reply\"}";
+            }
+            chainJson = "{\"chain\":[" + arr + "],\"explanation\":\"Chain extracted from reply text\"}";
+            DBG("EchoJay chain fallback: synthesised block from " + juce::String(mentions.size()) + " mentions");
+        }
+    }
+
+    // Feed-conformance check: every chain-block name must be in the
+    // recommendable feed (the AVAILABLE PLUGINS list we injected).
+    // An out-of-feed name means the model drew from another source
+    // (profile plugin library, chat history, its own knowledge) —
+    // log loudly so contaminated context is diagnosable per request.
+    if (success && chainJson.isNotEmpty())
+    {
+        auto pv = juce::JSON::parse(chainJson);
+        if (auto* po = pv.getDynamicObject())
+            if (auto* carr = po->getProperty("chain").getArray())
+            {
+                juce::StringArray feed =
+                    processorRef.getChainHost().getRecommendableNames();
+                int total = 0, inFeed = 0;
+                for (auto& ev : *carr)
+                    if (auto* eo = ev.getDynamicObject())
                     {
-                        if (i > 0) arr += ",";
-                        arr += "{\"name\":\"" + mentions[i].name + "\",\"role\":\"from reply\"}";
+                        auto n = eo->getProperty("name").toString().trim();
+                        if (n.isEmpty()) continue;
+                        ++total;
+                        bool ok = false;
+                        for (auto& f : feed)
+                            if (ChainHost::namesMatchLoose(n, f)) { ok = true; break; }
+                        if (ok) ++inFeed;
+                        else EchoJay_NSLog(("EJChat: chain name OUT OF FEED: \""
+                                            + n + "\"").toRawUTF8());
                     }
-                    chainJson = "{\"chain\":[" + arr + "],\"explanation\":\"Chain extracted from reply text\"}";
-                    DBG("EchoJay chain fallback: synthesised block from " + juce::String(mentions.size()) + " mentions");
-                }
+                EchoJay_NSLog(("EJChat: chain block feed check -- "
+                               + juce::String(inFeed) + "/" + juce::String(total)
+                               + " names in recommendable feed").toRawUTF8());
             }
+    }
 
-            // Feed-conformance check: every chain-block name must be in the
-            // recommendable feed (the AVAILABLE PLUGINS list we injected).
-            // An out-of-feed name means the model drew from another source
-            // (profile plugin library, chat history, its own knowledge) —
-            // log loudly so contaminated context is diagnosable per request.
-            if (success && chainJson.isNotEmpty())
+    if (success) {
+        ChatMsg cm;
+        cm.role      = "assistant";
+        cm.content   = visibleReply;
+        cm.chainData = chainJson;   // empty if model didn't return a chain block
+        cm.gainData  = gainJson;    // empty if no gain proposal block
+        cm.askData   = askJson;     // empty if no ask block
+        cm.editData  = editJson;    // empty if no chain-edit block
+        // Staleness anchor: the rack revision the model's baseSlots
+        // describe. -1 after reload (in-memory counter, see header).
+        // Targeted turns (Phase R) anchor to the LINK's sidecar
+        // revision — a different rack's counter, never the local one.
+        if (editJson.isNotEmpty())
+        {
+            if (turnTargetUid.isNotEmpty())
             {
-                auto pv = juce::JSON::parse(chainJson);
-                if (auto* po = pv.getDynamicObject())
-                    if (auto* carr = po->getProperty("chain").getArray())
-                    {
-                        juce::StringArray feed =
-                            safeThis->processorRef.getChainHost().getRecommendableNames();
-                        int total = 0, inFeed = 0;
-                        for (auto& ev : *carr)
-                            if (auto* eo = ev.getDynamicObject())
-                            {
-                                auto n = eo->getProperty("name").toString().trim();
-                                if (n.isEmpty()) continue;
-                                ++total;
-                                bool ok = false;
-                                for (auto& f : feed)
-                                    if (ChainHost::namesMatchLoose(n, f)) { ok = true; break; }
-                                if (ok) ++inFeed;
-                                else EchoJay_NSLog(("EJChat: chain name OUT OF FEED: \""
-                                                    + n + "\"").toRawUTF8());
-                            }
-                        EchoJay_NSLog(("EJChat: chain block feed check -- "
-                                       + juce::String(inFeed) + "/" + juce::String(total)
-                                       + " names in recommendable feed").toRawUTF8());
-                    }
+                cm.editTargetUid  = turnTargetUid;
+                cm.editTargetName = turnTargetName;
+                auto rack = readLinkRackSidecar(turnTargetUid);
+                cm.editBaseRevision = rack.valid ? rack.revision : -1;
             }
-
-            if (success) {
-                ChatMsg cm;
-                cm.role      = "assistant";
-                cm.content   = visibleReply;
-                cm.chainData = chainJson;   // empty if model didn't return a chain block
-                cm.gainData  = gainJson;    // empty if no gain proposal block
-                cm.askData   = askJson;     // empty if no ask block
-                cm.editData  = editJson;    // empty if no chain-edit block
-                // Staleness anchor: the rack revision the model's baseSlots
-                // describe. -1 after reload (in-memory counter, see header).
-                // Targeted turns (Phase R) anchor to the LINK's sidecar
-                // revision — a different rack's counter, never the local one.
-                if (editJson.isNotEmpty())
+            else
+            {
+                // LOCAL rack: prose-only set ops are card
+                // suggestions and land AT RECEIPT - Apply exists to
+                // confirm rack changes, and a suggestion changes
+                // nothing. All-suggestion cards retire immediately
+                // (op lines + result, no button); mixed batches
+                // keep Apply for the real ops only.
+                bool allConsumed = false;
+                juce::StringArray consumed;
+                const auto remaining = consumeSuggestionSetsAtReceipt(editJson, allConsumed, consumed);
+                if (!consumed.isEmpty())
                 {
-                    if (turnTargetUid.isNotEmpty())
+                    if (allConsumed)
                     {
-                        cm.editTargetUid  = turnTargetUid;
-                        cm.editTargetName = turnTargetName;
-                        auto rack = safeThis->readLinkRackSidecar(turnTargetUid);
-                        cm.editBaseRevision = rack.valid ? rack.revision : -1;
+                        cm.editApplied = true;   // keeps original editData: op lines stay visible
+                        cm.editResult  = "Suggested settings added to the card - nothing written automatically";
                     }
                     else
-                        cm.editBaseRevision = safeThis->processorRef.getChainHost().getChainRevision();
+                        cm.editData = remaining;
+                    chainListPanel.rebuild(processorRef.getChainHost().getAllSlotInfos(),
+                                           chainSelectedSlot_);
                 }
-                safeThis->chatMessages.push_back(cm);
-                safeThis->processorRef.chatHistory.push_back({"assistant", visibleReply});
-                safeThis->processorRef.chatRoles.add("assistant");
-                safeThis->processorRef.chatContents.add(visibleReply);
-            } else {
-                safeThis->chatMessages.push_back({"assistant", reply});
-                safeThis->processorRef.chatHistory.push_back({"assistant", reply});
+                cm.editBaseRevision = processorRef.getChainHost().getChainRevision();
             }
+        }
+        // DROP PATH 1 of 2: the real reply REPLACES the provisional
+        // in place, never push-then-push — the user must never see
+        // two assistant turns for one send. The provisional's slot
+        // is found by IDENTITY, so a second send landing first
+        // cannot make this overwrite the wrong message.
+        const int pIdx = findProvisionalIdx(provisionalId);
+        if (pIdx >= 0) chatMessages[(size_t) pIdx] = cm;
+        else           chatMessages.push_back(cm);
+        // The REAL turn goes to all four stores; the provisional
+        // went to one. These three lines are why the provisional
+        // never touched them.
+        processorRef.chatHistory.push_back({"assistant", visibleReply});
+        processorRef.chatRoles.add("assistant");
+        processorRef.chatContents.add(visibleReply);
+    } else {
+        // DROP PATH 2 of 2: every failure, INCLUDING the
+        // limit-reached copy, which arrives here as an ordinary
+        // failed send. Drop first, then push, or the turn ends with
+        // a preamble promising work above a message saying it never
+        // happened.
+        dropProvisional(provisionalId);
+        chatMessages.push_back({"assistant", reply});
+        processorRef.chatHistory.push_back({"assistant", reply});
+    }
 
-            // Mirror assistant turn to workspace and persist (visibleReply has block stripped; chain + gain + ask stored separately)
-            safeThis->workspace.appendMessageToChat(activeChatId, "assistant", visibleReply,
-                                                    {}, chainJson, gainJson, askJson, editJson,
-                                                    {}, {}, {},
-                                                    editJson.isNotEmpty() ? turnTargetUid  : juce::String(),
-                                                    editJson.isNotEmpty() ? turnTargetName : juce::String());
-            // Ask arrived: run the layout pass so the docked shelf appears
-            // and the message viewport reflows above it (message is now in
-            // chatMessages, so findNewestUnansweredAsk sees it)
-            if (askJson.isNotEmpty())
-                safeThis->resized();
-            if (safeThis->sidebarModel)
-            {
-                safeThis->sidebarModel->refreshRows(
-                    safeThis->workspace.getChats(),
-                    safeThis->workspace.getAlbums(),
-                    safeThis->workspace.getReviews(),
-                    safeThis->workspace.getPinnedProjects(), safeThis->collapsedAlbums,
-                    safeThis->currentChatId);
-                safeThis->chatSidebar.updateContent();
-            }
-            safeThis->workspace.requestMutationSync();
-            safeThis->repaint();
+    // Mirror assistant turn to workspace and persist (visibleReply has block stripped; chain + gain + ask stored separately)
+    workspace.appendMessageToChat(activeChatId, "assistant", visibleReply,
+                                            {}, chainJson, gainJson, askJson, editJson,
+                                            {}, {}, {},
+                                            editJson.isNotEmpty() ? turnTargetUid  : juce::String(),
+                                            editJson.isNotEmpty() ? turnTargetName : juce::String());
+    // Ask arrived: run the layout pass so the docked shelf appears
+    // and the message viewport reflows above it (message is now in
+    // chatMessages, so findNewestUnansweredAsk sees it)
+    if (askJson.isNotEmpty())
+        resized();
+    if (sidebarModel)
+    {
+        sidebarModel->refreshRows(
+            workspace.getChats(),
+            workspace.getAlbums(),
+            workspace.getReviews(),
+            workspace.getPinnedProjects(), collapsedAlbums,
+            currentChatId);
+        chatSidebar.updateContent();
+    }
+    workspace.requestMutationSync();
+    repaint();
+}
+
+// Step-5 selection flag: chain builds stream when this file exists.
+// Same file convention as dev_mode (and the same directory), so flipping it
+// is a terminal touch/rm, no UI and no rebuild:
+//   ON:   touch  <userAppData>/EchoJay/stream_chains
+//   OFF:  rm     <userAppData>/EchoJay/stream_chains     (the default)
+// Read PER SEND, deliberately not once per process like dev_mode: the whole
+// point of the flag is flipping it mid-session once ordinary turns have
+// proven the extraction, and one stat per send is free. While the server's
+// step-6 metering is pending, /api/chat-stream is dev-gated — a non-dev
+// account with this flag on gets an honest failed turn (403), not a silent
+// fallback, so the flag stays a dev lever until step 6 removes the gate.
+static bool streamChainBuildsEnabled()
+{
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+               .getChildFile("EchoJay").getChildFile("stream_chains").existsAsFile();
+}
+
+// The main /api/chat send. Lifted out of sendChatMessage unchanged so the
+// classifier can run in front of it; the reply handling below is the same
+// code it always was, plus the provisional-bubble replacement.
+void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
+                                     const juce::String& activeChatId,
+                                     const juce::String& turnTargetUid,
+                                     const juce::String& turnTargetName,
+                                     int provisionalId,
+                                     const juce::StringArray& roles,
+                                     const juce::StringArray& contents)
+{
+    // ---- Step-5 selection: chain builds stream, everything else one-shot ----
+    // ONE choke point, because every typed send and chip tap funnels here
+    // (spec 2.3): when the flag is on and the staged state says this send is
+    // a chain build, the streaming variant takes the turn. Everything else —
+    // and everything while the flag is off, the default — is byte-for-byte
+    // the path that has always run. The staged per-turn state is untouched
+    // by the check (read-only) and is consumed by whichever variant fires.
+    if (streamChainBuildsEnabled() && api.nextTurnIsChainBuild())
+    {
+        EchoJay_NSLog("EJStream: selection routed chain build to /api/chat-stream");
+        fireChatStreamCall(sysPrompt, activeChatId, turnTargetUid, turnTargetName,
+                           provisionalId, roles, contents);
+        return;
+    }
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.sendChat(roles, contents, sysPrompt,
+        [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
+            if (safeThis == nullptr)
+                return;
+            safeThis->handleChatReply(reply, success, activeChatId,
+                                      turnTargetUid, turnTargetName, provisionalId);
         });
+}
+
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+//  Streaming variant of fireChatMainCall (spec step 4 — Feature A rendering)
+// ---------------------------------------------------------------------------
+// NO CALL SITE YET, deliberately: step 5 (selection) decides which turn
+// types route here, and nothing routes here until then.
+//
+// The provisional-bubble drop discipline, extended to EVERY partial state:
+//
+//   - deltas update ONE provisional bubble in chatMessages — found by
+//     IDENTITY on every event (the vector can shift under async work) —
+//     and touch no other store. Streaming text reaches chatMessages only.
+//   - the chain block resolves AT ONCE when the parser completes it: the
+//     bubble gets chainData and the chain card + Build button render with
+//     it. Still provisional — a stream that dies after the block drops the
+//     card and the button with the bubble. (gain/ask/edit cards resolve a
+//     breath later, at done: they are interactive state the authoritative
+//     pipeline stamps — edit base revisions, the ask shelf — and blocks
+//     are the reply tail, so the gap is imperceptible; chain, the one the
+//     spec's ordering names, is the one that resolves live.)
+//   - done is the ONLY persistence event: done.reply runs handleChatReply,
+//     the identical pipeline the one-shot path uses, replacing the
+//     provisional by identity and writing all four stores.
+//   - done.chainBlock 'truncated'/'missing' is a FAILED BUILD: the
+//     provisional — prose included — drops, and an explicit failure bubble
+//     takes its place. A turn that looks fine and did not do the work must
+//     never read as a chatty reply.
+//   - an error frame / dead stream lands in handleChatReply's failure
+//     branch: provisional dropped, honest failure copy, nothing persisted
+//     beyond what the one-shot failure path has always written.
+//   - nothing waits on thinking: the transport forwards no thinking frames
+//     (Feature A) and rendering keys on text deltas and done alone, so a
+//     Feature-B turn with zero thinking blocks behaves identically.
+void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
+                                       const juce::String& activeChatId,
+                                       const juce::String& turnTargetUid,
+                                       const juce::String& turnTargetName,
+                                       int provisionalId,
+                                       const juce::StringArray& roles,
+                                       const juce::StringArray& contents)
+{
+    struct StreamTurn
+    {
+        EJStreamBlockParser parser;
+        juce::String prose;       // accumulated displayable prose (provisional)
+        juce::String chainJson;   // set the moment the chain block completes
+        int provisionalId = 0;    // the bubble's identity; created on first content
+        bool sawFirstContent = false;
+    };
+    auto st = std::make_shared<StreamTurn>();
+    st->provisionalId = provisionalId;
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+
+    // Paint the current provisional state into the bubble. Runs only on the
+    // message thread (streamChat's callbacks land there) and re-finds the
+    // bubble by identity every time. Creates it on first content when the
+    // classifier put up no preamble bubble; when it did, the preamble
+    // becomes the first frame of the stream (spec section 5) — replaced in
+    // place, one bubble per turn, never push-then-push.
+    auto* stp = st.get();   // parser callbacks fire synchronously inside
+                            // appendDelta/finish, while `st` is alive; a
+                            // shared_ptr here would be a st->parser->st cycle
+    auto paintBubble = [safeThis, stp]()
+    {
+        auto* ed = safeThis.getComponent();
+        if (ed == nullptr) return;
+        if (! stp->sawFirstContent)
+        {
+            stp->sawFirstContent = true;
+            ed->clearStageStatus();   // streamed content replaces the shimmer
+        }
+        int pIdx = ed->findProvisionalIdx (stp->provisionalId);
+        if (pIdx < 0)
+        {
+            ChatMsg pm;
+            pm.role          = "assistant";
+            pm.provisionalId = ed->nextProvisionalId_++;
+            stp->provisionalId = pm.provisionalId;
+            ed->chatMessages.push_back (std::move (pm));
+            pIdx = (int) ed->chatMessages.size() - 1;
+        }
+        auto& m     = ed->chatMessages[(size_t) pIdx];
+        m.content   = stp->prose;
+        m.chainData = stp->chainJson;
+        ed->resized();
+        ed->repaint();
+    };
+
+    st->parser.onProse = [paintBubble, stp] (const juce::String& s)
+    {
+        stp->prose += s;
+        paintBubble();
+    };
+    st->parser.onBlock = [paintBubble, stp] (const EJStreamBlockParser::BlockEvent& ev)
+    {
+        if (ev.type == "chain")
+        {
+            stp->chainJson = ev.payload;   // complete by construction (rule 1)
+            paintBubble();                 // the card + Build resolve at once
+        }
+        // gain / ask / edit: resolved at done by handleChatReply — see the
+        // header comment for why they wait a breath.
+    };
+
+    EchoJayAPI::ChatStreamEvents ev;
+    ev.onTextDelta = [safeThis, st] (const juce::String& t)
+    {
+        if (safeThis == nullptr) return;
+        st->parser.appendDelta (t);
+    };
+    ev.onDone = [safeThis, st, activeChatId, turnTargetUid, turnTargetName] (const juce::var& done)
+    {
+        if (safeThis == nullptr) return;
+        auto* ed = safeThis.getComponent();
+        ed->activeChatStream_ = nullptr;
+        st->parser.finish();   // flush withheld prose; the authoritative
+                               // replace below supersedes it either way
+
+        const auto reply      = done.getProperty ("reply", juce::var()).toString();
+        const auto chainBlock = done.getProperty ("chainBlock", juce::var()).toString();
+
+        if (chainBlock == "truncated" || chainBlock == "missing")
+        {
+            // The failed-build guard (spec 3.1 / section 6): the server says
+            // this chain turn was told to build and delivered no complete
+            // block. Rendering the prose as a normal reply would be exactly
+            // the fabricated-work shape — looks fine, did nothing. Drop the
+            // whole provisional (prose, card if any) and say what happened.
+            // Same store discipline as the one-shot failure path.
+            EchoJay_NSLog (("EJStream: FAILED BUILD chainBlock=" + chainBlock).toRawUTF8());
+            ed->chatLoading = false;
+            ed->clearStageStatus();
+            ed->dropProvisional (st->provisionalId);
+            const juce::String msg = chainBlock == "truncated"
+                ? "That build didn't finish — the reply was cut off before the chain completed, so there's nothing safe to build. Ask again and I'll rebuild it fresh."
+                : "That turn should have delivered a buildable chain but didn't produce one. Nothing was built — ask again to retry.";
+            ed->chatMessages.push_back ({ "assistant", msg });
+            ed->processorRef.chatHistory.push_back ({ "assistant", msg });
+            ed->resized();
+            ed->repaint();
+            return;
+        }
+
+        // The authoritative path: done.reply through the IDENTICAL one-shot
+        // pipeline. Every provisional state above is superseded here — this
+        // is the only line that persists anything.
+        ed->handleChatReply (reply, true, activeChatId,
+                             turnTargetUid, turnTargetName, st->provisionalId);
+    };
+    ev.onError = [safeThis, st, activeChatId, turnTargetUid, turnTargetName] (const juce::String& err, int)
+    {
+        if (safeThis == nullptr) return;
+        safeThis->activeChatStream_ = nullptr;
+        // DROP PATH 2, exactly as the one-shot path: the provisional — and
+        // with it every delta the user watched — drops before the failure
+        // copy renders. A stream that dies mid-flight leaves nothing.
+        safeThis->handleChatReply (err, false, activeChatId,
+                                   turnTargetUid, turnTargetName, st->provisionalId);
+    };
+
+    activeChatStream_ = api.streamChat (roles, contents, sysPrompt, std::move (ev));
+}
+
+//  Provisional-bubble lifetime
+// ---------------------------------------------------------------------------
+//
+// BY IDENTITY, NEVER BY INDEX. Both call sites are reached from an async
+// reply, and a second send whose reply lands first shifts the vector under
+// the first send's callback — so a captured index can point at the wrong
+// message, or past the end. An id cannot drift.
+
+int EchoJayEditor::findProvisionalIdx(int provisionalId) const
+{
+    if (provisionalId == 0) return -1;
+    for (int i = (int) chatMessages.size() - 1; i >= 0; --i)
+        if (chatMessages[(size_t) i].provisionalId == provisionalId)
+            return i;
+    return -1;   // already replaced or dropped
+}
+
+void EchoJayEditor::dropProvisional(int provisionalId)
+{
+    const int idx = findProvisionalIdx(provisionalId);
+    if (idx < 0) return;   // idempotent: nothing to drop
+
+    // THE GUARD THAT MATTERS. A drop that takes the user's message instead
+    // of the bubble presents as "my message vanished" and gets blamed on
+    // persistence, on the sidebar, on anything but the drop. findProvisional
+    // already keys on the id, so this can only fire if the id were reused —
+    // and then it fires loudly, in the one place that could do the damage.
+    jassert(chatMessages[(size_t) idx].role == "assistant");
+    jassert(chatMessages[(size_t) idx].provisionalId == provisionalId);
+
+    chatMessages.erase(chatMessages.begin() + idx);
+    resized();     // indices stamped during layout are recomputed there
+    repaint();
+}
+
+// The switch guard's real question, asked exactly. It used to be
+// approximated by "is there any prior assistant reply at all", which also
+// rejected a target channel that legitimately had its own history — so
+// switching to a channel you had chatted on before silently refused to carry
+// the request. What the guard actually needs to know is whether the newest
+// assistant turn is the mismatch question THIS CLIENT just rendered, and the
+// client stamped that at render time, so it can be tested rather than
+// inferred from prose.
+bool EchoJayEditor::newestAssistantIsClientAsk(const juce::String& kind) const
+{
+    for (int i = (int) chatMessages.size() - 1; i >= 0; --i)
+    {
+        const auto& m = chatMessages[(size_t) i];
+        if (m.provisionalId != 0) continue;          // never history
+        if (m.role != "assistant") continue;
+        return m.clientAskKind == kind;              // newest assistant turn decides
+    }
+    return false;
+}
+
+juce::String EchoJayEditor::priorAssistantForClassify() const
+{
+    // Newest assistant turn the user actually saw. The server caps it at 400
+    // characters (tail, marked truncated), so nothing is trimmed here.
+    //
+    // SKIPS PROVISIONALS. A preamble is a rendering artefact; feeding one
+    // back as PRIOR REPLY would have the classifier reason about its own
+    // ack. By send time any earlier provisional has been replaced or
+    // dropped, so this is belt and braces — and cheap.
+    for (int i = (int) chatMessages.size() - 1; i >= 0; --i)
+    {
+        const auto& m = chatMessages[(size_t) i];
+        if (m.provisionalId != 0) continue;
+        if (m.role == "assistant") return m.content;
+    }
+    return {};
+}
+
+juce::String EchoJayEditor::askDataFromClassifyChips(const juce::String& question,
+                                                     const juce::var& chips)
+{
+    // EMPTY IN MUST MEAN EMPTY OUT. needs_scoping nulls its chips on
+    // purpose — a scoping question is prose, because the useful answers are
+    // the user's own words and not a menu — so a null must render as a
+    // question with no shelf, never as an empty shelf.
+    auto* arr = chips.getArray();
+    if (arr == nullptr || arr->isEmpty()) return {};
+
+    juce::Array<juce::var> choices;
+    for (const auto& cv : *arr)
+    {
+        if (choices.size() >= kMaxAskChips) break;
+        juce::String label, detail, intent;
+        juce::var candidates;
+        if (auto* co = cv.getDynamicObject())
+        {
+            label  = co->getProperty("label").toString().trim();
+            detail = co->getProperty("detail").toString().trim();
+            intent = co->getProperty("intent").toString().trim();
+            // Ranked switch destinations ({instanceId, why}), carried VERBATIM.
+            // This function is the ingestion boundary: a field it does not
+            // copy is gone by the time anything can read it, which is how the
+            // chooser would have found an empty ranking and silently fallen
+            // back to its own ordering. Not interpreted here — the chooser
+            // validates ids against the live registry, because a Link can
+            // disappear between the classify call and the tap.
+            candidates = co->getProperty("candidates");
+        }
+        else
+        {
+            label = cv.toString().trim();   // bare strings are legal too
+        }
+        if (label.isEmpty()) continue;      // a blank button is worse than no chip
+
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label", label);
+        if (detail.isNotEmpty()) c->setProperty("detail", detail);
+        if (intent.isNotEmpty()) c->setProperty("intent", intent);
+        if (auto* ca = candidates.getArray(); ca != nullptr && ! ca->isEmpty())
+            c->setProperty("candidates", candidates);
+        choices.add(juce::var(c));
+    }
+
+    // The shelf draws from two chips up (measureAskShelf), so anything
+    // less is prose here too rather than a half-drawn shelf.
+    if (choices.size() < 2) return {};
+
+    auto* root = new juce::DynamicObject();
+    root->setProperty("question", question);
+    root->setProperty("choices", choices);
+    root->setProperty("allowFreeText", true);
+    return juce::JSON::toString(juce::var(root), true);
+}
+
+// channel_mismatch, rendered entirely client-side (prompt v13, 4 Aug 2026).
+//
+// The server sends intent and precondition and nothing else. Everything the
+// user sees is built here, the same way presentCompareScopeAsk builds its
+// local ASK: no model call, no second round trip, no latency.
+//
+// WHY IT MOVED. Writing this question was ~100 output tokens on top of a
+// ~30-token classification, generated INLINE on the turn the user waits
+// through, at ~16 ms/token. It was the whole of a 4,498 ms mismatch turn
+// against a 2,940 ms chat turn in the same run. Label-only, the same shape
+// measures ~2,235 ms — faster than a plain chat turn.
+//
+// THE COPY NAMES ONLY WHAT THIS SIDE KNOWS: the current channel. It does not
+// name a better destination, and must not learn to. Picking one is the one
+// part that genuinely needed a model, and it bought a TAP rather than a
+// decision — the chooser below lists every Link from the local registry a
+// tap later, including ones the model never saw. A guessed destination here
+// would be worse than none: wrong often, and stated with the client's own
+// authority rather than the model's hedging.
+void EchoJayEditor::renderChannelMismatch(const juce::String& channelName,
+                                          const juce::String& activeChatId)
+{
+    // ASK, never tell. The user may have a reason — a vocal sample used as a
+    // kick layer is a real thing — so this raises the mismatch as a question
+    // and never as a verdict. Same register as CHANNEL SHAPE CHECK.
+    const juce::String where = channelName.isNotEmpty() ? channelName
+                                                        : juce::String("this channel");
+    const juce::String question =
+        "You're on " + where + ". Are you sure you want to build here?";
+
+    // Two chips, built locally. "build" is the existing vocabulary and stages
+    // chain_generate through the ladder; "switch" is intercepted before any
+    // send and opens the Link chooser (59adea7). Never a cancel chip — not
+    // answering is cancelling.
+    auto mk = [](const juce::String& label, const juce::String& intent)
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",  label);
+        c->setProperty("intent", intent);
+        return juce::var(c);
+    };
+    juce::Array<juce::var> chips;
+    chips.add(mk("Build it here",        "build"));
+    chips.add(mk("Move this request",    "switch"));
+
+    EchoJay_NSLog(("EJClassify: channel_mismatch rendered locally (channel=\""
+                   + where + "\")").toRawUTF8());
+
+    renderClassifierQuestion(question, juce::var(chips), activeChatId,
+                             "channel_mismatch");
+}
+
+void EchoJayEditor::renderClassifierQuestion(const juce::String& question,
+                                             const juce::var& chips,
+                                             const juce::String& activeChatId,
+                                             const juce::String& askKind)
+{
+    // The classify call IS the turn: no main call fires. Built the same way
+    // presentCompareScopeAsk builds its local ASK — askData constructed
+    // client-side, one assistant ChatMsg, then a layout pass so the docked
+    // shelf appears.
+    //
+    // UNLIKE presentCompareScopeAsk in ONE respect, deliberately: this turn
+    // also goes to chatRoles/chatContents. The compare-scope ask is a local
+    // UI question the model has no business knowing about; this one is a
+    // real assistant turn that the user answers next, and the server reads
+    // the previous assistant message to decide whether a scoping question
+    // was already asked (suppressScoping) and whether the user answered it
+    // or took the build escape. Leave it out of the API history and the
+    // next turn re-asks the question the user just answered.
+    //
+    // This is history, NOT a provisional: provisionalId stays 0, and it is
+    // written to all four stores exactly like any other assistant turn.
+    const juce::String askJson = askDataFromClassifyChips(question, chips);
+
+    ChatMsg cm;
+    cm.role    = "assistant";
+    cm.content = question;
+    cm.askData = askJson;              // empty = prose, no shelf
+    cm.clientAskKind = askKind;        // "" unless the CLIENT wrote this ask
+    chatMessages.push_back(cm);
+    processorRef.chatHistory.push_back({ "assistant", question });
+    processorRef.chatRoles.add("assistant");
+    processorRef.chatContents.add(question);
+
+    if (activeChatId.isNotEmpty())
+    {
+        workspace.appendMessageToChat(activeChatId, "assistant", question,
+                                      {}, {}, {}, askJson, {});
+        workspace.requestMutationSync();   // append does not sync by itself
+    }
+
+    // The send never happened, so the send's UI state has to be unwound
+    // here — nothing downstream is going to do it.
+    chatLoading = false;
+    clearStageStatus();
+
+    if (sidebarModel)
+    {
+        sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                  workspace.getReviews(), workspace.getPinnedProjects(),
+                                  collapsedAlbums, currentChatId);
+        chatSidebar.updateContent();
+    }
+
+    EchoJay_NSLog(("EJClassify: short-circuit rendered ("
+                   + juce::String(askJson.isNotEmpty() ? "with chips" : "prose only")
+                   + ")").toRawUTF8());
+
+    // Lays out the shelf over the input row (findNewestUnansweredAsk sees
+    // the message now) and reflows the viewport above it.
+    resized();
+    repaint();
+}
+
+// The newest thing the USER typed in this conversation, verbatim.
+//
+// chatMessages holds the raw typed text for a user turn (`um.content = msg`
+// — injections go to chatContents, not here), so this needs no stripping and
+// must not acquire any: the point of carrying the request over is that the
+// user does not retype it, and a "cleaned" version is a different request.
+juce::String EchoJayEditor::newestUserRequest() const
+{
+    for (int i = (int) chatMessages.size() - 1; i >= 0; --i)
+        if (chatMessages[(size_t) i].role == "user")
+            return chatMessages[(size_t) i].content;
+    return {};
+}
+
+// The channel chooser: pick a Link to move this request to.
+//
+// MEMBERSHIP FROM THE REGISTRY, ORDER FROM THE MODEL. getLinkDisplayList() is
+// the canonical list every Link surface must agree on, and it assigns the
+// "Untitled N" numbering over the FULL set — so an unnamed Link appears here
+// with the same label it has in the Monitor, rather than vanishing because the
+// classifier could not name it (the server drops nameless links from LINKS
+// entirely). The model supplies ranking only, and a ranking it cannot supply
+// costs the user nothing.
+//
+// OFFLINE LINKS ARE LISTED AND MARKED, never hidden. A channel chat for an
+// offline Link is legal — its rack sidecar persists and the conversation is
+// real — so hiding it would remove a destination the app supports.
+void EchoJayEditor::openChannelChooser(int chipIdx)
+{
+    // Candidates ride the chip, read at TAP time rather than cached at layout
+    // time: the shelf is rebuilt on every resize and the ranking is only
+    // needed once, here.
+    juce::StringArray rankedUids;
+    std::map<juce::String, juce::String> whyByUid;
+    if (askChipMsgIdx_ >= 0 && askChipMsgIdx_ < (int) chatMessages.size())
+    {
+        auto parsed = juce::JSON::parse(chatMessages[(size_t) askChipMsgIdx_].askData);
+        if (auto* root = parsed.getDynamicObject())
+            if (auto* choices = root->getProperty("choices").getArray())
+                if (chipIdx >= 0 && chipIdx < choices->size())
+                    if (auto* ch = (*choices)[chipIdx].getDynamicObject())
+                        if (auto* cands = ch->getProperty("candidates").getArray())
+                            for (const auto& cv : *cands)
+                                if (auto* co = cv.getDynamicObject())
+                                {
+                                    const auto id = co->getProperty("instanceId").toString().trim();
+                                    if (id.isEmpty() || rankedUids.contains(id)) continue;
+                                    rankedUids.add(id);
+                                    whyByUid[id] = co->getProperty("why").toString().trim();
+                                }
+    }
+
+    // Ordering is echojay::orderSwitchDestinations — shared with the fixture
+    // in test/channel_label_test.cpp rather than written inline here, because
+    // "the model's ranking is only an opinion" is a rule with four ways to get
+    // it subtly wrong (a hallucinated id, the current channel, a duplicate, an
+    // unrankable unnamed Link) and none of them are visible by reading a menu.
+    std::vector<std::string> registryUids;
+    std::map<juce::String, juce::String> nameByUid;
+    for (const auto& e : processorRef.getLinkDisplayList())
+    {
+        if (e.info.uid.isEmpty()) continue;
+        registryUids.push_back(e.info.uid.toStdString());
+        nameByUid[e.info.uid] = e.displayName;   // canonical label, incl. "Untitled N"
+    }
+    std::vector<std::string> ranked;
+    for (const auto& u : rankedUids) ranked.push_back(u.toStdString());
+
+    juce::StringArray ordered;
+    for (const auto& u : echojay::orderSwitchDestinations(
+             registryUids, ranked, effectiveChannelUid().toStdString()))
+        ordered.add(juce::String(u));
+
+    if (ordered.isEmpty())
+    {
+        EchoJay_NSLog("EJSwitch: chooser opened with no destination (no other Links)");
+        return;
+    }
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("MOVE THIS REQUEST TO");
+    for (int i = 0; i < ordered.size(); ++i)
+    {
+        const auto& uid = ordered[i];
+        juce::String row = nameByUid[uid];
+        if (auto it = whyByUid.find(uid); it != whyByUid.end() && it->second.isNotEmpty())
+            row += "  -  " + it->second;
+        if (! linkUidLive(uid)) row += "  (offline)";
+        menu.addItem(i + 1, row);
+    }
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(&askChipBtns[(size_t) chipIdx]),
+        [safeThis, ordered](int result)
+        {
+            if (safeThis == nullptr || result <= 0 || result > ordered.size()) return;
+            safeThis->switchChannelCarryingRequest(ordered[result - 1]);
+        });
+}
+
+// SWITCH FIRST, THEN SEED. The order is load-bearing twice over and it is
+// checked at runtime, not asserted in a comment.
+//
+// Both effectiveChannelUid() and priorAssistantForClassify() read the ACTIVE
+// CHAT. Seed before the switch lands and the seeded turn goes out with the OLD
+// channel and the OLD prior reply, which is not one bug but two in a single
+// turn: /api/classify sees the mismatched channel again and re-fires
+// channel_mismatch, and it sees its own previous question as PRIOR REPLY, so
+// the ASKED ALREADY rule — which exists to stop exactly that loop — misfires
+// on a question the user has already answered. The user would tap the chooser,
+// arrive, and be asked the same thing again with no way forward.
+//
+// jassert alone would not do: it compiles out of the Release build users run,
+// which makes it a comment with extra steps. The post-conditions are verified
+// live and a violation REFUSES TO SEED. Failing to carry the request costs one
+// retype on the right channel; carrying it wrongly costs the loop.
+void EchoJayEditor::switchChannelCarryingRequest(const juce::String& uid)
+{
+    if (uid.isEmpty()) return;
+
+    // Captured BEFORE the switch: openChannelByUid clears chatMessages on the
+    // pending path, and this reads from it.
+    const juce::String request = newestUserRequest();
+
+    supersedePendingAsks();          // marks + persists askAnswered
+    askShelfVisible_ = false;
+
+    openChannelByUid(uid);           // <-- THE SWITCH
+
+    const bool switched = (effectiveChannelUid() == uid);
+    // NOT "is there any prior reply" — that also refused a target channel with
+    // its own history, which is a normal chat, not a violated ordering. After
+    // a correct switch the active chat is the TARGET and the mismatch question
+    // lives in the SOURCE, so this is structurally false; after a failed one
+    // we are still in the source chat and it is right there.
+    const bool priorIsOurMismatchAsk = newestAssistantIsClientAsk("channel_mismatch");
+    jassert(switched && ! priorIsOurMismatchAsk);
+    if (! switched || priorIsOurMismatchAsk)
+    {
+        EchoJay_NSLog(("EJSwitch: REFUSING to seed - ordering violated (switched="
+                       + juce::String(switched ? 1 : 0) + " priorIsOurMismatchAsk="
+                       + juce::String(priorIsOurMismatchAsk ? 1 : 0) + ")").toRawUTF8());
+        resized(); repaint();
+        return;
+    }
+
+    if (request.isEmpty())
+    {
+        // Nothing to carry (the chip was tapped with no user turn behind it).
+        // Arriving on the right channel is still the useful half.
+        EchoJay_NSLog("EJSwitch: switched with no request to carry");
+        resized(); repaint();
+        return;
+    }
+
+    // Seeded as a normal send with NO staged turn type: the request is
+    // re-classified from scratch on the new channel, which is the whole point.
+    // channel_mismatch cannot fire again because CHANNEL now follows the
+    // conversation (materialContextName), and ASKED ALREADY cannot misfire
+    // because the prior reply is empty — both verified immediately above.
+    EchoJay_NSLog(("EJSwitch: switched to " + uid + ", carrying the request").toRawUTF8());
+    sendChatMessage(request, {}, {});
 }
 
 void EchoJayEditor::showChainPluginPicker()
@@ -20837,6 +22782,23 @@ void EchoJayEditor::showChainPluginPicker()
         [safeThis, plugins](int result)
         {
             if (safeThis == nullptr || result <= 0 || result > plugins.size()) return;
+            // REMOTE ADD forks here. The op adds BY NAME, so it is the raw
+            // picker name that travels, NOT preferInlineHostableDesc's
+            // possible AU-to-VST3 swap: that swap exists so the editor can be
+            // hosted INLINE in this window, which is meaningless for a plugin
+            // that will live in the Link and be edited there. Sending the
+            // swapped name would also ask the Link for a build it may not
+            // have, turning a working add into a spurious refusal.
+            const juce::String rackUid = safeThis->chainViewUid();
+            if (rackUid.isNotEmpty())
+            {
+                // NO direct status write here (fix 3): the line is DERIVED
+                // by refreshChainPanelForView from the pending list and the
+                // sidecar cache, one author. Writing "Adding..." from a
+                // second place is how the line got orphaned mid-sentence.
+                safeThis->sendRackAdd(rackUid, plugins[result - 1].name);
+                return;
+            }
             auto& ch2 = safeThis->processorRef.getChainHost();
             // NEW instantiation — popout-only AUs may swap to their VST3 build
             auto desc = ch2.preferInlineHostableDesc(plugins[result - 1]);
@@ -21194,6 +23156,58 @@ void EchoJayEditor::sendLinkGainCommand(const juce::String& linkAddr, float gain
 // there are no live Links (so plain chats are unaffected). The instructions
 // live here (not the server prompt) so the whole feature is client-owned and
 // conditional on Links being present.
+// The same Links, structured, for /api/classify's LINKS fact.
+//
+// ONE SOURCE with buildLinkLevelsContext below — getLinkDisplayList(), the
+// canonical list every Link-listing surface uses — so the prose block the
+// model reads on the main call and the LINKS fact the classifier reads can
+// never name different channels.
+//
+// NOT the prose block, deliberately. /api/classify compares LINKS against
+// CHANNEL to decide the channel_mismatch precondition, and builds its
+// deterministic replacement copy ("that would sit better on your <name>
+// track") out of a NAME taken from this array. Handing it a paragraph of
+// levels, placements and grounding rules would make it parse prose to find
+// one, and would put the model's own measurement caveats in front of a
+// question that is not about levels at all.
+//
+// Entries are {"name": ...}. The endpoint accepts bare strings too, but its
+// readers take `.name` off an object, so this shape is the one they are
+// written against — and placement or gain can be added later as a field
+// rather than as a shape change.
+//
+// THE MIX BUS IS DELIBERATELY ABSENT. LINKS is the set of other channels the
+// user could switch to, and the server puts a name from it into "your <name>
+// track" — a sentence the mix bus cannot be the subject of.
+// buildLinkLevelsContext states the bus on its own line for the same reason.
+//
+// No refreshLinkRegistry() here: the editor timer already refreshes the
+// registry at ~2 Hz, and this sits on the latency-critical path in front of
+// a send.
+juce::var EchoJayEditor::buildClassifyLinks() const
+{
+    // The endpoint slices at 24. Stopping at the same number keeps the
+    // request honest about what it asked to have considered, rather than
+    // sending a tail that is silently dropped.
+    constexpr int kMaxClassifyLinks = 24;
+
+    juce::Array<juce::var> out;
+    for (const auto& e : processorRef.getLinkDisplayList())
+    {
+        if (out.size() >= kMaxClassifyLinks) break;
+        if (e.info.uid.isEmpty()) continue;          // unaddressable, as in the prose block
+        const juce::String name = e.displayName.trim();
+        if (name.isEmpty()) continue;
+        auto* o = new juce::DynamicObject();
+        o->setProperty("name", name);
+        out.add(juce::var(o));
+    }
+    // Void, not an empty array: classify() omits the field entirely, and the
+    // facts block then reads "LINKS: (none)" — which is the honest statement
+    // that there are no other channels, not an empty list of them.
+    return out.isEmpty() ? juce::var() : juce::var(out);
+}
+
 juce::String EchoJayEditor::buildLinkLevelsContext()
 {
     processorRef.refreshLinkRegistry();
@@ -23783,6 +25797,20 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                     EchoJay_NSLog("EJChat: ASK block received (capture turn)");
                 if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
                     EchoJay_NSLog("EJChat: CHAIN_EDIT block received (capture turn)");
+
+                // Empty-ops edit block = no block (9 Aug 2026, belt - the
+                // server strips these too): the prose IS the turn, and a
+                // contentless card must never suppress it. The XTComp
+                // full-compliance turn (honest decline + "edit":[]) rendered
+                // as an empty bubble because block-present implied
+                // card-worth-showing.
+                if (editJson.isNotEmpty())
+                {
+                    auto evEB = juce::JSON::parse(editJson);
+                    auto* eoEB = evEB.getDynamicObject();
+                    const juce::Array<juce::var>* eaEB = (eoEB != nullptr) ? eoEB->getProperty("edit").getArray() : nullptr;
+                    if (eaEB == nullptr || eaEB->isEmpty()) editJson.clear();
+                }
                 if (chainJson.isNotEmpty())
                     EchoJay_NSLog("EJChat: CHAIN block received (capture turn)");
             }
@@ -23806,7 +25834,27 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                     cm.editBaseRevision = rack.valid ? rack.revision : -1;
                 }
                 else
+                {
+                    // Same receipt-time suggestion consumption as the chat
+                    // path: local rack, prose-only sets need no Apply.
+                    bool allConsumed = false;
+                    juce::StringArray consumed;
+                    const auto remaining = safeThis2->consumeSuggestionSetsAtReceipt(editJson, allConsumed, consumed);
+                    if (!consumed.isEmpty())
+                    {
+                        if (allConsumed)
+                        {
+                            cm.editApplied = true;
+                            cm.editResult  = "Suggested settings added to the card - nothing written automatically";
+                        }
+                        else
+                            cm.editData = remaining;
+                        auto& chS2 = safeThis2->processorRef.getChainHost();
+                        safeThis2->chainListPanel.rebuild(chS2.getAllSlotInfos(),
+                                                          safeThis2->chainSelectedSlot_);
+                    }
                     cm.editBaseRevision = safeThis2->processorRef.getChainHost().getChainRevision();
+                }
             }
             safeThis2->chatMessages.push_back(cm);
             safeThis2->processorRef.chatHistory.push_back({"assistant", visibleReply});

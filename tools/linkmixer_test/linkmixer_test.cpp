@@ -106,6 +106,9 @@ struct EchoJayLinkMixerTestAccess
     { return Ed::elideMiddle (s, head, tail); }
 
     static int blockH (bool wide) { return Ed::chainBlockH (wide); }
+
+    static ChainHost::SlotInfo fromSidecar (const LinkShm::RackSidecarSlot& rs)
+    { return Ed::slotInfoFromSidecar (rs); }
     static int blockPitch() { return Ed::kChainBlockH + Ed::kChainBlockGap; }
     static void ctrls2 (juce::Rectangle<int> block,
                         juce::Rectangle<int>& b, juce::Rectangle<int>& x)
@@ -1016,6 +1019,44 @@ static void testElideMiddle()
              "a zero tail returns the input");
 }
 
+static void testSidecarToSlotInfo()
+{
+    // THE REMOTE RACK'S CONVERSION. The Chain tab feeds its panel from a
+    // sidecar when a Link is selected, and the two types carry the same five
+    // fields. SlotInfo is a plain aggregate, so a brace-initialiser would
+    // keep compiling if its members were ever reordered and would silently
+    // put the format string into the settings field. This pins each field to
+    // its own destination with values that cannot be confused for each other.
+    std::printf ("sidecar -> SlotInfo: field for field\n");
+
+    LinkShm::RackSidecarSlot rs;
+    rs.name     = "NAME_FIELD";
+    rs.format   = "FORMAT_FIELD";
+    rs.settings = "SETTINGS_FIELD";
+    rs.bypassed = true;
+    rs.wet      = 0.25f;
+
+    const auto si = T::fromSidecar (rs);
+    check (si.name     == juce::String ("NAME_FIELD"),     "name survives");
+    check (si.format   == juce::String ("FORMAT_FIELD"),   "format survives");
+    check (si.settings == juce::String ("SETTINGS_FIELD"), "settings survives");
+    check (si.bypassed == true,                            "bypassed survives");
+    check (std::abs (si.wet - 0.25f) < 1.0e-6f,            "wet survives");
+
+    // The distinct-value guard: no field may hold another's payload.
+    check (si.settings != juce::String ("FORMAT_FIELD"),
+           "format did NOT land in settings");
+    check (si.format   != juce::String ("SETTINGS_FIELD"),
+           "settings did NOT land in format");
+
+    // Defaults must not fabricate: an untouched sidecar slot converts to an
+    // unbypassed, fully wet, nameless slot rather than to anything invented.
+    const auto empty = T::fromSidecar (LinkShm::RackSidecarSlot{});
+    check (empty.name.isEmpty(),   "an empty slot converts to an empty name");
+    check (! empty.bypassed,       "an empty slot is not bypassed");
+    check (std::abs (empty.wet - 1.0f) < 1.0e-6f, "an empty slot is fully wet");
+}
+
 static void testContentMigration()
 {
     // 8b removed the meter content mode. Saved projects persisted 0/1/2 for
@@ -1116,6 +1157,7 @@ int main()
     testActiveBottomRow (T::wWide(),   1044);
     testEqSlotSqueeze();
     testNarrowChainSlots();
+    testSidecarToSlotInfo();
     testElideMiddle();
     testContentMigration();
     testDegenerate();

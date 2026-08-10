@@ -8,7 +8,7 @@
 set -e
 
 PLUGIN_NAME="EchoJay-V2"
-VERSION="2.24.2"
+VERSION="2.25.23"
 # Display-only: v2.MM.PP padding for FILENAMES and human text; every
 # parsed field (pkgbuild --version, plists) keeps the numeric $VERSION.
 DISPLAY_VERSION=$(echo "$VERSION" | awk -F. '{printf "%d.%02d.%02d", $1, $2, $3}')

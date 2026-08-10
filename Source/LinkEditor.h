@@ -495,6 +495,28 @@ public:
             repaint();
         }
 
+        /** Rack (host) index to model index. The wire and the sidecar both
+            speak RACK slots; the panel is indexed by MODEL slots, which also
+            contain unresolved entries with hostIdx = -1. Returns -1 when no
+            live slot answers to that rack index, which is the honest answer
+            for a plugin that failed to load on this Link. */
+        int modelIdxForHostIdx(int hostIdx) const
+        {
+            if (hostIdx < 0) return -1;
+            const auto& model = proc.getChainModel();
+            for (int i = 0; i < (int)model.size(); ++i)
+                if (model[(size_t)i].hostIdx == hostIdx) return i;
+            return -1;
+        }
+
+        /** Bring whichever editor is currently up to the front. Inline
+            editors ride the Link window (already raised by the caller), so
+            only a pop-out needs its own raise. */
+        void raiseOpenEditor()
+        {
+            if (popout != nullptr) popout->toFront(true);
+        }
+
         bool canPopOut() const
         {
             auto& model = proc.getChainModel();
@@ -574,6 +596,24 @@ public:
                 bl->onWetEnd = [this] { proc.commitChainWetChange(); };
                 bl->prevBtn.setEnabled(i > 0);
                 bl->nextBtn.setEnabled(i < (int)model.size() - 1);
+                // Stage 1: a slot under an edit lease is CONTROLLED from the
+                // main plugin. Its controls go dead here (the lease owns the
+                // bypass, and structure is refused rack-wide while held) and
+                // the tooltip says where control lives. The lease actions
+                // call notifyChainModel, so this rebuild runs on every
+                // engage and release.
+                if (model[(size_t)i].hostIdx >= 0
+                    && model[(size_t)i].hostIdx == proc.controlledSlot0())
+                {
+                    const juce::String why =
+                        "Being edited from the main EchoJay plugin - "
+                        "controls return when it releases";
+                    for (auto* b : { &bl->bypassBtn, &bl->removeBtn,
+                                     &bl->prevBtn, &bl->nextBtn })
+                    { b->setEnabled(false); b->setTooltip(why); }
+                    bl->wetKnob.setVisible(false);
+                    bl->setAlpha(0.55f);
+                }
                 stripContent.addAndMakeVisible(*bl);
                 blocks.push_back(std::move(bl));
             }
