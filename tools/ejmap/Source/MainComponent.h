@@ -7385,7 +7385,7 @@ public:
                   << (dryRun ? " (DRY RUN: gate and artefact only, nothing leaves)" : "")
                   << std::endl;
 
-        int sent = 0, refused = 0;
+        int sent = 0, refused = 0, reported = 0;
         juce::StringArray refusedLines;
         for (const auto& f : pending)
         {
@@ -7399,16 +7399,24 @@ public:
 
             auto printLine = [&] (const juce::String& outcome, const juce::String& why)
             {
+                // ON SCREEN, PER MAP. A mapper watching Send All must see the
+                // same thing --send-pending prints: a summary buries the
+                // refusals, and a refusal is the only line that needs acting
+                // on.
+                //
+                // COUNTED BY ITS OWN COUNTER, and printed ONCE. The first
+                // version numbered lines from `sent + refused`, which the dry
+                // run does not increment on every path -- so it printed [3/5]
+                // twice and the reader could not tell whether a map had been
+                // skipped. It also wrote the line to stdout AND through
+                // sweepSay, which writes to stdout too, so every map appeared
+                // twice on the CLI. A per-map report that miscounts and
+                // repeats itself is not a per-map report.
+                ++reported;
                 const auto line = juce::String (outcome == "sent" ? "SENT    " : "REFUSED ")
                                 + fp.substring (0, 12) + "  "
                                 + name.paddedRight (' ', 32).substring (0, 32) + "  " + why;
-                std::cout << "  " << line << std::endl;
-                std::cout.flush();
-                // ON SCREEN, PER MAP (10 Aug 2026). A mapper watching Send All
-                // must see the same thing --send-pending prints: a summary
-                // buries the refusals, and a refusal is the only line that
-                // needs acting on.
-                sweepSay ("[" + juce::String (sent + refused + 1) + "/"
+                sweepSay ("[" + juce::String (reported) + "/"
                             + juce::String (pending.size()) + "] " + line);
                 if (outcome != "sent") refusedLines.add (name + ": " + why);
                 juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
