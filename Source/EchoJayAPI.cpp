@@ -1610,13 +1610,22 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
 
                     if (type == "delta")
                     {
-                        // Feature A: text only. Thinking deltas (Feature B,
-                        // off) and future block types are ignored, per the
-                        // contract's forward-compatibility rule.
-                        if (obj->getProperty ("block").toString() == "text")
+                        // Tagged by TYPE on every delta, never by index or
+                        // arrival order (spec 3.1). Unknown block types stay
+                        // ignored, per the forward-compatibility rule.
+                        const auto block = obj->getProperty ("block").toString();
+                        if (block == "text")
                         {
                             auto text = obj->getProperty ("text").toString();
                             dispatch ([ev, text] { if (ev->onTextDelta) ev->onTextDelta (text); });
+                        }
+                        else if (block == "thinking")
+                        {
+                            // Feature B. Absent under Feature A because the
+                            // server sends no thinking config at all — this
+                            // branch simply never fires there.
+                            auto text = obj->getProperty ("text").toString();
+                            dispatch ([ev, text] { if (ev->onThinkingDelta) ev->onThinkingDelta (text); });
                         }
                     }
                     else if (type == "done")

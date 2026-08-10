@@ -22231,6 +22231,8 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         juce::String chainJson;   // set the moment the chain block completes
         int provisionalId = 0;    // the bubble's identity; created on first content
         bool sawFirstContent = false;
+        // Feature B: the reasoning tail, live only. See onThinkingDelta.
+        juce::String reasoningTail;
     };
     auto st = std::make_shared<StreamTurn>();
     st->provisionalId = provisionalId;
@@ -22292,6 +22294,58 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
     {
         if (safeThis == nullptr) return;
         st->parser.appendDelta (t);
+    };
+    // ---- Feature B: the reasoning ticker (spec section 4, Shape A) --------
+    // Reasoning renders into the STAGE ROW, not into a message. That is the
+    // whole design, and it is what makes the store discipline structural
+    // rather than remembered:
+    //
+    //   - the stage row is not a ChatMsg, and WsMessage has no counterpart
+    //     to it, so reasoning CANNOT reach chatMessages, chatRoles /
+    //     chatContents, chatHistory or the workspace. It is the same
+    //     guarantee shape as provisionalId, one level stricter.
+    //   - it is one fixed-height row (stageRowH), so it cannot perturb
+    //     message heights — the two-tH-sums bug class the stage row was
+    //     invented to sidestep stays sidestepped.
+    //   - it answers section 4's three open questions by construction:
+    //     not expanded by default, gone the moment the reply starts
+    //     (paintBubble's clearStageStatus), and never in history.
+    //
+    // The row already reads as working-state and its default text is
+    // literally "Thinking…"; this replaces that generic word with the
+    // model's actual current line. Deliberately unlabelled: at 320px a
+    // prefix would eat the content. If the scratch work reads badly in
+    // practice (section 6's risk — it may name plugins it later discards),
+    // the cheap fixes are a prefix here or dropping back to the generic
+    // line, both one edit at this site.
+    ev.onThinkingDelta = [safeThis, st] (const juce::String& t)
+    {
+        auto* ed = safeThis.getComponent();
+        if (ed == nullptr) return;
+        // Once the reply itself is streaming, the row is gone and reasoning
+        // is over — a late thinking delta must not resurrect it.
+        if (st->sawFirstContent) return;
+
+        st->reasoningTail += t;
+        // Show the newest thought UNIT, and keep only that in memory — this
+        // is a ticker, not a transcript. A unit ends at a newline or a
+        // sentence end: the 10 Aug capture came in short lines ("Signal
+        // flow: subtractive EQ -> de-ess -> ..."), but reasoning style
+        // varies per turn, and on a single-paragraph turn a newline-only
+        // rule would leave the row showing the same ellipsized opening for
+        // the whole wait — a ticker that looks frozen, which reads as a
+        // hang. Sentence ends keep it moving on either style.
+        int cut = -1;
+        for (const auto* end : { "\n", ". ", "? ", "! " })
+        {
+            const int p = st->reasoningTail.lastIndexOf (juce::String (end));
+            if (p > cut) cut = p + (int) juce::String (end).length() - 1;
+        }
+        if (cut >= 0 && st->reasoningTail.substring (cut + 1).trim().isNotEmpty())
+            st->reasoningTail = st->reasoningTail.substring (cut + 1);
+        auto line = st->reasoningTail.trim();
+        if (line.isNotEmpty())
+            ed->setStageStatus (line);
     };
     ev.onDone = [safeThis, st, activeChatId, turnTargetUid, turnTargetName] (const juce::var& done)
     {
